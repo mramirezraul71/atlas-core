@@ -4,3 +4,9 @@
 **/*.env
 snapshots/**/config/.env
 snapshots/**/.env
+.env
+*.env
+**/.env
+**/*.env
+snapshots/**/config/.env
+snapshots/**/.env
