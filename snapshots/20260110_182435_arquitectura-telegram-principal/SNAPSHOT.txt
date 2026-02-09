@@ -1,0 +1,2 @@
+Snapshot: 20260110_182435
+Label: arquitectura-telegram-principal

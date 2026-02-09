@@ -1,0 +1,101 @@
+[2026-01-10 10:33:29] ATLAS iniciado correctamente. Núcleo activo.
+[2026-01-10 10:34:04] ATLAS detenido manualmente.
+[2026-01-10 10:36:14] ATLAS iniciado correctamente. Núcleo activo.
+[2026-01-10 10:36:30] ATLAS detenido manualmente.
+[2026-01-10 10:36:46] ATLAS iniciado correctamente. Núcleo activo.
+[2026-01-10 10:37:12] ATLAS detenido manualmente.
+[2026-01-10 10:37:14] ATLAS iniciado correctamente. Núcleo activo.
+[2026-01-10 10:37:27] ATLAS detenido manualmente.
+[2026-01-10 10:40:44] ATLAS iniciado. Core activo.
+[2026-01-10 10:40:44] Snapshot creado: 20260110_104044_startup
+[2026-01-10 10:40:54] ATLAS heartbeat OK
+[2026-01-10 10:41:04] ATLAS heartbeat OK
+[2026-01-10 10:41:05] ATLAS detenido manualmente.
+[2026-01-10 10:42:17] ATLAS iniciado. Core activo.
+[2026-01-10 10:42:17] Snapshot creado: 20260110_104217_startup
+[2026-01-10 10:42:17] RAULI DOCTOR INICIADO
+[2026-01-10 10:42:17] --- FLUTTER_VERSION ---
+[2026-01-10 10:42:18] Flutter 3.38.5 â€¢ channel stable â€¢ https://github.com/flutter/flutter.git
+Framework â€¢ revision f6ff1529fd (4 weeks ago) â€¢ 2025-12-11 11:50:07 -0500
+Engine â€¢ hash c108a94d7a8273e112339e6c6833daa06e723a54 (revision 1527ae0ec5) (29 days ago) â€¢ 2025-12-11 15:04:31.000Z
+Tools â€¢ Dart 3.10.4 â€¢ DevTools 2.51.1
+[2026-01-10 10:42:18] --- FLUTTER_DOCTOR ---
+[2026-01-10 10:42:21] [âˆš] Flutter (Channel stable, 3.38.5, on Microsoft Windows [VersiÂ¢n 10.0.26200.7462], locale es-US) [332ms]
+    â€¢ Flutter version 3.38.5 on channel stable at C:\flutter
+    â€¢ Upstream repository https://github.com/flutter/flutter.git
+    â€¢ Framework revision f6ff1529fd (4 weeks ago), 2025-12-11 11:50:07 -0500
+    â€¢ Engine revision 1527ae0ec5
+    â€¢ Dart version 3.10.4
+    â€¢ DevTools version 2.51.1
+    â€¢ Feature flags: enable-web, enable-linux-desktop, enable-macos-desktop, enable-windows-desktop, enable-android, enable-ios, cli-animations, enable-native-assets, omit-legacy-version-file, enable-lldb-debugging
+
+[âˆš] Windows Version (Windows 11 or higher, 25H2, 2009) [2.0s]
+
+[âˆš] Android toolchain - develop for Android devices (Android SDK version 36.1.0) [2.2s]
+    â€¢ Android SDK at C:\Users\r6957\AppData\Local\Android\sdk
+    â€¢ Emulator version 36.3.10.0 (build_id 14472402) (CL:N/A)
+    â€¢ Platform android-36, build-tools 36.1.0
+    â€¢ Java binary at: C:\Program Files\Android\Android Studio\jbr\bin\java
+      This is the JDK bundled with the latest Android Studio installation on this machine.
+      To manually set the JDK path, use: `flutter config --jdk-dir="path/to/jdk"`.
+    â€¢ Java version OpenJDK Runtime Environment (build 21.0.8+-14196175-b1038.72)
+    â€¢ All Android licenses accepted.
+
+[âˆš] Chrome - develop for the web [130ms]
+    â€¢ Chrome at C:\Program Files\Google\Chrome\Application\chrome.exe
+
+[âˆš] Visual Studio - develop Windows apps (Visual Studio Build Tools 2022 17.14.21 (November 2025)) [129ms]
+    â€¢ Visual Studio at C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools
+    â€¢ Visual Studio Build Tools 2022 version 17.14.36717.8
+    â€¢ Windows 10 SDK version 10.0.26100.0
+
+[âˆš] Connected device (3 available) [192ms]
+    â€¢ Windows (desktop) â€¢ windows â€¢ windows-x64    â€¢ Microsoft Windows [VersiÂ¢n 10.0.26200.7462]
+    â€¢ Chrome (web)      â€¢ chrome  â€¢ web-javascript â€¢ Google Chrome 143.0.7499.193
+    â€¢ Edge (web)        â€¢ edge    â€¢ web-javascript â€¢ Microsoft Edge 143.0.3650.139
+
+[âˆš] Network resources [502ms]
+    â€¢ All expected network resources are available.
+
+â€¢ No issues found!
+[2026-01-10 10:42:21] --- DART_VERSION ---
+[2026-01-10 10:42:22] Dart SDK version: 3.10.4 (stable) (Tue Dec 9 00:01:55 2025 -0800) on "windows_x64"
+[2026-01-10 10:42:22] --- WHERE_FLUTTER ---
+[2026-01-10 10:42:22] C:\flutter\bin\flutter
+C:\flutter\bin\flutter.bat
+[2026-01-10 10:42:22] --- WHERE_DART ---
+[2026-01-10 10:42:22] C:\flutter\bin\dart
+C:\flutter\bin\dart.bat
+[2026-01-10 10:42:22] --- WHERE_PYTHON ---
+[2026-01-10 10:42:22] C:\Python314\python.exe
+C:\Users\r6957\AppData\Local\Programs\Python\Python311\python.exe
+C:\Users\r6957\AppData\Local\Microsoft\WindowsApps\python.exe
+C:\Users\r6957\AppData\Local\Python\bin\python.exe
+[2026-01-10 10:42:22] RAULI DOCTOR FINALIZADO
+[2026-01-10 10:42:32] ATLAS heartbeat OK
+[2026-01-10 10:42:36] ATLAS detenido manualmente.
+[2026-01-10 11:13:19] ATLAS GUI iniciado
+[2026-01-10 11:13:19] Snapshot creado: 20260110_111319_gui_startup
+[2026-01-10 11:15:26] ATLAS GUI cmd='help' resp='Comandos ATLAS:
+  help                 -> ayuda
+  status               -> estado rapido
+  doctor               -> flutter doctor -v (se guarda en log)
+  snapshot [label]     -> crear snapshot
+  run rauli            -> abre RAULI (flutter run -d windows)
+  exit                 -> cerrar ATLAS'
+[2026-01-10 11:15:41] ATLAS GUI cmd='status' resp='ATLAS OK | logs=C:\ATLAS\logs\atlas.log | snapshots=C:\ATLAS\snapshots'
+[2026-01-10 11:15:54] ATLAS GUI cmd='status' resp='ATLAS OK | logs=C:\ATLAS\logs\atlas.log | snapshots=C:\ATLAS\snapshots'
+[2026-01-10 11:16:24] Snapshot creado: 20260110_111624_prueba1
+[2026-01-10 11:16:24] ATLAS GUI cmd='snapshot prueba1' resp='Snapshot creado: C:\ATLAS\snapshots\20260110_111624_prueba1'
+[2026-01-10 11:16:55] ATLAS GUI cmd='help' resp='Comandos ATLAS:
+  help                 -> ayuda
+  status               -> estado rapido
+  doctor               -> flutter doctor -v (se guarda en log)
+  snapshot [label]     -> crear snapshot
+  run rauli            -> abre RAULI (flutter run -d windows)
+  exit                 -> cerrar ATLAS'
+[2026-01-10 11:21:59] ATLAS GUI iniciado
+[2026-01-10 11:21:59] Snapshot creado: 20260110_112159_gui_startup
+[2026-01-10 16:49:24] ATLAS_TELEGRAM: ON
+[2026-01-10 17:17:08] ATLAS_GUI: iniciada
+[2026-01-10 17:20:15] ATLAS_GUI: iniciada

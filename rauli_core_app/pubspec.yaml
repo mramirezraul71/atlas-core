@@ -1,0 +1,16 @@
+﻿name: rauli_core
+description: RAULI Core Skeleton
+publish_to: "none"
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  path_provider: ^2.1.2
+
+flutter:
+  uses-material-design: true
