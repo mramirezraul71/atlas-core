@@ -49,3 +49,27 @@ def execute(step: Step):
         return {"ok": False, "error": f"Tool no soportada aún: {t}"}
     out = handle(cmd)
     return {"ok": True, "tool": t, "output": out}
+
+@app.get("/modules")
+def modules():
+    return {
+        "ok": True,
+        "modules": [
+            {"name": "vision", "enabled": False},
+            {"name": "voice", "enabled": False},
+            {"name": "agent_router", "enabled": False},
+            {"name": "telegram", "enabled": True},
+        ]
+    }
+
+@app.get("/modules")
+def modules():
+    return {
+        "ok": True,
+        "modules": [
+            {"name": "vision", "enabled": False},
+            {"name": "voice", "enabled": False},
+            {"name": "agent_router", "enabled": False},
+            {"name": "telegram", "enabled": True},
+        ]
+    }
