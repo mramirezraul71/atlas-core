@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ATLAS Dashboard</title>
+  <style>
+    :root { --bg: #0f0f12; --card: #1a1a20; --text: #e4e4e7; --muted: #71717a; --accent: #3b82f6; --green: #22c55e; --red: #ef4444; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .container { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+    h1 { font-size: 1.5rem; margin: 0 0 1rem; color: var(--text); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+    .card { background: var(--card); border-radius: 8px; padding: 1rem; border: 1px solid rgba(255,255,255,.06); }
+    .card h2 { font-size: .875rem; margin: 0 0 .5rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    .card .value { font-size: 1rem; word-break: break-all; }
+    .card.loading .value { color: var(--muted); }
+    .card.error .value { color: var(--red); }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-top: .5rem; }
+    button { background: var(--accent); color: #fff; border: none; padding: .4rem .75rem; border-radius: 6px; cursor: pointer; font-size: .875rem; }
+    button:hover { filter: brightness(1.1); }
+    button.danger { background: var(--red); }
+    button.small { padding: .25rem .5rem; font-size: .75rem; }
+    .badge { display: inline-block; padding: .15rem .4rem; border-radius: 4px; font-size: .75rem; }
+    .badge.ok { background: rgba(34,197,94,.2); color: var(--green); }
+    .badge.pending { background: rgba(234,179,8,.2); color: #eab308; }
+    ul { margin: 0; padding-left: 1.2rem; font-size: .875rem; }
+    #approvals-list li { margin-bottom: .35rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ATLAS Dashboard</h1>
+    <div class="grid">
+      <div class="card" id="status-card"><h2>Status</h2><div class="value">—</div></div>
+      <div class="card" id="version-card"><h2>Version</h2><div class="value">—</div></div>
+      <div class="card" id="metrics-card"><h2>Metrics</h2><div class="value">—</div></div>
+      <div class="card" id="scheduler-card"><h2>Scheduler</h2><div class="value">—</div><div class="row"></div></div>
+      <div class="card" id="update-card"><h2>Update</h2><div class="value">—</div><div class="row"><button class="small" onclick="updateCheck()">Check</button></div></div>
+      <div class="card" id="approvals-card"><h2>Approvals</h2><div class="value"><ul id="approvals-list"></ul></div></div>
+    </div>
+  </div>
+  <script>
+    const base = window.location.origin;
+    async function get(path) {
+      const r = await fetch(base + path, { headers: { 'Accept': 'application/json' } });
+      return r.ok ? r.json() : null;
+    }
+    async function post(path, body) {
+      const r = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+      return r.ok ? r.json() : null;
+    }
+    function setCard(id, text, isError) {
+      const card = document.getElementById(id);
+      const val = card.querySelector('.value');
+      val.textContent = text;
+      card.classList.remove('loading', 'error');
+      if (isError) card.classList.add('error');
+    }
+    function setCardJson(id, data) {
+      const card = document.getElementById(id);
+      const val = card.querySelector('.value');
+      val.textContent = data ? (data.ok !== undefined ? (data.ok ? 'OK' : (data.error || 'Error')) : JSON.stringify(data).slice(0, 120)) : '—';
+      card.classList.remove('loading', 'error');
+      if (data && data.ok === false) card.classList.add('error');
+    }
+    async function loadStatus() {
+      const d = await get('/status');
+      setCardJson('status-card', d);
+    }
+    async function loadVersion() {
+      const d = await get('/version');
+      if (d && d.version) setCard('version-card', d.version + ' (' + (d.channel || '') + ') ' + (d.git_sha || ''));
+      else setCard('version-card', '—', true);
+    }
+    async function loadMetrics() {
+      const d = await get('/metrics');
+      if (d && d.data) {
+        const c = d.data.counters || {};
+        const l = d.data.latencies || {};
+        setCard('metrics-card', 'Paths: ' + Object.keys(l).length + ' | Counters: ' + Object.keys(c).length);
+      } else setCard('metrics-card', '—');
+    }
+    async function loadScheduler() {
+      const d = await get('/scheduler/jobs');
+      const jobs = (d && d.data) ? (Array.isArray(d.data) ? d.data : []) : [];
+      const card = document.getElementById('scheduler-card');
+      card.querySelector('.value').textContent = jobs.length + ' job(s)';
+      const row = card.querySelector('.row');
+      row.innerHTML = '';
+    }
+    async function loadUpdate() {
+      const d = await get('/update/status');
+      if (d && d.data) {
+        const has = d.data.has_update;
+        setCard('update-card', (d.data.branch || '') + ' | update: ' + (has ? 'Yes' : 'No'));
+      } else setCard('update-card', '—');
+    }
+    async function loadApprovals() {
+      const d = await get('/approvals/list?status=pending');
+      const list = document.getElementById('approvals-list');
+      const items = (d && d.data && Array.isArray(d.data)) ? d.data : [];
+      list.innerHTML = items.length ? items.map(a => '<li>' + a.id + ' ' + a.action + ' <button class="small" onclick="approve(\'' + a.id + '\')">Approve</button> <button class="small danger" onclick="reject(\'' + a.id + '\')">Reject</button></li>').join('') : '<li>None</li>';
+    }
+    async function updateCheck() {
+      await post('/update/check');
+      loadUpdate();
+    }
+    async function approve(id) {
+      await post('/approvals/approve', { id, approve: true });
+      loadApprovals();
+    }
+    async function reject(id) {
+      await post('/approvals/reject', { id });
+      loadApprovals();
+    }
+    async function init() {
+      await Promise.all([loadStatus(), loadVersion(), loadMetrics(), loadScheduler(), loadUpdate(), loadApprovals()]);
+    }
+    init();
+    setInterval(init, 30000);
+  </script>
+</body>
+</html>

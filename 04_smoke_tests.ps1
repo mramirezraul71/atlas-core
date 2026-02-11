@@ -42,6 +42,13 @@ if ($st.ok) {
   Write-Host "/status FAIL: $($st.err)" -ForegroundColor Red
 }
 
+$ver = Hit "/version"
+if ($ver.ok -and $ver.data.version) {
+  Write-Host "GET /version OK ($($ver.data.version) $($ver.data.channel))" -ForegroundColor Green
+} else {
+  Write-Host "GET /version FAIL: $($ver.err)" -ForegroundColor Red
+}
+
 $md = Hit "/modules"
 if ($md.ok) {
   Write-Host "/modules OK" -ForegroundColor Green
@@ -351,9 +358,34 @@ if ($improveStatus.ok) {
   Write-Host "GET /agent/improve/status FAIL: $($improveStatus.err)" -ForegroundColor Red
 }
 
+$uiResp = Invoke-WebRequest -Method GET -Uri ($base + "/ui") -TimeoutSec 5 -UseBasicParsing -ErrorAction SilentlyContinue
+if ($uiResp -and $uiResp.StatusCode -eq 200) {
+  Write-Host "GET /ui 200 OK" -ForegroundColor Green
+  $uiOk = $true
+} else {
+  Write-Host "GET /ui FAIL" -ForegroundColor Red
+  $uiOk = $false
+}
+
+$approvalsList = Hit "/approvals/list"
+if ($approvalsList.ok) {
+  Write-Host "GET /approvals/list OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /approvals/list FAIL: $($approvalsList.err)" -ForegroundColor Red
+}
+
+$bundleResp = Hit "/support/bundle"
+if ($bundleResp.ok -and $bundleResp.data.path) {
+  Write-Host "GET /support/bundle OK ($($bundleResp.data.path))" -ForegroundColor Green
+  $bundleOk = $true
+} else {
+  Write-Host "GET /support/bundle FAIL: $($bundleResp.err)" -ForegroundColor Red
+  $bundleOk = $false
+}
+
 $agentScaffoldOk = $agentOk -and $scaffoldOk -and $scriptOk -and $depsOk -and $webOk -and $voiceOk -and $memOk -and $visionOk -and $improveOk
 
-if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk -and $agentScaffoldOk) {
+if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk -and $agentScaffoldOk -and $uiOk -and $bundleOk) {
   Write-Host "SMOKE OK" -ForegroundColor Green
   exit 0
 } else {
