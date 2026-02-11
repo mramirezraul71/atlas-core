@@ -1,6 +1,7 @@
 """Safe shell command execution (Windows-aware)."""
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 from typing import Any, Dict, List, Optional
@@ -8,11 +9,25 @@ from typing import Any, Dict, List, Optional
 BLOCKED_PATTERNS = ("rm -rf /", "format ", "del /f /s", "rd /s /q", "mkfs", "> /dev/sd")
 
 
+def _env_list(name: str, default: str) -> List[str]:
+    v = os.getenv(name, default)
+    return [x.strip() for x in (v or "").split(",") if x.strip()]
+
+
 class SafeShellExecutor:
     """Run shell commands with allowlist/blocklist. Returns stdout, stderr, returncode."""
 
     def __init__(self, allowed_cmds: Optional[List[str]] = None, blocklist: Optional[List[str]] = None) -> None:
-        self.allowed_cmds = allowed_cmds or []
+        self.safe_mode = os.getenv("HANDS_SAFE_MODE", "true").strip().lower() in ("1", "true", "yes")
+        if allowed_cmds is not None:
+            self.allowed_cmds = allowed_cmds
+        elif self.safe_mode:
+            self.allowed_cmds = _env_list(
+                "HANDS_ALLOWED_PREFIXES",
+                "pip,python,git,uvicorn,pytest,Invoke-RestMethod,where,Get-Command",
+            )
+        else:
+            self.allowed_cmds = []
         self.blocklist = blocklist or list(BLOCKED_PATTERNS)
 
     def is_safe(self, cmd: str) -> bool:
