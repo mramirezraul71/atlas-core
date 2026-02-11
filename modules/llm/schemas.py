@@ -1,11 +1,17 @@
+"""Request/response schemas for the /llm API (Pydantic models)."""
 from __future__ import annotations
+
+from typing import Any, Dict, List, Literal, Optional
+
 from pydantic import BaseModel, Field
-from typing import Optional, Literal, Dict, Any, List
 
 RouteName = Literal["FAST", "CHAT", "CODE", "REASON", "TOOLS"]
 
+
 class LLMRequest(BaseModel):
-    prompt: str = Field(..., min_length=1)
+    """Body for POST /llm. Prompt required; route/model/system/temperature optional."""
+
+    prompt: str = Field(..., min_length=1, description="User prompt to send to the LLM.")
     route: Optional[RouteName] = None
     model: Optional[str] = None
     system: Optional[str] = None
@@ -15,7 +21,10 @@ class LLMRequest(BaseModel):
     stream: Optional[bool] = False
     tools: Optional[List[Dict[str, Any]]] = None
 
+
 class LLMResponse(BaseModel):
+    """Response from POST /llm: ok, output, route, model_used, ms, tokens_est, error, meta."""
+
     ok: bool
     output: str = ""
     route: Optional[RouteName] = None

@@ -139,6 +139,13 @@ from modules.llm.service import LLMService
 
 llm_service = LLMService()
 
-@app.post("/llm", response_model=LLMResponse)
-def llm_endpoint(req: LLMRequest):
+
+@app.post(
+    "/llm",
+    response_model=LLMResponse,
+    summary="Hybrid LLM (Ollama)",
+    description="Route prompt to FAST/CHAT/CODE/REASON/TOOLS via HybridRouter and call Ollama. Returns ok, output, route, model_used, ms, tokens_est, error, meta.",
+)
+def llm_endpoint(req: LLMRequest) -> LLMResponse:
+    """Run LLM request through router + Ollama and return structured response."""
     return llm_service.run(req)
