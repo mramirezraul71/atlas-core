@@ -115,13 +115,20 @@ try {
 }
 
 $auditTail = Hit "/audit/tail?n=5"
-if ($auditTail.ok) {
-  Write-Host "GET /audit/tail?n=5 OK" -ForegroundColor Green
+$auditOk = $false
+if ($auditTail.ok -and $auditTail.data) {
+  $err = $auditTail.data.error
+  if ($null -eq $err -or $err -eq "") {
+    Write-Host "GET /audit/tail?n=5 OK (error=null)" -ForegroundColor Green
+    $auditOk = $true
+  } else {
+    Write-Host "GET /audit/tail FAIL: error no debe estar set (actual: $err)" -ForegroundColor Red
+  }
 } else {
   Write-Host "GET /audit/tail FAIL: $($auditTail.err)" -ForegroundColor Red
 }
 
-$policyAuditOk = $metrics.ok -and $policyOk -and $auditTail.ok
+$policyAuditOk = $metrics.ok -and $policyOk -and $auditOk
 
 if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk -and $policyAuditOk) {
   Write-Host "SMOKE OK" -ForegroundColor Green
