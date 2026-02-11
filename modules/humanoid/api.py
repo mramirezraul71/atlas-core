@@ -49,28 +49,38 @@ def humanoid_status() -> dict:
 
 class PlanBody(BaseModel):
     goal: str = Field(..., min_length=1)
+    fast: bool = Field(default=True, description="If true, force FAST model to avoid timeout")
 
 
 @router.post("/plan")
 def humanoid_plan(body: PlanBody) -> dict:
-    """Plan steps for a goal (LLM-backed). Returns {ok, data: {steps}, ms, error}."""
+    """Plan steps for a goal (LLM-backed). Returns {ok, data: {steps}, ms, error}. Timeout 15s."""
     if not _humanoid_enabled():
         raise HTTPException(status_code=503, detail="HUMANOID_ENABLED=false")
     t0 = time.perf_counter()
-    k = get_humanoid_kernel()
-    autonomy = k.registry.get("autonomy")
-    if not autonomy or not hasattr(autonomy, "planner"):
-        return _resp(False, data={"steps": []}, ms=int((time.perf_counter() - t0) * 1000), error="autonomy module not available")
-    result = autonomy.planner.plan(body.goal)
-    if result.get("ok"):
-        autonomy.tracker.set_goal(body.goal, result.get("steps"))
-    ms = int((time.perf_counter() - t0) * 1000)
-    return _resp(
-        ok=result.get("ok", False),
-        data={"steps": result.get("steps", [])},
-        ms=ms,
-        error=result.get("error"),
-    )
+    try:
+        k = get_humanoid_kernel()
+        autonomy = k.registry.get("autonomy")
+        if not autonomy or not hasattr(autonomy, "planner"):
+            return _resp(False, data={"steps": []}, ms=int((time.perf_counter() - t0) * 1000), error="autonomy module not available")
+        result = autonomy.planner.plan(body.goal, fast=body.fast)
+        if result.get("ok"):
+            autonomy.tracker.set_goal(body.goal, result.get("steps"))
+        ms = int((time.perf_counter() - t0) * 1000)
+        if result.get("error") == "planner_timeout":
+            return _resp(ok=False, data={"steps": []}, ms=ms, error="planner_timeout")
+        return _resp(
+            ok=result.get("ok", False),
+            data={"steps": result.get("steps", [])},
+            ms=ms,
+            error=result.get("error"),
+        )
+    except (TimeoutError, Exception) as e:
+        err = str(e).lower()
+        ms = int((time.perf_counter() - t0) * 1000)
+        if "timeout" in err or "timed out" in err:
+            return _resp(ok=False, data={"steps": []}, ms=ms, error="planner_timeout")
+        return _resp(ok=False, data={"steps": []}, ms=ms, error=str(e))
 
 
 class UpdateCheckBody(BaseModel):
