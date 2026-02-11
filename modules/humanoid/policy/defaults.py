@@ -32,6 +32,7 @@ def get_default_policies() -> List[PolicyRule]:
         PolicyRule(id="owner_memory_write", scope="memory", condition={"role": "owner", "action": "memory_write"}, action="allow"),
         PolicyRule(id="owner_memory_export", scope="memory", condition={"role": "owner", "action": "memory_export"}, action="allow"),
         PolicyRule(id="deny_memory_delete", scope="memory", condition={"action": "memory_delete"}, action="deny", meta={"description": "memory_delete denied by default"}),
+        PolicyRule(id="owner_ci_autofix", scope="ci", condition={"role": "owner", "action": "ci_autofix"}, action="allow"),
     ]
 
 
