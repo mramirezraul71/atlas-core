@@ -9,10 +9,17 @@ from typing import Any, Dict, List, Optional
 
 
 class AuditDB:
-    """Simple audit log storage. Optional SQLite backend."""
+    """Simple audit log storage. Optional SQLite backend. Path from AUDIT_DB_PATH if not given."""
 
     def __init__(self, path: str | Path | None = None) -> None:
-        self._path = Path(path) if path else None
+        import os
+        self._path: Optional[Path] = None
+        if path is not None:
+            self._path = Path(path)
+        else:
+            env_path = os.getenv("AUDIT_DB_PATH")
+            if env_path:
+                self._path = Path(env_path)
         self._conn: Optional[sqlite3.Connection] = None
 
     def _ensure_conn(self) -> sqlite3.Connection:

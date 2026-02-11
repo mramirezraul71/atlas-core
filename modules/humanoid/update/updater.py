@@ -113,6 +113,11 @@ class Updater:
             out["error"] = "UPDATE_APPLY=false and force not set; refusing to run installs"
             out["ms"] = round((time.perf_counter() - t0) * 1000)
             return out
+        policy_allow = os.getenv("POLICY_ALLOW_UPDATE_APPLY", "false").strip().lower() in ("1", "true", "yes")
+        if not policy_allow and not force:
+            out["error"] = "POLICY_ALLOW_UPDATE_APPLY=false; refusing to run installs"
+            out["ms"] = round((time.perf_counter() - t0) * 1000)
+            return out
         plan_result = self.plan(required_packages)
         if not plan_result.get("ok"):
             out["error"] = plan_result.get("error", "plan failed")
