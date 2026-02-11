@@ -103,14 +103,21 @@ from modules.command_router import handle as route_command
 
 class IntentIn(BaseModel):
     user: str = "raul"
-    text: str
+    text: str = ""
     meta: Optional[dict[str, Any]] = None
 
 @app.post("/intent")
 def intent(payload: IntentIn):
     t0 = time.time()
+    if not (payload.text or "").strip():
+        return {
+            "ok": False,
+            "received": payload.model_dump(),
+            "error": "Campo 'text' es requerido (ej: {\"text\": \"/status\"})",
+            "ms": int((time.time() - t0) * 1000),
+        }
     try:
-        out = route_command(payload.text)
+        out = route_command((payload.text or "").strip())
         return {
             "ok": True,
             "received": payload.model_dump(),

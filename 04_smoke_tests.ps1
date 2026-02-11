@@ -12,7 +12,11 @@ function Hit($path) {
     $r = Invoke-RestMethod -Method GET -Uri ($base + $path) -TimeoutSec 5
     return @{ ok=$true; data=$r }
   } catch {
-    return @{ ok=$false; err=$_.Exception.Message }
+    $err = $_.Exception.Message
+    if ($err -match "conectar|connection|refused") {
+      $err += " [¿API levantada? Ejecuta en otra terminal: .\03_run_atlas_api.ps1 -RepoPath $RepoPath -AtlasPort $AtlasPort]"
+    }
+    return @{ ok=$false; err=$err }
   }
 }
 
