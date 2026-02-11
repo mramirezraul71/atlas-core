@@ -22,10 +22,14 @@ class SafeShellExecutor:
         if allowed_cmds is not None:
             self.allowed_cmds = allowed_cmds
         elif self.safe_mode:
-            self.allowed_cmds = _env_list(
-                "HANDS_ALLOWED_PREFIXES",
-                "pip,python,git,uvicorn,pytest,Invoke-RestMethod,where,Get-Command",
-            )
+            policy_prefixes = os.getenv("POLICY_ALLOWED_COMMAND_PREFIXES")
+            if policy_prefixes:
+                self.allowed_cmds = _env_list("POLICY_ALLOWED_COMMAND_PREFIXES", "")
+            else:
+                self.allowed_cmds = _env_list(
+                    "HANDS_ALLOWED_PREFIXES",
+                    "pip,python,git,uvicorn,pytest,Invoke-RestMethod,where,Get-Command",
+                )
         else:
             self.allowed_cmds = []
         self.blocklist = blocklist or list(BLOCKED_PATTERNS)

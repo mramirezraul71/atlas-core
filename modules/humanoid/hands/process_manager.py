@@ -34,6 +34,9 @@ class ProcessManager:
             return {"ok": False, "processes": [], "error": str(e)}
 
     def kill(self, pid: int, force: bool = False) -> Dict[str, Any]:
+        allow = os.getenv("POLICY_ALLOW_KILL_PROCESS", "false").strip().lower() in ("1", "true", "yes")
+        if not allow:
+            return {"ok": False, "error": "POLICY_ALLOW_KILL_PROCESS=false"}
         try:
             if _HAS_PSUTIL:
                 p = psutil.Process(pid)
