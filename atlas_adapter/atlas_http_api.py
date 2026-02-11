@@ -297,6 +297,53 @@ def support_bundle():
         return _std_resp(False, None, ms, str(e))
 
 
+# --- Approvals (policy + audit) ---
+@app.get("/approvals/list")
+def approvals_list(limit: int = 50):
+    """List pending approval items. Response: {ok, data: [items], ms, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.approvals import list_pending
+        items = list_pending(limit=limit)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": True, "data": [getattr(i, "__dict__", i) if hasattr(i, "__dict__") else i for i in items], "ms": ms, "error": None}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "data": None, "ms": ms, "error": str(e)}
+
+
+class ApprovalActionBody(BaseModel):
+    id: Optional[str] = None
+    approval_id: Optional[str] = None
+
+@app.post("/approvals/approve")
+def approvals_approve(body: ApprovalActionBody):
+    """Approve item by id. Body: {id} or {approval_id}. Audited."""
+    aid = body.id or body.approval_id
+    if not aid:
+        return {"ok": False, "id": None, "status": "missing_id", "error": "id or approval_id required"}
+    try:
+        from modules.humanoid.approvals import approve as approval_approve
+        out = approval_approve(aid, resolved_by="api")
+        return {"ok": out.get("ok"), "id": aid, "status": out.get("status"), "error": None}
+    except Exception as e:
+        return {"ok": False, "id": aid, "status": "error", "error": str(e)}
+
+
+@app.post("/approvals/reject")
+def approvals_reject(body: ApprovalActionBody):
+    """Reject item by id. Body: {id} or {approval_id}. Audited."""
+    aid = body.id or body.approval_id
+    if not aid:
+        return {"ok": False, "id": None, "status": "missing_id", "error": "id or approval_id required"}
+    try:
+        from modules.humanoid.approvals import reject as approval_reject
+        out = approval_reject(aid, resolved_by="api")
+        return {"ok": out.get("ok"), "id": aid, "status": out.get("status"), "error": None}
+    except Exception as e:
+        return {"ok": False, "id": aid, "status": "error", "error": str(e)}
+
+
 # --- Scheduler / Watchdog / Healing ---
 def _std_resp(ok: bool, data: Any = None, ms: int = 0, error: Optional[str] = None) -> dict:
     out = {"ok": ok, "data": data, "ms": ms, "error": error}
