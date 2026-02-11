@@ -149,3 +149,9 @@ llm_service = LLMService()
 def llm_endpoint(req: LLMRequest) -> LLMResponse:
     """Run LLM request through router + Ollama and return structured response."""
     return llm_service.run(req)
+
+
+# --- Humanoid (kernel + modules) ---
+from modules.humanoid.api import router as humanoid_router
+
+app.include_router(humanoid_router)
