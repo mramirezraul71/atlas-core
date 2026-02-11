@@ -46,6 +46,11 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def _lifespan(app):
+    try:
+        from modules.humanoid.deploy.healthcheck import _set_app_start_time
+        _set_app_start_time()
+    except Exception:
+        pass
     humanoid = os.getenv("HUMANOID_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
     sched = os.getenv("SCHED_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
     if humanoid and sched:
@@ -76,6 +81,16 @@ class Step(BaseModel):
 @app.get("/status")
 def status():
     return {"ok": True, "atlas": handle("/status")}
+
+
+@app.get("/health")
+def health():
+    """Extended health: LLM latency, scheduler, memory, DB integrity, port active, uptime. Score 0-100."""
+    try:
+        from modules.humanoid.deploy.healthcheck import run_health
+        return run_health(base_url=None)
+    except Exception as e:
+        return {"ok": False, "score": 0, "checks": {}, "error": str(e)}
 
 
 @app.get("/version")
@@ -509,6 +524,60 @@ def update_apply_endpoint():
     try:
         from modules.humanoid.update.update_engine import apply as update_apply
         result = update_apply()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), result.get("data"), ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/deploy/status")
+def deploy_status():
+    """Deploy status: mode, active_port, staging_port, health_score, version, channel, last_deploy, canary_stats."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.deploy import get_deploy_state, run_health
+        from modules.humanoid.release import get_version_info
+        state = get_deploy_state()
+        health_result = run_health(base_url=None)
+        health_score_val = health_result.get("score", 0)
+        version_info = get_version_info()
+        canary_stats = {}
+        fallback_suggestions = {"revert_health": health_score_val < 60, "disable_canary": False}
+        try:
+            from modules.humanoid.deploy.canary import get_canary_stats, should_disable_canary, set_canary_disabled_fallback
+            canary_stats = get_canary_stats()
+            if should_disable_canary() and not state.get("canary_disabled_fallback"):
+                set_canary_disabled_fallback(True)
+            fallback_suggestions["disable_canary"] = should_disable_canary()
+        except Exception:
+            pass
+        data = {
+            "mode": state.get("mode", "single"),
+            "active_port": state.get("active_port", 8791),
+            "staging_port": state.get("staging_port", 8792),
+            "health_score": health_score_val,
+            "version": version_info.get("version", "0.0.0"),
+            "channel": version_info.get("channel", "canary"),
+            "last_deploy": state.get("last_deploy_ts"),
+            "last_switch": state.get("last_switch_ts"),
+            "canary_stats": canary_stats,
+            "fallback_suggestions": fallback_suggestions,
+        }
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/deploy/bluegreen")
+def deploy_bluegreen():
+    """Run blue-green flow: launch staging, smoke, healthcheck x3, switch or rollback. Policy + audit."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.deploy import run_bluegreen_flow
+        result = run_bluegreen_flow()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(result.get("ok", False), result.get("data"), ms, result.get("error"))
     except Exception as e:
