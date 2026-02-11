@@ -69,7 +69,32 @@ try {
   $llm = @{ ok = $false }
 }
 
-if ($st.ok -and $md.ok -and $llm.ok) {
+Write-Host "== SMOKE: Humanoid ==" -ForegroundColor Cyan
+$hStatus = Hit "/humanoid/status"
+if ($hStatus.ok) {
+  Write-Host "/humanoid/status OK" -ForegroundColor Green
+  if ($hStatus.data.data) { $hStatus.data.data.modules -join ", " }
+} else {
+  Write-Host "/humanoid/status FAIL: $($hStatus.err)" -ForegroundColor Red
+}
+
+$hCheck = HitPost "/humanoid/update-check" (@{})
+if ($hCheck.ok -and $hCheck.data.ok) {
+  Write-Host "/humanoid/update-check OK" -ForegroundColor Green
+} else {
+  Write-Host "/humanoid/update-check FAIL: $($hCheck.err)" -ForegroundColor Red
+}
+
+$hPlan = HitPost "/humanoid/plan" (@{ goal = "Abrir un archivo de texto" })
+if ($hPlan.ok -and $hPlan.data.ok) {
+  Write-Host "/humanoid/plan OK" -ForegroundColor Green
+} else {
+  Write-Host "/humanoid/plan FAIL or no steps: $($hPlan.err)" -ForegroundColor Red
+}
+
+$humanoidOk = $hStatus.ok -and $hCheck.ok -and $hPlan.ok
+
+if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk) {
   Write-Host "SMOKE OK ✅" -ForegroundColor Green
   exit 0
 } else {
