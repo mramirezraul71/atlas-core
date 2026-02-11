@@ -8,34 +8,49 @@ from .db import _ensure, fts_available
 
 
 def recall_by_query(query: str, limit: int = 20) -> List[Dict[str, Any]]:
-    """Search memory. Uses FTS if available, else LIKE on tasks.goal and runs."""
+    """Search memory. FTS → LIKE → histórico simple por orden (fallback final)."""
     conn = _ensure()
-    results = []
-    query_clean = query.strip()
-    if not query_clean:
-        return results
-    if fts_available():
+    results: List[Dict[str, Any]] = []
+    query_clean = (query or "").strip()
+    if query_clean:
+        if fts_available():
+            try:
+                rows = conn.execute(
+                    "SELECT rowid, content, thread_id, task_id, kind FROM memory_fts WHERE memory_fts MATCH ? LIMIT ?",
+                    (query_clean, limit),
+                ).fetchall()
+                for r in rows:
+                    results.append({"rowid": r[0], "content": r[1][:500], "thread_id": r[2], "task_id": r[3], "kind": r[4]})
+                if results:
+                    return results
+            except Exception:
+                pass
+        like = f"%{query_clean.replace('%', ' ').replace('_', ' ')}%"
         try:
-            # FTS5: content MATCH ?
             rows = conn.execute(
-                "SELECT rowid, content, thread_id, task_id, kind FROM memory_fts WHERE memory_fts MATCH ? LIMIT ?",
-                (query_clean, limit),
+                "SELECT id, thread_id, goal, plan_json, status, created_ts FROM tasks WHERE goal LIKE ? OR plan_json LIKE ? ORDER BY created_ts DESC LIMIT ?",
+                (like, like, limit),
             ).fetchall()
             for r in rows:
-                results.append({"rowid": r[0], "content": r[1][:500], "thread_id": r[2], "task_id": r[3], "kind": r[4]})
-            return results
+                results.append({
+                    "task_id": r[0], "thread_id": r[1], "goal": r[2], "plan": json.loads(r[3]) if r[3] else {}, "status": r[4], "created_ts": r[5],
+                })
+            if results:
+                return results
         except Exception:
             pass
-    # Fallback: LIKE on tasks
-    like = f"%{query_clean.replace('%', ' ').replace('_', ' ')}%"
-    rows = conn.execute(
-        "SELECT id, thread_id, goal, plan_json, status, created_ts FROM tasks WHERE goal LIKE ? OR plan_json LIKE ? ORDER BY created_ts DESC LIMIT ?",
-        (like, like, limit),
-    ).fetchall()
-    for r in rows:
-        results.append({
-            "task_id": r[0], "thread_id": r[1], "goal": r[2], "plan": json.loads(r[3]) if r[3] else {}, "status": r[4], "created_ts": r[5],
-        })
+    # Fallback final: histórico simple por orden (spec 1)
+    try:
+        rows = conn.execute(
+            "SELECT id, thread_id, goal, plan_json, status, created_ts FROM tasks ORDER BY created_ts DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        for r in rows:
+            results.append({
+                "task_id": r[0], "thread_id": r[1], "goal": r[2], "plan": json.loads(r[3]) if r[3] else {}, "status": r[4], "created_ts": r[5],
+            })
+    except Exception:
+        pass
     return results
 
 

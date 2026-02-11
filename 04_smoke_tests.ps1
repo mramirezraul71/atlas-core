@@ -150,6 +150,14 @@ if ($schedJobs.ok) {
   Write-Host "GET /scheduler/jobs FAIL: $($schedJobs.err)" -ForegroundColor Red
 }
 
+# Update check (plan only, timeout 15s)
+$updateCheck = HitPost "/update/check" (@{})
+if ($updateCheck.ok) {
+  Write-Host "POST /update/check OK (plan only)" -ForegroundColor Green
+} else {
+  Write-Host "POST /update/check FAIL: $($updateCheck.err)" -ForegroundColor Red
+}
+
 $runAt = (Get-Date).AddSeconds(2).ToUniversalTime().ToString("o")
 $createBody = @{
   name = "smoke_update_check"
@@ -252,6 +260,26 @@ if ($voiceStatus.ok) {
   $voiceOk = $false
 }
 
+# Memory: thread create + write + recall + export (timeouts 10s)
+$memThreadCreate = HitPost "/memory/thread/create" (@{ title = "smoke_thread" })
+$memThreadId = $null
+if ($memThreadCreate.ok -and $memThreadCreate.data.ok -and $memThreadCreate.data.data.thread_id) {
+  $memThreadId = $memThreadCreate.data.data.thread_id
+  Write-Host "POST /memory/thread/create OK (thread_id=$memThreadId)" -ForegroundColor Green
+} else {
+  Write-Host "POST /memory/thread/create FAIL: $($memThreadCreate.err)" -ForegroundColor Red
+}
+
+if ($memThreadId) {
+  $memWriteBody = @{ thread_id = $memThreadId; kind = "summary"; payload = @{ content = "Smoke test write." } }
+  $memWrite = HitPost "/memory/write" $memWriteBody
+  if ($memWrite.ok -and $memWrite.data.ok) {
+    Write-Host "POST /memory/write OK" -ForegroundColor Green
+  } else {
+    Write-Host "POST /memory/write FAIL: $($memWrite.err)" -ForegroundColor Red
+  }
+}
+
 $memRecall = Hit "/memory/recall?query=Listar&limit=5"
 if ($memRecall.ok) {
   Write-Host "GET /memory/recall OK (memory write/recall)" -ForegroundColor Green
@@ -259,6 +287,20 @@ if ($memRecall.ok) {
 } else {
   Write-Host "GET /memory/recall FAIL: $($memRecall.err)" -ForegroundColor Red
   $memOk = $false
+}
+
+$memExport = Hit "/memory/export?limit=10"
+if ($memExport.ok) {
+  Write-Host "GET /memory/export OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /memory/export FAIL: $($memExport.err)" -ForegroundColor Red
+}
+
+$memThreadList = Hit "/memory/thread/list?limit=5"
+if ($memThreadList.ok) {
+  Write-Host "GET /memory/thread/list OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /memory/thread/list FAIL: $($memThreadList.err)" -ForegroundColor Red
 }
 
 $memSnapshot = Hit "/memory/snapshot"

@@ -688,8 +688,9 @@ def vision_analyze(body: VisionAnalyzeBody):
         result = analyze(body.image_path, use_ocr=body.use_ocr if body.use_ocr is not None else True, use_llm_vision=body.use_llm_vision if body.use_llm_vision is not None else True)
         ms = int((time.perf_counter() - t0) * 1000)
         ok = result.get("ok", False)
+        result.setdefault("suggested_actions", result.get("acciones_sugeridas") or [])
         resumen = f"Imagen analizada: {len(result.get('extracted_text', ''))} chars texto, {len(result.get('entities', []))} entidades" if ok else "Análisis fallido"
-        siguientes = result.get("acciones_sugeridas") or []
+        siguientes = result.get("acciones_sugeridas") or result.get("suggested_actions") or []
         return _professional_resp(ok, result, ms, result.get("error"), resumen=resumen, siguientes_pasos=siguientes)
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
@@ -743,16 +744,22 @@ def vision_status_endpoint():
         return _std_resp(False, None, ms, str(e))
 
 
-# --- Memory ---
+# --- Memory (Policy: memory_read / memory_write / memory_export; memory_delete denied) ---
+def _memory_actor():
+    return ActorContext(actor="api", role=os.getenv("POLICY_DEFAULT_ROLE", "owner"))
+
 @app.get("/memory/recall")
 def memory_recall(query: str = "", limit: int = 20):
-    """Recall by search query. FTS or LIKE fallback."""
+    """Recall by search query. FTS or LIKE fallback. Policy: memory_read."""
     t0 = time.perf_counter()
     try:
+        decision = get_policy_engine().can(_memory_actor(), "memory", "memory_read")
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
         from modules.humanoid.memory_engine import recall_by_query
         data = recall_by_query(query or "", limit=limit)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(True, {"results": data}, ms, None)
+        return _professional_resp(True, {"results": data}, ms, None, resumen=f"Recall: {len(data)} resultados")
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -760,9 +767,12 @@ def memory_recall(query: str = "", limit: int = 20):
 
 @app.get("/memory/thread")
 def memory_thread(thread_id: str = "", limit: int = 50):
-    """Recall by thread_id."""
+    """Recall by thread_id. Policy: memory_read."""
     t0 = time.perf_counter()
     try:
+        decision = get_policy_engine().can(_memory_actor(), "memory", "memory_read")
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
         from modules.humanoid.memory_engine import recall_by_thread
         data = recall_by_thread(thread_id or "", limit=limit)
         ms = int((time.perf_counter() - t0) * 1000)
@@ -772,11 +782,119 @@ def memory_thread(thread_id: str = "", limit: int = 50):
         return _std_resp(False, None, ms, str(e))
 
 
-@app.get("/memory/export")
-def memory_export(thread_id: str = "", task_id: str = "", limit: int = 100):
-    """Export memory as markdown."""
+class MemoryThreadCreateBody(BaseModel):
+    title: str = ""
+
+@app.post("/memory/thread/create")
+def memory_thread_create(body: MemoryThreadCreateBody):
+    """Create or get thread. Returns thread_id. Policy: memory_write."""
     t0 = time.perf_counter()
     try:
+        decision = get_policy_engine().can(_memory_actor(), "memory", "memory_write")
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
+        from modules.humanoid.memory_engine import ensure_thread
+        thread_id = ensure_thread(None, (body.title or "")[:200])
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"thread_id": thread_id}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/memory/thread/list")
+def memory_thread_list(limit: int = 50):
+    """List threads. Policy: memory_read."""
+    t0 = time.perf_counter()
+    try:
+        decision = get_policy_engine().can(_memory_actor(), "memory", "memory_read")
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
+        from modules.humanoid.memory_engine import list_threads
+        data = list_threads(limit=limit)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"threads": data}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class MemoryWriteBody(BaseModel):
+    thread_id: str = ""
+    kind: str = "summary"  # artifact | decision | summary
+    payload: dict = {}
+    task_id: Optional[str] = None
+    run_id: Optional[int] = None
+
+@app.post("/memory/write")
+def memory_write_endpoint(body: MemoryWriteBody):
+    """Write artifact/decision/summary. Policy: memory_write. Redacts secrets."""
+    t0 = time.perf_counter()
+    try:
+        decision = get_policy_engine().can(_memory_actor(), "memory", "memory_write")
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
+        from modules.humanoid.memory_engine import memory_write as mem_write
+        out = mem_write(body.thread_id or None, body.kind, body.payload or {}, body.task_id, body.run_id)
+        ms = int((time.perf_counter() - t0) * 1000)
+        if not out.get("ok"):
+            return _std_resp(False, None, ms, out.get("error"))
+        return _std_resp(True, {"id": out.get("id"), "kind": out.get("kind")}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class MemorySummarizeBody(BaseModel):
+    thread_id: str
+    use_llm: bool = True
+
+@app.post("/memory/summarize")
+def memory_summarize(body: MemorySummarizeBody):
+    """Incremental summary for thread. FAST LLM if use_llm else deterministic. Policy: memory_write. Timeout 15s."""
+    t0 = time.perf_counter()
+    timeout_sec = 15
+    try:
+        decision = get_policy_engine().can(_memory_actor(), "memory", "memory_write")
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
+        from modules.humanoid.memory_engine import recall_by_thread, add_summary
+        data = recall_by_thread(body.thread_id, limit=20)
+        tasks = data.get("tasks", [])
+        summaries = data.get("summaries", [])
+        if body.use_llm:
+            try:
+                from modules.humanoid import get_humanoid_kernel
+                k = get_humanoid_kernel()
+                brain = k.registry.get("brain")
+                if brain and hasattr(brain, "run_llm"):
+                    goals = [t.get("goal", "")[:100] for t in tasks[:5]]
+                    prompt = f"Resumen en una frase: hilo con {len(tasks)} tareas. Primeras: {'; '.join(goals)}."
+                    r = brain.run_llm(prompt, route="FAST", max_tokens=128, timeout_override=timeout_sec)
+                    text = (r.get("output") or "").strip()[:2000] if r.get("ok") else ""
+                    if text:
+                        add_summary(body.thread_id, text)
+                        ms = int((time.perf_counter() - t0) * 1000)
+                        return _std_resp(True, {"summary_preview": text[:200]}, ms, None)
+            except Exception:
+                pass
+        text = f"Resumen: {len(tasks)} tareas, {len(summaries)} resúmenes previos."
+        add_summary(body.thread_id, text)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"summary_preview": text}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/memory/export")
+def memory_export(thread_id: str = "", task_id: str = "", limit: int = 100):
+    """Export memory as markdown. Policy: memory_export."""
+    t0 = time.perf_counter()
+    try:
+        decision = get_policy_engine().can(_memory_actor(), "memory", "memory_export")
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
         from modules.humanoid.memory_engine import export_markdown
         md = export_markdown(thread_id=thread_id, task_id=task_id, limit=limit)
         ms = int((time.perf_counter() - t0) * 1000)
@@ -788,9 +906,12 @@ def memory_export(thread_id: str = "", task_id: str = "", limit: int = 100):
 
 @app.get("/memory/snapshot")
 def memory_snapshot():
-    """Snapshot counts for backup."""
+    """Snapshot counts for backup. Policy: memory_read."""
     t0 = time.perf_counter()
     try:
+        decision = get_policy_engine().can(_memory_actor(), "memory", "memory_read")
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
         from modules.humanoid.memory_engine import snapshot
         data = snapshot()
         ms = int((time.perf_counter() - t0) * 1000)

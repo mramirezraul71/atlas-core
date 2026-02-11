@@ -26,6 +26,7 @@ def check_ollama() -> Dict[str, Any]:
 
 
 def check_vision() -> Dict[str, Any]:
+    """Vision deps: pillow, pytesseract (+ tesseract binary). Spec: tesseract, vision deps."""
     missing = []
     try:
         from PIL import Image
@@ -36,7 +37,8 @@ def check_vision() -> Dict[str, Any]:
         pytesseract.get_tesseract_version()
     except Exception:
         missing.append("pytesseract")
-    return {"module": "vision", "available": len(missing) == 0, "missing_deps": missing, "suggested": "pip install pillow pytesseract" if missing else ""}
+        missing.append("tesseract")
+    return {"module": "vision", "available": len(missing) == 0, "missing_deps": missing, "suggested": "pip install pillow pytesseract; install Tesseract binary" if missing else ""}
 
 
 def check_playwright() -> Dict[str, Any]:
@@ -49,6 +51,7 @@ def check_playwright() -> Dict[str, Any]:
 
 
 def check_stt() -> Dict[str, Any]:
+    """STT: whisper/faster-whisper. Spec: whisper si existe."""
     try:
         from modules.humanoid.voice.stt import get_missing_deps
         missing = get_missing_deps()
