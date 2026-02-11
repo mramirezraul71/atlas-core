@@ -1,4 +1,4 @@
-"""Safe updater: plan only by default. Apply only if UPDATE_APPLY=true or request.force."""
+"""Safe updater: plan only by default. Policy + audit for update-check and update-apply."""
 from __future__ import annotations
 
 import os
@@ -9,6 +9,11 @@ from typing import Any, Dict, List
 
 from .env_scanner import EnvScanner
 from .dep_resolver import DepResolver
+
+
+def _default_actor():
+    from modules.humanoid.policy import ActorContext
+    return ActorContext(actor="api", role=os.getenv("POLICY_DEFAULT_ROLE", "owner"))
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -61,8 +66,10 @@ class Updater:
             out["error"] = str(e)
         return out
 
-    def plan(self, required_packages: List[str]) -> Dict[str, Any]:
-        """Returns {ok, python_version, pip_list_ok, missing, install_plan, plan_commands, update_config, error}."""
+    def plan(self, required_packages: List[str], actor: Any = None) -> Dict[str, Any]:
+        """Update-check: always allowed for owner. Returns plan + audit log."""
+        t0 = time.perf_counter()
+        actor_ctx = actor or _default_actor()
         out: Dict[str, Any] = {
             "ok": True,
             "python_version": None,
@@ -97,9 +104,15 @@ class Updater:
         else:
             out["error"] = pl.get("error")
             out["ok"] = False
+        ms = round((time.perf_counter() - t0) * 1000)
+        try:
+            from modules.humanoid.audit import get_audit_logger
+            get_audit_logger().log_event(actor_ctx.actor, actor_ctx.role, "update", "check", out["ok"], ms, out.get("error"), {"required_packages": required_packages}, {"missing": out.get("missing", []), "plan_commands": out.get("plan_commands", [])})
+        except Exception:
+            pass
         return out
 
-    def apply(self, required_packages: List[str], force: bool = False) -> Dict[str, Any]:
+    def apply(self, required_packages: List[str], force: bool = False, actor: Any = None) -> Dict[str, Any]:
         """Run installs only if UPDATE_APPLY=true or force=true. Returns {ok, ms, error, applied_commands, snapshot}."""
         t0 = time.perf_counter()
         out: Dict[str, Any] = {
@@ -118,7 +131,17 @@ class Updater:
             out["error"] = "POLICY_ALLOW_UPDATE_APPLY=false; refusing to run installs"
             out["ms"] = round((time.perf_counter() - t0) * 1000)
             return out
-        plan_result = self.plan(required_packages)
+        actor_ctx = actor or _default_actor()
+        try:
+            from modules.humanoid.policy import get_policy_engine
+            decision = get_policy_engine().can(actor_ctx, "update", "apply")
+            if not decision.allow and not force:
+                out["error"] = decision.reason
+                out["ms"] = round((time.perf_counter() - t0) * 1000)
+                return out
+        except Exception:
+            pass
+        plan_result = self.plan(required_packages, actor=actor_ctx)
         if not plan_result.get("ok"):
             out["error"] = plan_result.get("error", "plan failed")
             out["ms"] = round((time.perf_counter() - t0) * 1000)
@@ -146,4 +169,9 @@ class Updater:
                 out["error"] = out["error"] or str(e)
         out["ok"] = out["error"] is None
         out["ms"] = round((time.perf_counter() - t0) * 1000)
+        try:
+            from modules.humanoid.audit import get_audit_logger
+            get_audit_logger().log_event(actor_ctx.actor, actor_ctx.role, "update", "apply", out["ok"], out["ms"], out.get("error"), {"required_packages": required_packages, "force": force}, {"applied_commands": len(out.get("applied_commands", []))})
+        except Exception:
+            pass
         return out
