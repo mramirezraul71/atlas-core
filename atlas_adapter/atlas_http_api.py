@@ -30,7 +30,25 @@ def load_handle():
     return mod.handle  # type: ignore
 
 handle = load_handle()
-app = FastAPI(title="ATLAS Adapter", version="1.0.0")
+
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def _lifespan(app):
+    humanoid = os.getenv("HUMANOID_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
+    sched = os.getenv("SCHED_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
+    if humanoid and sched:
+        from modules.humanoid.scheduler import start_scheduler
+        from modules.humanoid.watchdog import start_watchdog
+        from concurrent.futures import ThreadPoolExecutor
+        _executor = ThreadPoolExecutor(max_workers=2)
+        start_scheduler(executor=_executor)
+        start_watchdog()
+    yield
+
+
+app = FastAPI(title="ATLAS Adapter", version="1.0.0", lifespan=_lifespan)
 
 # Metrics middleware: request count + latency per path
 from modules.humanoid.metrics import MetricsMiddleware
@@ -210,3 +228,161 @@ def audit_tail(n: int = 50, module: Optional[str] = None):
     if not entries and get_audit_logger()._db is None:
         return {"ok": True, "entries": [], "error": "AUDIT_DB_PATH not set"}
     return {"ok": True, "entries": entries, "error": None}
+
+
+# --- Scheduler / Watchdog / Healing ---
+def _std_resp(ok: bool, data: Any = None, ms: int = 0, error: Optional[str] = None) -> dict:
+    out = {"ok": ok, "data": data, "ms": ms, "error": error}
+    return out
+
+
+@app.get("/scheduler/jobs")
+def scheduler_jobs(status: Optional[str] = None):
+    """List jobs, optional filter by status. Response: {ok, data, ms, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.scheduler import get_scheduler_db
+        db = get_scheduler_db()
+        jobs = db.list_jobs(status=status)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, jobs, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class SchedulerJobCreateBody(BaseModel):
+    name: str
+    kind: str  # update_check | llm_plan | shell_command | custom
+    payload: dict = {}
+    run_at: Optional[str] = None
+    interval_seconds: Optional[int] = None
+    max_retries: Optional[int] = None
+    backoff_seconds: Optional[int] = None
+
+
+@app.post("/scheduler/job/create")
+def scheduler_job_create(body: SchedulerJobCreateBody):
+    """Create a job. run_at ISO or now; interval_seconds for recurring. Response: {ok, data, ms, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.scheduler import JobSpec, get_scheduler_db
+        import os
+        max_r = int(os.getenv("SCHED_DEFAULT_RETRIES", "3") or 3) if body.max_retries is None else body.max_retries
+        backoff = int(os.getenv("SCHED_BACKOFF_SECONDS", "5") or 5) if body.backoff_seconds is None else body.backoff_seconds
+        spec = JobSpec(
+            name=body.name,
+            kind=body.kind,
+            payload=body.payload,
+            run_at=body.run_at,
+            interval_seconds=body.interval_seconds,
+            max_retries=max_r,
+            backoff_seconds=backoff,
+        )
+        db = get_scheduler_db()
+        job = db.create_job(spec)
+        get_audit_logger().log_event("api", "owner", "scheduler", "job_enqueue", True, 0, None, {"job_id": job.get("id"), "name": body.name, "kind": body.kind}, None)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, job, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class SchedulerJobIdBody(BaseModel):
+    job_id: str
+
+
+@app.post("/scheduler/job/pause")
+def scheduler_job_pause(body: SchedulerJobIdBody):
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.scheduler import get_scheduler_db
+        db = get_scheduler_db()
+        j = db.get_job(body.job_id)
+        if not j:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "job not found")
+        db.set_paused(body.job_id)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"job_id": body.job_id, "status": "paused"}, ms, None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.post("/scheduler/job/resume")
+def scheduler_job_resume(body: SchedulerJobIdBody):
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.scheduler import get_scheduler_db
+        from datetime import datetime, timezone
+        db = get_scheduler_db()
+        j = db.get_job(body.job_id)
+        if not j:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "job not found")
+        now = datetime.now(timezone.utc).isoformat()
+        db.set_queued(body.job_id, now)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"job_id": body.job_id, "status": "queued", "next_run_ts": now}, ms, None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.post("/scheduler/job/run-now")
+def scheduler_job_run_now(body: SchedulerJobIdBody):
+    """Schedule job to run immediately (set next_run_ts to now)."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.scheduler import get_scheduler_db
+        from datetime import datetime, timezone
+        db = get_scheduler_db()
+        j = db.get_job(body.job_id)
+        if not j:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "job not found")
+        now = datetime.now(timezone.utc).isoformat()
+        db.set_queued(body.job_id, now)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"job_id": body.job_id, "status": "queued", "next_run_ts": now}, ms, None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/scheduler/job/runs")
+def scheduler_job_runs(job_id: str, limit: int = 50):
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.scheduler import get_scheduler_db
+        db = get_scheduler_db()
+        runs = db.get_runs(job_id, limit=limit)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, runs, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/watchdog/status")
+def watchdog_status_endpoint():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.watchdog import watchdog_status
+        data = watchdog_status()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/healing/status")
+def healing_status_endpoint():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.healing import healing_status
+        data = healing_status()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
