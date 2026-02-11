@@ -73,6 +73,18 @@ async def _tick() -> None:
             _audit("watchdog", "alerts", False, {"alerts": alerts}, f"{len(alerts)} alert(s)")
             _publish("watchdog.alerts", {"alerts": alerts})
             _log.warning("Watchdog alerts: %s", alerts)
+            # Self-healing: if scheduler stopped, try to restart (respects healing limit)
+            for a in alerts:
+                if a.get("rule") == "scheduler_stopped":
+                    try:
+                        from modules.humanoid.healing import restart_scheduler
+                        r = restart_scheduler()
+                        if r.get("ok"):
+                            _audit("watchdog", "healing_restart_scheduler", True, r)
+                            _log.info("Watchdog triggered scheduler restart: %s", r.get("message"))
+                    except Exception:
+                        pass
+                    break
     except Exception as e:
         _log.exception("Watchdog tick error: %s", e)
         _audit("watchdog", "tick_error", False, {"error": str(e)})
