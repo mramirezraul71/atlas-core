@@ -31,6 +31,8 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_llm_plan(payload)
         elif kind == "system_update":
             out = _run_system_update(payload)
+        elif kind == "ci_improve":
+            out = _run_ci_improve(payload)
         else:
             out = {"ok": True, "result": "no-op", "kind": kind}
     except Exception as e:
@@ -111,5 +113,19 @@ def _run_system_update(payload: Dict[str, Any]) -> Dict[str, Any]:
         else:
             result = update_check()
         return result.get("data") or result if isinstance(result.get("data"), dict) else {"ok": result.get("ok"), "data": result, "error": result.get("error")}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _run_ci_improve(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run CI improve cycle (plan_only). payload: {scope, mode, depth, max_items}."""
+    scope = (payload.get("scope") or "repo").strip()
+    mode = (payload.get("mode") or "plan_only").strip()
+    depth = max(1, min(5, int(payload.get("depth") or 2)))
+    max_items = payload.get("max_items") or 10
+    try:
+        from modules.humanoid.ci import run_improve
+        result = run_improve(scope=scope, mode=mode, depth=depth, max_items=max_items)
+        return result.get("data") or result
     except Exception as e:
         return {"ok": False, "error": str(e)}
