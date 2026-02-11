@@ -1,4 +1,7 @@
-"""Watchdog engine: periodic check of metrics + scheduler, publish events + audit."""
+"""Watchdog engine: periodic check of metrics + scheduler, publish events + audit.
+
+Self-healing: solo reinicia loops internos (p. ej. scheduler). Nunca reinicia el proceso
+o sistema completo sin aprobación explícita (policy/flag)."""
 from __future__ import annotations
 
 import asyncio

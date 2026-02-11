@@ -131,8 +131,46 @@ def analyze(image_path: str, use_ocr: bool = True, use_llm_vision: bool = True) 
             interpretation = f"Image {img.size[0]}x{img.size[1]} mode={img.mode}"
         except Exception:
             interpretation = "Could not read image"
+    # Insights y acciones sugeridas (respuesta profesional)
+    insights = _build_insights(extracted_text, interpretation, entities)
+    acciones_sugeridas = _build_acciones_sugeridas(extracted_text, interpretation, entities)
     ms = int((time.perf_counter() - t0) * 1000)
-    return {"ok": True, "extracted_text": extracted_text, "interpretation": interpretation, "entities": entities, "ms": ms, "error": None}
+    return {
+        "ok": True,
+        "extracted_text": extracted_text,
+        "interpretation": interpretation,
+        "entities": entities,
+        "insights": insights,
+        "acciones_sugeridas": acciones_sugeridas,
+        "ms": ms,
+        "error": None,
+    }
+
+
+def _build_insights(extracted_text: str, interpretation: str, entities: List[str]) -> List[str]:
+    """Deriva insights cortos a partir de texto e interpretación."""
+    insights: List[str] = []
+    if interpretation:
+        insights.append(interpretation[:300] if len(interpretation) > 300 else interpretation)
+    if extracted_text and extracted_text not in (interpretation or ""):
+        insights.append(f"Texto detectado: {len(extracted_text)} caracteres")
+    if entities:
+        insights.append(f"Entidades: {', '.join(entities[:10])}")
+    return insights[:5]
+
+
+def _build_acciones_sugeridas(extracted_text: str, interpretation: str, entities: List[str]) -> List[str]:
+    """Sugerencias de acción según contenido."""
+    acciones: List[str] = []
+    if extracted_text:
+        acciones.append("Copiar texto extraído al portapapeles o guardar en memoria")
+    if interpretation and ("código" in interpretation.lower() or "code" in interpretation.lower()):
+        acciones.append("Revisar si hay código en imagen para ejecutar o guardar")
+    if entities:
+        acciones.append("Usar entidades para búsqueda o etiquetado")
+    if not acciones:
+        acciones.append("Usar imagen como referencia o adjunto en tarea")
+    return acciones[:5]
 
 
 def screenshot_analyze(screenshot_path: str) -> Dict[str, Any]:
