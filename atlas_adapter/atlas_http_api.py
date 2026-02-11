@@ -68,7 +68,15 @@ async def _lifespan(app):
     yield
 
 
-app = FastAPI(title="ATLAS Adapter", version="1.0.0", lifespan=_lifespan)
+app = FastAPI(
+    title="ATLAS Adapter",
+    version="1.0.0",
+    lifespan=_lifespan,
+    openapi_tags=[
+        {"name": "Health", "description": "Health check extendido (score 0-100, LLM, scheduler, memory, DB, uptime)."},
+        {"name": "Deploy", "description": "Blue-green deployment, canary ramp-up, deploy status y reportes."},
+    ],
+)
 
 # Metrics middleware: request count + latency per path
 from modules.humanoid.metrics import MetricsMiddleware
@@ -83,7 +91,7 @@ def status():
     return {"ok": True, "atlas": handle("/status")}
 
 
-@app.get("/health")
+@app.get("/health", tags=["Health"])
 def health():
     """Extended health: LLM latency, scheduler, memory, DB integrity, port active, uptime. Score 0-100."""
     try:
@@ -531,7 +539,7 @@ def update_apply_endpoint():
         return _std_resp(False, None, ms, str(e))
 
 
-@app.get("/deploy/status")
+@app.get("/deploy/status", tags=["Deploy"])
 def deploy_status():
     """Deploy status: mode, active_port, staging_port, health_score, version, channel, last_deploy, canary_stats."""
     t0 = time.perf_counter()
@@ -571,15 +579,31 @@ def deploy_status():
         return _std_resp(False, None, ms, str(e))
 
 
-@app.post("/deploy/bluegreen")
-def deploy_bluegreen():
-    """Run blue-green flow: launch staging, smoke, healthcheck x3, switch or rollback. Policy + audit."""
+@app.post("/deploy/bluegreen", tags=["Deploy"])
+def deploy_bluegreen(dry_run: bool = False):
+    """Run blue-green flow: launch staging, smoke, healthcheck x3, switch or rollback. Use dry_run=true to simulate without switching."""
     t0 = time.perf_counter()
     try:
         from modules.humanoid.deploy import run_bluegreen_flow
-        result = run_bluegreen_flow()
+        from modules.humanoid.metrics import get_metrics_store
+        get_metrics_store().inc("deploy_bluegreen_runs")
+        result = run_bluegreen_flow(dry_run=dry_run)
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(result.get("ok", False), result.get("data"), ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/deploy/canary/report", tags=["Deploy"])
+def deploy_canary_report(hours: float = 24.0):
+    """Canary vs stable comparison over the last N hours: counts, error rate, avg latency."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.deploy.canary import get_canary_report
+        data = get_canary_report(hours=hours)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))

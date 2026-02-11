@@ -78,10 +78,22 @@ def switch_active_port(new_active_port: int, service_name: Optional[str] = None)
             subprocess.run(["net", "start", svc], capture_output=True, timeout=15)
         except Exception as e:
             ms = int((time.perf_counter() - t0) * 1000)
+            try:
+                from modules.humanoid.metrics import get_metrics_store
+                get_metrics_store().inc("deploy_switch_fail")
+                get_metrics_store().inc("deploy_switch_total")
+            except Exception:
+                pass
             if audit:
                 audit.log_event("deploy", "switcher", "switch", False, ms, str(e), {"old": old_port, "new": new_active_port}, None)
             return {"ok": False, "message": "service restart failed", "error": str(e)}
     ms = int((time.perf_counter() - t0) * 1000)
+    try:
+        from modules.humanoid.metrics import get_metrics_store
+        get_metrics_store().inc("deploy_switch_success")
+        get_metrics_store().inc("deploy_switch_total")
+    except Exception:
+        pass
     if audit:
         audit.log_event("deploy", "switcher", "switch", True, ms, None, {"old": old_port, "new": new_active_port}, None)
     return {"ok": True, "message": f"active_port={new_active_port}", "error": None}

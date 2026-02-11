@@ -82,7 +82,13 @@ def record_canary_call(feature: str, used_canary: bool, ok: bool, latency_ms: fl
     })
     if not ok and used_canary:
         _CANARY_ERRORS[feature] = _CANARY_ERRORS.get(feature, 0) + 1
-    # Keep last 500
+    try:
+        from modules.humanoid.metrics import get_metrics_store
+        store = get_metrics_store()
+        store.inc("canary_requests")
+        store.record_latency(f"canary_{feature}", latency_ms)
+    except Exception:
+        pass
     if len(_CANARY_METRICS) > 500:
         _CANARY_METRICS[:] = _CANARY_METRICS[-500:]
 
@@ -128,3 +134,25 @@ def should_disable_canary() -> bool:
         return False
     stats = get_canary_stats()
     return bool(stats.get("canary_error_rate", 0) > _CANARY_THRESHOLD)
+
+
+def get_canary_report(hours: float = 24.0) -> Dict[str, Any]:
+    """Report: canary vs stable comparison over the last N hours (counts, error rate, avg latency)."""
+    stats = get_canary_stats()
+    cutoff = time.time() - (hours * 3600)
+    recent = [m for m in _CANARY_METRICS if m["ts"] > cutoff]
+    canary_calls = [m for m in recent if m["canary"]]
+    stable_calls = [m for m in recent if not m["canary"]]
+    canary_errors = sum(1 for m in canary_calls if not m["ok"])
+    canary_n = len(canary_calls)
+    stable_n = len(stable_calls)
+    return {
+        "window_hours": hours,
+        "canary_calls": canary_n,
+        "stable_calls": stable_n,
+        "canary_errors": canary_errors,
+        "canary_error_rate": round(canary_errors / canary_n, 4) if canary_n else 0.0,
+        "canary_avg_latency_ms": round(sum(m["latency_ms"] for m in canary_calls) / canary_n, 2) if canary_n else None,
+        "stable_avg_latency_ms": round(sum(m["latency_ms"] for m in stable_calls) / stable_n, 2) if stable_n else None,
+        **{k: v for k, v in stats.items() if k in ("enabled", "percentage", "features", "disabled_due_to_errors")},
+    }
