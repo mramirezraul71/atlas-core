@@ -20,7 +20,6 @@ from .git_manager import (
 )
 from .rollback import rollback as do_rollback
 from .smoke_runner import run_smoke
-from .updater import Updater
 
 _log = logging.getLogger("humanoid.update_engine")
 

@@ -47,6 +47,15 @@ def _audit(action: str, ok: bool, payload: Optional[Dict] = None, error: Optiona
         pass
 
 
+def _memory_web(kind: str, path_or_uri: str, content_preview: str = "") -> None:
+    """Integrar acción web en memoria persistente."""
+    try:
+        from modules.humanoid.memory_engine import store_artifact
+        store_artifact(None, None, f"web_{kind}", path_or_uri[:2048], content_preview[:1024])
+    except Exception:
+        pass
+
+
 def open_url(url: str, timeout_ms: int = 30000) -> Dict[str, Any]:
     """Open URL. Returns {ok, error}. Policy + rate limit applied."""
     if not is_available():
@@ -63,6 +72,7 @@ def open_url(url: str, timeout_ms: int = 30000) -> Dict[str, Any]:
         _page = _browser.new_page()
         _page.goto(url, timeout=timeout_ms)
         _audit("open_url", True, {"url": url})
+        _memory_web("navigate", url)
         return {"ok": True, "ms": int((time.perf_counter() - t0) * 1000)}
     except Exception as e:
         _audit("open_url", False, {"url": url}, str(e))
@@ -100,6 +110,7 @@ def extract_text() -> Dict[str, Any]:
         from .extractors import extract_text_from_html
         html = _page.content()
         text = extract_text_from_html(html)
+        _memory_web("extract", "page_content", text[:1000])
         return {"ok": True, "text": text[:5000]}
     except Exception as e:
         return {"ok": False, "text": "", "error": str(e)}
@@ -113,6 +124,7 @@ def screenshot(path: Optional[str] = None) -> Dict[str, Any]:
             path = str(Path(os.getenv("TEMP", ".")) / "atlas_web_screenshot.png")
         _page.screenshot(path=path)
         _audit("screenshot", True, {"path": path})
+        _memory_web("screenshot", path)
         return {"ok": True, "path": path}
     except Exception as e:
         return {"ok": False, "path": "", "error": str(e)}
