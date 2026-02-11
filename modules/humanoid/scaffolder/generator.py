@@ -80,6 +80,14 @@ def generate(
         tree.append("RUNBOOK.md")
         files_created.append(runbook_path)
 
+    try:
+        from modules.humanoid.memory_engine import store_artifact, ensure_thread
+        thread_id = ensure_thread(None, f"scaffold:{name}")
+        for fp in files_created:
+            store_artifact(None, None, "scaffold_file", fp, "")
+    except Exception:
+        pass
+
     return {
         "ok": True,
         "tree": tree,

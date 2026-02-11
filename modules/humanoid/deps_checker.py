@@ -1,7 +1,42 @@
 """Dependency checker: report missing_deps per module. No auto-install."""
 from __future__ import annotations
 
+import sqlite3
 from typing import Any, Dict, List
+
+
+def check_sqlite() -> Dict[str, Any]:
+    try:
+        sqlite3.connect(":memory:").close()
+        return {"module": "sqlite", "available": True, "missing_deps": [], "suggested": ""}
+    except Exception as e:
+        return {"module": "sqlite", "available": False, "missing_deps": ["sqlite3"], "error": str(e), "suggested": "sqlite3 is usually built-in"}
+
+
+def check_ollama() -> Dict[str, Any]:
+    import os
+    try:
+        import httpx
+        url = (os.getenv("OLLAMA_BASE_URL") or "http://127.0.0.1:11434") + "/api/tags"
+        with httpx.Client(timeout=5) as client:
+            r = client.get(url)
+            return {"module": "ollama", "available": r.status_code == 200, "missing_deps": [] if r.status_code == 200 else ["ollama running"], "suggested": "Start Ollama service"}
+    except Exception as e:
+        return {"module": "ollama", "available": False, "missing_deps": ["ollama running"], "error": str(e), "suggested": "Start Ollama: ollama serve"}
+
+
+def check_vision() -> Dict[str, Any]:
+    missing = []
+    try:
+        from PIL import Image
+    except ImportError:
+        missing.append("pillow")
+    try:
+        import pytesseract
+        pytesseract.get_tesseract_version()
+    except Exception:
+        missing.append("pytesseract")
+    return {"module": "vision", "available": len(missing) == 0, "missing_deps": missing, "suggested": "pip install pillow pytesseract" if missing else ""}
 
 
 def check_playwright() -> Dict[str, Any]:
@@ -33,7 +68,7 @@ def check_tts() -> Dict[str, Any]:
 
 def check_all() -> Dict[str, Any]:
     """Return {ok, modules: [{module, available, missing_deps, suggested}], missing_deps: [...], suggested_commands: [...]}."""
-    results = [check_playwright(), check_stt(), check_tts()]
+    results = [check_sqlite(), check_ollama(), check_vision(), check_playwright(), check_stt(), check_tts()]
     all_missing: List[str] = []
     suggested: List[str] = []
     for r in results:

@@ -113,6 +113,12 @@ def generate_script(
             w = fs_controller.write_text(write_path, content)
             if w.get("ok"):
                 out["path"] = write_path
+                try:
+                    from modules.humanoid.memory_engine import store_artifact, ensure_thread
+                    ensure_thread(None, f"script:{kind}")
+                    store_artifact(None, None, "script", write_path, purpose[:200])
+                except Exception:
+                    pass
             else:
                 out["ok"] = False
                 out["error"] = w.get("error")
