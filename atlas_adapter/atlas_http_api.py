@@ -133,29 +133,12 @@ def intent(payload: IntentIn):
         }
 
 
-# --- LLM híbrido local (Ollama) ---
-from modules.llm_router import run as llm_run
+# --- LLM híbrido (router + Ollama) ---
+from modules.llm.schemas import LLMRequest, LLMResponse
+from modules.llm.service import LLMService
 
+llm_service = LLMService()
 
-class LLMIn(BaseModel):
-    task: str = "chat"
-    text: str
-    user: str = "raul"
-    meta: Optional[dict[str, Any]] = None
-
-
-@app.post("/llm")
-def llm(payload: LLMIn):
-    t0 = time.time()
-    try:
-        r = llm_run(payload.task, payload.text, user=payload.user)
-        r["ms"] = int((time.time() - t0) * 1000)
-        r["input"] = payload.model_dump()
-        return r
-    except Exception as e:
-        return {
-            "ok": False,
-            "error": str(e),
-            "ms": int((time.time() - t0) * 1000),
-            "input": payload.model_dump(),
-        }
+@app.post("/llm", response_model=LLMResponse)
+def llm_endpoint(req: LLMRequest):
+    return llm_service.run(req)
