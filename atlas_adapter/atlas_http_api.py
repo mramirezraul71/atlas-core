@@ -108,23 +108,19 @@ class IntentIn(BaseModel):
 
 @app.post("/intent")
 def intent(payload: IntentIn):
-    """
-    Endpoint canónico: recibe intención (texto) y la resuelve con command_router.
-    Ejemplos: "/status", "/modules", "hola", etc.
-    """
     t0 = time.time()
     try:
         out = route_command(payload.text)
         return {
             "ok": True,
-            "input": payload.model_dump(),
+            "received": payload.model_dump(),
             "output": out,
             "ms": int((time.time() - t0) * 1000),
         }
     except Exception as e:
         return {
             "ok": False,
-            "input": payload.model_dump(),
+            "received": payload.model_dump(),
             "error": str(e),
             "ms": int((time.time() - t0) * 1000),
         }
