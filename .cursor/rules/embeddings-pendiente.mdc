@@ -1,7 +1,7 @@
 ---
 description: Recordatorio: implementar embeddings en memory_engine (pendiente)
 globs: modules/humanoid/memory_engine/**/*
-alwaysApply: false
+alwaysApply: true
 ---
 
 # Pendiente: Embeddings en memory_engine
