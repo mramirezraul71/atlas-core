@@ -57,3 +57,14 @@ class MetricsStore:
     def reset(self) -> None:
         self._counters.clear()
         self._latencies.clear()
+
+
+_metrics_store: MetricsStore | None = None
+
+
+def get_metrics_store() -> MetricsStore:
+    """Singleton MetricsStore for app-wide use."""
+    global _metrics_store
+    if _metrics_store is None:
+        _metrics_store = MetricsStore()
+    return _metrics_store

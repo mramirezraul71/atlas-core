@@ -1,15 +1,32 @@
-"""Audit persistence (e.g. SQLite)."""
+"""Audit persistence: SQLite audit_log table. Path from AUDIT_DB_PATH."""
 from __future__ import annotations
 
 import json
 import sqlite3
-import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT,
+    actor TEXT,
+    role TEXT,
+    module TEXT,
+    action TEXT,
+    ok INTEGER,
+    ms INTEGER,
+    error TEXT,
+    payload_json TEXT,
+    result_json TEXT
+)
+"""
+
+
 class AuditDB:
-    """Simple audit log storage. Optional SQLite backend. Path from AUDIT_DB_PATH if not given."""
+    """SQLite audit log. Schema: id, ts ISO, actor, role, module, action, ok, ms, error, payload_json, result_json."""
 
     def __init__(self, path: str | Path | None = None) -> None:
         import os
@@ -29,53 +46,76 @@ class AuditDB:
             raise RuntimeError("AuditDB: no path configured")
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self._path))
-        self._conn.execute(
-            """CREATE TABLE IF NOT EXISTS audit (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ts REAL,
-                scope TEXT,
-                action TEXT,
-                payload TEXT,
-                result TEXT
-            )"""
-        )
+        self._conn.execute(_SCHEMA)
         self._conn.commit()
         return self._conn
 
-    def log(self, scope: str, action: str, payload: Dict[str, Any], result: str = "ok") -> None:
-        """Append one audit entry."""
+    def log_event(
+        self,
+        actor: str,
+        role: str,
+        module: str,
+        action: str,
+        ok: bool,
+        ms: int = 0,
+        error: Optional[str] = None,
+        payload: Optional[Dict[str, Any]] = None,
+        result: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Insert one audit_log row. ts = ISO UTC."""
         try:
             conn = self._ensure_conn()
+            ts = datetime.now(timezone.utc).isoformat()
             conn.execute(
-                "INSERT INTO audit (ts, scope, action, payload, result) VALUES (?, ?, ?, ?, ?)",
-                (time.time(), scope, action, json.dumps(payload), result),
+                """INSERT INTO audit_log (ts, actor, role, module, action, ok, ms, error, payload_json, result_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    ts,
+                    actor,
+                    role,
+                    module,
+                    action,
+                    1 if ok else 0,
+                    ms,
+                    error,
+                    json.dumps(payload) if payload is not None else None,
+                    json.dumps(result) if result is not None else None,
+                ),
             )
             conn.commit()
         except Exception:
             pass
 
-    def query(self, scope: str | None = None, limit: int = 100) -> List[Dict[str, Any]]:
-        """Return recent audit entries, optionally filtered by scope."""
+    def tail(self, n: int = 50, module: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Last n rows, optional filter by module."""
         try:
             conn = self._ensure_conn()
-            if scope:
+            if module:
                 cur = conn.execute(
-                    "SELECT ts, scope, action, payload, result FROM audit WHERE scope = ? ORDER BY id DESC LIMIT ?",
-                    (scope, limit),
+                    """SELECT id, ts, actor, role, module, action, ok, ms, error, payload_json, result_json
+                       FROM audit_log WHERE module = ? ORDER BY id DESC LIMIT ?""",
+                    (module, n),
                 )
             else:
                 cur = conn.execute(
-                    "SELECT ts, scope, action, payload, result FROM audit ORDER BY id DESC LIMIT ?",
-                    (limit,),
+                    """SELECT id, ts, actor, role, module, action, ok, ms, error, payload_json, result_json
+                       FROM audit_log ORDER BY id DESC LIMIT ?""",
+                    (n,),
                 )
             rows = cur.fetchall()
             return [
                 {
-                    "ts": r[0],
-                    "scope": r[1],
-                    "action": r[2],
-                    "payload": json.loads(r[3]) if r[3] else {},
-                    "result": r[4],
+                    "id": r[0],
+                    "ts": r[1],
+                    "actor": r[2],
+                    "role": r[3],
+                    "module": r[4],
+                    "action": r[5],
+                    "ok": bool(r[6]),
+                    "ms": r[7],
+                    "error": r[8],
+                    "payload": json.loads(r[9]) if r[9] else {},
+                    "result": json.loads(r[10]) if r[10] else {},
                 }
                 for r in rows
             ]
