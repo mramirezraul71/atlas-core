@@ -1,0 +1,97 @@
+"""Job runner: update_check, shell_command, llm_plan, custom. Timeout 20s, Policy + Audit."""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import time
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, Optional
+
+RUNNER_TIMEOUT_SEC = 20
+_scheduler_actor = "scheduler"
+
+_log = logging.getLogger("humanoid.scheduler.runner")
+
+
+def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
+    """Run one job synchronously. Returns {ok, result_json, error, ms}. No update_apply."""
+    t0 = time.perf_counter()
+    kind = (job.get("kind") or "custom").strip().lower()
+    payload = job.get("payload") or {}
+    jid = job.get("id", "")
+    name = job.get("name", "")
+
+    try:
+        if kind == "update_check":
+            out = _run_update_check(payload)
+        elif kind == "shell_command":
+            out = _run_shell_command(payload)
+        elif kind == "llm_plan":
+            out = _run_llm_plan(payload)
+        else:
+            out = {"ok": True, "result": "no-op", "kind": kind}
+    except Exception as e:
+        _log.exception("Job %s run failed: %s", jid, e)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "result_json": None, "error": str(e), "ms": ms}
+
+    ms = int((time.perf_counter() - t0) * 1000)
+    ok = out.get("ok", False)
+    result_json = json.dumps(out) if isinstance(out, dict) else json.dumps({"ok": ok, "raw": str(out)})
+    return {"ok": ok, "result_json": result_json, "error": out.get("error"), "ms": ms}
+
+
+def _run_update_check(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Update-check only (no apply). Uses humanoid update module plan()."""
+    required = payload.get("required_packages") or ["fastapi", "uvicorn", "httpx", "pydantic"]
+    try:
+        from modules.humanoid import get_humanoid_kernel
+        k = get_humanoid_kernel()
+        update_mod = k.registry.get("update")
+        if not update_mod or not hasattr(update_mod, "updater"):
+            return {"ok": False, "error": "update module not available"}
+        plan_result = update_mod.updater.plan(required)
+        return plan_result
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _run_shell_command(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run command via Hands SafeShellExecutor + Policy. payload: {command, cwd}."""
+    command = (payload.get("command") or "").strip()
+    if not command:
+        return {"ok": False, "error": "missing command in payload"}
+    cwd = payload.get("cwd") or None
+    try:
+        from modules.humanoid import get_humanoid_kernel
+        from modules.humanoid.policy import ActorContext, get_policy_engine
+        actor = ActorContext(actor=_scheduler_actor, role=os.getenv("POLICY_DEFAULT_ROLE", "owner"))
+        decision = get_policy_engine().can(actor, "hands", "exec_command", target=command)
+        if not decision.allow:
+            return {"ok": False, "error": decision.reason or "policy denied"}
+        k = get_humanoid_kernel()
+        hands = k.registry.get("hands")
+        if not hands or not hasattr(hands, "shell"):
+            return {"ok": False, "error": "hands module not available"}
+        result = hands.shell.run(command, cwd=cwd, timeout_sec=min(RUNNER_TIMEOUT_SEC, 60), actor=actor)
+        return result
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _run_llm_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Call humanoid planner (FAST). payload: {goal}."""
+    goal = (payload.get("goal") or "").strip()
+    if not goal:
+        return {"ok": False, "steps": [], "error": "missing goal in payload"}
+    try:
+        from modules.humanoid import get_humanoid_kernel
+        k = get_humanoid_kernel()
+        autonomy = k.registry.get("autonomy")
+        if not autonomy or not hasattr(autonomy, "planner"):
+            return {"ok": False, "steps": [], "error": "autonomy module not available"}
+        result = autonomy.planner.plan(goal, fast=True)
+        return result
+    except Exception as e:
+        return {"ok": False, "steps": [], "error": str(e)}
