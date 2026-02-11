@@ -243,11 +243,12 @@
         <p class="robot-task-help">Reconocimiento de voz (micrófono) y detección de rostro (cámara).</p>
         <div class="robot-actions">
           <button type="button" class="small" id="btn-face-check" onclick="checkFace()">📷 Verificar rostro (cámara)</button>
+          <button type="button" class="small secondary" id="btn-face-disconnect" style="display:none;" onclick="disconnectCamera()">Apagar cámara</button>
           <span class="last-update" id="face-result"></span>
         </div>
         <div id="face-video-container" style="display:none; margin-top:0.5rem;">
           <video id="face-video" autoplay playsinline width="320" height="240" style="border-radius:8px; background:#000;"></video>
-          <p style="font-size:.8rem; color:var(--muted); margin-top:.35rem;">Mira a la cámara y pulsa de nuevo para capturar.</p>
+          <p style="font-size:.8rem; color:var(--muted); margin-top:.35rem;">Mira a la cámara y pulsa «Verificar rostro» para capturar. Pulsa «Apagar cámara» cuando termines.</p>
         </div>
       </div>
     </section>
@@ -311,20 +312,19 @@
         let out;
         if (taskType === 'quick') {
           out = await post('/intent', { text: text });
-          let msg = '';
-          if (out && out.output !== undefined) msg = typeof out.output === 'string' ? out.output : JSON.stringify(out.output, null, 2);
-          else if (out && out.error) { msg = out.error; responseEl.classList.add('error'); }
-          else msg = out ? JSON.stringify(out, null, 2) : 'Sin respuesta';
+          let msg = formatRobotResponse(out, 'quick');
+          if (out && out.error) responseEl.classList.add('error');
+          else responseEl.classList.remove('error');
           responseEl.textContent = msg;
           setLastResponseText(msg);
         } else {
           const mode = taskType === 'medium' ? 'plan_only' : 'controlled';
           const depth = taskType === 'medium' ? 1 : 2;
           out = await post('/agent/goal', { goal: text, mode: mode, depth: depth, fast: taskType === 'medium' });
-          let msg = '';
-          if (out && out.resumen) msg = out.resumen + (out.data ? '\n\n' + JSON.stringify(out.data, null, 2).slice(0, 2000) : '');
-          else if (out && out.error) { msg = out.error; responseEl.classList.add('error'); }
-          else msg = out ? JSON.stringify(out, null, 2).slice(0, 3000) : 'Sin respuesta';
+          let msg = formatRobotResponse(out, taskType);
+          if (out && out.data && (out.data.steps || out.data.plan)) msg += '\n\n' + (out.data.resumen || JSON.stringify({ steps: out.data.steps || out.data.plan }, null, 2).slice(0, 1500));
+          if (out && out.error) responseEl.classList.add('error');
+          else responseEl.classList.remove('error');
           responseEl.textContent = msg;
           setLastResponseText(msg);
         }
@@ -338,6 +338,24 @@
 
     let lastResponseText = '';
     function setLastResponseText(t) { lastResponseText = (t || '').trim(); }
+
+    function formatRobotResponse(out, taskType) {
+      if (!out) return 'No hubo respuesta del robot.';
+      if (out.error) return 'Error: ' + (out.error || 'desconocido');
+      if (taskType === 'quick' && out.output !== undefined) {
+        var o = out.output;
+        if (typeof o === 'string') return o;
+        if (o && typeof o === 'object') {
+          if (o.atlas) return String(o.atlas);
+          if (o.message) return String(o.message);
+          if (o.status) return 'Estado: ' + String(o.status);
+        }
+        return typeof o === 'string' ? o : (out.resumen || 'Comando ejecutado. Revisa los detalles abajo.');
+      }
+      if (out.resumen) return out.resumen;
+      if (out.message) return out.message;
+      return 'Listo. Revisa los detalles si los hay.';
+    }
 
     function startVoiceRecognition() {
       const btn = document.getElementById('btn-voice-mic');
@@ -392,11 +410,28 @@
     }
 
     let faceStream = null;
+    function disconnectCamera() {
+      if (faceStream) {
+        faceStream.getTracks().forEach(function(t) { t.stop(); });
+        faceStream = null;
+      }
+      const video = document.getElementById('face-video');
+      const container = document.getElementById('face-video-container');
+      const btn = document.getElementById('btn-face-check');
+      const btnDisc = document.getElementById('btn-face-disconnect');
+      const resultEl = document.getElementById('face-result');
+      if (video) { video.srcObject = null; video.style.display = 'none'; }
+      if (container) container.style.display = 'none';
+      if (btn) btn.textContent = '📷 Verificar rostro (cámara)';
+      if (btnDisc) btnDisc.style.display = 'none';
+      if (resultEl) resultEl.textContent = 'Cámara apagada.';
+    }
     async function checkFace() {
       const resultEl = document.getElementById('face-result');
       const container = document.getElementById('face-video-container');
       const video = document.getElementById('face-video');
       const btn = document.getElementById('btn-face-check');
+      const btnDisc = document.getElementById('btn-face-disconnect');
       if (resultEl) resultEl.textContent = '…';
       try {
         if (!faceStream) {
@@ -404,6 +439,7 @@
           if (video) { video.srcObject = faceStream; video.style.display = 'block'; }
           if (container) container.style.display = 'block';
           if (btn) btn.textContent = '📷 Capturar y verificar';
+          if (btnDisc) btnDisc.style.display = 'inline-block';
           if (resultEl) resultEl.textContent = 'Cámara encendida. Pulsa de nuevo para capturar.';
           return;
         }
