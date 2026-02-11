@@ -65,8 +65,10 @@ def _check_memory_writable() -> Dict[str, Any]:
 
 
 def _check_db_integrity() -> Dict[str, Any]:
-    """SQLite PRAGMA quick_check on scheduler DB."""
+    """SQLite PRAGMA quick_check on scheduler DB. Skipped if scheduler disabled."""
     try:
+        if os.getenv("SCHED_ENABLED", "true").strip().lower() not in ("1", "true", "yes"):
+            return {"ok": True, "skipped": True, "message": "scheduler disabled"}
         from modules.humanoid.scheduler import get_scheduler_db
         db = get_scheduler_db()
         conn = db._ensure()
@@ -133,7 +135,7 @@ def run_health(base_url: Optional[str] = None) -> Dict[str, Any]:
 
 
 def health_score(checks: Dict[str, Any]) -> int:
-    """Compute 0-100 score from checks dict (from run_health in-process)."""
+    """Compute 0-100 score from checks dict. Skipped checks are not penalized."""
     if not checks:
         return 0
     ok_count = 0
@@ -142,9 +144,12 @@ def health_score(checks: Dict[str, Any]) -> int:
         if key == "uptime_sec":
             ok_count += 1 if isinstance(val, (int, float)) and val >= 0 else 0
             n += 1
-        elif isinstance(val, dict) and val.get("ok"):
-            ok_count += 1
+        elif isinstance(val, dict):
+            if val.get("skipped"):
+                continue  # don't count skipped in denominator
             n += 1
+            if val.get("ok"):
+                ok_count += 1
     if n == 0:
-        return 0
+        return 100  # all skipped => healthy
     return min(100, int(round(100.0 * ok_count / n)))

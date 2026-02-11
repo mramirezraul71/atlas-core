@@ -63,13 +63,14 @@ def _launch_staging_instance(port: int, timeout_sec: int = 30) -> Dict[str, Any]
         return {"ok": False, "process": None, "error": str(e)}
 
 
-def run_bluegreen_flow(actor: Any = None) -> Dict[str, Any]:
+def run_bluegreen_flow(actor: Any = None, dry_run: bool = False) -> Dict[str, Any]:
     """
     1) Launch staging on STAGING_PORT
     2) Smoke tests against staging
     3) Healthcheck 3 times
     4) If all OK: switch active port, stop old instance
     5) If fail: keep active, log rollback
+    If dry_run=True, simulate steps (launch staging, smoke, health) but do not switch; staging process is killed at end.
     """
     t0 = time.perf_counter()
     if os.getenv("DEPLOY_MODE", "").strip().lower() != "bluegreen":
@@ -89,6 +90,25 @@ def run_bluegreen_flow(actor: Any = None) -> Dict[str, Any]:
         return {"ok": False, "data": {"steps": steps}, "ms": int((time.perf_counter() - t0) * 1000), "error": launch.get("error")}
 
     proc = launch.get("process")
+
+    def _kill_staging(p: Optional[subprocess.Popen]) -> None:
+        if not p:
+            return
+        try:
+            p.terminate()
+            p.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                p.kill()
+                p.wait(timeout=2)
+            except Exception:
+                pass
+        except Exception:
+            try:
+                p.kill()
+            except Exception:
+                pass
+
     try:
         base = f"http://127.0.0.1:{staging_port}"
 
@@ -102,12 +122,7 @@ def run_bluegreen_flow(actor: Any = None) -> Dict[str, Any]:
             smoke_result = {"error": str(e)}
         steps.append({"step": "smoke", "ok": smoke_ok, "error": smoke_result.get("error")})
         if not smoke_ok:
-            if proc:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except Exception:
-                    proc.kill()
+            _kill_staging(proc)
             state["mode"] = "single"
             persist_state(state)
             _audit("deploy", "bluegreen_flow", False, {"steps": steps}, smoke_result.get("error"), int((time.perf_counter() - t0) * 1000))
@@ -124,25 +139,21 @@ def run_bluegreen_flow(actor: Any = None) -> Dict[str, Any]:
             steps.append({"step": f"health_{i+1}", "ok": True, "score": h.get("score")})
             time.sleep(1)
         if not health_ok:
-            if proc:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except Exception:
-                    proc.kill()
+            _kill_staging(proc)
             state["mode"] = "single"
             persist_state(state)
             _audit("deploy", "bluegreen_flow", False, {"steps": steps}, "health < 60", int((time.perf_counter() - t0) * 1000))
             return {"ok": False, "data": {"steps": steps, "rollback": "health failed", "fallback": "single-port"}, "ms": int((time.perf_counter() - t0) * 1000), "error": "health check failed"}
 
+        if dry_run:
+            _kill_staging(proc)
+            ms = int((time.perf_counter() - t0) * 1000)
+            _audit("deploy", "bluegreen_flow", True, {"steps": steps, "dry_run": True}, None, ms)
+            return {"ok": True, "data": {"steps": steps, "switched": False, "dry_run": True}, "ms": ms, "error": None}
+
         # 4) Switch
         if not auto_switch:
-            if proc:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except Exception:
-                    proc.kill()
+            _kill_staging(proc)
             return {"ok": True, "data": {"steps": steps, "switched": False, "message": "AUTO_SWITCH_ON_HEALTH=false"}, "ms": int((time.perf_counter() - t0) * 1000), "error": None}
 
         switch_result = switch_active_port(staging_port)
@@ -151,22 +162,14 @@ def run_bluegreen_flow(actor: Any = None) -> Dict[str, Any]:
         state["last_deploy_ts"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         persist_state(state)
 
-        if proc:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except Exception:
-                proc.kill()
+        _kill_staging(proc)
 
         ms = int((time.perf_counter() - t0) * 1000)
         _audit("deploy", "bluegreen_flow", switch_result.get("ok", False), {"steps": steps}, switch_result.get("error"), ms)
         return {"ok": switch_result.get("ok", False), "data": {"steps": steps, "switched": True}, "ms": ms, "error": switch_result.get("error")}
     except Exception as e:
-        if proc:
-            try:
-                proc.terminate()
-                proc.wait(timeout=5)
-            except Exception:
-                pass
+        _kill_staging(proc)
         _audit("deploy", "bluegreen_flow", False, {"steps": steps}, str(e), int((time.perf_counter() - t0) * 1000))
         return {"ok": False, "data": {"steps": steps}, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+    finally:
+        _kill_staging(proc)
