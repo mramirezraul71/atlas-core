@@ -252,7 +252,40 @@ if ($voiceStatus.ok) {
   $voiceOk = $false
 }
 
-$agentScaffoldOk = $agentOk -and $scaffoldOk -and $scriptOk -and $depsOk -and $webOk -and $voiceOk
+$memRecall = Hit "/memory/recall?query=Listar&limit=5"
+if ($memRecall.ok) {
+  Write-Host "GET /memory/recall OK (memory write/recall)" -ForegroundColor Green
+  $memOk = $true
+} else {
+  Write-Host "GET /memory/recall FAIL: $($memRecall.err)" -ForegroundColor Red
+  $memOk = $false
+}
+
+$memSnapshot = Hit "/memory/snapshot"
+if ($memSnapshot.ok) {
+  Write-Host "GET /memory/snapshot OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /memory/snapshot FAIL: $($memSnapshot.err)" -ForegroundColor Red
+}
+
+$visionStatus = Hit "/vision/status"
+if ($visionStatus.ok) {
+  Write-Host "GET /vision/status OK" -ForegroundColor Green
+  $visionOk = $true
+} else {
+  Write-Host "GET /vision/status FAIL: $($visionStatus.err)" -ForegroundColor Red
+  $visionOk = $false
+}
+
+$visionAnalyzeBody = @{ image_path = "C:\ATLAS_PUSH\logs\nonexistent.png" }
+$visionAnalyze = HitPost "/vision/analyze" $visionAnalyzeBody
+if ($visionAnalyze.ok) {
+  Write-Host "POST /vision/analyze responds (ok or error for missing file)" -ForegroundColor Green
+} else {
+  Write-Host "POST /vision/analyze FAIL: $($visionAnalyze.err)" -ForegroundColor Red
+}
+
+$agentScaffoldOk = $agentOk -and $scaffoldOk -and $scriptOk -and $depsOk -and $webOk -and $voiceOk -and $memOk -and $visionOk
 
 if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk -and $agentScaffoldOk) {
   Write-Host "SMOKE OK" -ForegroundColor Green
