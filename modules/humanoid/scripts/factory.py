@@ -119,6 +119,11 @@ def generate_script(
                     store_artifact(None, None, "script", write_path, purpose[:200])
                 except Exception:
                     pass
+                try:
+                    from modules.humanoid.audit import get_audit_logger
+                    get_audit_logger().log_event("script_factory", "system", "scripts", "generate", True, 0, None, {"kind": kind, "path": write_path, "purpose": purpose[:100]}, None)
+                except Exception:
+                    pass
             else:
                 out["ok"] = False
                 out["error"] = w.get("error")

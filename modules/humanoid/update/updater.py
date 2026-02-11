@@ -1,4 +1,7 @@
-"""Safe updater: plan only by default. Policy + audit for update-check and update-apply."""
+"""Safe updater: plan only by default. Policy + audit for update-check and update-apply.
+
+Nunca apply sin permiso: UPDATE_APPLY=false por defecto; POLICY_ALLOW_UPDATE_APPLY
+y/o force explícito en apply() para ejecutar instalaciones."""
 from __future__ import annotations
 
 import os

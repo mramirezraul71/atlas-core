@@ -6,7 +6,7 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-from .critic import validate_no_destructive, validate_plan_structure, validate_step_result
+from .critic import suggest_fix_for_failed_step, validate_no_destructive, validate_plan_structure, validate_step_result
 from .memory import load_task, new_task_id, save_task
 from .models import Plan, Result, Step, Task
 
@@ -46,14 +46,32 @@ def _get_hands() -> Any:
     return None
 
 
+# Fallback determinista cuando el LLM no responde (timeout/error)
+_DECOMPOSE_FALLBACK = {
+    "ok": False,
+    "steps": [],
+    "error": "plan_unavailable",
+    "fallback": True,
+    "message": "Plan no disponible. Reintente o use modo manual.",
+}
+
+
 def _decompose(goal: str, fast: bool = True) -> Dict[str, Any]:
-    """Convert goal into steps (definition of done per step). Uses planner."""
+    """Convert goal into steps (definition of done per step). Uses planner. Fallback determinista si LLM falla."""
     planner = _get_planner()
     if not planner:
-        return {"ok": False, "steps": [], "error": "Planner not available"}
-    r = planner.plan(goal, fast=fast)
+        return {**_DECOMPOSE_FALLBACK, "error": "Planner not available"}
+    try:
+        r = planner.plan(goal, fast=fast)
+    except Exception as e:
+        _log.warning("Planner exception: %s", e)
+        return {**_DECOMPOSE_FALLBACK, "error": str(e)[:200]}
     if not r.get("ok"):
-        return {"ok": False, "steps": r.get("steps", []), "error": r.get("error")}
+        return {
+            **_DECOMPOSE_FALLBACK,
+            "steps": r.get("steps", []),
+            "error": r.get("error") or "LLM failed",
+        }
     raw = r.get("steps", [])
     steps = []
     for i, s in enumerate(raw):
@@ -68,7 +86,9 @@ def _decompose(goal: str, fast: bool = True) -> Dict[str, Any]:
 
 def run_goal(goal: str, mode: str = "plan_only", fast: bool = True) -> Dict[str, Any]:
     """
-    Run goal: plan_only returns plan only; execute runs steps (with policy/approval).
+    Pipeline: Goal → Decompose → Plan → Execute → Verify → Critic → Store → Report.
+    Modos: plan_only (solo plan); execute_controlled (plan + pasos solo vía execute_step con approve);
+    execute / execute_auto (ejecutar todos los pasos según policy).
     Returns {ok, plan, steps, task_id, execution_log?, artifacts?, error, ms}.
     """
     t0 = time.perf_counter()
@@ -82,7 +102,11 @@ def run_goal(goal: str, mode: str = "plan_only", fast: bool = True) -> Dict[str,
     if not dec.get("ok"):
         ms = int((time.perf_counter() - t0) * 1000)
         _audit("orchestrator", "run_goal", False, {"task_id": task_id}, dec.get("error"), ms)
-        return {"ok": False, "plan": None, "steps": dec.get("steps", []), "task_id": task_id, "execution_log": [], "artifacts": [], "error": dec.get("error"), "ms": ms}
+        out = {"ok": False, "plan": None, "steps": dec.get("steps", []), "task_id": task_id, "execution_log": [], "artifacts": [], "error": dec.get("error"), "ms": ms}
+        if dec.get("fallback"):
+            out["fallback"] = True
+            out["message"] = dec.get("message", _DECOMPOSE_FALLBACK["message"])
+        return out
 
     steps_data = dec.get("steps", [])
     ok_plan, err_plan = validate_plan_structure({"goal": goal, "steps": [s.get("description") for s in steps_data]})
@@ -93,6 +117,7 @@ def run_goal(goal: str, mode: str = "plan_only", fast: bool = True) -> Dict[str,
     plan = {"goal": goal, "steps": steps_data, "raw_steps": dec.get("raw_steps", [])}
     execution_log = []
     artifacts = []
+    thread_id = None
 
     save_task(task_id, goal, plan, execution_log, "planned")
     try:
@@ -107,13 +132,26 @@ def run_goal(goal: str, mode: str = "plan_only", fast: bool = True) -> Dict[str,
         _audit("orchestrator", "run_goal", True, {"task_id": task_id, "mode": "plan_only", "steps_count": len(steps_data)}, None, ms)
         return {"ok": True, "plan": plan, "steps": steps_data, "task_id": task_id, "execution_log": [], "artifacts": [], "error": None, "ms": ms}
 
-    # execute mode: run steps (each step execution requires approval at L1; L2/L3 can auto-execute non-destructive)
+    if mode == "execute_controlled":
+        ms = int((time.perf_counter() - t0) * 1000)
+        _audit("orchestrator", "run_goal", True, {"task_id": task_id, "mode": "execute_controlled", "steps_count": len(steps_data)}, None, ms)
+        return {"ok": True, "plan": plan, "steps": steps_data, "task_id": task_id, "execution_log": [], "artifacts": [], "error": None, "ms": ms, "message": "Ejecute cada paso vía POST /agent/step/execute con approve=true"}
+
+    # execute / execute_auto: run steps; on failure use critic and one retry with suggested fix
+    MAX_RETRIES_PER_STEP = 1
     for i, step in enumerate(steps_data):
         desc = step.get("description", "")
         if not validate_no_destructive(desc):
             execution_log.append({"step_id": step.get("id"), "status": "skipped", "error": "destructive step blocked"})
             continue
         step_result = _execute_step_internal(step, task_id)
+        # Replan con critic: si falló, critic sugiere revisión y reintentamos una vez
+        retries = 0
+        while step_result.get("status") != "success" and retries < MAX_RETRIES_PER_STEP:
+            revised_desc, _hint = suggest_fix_for_failed_step(desc, step_result, goal)
+            step_revised = {**step, "description": revised_desc}
+            step_result = _execute_step_internal(step_revised, task_id)
+            retries += 1
         execution_log.append(step_result)
         if step_result.get("artifacts"):
             artifacts.extend(step_result["artifacts"])
@@ -128,6 +166,14 @@ def run_goal(goal: str, mode: str = "plan_only", fast: bool = True) -> Dict[str,
         try:
             from modules.humanoid.memory_engine import store_artifact
             store_artifact(task_id, None, "run_artifact", str(art)[:512])
+        except Exception:
+            pass
+    # Reflect: resumen incremental en memoria
+    if thread_id:
+        try:
+            from modules.humanoid.memory_engine import add_summary
+            summary = f"Goal: {goal[:100]}. Steps: {len(steps_data)}, completed: {len([e for e in execution_log if e.get('status') == 'success'])}, artifacts: {len(artifacts)}."
+            add_summary(thread_id, summary)
         except Exception:
             pass
     ms = int((time.perf_counter() - t0) * 1000)

@@ -98,17 +98,6 @@ def modules():
         ]
     }
 
-@app.get("/modules")
-def modules():
-    return {
-        "ok": True,
-        "modules": [
-            {"name": "vision", "enabled": False},
-            {"name": "voice", "enabled": False},
-            {"name": "agent_router", "enabled": False},
-            {"name": "telegram", "enabled": True},
-        ]
-    }
 from pydantic import BaseModel
 from typing import Any, Optional
 import time
@@ -432,19 +421,35 @@ def healing_status_endpoint():
 
 class AgentGoalBody(BaseModel):
     goal: str
-    mode: str = "plan_only"  # plan_only | execute
+    mode: str = "plan_only"  # plan_only | execute_controlled | execute (execute_auto)
     fast: Optional[bool] = True
 
 
 @app.post("/agent/goal")
 def agent_goal(body: AgentGoalBody):
-    """Run goal: plan_only or execute. Returns {ok, data: {plan, steps, task_id, execution_log?, artifacts?}, ms, error}."""
+    """Run goal: plan_only | execute_controlled | execute. Respuesta profesional: resumen, data, archivos, siguientes_pasos."""
     t0 = time.perf_counter()
     try:
         from modules.humanoid.orchestrator import run_goal
         result = run_goal(body.goal, mode=body.mode or "plan_only", fast=body.fast if body.fast is not None else True)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(result.get("ok", False), {k: v for k, v in result.items() if k not in ("ok", "error")}, ms, result.get("error"))
+        ok = result.get("ok", False)
+        data = {k: v for k, v in result.items() if k not in ("ok", "error", "fallback", "message")}
+        steps_count = len(result.get("steps") or [])
+        exec_log = result.get("execution_log") or []
+        done = len([e for e in exec_log if e.get("status") == "success"])
+        resumen = f"Goal: {steps_count} pasos, {done} ejecutados" if ok else (result.get("message") or result.get("error") or "Error")
+        archivos = result.get("artifacts") or []
+        siguientes = []
+        if body.mode == "execute_controlled":
+            siguientes = ["Ejecute cada paso vía POST /agent/step/execute con approve=true"]
+        elif result.get("message"):
+            siguientes = [result.get("message")]
+        out = _professional_resp(ok, data, ms, result.get("error"), resumen=resumen, archivos=archivos if archivos else None, siguientes_pasos=siguientes if siguientes else None)
+        if result.get("fallback"):
+            out["fallback"] = True
+            out["message"] = result.get("message")
+        return out
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -662,15 +667,30 @@ class VisionAnalyzeBody(BaseModel):
     use_llm_vision: Optional[bool] = True
 
 
+def _professional_resp(ok: bool, data: Any, ms: int, error: Optional[str], resumen: str = "", archivos: Optional[list] = None, siguientes_pasos: Optional[list] = None) -> dict:
+    """Respuesta profesional: resumen, resultado técnico, evidencia, siguientes pasos."""
+    out = _std_resp(ok, data, ms, error)
+    if resumen:
+        out["resumen"] = resumen
+    if archivos:
+        out["archivos_creados"] = archivos
+    if siguientes_pasos:
+        out["siguientes_pasos"] = siguientes_pasos
+    return out
+
+
 @app.post("/vision/analyze")
 def vision_analyze(body: VisionAnalyzeBody):
-    """Analyze image: OCR + LLM vision. Returns {ok, data: {extracted_text, interpretation, entities, ms}, error}."""
+    """Analyze image: OCR + LLM vision. Returns texto, estructura, insights, acciones_sugeridas + formato profesional."""
     t0 = time.perf_counter()
     try:
         from modules.humanoid.vision import analyze
         result = analyze(body.image_path, use_ocr=body.use_ocr if body.use_ocr is not None else True, use_llm_vision=body.use_llm_vision if body.use_llm_vision is not None else True)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(result.get("ok", False), result, ms, result.get("error"))
+        ok = result.get("ok", False)
+        resumen = f"Imagen analizada: {len(result.get('extracted_text', ''))} chars texto, {len(result.get('entities', []))} entidades" if ok else "Análisis fallido"
+        siguientes = result.get("acciones_sugeridas") or []
+        return _professional_resp(ok, result, ms, result.get("error"), resumen=resumen, siguientes_pasos=siguientes)
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))

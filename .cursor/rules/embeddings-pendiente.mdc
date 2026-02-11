@@ -1,0 +1,15 @@
+---
+description: Recordatorio: implementar embeddings en memory_engine (pendiente)
+globs: modules/humanoid/memory_engine/**/*
+alwaysApply: false
+---
+
+# Pendiente: Embeddings en memory_engine
+
+Cuando trabajes en `modules/humanoid/memory_engine/`, recuerda que está pendiente:
+
+- **Búsqueda semántica**: implementar `recall_by_similarity(query, limit)` usando vectores de embedding.
+- **Almacenar embeddings**: al guardar planes/runs/artifacts/summaries, opcionalmente calcular y guardar embedding (p. ej. con Ollama si hay modelo de embeddings disponible).
+- **Dependencia ligera**: preferir integración con Ollama o una lib ligera; si no, mantener FTS/LIKE como está y documentar "embeddings: futuro".
+
+Schema posible: columna `embedding BLOB` en tabla relevante o tabla `embeddings(id, source_kind, source_id, vector_blob)`. Fallback: si no hay embedder, `recall_by_similarity` debe delegar a `recall_by_query`.

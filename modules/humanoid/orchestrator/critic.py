@@ -52,3 +52,44 @@ def validate_no_destructive(description: str) -> bool:
     lower = description.lower()
     blocked = ("rm -rf", "format c:", "del /f /s", "drop database", "truncate", "delete from")
     return not any(b in lower for b in blocked)
+
+
+def suggest_fix_for_failed_step(
+    step_description: str,
+    step_result: Dict[str, Any],
+    goal: str,
+) -> Tuple[str, Optional[str]]:
+    """
+    Given a failed step, suggest a revised step description for one retry.
+    Returns (revised_description, hint). Heuristic-based; no LLM.
+    """
+    err = (step_result.get("error") or "").lower()
+    result = step_result.get("result") or {}
+    out = (result.get("output") or result.get("stderr") or "").lower()
+
+    # Permission / access
+    if "permission" in err or "access denied" in err or "denied" in out:
+        return (
+            f"echo Verificar permisos y reintentar: {step_description[:80]}",
+            "Revisar permisos o ejecutar con privilegios adecuados.",
+        )
+    # Not found / path
+    if "not found" in err or "no such file" in err or "not found" in out or "no existe" in out:
+        return (
+            f"if exist . (echo OK) else (echo Ruta no encontrada; {step_description[:60]})",
+            "Comprobar rutas o crear directorio/archivo antes.",
+        )
+    # Timeout
+    if "timeout" in err or "timed out" in err:
+        return (
+            step_description,
+            "Reintentar; el paso puede requerir más tiempo o menos carga.",
+        )
+    # Network / connection
+    if "connection" in err or "network" in err or "refused" in err or "econnrefused" in out:
+        return (
+            f"echo Comprobar conectividad y reintentar: {step_description[:60]}",
+            "Verificar red o servicio antes de reintentar.",
+        )
+    # Generic retry with same step (once)
+    return (step_description, "Reintento directo sin modificación.")

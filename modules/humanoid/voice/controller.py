@@ -1,4 +1,7 @@
-"""Voice controller: endpoints helpers for speak, listen, status."""
+"""Voice controller: endpoints helpers for speak, listen, status.
+
+Modo seguro: la voz NO ejecuta comandos sin confirmación explícita.
+Cualquier integración que traduzca voz → comando debe pedir confirmación antes de ejecutar."""
 from __future__ import annotations
 
 from typing import Any, Dict

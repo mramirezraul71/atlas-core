@@ -1,4 +1,8 @@
-"""Persistent memory engine: threads, tasks, runs, artifacts, decisions, summaries. FTS or LIKE."""
+"""Persistent memory engine: threads, tasks, runs, artifacts, decisions, summaries. FTS or LIKE.
+
+Embeddings: futuro. Búsqueda semántica (recall_by_similarity) planeada cuando exista
+dependencia ligera (p. ej. Ollama embeddings o sentence-transformers); por ahora
+recall_by_query con FTS/LIKE es suficiente."""
 from __future__ import annotations
 
 from .db import fts_available, new_id
