@@ -15,9 +15,9 @@ if (!(Test-Path $venvAct)) { Write-Error "No existe venv. Ejecuta 01_setup_venv.
 # liberar puerto si ocupado
 $cons = Get-NetTCPConnection -LocalPort $AtlasPort -ErrorAction SilentlyContinue
 if ($cons) {
-  $pid = $cons[0].OwningProcess
-  Write-Host "Puerto $AtlasPort ocupado por PID $pid. Matando..." -ForegroundColor Yellow
-  Stop-Process -Id $pid -Force
+  $targetPid = $cons[0].OwningProcess
+  Write-Host "Puerto $AtlasPort ocupado por PID $targetPid. Matando..." -ForegroundColor Yellow
+  Stop-Process -Id $targetPid -Force
   Start-Sleep -Milliseconds 300
 }
 
