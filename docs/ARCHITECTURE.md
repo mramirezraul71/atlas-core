@@ -42,7 +42,7 @@ Arquitectura de referencia: minimalista en diseño, maximalista en capacidades. 
 
 - **DB:** `C:\ATLAS_PUSH\logs\atlas_memory.sqlite` (configurable vía `ATLAS_MEMORY_DB_PATH`).
 - **Soporta:** threads, tasks, plans, runs, artifacts, decisions, summaries, FTS, export snapshot.
-- **Fallbacks:** embeddings fallan → solo FTS; FTS no disponible → LIKE; todo falla → histórico simple por orden.
+- **Fallbacks:** embeddings fallan → solo FTS; FTS no disponible → LIKE; todo falla → **histórico simple por orden** (últimas N tasks por `created_ts`).
 - **Integración:** cada goal, step, resultado y error → Memory + Audit.
 
 ---
@@ -65,7 +65,7 @@ Arquitectura de referencia: minimalista en diseño, maximalista en capacidades. 
 
 ## 4) Web Navigation
 
-- Playwright; si no disponible → módulo disabled y `/deps/check` lo reporta. No instalación automática.
+- Playwright: open, click, fill, extract, navigate, screenshot, **configure page** (viewport, user_agent). Si no disponible → disabled y `/deps/check` lo reporta. No instalación automática.
 
 ---
 

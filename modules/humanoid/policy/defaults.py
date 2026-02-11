@@ -27,6 +27,11 @@ def get_default_policies() -> List[PolicyRule]:
         PolicyRule(id="deny_update_apply", scope="update", condition={"action": "apply"}, action="deny", meta={"description": "update-apply denied by default"}),
         PolicyRule(id="deny_kill_process", scope="hands", condition={"action": "kill_process"}, action="deny", meta={"description": "kill-process denied by default"}),
         PolicyRule(id="healing_restart_scheduler", scope="healing", condition={"role": "system", "action": "restart_scheduler"}, action="allow"),
+        # Memory: read/write/export allow for owner; delete denied by default
+        PolicyRule(id="owner_memory_read", scope="memory", condition={"role": "owner", "action": "memory_read"}, action="allow"),
+        PolicyRule(id="owner_memory_write", scope="memory", condition={"role": "owner", "action": "memory_write"}, action="allow"),
+        PolicyRule(id="owner_memory_export", scope="memory", condition={"role": "owner", "action": "memory_export"}, action="allow"),
+        PolicyRule(id="deny_memory_delete", scope="memory", condition={"action": "memory_delete"}, action="deny", meta={"description": "memory_delete denied by default"}),
     ]
 
 

@@ -130,6 +130,22 @@ def screenshot(path: Optional[str] = None) -> Dict[str, Any]:
         return {"ok": False, "path": "", "error": str(e)}
 
 
+def configure_page(viewport: Optional[Dict[str, int]] = None, user_agent: Optional[str] = None) -> Dict[str, Any]:
+    """Configure current page: viewport size and/or user agent. Spec: configure page."""
+    if not is_available() or _page is None:
+        return {"ok": False, "error": "no session"}
+    try:
+        if viewport:
+            _page.set_viewport_size(viewport)
+        if user_agent:
+            _page.set_extra_http_headers({"User-Agent": user_agent})
+        _audit("configure_page", True, {"viewport": viewport, "user_agent": bool(user_agent)})
+        return {"ok": True}
+    except Exception as e:
+        _audit("configure_page", False, {}, str(e))
+        return {"ok": False, "error": str(e)}
+
+
 def close() -> None:
     global _browser, _page
     if _browser:
