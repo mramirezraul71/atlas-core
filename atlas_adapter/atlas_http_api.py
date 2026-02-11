@@ -421,17 +421,46 @@ def healing_status_endpoint():
 
 class AgentGoalBody(BaseModel):
     goal: str
-    mode: str = "plan_only"  # plan_only | execute_controlled | execute (execute_auto)
+    mode: str = "plan_only"  # plan_only | controlled | auto
     fast: Optional[bool] = True
+    depth: Optional[int] = 1  # 1-5: multi-agent depth (1=single planner, 2+=Executive pipeline)
+
+
+def _agent_goal_mode(mode: str) -> str:
+    if mode in ("execute_controlled", "controlled"):
+        return "execute_controlled"
+    if mode in ("execute", "execute_auto", "auto"):
+        return "execute"
+    return "plan_only"
 
 
 @app.post("/agent/goal")
 def agent_goal(body: AgentGoalBody):
-    """Run goal: plan_only | execute_controlled | execute. Respuesta profesional: resumen, data, archivos, siguientes_pasos."""
+    """Run goal: plan_only | controlled | auto. depth 1-5: multi-agent pipeline. Respuesta: resumen, data, pipeline, siguientes_pasos."""
     t0 = time.perf_counter()
+    mode = _agent_goal_mode(body.mode or "plan_only")
+    depth = max(1, min(5, body.depth or 1))
     try:
-        from modules.humanoid.orchestrator import run_goal
-        result = run_goal(body.goal, mode=body.mode or "plan_only", fast=body.fast if body.fast is not None else True)
+        if depth >= 2:
+            from modules.humanoid.agents import run_multi_agent_goal
+            from modules.humanoid.orchestrator import run_goal_with_plan
+            ma = run_multi_agent_goal(body.goal, depth=depth, mode=mode)
+            if not ma.get("ok"):
+                ms = int((time.perf_counter() - t0) * 1000)
+                return _professional_resp(False, ma, ms, ma.get("error"), resumen=ma.get("error") or "Multi-agent failed")
+            if ma.get("decision") == "replan":
+                ms = int((time.perf_counter() - t0) * 1000)
+                data = {k: v for k, v in ma.items() if k not in ("ok", "error")}
+                return _professional_resp(True, data, ms, None, resumen="Reviewer rechazó; replan sugerido", siguientes_pasos=["Ajuste objetivo o replan"])
+            steps_raw = ma.get("steps") or []
+            steps_list = [s.get("description", s) if isinstance(s, dict) else str(s) for s in steps_raw]
+            if mode != "plan_only" and steps_list and ma.get("decision") == "approve":
+                result = run_goal_with_plan(body.goal, steps_list, mode=mode)
+            else:
+                result = {"ok": True, "plan": ma.get("plan"), "steps": steps_raw, "task_id": ma.get("task_id"), "execution_log": [], "artifacts": [], "pipeline": ma.get("pipeline", [])}
+        else:
+            from modules.humanoid.orchestrator import run_goal
+            result = run_goal(body.goal, mode=mode, fast=body.fast if body.fast is not None else True)
         ms = int((time.perf_counter() - t0) * 1000)
         ok = result.get("ok", False)
         data = {k: v for k, v in result.items() if k not in ("ok", "error", "fallback", "message")}
@@ -441,7 +470,7 @@ def agent_goal(body: AgentGoalBody):
         resumen = f"Goal: {steps_count} pasos, {done} ejecutados" if ok else (result.get("message") or result.get("error") or "Error")
         archivos = result.get("artifacts") or []
         siguientes = []
-        if body.mode == "execute_controlled":
+        if mode == "execute_controlled":
             siguientes = ["Ejecute cada paso vía POST /agent/step/execute con approve=true"]
         elif result.get("message"):
             siguientes = [result.get("message")]
@@ -470,6 +499,86 @@ def agent_step_execute(body: AgentStepBody):
         result = execute_step(body.task_id, body.step_id, approve=body.approve)
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(result.get("ok", False), {"result": result.get("result"), "artifacts": result.get("artifacts", [])}, ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/agent/benchmark")
+def agent_benchmark():
+    """Competitive intelligence: architecture, latencies, complexity, maintainability, risk, scalability. Strengths, Weaknesses, Gaps, Improvement map."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.metrics import get_metrics_store
+        store = get_metrics_store()
+        snap = store.snapshot()
+        counters = snap.get("counters") or {}
+        latencies = snap.get("latencies") or {}
+        avg_lat = {k: v.get("avg_ms", 0) for k, v in latencies.items()}
+        strengths = [
+            "Multi-agent pipeline (Executive, Strategist, Architect, Engineer, Reviewer, Optimizer)",
+            "Policy + Audit on all executable paths",
+            "Persistent memory (SQLite) + FTS fallback",
+            "Orchestrator with critic and replan",
+        ]
+        weaknesses = []
+        if not latencies:
+            weaknesses.append("Pocas métricas de latencia registradas")
+        gaps = ["Embeddings opcional pendiente", "Adaptive routing por modelo en refinamiento"]
+        improvement_map = [
+            "Aumentar depth en /agent/goal para tareas complejas",
+            "Revisar /agent/system-intel para cuellos de botella",
+        ]
+        data = {
+            "strengths": strengths,
+            "weaknesses": weaknesses,
+            "gaps": gaps,
+            "improvement_map": improvement_map,
+            "metrics": {"counters": counters, "latency_avg_ms": avg_lat},
+        }
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _professional_resp(True, data, ms, None, resumen=f"Benchmark: {len(strengths)} strengths, {len(gaps)} gaps")
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/agent/system-intel")
+@app.post("/agent/system-intel")
+def agent_system_intel():
+    """Performance intelligence: analyze logs, repeated errors, bottlenecks, optimization suggestions."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.audit import get_audit_logger
+        from modules.humanoid.metrics import get_metrics_store
+        entries = get_audit_logger().tail(n=100, module=None)
+        store = get_metrics_store()
+        snap = store.snapshot()
+        errors = [e for e in (entries or []) if not e.get("ok")]
+        error_msgs = {}
+        for e in errors:
+            msg = (e.get("error") or "unknown")[:80]
+            error_msgs[msg] = error_msgs.get(msg, 0) + 1
+        repeated = [{"error": k, "count": v} for k, v in error_msgs.items() if v >= 2][:10]
+        latencies = snap.get("latencies") or {}
+        bottlenecks = []
+        for name, stat in latencies.items():
+            avg = stat.get("avg_ms", 0)
+            if avg > 5000:
+                bottlenecks.append({"path": name, "avg_ms": round(avg, 0)})
+        suggestions = []
+        if repeated:
+            suggestions.append("Revisar errores repetidos y añadir fallback o retry")
+        if bottlenecks:
+            suggestions.append("Revisar endpoints con latencia >5s para optimizar o cache")
+        data = {
+            "repeated_errors": repeated,
+            "bottlenecks": bottlenecks[:10],
+            "suggestions": suggestions or ["Sistema estable; sin sugerencias urgentes"],
+            "audit_sample_size": len(entries or []),
+        }
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _professional_resp(True, data, ms, None, resumen=f"System intel: {len(repeated)} errores repetidos, {len(bottlenecks)} cuellos")
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
