@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from .db import SchedulerDB
+from .locking import recover_stale_locks, try_acquire_lease
 from .runner import run_job_sync
 
 _log = logging.getLogger("humanoid.scheduler.engine")
@@ -100,11 +101,13 @@ async def _run_one_job(job: Dict[str, Any]) -> None:
         _audit("scheduler", "job_failed", False, {"job_id": jid, "retries": retries}, err)
     else:
         from datetime import timedelta
-        next_dt = datetime.fromisoformat(now.replace("Z", "+00:00")) + timedelta(seconds=backoff)
+        # Progressive backoff: backoff_seconds * (retries)
+        delay = backoff * retries
+        next_dt = datetime.fromisoformat(now.replace("Z", "+00:00")) + timedelta(seconds=delay)
         next_ts = next_dt.isoformat()
         db.set_finished(jid, False, err, next_ts, retries)
         db.set_queued(jid, next_ts)
-        _audit("scheduler", "job_retry", True, {"job_id": jid, "retry": retries, "next_run": next_ts})
+        _audit("scheduler", "job_retry", True, {"job_id": jid, "retry": retries, "next_run": next_ts, "backoff_seconds": delay})
     _running -= 1
 
 
@@ -112,6 +115,7 @@ async def _tick() -> None:
     global _running
     db = get_scheduler_db()
     now = datetime.now(timezone.utc).isoformat()
+    recover_stale_locks(db)
     limit = max(1, _max_concurrency() - _running)
     if limit <= 0:
         return
@@ -121,7 +125,8 @@ async def _tick() -> None:
         if _cancel_requested.pop(jid, False):
             db.set_paused(jid)
             continue
-        db.set_running(jid)
+        if not try_acquire_lease(db, jid):
+            continue
         _running += 1
         _audit("scheduler", "job_run_start", True, {"job_id": jid, "kind": job.get("kind")})
         asyncio.create_task(_run_one_job(dict(job, last_run_ts=now)))
