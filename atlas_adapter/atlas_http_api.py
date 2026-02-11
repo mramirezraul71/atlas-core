@@ -655,3 +655,128 @@ def deps_check_get():
         return _std_resp(False, None, ms, str(e))
 
 
+# --- Vision ---
+class VisionAnalyzeBody(BaseModel):
+    image_path: str
+    use_ocr: Optional[bool] = True
+    use_llm_vision: Optional[bool] = True
+
+
+@app.post("/vision/analyze")
+def vision_analyze(body: VisionAnalyzeBody):
+    """Analyze image: OCR + LLM vision. Returns {ok, data: {extracted_text, interpretation, entities, ms}, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.vision import analyze
+        result = analyze(body.image_path, use_ocr=body.use_ocr if body.use_ocr is not None else True, use_llm_vision=body.use_llm_vision if body.use_llm_vision is not None else True)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), result, ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class VisionOcrBody(BaseModel):
+    image_path: str
+
+
+@app.post("/vision/ocr")
+def vision_ocr(body: VisionOcrBody):
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.vision import ocr
+        result = ocr(body.image_path or "")
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), result, ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class VisionScreenshotBody(BaseModel):
+    screenshot_path: str
+
+
+@app.post("/vision/screenshot")
+def vision_screenshot(body: VisionScreenshotBody):
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.vision import screenshot_analyze
+        result = screenshot_analyze(body.screenshot_path or "")
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), result, ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/vision/status")
+def vision_status_endpoint():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.vision import vision_status
+        data = vision_status()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+# --- Memory ---
+@app.get("/memory/recall")
+def memory_recall(query: str = "", limit: int = 20):
+    """Recall by search query. FTS or LIKE fallback."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.memory_engine import recall_by_query
+        data = recall_by_query(query or "", limit=limit)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"results": data}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/memory/thread")
+def memory_thread(thread_id: str = "", limit: int = 50):
+    """Recall by thread_id."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.memory_engine import recall_by_thread
+        data = recall_by_thread(thread_id or "", limit=limit)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/memory/export")
+def memory_export(thread_id: str = "", task_id: str = "", limit: int = 100):
+    """Export memory as markdown."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.memory_engine import export_markdown
+        md = export_markdown(thread_id=thread_id, task_id=task_id, limit=limit)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"markdown": md}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/memory/snapshot")
+def memory_snapshot():
+    """Snapshot counts for backup."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.memory_engine import snapshot
+        data = snapshot()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(data.get("ok", True), data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
