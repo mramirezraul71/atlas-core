@@ -94,3 +94,37 @@ def intent(payload: IntentIn):
             "ts": time.time(),
         }
     }
+# --- Canonical Intent API (v1) ---
+from pydantic import BaseModel
+from typing import Any, Optional
+import time
+
+from modules.command_router import handle as route_command
+
+class IntentIn(BaseModel):
+    user: str = "raul"
+    text: str
+    meta: Optional[dict[str, Any]] = None
+
+@app.post("/intent")
+def intent(payload: IntentIn):
+    """
+    Endpoint canónico: recibe intención (texto) y la resuelve con command_router.
+    Ejemplos: "/status", "/modules", "hola", etc.
+    """
+    t0 = time.time()
+    try:
+        out = route_command(payload.text)
+        return {
+            "ok": True,
+            "input": payload.model_dump(),
+            "output": out,
+            "ms": int((time.time() - t0) * 1000),
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "input": payload.model_dump(),
+            "error": str(e),
+            "ms": int((time.time() - t0) * 1000),
+        }
