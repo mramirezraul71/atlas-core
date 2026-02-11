@@ -94,10 +94,39 @@ if ($hPlan.ok -and $hPlan.data.ok) {
 
 $humanoidOk = $hStatus.ok -and $hCheck.ok -and $hPlan.ok
 
-if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk) {
-  Write-Host "SMOKE OK ✅" -ForegroundColor Green
+Write-Host "== SMOKE: Metrics / Policy / Audit ==" -ForegroundColor Cyan
+$metrics = Hit "/metrics"
+if ($metrics.ok) {
+  Write-Host "GET /metrics OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /metrics FAIL: $($metrics.err)" -ForegroundColor Red
+}
+
+$policyBody = @{ actor = "api"; role = "owner"; module = "hands"; action = "exec_command"; target = "pip --version" } | ConvertTo-Json
+try {
+  $policyR = Invoke-RestMethod -Method POST -Uri "$base/policy/test" -ContentType "application/json" -Body $policyBody -TimeoutSec 5
+  if ($policyR.allow -eq $true -or $policyR.allow -eq $false) {
+    Write-Host "POST /policy/test OK (allow=$($policyR.allow))" -ForegroundColor Green
+    $policyOk = $true
+  } else { $policyOk = $false }
+} catch {
+  Write-Host "POST /policy/test FAIL: $($_.Exception.Message)" -ForegroundColor Red
+  $policyOk = $false
+}
+
+$auditTail = Hit "/audit/tail?n=5"
+if ($auditTail.ok) {
+  Write-Host "GET /audit/tail?n=5 OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /audit/tail FAIL: $($auditTail.err)" -ForegroundColor Red
+}
+
+$policyAuditOk = $metrics.ok -and $policyOk -and $auditTail.ok
+
+if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk -and $policyAuditOk) {
+  Write-Host "SMOKE OK" -ForegroundColor Green
   exit 0
 } else {
-  Write-Host "SMOKE FAIL ❌" -ForegroundColor Red
+  Write-Host "SMOKE FAIL" -ForegroundColor Red
   exit 1
 }
