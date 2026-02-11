@@ -360,6 +360,48 @@ def scheduler_job_runs(job_id: str, limit: int = 50):
         return _std_resp(False, None, ms, str(e))
 
 
+@app.get("/update/status")
+def update_status_endpoint():
+    """Git-based update status: branch, head, remote, has_update. Response: {ok, data, ms, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.update.update_engine import status as update_status
+        data = update_status()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(data.get("ok", True), data, ms, data.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/update/check")
+def update_check_endpoint():
+    """Update check: fetch, snapshot. No apply. Response: {ok, data, ms, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.update.update_engine import check as update_check
+        result = update_check()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), result.get("data"), ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/update/apply")
+def update_apply_endpoint():
+    """Git update apply: staging -> smoke -> promote or rollback. Policy must allow. Response: {ok, data, ms, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.update.update_engine import apply as update_apply
+        result = update_apply()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), result.get("data"), ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
 @app.get("/watchdog/status")
 def watchdog_status_endpoint():
     t0 = time.perf_counter()
