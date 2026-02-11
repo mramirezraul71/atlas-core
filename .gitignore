@@ -12,3 +12,16 @@ snapshots/**/config/.env
 snapshots/**/.env
 __pycache__/
 *.pyc
+# Python venv
+.venv/
+venv/
+ENV/
+env/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Editor/OS
+.vscode/
+.DS_Store
