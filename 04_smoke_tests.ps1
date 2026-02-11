@@ -142,7 +142,51 @@ if ($auditTail.ok -and $auditTail.data) {
 
 $policyAuditOk = $metrics.ok -and $policyOk -and $auditOk
 
-if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk -and $policyAuditOk) {
+Write-Host "== SMOKE: Scheduler / Watchdog ==" -ForegroundColor Cyan
+$schedJobs = Hit "/scheduler/jobs"
+if ($schedJobs.ok) {
+  Write-Host "GET /scheduler/jobs OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /scheduler/jobs FAIL: $($schedJobs.err)" -ForegroundColor Red
+}
+
+$runAt = (Get-Date).AddSeconds(2).ToUniversalTime().ToString("o")
+$createBody = @{
+  name = "smoke_update_check"
+  kind = "update_check"
+  payload = @{ required_packages = @("fastapi") }
+  run_at = $runAt
+}
+$create = HitPost "/scheduler/job/create" $createBody
+$jobId = $null
+if ($create.ok -and $create.data.ok -and $create.data.data) {
+  Write-Host "POST /scheduler/job/create OK (job_id=$($create.data.data.id))" -ForegroundColor Green
+  $jobId = $create.data.data.id
+} else {
+  Write-Host "POST /scheduler/job/create FAIL: $($create.err)" -ForegroundColor Red
+}
+
+Start-Sleep -Seconds 5
+
+if ($jobId) {
+  $runs = Hit "/scheduler/job/runs?job_id=$jobId"
+  if ($runs.ok -and $runs.data.data) {
+    Write-Host "GET /scheduler/job/runs?job_id=... OK (runs: $($runs.data.data.Count))" -ForegroundColor Green
+  } else {
+    Write-Host "GET /scheduler/job/runs FAIL: $($runs.err)" -ForegroundColor Red
+  }
+}
+
+$watchdog = Hit "/watchdog/status"
+if ($watchdog.ok) {
+  Write-Host "GET /watchdog/status OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /watchdog/status FAIL: $($watchdog.err)" -ForegroundColor Red
+}
+
+$schedWatchdogOk = $schedJobs.ok -and $create.ok -and $watchdog.ok
+
+if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk) {
   Write-Host "SMOKE OK" -ForegroundColor Green
   exit 0
 } else {
