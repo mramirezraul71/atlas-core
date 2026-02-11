@@ -73,3 +73,24 @@ def modules():
             {"name": "telegram", "enabled": True},
         ]
     }
+from pydantic import BaseModel
+from typing import Any, Optional
+import time
+
+class IntentIn(BaseModel):
+    user: str = "raul"
+    text: str
+    meta: Optional[dict[str, Any]] = None
+
+@app.post("/intent")
+def intent(payload: IntentIn):
+    # Respuesta mínima (v1): eco + timestamp.
+    # Luego conectamos command_router/agent_router.
+    return {
+        "ok": True,
+        "received": payload.model_dump(),
+        "result": {
+            "message": "Intent recibido",
+            "ts": time.time(),
+        }
+    }
