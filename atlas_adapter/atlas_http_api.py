@@ -45,6 +45,11 @@ async def _lifespan(app):
         _executor = ThreadPoolExecutor(max_workers=2)
         start_scheduler(executor=_executor)
         start_watchdog()
+        try:
+            from modules.humanoid.ci import ensure_ci_jobs
+            ensure_ci_jobs()
+        except Exception:
+            pass
     yield
 
 
@@ -579,6 +584,90 @@ def agent_system_intel():
         }
         ms = int((time.perf_counter() - t0) * 1000)
         return _professional_resp(True, data, ms, None, resumen=f"System intel: {len(repeated)} errores repetidos, {len(bottlenecks)} cuellos")
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+# --- Continuous Improvement ---
+class AgentImproveBody(BaseModel):
+    scope: str = "all"  # repo | runtime | all
+    mode: str = "plan_only"  # plan_only | controlled | auto
+    depth: Optional[int] = 2
+    max_items: Optional[int] = None
+
+
+@app.post("/agent/improve")
+def agent_improve(body: AgentImproveBody):
+    """CI cycle: scan -> plan -> optional execute. scope=repo|runtime|all. mode=plan_only|controlled|auto. Timeout-safe."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.ci import run_improve
+        result = run_improve(
+            scope=body.scope or "all",
+            mode=body.mode or "plan_only",
+            depth=max(1, min(5, body.depth or 2)),
+            max_items=body.max_items,
+        )
+        ms = int((time.perf_counter() - t0) * 1000)
+        if not result.get("ok"):
+            return _std_resp(False, None, ms, result.get("error"))
+        data = result.get("data") or {}
+        return _professional_resp(
+            True,
+            {
+                "findings": data.get("findings", []),
+                "plan": data.get("plan", {}),
+                "approvals_required": data.get("approvals_required", []),
+                "auto_executed": data.get("auto_executed", []),
+                "artifacts": data.get("artifacts", []),
+                "report": data.get("report", {}),
+            },
+            ms,
+            None,
+            resumen=f"CI: {len(data.get('findings') or [])} findings, {len(data.get('approvals_required') or [])} pending approval",
+        )
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/agent/improve/status")
+def agent_improve_status():
+    """Last CI cycle: plan_id, timestamp, executed, pending. Links to memory/audit."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.ci import get_improve_status
+        data = get_improve_status()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class AgentImproveApplyBody(BaseModel):
+    plan_id: str = ""
+    approve: bool = False
+    items: Optional[list] = None  # item_ids to apply
+
+
+@app.post("/agent/improve/apply")
+def agent_improve_apply(body: AgentImproveApplyBody):
+    """Execute only approved items allowed by policy. plan_id must match last run."""
+    t0 = time.perf_counter()
+    if not body.approve:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "approve must be true")
+    try:
+        from modules.humanoid.ci import get_last_plan, execute_plan
+        plan = get_last_plan()
+        if not plan:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "no previous plan; run POST /agent/improve first")
+        if body.plan_id and plan.get("plan_id") != body.plan_id:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "plan_id does not match last cycle")
+        result = execute_plan(plan)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", True), {"executed": result.get("executed"), "errors": result.get("errors")}, ms, result.get("errors") and result["errors"][0] or None)
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))

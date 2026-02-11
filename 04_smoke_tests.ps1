@@ -327,7 +327,31 @@ if ($visionAnalyze.ok) {
   Write-Host "POST /vision/analyze FAIL: $($visionAnalyze.err)" -ForegroundColor Red
 }
 
-$agentScaffoldOk = $agentOk -and $scaffoldOk -and $scriptOk -and $depsOk -and $webOk -and $voiceOk -and $memOk -and $visionOk
+# CI improve (plan_only repo, must respond <15s)
+$improveBody = @{ scope = "repo"; mode = "plan_only"; depth = 2; max_items = 5 }
+$improveStart = Get-Date
+$improveResp = HitPost "/agent/improve" $improveBody
+$improveMs = ((Get-Date) - $improveStart).TotalMilliseconds
+if ($improveResp.ok -and $improveResp.data) {
+  if ($improveMs -lt 15000) {
+    Write-Host "POST /agent/improve (plan_only repo) OK in ${improveMs}ms (<15s)" -ForegroundColor Green
+    $improveOk = $true
+  } else {
+    Write-Host "POST /agent/improve OK but slow: ${improveMs}ms" -ForegroundColor Yellow
+    $improveOk = $true
+  }
+} else {
+  Write-Host "POST /agent/improve FAIL: $($improveResp.err)" -ForegroundColor Red
+  $improveOk = $false
+}
+$improveStatus = Hit "/agent/improve/status"
+if ($improveStatus.ok) {
+  Write-Host "GET /agent/improve/status OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /agent/improve/status FAIL: $($improveStatus.err)" -ForegroundColor Red
+}
+
+$agentScaffoldOk = $agentOk -and $scaffoldOk -and $scriptOk -and $depsOk -and $webOk -and $voiceOk -and $memOk -and $visionOk -and $improveOk
 
 if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk -and $agentScaffoldOk) {
   Write-Host "SMOKE OK" -ForegroundColor Green
