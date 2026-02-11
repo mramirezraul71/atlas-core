@@ -181,6 +181,77 @@ def run_goal(goal: str, mode: str = "plan_only", fast: bool = True) -> Dict[str,
     return {"ok": True, "plan": plan, "steps": steps_data, "task_id": task_id, "execution_log": execution_log, "artifacts": artifacts, "error": None, "ms": ms}
 
 
+def run_goal_with_plan(goal: str, steps_list: List[str], mode: str = "plan_only") -> Dict[str, Any]:
+    """Same as run_goal but use pre-computed steps (e.g. from multi-agent Executive). No _decompose."""
+    t0 = time.perf_counter()
+    task_id = new_task_id()
+    if not goal or not str(goal).strip():
+        ms = int((time.perf_counter() - t0) * 1000)
+        _audit("orchestrator", "run_goal_with_plan", False, {"task_id": task_id}, "empty goal", ms)
+        return {"ok": False, "plan": None, "steps": [], "task_id": task_id, "execution_log": [], "artifacts": [], "error": "empty goal", "ms": ms}
+    steps_data = [{"id": f"step_{i+1}", "description": s if isinstance(s, str) else str(s), "definition_of_done": None, "status": "pending"} for i, s in enumerate(steps_list or [])]
+    ok_plan, err_plan = validate_plan_structure({"goal": goal, "steps": [s.get("description") for s in steps_data]})
+    if not ok_plan and steps_data:
+        pass
+    elif not ok_plan:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "plan": None, "steps": steps_data, "task_id": task_id, "execution_log": [], "artifacts": [], "error": err_plan or "invalid steps", "ms": ms}
+    plan = {"goal": goal, "steps": steps_data, "raw_steps": steps_list or []}
+    execution_log = []
+    artifacts = []
+    thread_id = None
+    save_task(task_id, goal, plan, execution_log, "planned")
+    try:
+        from modules.humanoid.memory_engine import store_plan as mem_store_plan, ensure_thread
+        thread_id = ensure_thread(None, goal[:200])
+        mem_store_plan(goal, plan, task_id=task_id, thread_id=thread_id)
+    except Exception:
+        pass
+    if mode == "plan_only":
+        ms = int((time.perf_counter() - t0) * 1000)
+        _audit("orchestrator", "run_goal_with_plan", True, {"task_id": task_id, "mode": "plan_only"}, None, ms)
+        return {"ok": True, "plan": plan, "steps": steps_data, "task_id": task_id, "execution_log": [], "artifacts": [], "error": None, "ms": ms}
+    if mode == "execute_controlled":
+        ms = int((time.perf_counter() - t0) * 1000)
+        _audit("orchestrator", "run_goal_with_plan", True, {"task_id": task_id, "mode": "execute_controlled"}, None, ms)
+        return {"ok": True, "plan": plan, "steps": steps_data, "task_id": task_id, "execution_log": [], "artifacts": [], "error": None, "ms": ms, "message": "Ejecute cada paso vía POST /agent/step/execute con approve=true"}
+    for i, step in enumerate(steps_data):
+        desc = step.get("description", "")
+        if not validate_no_destructive(desc):
+            execution_log.append({"step_id": step.get("id"), "status": "skipped", "error": "destructive step blocked"})
+            continue
+        step_result = _execute_step_internal(step, task_id)
+        retries = 0
+        while step_result.get("status") != "success" and retries < 1:
+            revised_desc, _ = suggest_fix_for_failed_step(desc, step_result, goal)
+            step_result = _execute_step_internal({**step, "description": revised_desc}, task_id)
+            retries += 1
+        execution_log.append(step_result)
+        if step_result.get("artifacts"):
+            artifacts.extend(step_result["artifacts"])
+        try:
+            from modules.humanoid.memory_engine import store_run
+            store_run(task_id, step_result.get("step_id"), step_result.get("status") == "success", result=step_result.get("result"), error=step_result.get("error"))
+        except Exception:
+            pass
+    save_task(task_id, goal, plan, execution_log, "completed")
+    for art in artifacts:
+        try:
+            from modules.humanoid.memory_engine import store_artifact
+            store_artifact(task_id, None, "run_artifact", str(art)[:512])
+        except Exception:
+            pass
+    if thread_id:
+        try:
+            from modules.humanoid.memory_engine import add_summary
+            add_summary(thread_id, f"Goal: {goal[:100]}. Steps: {len(steps_data)}, completed: {len([e for e in execution_log if e.get('status') == 'success'])}.")
+        except Exception:
+            pass
+    ms = int((time.perf_counter() - t0) * 1000)
+    _audit("orchestrator", "run_goal_with_plan", True, {"task_id": task_id, "mode": "execute"}, None, ms)
+    return {"ok": True, "plan": plan, "steps": steps_data, "task_id": task_id, "execution_log": execution_log, "artifacts": artifacts, "error": None, "ms": ms}
+
+
 def _execute_step_internal(step: Dict[str, Any], task_id: str) -> Dict[str, Any]:
     """Execute one step (hands/shell). Returns {step_id, status, result?, error?, artifacts?}."""
     step_id = step.get("id", "")
