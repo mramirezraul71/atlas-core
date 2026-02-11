@@ -15,16 +15,26 @@ else:
     logging.warning("atlas.env not found at %s", ENV_PATH)
 
 (BASE_DIR / "logs").mkdir(parents=True, exist_ok=True)
+# Default DB paths so scheduler + memory work without atlas.env
+if not os.getenv("SCHED_DB_PATH"):
+    os.environ["SCHED_DB_PATH"] = str(BASE_DIR / "logs" / "atlas_sched.sqlite")
+if not os.getenv("ATLAS_MEMORY_DB_PATH"):
+    os.environ["ATLAS_MEMORY_DB_PATH"] = str(BASE_DIR / "logs" / "atlas_memory.sqlite")
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import importlib.util
 
 ATLAS_ROOT = Path(r"C:\ATLAS")
 ROUTER_PATH = ATLAS_ROOT / "modules" / "command_router.py"
+LOCAL_ROUTER = BASE_DIR / "modules" / "command_router.py"
 
 def load_handle():
-    spec = importlib.util.spec_from_file_location("command_router", str(ROUTER_PATH))
+    if ROUTER_PATH.exists():
+        spec = importlib.util.spec_from_file_location("command_router", str(ROUTER_PATH))
+    else:
+        spec = importlib.util.spec_from_file_location("command_router", str(LOCAL_ROUTER))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # type: ignore
     return mod.handle  # type: ignore
@@ -66,6 +76,30 @@ class Step(BaseModel):
 @app.get("/status")
 def status():
     return {"ok": True, "atlas": handle("/status")}
+
+
+@app.get("/version")
+def version():
+    """Release version, git sha, channel (stable/canary)."""
+    try:
+        from modules.humanoid.release import get_version_info
+        return {"ok": True, **get_version_info()}
+    except Exception as e:
+        return {"ok": False, "version": "0.0.0", "git_sha": "", "channel": "canary", "error": str(e)}
+
+
+# Dashboard UI (fallback: if UI fails, API still works)
+STATIC_DIR = BASE_DIR / "atlas_adapter" / "static"
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@app.get("/ui")
+def serve_ui():
+    """Minimal dashboard: status, version, metrics, jobs, update, approvals."""
+    path = STATIC_DIR / "dashboard.html"
+    if path.exists():
+        return FileResponse(path)
+    return {"ok": False, "error": "dashboard.html not found"}
 
 @app.get("/tools")
 def tools():
@@ -222,6 +256,45 @@ def audit_tail(n: int = 50, module: Optional[str] = None):
     if not entries and get_audit_logger()._db is None:
         return {"ok": True, "entries": [], "error": "AUDIT_DB_PATH not set"}
     return {"ok": True, "entries": entries, "error": None}
+
+
+@app.get("/support/bundle")
+def support_bundle():
+    """Export bundle: recent logs, metrics, last CI report. Returns {ok, data: {path}, ms, error}. Audited."""
+    t0 = time.perf_counter()
+    import zipfile
+    import json
+    from datetime import datetime, timezone
+    support_dir = BASE_DIR / "snapshots" / "support"
+    support_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    zip_path = support_dir / f"support_bundle_{ts}.zip"
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            try:
+                snap = get_metrics_store().snapshot()
+                zf.writestr("metrics.json", json.dumps(snap, indent=2))
+            except Exception:
+                zf.writestr("metrics.json", "{}")
+            log_file = BASE_DIR / "logs" / "atlas.log"
+            if log_file.exists():
+                try:
+                    tail = log_file.read_text(encoding="utf-8", errors="replace")[-50000:]
+                    zf.writestr("atlas_log_tail.txt", tail)
+                except Exception:
+                    pass
+            ci_dir = Path(os.getenv("CI_EXPORT_DIR", str(BASE_DIR / "snapshots" / "ci")))
+            if ci_dir.exists():
+                reports = sorted(ci_dir.glob("CI_REPORT_*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+                if reports:
+                    zf.write(reports[0], "ci_last_report.md")
+        get_audit_logger().log_event("support", "api", "bundle", True, int((time.perf_counter() - t0) * 1000), None, {"path": str(zip_path)}, None)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"path": str(zip_path)}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        get_audit_logger().log_event("support", "api", "bundle", False, ms, str(e), None, None)
+        return _std_resp(False, None, ms, str(e))
 
 
 # --- Scheduler / Watchdog / Healing ---
