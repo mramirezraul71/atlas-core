@@ -33,6 +33,15 @@ log = logging.getLogger("atlas.service")
 def main():
     host = os.getenv("SERVICE_BIND", "127.0.0.1")
     port = int(os.getenv("SERVICE_PORT", "8791") or 8791)
+    if os.getenv("DEPLOY_MODE", "").strip().lower() == "bluegreen":
+        state_file = REPO_ROOT / "logs" / "deploy_state.json"
+        if state_file.exists():
+            try:
+                import json
+                state = json.loads(state_file.read_text(encoding="utf-8"))
+                port = int(state.get("active_port", port))
+            except Exception:
+                pass
     app_import = os.getenv("SERVICE_APP_IMPORT", "atlas_adapter.atlas_http_api:app")
     log.info("Starting ATLAS service on %s:%s (app=%s)", host, port, app_import)
     import uvicorn
