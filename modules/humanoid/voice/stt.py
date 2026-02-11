@@ -13,19 +13,23 @@ def _check_deps() -> List[str]:
     if _missing and _missing != ["unknown"]:
         return _missing
     try:
-        import faster_whisper
+        import speech_recognition as sr
         _missing = []
         return []
     except ImportError:
         try:
-            import whisper
+            import faster_whisper
             _missing = []
             return []
         except ImportError:
-            _missing = ["faster-whisper or openai-whisper"]
-            return _missing
-    _missing = ["faster-whisper or openai-whisper"]
-    return _missing
+            try:
+                import whisper
+                _missing = []
+                return []
+            except ImportError:
+                _missing = ["speech_recognition (pip install SpeechRecognition) o faster-whisper/whisper"]
+                return _missing
+    return []
 
 
 def is_available() -> bool:
@@ -37,7 +41,17 @@ def get_missing_deps() -> List[str]:
 
 
 def transcribe(audio_path: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Transcribe audio file. Stub: returns not_available if deps missing."""
+    """Transcribe audio file (WAV). Uses SpeechRecognition (Google by default) or faster_whisper if available."""
     if not is_available():
         return {"ok": False, "text": "", "error": "STT not available", "missing_deps": get_missing_deps()}
-    return {"ok": False, "text": "", "error": "transcribe not implemented (stub)"}
+    try:
+        import speech_recognition as sr
+        r = sr.Recognizer()
+        with sr.AudioFile(audio_path) as source:
+            audio = r.record(source)
+        lang = (options or {}).get("language", "es-ES")
+        text = r.recognize_google(audio, language=lang)
+        return {"ok": True, "text": (text or "").strip(), "error": None}
+    except Exception as e:
+        _log.exception("STT transcribe failed")
+        return {"ok": False, "text": "", "error": str(e)}
