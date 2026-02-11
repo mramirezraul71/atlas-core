@@ -10,7 +10,7 @@ if (!(Test-Path $venvAct)) { Write-Error "No existe venv. Ejecuta 01_setup_venv.
 & $venvAct
 
 # Mínimos para que la API arranque
-python -m pip install -U fastapi uvicorn[standard] requests python-dotenv
+python -m pip install -U fastapi uvicorn[standard] requests python-dotenv httpx
 
 # requirements.txt si existe
 $req = Join-Path $RepoPath "requirements.txt"
