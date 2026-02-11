@@ -118,11 +118,26 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
 @app.get("/ui")
 def serve_ui():
-    """Minimal dashboard: status, version, metrics, jobs, update, approvals."""
+    """Dashboard: estado, versión, salud, métricas, programador, actualización, despliegue, aprobaciones e interacción con el robot."""
     path = STATIC_DIR / "dashboard.html"
     if path.exists():
         return FileResponse(path)
     return {"ok": False, "error": "dashboard.html not found"}
+
+
+@app.get("/ui/lang")
+def ui_lang(locale: str = "es"):
+    """Cadenas i18n para el dashboard (es | en)."""
+    try:
+        from modules.humanoid.config import SUPPORTED_LOCALES
+        from modules.humanoid.config.i18n import get_all_strings
+        loc = locale.strip().lower() if locale else "es"
+        if loc not in SUPPORTED_LOCALES:
+            loc = "es"
+        return {"ok": True, "locale": loc, "strings": get_all_strings(loc)}
+    except Exception as e:
+        return {"ok": False, "locale": "es", "strings": {}, "error": str(e)}
+
 
 @app.get("/tools")
 def tools():
@@ -1036,6 +1051,76 @@ def voice_status_endpoint():
     try:
         from modules.humanoid.voice import voice_status
         data = voice_status()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class VoiceTranscribeBody(BaseModel):
+    audio_base64: Optional[str] = None
+    language: Optional[str] = "es-ES"
+
+
+@app.post("/voice/transcribe")
+def voice_transcribe_endpoint(body: VoiceTranscribeBody):
+    """Transcribe audio (WAV en base64). Devuelve { ok, data: { text }, ms, error }."""
+    t0 = time.perf_counter()
+    try:
+        import base64
+        import tempfile
+        from pathlib import Path
+        from modules.humanoid.voice.stt import transcribe, is_available
+        if not body.audio_base64:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "audio_base64 requerido")
+        if not is_available():
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "STT no disponible")
+        raw = base64.b64decode(body.audio_base64)
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(raw)
+            path = f.name
+        try:
+            result = transcribe(path, options={"language": body.language or "es-ES"})
+            ms = int((time.perf_counter() - t0) * 1000)
+            return _std_resp(result.get("ok", False), {"text": result.get("text", "")}, ms, result.get("error"))
+        finally:
+            Path(path).unlink(missing_ok=True)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class FaceCheckBody(BaseModel):
+    image_base64: Optional[str] = None
+
+
+@app.post("/face/check")
+def face_check_endpoint(body: FaceCheckBody):
+    """Detección de rostro en imagen (PNG/JPEG en base64). Devuelve { ok, data: { faces_detected, message }, ms, error }."""
+    t0 = time.perf_counter()
+    try:
+        import base64
+        from modules.humanoid.face import face_check_image
+        if not body.image_base64:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "image_base64 requerido")
+        raw = base64.b64decode(body.image_base64)
+        result = face_check_image(raw)
+        ms = int((time.perf_counter() - t0) * 1000)
+        data = {"faces_detected": result.get("faces_detected", 0), "message": result.get("message", ""), "count": result.get("count", 0)}
+        return _std_resp(result.get("ok", False), data, ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/face/status")
+def face_status_endpoint():
+    """Estado del módulo de reconocimiento facial."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.face.detector import is_available, _check_deps
+        data = {"available": is_available(), "missing_deps": _check_deps()}
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
     except Exception as e:

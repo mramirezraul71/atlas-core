@@ -32,7 +32,31 @@ def get_missing_deps() -> List[str]:
 
 
 def speak(text: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Speak text. Stub: returns not_available if deps missing."""
+    """Speak text using pyttsx3. Runs in thread to avoid blocking."""
     if not is_available():
         return {"ok": False, "error": "TTS not available", "missing_deps": get_missing_deps()}
-    return {"ok": False, "error": "speak not implemented (stub)"}
+    if not (text or "").strip():
+        return {"ok": True, "message": "empty text"}
+    try:
+        import pyttsx3
+        import threading
+
+        def _run():
+            engine = pyttsx3.init()
+            try:
+                engine.setProperty("rate", 150)
+                engine.say((text or "").strip())
+                engine.runAndWait()
+            finally:
+                try:
+                    engine.stop()
+                except Exception:
+                    pass
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        thread.join(timeout=30)
+        return {"ok": True, "message": "speaking"}
+    except Exception as e:
+        _log.exception("TTS speak failed")
+        return {"ok": False, "error": str(e)}

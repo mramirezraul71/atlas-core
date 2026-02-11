@@ -5,120 +5,547 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ATLAS Dashboard</title>
   <style>
-    :root { --bg: #0f0f12; --card: #1a1a20; --text: #e4e4e7; --muted: #71717a; --accent: #3b82f6; --green: #22c55e; --red: #ef4444; }
+    :root {
+      /* Base oscuro con toques morados */
+      --bg: #0d0c12;
+      --bg-elevated: #14121b;
+      --card: #16141f;
+      --card-border: rgba(139, 92, 246, 0.12);
+      --text: #e8e6ed;
+      --muted: #78748a;
+      /* Acento principal: morado/violeta */
+      --accent: #8b5cf6;
+      --accent-hover: #a78bfa;
+      --accent-muted: rgba(139, 92, 246, 0.2);
+      --purple: #8b5cf6;
+      --purple-light: #a78bfa;
+      --purple-dark: #6d28d9;
+      /* Estado */
+      --green: #22c55e;
+      --red: #ef4444;
+      --amber: #eab308;
+    }
     * { box-sizing: border-box; }
-    body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; }
-    .container { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
-    h1 { font-size: 1.5rem; margin: 0 0 1rem; color: var(--text); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
-    .card { background: var(--card); border-radius: 8px; padding: 1rem; border: 1px solid rgba(255,255,255,.06); }
-    .card h2 { font-size: .875rem; margin: 0 0 .5rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
-    .card .value { font-size: 1rem; word-break: break-all; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      background-image: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(139, 92, 246, 0.08), transparent);
+    }
+    .container { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--card-border);
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin: 0;
+      font-weight: 600;
+      background: linear-gradient(135deg, var(--text) 0%, var(--purple-light) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header-actions { display: flex; align-items: center; gap: .75rem; }
+    .last-update { font-size: .75rem; color: var(--muted); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 1.1rem;
+      border: 1px solid var(--card-border);
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .card:hover {
+      border-color: rgba(139, 92, 246, 0.25);
+      box-shadow: 0 4px 12px rgba(139, 92, 246, 0.08);
+    }
+    .card h2 {
+      font-size: .75rem;
+      margin: 0 0 .5rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      font-weight: 600;
+    }
+    .card h2::after {
+      content: '';
+      display: inline-block;
+      width: 3px;
+      height: 10px;
+      background: var(--purple);
+      border-radius: 2px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .card .value { font-size: .95rem; word-break: break-word; line-height: 1.4; }
     .card.loading .value { color: var(--muted); }
     .card.error .value { color: var(--red); }
     .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-top: .5rem; }
-    button { background: var(--accent); color: #fff; border: none; padding: .4rem .75rem; border-radius: 6px; cursor: pointer; font-size: .875rem; }
-    button:hover { filter: brightness(1.1); }
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: .4rem .75rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: .875rem;
+      font-weight: 500;
+      transition: background .2s, transform .1s;
+    }
+    button:hover { background: var(--accent-hover); }
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
     button.danger { background: var(--red); }
+    button.danger:hover { filter: brightness(1.1); }
+    button.secondary {
+      background: var(--accent-muted);
+      color: var(--purple-light);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+    }
+    button.secondary:hover {
+      background: rgba(139, 92, 246, 0.3);
+      border-color: var(--purple);
+    }
     button.small { padding: .25rem .5rem; font-size: .75rem; }
-    .badge { display: inline-block; padding: .15rem .4rem; border-radius: 4px; font-size: .75rem; }
-    .badge.ok { background: rgba(34,197,94,.2); color: var(--green); }
-    .badge.pending { background: rgba(234,179,8,.2); color: #eab308; }
+    .badge { display: inline-block; padding: .2rem .45rem; border-radius: 4px; font-size: .75rem; font-weight: 500; }
+    .badge.ok { background: rgba(34,197,94,.25); color: var(--green); }
+    .badge.warn { background: rgba(234,179,8,.25); color: var(--amber); }
+    .badge.err { background: rgba(239,68,68,.25); color: var(--red); }
+    .score-bar {
+      height: 6px;
+      background: var(--bg-elevated);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: .4rem;
+      max-width: 120px;
+    }
+    #health-bar-fill { transition: width .3s ease, background .2s; }
     ul { margin: 0; padding-left: 1.2rem; font-size: .875rem; }
     #approvals-list li { margin-bottom: .35rem; }
+    .metrics-list { font-size: .8rem; color: var(--muted); margin-top: .3rem; }
+    .metrics-list span { display: block; }
+    /* Interacción robot */
+    .robot-section { margin-top: 1.5rem; }
+    .robot-section .card { padding: 1.25rem; }
+    .robot-section h2 { margin-bottom: .75rem; }
+    .robot-task-type { margin-bottom: .75rem; }
+    .robot-task-type label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: .35rem; }
+    .robot-task-type select {
+      width: 100%;
+      max-width: 320px;
+      padding: .5rem;
+      border-radius: 8px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      font-size: .9rem;
+    }
+    .robot-task-type select:focus {
+      outline: none;
+      border-color: var(--purple);
+      box-shadow: 0 0 0 2px var(--accent-muted);
+    }
+    .robot-task-help { font-size: .75rem; color: var(--muted); margin-top: .25rem; margin-bottom: .5rem; }
+    .robot-input {
+      width: 100%;
+      min-height: 80px;
+      padding: .75rem;
+      border-radius: 8px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      font-size: .9rem;
+      resize: vertical;
+      font-family: inherit;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .robot-input:focus {
+      outline: none;
+      border-color: var(--purple);
+      box-shadow: 0 0 0 2px var(--accent-muted);
+    }
+    .robot-input::placeholder { color: var(--muted); }
+    .robot-actions { margin-top: .75rem; display: flex; gap: .5rem; align-items: center; }
+    .robot-response {
+      margin-top: 1rem;
+      padding: .75rem;
+      border-radius: 8px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--card-border);
+      font-size: .85rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .robot-response.empty { color: var(--muted); }
+    .robot-response.error { border-color: var(--red); color: var(--red); }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>ATLAS Dashboard</h1>
-    <div class="grid">
-      <div class="card" id="status-card"><h2>Status</h2><div class="value">—</div></div>
-      <div class="card" id="version-card"><h2>Version</h2><div class="value">—</div></div>
-      <div class="card" id="metrics-card"><h2>Metrics</h2><div class="value">—</div></div>
-      <div class="card" id="scheduler-card"><h2>Scheduler</h2><div class="value">—</div><div class="row"></div></div>
-      <div class="card" id="update-card"><h2>Update</h2><div class="value">—</div><div class="row"><button class="small" onclick="updateCheck()">Check</button></div></div>
-      <div class="card" id="approvals-card"><h2>Approvals</h2><div class="value"><ul id="approvals-list"></ul></div></div>
+    <div class="header">
+      <h1>ATLAS Dashboard</h1>
+      <div class="header-actions">
+        <span class="last-update" id="last-update">—</span>
+        <button class="secondary" id="btn-refresh" onclick="refreshAll()">Actualizar</button>
+      </div>
     </div>
+    <div class="grid">
+      <div class="card" id="status-card"><h2>Estado</h2><div class="value">—</div></div>
+      <div class="card" id="version-card"><h2>Versión</h2><div class="value">—</div></div>
+      <div class="card" id="health-card"><h2>Salud</h2><div class="value">—</div><div class="score-bar"><div id="health-bar-fill" style="width:0%;height:100%;background:var(--muted);border-radius:3px"></div></div></div>
+      <div class="card" id="metrics-card"><h2>Métricas</h2><div class="value">—</div><div class="metrics-list" id="metrics-detail"></div></div>
+      <div class="card" id="scheduler-card"><h2>Programador</h2><div class="value">—</div><div class="row"></div></div>
+      <div class="card" id="update-card"><h2>Actualización</h2><div class="value">—</div><div class="row"><button class="small" onclick="updateCheck()">Comprobar</button></div></div>
+      <div class="card" id="deploy-card"><h2>Despliegue</h2><div class="value">—</div><div class="row"></div></div>
+      <div class="card" id="approvals-card"><h2>Aprobaciones</h2><div class="value"><ul id="approvals-list"></ul></div></div>
+    </div>
+
+    <section class="robot-section">
+      <div class="card">
+        <h2>Interactuar con ATLAS</h2>
+        <p class="robot-task-help" id="robot-task-help">Comando directo: /status, /doctor, /modules. Sin IA.</p>
+        <div class="robot-task-type">
+          <label for="robot-task-type">Envergadura de la tarea</label>
+          <select id="robot-task-type" onchange="updateTaskHelp()">
+            <option value="quick">Rápida (comando)</option>
+            <option value="medium">Media (IA plan)</option>
+            <option value="full">Compleja (IA plan + ejecución)</option>
+          </select>
+        </div>
+        <textarea id="robot-input" class="robot-input" placeholder="Escribe un comando (ej. /status) o un objetivo para la IA…"></textarea>
+        <div class="robot-actions">
+          <button id="robot-send" onclick="sendToRobot()">Enviar</button>
+          <span class="last-update" id="robot-status"></span>
+        </div>
+        <div class="robot-actions" style="margin-top:0.5rem;">
+          <button type="button" class="small secondary" id="btn-voice-mic" onclick="startVoiceRecognition()">🎤 Hablar por voz</button>
+          <button type="button" class="small secondary" id="btn-voice-play" onclick="playResponseWithVoice()">🔊 Reproducir respuesta por PC</button>
+        </div>
+        <div class="robot-response empty" id="robot-response">La respuesta aparecerá aquí.</div>
+      </div>
+    </section>
+
+    <section class="robot-section">
+      <div class="card">
+        <h2>Voz y rostro</h2>
+        <p class="robot-task-help">Reconocimiento de voz (micrófono) y detección de rostro (cámara).</p>
+        <div class="robot-actions">
+          <button type="button" class="small" id="btn-face-check" onclick="checkFace()">📷 Verificar rostro (cámara)</button>
+          <span class="last-update" id="face-result"></span>
+        </div>
+        <div id="face-video-container" style="display:none; margin-top:0.5rem;">
+          <video id="face-video" autoplay playsinline width="320" height="240" style="border-radius:8px; background:#000;"></video>
+          <p style="font-size:.8rem; color:var(--muted); margin-top:.35rem;">Mira a la cámara y pulsa de nuevo para capturar.</p>
+        </div>
+      </div>
+    </section>
   </div>
   <script>
     const base = window.location.origin;
+    const TASK_HELP = {
+      quick: 'Comando directo: /status, /doctor, /modules. Sin IA.',
+      medium: 'La IA genera un plan; no ejecuta. Ideal para revisar pasos antes de ejecutar.',
+      full: 'Plan y ejecución con aprobación. Mayor uso de recursos. Para tareas complejas.'
+    };
     async function get(path) {
-      const r = await fetch(base + path, { headers: { 'Accept': 'application/json' } });
+      const r = await fetch(base + path, { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
       return r.ok ? r.json() : null;
     }
     async function post(path, body) {
       const r = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
       return r.ok ? r.json() : null;
     }
+    function setLastUpdate() {
+      document.getElementById('last-update').textContent = 'Última actualización: ' + new Date().toLocaleTimeString('es');
+    }
     function setCard(id, text, isError) {
       const card = document.getElementById(id);
+      if (!card) return;
       const val = card.querySelector('.value');
-      val.textContent = text;
+      if (val) val.textContent = text;
       card.classList.remove('loading', 'error');
       if (isError) card.classList.add('error');
     }
     function setCardJson(id, data) {
       const card = document.getElementById(id);
+      if (!card) return;
       const val = card.querySelector('.value');
       val.textContent = data ? (data.ok !== undefined ? (data.ok ? 'OK' : (data.error || 'Error')) : JSON.stringify(data).slice(0, 120)) : '—';
       card.classList.remove('loading', 'error');
       if (data && data.ok === false) card.classList.add('error');
     }
+    function updateTaskHelp() {
+      const sel = document.getElementById('robot-task-type');
+      const help = document.getElementById('robot-task-help');
+      if (help && sel) help.textContent = TASK_HELP[sel.value] || TASK_HELP.quick;
+    }
+    async function sendToRobot() {
+      const input = document.getElementById('robot-input');
+      const responseEl = document.getElementById('robot-response');
+      const statusEl = document.getElementById('robot-status');
+      const btn = document.getElementById('robot-send');
+      const taskType = document.getElementById('robot-task-type').value;
+      const text = (input && input.value || '').trim();
+      if (!text) {
+        responseEl.textContent = 'Escribe un comando o objetivo.';
+        responseEl.classList.add('error', 'empty');
+        return;
+      }
+      btn.disabled = true;
+      statusEl.textContent = 'Enviando…';
+      responseEl.classList.remove('error', 'empty');
+      responseEl.textContent = '…';
+      try {
+        let out;
+        if (taskType === 'quick') {
+          out = await post('/intent', { text: text });
+          let msg = '';
+          if (out && out.output !== undefined) msg = typeof out.output === 'string' ? out.output : JSON.stringify(out.output, null, 2);
+          else if (out && out.error) { msg = out.error; responseEl.classList.add('error'); }
+          else msg = out ? JSON.stringify(out, null, 2) : 'Sin respuesta';
+          responseEl.textContent = msg;
+          setLastResponseText(msg);
+        } else {
+          const mode = taskType === 'medium' ? 'plan_only' : 'controlled';
+          const depth = taskType === 'medium' ? 1 : 2;
+          out = await post('/agent/goal', { goal: text, mode: mode, depth: depth, fast: taskType === 'medium' });
+          let msg = '';
+          if (out && out.resumen) msg = out.resumen + (out.data ? '\n\n' + JSON.stringify(out.data, null, 2).slice(0, 2000) : '');
+          else if (out && out.error) { msg = out.error; responseEl.classList.add('error'); }
+          else msg = out ? JSON.stringify(out, null, 2).slice(0, 3000) : 'Sin respuesta';
+          responseEl.textContent = msg;
+          setLastResponseText(msg);
+        }
+      } catch (e) {
+        responseEl.textContent = 'Error: ' + (e.message || String(e));
+        responseEl.classList.add('error');
+      }
+      statusEl.textContent = '';
+      btn.disabled = false;
+    }
+
+    let lastResponseText = '';
+    function setLastResponseText(t) { lastResponseText = (t || '').trim(); }
+
+    function startVoiceRecognition() {
+      const btn = document.getElementById('btn-voice-mic');
+      const input = document.getElementById('robot-input');
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        alert('Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge.');
+        return;
+      }
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const rec = new SpeechRecognition();
+      rec.lang = 'es-ES';
+      rec.continuous = false;
+      rec.interimResults = false;
+      if (btn) { btn.disabled = true; btn.textContent = 'Escuchando…'; }
+      rec.onresult = function(e) {
+        const text = (e.results[0] && e.results[0][0]) ? e.results[0][0].transcript : '';
+        if (input) input.value = text;
+        if (btn) { btn.disabled = false; btn.textContent = '🎤 Hablar por voz'; }
+        if (text) sendToRobot();
+      };
+      rec.onerror = function() {
+        if (btn) { btn.disabled = false; btn.textContent = '🎤 Hablar por voz'; }
+      };
+      rec.onend = function() {
+        if (btn && btn.textContent === 'Escuchando…') { btn.disabled = false; btn.textContent = '🎤 Hablar por voz'; }
+      };
+      rec.start();
+    }
+
+    async function playResponseWithVoice() {
+      const text = lastResponseText || (document.getElementById('robot-response') && document.getElementById('robot-response').textContent) || '';
+      if (!text || text.startsWith('La respuesta') || text === '…') {
+        alert('No hay respuesta que reproducir. Envía un comando primero.');
+        return;
+      }
+      const short = text.slice(0, 500);
+      try {
+        const r = await post('/voice/speak', { text: short });
+        if (r && r.ok) return;
+        if (window.speechSynthesis && window.SpeechSynthesisUtterance) {
+          const u = new SpeechSynthesisUtterance(short);
+          u.lang = 'es-ES';
+          window.speechSynthesis.speak(u);
+        } else alert('TTS no disponible en el servidor. Instala pyttsx3.');
+      } catch (e) {
+        if (window.speechSynthesis && window.SpeechSynthesisUtterance) {
+          const u = new SpeechSynthesisUtterance(short);
+          u.lang = 'es-ES';
+          window.speechSynthesis.speak(u);
+        } else alert('Error: ' + (e.message || e));
+      }
+    }
+
+    let faceStream = null;
+    async function checkFace() {
+      const resultEl = document.getElementById('face-result');
+      const container = document.getElementById('face-video-container');
+      const video = document.getElementById('face-video');
+      const btn = document.getElementById('btn-face-check');
+      if (resultEl) resultEl.textContent = '…';
+      try {
+        if (!faceStream) {
+          faceStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 320, height: 240 } });
+          if (video) { video.srcObject = faceStream; video.style.display = 'block'; }
+          if (container) container.style.display = 'block';
+          if (btn) btn.textContent = '📷 Capturar y verificar';
+          if (resultEl) resultEl.textContent = 'Cámara encendida. Pulsa de nuevo para capturar.';
+          return;
+        }
+        if (!video || video.readyState < 2) {
+          if (resultEl) resultEl.textContent = 'Espera a que cargue el video.';
+          return;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        const dataUrl = canvas.toDataURL('image/png');
+        const base64 = dataUrl.split(',')[1];
+        const r = await post('/face/check', { image_base64: base64 });
+        if (r && r.ok && r.data) {
+          const n = r.data.faces_detected || r.data.count || 0;
+          if (resultEl) resultEl.textContent = n > 0 ? '✓ Rostro detectado (' + n + ')' : 'No se detectó rostro.';
+        } else {
+          if (resultEl) resultEl.textContent = 'Error: ' + (r && r.error ? r.error : 'sin respuesta');
+        }
+      } catch (e) {
+        if (resultEl) resultEl.textContent = 'Error: ' + (e.message || e);
+      }
+    }
+
     async function loadStatus() {
       const d = await get('/status');
       setCardJson('status-card', d);
     }
     async function loadVersion() {
       const d = await get('/version');
-      if (d && d.version) setCard('version-card', d.version + ' (' + (d.channel || '') + ') ' + (d.git_sha || ''));
+      if (d && d.ok !== false) setCard('version-card', (d.version || '—') + ' (' + (d.channel || '') + ')' + (d.git_sha ? ' ' + d.git_sha : ''));
       else setCard('version-card', '—', true);
+    }
+    async function loadHealth() {
+      const d = await get('/health');
+      const card = document.getElementById('health-card');
+      const val = card ? card.querySelector('.value') : null;
+      const bar = document.getElementById('health-bar-fill');
+      if (!d) {
+        if (val) val.textContent = '—';
+        if (bar) bar.style.width = '0%';
+        if (card) card.classList.add('error');
+        return;
+      }
+      const score = d.score != null ? d.score : 0;
+      if (val) val.textContent = score + '/100';
+      if (bar) {
+        bar.style.width = score + '%';
+        bar.style.background = score >= 80 ? 'var(--green)' : score >= 60 ? 'var(--amber)' : 'var(--red)';
+      }
+      card.classList.remove('error');
+      if (d.ok === false) card.classList.add('error');
     }
     async function loadMetrics() {
       const d = await get('/metrics');
+      const detail = document.getElementById('metrics-detail');
       if (d && d.data) {
         const c = d.data.counters || {};
         const l = d.data.latencies || {};
-        setCard('metrics-card', 'Paths: ' + Object.keys(l).length + ' | Counters: ' + Object.keys(c).length);
-      } else setCard('metrics-card', '—');
+        const keys = Object.keys(c);
+        const top = keys.slice(0, 6).map(k => k + ': ' + c[k]).join(' · ');
+        setCard('metrics-card', (keys.length ? 'Contadores: ' + keys.length : '—') + (Object.keys(l).length ? ' · Latencias: ' + Object.keys(l).length : ''));
+        if (detail && top) detail.innerHTML = '<span>' + top + '</span>';
+        else if (detail) detail.innerHTML = '';
+      } else {
+        setCard('metrics-card', '—');
+        if (detail) detail.innerHTML = '';
+      }
     }
     async function loadScheduler() {
       const d = await get('/scheduler/jobs');
       const jobs = (d && d.data) ? (Array.isArray(d.data) ? d.data : []) : [];
       const card = document.getElementById('scheduler-card');
-      card.querySelector('.value').textContent = jobs.length + ' job(s)';
-      const row = card.querySelector('.row');
-      row.innerHTML = '';
+      if (card) {
+        const val = card.querySelector('.value');
+        if (val) val.textContent = jobs.length + ' trabajo(s)';
+      }
     }
     async function loadUpdate() {
       const d = await get('/update/status');
       if (d && d.data) {
         const has = d.data.has_update;
-        setCard('update-card', (d.data.branch || '') + ' | update: ' + (has ? 'Yes' : 'No'));
+        const branch = d.data.branch || '—';
+        setCard('update-card', branch + ' · actualización: ' + (has ? 'Sí' : 'No'));
       } else setCard('update-card', '—');
     }
+    async function loadDeploy() {
+      const d = await get('/deploy/status');
+      if (d && d.data) {
+        const x = d.data;
+        const mode = x.mode || 'single';
+        const port = x.active_port != null ? x.active_port : '—';
+        const score = x.health_score != null ? x.health_score : '—';
+        const canary = x.canary_stats && x.canary_stats.enabled ? 'Canary ON' : 'Canary OFF';
+        setCard('deploy-card', 'modo: ' + mode + ' · puerto: ' + port + ' · salud: ' + score + ' · ' + canary);
+      } else setCard('deploy-card', '—');
+    }
     async function loadApprovals() {
-      const d = await get('/approvals/list?status=pending');
+      const d = await get('/approvals/list');
       const list = document.getElementById('approvals-list');
       const items = (d && d.data && Array.isArray(d.data)) ? d.data : [];
-      list.innerHTML = items.length ? items.map(a => '<li>' + a.id + ' ' + a.action + ' <button class="small" onclick="approve(\'' + a.id + '\')">Approve</button> <button class="small danger" onclick="reject(\'' + a.id + '\')">Reject</button></li>').join('') : '<li>None</li>';
+      list.innerHTML = items.length
+        ? items.map(a => '<li>' + a.id + ' ' + (a.action || '') + ' <button class="small" onclick="approve(\'' + a.id + '\')">Aprobar</button> <button class="small danger" onclick="reject(\'' + a.id + '\')">Rechazar</button></li>').join('')
+        : '<li>Ninguno</li>';
     }
     async function updateCheck() {
       await post('/update/check');
       loadUpdate();
     }
     async function approve(id) {
-      await post('/approvals/approve', { id, approve: true });
+      await post('/approvals/approve', { id: id });
       loadApprovals();
     }
     async function reject(id) {
-      await post('/approvals/reject', { id });
+      await post('/approvals/reject', { id: id });
       loadApprovals();
     }
-    async function init() {
-      await Promise.all([loadStatus(), loadVersion(), loadMetrics(), loadScheduler(), loadUpdate(), loadApprovals()]);
+    async function refreshAll() {
+      const btn = document.getElementById('btn-refresh');
+      const lastEl = document.getElementById('last-update');
+      if (btn) { btn.disabled = true; btn.textContent = 'Actualizando…'; }
+      if (lastEl) lastEl.textContent = 'Actualizando…';
+      try {
+        await Promise.all([
+          loadStatus(),
+          loadVersion(),
+          loadHealth(),
+          loadMetrics(),
+          loadScheduler(),
+          loadUpdate(),
+          loadDeploy(),
+          loadApprovals()
+        ]);
+        setLastUpdate();
+      } catch (e) {
+        if (lastEl) lastEl.textContent = 'Error al actualizar';
+      }
+      if (btn) { btn.disabled = false; btn.textContent = 'Actualizar'; }
     }
-    init();
-    setInterval(init, 30000);
+    refreshAll();
+    setInterval(refreshAll, 30000);
   </script>
 </body>
 </html>
