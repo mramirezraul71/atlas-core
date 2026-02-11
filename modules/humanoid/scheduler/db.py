@@ -170,13 +170,19 @@ class SchedulerDB:
         ]
 
     def _row_to_job(self, r: tuple) -> Dict[str, Any]:
-        # id name kind payload_json run_at interval_seconds enabled status retries max_retries backoff_seconds lease_until last_error last_run_ts next_run_ts created_ts updated_ts (17 cols)
+        # 17 cols: id name kind payload_json run_at interval_seconds enabled status retries max_retries backoff_seconds lease_until last_error last_run_ts next_run_ts created_ts updated_ts
         n = len(r)
+        if n >= 17:
+            created_ts, updated_ts = r[15], r[16]
+            lease_until, last_error, last_run_ts, next_run_ts = r[11], r[12], r[13], r[14]
+        else:
+            lease_until = None
+            last_error, last_run_ts, next_run_ts = (r[11], r[12], r[13]) if n > 13 else (None, None, None)
+            created_ts, updated_ts = r[14], r[15] if n > 15 else r[14]
         return {
             "id": r[0], "name": r[1], "kind": r[2], "payload": json.loads(r[3]) if r[3] else {},
             "run_at": r[4], "interval_seconds": r[5], "enabled": r[6], "status": r[7],
             "retries": r[8], "max_retries": r[9], "backoff_seconds": r[10],
-            "lease_until": r[11] if n > 11 else None,
-            "last_error": r[12] if n > 12 else None, "last_run_ts": r[13] if n > 13 else None, "next_run_ts": r[14] if n > 14 else None,
-            "created_ts": r[15] if n > 15 else r[14], "updated_ts": r[16] if n > 16 else r[15],
+            "lease_until": lease_until, "last_error": last_error, "last_run_ts": last_run_ts, "next_run_ts": next_run_ts,
+            "created_ts": created_ts, "updated_ts": updated_ts,
         }

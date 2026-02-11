@@ -29,6 +29,8 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_shell_command(payload)
         elif kind == "llm_plan":
             out = _run_llm_plan(payload)
+        elif kind == "system_update":
+            out = _run_system_update(payload)
         else:
             out = {"ok": True, "result": "no-op", "kind": kind}
     except Exception as e:
@@ -95,3 +97,19 @@ def _run_llm_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
         return result
     except Exception as e:
         return {"ok": False, "steps": [], "error": str(e)}
+
+
+def _run_system_update(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run git-based update engine: check only (no apply) or full apply if policy allows. payload: {action: 'check'|'apply'}."""
+    action = (payload.get("action") or "check").strip().lower()
+    try:
+        from modules.humanoid.update.update_engine import apply as update_apply, check as update_check, update_enabled
+        if not update_enabled():
+            return {"ok": False, "error": "UPDATE_ENABLED=false"}
+        if action == "apply":
+            result = update_apply()
+        else:
+            result = update_check()
+        return result.get("data") or result if isinstance(result.get("data"), dict) else {"ok": result.get("ok"), "data": result, "error": result.get("error")}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
