@@ -65,3 +65,15 @@ def recall_by_thread(thread_id: str, limit: int = 50) -> Dict[str, Any]:
     for row in conn.execute("SELECT id, content, created_ts FROM summaries WHERE thread_id = ? ORDER BY created_ts DESC LIMIT ?", (thread_id, limit)).fetchall():
         summaries.append({"id": row[0], "content": row[1], "created_ts": row[2]})
     return {"thread_id": thread_id, "tasks": tasks, "runs": runs, "artifacts": artifacts, "summaries": summaries}
+
+
+# --- RECORDATORIO: Embeddings pendiente ---
+# TODO(memory): Implementar recall_by_similarity con vectores (Ollama/lib ligera).
+# Schema: embedding BLOB o tabla embeddings(source_kind, source_id, vector).
+# Mientras tanto: fallback a recall_by_query.
+
+
+def recall_by_similarity(query: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """Búsqueda semántica por embedding. Pendiente: usar vectores cuando exista dependencia.
+    Fallback actual: recall_by_query (FTS/LIKE)."""
+    return recall_by_query(query, limit=limit)
