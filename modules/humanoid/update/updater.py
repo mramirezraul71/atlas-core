@@ -1,7 +1,10 @@
-"""Safe updater: plan only. Apply controlled by env (UPDATE_APPLY=false = never run)."""
+"""Safe updater: plan only by default. Apply only if UPDATE_APPLY=true or request.force."""
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
+import time
 from typing import Any, Dict, List
 
 from .env_scanner import EnvScanner
@@ -18,7 +21,7 @@ def _env_str(name: str, default: str) -> str:
 
 
 class Updater:
-    """Produce an update plan. Does NOT run installs unless UPDATE_APPLY=true (not recommended)."""
+    """Plan → Verify → Apply. Apply runs only if UPDATE_APPLY=true or force=true."""
 
     def __init__(self) -> None:
         self.scanner = EnvScanner()
@@ -28,14 +31,45 @@ class Updater:
         self.snapshot_before = _env_bool("UPDATE_SNAPSHOT_BEFORE", True)
         self.allow_pip_upgrade = _env_bool("UPDATE_ALLOW_PIP_UPGRADE", False)
 
+    def snapshot_before_apply(self, cwd: str | None = None) -> Dict[str, Any]:
+        """Run git status + git diff (plan only, no commit). Returns {ok, status_output, diff_output}."""
+        cwd = cwd or os.getcwd()
+        out: Dict[str, Any] = {"ok": True, "status_output": "", "diff_output": "", "error": None}
+        try:
+            r = subprocess.run(
+                ["git", "status", "--short"],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            out["status_output"] = (r.stdout or r.stderr or "").strip()
+            if r.returncode != 0:
+                out["ok"] = False
+                out["error"] = out["status_output"]
+                return out
+            r2 = subprocess.run(
+                ["git", "diff", "--no-color"],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            out["diff_output"] = (r2.stdout or "").strip()[:8192]
+        except Exception as e:
+            out["ok"] = False
+            out["error"] = str(e)
+        return out
+
     def plan(self, required_packages: List[str]) -> Dict[str, Any]:
-        """Returns {ok, python_version, pip_list_ok, missing, install_plan, update_config, error}."""
+        """Returns {ok, python_version, pip_list_ok, missing, install_plan, plan_commands, update_config, error}."""
         out: Dict[str, Any] = {
             "ok": True,
             "python_version": None,
             "pip_list_ok": False,
             "missing": [],
             "install_plan": [],
+            "plan_commands": [],
             "update_config": {
                 "UPDATE_MODE": self.update_mode,
                 "UPDATE_APPLY": self.update_apply,
@@ -57,8 +91,54 @@ class Updater:
             ch = self.resolver.check(required_packages)
             out["missing"] = ch.get("missing", [])
             for p in out["missing"]:
-                out["install_plan"].append(f"pip install {p}")
+                cmd = f"pip install {p}"
+                out["install_plan"].append(cmd)
+                out["plan_commands"].append(cmd)
         else:
             out["error"] = pl.get("error")
             out["ok"] = False
+        return out
+
+    def apply(self, required_packages: List[str], force: bool = False) -> Dict[str, Any]:
+        """Run installs only if UPDATE_APPLY=true or force=true. Returns {ok, ms, error, applied_commands, snapshot}."""
+        t0 = time.perf_counter()
+        out: Dict[str, Any] = {
+            "ok": False,
+            "ms": 0,
+            "error": None,
+            "applied_commands": [],
+            "snapshot": None,
+        }
+        if not (self.update_apply or force):
+            out["error"] = "UPDATE_APPLY=false and force not set; refusing to run installs"
+            out["ms"] = round((time.perf_counter() - t0) * 1000)
+            return out
+        plan_result = self.plan(required_packages)
+        if not plan_result.get("ok"):
+            out["error"] = plan_result.get("error", "plan failed")
+            out["ms"] = round((time.perf_counter() - t0) * 1000)
+            return out
+        commands = plan_result.get("plan_commands", plan_result.get("install_plan", []))
+        if not commands:
+            out["ok"] = True
+            out["ms"] = round((time.perf_counter() - t0) * 1000)
+            return out
+        if self.snapshot_before:
+            out["snapshot"] = self.snapshot_before_apply()
+        for cmd in commands:
+            try:
+                r = subprocess.run(
+                    [sys.executable, "-m", "pip", "install", cmd.replace("pip install ", "").strip()],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                )
+                out["applied_commands"].append({"cmd": cmd, "returncode": r.returncode, "stderr": (r.stderr or "")[:500]})
+                if r.returncode != 0:
+                    out["error"] = out["error"] or (r.stderr or str(r.returncode))
+            except Exception as e:
+                out["applied_commands"].append({"cmd": cmd, "error": str(e)})
+                out["error"] = out["error"] or str(e)
+        out["ok"] = out["error"] is None
+        out["ms"] = round((time.perf_counter() - t0) * 1000)
         return out

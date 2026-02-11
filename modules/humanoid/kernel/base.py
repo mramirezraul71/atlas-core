@@ -9,6 +9,7 @@ class BaseModule(ABC):
     """Base for all humanoid submodules. Subclasses register with the kernel."""
 
     name: str = "base"
+    enabled: bool = True
 
     @abstractmethod
     def init(self) -> None:
@@ -19,9 +20,15 @@ class BaseModule(ABC):
         """Clean shutdown. Override if needed."""
         pass
 
+    def health(self) -> Dict[str, Any]:
+        """Report module health. Default uses health_check() if present."""
+        if hasattr(self, "health_check"):
+            return self.health_check()
+        return {"ok": True, "message": "ok", "details": {}}
+
     def info(self) -> Dict[str, Any]:
         """Metadata for status. Override to add fields."""
-        return {"module": self.name}
+        return {"module": self.name, "enabled": self.enabled}
 
 
 class HealthCheckMixin:
