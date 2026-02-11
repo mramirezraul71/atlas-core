@@ -63,3 +63,26 @@ class FileSystemController:
             return {"ok": True, "path": str(p), "error": None}
         except Exception as e:
             return {"ok": False, "path": "", "error": str(e)}
+
+    def write_text(self, path: str, content: str, encoding: str = "utf-8") -> Dict[str, Any]:
+        """Write file only under POLICY_ALLOWED_PATHS. Creates parent dirs if needed."""
+        try:
+            p = Path(path).resolve()
+            if not _path_allowed(p):
+                return {"ok": False, "error": "path not in POLICY_ALLOWED_PATHS"}
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding=encoding, errors="replace")
+            return {"ok": True, "path": str(p), "error": None}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def ensure_dir(self, path: str) -> Dict[str, Any]:
+        """Create directory (and parents) only under allowed paths."""
+        try:
+            p = Path(path).resolve()
+            if not _path_allowed(p):
+                return {"ok": False, "error": "path not in POLICY_ALLOWED_PATHS"}
+            p.mkdir(parents=True, exist_ok=True)
+            return {"ok": True, "path": str(p), "error": None}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
