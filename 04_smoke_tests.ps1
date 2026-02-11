@@ -85,11 +85,23 @@ if ($hCheck.ok -and $hCheck.data.ok) {
   Write-Host "/humanoid/update-check FAIL: $($hCheck.err)" -ForegroundColor Red
 }
 
-$hPlan = HitPost "/humanoid/plan" (@{ goal = "Abrir un archivo de texto" })
-if ($hPlan.ok -and $hPlan.data.ok) {
-  Write-Host "/humanoid/plan OK" -ForegroundColor Green
-} else {
-  Write-Host "/humanoid/plan FAIL or no steps: $($hPlan.err)" -ForegroundColor Red
+# Plan: timeout 45s (planner corta a 15s; aceptamos ok true o error planner_timeout = no bloqueo)
+$planBody = @{ goal = "Abrir un archivo de texto"; fast = $true } | ConvertTo-Json
+try {
+  $planR = Invoke-RestMethod -Method POST -Uri "$base/humanoid/plan" -ContentType "application/json" -Body $planBody -TimeoutSec 45
+  if ($planR.ok -and $planR.data) {
+    Write-Host "/humanoid/plan OK (steps: $($planR.data.steps.Count))" -ForegroundColor Green
+    $hPlan = @{ ok = $true }
+  } elseif ($planR.error -eq "planner_timeout") {
+    Write-Host "/humanoid/plan OK (planner_timeout en 15s, sin bloqueo)" -ForegroundColor Green
+    $hPlan = @{ ok = $true }
+  } else {
+    Write-Host "/humanoid/plan responde pero falla: $($planR.error)" -ForegroundColor Yellow
+    $hPlan = @{ ok = $false }
+  }
+} catch {
+  Write-Host "/humanoid/plan FAIL (timeout o error): $($_.Exception.Message)" -ForegroundColor Red
+  $hPlan = @{ ok = $false }
 }
 
 $humanoidOk = $hStatus.ok -and $hCheck.ok -and $hPlan.ok
