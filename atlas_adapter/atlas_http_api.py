@@ -1,10 +1,24 @@
 """ATLAS HTTP API adapter
 Expone /status /tools /execute usando el command_router.handle de C:\ATLAS\modules\command_router.py
 """
+import os
+from pathlib import Path
+
+# Cargar config ANTES de importar módulos que usan os.getenv (audit, policy, etc.)
+BASE_DIR = Path(__file__).resolve().parent.parent
+ENV_PATH = BASE_DIR / "config" / "atlas.env"
+if ENV_PATH.exists():
+    from dotenv import load_dotenv
+    load_dotenv(ENV_PATH)
+else:
+    import logging
+    logging.warning("atlas.env not found at %s", ENV_PATH)
+
+(BASE_DIR / "logs").mkdir(parents=True, exist_ok=True)
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 import importlib.util
-from pathlib import Path
 
 ATLAS_ROOT = Path(r"C:\ATLAS")
 ROUTER_PATH = ATLAS_ROOT / "modules" / "command_router.py"
@@ -195,4 +209,4 @@ def audit_tail(n: int = 50, module: Optional[str] = None):
     entries = get_audit_logger().tail(n=n, module=module)
     if not entries and get_audit_logger()._db is None:
         return {"ok": True, "entries": [], "error": "AUDIT_DB_PATH not set"}
-    return {"ok": True, "entries": entries}
+    return {"ok": True, "entries": entries, "error": None}
