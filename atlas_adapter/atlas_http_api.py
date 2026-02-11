@@ -18,6 +18,10 @@ def load_handle():
 handle = load_handle()
 app = FastAPI(title="ATLAS Adapter", version="1.0.0")
 
+# Metrics middleware: request count + latency per path
+from modules.humanoid.metrics import MetricsMiddleware
+app.add_middleware(MetricsMiddleware)
+
 class Step(BaseModel):
     tool: str
     args: dict = {}
@@ -155,3 +159,40 @@ def llm_endpoint(req: LLMRequest) -> LLMResponse:
 from modules.humanoid.api import router as humanoid_router
 
 app.include_router(humanoid_router)
+
+
+# --- Metrics / Policy / Audit endpoints ---
+from modules.humanoid.metrics import get_metrics_store
+from modules.humanoid.policy import ActorContext, get_policy_engine
+from modules.humanoid.audit import get_audit_logger
+
+
+@app.get("/metrics")
+def metrics():
+    """JSON metrics: counters and latencies per endpoint."""
+    return get_metrics_store().snapshot()
+
+
+class PolicyTestBody(BaseModel):
+    actor: str = "api"
+    role: str = "owner"
+    module: str = "hands"
+    action: str = "exec_command"
+    target: Optional[str] = None
+
+
+@app.post("/policy/test")
+def policy_test(body: PolicyTestBody):
+    """Test policy: {actor, role, module, action, target} -> {allow, reason}."""
+    ctx = ActorContext(actor=body.actor, role=body.role)
+    decision = get_policy_engine().can(ctx, body.module, body.action, body.target)
+    return {"allow": decision.allow, "reason": decision.reason, "details": decision.details}
+
+
+@app.get("/audit/tail")
+def audit_tail(n: int = 50, module: Optional[str] = None):
+    """Last n audit log entries, optional filter by module."""
+    entries = get_audit_logger().tail(n=n, module=module)
+    if not entries and get_audit_logger()._db is None:
+        return {"ok": True, "entries": [], "error": "AUDIT_DB_PATH not set"}
+    return {"ok": True, "entries": entries}
