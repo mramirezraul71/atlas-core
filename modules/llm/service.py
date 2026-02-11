@@ -8,6 +8,8 @@ from .ollama_client import OllamaClient
 from .schemas import LLMRequest, LLMResponse
 
 class LLMService:
+    """Orchestrates HybridRouter + OllamaClient for a single LLM request."""
+
     def __init__(self) -> None:
         self.settings = LLMSettings()
         self.router = HybridRouter(
@@ -22,6 +24,7 @@ class LLMService:
         )
 
     def run(self, req: LLMRequest) -> LLMResponse:
+        """Route prompt, call Ollama, return LLMResponse with ok, output, route, ms, meta."""
         t0 = time.perf_counter()
         try:
             decision = self.router.decide(req.prompt, forced=req.route)
