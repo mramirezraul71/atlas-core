@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 
 class TaskPlanner:
-    """Plan tasks using LLM. Requires BrainModule with run_llm."""
+    """Plan tasks using LLM. Requires BrainOrchestrator with run_llm."""
 
     def __init__(self, brain: Any = None) -> None:
         self._brain = brain
