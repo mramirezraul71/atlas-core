@@ -26,6 +26,9 @@ __pycache__/
 .vscode/
 .DS_Store
 
+# CI reportes generados
+snapshots/ci/
+
 # Audit DB (local)
 logs/*.sqlite
 # Task/orchestrator local state
