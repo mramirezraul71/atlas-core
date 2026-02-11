@@ -18,7 +18,6 @@ CREATE TABLE IF NOT EXISTS jobs (
     name TEXT NOT NULL,
     kind TEXT NOT NULL,
     payload_json TEXT,
-    cron TEXT,
     run_at TEXT,
     interval_seconds INTEGER,
     enabled INTEGER NOT NULL DEFAULT 1,
@@ -26,9 +25,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     retries INTEGER NOT NULL DEFAULT 0,
     max_retries INTEGER NOT NULL DEFAULT 3,
     backoff_seconds INTEGER NOT NULL DEFAULT 5,
+    lease_until TEXT,
+    last_error TEXT,
     last_run_ts TEXT,
     next_run_ts TEXT,
-    last_error TEXT,
     created_ts TEXT NOT NULL,
     updated_ts TEXT NOT NULL
 )
@@ -65,7 +65,17 @@ class SchedulerDB:
         self._connection.execute(JOBS_SCHEMA)
         self._connection.execute(RUNS_SCHEMA)
         self._connection.commit()
+        self._migrate_lease_column()
         return self._connection
+
+    def _migrate_lease_column(self) -> None:
+        """Add lease_until if missing (backward compat)."""
+        conn = self._connection
+        row = conn.execute("PRAGMA table_info(jobs)").fetchall()
+        names = [r[1] for r in row]
+        if "lease_until" not in names:
+            conn.execute("ALTER TABLE jobs ADD COLUMN lease_until TEXT")
+            conn.commit()
 
     def create_job(self, spec: "JobSpec") -> Dict[str, Any]:
         now = datetime.now(timezone.utc).isoformat()
@@ -74,10 +84,10 @@ class SchedulerDB:
         next_run = run_at or now
         conn = self._ensure()
         conn.execute(
-            """INSERT INTO jobs (id, name, kind, payload_json, cron, run_at, interval_seconds, enabled, status,
-               retries, max_retries, backoff_seconds, last_run_ts, next_run_ts, last_error, created_ts, updated_ts)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'queued', 0, ?, ?, NULL, ?, NULL, ?, ?)""",
-            (jid, spec.name, spec.kind, json.dumps(spec.payload or {}), None, spec.run_at, spec.interval_seconds,
+            """INSERT INTO jobs (id, name, kind, payload_json, run_at, interval_seconds, enabled, status,
+               retries, max_retries, backoff_seconds, lease_until, last_error, last_run_ts, next_run_ts, created_ts, updated_ts)
+               VALUES (?, ?, ?, ?, ?, ?, 1, 'queued', 0, ?, ?, NULL, NULL, NULL, ?, ?, ?)""",
+            (jid, spec.name, spec.kind, json.dumps(spec.payload or {}), spec.run_at, spec.interval_seconds,
              spec.max_retries, spec.backoff_seconds, next_run, now, now),
         )
         conn.commit()
@@ -99,17 +109,22 @@ class SchedulerDB:
         return [self._row_to_job(r) for r in rows]
 
     def due_jobs(self, now_iso: str, limit: int) -> List[Dict[str, Any]]:
+        """Jobs that are due: queued/failed with next_run_ts <= now, or running with expired lease."""
         conn = self._ensure()
         rows = conn.execute(
-            """SELECT * FROM jobs WHERE enabled = 1 AND status IN ('queued', 'failed')
-               AND next_run_ts <= ? ORDER BY next_run_ts LIMIT ?""",
-            (now_iso, limit),
+            """SELECT * FROM jobs WHERE enabled = 1 AND next_run_ts <= ?
+               AND (status IN ('queued', 'failed') OR (status = 'running' AND lease_until IS NOT NULL AND lease_until < ?))
+               ORDER BY next_run_ts LIMIT ?""",
+            (now_iso, now_iso, limit),
         ).fetchall()
         return [self._row_to_job(r) for r in rows]
 
-    def set_running(self, job_id: str) -> None:
+    def set_running(self, job_id: str, lease_until: Optional[str] = None) -> None:
         now = datetime.now(timezone.utc).isoformat()
-        self._ensure().execute("UPDATE jobs SET status = 'running', updated_ts = ? WHERE id = ?", (now, job_id))
+        if lease_until:
+            self._ensure().execute("UPDATE jobs SET status = 'running', lease_until = ?, updated_ts = ? WHERE id = ?", (lease_until, now, job_id))
+        else:
+            self._ensure().execute("UPDATE jobs SET status = 'running', updated_ts = ? WHERE id = ?", (now, job_id))
         self._ensure().commit()
 
     def set_finished(self, job_id: str, ok: bool, last_error: Optional[str], next_run_ts: Optional[str], retries: int) -> None:
@@ -117,7 +132,7 @@ class SchedulerDB:
         status = "success" if ok else "failed"
         conn = self._ensure()
         conn.execute(
-            "UPDATE jobs SET status = ?, last_run_ts = ?, next_run_ts = ?, last_error = ?, retries = ?, updated_ts = ? WHERE id = ?",
+            "UPDATE jobs SET status = ?, lease_until = NULL, last_run_ts = ?, next_run_ts = ?, last_error = ?, retries = ?, updated_ts = ? WHERE id = ?",
             (status, now, next_run_ts, last_error, retries, now, job_id),
         )
         conn.commit()
@@ -155,9 +170,13 @@ class SchedulerDB:
         ]
 
     def _row_to_job(self, r: tuple) -> Dict[str, Any]:
+        # id name kind payload_json run_at interval_seconds enabled status retries max_retries backoff_seconds lease_until last_error last_run_ts next_run_ts created_ts updated_ts (17 cols)
+        n = len(r)
         return {
             "id": r[0], "name": r[1], "kind": r[2], "payload": json.loads(r[3]) if r[3] else {},
-            "cron": r[4], "run_at": r[5], "interval_seconds": r[6], "enabled": r[7], "status": r[8],
-            "retries": r[9], "max_retries": r[10], "backoff_seconds": r[11], "last_run_ts": r[12],
-            "next_run_ts": r[13], "last_error": r[14], "created_ts": r[15], "updated_ts": r[16],
+            "run_at": r[4], "interval_seconds": r[5], "enabled": r[6], "status": r[7],
+            "retries": r[8], "max_retries": r[9], "backoff_seconds": r[10],
+            "lease_until": r[11] if n > 11 else None,
+            "last_error": r[12] if n > 12 else None, "last_run_ts": r[13] if n > 13 else None, "next_run_ts": r[14] if n > 14 else None,
+            "created_ts": r[15] if n > 15 else r[14], "updated_ts": r[16] if n > 16 else r[15],
         }
