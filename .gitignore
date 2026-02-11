@@ -1,4 +1,4 @@
-﻿.env
+.env
 *.env
 **/.env
 **/*.env
@@ -25,3 +25,6 @@ __pycache__/
 # Editor/OS
 .vscode/
 .DS_Store
+
+# Audit DB (local)
+logs/*.sqlite
