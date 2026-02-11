@@ -52,31 +52,20 @@ CREATE TABLE IF NOT EXISTS job_runs (
 class SchedulerDB:
     def __init__(self, path: Optional[str] = None) -> None:
         self._path = path or os.getenv("SCHED_DB_PATH")
-        self._conn: Optional[sqlite3.Connection] = None
-
-    def _conn(self) -> sqlite3.Connection:
-        if self._conn is not None:
-            return self._conn
-        if not self._path:
-            raise RuntimeError("SCHED_DB_PATH not set")
-        Path(self._path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self._path)
-        self._conn.execute(JOBS_SCHEMA)
-        self._conn.execute(RUNS_SCHEMA)
-        self._conn.commit()
-        return self._conn
+        self._connection: Optional[sqlite3.Connection] = None
 
     def _ensure(self) -> sqlite3.Connection:
-        if getattr(self, "_conn", None) is None or (hasattr(self, "_conn") and self._conn is None):
-            p = self._path or os.getenv("SCHED_DB_PATH")
-            if not p:
-                raise RuntimeError("SCHED_DB_PATH not set")
-            Path(p).parent.mkdir(parents=True, exist_ok=True)
-            self._conn = sqlite3.connect(p)
-            self._conn.execute(JOBS_SCHEMA)
-            self._conn.execute(RUNS_SCHEMA)
-            self._conn.commit()
-        return self._conn
+        if self._connection is not None:
+            return self._connection
+        p = self._path or os.getenv("SCHED_DB_PATH")
+        if not p:
+            raise RuntimeError("SCHED_DB_PATH not set")
+        Path(p).parent.mkdir(parents=True, exist_ok=True)
+        self._connection = sqlite3.connect(p)
+        self._connection.execute(JOBS_SCHEMA)
+        self._connection.execute(RUNS_SCHEMA)
+        self._connection.commit()
+        return self._connection
 
     def create_job(self, spec: "JobSpec") -> Dict[str, Any]:
         now = datetime.now(timezone.utc).isoformat()
