@@ -428,3 +428,230 @@ def healing_status_endpoint():
         return _std_resp(False, None, ms, str(e))
 
 
+# --- Agent / Scaffold / Scripts / Web / Voice / Deps ---
+
+class AgentGoalBody(BaseModel):
+    goal: str
+    mode: str = "plan_only"  # plan_only | execute
+    fast: Optional[bool] = True
+
+
+@app.post("/agent/goal")
+def agent_goal(body: AgentGoalBody):
+    """Run goal: plan_only or execute. Returns {ok, data: {plan, steps, task_id, execution_log?, artifacts?}, ms, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.orchestrator import run_goal
+        result = run_goal(body.goal, mode=body.mode or "plan_only", fast=body.fast if body.fast is not None else True)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), {k: v for k, v in result.items() if k not in ("ok", "error")}, ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class AgentStepBody(BaseModel):
+    task_id: str
+    step_id: str
+    approve: bool = False
+
+
+@app.post("/agent/step/execute")
+def agent_step_execute(body: AgentStepBody):
+    """Execute one step after approval. Returns {ok, data: {result, artifacts}, ms, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.orchestrator import execute_step
+        result = execute_step(body.task_id, body.step_id, approve=body.approve)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), {"result": result.get("result"), "artifacts": result.get("artifacts", [])}, ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class ScaffoldBody(BaseModel):
+    type: str = "fastapi"  # fastapi | pwa | flutter | node
+    name: str
+    options: Optional[dict] = None
+
+
+@app.post("/scaffold/app")
+def scaffold_app(body: ScaffoldBody):
+    """Generate app structure + RUNBOOK. Returns {ok, data: {tree, files_created, runbook_path}, ms, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.scaffolder import generate
+        result = generate(body.type, body.name, options=body.options or {})
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), {k: v for k, v in result.items() if k != "ok"}, ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class ScriptsGenerateBody(BaseModel):
+    kind: str = "powershell"  # powershell | python
+    purpose: str
+    options: Optional[dict] = None
+
+
+@app.post("/scripts/generate")
+def scripts_generate(body: ScriptsGenerateBody):
+    """Generate script. Returns {ok, data: {path, preview, how_to_run}, ms, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.scripts import generate_script
+        from modules.humanoid import get_humanoid_kernel
+        k = get_humanoid_kernel()
+        hands = k.registry.get("hands")
+        fs = getattr(hands, "fs", None) if hands else None
+        result = generate_script(body.kind, body.purpose, options=body.options or {}, fs_controller=fs)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), {"path": result.get("path"), "preview": result.get("preview"), "how_to_run": result.get("how_to_run"), "validated": result.get("validated")}, ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/web/session/start")
+def web_session_start():
+    """Start browser session (no-op if Playwright not installed). Returns {ok, data, ms, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.web import status as web_status
+        data = web_status()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class WebNavigateBody(BaseModel):
+    url: str
+
+
+@app.post("/web/navigate")
+def web_navigate(body: WebNavigateBody):
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.web import open_url
+        result = open_url(body.url or "")
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), result, ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/web/extract")
+def web_extract():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.web import extract_text
+        result = extract_text()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), result, ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/web/screenshot")
+def web_screenshot():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.web import screenshot
+        result = screenshot()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), result, ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/web/status")
+def web_status_endpoint():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.web import status as web_status
+        data = web_status()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class VoiceSpeakBody(BaseModel):
+    text: str
+
+
+@app.post("/voice/speak")
+def voice_speak_endpoint(body: VoiceSpeakBody):
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.voice import voice_speak
+        result = voice_speak(body.text or "")
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), result, ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/voice/listen")
+def voice_listen_endpoint():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.voice import voice_listen_stub
+        result = voice_listen_stub()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", True), result, ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/voice/status")
+def voice_status_endpoint():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.voice import voice_status
+        data = voice_status()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/deps/check")
+def deps_check_endpoint():
+    """Return missing_deps per module and suggested commands. No install."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.deps_checker import check_all
+        data = check_all()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(data.get("ok", True), data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/deps/check")
+def deps_check_get():
+    """GET variant of deps check."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.deps_checker import check_all
+        data = check_all()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(data.get("ok", True), data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+

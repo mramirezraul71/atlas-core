@@ -186,7 +186,75 @@ if ($watchdog.ok) {
 
 $schedWatchdogOk = $schedJobs.ok -and $create.ok -and $watchdog.ok
 
-if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk) {
+Write-Host "== SMOKE: Agent / Scaffold / Scripts / Deps / Web / Voice ==" -ForegroundColor Cyan
+$agentBody = @{ goal = "Listar archivos del directorio actual"; mode = "plan_only"; fast = $true }
+$agentStart = Get-Date
+$agentResp = HitPost "/agent/goal" $agentBody
+$agentMs = ((Get-Date) - $agentStart).TotalMilliseconds
+if ($agentResp.ok -and $agentResp.data.ok -and $agentResp.data.data) {
+  if ($agentMs -lt 15000) {
+    Write-Host "POST /agent/goal (plan_only) OK in ${agentMs}ms (<15s)" -ForegroundColor Green
+    $agentOk = $true
+  } else {
+    Write-Host "POST /agent/goal OK but slow: ${agentMs}ms" -ForegroundColor Yellow
+    $agentOk = $true
+  }
+} else {
+  Write-Host "POST /agent/goal FAIL: $($agentResp.err)" -ForegroundColor Red
+  $agentOk = $false
+}
+
+$scaffoldBody = @{ type = "fastapi"; name = "smoke_fastapi_minimal"; options = @{ subdir = "_generated" } }
+$scaffold = HitPost "/scaffold/app" $scaffoldBody
+if ($scaffold.ok -and $scaffold.data.ok -and $scaffold.data.data.files_created) {
+  Write-Host "POST /scaffold/app (fastapi minimal) OK" -ForegroundColor Green
+  $scaffoldOk = $true
+} else {
+  Write-Host "POST /scaffold/app FAIL: $($scaffold.err)" -ForegroundColor Red
+  $scaffoldOk = $false
+}
+
+$scriptBody = @{ kind = "powershell"; purpose = "smoke test script" }
+$scriptResp = HitPost "/scripts/generate" $scriptBody
+if ($scriptResp.ok -and $scriptResp.data) {
+  Write-Host "POST /scripts/generate OK" -ForegroundColor Green
+  $scriptOk = $true
+} else {
+  Write-Host "POST /scripts/generate FAIL: $($scriptResp.err)" -ForegroundColor Red
+  $scriptOk = $false
+}
+
+$depsResp = Hit "/deps/check"
+if ($depsResp.ok -and $depsResp.data) {
+  Write-Host "GET /deps/check OK (missing_deps reported)" -ForegroundColor Green
+  $depsOk = $true
+} else {
+  Write-Host "GET /deps/check FAIL: $($depsResp.err)" -ForegroundColor Red
+  $depsOk = $false
+}
+
+$webStatus = Hit "/web/status"
+if ($webStatus.ok) {
+  $en = if ($webStatus.data.data) { $webStatus.data.data.enabled } else { $null }
+  Write-Host "GET /web/status OK (enabled=$en)" -ForegroundColor Green
+  $webOk = $true
+} else {
+  Write-Host "GET /web/status FAIL: $($webStatus.err)" -ForegroundColor Red
+  $webOk = $false
+}
+
+$voiceStatus = Hit "/voice/status"
+if ($voiceStatus.ok) {
+  Write-Host "GET /voice/status OK" -ForegroundColor Green
+  $voiceOk = $true
+} else {
+  Write-Host "GET /voice/status FAIL: $($voiceStatus.err)" -ForegroundColor Red
+  $voiceOk = $false
+}
+
+$agentScaffoldOk = $agentOk -and $scaffoldOk -and $scriptOk -and $depsOk -and $webOk -and $voiceOk
+
+if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk -and $agentScaffoldOk) {
   Write-Host "SMOKE OK" -ForegroundColor Green
   exit 0
 } else {
