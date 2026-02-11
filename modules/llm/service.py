@@ -30,13 +30,16 @@ class LLMService:
             decision = self.router.decide(req.prompt, forced=req.route)
             model = req.model or self.settings.model_for_route(decision.route)
 
+            timeout_override = getattr(req, "timeout_override", None)
             data = self.client.generate(
                 model=model,
                 prompt=req.prompt,
                 system=req.system,
-                temperature=req.temperature or 0.2,
+                temperature=req.temperature if req.temperature is not None else 0.2,
                 top_p=req.top_p or 0.9,
                 stream=bool(req.stream),
+                max_tokens=req.max_tokens,
+                timeout_override=timeout_override,
             )
 
             output = data.get("response", "") or ""
