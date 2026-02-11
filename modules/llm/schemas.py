@@ -20,6 +20,7 @@ class LLMRequest(BaseModel):
     max_tokens: Optional[int] = None
     stream: Optional[bool] = False
     tools: Optional[List[Dict[str, Any]]] = None
+    timeout_override: Optional[int] = None  # seconds; if set, overrides client default for this request
 
 
 class LLMResponse(BaseModel):
