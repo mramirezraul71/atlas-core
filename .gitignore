@@ -10,3 +10,5 @@ snapshots/**/.env
 **/*.env
 snapshots/**/config/.env
 snapshots/**/.env
+__pycache__/
+*.pyc
