@@ -1,10 +1,13 @@
 param(
-  [Parameter(Mandatory=$true)][int]$Port
+  [Parameter(Mandatory=$false)][int]$Port = 8791
 )
 
 Write-Host "== Kill port $Port ==" -ForegroundColor Cyan
 $cons = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
-if (!$cons) { Write-Host "Puerto $Port ya está libre." -ForegroundColor Green; exit 0 }
+if (!$cons) {
+  Write-Host "Puerto $Port ya está libre." -ForegroundColor Green
+  exit 0
+}
 
 $targetPid = $cons[0].OwningProcess
 # No matar el proceso actual (esta sesión de PowerShell) para no cerrar la terminal
@@ -13,7 +16,7 @@ if ($targetPid -eq $PID) {
   Write-Host "Cierra uvicorn con Ctrl+C en la terminal donde corre, o ejecuta este script desde otra terminal." -ForegroundColor Yellow
   exit 2
 }
-Write-Host "Matando PID $targetPid usando puerto $Port" -ForegroundColor Yellow
+Write-Host "Killing process on port $Port..." -ForegroundColor Yellow
 Stop-Process -Id $targetPid -Force
 Start-Sleep -Milliseconds 500
 Write-Host "Listo." -ForegroundColor Green
