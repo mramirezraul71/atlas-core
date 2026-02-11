@@ -95,6 +95,12 @@ def run_goal(goal: str, mode: str = "plan_only", fast: bool = True) -> Dict[str,
     artifacts = []
 
     save_task(task_id, goal, plan, execution_log, "planned")
+    try:
+        from modules.humanoid.memory_engine import store_plan as mem_store_plan, ensure_thread
+        thread_id = ensure_thread(None, goal[:200])
+        mem_store_plan(goal, plan, task_id=task_id, thread_id=thread_id)
+    except Exception:
+        pass
 
     if mode == "plan_only":
         ms = int((time.perf_counter() - t0) * 1000)
@@ -107,13 +113,23 @@ def run_goal(goal: str, mode: str = "plan_only", fast: bool = True) -> Dict[str,
         if not validate_no_destructive(desc):
             execution_log.append({"step_id": step.get("id"), "status": "skipped", "error": "destructive step blocked"})
             continue
-        # Execute step via hands (shell) if it looks like a command
         step_result = _execute_step_internal(step, task_id)
         execution_log.append(step_result)
         if step_result.get("artifacts"):
             artifacts.extend(step_result["artifacts"])
+        try:
+            from modules.humanoid.memory_engine import store_run
+            store_run(task_id, step_result.get("step_id"), step_result.get("status") == "success", result=step_result.get("result"), error=step_result.get("error"))
+        except Exception:
+            pass
 
     save_task(task_id, goal, plan, execution_log, "completed")
+    for art in artifacts:
+        try:
+            from modules.humanoid.memory_engine import store_artifact
+            store_artifact(task_id, None, "run_artifact", str(art)[:512])
+        except Exception:
+            pass
     ms = int((time.perf_counter() - t0) * 1000)
     _audit("orchestrator", "run_goal", True, {"task_id": task_id, "mode": "execute", "steps": len(steps_data)}, None, ms)
     return {"ok": True, "plan": plan, "steps": steps_data, "task_id": task_id, "execution_log": execution_log, "artifacts": artifacts, "error": None, "ms": ms}
