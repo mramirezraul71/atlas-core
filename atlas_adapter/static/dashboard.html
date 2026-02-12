@@ -214,6 +214,26 @@
       <div class="card" id="approvals-card"><h2>Aprobaciones</h2><div class="value"><ul id="approvals-list"></ul></div></div>
     </div>
 
+    <section class="robot-section" id="owner-console-section">
+      <div class="card">
+        <h2>Owner Console</h2>
+        <p class="robot-task-help">Sesiones activas, aprobaciones pendientes/expiradas, emergencia, integridad de cadena.</p>
+        <div class="row" style="margin-bottom:0.75rem;">
+          <button class="small" id="owner-session-btn" onclick="ownerStartSession()">Iniciar sesión owner</button>
+          <span class="last-update" id="owner-session-msg"></span>
+          <button class="small secondary" onclick="loadOwnerStatus()">Actualizar</button>
+          <button class="small" id="owner-emergency-btn" onclick="ownerToggleEmergency()">Emergency: —</button>
+          <button class="small secondary" onclick="ownerVerifyChain()">Verificar cadena</button>
+        </div>
+        <div id="owner-sessions" class="value" style="font-size:.8rem; color:var(--muted);"></div>
+        <h3 style="font-size:.75rem; color:var(--muted); margin:.5rem 0 .25rem;">Pendientes / Expiradas</h3>
+        <div id="owner-pending-list" class="value" style="font-size:.8rem; max-height:120px; overflow-y:auto;"></div>
+        <div id="owner-expired-list" class="value" style="font-size:.8rem; max-height:80px; overflow-y:auto; color:var(--amber);"></div>
+        <h3 style="font-size:.75rem; color:var(--muted); margin:.5rem 0 .25rem;">Historial críticos</h3>
+        <div id="owner-critical-history" class="value" style="font-size:.8rem; max-height:140px; overflow-y:auto;"></div>
+      </div>
+    </section>
+
     <section class="robot-section" id="gateway-section" style="display:none;">
       <div class="card">
         <h2>Gateway — Stealth</h2>
@@ -298,6 +318,7 @@
   </div>
   <script>
     const base = window.location.origin;
+    let ownerSessionToken = null;
     const TASK_HELP = {
       quick: 'Comando directo: /status, /doctor, /modules. Sin IA.',
       medium: 'La IA genera un plan; no ejecuta. Ideal para revisar pasos antes de ejecutar.',
@@ -307,8 +328,10 @@
       const r = await fetch(base + path, { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
       return r.ok ? r.json() : null;
     }
-    async function post(path, body) {
-      const r = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    async function post(path, body, headers) {
+      const h = { 'Content-Type': 'application/json', ...(headers || {}) };
+      if (ownerSessionToken) h['X-Owner-Session'] = ownerSessionToken;
+      const r = await fetch(base + path, { method: 'POST', headers: h, body: JSON.stringify(body || {}) });
       return r.ok ? r.json() : null;
     }
     function setLastUpdate() {
@@ -670,12 +693,55 @@
       loadUpdate();
     }
     async function approve(id) {
-      await post('/approvals/approve', { id: id });
+      const r = await post('/approvals/approve', { id: id });
+      if (r && !r.ok && r.status === 'owner_session_required') {
+        document.getElementById('owner-session-msg').textContent = 'Sesión requerida para high/critical. Inicia sesión en Owner Console.';
+      }
       loadApprovals();
+      loadOwnerStatus();
     }
     async function reject(id) {
       await post('/approvals/reject', { id: id });
       loadApprovals();
+    }
+    async function ownerStartSession() {
+      const msg = document.getElementById('owner-session-msg');
+      const r = await post('/owner/session/start', { actor: 'owner', method: 'ui' });
+      if (r && r.ok && r.session_token) {
+        ownerSessionToken = r.session_token;
+        msg.textContent = 'Sesión activa (TTL ' + (r.ttl_seconds || 900) + 's)';
+        msg.style.color = 'var(--green)';
+        loadOwnerStatus();
+      } else {
+        ownerSessionToken = null;
+        msg.textContent = (r && r.error) ? r.error : 'Error al iniciar sesión';
+        msg.style.color = 'var(--red)';
+      }
+    }
+    async function loadOwnerStatus() {
+      const d = await get('/owner/status');
+      if (!d || !d.data) return;
+      const data = d.data;
+      const sessionsEl = document.getElementById('owner-sessions');
+      if (sessionsEl) sessionsEl.textContent = (data.active_sessions && data.active_sessions.length) ? data.active_sessions.length + ' sesión(es) activa(s)' : 'Sin sesiones';
+      const pendingEl = document.getElementById('owner-pending-list');
+      if (pendingEl) pendingEl.innerHTML = (data.pending_approvals && data.pending_approvals.length) ? data.pending_approvals.map(a => a.id + ' ' + (a.action||'') + ' risk=' + (a.risk||'')).join(' | ') : 'Ninguno';
+      const expiredEl = document.getElementById('owner-expired-list');
+      if (expiredEl) expiredEl.innerHTML = (data.expired_approvals && data.expired_approvals.length) ? data.expired_approvals.map(a => a.id + ' ' + (a.action||'')).join(' | ') : 'Ninguno';
+      const criticalEl = document.getElementById('owner-critical-history');
+      if (criticalEl) criticalEl.innerHTML = (data.critical_history && data.critical_history.length) ? data.critical_history.slice(0, 10).map(a => a.id + ' ' + (a.action||'') + ' ' + (a.resolved_by||'')).join(' | ') : 'Ninguno';
+      const emergencyBtn = document.getElementById('owner-emergency-btn');
+      if (emergencyBtn) emergencyBtn.textContent = 'Emergency: ' + (data.emergency ? 'ON' : 'OFF');
+    }
+    async function ownerToggleEmergency() {
+      const d = await get('/owner/status');
+      const next = !(d && d.data && d.data.emergency);
+      const r = await post('/owner/emergency', { enable: next });
+      if (r && r.ok) loadOwnerStatus(); else alert(r && r.error ? r.error : 'Error');
+    }
+    async function ownerVerifyChain() {
+      const r = await get('/approvals/chain/verify');
+      if (r && r.valid) alert('Cadena íntegra.'); else alert(r && !r.valid ? 'Cadena rota: ' + (r.first_invalid_id || '') : (r && r.error) || 'Error');
     }
     async function refreshAll() {
       const btn = document.getElementById('btn-refresh');
@@ -693,7 +759,8 @@
           loadDeploy(),
           loadCluster(),
           loadGateway(),
-          loadApprovals()
+          loadApprovals(),
+          loadOwnerStatus()
         ]);
         setLastUpdate();
       } catch (e) {

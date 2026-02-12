@@ -51,6 +51,11 @@ async def _lifespan(app):
         _set_app_start_time()
     except Exception:
         pass
+    try:
+        from modules.humanoid.owner.emergency import set_emergency_from_env
+        set_emergency_from_env()
+    except Exception:
+        pass
     humanoid = os.getenv("HUMANOID_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
     sched = os.getenv("SCHED_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
     if humanoid and sched:
@@ -359,17 +364,123 @@ class ApprovalActionBody(BaseModel):
     approval_id: Optional[str] = None
 
 @app.post("/approvals/approve")
-def approvals_approve(body: ApprovalActionBody):
-    """Approve item by id. Body: {id} or {approval_id}. Audited."""
+def approvals_approve(body: ApprovalActionBody, x_owner_session: Optional[str] = Header(None, alias="X-Owner-Session")):
+    """Approve item by id. Body: {id} or {approval_id}. High/critical require X-Owner-Session. Audited."""
     aid = body.id or body.approval_id
     if not aid:
         return {"ok": False, "id": None, "status": "missing_id", "error": "id or approval_id required"}
     try:
         from modules.humanoid.approvals import approve as approval_approve
-        out = approval_approve(aid, resolved_by="api")
-        return {"ok": out.get("ok"), "id": aid, "status": out.get("status"), "error": None}
+        out = approval_approve(aid, resolved_by="api", owner_session_token=x_owner_session)
+        return {"ok": out.get("ok"), "id": aid, "status": out.get("status"), "error": out.get("error")}
     except Exception as e:
         return {"ok": False, "id": aid, "status": "error", "error": str(e)}
+
+
+@app.get("/approvals/chain/verify")
+def approvals_chain_verify():
+    """Verify approval chain integrity. Response: {ok, valid, first_invalid_id?, expected_hash?, got_hash?}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.approvals import verify_chain
+        result = verify_chain()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": result.get("ok", True), "valid": result.get("valid", True), "ms": ms, "first_invalid_id": result.get("first_invalid_id"), "expected_hash": result.get("expected_hash"), "got_hash": result.get("got_hash"), "error": None}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "valid": False, "ms": ms, "first_invalid_id": None, "expected_hash": None, "got_hash": None, "error": str(e)}
+
+
+# --- Owner (zero-trust session + emergency) ---
+class OwnerSessionStartBody(BaseModel):
+    actor: str
+    method: Optional[str] = "ui"  # ui | telegram | voice
+
+@app.post("/owner/session/start")
+def owner_session_start(body: OwnerSessionStartBody):
+    """Start owner session. Returns session_token (TTL). Required for high/critical approvals via X-Owner-Session."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.owner.session import start as owner_start
+        out = owner_start(actor=body.actor or "owner", method=body.method or "ui")
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": out.get("ok"), "session_token": out.get("session_token"), "ttl_seconds": out.get("ttl_seconds"), "method": out.get("method"), "ms": ms, "error": out.get("error")}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "session_token": None, "ms": ms, "error": str(e)}
+
+
+class OwnerEmergencyBody(BaseModel):
+    enable: bool
+
+@app.post("/owner/emergency")
+def owner_emergency(body: OwnerEmergencyBody):
+    """Enable/disable emergency mode. When enabled: suspend non-critical runs, block deploys; only health + status allowed."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.owner.emergency import set_emergency, is_emergency
+        set_emergency(body.enable)
+        try:
+            from modules.humanoid.audit import get_audit_logger
+            get_audit_logger().log_event("owner", "api", "emergency", True, 0, None, {"enable": body.enable}, None)
+        except Exception:
+            pass
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": True, "emergency": is_emergency(), "ms": ms, "error": None}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "emergency": None, "ms": ms, "error": str(e)}
+
+
+def _owner_status_data():
+    """Aggregate owner console data: sessions, pending, expired, emergency, chain, critical history."""
+    from modules.humanoid.owner.session import list_active
+    from modules.humanoid.owner.emergency import is_emergency
+    from modules.humanoid.approvals import list_pending, verify_chain
+    from modules.humanoid.approvals.store import list_items
+    from datetime import datetime, timezone
+    sessions = list_active()
+    pending = list_pending(limit=50)
+    all_items = list_items(status=None, limit=100)
+    expired = []
+    for it in all_items:
+        if it.get("status") != "pending":
+            continue
+        et = it.get("expires_at")
+        if not et:
+            continue
+        try:
+            dt = datetime.fromisoformat(et.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) >= dt:
+                expired.append(it)
+        except Exception:
+            pass
+    chain = verify_chain()
+    critical_history = [x for x in all_items if x.get("status") == "approved" and (x.get("risk") or "").strip().lower() == "critical"][:20]
+    return {
+        "active_sessions": sessions,
+        "pending_approvals": pending,
+        "expired_approvals": expired,
+        "emergency": is_emergency(),
+        "chain_valid": chain.get("valid", False),
+        "chain_ok": chain.get("ok", False),
+        "critical_history": critical_history,
+    }
+
+
+@app.get("/owner/status")
+def owner_status():
+    """Owner console: active sessions, pending/expired approvals, emergency, chain integrity, critical history."""
+    t0 = time.perf_counter()
+    try:
+        data = _owner_status_data()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": True, "data": data, "ms": ms, "error": None}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "data": None, "ms": ms, "error": str(e)}
 
 
 @app.post("/approvals/reject")
@@ -549,6 +660,9 @@ def update_apply_endpoint():
     """Git update apply: staging -> smoke -> promote or rollback. Policy must allow. Response: {ok, data, ms, error}."""
     t0 = time.perf_counter()
     try:
+        from modules.humanoid.owner.emergency import is_emergency
+        if is_emergency():
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "emergency mode: updates suspended")
         from modules.humanoid.update.update_engine import apply as update_apply
         result = update_apply()
         ms = int((time.perf_counter() - t0) * 1000)
@@ -589,6 +703,9 @@ def deploy_apply(body: Optional[DeployApplyBody] = None):
     t0 = time.perf_counter()
     body = body or DeployApplyBody()
     try:
+        from modules.humanoid.owner.emergency import is_emergency
+        if is_emergency():
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "emergency mode: deploys suspended")
         decision = get_policy_engine().can(_memory_actor(), "deploy", "deploy_apply")
         if not decision.allow:
             return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason or "policy denied")
@@ -619,6 +736,9 @@ def deploy_bluegreen(dry_run: bool = False):
     """Run blue-green flow: launch staging, smoke, healthcheck x3, switch or rollback. Use dry_run=true to simulate without switching."""
     t0 = time.perf_counter()
     try:
+        from modules.humanoid.owner.emergency import is_emergency
+        if is_emergency():
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "emergency mode: deploys suspended")
         from modules.humanoid.deploy import run_bluegreen_flow
         from modules.humanoid.metrics import get_metrics_store
         get_metrics_store().inc("deploy_bluegreen_runs")

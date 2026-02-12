@@ -450,6 +450,28 @@ if ($approvalsList.ok) {
   Write-Host "GET /approvals/list FAIL: $($approvalsList.err)" -ForegroundColor Red
 }
 
+# Owner: session start, chain verify, emergency (plan_only - must respond without hanging)
+$ownerSessionBody = @{ actor = "owner"; method = "ui" }
+$ownerSession = HitPost "/owner/session/start" $ownerSessionBody
+if ($ownerSession.ok -and $ownerSession.data) {
+  Write-Host "POST /owner/session/start OK (token present=$($null -ne $ownerSession.data.session_token))" -ForegroundColor Green
+} else {
+  Write-Host "POST /owner/session/start FAIL: $($ownerSession.err)" -ForegroundColor Red
+}
+$chainVerify = Hit "/approvals/chain/verify"
+if ($chainVerify.ok -and $chainVerify.data -ne $null) {
+  Write-Host "GET /approvals/chain/verify OK (valid=$($chainVerify.data.valid))" -ForegroundColor Green
+} else {
+  Write-Host "GET /approvals/chain/verify FAIL: $($chainVerify.err)" -ForegroundColor Red
+}
+$emergencyBody = @{ enable = $false }
+$emergencyResp = HitPost "/owner/emergency" $emergencyBody
+if ($emergencyResp.ok -and $emergencyResp.data -ne $null) {
+  Write-Host "POST /owner/emergency (plan_only) OK (emergency=$($emergencyResp.data.emergency))" -ForegroundColor Green
+} else {
+  Write-Host "POST /owner/emergency FAIL: $($emergencyResp.err)" -ForegroundColor Red
+}
+
 $bundleResp = Hit "/support/bundle"
 if ($bundleResp.ok -and $bundleResp.data.path) {
   Write-Host "GET /support/bundle OK ($($bundleResp.data.path))" -ForegroundColor Green
