@@ -628,6 +628,45 @@ def deploy_bluegreen(dry_run: bool = False):
         return _std_resp(False, None, ms, str(e))
 
 
+@app.get("/canary/status", tags=["Deploy"])
+def canary_status():
+    """Canary status: enabled, percentage, features, stats (calls, error rate, latency)."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.deploy.canary import get_canary_stats
+        data = get_canary_stats()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class CanaryConfigBody(BaseModel):
+    enabled: Optional[bool] = None
+    percentage: Optional[float] = None
+    features: Optional[List[str]] = None
+
+
+@app.post("/canary/config", tags=["Deploy"])
+def canary_config(body: Optional[CanaryConfigBody] = None):
+    """Runtime canary config (owner only, policy-gated). Body: enabled?, percentage?, features?."""
+    t0 = time.perf_counter()
+    body = body or CanaryConfigBody()
+    try:
+        decision = get_policy_engine().can(_memory_actor(), "deploy", "canary_config")
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason or "policy denied")
+        from modules.humanoid.deploy.canary import set_canary_config, get_canary_stats
+        set_canary_config(enabled=body.enabled, percentage=body.percentage, features=body.features)
+        data = get_canary_stats()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
 @app.get("/deploy/canary/report", tags=["Deploy"])
 def deploy_canary_report(hours: float = 24.0):
     """Canary vs stable comparison over the last N hours: counts, error rate, avg latency."""
