@@ -23,10 +23,19 @@ def requires_approval(action: str, payload: Optional[Dict[str, Any]] = None) -> 
 
 
 def risk_level(action: str, payload: Optional[Dict[str, Any]] = None) -> str:
-    """Return risk: high | medium | low."""
+    """Return risk: critical | high | medium | low. Critical always requires double confirmation."""
     action_lower = (action or "").strip().lower()
-    if "delete" in action_lower or "rollback" in action_lower or "apply" in action_lower and "update" in action_lower:
+    if "deploy_apply" in action_lower or "apply" in action_lower and "update" in action_lower:
+        return "critical"
+    if "delete" in action_lower or "rollback" in action_lower:
+        return "critical"
+    if "apply" in action_lower or "promote" in action_lower:
         return "high"
     if "execute" in action_lower or "run" in action_lower:
         return "medium"
     return "low"
+
+
+def requires_2fa_for_risk(risk: str) -> bool:
+    """Critical always requires 2fa (double confirm)."""
+    return (risk or "").strip().lower() == "critical"

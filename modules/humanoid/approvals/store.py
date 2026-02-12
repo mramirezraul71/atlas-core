@@ -20,7 +20,12 @@ CREATE TABLE IF NOT EXISTS approvals (
     job_id TEXT,
     run_id INTEGER,
     resolved_ts TEXT,
-    resolved_by TEXT
+    resolved_by TEXT,
+    requires_2fa INTEGER DEFAULT 0,
+    expires_at TEXT,
+    approval_signature TEXT,
+    origin_node_id TEXT,
+    chain_hash TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals(status);
 CREATE INDEX IF NOT EXISTS idx_approvals_created ON approvals(created_ts);
@@ -45,6 +50,11 @@ def _ensure() -> sqlite3.Connection:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     _conn = sqlite3.connect(path)
     _conn.executescript(SCHEMA)
+    for col, typ in [("requires_2fa", "INTEGER DEFAULT 0"), ("expires_at", "TEXT"), ("approval_signature", "TEXT"), ("origin_node_id", "TEXT"), ("chain_hash", "TEXT")]:
+        try:
+            _conn.execute(f"ALTER TABLE approvals ADD COLUMN {col} {typ}")
+        except sqlite3.OperationalError:
+            pass
     _conn.commit()
     return _conn
 
@@ -53,59 +63,161 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def create(action: str, payload: Dict[str, Any], risk: str = "medium", job_id: Optional[str] = None, run_id: Optional[int] = None) -> Dict[str, Any]:
+def _expires_at_default_minutes() -> int:
+    import os
+    try:
+        return int(os.getenv("APPROVAL_EXPIRE_MINUTES", "15") or 15)
+    except (TypeError, ValueError):
+        return 15
+
+
+def create(
+    action: str,
+    payload: Dict[str, Any],
+    risk: str = "medium",
+    job_id: Optional[str] = None,
+    run_id: Optional[int] = None,
+    requires_2fa: bool = False,
+    origin_node_id: Optional[str] = None,
+) -> Dict[str, Any]:
     aid = str(uuid.uuid4())[:12]
     now = _now()
+    from datetime import timedelta
+    exp_min = _expires_at_default_minutes()
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=exp_min)).isoformat()
     conn = _ensure()
     conn.execute(
-        "INSERT INTO approvals (id, created_ts, action, payload_json, risk, status, job_id, run_id) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
-        (aid, now, action, json.dumps(payload), risk, job_id, run_id),
+        """INSERT INTO approvals (id, created_ts, action, payload_json, risk, status, job_id, run_id, requires_2fa, expires_at, origin_node_id)
+           VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)""",
+        (aid, now, action, json.dumps(payload), risk, job_id, run_id, 1 if requires_2fa else 0, expires_at, origin_node_id),
     )
     conn.commit()
-    return {"id": aid, "created_ts": now, "action": action, "payload": payload, "risk": risk, "status": "pending", "job_id": job_id, "run_id": run_id}
+    return {
+        "id": aid, "created_ts": now, "action": action, "payload": payload, "risk": risk, "status": "pending",
+        "job_id": job_id, "run_id": run_id, "requires_2fa": requires_2fa, "expires_at": expires_at, "origin_node_id": origin_node_id,
+    }
 
 
 def list_items(status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
     conn = _ensure()
+    cols = "id, created_ts, action, payload_json, risk, status, job_id, run_id, resolved_ts, resolved_by, requires_2fa, expires_at, approval_signature, origin_node_id, chain_hash"
     if status:
-        rows = conn.execute("SELECT id, created_ts, action, payload_json, risk, status, job_id, run_id, resolved_ts, resolved_by FROM approvals WHERE status = ? ORDER BY created_ts DESC LIMIT ?", (status, limit)).fetchall()
+        rows = conn.execute(f"SELECT {cols} FROM approvals WHERE status = ? ORDER BY created_ts DESC LIMIT ?", (status, limit)).fetchall()
     else:
-        rows = conn.execute("SELECT id, created_ts, action, payload_json, risk, status, job_id, run_id, resolved_ts, resolved_by FROM approvals ORDER BY created_ts DESC LIMIT ?", (limit,)).fetchall()
+        rows = conn.execute(f"SELECT {cols} FROM approvals ORDER BY created_ts DESC LIMIT ?", (limit,)).fetchall()
     out = []
     for r in rows:
-        out.append({
+        d = {
             "id": r[0], "created_ts": r[1], "action": r[2],
             "payload": json.loads(r[3]) if r[3] else {},
             "risk": r[4], "status": r[5], "job_id": r[6], "run_id": r[7],
             "resolved_ts": r[8], "resolved_by": r[9],
-        })
+        }
+        d["requires_2fa"] = bool(r[10]) if len(r) > 10 else False
+        d["expires_at"] = r[11] if len(r) > 11 else None
+        d["approval_signature"] = r[12] if len(r) > 12 else None
+        d["origin_node_id"] = r[13] if len(r) > 13 else None
+        d["chain_hash"] = r[14] if len(r) > 14 else None
+        out.append(d)
     return out
 
 
 def get(aid: str) -> Optional[Dict[str, Any]]:
     conn = _ensure()
-    row = conn.execute("SELECT id, created_ts, action, payload_json, risk, status, job_id, run_id, resolved_ts, resolved_by FROM approvals WHERE id = ?", (aid,)).fetchone()
+    cols = "id, created_ts, action, payload_json, risk, status, job_id, run_id, resolved_ts, resolved_by, requires_2fa, expires_at, approval_signature, origin_node_id, chain_hash"
+    row = conn.execute(f"SELECT {cols} FROM approvals WHERE id = ?", (aid,)).fetchone()
     if not row:
         return None
-    return {
+    d = {
         "id": row[0], "created_ts": row[1], "action": row[2],
         "payload": json.loads(row[3]) if row[3] else {},
         "risk": row[4], "status": row[5], "job_id": row[6], "run_id": row[7],
         "resolved_ts": row[8], "resolved_by": row[9],
     }
+    if len(row) > 10:
+        d["requires_2fa"] = bool(row[10])
+        d["expires_at"] = row[11]
+        d["approval_signature"] = row[12]
+        d["origin_node_id"] = row[13]
+        d["chain_hash"] = row[14]
+    return d
 
 
-def approve(aid: str, resolved_by: str = "api") -> bool:
+def _is_expired(expires_at: Optional[str]) -> bool:
+    if not expires_at:
+        return False
+    try:
+        s = expires_at.replace("Z", "+00:00")
+        exp = datetime.fromisoformat(s)
+        return datetime.now(timezone.utc) >= exp
+    except Exception:
+        return False
+
+
+def _compute_chain_hash(prev_hash: str, item: Dict[str, Any], resolved_ts: str, resolved_by: str) -> str:
+    import hashlib
+    data = f"{prev_hash}|{item.get('id')}|{item.get('action')}|{item.get('created_ts')}|{resolved_ts}|{resolved_by}"
+    return hashlib.sha256(data.encode()).hexdigest()
+
+
+def _last_chain_hash(conn: sqlite3.Connection) -> str:
+    row = conn.execute("SELECT chain_hash FROM approvals WHERE chain_hash IS NOT NULL ORDER BY created_ts DESC LIMIT 1").fetchone()
+    return row[0] if row and row[0] else "0"
+
+
+def approve(aid: str, resolved_by: str = "api", signature: Optional[str] = None) -> bool:
     conn = _ensure()
+    item = get(aid)
+    if not item or item.get("status") != "pending":
+        return False
+    if _is_expired(item.get("expires_at")):
+        return False
     now = _now()
-    cur = conn.execute("UPDATE approvals SET status = 'approved', resolved_ts = ?, resolved_by = ? WHERE id = ? AND status = 'pending'", (now, resolved_by, aid))
+    prev = _last_chain_hash(conn)
+    chain = _compute_chain_hash(prev, item, now, resolved_by)
+    cur = conn.execute(
+        "UPDATE approvals SET status = 'approved', resolved_ts = ?, resolved_by = ?, approval_signature = ?, chain_hash = ? WHERE id = ? AND status = 'pending'",
+        (now, resolved_by, signature or "", chain, aid),
+    )
     conn.commit()
     return cur.rowcount > 0
 
 
 def reject(aid: str, resolved_by: str = "api") -> bool:
     conn = _ensure()
+    item = get(aid)
+    if not item or item.get("status") != "pending":
+        return False
     now = _now()
     cur = conn.execute("UPDATE approvals SET status = 'rejected', resolved_ts = ?, resolved_by = ? WHERE id = ? AND status = 'pending'", (now, resolved_by, aid))
     conn.commit()
     return cur.rowcount > 0
+
+
+def list_for_chain() -> List[Dict[str, Any]]:
+    """All approvals ordered by created_ts for chain verification."""
+    conn = _ensure()
+    cols = "id, created_ts, action, payload_json, risk, status, job_id, run_id, resolved_ts, resolved_by, requires_2fa, expires_at, approval_signature, origin_node_id, chain_hash"
+    rows = conn.execute(f"SELECT {cols} FROM approvals ORDER BY created_ts ASC").fetchall()
+    out = []
+    for r in rows:
+        d = {"id": r[0], "created_ts": r[1], "action": r[2], "payload": json.loads(r[3]) if r[3] else {}, "risk": r[4], "status": r[5], "job_id": r[6], "run_id": r[7], "resolved_ts": r[8], "resolved_by": r[9]}
+        if len(r) > 14:
+            d["chain_hash"] = r[14]
+        out.append(d)
+    return out
+
+
+def verify_chain() -> Dict[str, Any]:
+    """Recompute hashes in order; return {ok, valid, first_invalid_id, expected_hash, got_hash}."""
+    items = list_for_chain()
+    prev = "0"
+    for item in items:
+        if item.get("status") != "approved":
+            continue
+        expected = _compute_chain_hash(prev, item, item.get("resolved_ts") or "", item.get("resolved_by") or "")
+        got = item.get("chain_hash")
+        if got != expected:
+            return {"ok": False, "valid": False, "first_invalid_id": item.get("id"), "expected_hash": expected, "got_hash": got}
+        prev = expected
+    return {"ok": True, "valid": True}
