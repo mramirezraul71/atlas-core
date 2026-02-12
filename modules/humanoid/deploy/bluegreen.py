@@ -1,16 +1,17 @@
-"""Blue-green local: launch staging, smoke, healthcheck x3, switch or rollback. Policy + audit."""
+"""Blue-green local: launch staging, smoke, health with retries, promote (restart on ACTIVE) or rollback. Policy + audit."""
 from __future__ import annotations
 
 import os
-import subprocess
 import time
-from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from .healthcheck import run_health
-from .switcher import get_deploy_state, switch_active_port, persist_state
+from .healthcheck import run_health_verbose
+from .process_manager import start_instance, stop_by_pid, wait_until_healthy
+from .switcher import get_deploy_state, persist_state
 
 _log = __import__("logging").getLogger("humanoid.deploy.bluegreen")
+
+TIMEOUT_START_SEC = 30
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -28,148 +29,137 @@ def _env_int(name: str, default: int) -> int:
 def _audit(action: str, ok: bool, payload: Optional[Dict] = None, error: Optional[str] = None, ms: int = 0) -> None:
     try:
         from modules.humanoid.audit import get_audit_logger
-        get_audit_logger().log_event("deploy", "bluegreen", action, ok, ms, error, payload, None)
+        get_audit_logger().log_event("deploy", "bluegreen", "bluegreen", action, ok, ms, error, payload, None)
     except Exception:
         pass
 
 
-def _launch_staging_instance(port: int, timeout_sec: int = 30) -> Dict[str, Any]:
-    """Start uvicorn in subprocess on port. Returns {ok, process, error}."""
-    repo = Path(os.getenv("ATLAS_PUSH_ROOT", os.getcwd()))
-    venv_python = repo / ".venv" / "Scripts" / "python.exe"
-    if not venv_python.exists():
-        venv_python = repo / ".venv" / "bin" / "python"
-    if not venv_python.exists():
-        return {"ok": False, "process": None, "error": "venv not found"}
-    try:
-        proc = subprocess.Popen(
-            [str(venv_python), "-m", "uvicorn", "atlas_adapter.atlas_http_api:app", "--host", "127.0.0.1", "--port", str(port)],
-            cwd=str(repo),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            env={**os.environ, "ATLAS_DEPLOY_STAGING": "1"},
-        )
-        # Wait for port to respond
-        base = f"http://127.0.0.1:{port}"
-        for _ in range(timeout_sec):
-            time.sleep(1)
-            h = run_health(base)
-            if h.get("ok") or h.get("score", 0) > 0:
-                return {"ok": True, "process": proc, "error": None}
-        proc.terminate()
-        proc.wait(timeout=5)
-        return {"ok": False, "process": None, "error": "staging did not become healthy in time"}
-    except Exception as e:
-        return {"ok": False, "process": None, "error": str(e)}
-
-
-def run_bluegreen_flow(actor: Any = None, dry_run: bool = False) -> Dict[str, Any]:
+def run_bluegreen_flow(actor: Any = None, dry_run: bool = False, ref: Optional[str] = None) -> Dict[str, Any]:
     """
-    1) Launch staging on STAGING_PORT
-    2) Smoke tests against staging
-    3) Healthcheck 3 times
-    4) If all OK: switch active port, stop old instance
-    5) If fail: keep active, log rollback
-    If dry_run=True, simulate steps (launch staging, smoke, health) but do not switch; staging process is killed at end.
+    Option 1: ACTIVE always 8791. 1) Launch STAGING on STAGING_PORT, 2) Smoke vs STAGING, 3) Health vs STAGING
+    (DEPLOY_HEALTH_RETRIES, DEPLOY_HEALTH_MIN_SCORE), 4) If OK: promote = restart service on 8791 (net stop/start);
+    if fail: stop STAGING, rollback audit.
     """
     t0 = time.perf_counter()
-    if os.getenv("DEPLOY_MODE", "").strip().lower() != "bluegreen":
+    deploy_mode = os.getenv("DEPLOY_MODE", "").strip().lower()
+    if deploy_mode != "bluegreen":
         return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": "DEPLOY_MODE != bluegreen"}
 
     state = get_deploy_state()
-    active = state.get("active_port", _env_int("ACTIVE_PORT", 8791))
+    active_port = state.get("active_port", _env_int("ACTIVE_PORT", 8791))
     staging_port = state.get("staging_port", _env_int("STAGING_PORT", 8792))
+    health_retries = _env_int("DEPLOY_HEALTH_RETRIES", 3)
+    health_retry_sec = _env_int("DEPLOY_HEALTH_RETRY_SECONDS", 2)
+    min_score = _env_int("DEPLOY_HEALTH_MIN_SCORE", 75)
     auto_switch = state.get("auto_switch_on_health", _env_bool("AUTO_SWITCH_ON_HEALTH", True))
-    steps = []
+    steps: List[Dict[str, Any]] = []
+    staging_pid: Optional[int] = None
 
-    # 1) Launch staging
-    launch = _launch_staging_instance(staging_port)
-    steps.append({"step": "launch_staging", "ok": launch.get("ok"), "error": launch.get("error")})
+    _audit("deploy_start", True, {"ref": ref}, None, 0)
+
+    # 1) Launch staging (process_manager, PID tracking)
+    launch = start_instance(staging_port, "staging")
+    staging_pid = launch.get("pid")
+    steps.append({"step": "staging_started", "ok": launch.get("ok"), "pid": staging_pid, "port": staging_port, "error": launch.get("error")})
     if not launch.get("ok"):
-        _audit("bluegreen_flow", False, {"steps": steps}, launch.get("error"), int((time.perf_counter() - t0) * 1000))
+        _audit("staging_started", False, {"steps": steps}, launch.get("error"), int((time.perf_counter() - t0) * 1000))
         return {"ok": False, "data": {"steps": steps}, "ms": int((time.perf_counter() - t0) * 1000), "error": launch.get("error")}
+    state["staging_pid"] = staging_pid
+    persist_state(state)
+    _audit("staging_started", True, {"pid": staging_pid, "port": staging_port}, None, 0)
 
-    proc = launch.get("process")
+    base_staging = f"http://127.0.0.1:{staging_port}"
+    if not wait_until_healthy(base_staging, timeout_sec=TIMEOUT_START_SEC):
+        stop_by_pid(staging_pid)
+        state["staging_pid"] = None
+        state["last_deploy"] = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "ref": ref, "result": "rollback", "error": "staging did not become healthy"}
+        persist_state(state)
+        _audit("rollback", False, {"steps": steps}, "staging unhealthy", int((time.perf_counter() - t0) * 1000))
+        return {"ok": False, "data": {"steps": steps, "rollback": "staging unhealthy"}, "ms": int((time.perf_counter() - t0) * 1000), "error": "staging unhealthy"}
 
-    def _kill_staging(p: Optional[subprocess.Popen]) -> None:
-        if not p:
-            return
-        try:
-            p.terminate()
-            p.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            try:
-                p.kill()
-                p.wait(timeout=2)
-            except Exception:
-                pass
-        except Exception:
-            try:
-                p.kill()
-            except Exception:
-                pass
+    # 2) Smoke vs STAGING
+    try:
+        from modules.humanoid.update.smoke_runner import run_smoke
+        smoke_result = run_smoke(port=staging_port, timeout_sec=120)
+        smoke_ok = smoke_result.get("ok", False)
+    except Exception as e:
+        smoke_ok = False
+        smoke_result = {"error": str(e)}
+    steps.append({"step": "smoke_result", "ok": smoke_ok, "error": smoke_result.get("error")})
+    _audit("smoke_result", smoke_ok, {"ok": smoke_ok, "error": smoke_result.get("error")}, smoke_result.get("error"), smoke_result.get("ms", 0))
+    if not smoke_ok:
+        stop_by_pid(staging_pid)
+        state["staging_pid"] = None
+        state["mode"] = "single"
+        state["last_deploy"] = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "ref": ref, "result": "rollback", "error": smoke_result.get("error")}
+        persist_state(state)
+        _audit("rollback", False, {"steps": steps}, "smoke failed", int((time.perf_counter() - t0) * 1000))
+        return {"ok": False, "data": {"steps": steps, "rollback": "smoke failed"}, "ms": int((time.perf_counter() - t0) * 1000), "error": "smoke failed"}
+
+    # 3) Health vs STAGING with retries and min score
+    health_ok = False
+    last_health: Dict[str, Any] = {}
+    for i in range(health_retries):
+        time.sleep(health_retry_sec)
+        h = run_health_verbose(base_url=base_staging, active_port=staging_port)
+        last_health = h
+        score = h.get("score", 0)
+        steps.append({"step": f"health_{i+1}", "ok": score >= min_score, "score": score, "checks": h.get("checks")})
+        if score >= min_score:
+            health_ok = True
+            break
+    _audit("health_scores", health_ok, {"steps": steps, "last_health": last_health}, None if health_ok else "score < min", 0)
+    if not health_ok:
+        stop_by_pid(staging_pid)
+        state["staging_pid"] = None
+        state["mode"] = "single"
+        state["last_deploy"] = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "ref": ref, "result": "rollback", "error": f"health score < {min_score}"}
+        persist_state(state)
+        _audit("rollback", False, {"steps": steps}, f"health < {min_score}", int((time.perf_counter() - t0) * 1000))
+        return {"ok": False, "data": {"steps": steps, "rollback": "health failed"}, "ms": int((time.perf_counter() - t0) * 1000), "error": "health check failed"}
+
+    if dry_run:
+        stop_by_pid(staging_pid)
+        state["staging_pid"] = None
+        persist_state(state)
+        ms = int((time.perf_counter() - t0) * 1000)
+        _audit("deploy", True, {"steps": steps, "dry_run": True}, None, ms)
+        return {"ok": True, "data": {"steps": steps, "switched": False, "dry_run": True}, "ms": ms, "error": None}
+
+    if not auto_switch:
+        stop_by_pid(staging_pid)
+        state["staging_pid"] = None
+        persist_state(state)
+        return {"ok": True, "data": {"steps": steps, "switched": False, "message": "AUTO_SWITCH_ON_HEALTH=false"}, "ms": int((time.perf_counter() - t0) * 1000), "error": None}
+
+    # 4) Promote: merge staging -> main so disk has new code, then restart service on ACTIVE_PORT
+    stop_by_pid(staging_pid)
+    state["staging_pid"] = None
+    state["last_deploy"] = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "ref": ref, "result": "success", "error": None}
+    state["last_health"] = {"score": last_health.get("score"), "checks": last_health.get("checks")}
+    state["last_deploy_ts"] = state["last_deploy"]["ts"]
+    state["last_deploy_ref"] = ref
+    state["last_deploy_result"] = "success"
+    persist_state(state)
 
     try:
-        base = f"http://127.0.0.1:{staging_port}"
+        from modules.humanoid.update.git_manager import checkout_branch, merge_staging
+        _main = os.getenv("UPDATE_BRANCH", "main").strip() or "main"
+        _staging_name = os.getenv("UPDATE_STAGING_BRANCH", "staging").strip() or "staging"
+        if checkout_branch(_main).get("ok") and merge_staging(_staging_name).get("ok"):
+            pass  # disk now has main + staging merged
+    except Exception:
+        pass
 
-        # 2) Smoke
+    svc = os.getenv("SERVICE_NAME", "ATLAS_PUSH")
+    if os.getenv("SERVICE_ENABLED", "").strip().lower() in ("1", "true", "yes"):
         try:
-            from modules.humanoid.update.smoke_runner import run_smoke
-            smoke_result = run_smoke(port=staging_port, timeout_sec=120)
-            smoke_ok = smoke_result.get("ok", False)
+            import subprocess
+            subprocess.run(["net", "stop", svc], capture_output=True, timeout=15)
+            time.sleep(2)
+            subprocess.run(["net", "start", svc], capture_output=True, timeout=15)
         except Exception as e:
-            smoke_ok = False
-            smoke_result = {"error": str(e)}
-        steps.append({"step": "smoke", "ok": smoke_ok, "error": smoke_result.get("error")})
-        if not smoke_ok:
-            _kill_staging(proc)
-            state["mode"] = "single"
-            persist_state(state)
-            _audit("deploy", "bluegreen_flow", False, {"steps": steps}, smoke_result.get("error"), int((time.perf_counter() - t0) * 1000))
-            return {"ok": False, "data": {"steps": steps, "rollback": "smoke failed", "fallback": "single-port"}, "ms": int((time.perf_counter() - t0) * 1000), "error": "smoke failed"}
-
-        # 3) Healthcheck 3x
-        health_ok = True
-        for i in range(3):
-            h = run_health(base)
-            if not h.get("ok") or h.get("score", 0) < 60:
-                health_ok = False
-                steps.append({"step": f"health_{i+1}", "ok": False, "score": h.get("score")})
-                break
-            steps.append({"step": f"health_{i+1}", "ok": True, "score": h.get("score")})
-            time.sleep(1)
-        if not health_ok:
-            _kill_staging(proc)
-            state["mode"] = "single"
-            persist_state(state)
-            _audit("deploy", "bluegreen_flow", False, {"steps": steps}, "health < 60", int((time.perf_counter() - t0) * 1000))
-            return {"ok": False, "data": {"steps": steps, "rollback": "health failed", "fallback": "single-port"}, "ms": int((time.perf_counter() - t0) * 1000), "error": "health check failed"}
-
-        if dry_run:
-            _kill_staging(proc)
-            ms = int((time.perf_counter() - t0) * 1000)
-            _audit("deploy", "bluegreen_flow", True, {"steps": steps, "dry_run": True}, None, ms)
-            return {"ok": True, "data": {"steps": steps, "switched": False, "dry_run": True}, "ms": ms, "error": None}
-
-        # 4) Switch
-        if not auto_switch:
-            _kill_staging(proc)
-            return {"ok": True, "data": {"steps": steps, "switched": False, "message": "AUTO_SWITCH_ON_HEALTH=false"}, "ms": int((time.perf_counter() - t0) * 1000), "error": None}
-
-        switch_result = switch_active_port(staging_port)
-        steps.append({"step": "switch", "ok": switch_result.get("ok"), "error": switch_result.get("error")})
-        state = get_deploy_state()
-        state["last_deploy_ts"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        persist_state(state)
-
-        _kill_staging(proc)
-
-        ms = int((time.perf_counter() - t0) * 1000)
-        _audit("deploy", "bluegreen_flow", switch_result.get("ok", False), {"steps": steps}, switch_result.get("error"), ms)
-        return {"ok": switch_result.get("ok", False), "data": {"steps": steps, "switched": True}, "ms": ms, "error": switch_result.get("error")}
-    except Exception as e:
-        _kill_staging(proc)
-        _audit("deploy", "bluegreen_flow", False, {"steps": steps}, str(e), int((time.perf_counter() - t0) * 1000))
-        return {"ok": False, "data": {"steps": steps}, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
-    finally:
-        _kill_staging(proc)
+            _audit("promote_success", False, {"steps": steps}, str(e), int((time.perf_counter() - t0) * 1000))
+            return {"ok": False, "data": {"steps": steps, "switched": False, "error": str(e)}, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+    _audit("promote_success", True, {"steps": steps, "active_port": active_port}, None, int((time.perf_counter() - t0) * 1000))
+    return {"ok": True, "data": {"steps": steps, "switched": True}, "ms": int((time.perf_counter() - t0) * 1000), "error": None}

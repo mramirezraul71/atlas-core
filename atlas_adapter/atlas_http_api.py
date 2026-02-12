@@ -93,12 +93,14 @@ def status():
 
 @app.get("/health", tags=["Health"])
 def health():
-    """Extended health: LLM latency, scheduler, memory, DB integrity, port active, uptime. Score 0-100."""
+    """Health verificable: ok, score 0-100, checks (api_up, memory_writable, audit_writable, scheduler_alive, llm_reachable, avg_latency_ms, error_rate, active_port, version, channel), ms, error."""
     try:
-        from modules.humanoid.deploy.healthcheck import run_health
-        return run_health(base_url=None)
+        from modules.humanoid.deploy.healthcheck import run_health_verbose
+        from modules.humanoid.deploy.ports import get_ports
+        active_port = get_ports()[0]
+        return run_health_verbose(base_url=None, active_port=active_port)
     except Exception as e:
-        return {"ok": False, "score": 0, "checks": {}, "error": str(e)}
+        return {"ok": False, "score": 0, "checks": {}, "ms": 0, "error": str(e)}
 
 
 @app.get("/version")
@@ -176,7 +178,7 @@ def modules():
     }
 
 from pydantic import BaseModel
-from typing import Any, Optional
+from typing import Any, List, Optional
 import time
 
 class IntentIn(BaseModel):
@@ -198,7 +200,7 @@ def intent(payload: IntentIn):
     }
 # --- Canonical Intent API (v1) ---
 from pydantic import BaseModel
-from typing import Any, Optional
+from typing import Any, List, Optional
 import time
 
 from modules.command_router import handle as route_command
@@ -556,39 +558,55 @@ def update_apply_endpoint():
 
 @app.get("/deploy/status", tags=["Deploy"])
 def deploy_status():
-    """Deploy status: mode, active_port, staging_port, health_score, version, channel, last_deploy, canary_stats."""
+    """Deploy status: ok, mode, active_port, staging_port, active_pid, staging_pid, last_deploy, last_health, canary."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.deploy import get_deploy_state, run_health
-        from modules.humanoid.release import get_version_info
+        from modules.humanoid.deploy.status import build_deploy_status
+        from modules.humanoid.deploy.canary import should_disable_canary, set_canary_disabled_fallback
+        from modules.humanoid.deploy.switcher import get_deploy_state
         state = get_deploy_state()
-        health_result = run_health(base_url=None)
-        health_score_val = health_result.get("score", 0)
-        version_info = get_version_info()
-        canary_stats = {}
-        fallback_suggestions = {"revert_health": health_score_val < 60, "disable_canary": False}
-        try:
-            from modules.humanoid.deploy.canary import get_canary_stats, should_disable_canary, set_canary_disabled_fallback
-            canary_stats = get_canary_stats()
-            if should_disable_canary() and not state.get("canary_disabled_fallback"):
-                set_canary_disabled_fallback(True)
-            fallback_suggestions["disable_canary"] = should_disable_canary()
-        except Exception:
-            pass
-        data = {
-            "mode": state.get("mode", "single"),
-            "active_port": state.get("active_port", 8791),
-            "staging_port": state.get("staging_port", 8792),
-            "health_score": health_score_val,
-            "version": version_info.get("version", "0.0.0"),
-            "channel": version_info.get("channel", "canary"),
-            "last_deploy": state.get("last_deploy_ts"),
-            "last_switch": state.get("last_switch_ts"),
-            "canary_stats": canary_stats,
-            "fallback_suggestions": fallback_suggestions,
-        }
+        if should_disable_canary() and not state.get("canary_disabled_fallback"):
+            set_canary_disabled_fallback(True)
+        data = build_deploy_status()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class DeployApplyBody(BaseModel):
+    ref: Optional[str] = None   # origin/main | tag:vX.Y.Z | sha:....
+    mode: Optional[str] = None  # bluegreen | single
+    force: Optional[bool] = False
+
+
+@app.post("/deploy/apply", tags=["Deploy"])
+def deploy_apply(body: Optional[DeployApplyBody] = None):
+    """Apply deploy: policy gate deploy_apply, optional fetch+staging ref, then blue-green flow (staging -> smoke -> health -> promote or rollback)."""
+    t0 = time.perf_counter()
+    body = body or DeployApplyBody()
+    try:
+        decision = get_policy_engine().can(_memory_actor(), "deploy", "deploy_apply")
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason or "policy denied")
+        ref = body.ref or "origin/main"
+        if body.mode and body.mode.strip().lower() == "single":
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "mode=single not implemented for apply")
+        from modules.humanoid.update.git_manager import fetch, create_staging_branch
+        from modules.humanoid.deploy.bluegreen import run_bluegreen_flow
+        r_fetch = fetch(os.getenv("UPDATE_REMOTE", "origin"))
+        if not r_fetch.get("ok"):
+            return _std_resp(False, {"step": "fetch", "error": r_fetch.get("error")}, int((time.perf_counter() - t0) * 1000), r_fetch.get("error"))
+        remote = os.getenv("UPDATE_REMOTE", "origin")
+        branch = (ref.replace("origin/", "").strip() if ref.startswith("origin/") else "main")
+        staging_name = os.getenv("UPDATE_STAGING_BRANCH", "staging").strip() or "staging"
+        r_staging = create_staging_branch(remote=remote, branch=branch, staging_name=staging_name)
+        if not r_staging.get("ok"):
+            return _std_resp(False, {"step": "create_staging", "error": r_staging.get("error")}, int((time.perf_counter() - t0) * 1000), r_staging.get("error"))
+        result = run_bluegreen_flow(ref=ref, dry_run=False)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), result.get("data"), ms, result.get("error"))
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))

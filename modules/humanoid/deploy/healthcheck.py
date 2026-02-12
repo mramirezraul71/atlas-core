@@ -1,4 +1,4 @@
-"""Extended health check: LLM latency, scheduler, memory, DB integrity, port, uptime. Score 0-100."""
+"""Extended health check. Score 0-100 deterministic: api_up +20, memory +15, audit +15, scheduler +15, llm +10, latency +15, error_rate +10."""
 from __future__ import annotations
 
 import os
@@ -8,6 +8,8 @@ import urllib.error
 from typing import Any, Dict, Optional
 
 HEALTH_TIMEOUT_SEC = 10
+LATENCY_THRESHOLD_MS = 2000
+ERROR_RATE_THRESHOLD = 0.1
 _APP_START_TIME: Optional[float] = None
 
 
@@ -62,6 +64,36 @@ def _check_memory_writable() -> Dict[str, Any]:
         return {"ok": True, "writable": True, "message": "ok"}
     except Exception as e:
         return {"ok": False, "writable": False, "message": str(e)}
+
+
+def _check_audit_writable() -> Dict[str, Any]:
+    """Audit DB writable (connect + SELECT)."""
+    try:
+        from modules.humanoid.audit import get_audit_logger
+        logger = get_audit_logger()
+        if getattr(logger, "_db", None) is None:
+            return {"ok": False, "writable": False, "message": "AUDIT_DB_PATH not set"}
+        conn = logger._db._ensure_conn()
+        conn.execute("SELECT 1")
+        conn.commit()
+        return {"ok": True, "writable": True, "message": "ok"}
+    except Exception as e:
+        return {"ok": False, "writable": False, "message": str(e)}
+
+
+def _check_llm_reachable() -> Dict[str, Any]:
+    """LLM (Ollama) reachable or /llm responds."""
+    try:
+        url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+        if not url.startswith("http"):
+            url = "http://" + url
+        req = urllib.request.Request(f"{url.rstrip('/')}/api/tags", method="GET")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            if r.status == 200:
+                return {"ok": True, "message": "ok"}
+            return {"ok": False, "message": f"status {r.status}"}
+    except Exception as e:
+        return {"ok": False, "message": str(e.reason) if getattr(e, "reason", None) else str(e)}
 
 
 def _check_db_integrity() -> Dict[str, Any]:
@@ -153,3 +185,86 @@ def health_score(checks: Dict[str, Any]) -> int:
     if n == 0:
         return 100  # all skipped => healthy
     return min(100, int(round(100.0 * ok_count / n)))
+
+
+def run_health_verbose(base_url: Optional[str] = None, active_port: Optional[int] = None) -> Dict[str, Any]:
+    """
+    Run health and return API shape: ok, score 0-100, checks (api_up, memory_writable, audit_writable,
+    scheduler_alive, llm_reachable, avg_latency_ms, error_rate, active_port, version, channel), ms, error.
+    Score: api_up +20, memory +15, audit +15, scheduler +15, llm +10, latency<=thr +15, error_rate<=thr +10.
+    """
+    t0 = time.perf_counter()
+    if base_url:
+        url = f"{base_url.rstrip('/')}/health"
+        try:
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=HEALTH_TIMEOUT_SEC) as r:
+                import json
+                data = json.loads(r.read().decode())
+                data["ms"] = int((time.perf_counter() - t0) * 1000)
+                return data
+        except Exception as e:
+            return {"ok": False, "score": 0, "checks": {}, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+
+    api_up = True
+    _mem = _check_memory_writable()
+    memory_writable = _mem.get("ok") and _mem.get("writable", True)
+    audit_writable = _check_audit_writable().get("ok", False)
+    _sched = _check_scheduler_running()
+    scheduler_alive = _sched.get("ok", False) and _sched.get("running", True)
+    llm_reachable = _check_llm_reachable().get("ok", False)
+    llm_lat = _check_llm_latency_avg()
+    avg_latency_ms = llm_lat.get("avg_ms")
+    if avg_latency_ms is None:
+        avg_latency_ms = 0.0
+    try:
+        from modules.humanoid.metrics import get_metrics_store
+        snap = get_metrics_store().snapshot()
+        counters = snap.get("counters") or {}
+        total = max(1, counters.get("requests", 1) + counters.get("errors", 0))
+        error_rate = (counters.get("errors", 0) or 0) / total
+    except Exception:
+        error_rate = 0.0
+    try:
+        from modules.humanoid.release import get_version_info
+        version_info = get_version_info()
+        version = version_info.get("version", "0.0.0")
+        channel = version_info.get("channel", "canary")
+    except Exception:
+        version = "0.0.0"
+        channel = "canary"
+    port = active_port if active_port is not None else int(os.getenv("ACTIVE_PORT", "8791") or 8791)
+
+    score = 0
+    if api_up:
+        score += 20
+    if memory_writable:
+        score += 15
+    if audit_writable:
+        score += 15
+    if scheduler_alive:
+        score += 15
+    if llm_reachable:
+        score += 10
+    if avg_latency_ms is not None and avg_latency_ms <= LATENCY_THRESHOLD_MS:
+        score += 15
+    elif avg_latency_ms is None:
+        score += 15
+    if error_rate <= ERROR_RATE_THRESHOLD:
+        score += 10
+
+    checks = {
+        "api_up": api_up,
+        "memory_writable": memory_writable,
+        "audit_writable": audit_writable,
+        "scheduler_alive": scheduler_alive,
+        "llm_reachable": llm_reachable,
+        "avg_latency_ms": round(avg_latency_ms, 1) if isinstance(avg_latency_ms, (int, float)) else None,
+        "error_rate": round(error_rate, 4),
+        "active_port": port,
+        "version": version,
+        "channel": channel,
+    }
+    ms = int((time.perf_counter() - t0) * 1000)
+    ok = score >= 60
+    return {"ok": ok, "score": min(100, score), "checks": checks, "ms": ms, "error": None if ok else "health score < 60"}
