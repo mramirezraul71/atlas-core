@@ -49,6 +49,20 @@ if ($ver.ok -and $ver.data.version) {
   Write-Host "GET /version FAIL: $($ver.err)" -ForegroundColor Red
 }
 
+# Deploy / Health / Canary (base URL = same $base from -AtlasPort)
+$health = Hit "/health"
+if ($health.ok -and ($health.data.ok -ne $null -or $health.data.score -ge 0)) {
+  Write-Host "GET /health OK (score=$($health.data.score) ms=$($health.data.ms))" -ForegroundColor Green
+} else {
+  Write-Host "GET /health FAIL: $($health.err)" -ForegroundColor Red
+}
+$deployStatus = Hit "/deploy/status"
+if ($deployStatus.ok -and $deployStatus.data -and ($deployStatus.data.ok -or $deployStatus.data.mode)) {
+  Write-Host "GET /deploy/status OK (mode=$($deployStatus.data.mode))" -ForegroundColor Green
+} else {
+  Write-Host "GET /deploy/status FAIL: $($deployStatus.err)" -ForegroundColor Red
+}
+
 $md = Hit "/modules"
 if ($md.ok) {
   Write-Host "/modules OK" -ForegroundColor Green
