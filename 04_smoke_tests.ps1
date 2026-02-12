@@ -97,6 +97,34 @@ if ($clusterNodes.ok) {
   Write-Host "GET /cluster/nodes FAIL: $($clusterNodes.err)" -ForegroundColor Red
 }
 
+# Gateway (must respond quickly; no_gateway_config OK, no hang)
+$gatewayStatus = Hit "/gateway/status"
+if ($gatewayStatus.ok -and $gatewayStatus.data) {
+  Write-Host "GET /gateway/status OK (enabled=$($gatewayStatus.data.enabled))" -ForegroundColor Green
+} else {
+  Write-Host "GET /gateway/status FAIL: $($gatewayStatus.err)" -ForegroundColor Red
+}
+$gatewayCheck = HitPost "/gateway/check" (@{})
+if ($gatewayCheck.ok -or ($gatewayCheck.data -and $gatewayCheck.data.error -match "policy")) {
+  Write-Host "POST /gateway/check OK or policy-denied" -ForegroundColor Green
+} else {
+  Write-Host "POST /gateway/check: $($gatewayCheck.err)" -ForegroundColor Yellow
+}
+$gatewayBootstrap = HitPost "/gateway/bootstrap" (@{})
+if ($gatewayBootstrap.ok) {
+  Write-Host "POST /gateway/bootstrap OK" -ForegroundColor Green
+} elseif ($gatewayBootstrap.data -and $gatewayBootstrap.data.error -eq "no_gateway_config") {
+  Write-Host "POST /gateway/bootstrap no_gateway_config (expected without config)" -ForegroundColor Green
+} else {
+  Write-Host "POST /gateway/bootstrap: $($gatewayBootstrap.err)" -ForegroundColor Yellow
+}
+$clusterStatusAgain = Hit "/cluster/status"
+if ($clusterStatusAgain.ok) {
+  Write-Host "GET /cluster/status OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /cluster/status FAIL: $($clusterStatusAgain.err)" -ForegroundColor Red
+}
+
 $md = Hit "/modules"
 if ($md.ok) {
   Write-Host "/modules OK" -ForegroundColor Green
