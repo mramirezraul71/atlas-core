@@ -69,6 +69,34 @@ if ($canaryStatus.ok -and $canaryStatus.data) {
   Write-Host "GET /canary/status FAIL: $($canaryStatus.err)" -ForegroundColor Red
 }
 
+# Cluster (fallback local if no worker; must not hang)
+$clusterStatus = Hit "/cluster/status"
+if ($clusterStatus.ok -and $clusterStatus.data) {
+  Write-Host "GET /cluster/status OK (enabled=$($clusterStatus.data.enabled))" -ForegroundColor Green
+} else {
+  Write-Host "GET /cluster/status FAIL: $($clusterStatus.err)" -ForegroundColor Red
+}
+$clusterRegBody = @{ node_id = "smoke-local"; role = "worker"; base_url = $base; capabilities = @{ hands = $true; web = $true; vision = $false; voice = $false; llm = $true } }
+$clusterReg = HitPost "/cluster/node/register" $clusterRegBody
+if ($clusterReg.ok -or ($clusterReg.data -and $clusterReg.data.error -match "policy")) {
+  Write-Host "POST /cluster/node/register OK or policy-denied (expected)" -ForegroundColor Green
+} else {
+  Write-Host "POST /cluster/node/register: $($clusterReg.err)" -ForegroundColor Yellow
+}
+$clusterHeartbeatBody = @{ node_id = "smoke-local"; capabilities = @{ hands = $true }; health = @{ score = 80 }; version = "0.0.0"; channel = "canary"; base_url = $base }
+$clusterHeartbeat = HitPost "/cluster/heartbeat" $clusterHeartbeatBody
+if ($clusterHeartbeat.ok -and $clusterHeartbeat.data) {
+  Write-Host "POST /cluster/heartbeat OK" -ForegroundColor Green
+} else {
+  Write-Host "POST /cluster/heartbeat: $($clusterHeartbeat.err)" -ForegroundColor Yellow
+}
+$clusterNodes = Hit "/cluster/nodes"
+if ($clusterNodes.ok) {
+  Write-Host "GET /cluster/nodes OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /cluster/nodes FAIL: $($clusterNodes.err)" -ForegroundColor Red
+}
+
 $md = Hit "/modules"
 if ($md.ok) {
   Write-Host "/modules OK" -ForegroundColor Green

@@ -209,8 +209,28 @@
       <div class="card" id="scheduler-card"><h2>Programador</h2><div class="value">—</div><div class="row"></div></div>
       <div class="card" id="update-card"><h2>Actualización</h2><div class="value">—</div><div class="row"><button class="small" onclick="updateCheck()">Comprobar</button></div></div>
       <div class="card" id="deploy-card"><h2>Despliegue</h2><div class="value">—</div><div class="row"></div></div>
+      <div class="card" id="cluster-card"><h2>Cluster</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadCluster()">Ver nodos</button></div></div>
       <div class="card" id="approvals-card"><h2>Aprobaciones</h2><div class="value"><ul id="approvals-list"></ul></div></div>
     </div>
+
+    <section class="robot-section" id="cluster-section" style="display:none;">
+      <div class="card">
+        <h2>Cluster — Owner Command Center</h2>
+        <p class="robot-task-help">Nodos registrados, heartbeat, ruta preferida y eventos.</p>
+        <div class="row" style="margin-bottom:0.75rem;">
+          <button class="small" onclick="loadCluster()">Actualizar nodos</button>
+          <button class="small secondary" onclick="clusterPing()">Ping</button>
+          <select id="cluster-route-pref" onchange="setClusterRoute()" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
+            <option value="local">Ruta: local</option>
+            <option value="remote_preferred">Ruta: remote_preferred</option>
+          </select>
+          <button class="small secondary" onclick="runClusterTestJob()">Run test job (best node)</button>
+        </div>
+        <div id="cluster-nodes-list" class="value" style="font-size:.85rem; max-height:200px; overflow-y:auto;"></div>
+        <h3 style="font-size:.8rem; color:var(--muted); margin:.75rem 0 .35rem;">Últimos eventos</h3>
+        <div id="cluster-events-list" class="value" style="font-size:.8rem; max-height:160px; overflow-y:auto; color:var(--muted);"></div>
+      </div>
+    </section>
 
     <section class="robot-section">
       <div class="card">
@@ -533,10 +553,53 @@
         const x = d.data;
         const mode = x.mode || 'single';
         const port = x.active_port != null ? x.active_port : '—';
-        const score = x.health_score != null ? x.health_score : '—';
-        const canary = x.canary_stats && x.canary_stats.enabled ? 'Canary ON' : 'Canary OFF';
+        const score = (x.last_health && x.last_health.score != null) ? x.last_health.score : (x.health_score != null ? x.health_score : '—');
+        const canary = x.canary && x.canary.enabled ? 'Canary ON' : 'Canary OFF';
         setCard('deploy-card', 'modo: ' + mode + ' · puerto: ' + port + ' · salud: ' + score + ' · ' + canary);
       } else setCard('deploy-card', '—');
+    }
+    async function loadCluster() {
+      const st = await get('/cluster/status');
+      const card = document.getElementById('cluster-card');
+      if (st && st.data) {
+        const en = st.data.enabled;
+        const nodeId = st.data.node_id || '—';
+        const role = st.data.role || '—';
+        const count = (st.data.nodes && st.data.nodes.length) || 0;
+        if (card) {
+          const val = card.querySelector('.value');
+          if (val) val.textContent = en ? (nodeId + ' · ' + role + ' · ' + count + ' nodo(s)') : 'Desactivado';
+        }
+        document.getElementById('cluster-section').style.display = en ? 'block' : 'none';
+        if (en) {
+          const nodesEl = document.getElementById('cluster-nodes-list');
+          const nodes = st.data.nodes || [];
+          nodesEl.innerHTML = nodes.length ? nodes.map((n, i) => '<div style="margin:.35rem 0; padding:.35rem; background:var(--bg-elevated); border-radius:6px;">' + n.node_id + ' · ' + (n.status || '—') + ' · score ' + (n.health_score != null ? n.health_score : '—') + ' · ' + (n.base_url || '') + ' <button class="small" data-base-url="' + (n.base_url || '').replace(/"/g, '&quot;') + '" onclick="clusterPingNode(this)">Ping</button></div>').join('') : '<span class="muted">Sin nodos</span>';
+          const ev = await get('/cluster/events?limit=20');
+          const eventsEl = document.getElementById('cluster-events-list');
+          const events = (ev && ev.data && Array.isArray(ev.data)) ? ev.data : [];
+          eventsEl.innerHTML = events.length ? events.slice(0, 15).map(e => e.ts + ' ' + e.node_id + ' ' + e.kind).join('\n') : '—';
+        }
+      } else {
+        if (card) { const val = card.querySelector('.value'); if (val) val.textContent = '—'; }
+      }
+    }
+    function clusterPing() {
+      get('/cluster/ping').then(d => alert(d && d.data && d.data.pong ? 'Pong OK' : 'No pong'));
+    }
+    function clusterPingNode(btnOrUrl) {
+      const baseUrl = typeof btnOrUrl === 'string' ? btnOrUrl : (btnOrUrl && btnOrUrl.getAttribute ? btnOrUrl.getAttribute('data-base-url') : null);
+      if (!baseUrl) return;
+      fetch(baseUrl.replace(/\/$/, '') + '/cluster/ping', { cache: 'no-store' }).then(r => r.json()).then(d => alert(d && d.data && d.data.pong ? 'Pong OK' : 'Error')).catch(() => alert('Error de red'));
+    }
+    function setClusterRoute() {
+      const sel = document.getElementById('cluster-route-pref');
+      if (sel) localStorage.setItem('atlas_cluster_route', sel.value);
+    }
+    async function runClusterTestJob() {
+      const r = await post('/cluster/route/decision', { task: 'hands', prefer_remote: true });
+      if (r && r.data) alert('Ruta: ' + (r.data.route || '—') + (r.data.node_id ? ' · nodo ' + r.data.node_id : ''));
+      else alert('Error: ' + (r && r.error ? r.error : 'sin respuesta'));
     }
     async function loadApprovals() {
       const d = await get('/approvals/list');
@@ -572,6 +635,7 @@
           loadScheduler(),
           loadUpdate(),
           loadDeploy(),
+          loadCluster(),
           loadApprovals()
         ]);
         setLastUpdate();
