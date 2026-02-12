@@ -21,7 +21,7 @@ if not os.getenv("SCHED_DB_PATH"):
 if not os.getenv("ATLAS_MEMORY_DB_PATH"):
     os.environ["ATLAS_MEMORY_DB_PATH"] = str(BASE_DIR / "logs" / "atlas_memory.sqlite")
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Header
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import importlib.util
@@ -75,6 +75,7 @@ app = FastAPI(
     openapi_tags=[
         {"name": "Health", "description": "Health check extendido (score 0-100, LLM, scheduler, memory, DB, uptime)."},
         {"name": "Deploy", "description": "Blue-green deployment, canary ramp-up, deploy status y reportes."},
+        {"name": "Cluster", "description": "Atlas Cluster: nodos, heartbeat, routing, ejecución remota (hands/web/vision/voice)."},
     ],
 )
 
@@ -679,6 +680,186 @@ def deploy_canary_report(hours: float = 24.0):
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
+
+
+# --- Cluster (multi-node) ---
+@app.get("/cluster/status", tags=["Cluster"])
+def cluster_status():
+    """Cluster status: enabled, node_id, role, nodes count."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cluster import registry
+        if not registry.cluster_enabled():
+            return _std_resp(True, {"enabled": False, "node_id": registry.node_id(), "role": registry.node_role(), "nodes": []}, int((time.perf_counter() - t0) * 1000), None)
+        nodes = registry.list_nodes()
+        data = {"enabled": True, "node_id": registry.node_id(), "role": registry.node_role(), "nodes": nodes, "count": len(nodes)}
+        return _std_resp(True, data, int((time.perf_counter() - t0) * 1000), None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/cluster/nodes", tags=["Cluster"])
+def cluster_nodes(status_filter: Optional[str] = None):
+    """List registered nodes (optionally filter by status). Marks stale nodes offline."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cluster import registry
+        registry.mark_offline_stale()
+        nodes = registry.list_nodes(status_filter=status_filter)
+        return _std_resp(True, nodes, int((time.perf_counter() - t0) * 1000), None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/cluster/events", tags=["Cluster"])
+def cluster_events(limit: int = 50, node_id_filter: Optional[str] = None):
+    """Last node_events for UI (register, heartbeat, offline, route, error)."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cluster import db as cluster_db
+        events = cluster_db.get_events(limit=limit, node_id=node_id_filter)
+        return _std_resp(True, events, int((time.perf_counter() - t0) * 1000), None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+class ClusterRegisterBody(BaseModel):
+    node_id: str
+    role: str = "worker"
+    base_url: str
+    capabilities: Optional[dict] = None
+    tags: Optional[dict] = None
+
+
+@app.post("/cluster/node/register", tags=["Cluster"])
+def cluster_node_register(body: ClusterRegisterBody):
+    """Register or update a node (policy: remote_execute or owner)."""
+    t0 = time.perf_counter()
+    try:
+        decision = get_policy_engine().can(_memory_actor(), "cluster", "remote_execute")
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason or "policy denied")
+        from modules.humanoid.cluster import registry
+        result = registry.register_node(body.node_id, body.role, body.base_url, body.capabilities, body.tags)
+        return _std_resp(result.get("ok", False), result, int((time.perf_counter() - t0) * 1000), result.get("error"))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+class ClusterHeartbeatBody(BaseModel):
+    node_id: str
+    capabilities: dict = {}
+    health: dict = {}
+    version: str = ""
+    channel: str = "canary"
+    base_url: Optional[str] = None
+
+
+@app.post("/cluster/heartbeat", tags=["Cluster"])
+def cluster_heartbeat(body: ClusterHeartbeatBody, request: Request = None):
+    """HQ: receive heartbeat from worker. Registers node if new (base_url from request)."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cluster.heartbeat import receive_heartbeat
+        result = receive_heartbeat(body.node_id, body.capabilities, body.health, body.version, body.channel, base_url=body.base_url)
+        return _std_resp(result.get("ok", False), result, int((time.perf_counter() - t0) * 1000), result.get("error"))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/cluster/ping", tags=["Cluster"])
+def cluster_ping():
+    """Ping: respond 200 if alive (for HQ->worker check)."""
+    return _std_resp(True, {"pong": True}, 0, None)
+
+
+class ClusterRouteBody(BaseModel):
+    task: str = "hands"
+    prefer_remote: bool = False
+    require_capability: Optional[str] = None
+
+
+@app.post("/cluster/route/decision", tags=["Cluster"])
+def cluster_route_decision(body: ClusterRouteBody):
+    """Debug: get routing decision for a task."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cluster.router import route_decision
+        decision = route_decision(body.task, prefer_remote=body.prefer_remote, require_capability=body.require_capability)
+        return _std_resp(True, decision, int((time.perf_counter() - t0) * 1000), None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+def _cluster_remote_result(ok: bool, data: Any = None, ms: int = 0, error: Optional[str] = None, correlation_id: Optional[str] = None) -> dict:
+    out = {"ok": ok, "data": data, "ms": ms, "error": error}
+    if correlation_id:
+        out["correlation_id"] = correlation_id
+    return out
+
+
+@app.post("/remote/hands", tags=["Cluster"])
+def remote_hands(body: dict):
+    """Worker: execute hands (shell). Returns {ok, data, ms, error, correlation_id}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cluster import trace
+        from modules.humanoid.cluster.remote_server import execute_remote_hands
+        cid = body.get("correlation_id") or trace.new_correlation_id()
+        r = execute_remote_hands(body)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _cluster_remote_result(r.get("ok", False), r.get("data"), ms, r.get("error"), cid)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _cluster_remote_result(False, None, ms, str(e), body.get("correlation_id"))
+
+
+@app.post("/remote/web", tags=["Cluster"])
+def remote_web(body: dict):
+    """Worker: execute web action."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cluster import trace
+        from modules.humanoid.cluster.remote_server import execute_remote_web
+        cid = body.get("correlation_id") or trace.new_correlation_id()
+        r = execute_remote_web(body)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _cluster_remote_result(r.get("ok", False), r.get("data"), ms, r.get("error"), cid)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _cluster_remote_result(False, None, ms, str(e), body.get("correlation_id"))
+
+
+@app.post("/remote/vision", tags=["Cluster"])
+def remote_vision(body: dict):
+    """Worker: execute vision (analyze image)."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cluster import trace
+        from modules.humanoid.cluster.remote_server import execute_remote_vision
+        cid = body.get("correlation_id") or trace.new_correlation_id()
+        r = execute_remote_vision(body)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _cluster_remote_result(r.get("ok", False), r.get("data"), ms, r.get("error"), cid)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _cluster_remote_result(False, None, ms, str(e), body.get("correlation_id"))
+
+
+@app.post("/remote/voice", tags=["Cluster"])
+def remote_voice(body: dict):
+    """Worker: execute voice action."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cluster import trace
+        from modules.humanoid.cluster.remote_server import execute_remote_voice
+        cid = body.get("correlation_id") or trace.new_correlation_id()
+        r = execute_remote_voice(body)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _cluster_remote_result(r.get("ok", False), r.get("data"), ms, r.get("error"), cid)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _cluster_remote_result(False, None, ms, str(e), body.get("correlation_id"))
 
 
 @app.get("/watchdog/status")

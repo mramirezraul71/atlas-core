@@ -37,6 +37,9 @@ def get_default_policies() -> List[PolicyRule]:
         PolicyRule(id="owner_deploy_apply", scope="deploy", condition={"role": "owner", "action": "deploy_apply"}, action="allow"),
         PolicyRule(id="deny_canary_config", scope="deploy", condition={"action": "canary_config"}, action="deny", meta={"description": "canary_config denied by default"}),
         PolicyRule(id="owner_canary_config", scope="deploy", condition={"role": "owner", "action": "canary_config"}, action="allow"),
+        PolicyRule(id="deny_remote_execute", scope="cluster", condition={"action": "remote_execute"}, action="deny", meta={"description": "remote_execute denied by default"}),
+        PolicyRule(id="owner_remote_execute", scope="cluster", condition={"role": "owner", "action": "remote_execute"}, action="allow"),
+        PolicyRule(id="hq_remote_execute", scope="cluster", condition={"role": "hq", "action": "remote_execute"}, action="allow"),
     ]
 
 
