@@ -33,6 +33,8 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_system_update(payload)
         elif kind == "ci_improve":
             out = _run_ci_improve(payload)
+        elif kind == "remote_hands":
+            out = _run_remote_hands(payload)
         else:
             out = {"ok": True, "result": "no-op", "kind": kind}
     except Exception as e:
@@ -57,6 +59,19 @@ def _run_update_check(payload: Dict[str, Any]) -> Dict[str, Any]:
             return {"ok": False, "error": "update module not available"}
         plan_result = update_mod.updater.plan(required)
         return plan_result
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _run_remote_hands(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run command via cluster dispatcher (local or best remote node). payload: {command, timeout_sec}."""
+    command = (payload.get("command") or "").strip()
+    if not command:
+        return {"ok": False, "error": "missing command in payload"}
+    try:
+        from modules.humanoid.dispatch.dispatcher import run_hands
+        result = run_hands(command, timeout_sec=payload.get("timeout_sec", 30), prefer_remote=payload.get("prefer_remote", True))
+        return {"ok": result.get("ok", False), "data": result.get("data"), "error": result.get("error"), "correlation_id": result.get("correlation_id")}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
