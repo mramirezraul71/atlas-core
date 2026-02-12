@@ -210,8 +210,31 @@
       <div class="card" id="update-card"><h2>Actualización</h2><div class="value">—</div><div class="row"><button class="small" onclick="updateCheck()">Comprobar</button></div></div>
       <div class="card" id="deploy-card"><h2>Despliegue</h2><div class="value">—</div><div class="row"></div></div>
       <div class="card" id="cluster-card"><h2>Cluster</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadCluster()">Ver nodos</button></div></div>
+      <div class="card" id="gateway-card"><h2>Gateway</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadGateway()">Ver</button></div></div>
       <div class="card" id="approvals-card"><h2>Aprobaciones</h2><div class="value"><ul id="approvals-list"></ul></div></div>
     </div>
+
+    <section class="robot-section" id="gateway-section" style="display:none;">
+      <div class="card">
+        <h2>Gateway — Stealth</h2>
+        <p class="robot-task-help">Modo actual, herramientas detectadas, último éxito, Check / Bootstrap / Set mode.</p>
+        <div class="row" style="margin-bottom:0.75rem;">
+          <button class="small" onclick="gatewayCheck()">Check</button>
+          <button class="small" onclick="gatewayBootstrap()">Bootstrap</button>
+          <select id="gateway-mode" onchange="gatewaySetMode()" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
+            <option value="auto">auto</option>
+            <option value="cloudflare">cloudflare</option>
+            <option value="tailscale">tailscale</option>
+            <option value="ssh">ssh</option>
+            <option value="lan">lan</option>
+          </select>
+          <span class="last-update" id="gateway-status-msg"></span>
+        </div>
+        <div id="gateway-tools" class="value" style="font-size:.85rem;"></div>
+        <div id="gateway-last-success" class="value" style="font-size:.8rem; color:var(--muted); margin-top:.5rem;"></div>
+        <div id="gateway-recommendations" class="value" style="font-size:.8rem; color:var(--amber); margin-top:.35rem;"></div>
+      </div>
+    </section>
 
     <section class="robot-section" id="cluster-section" style="display:none;">
       <div class="card">
@@ -601,6 +624,39 @@
       if (r && r.data) alert('Ruta: ' + (r.data.route || '—') + (r.data.node_id ? ' · nodo ' + r.data.node_id : ''));
       else alert('Error: ' + (r && r.error ? r.error : 'sin respuesta'));
     }
+    async function loadGateway() {
+      const st = await get('/gateway/status');
+      const card = document.getElementById('gateway-card');
+      if (st && st.data) {
+        const d = st.data;
+        if (card) { const val = card.querySelector('.value'); if (val) val.textContent = d.enabled ? (d.mode + ' · ' + (d.last_success_mode || '—')) : 'Desactivado'; }
+        document.getElementById('gateway-section').style.display = d.enabled ? 'block' : 'none';
+        const sel = document.getElementById('gateway-mode'); if (sel) sel.value = d.mode || 'auto';
+        const tools = document.getElementById('gateway-tools');
+        tools.innerHTML = 'cloudflared: ' + (d.tools && d.tools.cloudflared ? 'OK' : '—') + ' · tailscale: ' + (d.tools && d.tools.tailscale ? 'OK' : '—') + ' · ssh: ' + (d.tools && d.tools.ssh ? 'OK' : '—');
+        const last = document.getElementById('gateway-last-success');
+        last.textContent = d.last_success_ts ? ('Último éxito: ' + d.last_success_ts + ' · ' + (d.last_success_mode || '') + ' · ' + (d.last_success_target || '')) : 'Sin último éxito';
+        const rec = document.getElementById('gateway-recommendations');
+        rec.textContent = (d.recommendations && d.recommendations.length) ? d.recommendations.join('; ') : '';
+      } else { if (card) { const val = card.querySelector('.value'); if (val) val.textContent = '—'; } }
+    }
+    async function gatewayCheck() {
+      const msg = document.getElementById('gateway-status-msg'); if (msg) msg.textContent = 'Comprobando…';
+      const r = await post('/gateway/check');
+      if (msg) msg.textContent = r && r.ok ? 'Check OK' : (r && r.error ? r.error : 'Error');
+      loadGateway();
+    }
+    async function gatewayBootstrap() {
+      const msg = document.getElementById('gateway-status-msg'); if (msg) msg.textContent = 'Bootstrap…';
+      const r = await post('/gateway/bootstrap');
+      if (msg) msg.textContent = r && r.ok ? 'Bootstrap OK' : (r && r.error ? r.error : 'Error');
+      loadGateway();
+    }
+    async function gatewaySetMode() {
+      const sel = document.getElementById('gateway-mode'); if (!sel) return;
+      const r = await post('/gateway/mode', { mode: sel.value });
+      if (r && r.ok) loadGateway(); else alert(r && r.error ? r.error : 'Error');
+    }
     async function loadApprovals() {
       const d = await get('/approvals/list');
       const list = document.getElementById('approvals-list');
@@ -636,6 +692,7 @@
           loadUpdate(),
           loadDeploy(),
           loadCluster(),
+          loadGateway(),
           loadApprovals()
         ]);
         setLastUpdate();
