@@ -76,6 +76,7 @@ app = FastAPI(
         {"name": "Health", "description": "Health check extendido (score 0-100, LLM, scheduler, memory, DB, uptime)."},
         {"name": "Deploy", "description": "Blue-green deployment, canary ramp-up, deploy status y reportes."},
         {"name": "Cluster", "description": "Atlas Cluster: nodos, heartbeat, routing, ejecución remota (hands/web/vision/voice)."},
+        {"name": "Gateway", "description": "Stealth Gateway: Cloudflare / Tailscale / SSH / LAN, bootstrap, health."},
     ],
 )
 
@@ -787,6 +788,75 @@ def cluster_route_decision(body: ClusterRouteBody):
         from modules.humanoid.cluster.router import route_decision
         decision = route_decision(body.task, prefer_remote=body.prefer_remote, require_capability=body.require_capability)
         return _std_resp(True, decision, int((time.perf_counter() - t0) * 1000), None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+# --- Gateway (Stealth multi-path) ---
+@app.get("/gateway/status", tags=["Gateway"])
+def gateway_status():
+    """Gateway status: enabled, mode, tools detected, last success, recommendations."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.gateway.store import build_gateway_status
+        data = build_gateway_status()
+        return _std_resp(True, data, int((time.perf_counter() - t0) * 1000), None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.post("/gateway/check", tags=["Gateway"])
+def gateway_check():
+    """Check gateway candidates (policy: gateway_check)."""
+    t0 = time.perf_counter()
+    try:
+        decision = get_policy_engine().can(_memory_actor(), "gateway", "gateway_check")
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason or "policy denied")
+        from modules.humanoid.gateway.selector import check_candidates
+        data = check_candidates()
+        return _std_resp(True, data, int((time.perf_counter() - t0) * 1000), None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.post("/gateway/bootstrap", tags=["Gateway"])
+def gateway_bootstrap():
+    """Bootstrap worker to HQ (policy: gateway_bootstrap). Returns quickly if no_gateway_config."""
+    t0 = time.perf_counter()
+    try:
+        decision = get_policy_engine().can(_memory_actor(), "gateway", "gateway_bootstrap")
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason or "policy denied")
+        from modules.humanoid.gateway import bootstrap as gw_bootstrap
+        from modules.humanoid.gateway import selector as gw_selector
+        target = gw_selector.resolve_worker_url(None)
+        if not target:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "no_gateway_config")
+        result = gw_bootstrap.bootstrap()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), result, ms, result.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class GatewayModeBody(BaseModel):
+    mode: str  # auto | cloudflare | tailscale | ssh | lan
+
+
+@app.post("/gateway/mode", tags=["Gateway"])
+def gateway_set_mode(body: GatewayModeBody):
+    """Set gateway mode (policy: gateway_set_mode)."""
+    t0 = time.perf_counter()
+    try:
+        decision = get_policy_engine().can(_memory_actor(), "gateway", "gateway_set_mode")
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason or "policy denied")
+        from modules.humanoid.gateway import store as gateway_store
+        gateway_store.set_mode(body.mode)
+        data = gateway_store.build_gateway_status()
+        return _std_resp(True, data, int((time.perf_counter() - t0) * 1000), None)
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 

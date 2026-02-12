@@ -40,6 +40,12 @@ def get_default_policies() -> List[PolicyRule]:
         PolicyRule(id="deny_remote_execute", scope="cluster", condition={"action": "remote_execute"}, action="deny", meta={"description": "remote_execute denied by default"}),
         PolicyRule(id="owner_remote_execute", scope="cluster", condition={"role": "owner", "action": "remote_execute"}, action="allow"),
         PolicyRule(id="hq_remote_execute", scope="cluster", condition={"role": "hq", "action": "remote_execute"}, action="allow"),
+        PolicyRule(id="deny_gateway_check", scope="gateway", condition={"action": "gateway_check"}, action="deny", meta={"description": "gateway_check denied by default"}),
+        PolicyRule(id="owner_gateway_check", scope="gateway", condition={"role": "owner", "action": "gateway_check"}, action="allow"),
+        PolicyRule(id="deny_gateway_bootstrap", scope="gateway", condition={"action": "gateway_bootstrap"}, action="deny", meta={"description": "gateway_bootstrap denied by default"}),
+        PolicyRule(id="owner_gateway_bootstrap", scope="gateway", condition={"role": "owner", "action": "gateway_bootstrap"}, action="allow"),
+        PolicyRule(id="deny_gateway_set_mode", scope="gateway", condition={"action": "gateway_set_mode"}, action="deny", meta={"description": "gateway_set_mode denied by default"}),
+        PolicyRule(id="owner_gateway_set_mode", scope="gateway", condition={"role": "owner", "action": "gateway_set_mode"}, action="allow"),
     ]
 
 
