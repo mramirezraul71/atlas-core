@@ -483,6 +483,42 @@ def owner_status():
         return {"ok": False, "data": None, "ms": ms, "error": str(e)}
 
 
+class OwnerVoiceCommandBody(BaseModel):
+    transcript: str
+    device_source: Optional[str] = None
+
+@app.post("/owner/voice/command")
+def owner_voice_command(body: OwnerVoiceCommandBody):
+    """Voice approval: 'aprobar <id>' -> confirm; 'confirmar <id>' -> approve. Returns {response, approved}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.owner.voice_approval import handle_voice_command
+        response, approved = handle_voice_command(body.transcript or "", body.device_source)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": True, "response": response, "approved": approved, "ms": ms, "error": None}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "response": "", "approved": False, "ms": ms, "error": str(e)}
+
+
+class OwnerTelegramCallbackBody(BaseModel):
+    callback_data: str   # approve:ID | reject:ID
+    chat_id: str
+
+@app.post("/owner/telegram/callback")
+def owner_telegram_callback(body: OwnerTelegramCallbackBody):
+    """Handle Telegram inline callback (bot sends callback_data + chat_id). Returns {ok, action, id, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.comms.telegram_bridge import TelegramBridge
+        out = TelegramBridge().handle_callback_data(body.callback_data or "", body.chat_id or "")
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": out.get("ok"), "action": out.get("action"), "id": out.get("id"), "ms": ms, "error": out.get("error")}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "action": None, "id": None, "ms": ms, "error": str(e)}
+
+
 @app.post("/approvals/reject")
 def approvals_reject(body: ApprovalActionBody):
     """Reject item by id. Body: {id} or {approval_id}. Audited."""
