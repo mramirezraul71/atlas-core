@@ -8,15 +8,24 @@ from .gate import requires_approval, risk_level, requires_2fa_for_risk
 
 
 def _notify_telegram_approval_pending(item: Dict[str, Any]) -> None:
-    """If Telegram enabled, send notification for HIGH/critical pending approval. No-op if deps missing."""
+    """If Telegram enabled: critical -> inline Aprobar/Rechazar; else HIGH -> plain message."""
     if os.getenv("TELEGRAM_ENABLED", "").strip().lower() not in ("1", "true", "yes"):
         return
+    telegram_confirm = os.getenv("OWNER_TELEGRAM_CONFIRM", "").strip().lower() in ("1", "true", "yes")
     try:
         from modules.humanoid.comms.telegram_bridge import TelegramBridge
-        chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
-        risk = (item.get("risk") or "high").strip().upper()
-        msg = f"[ATLAS] Approval pendiente {risk}: id={item.get('id')} action={item.get('action')}. Revisa /ui o POST /approvals/approve"
-        TelegramBridge().send(chat_id, msg)
+        chat_id = (os.getenv("TELEGRAM_CHAT_ID", "") or "").strip()
+        if not chat_id:
+            return
+        bridge = TelegramBridge()
+        risk = (item.get("risk") or "high").strip().lower()
+        action = item.get("action") or "approval"
+        aid = item.get("id") or ""
+        if risk == "critical" and telegram_confirm:
+            bridge.send_approval_inline(chat_id, aid, action, risk)
+        else:
+            msg = f"[ATLAS] Approval pendiente {risk.upper()}: id={aid} action={action}. Revisa /ui o POST /approvals/approve"
+            bridge.send(chat_id, msg)
     except Exception:
         pass
 from .store import create as store_create, list_items, get, approve as store_approve, reject as store_reject

@@ -376,7 +376,14 @@
       responseEl.textContent = '…';
       try {
         let out;
-        if (taskType === 'quick') {
+        const textLower = text.trim().toLowerCase();
+        if (taskType === 'quick' && (textLower.startsWith('aprobar ') || textLower.startsWith('confirmar '))) {
+          out = await post('/owner/voice/command', { transcript: text.trim(), device_source: 'ui' });
+          const msg = (out && out.response !== undefined) ? out.response : (out && out.error ? 'Error: ' + out.error : 'Sin respuesta');
+          responseEl.textContent = msg;
+          if (out && out.approved) responseEl.classList.remove('error'); else if (out && out.error) responseEl.classList.add('error');
+          setLastResponseText(msg);
+        } else if (taskType === 'quick') {
           out = await post('/intent', { text: text });
           let msg = formatRobotResponse(out, 'quick');
           if (out && out.error) responseEl.classList.add('error');
