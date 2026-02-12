@@ -35,6 +35,8 @@ def get_default_policies() -> List[PolicyRule]:
         PolicyRule(id="owner_ci_autofix", scope="ci", condition={"role": "owner", "action": "ci_autofix"}, action="allow"),
         PolicyRule(id="deny_deploy_apply", scope="deploy", condition={"action": "deploy_apply"}, action="deny", meta={"description": "deploy_apply denied by default"}),
         PolicyRule(id="owner_deploy_apply", scope="deploy", condition={"role": "owner", "action": "deploy_apply"}, action="allow"),
+        PolicyRule(id="deny_canary_config", scope="deploy", condition={"action": "canary_config"}, action="deny", meta={"description": "canary_config denied by default"}),
+        PolicyRule(id="owner_canary_config", scope="deploy", condition={"role": "owner", "action": "canary_config"}, action="allow"),
     ]
 
 

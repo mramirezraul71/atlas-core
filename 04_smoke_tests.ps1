@@ -62,6 +62,12 @@ if ($deployStatus.ok -and $deployStatus.data -and ($deployStatus.data.ok -or $de
 } else {
   Write-Host "GET /deploy/status FAIL: $($deployStatus.err)" -ForegroundColor Red
 }
+$canaryStatus = Hit "/canary/status"
+if ($canaryStatus.ok -and $canaryStatus.data) {
+  Write-Host "GET /canary/status OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /canary/status FAIL: $($canaryStatus.err)" -ForegroundColor Red
+}
 
 $md = Hit "/modules"
 if ($md.ok) {
