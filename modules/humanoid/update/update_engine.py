@@ -152,6 +152,16 @@ def apply(
     update_window_required = _env_bool("UPDATE_REQUIRE_WINDOW", False)
     if update_window_required and not _in_update_window():
         return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": "outside update window"}
+    try:
+        from modules.humanoid.governance.gates import decide
+        d = decide("update_apply")
+        if d.blocked_by_emergency:
+            _audit("update", "apply", False, {"blocked": "emergency_stop"}, "emergency_stop_block", 0)
+            return {"ok": False, "data": None, "ms": 0, "error": "emergency_stop_block"}
+        if d.needs_approval and not d.allow:
+            return {"ok": False, "data": None, "ms": 0, "error": "governed_requires_approval"}
+    except Exception:
+        pass
     remote = _env_str("UPDATE_REMOTE", "origin")
     branch = _env_str("UPDATE_BRANCH", "main")
     staging_name = _env_str("UPDATE_STAGING_BRANCH", "staging")

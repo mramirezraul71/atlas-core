@@ -180,6 +180,16 @@ def execute_safe(
     """Execute safe actions; respect limit and policy. Capture evidence."""
     if not _policy_allows_ga_autorun():
         return []
+    try:
+        from modules.humanoid.governance.gates import decide
+        d = decide("ga_autorun")
+        if d.blocked_by_emergency:
+            _audit("ga", "safe_execute", False, {"blocked": "emergency_stop"}, "emergency_stop_block", 0)
+            return []
+        if d.needs_approval and not d.allow:
+            return []
+    except Exception:
+        pass
     enabled = os.getenv("GA_SAFE_AUTORUN_ENABLED", "true").strip().lower() in ("1", "true", "yes")
     if not enabled:
         return []

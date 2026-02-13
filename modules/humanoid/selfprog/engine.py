@@ -116,6 +116,18 @@ def run_selfprog_flow(
         report.append("SKIP: selfprog disabled or observe_only")
         return {"ok": False, "report": report, "ms": 0, "rollback": False}
 
+    try:
+        from modules.humanoid.governance.gates import decide
+        d = decide("selfprog_apply")
+        if d.blocked_by_emergency:
+            report.append("BLOCKED: emergency_stop")
+            return {"ok": False, "report": report, "ms": 0, "rollback": False}
+        if d.needs_approval and not d.allow:
+            report.append("SKIP: governed_requires_approval")
+            return {"ok": False, "report": report, "ms": 0, "rollback": False}
+    except Exception:
+        pass
+
     kind = spec.get("kind", "module")
     created = False
 
