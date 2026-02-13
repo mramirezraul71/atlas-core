@@ -107,6 +107,10 @@
     button:disabled { opacity: 0.6; cursor: not-allowed; }
     button.danger { background: var(--red); }
     button.danger:hover { filter: brightness(1.1); }
+    button.growth { background: var(--green); color: #fff; }
+    button.growth:hover { filter: brightness(1.1); }
+    button.governed { background: #64748b; color: #fff; }
+    button.governed:hover { filter: brightness(1.1); }
     button.secondary {
       background: var(--accent-muted);
       color: var(--purple-light);
@@ -201,6 +205,15 @@
         <button class="secondary" id="btn-refresh" onclick="refreshAll()">Actualizar</button>
       </div>
     </div>
+    <!-- Governance bar: GROWTH / GOVERNED / EMERGENCY STOP -->
+    <div class="governance-bar" id="governance-bar" style="display:flex;align-items:center;gap:.5rem;padding:.5rem 0;margin-bottom:.75rem;border-bottom:1px solid var(--card-border);">
+      <span style="font-size:.75rem;color:var(--muted);margin-right:.5rem;">Governance:</span>
+      <button class="growth" id="gov-growth" onclick="govSetMode('growth')">GROWTH</button>
+      <button class="governed" id="gov-governed" onclick="govSetMode('governed')">GOVERNED</button>
+      <button class="danger" id="gov-emergency" onclick="govEmergencyStop()">EMERGENCY STOP</button>
+      <span class="badge" id="gov-status" style="margin-left:.5rem;">—</span>
+      <span class="last-update" id="gov-msg"></span>
+    </div>
     <div class="grid">
       <div class="card" id="status-card"><h2>Estado</h2><div class="value">—</div></div>
       <div class="card" id="version-card"><h2>Versión</h2><div class="value">—</div></div>
@@ -274,6 +287,18 @@
         <div id="owner-expired-list" class="value" style="font-size:.8rem; max-height:80px; overflow-y:auto; color:var(--amber);"></div>
         <h3 style="font-size:.75rem; color:var(--muted); margin:.5rem 0 .25rem;">Historial críticos</h3>
         <div id="owner-critical-history" class="value" style="font-size:.8rem; max-height:140px; overflow-y:auto;"></div>
+      </div>
+    </section>
+
+    <section class="robot-section" id="governance-panel">
+      <div class="card">
+        <h2>Governance</h2>
+        <p class="robot-task-help">Log de cambios de modo, acciones bloqueadas, approvals creadas.</p>
+        <div class="row" style="margin-top:.5rem;">
+          <button class="small secondary" onclick="loadGovernanceStatus()">Actualizar</button>
+          <a href="#" id="governance-log-link" target="_blank" style="font-size:.8rem; color:var(--purple-light);">Log</a>
+        </div>
+        <div id="governance-log" class="value" style="font-size:.75rem; max-height:120px; overflow-y:auto; margin-top:.5rem; color:var(--muted);"></div>
       </div>
     </section>
 
@@ -1003,13 +1028,75 @@
           loadANSStatus(),
           loadOwnerStatus(),
           loadGAStatus(),
-          loadProductStatus()
+          loadProductStatus(),
+          loadGovernanceStatus()
         ]);
         setLastUpdate();
       } catch (e) {
         if (lastEl) lastEl.textContent = 'Error al actualizar';
       }
       if (btn) { btn.disabled = false; btn.textContent = 'Actualizar'; }
+    }
+    async function loadGovernanceStatus() {
+      const st = await get('/governance/status');
+      const logEl = document.getElementById('governance-log');
+      const statusEl = document.getElementById('gov-status');
+      const growthBtn = document.getElementById('gov-growth');
+      const governedBtn = document.getElementById('gov-governed');
+      const emergBtn = document.getElementById('gov-emergency');
+      if (st && st.ok) {
+        const mode = st.mode || 'governed';
+        const emergency = st.emergency_stop || false;
+        if (statusEl) statusEl.textContent = (emergency ? 'EMERGENCY ' : '') + mode.toUpperCase();
+        if (statusEl) statusEl.className = 'badge ' + (emergency ? 'err' : (mode === 'growth' ? 'ok' : 'warn'));
+        if (growthBtn) growthBtn.style.opacity = mode === 'growth' ? '1' : '0.6';
+        if (governedBtn) governedBtn.style.opacity = mode === 'governed' ? '1' : '0.6';
+        if (emergBtn) emergBtn.textContent = emergency ? 'EMERGENCY STOP ON' : 'EMERGENCY STOP';
+      }
+      const logData = await get('/governance/log?limit=10');
+      if (logData && logData.log && logEl) {
+        logEl.innerHTML = logData.log.map(x => x.action + ': ' + (x.from_val || '') + ' → ' + (x.to_val || '') + (x.reason ? ' (' + x.reason.substring(0,40) + ')' : '')).join('<br>') || '—';
+      }
+    }
+    async function govSetMode(mode) {
+      const msgEl = document.getElementById('gov-msg');
+      if (!ownerSessionToken) {
+        if (msgEl) msgEl.textContent = 'Inicia sesión owner para cambiar modo';
+        return;
+      }
+      if (msgEl) msgEl.textContent = 'Cambiando…';
+      const r = await post('/governance/mode', { mode: mode });
+      if (r && r.ok) {
+        if (msgEl) msgEl.textContent = 'Modo: ' + r.mode;
+        loadGovernanceStatus();
+      } else {
+        if (msgEl) msgEl.textContent = r && r.error ? r.error : 'Error';
+      }
+    }
+    let govEmergencyConfirm = false;
+    async function govEmergencyStop() {
+      const msgEl = document.getElementById('gov-msg');
+      if (!ownerSessionToken) {
+        if (msgEl) msgEl.textContent = 'Inicia sesión owner para Emergency Stop';
+        return;
+      }
+      const st = await get('/governance/status');
+      const cur = st && st.emergency_stop;
+      if (!govEmergencyConfirm && !cur) {
+        govEmergencyConfirm = true;
+        if (msgEl) msgEl.textContent = 'Confirma: pulsa de nuevo para Emergency Stop';
+        setTimeout(() => { govEmergencyConfirm = false; }, 3000);
+        return;
+      }
+      govEmergencyConfirm = false;
+      if (msgEl) msgEl.textContent = 'Procesando…';
+      const r = await post('/governance/emergency', { enable: !cur });
+      if (r && r.ok) {
+        if (msgEl) msgEl.textContent = 'Emergency: ' + (r.emergency_stop ? 'ON' : 'OFF');
+        loadGovernanceStatus();
+      } else {
+        if (msgEl) msgEl.textContent = r && r.error ? r.error : 'Error';
+      }
     }
     refreshAll();
     setInterval(refreshAll, 30000);
