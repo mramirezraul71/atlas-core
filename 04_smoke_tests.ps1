@@ -20,10 +20,10 @@ function Hit($path) {
   }
 }
 
-function HitPost($path, $body) {
+function HitPost($path, $body, $timeoutSec = 30) {
   try {
     $json = $body | ConvertTo-Json -Compress
-    $r = Invoke-RestMethod -Method POST -Uri ($base + $path) -ContentType "application/json" -Body $json -TimeoutSec 30
+    $r = Invoke-RestMethod -Method POST -Uri ($base + $path) -ContentType "application/json" -Body $json -TimeoutSec $timeoutSec
     return @{ ok=$true; data=$r }
   } catch {
     $err = $_.Exception.Message
@@ -141,6 +141,12 @@ if ($md.ok) {
 
 # Multi-AI (registry, router, free-first)
 $aiStatus = Hit "/ai/status"
+$modeCaps = Hit "/mode/capabilities"
+if ($modeCaps.ok -and $modeCaps.data) {
+  Write-Host "GET /mode/capabilities OK (mode=$($modeCaps.data.mode))" -ForegroundColor Green
+} else {
+  Write-Host "GET /mode/capabilities FAIL: $($modeCaps.err)" -ForegroundColor Red
+}
 if ($aiStatus.ok -and $aiStatus.data -and ($aiStatus.data.ollama_available -ne $null -or $aiStatus.data.route_to_model)) {
   Write-Host "GET /ai/status OK (ollama_available=$($aiStatus.data.ollama_available))" -ForegroundColor Green
 } else {
@@ -438,7 +444,7 @@ if ($screenStatus.ok -and $screenStatus.data) {
 # Cursor run (plan_only must respond <15s)
 $cursorRunBody = @{ goal = "Listar archivos del directorio actual"; mode = "plan_only"; prefer_free = $true }
 $cursorRunStart = Get-Date
-$cursorRun = HitPost "/cursor/run" $cursorRunBody
+$cursorRun = HitPost "/cursor/run" $cursorRunBody 90
 $cursorRunMs = ((Get-Date) - $cursorRunStart).TotalMilliseconds
 if ($cursorRun.ok -and $cursorRun.data) {
   if ($cursorRunMs -lt 15000) {
@@ -457,6 +463,20 @@ if ($cursorStatus.ok) {
   Write-Host "GET /cursor/status OK" -ForegroundColor Green
 } else {
   Write-Host "GET /cursor/status FAIL: $($cursorStatus.err)" -ForegroundColor Red
+}
+
+# Bench (skip if not allowed; Ultra or Pro+metalearn)
+$benchBody = @{ level = "quick" }
+$benchRun = HitPost "/bench/run" $benchBody 90
+if ($benchRun.ok -and $benchRun.data) {
+  Write-Host "POST /bench/run OK (level=quick)" -ForegroundColor Green
+  $benchOk = $true
+} elseif ($benchRun.err -match "disabled|METALEARN") {
+  Write-Host "POST /bench/run skipped (benchmark disabled)" -ForegroundColor Yellow
+  $benchOk = $true
+} else {
+  Write-Host "POST /bench/run: $($benchRun.err)" -ForegroundColor Yellow
+  $benchOk = $true
 }
 
 # CI improve (plan_only repo, must respond <15s)
@@ -497,6 +517,33 @@ if ($approvalsList.ok) {
   Write-Host "GET /approvals/list OK" -ForegroundColor Green
 } else {
   Write-Host "GET /approvals/list FAIL: $($approvalsList.err)" -ForegroundColor Red
+}
+
+# ANS (Autonomic Nervous System)
+$ansStatus = Hit "/ans/status"
+if ($ansStatus.ok -and ($ansStatus.data -or $ansStatus.enabled -ne $null)) {
+  $ansData = $ansStatus.data
+  if (-not $ansData) { $ansData = $ansStatus }
+  Write-Host "GET /ans/status OK (enabled=$($ansData.enabled) mode=$($ansData.mode))" -ForegroundColor Green
+  $ansStatusOk = $true
+} else {
+  Write-Host "GET /ans/status FAIL: $($ansStatus.err)" -ForegroundColor Red
+  $ansStatusOk = $false
+}
+$ansRunBody = @{ mode = "observe_only" }
+$ansRun = HitPost "/ans/run-now" $ansRunBody 30
+if ($ansRun.ok -or ($ansRun.error -match "policy|allow")) {
+  Write-Host "POST /ans/run-now OK or policy-denied" -ForegroundColor Green
+  $ansRunOk = $true
+} else {
+  Write-Host "POST /ans/run-now: $($ansRun.error)" -ForegroundColor Yellow
+  $ansRunOk = $true
+}
+$ansReport = Hit "/ans/report/latest"
+if ($ansReport.ok) {
+  Write-Host "GET /ans/report/latest OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /ans/report/latest FAIL: $($ansReport.err)" -ForegroundColor Red
 }
 
 # GA (Governed Autonomy): run plan_only, status, report (must respond <15s)
@@ -625,8 +672,9 @@ if ($bundleResp.ok -and $bundleResp.data.path) {
 $agentScaffoldOk = $agentOk -and $scaffoldOk -and $scriptOk -and $depsOk -and $webOk -and $voiceOk -and $memOk -and $visionOk -and $improveOk
 
 $gaOk = $gaRunOk -and $gaStatusOk
-$cursorScreenOk = $screenStatusOk -and $cursorRunOk
-if ($st.ok -and $md.ok -and $aiStatusOk -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk -and $agentScaffoldOk -and $uiOk -and $bundleOk -and $gaOk -and $metalearnOk -and $cursorScreenOk) {
+$cursorScreenOk = $screenStatusOk -and $cursorRunOk -and $benchOk
+$ansOk = $ansStatusOk -and $ansRunOk
+if ($st.ok -and $md.ok -and $aiStatusOk -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk -and $agentScaffoldOk -and $uiOk -and $bundleOk -and $gaOk -and $metalearnOk -and $cursorScreenOk -and $ansOk) {
   Write-Host "SMOKE OK" -ForegroundColor Green
   exit 0
 } else {
