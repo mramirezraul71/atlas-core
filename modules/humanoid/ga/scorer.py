@@ -63,9 +63,16 @@ def _map_finding_to_action(f: Finding) -> tuple[str, int]:
 
 
 def score_finding(f: Finding) -> ActionCandidate:
-    """Convert Finding to ActionCandidate with risk + ROI."""
+    """Convert Finding to ActionCandidate with risk + ROI. Meta-learning overrides applied if enabled."""
     action_type, roi = _map_finding_to_action(f)
     risk_level = RISK_MAP.get(action_type, "medium")
+    try:
+        from modules.humanoid.metalearn.tuner import get_risk_overrides
+        overrides = get_risk_overrides()
+        if overrides and action_type in overrides:
+            risk_level = overrides[action_type]
+    except Exception:
+        pass
     evidence = EVIDENCE_REQUIRED.get(action_type, ["exit_code"])
     return ActionCandidate(
         finding=f,

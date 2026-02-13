@@ -86,14 +86,25 @@ def approve(
         get_audit_logger().log_event("approvals", resolved_by, "approve", ok, 0, None, {"id": aid}, None)
     except Exception:
         pass
+    try:
+        from modules.humanoid.metalearn.collector import record_approval_resolved
+        record_approval_resolved(aid, item.get("action"), item.get("risk"), "approved", item)
+    except Exception:
+        pass
     return {"ok": ok, "id": aid, "status": "approved" if ok else "not_found"}
 
 
 def reject(aid: str, resolved_by: str = "api") -> Dict[str, Any]:
+    item = get(aid)
     ok = store_reject(aid, resolved_by=resolved_by)
     try:
         from modules.humanoid.audit import get_audit_logger
         get_audit_logger().log_event("approvals", resolved_by, "reject", ok, 0, None, {"id": aid}, None)
+    except Exception:
+        pass
+    try:
+        from modules.humanoid.metalearn.collector import record_approval_resolved
+        record_approval_resolved(aid, (item or {}).get("action"), (item or {}).get("risk"), "rejected", item or {})
     except Exception:
         pass
     return {"ok": ok, "id": aid, "status": "rejected" if ok else "not_found"}
