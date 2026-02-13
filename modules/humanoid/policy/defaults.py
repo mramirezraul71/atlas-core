@@ -58,6 +58,12 @@ def get_default_policies() -> List[PolicyRule]:
         PolicyRule(id="contadora_memory_read", scope="memory", condition={"role": "contadora", "action": "memory_read"}, action="allow"),
         PolicyRule(id="contadora_memory_write", scope="memory", condition={"role": "contadora", "action": "memory_write"}, action="allow"),
         PolicyRule(id="contadora_memory_export", scope="memory", condition={"role": "contadora", "action": "memory_export"}, action="allow"),
+        # LIMITES DUROS: NUNCA borrar audit db, snapshots, rollback, approvals, policy
+        PolicyRule(id="deny_delete_audit_db", scope="hands", condition={"action": "delete_path", "path_contains": "atlas_audit.sqlite"}, action="deny", meta={"description": "NUNCA borrar audit db"}),
+        PolicyRule(id="deny_delete_snapshots", scope="hands", condition={"action": "delete_path", "path_contains": "snapshots"}, action="deny", meta={"description": "NUNCA borrar snapshots"}),
+        PolicyRule(id="deny_delete_rollback", scope="hands", condition={"action": "delete_path", "path_contains": "rollback"}, action="deny", meta={"description": "NUNCA borrar rollback engine"}),
+        PolicyRule(id="deny_delete_approvals", scope="hands", condition={"action": "delete_path", "path_contains": "approvals"}, action="deny", meta={"description": "NUNCA borrar approvals engine"}),
+        PolicyRule(id="deny_delete_policy", scope="hands", condition={"action": "delete_path", "path_contains": "policy"}, action="deny", meta={"description": "NUNCA borrar policy engine"}),
     ]
 
 
