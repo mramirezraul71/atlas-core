@@ -323,6 +323,51 @@
       </div>
     </section>
 
+    <section class="robot-section" id="cursor-mode-section">
+      <div class="card">
+        <h2>Cursor Mode</h2>
+        <p class="robot-task-help" style="color:var(--muted); font-size:.8rem;">Objetivo único, plan con IA (free-first), pasos y evidencia. plan_only = solo plan; controlled/auto = ejecución con policy.</p>
+        <div class="robot-task-type">
+          <label for="cursor-goal">Objetivo</label>
+          <textarea id="cursor-goal" class="robot-input" placeholder="Ej: Listar archivos del directorio actual" rows="2" style="min-height:60px;"></textarea>
+        </div>
+        <div class="row" style="margin-top:.5rem; gap:1rem;">
+          <div class="robot-task-type">
+            <label for="cursor-mode">Modo</label>
+            <select id="cursor-mode" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
+              <option value="plan_only">Solo plan</option>
+              <option value="controlled">Controlado</option>
+              <option value="auto">Auto</option>
+            </select>
+          </div>
+          <div class="robot-task-type">
+            <label for="cursor-free">IA</label>
+            <select id="cursor-free" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
+              <option value="free_only">Solo gratis (Ollama)</option>
+              <option value="auto">Auto</option>
+              <option value="allow_paid">Permitir pago (Owner)</option>
+            </select>
+          </div>
+        </div>
+        <div class="robot-actions" style="margin-top:.75rem;">
+          <button id="cursor-run-btn" onclick="cursorRun()">Run</button>
+          <span class="last-update" id="cursor-status"></span>
+        </div>
+        <div id="cursor-steps-panel" class="metrics-list" style="margin-top:.75rem; display:none;">
+          <strong>Pasos</strong>
+          <ul id="cursor-steps-list"></ul>
+        </div>
+        <div id="cursor-routing-panel" class="metrics-list" style="margin-top:.5rem; display:none;">
+          <strong>Modelo</strong>
+          <span id="cursor-routing-text"></span>
+        </div>
+        <div id="cursor-evidence-panel" class="metrics-list" style="margin-top:.35rem; display:none;">
+          <strong>Evidencia</strong>
+          <span id="cursor-evidence-text"></span>
+        </div>
+      </div>
+    </section>
+
     <section class="robot-section">
       <div class="card">
         <h2>Voz y rostro</h2>
@@ -429,6 +474,56 @@
         responseEl.classList.add('error');
       }
       statusEl.textContent = '';
+      btn.disabled = false;
+    }
+
+    async function cursorRun() {
+      const goalEl = document.getElementById('cursor-goal');
+      const statusEl = document.getElementById('cursor-status');
+      const btn = document.getElementById('cursor-run-btn');
+      const stepsPanel = document.getElementById('cursor-steps-panel');
+      const stepsList = document.getElementById('cursor-steps-list');
+      const routingPanel = document.getElementById('cursor-routing-panel');
+      const routingText = document.getElementById('cursor-routing-text');
+      const evidencePanel = document.getElementById('cursor-evidence-panel');
+      const evidenceText = document.getElementById('cursor-evidence-text');
+      const goal = (goalEl && goalEl.value || '').trim();
+      if (!goal) {
+        statusEl.textContent = 'Escribe un objetivo.';
+        return;
+      }
+      const mode = (document.getElementById('cursor-mode') && document.getElementById('cursor-mode').value) || 'plan_only';
+      const freeSel = document.getElementById('cursor-free') && document.getElementById('cursor-free').value;
+      const prefer_free = freeSel !== 'allow_paid';
+      const allow_paid = freeSel === 'allow_paid';
+      btn.disabled = true;
+      statusEl.textContent = 'Ejecutando…';
+      stepsPanel.style.display = 'none';
+      routingPanel.style.display = 'none';
+      evidencePanel.style.display = 'none';
+      try {
+        const out = await post('/cursor/run', { goal: goal, mode: mode, prefer_free: prefer_free, allow_paid: allow_paid });
+        if (out && out.data) {
+          const d = out.data;
+          if (d.steps && d.steps.length) {
+            stepsPanel.style.display = 'block';
+            stepsList.innerHTML = d.steps.map(function(s) {
+              const desc = typeof s === 'object' ? (s.description || s) : s;
+              return '<li>' + (desc || '').slice(0, 120) + '</li>';
+            }).join('');
+          }
+          if (d.model_routing && (d.model_routing.provider_id || d.model_routing.route)) {
+            routingPanel.style.display = 'block';
+            routingText.textContent = (d.model_routing.provider_id || '') + ' / ' + (d.model_routing.route || '') + ' (' + (d.model_routing.reason || '') + ')';
+          }
+          if (d.evidence && d.evidence.length) { evidenceText.textContent = d.evidence.join(', '); evidencePanel.style.display = 'block'; }
+          else if (d.evidence) { evidenceText.textContent = String(d.evidence); evidencePanel.style.display = 'block'; }
+          if (d.next_actions && d.next_actions.length) { evidenceText.textContent = (evidenceText.textContent || '') + (evidenceText.textContent ? ' | ' : '') + 'Siguientes: ' + d.next_actions.join('; '); evidencePanel.style.display = 'block'; }
+        }
+        statusEl.textContent = out && out.ok ? (out.data && out.data.summary ? out.data.summary : 'OK') : (out && out.error ? out.error : 'Error');
+      } catch (e) {
+        statusEl.textContent = 'Error: ' + (e.message || String(e));
+      }
       btn.disabled = false;
     }
 

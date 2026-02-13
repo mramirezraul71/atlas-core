@@ -47,6 +47,7 @@ def get_default_policies() -> List[PolicyRule]:
         PolicyRule(id="deny_gateway_set_mode", scope="gateway", condition={"action": "gateway_set_mode"}, action="deny", meta={"description": "gateway_set_mode denied by default"}),
         PolicyRule(id="owner_gateway_set_mode", scope="gateway", condition={"role": "owner", "action": "gateway_set_mode"}, action="allow"),
         PolicyRule(id="ga_autorun", scope="ga", condition={"role": "system", "action": "ga_autorun"}, action="allow"),
+        PolicyRule(id="owner_screen_act", scope="screen", condition={"role": "owner", "action": "screen_act"}, action="allow"),
     ]
 
 

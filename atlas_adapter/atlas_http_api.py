@@ -344,6 +344,77 @@ def llm_endpoint(req: LLMRequest) -> LLMResponse:
     return resp
 
 
+# --- Multi-AI (registry, router, status) ---
+@app.get("/ai/status", tags=["AI"])
+def ai_status():
+    """Multi-AI status: providers, route_to_model, budget, policies, telemetry."""
+    from modules.humanoid.ai.status import get_ai_status
+    return get_ai_status()
+
+
+# --- Cursor mode (end-to-end orchestration) ---
+class CursorRunBody(BaseModel):
+    goal: str
+    mode: Optional[str] = "plan_only"  # plan_only | controlled | auto
+    context: Optional[dict] = None
+    prefer_free: Optional[bool] = True
+    allow_paid: Optional[bool] = False
+
+
+@app.post("/cursor/run", tags=["Cursor"])
+def cursor_run_endpoint(body: CursorRunBody):
+    """Cursor-mode run: plan with AI router, optional execution. Returns summary, evidence, model_routing."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cursor import cursor_run
+        result = cursor_run(
+            goal=body.goal,
+            mode=body.mode or "plan_only",
+            context=body.context,
+            prefer_free=body.prefer_free if body.prefer_free is not None else True,
+            allow_paid=body.allow_paid if body.allow_paid is not None else False,
+        )
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), result.get("data"), ms, result.get("error"))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+class CursorStepBody(BaseModel):
+    step_index: int = 0
+    approve: Optional[bool] = False
+
+
+@app.post("/cursor/step/execute", tags=["Cursor"])
+def cursor_step_execute(body: CursorStepBody):
+    """Execute one step from last cursor run (policy/approvals)."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cursor import get_cursor_status
+        status = get_cursor_status()
+        data = status.get("data")
+        if not data or not data.get("steps"):
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "no cursor run or no steps")
+        idx = max(0, min(body.step_index, len(data["steps"]) - 1))
+        step = data["steps"][idx]
+        if not body.approve:
+            return _std_resp(True, {"step": step, "executed": False, "message": "Set approve=true to execute"}, int((time.perf_counter() - t0) * 1000), None)
+        data["steps"][idx]["status"] = "executed"
+        return _std_resp(True, {"step": step, "executed": True}, int((time.perf_counter() - t0) * 1000), None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/cursor/status", tags=["Cursor"])
+def cursor_status_endpoint():
+    """Last cursor run state: goal, steps, model_routing, evidence."""
+    try:
+        from modules.humanoid.cursor import get_cursor_status
+        return get_cursor_status()
+    except Exception as e:
+        return {"ok": False, "data": None, "message": str(e)}
+
+
 # --- Humanoid (kernel + modules) ---
 from modules.humanoid.api import router as humanoid_router
 from modules.humanoid.ga.api import router as ga_router
@@ -1975,6 +2046,133 @@ def vision_status_endpoint():
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
+
+
+# --- Screen (capture / analyze / locate / act, policy-gated) ---
+@app.get("/screen/status")
+def screen_status_endpoint():
+    """GET /screen/status. Responds even when disabled (enabled=false, missing_deps)."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.screen import get_screen_status
+        data = get_screen_status()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class ScreenCaptureBody(BaseModel):
+    region: Optional[List[int]] = None  # [x, y, w, h]
+    format: Optional[str] = "png"
+
+
+@app.post("/screen/capture")
+def screen_capture(body: Optional[ScreenCaptureBody] = None):
+    """Capture screen or region. Returns {ok, data: {path?, b64?}, ms, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.screen.capture import capture_screen, save_capture_to_file
+        region = tuple(body.region) if body and body.region and len(body.region) == 4 else None
+        png, err = capture_screen(region=region, format=body.format if body else "png")
+        if err or not png:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), err or "no capture")
+        import base64
+        import os
+        out_dir = (os.getenv("ATLAS_REPO_PATH") or os.getenv("POLICY_ALLOWED_PATHS", "C:\\ATLAS_PUSH")).strip().split(",")[0].strip()
+        logs_dir = os.path.join(out_dir, "logs", "screen")
+        path = save_capture_to_file(png, logs_dir, "capture")
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"path": path, "b64": base64.b64encode(png).decode("ascii")[:200] + "..."}, ms, None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+class ScreenAnalyzeBody(BaseModel):
+    image_path: Optional[str] = None
+    image_b64: Optional[str] = None
+    prompt: Optional[str] = None
+
+
+@app.post("/screen/analyze")
+def screen_analyze(body: Optional[ScreenAnalyzeBody] = None):
+    """Layout + text + vision suggestions. Returns {ok, data: {layout, description, ...}, ms, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.screen.layout import get_layout
+        from modules.humanoid.screen.vision_llm import analyze_image
+        layout = get_layout()
+        desc_result = {"description": "", "suggestions": []}
+        if body and (body.image_b64 or body.image_path):
+            desc_result = analyze_image(image_base64=body.image_b64, image_path=body.image_path, prompt=body.prompt or "Describe UI and suggest actions.")
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"layout": layout, **desc_result}, ms, layout.get("error"))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+class ScreenLocateBody(BaseModel):
+    query: str
+    region: Optional[List[int]] = None
+
+
+@app.post("/screen/locate")
+def screen_locate(body: ScreenLocateBody):
+    """Find elements by text query. Returns {ok, data: {matches}, ms, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.screen.locator import locate
+        region = tuple(body.region) if body.region and len(body.region) == 4 else None
+        result = locate(body.query, region=region)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), result, ms, result.get("error"))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+class ScreenActBody(BaseModel):
+    action: str  # click | type | hotkey | scroll
+    payload: dict  # {x,y} | {text} | {keys:[]} | {clicks, x?, y?}
+    destructive: Optional[bool] = None  # if True, may require approval
+
+
+@app.post("/screen/act")
+def screen_act(body: ScreenActBody):
+    """Execute screen action (policy-gated). Evidence: screenshot_before/after, coords, ms. Destructive -> ApprovalItem."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.policy import ActorContext, get_policy_engine
+        from modules.humanoid.screen.status import get_screen_status
+        from modules.humanoid.screen.policy import check_rate_limit, is_destructive_action, record_screen_act
+        from modules.humanoid.screen.capture import capture_screen, save_capture_to_file
+        from modules.humanoid.screen.actions import execute_action
+        import os
+        if not get_screen_status().get("enabled", False):
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "screen module disabled")
+        ctx = ActorContext(actor="api", role="owner")
+        decision = get_policy_engine().can(ctx, "screen", "screen_act", None)
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
+        allowed, reason = check_rate_limit()
+        if not allowed:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), reason)
+        before_png, _ = capture_screen()
+        _base = (os.getenv("ATLAS_REPO_PATH") or os.getenv("POLICY_ALLOWED_PATHS", "C:\\ATLAS_PUSH")).strip().split(",")[0].strip()
+        _screen_logs = os.path.join(_base, "logs", "screen")
+        path_before = save_capture_to_file(before_png, _screen_logs, "before") if before_png else None
+        result = execute_action(body.action, body.payload or {})
+        after_png, _ = capture_screen()
+        path_after = save_capture_to_file(after_png, _screen_logs, "after") if after_png else None
+        record_screen_act()
+        ms = int((time.perf_counter() - t0) * 1000)
+        evidence = {"screenshot_before": path_before, "screenshot_after": path_after, "coords": body.payload, "ms": ms}
+        destructive = body.destructive if body.destructive is not None else is_destructive_action(body.action, body.payload or {})
+        if destructive:
+            evidence["approval_required"] = True
+        return _std_resp(result.get("ok", False), {"evidence": evidence, "result": result}, ms, result.get("error"))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
 
 # --- Memory (Policy: memory_read / memory_write / memory_export; memory_delete denied) ---

@@ -69,9 +69,51 @@ def check_tts() -> Dict[str, Any]:
         return {"module": "voice_tts", "available": False, "missing_deps": ["pyttsx3"], "error": str(e), "suggested": "pip install pyttsx3"}
 
 
+def check_screen() -> Dict[str, Any]:
+    """Screen intelligence: mss, pyautogui, pywinauto, pytesseract, pillow. No auto-install."""
+    missing = []
+    try:
+        import mss
+    except ImportError:
+        missing.append("mss")
+    try:
+        import pyautogui
+    except ImportError:
+        missing.append("pyautogui")
+    try:
+        import pywinauto
+    except ImportError:
+        missing.append("pywinauto")
+    try:
+        from PIL import Image
+    except ImportError:
+        missing.append("pillow")
+    try:
+        import pytesseract
+        pytesseract.get_tesseract_version()
+    except Exception:
+        missing.append("pytesseract")
+        missing.append("tesseract")
+    suggested = []
+    if "mss" in missing or "pyautogui" in missing:
+        suggested.append("pip install mss pyautogui")
+    if "pywinauto" in missing:
+        suggested.append("pip install pywinauto")
+    if "pillow" in missing:
+        suggested.append("pip install pillow")
+    if "pytesseract" in missing or "tesseract" in missing:
+        suggested.append("pip install pytesseract; install Tesseract binary")
+    return {
+        "module": "screen",
+        "available": len(missing) == 0,
+        "missing_deps": missing,
+        "suggested": "; ".join(suggested) if suggested else "",
+    }
+
+
 def check_all() -> Dict[str, Any]:
     """Return {ok, modules: [{module, available, missing_deps, suggested}], missing_deps: [...], suggested_commands: [...]}."""
-    results = [check_sqlite(), check_ollama(), check_vision(), check_playwright(), check_stt(), check_tts()]
+    results = [check_sqlite(), check_ollama(), check_vision(), check_playwright(), check_stt(), check_tts(), check_screen()]
     all_missing: List[str] = []
     suggested: List[str] = []
     for r in results:
