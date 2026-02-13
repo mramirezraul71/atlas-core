@@ -24,9 +24,16 @@ def get_ai_status() -> Dict[str, Any]:
     specs = get_model_specs(ollama_ok)
     route_to_model = {s.route: s.full_key for s in specs}
 
+    try:
+        from modules.humanoid.mode import get_mode_capabilities
+        capabilities = get_mode_capabilities()
+    except Exception:
+        capabilities = {}
+
     return {
         "ok": True,
         "ollama_available": ollama_ok,
+        "atlas_mode": capabilities.get("mode", "pro"),
         "providers": [
             {"id": p.id, "name": p.name, "is_free": p.is_free, "available": p.available}
             for p in providers

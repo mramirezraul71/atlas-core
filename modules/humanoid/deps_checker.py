@@ -111,9 +111,37 @@ def check_screen() -> Dict[str, Any]:
     }
 
 
+def check_hardware() -> Dict[str, Any]:
+    """RAM/GPU heuristics for model selection. No auto-install."""
+    ram_gb = None
+    low_ram = False
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        ram_gb = round(mem.total / (1024 ** 3), 1)
+        low_ram = mem.total < 8 * 1024 ** 3
+    except ImportError:
+        pass
+    gpu = False
+    try:
+        import subprocess
+        r = subprocess.run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], capture_output=True, timeout=3)
+        gpu = r.returncode == 0 and bool(r.stdout)
+    except Exception:
+        pass
+    return {
+        "module": "hardware",
+        "available": True,
+        "ram_gb": ram_gb,
+        "low_ram": low_ram,
+        "gpu": gpu,
+        "suggested": "Use AI_FAST_MODEL if low_ram" if low_ram else "",
+    }
+
+
 def check_all() -> Dict[str, Any]:
     """Return {ok, modules: [{module, available, missing_deps, suggested}], missing_deps: [...], suggested_commands: [...]}."""
-    results = [check_sqlite(), check_ollama(), check_vision(), check_playwright(), check_stt(), check_tts(), check_screen()]
+    results = [check_sqlite(), check_ollama(), check_vision(), check_playwright(), check_stt(), check_tts(), check_screen(), check_hardware()]
     all_missing: List[str] = []
     suggested: List[str] = []
     for r in results:
