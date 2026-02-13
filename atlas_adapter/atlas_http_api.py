@@ -75,6 +75,11 @@ async def _lifespan(app):
             ensure_ga_jobs()
         except Exception:
             pass
+        try:
+            from modules.humanoid.metalearn.scheduler_jobs import ensure_metalearn_jobs
+            ensure_metalearn_jobs()
+        except Exception:
+            pass
     yield
 
 
@@ -264,15 +269,23 @@ llm_service = LLMService()
 )
 def llm_endpoint(req: LLMRequest) -> LLMResponse:
     """Run LLM request through router + Ollama and return structured response."""
-    return llm_service.run(req)
+    resp = llm_service.run(req)
+    try:
+        from modules.humanoid.metalearn.collector import record_router_call
+        record_router_call(getattr(resp, "route", "CHAT") or "CHAT", getattr(resp, "model_used", "") or "", "ok" if getattr(resp, "ok", True) else "fail", getattr(resp, "ms", None))
+    except Exception:
+        pass
+    return resp
 
 
 # --- Humanoid (kernel + modules) ---
 from modules.humanoid.api import router as humanoid_router
 from modules.humanoid.ga.api import router as ga_router
+from modules.humanoid.metalearn.api import router as metalearn_router
 
 app.include_router(humanoid_router)
 app.include_router(ga_router)
+app.include_router(metalearn_router)
 
 
 # --- Metrics / Policy / Audit endpoints ---
