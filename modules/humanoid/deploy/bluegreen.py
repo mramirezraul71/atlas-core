@@ -162,4 +162,40 @@ def run_bluegreen_flow(actor: Any = None, dry_run: bool = False, ref: Optional[s
             _audit("promote_success", False, {"steps": steps}, str(e), int((time.perf_counter() - t0) * 1000))
             return {"ok": False, "data": {"steps": steps, "switched": False, "error": str(e)}, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
     _audit("promote_success", True, {"steps": steps, "active_port": active_port}, None, int((time.perf_counter() - t0) * 1000))
+
+    # Post-promote: GA auto-check if enabled
+    _run_ga_post_update(active_port, last_health, min_score)
+
     return {"ok": True, "data": {"steps": steps, "switched": True}, "ms": int((time.perf_counter() - t0) * 1000), "error": None}
+
+
+def _run_ga_post_update(active_port: int, last_health: Dict[str, Any], min_score: int) -> None:
+    """After promote: health + GA run. If health < min, create ApprovalItem 'rollback recommended'."""
+    if not _env_bool("GA_POST_UPDATE_AUTOCHECK", True):
+        return
+    try:
+        ga_enabled = os.getenv("GOVERNED_AUTONOMY_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+        if not ga_enabled:
+            return
+        from modules.humanoid.deploy.healthcheck import run_health_verbose
+        base = f"http://127.0.0.1:{active_port}"
+        time.sleep(2)
+        h = run_health_verbose(base_url=base, active_port=active_port)
+        score = h.get("score", 0)
+        ga_min = int(os.getenv("GA_POST_DEPLOY_HEALTH_MIN", "75") or 75)
+        if score < ga_min:
+            try:
+                from modules.humanoid.approvals.store import create as approval_create
+                approval_create(
+                    action="ga_rollback_recommended",
+                    payload={"score": score, "min": ga_min, "reason": "post-deploy health below threshold"},
+                    risk="critical",
+                )
+                _audit("ga_post_update", False, {"score": score, "min": ga_min}, "rollback recommended", 0)
+            except Exception:
+                pass
+        else:
+            from modules.humanoid.ga.cycle import run_cycle
+            run_cycle(scope="repo", mode="plan_only", max_findings=5)
+    except Exception:
+        pass

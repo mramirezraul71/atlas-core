@@ -450,6 +450,48 @@ if ($approvalsList.ok) {
   Write-Host "GET /approvals/list FAIL: $($approvalsList.err)" -ForegroundColor Red
 }
 
+# GA (Governed Autonomy): run plan_only, status, report (must respond <15s)
+Write-Host "== SMOKE: GA (Governed Autonomy) ==" -ForegroundColor Cyan
+$gaRunBody = @{ scope = "runtime"; mode = "plan_only"; max_findings = 5 }
+$gaRunStart = Get-Date
+$gaRun = HitPost "/ga/run" $gaRunBody
+$gaRunMs = ((Get-Date) - $gaRunStart).TotalMilliseconds
+if ($gaRun.ok -and $gaRun.data) {
+  if ($gaRunMs -lt 15000) {
+    Write-Host "POST /ga/run (scope=runtime mode=plan_only) OK in ${gaRunMs}ms (<15s)" -ForegroundColor Green
+    $gaRunOk = $true
+  } else {
+    Write-Host "POST /ga/run OK but slow: ${gaRunMs}ms" -ForegroundColor Yellow
+    $gaRunOk = $true
+  }
+  $rp = $gaRun.data.data.report_path
+  if ($rp -and (Test-Path $rp -ErrorAction SilentlyContinue)) {
+    Write-Host "GA report_path exists: $rp" -ForegroundColor Green
+  } elseif ($rp) {
+    Write-Host "GA report_path set: $rp" -ForegroundColor Yellow
+  }
+} elseif ($gaRun.data -and $gaRun.data.error -match "GOVERNED_AUTONOMY") {
+  Write-Host "POST /ga/run disabled (GOVERNED_AUTONOMY_ENABLED=false)" -ForegroundColor Yellow
+  $gaRunOk = $true
+} else {
+  Write-Host "POST /ga/run FAIL: $($gaRun.err)" -ForegroundColor Red
+  $gaRunOk = $false
+}
+$gaStatus = Hit "/ga/status"
+if ($gaStatus.ok -and $gaStatus.data) {
+  Write-Host "GET /ga/status OK (mode=$($gaStatus.data.data.mode) pending=$($gaStatus.data.data.approvals_pending_count))" -ForegroundColor Green
+  $gaStatusOk = $true
+} else {
+  Write-Host "GET /ga/status FAIL: $($gaStatus.err)" -ForegroundColor Red
+  $gaStatusOk = $false
+}
+$gaReportLatest = Hit "/ga/report/latest"
+if ($gaReportLatest.ok) {
+  Write-Host "GET /ga/report/latest OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /ga/report/latest FAIL: $($gaReportLatest.err)" -ForegroundColor Red
+}
+
 # Owner: session start, end, status, chain verify, emergency (non-destructive)
 $ownerSessionBody = @{ actor = "owner"; method = "ui" }
 $ownerSession = HitPost "/owner/session/start" $ownerSessionBody
@@ -504,7 +546,8 @@ if ($bundleResp.ok -and $bundleResp.data.path) {
 
 $agentScaffoldOk = $agentOk -and $scaffoldOk -and $scriptOk -and $depsOk -and $webOk -and $voiceOk -and $memOk -and $visionOk -and $improveOk
 
-if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk -and $agentScaffoldOk -and $uiOk -and $bundleOk) {
+$gaOk = $gaRunOk -and $gaStatusOk
+if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk -and $agentScaffoldOk -and $uiOk -and $bundleOk -and $gaOk) {
   Write-Host "SMOKE OK" -ForegroundColor Green
   exit 0
 } else {

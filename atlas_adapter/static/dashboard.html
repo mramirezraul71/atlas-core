@@ -212,6 +212,7 @@
       <div class="card" id="cluster-card"><h2>Cluster</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadCluster()">Ver nodos</button></div></div>
       <div class="card" id="gateway-card"><h2>Gateway</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadGateway()">Ver</button></div></div>
       <div class="card" id="approvals-card"><h2>Aprobaciones</h2><div class="value"><ul id="approvals-list"></ul></div></div>
+      <div class="card" id="ga-card"><h2>Governed Autonomy</h2><div class="value">—</div><div class="row"><button class="small" onclick="gaRunNow()">Run Now</button><button class="small secondary" onclick="loadGAStatus()">Actualizar</button></div><div class="metrics-list" id="ga-detail"></div></div>
     </div>
 
     <section class="robot-section" id="owner-console-section">
@@ -226,6 +227,13 @@
           <button class="small secondary" onclick="ownerVerifyChain()">Verificar cadena</button>
         </div>
         <div id="owner-sessions" class="value" style="font-size:.8rem; color:var(--muted);"></div>
+        <h3 style="font-size:.75rem; color:var(--muted); margin:.5rem 0 .25rem;">Governed Autonomy</h3>
+        <div class="row" style="margin-bottom:.5rem;">
+          <button class="small" onclick="gaRunNow()">Run GA Now</button>
+          <span class="last-update" id="ga-status-msg"></span>
+        </div>
+        <div id="ga-last-report" class="value" style="font-size:.8rem; color:var(--muted); max-height:80px; overflow-y:auto;"></div>
+        <div id="ga-executed" class="value" style="font-size:.75rem; color:var(--green); margin-top:.35rem;"></div>
         <h3 style="font-size:.75rem; color:var(--muted); margin:.5rem 0 .25rem;">Pendientes / Expiradas</h3>
         <div id="owner-pending-list" class="value" style="font-size:.8rem; max-height:120px; overflow-y:auto;"></div>
         <div id="owner-expired-list" class="value" style="font-size:.8rem; max-height:80px; overflow-y:auto; color:var(--amber);"></div>
@@ -750,6 +758,33 @@
       const r = await get('/approvals/chain/verify');
       if (r && r.valid) alert('Cadena íntegra.'); else alert(r && !r.valid ? 'Cadena rota: ' + (r.first_invalid_id || '') : (r && r.error) || 'Error');
     }
+    async function loadGAStatus() {
+      const r = await get('/ga/status');
+      const card = document.getElementById('ga-card');
+      const detail = document.getElementById('ga-detail');
+      const lastReport = document.getElementById('ga-last-report');
+      const executed = document.getElementById('ga-executed');
+      if (!r || !r.ok) {
+        if (card) card.querySelector('.value').textContent = r && r.error ? r.error : 'GA no disponible';
+        return;
+      }
+      const d = r.data || {};
+      const mode = d.mode || 'plan_only';
+      const pending = d.approvals_pending_count || 0;
+      const reportPath = d.last_report || d.last_report_path;
+      if (card) card.querySelector('.value').textContent = 'Modo: ' + mode + ' | Pendientes: ' + pending;
+      if (detail) detail.innerHTML = '<span>Último reporte: ' + (reportPath ? reportPath.split(/[/\\]/).pop() : '—') + '</span>';
+      if (lastReport) lastReport.textContent = reportPath ? 'Reporte: ' + reportPath : 'Sin reportes';
+      if (executed) executed.textContent = '';
+    }
+    async function gaRunNow() {
+      const msg = document.getElementById('ga-status-msg');
+      if (msg) msg.textContent = 'Ejecutando…';
+      const r = await post('/ga/run', { scope: 'all', mode: 'plan_only', max_findings: 10 });
+      if (msg) msg.textContent = r && r.ok ? 'OK (' + (r.ms || 0) + 'ms)' : (r && r.error ? r.error : 'Error');
+      loadGAStatus();
+      loadApprovals();
+    }
     async function refreshAll() {
       const btn = document.getElementById('btn-refresh');
       const lastEl = document.getElementById('last-update');
@@ -767,7 +802,8 @@
           loadCluster(),
           loadGateway(),
           loadApprovals(),
-          loadOwnerStatus()
+          loadOwnerStatus(),
+          loadGAStatus()
         ]);
         setLastUpdate();
       } catch (e) {
