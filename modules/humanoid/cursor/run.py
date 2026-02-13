@@ -10,9 +10,11 @@ from .status import set_last_run
 def cursor_run(
     goal: str,
     mode: str = "plan_only",
+    depth: int = 1,
     context: Optional[Dict[str, Any]] = None,
     prefer_free: bool = True,
     allow_paid: bool = False,
+    profile: str = "owner",
 ) -> Dict[str, Any]:
     """
     Orchestrate: build plan (AI router), optionally execute steps, return summary + evidence.
@@ -30,7 +32,8 @@ def cursor_run(
 
     try:
         # 1) Build plan using AI layer (FAST/REASON) or humanoid planner
-        plan_prompt = f"Break down into 3-5 concrete steps to achieve: {goal}. Output only a short numbered list, one step per line."
+        n_steps = min(7, max(3, 3 + depth))
+        plan_prompt = f"Break down into {n_steps} concrete steps to achieve: {goal}. Output only a short numbered list, one step per line."
         try:
             from modules.humanoid.ai.router import route_and_run
             out, decision, meta = route_and_run(plan_prompt, intent_hint="reason", prefer_free=prefer_free)
@@ -78,6 +81,8 @@ def cursor_run(
         data = {
             "goal": goal,
             "mode": mode,
+            "depth": depth,
+            "profile": profile,
             "steps": steps,
             "summary": summary,
             "evidence": evidence,

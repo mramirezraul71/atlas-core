@@ -37,8 +37,16 @@ def execute_remote_hands(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def execute_remote_web(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Run web action locally."""
+    """Run web action locally. If playwright not available, fallback to screen (plan_only with instructions)."""
     try:
+        from modules.humanoid.deps_checker import check_playwright
+        if not check_playwright().get("available", False):
+            return {
+                "ok": False,
+                "error": "playwright not available; use /screen/capture for desktop/browser UI",
+                "data": None,
+                "fallback": "screen",
+            }
         url = payload.get("action") or payload.get("url") or ""
         if not url:
             return {"ok": False, "error": "missing action/url", "data": None}

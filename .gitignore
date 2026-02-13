@@ -31,5 +31,12 @@ snapshots/ci/
 
 # Audit DB (local)
 logs/*.sqlite
+logs/*.sqlite-shm
+logs/*.sqlite-wal
 # Task/orchestrator local state
 atlas_task_memory.sqlite
+
+# Reportes ANS/GA/Metalearn generados
+snapshots/ga/
+snapshots/metalearn/
+snapshots/support/
