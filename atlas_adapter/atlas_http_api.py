@@ -352,13 +352,72 @@ def ai_status():
     return get_ai_status()
 
 
+class AIRouteBody(BaseModel):
+    prompt: Optional[str] = None
+    intent_hint: Optional[str] = None
+    modality: Optional[str] = "text"
+    intent: Optional[str] = None
+    complexity: Optional[str] = None
+    latency_need: Optional[str] = None
+    safety: Optional[str] = None
+    prefer_free: Optional[bool] = True
+
+
+@app.post("/ai/route", tags=["AI"])
+def ai_route(body: AIRouteBody):
+    """Return RouteDecision for TaskProfile. Use prompt+intent_hint or intent/complexity/modality."""
+    try:
+        from modules.humanoid.ai.router import infer_task_profile, decide_route
+        from modules.humanoid.ai.models import TaskProfile
+        if body.prompt:
+            profile = infer_task_profile(
+                body.prompt,
+                intent_hint=body.intent_hint or body.intent,
+                modality=body.modality or "text",
+            )
+        else:
+            profile = TaskProfile(
+                intent=body.intent or "chat",
+                complexity=body.complexity or "med",
+                latency_need=body.latency_need or "normal",
+                modality=body.modality or "text",
+                safety=body.safety or "med",
+            )
+        decision = decide_route(profile, prefer_free=body.prefer_free if body.prefer_free is not None else True)
+        return {
+            "ok": True,
+            "decision": {
+                "provider_id": decision.provider_id,
+                "model_key": decision.model_key,
+                "route": decision.route,
+                "reason": decision.reason,
+                "is_free": decision.is_free,
+                "cost_estimate_usd": decision.cost_estimate_usd,
+            },
+        }
+    except Exception as e:
+        return {"ok": False, "decision": None, "error": str(e)}
+
+
+@app.get("/mode/capabilities", tags=["Mode"])
+def mode_capabilities():
+    """ATLAS_MODE capabilities: screen_act, record_replay, playwright, benchmark."""
+    try:
+        from modules.humanoid.mode import get_mode_capabilities
+        return {"ok": True, "data": get_mode_capabilities()}
+    except Exception as e:
+        return {"ok": False, "data": None, "error": str(e)}
+
+
 # --- Cursor mode (end-to-end orchestration) ---
 class CursorRunBody(BaseModel):
     goal: str
     mode: Optional[str] = "plan_only"  # plan_only | controlled | auto
-    context: Optional[dict] = None
+    depth: Optional[int] = 1  # 1-5
     prefer_free: Optional[bool] = True
     allow_paid: Optional[bool] = False
+    profile: Optional[str] = "owner"  # owner | operario | contadora
+    context: Optional[dict] = None
 
 
 @app.post("/cursor/run", tags=["Cursor"])
@@ -370,9 +429,11 @@ def cursor_run_endpoint(body: CursorRunBody):
         result = cursor_run(
             goal=body.goal,
             mode=body.mode or "plan_only",
+            depth=max(1, min(5, body.depth or 1)),
             context=body.context,
             prefer_free=body.prefer_free if body.prefer_free is not None else True,
             allow_paid=body.allow_paid if body.allow_paid is not None else False,
+            profile=body.profile or "owner",
         )
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(result.get("ok", False), result.get("data"), ms, result.get("error"))
@@ -420,9 +481,11 @@ from modules.humanoid.api import router as humanoid_router
 from modules.humanoid.ga.api import router as ga_router
 from modules.humanoid.metalearn.api import router as metalearn_router
 
+from modules.humanoid.ans.api import router as ans_router
 app.include_router(humanoid_router)
 app.include_router(ga_router)
 app.include_router(metalearn_router)
+app.include_router(ans_router)
 
 
 # --- Metrics / Policy / Audit endpoints ---
@@ -2150,6 +2213,12 @@ def screen_act(body: ScreenActBody):
         import os
         if not get_screen_status().get("enabled", False):
             return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "screen module disabled")
+        try:
+            from modules.humanoid.mode import is_screen_act_allowed
+            if not is_screen_act_allowed():
+                return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "screen_act disabled (ATLAS_MODE=lite or deps missing)")
+        except Exception:
+            pass
         ctx = ActorContext(actor="api", role="owner")
         decision = get_policy_engine().can(ctx, "screen", "screen_act", None)
         if not decision.allow:
@@ -2162,6 +2231,12 @@ def screen_act(body: ScreenActBody):
         _screen_logs = os.path.join(_base, "logs", "screen")
         path_before = save_capture_to_file(before_png, _screen_logs, "before") if before_png else None
         result = execute_action(body.action, body.payload or {})
+        try:
+            from modules.humanoid.screen.record import is_recording, record_action
+            if is_recording():
+                record_action(body.action, body.payload or {})
+        except Exception:
+            pass
         after_png, _ = capture_screen()
         path_after = save_capture_to_file(after_png, _screen_logs, "after") if after_png else None
         record_screen_act()
@@ -2171,6 +2246,150 @@ def screen_act(body: ScreenActBody):
         if destructive:
             evidence["approval_required"] = True
         return _std_resp(result.get("ok", False), {"evidence": evidence, "result": result}, ms, result.get("error"))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.post("/screen/record/start", tags=["Screen"])
+def screen_record_start():
+    """Start recording screen actions (macro). Pro/Ultra only."""
+    try:
+        from modules.humanoid.mode import is_record_replay_allowed
+        if not is_record_replay_allowed():
+            return _std_resp(False, None, 0, "record/replay disabled (ATLAS_MODE)")
+        from modules.humanoid.screen.record import start_recording
+        r = start_recording()
+        return _std_resp(r.get("ok", False), r, 0, r.get("error"))
+    except Exception as e:
+        return _std_resp(False, None, 0, str(e))
+
+
+@app.post("/screen/record/stop", tags=["Screen"])
+def screen_record_stop():
+    """Stop recording and return recorded actions."""
+    try:
+        from modules.humanoid.screen.record import stop_recording
+        r = stop_recording()
+        return _std_resp(r.get("ok", False), r, 0, r.get("error"))
+    except Exception as e:
+        return _std_resp(False, None, 0, str(e))
+
+
+class ScreenReplayBody(BaseModel):
+    macro_id: Optional[str] = None
+    actions: Optional[List[dict]] = None
+    delay_ms: Optional[int] = 100
+
+
+@app.post("/screen/replay", tags=["Screen"])
+def screen_replay(body: ScreenReplayBody):
+    """Replay macro by id or inline actions. Policy-gated."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.policy import ActorContext, get_policy_engine
+        from modules.humanoid.mode import is_record_replay_allowed
+        if not is_record_replay_allowed():
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "record/replay disabled")
+        ctx = ActorContext(actor="api", role="owner")
+        decision = get_policy_engine().can(ctx, "screen", "screen_act", None)
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
+        actions = body.actions
+        if not actions and body.macro_id:
+            from modules.humanoid.macros import get_macro
+            m = get_macro(body.macro_id)
+            if not m:
+                return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "macro not found")
+            actions = m.get("actions", [])
+        if not actions:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "no actions")
+        from modules.humanoid.screen.replay import replay_actions
+        r = replay_actions(actions, delay_ms=body.delay_ms or 100)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(r.get("ok", False), r, ms, r.get("errors", [None])[0] if r.get("errors") else None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+# --- Macros ---
+@app.get("/macros/list", tags=["Macros"])
+def macros_list(limit: int = 50):
+    """List saved macros."""
+    try:
+        from modules.humanoid.macros import list_macros
+        return {"ok": True, "data": list_macros(limit=limit)}
+    except Exception as e:
+        return {"ok": False, "data": [], "error": str(e)}
+
+
+class MacrosSaveBody(BaseModel):
+    id: str
+    name: str
+    actions: List[dict]
+
+
+@app.post("/macros/save", tags=["Macros"])
+def macros_save(body: MacrosSaveBody):
+    """Save macro (e.g. from record/stop actions)."""
+    try:
+        from modules.humanoid.macros import save_macro
+        r = save_macro(body.id, body.name, body.actions)
+        return _std_resp(r.get("ok", False), r, 0, r.get("error"))
+    except Exception as e:
+        return _std_resp(False, None, 0, str(e))
+
+
+@app.get("/macros/get", tags=["Macros"])
+def macros_get(id: Optional[str] = None):
+    """Get macro by id."""
+    if not id:
+        return {"ok": False, "data": None, "error": "id required"}
+    try:
+        from modules.humanoid.macros import get_macro
+        m = get_macro(id)
+        return {"ok": m is not None, "data": m, "error": None if m else "not found"}
+    except Exception as e:
+        return {"ok": False, "data": None, "error": str(e)}
+
+
+class MacrosDeleteBody(BaseModel):
+    id: str
+
+
+@app.post("/macros/delete", tags=["Macros"])
+def macros_delete(body: MacrosDeleteBody):
+    """Delete macro. Denied by default; approval required."""
+    try:
+        from modules.humanoid.policy import ActorContext, get_policy_engine
+        ctx = ActorContext(actor="api", role="owner")
+        decision = get_policy_engine().can(ctx, "macros", "delete", body.id)
+        if not decision.allow:
+            return _std_resp(False, None, 0, decision.reason)
+        from modules.humanoid.macros import delete_macro
+        r = delete_macro(body.id)
+        return _std_resp(r.get("ok", False), r, 0, r.get("error"))
+    except Exception as e:
+        return _std_resp(False, None, 0, str(e))
+
+
+# --- Bench (model benchmarking, Ultra/Pro+metalearn) ---
+class BenchRunBody(BaseModel):
+    level: Optional[str] = "quick"  # quick | full
+
+
+@app.post("/bench/run", tags=["Bench"])
+def bench_run(body: Optional[BenchRunBody] = None):
+    """Run benchmark: probes per route, latency, recommended model mapping. Ultra or Pro+metalearn."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.mode import is_benchmark_allowed
+        if not is_benchmark_allowed():
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "benchmark disabled (ATLAS_MODE or METALEARN)")
+        from modules.humanoid.bench import run_bench
+        level = (body and body.level) or "quick"
+        r = run_bench(level=level)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, r, ms, None)
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 

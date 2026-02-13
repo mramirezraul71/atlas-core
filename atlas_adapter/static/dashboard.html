@@ -230,6 +230,26 @@
       </div>
     </section>
 
+    <section class="robot-section" id="ans-section">
+      <div class="card">
+        <h2>ANS (Autonomic Nervous System)</h2>
+        <p class="robot-task-help" style="color:var(--muted); font-size:.8rem;">Auto-checks, auto-heals (SAFE), incidentes, reportes. Sin preguntar: actúa SAFE; lo riesgoso -> approval + notificar.</p>
+        <div class="row" style="margin-top:.5rem;">
+          <span class="badge" id="ans-enabled">—</span>
+          <span class="badge" id="ans-mode">—</span>
+          <span class="last-update" id="ans-incidents">—</span>
+          <button class="small" onclick="ansRunNow()">Run Now</button>
+          <button class="small secondary" onclick="loadANSStatus()">Actualizar</button>
+        </div>
+        <div id="ans-incidents-list" class="value" style="font-size:.8rem; max-height:100px; overflow-y:auto; margin-top:.5rem;"></div>
+        <div id="ans-actions-list" class="value" style="font-size:.75rem; color:var(--muted); max-height:80px; overflow-y:auto; margin-top:.35rem;"></div>
+        <div class="row" style="margin-top:.5rem;">
+          <a id="ans-report-link" href="#" target="_blank" style="font-size:.8rem; color:var(--purple-light);">Último reporte</a>
+          <button class="small secondary" onclick="downloadSupportBundle()">Support Bundle</button>
+        </div>
+      </div>
+    </section>
+
     <section class="robot-section" id="owner-console-section">
       <div class="card">
         <h2>Owner Console</h2>
@@ -331,7 +351,7 @@
           <label for="cursor-goal">Objetivo</label>
           <textarea id="cursor-goal" class="robot-input" placeholder="Ej: Listar archivos del directorio actual" rows="2" style="min-height:60px;"></textarea>
         </div>
-        <div class="row" style="margin-top:.5rem; gap:1rem;">
+        <div class="row" style="margin-top:.5rem; gap:1rem; flex-wrap:wrap;">
           <div class="robot-task-type">
             <label for="cursor-mode">Modo</label>
             <select id="cursor-mode" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
@@ -341,11 +361,27 @@
             </select>
           </div>
           <div class="robot-task-type">
+            <label for="cursor-resources">Recursos</label>
+            <select id="cursor-resources" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
+              <option value="lite">Lite</option>
+              <option value="pro" selected>Pro</option>
+              <option value="ultra">Ultra</option>
+            </select>
+          </div>
+          <div class="robot-task-type">
             <label for="cursor-free">IA</label>
             <select id="cursor-free" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
               <option value="free_only">Solo gratis (Ollama)</option>
               <option value="auto">Auto</option>
               <option value="allow_paid">Permitir pago (Owner)</option>
+            </select>
+          </div>
+          <div class="robot-task-type">
+            <label for="cursor-profile">Perfil</label>
+            <select id="cursor-profile" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
+              <option value="owner">Owner</option>
+              <option value="operario">Operario</option>
+              <option value="contadora">Contadora</option>
             </select>
           </div>
         </div>
@@ -493,16 +529,18 @@
         return;
       }
       const mode = (document.getElementById('cursor-mode') && document.getElementById('cursor-mode').value) || 'plan_only';
+      const depth = 1;
       const freeSel = document.getElementById('cursor-free') && document.getElementById('cursor-free').value;
       const prefer_free = freeSel !== 'allow_paid';
       const allow_paid = freeSel === 'allow_paid';
+      const profile = (document.getElementById('cursor-profile') && document.getElementById('cursor-profile').value) || 'owner';
       btn.disabled = true;
       statusEl.textContent = 'Ejecutando…';
       stepsPanel.style.display = 'none';
       routingPanel.style.display = 'none';
       evidencePanel.style.display = 'none';
       try {
-        const out = await post('/cursor/run', { goal: goal, mode: mode, prefer_free: prefer_free, allow_paid: allow_paid });
+        const out = await post('/cursor/run', { goal: goal, mode: mode, depth: depth, prefer_free: prefer_free, allow_paid: allow_paid, profile: profile });
         if (out && out.data) {
           const d = out.data;
           if (d.steps && d.steps.length) {
@@ -887,6 +925,36 @@
       if (lastReport) lastReport.textContent = reportPath ? 'Reporte: ' + reportPath : 'Sin reportes';
       if (executed) executed.textContent = '';
     }
+    async function loadANSStatus() {
+      const r = await get('/ans/status');
+      const enabledEl = document.getElementById('ans-enabled');
+      const modeEl = document.getElementById('ans-mode');
+      const incidentsEl = document.getElementById('ans-incidents');
+      const listEl = document.getElementById('ans-incidents-list');
+      const reportLink = document.getElementById('ans-report-link');
+      if (!r || !r.ok) {
+        if (enabledEl) enabledEl.textContent = r && r.error ? r.error : '—';
+        return;
+      }
+      if (enabledEl) enabledEl.textContent = r.enabled ? 'ON' : 'OFF';
+      if (enabledEl) enabledEl.className = 'badge ' + (r.enabled ? 'ok' : 'warn');
+      if (modeEl) modeEl.textContent = r.mode || '—';
+      if (incidentsEl) incidentsEl.textContent = 'Abiertos: ' + (r.incidents_open || 0) + ' | Cerrados: ' + (r.incidents_closed || 0);
+      const incR = await get('/ans/incidents?status=open&limit=10');
+      if (listEl && incR && incR.data && incR.data.length) {
+        listEl.innerHTML = incR.data.map(function(i) { return '<div>' + (i.check_id || '') + ': ' + (i.message || '').slice(0, 60) + '</div>'; }).join('');
+      } else if (listEl) listEl.innerHTML = '<span style="color:var(--muted);">Sin incidentes abiertos</span>';
+      if (reportLink && r.report_path) { reportLink.href = '#'; reportLink.textContent = 'Reporte: ' + r.report_path.split(/[/\\]/).pop(); }
+    }
+    async function ansRunNow() {
+      const r = await post('/ans/run-now', { mode: 'auto' });
+      if (r && r.ok) {
+        loadANSStatus();
+        alert('ANS Run Now OK: ' + (r.issues_count || 0) + ' issues, ' + (r.actions_taken && r.actions_taken.length) + ' actions');
+      } else {
+        alert('ANS Run Now: ' + (r && r.error ? r.error : 'Error'));
+      }
+    }
     async function loadProductStatus() {
       const r = await get('/product/status');
       if (!r || !r.data) return;
@@ -932,6 +1000,7 @@
           loadCluster(),
           loadGateway(),
           loadApprovals(),
+          loadANSStatus(),
           loadOwnerStatus(),
           loadGAStatus(),
           loadProductStatus()
