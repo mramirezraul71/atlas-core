@@ -37,6 +37,8 @@ def list_providers(ollama_available: bool) -> List[Provider]:
         _env("AI_REASON_MODEL", "ollama:deepseek-r1:14b"),
         _env("AI_TOOLS_MODEL", "ollama:qwen2.5:7b"),
         _env("AI_VISION_MODEL", "ollama:llama3.2-vision:11b"),
+        _env("AI_ARCHITECT_MODEL", "ollama:deepseek-r1:14b"),
+        _env("AI_OPTIMIZER_MODEL", "ollama:deepseek-coder:6.7b"),
     ]
     providers.append(
         Provider(
@@ -92,6 +94,8 @@ def get_model_specs(ollama_available: bool) -> List[ModelSpec]:
         ("REASON", "AI_REASON_MODEL"),
         ("TOOLS", "AI_TOOLS_MODEL"),
         ("VISION", "AI_VISION_MODEL"),
+        ("ARCHITECT", "AI_ARCHITECT_MODEL"),
+        ("OPTIMIZER", "AI_OPTIMIZER_MODEL"),
     ]
     for route, env_key in route_keys:
         full = _env(env_key, "")

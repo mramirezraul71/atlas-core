@@ -36,7 +36,9 @@ logs/*.sqlite-wal
 # Task/orchestrator local state
 atlas_task_memory.sqlite
 
-# Reportes ANS/GA/Metalearn generados
+# Reportes ANS/GA/Metalearn/Brain/Hands-Eyes generados
 snapshots/ga/
 snapshots/metalearn/
 snapshots/support/
+snapshots/brain/
+snapshots/hands_eyes/
