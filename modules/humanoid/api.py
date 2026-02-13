@@ -24,6 +24,30 @@ def _resp(ok: bool, data: Any = None, ms: int = 0, error: Optional[str] = None, 
     return out
 
 
+@router.post("/makeplay/scan")
+def humanoid_makeplay_scan() -> dict:
+    """Scanner MakePlay: snapshot estado ATLAS -> webhook. Para feedback loop continuo."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.comms.makeplay_scanner import run_scan
+        r = run_scan()
+        ms = int((time.perf_counter() - t0) * 1000)
+        snap = r.get("snapshot", {})
+        return _resp(ok=r.get("ok", True), data=snap, ms=ms, webhook_pushed=snap.get("webhook_pushed", False))
+    except Exception as e:
+        return _resp(ok=False, error=str(e), ms=int((time.perf_counter() - t0) * 1000))
+
+
+@router.get("/self-model")
+def humanoid_self_model() -> dict:
+    """Autoconocimiento: anatomía del sistema, cerebro, nervios, órganos, dependencias."""
+    try:
+        from modules.humanoid.self_model import get_manifest
+        return _resp(ok=True, data=get_manifest())
+    except Exception as e:
+        return _resp(ok=False, error=str(e))
+
+
 @router.get("/status")
 def humanoid_status() -> dict:
     """Full humanoid status: modules, health, module_states, latencies."""

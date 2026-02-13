@@ -14,4 +14,4 @@ def run() -> dict:
         conn.commit()
         return {"ok": True, "check_id": "memory_health", "message": "ok", "details": {}, "severity": "low"}
     except Exception as e:
-        return {"ok": False, "check_id": "memory_health", "message": str(e), "details": {"error": str(e)}, "severity": "med", "suggested_heals": []}
+        return {"ok": False, "check_id": "memory_health", "message": str(e), "details": {"error": str(e)}, "severity": "med", "suggested_heals": ["clear_stale_locks"]}

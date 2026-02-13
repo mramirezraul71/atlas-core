@@ -9,17 +9,35 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_PATH = BASE_DIR / "config" / "atlas.env"
 if ENV_PATH.exists():
     from dotenv import load_dotenv
-    load_dotenv(ENV_PATH)
+    load_dotenv(ENV_PATH, override=True)
 else:
     import logging
     logging.warning("atlas.env not found at %s", ENV_PATH)
 
-(BASE_DIR / "logs").mkdir(parents=True, exist_ok=True)
-# Default DB paths so scheduler + memory work without atlas.env
-if not os.getenv("SCHED_DB_PATH"):
-    os.environ["SCHED_DB_PATH"] = str(BASE_DIR / "logs" / "atlas_sched.sqlite")
-if not os.getenv("ATLAS_MEMORY_DB_PATH"):
-    os.environ["ATLAS_MEMORY_DB_PATH"] = str(BASE_DIR / "logs" / "atlas_memory.sqlite")
+_logs = str(BASE_DIR / "logs")
+
+
+def _ensure_db_path(env_var: str, filename: str) -> None:
+    """Force env var to writable path under project logs."""
+    p = Path(os.getenv(env_var) or str(Path(_logs) / filename))
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.touch()
+    except Exception:
+        p = Path(_logs) / filename
+        p.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            p.touch()
+        except Exception:
+            pass
+    os.environ[env_var] = str(p)
+
+
+Path(_logs).mkdir(parents=True, exist_ok=True)
+_ensure_db_path("SCHED_DB_PATH", "atlas_sched.sqlite")
+_ensure_db_path("ATLAS_MEMORY_DB_PATH", "atlas_memory.sqlite")
+_ensure_db_path("MEMORY_DB_PATH", "atlas_memory.sqlite")
+_ensure_db_path("AUDIT_DB_PATH", "atlas_audit.sqlite")
 
 from fastapi import FastAPI, Request, Header
 from fastapi.responses import FileResponse
@@ -82,6 +100,16 @@ async def _lifespan(app):
                 ensure_metalearn_jobs()
             except Exception:
                 pass
+            try:
+                from modules.humanoid.ans.scheduler_jobs import ensure_ans_jobs
+                ensure_ans_jobs()
+            except Exception:
+                pass
+            try:
+                from modules.humanoid.comms.makeplay_scheduler import ensure_makeplay_jobs
+                ensure_makeplay_jobs()
+            except Exception:
+                pass
     yield
 
 
@@ -120,6 +148,28 @@ def health():
         return run_health_verbose(base_url=None, active_port=active_port)
     except Exception as e:
         return {"ok": False, "score": 0, "checks": {}, "ms": 0, "error": str(e)}
+
+
+@app.get("/health/debug", tags=["Health"])
+def health_debug():
+    """Raw check results con mensajes de error para diagnóstico."""
+    try:
+        from modules.humanoid.deploy.healthcheck import (
+            _check_memory_writable,
+            _check_audit_writable,
+            _check_scheduler_running,
+        )
+        return {
+            "ok": True,
+            "AUDIT_DB_PATH": os.getenv("AUDIT_DB_PATH"),
+            "SCHED_DB_PATH": os.getenv("SCHED_DB_PATH"),
+            "ATLAS_MEMORY_DB_PATH": os.getenv("ATLAS_MEMORY_DB_PATH"),
+            "memory": _check_memory_writable(),
+            "audit": _check_audit_writable(),
+            "scheduler": _check_scheduler_running(),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @app.get("/version")
@@ -711,6 +761,68 @@ def owner_session_start(body: OwnerSessionStartBody):
         out = owner_start(actor=body.actor or "owner", method=body.method or "ui")
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": out.get("ok"), "session_token": out.get("session_token"), "ttl_seconds": out.get("ttl_seconds"), "method": out.get("method"), "expires_at": out.get("expires_at"), "ms": ms, "error": out.get("error")}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "session_token": None, "ms": ms, "error": str(e)}
+
+
+@app.get("/owner/windows-user")
+def owner_windows_user(request: Request):
+    """Usuario Windows actual (solo localhost). Para pre-llenar login."""
+    if request.client and request.client.host not in ("127.0.0.1", "localhost", "::1"):
+        return {"ok": False, "username": "", "error": "Solo localhost"}
+    try:
+        from modules.humanoid.owner.windows_auth import current_windows_user
+        return {"ok": True, "username": current_windows_user(), "error": None}
+    except Exception as e:
+        return {"ok": False, "username": "", "error": str(e)}
+
+
+class OwnerSessionStartWithFaceBody(BaseModel):
+    image_base64: Optional[str] = None
+
+
+@app.post("/owner/session/start-with-face")
+def owner_session_start_with_face(body: OwnerSessionStartWithFaceBody):
+    """Inicia sesión owner si se detecta rostro en la imagen."""
+    t0 = time.perf_counter()
+    try:
+        import base64
+        from modules.humanoid.face import face_check_image
+        from modules.humanoid.owner.session import start as owner_start
+        if not body.image_base64:
+            return {"ok": False, "session_token": None, "error": "Imagen requerida", "ms": int((time.perf_counter() - t0) * 1000)}
+        raw = base64.b64decode(body.image_base64)
+        result = face_check_image(raw)
+        faces = result.get("faces_detected", 0) or result.get("count", 0)
+        if faces < 1:
+            return {"ok": False, "session_token": None, "error": "No se detectó rostro", "ms": int((time.perf_counter() - t0) * 1000)}
+        out = owner_start(actor="face", method="ui")
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": out.get("ok"), "session_token": out.get("session_token"), "ttl_seconds": out.get("ttl_seconds"), "method": "face", "expires_at": out.get("expires_at"), "ms": ms, "error": out.get("error")}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "session_token": None, "ms": ms, "error": str(e)}
+
+
+class OwnerSessionStartWithWindowsBody(BaseModel):
+    username: str = ""
+    password: str = ""
+
+
+@app.post("/owner/session/start-with-windows")
+def owner_session_start_with_windows(body: OwnerSessionStartWithWindowsBody):
+    """Inicia sesión owner si la contraseña de usuario Windows es correcta."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.owner.windows_auth import verify_windows_user
+        from modules.humanoid.owner.session import start as owner_start
+        ok, err = verify_windows_user(body.username.strip(), body.password)
+        if not ok:
+            return {"ok": False, "session_token": None, "error": err or "Credenciales incorrectas", "ms": int((time.perf_counter() - t0) * 1000)}
+        out = owner_start(actor=body.username.strip(), method="ui")
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": out.get("ok"), "session_token": out.get("session_token"), "ttl_seconds": out.get("ttl_seconds"), "method": "windows", "expires_at": out.get("expires_at"), "ms": ms, "error": out.get("error")}
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": False, "session_token": None, "ms": ms, "error": str(e)}

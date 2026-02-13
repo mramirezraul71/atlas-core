@@ -45,7 +45,7 @@ class AuditDB:
         if self._path is None:
             raise RuntimeError("AuditDB: no path configured")
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self._path))
+        self._conn = sqlite3.connect(str(self._path), check_same_thread=False)
         self._conn.execute(_SCHEMA)
         self._conn.commit()
         return self._conn

@@ -21,11 +21,23 @@ def _report_dir() -> Path:
     return Path(_REPORT_DIR)
 
 
-def write_report(incidents: List[Dict], actions: List[Dict], summary: str = "") -> str:
+def write_report(incidents: List[Dict], actions: List[Dict], summary: str = "", diagnosis: Dict = None) -> str:
     Path(_report_dir()).mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     path = _report_dir() / f"ANS_REPORT_{ts}.md"
     lines = [f"# ANS Report {ts}", "", f"Summary: {summary or 'ok'}", ""]
+    if diagnosis:
+        lines.append("## Diagnóstico (cerebro)")
+        lines.append(diagnosis.get("summary", ""))
+        if diagnosis.get("root_causes"):
+            lines.append("### Causas raíz")
+            for rc in diagnosis["root_causes"][:5]:
+                lines.append(f"- {rc.get('check')}: {rc.get('message', '')[:80]}")
+        if diagnosis.get("recommendations"):
+            lines.append("### Recomendaciones")
+            for r in diagnosis["recommendations"]:
+                lines.append(f"- {r}")
+        lines.append("")
     if incidents:
         lines.append("## Incidents")
         for i in incidents[:20]:

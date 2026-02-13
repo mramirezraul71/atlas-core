@@ -61,7 +61,7 @@ class SchedulerDB:
         if not p:
             raise RuntimeError("SCHED_DB_PATH not set")
         Path(p).parent.mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(p)
+        self._connection = sqlite3.connect(p, check_same_thread=False)
         self._connection.execute(JOBS_SCHEMA)
         self._connection.execute(RUNS_SCHEMA)
         self._connection.commit()
@@ -100,12 +100,18 @@ class SchedulerDB:
             return None
         return self._row_to_job(row)
 
-    def list_jobs(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_jobs(self, status: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         conn = self._ensure()
         if status:
-            rows = conn.execute("SELECT * FROM jobs WHERE status = ? ORDER BY next_run_ts", (status,)).fetchall()
+            sql = "SELECT * FROM jobs WHERE status = ? ORDER BY next_run_ts"
+            if limit:
+                sql += f" LIMIT {int(limit)}"
+            rows = conn.execute(sql, (status,)).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM jobs ORDER BY next_run_ts").fetchall()
+            sql = "SELECT * FROM jobs ORDER BY next_run_ts"
+            if limit:
+                sql += f" LIMIT {int(limit)}"
+            rows = conn.execute(sql).fetchall()
         return [self._row_to_job(r) for r in rows]
 
     def due_jobs(self, now_iso: str, limit: int) -> List[Dict[str, Any]]:

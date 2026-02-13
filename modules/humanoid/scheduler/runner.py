@@ -41,6 +41,8 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_remote_hands(payload)
         elif kind == "ans_cycle":
             out = _run_ans_cycle(payload)
+        elif kind == "makeplay_scanner":
+            out = _run_makeplay_scanner(payload)
         else:
             out = {"ok": True, "result": "no-op", "kind": kind}
     except Exception as e:
@@ -192,5 +194,14 @@ def _run_ans_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
         mode = payload.get("mode") or os.getenv("ANS_MODE", "auto")
         timeout = int(payload.get("timeout_sec") or os.getenv("ANS_INTERVAL_SECONDS", "30") or "30")
         return run_ans_cycle(mode=mode, timeout_sec=min(timeout, 60))
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _run_makeplay_scanner(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Scanner permanente: estado ATLAS -> webhook MakePlay."""
+    try:
+        from modules.humanoid.comms.makeplay_scanner import run_scan
+        return run_scan()
     except Exception as e:
         return {"ok": False, "error": str(e)}

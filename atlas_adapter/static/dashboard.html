@@ -56,6 +56,8 @@
     }
     .header-actions { display: flex; align-items: center; gap: .75rem; }
     .last-update { font-size: .75rem; color: var(--muted); }
+    .last-update.updating { animation: pulse 0.8s ease-in-out infinite; }
+    @keyframes pulse { 50% { opacity: 0.6; } }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
     .card {
       background: var(--card);
@@ -137,6 +139,34 @@
     ul { margin: 0; padding-left: 1.2rem; font-size: .875rem; }
     #approvals-list li { margin-bottom: .35rem; }
     .metrics-list { font-size: .8rem; color: var(--muted); margin-top: .3rem; }
+    /* Menú desplegable horizontal */
+    .nav-horizontal { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .nav-dropdown-wrap { position: relative; }
+    .nav-dropdown-btn {
+      display: flex; align-items: center; gap: .35rem;
+      background: var(--accent-muted); color: var(--purple-light);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      padding: .5rem .85rem; border-radius: 8px;
+      cursor: pointer; font-size: .875rem; font-weight: 500;
+      transition: background .2s, border-color .2s;
+    }
+    .nav-dropdown-btn:hover {
+      background: rgba(139, 92, 246, 0.3);
+      border-color: var(--purple);
+    }
+    .nav-dropdown-btn.open { background: rgba(139, 92, 246, 0.25); border-color: var(--purple); }
+    .nav-dropdown-btn .chevron { font-size: .7em; transition: transform .2s; }
+    .nav-dropdown-btn.open .chevron { transform: rotate(180deg); }
+    .nav-dropdown-panel {
+      display: none; position: absolute; top: 100%; left: 0; margin-top: .35rem;
+      min-width: 320px; max-width: 95vw; max-height: 80vh; overflow-y: auto;
+      background: var(--card); border: 1px solid var(--card-border);
+      border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.4);
+      z-index: 100; padding: 1rem;
+    }
+    .nav-dropdown-panel.open { display: block; }
+    .nav-dropdown-panel h3 { font-size: .8rem; color: var(--muted); margin: 1rem 0 .5rem; text-transform: uppercase; letter-spacing: .05em; }
+    .nav-dropdown-panel h3:first-child { margin-top: 0; }
     .metrics-list span { display: block; }
     /* Interacción robot */
     .robot-section { margin-top: 1.5rem; }
@@ -194,50 +224,155 @@
     }
     .robot-response.empty { color: var(--muted); }
     .robot-response.error { border-color: var(--red); color: var(--red); }
+    /* Expandir panel: botón y modal */
+    .btn-expand {
+      background: none; border: none; cursor: pointer; padding: .2rem .35rem;
+      font-size: .9rem; color: var(--muted); opacity: 0.7;
+      border-radius: 4px; margin-left: .35rem; vertical-align: middle;
+    }
+    .btn-expand:hover { color: var(--purple-light); opacity: 1; background: var(--accent-muted); }
+    .expand-modal {
+      display: none; position: fixed; inset: 0; z-index: 9999;
+      background: rgba(0,0,0,.85); backdrop-filter: blur(6px);
+      align-items: center; justify-content: center; padding: 2rem;
+    }
+    .expand-modal.open { display: flex; }
+    .expand-modal-content {
+      background: var(--card); border: 1px solid var(--card-border);
+      border-radius: 12px; max-width: 95vw; max-height: 90vh;
+      width: 100%; overflow: auto; padding: 1.5rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,.5);
+    }
+    .expand-modal-content .pre-expand { max-height: none !important; height: 70vh !important; font-size: .85rem !important; }
+    .expand-modal-content .list-expand { max-height: none !important; height: 70vh !important; }
+    .expand-modal-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 1rem; padding-bottom: .75rem; border-bottom: 1px solid var(--card-border);
+    }
+    .expand-modal-header h2 { margin: 0; font-size: 1rem; }
+    .btn-close-expand {
+      background: var(--red); color: #fff; border: none; padding: .35rem .75rem;
+      border-radius: 6px; cursor: pointer; font-size: .8rem;
+    }
+    .btn-close-expand:hover { filter: brightness(1.1); }
   </style>
 </head>
 <body>
+  <div id="expand-modal" class="expand-modal" onclick="if(event.target===this) closeExpandModal()">
+    <div class="expand-modal-content" onclick="event.stopPropagation()">
+      <div class="expand-modal-header">
+        <h2 id="expand-modal-title">—</h2>
+        <button type="button" class="btn-close-expand" onclick="closeExpandModal()">Cerrar</button>
+      </div>
+      <div id="expand-modal-body"></div>
+    </div>
+  </div>
   <div class="container">
     <div class="header">
-      <h1>ATLAS Dashboard</h1>
-      <div class="header-actions">
+      <h1 data-i18n="app.title">ATLAS Dashboard</h1>
+      <div class="header-actions nav-horizontal">
+        <span style="font-size:.75rem;color:var(--muted);margin-right:.5rem;">
+          <a href="#" onclick="setLocale('es');return false;" id="lang-es" style="color:var(--purple-light);text-decoration:none;">ES</a>
+          <span style="color:var(--muted);">|</span>
+          <a href="#" onclick="setLocale('en');return false;" id="lang-en" style="color:var(--muted);text-decoration:none;">EN</a>
+        </span>
         <span class="last-update" id="last-update">—</span>
-        <button class="secondary" id="btn-refresh" onclick="refreshAll()">Actualizar</button>
+        <button class="secondary" id="btn-refresh" onclick="refreshAll()" data-i18n="app.refresh">Actualizar</button>
+        <div class="nav-dropdown-wrap">
+          <button type="button" class="nav-dropdown-btn" id="nav-opciones-btn" onclick="toggleOpcionesMenu()" aria-expanded="false">
+            Opciones <span class="chevron">▼</span>
+          </button>
+          <div class="nav-dropdown-panel" id="nav-opciones-panel">
+            <div id="nav-opciones-content" style="display:flex;flex-direction:column;gap:1rem;">
+              <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.75rem;">
+                <div class="card" id="metrics-card"><h2 data-i18n="card.metrics">Métricas</h2><div class="value">—</div><div class="metrics-list" id="metrics-detail"></div></div>
+                <div class="card" id="scheduler-card"><h2 data-i18n="card.scheduler">Programador</h2><div class="value">—</div><div class="row"></div></div>
+                <div class="card" id="cluster-card"><h2 data-i18n="card.cluster">Cluster</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadCluster()" data-i18n="cluster.view">Ver nodos</button></div></div>
+                <div class="card" id="gateway-card"><h2 data-i18n="card.gateway">Gateway</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadGateway()" data-i18n="gateway.view">Ver</button></div></div>
+                <div class="card" id="approvals-card"><h2 data-i18n="card.approvals">Aprobaciones</h2><div class="value"><ul id="approvals-list"></ul></div></div>
+              </div>
+              <div id="nav-opciones-sections"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <!-- Governance bar: GROWTH / GOVERNED / EMERGENCY STOP -->
     <div class="governance-bar" id="governance-bar" style="display:flex;align-items:center;gap:.5rem;padding:.5rem 0;margin-bottom:.75rem;border-bottom:1px solid var(--card-border);">
-      <span style="font-size:.75rem;color:var(--muted);margin-right:.5rem;">Governance:</span>
+      <span style="font-size:.75rem;color:var(--muted);margin-right:.5rem;" data-i18n="gov.label">Governance:</span>
       <button class="growth" id="gov-growth" onclick="govSetMode('growth')">GROWTH</button>
       <button class="governed" id="gov-governed" onclick="govSetMode('governed')">GOVERNED</button>
       <button class="danger" id="gov-emergency" onclick="govEmergencyStop()">EMERGENCY STOP</button>
       <span class="badge" id="gov-status" style="margin-left:.5rem;">—</span>
       <span class="last-update" id="gov-msg"></span>
     </div>
+    <!-- Grid principal: siempre visible -->
     <div class="grid">
-      <div class="card" id="status-card"><h2>Estado</h2><div class="value">—</div></div>
-      <div class="card" id="version-card"><h2>Versión</h2><div class="value">—</div></div>
-      <div class="card" id="health-card"><h2>Salud</h2><div class="value">—</div><div class="score-bar"><div id="health-bar-fill" style="width:0%;height:100%;background:var(--muted);border-radius:3px"></div></div></div>
-      <div class="card" id="metrics-card"><h2>Métricas</h2><div class="value">—</div><div class="metrics-list" id="metrics-detail"></div></div>
-      <div class="card" id="scheduler-card"><h2>Programador</h2><div class="value">—</div><div class="row"></div></div>
-      <div class="card" id="update-card"><h2>Actualización</h2><div class="value">—</div><div class="row"><button class="small" onclick="updateCheck()">Comprobar</button></div></div>
-      <div class="card" id="deploy-card"><h2>Despliegue</h2><div class="value">—</div><div class="row"></div></div>
-      <div class="card" id="cluster-card"><h2>Cluster</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadCluster()">Ver nodos</button></div></div>
-      <div class="card" id="gateway-card"><h2>Gateway</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadGateway()">Ver</button></div></div>
-      <div class="card" id="approvals-card"><h2>Aprobaciones</h2><div class="value"><ul id="approvals-list"></ul></div></div>
-      <div class="card" id="ga-card"><h2>Governed Autonomy</h2><div class="value">—</div><div class="row"><button class="small" onclick="gaRunNow()">Run Now</button><button class="small secondary" onclick="loadGAStatus()">Actualizar</button></div><div class="metrics-list" id="ga-detail"></div></div>
+      <div class="card" id="status-card"><h2 data-i18n="card.status">Estado</h2><div class="value">—</div></div>
+      <div class="card" id="version-card"><h2 data-i18n="card.version">Versión</h2><div class="value">—</div></div>
+      <div class="card" id="health-card"><h2 data-i18n="card.health">Salud</h2><div class="value">—</div><div class="score-bar"><div id="health-bar-fill" style="width:0%;height:100%;background:var(--muted);border-radius:3px"></div></div><div id="health-checks-detail" class="metrics-list" style="margin-top:.5rem;font-size:.7rem;cursor:pointer;" onclick="toggleHealthDetail()" title="Clic para ver desglose"></div></div>
+      <div class="card" id="update-card"><h2 data-i18n="card.update">Actualización</h2><div class="value">—</div></div>
+      <div class="card" id="deploy-card"><h2 data-i18n="card.deploy">Despliegue</h2><div class="value">—</div><div class="row"></div></div>
+      <div class="card" id="ga-card"><h2 data-i18n="ga.panel">Governed Autonomy</h2><div class="value">—</div><div class="row"><button class="small" onclick="gaRunNow()" data-i18n="ga.run">Run Now</button><button class="small secondary" onclick="loadGAStatus()" data-i18n="app.refresh">Actualizar</button></div><div class="metrics-list" id="ga-detail"></div></div>
     </div>
+
+    <!-- Bitácora: qué está mal → qué acción ejecuto → resultado -->
+    <section class="robot-section" id="bitacora-section" style="margin-top:1rem;">
+      <div class="card" style="padding:1rem;">
+        <h2>Bitácora ANS <button class="btn-expand" onclick="expandPanel('bitacora-section','Bitácora ANS','#bitacora-list')" title="Ampliar">⛶</button></h2>
+        <p class="robot-task-help" style="color:var(--muted);font-size:.8rem;margin:.5rem 0;">Problema detectado → Acción ejecutada → Resultado</p>
+        <div id="bitacora-list" style="font-size:.8rem;max-height:160px;overflow-y:auto;background:var(--bg-elevated);border-radius:8px;padding:.5rem;border:1px solid var(--card-border);">
+          <div class="bitacora-empty" id="bitacora-empty">Sin entradas recientes</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scanner + Descargas: último scan y pip install -->
+    <section class="robot-section" id="scanner-downloads-section" style="margin-top:1rem;">
+      <div class="card" style="padding:1rem;">
+        <h2>Scanner y Descargas <button class="btn-expand" onclick="expandPanel('scanner-downloads-section','Scanner y Descargas','#scanner-expand-content')" title="Ampliar">⛶</button></h2>
+        <p class="robot-task-help" style="color:var(--muted);font-size:.8rem;margin:.5rem 0;">Último scan (MakePlay) y descargas pip en tiempo real.</p>
+        <div class="row" style="margin-bottom:.5rem;">
+          <button class="small secondary" onclick="loadScannerStatus()" data-i18n="app.refresh">Actualizar</button>
+        </div>
+        <div id="scanner-expand-content" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;font-size:.8rem;">
+          <div>
+            <h3 style="font-size:.7rem;color:var(--muted);margin:.5rem 0;">Último scan</h3>
+            <pre id="scanner-last-scan" style="font-family:Consolas,monospace;font-size:.7rem;max-height:120px;overflow-y:auto;background:#0a0a0f;color:#a5d6ff;padding:.5rem;border-radius:6px;border:1px solid var(--card-border);margin:0;white-space:pre-wrap;"></pre>
+          </div>
+          <div>
+            <h3 style="font-size:.7rem;color:var(--muted);margin:.5rem 0;">Últimas descargas (pip)</h3>
+            <div id="scanner-downloads-list" style="max-height:120px;overflow-y:auto;background:#0a0a0f;color:#a5d6ff;padding:.5rem;border-radius:6px;border:1px solid var(--card-border);"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Consola en vivo: señales ANS (estilo Cursor) -->
+    <section class="robot-section" id="live-console-section" style="margin-top:1rem;">
+      <div class="card" style="padding:1rem;">
+        <h2>Consola en vivo <button class="btn-expand" onclick="expandPanel('live-console-section','Consola en vivo','#live-console-output')" title="Ampliar">⛶</button></h2>
+        <p class="robot-task-help" style="color:var(--muted);font-size:.8rem;margin:.5rem 0;">Lo que el sistema ejecuta en tiempo real: checks, heals, decisiones.</p>
+        <div class="row" style="margin-bottom:.5rem;">
+          <button class="small" id="live-console-btn" onclick="toggleLiveConsole()">Iniciar stream</button>
+          <button class="small secondary" onclick="loadLiveRecent()">Cargar recientes</button>
+          <a href="#" class="small secondary" style="padding:.25rem .5rem;text-decoration:none;" onclick="window.open(base+'/ans/self-model','_blank','width=800,height=600');return false;">Ver autoconocimiento</a>
+          <span class="badge" id="live-console-status" style="margin-left:.5rem;">—</span>
+        </div>
+        <pre id="live-console-output" style="font-family:Consolas,monospace;font-size:.75rem;max-height:240px;overflow-y:auto;background:#0a0a0f;color:#a5d6ff;padding:.75rem;border-radius:8px;border:1px solid var(--card-border);margin:0;white-space:pre-wrap;word-break:break-all;"></pre>
+      </div>
+    </section>
 
     <section class="robot-section" id="product-section">
       <div class="card">
-        <h2>Product</h2>
-        <p class="robot-task-help">Version, edition, license, service, cluster, gateway, health, GA/Metalearn, support bundle.</p>
+        <h2 data-i18n="product.panel">Product</h2>
+        <p class="robot-task-help" data-i18n="product.help">Version, edition, license, service, cluster, gateway, health, GA/Metalearn, support bundle.</p>
         <div class="row" style="margin-bottom:.5rem;">
           <span class="badge ok" id="product-version">—</span>
           <span class="badge" id="product-edition">—</span>
           <span class="badge" id="product-license">—</span>
-          <button class="small secondary" onclick="loadProductStatus()">Actualizar</button>
-          <button class="small" onclick="downloadSupportBundle()">Support bundle</button>
+          <button class="small secondary" onclick="loadProductStatus()" data-i18n="app.refresh">Actualizar</button>
+          <button class="small" onclick="downloadSupportBundle()" data-i18n="product.support">Support bundle</button>
         </div>
         <div id="product-detail" class="value" style="font-size:.8rem; color:var(--muted);"></div>
       </div>
@@ -245,58 +380,73 @@
 
     <section class="robot-section" id="ans-section">
       <div class="card">
-        <h2>ANS (Autonomic Nervous System)</h2>
-        <p class="robot-task-help" style="color:var(--muted); font-size:.8rem;">Auto-checks, auto-heals (SAFE), incidentes, reportes. Sin preguntar: actúa SAFE; lo riesgoso -> approval + notificar.</p>
+        <h2 data-i18n="ans.panel">ANS (Autonomic Nervous System) <button class="btn-expand" onclick="expandPanel('ans-section','ANS','#ans-incidents-list,#ans-actions-list')" title="Ampliar">⛶</button></h2>
+        <p class="robot-task-help" data-i18n="ans.help" style="color:var(--muted); font-size:.8rem;">Auto-checks, auto-heals (SAFE), incidentes, reportes.</p>
         <div class="row" style="margin-top:.5rem;">
           <span class="badge" id="ans-enabled">—</span>
           <span class="badge" id="ans-mode">—</span>
           <span class="last-update" id="ans-incidents">—</span>
-          <button class="small" onclick="ansRunNow()">Run Now</button>
-          <button class="small secondary" onclick="loadANSStatus()">Actualizar</button>
+          <button class="small" onclick="ansRunNow()" data-i18n="ans.run">Run Now</button>
+          <button class="small secondary" onclick="loadANSStatus()" data-i18n="app.refresh">Actualizar</button>
         </div>
         <div id="ans-incidents-list" class="value" style="font-size:.8rem; max-height:100px; overflow-y:auto; margin-top:.5rem;"></div>
         <div id="ans-actions-list" class="value" style="font-size:.75rem; color:var(--muted); max-height:80px; overflow-y:auto; margin-top:.35rem;"></div>
         <div class="row" style="margin-top:.5rem;">
-          <a id="ans-report-link" href="#" target="_blank" style="font-size:.8rem; color:var(--purple-light);">Último reporte</a>
-          <button class="small secondary" onclick="downloadSupportBundle()">Support Bundle</button>
+          <a id="ans-report-link" href="#" target="_blank" style="font-size:.8rem; color:var(--purple-light);" data-i18n="ans.report">Último reporte</a>
+          <button class="small secondary" onclick="downloadSupportBundle()" data-i18n="product.support">Support Bundle</button>
         </div>
       </div>
     </section>
 
     <section class="robot-section" id="owner-console-section">
       <div class="card">
-        <h2>Owner Console</h2>
-        <p class="robot-task-help">Sesiones activas, aprobaciones pendientes/expiradas, emergencia, integridad de cadena.</p>
-        <div class="row" style="margin-bottom:0.75rem;">
-          <button class="small" id="owner-session-btn" onclick="ownerStartSession()">Iniciar sesión owner</button>
+        <h2 data-i18n="owner.panel">Owner Console <button class="btn-expand" onclick="expandPanel('owner-console-section','Owner Console','#owner-sessions,#ga-last-report,#owner-pending-list,#owner-expired-list')" title="Ampliar">⛶</button></h2>
+        <p class="robot-task-help" data-i18n="owner.help">Sesiones activas, aprobaciones pendientes/expiradas, emergencia, integridad de cadena.</p>
+        <div class="row" style="margin-bottom:0.5rem;">
+          <span style="font-size:.8rem; color:var(--muted);">Iniciar sesión:</span>
+          <button class="small" onclick="ownerStartWithFace()" title="Reconocimiento facial">📷 Rostro</button>
+          <button class="small" onclick="showOwnerWindowsLogin()" title="Contraseña Windows">🔐 Contraseña Windows</button>
           <span class="last-update" id="owner-session-msg"></span>
-          <button class="small secondary" onclick="loadOwnerStatus()">Actualizar</button>
-          <button class="small" id="owner-emergency-btn" onclick="ownerToggleEmergency()">Emergency: —</button>
-          <button class="small secondary" onclick="ownerVerifyChain()">Verificar cadena</button>
+        </div>
+        <div id="owner-face-login" style="display:none; margin-bottom:0.75rem; padding:0.75rem; background:var(--bg-elevated); border-radius:8px; border:1px solid var(--card-border);">
+          <p style="font-size:.8rem; margin:0 0 .5rem;">Mira a la cámara y captura:</p>
+          <video id="owner-face-video" autoplay playsinline width="240" height="180" style="border-radius:6px; background:#000; margin-bottom:.5rem;"></video>
+          <div class="row"><button class="small" onclick="ownerCaptureAndLogin()">Capturar e iniciar sesión</button><button class="small secondary" onclick="hideOwnerFaceLogin()">Cancelar</button></div>
+        </div>
+        <div id="owner-windows-login" style="display:none; margin-bottom:0.75rem; padding:0.75rem; background:var(--bg-elevated); border-radius:8px; border:1px solid var(--card-border);">
+          <p style="font-size:.8rem; margin:0 0 .5rem;">Usuario y contraseña de Windows:</p>
+          <div style="margin-bottom:.5rem;"><input type="text" id="owner-win-user" placeholder="Usuario" style="width:160px; padding:.35rem; border-radius:6px; background:var(--bg); border:1px solid var(--card-border); color:var(--text); font-size:.85rem;"></div>
+          <div style="margin-bottom:.5rem;"><input type="password" id="owner-win-pass" placeholder="Contraseña" style="width:160px; padding:.35rem; border-radius:6px; background:var(--bg); border:1px solid var(--card-border); color:var(--text); font-size:.85rem;"></div>
+          <div class="row"><button class="small" onclick="ownerLoginWithWindows()">Iniciar sesión</button><button class="small secondary" onclick="hideOwnerWindowsLogin()">Cancelar</button></div>
+        </div>
+        <div class="row" style="margin-bottom:0.75rem;">
+          <button class="small secondary" onclick="loadOwnerStatus()" data-i18n="app.refresh">Actualizar</button>
+          <button class="small" id="owner-emergency-btn" onclick="ownerToggleEmergency()" data-i18n="owner.emergency">Emergency: —</button>
+          <button class="small secondary" onclick="ownerVerifyChain()" data-i18n="owner.verify">Verificar cadena</button>
         </div>
         <div id="owner-sessions" class="value" style="font-size:.8rem; color:var(--muted);"></div>
-        <h3 style="font-size:.75rem; color:var(--muted); margin:.5rem 0 .25rem;">Governed Autonomy</h3>
+        <h3 style="font-size:.75rem; color:var(--muted); margin:.5rem 0 .25rem;" data-i18n="owner.ga_label">Governed Autonomy</h3>
         <div class="row" style="margin-bottom:.5rem;">
-          <button class="small" onclick="gaRunNow()">Run GA Now</button>
+          <button class="small" onclick="gaRunNow()" data-i18n="ga.run_now">Run GA Now</button>
           <span class="last-update" id="ga-status-msg"></span>
         </div>
         <div id="ga-last-report" class="value" style="font-size:.8rem; color:var(--muted); max-height:80px; overflow-y:auto;"></div>
         <div id="ga-executed" class="value" style="font-size:.75rem; color:var(--green); margin-top:.35rem;"></div>
-        <h3 style="font-size:.75rem; color:var(--muted); margin:.5rem 0 .25rem;">Pendientes / Expiradas</h3>
+        <h3 style="font-size:.75rem; color:var(--muted); margin:.5rem 0 .25rem;" data-i18n="owner.pending">Pendientes / Expiradas</h3>
         <div id="owner-pending-list" class="value" style="font-size:.8rem; max-height:120px; overflow-y:auto;"></div>
         <div id="owner-expired-list" class="value" style="font-size:.8rem; max-height:80px; overflow-y:auto; color:var(--amber);"></div>
-        <h3 style="font-size:.75rem; color:var(--muted); margin:.5rem 0 .25rem;">Historial críticos</h3>
+        <h3 style="font-size:.75rem; color:var(--muted); margin:.5rem 0 .25rem;" data-i18n="owner.history">Historial críticos</h3>
         <div id="owner-critical-history" class="value" style="font-size:.8rem; max-height:140px; overflow-y:auto;"></div>
       </div>
     </section>
 
     <section class="robot-section" id="governance-panel">
       <div class="card">
-        <h2>Governance</h2>
-        <p class="robot-task-help">Log de cambios de modo, acciones bloqueadas, approvals creadas.</p>
+        <h2 data-i18n="gov.panel">Governance</h2>
+        <p class="robot-task-help" data-i18n="gov.panel_help">Log de cambios de modo, acciones bloqueadas, approvals creadas.</p>
         <div class="row" style="margin-top:.5rem;">
-          <button class="small secondary" onclick="loadGovernanceStatus()">Actualizar</button>
-          <a href="#" id="governance-log-link" target="_blank" style="font-size:.8rem; color:var(--purple-light);">Log</a>
+          <button class="small secondary" onclick="loadGovernanceStatus()" data-i18n="app.refresh">Actualizar</button>
+          <a href="#" id="governance-log-link" target="_blank" style="font-size:.8rem; color:var(--purple-light);" data-i18n="gov.log">Log</a>
         </div>
         <div id="governance-log" class="value" style="font-size:.75rem; max-height:120px; overflow-y:auto; margin-top:.5rem; color:var(--muted);"></div>
       </div>
@@ -304,11 +454,11 @@
 
     <section class="robot-section" id="gateway-section" style="display:none;">
       <div class="card">
-        <h2>Gateway — Stealth</h2>
-        <p class="robot-task-help">Modo actual, herramientas detectadas, último éxito, Check / Bootstrap / Set mode.</p>
+        <h2 data-i18n="gateway.stealth">Gateway — Stealth</h2>
+        <p class="robot-task-help" data-i18n="gateway.help">Modo actual, herramientas detectadas, último éxito, Check / Bootstrap / Set mode.</p>
         <div class="row" style="margin-bottom:0.75rem;">
-          <button class="small" onclick="gatewayCheck()">Check</button>
-          <button class="small" onclick="gatewayBootstrap()">Bootstrap</button>
+          <button class="small" onclick="gatewayCheck()" data-i18n="gateway.check">Check</button>
+          <button class="small" onclick="gatewayBootstrap()" data-i18n="gateway.bootstrap">Bootstrap</button>
           <select id="gateway-mode" onchange="gatewaySetMode()" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
             <option value="auto">auto</option>
             <option value="cloudflare">cloudflare</option>
@@ -326,121 +476,121 @@
 
     <section class="robot-section" id="cluster-section" style="display:none;">
       <div class="card">
-        <h2>Cluster — Owner Command Center</h2>
-        <p class="robot-task-help">Nodos registrados, heartbeat, ruta preferida y eventos.</p>
+        <h2 data-i18n="cluster.command_center">Cluster — Owner Command Center</h2>
+        <p class="robot-task-help" data-i18n="cluster.help">Nodos registrados, heartbeat, ruta preferida y eventos.</p>
         <div class="row" style="margin-bottom:0.75rem;">
-          <button class="small" onclick="loadCluster()">Actualizar nodos</button>
-          <button class="small secondary" onclick="clusterPing()">Ping</button>
+          <button class="small" onclick="loadCluster()" data-i18n="cluster.refresh">Actualizar nodos</button>
+          <button class="small secondary" onclick="clusterPing()" data-i18n="cluster.ping">Ping</button>
           <select id="cluster-route-pref" onchange="setClusterRoute()" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
-            <option value="local">Ruta: local</option>
-            <option value="remote_preferred">Ruta: remote_preferred</option>
+            <option value="local" data-i18n="cluster.route_local">Ruta: local</option>
+            <option value="remote_preferred" data-i18n="cluster.route_remote">Ruta: remote_preferred</option>
           </select>
-          <button class="small secondary" onclick="runClusterTestJob()">Run test job (best node)</button>
+          <button class="small secondary" onclick="runClusterTestJob()" data-i18n="cluster.test_job">Run test job (best node)</button>
         </div>
         <div id="cluster-nodes-list" class="value" style="font-size:.85rem; max-height:200px; overflow-y:auto;"></div>
-        <h3 style="font-size:.8rem; color:var(--muted); margin:.75rem 0 .35rem;">Últimos eventos</h3>
+        <h3 style="font-size:.8rem; color:var(--muted); margin:.75rem 0 .35rem;" data-i18n="cluster.events">Últimos eventos</h3>
         <div id="cluster-events-list" class="value" style="font-size:.8rem; max-height:160px; overflow-y:auto; color:var(--muted);"></div>
       </div>
     </section>
 
-    <section class="robot-section">
+    <section class="robot-section" id="robot-section-id">
       <div class="card">
-        <h2>Interactuar con ATLAS</h2>
-        <p class="robot-task-help" id="robot-task-help">Comando directo: /status, /doctor, /modules. Sin IA.</p>
+        <h2 data-i18n="robot.title">Interactuar con ATLAS <button class="btn-expand" onclick="expandPanel('robot-section-id','Interactuar','#robot-response,#robot-input')" title="Ampliar">⛶</button></h2>
+        <p class="robot-task-help" id="robot-task-help" data-i18n="robot.task_quick_help">Comando directo: /status, /doctor, /modules. Sin IA.</p>
         <div class="robot-task-type">
-          <label for="robot-task-type">Envergadura de la tarea</label>
+          <label for="robot-task-type" data-i18n="robot.task_type">Envergadura de la tarea</label>
           <select id="robot-task-type" onchange="updateTaskHelp()">
-            <option value="quick">Rápida (comando)</option>
-            <option value="medium">Media (IA plan)</option>
-            <option value="full">Compleja (IA plan + ejecución)</option>
+            <option value="quick" data-i18n="robot.task_quick">Rápida (comando)</option>
+            <option value="medium" data-i18n="robot.task_medium">Media (IA plan)</option>
+            <option value="full" data-i18n="robot.task_full">Compleja (IA plan + ejecución)</option>
           </select>
         </div>
-        <textarea id="robot-input" class="robot-input" placeholder="Escribe un comando (ej. /status) o un objetivo para la IA…"></textarea>
+        <textarea id="robot-input" class="robot-input" data-i18n-placeholder="robot.placeholder" placeholder="Escribe un comando (ej. /status) o un objetivo para la IA…"></textarea>
         <div class="robot-actions">
-          <button id="robot-send" onclick="sendToRobot()">Enviar</button>
+          <button id="robot-send" onclick="sendToRobot()" data-i18n="robot.send">Enviar</button>
           <span class="last-update" id="robot-status"></span>
         </div>
         <div class="robot-actions" style="margin-top:0.5rem;">
-          <button type="button" class="small secondary" id="btn-voice-mic" onclick="startVoiceRecognition()">🎤 Hablar por voz</button>
-          <button type="button" class="small secondary" id="btn-voice-play" onclick="playResponseWithVoice()">🔊 Reproducir respuesta por PC</button>
+          <button type="button" class="small secondary" id="btn-voice-mic" onclick="startVoiceRecognition()" data-i18n="voice.talk">🎤 Hablar por voz</button>
+          <button type="button" class="small secondary" id="btn-voice-play" onclick="playResponseWithVoice()" data-i18n="voice.speak">🔊 Reproducir respuesta por PC</button>
         </div>
-        <div class="robot-response empty" id="robot-response">La respuesta aparecerá aquí.</div>
+        <div class="robot-response empty" id="robot-response" data-i18n="cursor.response_placeholder">La respuesta aparecerá aquí.</div>
       </div>
     </section>
 
     <section class="robot-section" id="cursor-mode-section">
       <div class="card">
-        <h2>Cursor Mode</h2>
-        <p class="robot-task-help" style="color:var(--muted); font-size:.8rem;">Objetivo único, plan con IA (free-first), pasos y evidencia. plan_only = solo plan; controlled/auto = ejecución con policy.</p>
+        <h2 data-i18n="cursor.panel">Cursor Mode <button class="btn-expand" onclick="expandPanel('cursor-mode-section','Cursor Mode','#cursor-goal,#cursor-steps-panel,#cursor-evidence-panel')" title="Ampliar">⛶</button></h2>
+        <p class="robot-task-help" data-i18n="cursor.help" style="color:var(--muted); font-size:.8rem;">Objetivo único, plan con IA (free-first), pasos y evidencia.</p>
         <div class="robot-task-type">
-          <label for="cursor-goal">Objetivo</label>
-          <textarea id="cursor-goal" class="robot-input" placeholder="Ej: Listar archivos del directorio actual" rows="2" style="min-height:60px;"></textarea>
+          <label for="cursor-goal" data-i18n="cursor.goal">Objetivo</label>
+          <textarea id="cursor-goal" class="robot-input" data-i18n-placeholder="cursor.placeholder" placeholder="Ej: Listar archivos del directorio actual" rows="2" style="min-height:60px;"></textarea>
         </div>
         <div class="row" style="margin-top:.5rem; gap:1rem; flex-wrap:wrap;">
           <div class="robot-task-type">
-            <label for="cursor-mode">Modo</label>
+            <label for="cursor-mode" data-i18n="cursor.mode_label">Modo</label>
             <select id="cursor-mode" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
-              <option value="plan_only">Solo plan</option>
-              <option value="controlled">Controlado</option>
-              <option value="auto">Auto</option>
+              <option value="plan_only" data-i18n="cursor.mode_plan_only">Solo plan</option>
+              <option value="controlled" data-i18n="cursor.mode_controlled">Controlado</option>
+              <option value="auto" data-i18n="cursor.mode_auto">Auto</option>
             </select>
           </div>
           <div class="robot-task-type">
-            <label for="cursor-resources">Recursos</label>
+            <label for="cursor-resources" data-i18n="cursor.resources_label">Recursos</label>
             <select id="cursor-resources" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
-              <option value="lite">Lite</option>
-              <option value="pro" selected>Pro</option>
-              <option value="ultra">Ultra</option>
+              <option value="lite" data-i18n="cursor.resources_lite">Lite</option>
+              <option value="pro" selected data-i18n="cursor.resources_pro">Pro</option>
+              <option value="ultra" data-i18n="cursor.resources_ultra">Ultra</option>
             </select>
           </div>
           <div class="robot-task-type">
-            <label for="cursor-free">IA</label>
+            <label for="cursor-free" data-i18n="cursor.ai_label">IA</label>
             <select id="cursor-free" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
-              <option value="free_only">Solo gratis (Ollama)</option>
-              <option value="auto">Auto</option>
-              <option value="allow_paid">Permitir pago (Owner)</option>
+              <option value="free_only" data-i18n="cursor.ai_free_only">Solo gratis (Ollama)</option>
+              <option value="auto" data-i18n="cursor.ai_auto">Auto</option>
+              <option value="allow_paid" data-i18n="cursor.ai_allow_paid">Permitir pago (Owner)</option>
             </select>
           </div>
           <div class="robot-task-type">
-            <label for="cursor-profile">Perfil</label>
+            <label for="cursor-profile" data-i18n="cursor.profile_label">Perfil</label>
             <select id="cursor-profile" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
-              <option value="owner">Owner</option>
-              <option value="operario">Operario</option>
-              <option value="contadora">Contadora</option>
+              <option value="owner" data-i18n="cursor.profile_owner">Owner</option>
+              <option value="operario" data-i18n="cursor.profile_operario">Operario</option>
+              <option value="contadora" data-i18n="cursor.profile_contadora">Contadora</option>
             </select>
           </div>
         </div>
         <div class="robot-actions" style="margin-top:.75rem;">
-          <button id="cursor-run-btn" onclick="cursorRun()">Run</button>
+          <button id="cursor-run-btn" onclick="cursorRun()" data-i18n="cursor.ejecutar">Run</button>
           <span class="last-update" id="cursor-status"></span>
         </div>
         <div id="cursor-steps-panel" class="metrics-list" style="margin-top:.75rem; display:none;">
-          <strong>Pasos</strong>
+          <strong data-i18n="cursor.steps">Pasos</strong>
           <ul id="cursor-steps-list"></ul>
         </div>
         <div id="cursor-routing-panel" class="metrics-list" style="margin-top:.5rem; display:none;">
-          <strong>Modelo</strong>
+          <strong data-i18n="cursor.model">Modelo</strong>
           <span id="cursor-routing-text"></span>
         </div>
         <div id="cursor-evidence-panel" class="metrics-list" style="margin-top:.35rem; display:none;">
-          <strong>Evidencia</strong>
+          <strong data-i18n="cursor.evidence">Evidencia</strong>
           <span id="cursor-evidence-text"></span>
         </div>
       </div>
     </section>
 
-    <section class="robot-section">
+    <section class="robot-section" id="voice-section">
       <div class="card">
-        <h2>Voz y rostro</h2>
-        <p class="robot-task-help">Reconocimiento de voz (micrófono) y detección de rostro (cámara).</p>
+        <h2 data-i18n="voice.panel">Voz y rostro <button class="btn-expand" onclick="expandPanel('voice-section','Voz y rostro','#face-video-container,#face-result')" title="Ampliar">⛶</button></h2>
+        <p class="robot-task-help" data-i18n="voice.help">Reconocimiento de voz (micrófono) y detección de rostro (cámara).</p>
         <div class="robot-actions">
-          <button type="button" class="small" id="btn-face-check" onclick="checkFace()">📷 Verificar rostro (cámara)</button>
-          <button type="button" class="small secondary" id="btn-face-disconnect" style="display:none;" onclick="disconnectCamera()">Apagar cámara</button>
+          <button type="button" class="small" id="btn-face-check" onclick="checkFace()" data-i18n="voice.face">📷 Verificar rostro (cámara)</button>
+          <button type="button" class="small secondary" id="btn-face-disconnect" style="display:none;" onclick="disconnectCamera()" data-i18n="voice.disconnect">Apagar cámara</button>
           <span class="last-update" id="face-result"></span>
         </div>
         <div id="face-video-container" style="display:none; margin-top:0.5rem;">
           <video id="face-video" autoplay playsinline width="320" height="240" style="border-radius:8px; background:#000;"></video>
-          <p style="font-size:.8rem; color:var(--muted); margin-top:.35rem;">Mira a la cámara y pulsa «Verificar rostro» para capturar. Pulsa «Apagar cámara» cuando termines.</p>
+          <p style="font-size:.8rem; color:var(--muted); margin-top:.35rem;" data-i18n="face.help_video">Mira a la cámara y pulsa «Verificar rostro» para capturar. Pulsa «Apagar cámara» cuando termines.</p>
         </div>
       </div>
     </section>
@@ -448,14 +598,63 @@
   <script>
     const base = window.location.origin;
     let ownerSessionToken = null;
-    const TASK_HELP = {
-      quick: 'Comando directo: /status, /doctor, /modules. Sin IA.',
-      medium: 'La IA genera un plan; no ejecuta. Ideal para revisar pasos antes de ejecutar.',
-      full: 'Plan y ejecución con aprobación. Mayor uso de recursos. Para tareas complejas.'
-    };
+
+    function toggleOpcionesMenu() {
+      const btn = document.getElementById('nav-opciones-btn');
+      const panel = document.getElementById('nav-opciones-panel');
+      if (!btn || !panel) return;
+      btn.classList.toggle('open');
+      panel.classList.toggle('open');
+      btn.setAttribute('aria-expanded', panel.classList.contains('open'));
+    }
+    document.addEventListener('click', function(e) {
+      const wrap = document.querySelector('.nav-dropdown-wrap');
+      const panel = document.getElementById('nav-opciones-panel');
+      const btn = document.getElementById('nav-opciones-btn');
+      if (panel && panel.classList.contains('open') && wrap && !wrap.contains(e.target)) {
+        panel.classList.remove('open');
+        if (btn) btn.classList.remove('open');
+      }
+    });
+    let currentLocale = localStorage.getItem('ui_locale') || 'es';
+    let UI_STRINGS = {};
     async function get(path) {
       const r = await fetch(base + path, { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
       return r.ok ? r.json() : null;
+    }
+    async function setLocale(locale) {
+      if (locale !== 'es' && locale !== 'en') return;
+      currentLocale = locale;
+      localStorage.setItem('ui_locale', locale);
+      document.documentElement.lang = locale === 'es' ? 'es' : 'en';
+      const langEs = document.getElementById('lang-es');
+      const langEn = document.getElementById('lang-en');
+      if (langEs) { langEs.style.color = locale === 'es' ? 'var(--purple-light)' : 'var(--muted)'; }
+      if (langEn) { langEn.style.color = locale === 'en' ? 'var(--purple-light)' : 'var(--muted)'; }
+      const r = await get('/ui/lang?locale=' + locale);
+      if (r && r.ok && r.strings) applyStrings(r.strings);
+      refreshAll();
+    }
+    function applyStrings(strings) {
+      UI_STRINGS = strings || {};
+      document.querySelectorAll('[data-i18n]').forEach(function(el) {
+        const key = el.getAttribute('data-i18n');
+        if (key && UI_STRINGS[key]) el.textContent = UI_STRINGS[key];
+      });
+      document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el) {
+        const key = el.getAttribute('data-i18n-placeholder');
+        if (key && UI_STRINGS[key]) el.placeholder = UI_STRINGS[key];
+      });
+      updateTaskHelp();
+    }
+    async function loadLocale() {
+      const r = await get('/ui/lang?locale=' + currentLocale);
+      if (r && r.ok && r.strings) applyStrings(r.strings);
+      document.documentElement.lang = currentLocale === 'es' ? 'es' : 'en';
+      const langEs = document.getElementById('lang-es');
+      const langEn = document.getElementById('lang-en');
+      if (langEs) { langEs.style.color = currentLocale === 'es' ? 'var(--purple-light)' : 'var(--muted)'; }
+      if (langEn) { langEn.style.color = currentLocale === 'en' ? 'var(--purple-light)' : 'var(--muted)'; }
     }
     async function post(path, body, headers) {
       const h = { 'Content-Type': 'application/json', ...(headers || {}) };
@@ -464,7 +663,9 @@
       return r.ok ? r.json() : null;
     }
     function setLastUpdate() {
-      document.getElementById('last-update').textContent = 'Última actualización: ' + new Date().toLocaleTimeString('es');
+      const s = UI_STRINGS['app.last_update'] ? (UI_STRINGS['app.last_update'] + ': ') : (currentLocale === 'en' ? 'Last update: ' : 'Última actualización: ');
+      const el = document.getElementById('last-update');
+      if (el) el.textContent = s + new Date().toLocaleTimeString(currentLocale === 'es' ? 'es-ES' : 'en-US');
     }
     function setCard(id, text, isError) {
       const card = document.getElementById(id);
@@ -485,7 +686,9 @@
     function updateTaskHelp() {
       const sel = document.getElementById('robot-task-type');
       const help = document.getElementById('robot-task-help');
-      if (help && sel) help.textContent = TASK_HELP[sel.value] || TASK_HELP.quick;
+      if (!help || !sel) return;
+      const key = 'robot.task_' + sel.value + '_help';
+      help.textContent = UI_STRINGS[key] || UI_STRINGS['robot.task_quick_help'] || '';
     }
     async function sendToRobot() {
       const input = document.getElementById('robot-input');
@@ -495,12 +698,12 @@
       const taskType = document.getElementById('robot-task-type').value;
       const text = (input && input.value || '').trim();
       if (!text) {
-        responseEl.textContent = 'Escribe un comando o objetivo.';
+        responseEl.textContent = UI_STRINGS['robot.no_input'] || 'Escribe un comando o objetivo.';
         responseEl.classList.add('error', 'empty');
         return;
       }
       btn.disabled = true;
-      statusEl.textContent = 'Enviando…';
+      statusEl.textContent = UI_STRINGS['robot.sending'] || 'Enviando…';
       responseEl.classList.remove('error', 'empty');
       responseEl.textContent = '…';
       try {
@@ -550,7 +753,7 @@
       const evidenceText = document.getElementById('cursor-evidence-text');
       const goal = (goalEl && goalEl.value || '').trim();
       if (!goal) {
-        statusEl.textContent = 'Escribe un objetivo.';
+        statusEl.textContent = UI_STRINGS['cursor.no_goal'] || 'Escribe un objetivo.';
         return;
       }
       const mode = (document.getElementById('cursor-mode') && document.getElementById('cursor-mode').value) || 'plan_only';
@@ -560,7 +763,7 @@
       const allow_paid = freeSel === 'allow_paid';
       const profile = (document.getElementById('cursor-profile') && document.getElementById('cursor-profile').value) || 'owner';
       btn.disabled = true;
-      statusEl.textContent = 'Ejecutando…';
+      statusEl.textContent = UI_STRINGS['cursor.running'] || 'Ejecutando…';
       stepsPanel.style.display = 'none';
       routingPanel.style.display = 'none';
       evidencePanel.style.display = 'none';
@@ -581,7 +784,7 @@
           }
           if (d.evidence && d.evidence.length) { evidenceText.textContent = d.evidence.join(', '); evidencePanel.style.display = 'block'; }
           else if (d.evidence) { evidenceText.textContent = String(d.evidence); evidencePanel.style.display = 'block'; }
-          if (d.next_actions && d.next_actions.length) { evidenceText.textContent = (evidenceText.textContent || '') + (evidenceText.textContent ? ' | ' : '') + 'Siguientes: ' + d.next_actions.join('; '); evidencePanel.style.display = 'block'; }
+          if (d.next_actions && d.next_actions.length) { evidenceText.textContent = (evidenceText.textContent || '') + (evidenceText.textContent ? ' | ' : '') + (UI_STRINGS['cursor.next_actions'] || 'Siguientes: ') + ' ' + d.next_actions.join('; '); evidencePanel.style.display = 'block'; }
         }
         statusEl.textContent = out && out.ok ? (out.data && out.data.summary ? out.data.summary : 'OK') : (out && out.error ? out.error : 'Error');
       } catch (e) {
@@ -594,28 +797,28 @@
     function setLastResponseText(t) { lastResponseText = (t || '').trim(); }
 
     function formatRobotResponse(out, taskType) {
-      if (!out) return 'No hubo respuesta del robot.';
-      if (out.error) return 'Error: ' + (out.error || 'desconocido');
+      if (!out) return UI_STRINGS['robot.no_response'] || 'No hubo respuesta del robot.';
+      if (out.error) return (UI_STRINGS['robot.error'] || 'Error') + ': ' + (out.error || '');
       if (taskType === 'quick' && out.output !== undefined) {
         var o = out.output;
         if (typeof o === 'string') return o;
         if (o && typeof o === 'object') {
           if (o.atlas) return String(o.atlas);
           if (o.message) return String(o.message);
-          if (o.status) return 'Estado: ' + String(o.status);
+          if (o.status) return (UI_STRINGS['robot.status_prefix'] || 'Estado: ') + String(o.status);
         }
-        return typeof o === 'string' ? o : (out.resumen || 'Comando ejecutado. Revisa los detalles abajo.');
+        return typeof o === 'string' ? o : (out.resumen || (UI_STRINGS['robot.cmd_done'] || 'Comando ejecutado. Revisa los detalles abajo.'));
       }
       if (out.resumen) return out.resumen;
       if (out.message) return out.message;
-      return 'Listo. Revisa los detalles si los hay.';
+      return UI_STRINGS['robot.done'] || 'Listo. Revisa los detalles si los hay.';
     }
 
     function startVoiceRecognition() {
       const btn = document.getElementById('btn-voice-mic');
       const input = document.getElementById('robot-input');
       if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        alert('Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge.');
+        alert(UI_STRINGS['voice.browser_no_speech'] || 'Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge.');
         return;
       }
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -623,26 +826,26 @@
       rec.lang = 'es-ES';
       rec.continuous = false;
       rec.interimResults = false;
-      if (btn) { btn.disabled = true; btn.textContent = 'Escuchando…'; }
+      if (btn) { btn.disabled = true; btn.textContent = '🎤 ' + (UI_STRINGS['voice.listening'] || 'Escuchando…'); }
       rec.onresult = function(e) {
         const text = (e.results[0] && e.results[0][0]) ? e.results[0][0].transcript : '';
         if (input) input.value = text;
-        if (btn) { btn.disabled = false; btn.textContent = '🎤 Hablar por voz'; }
+        if (btn) { btn.disabled = false; btn.textContent = '🎤 ' + (UI_STRINGS['voice.talk'] || 'Hablar por voz'); }
         if (text) sendToRobot();
       };
       rec.onerror = function() {
-        if (btn) { btn.disabled = false; btn.textContent = '🎤 Hablar por voz'; }
+        if (btn) { btn.disabled = false; btn.textContent = '🎤 ' + (UI_STRINGS['voice.talk'] || 'Hablar por voz'); }
       };
       rec.onend = function() {
-        if (btn && btn.textContent === 'Escuchando…') { btn.disabled = false; btn.textContent = '🎤 Hablar por voz'; }
+        if (btn && btn.textContent.indexOf('Escuchando') >= 0) { btn.disabled = false; btn.textContent = '🎤 ' + (UI_STRINGS['voice.talk'] || 'Hablar por voz'); }
       };
       rec.start();
     }
 
     async function playResponseWithVoice() {
       const text = lastResponseText || (document.getElementById('robot-response') && document.getElementById('robot-response').textContent) || '';
-      if (!text || text.startsWith('La respuesta') || text === '…') {
-        alert('No hay respuesta que reproducir. Envía un comando primero.');
+      if (!text || text.startsWith(UI_STRINGS['cursor.response_placeholder'] || 'La respuesta') || text === '…') {
+        alert(UI_STRINGS['voice.no_response_play'] || 'No hay respuesta que reproducir. Envía un comando primero.');
         return;
       }
       const short = text.slice(0, 500);
@@ -653,7 +856,7 @@
           const u = new SpeechSynthesisUtterance(short);
           u.lang = 'es-ES';
           window.speechSynthesis.speak(u);
-        } else alert('TTS no disponible en el servidor. Instala pyttsx3.');
+        } else alert(UI_STRINGS['voice.tts_unavailable'] || 'TTS no disponible en el servidor. Instala pyttsx3.');
       } catch (e) {
         if (window.speechSynthesis && window.SpeechSynthesisUtterance) {
           const u = new SpeechSynthesisUtterance(short);
@@ -676,9 +879,9 @@
       const resultEl = document.getElementById('face-result');
       if (video) { video.srcObject = null; video.style.display = 'none'; }
       if (container) container.style.display = 'none';
-      if (btn) btn.textContent = '📷 Verificar rostro (cámara)';
+      if (btn) btn.textContent = '📷 ' + (UI_STRINGS['voice.face'] || 'Verificar rostro (cámara)');
       if (btnDisc) btnDisc.style.display = 'none';
-      if (resultEl) resultEl.textContent = 'Cámara apagada.';
+      if (resultEl) resultEl.textContent = UI_STRINGS['face.camera_off'] || 'Cámara apagada.';
     }
     async function checkFace() {
       const resultEl = document.getElementById('face-result');
@@ -692,13 +895,13 @@
           faceStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 320, height: 240 } });
           if (video) { video.srcObject = faceStream; video.style.display = 'block'; }
           if (container) container.style.display = 'block';
-          if (btn) btn.textContent = '📷 Capturar y verificar';
+          if (btn) btn.textContent = '📷 ' + (UI_STRINGS['face.capture'] || 'Capturar y verificar');
           if (btnDisc) btnDisc.style.display = 'inline-block';
-          if (resultEl) resultEl.textContent = 'Cámara encendida. Pulsa de nuevo para capturar.';
+          if (resultEl) resultEl.textContent = UI_STRINGS['face.camera_on'] || 'Cámara encendida. Pulsa de nuevo para capturar.';
           return;
         }
         if (!video || video.readyState < 2) {
-          if (resultEl) resultEl.textContent = 'Espera a que cargue el video.';
+          if (resultEl) resultEl.textContent = UI_STRINGS['face.wait_video'] || 'Espera a que cargue el video.';
           return;
         }
         const canvas = document.createElement('canvas');
@@ -710,7 +913,7 @@
         const r = await post('/face/check', { image_base64: base64 });
         if (r && r.ok && r.data) {
           const n = r.data.faces_detected || r.data.count || 0;
-          if (resultEl) resultEl.textContent = n > 0 ? '✓ Rostro detectado (' + n + ')' : 'No se detectó rostro.';
+          if (resultEl) resultEl.textContent = n > 0 ? ((UI_STRINGS['face.detected'] || '✓ Rostro detectado ({n})').replace('{n}', n)) : (UI_STRINGS['face.not_detected'] || 'No se detectó rostro.');
         } else {
           if (resultEl) resultEl.textContent = 'Error: ' + (r && r.error ? r.error : 'sin respuesta');
         }
@@ -728,15 +931,63 @@
       if (d && d.ok !== false) setCard('version-card', (d.version || '—') + ' (' + (d.channel || '') + ')' + (d.git_sha ? ' ' + d.git_sha : ''));
       else setCard('version-card', '—', true);
     }
+    var _lastHealthData = null;
+    var _healthDetailExpanded = false;
+    var HEALTH_HINTS = {
+      api_up: { ok: 'API respondiendo', fail: 'API no responde' },
+      memory_writable: { ok: 'Memoria OK', fail: 'Memory DB no escribible — revisa MEMORY_DB_PATH / ATLAS_MEMORY_DB_PATH' },
+      audit_writable: { ok: 'Audit OK', fail: 'Audit DB no escribible — define AUDIT_DB_PATH' },
+      scheduler_alive: { ok: 'Scheduler OK', fail: 'Scheduler caído — revisa SCHED_DB_PATH y que el scheduler esté corriendo' },
+      llm_reachable: { ok: 'LLM OK', fail: 'Ollama no alcanzable — inicia Ollama o configura OLLAMA_BASE_URL' },
+      avg_latency_ms: { ok: 'Latencia OK', fail: 'Latencia alta (>2s)' },
+      error_rate: { ok: 'Error rate OK', fail: 'Tasa de error alta (>10%)' },
+      ans_open_incidents: { ok: 'Sin incidentes', fail: 'Incidentes ANS abiertos — ANS debe ejecutar heals para cerrarlos' }
+    };
+    function toggleHealthDetail() {
+      _healthDetailExpanded = !_healthDetailExpanded;
+      renderHealthDetail();
+    }
+    function renderHealthDetail() {
+      const el = document.getElementById('health-checks-detail');
+      if (!el) return;
+      if (!_lastHealthData || !_lastHealthData.checks) {
+        el.textContent = _healthDetailExpanded ? 'Sin datos — actualiza' : 'Clic para ver desglose';
+        return;
+      }
+      const c = _lastHealthData.checks;
+      if (!_healthDetailExpanded) {
+        const fails = ['api_up','memory_writable','audit_writable','scheduler_alive','llm_reachable'].filter(k => c[k] === false);
+        const inc = c.ans_open_incidents || 0;
+        if (inc > 0) fails.push(inc + ' incidente(s)');
+        el.innerHTML = fails.length ? '<span style="color:var(--red);">' + fails.length + ' fallo(s) — Clic para ver</span>' : '<span style="color:var(--green);">OK — Clic para desglose</span>';
+        return;
+      }
+      var lines = [];
+      ['api_up','memory_writable','audit_writable','scheduler_alive','llm_reachable','avg_latency_ms','error_rate'].forEach(function(k) {
+        var v = c[k];
+        var hint = HEALTH_HINTS[k] || {};
+        var ok = v === true || (k === 'avg_latency_ms' && (v == null || (typeof v === 'number' && v <= 2000))) || (k === 'error_rate' && (v == null || (typeof v === 'number' && v <= 0.1)));
+        var msg = ok ? (hint.ok || 'OK') : (hint.fail || (k + ': ' + v));
+        lines.push('<span class="badge ' + (ok ? 'ok' : 'err') + '" style="margin-right:.35rem;">' + (ok ? '✓' : '✗') + '</span>' + k + ': ' + msg);
+      });
+      if (c.ans_open_incidents > 0) {
+        lines.push('<span class="badge err" style="margin-right:.35rem;">!</span>ans_open_incidents: ' + c.ans_open_incidents + ' (penaliza -' + Math.min(30, c.ans_open_incidents * 5) + ')');
+      }
+      lines.push('<span style="color:var(--muted);">latencia: ' + (c.avg_latency_ms != null ? c.avg_latency_ms + ' ms' : '—') + ' · error_rate: ' + (c.error_rate != null ? (c.error_rate * 100).toFixed(2) + '%' : '—') + '</span>');
+      el.innerHTML = lines.join('<br>');
+    }
     async function loadHealth() {
       const d = await get('/health');
+      _lastHealthData = d;
       const card = document.getElementById('health-card');
       const val = card ? card.querySelector('.value') : null;
       const bar = document.getElementById('health-bar-fill');
+      const detailEl = document.getElementById('health-checks-detail');
       if (!d) {
         if (val) val.textContent = '—';
         if (bar) bar.style.width = '0%';
         if (card) card.classList.add('error');
+        if (detailEl) detailEl.textContent = 'Error al cargar';
         return;
       }
       const score = d.score != null ? d.score : 0;
@@ -747,6 +998,7 @@
       }
       card.classList.remove('error');
       if (d.ok === false) card.classList.add('error');
+      renderHealthDetail();
     }
     async function loadMetrics() {
       const d = await get('/metrics');
@@ -756,7 +1008,7 @@
         const l = d.data.latencies || {};
         const keys = Object.keys(c);
         const top = keys.slice(0, 6).map(k => k + ': ' + c[k]).join(' · ');
-        setCard('metrics-card', (keys.length ? 'Contadores: ' + keys.length : '—') + (Object.keys(l).length ? ' · Latencias: ' + Object.keys(l).length : ''));
+        setCard('metrics-card', (keys.length ? (UI_STRINGS['metrics.counters'] || 'Contadores') + ': ' + keys.length : '—') + (Object.keys(l).length ? ' · ' + (UI_STRINGS['metrics.latencies'] || 'Latencias') + ': ' + Object.keys(l).length : ''));
         if (detail && top) detail.innerHTML = '<span>' + top + '</span>';
         else if (detail) detail.innerHTML = '';
       } else {
@@ -770,7 +1022,7 @@
       const card = document.getElementById('scheduler-card');
       if (card) {
         const val = card.querySelector('.value');
-        if (val) val.textContent = jobs.length + ' trabajo(s)';
+        if (val) val.textContent = jobs.length + ' ' + (UI_STRINGS['jobs.suffix'] || 'trabajo(s)');
       }
     }
     async function loadUpdate() {
@@ -778,7 +1030,7 @@
       if (d && d.data) {
         const has = d.data.has_update;
         const branch = d.data.branch || '—';
-        setCard('update-card', branch + ' · actualización: ' + (has ? 'Sí' : 'No'));
+        setCard('update-card', branch + ' · ' + (UI_STRINGS['update.has'] || 'actualización') + ': ' + (has ? (UI_STRINGS['update.yes'] || 'Sí') : (UI_STRINGS['update.no'] || 'No')));
       } else setCard('update-card', '—');
     }
     async function loadDeploy() {
@@ -789,7 +1041,7 @@
         const port = x.active_port != null ? x.active_port : '—';
         const score = (x.last_health && x.last_health.score != null) ? x.last_health.score : (x.health_score != null ? x.health_score : '—');
         const canary = x.canary && x.canary.enabled ? 'Canary ON' : 'Canary OFF';
-        setCard('deploy-card', 'modo: ' + mode + ' · puerto: ' + port + ' · salud: ' + score + ' · ' + canary);
+        setCard('deploy-card', (UI_STRINGS['deploy.mode'] || 'modo: {mode} · puerto: {port} · salud: {score} · {canary}').replace('{mode}', mode).replace('{port}', port).replace('{score}', score).replace('{canary}', canary));
       } else setCard('deploy-card', '—');
     }
     async function loadCluster() {
@@ -802,13 +1054,13 @@
         const count = (st.data.nodes && st.data.nodes.length) || 0;
         if (card) {
           const val = card.querySelector('.value');
-          if (val) val.textContent = en ? (nodeId + ' · ' + role + ' · ' + count + ' nodo(s)') : 'Desactivado';
+          if (val) val.textContent = en ? (nodeId + ' · ' + role + ' · ' + count + ' ' + (UI_STRINGS['cluster.node_count'] || '{n} nodo(s)').replace('{n}', count)) : (UI_STRINGS['gateway.disabled'] || 'Desactivado');
         }
         document.getElementById('cluster-section').style.display = en ? 'block' : 'none';
         if (en) {
           const nodesEl = document.getElementById('cluster-nodes-list');
           const nodes = st.data.nodes || [];
-          nodesEl.innerHTML = nodes.length ? nodes.map((n, i) => '<div style="margin:.35rem 0; padding:.35rem; background:var(--bg-elevated); border-radius:6px;">' + n.node_id + ' · ' + (n.status || '—') + ' · score ' + (n.health_score != null ? n.health_score : '—') + ' · ' + (n.base_url || '') + ' <button class="small" data-base-url="' + (n.base_url || '').replace(/"/g, '&quot;') + '" onclick="clusterPingNode(this)">Ping</button></div>').join('') : '<span class="muted">Sin nodos</span>';
+          nodesEl.innerHTML = nodes.length ? nodes.map((n, i) => '<div style="margin:.35rem 0; padding:.35rem; background:var(--bg-elevated); border-radius:6px;">' + n.node_id + ' · ' + (n.status || '—') + ' · score ' + (n.health_score != null ? n.health_score : '—') + ' · ' + (n.base_url || '') + ' <button class="small" data-base-url="' + (n.base_url || '').replace(/"/g, '&quot;') + '" onclick="clusterPingNode(this)">' + (UI_STRINGS['cluster.ping'] || 'Ping') + '</button></div>').join('') : '<span class="muted">' + (UI_STRINGS['cluster.no_nodes'] || 'Sin nodos') + '</span>';
           const ev = await get('/cluster/events?limit=20');
           const eventsEl = document.getElementById('cluster-events-list');
           const events = (ev && ev.data && Array.isArray(ev.data)) ? ev.data : [];
@@ -840,19 +1092,19 @@
       const card = document.getElementById('gateway-card');
       if (st && st.data) {
         const d = st.data;
-        if (card) { const val = card.querySelector('.value'); if (val) val.textContent = d.enabled ? (d.mode + ' · ' + (d.last_success_mode || '—')) : 'Desactivado'; }
+        if (card) { const val = card.querySelector('.value'); if (val) val.textContent = d.enabled ? (d.mode + ' · ' + (d.last_success_mode || '—')) : (UI_STRINGS['gateway.disabled'] || 'Desactivado'); }
         document.getElementById('gateway-section').style.display = d.enabled ? 'block' : 'none';
         const sel = document.getElementById('gateway-mode'); if (sel) sel.value = d.mode || 'auto';
         const tools = document.getElementById('gateway-tools');
         tools.innerHTML = 'cloudflared: ' + (d.tools && d.tools.cloudflared ? 'OK' : '—') + ' · tailscale: ' + (d.tools && d.tools.tailscale ? 'OK' : '—') + ' · ssh: ' + (d.tools && d.tools.ssh ? 'OK' : '—');
         const last = document.getElementById('gateway-last-success');
-        last.textContent = d.last_success_ts ? ('Último éxito: ' + d.last_success_ts + ' · ' + (d.last_success_mode || '') + ' · ' + (d.last_success_target || '')) : 'Sin último éxito';
+        last.textContent = d.last_success_ts ? ((UI_STRINGS['gateway.last_success'] || 'Último éxito') + ': ' + d.last_success_ts + ' · ' + (d.last_success_mode || '') + ' · ' + (d.last_success_target || '')) : (UI_STRINGS['gateway.no_success'] || 'Sin último éxito');
         const rec = document.getElementById('gateway-recommendations');
         rec.textContent = (d.recommendations && d.recommendations.length) ? d.recommendations.join('; ') : '';
       } else { if (card) { const val = card.querySelector('.value'); if (val) val.textContent = '—'; } }
     }
     async function gatewayCheck() {
-      const msg = document.getElementById('gateway-status-msg'); if (msg) msg.textContent = 'Comprobando…';
+      const msg = document.getElementById('gateway-status-msg'); if (msg) msg.textContent = UI_STRINGS['gateway.checking'] || 'Comprobando…';
       const r = await post('/gateway/check');
       if (msg) msg.textContent = r && r.ok ? 'Check OK' : (r && r.error ? r.error : 'Error');
       loadGateway();
@@ -874,7 +1126,7 @@
       const items = (d && d.data && Array.isArray(d.data)) ? d.data : [];
       list.innerHTML = items.length
         ? items.map(a => '<li>' + a.id + ' ' + (a.action || '') + ' <button class="small" onclick="approve(\'' + a.id + '\')">Aprobar</button> <button class="small danger" onclick="reject(\'' + a.id + '\')">Rechazar</button></li>').join('')
-        : '<li>Ninguno</li>';
+        : '<li>' + (UI_STRINGS['approvals.none'] || 'Ninguno') + '</li>';
     }
     async function updateCheck() {
       await post('/update/check');
@@ -891,6 +1143,86 @@
     async function reject(id) {
       await post('/approvals/reject', { id: id });
       loadApprovals();
+    }
+    let ownerFaceStream = null;
+    async function ownerStartWithFace() {
+      const panel = document.getElementById('owner-face-login');
+      const video = document.getElementById('owner-face-video');
+      if (panel.style.display === 'block') return;
+      panel.style.display = 'block';
+      try {
+        ownerFaceStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 240, height: 180 } });
+        if (video) video.srcObject = ownerFaceStream;
+      } catch (e) {
+        document.getElementById('owner-session-msg').textContent = 'Cámara no disponible: ' + (e.message || e);
+        document.getElementById('owner-session-msg').style.color = 'var(--red)';
+        panel.style.display = 'none';
+      }
+    }
+    function hideOwnerFaceLogin() {
+      const panel = document.getElementById('owner-face-login');
+      const video = document.getElementById('owner-face-video');
+      if (ownerFaceStream) { ownerFaceStream.getTracks().forEach(t => t.stop()); ownerFaceStream = null; }
+      if (video) video.srcObject = null;
+      panel.style.display = 'none';
+    }
+    async function ownerCaptureAndLogin() {
+      const video = document.getElementById('owner-face-video');
+      const msg = document.getElementById('owner-session-msg');
+      if (!video || video.readyState < 2) { msg.textContent = 'Espera a que cargue el video.'; msg.style.color = 'var(--amber)'; return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      const base64 = canvas.toDataURL('image/png').split(',')[1];
+      msg.textContent = 'Verificando…'; msg.style.color = 'var(--muted)';
+      const r = await post('/owner/session/start-with-face', { image_base64: base64 });
+      hideOwnerFaceLogin();
+      if (r && r.ok && r.session_token) {
+        ownerSessionToken = r.session_token;
+        msg.textContent = 'Sesión activa (TTL ' + (r.ttl_seconds || 900) + 's)';
+        msg.style.color = 'var(--green)';
+        loadOwnerStatus();
+      } else {
+        ownerSessionToken = null;
+        msg.textContent = (r && r.error) ? r.error : 'No se detectó rostro. Intenta de nuevo.';
+        msg.style.color = 'var(--red)';
+      }
+    }
+    async function showOwnerWindowsLogin() {
+      const panel = document.getElementById('owner-windows-login');
+      const userEl = document.getElementById('owner-win-user');
+      const passEl = document.getElementById('owner-win-pass');
+      if (panel.style.display === 'block') return;
+      panel.style.display = 'block';
+      userEl.value = ''; passEl.value = '';
+      const u = await get('/owner/windows-user');
+      if (u && u.ok && u.username) userEl.value = u.username;
+      if (passEl) passEl.focus();
+    }
+    function hideOwnerWindowsLogin() {
+      document.getElementById('owner-windows-login').style.display = 'none';
+    }
+    async function ownerLoginWithWindows() {
+      const userEl = document.getElementById('owner-win-user');
+      const passEl = document.getElementById('owner-win-pass');
+      const msg = document.getElementById('owner-session-msg');
+      const user = (userEl && userEl.value || '').trim();
+      const pass = (passEl && passEl.value || '');
+      if (!user || !pass) { msg.textContent = 'Usuario y contraseña requeridos'; msg.style.color = 'var(--red)'; return; }
+      msg.textContent = 'Verificando…'; msg.style.color = 'var(--muted)';
+      const r = await post('/owner/session/start-with-windows', { username: user, password: pass });
+      hideOwnerWindowsLogin();
+      if (r && r.ok && r.session_token) {
+        ownerSessionToken = r.session_token;
+        msg.textContent = 'Sesión activa (TTL ' + (r.ttl_seconds || 900) + 's)';
+        msg.style.color = 'var(--green)';
+        loadOwnerStatus();
+      } else {
+        ownerSessionToken = null;
+        msg.textContent = (r && r.error) ? r.error : 'Usuario o contraseña incorrectos';
+        msg.style.color = 'var(--red)';
+      }
     }
     async function ownerStartSession() {
       const msg = document.getElementById('owner-session-msg');
@@ -913,13 +1245,13 @@
       const sessionsEl = document.getElementById('owner-sessions');
       if (sessionsEl) sessionsEl.textContent = (data.active_sessions && data.active_sessions.length) ? data.active_sessions.length + ' sesión(es) activa(s)' : 'Sin sesiones';
       const pendingEl = document.getElementById('owner-pending-list');
-      if (pendingEl) pendingEl.innerHTML = (data.pending_approvals && data.pending_approvals.length) ? data.pending_approvals.map(a => a.id + ' ' + (a.action||'') + ' risk=' + (a.risk||'')).join(' | ') : 'Ninguno';
+      if (pendingEl) pendingEl.innerHTML = (data.pending_approvals && data.pending_approvals.length) ? data.pending_approvals.map(a => a.id + ' ' + (a.action||'') + ' risk=' + (a.risk||'')).join(' | ') : (UI_STRINGS['approvals.none'] || 'Ninguno');
       const expiredEl = document.getElementById('owner-expired-list');
-      if (expiredEl) expiredEl.innerHTML = (data.expired_approvals && data.expired_approvals.length) ? data.expired_approvals.map(a => a.id + ' ' + (a.action||'')).join(' | ') : 'Ninguno';
+      if (expiredEl) expiredEl.innerHTML = (data.expired_approvals && data.expired_approvals.length) ? data.expired_approvals.map(a => a.id + ' ' + (a.action||'')).join(' | ') : (UI_STRINGS['approvals.none'] || 'Ninguno');
       const criticalEl = document.getElementById('owner-critical-history');
-      if (criticalEl) criticalEl.innerHTML = (data.critical_history && data.critical_history.length) ? data.critical_history.slice(0, 10).map(a => a.id + ' ' + (a.action||'') + ' ' + (a.resolved_by||'')).join(' | ') : 'Ninguno';
+      if (criticalEl) criticalEl.innerHTML = (data.critical_history && data.critical_history.length) ? data.critical_history.slice(0, 10).map(a => a.id + ' ' + (a.action||'') + ' ' + (a.resolved_by||'')).join(' | ') : (UI_STRINGS['approvals.none'] || 'Ninguno');
       const emergencyBtn = document.getElementById('owner-emergency-btn');
-      if (emergencyBtn) emergencyBtn.textContent = 'Emergency: ' + (data.emergency ? 'ON' : 'OFF');
+      if (emergencyBtn) emergencyBtn.textContent = (UI_STRINGS['owner.emergency'] || 'Emergency:') + ' ' + (data.emergency ? (UI_STRINGS['owner.emergency_on'] || 'ON') : (UI_STRINGS['owner.emergency_off'] || 'OFF'));
     }
     async function ownerToggleEmergency() {
       const d = await get('/owner/status');
@@ -938,16 +1270,19 @@
       const lastReport = document.getElementById('ga-last-report');
       const executed = document.getElementById('ga-executed');
       if (!r || !r.ok) {
-        if (card) card.querySelector('.value').textContent = r && r.error ? r.error : 'GA no disponible';
+        if (card) card.querySelector('.value').textContent = r && r.error ? r.error : (UI_STRINGS['ga.not_available'] || 'GA no disponible');
         return;
       }
       const d = r.data || {};
-      const mode = d.mode || 'plan_only';
+      const rawMode = d.mode || 'plan_only';
+      const modeKey = 'ga.mode_' + rawMode.replace(/-/g, '_');
+      const modeText = (UI_STRINGS || {})[modeKey] || rawMode;
       const pending = d.approvals_pending_count || 0;
       const reportPath = d.last_report || d.last_report_path;
-      if (card) card.querySelector('.value').textContent = 'Modo: ' + mode + ' | Pendientes: ' + pending;
-      if (detail) detail.innerHTML = '<span>Último reporte: ' + (reportPath ? reportPath.split(/[/\\]/).pop() : '—') + '</span>';
-      if (lastReport) lastReport.textContent = reportPath ? 'Reporte: ' + reportPath : 'Sin reportes';
+      const s = UI_STRINGS || {};
+      if (card) card.querySelector('.value').textContent = (s['ga.mode'] || 'Modo') + ': ' + modeText + ' | ' + (s['ga.pending'] || 'Pendientes') + ': ' + pending;
+      if (detail) detail.innerHTML = '<span>' + (s['ga.last_report'] || 'Último reporte') + ': ' + (reportPath ? reportPath.split(/[/\\]/).pop() : '—') + '</span>';
+      if (lastReport) lastReport.textContent = reportPath ? (s['ga.report_label'] || 'Reporte') + ': ' + reportPath : (s['ga.no_reports'] || 'Sin reportes');
       if (executed) executed.textContent = '';
     }
     async function loadANSStatus() {
@@ -1011,8 +1346,8 @@
     async function refreshAll() {
       const btn = document.getElementById('btn-refresh');
       const lastEl = document.getElementById('last-update');
-      if (btn) { btn.disabled = true; btn.textContent = 'Actualizando…'; }
-      if (lastEl) lastEl.textContent = 'Actualizando…';
+      if (btn) { btn.disabled = true; btn.textContent = UI_STRINGS['app.updating'] || 'Actualizando…'; }
+      if (lastEl) { lastEl.textContent = UI_STRINGS['app.updating'] || 'Actualizando…'; lastEl.style.color = 'var(--purple-light)'; lastEl.classList.add('updating'); }
       try {
         await Promise.all([
           loadStatus(),
@@ -1020,12 +1355,14 @@
           loadHealth(),
           loadMetrics(),
           loadScheduler(),
-          loadUpdate(),
+          updateCheck(),
           loadDeploy(),
           loadCluster(),
           loadGateway(),
           loadApprovals(),
           loadANSStatus(),
+          loadBitacora(),
+          loadScannerStatus(),
           loadOwnerStatus(),
           loadGAStatus(),
           loadProductStatus(),
@@ -1033,9 +1370,10 @@
         ]);
         setLastUpdate();
       } catch (e) {
-        if (lastEl) lastEl.textContent = 'Error al actualizar';
+        if (lastEl) lastEl.textContent = (UI_STRINGS['robot.error'] || 'Error') + ' al actualizar';
       }
-      if (btn) { btn.disabled = false; btn.textContent = 'Actualizar'; }
+      if (lastEl) { lastEl.classList.remove('updating'); lastEl.style.color = ''; }
+      if (btn) { btn.disabled = false; btn.textContent = UI_STRINGS['app.refresh'] || 'Actualizar'; }
     }
     async function loadGovernanceStatus() {
       const st = await get('/governance/status');
@@ -1044,15 +1382,22 @@
       const growthBtn = document.getElementById('gov-growth');
       const governedBtn = document.getElementById('gov-governed');
       const emergBtn = document.getElementById('gov-emergency');
+      const logLink = document.getElementById('governance-log-link');
       if (st && st.ok) {
         const mode = st.mode || 'governed';
         const emergency = st.emergency_stop || false;
-        if (statusEl) statusEl.textContent = (emergency ? 'EMERGENCY ' : '') + mode.toUpperCase();
-        if (statusEl) statusEl.className = 'badge ' + (emergency ? 'err' : (mode === 'growth' ? 'ok' : 'warn'));
+        if (statusEl) {
+          statusEl.textContent = (emergency ? 'EMERGENCY ' : '') + mode.toUpperCase();
+          statusEl.className = 'badge ' + (emergency ? 'err' : (mode === 'growth' ? 'ok' : 'warn'));
+        }
         if (growthBtn) growthBtn.style.opacity = mode === 'growth' ? '1' : '0.6';
         if (governedBtn) governedBtn.style.opacity = mode === 'governed' ? '1' : '0.6';
-        if (emergBtn) emergBtn.textContent = emergency ? 'EMERGENCY STOP ON' : 'EMERGENCY STOP';
+        if (emergBtn) emergBtn.textContent = emergency ? (UI_STRINGS['gov.emergency_on'] || 'EMERGENCY STOP ON') : (UI_STRINGS['gov.emergency'] || 'EMERGENCY STOP');
+      } else if (statusEl) {
+        statusEl.textContent = st ? 'Error' : '—';
+        statusEl.className = 'badge err';
       }
+      if (logLink) logLink.href = base + '/governance/log?limit=20';
       const logData = await get('/governance/log?limit=10');
       if (logData && logData.log && logEl) {
         logEl.innerHTML = logData.log.map(x => x.action + ': ' + (x.from_val || '') + ' → ' + (x.to_val || '') + (x.reason ? ' (' + x.reason.substring(0,40) + ')' : '')).join('<br>') || '—';
@@ -1060,31 +1405,24 @@
     }
     async function govSetMode(mode) {
       const msgEl = document.getElementById('gov-msg');
-      if (!ownerSessionToken) {
-        if (msgEl) msgEl.textContent = 'Inicia sesión owner para cambiar modo';
-        return;
-      }
       if (msgEl) msgEl.textContent = 'Cambiando…';
       const r = await post('/governance/mode', { mode: mode });
       if (r && r.ok) {
         if (msgEl) msgEl.textContent = 'Modo: ' + r.mode;
         loadGovernanceStatus();
       } else {
-        if (msgEl) msgEl.textContent = r && r.error ? r.error : 'Error';
+        const err = r && (r.error || r.status);
+        if (msgEl) msgEl.textContent = (err && (err + '').includes('owner_session')) ? (UI_STRINGS['gov.owner_required'] || 'Inicia sesión owner para cambiar modo') : (err || 'Error');
       }
     }
     let govEmergencyConfirm = false;
     async function govEmergencyStop() {
       const msgEl = document.getElementById('gov-msg');
-      if (!ownerSessionToken) {
-        if (msgEl) msgEl.textContent = 'Inicia sesión owner para Emergency Stop';
-        return;
-      }
       const st = await get('/governance/status');
       const cur = st && st.emergency_stop;
       if (!govEmergencyConfirm && !cur) {
         govEmergencyConfirm = true;
-        if (msgEl) msgEl.textContent = 'Confirma: pulsa de nuevo para Emergency Stop';
+        if (msgEl) msgEl.textContent = UI_STRINGS['gov.confirm'] || 'Confirma: pulsa de nuevo para Emergency Stop';
         setTimeout(() => { govEmergencyConfirm = false; }, 3000);
         return;
       }
@@ -1095,10 +1433,194 @@
         if (msgEl) msgEl.textContent = 'Emergency: ' + (r.emergency_stop ? 'ON' : 'OFF');
         loadGovernanceStatus();
       } else {
-        if (msgEl) msgEl.textContent = r && r.error ? r.error : 'Error';
+        const err = r && (r.error || r.status);
+        if (msgEl) msgEl.textContent = (err && (err + '').includes('owner_session')) ? (UI_STRINGS['gov.emergency_owner'] || 'Inicia sesión owner para Emergency Stop') : (err || 'Error');
       }
     }
+    function expandPanel(sectionId, title, selector) {
+      const body = document.getElementById('expand-modal-body');
+      const titleEl = document.getElementById('expand-modal-title');
+      const modal = document.getElementById('expand-modal');
+      if (!body || !titleEl || !modal) return;
+      const selectors = (selector || '').split(',').map(s => s.trim()).filter(Boolean);
+      body.innerHTML = '';
+      if (!selectors.length) {
+        const section = document.getElementById(sectionId);
+        if (section) {
+          const card = section.querySelector('.card');
+          const clone = card ? card.cloneNode(true) : section.cloneNode(true);
+          clone.querySelectorAll('.btn-expand').forEach(el => el.remove());
+          body.appendChild(clone);
+        }
+      } else {
+        selectors.forEach(function(sel) {
+          const el = document.querySelector(sel);
+          if (el) {
+            const wrap = document.createElement('div');
+            wrap.style.marginBottom = '1rem';
+            const c = el.cloneNode(true);
+            if (el.id === 'live-console-output') {
+              c.classList.add('pre-expand');
+              c.style.minHeight = '60vh';
+              c.style.fontSize = '0.85rem';
+            } else if (el.id === 'scanner-expand-content') {
+              c.querySelectorAll('pre, [id*="scanner"]').forEach(function(child) {
+                child.style.maxHeight = '55vh';
+                child.style.overflowY = 'auto';
+              });
+            } else {
+              c.style.maxHeight = '60vh';
+              c.style.overflowY = 'auto';
+            }
+            wrap.appendChild(c);
+            body.appendChild(wrap);
+          }
+        });
+      }
+      titleEl.textContent = title || 'Ampliar';
+      modal.classList.add('open');
+    }
+    function closeExpandModal() {
+      const modal = document.getElementById('expand-modal');
+      if (modal) modal.classList.remove('open');
+    }
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeExpandModal();
+    });
+    let liveConsoleEventSource = null;
+    let liveConsoleWanted = false;
+    function toggleLiveConsole() {
+      const btn = document.getElementById('live-console-btn');
+      const status = document.getElementById('live-console-status');
+      if (liveConsoleEventSource) {
+        liveConsoleWanted = false;
+        liveConsoleEventSource.close();
+        liveConsoleEventSource = null;
+        if (btn) btn.textContent = 'Iniciar stream';
+        if (status) { status.textContent = 'Detenido'; status.className = 'badge warn'; }
+        return;
+      }
+      liveConsoleWanted = true;
+      const url = base + '/ans/live';
+      try {
+        function connectLiveStream() {
+          if (!liveConsoleWanted) return;
+          const es = new EventSource(url);
+          liveConsoleEventSource = es;
+          es.onopen = function() {
+            if (liveConsoleWanted && status) { status.textContent = 'Conectado'; status.className = 'badge ok'; }
+          };
+          es.onmessage = function(e) {
+            try {
+              const ev = JSON.parse(e.data);
+              appendLiveEvent(ev);
+            } catch (_) {}
+          };
+          es.onerror = function() {
+            if (status) { status.textContent = 'Reconectando…'; status.className = 'badge warn'; }
+            es.close();
+            liveConsoleEventSource = null;
+            if (liveConsoleWanted) setTimeout(connectLiveStream, 2000);
+          };
+        }
+        connectLiveStream();
+        if (btn) btn.textContent = 'Detener stream';
+      } catch (err) {
+        if (status) { status.textContent = 'Error: ' + (err.message || err); status.className = 'badge err'; }
+      }
+    }
+    function appendLiveEvent(ev) {
+      const pre = document.getElementById('live-console-output');
+      if (!pre) return;
+      const phase = ev.phase || '?';
+      const ts = (ev.ts || '').split('T')[1] || '';
+      const t = ts.substring(0, 12);
+      let line = '[' + t + '] ';
+      if (phase === 'cycle_start') line += '>> Ciclo ANS iniciado';
+      else if (phase === 'cycle_end') line += '<< Ciclo finalizado: ' + (ev.message || '');
+      else if (phase === 'check_start') line += '  check: ' + (ev.check_id || '');
+      else if (phase === 'check_end') line += '  check ' + (ev.check_id || '') + ': ' + (ev.ok ? 'OK' : 'FAIL') + ' ' + (ev.message || '').substring(0, 50);
+      else if (phase === 'incident') line += '  ! INCIDENT ' + (ev.check_id || '') + ': ' + (ev.message || '').substring(0, 60);
+      else if (phase === 'heal_attempt') line += '  -> heal: ' + (ev.heal_id || '');
+      else if (phase === 'heal_end') line += '  <- heal ' + (ev.heal_id || '') + ': ' + (ev.ok ? 'OK' : 'FAIL') + ' ' + (ev.message || '').substring(0, 40);
+      else if (phase === 'skip') line += '  (omitido) ' + (ev.heal_id || ev.check_id || '') + ': ' + (ev.message || '');
+      else if (phase === 'scanner_start') line += '  >> Scanner iniciado';
+      else if (phase === 'scanner_end') line += '  << Scanner finalizado: ' + (ev.message || '');
+      else if (phase === 'download_start') {
+        var cmt = (ev.details && (currentLocale === 'es' ? ev.details.comment_es : ev.details.comment_en)) || ((ev.details && ev.details.packages) ? ev.details.packages.join(' ') : ev.message || '');
+        line += '  >> pip: ' + (cmt || ev.message || '').substring(0, 60);
+      } else if (phase === 'download_end') {
+        var cmt = (ev.details && (currentLocale === 'es' ? ev.details.comment_es : ev.details.comment_en)) || '';
+        line += '  << pip ' + (ev.ok ? 'OK' : 'FAIL') + (cmt ? ': ' + cmt.substring(0, 50) : '') + (ev.message && !cmt ? ': ' + ev.message.substring(0, 40) : '');
+      }
+      else if (phase === 'heartbeat') line += '.';
+      else line += '  ' + phase + ': ' + (ev.message || JSON.stringify(ev)).substring(0, 80);
+      pre.textContent += line + '\n';
+      pre.scrollTop = pre.scrollHeight;
+    }
+    async function loadLiveRecent() {
+      const r = await get('/ans/live/recent?limit=80');
+      const pre = document.getElementById('live-console-output');
+      if (!pre) return;
+      pre.textContent = '';
+      (r && r.events || []).forEach(appendLiveEvent);
+    }
+
+    async function loadScannerStatus() {
+      const r = await get('/ans/scanner-status');
+      const scanEl = document.getElementById('scanner-last-scan');
+      const listEl = document.getElementById('scanner-downloads-list');
+      if (!scanEl && !listEl) return;
+      if (scanEl) {
+        const s = r && r.ok && r.last_scan ? r.last_scan : {};
+        if (Object.keys(s).length) {
+          scanEl.textContent = JSON.stringify(s, null, 2).substring(0, 800) + (JSON.stringify(s).length > 800 ? '...' : '');
+        } else {
+          scanEl.textContent = 'Sin datos';
+        }
+      }
+      if (listEl) {
+        const items = r && r.ok && r.last_downloads ? r.last_downloads : [];
+        const loc = (typeof currentLocale !== 'undefined' ? currentLocale : 'es');
+        listEl.innerHTML = items.length ? items.map(function(d) {
+          const cls = d.ok ? 'ok' : 'err';
+          const pkgs = (d.packages || []).join(', ');
+          const cmt = (loc === 'es' ? d.comment_es : d.comment_en) || pkgs;
+          const t = (d.ts || '').split('T')[1] || '';
+          return '<div style="margin-bottom:.35rem;" title="' + pkgs + '"><span class="badge ' + cls + '">' + (d.ok ? 'OK' : 'FAIL') + '</span> ' + t.substring(0, 8) + ' ' + cmt + '</div>';
+        }).join('') : '<div style="color:var(--muted);">Sin descargas recientes</div>';
+      }
+    }
+
+    async function loadBitacora() {
+      const r = await get('/ans/bitacora?limit=20');
+      const list = document.getElementById('bitacora-list');
+      const empty = document.getElementById('bitacora-empty');
+      if (!list) return;
+      list.querySelectorAll('.bitacora-row').forEach(el => el.remove());
+      const items = r && r.ok && r.data ? r.data : [];
+      if (empty) empty.style.display = items.length ? 'none' : 'block';
+      items.forEach(function(e) {
+        const row = document.createElement('div');
+        row.className = 'bitacora-row';
+        const t = (e.timestamp || '').split('T')[1] || '';
+        const time = t.substring(0, 8);
+        row.innerHTML = '<span style="color:var(--muted);">' + time + '</span> ' +
+          '<strong>Problema:</strong> ' + (e.problema || '—') + ' → ' +
+          '<strong>Acción:</strong> ' + (e.accion || '—') + ' → ' +
+          '<span class="badge ' + (e.resultado === 'OK' ? 'ok' : (e.resultado === 'Error' ? 'err' : 'warn')) + '">' + (e.resultado || '—') + '</span>' +
+          (e.detalle ? ' <span style="color:var(--muted);">' + e.detalle.substring(0, 40) + '</span>' : '');
+        row.style.marginBottom = '.35rem';
+        list.appendChild(row);
+      });
+    }
+    (function() {
+      var target = document.getElementById('nav-opciones-sections');
+      var ids = ['scanner-downloads-section','live-console-section','product-section','ans-section','owner-console-section','governance-panel','gateway-section','cluster-section','cursor-mode-section','voice-section'];
+      if (target) ids.forEach(function(id) { var el = document.getElementById(id); if (el) target.appendChild(el); });
+    })();
     refreshAll();
+    loadLocale();
     setInterval(refreshAll, 30000);
   </script>
 </body>

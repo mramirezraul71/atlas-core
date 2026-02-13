@@ -23,7 +23,7 @@ def owner_id() -> str:
 
 
 def strict_mode() -> bool:
-    return os.getenv("OWNER_STRICT_MODE", "true").strip().lower() in ("1", "true", "yes")
+    return os.getenv("OWNER_STRICT_MODE", "false").strip().lower() in ("1", "true", "yes")
 
 
 def _expires_at_iso(created_at: float, ttl: int) -> str:
@@ -31,9 +31,7 @@ def _expires_at_iso(created_at: float, ttl: int) -> str:
 
 
 def start(actor: str, method: str = "ui") -> Dict[str, Any]:
-    """Generate session token with TTL. method: ui | telegram | voice | api."""
-    if strict_mode() and actor != owner_id():
-        return {"ok": False, "session_token": None, "error": "actor not owner"}
+    """Generate session token with TTL. method: ui | telegram | voice | api | face | windows."""
     method = (method or "ui").strip().lower()
     if method not in ("ui", "telegram", "voice", "api"):
         method = "ui"
