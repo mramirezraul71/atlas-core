@@ -33,6 +33,8 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_system_update(payload)
         elif kind == "ci_improve":
             out = _run_ci_improve(payload)
+        elif kind == "ga_cycle":
+            out = _run_ga_cycle(payload)
         elif kind == "remote_hands":
             out = _run_remote_hands(payload)
         else:
@@ -141,6 +143,19 @@ def _run_ci_improve(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         from modules.humanoid.ci import run_improve
         result = run_improve(scope=scope, mode=mode, depth=depth, max_items=max_items)
+        return result.get("data") or result
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _run_ga_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run Governed Autonomy cycle. payload: {scope, mode, max_findings}."""
+    scope = (payload.get("scope") or "all").strip()
+    mode = (payload.get("mode") or os.getenv("GA_MODE", "plan_only")).strip()
+    max_findings = payload.get("max_findings")
+    try:
+        from modules.humanoid.ga.cycle import run_cycle
+        result = run_cycle(scope=scope, mode=mode, max_findings=max_findings)
         return result.get("data") or result
     except Exception as e:
         return {"ok": False, "error": str(e)}
