@@ -492,6 +492,35 @@ if ($gaReportLatest.ok) {
   Write-Host "GET /ga/report/latest FAIL: $($gaReportLatest.err)" -ForegroundColor Red
 }
 
+# Meta-Learning
+Write-Host "== SMOKE: Meta-Learning ==" -ForegroundColor Cyan
+$metalearnStatus = Hit "/metalearn/status"
+if ($metalearnStatus.ok) {
+  Write-Host "GET /metalearn/status OK" -ForegroundColor Green
+  $metalearnStatusOk = $true
+} else {
+  Write-Host "GET /metalearn/status FAIL: $($metalearnStatus.err)" -ForegroundColor Red
+  $metalearnStatusOk = $false
+}
+$metalearnRun = HitPost "/metalearn/run" (@{})
+if ($metalearnRun.ok) {
+  Write-Host "POST /metalearn/run OK" -ForegroundColor Green
+  $metalearnRunOk = $true
+} elseif ($metalearnRun.err -match "METALEARN|503|disabled") {
+  Write-Host "POST /metalearn/run disabled or 503 (acceptable)" -ForegroundColor Yellow
+  $metalearnRunOk = $true
+} else {
+  Write-Host "POST /metalearn/run FAIL: $($metalearnRun.err)" -ForegroundColor Red
+  $metalearnRunOk = $false
+}
+$metalearnReport = Hit "/metalearn/report/latest"
+if ($metalearnReport.ok) {
+  Write-Host "GET /metalearn/report/latest OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /metalearn/report/latest FAIL: $($metalearnReport.err)" -ForegroundColor Red
+}
+$metalearnOk = $metalearnStatusOk -and $metalearnRunOk
+
 # Owner: session start, end, status, chain verify, emergency (non-destructive)
 $ownerSessionBody = @{ actor = "owner"; method = "ui" }
 $ownerSession = HitPost "/owner/session/start" $ownerSessionBody
@@ -547,7 +576,7 @@ if ($bundleResp.ok -and $bundleResp.data.path) {
 $agentScaffoldOk = $agentOk -and $scaffoldOk -and $scriptOk -and $depsOk -and $webOk -and $voiceOk -and $memOk -and $visionOk -and $improveOk
 
 $gaOk = $gaRunOk -and $gaStatusOk
-if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk -and $agentScaffoldOk -and $uiOk -and $bundleOk -and $gaOk) {
+if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk -and $agentScaffoldOk -and $uiOk -and $bundleOk -and $gaOk -and $metalearnOk) {
   Write-Host "SMOKE OK" -ForegroundColor Green
   exit 0
 } else {
