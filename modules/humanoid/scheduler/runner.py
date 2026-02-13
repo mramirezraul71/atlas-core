@@ -35,6 +35,8 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_ci_improve(payload)
         elif kind == "ga_cycle":
             out = _run_ga_cycle(payload)
+        elif kind == "metalearn_cycle":
+            out = _run_metalearn_cycle(payload)
         elif kind == "remote_hands":
             out = _run_remote_hands(payload)
         else:
@@ -42,10 +44,20 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         _log.exception("Job %s run failed: %s", jid, e)
         ms = int((time.perf_counter() - t0) * 1000)
+        try:
+            from modules.humanoid.metalearn.collector import record_scheduler_job
+            record_scheduler_job(jid, kind, "fail", ms, str(e))
+        except Exception:
+            pass
         return {"ok": False, "result_json": None, "error": str(e), "ms": ms}
 
     ms = int((time.perf_counter() - t0) * 1000)
     ok = out.get("ok", False)
+    try:
+        from modules.humanoid.metalearn.collector import record_scheduler_job
+        record_scheduler_job(jid, kind, "ok" if ok else "fail", ms, out.get("error"))
+    except Exception:
+        pass
     result_json = json.dumps(out) if isinstance(out, dict) else json.dumps({"ok": ok, "raw": str(out)})
     return {"ok": ok, "result_json": result_json, "error": out.get("error"), "ms": ms}
 
@@ -157,5 +169,15 @@ def _run_ga_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
         from modules.humanoid.ga.cycle import run_cycle
         result = run_cycle(scope=scope, mode=mode, max_findings=max_findings)
         return result.get("data") or result
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _run_metalearn_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run meta-learning cycle: train + tune + report."""
+    try:
+        from modules.humanoid.metalearn.cycle import run_cycle
+        result = run_cycle()
+        return result
     except Exception as e:
         return {"ok": False, "error": str(e)}

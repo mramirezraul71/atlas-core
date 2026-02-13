@@ -205,5 +205,10 @@ def execute_safe(
         if res.ok:
             _audit("ga", "safe_execute", True, {"action": c.action_type, "finding": c.finding.detail}, None, res.ms)
             _write_memory(f"GA safe: {c.action_type} - {c.finding.detail}", {"action": c.action_type, "evidence": res.evidence})
+        try:
+            from modules.humanoid.metalearn.collector import record_ga_action
+            record_ga_action(c.action_type, c.risk_level, "ok" if res.ok else "fail", res.ms, {"action_type": c.action_type, "evidence": res.evidence})
+        except Exception:
+            pass
         results.append(res)
     return results

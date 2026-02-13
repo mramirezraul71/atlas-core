@@ -160,12 +160,20 @@ def run_bluegreen_flow(actor: Any = None, dry_run: bool = False, ref: Optional[s
             subprocess.run(["net", "start", svc], capture_output=True, timeout=15)
         except Exception as e:
             _audit("promote_success", False, {"steps": steps}, str(e), int((time.perf_counter() - t0) * 1000))
+            try:
+                from modules.humanoid.metalearn.collector import record_deploy
+                record_deploy("fail", {"error": str(e), "steps": steps})
+            except Exception:
+                pass
             return {"ok": False, "data": {"steps": steps, "switched": False, "error": str(e)}, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
     _audit("promote_success", True, {"steps": steps, "active_port": active_port}, None, int((time.perf_counter() - t0) * 1000))
-
+    try:
+        from modules.humanoid.metalearn.collector import record_deploy
+        record_deploy("ok", {"steps": steps, "active_port": active_port})
+    except Exception:
+        pass
     # Post-promote: GA auto-check if enabled
     _run_ga_post_update(active_port, last_health, min_score)
-
     return {"ok": True, "data": {"steps": steps, "switched": True}, "ms": int((time.perf_counter() - t0) * 1000), "error": None}
 
 
