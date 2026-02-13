@@ -139,6 +139,15 @@ if ($md.ok) {
   Write-Host "/modules FAIL: $($md.err)" -ForegroundColor Red
 }
 
+# Multi-AI (registry, router, free-first)
+$aiStatus = Hit "/ai/status"
+if ($aiStatus.ok -and $aiStatus.data -and ($aiStatus.data.ollama_available -ne $null -or $aiStatus.data.route_to_model)) {
+  Write-Host "GET /ai/status OK (ollama_available=$($aiStatus.data.ollama_available))" -ForegroundColor Green
+} else {
+  Write-Host "GET /ai/status FAIL: $($aiStatus.err)" -ForegroundColor Red
+}
+$aiStatusOk = $aiStatus.ok -and $aiStatus.data
+
 Write-Host "== SMOKE: /llm ==" -ForegroundColor Cyan
 $body = @{
   prompt = "Devuélveme SOLO la palabra: OK"
@@ -416,6 +425,40 @@ if ($visionAnalyze.ok) {
   Write-Host "POST /vision/analyze FAIL: $($visionAnalyze.err)" -ForegroundColor Red
 }
 
+# Screen (must respond even when disabled)
+$screenStatus = Hit "/screen/status"
+if ($screenStatus.ok -and $screenStatus.data) {
+  Write-Host "GET /screen/status OK (enabled=$($screenStatus.data.enabled))" -ForegroundColor Green
+  $screenStatusOk = $true
+} else {
+  Write-Host "GET /screen/status FAIL: $($screenStatus.err)" -ForegroundColor Red
+  $screenStatusOk = $false
+}
+
+# Cursor run (plan_only must respond <15s)
+$cursorRunBody = @{ goal = "Listar archivos del directorio actual"; mode = "plan_only"; prefer_free = $true }
+$cursorRunStart = Get-Date
+$cursorRun = HitPost "/cursor/run" $cursorRunBody
+$cursorRunMs = ((Get-Date) - $cursorRunStart).TotalMilliseconds
+if ($cursorRun.ok -and $cursorRun.data) {
+  if ($cursorRunMs -lt 15000) {
+    Write-Host "POST /cursor/run (plan_only) OK in ${cursorRunMs}ms (<15s)" -ForegroundColor Green
+    $cursorRunOk = $true
+  } else {
+    Write-Host "POST /cursor/run OK but slow: ${cursorRunMs}ms" -ForegroundColor Yellow
+    $cursorRunOk = $true
+  }
+} else {
+  Write-Host "POST /cursor/run FAIL: $($cursorRun.err)" -ForegroundColor Red
+  $cursorRunOk = $false
+}
+$cursorStatus = Hit "/cursor/status"
+if ($cursorStatus.ok) {
+  Write-Host "GET /cursor/status OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /cursor/status FAIL: $($cursorStatus.err)" -ForegroundColor Red
+}
+
 # CI improve (plan_only repo, must respond <15s)
 $improveBody = @{ scope = "repo"; mode = "plan_only"; depth = 2; max_items = 5 }
 $improveStart = Get-Date
@@ -582,7 +625,8 @@ if ($bundleResp.ok -and $bundleResp.data.path) {
 $agentScaffoldOk = $agentOk -and $scaffoldOk -and $scriptOk -and $depsOk -and $webOk -and $voiceOk -and $memOk -and $visionOk -and $improveOk
 
 $gaOk = $gaRunOk -and $gaStatusOk
-if ($st.ok -and $md.ok -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk -and $agentScaffoldOk -and $uiOk -and $bundleOk -and $gaOk -and $metalearnOk) {
+$cursorScreenOk = $screenStatusOk -and $cursorRunOk
+if ($st.ok -and $md.ok -and $aiStatusOk -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk -and $agentScaffoldOk -and $uiOk -and $bundleOk -and $gaOk -and $metalearnOk -and $cursorScreenOk) {
   Write-Host "SMOKE OK" -ForegroundColor Green
   exit 0
 } else {
