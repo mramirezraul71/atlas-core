@@ -58,6 +58,7 @@ async def _lifespan(app):
         pass
     humanoid = os.getenv("HUMANOID_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
     sched = os.getenv("SCHED_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
+    worker_only = os.getenv("WORKER_ONLY", "false").strip().lower() in ("1", "true", "yes")
     if humanoid and sched:
         from modules.humanoid.scheduler import start_scheduler
         from modules.humanoid.watchdog import start_watchdog
@@ -65,21 +66,22 @@ async def _lifespan(app):
         _executor = ThreadPoolExecutor(max_workers=2)
         start_scheduler(executor=_executor)
         start_watchdog()
-        try:
-            from modules.humanoid.ci import ensure_ci_jobs
-            ensure_ci_jobs()
-        except Exception:
-            pass
-        try:
-            from modules.humanoid.ga.scheduler_jobs import ensure_ga_jobs
-            ensure_ga_jobs()
-        except Exception:
-            pass
-        try:
-            from modules.humanoid.metalearn.scheduler_jobs import ensure_metalearn_jobs
-            ensure_metalearn_jobs()
-        except Exception:
-            pass
+        if not worker_only:
+            try:
+                from modules.humanoid.ci import ensure_ci_jobs
+                ensure_ci_jobs()
+            except Exception:
+                pass
+            try:
+                from modules.humanoid.ga.scheduler_jobs import ensure_ga_jobs
+                ensure_ga_jobs()
+            except Exception:
+                pass
+            try:
+                from modules.humanoid.metalearn.scheduler_jobs import ensure_metalearn_jobs
+                ensure_metalearn_jobs()
+            except Exception:
+                pass
     yield
 
 
@@ -122,12 +124,76 @@ def health():
 
 @app.get("/version")
 def version():
-    """Release version, git sha, channel (stable/canary)."""
+    """Release version, git sha, channel (stable/canary), edition, product_mode."""
     try:
         from modules.humanoid.release import get_version_info
-        return {"ok": True, **get_version_info()}
+        out = {"ok": True, **get_version_info()}
+        if os.getenv("PRODUCT_MODE", "").strip().lower() in ("1", "true", "yes"):
+            try:
+                from modules.humanoid.product.license import license_status
+                out["license"] = license_status()
+            except Exception:
+                out["license"] = {"status": "unknown"}
+        return out
     except Exception as e:
         return {"ok": False, "version": "0.0.0", "git_sha": "", "channel": "canary", "error": str(e)}
+
+
+@app.get("/product/status")
+def product_status():
+    """Product dashboard: version, edition, license, service hint, cluster, gateway, health score, last GA/metalearn, support_contact."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.release import get_version_info
+        from modules.humanoid.product.license import license_status
+        from modules.humanoid.deploy.healthcheck import run_health_verbose
+        from modules.humanoid.deploy.ports import get_ports
+        version_info = get_version_info()
+        license_info = license_status()
+        port = get_ports()[0] if get_ports() else int(os.getenv("SERVICE_PORT", "8791") or 8791)
+        health = run_health_verbose(base_url=None, active_port=port)
+        ga_last = None
+        meta_last = None
+        try:
+            from modules.humanoid.ga.cycle import get_status as ga_status
+            ga_last = ga_status().get("last_run_ts")
+        except Exception:
+            pass
+        try:
+            from modules.humanoid.metalearn.cycle import get_status as meta_status
+            meta_last = meta_status().get("last_update_ts")
+        except Exception:
+            pass
+        cluster_nodes = 0
+        gateway_state = "unknown"
+        try:
+            from modules.humanoid.cluster.registry import list_nodes
+            cluster_nodes = len(list_nodes())
+        except Exception:
+            pass
+        try:
+            from modules.humanoid.gateway.store import build_gateway_status
+            gw = build_gateway_status()
+            gateway_state = gw.get("mode", "unknown")
+        except Exception:
+            pass
+        service_name = os.getenv("SERVICE_NAME", "ATLAS_PUSH")
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {
+            "version": version_info.get("version", "0.0.0"),
+            "edition": version_info.get("edition", "community"),
+            "license": license_info,
+            "service_name": service_name,
+            "active_port": port,
+            "health_score": health.get("score", 0),
+            "cluster_nodes": cluster_nodes,
+            "gateway_state": gateway_state,
+            "last_ga_run_ts": ga_last,
+            "last_metalearn_run_ts": meta_last,
+            "support_contact": os.getenv("SUPPORT_CONTACT", ""),
+        }, ms, None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
 
 # Dashboard UI (fallback: if UI fails, API still works)
@@ -325,9 +391,19 @@ def audit_tail(n: int = 50, module: Optional[str] = None):
     return {"ok": True, "entries": entries, "error": None}
 
 
+def _redact_tokens(text: str) -> str:
+    """Redact token/secret-like substrings for support bundle."""
+    import re
+    if not text:
+        return text
+    for pattern in [r"Bearer\s+[A-Za-z0-9_\-\.]+", r"token[=:]\s*[\w\-]+", r"api_key[=:]\s*[\w\-]+", r"secret[=:]\s*[\w\-]+"]:
+        text = re.sub(pattern, "***REDACTED***", text, flags=re.IGNORECASE)
+    return text
+
+
 @app.get("/support/bundle")
 def support_bundle():
-    """Export bundle: recent logs, metrics, last CI report. Returns {ok, data: {path}, ms, error}. Audited."""
+    """Export bundle: health, metrics, GA/metalearn/CI reports, deploy/gateway/cluster status, logs (redacted), config (no secrets). Returns {ok, data: {path}, ms, error}. Audited."""
     t0 = time.perf_counter()
     import zipfile
     import json
@@ -339,6 +415,14 @@ def support_bundle():
     try:
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             try:
+                from modules.humanoid.deploy.healthcheck import run_health_verbose
+                from modules.humanoid.deploy.ports import get_ports
+                port = get_ports()[0] if get_ports() else 8791
+                health = run_health_verbose(base_url=None, active_port=port)
+                zf.writestr("health.json", json.dumps(health, indent=2))
+            except Exception:
+                zf.writestr("health.json", "{}")
+            try:
                 snap = get_metrics_store().snapshot()
                 zf.writestr("metrics.json", json.dumps(snap, indent=2))
             except Exception:
@@ -347,7 +431,14 @@ def support_bundle():
             if log_file.exists():
                 try:
                     tail = log_file.read_text(encoding="utf-8", errors="replace")[-50000:]
-                    zf.writestr("atlas_log_tail.txt", tail)
+                    zf.writestr("atlas_log_tail.txt", _redact_tokens(tail))
+                except Exception:
+                    pass
+            svc_log = BASE_DIR / "logs" / "service.log"
+            if svc_log.exists():
+                try:
+                    tail = svc_log.read_text(encoding="utf-8", errors="replace")[-20000:]
+                    zf.writestr("service_log_tail.txt", _redact_tokens(tail))
                 except Exception:
                     pass
             ci_dir = Path(os.getenv("CI_EXPORT_DIR", str(BASE_DIR / "snapshots" / "ci")))
@@ -355,6 +446,43 @@ def support_bundle():
                 reports = sorted(ci_dir.glob("CI_REPORT_*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
                 if reports:
                     zf.write(reports[0], "ci_last_report.md")
+            ga_dir = Path(os.getenv("GA_REPORT_DIR", str(BASE_DIR / "snapshots" / "ga")))
+            if ga_dir.exists():
+                reports = sorted(ga_dir.glob("GA_REPORT_*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+                if reports:
+                    zf.write(reports[0], "ga_last_report.md")
+            meta_dir = Path(os.getenv("METALEARN_REPORT_DIR", str(BASE_DIR / "snapshots" / "metalearn")))
+            if meta_dir.exists():
+                reports = sorted(meta_dir.glob("META_REPORT_*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+                if reports:
+                    zf.write(reports[0], "metalearn_last_report.md")
+            try:
+                from modules.humanoid.deploy.switcher import get_deploy_state
+                deploy = get_deploy_state()
+                zf.writestr("deploy_status.json", json.dumps(deploy, indent=2))
+            except Exception:
+                zf.writestr("deploy_status.json", "{}")
+            try:
+                from modules.humanoid.gateway.store import build_gateway_status
+                gw = build_gateway_status()
+                zf.writestr("gateway_status.json", json.dumps(gw, indent=2))
+            except Exception:
+                zf.writestr("gateway_status.json", "{}")
+            try:
+                from modules.humanoid.cluster.registry import list_nodes
+                nodes = list_nodes()
+                zf.writestr("cluster_status.json", json.dumps({"nodes": nodes}, indent=2))
+            except Exception:
+                zf.writestr("cluster_status.json", "{}")
+            env_file = BASE_DIR / "config" / "atlas.env"
+            if env_file.exists():
+                lines = []
+                for line in env_file.read_text(encoding="utf-8", errors="replace").splitlines():
+                    if "=" in line and any(s in line.lower() for s in ["secret", "password", "token", "key"]):
+                        lines.append(line.split("=")[0] + "=***REDACTED***")
+                    else:
+                        lines.append(line)
+                zf.writestr("config_redacted.env", "\n".join(lines))
         get_audit_logger().log_event("support", "api", "bundle", True, int((time.perf_counter() - t0) * 1000), None, {"path": str(zip_path)}, None)
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, {"path": str(zip_path)}, ms, None)
@@ -362,6 +490,20 @@ def support_bundle():
         ms = int((time.perf_counter() - t0) * 1000)
         get_audit_logger().log_event("support", "api", "bundle", False, ms, str(e), None, None)
         return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/support/selfcheck")
+def support_selfcheck():
+    """Run quick diagnostics; return problems and suggestions. {ok, data: {problems, suggestions}, ms, error}."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.product.selfcheck import run_selfcheck
+        result = run_selfcheck()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", True), {"problems": result.get("problems", []), "suggestions": result.get("suggestions", [])}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, {"problems": [{"id": "selfcheck_error", "severity": "critical", "message": str(e), "suggestion": "Check logs"}], "suggestions": []}, ms, str(e))
 
 
 # --- Approvals (policy + audit) ---
