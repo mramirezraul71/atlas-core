@@ -9,12 +9,15 @@ from .gate import requires_approval, risk_level, requires_2fa_for_risk
 
 def _notify_telegram_approval_pending(item: Dict[str, Any]) -> None:
     """If Telegram enabled: critical -> inline Aprobar/Rechazar; else HIGH -> plain message."""
-    if os.getenv("TELEGRAM_ENABLED", "").strip().lower() not in ("1", "true", "yes"):
+    enabled = os.getenv("TELEGRAM_APPROVALS_ENABLED") or os.getenv("TELEGRAM_ENABLED", "")
+    if enabled.strip().lower() not in ("1", "true", "yes"):
         return
-    telegram_confirm = os.getenv("OWNER_TELEGRAM_CONFIRM", "").strip().lower() in ("1", "true", "yes")
+    telegram_confirm = (os.getenv("TELEGRAM_REQUIRE_CONFIRM") or os.getenv("OWNER_TELEGRAM_CONFIRM", "")).strip().lower() in ("1", "true", "yes")
     try:
         from modules.humanoid.comms.telegram_bridge import TelegramBridge
-        chat_id = (os.getenv("TELEGRAM_CHAT_ID", "") or "").strip()
+        raw = (os.getenv("TELEGRAM_ALLOWED_CHAT_IDS") or os.getenv("TELEGRAM_CHAT_ID", "") or "").strip()
+        chat_ids = [x.strip() for x in raw.replace(",", " ").split() if x.strip()]
+        chat_id = chat_ids[0] if chat_ids else ""
         if not chat_id:
             return
         bridge = TelegramBridge()
@@ -51,22 +54,32 @@ def create(action: str, payload: Dict[str, Any], job_id: Optional[str] = None, r
         return {"ok": False, "approval_id": None, "error": str(e)}
 
 
-def list_pending(limit: int = 50) -> List[Dict[str, Any]]:
-    return list_items(status="pending", limit=limit)
+def list_pending(limit: int = 50, risk: Optional[str] = None) -> List[Dict[str, Any]]:
+    return list_items(status="pending", risk=risk, limit=limit)
 
 
-def list_all(limit: int = 50) -> List[Dict[str, Any]]:
-    return list_items(status=None, limit=limit)
+def list_all(limit: int = 50, status: Optional[str] = None, risk: Optional[str] = None) -> List[Dict[str, Any]]:
+    return list_items(status=status, risk=risk, limit=limit)
 
 
-def approve(aid: str, resolved_by: str = "api", owner_session_token: Optional[str] = None, signature: Optional[str] = None) -> Dict[str, Any]:
+def approve(
+    aid: str,
+    resolved_by: str = "api",
+    owner_session_token: Optional[str] = None,
+    signature: Optional[str] = None,
+    approved_via: str = "api",
+    confirm_token: Optional[str] = None,
+) -> Dict[str, Any]:
+    from modules.humanoid.owner.gate import check_owner_gate
+    from .replay import consume_nonce
     item = get(aid)
     if item:
         risk = (item.get("risk") or "medium").strip().lower()
-        if risk in ("high", "critical"):
-            from modules.humanoid.owner.session import validate as session_validate, strict_mode
-            if strict_mode() and not session_validate(owner_session_token):
-                return {"ok": False, "id": aid, "status": "owner_session_required", "error": "X-Owner-Session required for high/critical"}
+        allow, err = check_owner_gate(risk, owner_session_token, action=None)
+        if not allow:
+            return {"ok": False, "id": aid, "status": "owner_session_required", "error": err or "X-Owner-Session required"}
+        if confirm_token and not consume_nonce(confirm_token):
+            return {"ok": False, "id": aid, "status": "replay_or_invalid", "error": "Invalid or reused confirm_token (nonce)"}
     ok = store_approve(aid, resolved_by=resolved_by, signature=signature)
     try:
         from modules.humanoid.audit import get_audit_logger

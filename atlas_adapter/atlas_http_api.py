@@ -346,12 +346,13 @@ def support_bundle():
 
 # --- Approvals (policy + audit) ---
 @app.get("/approvals/list")
-def approvals_list(limit: int = 50):
-    """List pending approval items. Response: {ok, data: [items], ms, error}."""
+def approvals_list(status: Optional[str] = None, risk: Optional[str] = None, limit: int = 50):
+    """List approval items. ?status=pending&risk=high. Response: {ok, data: [items], ms, error}."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.approvals import list_pending
-        items = list_pending(limit=limit)
+        from modules.humanoid.approvals import list_all
+        st = status if status else "pending"
+        items = list_all(limit=limit, status=st, risk=risk)
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": True, "data": [getattr(i, "__dict__", i) if hasattr(i, "__dict__") else i for i in items], "ms": ms, "error": None}
     except Exception as e:
@@ -362,16 +363,21 @@ def approvals_list(limit: int = 50):
 class ApprovalActionBody(BaseModel):
     id: Optional[str] = None
     approval_id: Optional[str] = None
+    approve: Optional[bool] = True
+    session_token: Optional[str] = None
+    confirm_token: Optional[str] = None
+
 
 @app.post("/approvals/approve")
 def approvals_approve(body: ApprovalActionBody, x_owner_session: Optional[str] = Header(None, alias="X-Owner-Session")):
-    """Approve item by id. Body: {id} or {approval_id}. High/critical require X-Owner-Session. Audited."""
+    """Approve item by id. Body: {id, approve?, session_token?, confirm_token?}. Risk>=medium require X-Owner-Session."""
     aid = body.id or body.approval_id
     if not aid:
         return {"ok": False, "id": None, "status": "missing_id", "error": "id or approval_id required"}
+    token = body.session_token or x_owner_session
     try:
         from modules.humanoid.approvals import approve as approval_approve
-        out = approval_approve(aid, resolved_by="api", owner_session_token=x_owner_session)
+        out = approval_approve(aid, resolved_by="api", owner_session_token=token, confirm_token=body.confirm_token)
         return {"ok": out.get("ok"), "id": aid, "status": out.get("status"), "error": out.get("error")}
     except Exception as e:
         return {"ok": False, "id": aid, "status": "error", "error": str(e)}
@@ -385,7 +391,7 @@ def approvals_chain_verify():
         from modules.humanoid.approvals import verify_chain
         result = verify_chain()
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": result.get("ok", True), "valid": result.get("valid", True), "ms": ms, "first_invalid_id": result.get("first_invalid_id"), "expected_hash": result.get("expected_hash"), "got_hash": result.get("got_hash"), "error": None}
+        return {"ok": result.get("ok", True), "valid": result.get("valid", True), "ms": ms, "broken_at_id": result.get("broken_at_id"), "first_invalid_id": result.get("broken_at_id"), "last_hash": result.get("last_hash"), "count": result.get("count"), "error": None}
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": False, "valid": False, "ms": ms, "first_invalid_id": None, "expected_hash": None, "got_hash": None, "error": str(e)}
@@ -394,28 +400,100 @@ def approvals_chain_verify():
 # --- Owner (zero-trust session + emergency) ---
 class OwnerSessionStartBody(BaseModel):
     actor: str
-    method: Optional[str] = "ui"  # ui | telegram | voice
+    method: Optional[str] = "ui"  # ui | telegram | voice | api
+
 
 @app.post("/owner/session/start")
 def owner_session_start(body: OwnerSessionStartBody):
-    """Start owner session. Returns session_token (TTL). Required for high/critical approvals via X-Owner-Session."""
+    """Start owner session. Returns session_token (TTL). Required for risky approvals via X-Owner-Session."""
     t0 = time.perf_counter()
     try:
         from modules.humanoid.owner.session import start as owner_start
         out = owner_start(actor=body.actor or "owner", method=body.method or "ui")
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": out.get("ok"), "session_token": out.get("session_token"), "ttl_seconds": out.get("ttl_seconds"), "method": out.get("method"), "ms": ms, "error": out.get("error")}
+        return {"ok": out.get("ok"), "session_token": out.get("session_token"), "ttl_seconds": out.get("ttl_seconds"), "method": out.get("method"), "expires_at": out.get("expires_at"), "ms": ms, "error": out.get("error")}
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": False, "session_token": None, "ms": ms, "error": str(e)}
 
 
+class OwnerSessionEndBody(BaseModel):
+    session_token: str
+
+
+@app.post("/owner/session/end")
+def owner_session_end(body: OwnerSessionEndBody):
+    """End (revoke) owner session."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.owner.session import end as owner_end
+        ok = owner_end(body.session_token)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": ok, "ms": ms, "error": None}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "ms": ms, "error": str(e)}
+
+
+@app.get("/owner/session/status")
+def owner_session_status():
+    """List active sessions (redacted tokens)."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.owner.session import list_active
+        sessions = list_active()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": True, "sessions": sessions, "ms": ms, "error": None}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "sessions": [], "ms": ms, "error": str(e)}
+
+
+@app.get("/owner/emergency/status")
+def owner_emergency_status():
+    """Emergency mode status: enabled, block flags."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.owner.emergency import get_emergency_state
+        data = get_emergency_state()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": True, "data": data, "ms": ms, "error": None}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "data": None, "ms": ms, "error": str(e)}
+
+
+class OwnerEmergencySetBody(BaseModel):
+    enable: bool
+    reason: Optional[str] = None
+
+
+@app.post("/owner/emergency/set")
+def owner_emergency_set(body: OwnerEmergencySetBody):
+    """Enable/disable emergency mode. When enabled: block deploys, remote_exec, shell; allow status/health."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.owner.emergency import set_emergency, is_emergency
+        set_emergency(body.enable, reason=body.reason or "")
+        try:
+            from modules.humanoid.audit import get_audit_logger
+            get_audit_logger().log_event("owner", "api", "emergency_set", True, 0, None, {"enable": body.enable, "reason": body.reason}, None)
+        except Exception:
+            pass
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": True, "emergency": is_emergency(), "ms": ms, "error": None}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "emergency": None, "ms": ms, "error": str(e)}
+
+
 class OwnerEmergencyBody(BaseModel):
     enable: bool
 
+
 @app.post("/owner/emergency")
 def owner_emergency(body: OwnerEmergencyBody):
-    """Enable/disable emergency mode. When enabled: suspend non-critical runs, block deploys; only health + status allowed."""
+    """Enable/disable emergency mode (legacy). Prefer POST /owner/emergency/set."""
     t0 = time.perf_counter()
     try:
         from modules.humanoid.owner.emergency import set_emergency, is_emergency
@@ -481,6 +559,27 @@ def owner_status():
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": False, "data": None, "ms": ms, "error": str(e)}
+
+
+class VoiceApproveBody(BaseModel):
+    phrase: str
+    session_token: Optional[str] = None
+
+
+@app.post("/voice/approve")
+def voice_approve(body: VoiceApproveBody):
+    """Voice approval: 'aprobar <id>' -> 'di confirmar <id>'; 'confirmar <id>' -> approve. Replay-safe."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.owner.voice_approval import handle_voice_command, voice_approval_enabled
+        if not voice_approval_enabled():
+            return {"ok": False, "response": "", "approved": False, "ms": int((time.perf_counter() - t0) * 1000), "error": "voice_approvals disabled"}
+        response, approved = handle_voice_command(body.phrase or "", device_source="api")
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": True, "response": response, "approved": approved, "ms": ms, "error": None}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "response": "", "approved": False, "ms": ms, "error": str(e)}
 
 
 class OwnerVoiceCommandBody(BaseModel):
@@ -1029,6 +1128,9 @@ def remote_hands(body: dict):
     """Worker: execute hands (shell). Returns {ok, data, ms, error, correlation_id}."""
     t0 = time.perf_counter()
     try:
+        from modules.humanoid.owner.emergency import is_action_blocked
+        if is_action_blocked("remote_hands"):
+            return _cluster_remote_result(False, None, int((time.perf_counter() - t0) * 1000), "emergency_mode_block", body.get("correlation_id"))
         from modules.humanoid.cluster import trace
         from modules.humanoid.cluster.remote_server import execute_remote_hands
         cid = body.get("correlation_id") or trace.new_correlation_id()
@@ -1045,6 +1147,9 @@ def remote_web(body: dict):
     """Worker: execute web action."""
     t0 = time.perf_counter()
     try:
+        from modules.humanoid.owner.emergency import is_action_blocked
+        if is_action_blocked("remote_web"):
+            return _cluster_remote_result(False, None, int((time.perf_counter() - t0) * 1000), "emergency_mode_block", body.get("correlation_id"))
         from modules.humanoid.cluster import trace
         from modules.humanoid.cluster.remote_server import execute_remote_web
         cid = body.get("correlation_id") or trace.new_correlation_id()
@@ -1061,6 +1166,9 @@ def remote_vision(body: dict):
     """Worker: execute vision (analyze image)."""
     t0 = time.perf_counter()
     try:
+        from modules.humanoid.owner.emergency import is_action_blocked
+        if is_action_blocked("remote_vision"):
+            return _cluster_remote_result(False, None, int((time.perf_counter() - t0) * 1000), "emergency_mode_block", body.get("correlation_id"))
         from modules.humanoid.cluster import trace
         from modules.humanoid.cluster.remote_server import execute_remote_vision
         cid = body.get("correlation_id") or trace.new_correlation_id()
@@ -1077,6 +1185,9 @@ def remote_voice(body: dict):
     """Worker: execute voice action."""
     t0 = time.perf_counter()
     try:
+        from modules.humanoid.owner.emergency import is_action_blocked
+        if is_action_blocked("remote_voice"):
+            return _cluster_remote_result(False, None, int((time.perf_counter() - t0) * 1000), "emergency_mode_block", body.get("correlation_id"))
         from modules.humanoid.cluster import trace
         from modules.humanoid.cluster.remote_server import execute_remote_voice
         cid = body.get("correlation_id") or trace.new_correlation_id()

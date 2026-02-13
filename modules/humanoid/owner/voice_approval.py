@@ -62,4 +62,5 @@ def handle_voice_command(transcript: str, device_source: Optional[str] = None) -
 
 
 def voice_approval_enabled() -> bool:
-    return os.getenv("OWNER_VOICE_CONFIRM", "").strip().lower() in ("1", "true", "yes")
+    v = os.getenv("VOICE_APPROVALS_ENABLED") or os.getenv("OWNER_VOICE_CONFIRM", "")
+    return v.strip().lower() in ("1", "true", "yes")

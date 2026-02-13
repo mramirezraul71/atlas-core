@@ -1,20 +1,21 @@
-"""Owner session: TTL token for high/critical approvals. X-Owner-Session header."""
+"""Owner session: TTL token for approvals. X-Owner-Session header. create/validate/revoke."""
 from __future__ import annotations
 
 import os
 import secrets
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 _SESSIONS: Dict[str, Dict[str, Any]] = {}
-_TIMEOUT = 900
 
 
 def _timeout_sec() -> int:
+    v = os.getenv("OWNER_SESSION_TTL_SECONDS") or os.getenv("OWNER_SESSION_TIMEOUT", "900")
     try:
-        return int(os.getenv("OWNER_SESSION_TIMEOUT", "900") or 900)
+        return int(v or 900)
     except (TypeError, ValueError):
-        return _TIMEOUT
+        return 900
 
 
 def owner_id() -> str:
@@ -25,17 +26,34 @@ def strict_mode() -> bool:
     return os.getenv("OWNER_STRICT_MODE", "true").strip().lower() in ("1", "true", "yes")
 
 
+def _expires_at_iso(created_at: float, ttl: int) -> str:
+    return datetime.fromtimestamp(created_at + ttl, tz=timezone.utc).isoformat()
+
+
 def start(actor: str, method: str = "ui") -> Dict[str, Any]:
-    """Generate session token with TTL. method: ui | telegram | voice."""
+    """Generate session token with TTL. method: ui | telegram | voice | api."""
     if strict_mode() and actor != owner_id():
         return {"ok": False, "session_token": None, "error": "actor not owner"}
     method = (method or "ui").strip().lower()
-    if method not in ("ui", "telegram", "voice"):
+    if method not in ("ui", "telegram", "voice", "api"):
         method = "ui"
     token = secrets.token_urlsafe(32)
     ttl = _timeout_sec()
-    _SESSIONS[token] = {"actor": actor, "method": method, "created_at": time.time(), "ttl": ttl}
-    return {"ok": True, "session_token": token, "ttl_seconds": ttl, "method": method}
+    now = time.time()
+    _SESSIONS[token] = {
+        "actor": actor,
+        "method": method,
+        "created_at": now,
+        "ttl": ttl,
+        "expires_at": _expires_at_iso(now, ttl),
+    }
+    return {
+        "ok": True,
+        "session_token": token,
+        "ttl_seconds": ttl,
+        "method": method,
+        "expires_at": _expires_at_iso(now, ttl),
+    }
 
 
 def validate(token: Optional[str]) -> bool:
@@ -44,15 +62,29 @@ def validate(token: Optional[str]) -> bool:
         return False
     s = _SESSIONS[token]
     if time.time() - s["created_at"] > s["ttl"]:
-        del _SESSIONS[token]
+        _SESSIONS.pop(token, None)
         return False
     return True
 
 
+def end(session_token: Optional[str]) -> bool:
+    """Revoke session. Returns True if revoked."""
+    if not session_token:
+        return False
+    if session_token in _SESSIONS:
+        del _SESSIONS[session_token]
+        return True
+    return False
+
+
 def list_active() -> list:
-    """List active sessions (for UI). Expire stale first."""
+    """List active sessions (redacted tokens). Expire stale first."""
     ttl = _timeout_sec()
-    expired = [t for t, s in _SESSIONS.items() if time.time() - s["created_at"] > (s.get("ttl") or ttl)]
+    now = time.time()
+    expired = [t for t, s in _SESSIONS.items() if now - s["created_at"] > (s.get("ttl") or ttl)]
     for t in expired:
         _SESSIONS.pop(t, None)
-    return [{"method": s.get("method"), "created_at": s.get("created_at")} for s in _SESSIONS.values()]
+    return [
+        {"method": s.get("method"), "created_at": s.get("created_at"), "expires_at": s.get("expires_at")}
+        for s in _SESSIONS.values()
+    ]
