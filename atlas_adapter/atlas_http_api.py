@@ -70,6 +70,11 @@ async def _lifespan(app):
             ensure_ci_jobs()
         except Exception:
             pass
+        try:
+            from modules.humanoid.ga.scheduler_jobs import ensure_ga_jobs
+            ensure_ga_jobs()
+        except Exception:
+            pass
     yield
 
 
@@ -264,8 +269,10 @@ def llm_endpoint(req: LLMRequest) -> LLMResponse:
 
 # --- Humanoid (kernel + modules) ---
 from modules.humanoid.api import router as humanoid_router
+from modules.humanoid.ga.api import router as ga_router
 
 app.include_router(humanoid_router)
+app.include_router(ga_router)
 
 
 # --- Metrics / Policy / Audit endpoints ---
