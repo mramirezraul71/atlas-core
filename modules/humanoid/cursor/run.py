@@ -11,6 +11,15 @@ def _cursor_auto_execute(steps: List[Dict[str, Any]], goal: str) -> Dict[str, An
     """Cursor Super Mode: ejecuta steps sin approval. Crea módulos, edita código, ejecuta tools, navega pantalla."""
     executed: List[Dict[str, Any]] = []
     evidence: List[str] = []
+    try:
+        from modules.humanoid.governance.gates import decide
+        d = decide("cursor_tool_exec")
+        if d.blocked_by_emergency:
+            return {"ok": False, "executed": [], "evidence": [], "error": "emergency_stop_block"}
+        if d.needs_approval and not d.allow:
+            return {"ok": False, "executed": [], "evidence": [], "error": "governed_requires_approval"}
+    except Exception:
+        pass
     for i, s in enumerate(steps):
         desc = (s.get("description") or "").lower()
         if not desc:

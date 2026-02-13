@@ -89,6 +89,17 @@ def _run_full(timeout_sec: int) -> Dict[str, Any]:
                     if not allowed:
                         continue
                     try:
+                        from modules.humanoid.governance.gates import decide
+                        d = decide("ans_heal")
+                        if d.blocked_by_emergency:
+                            from modules.humanoid.governance.audit import audit_blocked
+                            audit_blocked("ans_heal", "emergency_stop_block")
+                            continue
+                        if d.needs_approval and not d.allow:
+                            continue
+                    except Exception:
+                        pass
+                    try:
                         policy_ok = get_policy_engine().can(ActorContext(actor="ans", role="system"), "ans", "ans_autofix", heal_id).allow
                         if not policy_ok:
                             continue

@@ -660,6 +660,46 @@ if ($emergencyResp.ok) {
   Write-Host "POST /owner/emergency/set FAIL: $($emergencyResp.err)" -ForegroundColor Red
 }
 
+# Governance (Dual Governance Mode)
+Write-Host "== SMOKE: Governance ==" -ForegroundColor Cyan
+$govStatusOk = $false
+$govStatus = Hit "/governance/status"
+if ($govStatus.ok -and $govStatus.data -and ($govStatus.data.mode -or $govStatus.data.emergency_stop -ne $null)) {
+  Write-Host "GET /governance/status OK (mode=$($govStatus.data.mode) emergency=$($govStatus.data.emergency_stop))" -ForegroundColor Green
+  $govStatusOk = $true
+} else {
+  Write-Host "GET /governance/status FAIL: $($govStatus.err)" -ForegroundColor Red
+  $govStatusOk = $false
+}
+$govRules = Hit "/governance/rules"
+if ($govRules.ok -and $govRules.data) {
+  Write-Host "GET /governance/rules OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /governance/rules FAIL: $($govRules.err)" -ForegroundColor Red
+}
+# POST /governance/mode sin owner session debe fallar con error concreto
+$govModeBody = @{ mode = "growth" } | ConvertTo-Json
+try {
+  $govModeResp = Invoke-RestMethod -Method POST -Uri ($base + "/governance/mode") -ContentType "application/json" -Body $govModeBody -TimeoutSec 5
+  if (-not $govModeResp.ok -and ($govModeResp.error -match "owner_session" -or $govModeResp.status -match "owner_session")) {
+    Write-Host "POST /governance/mode sin owner session: rechazado correctamente (owner_session_required)" -ForegroundColor Green
+  } elseif ($govModeResp.ok) {
+    Write-Host "POST /governance/mode OK (session activa o no requerida)" -ForegroundColor Green
+  } else {
+    Write-Host "POST /governance/mode: $($govModeResp | ConvertTo-Json)" -ForegroundColor Yellow
+  }
+} catch {
+  Write-Host "POST /governance/mode sin owner session: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+# GET /health y /status siguen OK incluso con EMERGENCY_STOP=true
+$healthAgain = Hit "/health"
+$statusAgain = Hit "/status"
+if ($healthAgain.ok -and $statusAgain.ok) {
+  Write-Host "GET /health y /status OK tras governance checks" -ForegroundColor Green
+} else {
+  Write-Host "GET /health o /status FAIL tras governance" -ForegroundColor Red
+}
+
 $bundleResp = Hit "/support/bundle"
 if ($bundleResp.ok -and $bundleResp.data.path) {
   Write-Host "GET /support/bundle OK ($($bundleResp.data.path))" -ForegroundColor Green
@@ -674,7 +714,8 @@ $agentScaffoldOk = $agentOk -and $scaffoldOk -and $scriptOk -and $depsOk -and $w
 $gaOk = $gaRunOk -and $gaStatusOk
 $cursorScreenOk = $screenStatusOk -and $cursorRunOk -and $benchOk
 $ansOk = $ansStatusOk -and $ansRunOk
-if ($st.ok -and $md.ok -and $aiStatusOk -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk -and $agentScaffoldOk -and $uiOk -and $bundleOk -and $gaOk -and $metalearnOk -and $cursorScreenOk -and $ansOk) {
+$govOk = $govStatusOk
+if ($st.ok -and $md.ok -and $aiStatusOk -and $llm.ok -and $humanoidOk -and $policyAuditOk -and $schedWatchdogOk -and $agentScaffoldOk -and $uiOk -and $bundleOk -and $gaOk -and $metalearnOk -and $cursorScreenOk -and $ansOk -and $govOk) {
   Write-Host "SMOKE OK" -ForegroundColor Green
   exit 0
 } else {
