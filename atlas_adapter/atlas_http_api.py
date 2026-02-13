@@ -482,10 +482,13 @@ from modules.humanoid.ga.api import router as ga_router
 from modules.humanoid.metalearn.api import router as metalearn_router
 
 from modules.humanoid.ans.api import router as ans_router
+from modules.humanoid.governance.api import router as governance_router
+
 app.include_router(humanoid_router)
 app.include_router(ga_router)
 app.include_router(metalearn_router)
 app.include_router(ans_router)
+app.include_router(governance_router)
 
 
 # --- Metrics / Policy / Audit endpoints ---
