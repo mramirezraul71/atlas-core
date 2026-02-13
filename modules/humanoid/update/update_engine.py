@@ -1,9 +1,10 @@
-"""Git-based update engine: fetch, staging, smoke, promote or rollback. Policy + audit."""
+"""Git-based update engine: fetch, staging, smoke, promote or rollback. Policy + audit. Windows-style update window."""
 from __future__ import annotations
 
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from .git_manager import (
@@ -45,6 +46,24 @@ def update_enabled() -> bool:
     return _env_bool("UPDATE_ENABLED", True)
 
 
+def _in_update_window() -> bool:
+    """Windows-style: solo permite apply dentro de la ventana configurada."""
+    start = _env_str("UPDATE_WINDOW_START", "01:00")
+    end = _env_str("UPDATE_WINDOW_END", "04:00")
+    now = datetime.now(timezone.utc)
+    try:
+        h, m = map(int, start.split(":"))
+        t_start = h * 60 + m
+        h2, m2 = map(int, end.split(":"))
+        t_end = h2 * 60 + m2
+        t_now = now.hour * 60 + now.minute
+        if t_start <= t_end:
+            return t_start <= t_now <= t_end
+        return t_now >= t_start or t_now <= t_end
+    except Exception:
+        return True
+
+
 def status() -> Dict[str, Any]:
     """Current update status: branch, head, remote, has_update, config."""
     t0 = time.perf_counter()
@@ -62,6 +81,9 @@ def status() -> Dict[str, Any]:
             "require_smoke": _env_bool("UPDATE_REQUIRE_SMOKE", True),
             "auto_promote": _env_bool("UPDATE_AUTO_PROMOTE", False),
             "allow_rollback": _env_bool("UPDATE_ALLOW_ROLLBACK", True),
+            "update_window_start": _env_str("UPDATE_WINDOW_START", "01:00"),
+            "update_window_end": _env_str("UPDATE_WINDOW_END", "04:00"),
+            "in_update_window": _in_update_window(),
         },
         "ms": 0,
         "error": None,
@@ -127,6 +149,9 @@ def apply(
     policy_allow = os.getenv("POLICY_ALLOW_UPDATE_APPLY", "false").strip().lower() in ("1", "true", "yes")
     if not policy_allow:
         return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": "POLICY_ALLOW_UPDATE_APPLY=false"}
+    update_window_required = _env_bool("UPDATE_REQUIRE_WINDOW", False)
+    if update_window_required and not _in_update_window():
+        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": "outside update window"}
     remote = _env_str("UPDATE_REMOTE", "origin")
     branch = _env_str("UPDATE_BRANCH", "main")
     staging_name = _env_str("UPDATE_STAGING_BRANCH", "staging")

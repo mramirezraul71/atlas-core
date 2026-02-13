@@ -1,10 +1,57 @@
-"""Cursor run: plan with AI router, optional step execution, evidence."""
+"""Cursor run: plan with AI router, optional step execution, evidence. mode=auto = Cursor Super Mode."""
 from __future__ import annotations
 
 import time
 from typing import Any, Dict, List, Optional
 
 from .status import set_last_run
+
+
+def _cursor_auto_execute(steps: List[Dict[str, Any]], goal: str) -> Dict[str, Any]:
+    """Cursor Super Mode: ejecuta steps sin approval. Crea módulos, edita código, ejecuta tools, navega pantalla."""
+    executed: List[Dict[str, Any]] = []
+    evidence: List[str] = []
+    for i, s in enumerate(steps):
+        desc = (s.get("description") or "").lower()
+        if not desc:
+            continue
+        r: Dict[str, Any] = {"step": i, "description": s.get("description"), "ok": False, "action": None}
+        try:
+            if "crear módulo" in desc or "create module" in desc:
+                from modules.humanoid.selfprog import create_module
+                name = desc.split()[-1][:30] if desc.split() else "new_module"
+                res = create_module(name)
+                r["ok"] = res.get("ok", False)
+                r["action"] = "create_module"
+            elif "instalar" in desc or "install" in desc:
+                from modules.humanoid.selfprog import install_dependency
+                pkg = desc.replace("instalar", "").replace("install", "").strip().split()[0] if desc.split() else ""
+                if pkg:
+                    res = install_dependency(pkg)
+                    r["ok"] = res.get("ok", False)
+                    r["action"] = "install_dependency"
+            elif "click" in desc or "clic" in desc:
+                from modules.humanoid.hands_eyes import execute_action, locate_element
+                loc = locate_element(desc.split("en")[-1].strip()[:50] if "en" in desc else desc[:50])
+                matches = loc.get("matches", [])
+                if matches and matches[0].get("bbox"):
+                    bbox = matches[0]["bbox"]
+                    cx = bbox[0] + bbox[2] // 2 if len(bbox) >= 3 else bbox[0]
+                    cy = bbox[1] + bbox[3] // 2 if len(bbox) >= 4 else bbox[1]
+                    res = execute_action("click", {"x": cx, "y": cy}, verify_after=True)
+                    r["ok"] = res.get("ok", False)
+                    r["action"] = "click"
+                    if res.get("evidence_after"):
+                        evidence.append(res["evidence_after"])
+            else:
+                r["action"] = "skipped"
+                r["ok"] = True
+        except Exception as e:
+            r["error"] = str(e)
+        executed.append(r)
+        s["status"] = "done" if r.get("ok") else "failed"
+    ok_all = all(x.get("ok", False) for x in executed)
+    return {"ok": ok_all, "executed": executed, "evidence": evidence}
 
 
 def cursor_run(
@@ -72,10 +119,18 @@ def cursor_run(
                 error = str(e)
 
         summary = f"Plan: {len(steps)} steps. Mode={mode}."
+        auto_result: Dict[str, Any] = {}
         if mode == "plan_only":
             next_actions = ["Use POST /cursor/step/execute to run a step", "Or set mode=controlled/auto for execution"]
+        elif mode == "auto":
+            auto_result = _cursor_auto_execute(steps, goal)
+            evidence = auto_result.get("evidence", [])
+            summary = f"Plan: {len(steps)} steps. Auto executed: {sum(1 for x in auto_result.get('executed', []) if x.get('ok'))} ok."
+            next_actions = [f"Auto mode: {len(evidence)} evidence saved. Report: ok={auto_result.get('ok')}"]
+            if not auto_result.get("ok"):
+                error = "auto_execute partial failure"
         else:
-            next_actions = ["Execution not yet implemented for controlled/auto; use plan_only or /agent/goal"]
+            next_actions = ["Execution not yet implemented for controlled; use plan_only or mode=auto"]
 
         ms = int((time.perf_counter() - t0) * 1000)
         data = {
@@ -91,6 +146,8 @@ def cursor_run(
             "approval_id": approval_id,
             "ms": ms,
         }
+        if mode == "auto":
+            data["auto_result"] = auto_result
         set_last_run(data)
         return {"ok": error is None, "data": data, "ms": ms, "error": error}
     except Exception as e:
