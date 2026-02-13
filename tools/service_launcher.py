@@ -47,5 +47,23 @@ def main():
     import uvicorn
     uvicorn.run(app_import, host=host, port=port, log_level="info")
 
+def _run_selfcheck() -> None:
+    """Run selfcheck after env load; log critical issues, do not crash."""
+    try:
+        import os
+        if os.getenv("WORKER_ONLY", "").strip().lower() in ("1", "true", "yes"):
+            return
+        from modules.humanoid.product.selfcheck import run_selfcheck
+        result = run_selfcheck()
+        problems = result.get("problems") or []
+        critical = [p for p in problems if p.get("severity") == "critical"]
+        if critical:
+            for p in critical:
+                log.warning("Selfcheck critical: %s - %s", p.get("id"), p.get("message"))
+    except Exception as e:
+        log.debug("Selfcheck skipped: %s", e)
+
+
 if __name__ == "__main__":
+    _run_selfcheck()
     main()
