@@ -3,10 +3,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from .risk import risk_level as _risk_level, requires_2fa_for_risk as _requires_2fa
+
 # Actions that do NOT require approval (safe or read-only)
 SAFE_OR_READ_ACTIONS = frozenset({
     "read", "status", "recall", "export", "list", "check", "plan_only",
-    "memory_read", "memory_export", "ci_autofix",  # ci_autofix is policy-gated elsewhere
+    "memory_read", "memory_export", "ci_autofix",
 })
 
 
@@ -23,19 +25,8 @@ def requires_approval(action: str, payload: Optional[Dict[str, Any]] = None) -> 
 
 
 def risk_level(action: str, payload: Optional[Dict[str, Any]] = None) -> str:
-    """Return risk: critical | high | medium | low. Critical always requires double confirmation."""
-    action_lower = (action or "").strip().lower()
-    if "deploy_apply" in action_lower or "apply" in action_lower and "update" in action_lower:
-        return "critical"
-    if "delete" in action_lower or "rollback" in action_lower:
-        return "critical"
-    if "apply" in action_lower or "promote" in action_lower:
-        return "high"
-    if "execute" in action_lower or "run" in action_lower:
-        return "medium"
-    return "low"
+    return _risk_level(action, payload)
 
 
 def requires_2fa_for_risk(risk: str) -> bool:
-    """Critical always requires 2fa (double confirm)."""
-    return (risk or "").strip().lower() == "critical"
+    return _requires_2fa(risk)

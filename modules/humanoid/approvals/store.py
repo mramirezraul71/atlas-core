@@ -50,7 +50,17 @@ def _ensure() -> sqlite3.Connection:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     _conn = sqlite3.connect(path)
     _conn.executescript(SCHEMA)
-    for col, typ in [("requires_2fa", "INTEGER DEFAULT 0"), ("expires_at", "TEXT"), ("approval_signature", "TEXT"), ("origin_node_id", "TEXT"), ("chain_hash", "TEXT")]:
+    for col, typ in [
+        ("requires_2fa", "INTEGER DEFAULT 0"),
+        ("expires_at", "TEXT"),
+        ("approval_signature", "TEXT"),
+        ("origin_node_id", "TEXT"),
+        ("chain_hash", "TEXT"),
+        ("request_hash", "TEXT"),
+        ("chain_prev_hash", "TEXT"),
+        ("approved_via", "TEXT"),
+        ("correlation_id", "TEXT"),
+    ]:
         try:
             _conn.execute(f"ALTER TABLE approvals ADD COLUMN {col} {typ}")
         except sqlite3.OperationalError:
@@ -63,14 +73,6 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _expires_at_default_minutes() -> int:
-    import os
-    try:
-        return int(os.getenv("APPROVAL_EXPIRE_MINUTES", "15") or 15)
-    except (TypeError, ValueError):
-        return 15
-
-
 def create(
     action: str,
     payload: Dict[str, Any],
@@ -80,16 +82,17 @@ def create(
     requires_2fa: bool = False,
     origin_node_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    from .ttl import expires_at_seconds
+    from .chain import compute_request_hash, enabled as chain_enabled
     aid = str(uuid.uuid4())[:12]
     now = _now()
-    from datetime import timedelta
-    exp_min = _expires_at_default_minutes()
-    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=exp_min)).isoformat()
+    expires_at = expires_at_seconds()
+    request_hash = compute_request_hash(payload) if chain_enabled() else ""
     conn = _ensure()
     conn.execute(
-        """INSERT INTO approvals (id, created_ts, action, payload_json, risk, status, job_id, run_id, requires_2fa, expires_at, origin_node_id)
-           VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)""",
-        (aid, now, action, json.dumps(payload), risk, job_id, run_id, 1 if requires_2fa else 0, expires_at, origin_node_id),
+        """INSERT INTO approvals (id, created_ts, action, payload_json, risk, status, job_id, run_id, requires_2fa, expires_at, origin_node_id, request_hash)
+           VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)""",
+        (aid, now, action, json.dumps(payload), risk, job_id, run_id, 1 if requires_2fa else 0, expires_at, origin_node_id, request_hash[:64] if request_hash else None),
     )
     conn.commit()
     return {
@@ -98,13 +101,26 @@ def create(
     }
 
 
-def list_items(status: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+def list_items(
+    status: Optional[str] = None,
+    risk: Optional[str] = None,
+    limit: int = 50,
+) -> List[Dict[str, Any]]:
     conn = _ensure()
     cols = "id, created_ts, action, payload_json, risk, status, job_id, run_id, resolved_ts, resolved_by, requires_2fa, expires_at, approval_signature, origin_node_id, chain_hash"
+    where, params = [], []
     if status:
-        rows = conn.execute(f"SELECT {cols} FROM approvals WHERE status = ? ORDER BY created_ts DESC LIMIT ?", (status, limit)).fetchall()
-    else:
-        rows = conn.execute(f"SELECT {cols} FROM approvals ORDER BY created_ts DESC LIMIT ?", (limit,)).fetchall()
+        where.append("status = ?")
+        params.append(status)
+    if risk:
+        where.append("risk = ?")
+        params.append(risk.strip().lower())
+    params.append(limit)
+    sql = f"SELECT {cols} FROM approvals"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY created_ts DESC LIMIT ?"
+    rows = conn.execute(sql, params).fetchall()
     out = []
     for r in rows:
         d = {
@@ -144,24 +160,18 @@ def get(aid: str) -> Optional[Dict[str, Any]]:
 
 
 def _is_expired(expires_at: Optional[str]) -> bool:
-    if not expires_at:
-        return False
-    try:
-        s = expires_at.replace("Z", "+00:00")
-        exp = datetime.fromisoformat(s)
-        return datetime.now(timezone.utc) >= exp
-    except Exception:
-        return False
+    from .ttl import is_expired as ttl_expired
+    return ttl_expired(expires_at)
 
 
 def _compute_chain_hash(prev_hash: str, item: Dict[str, Any], resolved_ts: str, resolved_by: str) -> str:
-    import hashlib
-    data = f"{prev_hash}|{item.get('id')}|{item.get('action')}|{item.get('created_ts')}|{resolved_ts}|{resolved_by}"
-    return hashlib.sha256(data.encode()).hexdigest()
+    from .chain import compute_chain_hash, compute_request_hash
+    req_hash = item.get("request_hash") or compute_request_hash(item.get("payload") or {})
+    return compute_chain_hash(prev_hash, item.get("id", ""), "approved", req_hash, resolved_ts, resolved_by)
 
 
 def _last_chain_hash(conn: sqlite3.Connection) -> str:
-    row = conn.execute("SELECT chain_hash FROM approvals WHERE chain_hash IS NOT NULL ORDER BY created_ts DESC LIMIT 1").fetchone()
+    row = conn.execute("SELECT chain_hash FROM approvals WHERE status='approved' AND chain_hash IS NOT NULL ORDER BY created_ts DESC LIMIT 1").fetchone()
     return row[0] if row and row[0] else "0"
 
 
@@ -209,15 +219,9 @@ def list_for_chain() -> List[Dict[str, Any]]:
 
 
 def verify_chain() -> Dict[str, Any]:
-    """Recompute hashes in order; return {ok, valid, first_invalid_id, expected_hash, got_hash}."""
+    """Recompute hashes; return {ok, valid, broken_at_id?, last_hash, count}."""
+    from .chain import verify_chain as chain_verify, enabled
     items = list_for_chain()
-    prev = "0"
-    for item in items:
-        if item.get("status") != "approved":
-            continue
-        expected = _compute_chain_hash(prev, item, item.get("resolved_ts") or "", item.get("resolved_by") or "")
-        got = item.get("chain_hash")
-        if got != expected:
-            return {"ok": False, "valid": False, "first_invalid_id": item.get("id"), "expected_hash": expected, "got_hash": got}
-        prev = expected
-    return {"ok": True, "valid": True}
+    if not enabled():
+        return {"ok": True, "valid": True, "broken_at_id": None, "last_hash": "0", "count": 0}
+    return chain_verify(items)
