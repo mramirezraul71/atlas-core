@@ -47,7 +47,17 @@ def get_default_policies() -> List[PolicyRule]:
         PolicyRule(id="deny_gateway_set_mode", scope="gateway", condition={"action": "gateway_set_mode"}, action="deny", meta={"description": "gateway_set_mode denied by default"}),
         PolicyRule(id="owner_gateway_set_mode", scope="gateway", condition={"role": "owner", "action": "gateway_set_mode"}, action="allow"),
         PolicyRule(id="ga_autorun", scope="ga", condition={"role": "system", "action": "ga_autorun"}, action="allow"),
+        PolicyRule(id="ans_autofix_system", scope="ans", condition={"role": "system", "action": "ans_autofix"}, action="allow"),
+        PolicyRule(id="owner_ans_run_now", scope="ans", condition={"role": "owner", "action": "ans_run_now"}, action="allow"),
         PolicyRule(id="owner_screen_act", scope="screen", condition={"role": "owner", "action": "screen_act"}, action="allow"),
+        PolicyRule(id="operario_screen_act", scope="screen", condition={"role": "operario", "action": "screen_act"}, action="allow"),
+        PolicyRule(id="deny_macros_delete", scope="macros", condition={"action": "delete"}, action="deny", meta={"description": "macros delete denied by default"}),
+        PolicyRule(id="owner_macros_delete", scope="macros", condition={"role": "owner", "action": "delete"}, action="allow"),
+        PolicyRule(id="operario_plan", scope="autonomy", condition={"role": "operario", "action": "plan"}, action="allow"),
+        PolicyRule(id="operario_exec_prefix", scope="hands", condition={"role": "operario", "action": "exec_command", "prefix_allowed": True}, action="allow"),
+        PolicyRule(id="contadora_memory_read", scope="memory", condition={"role": "contadora", "action": "memory_read"}, action="allow"),
+        PolicyRule(id="contadora_memory_write", scope="memory", condition={"role": "contadora", "action": "memory_write"}, action="allow"),
+        PolicyRule(id="contadora_memory_export", scope="memory", condition={"role": "contadora", "action": "memory_export"}, action="allow"),
     ]
 
 
