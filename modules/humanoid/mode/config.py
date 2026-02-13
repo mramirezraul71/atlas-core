@@ -1,4 +1,4 @@
-"""ATLAS_MODE lite/pro/ultra + auto-adapt from deps/hardware."""
+"""ATLAS_MODE lite/pro/ultra + SYSTEM_MODE observe/safe/pro/aggressive/ultra + auto-adapt from deps/hardware."""
 from __future__ import annotations
 
 import os
@@ -15,6 +15,62 @@ def get_atlas_mode() -> str:
     if m in ("lite", "pro", "ultra"):
         return m
     return "pro"
+
+
+def get_system_mode() -> str:
+    """observe | safe | pro | aggressive | ultra."""
+    m = _env("SYSTEM_MODE", "safe")
+    if m in ("observe", "safe", "pro", "aggressive", "ultra"):
+        return m
+    return "safe"
+
+
+def is_observe_only() -> bool:
+    """True si solo inspección, no modifica nada."""
+    return get_system_mode() == "observe"
+
+
+def is_safe_or_higher() -> bool:
+    """True si puede modificar bajo riesgo bajo."""
+    m = get_system_mode()
+    return m in ("safe", "pro", "aggressive", "ultra")
+
+
+def is_aggressive_or_ultra() -> bool:
+    """True si autoexpansión o autoevolución."""
+    return get_system_mode() in ("aggressive", "ultra")
+
+
+def is_evolution_enabled() -> bool:
+    return _env("EVOLUTION_ENABLED", "true") in ("1", "true", "yes")
+
+
+def is_selfprog_enabled() -> bool:
+    return _env("SELFPROG_ENABLED", "true") in ("1", "true", "yes")
+
+
+def is_auto_update_enabled() -> bool:
+    return _env("AUTO_UPDATE_ENABLED", "true") in ("1", "true", "yes")
+
+
+def is_auto_refactor_enabled() -> bool:
+    return _env("AUTO_REFRACTOR_ENABLED", "false") in ("1", "true", "yes")
+
+
+def is_auto_dep_install_enabled() -> bool:
+    return _env("AUTO_DEP_INSTALL", "true") in ("1", "true", "yes")
+
+
+def is_auto_plugin_expansion_enabled() -> bool:
+    return _env("AUTO_PLUGIN_EXPANSION", "false") in ("1", "true", "yes")
+
+
+def is_rollback_enabled() -> bool:
+    return _env("ROLLBACK_ENABLED", "true") in ("1", "true", "yes")
+
+
+def rollback_on_smoke_fail() -> bool:
+    return _env("ROLLBACK_ON_SMOKE_FAIL", "true") in ("1", "true", "yes")
 
 
 def _screen_act_deps_ok() -> bool:
@@ -96,8 +152,10 @@ def get_mode_capabilities() -> Dict[str, Any]:
     playwright = _playwright_ok()
     tesseract = _tesseract_ok()
     record_replay = is_record_replay_allowed() and mode == "ultra"
+    system_mode = get_system_mode()
     return {
         "mode": mode,
+        "system_mode": system_mode,
         "screen_capture": True,
         "screen_analyze": True,
         "screen_act": screen_act,

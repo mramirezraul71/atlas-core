@@ -42,7 +42,7 @@ def infer_task_profile(prompt: str, intent_hint: Optional[str] = None, modality:
 
     intent_map = {
         "FAST": "chat", "CHAT": "chat", "CODE": "code", "REASON": "reason",
-        "TOOLS": "tools", "VISION": "vision",
+        "TOOLS": "tools", "VISION": "vision", "ARCHITECT": "reason", "OPTIMIZER": "code",
     }
     intent = intent_map.get(route_name, "chat")
     if intent_hint and intent_hint.lower() in ("ops", "web", "docs"):
@@ -112,6 +112,8 @@ def _profile_to_route(profile: TaskProfile) -> str:
     if i in ("reason",): return "REASON"
     if i in ("tools",): return "TOOLS"
     if i in ("vision",): return "VISION"
+    if i in ("architect",): return "ARCHITECT"
+    if i in ("optimizer",): return "OPTIMIZER"
     if profile.modality == "image": return "VISION"
     if profile.latency_need == "fast": return "FAST"
     return "CHAT"
