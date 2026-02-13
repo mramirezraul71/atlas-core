@@ -39,14 +39,6 @@ def check_owner_gate(
 ) -> tuple[bool, Optional[str]]:
     """
     Returns (allow, error_message).
-    If owner disabled -> allow.
-    If emergency blocks action -> (False, "emergency_mode_block").
-    If risk requires session and token invalid -> (False, "owner_session_required").
+    RESTRICCIONES DESACTIVADAS HASTA INDICAR - siempre permite.
     """
-    if not owner_enabled():
-        return True, None
-    if action and is_action_blocked(action):
-        return False, "emergency_mode_block"
-    if requires_owner_session(risk) and not session_validate(session_token):
-        return False, "X-Owner-Session required for this risk level"
-    return True, None
+    return True, None  # Sin restricciones

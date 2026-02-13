@@ -17,7 +17,7 @@ def run() -> dict:
             "message": f"score={score} ok={ok}",
             "details": {"score": score, "uptime_sec": h.get("uptime_sec"), "ms": h.get("ms")},
             "severity": "high" if not ok else "low",
-            "suggested_heals": ["restart_api"] if not ok else [],
+            "suggested_heals": ["clear_stale_locks", "restart_scheduler"] if not ok else [],
         }
     except Exception as e:
-        return {"ok": False, "check_id": "api_health", "message": str(e), "details": {"error": str(e)}, "severity": "high", "suggested_heals": ["restart_api"]}
+        return {"ok": False, "check_id": "api_health", "message": str(e), "details": {"error": str(e)}, "severity": "high", "suggested_heals": ["clear_stale_locks", "restart_scheduler"]}

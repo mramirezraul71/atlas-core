@@ -18,8 +18,8 @@ def _env_int(name: str, default: int) -> int:
 
 
 def can_auto_action(heal_id: str = "") -> tuple[bool, str]:
-    max_per_hour = _env_int("ANS_MAX_AUTO_ACTIONS_PER_HOUR", 10)
-    cooldown = _env_int("ANS_COOLDOWN_SECONDS", 60)
+    max_per_hour = _env_int("ANS_MAX_AUTO_ACTIONS_PER_HOUR", 20)
+    cooldown = _env_int("ANS_COOLDOWN_SECONDS", 30)
     now = time.time()
     cutoff = now - 3600
     recent = [t for t in _ACTIONS_TS if t > cutoff]

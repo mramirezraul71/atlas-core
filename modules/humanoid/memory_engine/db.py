@@ -96,7 +96,7 @@ def _ensure() -> sqlite3.Connection:
         return _conn
     path = _db_path()
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    _conn = sqlite3.connect(path)
+    _conn = sqlite3.connect(path, check_same_thread=False)
     _conn.execute("PRAGMA journal_mode=WAL")
     for stmt in SCHEMA.split(";"):
         stmt = stmt.strip()

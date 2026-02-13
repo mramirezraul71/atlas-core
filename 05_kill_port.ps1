@@ -10,7 +10,11 @@ if (!$cons) {
 }
 
 $targetPid = $cons[0].OwningProcess
-# No matar el proceso actual (esta sesión de PowerShell) para no cerrar la terminal
+# Ignorar PID 0 (Idle) y no matar el proceso actual (PowerShell)
+if ($targetPid -le 0) {
+  Write-Host "Puerto $Port usado por proceso del sistema (PID $targetPid). Ignorando." -ForegroundColor Yellow
+  exit 1
+}
 if ($targetPid -eq $PID) {
   Write-Host "AVISO: El puerto $Port lo usa esta misma sesión (PID $PID). No se matará para evitar cerrar la terminal." -ForegroundColor Yellow
   Write-Host "Cierra uvicorn con Ctrl+C en la terminal donde corre, o ejecuta este script desde otra terminal." -ForegroundColor Yellow

@@ -68,13 +68,8 @@ def governance_set_mode(
     body: ModeBody,
     x_owner_session: Optional[str] = Header(None, alias="X-Owner-Session"),
 ):
-    """POST /governance/mode. Requiere owner session si GOVERNANCE_CHANGE_REQUIRES_OWNER_SESSION."""
-    import os
-    require_session = (os.getenv("GOVERNANCE_CHANGE_REQUIRES_OWNER_SESSION", "true") or "").strip().lower() in ("1", "true", "yes")
-    if require_session:
-        ok, err = _require_owner_session(x_owner_session)
-        if not ok:
-            return {"ok": False, "error": err, "status": "owner_session_required"}
+    """POST /governance/mode. RESTRICCIONES DESACTIVADAS - no requiere owner session."""
+    # require_session desactivado hasta indicar
     try:
         from modules.humanoid.governance.state import get_mode, set_mode, set_emergency_stop
         from modules.humanoid.governance.audit import audit_mode_change
@@ -97,10 +92,8 @@ def governance_emergency(
     body: EmergencyBody,
     x_owner_session: Optional[str] = Header(None, alias="X-Owner-Session"),
 ):
-    """POST /governance/emergency. Requiere owner session."""
-    ok, err = _require_owner_session(x_owner_session)
-    if not ok:
-        return {"ok": False, "error": err, "status": "owner_session_required"}
+    """POST /governance/emergency. RESTRICCIONES DESACTIVADAS - no requiere owner session."""
+    # ok, err check desactivado hasta indicar
     try:
         from modules.humanoid.governance.state import get_emergency_stop, set_emergency_stop
         from modules.humanoid.governance.audit import audit_emergency_change

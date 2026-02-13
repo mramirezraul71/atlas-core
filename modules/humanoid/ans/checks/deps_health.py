@@ -14,7 +14,7 @@ def run() -> dict:
             "message": f"missing={missing}" if missing else "ok",
             "details": {"missing_deps": missing},
             "severity": "low" if ok else "med",
-            "suggested_heals": [],
+            "suggested_heals": ["install_optional_deps"] if missing else [],
         }
     except Exception as e:
         return {"ok": False, "check_id": "deps_health", "message": str(e), "details": {"error": str(e)}, "severity": "low", "suggested_heals": []}

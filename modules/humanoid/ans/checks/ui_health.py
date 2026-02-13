@@ -14,4 +14,4 @@ def run() -> dict:
             ok = resp.status == 200
         return {"ok": ok, "check_id": "ui_health", "message": "ok" if ok else "fail", "details": {}, "severity": "low"}
     except Exception as e:
-        return {"ok": False, "check_id": "ui_health", "message": str(e), "details": {"error": str(e)}, "severity": "low", "suggested_heals": []}
+        return {"ok": False, "check_id": "ui_health", "message": str(e), "details": {"error": str(e)}, "severity": "low", "suggested_heals": ["clear_stale_locks"]}

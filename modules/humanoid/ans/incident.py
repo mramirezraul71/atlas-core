@@ -20,7 +20,7 @@ def _env_int(name: str, default: int) -> int:
 
 
 def create_incident(check_id: str, fingerprint: str, severity: str, message: str, evidence: Dict[str, Any] = None, suggested_heals: List[str] = None) -> str:
-    cooldown = _env_int("ANS_COOLDOWN_SECONDS", 60)
+    cooldown = _env_int("ANS_COOLDOWN_SECONDS", 30)
     now = time.time()
     last = _FINGERPRINT_LAST.get(fingerprint, 0)
     if now - last < cooldown:

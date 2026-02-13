@@ -252,6 +252,14 @@ def run_health_verbose(base_url: Optional[str] = None, active_port: Optional[int
         score += 15
     if error_rate <= ERROR_RATE_THRESHOLD:
         score += 10
+    ans_open_incidents = 0
+    try:
+        from modules.humanoid.ans.incident import get_incidents
+        ans_open_incidents = len(get_incidents(status="open", limit=20))
+        penalty = min(30, ans_open_incidents * 5)
+        score = max(0, score - penalty)
+    except Exception:
+        pass
 
     checks = {
         "api_up": api_up,
@@ -261,6 +269,7 @@ def run_health_verbose(base_url: Optional[str] = None, active_port: Optional[int
         "llm_reachable": llm_reachable,
         "avg_latency_ms": round(avg_latency_ms, 1) if isinstance(avg_latency_ms, (int, float)) else None,
         "error_rate": round(error_rate, 4),
+        "ans_open_incidents": ans_open_incidents,
         "active_port": port,
         "version": version,
         "channel": channel,
