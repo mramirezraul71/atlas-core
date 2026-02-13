@@ -56,6 +56,12 @@ if ($health.ok -and ($health.data.ok -ne $null -or $health.data.score -ge 0)) {
 } else {
   Write-Host "GET /health FAIL: $($health.err)" -ForegroundColor Red
 }
+$selfcheck = Hit "/support/selfcheck"
+if ($selfcheck.ok -and $selfcheck.data) {
+  Write-Host "GET /support/selfcheck OK" -ForegroundColor Green
+} else {
+  Write-Host "GET /support/selfcheck FAIL: $($selfcheck.err)" -ForegroundColor Red
+}
 $deployStatus = Hit "/deploy/status"
 if ($deployStatus.ok -and $deployStatus.data -and ($deployStatus.data.ok -or $deployStatus.data.mode)) {
   Write-Host "GET /deploy/status OK (mode=$($deployStatus.data.mode))" -ForegroundColor Green

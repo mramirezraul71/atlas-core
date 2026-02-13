@@ -215,6 +215,21 @@
       <div class="card" id="ga-card"><h2>Governed Autonomy</h2><div class="value">—</div><div class="row"><button class="small" onclick="gaRunNow()">Run Now</button><button class="small secondary" onclick="loadGAStatus()">Actualizar</button></div><div class="metrics-list" id="ga-detail"></div></div>
     </div>
 
+    <section class="robot-section" id="product-section">
+      <div class="card">
+        <h2>Product</h2>
+        <p class="robot-task-help">Version, edition, license, service, cluster, gateway, health, GA/Metalearn, support bundle.</p>
+        <div class="row" style="margin-bottom:.5rem;">
+          <span class="badge ok" id="product-version">—</span>
+          <span class="badge" id="product-edition">—</span>
+          <span class="badge" id="product-license">—</span>
+          <button class="small secondary" onclick="loadProductStatus()">Actualizar</button>
+          <button class="small" onclick="downloadSupportBundle()">Support bundle</button>
+        </div>
+        <div id="product-detail" class="value" style="font-size:.8rem; color:var(--muted);"></div>
+      </div>
+    </section>
+
     <section class="robot-section" id="owner-console-section">
       <div class="card">
         <h2>Owner Console</h2>
@@ -777,6 +792,26 @@
       if (lastReport) lastReport.textContent = reportPath ? 'Reporte: ' + reportPath : 'Sin reportes';
       if (executed) executed.textContent = '';
     }
+    async function loadProductStatus() {
+      const r = await get('/product/status');
+      if (!r || !r.data) return;
+      const d = r.data;
+      const vEl = document.getElementById('product-version');
+      const eEl = document.getElementById('product-edition');
+      const lEl = document.getElementById('product-license');
+      const detailEl = document.getElementById('product-detail');
+      if (vEl) vEl.textContent = 'v' + (d.version || '—');
+      if (eEl) { eEl.textContent = d.edition || 'community'; eEl.className = 'badge ' + (d.edition === 'enterprise' ? 'ok' : ''); }
+      if (lEl) { lEl.textContent = (d.license && d.license.status) || '—'; lEl.className = 'badge ' + ((d.license && d.license.status === 'valid') ? 'ok' : 'warn'); }
+      if (detailEl) detailEl.innerHTML = 'Health: ' + (d.health_score || 0) + ' | Port: ' + (d.active_port || '—') + ' | Cluster: ' + (d.cluster_nodes || 0) + ' nodes | Gateway: ' + (d.gateway_state || '—') + (d.support_contact ? ' | Contact: ' + d.support_contact : '');
+    }
+    async function downloadSupportBundle() {
+      const r = await get('/support/bundle');
+      if (r && r.data && r.data.path) {
+        const msg = document.getElementById('product-detail');
+        if (msg) msg.innerHTML = (msg.innerHTML || '') + ' <br>Bundle: ' + r.data.path;
+      }
+    }
     async function gaRunNow() {
       const msg = document.getElementById('ga-status-msg');
       if (msg) msg.textContent = 'Ejecutando…';
@@ -803,7 +838,8 @@
           loadGateway(),
           loadApprovals(),
           loadOwnerStatus(),
-          loadGAStatus()
+          loadGAStatus(),
+          loadProductStatus()
         ]);
         setLastUpdate();
       } catch (e) {
