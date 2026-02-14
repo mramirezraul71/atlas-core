@@ -723,6 +723,17 @@ def robot_status():
     return {"ok": False, "connected": False, "robot_url": "http://127.0.0.1:8002"}
 
 
+@app.get("/api/nerve/status", tags=["NEXUS"])
+def nerve_status():
+    """Estado del nervio: ojos (Nexus disponible, snapshot_url), manos (local). Cerebro → Nexus/manos."""
+    try:
+        from modules.humanoid.nerve import nerve_eyes_status
+        eyes = nerve_eyes_status()
+        return {"ok": True, "eyes": eyes, "hands": {"local": True}}
+    except Exception as e:
+        return {"ok": False, "eyes": {}, "hands": {}, "error": str(e)}
+
+
 @app.get("/health", tags=["Health"])
 def health():
     """Health verificable: ok, score 0-100, checks (api_up, memory_writable, audit_writable, scheduler_alive, llm_reachable, avg_latency_ms, error_rate, active_port, version, channel), ms, error."""
@@ -772,6 +783,39 @@ def version():
         return out
     except Exception as e:
         return {"ok": False, "version": "0.0.0", "git_sha": "", "channel": "canary", "error": str(e)}
+
+
+@app.get("/cuerpo/camera/stream")
+def camera_stream_proxy():
+    """Proxy para stream de cámara del robot (puerto 8002)."""
+    try:
+        import urllib.request
+        import urllib.error
+        import os
+        stream_url = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/") + "/api/camera/stream"
+        req = urllib.request.Request(stream_url, method="GET")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            if r.status == 200:
+                content_type = r.headers.get("Content-Type", "image/jpeg")
+                from fastapi.responses import Response
+                return Response(content=r.read(), media_type=content_type)
+    except Exception as e:
+        print(f"Camera proxy error: {e}")  # Debug
+    
+    # Si falla, devolver imagen placeholder
+    try:
+        import numpy as np
+        import cv2
+        img = np.zeros((480, 640, 3), dtype=np.uint8)
+        img[:] = (50, 50, 50)
+        cv2.putText(img, "CAMERA OFFLINE", (150, 240), 0, 1.5, (255, 255, 255), 3)
+        cv2.putText(img, "Robot Backend (8002) not running", (100, 280), 0, 0.8, (200, 200, 200), 2)
+        _, buffer = cv2.imencode('.jpg', img)
+        from fastapi.responses import Response
+        return Response(content=buffer.tobytes(), media_type="image/jpeg")
+    except Exception:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(content={"error": "Camera service unavailable"}, status_code=503)
 
 
 @app.get("/product/status")
@@ -1059,6 +1103,27 @@ def evolution_approve(body: EvolutionApproveBody):
     return {"ok": False, "error": "Pendiente no encontrado"}
 
 
+@app.post("/api/evolution/trigger", tags=["Evolution"])
+def evolution_trigger():
+    """Fuerza la ejecución de un ciclo de la Tríada (PyPI | GitHub | Hugging Face) en segundo plano. No espera a que termine."""
+    import subprocess
+    import sys
+    daemon_script = BASE_DIR / "evolution_daemon.py"
+    if not daemon_script.exists():
+        return {"ok": False, "error": "evolution_daemon.py no encontrado", "triggered": False}
+    try:
+        subprocess.Popen(
+            [sys.executable, str(daemon_script), "--run-once"],
+            cwd=str(BASE_DIR),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=(subprocess.CREATE_NO_WINDOW if (sys.platform == "win32" and hasattr(subprocess, "CREATE_NO_WINDOW")) else 0),
+        )
+        return {"ok": True, "triggered": True, "message": "Ciclo Tríada (PyPI/GitHub/HF) iniciado en segundo plano. Ver /api/evolution/status y logs/evolution_last_cycle.json"}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "triggered": False}
+
+
 # --- LLM híbrido (router + Ollama) ---
 from modules.llm.schemas import LLMRequest, LLMResponse
 from modules.llm.service import LLMService
@@ -1152,11 +1217,12 @@ def mode_capabilities():
 class CursorRunBody(BaseModel):
     goal: str
     mode: Optional[str] = "plan_only"  # plan_only | controlled | auto
-    depth: Optional[int] = 1  # 1-5
+    depth: Optional[int] = 1  # 1-5 (overridden by resources if present)
     prefer_free: Optional[bool] = True
     allow_paid: Optional[bool] = False
     profile: Optional[str] = "owner"  # owner | operario | contadora
     context: Optional[dict] = None
+    resources: Optional[str] = None  # lite | pro | ultra -> depth 1/2/3
 
 
 @app.post("/cursor/run", tags=["Cursor"])
@@ -1173,6 +1239,7 @@ def cursor_run_endpoint(body: CursorRunBody):
             prefer_free=body.prefer_free if body.prefer_free is not None else True,
             allow_paid=body.allow_paid if body.allow_paid is not None else False,
             profile=body.profile or "owner",
+            resources=body.resources,
         )
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(result.get("ok", False), result.get("data"), ms, result.get("error"))
@@ -1213,6 +1280,250 @@ def cursor_status_endpoint():
         return get_cursor_status()
     except Exception as e:
         return {"ok": False, "data": None, "message": str(e)}
+
+
+class RepoPushBody(BaseModel):
+    """Solicitud de push de repo (esta u otra app). Desde Cursor o chat."""
+    app_id: Optional[str] = None   # atlas_push | atlas_nexus | robot | ...
+    repo_path: Optional[str] = None  # ruta absoluta si no usa known_apps
+    message: Optional[str] = None    # mensaje de commit
+
+
+@app.post("/api/repo/push", tags=["Cursor", "Repo"])
+def api_repo_push(body: RepoPushBody):
+    """Sube el repo de esta app o de otra (app_id o repo_path). Usado por Cursor y por chat."""
+    t0 = time.perf_counter()
+    try:
+        from modules.repo_push import push_repo, resolve_path, list_known_apps
+        repo = resolve_path(app_id=body.app_id, repo_path=body.repo_path)
+        msg = (body.message or "").strip() or "chore: sync (solicitado por Cursor/chat)"
+        result = push_repo(repo_path=repo, message=msg)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {
+            "ok": result.get("ok", False),
+            "data": {"message": result.get("message"), "branch": result.get("branch"), "pushed": result.get("pushed")},
+            "ms": ms,
+            "error": result.get("error"),
+        }
+    except Exception as e:
+        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+
+
+@app.get("/api/repo/apps", tags=["Repo"])
+def api_repo_apps():
+    """Lista apps conocidas (known_apps) para push desde Cursor/chat."""
+    try:
+        from modules.repo_push import list_known_apps
+        return {"ok": True, "data": list_known_apps()}
+    except Exception as e:
+        return {"ok": False, "data": {}, "error": str(e)}
+
+
+# --- Aprendizaje progresivo ATLAS (continual learning) ---
+_learning_components: Optional[dict] = None
+
+
+def _get_semantic_memory_safe():
+    """Semantic memory o stub si falla (p. ej. sin sentence_transformers)."""
+    try:
+        from modules.humanoid.memory_engine.semantic_memory import get_semantic_memory
+        return get_semantic_memory()
+    except Exception:
+        class _StubSemanticMemory:
+            def add_experience(self, *args, **kwargs): return 0
+            def recall_similar(self, *args, **kwargs): return []
+            def get_statistics(self): return {"total_experiences": 0, "storage_size_mb": 0}
+        return _StubSemanticMemory()
+
+
+def _get_learning_components():
+    """Inicialización perezosa del sistema de aprendizaje continuo."""
+    global _learning_components
+    if _learning_components is not None:
+        return _learning_components
+    import sys
+    if str(BASE_DIR) not in sys.path:
+        sys.path.insert(0, str(BASE_DIR))
+    try:
+        from brain.knowledge.initial_knowledge import InitialKnowledgeBase
+        from brain.learning.uncertainty_detector import UncertaintyDetector
+        from brain.learning.ai_consultant import AIConsultant
+        from brain.learning.knowledge_consolidator import KnowledgeConsolidator
+        from brain.learning.continual_learning_loop import ContinualLearningLoop
+        kb = InitialKnowledgeBase()
+        uncertainty_detector = UncertaintyDetector(uncertainty_threshold=0.6)
+        ai_consultant = AIConsultant()
+        semantic_memory = _get_semantic_memory_safe()
+        episodic_memory = None
+        try:
+            from brain.learning.episodic_memory import EpisodicMemory
+            episodic_memory = EpisodicMemory()
+        except Exception:
+            pass
+        consolidator = KnowledgeConsolidator(
+            semantic_memory=semantic_memory,
+            episodic_memory=episodic_memory,
+            knowledge_base=kb,
+        )
+        learning_loop = ContinualLearningLoop(
+            knowledge_base=kb,
+            uncertainty_detector=uncertainty_detector,
+            ai_consultant=ai_consultant,
+            semantic_memory=semantic_memory,
+            episodic_memory=episodic_memory,
+            consolidator=consolidator,
+            action_executor=None,
+        )
+        _learning_components = {
+            "kb": kb,
+            "uncertainty_detector": uncertainty_detector,
+            "ai_consultant": ai_consultant,
+            "semantic_memory": semantic_memory,
+            "episodic_memory": episodic_memory,
+            "consolidator": consolidator,
+            "learning_loop": learning_loop,
+        }
+        return _learning_components
+    except Exception as e:
+        _learning_components = {"error": str(e)}
+        return _learning_components
+
+
+class ProcessSituationBody(BaseModel):
+    description: str = ""
+    type: Optional[str] = None
+    goal: Optional[str] = None
+    entities: Optional[List[str]] = None
+    constraints: Optional[List[str]] = None
+
+
+@app.post("/api/learning/process-situation", tags=["Learning"])
+async def process_situation_with_learning(body: ProcessSituationBody):
+    """Procesar situación con aprendizaje continuo: percibe, razona, actúa, aprende, consolida."""
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    situation = body.model_dump(exclude_none=True)
+    if not situation.get("description"):
+        situation["description"] = body.description or (body.goal or "unknown")
+    result = await comp["learning_loop"].process_situation(situation)
+    return {"ok": True, "data": result}
+
+
+@app.get("/api/learning/knowledge-base", tags=["Learning"])
+def get_learning_knowledge_base():
+    """Ver conocimiento actual del robot (conceptos, skills, reglas)."""
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    kb = comp["kb"]
+    return {
+        "ok": True,
+        "data": {
+            "concepts": kb.concepts,
+            "skills": kb.skills,
+            "rules": kb.rules,
+            "total_concepts": len(kb.concepts),
+            "total_skills": len(kb.skills),
+        },
+    }
+
+
+@app.post("/api/learning/consolidate", tags=["Learning"])
+async def trigger_learning_consolidation():
+    """Forzar consolidación de conocimiento."""
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    report = comp["consolidator"].consolidate_knowledge()
+    from datetime import datetime
+    return {"ok": True, "status": "consolidated", "report": report, "timestamp": datetime.now().isoformat()}
+
+
+@app.get("/api/learning/uncertainty-status", tags=["Learning"])
+def get_learning_uncertainty_status():
+    """Estado del detector de incertidumbre (umbral, fallos, estadísticas)."""
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    ud = comp["uncertainty_detector"]
+    total = sum(len(f) for f in ud.failure_memory.values())
+    data = {
+        "threshold": ud.uncertainty_threshold,
+        "failure_memory": dict(ud.failure_memory),
+        "total_failures_tracked": total,
+    }
+    if getattr(ud, "get_statistics", None):
+        try:
+            data["statistics"] = ud.get_statistics()
+        except Exception:
+            pass
+    return {"ok": True, "data": data}
+
+
+class TeachConceptBody(BaseModel):
+    concept_name: str
+    definition: str
+    properties: Optional[List[str]] = None
+    examples: Optional[List[str]] = None
+
+
+@app.post("/api/learning/teach-concept", tags=["Learning"])
+async def teach_new_concept(body: TeachConceptBody):
+    """Enseñar nuevo concepto al robot (humano en el loop)."""
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    kb = comp["kb"]
+    sem = comp["semantic_memory"]
+    kb.add_learned_concept(
+        name=body.concept_name,
+        definition=body.definition,
+        concept_type="learned",
+        properties=body.properties,
+        examples=body.examples,
+        confidence=1.0,
+        source="human_taught",
+    )
+    if getattr(sem, "add_experience", None):
+        try:
+            sem.add_experience(
+                description="Concept: %s - %s" % (body.concept_name, body.definition),
+                context=str(body.properties),
+                tags=["concept", "human_taught", body.concept_name],
+            )
+        except Exception:
+            pass
+    return {"ok": True, "status": "concept_taught", "concept": body.concept_name, "total_concepts": len(kb.concepts)}
+
+
+@app.get("/api/learning/growth-metrics", tags=["Learning"])
+def get_learning_growth_metrics():
+    """Métricas de crecimiento del conocimiento (inteligencia creciente)."""
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    kb = comp["kb"]
+    sem = comp["semantic_memory"]
+    loop = comp["learning_loop"]
+    ud = comp["uncertainty_detector"]
+    stats = getattr(sem, "get_statistics", lambda: {})() or {}
+    total_failures = sum(len(f) for f in ud.failure_memory.values())
+    ep_stats = {}
+    if comp.get("episodic_memory") and getattr(comp["episodic_memory"], "get_statistics", None):
+        try:
+            ep_stats = comp["episodic_memory"].get_statistics()
+        except Exception:
+            pass
+    return {
+        "ok": True,
+        "data": {
+            "knowledge_base": {"concepts": len(kb.concepts), "skills": len(kb.skills), "rules": len(kb.rules)},
+            "memory": {"total_experiences": stats.get("total_experiences", 0), "storage_mb": stats.get("storage_size_mb", 0)},
+            "episodic_memory": ep_stats,
+            "learning": {"total_experiences_processed": loop.experience_counter, "times_failures_tracked": total_failures},
+        },
+    }
 
 
 # --- Humanoid (kernel + modules) ---
