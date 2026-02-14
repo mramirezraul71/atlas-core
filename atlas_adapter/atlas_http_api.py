@@ -194,6 +194,19 @@ async def _lifespan(app):
     except Exception as e:
         import logging
         logging.getLogger(__name__).debug("ATLAS AUTONOMOUS background tasks no iniciados: %s", e)
+    # Actualización periódica de métricas Prometheus (memoria, etc.)
+    try:
+        from modules.observability.metrics import update_system_metrics
+        async def _metrics_loop():
+            while True:
+                await asyncio.sleep(10)
+                try:
+                    update_system_metrics()
+                except Exception:
+                    pass
+        asyncio.create_task(_metrics_loop())
+    except Exception:
+        pass
     yield
 
 
@@ -212,6 +225,12 @@ app = FastAPI(
 # Metrics middleware: request count + latency per path
 from modules.humanoid.metrics import MetricsMiddleware
 app.add_middleware(MetricsMiddleware)
+# Observabilidad Prometheus (request count, duration, active)
+try:
+    from modules.observability.middleware import ObservabilityMiddleware
+    app.add_middleware(ObservabilityMiddleware)
+except Exception:
+    pass
 
 class Step(BaseModel):
     tool: str
@@ -413,6 +432,272 @@ def api_world_model_simulate():
         }
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# ---------- Fase 4: Meta-Learning (MAML) ----------
+_maml_instance = None
+
+
+class MetaAdaptBody(BaseModel):
+    """Body para POST /api/meta-learning/adapt."""
+    demonstrations: List[dict] = []
+    num_steps: int = 5
+
+
+def _get_maml():
+    """Lazy singleton MAML (requiere torch)."""
+    global _maml_instance
+    if _maml_instance is not None:
+        return _maml_instance
+    try:
+        from autonomous.learning.meta_learning.maml import MAML
+        if MAML is None:
+            return None
+        _maml_instance = MAML(state_dim=128, action_dim=64, meta_lr=1e-3, inner_lr=1e-2, inner_steps=5)
+        return _maml_instance
+    except Exception:
+        return None
+
+
+@app.post("/api/meta-learning/train", tags=["MetaLearning"])
+def api_meta_learning_train(num_tasks: int = 8, num_steps: int = 100):
+    """Meta-entrenar MAML sobre distribución de tareas."""
+    maml = _get_maml()
+    if maml is None:
+        return {"status": "error", "error": "MAML no disponible (PyTorch requerido)"}
+    try:
+        import numpy as np
+        results = []
+        for step in range(num_steps):
+            metrics = maml.meta_train_step(num_tasks=num_tasks)
+            if "error" in metrics:
+                return {"status": "error", "error": metrics["error"]}
+            if step % 10 == 0:
+                results.append({"step": step, "meta_loss": metrics["meta_loss"], "avg_task_loss": metrics["avg_task_loss"]})
+        snap_dir = BASE_DIR / "snapshots"
+        snap_dir.mkdir(parents=True, exist_ok=True)
+        maml.save_checkpoint(str(snap_dir / "maml_checkpoint.pt"))
+        return {
+            "status": "meta_training_complete",
+            "steps": num_steps,
+            "final_loss": results[-1]["meta_loss"] if results else 0,
+            "training_curve": results,
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/api/meta-learning/adapt", tags=["MetaLearning"])
+def api_meta_learning_adapt(body: MetaAdaptBody):
+    """Adaptar a nueva tarea con pocas demostraciones (few-shot)."""
+    maml = _get_maml()
+    if maml is None:
+        return {"status": "error", "error": "MAML no disponible (PyTorch requerido)"}
+    demonstrations = body.demonstrations or []
+    num_steps = body.num_steps or 5
+    try:
+        import numpy as np
+        demo_tuples = [
+            (np.array(d.get("state", [])), np.array(d.get("action", [])), float(d.get("reward", 0)))
+            for d in demonstrations
+        ]
+        adapted_policy = maml.adapt_to_new_task(demo_tuples, num_adaptation_steps=num_steps)
+        snap_dir = BASE_DIR / "snapshots"
+        snap_dir.mkdir(parents=True, exist_ok=True)
+        import torch
+        torch.save(adapted_policy.state_dict(), str(snap_dir / "adapted_policy.pt"))
+        return {
+            "status": "adapted",
+            "num_demonstrations": len(demonstrations),
+            "adaptation_steps": num_steps,
+            "policy_path": "snapshots/adapted_policy.pt",
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.get("/api/meta-learning/stats", tags=["MetaLearning"])
+def api_meta_learning_stats():
+    """Estadísticas de meta-learning."""
+    maml = _get_maml()
+    if maml is None:
+        return {"num_tasks_in_buffer": 0, "error": "MAML no disponible"}
+    return {
+        "num_tasks_in_buffer": len(maml.task_buffer),
+        "policy_parameters": sum(p.numel() for p in maml.policy.parameters()),
+        "inner_lr": maml.inner_lr,
+        "inner_steps": maml.inner_steps,
+    }
+
+
+@app.post("/api/meta-learning/generate-tasks", tags=["MetaLearning"])
+def api_meta_learning_generate_tasks(task_type: str = "navigation", num_tasks: int = 50):
+    """Generar tareas sintéticas para meta-entrenamiento."""
+    maml = _get_maml()
+    if maml is None:
+        return {"status": "error", "error": "MAML no disponible (PyTorch requerido)"}
+    try:
+        from autonomous.learning.meta_learning.task_generator import TaskGenerator
+        if task_type == "navigation":
+            tasks = TaskGenerator.generate_navigation_tasks(num_tasks)
+        elif task_type == "manipulation":
+            tasks = TaskGenerator.generate_manipulation_tasks(num_tasks)
+        else:
+            return {"error": f"Unknown task type: {task_type}"}
+        for task in tasks:
+            maml.add_task(task)
+        return {
+            "status": "tasks_generated",
+            "task_type": task_type,
+            "num_tasks": num_tasks,
+            "total_in_buffer": len(maml.task_buffer),
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+# ---------- Fase 4: Causal Reasoning ----------
+_causal_reasoner = None
+
+
+def _get_causal_reasoner():
+    global _causal_reasoner
+    if _causal_reasoner is not None:
+        return _causal_reasoner
+    try:
+        from brain.reasoning.causal_model import CausalReasoner
+        _causal_reasoner = CausalReasoner()
+        return _causal_reasoner
+    except Exception:
+        return None
+
+
+@app.post("/api/causal/create-domain", tags=["Causal"])
+def api_causal_create_domain(domain_name: str, structure: dict):
+    """Crear grafo causal para un dominio."""
+    reasoner = _get_causal_reasoner()
+    if reasoner is None:
+        return {"error": "CausalReasoner no disponible (networkx requerido)"}
+    try:
+        graph = reasoner.create_domain(domain_name, structure)
+        return {
+            "domain": domain_name,
+            "variables": structure.get("variables", []),
+            "num_edges": len(structure.get("edges", [])),
+            "graph": graph.visualize(),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/api/causal/reason", tags=["Causal"])
+def api_causal_reason(domain: str, action: str, current_state: dict):
+    """Razonar consecuencias de una acción."""
+    reasoner = _get_causal_reasoner()
+    if reasoner is None:
+        return {"error": "CausalReasoner no disponible"}
+    return reasoner.reason_about_action(domain, action, current_state or {})
+
+
+@app.post("/api/causal/explain", tags=["Causal"])
+def api_causal_explain(domain: str, effect: str, potential_causes: List[str]):
+    """Explicar por qué ocurrió effect dados potential_causes."""
+    reasoner = _get_causal_reasoner()
+    if reasoner is None:
+        return {"error": "CausalReasoner no disponible", "explanation": ""}
+    explanation = reasoner.explain_why(domain, effect, potential_causes or [])
+    return {"explanation": explanation}
+
+
+@app.post("/api/causal/counterfactual", tags=["Causal"])
+def api_causal_counterfactual(domain: str, variable: str, value: float, reality: dict):
+    """Razonamiento contrafáctico: qué si variable hubiera sido value."""
+    reasoner = _get_causal_reasoner()
+    if reasoner is None:
+        return {"error": "CausalReasoner no disponible"}
+    if domain not in reasoner.graphs:
+        return {"error": f"Unknown domain: {domain}"}
+    result = reasoner.graphs[domain].counterfactual(variable, value, reality or {})
+    return result
+
+
+# ---------- Fase 4.3: Self-Programming ----------
+class SelfProgramValidateBody(BaseModel):
+    """Body para POST /api/self-programming/validate."""
+    code: str = ""
+    function_name: str = "run"
+    test_cases: List[dict] = []
+
+
+class SelfProgramOptimizeBody(BaseModel):
+    code: str = ""
+
+
+class SelfProgramExecuteBody(BaseModel):
+    code: str = ""
+    function_name: str = "run"
+    test_input: dict = {}
+
+
+_skill_validator = None
+_skill_optimizer = None
+
+
+def _get_skill_validator():
+    global _skill_validator
+    if _skill_validator is None:
+        try:
+            from brain.self_programming.skill_sandbox import SkillValidator
+            _skill_validator = SkillValidator()
+        except Exception:
+            pass
+    return _skill_validator
+
+
+def _get_skill_optimizer():
+    global _skill_optimizer
+    if _skill_optimizer is None:
+        try:
+            from brain.self_programming.skill_optimizer import SkillOptimizer
+            _skill_optimizer = SkillOptimizer()
+        except Exception:
+            pass
+    return _skill_optimizer
+
+
+@app.post("/api/self-programming/validate", tags=["SelfProgramming"])
+def api_self_programming_validate(body: SelfProgramValidateBody):
+    """Valida skill: sintaxis, seguridad, tests en sandbox."""
+    validator = _get_skill_validator()
+    if validator is None:
+        return {"overall_valid": False, "error": "SkillValidator no disponible"}
+    return validator.validate_comprehensive(
+        body.code, body.function_name, body.test_cases or []
+    )
+
+
+@app.post("/api/self-programming/optimize", tags=["SelfProgramming"])
+def api_self_programming_optimize(body: SelfProgramOptimizeBody):
+    """Optimiza código generado (errores, type hints, docstrings)."""
+    optimizer = _get_skill_optimizer()
+    if optimizer is None:
+        return {"error": "SkillOptimizer no disponible"}
+    return optimizer.optimize_code(body.code or "")
+
+
+@app.post("/api/self-programming/execute-sandbox", tags=["SelfProgramming"])
+def api_self_programming_execute_sandbox(body: SelfProgramExecuteBody):
+    """Ejecuta código en sandbox Docker."""
+    try:
+        from brain.self_programming.skill_sandbox import SkillSandbox
+        sandbox = SkillSandbox()
+        return sandbox.execute_safely(
+            body.code or "",
+            body.function_name or "run",
+            body.test_input or {},
+        )
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @app.get("/api/robot/status", tags=["NEXUS"])
@@ -1062,6 +1347,32 @@ from modules.humanoid.audit import get_audit_logger
 def metrics():
     """JSON metrics: counters and latencies per endpoint."""
     return get_metrics_store().snapshot()
+
+
+# Prometheus scrape endpoint (text/plain)
+@app.get("/metrics/prometheus", include_in_schema=False)
+def prometheus_metrics():
+    """Métricas en formato Prometheus para scraping."""
+    try:
+        from modules.observability.metrics import MetricsCollector
+        from fastapi.responses import Response
+        return Response(
+            content=MetricsCollector.get_prometheus_text(),
+            media_type="text/plain; charset=utf-8",
+        )
+    except Exception as e:
+        from fastapi.responses import Response
+        return Response(content=f"# error: {e}".encode(), media_type="text/plain", status_code=500)
+
+
+@app.get("/api/observability/metrics", tags=["Observability"])
+def api_observability_metrics():
+    """Resumen de métricas (requests, memoria, health score)."""
+    try:
+        from modules.observability.metrics import MetricsCollector
+        return MetricsCollector.get_metrics_summary()
+    except Exception as e:
+        return {"error": str(e), "total_requests": 0, "active_requests": 0, "memory_mb": 0}
 
 
 class PolicyTestBody(BaseModel):
