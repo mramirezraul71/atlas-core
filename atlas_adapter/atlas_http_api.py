@@ -39,9 +39,9 @@ _ensure_db_path("ATLAS_MEMORY_DB_PATH", "atlas_memory.sqlite")
 _ensure_db_path("MEMORY_DB_PATH", "atlas_memory.sqlite")
 _ensure_db_path("AUDIT_DB_PATH", "atlas_audit.sqlite")
 
-from typing import Optional
+from typing import List, Optional
 
-from fastapi import FastAPI, Request, Header, WebSocket
+from fastapi import FastAPI, Request, Header, WebSocket, File, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 import importlib.util
@@ -302,6 +302,115 @@ def cache_clear():
         from modules.nexus_heartbeat import clear_nexus_cache
         clear_nexus_cache()
         return {"ok": True, "message": "Cache servidor limpiado"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ---------- Semantic Memory (Fase 1 - Fundación Cognitiva) ----------
+@app.post("/api/memory/add", tags=["Memory"])
+def api_memory_add(
+    description: str,
+    context: Optional[str] = None,
+    outcome: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+):
+    """Añade una experiencia a la memoria semántica."""
+    try:
+        from modules.humanoid.memory_engine.semantic_memory import get_semantic_memory
+        exp_id = get_semantic_memory().add_experience(
+            description=description,
+            context=context,
+            outcome=outcome,
+            tags=tags,
+        )
+        return {"id": exp_id, "status": "stored"}
+    except Exception as e:
+        return {"id": None, "status": "error", "error": str(e)}
+
+
+@app.post("/api/memory/search", tags=["Memory"])
+def api_memory_search(
+    query: str,
+    top_k: int = 5,
+    min_similarity: float = 0.6,
+):
+    """Búsqueda por similaridad en memoria semántica."""
+    try:
+        from modules.humanoid.memory_engine.semantic_memory import get_semantic_memory
+        results = get_semantic_memory().recall_similar(
+            query, top_k=top_k, min_similarity=min_similarity
+        )
+        return {"results": results, "query": query}
+    except Exception as e:
+        return {"results": [], "query": query, "error": str(e)}
+
+
+@app.get("/api/memory/stats", tags=["Memory"])
+def api_memory_stats():
+    """Estadísticas de la memoria semántica."""
+    try:
+        from modules.humanoid.memory_engine.semantic_memory import get_semantic_memory
+        return get_semantic_memory().get_statistics()
+    except Exception as e:
+        return {"error": str(e), "total_experiences": 0, "embedding_dimension": 0, "storage_size_mb": 0}
+
+
+# ---------- Fase 2: Vision (depth + scene) ----------
+@app.post("/api/vision/depth/estimate", tags=["Vision"])
+async def api_vision_depth_estimate(file: UploadFile = File(..., description="Image file")):
+    """Estima mapa de profundidad desde imagen. Devuelve depth coloreado base64 y shape."""
+    try:
+        import numpy as np
+        import cv2
+        import base64
+        contents = await file.read()
+        arr = np.frombuffer(contents, dtype=np.uint8)
+        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if frame is None:
+            return {"ok": False, "error": "invalid image"}
+        from modules.humanoid.vision.depth_estimation import estimate_depth, depth_map_to_colored
+        depth = estimate_depth(frame)
+        colored = depth_map_to_colored(depth)
+        _, buf = cv2.imencode(".png", colored)
+        b64 = base64.b64encode(buf).decode("utf-8")
+        return {"ok": True, "depth_map_b64": b64, "shape": list(depth.shape), "dtype": str(depth.dtype)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/vision/scene/describe", tags=["Vision"])
+async def api_vision_scene_describe(file: UploadFile = File(..., description="Image file"), detail_level: str = "medium"):
+    """Descripción de escena desde imagen. detail_level: brief | medium | detailed."""
+    try:
+        import numpy as np
+        import cv2
+        from modules.humanoid.vision.scene_understanding import describe_scene
+        contents = await file.read()
+        arr = np.frombuffer(contents, dtype=np.uint8)
+        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if frame is None:
+            return {"ok": False, "error": "invalid image", "description": ""}
+        data = describe_scene(frame, detail_level=detail_level)
+        return {"ok": True, **data}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "description": ""}
+
+
+# ---------- Fase 1: World model (stub) ----------
+@app.post("/api/world-model/simulate", tags=["WorldModel"])
+def api_world_model_simulate():
+    """Simulación de acción en world model (stub). Fase 1.2 completo: PyBullet + MCTS."""
+    try:
+        # TODO: integrar physics_simulator.load_scene + simulate_action
+        return {
+            "ok": True,
+            "stub": True,
+            "final_state": {},
+            "collision_detected": False,
+            "objects_moved": [],
+            "success": True,
+            "message": "World model stub; implementar physics_simulator.py",
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

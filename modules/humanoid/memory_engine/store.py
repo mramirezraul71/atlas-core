@@ -94,6 +94,13 @@ def store_plan(goal: str, plan: Dict[str, Any], task_id: Optional[str] = None, t
     )
     conn.commit()
     _fts_insert(thread_id, task_id, "plan", goal + " " + json.dumps(plan)[:2000])
+    try:
+        from .semantic_memory import get_semantic_memory
+        sm = get_semantic_memory()
+        description = f"{goal} {json.dumps(plan)[:500]}"
+        sm.add_experience(description=description, context=thread_id, tags=["plan"])
+    except Exception:
+        pass
     return task_id
 
 
@@ -135,6 +142,17 @@ def store_decision(thread_id: Optional[str], task_id: Optional[str], decision_ty
     row = conn.execute("SELECT last_insert_rowid()").fetchone()
     _fts_insert(thread_id, task_id, "decision", decision_type + " " + json.dumps(payload)[:1000])
     return row[0] if row else 0
+
+
+def search_similar_plans(query: str, top_k: int = 5, min_similarity: float = 0.6) -> List[Dict[str, Any]]:
+    """Busca planes por similaridad semántica."""
+    try:
+        from .semantic_memory import get_semantic_memory
+        return get_semantic_memory().recall_similar(
+            query, top_k=top_k, min_similarity=min_similarity, tags_filter=["plan"]
+        )
+    except Exception:
+        return []
 
 
 def add_summary(thread_id: str, content: str) -> int:
