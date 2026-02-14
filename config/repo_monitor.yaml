@@ -1,0 +1,92 @@
+# ATLAS PUSH — Monitoreo y actualización automática del repositorio
+# TAREA ASIGNADA: A partir de ahora esta tarea es de este sistema. No dejar pendiente:
+#   - Monitoreo por ciclos (fetch, status, opcional pull).
+#   - Actualización tras arreglos (commit + push con filtros Git).
+#   - Acciones ante errores según on_error (reintentos, log, abort, reset_to_remote).
+# Uso: scripts/run_repo_monitor.ps1 -Cycle | -AfterFix | -StatusOnly
+
+repo:
+  path: null   # null = detectar desde script (raíz del repo)
+  remote: origin
+  branch: main
+  # Rama desde la que se hace push en modo after-fix (p. ej. intent-input-rename)
+  push_branch: null  # null = usar branch actual
+
+# Otras apps: cuando Cursor o el chat piden "sube el repo de X", se resuelve por app_id
+known_apps:
+  atlas_push: null          # null = raíz actual (ATLAS_PUSH)
+  atlas_nexus: "nexus/atlas_nexus"
+  robot: "nexus/atlas_nexus_robot"
+  # Añadir más: "mi_app": "C:/ruta/al/repo"
+
+# Filtros Git para monitoreo y commits automáticos
+git:
+  # Rutas que NUNCA se incluyen en status/commit automático (además de .gitignore)
+  exclude_paths:
+    - "*.env"
+    - ".env"
+    - "**/__pycache__/"
+    - "**/*.pyc"
+    - "logs/*.sqlite*"
+    - "snapshots/ans/*.md"
+    - "snapshots/ci/"
+    - "snapshots/ga/"
+    - "snapshots/metalearn/"
+    - "snapshots/support/"
+    - "snapshots/brain/"
+    - "snapshots/hands_eyes/"
+    - "temp_scripts/"
+    - "atlas_workspace/"
+    - "temp_vision/"
+    - ".venv/"
+    - "venv/"
+    - "pip/"
+  # En modo after-fix: solo considerar cambios en estas rutas para auto-commit (vacío = todas las no excluidas)
+  include_paths_for_commit: []  # ej: ["modules/", "atlas_adapter/", "config/*.yaml"]
+
+# Ciclos de monitoreo (fetch + status + opcional pull)
+cycle:
+  enabled: true
+  interval_seconds: 600   # 10 min (balance: no saturar remoto, detectar cambios a tiempo)
+  fetch_on_cycle: true
+  pull_on_cycle: false    # true = pull automático si hay actualización remota
+  report_only: true       # si true, solo reporta "update available" sin pull
+
+# Modo "después de arreglos" (--after-fix): commit + push de cambios filtrados
+after_fix:
+  enabled: true
+  default_message: "chore: auto-sync repo (monitor)"
+  allow_empty_commit: false
+
+# Comportamiento ante errores
+on_error:
+  fetch_fail:
+    retries: 3
+    delay_seconds: 5
+    then: log_and_continue  # log_and_continue | abort | reset_to_remote
+  pull_fail:
+    retries: 2
+    then: log_and_abort     # no reset automático para no perder trabajo local
+  push_fail:
+    retries: 3
+    delay_seconds: 10
+    then: log_and_abort
+  # Si se elige reset_to_remote en fetch_fail, se hace: git fetch && git reset --hard remote/branch
+  reset_branch: main
+
+# Bitácora ANS: todas las tareas del monitor se envían a la Bitácora (dashboard).
+bitacora:
+  enabled: true
+  dashboard_url: "http://127.0.0.1:8791"   # Base URL del PUSH (puerto por defecto)
+  timeout_seconds: 3
+
+# Logging
+logging:
+  file: "logs/repo_monitor.log"
+  level: INFO
+  max_bytes: 10485760   # 10 MB
+  backup_count: 3
+
+# Opcional: ejecutar después de un ciclo exitoso (comando externo)
+# post_cycle_ok: "python -c \"print('ok')\""
+# post_push_ok: null

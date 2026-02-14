@@ -123,6 +123,11 @@ async def _lifespan(app):
                 ensure_makeplay_jobs()
             except Exception:
                 pass
+            try:
+                from modules.humanoid.scheduler.repo_monitor_jobs import ensure_repo_monitor_jobs
+                ensure_repo_monitor_jobs()
+            except Exception:
+                pass
         # Heartbeat NEXUS: ping 8000/health, auto-reactivación con start_all.ps1, registro en Bitácora
         try:
             from modules.nexus_heartbeat import start_heartbeat, register_status_callback
