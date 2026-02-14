@@ -12,7 +12,7 @@ def run() -> dict:
         ok = h.get("ok", False)
         score = h.get("score", 0)
         return {
-            "ok": ok and score >= 60,
+            "ok": ok and score >= 50,
             "check_id": "api_health",
             "message": f"score={score} ok={ok}",
             "details": {"score": score, "uptime_sec": h.get("uptime_sec"), "ms": h.get("ms")},

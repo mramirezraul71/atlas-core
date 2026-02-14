@@ -26,15 +26,33 @@ def ans_incidents(status: Optional[str] = None, limit: int = 50):
         return {"ok": False, "data": [], "error": str(e)}
 
 
+@router.post("/resolve-incidents")
+def ans_resolve_incidents(check_id: Optional[str] = None):
+    """Resuelve todos los incidentes abiertos (stale). Opcional: check_id para solo ese check (ej. deps_health)."""
+    try:
+        from .incident import resolve_all_open
+        count = resolve_all_open(check_id=check_id)
+        return {"ok": True, "resolved": count}
+    except Exception as e:
+        return {"ok": False, "resolved": 0, "error": str(e)}
+
+
 @router.get("/bitacora")
-def ans_bitacora(limit: int = 30):
-    """Bitácora: problema → acción ejecutada → resultado."""
+def ans_bitacora(limit: int = 50):
+    """Bitácora: problema → acción ejecutada → resultado; incluye entradas EVOLUCIÓN. Sin duplicados por (check_id, problema)."""
     try:
         from .incident import get_incidents
-        items = get_incidents(status=None, limit=limit * 2)
+        from .evolution_bitacora import get_evolution_entries
+        items = get_incidents(status=None, limit=limit * 3)
+        seen_key: set = set()
         entries = []
-        for inc in items[:limit]:
-            prob = inc.get("message", inc.get("check_id", "?"))
+        for inc in items:
+            prob = (inc.get("message") or inc.get("check_id") or "?")[:120]
+            cid = inc.get("check_id") or ""
+            key = (cid, prob)
+            if key in seen_key:
+                continue
+            seen_key.add(key)
             actions = inc.get("actions_taken", [])
             if actions:
                 for a in actions:
@@ -42,22 +60,55 @@ def ans_bitacora(limit: int = 30):
                     res = "OK" if a.get("ok") else "Error"
                     entries.append({
                         "timestamp": inc.get("created_at"),
-                        "problema": prob[:120],
+                        "problema": prob,
                         "accion": accion,
                         "resultado": res,
                         "detalle": (a.get("message") or "")[:100],
+                        "source": "incident",
                     })
             else:
                 entries.append({
                     "timestamp": inc.get("created_at"),
-                    "problema": prob[:120],
+                    "problema": prob,
                     "accion": "—",
                     "resultado": "pendiente" if inc.get("status") == "open" else "—",
                     "detalle": "",
+                    "source": "incident",
                 })
+        for ev in get_evolution_entries(limit=limit):
+            entries.append({
+                "timestamp": ev.get("timestamp", ""),
+                "problema": "Evolución",
+                "accion": "—",
+                "resultado": "OK" if ev.get("ok", True) else "Error",
+                "detalle": (ev.get("message") or "")[:200],
+                "source": "evolution",
+            })
+        entries.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
         return {"ok": True, "data": entries[:limit]}
     except Exception as e:
         return {"ok": False, "data": [], "error": str(e)}
+
+
+class EvolutionLogBody(BaseModel):
+    message: str = ""
+    ok: Optional[bool] = True
+
+
+@router.post("/evolution-log")
+def ans_evolution_log(body: EvolutionLogBody):
+    """Registro industrial: el daemon ATLAS_EVOLUTION envía cada paso a la Bitácora ANS (sin silencio operativo)."""
+    try:
+        from .evolution_bitacora import append_evolution_log
+        from .live_stream import emit
+        msg = (body.message or "").strip()
+        ok = body.ok if body.ok is not None else True
+        if msg:
+            append_evolution_log(msg, ok=ok)
+            emit("evolution_log", message=msg, ok=ok)
+        return {"ok": True, "logged": bool(msg)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @router.get("/report/latest")

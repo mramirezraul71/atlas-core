@@ -1,0 +1,14 @@
+2026-02-13 23:23:09 [atlas.evolution] INFO Visión: Tesseract no configurado o no encontrado
+2026-02-13 23:23:09 [atlas.evolution] INFO ATLAS_EVOLUTION Daemon — Cerebro: Carga de Energía + Visión Activa | Sandbox: C:\ATLAS_PUSH\temp_growth
+2026-02-13 23:23:09 [atlas.evolution] INFO Credenciales cargadas desde C:\dev\credenciales.txt
+2026-02-13 23:23:09 [atlas.evolution] INFO [Inicio] PyPI: PyPI OK (requests 2.32.5)
+2026-02-13 23:23:09 [atlas.evolution] INFO [Inicio] GitHub: GitHub OK (usuario mramirezraul71)
+2026-02-13 23:23:09 [atlas.evolution] INFO [Inicio] Hugging Face: Hugging Face OK
+2026-02-13 23:23:09 [atlas.evolution] INFO Ciclo de Crecimiento cada 43200 s (12 h). Workers: PyPI | GitHub | Hugging Face
+2026-02-13 23:23:09 [atlas.evolution] INFO ATLAS_EVOLUTION daemon iniciado — ciclo cada 43200s (12.0h)
+2026-02-13 23:23:09 [atlas.evolution] INFO Tríada de Crecimiento: PyPI | GitHub | Hugging Face
+2026-02-13 23:23:12 [atlas.evolution] INFO [GitHub] mramirezraul71/Rauli_Core tag= commits=0 tools=[]
+2026-02-13 23:23:13 [atlas.evolution] INFO [HF] robbyant/lingbot-vla-4b (query=VLA) hash=e592cffcc13e1416
+2026-02-13 23:23:15 [atlas.evolution] INFO [HF] VladKobranov/splats (query=VLA) hash=d28a2688f27f33ff
+2026-02-13 23:23:17 [atlas.evolution] INFO [HF] OpenGalaxea/G0-VLA (query=VLA) hash=43f237a6eea24e62
+2026-02-13 23:23:19 [atlas.evolution] INFO Próximo ciclo (Tríada de Crecimiento) en 43200s

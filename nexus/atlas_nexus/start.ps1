@@ -11,12 +11,15 @@ if (Test-Path $freePort) { & $freePort -Kill | Out-Null }
 
 Write-Host "🚀 Starting ATLAS NEXUS..." -ForegroundColor Cyan
 
-# Activate venv
+# Activate venv si existe; si no, usar Python del sistema (arranque sin venv permitido)
+$pythonExe = $null
 if (Test-Path "venv\Scripts\Activate.ps1") {
     & "venv\Scripts\Activate.ps1"
-} else {
-    Write-Host "✗ Virtual environment not found. Run install.ps1 first." -ForegroundColor Red
-    exit 1
+    $pythonExe = Join-Path $PSScriptRoot "venv\Scripts\python.exe"
+}
+if (-not $pythonExe -or -not (Test-Path $pythonExe)) {
+    $pythonExe = "python"
+    Write-Host "⚠ Sin venv; usando Python del sistema. Para venv: Run install.ps1" -ForegroundColor Yellow
 }
 
 # Check config
@@ -26,10 +29,6 @@ if (-Not (Test-Path "config\.env")) {
         Copy-Item ".env.example" "config\.env"
     }
 }
-
-# Start ATLAS (usar Python del venv por ruta para evitar PATH del sistema)
-$pythonExe = Join-Path $PSScriptRoot "venv\Scripts\python.exe"
-if (-not (Test-Path $pythonExe)) { $pythonExe = "python" }
 
 Write-Host "Mode: $mode" -ForegroundColor Green
 Write-Host "API: http://localhost:8000" -ForegroundColor Green

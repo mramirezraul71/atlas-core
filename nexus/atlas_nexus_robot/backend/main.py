@@ -728,21 +728,21 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Evento de shutdown"""
-    logger.info("🛑 ATLAS NEXUS Robot Backend shutting down...")
+    logger.info("ATLAS NEXUS Robot Backend shutting down...")
 
 if __name__ == "__main__":
-    print("🤖 ATLAS NEXUS Robot Backend - Starting API Server...")
-    print("="*60)
-    print("📡 API will be available at: http://localhost:8002")
-    print("📚 Documentation: http://localhost:8002/docs")
-    print("🔌 WebSocket: ws://localhost:8002/ws")
-    print("="*60)
-    
-    # Iniciar servidor
+    # Prints sin emojis para evitar UnicodeEncodeError en Windows (cp1252)
+    print("ATLAS NEXUS Robot Backend - Starting API Server...")
+    print("=" * 60)
+    print("API: http://localhost:8002")
+    print("Docs: http://localhost:8002/docs")
+    print("WebSocket: ws://localhost:8002/ws")
+    print("=" * 60)
+
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=8002,
-        reload=True,
+        reload=False,
         log_level="info"
     )

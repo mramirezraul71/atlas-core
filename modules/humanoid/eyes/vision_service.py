@@ -10,6 +10,8 @@ class VisionService:
     def __init__(self) -> None:
         self._ocr_available = False
         try:
+            from modules.humanoid.screen.tesseract_config import set_tesseract_cmd
+            set_tesseract_cmd()
             import pytesseract  # noqa: F401
             self._ocr_available = True
         except ImportError:
@@ -19,6 +21,8 @@ class VisionService:
         if not self._ocr_available:
             return {"ok": False, "text": "", "error": "pytesseract not installed"}
         try:
+            from modules.humanoid.screen.tesseract_config import set_tesseract_cmd
+            set_tesseract_cmd()
             import pytesseract
             from PIL import Image
             text = pytesseract.image_to_string(Image.open(image_path))

@@ -96,6 +96,8 @@ def _playwright_ok() -> bool:
 
 def _tesseract_ok() -> bool:
     try:
+        from modules.humanoid.screen.tesseract_config import set_tesseract_cmd
+        set_tesseract_cmd()
         import pytesseract
         pytesseract.get_tesseract_version()
         return True

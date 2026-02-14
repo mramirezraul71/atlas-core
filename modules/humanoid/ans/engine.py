@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-SAFE_HEALS = {"clear_stale_locks", "restart_scheduler", "fallback_models", "tune_router", "rotate_logs", "retry_gateway_bootstrap", "mark_node_offline", "regenerate_support_bundle", "install_optional_deps"}
+SAFE_HEALS = {"clear_stale_locks", "restart_scheduler", "fallback_models", "tune_router", "rotate_logs", "retry_gateway_bootstrap", "mark_node_offline", "regenerate_support_bundle", "install_optional_deps", "install_tesseract"}
 
 # Mapeo check→heal por defecto cuando suggested_heals está vacío (evita "0 actions" con issues)
 CHECK_DEFAULT_HEALS: Dict[str, List[str]] = {
@@ -139,6 +139,17 @@ def _run_full(timeout_sec: int) -> Dict[str, Any]:
                 evidence = capture_evidence(cid, r.get("details", {}))
                 inc_id = create_incident(cid, fp, r.get("severity", "med"), r.get("message", ""), evidence, r.get("suggested_heals", []))
                 incidents_created.append(inc_id)
+                human_msg = (r.get("details") or {}).get("human_intervention_required")
+                if human_msg:
+                    try:
+                        from modules.humanoid.ans.live_stream import emit
+                        emit("alert", check_id=cid, message=human_msg, details={"human_intervention": True})
+                    except Exception:
+                        pass
+                    try:
+                        notify_telegram(human_msg, "med")
+                    except Exception:
+                        pass
                 try:
                     from modules.humanoid.ans.live_stream import emit
                     emit("incident", check_id=cid, message=r.get("message", "")[:80], details={"inc_id": inc_id, "severity": r.get("severity")})
@@ -148,10 +159,11 @@ def _run_full(timeout_sec: int) -> Dict[str, Any]:
                 if not heals:
                     heals = [h for h in (CHECK_DEFAULT_HEALS.get(cid) or []) if h in SAFE_HEALS]
                 if not heals:
-                    add_action(inc_id, "(omitido)", False, "sin heal disponible para este check")
+                    omit_msg = human_msg or "sin heal disponible para este check"
+                    add_action(inc_id, "(omitido)", False, omit_msg)
                     try:
                         from modules.humanoid.ans.live_stream import emit
-                        emit("skip", check_id=cid, message="sin heal disponible")
+                        emit("skip", check_id=cid, message=omit_msg[:80])
                     except Exception:
                         pass
                 for heal_id in heals:

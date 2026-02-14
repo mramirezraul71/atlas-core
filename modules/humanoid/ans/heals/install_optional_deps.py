@@ -33,6 +33,8 @@ def run(**kwargs) -> dict:
         missing = check_all().get("missing_deps", [])
     except Exception:
         missing = []
+    if "tesseract" in missing:
+        return heal_result(False, "install_optional_deps", "Falta el binario Tesseract en el OS; no usar pip. Ejecutar heal install_tesseract (winget).", {"skip_pip": True})
     to_install = [p for p in missing if p in _WHITELIST and p not in ("tesseract", "ollama running")]
     if not to_install:
         return heal_result(True, "install_optional_deps", "nothing to install (tesseract/ollama are system deps)", {})

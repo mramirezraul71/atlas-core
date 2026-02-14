@@ -15,6 +15,8 @@ def run_ocr(image_bytes: Optional[bytes] = None, image_path: Optional[str] = Non
     if not _screen_deps_ok():
         return "", "screen_deps_missing"
     try:
+        from modules.humanoid.screen.tesseract_config import set_tesseract_cmd
+        set_tesseract_cmd()
         import pytesseract
         from PIL import Image
         if image_bytes:

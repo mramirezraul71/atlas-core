@@ -18,6 +18,9 @@ venv/
 ENV/
 env/
 
+# Pip cache (local)
+pip/
+
 # Python bytecode
 __pycache__/
 *.pyc
@@ -42,6 +45,7 @@ snapshots/metalearn/
 snapshots/support/
 snapshots/brain/
 snapshots/hands_eyes/
+snapshots/ans/
 
 # Scripts generados por CoderAgent / AtlasCoder (sandbox)
 temp_scripts/

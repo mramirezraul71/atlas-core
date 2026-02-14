@@ -25,20 +25,75 @@ def check_ollama() -> Dict[str, Any]:
         return {"module": "ollama", "available": False, "missing_deps": ["ollama running"], "error": str(e), "suggested": "Start Ollama: ollama serve"}
 
 
+def _tesseract_exe_path() -> str:
+    import os
+    return os.getenv("TESSERACT_CMD") or r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+
+def _tesseract_find_binary() -> str:
+    """Devuelve la primera ruta donde exista el binario Tesseract (env, Program Files, PATH). Evita bucle en Bitácora."""
+    import os
+    from pathlib import Path
+    import shutil
+    candidates = []
+    env_path = os.getenv("TESSERACT_CMD")
+    if env_path:
+        candidates.append(env_path)
+    candidates.append(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+    candidates.append(r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe")
+    try:
+        which = shutil.which("tesseract")
+        if which:
+            candidates.append(which)
+    except Exception:
+        pass
+    for p in candidates:
+        if p and Path(p).exists():
+            return p
+    return ""
+
+
+def _tesseract_binary_exists() -> bool:
+    return bool(_tesseract_find_binary())
+
+
+def _set_tesseract_cmd() -> None:
+    import sys
+    if sys.platform != "win32":
+        return
+    try:
+        import pytesseract
+        path = _tesseract_find_binary() or _tesseract_exe_path()
+        pytesseract.pytesseract.tesseract_cmd = path
+    except Exception:
+        pass
+
+
 def check_vision() -> Dict[str, Any]:
-    """Vision deps: pillow, pytesseract (+ tesseract binary). Spec: tesseract, vision deps."""
+    """Vision deps: pillow, pytesseract (+ tesseract binary). Distingue pip vs binario."""
     missing = []
     try:
         from PIL import Image
     except ImportError:
         missing.append("pillow")
+    _set_tesseract_cmd()
     try:
         import pytesseract
+    except ImportError:
+        missing.append("pytesseract")
+        return {"module": "vision", "available": False, "missing_deps": missing, "suggested": "pip install pillow pytesseract"}
+    try:
         pytesseract.get_tesseract_version()
     except Exception:
-        missing.append("pytesseract")
-        missing.append("tesseract")
-    return {"module": "vision", "available": len(missing) == 0, "missing_deps": missing, "suggested": "pip install pillow pytesseract; install Tesseract binary" if missing else ""}
+        if _tesseract_binary_exists():
+            _set_tesseract_cmd()
+            try:
+                pytesseract.get_tesseract_version()
+            except Exception:
+                pass
+        if not _tesseract_binary_exists():
+            missing.append("tesseract")
+    return {"module": "vision", "available": len(missing) == 0, "missing_deps": missing, "suggested": "pip install pillow pytesseract; install Tesseract OCR en el OS" if missing else ""}
 
 
 def check_playwright() -> Dict[str, Any]:
@@ -88,12 +143,25 @@ def check_screen() -> Dict[str, Any]:
         from PIL import Image
     except ImportError:
         missing.append("pillow")
+    _set_tesseract_cmd()
     try:
         import pytesseract
-        pytesseract.get_tesseract_version()
-    except Exception:
+    except ImportError:
         missing.append("pytesseract")
-        missing.append("tesseract")
+        if not _tesseract_binary_exists():
+            missing.append("tesseract")
+    else:
+        try:
+            pytesseract.get_tesseract_version()
+        except Exception:
+            if _tesseract_binary_exists():
+                _set_tesseract_cmd()
+                try:
+                    pytesseract.get_tesseract_version()
+                except Exception:
+                    pass
+            if not _tesseract_binary_exists():
+                missing.append("tesseract")
     suggested = []
     if "mss" in missing or "pyautogui" in missing:
         suggested.append("pip install mss pyautogui")
@@ -101,8 +169,10 @@ def check_screen() -> Dict[str, Any]:
         suggested.append("pip install pywinauto")
     if "pillow" in missing:
         suggested.append("pip install pillow")
-    if "pytesseract" in missing or "tesseract" in missing:
-        suggested.append("pip install pytesseract; install Tesseract binary")
+    if "pytesseract" in missing:
+        suggested.append("pip install pytesseract")
+    if "tesseract" in missing:
+        suggested.append("Instalar Tesseract OCR en el OS (no pip)")
     return {
         "module": "screen",
         "available": len(missing) == 0,

@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from . import api_health, scheduler_health, memory_health, audit_health, llm_health, deps_health, router_health
-from . import ui_health, deploy_health, gateway_health, cluster_health, disk_health, logs_health
+from . import ui_health, deploy_health, gateway_health, cluster_health, disk_health, logs_health, evolution_health
 from modules.humanoid.ans.registry import register_check
 
 
 def _register_all() -> None:
     register_check("api_health", api_health.run)
+    register_check("evolution_health", evolution_health.run)
     register_check("scheduler_health", scheduler_health.run)
     register_check("memory_health", memory_health.run)
     register_check("audit_health", audit_health.run)

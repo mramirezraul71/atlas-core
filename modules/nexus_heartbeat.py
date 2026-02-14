@@ -1,4 +1,6 @@
-"""Heartbeat NEXUS: ping constante a 127.0.0.1:8000/health. Auto-reactivación con start_all.ps1."""
+"""Heartbeat NEXUS: ping constante a 127.0.0.1:8000/health. Auto-reactivación con start_all.ps1.
+Integrado con ATLAS AUTONOMOUS: HealthAggregator, CircuitBreaker, HealingOrchestrator (opcional).
+"""
 from __future__ import annotations
 
 import logging
@@ -7,10 +9,46 @@ import subprocess
 import threading
 import time
 import urllib.request
+import urllib.error
 from pathlib import Path
 from typing import Callable, Optional
 
 logger = logging.getLogger("atlas.nexus_heartbeat")
+
+# ATLAS AUTONOMOUS: integración opcional (lazy init para no fallar si autonomous no está)
+_health_aggregator = None
+_metrics_aggregator = None
+_healing_orchestrator = None
+_circuit_breaker = None
+_autonomous_initialized: bool = False
+_last_nexus_success_time: float = 0
+
+
+def _get_autonomous() -> bool:
+    """Inicializa y devuelve True si módulos autonomous están disponibles."""
+    global _health_aggregator, _metrics_aggregator, _healing_orchestrator, _circuit_breaker, _autonomous_initialized
+    if _autonomous_initialized:
+        return _health_aggregator is not None
+    _autonomous_initialized = True
+    try:
+        import sys
+        base = Path(__file__).resolve().parent.parent
+        if str(base) not in sys.path:
+            sys.path.insert(0, str(base))
+        from autonomous.health_monitor.health_aggregator import HealthAggregator
+        from autonomous.telemetry.metrics_aggregator import MetricsAggregator
+        from autonomous.self_healing.circuit_breaker import CircuitBreaker
+        from autonomous.self_healing.healing_orchestrator import HealingOrchestrator
+        _health_aggregator = HealthAggregator()
+        _metrics_aggregator = MetricsAggregator()
+        _healing_orchestrator = HealingOrchestrator()
+        _circuit_breaker = CircuitBreaker.get("nexus_heartbeat", {"failure_threshold": 3, "timeout_seconds": 30})
+        logger.info("Heartbeat integrado con ATLAS AUTONOMOUS (Health, CircuitBreaker, Healing)")
+        return True
+    except Exception as e:
+        logger.debug("Autonomous no disponible para heartbeat: %s", e)
+        _health_aggregator = _metrics_aggregator = _healing_orchestrator = _circuit_breaker = None
+        return False
 
 NEXUS_HEALTH_URL = os.getenv("NEXUS_BASE_URL", "http://127.0.0.1:8000").rstrip("/") + "/health"
 NEXUS_HEARTBEAT_INTERVAL_SEC = float(os.getenv("NEXUS_HEARTBEAT_INTERVAL_SEC", "15"))
@@ -27,20 +65,75 @@ _on_status_change: Optional[Callable[[bool, str], None]] = None
 
 
 def ping_nexus() -> tuple[bool, str]:
-    """GET NEXUS_HEALTH_URL. Devuelve (ok, mensaje)."""
-    try:
-        req = urllib.request.Request(NEXUS_HEALTH_URL, method="GET", headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=NEXUS_TIMEOUT) as r:
-            ok = r.status == 200
-            msg = "OK" if ok else f"HTTP {r.status}"
-            return (ok, msg)
-    except Exception as e:
-        return (False, str(e)[:120])
+    """GET NEXUS_HEALTH_URL; si falla (p. ej. 404), intenta /status. Devuelve (ok, mensaje)."""
+    base = os.getenv("NEXUS_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+    for path in ("/health", "/status"):
+        url = base + path
+        try:
+            req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=NEXUS_TIMEOUT) as r:
+                if r.status == 200:
+                    return (True, "OK")
+                if path == "/health":
+                    continue
+                return (False, f"HTTP {r.status}")
+        except urllib.error.HTTPError as e:
+            if e.code == 404 and path == "/health":
+                continue
+            return (False, f"HTTP {e.code}")
+        except Exception as e:
+            if path == "/health":
+                continue
+            return (False, str(e)[:120])
+    return (False, "no response from /health nor /status")
+
+
+def _free_port_8000() -> None:
+    """Libera el puerto 8000 (mata proceso que lo use) para evitar Errno 10048."""
+    base = Path(__file__).resolve().parent.parent
+    free_port = base / "scripts" / "free_port.ps1"
+    if not free_port.exists():
+        free_port = base / "scripts" / "free_port_8000.ps1"
+    if free_port.exists():
+        try:
+            args = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(free_port)]
+            if "free_port_8000" in str(free_port):
+                args.append("-Kill")
+            else:
+                args.extend(["-Port", "8000", "-Kill"])
+            subprocess.run(args, cwd=str(base), creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0, timeout=15, capture_output=True)
+        except Exception as e:
+            logger.debug("free_port al liberar 8000: %s", e)
+
+
+def clear_nexus_cache() -> None:
+    """Limpia __pycache__ en nexus/atlas_nexus y temp_models_cache para evitar estado viejo en navegador."""
+    base = Path(__file__).resolve().parent.parent
+    import shutil
+    for dir_path in (base / "nexus" / "atlas_nexus", base / "modules", base / "atlas_adapter"):
+        if dir_path.exists():
+            for pycache in dir_path.rglob("__pycache__"):
+                try:
+                    shutil.rmtree(pycache, ignore_errors=True)
+                except Exception:
+                    pass
+    temp_cache = base / "temp_models_cache"
+    if temp_cache.exists():
+        for p in temp_cache.iterdir():
+            try:
+                if p.is_dir():
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    p.unlink(missing_ok=True)
+            except Exception:
+                pass
+    logger.info("Cache limpiado (__pycache__, temp_models_cache).")
 
 
 def restart_nexus() -> bool:
     """Ejecuta NEXUS_START_SCRIPT o arranca NEXUS desde el repo (start.ps1 o python). Devuelve True si se lanzó."""
     base = Path(__file__).resolve().parent.parent  # ATLAS_PUSH
+    _free_port_8000()
     script_candidates = [
         Path(NEXUS_START_SCRIPT),
         base / "scripts" / "start_nexus.ps1",
@@ -124,23 +217,79 @@ def register_status_callback(callback: Callable[[bool, str], None]) -> None:
     _on_status_change = callback
 
 
+# Backoff (segundos) antes de cada reintento de restart (resiliencia prompt Claude NEXUS)
+_RESTART_BACKOFF = [10, 30, 60]
+_restart_count = 0
+
+
 def _heartbeat_loop() -> None:
-    """Bucle: ping cada NEXUS_HEARTBEAT_INTERVAL_SEC; si falla, intenta restart_nexus()."""
-    global _nexus_connected
+    """Bucle: ping cada NEXUS_HEARTBEAT_INTERVAL_SEC; si falla, intenta restart_nexus() con backoff.
+    Integración ATLAS AUTONOMOUS: métricas, circuit breaker, healing tras 3 fallos.
+    """
+    global _nexus_connected, _restart_count, _last_nexus_success_time
     consecutive_failures = 0
+    has_autonomous = _get_autonomous()
     while not _heartbeat_stop.wait(timeout=NEXUS_HEARTBEAT_INTERVAL_SEC):
+        # Circuit breaker: si está OPEN, no hacer ping y marcar desconectado
+        if has_autonomous and _circuit_breaker and _circuit_breaker.get_state().value == "open":
+            set_nexus_connected(False, "circuit open")
+            consecutive_failures += 1
+            if consecutive_failures >= 3 and _healing_orchestrator:
+                try:
+                    _healing_orchestrator.handle_error(
+                        Exception("NEXUS circuit open"),
+                        {"service": "nexus", "consecutive_failures": consecutive_failures, "last_success": _last_nexus_success_time},
+                    )
+                except Exception as e:
+                    logger.debug("Healing handle_error: %s", e)
+            continue
+        t0 = time.perf_counter()
         ok, msg = ping_nexus()
+        latency_ms = (time.perf_counter() - t0) * 1000
+        if has_autonomous and _metrics_aggregator:
+            try:
+                _metrics_aggregator.collect_metric("heartbeat", "nexus_latency_ms", latency_ms)
+                _metrics_aggregator.collect_metric("heartbeat", "nexus_online", 1.0 if ok else 0.0)
+            except Exception as e:
+                logger.debug("Métricas heartbeat: %s", e)
         if ok:
+            _last_nexus_success_time = time.time()
+            if has_autonomous and _circuit_breaker:
+                try:
+                    _circuit_breaker.record_success()
+                except Exception:
+                    pass
             consecutive_failures = 0
+            _restart_count = 0
             if not _nexus_connected:
                 set_nexus_connected(True, "")
                 logger.info("[CONEXIÓN] NEXUS en puerto 8000... OK.")
         else:
+            if has_autonomous and _circuit_breaker:
+                try:
+                    _circuit_breaker.record_failure()
+                except Exception:
+                    pass
             consecutive_failures += 1
             set_nexus_connected(False, msg)
+            if consecutive_failures >= 3 and _healing_orchestrator:
+                try:
+                    _healing_orchestrator.handle_error(
+                        Exception(msg),
+                        {"service": "nexus", "consecutive_failures": consecutive_failures, "last_success": _last_nexus_success_time},
+                    )
+                except Exception as e:
+                    logger.debug("Healing handle_error: %s", e)
             if consecutive_failures >= 2:
-                logger.warning("[CONEXIÓN] NEXUS no responde. Auto-reactivación: %s", NEXUS_START_SCRIPT)
+                delay = _RESTART_BACKOFF[min(_restart_count, len(_RESTART_BACKOFF) - 1)]
+                logger.warning(
+                    "[CONEXIÓN] NEXUS no responde. Auto-reactivación en %ss (intento %s): %s",
+                    delay, _restart_count + 1, NEXUS_START_SCRIPT,
+                )
+                if _heartbeat_stop.wait(timeout=delay):
+                    break
                 restart_nexus()
+                _restart_count += 1
                 consecutive_failures = 0
 
 

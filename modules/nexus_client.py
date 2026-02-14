@@ -1,8 +1,10 @@
 """NEXUS client — consume APIs de ATLAS NEXUS (robot, visión, directivas).
 Usado por PUSH para unificar panel: cerebro + robot.
+Incluye retry con backoff corto para resiliencia (prompt Claude NEXUS).
 """
 import os
 import logging
+import time
 import urllib.request
 import urllib.error
 import json
@@ -14,6 +16,8 @@ NEXUS_BASE_URL = os.getenv("NEXUS_BASE_URL", "").rstrip("/")
 NEXUS_ENABLED = os.getenv("NEXUS_ENABLED", "false").strip().lower() in ("1", "true", "yes", "y", "on")
 NEXUS_TIMEOUT = int(os.getenv("NEXUS_TIMEOUT", "5"))
 
+# Backoff en segundos para reintentos (resiliencia handshake PUSH-NEXUS)
+NEXUS_RETRY_DELAYS = [2, 4, 6]  # 3 reintentos = hasta 4 intentos
 
 NEXUS_ROBOT_URL = (os.getenv("NEXUS_ROBOT_URL") or "http://127.0.0.1:5174").rstrip("/")
 NEXUS_ROBOT_API_URL = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
@@ -28,6 +32,19 @@ def _fetch(url: str) -> Optional[dict]:
     except Exception as e:
         logger.debug("NEXUS fetch %s: %s", url, e)
         return None
+
+
+def _fetch_with_retry(url: str, max_attempts: int = 1 + len(NEXUS_RETRY_DELAYS)) -> Optional[dict]:
+    """GET JSON con reintentos y backoff. Para handshake resiliente con NEXUS."""
+    for attempt in range(max_attempts):
+        out = _fetch(url)
+        if out is not None:
+            return out
+        if attempt < len(NEXUS_RETRY_DELAYS):
+            delay = NEXUS_RETRY_DELAYS[attempt]
+            logger.debug("NEXUS retry %s en %ss: %s", attempt + 1, delay, url)
+            time.sleep(delay)
+    return None
 
 
 def _probe_ok(url: str) -> bool:
@@ -65,7 +82,10 @@ def get_nexus_status() -> dict:
             "vision": None,
         }
     base = NEXUS_BASE_URL.rstrip("/")
-    status = _fetch(f"{base}/status")
+    # Primer contacto con retry+backoff para resiliencia (NEXUS puede tardar en arrancar)
+    status = _fetch_with_retry(f"{base}/status")
+    if status is None:
+        status = _fetch_with_retry(f"{base}/health")
     directives = _fetch(f"{base}/directives/summary")
     directives_health = _fetch(f"{base}/directives/health")
     vision = _fetch(f"{base}/api/vision/status") or _fetch(f"{base}/vision/status")

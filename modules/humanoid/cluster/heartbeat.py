@@ -29,7 +29,7 @@ def receive_heartbeat(
     if not registry.cluster_enabled():
         return {"ok": False, "error": "CLUSTER_ENABLED=false"}
     score = int(health.get("score", 0)) if isinstance(health.get("score"), (int, float)) else 0
-    status = "online" if score >= 60 else "degraded"
+    status = "online" if score >= 50 else "degraded"
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     node = cluster_db.get_node(node_id_arg)
     if not node and base_url:

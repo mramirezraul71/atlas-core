@@ -45,7 +45,7 @@ class AtlasNexus:
     def __init__(self, config: Optional[NexusConfig] = None):
         """Initialize ATLAS NEXUS"""
         logger.info("=" * 60)
-        logger.info("🚀 ATLAS NEXUS - Initializing...")
+        logger.info("ATLAS NEXUS - Initializing...")
         logger.info("=" * 60)
         
         # Configuration
@@ -54,15 +54,15 @@ class AtlasNexus:
         logger.info(f"Root Path: {self.config.paths.root}")
         
         # Initialize Neural Router (Multi-LLM Brain)
-        logger.info("\n🧠 Initializing Neural Router...")
+        logger.info("\nInitializing Neural Router...")
         self.router = NeuralRouter(self.config)
         
         # Initialize Tools Registry
-        logger.info("\n🛠️  Initializing Tools Registry...")
+        logger.info("\nInitializing Tools Registry...")
         self.tools_registry = ToolsRegistry()
         
         # Initialize Autonomous Engine
-        logger.info("\n🤖 Initializing Autonomous Engine...")
+        logger.info("\nInitializing Autonomous Engine...")
         self.autonomous_engine = AutonomousEngine(
             config=self.config,
             router=self.router,
@@ -70,7 +70,7 @@ class AtlasNexus:
         )
         
         logger.info("\n" + "=" * 60)
-        logger.info("✅ ATLAS NEXUS - Ready!")
+        logger.info("ATLAS NEXUS - Ready!")
         logger.info("=" * 60 + "\n")
     
     async def start_api_server(self):
@@ -78,7 +78,7 @@ class AtlasNexus:
         from api.rest_api import create_api
         import uvicorn
         
-        logger.info(f"🌐 Starting API Server on {self.config.api.host}:{self.config.api.port}")
+        logger.info("Starting API Server on %s:%s", self.config.api.host, self.config.api.port)
         
         app = create_api(self)
         

@@ -39,8 +39,10 @@ _ensure_db_path("ATLAS_MEMORY_DB_PATH", "atlas_memory.sqlite")
 _ensure_db_path("MEMORY_DB_PATH", "atlas_memory.sqlite")
 _ensure_db_path("AUDIT_DB_PATH", "atlas_audit.sqlite")
 
-from fastapi import FastAPI, Request, Header
-from fastapi.responses import FileResponse
+from typing import Optional
+
+from fastapi import FastAPI, Request, Header, WebSocket
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 import importlib.util
 
@@ -103,6 +105,17 @@ async def _lifespan(app):
             try:
                 from modules.humanoid.ans.scheduler_jobs import ensure_ans_jobs
                 ensure_ans_jobs()
+                # Ejecutar triada ANS al arranque (una vez) para que la bitácora tenga acción desde el inicio
+                if os.getenv("ANS_ENABLED", "true").strip().lower() in ("1", "true", "yes") and os.getenv("ANS_RUN_AT_STARTUP", "true").strip().lower() in ("1", "true", "yes"):
+                    def _run_triada_at_startup():
+                        try:
+                            from modules.humanoid.ans.engine import run_ans_cycle
+                            run_ans_cycle(mode=os.getenv("ANS_MODE", "auto"), timeout_sec=60)
+                        except Exception:
+                            pass
+                    import threading
+                    t = threading.Thread(target=_run_triada_at_startup, daemon=True)
+                    t.start()
             except Exception:
                 pass
             try:
@@ -110,6 +123,77 @@ async def _lifespan(app):
                 ensure_makeplay_jobs()
             except Exception:
                 pass
+        # Heartbeat NEXUS: ping 8000/health, auto-reactivación con start_all.ps1, registro en Bitácora
+        try:
+            from modules.nexus_heartbeat import start_heartbeat, register_status_callback
+            _dashboard_base = (os.getenv("ATLAS_DASHBOARD_URL") or "http://127.0.0.1:8791").rstrip("/")
+            def _on_nexus_change(connected: bool, message: str) -> None:
+                text = "[CONEXIÓN] Buscando NEXUS en puerto 8000... OK." if connected else "[CONEXIÓN] Buscando NEXUS en puerto 8000... Desconectado."
+                try:
+                    import urllib.request
+                    import json
+                    req = urllib.request.Request(
+                        _dashboard_base + "/ans/evolution-log",
+                        data=json.dumps({"message": text, "ok": connected}).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    urllib.request.urlopen(req, timeout=3)
+                except Exception:
+                    pass
+            register_status_callback(_on_nexus_change)
+            start_heartbeat()
+            # Prueba de Nervios: autodiagnóstico de motores, mouse, cámara; actualiza Dashboard a CONECTADO | ACTIVO
+            def _run_nerve_test_background():
+                try:
+                    import sys
+                    from pathlib import Path
+                    push_base = Path(__file__).resolve().parent.parent
+                    if str(push_base) not in sys.path:
+                        sys.path.insert(0, str(push_base))
+                    import nexus_actions
+                    nexus_actions.run_nerve_test()
+                except Exception:
+                    pass
+            import threading
+            _nerve_thread = threading.Thread(target=_run_nerve_test_background, daemon=True)
+            _nerve_thread.start()
+        except Exception:
+            pass
+    # ATLAS AUTONOMOUS: background tasks (Health, Alert, Learning)
+    try:
+        import asyncio
+        import sys
+        if str(BASE_DIR) not in sys.path:
+            sys.path.insert(0, str(BASE_DIR))
+        from autonomous.health_monitor.health_aggregator import HealthAggregator
+        from autonomous.telemetry.alert_manager import AlertManager
+        from autonomous.learning.learning_orchestrator import LearningOrchestrator
+        import logging
+        _log = logging.getLogger(__name__)
+        _log.info("Iniciando background tasks de ATLAS AUTONOMOUS...")
+        health_agg = HealthAggregator()
+        health_agg.start_monitoring()
+        _log.info("✓ Health Monitoring activo")
+        alert_mgr = AlertManager()
+        asyncio.create_task(alert_mgr.start_evaluation_loop(60))
+        _log.info("✓ Alert Manager activo")
+        learning = LearningOrchestrator()
+
+        async def _learning_loop():
+            while True:
+                await asyncio.sleep(3600)
+                try:
+                    learning.run_learning_cycle()
+                    _log.info("✓ Learning cycle ejecutado")
+                except Exception as e:
+                    _log.error("Error en learning cycle: %s", e)
+
+        asyncio.create_task(_learning_loop())
+        _log.info("✓ Learning Engine activo")
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug("ATLAS AUTONOMOUS background tasks no iniciados: %s", e)
     yield
 
 
@@ -133,9 +217,116 @@ class Step(BaseModel):
     tool: str
     args: dict = {}
 
+def _robot_connected() -> bool:
+    """Ping Robot (8002) para estado cámaras."""
+    import urllib.request
+    import os
+    url = (os.getenv("NEXUS_ROBOT_API_URL") or os.getenv("NEXUS_ROBOT_URL") or "http://127.0.0.1:8002").rstrip("/") + "/"
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=2) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
 @app.get("/status")
 def status():
-    return {"ok": True, "atlas": handle("/status")}
+    try:
+        from modules.nexus_heartbeat import ping_nexus, set_nexus_connected, get_nexus_connection_state
+        ok, msg = ping_nexus()
+        set_nexus_connected(ok, "" if ok else msg)
+        nexus = get_nexus_connection_state()
+    except Exception:
+        nexus = {"connected": False, "active": False, "last_check_ts": 0, "last_error": ""}
+    robot_ok = _robot_connected()
+    return {
+        "ok": True,
+        "atlas": handle("/status"),
+        "nexus_connected": nexus.get("connected", False),
+        "nexus_active": nexus.get("active", False),
+        "nexus_last_check_ts": nexus.get("last_check_ts", 0),
+        "nexus_last_error": nexus.get("last_error", ""),
+        "nexus_dashboard_url": "http://127.0.0.1:8000/dashboard",
+        "robot_connected": robot_ok,
+    }
+
+
+@app.get("/api/nexus/connection", tags=["NEXUS"])
+def get_nexus_connection():
+    """CEREBRO — CUERPO (NEXUS): estado de conexión en tiempo real."""
+    try:
+        from modules.nexus_heartbeat import get_nexus_connection_state
+        return {"ok": True, **get_nexus_connection_state()}
+    except Exception as e:
+        return {"ok": False, "connected": False, "last_error": str(e)}
+
+
+class NexusConnectionBody(BaseModel):
+    connected: bool = False
+    message: str = ""
+    active: Optional[bool] = None
+
+
+@app.post("/api/nexus/connection", tags=["NEXUS"])
+def post_nexus_connection(body: NexusConnectionBody):
+    """Actualiza estado de conexión NEXUS (heartbeat o Prueba de Nervios). active=True → CONECTADO | ACTIVO."""
+    try:
+        from modules.nexus_heartbeat import set_nexus_connected, set_nexus_active
+        set_nexus_connected(body.connected, body.message or "")
+        if body.active is not None:
+            set_nexus_active(body.active)
+        return {"ok": True, "connected": body.connected, "active": body.active}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/nexus/reconnect", tags=["NEXUS"])
+def nexus_reconnect(clear_cache: bool = False):
+    """Reconectar NEXUS: mata proceso en 8000, opcionalmente limpia cache, arranca servicio y hace ping."""
+    try:
+        if clear_cache:
+            from modules.nexus_heartbeat import clear_nexus_cache
+            clear_nexus_cache()
+        from modules.nexus_heartbeat import reconnect_nexus_and_poll
+        state = reconnect_nexus_and_poll(wait_after_start_sec=6, poll_interval_sec=2, max_polls=15)
+        return {"ok": True, "connected": state.get("connected", False), **state}
+    except Exception as e:
+        return {"ok": False, "connected": False, "error": str(e)}
+
+
+@app.post("/api/cache/clear", tags=["NEXUS"])
+def cache_clear():
+    """Limpia cache del servidor (__pycache__, temp_models_cache). Para uso con botón Limpiar caché en navegador."""
+    try:
+        from modules.nexus_heartbeat import clear_nexus_cache
+        clear_nexus_cache()
+        return {"ok": True, "message": "Cache servidor limpiado"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/robot/status", tags=["NEXUS"])
+def robot_status():
+    """Estado del Robot (cámaras, visión) en puerto 8002. Para panel de cámaras."""
+    import urllib.request
+    import os
+    url = (os.getenv("NEXUS_ROBOT_URL") or os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/") + "/api/camera/service/status"
+    try:
+        req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=4) as r:
+            if r.status == 200:
+                return {"ok": True, "connected": True, "robot_url": url.rsplit("/", 1)[0]}
+    except Exception as e:
+        pass
+    url_health = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/") + "/"
+    try:
+        req = urllib.request.Request(url_health, method="GET")
+        with urllib.request.urlopen(req, timeout=3) as r:
+            return {"ok": True, "connected": True, "robot_url": url_health.rstrip("/")}
+    except Exception:
+        pass
+    return {"ok": False, "connected": False, "robot_url": "http://127.0.0.1:8002"}
 
 
 @app.get("/health", tags=["Health"])
@@ -370,6 +561,110 @@ def intent(payload: IntentIn):
         }
 
 
+# --- Push Dashboard (ATLAS_PUSH -> Dashboard -> ATLAS_NEXUS) ---
+_push_state: dict = {"last_command": None, "last_ack": None, "updated_at": None}
+
+# --- Evolution (ATLAS_EVOLUTION): gobernanza y pendientes de aprobación ---
+_evolution_pending: list = []  # [{ package, old_version, new_version, ts, worker }]
+_evolution_governed: bool = os.environ.get("EVOLUTION_GOVERNED", "").strip().upper() in ("1", "TRUE", "GOVERNED")
+_evolution_last_report: dict = {}  # Último reporte del daemon: { state, message, asimilacion_exitosa, ts }
+
+class PushCommandBody(BaseModel):
+    target: str = "NEXUS_ARM"
+    action: str = "update_state"
+    value: Any = 1
+
+@app.post("/api/push/command", tags=["Push"])
+def push_command(body: PushCommandBody):
+    """Recibe comando del Cerebro; NEXUS lee el estado y ejecuta. Si target=EVOLUTION_REPORT, registra pendientes y último reporte (Asimilación Exitosa)."""
+    global _push_state, _evolution_pending, _evolution_last_report
+    cmd = {"target": body.target, "action": body.action, "value": body.value, "ts": time.time()}
+    _push_state["last_command"] = cmd
+    _push_state["updated_at"] = time.time()
+    if body.target == "EVOLUTION_REPORT" and body.action == "worker_result" and isinstance(body.value, str):
+        try:
+            import json
+            payload = json.loads(body.value)
+            if payload.get("status") == "pending_approval" or payload.get("event") == "evolution_pending_approval":
+                _evolution_pending.append({
+                    "package": payload.get("package"),
+                    "old_version": payload.get("old_version"),
+                    "new_version": payload.get("new_version"),
+                    "ts": time.time(),
+                    "worker": payload.get("worker", "pypi"),
+                })
+            if payload.get("event") == "ans_bitacora" or payload.get("asimilacion_exitosa") is not None or payload.get("state"):
+                _evolution_last_report = {
+                    "state": payload.get("state", ""),
+                    "message": payload.get("message", ""),
+                    "asimilacion_exitosa": payload.get("asimilacion_exitosa", False),
+                    "ts": time.time(),
+                }
+        except Exception:
+            pass
+    return {"ok": True, "command": cmd}
+
+@app.get("/api/push/state", tags=["Push"])
+def push_state():
+    """Estado actual del Dashboard para evitar comandos duplicados."""
+    return {"ok": True, "state": _push_state.get("last_command"), "ack": _push_state.get("last_ack"), "updated_at": _push_state.get("updated_at")}
+
+@app.post("/api/push/ack", tags=["Push"])
+def push_ack(body: dict):
+    """NEXUS confirma recepción/ejecución."""
+    global _push_state
+    _push_state["last_ack"] = body
+    _push_state["updated_at"] = time.time()
+    return {"ok": True}
+
+
+@app.get("/api/evolution/status", tags=["Evolution"])
+def evolution_status():
+    """Estado de gobernanza, pendientes de aprobación y último reporte del daemon (Asimilación Exitosa)."""
+    return {
+        "governed": _evolution_governed,
+        "pending": list(_evolution_pending),
+        "last_report": dict(_evolution_last_report),
+        "updated_at": _push_state.get("updated_at") or time.time(),
+    }
+
+
+class EvolutionApproveBody(BaseModel):
+    package: str
+    new_version: str
+
+
+@app.post("/api/evolution/approve", tags=["Evolution"])
+def evolution_approve(body: EvolutionApproveBody):
+    """Confirma y aplica un cambio pendiente al requirements.txt del proyecto (núcleo)."""
+    global _evolution_pending
+    req_txt = Path(os.environ.get("ATLAS_BASE", BASE_DIR)) / "requirements.txt"
+    if not req_txt.exists():
+        return {"ok": False, "error": "requirements.txt no encontrado"}
+    for i, p in enumerate(_evolution_pending):
+        if p.get("package") == body.package and p.get("new_version") == body.new_version:
+            try:
+                text = req_txt.read_text(encoding="utf-8")
+                lines = text.splitlines()
+                new_lines = []
+                for line in lines:
+                    stripped = line.strip()
+                    if stripped.startswith("#") or not stripped:
+                        new_lines.append(line)
+                        continue
+                    name = line.split("==")[0].split(">=")[0].split("[")[0].strip()
+                    if name == body.package:
+                        new_lines.append(f"{body.package}=={body.new_version}")
+                        continue
+                    new_lines.append(line)
+                req_txt.write_text("\n".join(new_lines) + ("\n" if text.endswith("\n") else ""), encoding="utf-8")
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
+            _evolution_pending.pop(i)
+            return {"ok": True, "applied": f"{body.package}=={body.new_version}"}
+    return {"ok": False, "error": "Pendiente no encontrado"}
+
+
 # --- LLM híbrido (router + Ollama) ---
 from modules.llm.schemas import LLMRequest, LLMResponse
 from modules.llm.service import LLMService
@@ -539,6 +834,113 @@ app.include_router(ga_router)
 app.include_router(metalearn_router)
 app.include_router(ans_router)
 app.include_router(governance_router)
+
+# ATLAS AUTONOMOUS (health, healing, evolution, telemetry, resilience, learning)
+try:
+    import sys
+    if str(BASE_DIR) not in sys.path:
+        sys.path.insert(0, str(BASE_DIR))
+    from autonomous.api_routes import router as autonomous_router
+    app.include_router(autonomous_router)
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).warning("Autonomous module not loaded: %s", e)
+
+
+@app.get("/autonomous/dashboard", response_class=HTMLResponse)
+async def autonomous_dashboard():
+    """Dashboard UI de ATLAS AUTONOMOUS: health, servicios, healing, learning."""
+    html_file = BASE_DIR / "templates" / "autonomous_dashboard.html"
+    if not html_file.exists():
+        return HTMLResponse("<h1>Dashboard no encontrado</h1>", status_code=404)
+    return HTMLResponse(html_file.read_text(encoding="utf-8"))
+
+# --- Proxy NEXUS: /actions/log y /ws (evitar 404/403 cuando el dashboard usa origen PUSH) ---
+NEXUS_BASE = (os.getenv("NEXUS_BASE_URL") or "http://127.0.0.1:8000").rstrip("/")
+
+
+@app.get("/actions/log")
+async def proxy_actions_log(limit: int = 50):
+    """Proxy a NEXUS: log de acciones para panel tipo Cursor."""
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(f"{NEXUS_BASE}/actions/log", params={"limit": limit})
+            return r.json() if r.headers.get("content-type", "").startswith("application/json") else {"ok": False, "entries": []}
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).debug("Proxy /actions/log: %s", e)
+        return {"ok": False, "entries": [], "error": str(e)}
+
+
+@app.websocket("/ws")
+async def proxy_websocket(websocket: WebSocket):
+    """Proxy WebSocket a NEXUS para tiempo real (evitar 403 cuando el cliente usa origen PUSH)."""
+    import asyncio
+    import logging
+    log = logging.getLogger(__name__)
+    ws_nexus_url = NEXUS_BASE.replace("http://", "ws://").replace("https://", "wss://") + "/ws"
+    try:
+        import websockets
+    except ImportError:
+        try:
+            await websocket.accept()
+            await websocket.close(code=1011)
+        except Exception:
+            pass
+        log.warning("Proxy /ws: instalar 'websockets' para reenviar a NEXUS")
+        return
+    try:
+        async with websockets.connect(ws_nexus_url, close_timeout=5) as ws_nexus:
+            await websocket.accept()
+
+            async def client_to_nexus():
+                try:
+                    while True:
+                        msg = await websocket.receive()
+                        if "text" in msg:
+                            await ws_nexus.send(msg["text"])
+                        elif "bytes" in msg:
+                            await ws_nexus.send(msg["bytes"])
+                except Exception:
+                    pass
+
+            async def nexus_to_client():
+                try:
+                    while True:
+                        msg = await ws_nexus.recv()
+                        if isinstance(msg, bytes):
+                            await websocket.send_bytes(msg)
+                        else:
+                            await websocket.send_text(msg)
+                except Exception:
+                    pass
+
+            await asyncio.gather(
+                asyncio.create_task(client_to_nexus()),
+                asyncio.create_task(nexus_to_client()),
+            )
+    except Exception as e:
+        log.debug("Proxy /ws: %s", e)
+        try:
+            await websocket.accept()
+        except Exception:
+            pass
+        try:
+            await websocket.close(code=1011)
+        except Exception:
+            pass
+
+# --- Cuerpo (Robot): proxy cámaras y API Robot 8002 ---
+from modules.cuerpo_proxy import proxy_to_cuerpo
+from fastapi import Request
+from fastapi.responses import Response
+
+@app.api_route("/cuerpo", methods=["GET", "POST"])
+@app.api_route("/cuerpo/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+async def cuerpo_proxy_route(request: Request, path: str = "") -> Response:
+    """Proxy a Robot (cámaras, visión) en NEXUS_ROBOT_URL (8002). Panel de cámaras integrado."""
+    return await proxy_to_cuerpo(request, path)
 
 
 # --- Metrics / Policy / Audit endpoints ---

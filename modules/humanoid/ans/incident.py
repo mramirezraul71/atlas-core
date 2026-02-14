@@ -73,3 +73,18 @@ def get_incidents(status: str = None, limit: int = 50) -> List[Dict[str, Any]]:
 
 def get_incident(inc_id: str) -> Optional[Dict[str, Any]]:
     return _INCIDENTS.get(inc_id)
+
+
+def resolve_all_open(check_id: Optional[str] = None) -> int:
+    """Resuelve todos los incidentes abiertos, opcionalmente filtrados por check_id. Devuelve cantidad resueltos."""
+    from datetime import datetime, timezone
+    resolved = 0
+    for inc in list(_INCIDENTS.values()):
+        if inc.get("status") != "open":
+            continue
+        if check_id is not None and inc.get("check_id") != check_id:
+            continue
+        inc["status"] = "resolved"
+        inc["resolved_at"] = datetime.now(timezone.utc).isoformat()
+        resolved += 1
+    return resolved

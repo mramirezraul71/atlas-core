@@ -255,9 +255,85 @@
       border-radius: 6px; cursor: pointer; font-size: .8rem;
     }
     .btn-close-expand:hover { filter: brightness(1.1); }
+
+    /* Panel integrado Cuerpo (NEXUS): overlay con iframe */
+    .nexus-panel-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 10000;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      animation: fadeIn 0.2s ease;
+    }
+    .nexus-panel-overlay.open { display: flex; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .nexus-panel-box {
+      width: 95vw;
+      max-width: 1200px;
+      height: 88vh;
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .nexus-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--card-border);
+      flex-shrink: 0;
+    }
+    .nexus-panel-header h2 {
+      margin: 0;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .nexus-panel-header h2 span { color: var(--muted); font-weight: 400; }
+    .nexus-panel-iframe-wrap {
+      flex: 1;
+      min-height: 0;
+      background: #0d0c12;
+    }
+    .nexus-panel-iframe-wrap iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+    .nexus-panel-iframe-wrap .nexus-unavailable {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--muted);
+      font-size: 0.9rem;
+      padding: 2rem;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
+  <div id="nexus-panel-overlay" class="nexus-panel-overlay" onclick="if(event.target===this) closeNexusPanel()">
+    <div class="nexus-panel-box" onclick="event.stopPropagation()">
+      <div class="nexus-panel-header">
+        <h2>CEREBRO <span>→</span> CUERPO (NEXUS)</h2>
+        <button type="button" class="btn-close-expand" onclick="closeNexusPanel()">Cerrar</button>
+      </div>
+      <div class="nexus-panel-iframe-wrap" id="nexus-panel-iframe-wrap">
+        <iframe id="nexus-panel-iframe" title="Panel NEXUS (Cuerpo)" style="display:none;"></iframe>
+        <div id="nexus-panel-unavailable" class="nexus-unavailable" style="display:none;">NEXUS no está disponible en el puerto 8000.<br>Pulsa «Reconectar NEXUS» en la tarjeta Estado y vuelve a abrir este panel.</div>
+      </div>
+    </div>
+  </div>
   <div id="expand-modal" class="expand-modal" onclick="if(event.target===this) closeExpandModal()">
     <div class="expand-modal-content" onclick="event.stopPropagation()">
       <div class="expand-modal-header">
@@ -278,6 +354,7 @@
         </span>
         <span class="last-update" id="last-update">—</span>
         <button class="secondary" id="btn-refresh" onclick="refreshAll()" data-i18n="app.refresh">Actualizar</button>
+        <button class="small secondary" id="btn-clear-cache" onclick="clearCacheAndRefresh()" title="Limpiar cache del navegador y del servidor (proceso pendiente se mata al reconectar)">Limpiar caché</button>
         <div class="nav-dropdown-wrap">
           <button type="button" class="nav-dropdown-btn" id="nav-opciones-btn" onclick="toggleOpcionesMenu()" aria-expanded="false">
             Opciones <span class="chevron">▼</span>
@@ -289,7 +366,7 @@
                 <div class="card" id="scheduler-card"><h2 data-i18n="card.scheduler">Programador</h2><div class="value">—</div><div class="row"></div></div>
                 <div class="card" id="cluster-card"><h2 data-i18n="card.cluster">Cluster</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadCluster()" data-i18n="cluster.view">Ver nodos</button></div></div>
                 <div class="card" id="gateway-card"><h2 data-i18n="card.gateway">Gateway</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadGateway()" data-i18n="gateway.view">Ver</button></div></div>
-                <div class="card" id="approvals-card"><h2 data-i18n="card.approvals">Aprobaciones</h2><div class="value"><ul id="approvals-list"></ul></div></div>
+                <div class="card" id="approvals-card"><h2 data-i18n="card.approvals">Aprobaciones</h2><div class="value"><ul id="approvals-list"></ul><div id="evolution-pending" style="margin-top:.5rem;font-size:.8rem;"></div></div></div>
               </div>
               <div id="nav-opciones-sections"></div>
             </div>
@@ -308,7 +385,18 @@
     </div>
     <!-- Grid principal: siempre visible -->
     <div class="grid">
-      <div class="card" id="status-card"><h2 data-i18n="card.status">Estado</h2><div class="value">—</div></div>
+      <div class="card" id="status-card"><h2 data-i18n="card.status">Estado</h2><div class="value">—</div><div class="row" style="margin-top:.35rem;flex-wrap:wrap;gap:.35rem;"><button class="small secondary" id="btn-reconnect-nexus" onclick="reconnectNexus()" title="Arrancar NEXUS (puerto 8000) y actualizar estado">Reconectar NEXUS</button><button class="small secondary" id="btn-nexus-panel" onclick="openNexusPanel()" title="Abrir panel del Cuerpo (NEXUS) integrado">Panel Cuerpo (NEXUS)</button></div></div>
+      <div class="card" id="cameras-card" style="grid-column: span 1;">
+        <h2>Cámaras (Cuerpo)</h2>
+        <div class="value" id="cameras-status">Robot: —</div>
+        <div class="nexus-panel-iframe-wrap" id="cameras-panel-wrap" style="height:180px;margin-top:.5rem;border-radius:8px;overflow:hidden;background:var(--bg-elevated);border:1px solid var(--card-border);">
+          <img id="camera-stream-img" src="" alt="Stream cámara Robot" style="width:100%;height:100%;object-fit:contain;display:none;" onerror="this.style.display='none'; document.getElementById('cameras-no-stream').style.display='block';">
+          <div id="cameras-no-stream" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;">Robot (8002) no disponible. Arranca el backend para ver el stream.</div>
+        </div>
+        <div class="row" style="margin-top:.35rem;">
+          <button class="small secondary" onclick="loadCamerasStatus()" title="Comprobar Robot y refrescar stream">Actualizar cámaras</button>
+        </div>
+      </div>
       <div class="card" id="version-card"><h2 data-i18n="card.version">Versión</h2><div class="value">—</div></div>
       <div class="card" id="health-card"><h2 data-i18n="card.health">Salud</h2><div class="value">—</div><div class="score-bar"><div id="health-bar-fill" style="width:0%;height:100%;background:var(--muted);border-radius:3px"></div></div><div id="health-checks-detail" class="metrics-list" style="margin-top:.5rem;font-size:.7rem;cursor:pointer;" onclick="toggleHealthDetail()" title="Clic para ver desglose"></div></div>
       <div class="card" id="update-card"><h2 data-i18n="card.update">Actualización</h2><div class="value">—</div></div>
@@ -387,6 +475,7 @@
           <span class="badge" id="ans-mode">—</span>
           <span class="last-update" id="ans-incidents">—</span>
           <button class="small" onclick="ansRunNow()" data-i18n="ans.run">Run Now</button>
+          <button class="small secondary" onclick="ansResolveIncidents()" title="Cerrar todos los incidentes abiertos (stale)">Resolver incidentes</button>
           <button class="small secondary" onclick="loadANSStatus()" data-i18n="app.refresh">Actualizar</button>
         </div>
         <div id="ans-incidents-list" class="value" style="font-size:.8rem; max-height:100px; overflow-y:auto; margin-top:.5rem;"></div>
@@ -659,7 +748,7 @@
     async function post(path, body, headers) {
       const h = { 'Content-Type': 'application/json', ...(headers || {}) };
       if (ownerSessionToken) h['X-Owner-Session'] = ownerSessionToken;
-      const r = await fetch(base + path, { method: 'POST', headers: h, body: JSON.stringify(body || {}) });
+      const r = await fetch(base + path, { method: 'POST', headers: h, body: JSON.stringify(body || {}), cache: 'no-store' });
       return r.ok ? r.json() : null;
     }
     function setLastUpdate() {
@@ -924,7 +1013,99 @@
 
     async function loadStatus() {
       const d = await get('/status');
-      setCardJson('status-card', d);
+      const card = document.getElementById('status-card');
+      if (card) {
+        const val = card.querySelector('.value');
+        if (val) {
+          const atlasOk = d && d.ok;
+          const nexusConnected = d && d.nexus_connected === true;
+          const nexusActive = d && d.nexus_active === true;
+          const nexusLabel = nexusConnected ? (nexusActive ? 'CONECTADO | ACTIVO' : 'Conectado') : 'Desconectado';
+          const robotConnected = d && d.robot_connected === true;
+          const robotLabel = robotConnected ? 'Conectado' : 'Desconectado';
+          val.textContent = (atlasOk ? 'OK' : (d && d.error) || 'Error') + ' | NEXUS (8000): ' + nexusLabel + ' | Robot (8002): ' + robotLabel;
+          card.classList.toggle('error', !atlasOk);
+          card.classList.remove('loading');
+        }
+        if (d && d.nexus_dashboard_url) window._nexusDashboardUrl = d.nexus_dashboard_url;
+        window._nexusConnected = !!(d && d.nexus_connected);
+      }
+    }
+    function openNexusPanel() {
+      var url = window._nexusDashboardUrl || 'http://127.0.0.1:8000/dashboard';
+      var overlay = document.getElementById('nexus-panel-overlay');
+      var iframe = document.getElementById('nexus-panel-iframe');
+      var unav = document.getElementById('nexus-panel-unavailable');
+      if (!overlay || !iframe) return;
+      overlay.classList.add('open');
+      if (window._nexusConnected !== false) {
+        iframe.style.display = 'block';
+        unav.style.display = 'none';
+        iframe.src = url;
+      } else {
+        iframe.style.display = 'none';
+        iframe.src = 'about:blank';
+        if (unav) unav.style.display = 'flex';
+      }
+    }
+    function closeNexusPanel() {
+      var overlay = document.getElementById('nexus-panel-overlay');
+      var iframe = document.getElementById('nexus-panel-iframe');
+      if (overlay) overlay.classList.remove('open');
+      if (iframe) { iframe.src = 'about:blank'; iframe.style.display = 'none'; }
+      var unav = document.getElementById('nexus-panel-unavailable');
+      if (unav) unav.style.display = 'none';
+    }
+    async function loadCamerasStatus() {
+      var statusEl = document.getElementById('cameras-status');
+      var imgEl = document.getElementById('camera-stream-img');
+      var noStreamEl = document.getElementById('cameras-no-stream');
+      try {
+        const r = await get('/api/robot/status');
+        if (statusEl) statusEl.textContent = 'Robot (8002): ' + (r && r.connected ? 'Conectado' : 'Desconectado');
+        if (r && r.connected && imgEl) {
+          imgEl.src = (window._base || '') + '/cuerpo/camera/stream?t=' + Date.now();
+          imgEl.style.display = 'block';
+          if (noStreamEl) noStreamEl.style.display = 'none';
+          imgEl.onerror = function() { imgEl.style.display = 'none'; if (noStreamEl) noStreamEl.style.display = 'flex'; };
+        } else {
+          if (imgEl) { imgEl.src = ''; imgEl.style.display = 'none'; }
+          if (noStreamEl) noStreamEl.style.display = 'flex';
+        }
+      } catch (e) {
+        if (statusEl) statusEl.textContent = 'Robot (8002): Error';
+        if (imgEl) imgEl.style.display = 'none';
+        if (noStreamEl) noStreamEl.style.display = 'flex';
+      }
+    }
+    async function clearCacheAndRefresh() {
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+        const r = await fetch((window._apiBase || '') + '/api/cache/clear', { method: 'POST', headers: { 'Accept': 'application/json' }, cache: 'no-store' });
+        const d = r.ok ? await r.json() : {};
+        if (d.ok) { if (window._toast) window._toast('Caché limpiada (navegador + servidor)'); else alert('Caché limpiada.'); }
+        refreshAll();
+      } catch (e) {
+        if (window._toast) window._toast('Error: ' + (e.message || 'cache')); else alert('Error al limpiar caché');
+      }
+    }
+    async function reconnectNexus() {
+      const btn = document.getElementById('btn-reconnect-nexus');
+      if (btn) { btn.disabled = true; btn.textContent = 'Conectando…'; }
+      try {
+        const r = await post('/api/nexus/reconnect?clear_cache=true', {});
+        await loadStatus();
+        if (r && r.connected) {
+          if (btn) { btn.textContent = 'Reconectar NEXUS'; btn.classList.remove('error'); }
+        } else {
+          if (btn) { btn.textContent = 'Reconectar NEXUS'; btn.classList.add('error'); btn.title = (r && r.error) ? r.error : 'NEXUS no respondió en puerto 8000';
+          }
+        }
+      } catch (e) {
+        if (btn) { btn.textContent = 'Reconectar NEXUS'; btn.disabled = false; btn.title = (e && e.message) || 'Error'; }
+      }
+      if (btn) btn.disabled = false;
     }
     async function loadVersion() {
       const d = await get('/version');
@@ -966,12 +1147,12 @@
       ['api_up','memory_writable','audit_writable','scheduler_alive','llm_reachable','avg_latency_ms','error_rate'].forEach(function(k) {
         var v = c[k];
         var hint = HEALTH_HINTS[k] || {};
-        var ok = v === true || (k === 'avg_latency_ms' && (v == null || (typeof v === 'number' && v <= 2000))) || (k === 'error_rate' && (v == null || (typeof v === 'number' && v <= 0.1)));
+        var ok = v === true || (k === 'avg_latency_ms' && (v == null || (typeof v === 'number' && v <= 2000))) || (k === 'error_rate' && (v == null || v === false || (typeof v === 'number' && v <= 0.1) || (typeof v === 'string' && parseFloat(v) <= 0.1)));
         var msg = ok ? (hint.ok || 'OK') : (hint.fail || (k + ': ' + v));
         lines.push('<span class="badge ' + (ok ? 'ok' : 'err') + '" style="margin-right:.35rem;">' + (ok ? '✓' : '✗') + '</span>' + k + ': ' + msg);
       });
       if (c.ans_open_incidents > 0) {
-        lines.push('<span class="badge err" style="margin-right:.35rem;">!</span>ans_open_incidents: ' + c.ans_open_incidents + ' (penaliza -' + Math.min(30, c.ans_open_incidents * 5) + ')');
+        lines.push('<span class="badge err" style="margin-right:.35rem;">!</span>ans_open_incidents: ' + c.ans_open_incidents + ' (penaliza -' + Math.min(10, c.ans_open_incidents * 1) + ')');
       }
       lines.push('<span style="color:var(--muted);">latencia: ' + (c.avg_latency_ms != null ? c.avg_latency_ms + ' ms' : '—') + ' · error_rate: ' + (c.error_rate != null ? (c.error_rate * 100).toFixed(2) + '%' : '—') + '</span>');
       el.innerHTML = lines.join('<br>');
@@ -994,7 +1175,7 @@
       if (val) val.textContent = score + '/100';
       if (bar) {
         bar.style.width = score + '%';
-        bar.style.background = score >= 80 ? 'var(--green)' : score >= 60 ? 'var(--amber)' : 'var(--red)';
+        bar.style.background = score >= 80 ? 'var(--green)' : score >= 50 ? 'var(--amber)' : 'var(--red)';
       }
       card.classList.remove('error');
       if (d.ok === false) card.classList.add('error');
@@ -1127,6 +1308,38 @@
       list.innerHTML = items.length
         ? items.map(a => '<li>' + a.id + ' ' + (a.action || '') + ' <button class="small" onclick="approve(\'' + a.id + '\')">Aprobar</button> <button class="small danger" onclick="reject(\'' + a.id + '\')">Rechazar</button></li>').join('')
         : '<li>' + (UI_STRINGS['approvals.none'] || 'Ninguno') + '</li>';
+      loadEvolutionPending();
+    }
+    async function loadEvolutionPending() {
+      const el = document.getElementById('evolution-pending');
+      if (!el) return;
+      try {
+        const r = await get('/api/evolution/status');
+        const pending = (r && r.pending && Array.isArray(r.pending)) ? r.pending : [];
+        const lastReport = (r && r.last_report) ? r.last_report : {};
+        if (pending.length) {
+          el.innerHTML = '<strong>Evolution (GOVERNED)</strong>: ' + pending.map(function(p) {
+            const pkg = (p.package || '').replace(/'/g, '&#39;');
+            const ver = (p.new_version || '').replace(/'/g, '&#39;');
+            return pkg + ' → ' + ver + ' <button class="small ok" onclick="evolutionApprove(\'' + pkg + '\', \'' + ver + '\')">Aprobar Asimilación</button>';
+          }).join('<br/>');
+          el.style.color = 'var(--orange)';
+        } else {
+          el.innerHTML = lastReport.message ? '<span style="color:var(--muted);">Evolution: ' + (lastReport.message || '').substring(0, 60) + '</span>' : '';
+          el.style.color = '';
+        }
+      } catch (e) {
+        el.innerHTML = '';
+      }
+    }
+    async function evolutionApprove(packageName, newVersion) {
+      const r = await post('/api/evolution/approve', { package: packageName, new_version: newVersion });
+      if (r && r.ok) {
+        loadEvolutionPending();
+        loadBitacora();
+      } else {
+        alert(r && r.error ? r.error : 'Error al aprobar');
+      }
     }
     async function updateCheck() {
       await post('/update/check');
@@ -1310,9 +1523,21 @@
       const r = await post('/ans/run-now', { mode: 'auto' });
       if (r && r.ok) {
         loadANSStatus();
-        alert('ANS Run Now OK: ' + (r.issues_count || 0) + ' issues, ' + (r.actions_taken && r.actions_taken.length) + ' actions');
+        loadBitacora();
+        loadHealth();
+        alert('ANS Run Now: ' + (r.issues_count ?? 0) + ' issues, ' + (r.actions_taken && r.actions_taken.length ? r.actions_taken.length : 0) + ' actions');
       } else {
         alert('ANS Run Now: ' + (r && r.error ? r.error : 'Error'));
+      }
+    }
+    async function ansResolveIncidents() {
+      const r = await post('/ans/resolve-incidents', {});
+      if (r && r.ok) {
+        loadANSStatus();
+        loadHealth();
+        if (r.resolved !== undefined) alert('Resueltos ' + r.resolved + ' incidente(s).');
+      } else {
+        alert('Resolver incidentes: ' + (r && r.error ? r.error : 'Error'));
       }
     }
     async function loadProductStatus() {
@@ -1351,6 +1576,7 @@
       try {
         await Promise.all([
           loadStatus(),
+          loadCamerasStatus(),
           loadVersion(),
           loadHealth(),
           loadMetrics(),
@@ -1376,13 +1602,19 @@
       if (btn) { btn.disabled = false; btn.textContent = UI_STRINGS['app.refresh'] || 'Actualizar'; }
     }
     async function loadGovernanceStatus() {
-      const st = await get('/governance/status');
       const logEl = document.getElementById('governance-log');
       const statusEl = document.getElementById('gov-status');
       const growthBtn = document.getElementById('gov-growth');
       const governedBtn = document.getElementById('gov-governed');
       const emergBtn = document.getElementById('gov-emergency');
       const logLink = document.getElementById('governance-log-link');
+      const msgEl = document.getElementById('gov-msg');
+      let st = null;
+      try {
+        st = await get('/governance/status');
+      } catch (e) {
+        if (msgEl) msgEl.textContent = 'Sin conexión';
+      }
       if (st && st.ok) {
         const mode = st.mode || 'governed';
         const emergency = st.emergency_stop || false;
@@ -1393,27 +1625,69 @@
         if (growthBtn) growthBtn.style.opacity = mode === 'growth' ? '1' : '0.6';
         if (governedBtn) governedBtn.style.opacity = mode === 'governed' ? '1' : '0.6';
         if (emergBtn) emergBtn.textContent = emergency ? (UI_STRINGS['gov.emergency_on'] || 'EMERGENCY STOP ON') : (UI_STRINGS['gov.emergency'] || 'EMERGENCY STOP');
-      } else if (statusEl) {
-        statusEl.textContent = st ? 'Error' : '—';
-        statusEl.className = 'badge err';
+        if (msgEl) msgEl.textContent = st.fallback ? 'Modo por defecto (sin DB)' : '';
+      } else {
+        if (statusEl) {
+          statusEl.textContent = 'GOVERNED';
+          statusEl.className = 'badge warn';
+        }
+        if (growthBtn) growthBtn.style.opacity = '0.6';
+        if (governedBtn) governedBtn.style.opacity = '1';
+        if (emergBtn) emergBtn.textContent = UI_STRINGS['gov.emergency'] || 'EMERGENCY STOP';
+        if (msgEl) msgEl.textContent = (st && st.error) ? String(st.error).slice(0, 50) : (st ? 'Sin respuesta' : 'Sin conexión con la API');
       }
       if (logLink) logLink.href = base + '/governance/log?limit=20';
-      const logData = await get('/governance/log?limit=10');
-      if (logData && logData.log && logEl) {
-        logEl.innerHTML = logData.log.map(x => x.action + ': ' + (x.from_val || '') + ' → ' + (x.to_val || '') + (x.reason ? ' (' + x.reason.substring(0,40) + ')' : '')).join('<br>') || '—';
-      }
+      try {
+        const logData = await get('/governance/log?limit=10');
+        if (logData && logData.log && logEl) {
+          logEl.innerHTML = logData.log.map(x => x.action + ': ' + (x.from_val || '') + ' → ' + (x.to_val || '') + (x.reason ? ' (' + x.reason.substring(0,40) + ')' : '')).join('<br>') || '—';
+        }
+      } catch (e) {}
     }
     async function govSetMode(mode) {
       const msgEl = document.getElementById('gov-msg');
+      const statusEl = document.getElementById('gov-status');
+      const growthBtn = document.getElementById('gov-growth');
+      const governedBtn = document.getElementById('gov-governed');
+      const emergBtn = document.getElementById('gov-emergency');
+      var prevMode = (statusEl && statusEl.textContent) ? String(statusEl.textContent).replace(/^EMERGENCY\s+/i, '').trim().toLowerCase() : 'growth';
+      if (prevMode !== 'growth' && prevMode !== 'governed') prevMode = 'growth';
+      if (msgEl) msgEl.textContent = '';
+      applyGovernanceUI(mode, false);
       if (msgEl) msgEl.textContent = 'Cambiando…';
-      const r = await post('/governance/mode', { mode: mode });
-      if (r && r.ok) {
-        if (msgEl) msgEl.textContent = 'Modo: ' + r.mode;
-        loadGovernanceStatus();
-      } else {
-        const err = r && (r.error || r.status);
-        if (msgEl) msgEl.textContent = (err && (err + '').includes('owner_session')) ? (UI_STRINGS['gov.owner_required'] || 'Inicia sesión owner para cambiar modo') : (err || 'Error');
+      let r = null;
+      try {
+        r = await post('/governance/mode', { mode: mode });
+      } catch (e) {
+        applyGovernanceUI(prevMode || 'growth', false);
+        if (msgEl) msgEl.textContent = 'Sin conexión';
+        setTimeout(loadGovernanceStatus, 2000);
+        return;
       }
+      if (r && (r.ok || r.mode)) {
+        if (msgEl) msgEl.textContent = '';
+        applyGovernanceUI(r.mode || mode, r.emergency_stop);
+        if (!r.ok) setTimeout(loadGovernanceStatus, 1500);
+      } else {
+        applyGovernanceUI(prevMode || 'growth', false);
+        const err = r && (r.error || r.status);
+        if (msgEl) msgEl.textContent = (err && (err + '').includes('owner_session')) ? (UI_STRINGS['gov.owner_required'] || 'Inicia sesión owner para cambiar modo') : (err ? String(err).slice(0, 40) : 'No se pudo cambiar');
+        setTimeout(loadGovernanceStatus, 2000);
+      }
+    }
+    function applyGovernanceUI(mode, emergency) {
+      var m = (mode || 'governed').toString().toLowerCase();
+      var statusEl = document.getElementById('gov-status');
+      var growthBtn = document.getElementById('gov-growth');
+      var governedBtn = document.getElementById('gov-governed');
+      var emergBtn = document.getElementById('gov-emergency');
+      if (statusEl) {
+        statusEl.textContent = (emergency ? 'EMERGENCY ' : '') + m.toUpperCase();
+        statusEl.className = 'badge ' + (emergency ? 'err' : (m === 'growth' ? 'ok' : 'warn'));
+      }
+      if (growthBtn) growthBtn.style.opacity = m === 'growth' ? '1' : '0.6';
+      if (governedBtn) governedBtn.style.opacity = m === 'governed' ? '1' : '0.6';
+      if (emergBtn) emergBtn.textContent = emergency ? (UI_STRINGS['gov.emergency_on'] || 'EMERGENCY STOP ON') : (UI_STRINGS['gov.emergency'] || 'EMERGENCY STOP');
     }
     let govEmergencyConfirm = false;
     async function govEmergencyStop() {
@@ -1554,6 +1828,7 @@
         line += '  << pip ' + (ev.ok ? 'OK' : 'FAIL') + (cmt ? ': ' + cmt.substring(0, 50) : '') + (ev.message && !cmt ? ': ' + ev.message.substring(0, 40) : '');
       }
       else if (phase === 'heartbeat') line += '.';
+      else if (phase === 'evolution_log') line += '  ' + (ev.message || '').substring(0, 120) + (ev.ok === false ? ' [ERROR]' : '');
       else line += '  ' + phase + ': ' + (ev.message || JSON.stringify(ev)).substring(0, 80);
       pre.textContent += line + '\n';
       pre.scrollTop = pre.scrollHeight;

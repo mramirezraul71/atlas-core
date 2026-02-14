@@ -20,6 +20,8 @@ def _check_pytesseract() -> bool:
     if _ocr_available is not None:
         return _ocr_available
     try:
+        from modules.humanoid.screen.tesseract_config import set_tesseract_cmd
+        set_tesseract_cmd()
         import pytesseract
         pytesseract.get_tesseract_version()
         _ocr_available = True
@@ -62,6 +64,8 @@ def ocr(image_path: str) -> Dict[str, Any]:
         out["ms"] = int((time.perf_counter() - t0) * 1000)
         return out
     try:
+        from modules.humanoid.screen.tesseract_config import set_tesseract_cmd
+        set_tesseract_cmd()
         from PIL import Image
         import pytesseract
         img = Image.open(image_path)
