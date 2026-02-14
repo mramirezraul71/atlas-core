@@ -1,0 +1,93 @@
+# AI Models Configuration for ATLAS NEXUS
+# Sistema Multi-IA con Routing Automático
+
+providers:
+  ollama:
+    name: "Ollama (Local)"
+    base_url: "http://localhost:11434"
+    priority: 1
+    cost: "free"
+    available: true
+    models:
+      deepseek-coder:
+        specialty: "code"
+        description: "Especializado en programación y código"
+        max_tokens: 4096
+        temperature: 0.1
+      deepseek-r1:
+        specialty: "reasoning"
+        description: "Especializado en razonamiento matemático y lógico"
+        max_tokens: 4096
+        temperature: 0.2
+      llama3.2:
+        specialty: "general"
+        description: "Modelo general de conversación"
+        max_tokens: 4096
+        temperature: 0.7
+      mistral:
+        specialty: "analysis"
+        description: "Especializado en análisis de texto"
+        max_tokens: 4096
+        temperature: 0.3
+
+  deepseek:
+    name: "DeepSeek API"
+    base_url: "https://api.deepseek.com"
+    priority: 2
+    cost: "cheap"
+    available: true
+    api_key_env: "DEEPSEEK_API_KEY"
+    models:
+      deepseek-chat:
+        specialty: "general"
+        description: "Modelo general de conversación"
+        max_tokens: 4096
+        temperature: 0.7
+      deepseek-coder:
+        specialty: "code"
+        description: "Especializado en programación"
+        max_tokens: 4096
+        temperature: 0.1
+
+  openai:
+    name: "OpenAI API"
+    base_url: "https://api.openai.com/v1"
+    priority: 3
+    cost: "expensive"
+    available: true
+    api_key_env: "OPENAI_API_KEY"
+    models:
+      gpt-4o-mini:
+        specialty: "general"
+        description: "Modelo general de alta calidad"
+        max_tokens: 4096
+        temperature: 0.7
+
+# Routing Rules
+routing_rules:
+  code:
+    keywords: ["código", "función", "script", "debug", "programar", "python", "javascript", "java", "c++", "html", "css", "react", "node", "api", "algoritmo", "clase", "método", "variable", "bucle", "if", "else", "for", "while"]
+    preferred_model: "deepseek-coder"
+    fallback_provider: "deepseek"
+    
+  reasoning:
+    keywords: ["calcula", "matemática", "ecuación", "resuelve", "problema", "lógica", "razonamiento", "cuánto es", "suma", "resta", "multiplica", "divide", "porcentaje", "derivada", "integral"]
+    preferred_model: "deepseek-r1"
+    fallback_provider: "deepseek"
+    
+  analysis:
+    keywords: ["resume", "analiza texto", "traduce", "interpreta", "explica", "compara", "evalúa", "sintetiza", "parafrasea", "extrae", "identifica"]
+    preferred_model: "mistral"
+    fallback_provider: "deepseek"
+    
+  general:
+    keywords: ["hola", "adiós", "gracias", "cómo estás", "qué tal", "ayuda", "información", "dime", "explícame", "cuéntame"]
+    preferred_model: "llama3.2"
+    fallback_provider: "deepseek"
+
+# System Configuration
+system:
+  default_provider: "ollama"
+  timeout_seconds: 30
+  max_retries: 2
+  confidence_threshold: 0.6

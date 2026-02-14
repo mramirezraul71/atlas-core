@@ -1,0 +1,11 @@
+{
+  "index": 0,
+  "model": "NexiGo HelloCam N930W IR Camera",
+  "resolution": [
+    640,
+    480
+  ],
+  "capabilities": [
+    "video"
+  ]
+}

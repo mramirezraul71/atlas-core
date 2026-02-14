@@ -42,3 +42,23 @@ snapshots/metalearn/
 snapshots/support/
 snapshots/brain/
 snapshots/hands_eyes/
+
+# Scripts generados por CoderAgent / AtlasCoder (sandbox)
+temp_scripts/
+atlas_workspace/
+
+# Capturas del Agente Navegador
+temp_vision/
+
+# ATLAS_EVOLUTION sandbox
+.temp_venv/
+temp_workspace/
+temp_growth/
+temp_models_cache/
+
+# NEXUS (unificado en monorepo): logs y DBs locales
+nexus/**/logs/
+nexus/**/*.log
+nexus/**/*.db
+nexus/**/*.db-journal
+nexus/**/__pycache__/

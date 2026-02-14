@@ -1,0 +1,1 @@
+# ATLAS NEXUS - core module

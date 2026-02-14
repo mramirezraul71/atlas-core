@@ -1,0 +1,61 @@
+# ATLAS NEXUS Robot Configuration
+
+# Robot Core Configuration
+robot:
+  name: "ATLAS NEXUS"
+  version: "1.0.0"
+  description: "Robot autónomo inteligente con visión por computadora"
+  
+# Camera Configuration
+camera:
+  device_id: 0
+  resolution: [640, 480]
+  fps: 30
+  auto_exposure: true
+  
+# Vision System
+vision:
+  yolo:
+    model: "yolov8n.pt"
+    confidence_threshold: 0.5
+    device: "cpu"
+  
+# Brain AI Configuration
+brain:
+  reasoning:
+    engine: "langchain"
+    model: "gpt-3.5-turbo"
+    temperature: 0.7
+    max_tokens: 500
+  
+  memory:
+    short_term_size: 10
+    vector_db: "chromadb"
+    embedding_model: "all-MiniLM-L6-v2"
+    persist_directory: "./data/memory"
+  
+  personality:
+    name: "ATLAS"
+    role: "Robot autónomo inteligente"
+    traits:
+      - "Profesional y eficiente"
+      - "Curioso sobre el entorno"
+      - "Servicial y proactivo"
+
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 8002
+  debug: true
+  cors_origins: ["*"]
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+# System Configuration
+system:
+  max_memory_usage: "2GB"
+  temp_directory: "./temp"
+  data_directory: "./data"

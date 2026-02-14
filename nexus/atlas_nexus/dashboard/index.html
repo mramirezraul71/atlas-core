@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATLAS NEXUS - Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', 'SF Pro Display', -apple-system, sans-serif;
+            background: linear-gradient(160deg, #0f0f1a 0%, #1a1a2e 40%, #16213e 100%);
+            color: #e4e4e7;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container { max-width: 1400px; margin: 0 auto; }
+        
+        /* Header glassmorphism */
+        .header {
+            background: rgba(255,255,255,0.06);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.08);
+            padding: 20px 28px;
+            border-radius: 16px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .header h1 {
+            font-size: 1.6em;
+            font-weight: 700;
+            background: linear-gradient(135deg, #a78bfa 0%, #818cf8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header .status {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+        }
+        .header .status.online { background: rgba(16,185,129,0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.4); }
+        .header .status.offline { background: rgba(239,68,68,0.2); color: #f87171; border: 1px solid rgba(239,68,68,0.4); }
+        
+        /* Bloque principal siempre visible */
+        .main-visible {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        /* Execute Task */
+        .exec-card {
+            background: rgba(255,255,255,0.06);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.08);
+            padding: 24px;
+            border-radius: 16px;
+        }
+        .exec-card h2 { font-size: 1.1em; margin-bottom: 12px; color: #a78bfa; }
+        .input-group { display: flex; gap: 12px; }
+        .exec-card input {
+            flex: 1;
+            padding: 14px 18px;
+            background: rgba(0,0,0,0.25);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            color: #e4e4e7;
+            font-size: 15px;
+        }
+        .exec-card input::placeholder { color: #71717a; }
+        .exec-card button {
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #7c3aed 0%, #6366f1 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .exec-card button:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(124,58,237,0.4); }
+        
+        /* Panel movimientos en vivo - SIEMPRE VISIBLE */
+        .live-panel {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        .live-panel-title {
+            padding: 14px 20px;
+            background: rgba(255,255,255,0.05);
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .live-panel-title .pulse { width: 8px; height: 8px; background: #34d399; border-radius: 50%; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        .live-panel .actions-header {
+            display: grid;
+            grid-template-columns: 90px 70px 1fr 70px;
+            gap: 10px;
+            padding: 10px 20px;
+            background: #1e1e2e;
+            color: #71717a;
+            font-size: 12px;
+        }
+        .live-panel .actions-body {
+            max-height: 320px;
+            overflow-y: auto;
+            color: #d4d4d4;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+        }
+        .action-row {
+            display: grid;
+            grid-template-columns: 90px 70px 1fr 70px;
+            gap: 10px;
+            padding: 10px 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .action-row:hover { background: rgba(255,255,255,0.05); }
+        .action-row.running { border-left: 3px solid #f59e0b; }
+        .action-row.ok { border-left: 3px solid #34d399; }
+        .action-row.error { border-left: 3px solid #f87171; }
+        .action-empty { padding: 40px; text-align: center; color: #52525b; }
+        .actions-output {
+            padding: 16px 20px;
+            background: #18181b;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            max-height: 160px;
+            overflow-y: auto;
+        }
+        .actions-output-title { color: #71717a; margin-bottom: 8px; font-size: 12px; }
+        .actions-output pre { margin: 0; color: #a1a1aa; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+        
+        /* Menú desplegable opciones */
+        .collapse-menu {
+            margin-top: 24px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        .collapse-toggle {
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        .collapse-toggle:hover { background: rgba(255,255,255,0.05); }
+        .collapse-toggle .chevron { transition: transform 0.2s; color: #71717a; }
+        .collapse-toggle.open .chevron { transform: rotate(180deg); }
+        .collapse-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        .collapse-content.open { max-height: 1200px; }
+        .collapse-inner { padding: 20px 24px; border-top: 1px solid rgba(255,255,255,0.06); }
+        
+        /* Grid de tarjetas dentro del menú */
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background: rgba(0,0,0,0.2);
+            border: 1px solid rgba(255,255,255,0.06);
+            padding: 20px;
+            border-radius: 12px;
+        }
+        .card h3 { font-size: 1em; margin-bottom: 14px; color: #a78bfa; }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .metric:last-child { border-bottom: none; }
+        .metric-label { color: #71717a; font-size: 0.9em; }
+        .metric-value { font-weight: 600; }
+        
+        /* Console dentro del menú */
+        .console {
+            margin-top: 20px;
+            background: #0c0c10;
+            border: 1px solid rgba(255,255,255,0.06);
+            color: #22c55e;
+            padding: 20px;
+            border-radius: 12px;
+            font-family: 'Consolas', monospace;
+            font-size: 13px;
+            max-height: 280px;
+            overflow-y: auto;
+        }
+        .console-line { margin-bottom: 4px; }
+        
+        /* Accesos rápidos en header */
+        .quick-links {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .quick-links a {
+            padding: 8px 14px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 8px;
+            color: #a1a1aa;
+            text-decoration: none;
+            font-size: 0.9em;
+            transition: background 0.2s, color 0.2s;
+        }
+        .quick-links a:hover { background: rgba(167,139,250,0.2); color: #a78bfa; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div>
+                <h1>ATLAS NEXUS</h1>
+                <p style="font-size:0.85em;color:#71717a;margin-top:4px;">Dashboard · Movimientos en vivo</p>
+            </div>
+            <div style="display:flex;align-items:center;gap:20px;">
+                <div class="quick-links">
+                    <a href="/docs" target="_blank">API Docs</a>
+                    <a href="/" target="_blank">Status</a>
+                </div>
+                <div class="status online" id="status">● OPERATIVO</div>
+            </div>
+        </header>
+        
+        <main class="main-visible">
+            <!-- Ejecutar tarea - siempre visible -->
+            <section class="exec-card">
+                <h2>Ejecutar tarea</h2>
+                <div class="input-group">
+                    <input type="text" id="task-input" placeholder="Escribe un comando u objetivo (ej. Instala pytesseract, Busca noticias de IA...)" />
+                    <button onclick="executeTask()">Ejecutar</button>
+                </div>
+            </section>
+            
+            <!-- Movimientos en vivo - SIEMPRE VISIBLE -->
+            <section class="live-panel">
+                <div class="live-panel-title">
+                    <span class="pulse"></span>
+                    Panel de operaciones en vivo
+                </div>
+                <div class="actions-header">
+                    <span>Tiempo</span><span>Tipo</span><span>Acción</span><span>Estado</span>
+                </div>
+                <div class="actions-body" id="actions-body">
+                    <div class="action-empty" id="action-empty">Sin acciones recientes</div>
+                </div>
+                <div class="actions-output" id="actions-output" style="display:none;">
+                    <div class="actions-output-title">Salida:</div>
+                    <pre id="actions-output-content"></pre>
+                </div>
+            </section>
+            
+            <!-- Menú desplegable: más opciones -->
+            <div class="collapse-menu">
+                <div class="collapse-toggle" id="collapse-toggle" onclick="toggleOptions()">
+                    <span>Más opciones</span>
+                    <span class="chevron">▼</span>
+                </div>
+                <div class="collapse-content" id="collapse-content">
+                    <div class="collapse-inner">
+                        <div class="options-grid">
+                            <div class="card">
+                                <h3>Estado del sistema</h3>
+                                <div class="metric"><span class="metric-label">Versión</span><span class="metric-value" id="version">—</span></div>
+                                <div class="metric"><span class="metric-label">Uptime</span><span class="metric-value" id="uptime">—</span></div>
+                                <div class="metric"><span class="metric-label">Tareas activas</span><span class="metric-value" id="active-tasks">—</span></div>
+                                <div class="metric"><span class="metric-label">Completadas</span><span class="metric-value" id="completed-tasks">—</span></div>
+                            </div>
+                            <div class="card">
+                                <h3>LLM</h3>
+                                <div class="metric"><span class="metric-label">Total llamadas</span><span class="metric-value" id="llm-calls">—</span></div>
+                                <div class="metric"><span class="metric-label">Claude</span><span class="metric-value" id="llm-claude">—</span></div>
+                                <div class="metric"><span class="metric-label">DeepSeek</span><span class="metric-value" id="llm-deepseek">—</span></div>
+                                <div class="metric"><span class="metric-label">Ollama</span><span class="metric-value" id="llm-ollama">—</span></div>
+                            </div>
+                            <div class="card">
+                                <h3>Herramientas</h3>
+                                <div class="metric"><span class="metric-label">Disponibles</span><span class="metric-value" id="tools-count">—</span></div>
+                                <div class="metric"><span class="metric-label">Web</span><span class="metric-value">3</span></div>
+                                <div class="metric"><span class="metric-label">Archivos</span><span class="metric-value">4</span></div>
+                                <div class="metric"><span class="metric-label">Sistema</span><span class="metric-value">2</span></div>
+                            </div>
+                        </div>
+                        <div class="console" id="console">
+                            <div class="console-line">&gt; ATLAS NEXUS Console Ready</div>
+                            <div class="console-line">&gt; WebSocket: Conectando...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <script>
+        const API_BASE = window.location.origin;
+        const WS_URL = (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host + '/ws';
+        let ws = null;
+        
+        function toggleOptions() {
+            const content = document.getElementById('collapse-content');
+            const toggle = document.getElementById('collapse-toggle');
+            content.classList.toggle('open');
+            toggle.classList.toggle('open');
+        }
+        
+        async function init() {
+            await updateStatus();
+            await updateLLMStats();
+            await loadActionsLog();
+            connectWebSocket();
+            setInterval(updateStatus, 5000);
+            setInterval(updateLLMStats, 10000);
+            setInterval(loadActionsLog, 15000);
+        }
+        
+        let actionEntries = {};
+        async function loadActionsLog() {
+            try {
+                const r = await fetch(API_BASE + '/actions/log?limit=50');
+                const data = await r.json();
+                if (data.ok && data.entries) {
+                    actionEntries = {};
+                    data.entries.forEach(e => { actionEntries[e.id] = e; });
+                    renderActionsPanel();
+                }
+            } catch (e) { console.warn('Actions log:', e); }
+        }
+        function updateActionPanel(wsData) {
+            const d = wsData.data || wsData;
+            if (d.id) {
+                actionEntries[d.id] = d;
+                renderActionsPanel();
+            }
+        }
+        function renderActionsPanel() {
+            const body = document.getElementById('actions-body');
+            const empty = document.getElementById('action-empty');
+            const entries = Object.values(actionEntries).slice(-30).reverse();
+            empty.style.display = entries.length ? 'none' : 'block';
+            body.querySelectorAll('.action-row').forEach(el => el.remove());
+            entries.forEach(e => {
+                const row = document.createElement('div');
+                row.className = 'action-row ' + (e.status || '');
+                const time = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '—';
+                row.innerHTML = '<span>' + time + '</span><span>' + (e.action_type || '—') + '</span><span title="' + (e.description || '').replace(/"/g, '&quot;') + '">' + (e.description || '—').substring(0, 60) + (e.description && e.description.length > 60 ? '…' : '') + '</span><span>' + (e.status || '—') + '</span>';
+                row.onclick = () => {
+                    document.getElementById('actions-output-content').textContent = (e.command || '') + '\n\n' + (e.output || '(sin salida)');
+                    document.getElementById('actions-output').style.display = 'block';
+                };
+                body.appendChild(row);
+            });
+        }
+        
+        async function updateStatus() {
+            try {
+                const r = await fetch(API_BASE + '/status');
+                const data = await r.json();
+                document.getElementById('version').textContent = data.version || '—';
+                document.getElementById('uptime').textContent = formatUptime(data.uptime || 0);
+                document.getElementById('active-tasks').textContent = data.active_tasks ?? data.active_plans ?? '—';
+                document.getElementById('completed-tasks').textContent = data.completed_tasks ?? '—';
+                document.getElementById('tools-count').textContent = data.available_tools ?? '—';
+                document.getElementById('status').textContent = '● OPERATIVO';
+                document.getElementById('status').className = 'status online';
+            } catch (e) {
+                document.getElementById('status').textContent = '● DESCONECTADO';
+                document.getElementById('status').className = 'status offline';
+            }
+        }
+        
+        async function updateLLMStats() {
+            try {
+                const r = await fetch(API_BASE + '/llm/stats');
+                const data = await r.json();
+                document.getElementById('llm-calls').textContent = data.total_calls ?? '—';
+                document.getElementById('llm-claude').textContent = data.calls_by_model?.claude ?? '—';
+                document.getElementById('llm-deepseek').textContent = (data.calls_by_model?.deepseek_coder || 0) + (data.calls_by_model?.deepseek_chat || 0) || '—';
+                document.getElementById('llm-ollama').textContent = (data.calls_by_model?.llama || 0) + (data.calls_by_model?.mistral || 0) || '—';
+            } catch (e) {}
+        }
+        
+        function connectWebSocket() {
+            ws = new WebSocket(WS_URL);
+            ws.onopen = () => addConsoleLog('&gt; WebSocket: Conectado');
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                addConsoleLog('&gt; ' + (data.type || 'msg'));
+                if (data.type === 'action') updateActionPanel(data);
+                if (data.type === 'task_completed') updateStatus();
+            };
+            ws.onclose = () => { addConsoleLog('&gt; WebSocket desconectado'); setTimeout(connectWebSocket, 5000); };
+        }
+        
+        async function executeTask() {
+            const input = document.getElementById('task-input');
+            const task = input.value.trim();
+            if (!task) return;
+            addConsoleLog('&gt; Ejecutando: ' + task);
+            input.value = '';
+            try {
+                const r = await fetch(API_BASE + '/goal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ goal: task })
+                });
+                const result = await r.json();
+                if (result.plan_id) addConsoleLog('&gt; Plan creado: ' + result.plan_id);
+                else addConsoleLog('&gt; ' + (result.detail || JSON.stringify(result)));
+                updateStatus();
+            } catch (e) {
+                addConsoleLog('&gt; Error: ' + e.message);
+            }
+        }
+        
+        function addConsoleLog(msg) {
+            const el = document.getElementById('console');
+            const line = document.createElement('div');
+            line.className = 'console-line';
+            line.innerHTML = msg;
+            el.appendChild(line);
+            el.scrollTop = el.scrollHeight;
+        }
+        
+        function formatUptime(s) {
+            const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+            return h ? h + 'h ' + m + 'm' : m + 'm ' + Math.floor(s % 60) + 's';
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('task-input').addEventListener('keypress', e => { if (e.key === 'Enter') executeTask(); });
+            init();
+        });
+    </script>
+</body>
+</html>
