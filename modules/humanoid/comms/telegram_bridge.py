@@ -230,7 +230,15 @@ class TelegramBridge:
             try:
                 from modules.humanoid.approvals import approve
                 out = approve(aid, resolved_by=resolved_by, owner_session_token=None)
-                return {"ok": out.get("ok"), "action": "approve", "id": aid, "status": out.get("status"), "error": out.get("error")}
+                return {
+                    "ok": out.get("ok"),
+                    "action": "approve",
+                    "id": aid,
+                    "status": out.get("status"),
+                    "error": out.get("error"),
+                    "executed": out.get("executed"),
+                    "execution": out.get("execution"),
+                }
             except Exception as e:
                 return {"ok": False, "action": "approve", "id": aid, "status": "exception", "error": str(e)}
         if callback_data.startswith("reject:"):

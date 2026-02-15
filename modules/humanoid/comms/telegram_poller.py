@@ -106,14 +106,44 @@ def _should_remove_keyboard(status: str) -> bool:
     return st in ("approved", "rejected", "already_approved", "already_rejected", "expired", "not_found")
 
 
-def _format_status_message(action: str, aid: str, status: str, err: str = "") -> str:
+def _format_status_message(action: str, aid: str, status: str, err: str = "", execution: Optional[Dict[str, Any]] = None) -> str:
     a = (action or "").strip().lower()
     st = (status or "").strip().lower()
     eid = (aid or "").strip()
     err_s = (err or "").strip()
 
     if st in ("approved", "already_approved"):
-        return f"<b>ATLAS</b>\nAprobación: <b>APROBADA</b>\nID: <code>{eid}</code>"
+        lines = [f"<b>ATLAS</b>", "Aprobación: <b>APROBADA</b>", f"ID: <code>{eid}</code>"]
+        ex = execution or {}
+        if ex:
+            ex_ok = ex.get("ok")
+            ms = ex.get("ms")
+            if ex_ok is True:
+                lines.append("Ejecución: <b>OK</b>")
+            elif ex_ok is False:
+                lines.append("Ejecución: <b>FALLÓ</b>")
+            if ms is not None:
+                try:
+                    lines.append(f"Tiempo: <b>{int(ms)}ms</b>")
+                except Exception:
+                    pass
+            # Evidencia (paths locales)
+            try:
+                res = ex.get("result") or {}
+                ev = res.get("evidence") or {}
+                b = ev.get("before")
+                a2 = ev.get("after")
+                if b or a2:
+                    lines.append("Evidencia:")
+                    if b:
+                        lines.append(f"- before: <code>{str(b)[-220:]}</code>")
+                    if a2:
+                        lines.append(f"- after: <code>{str(a2)[-220:]}</code>")
+            except Exception:
+                pass
+            if ex.get("error"):
+                lines.append(f"Detalle: {str(ex.get('error'))[:160]}")
+        return "\n".join(lines)[:3500]
     if st in ("rejected", "already_rejected"):
         return f"<b>ATLAS</b>\nAprobación: <b>RECHAZADA</b>\nID: <code>{eid}</code>"
     if st == "expired":
@@ -158,7 +188,13 @@ def _loop() -> None:
                         # Editar el mensaje original: actualizar estado y remover botones si ya se resolvió.
                         try:
                             st = str(r.get("status") or "")
-                            txt = _format_status_message(str(r.get("action") or ""), str(r.get("id") or ""), st, str(r.get("error") or ""))
+                            txt = _format_status_message(
+                                str(r.get("action") or ""),
+                                str(r.get("id") or ""),
+                                st,
+                                str(r.get("error") or ""),
+                                r.get("execution"),
+                            )
                             _api_edit_message_text(chat_id, message_id, txt, remove_keyboard=_should_remove_keyboard(st))
                         except Exception:
                             pass
@@ -172,7 +208,7 @@ def _loop() -> None:
                     if lower.startswith("/approve ") or lower.startswith("aprobar "):
                         aid = text.split(maxsplit=1)[1].strip() if len(text.split(maxsplit=1)) > 1 else ""
                         r = bridge.handle_callback_data(f"approve:{aid}", chat_id, resolved_by="telegram")
-                        bridge.send(chat_id, _format_status_message("approve", aid, str(r.get("status") or ""), str(r.get("error") or "")))
+                        bridge.send(chat_id, _format_status_message("approve", aid, str(r.get("status") or ""), str(r.get("error") or ""), r.get("execution")))
                     elif lower.startswith("/reject ") or lower.startswith("rechazar "):
                         aid = text.split(maxsplit=1)[1].strip() if len(text.split(maxsplit=1)) > 1 else ""
                         r = bridge.handle_callback_data(f"reject:{aid}", chat_id, resolved_by="telegram")
