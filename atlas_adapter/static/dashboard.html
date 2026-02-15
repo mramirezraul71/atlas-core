@@ -643,7 +643,15 @@
           <div class="card" id="scheduler-card"><h2 data-i18n="card.scheduler">Programador</h2><div class="value">—</div><div class="row"></div></div>
           <div class="card" id="cluster-card"><h2 data-i18n="card.cluster">Cluster</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadCluster()" data-i18n="cluster.view">Ver nodos</button></div></div>
           <div class="card" id="gateway-card"><h2 data-i18n="card.gateway">Gateway</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadGateway()" data-i18n="gateway.view">Ver</button></div></div>
-          <div class="card" id="approvals-card"><h2 data-i18n="card.approvals">Aprobaciones</h2><div class="value"><ul id="approvals-list"></ul><div id="evolution-pending" style="margin-top:.5rem;font-size:.8rem;"></div></div></div>
+          <div class="card" id="approvals-card">
+            <h2 data-i18n="card.approvals">Aprobaciones
+              <button type="button" class="small secondary" style="float:right;" onclick="expandPanel('owner-console-section','Aprobaciones','#approvals-card,#owner-pending-list,#owner-expired-list')" title="Abrir / Maximizar">⛶</button>
+            </h2>
+            <div class="value">
+              <ul id="approvals-list"></ul>
+              <div id="evolution-pending" style="margin-top:.5rem;font-size:.8rem;"></div>
+            </div>
+          </div>
         </div>
         <div id="nav-opciones-sections"></div>
       </div>
@@ -951,6 +959,7 @@
             <button type="button" class="cc-tabbtn" id="cc-tab-web" onclick="ccSelectTab('web')">Web (Pies)</button>
             <button type="button" class="cc-tabbtn" id="cc-tab-vision" onclick="ccSelectTab('vision')">Visión</button>
             <button type="button" class="cc-tabbtn" id="cc-tab-terminal" onclick="ccSelectTab('terminal')">Terminal</button>
+            <button type="button" class="cc-tabbtn" id="cc-tab-architect" onclick="ccSelectTab('architect')">Architect</button>
           </div>
           <div class="row" style="margin:0;">
             <span class="badge" id="cc-comms-badge">COMMS: —</span>
@@ -1094,6 +1103,24 @@
           <div class="row" style="margin-top:.5rem;">
             <img id="cc-vision-preview2" class="cc-evidence-img" alt="Snapshot cámara" src="" style="display:none;">
           </div>
+          <div class="card" style="margin-top:.8rem;">
+            <h2 style="margin:0 0 .35rem;">Visión Ubicua (LAN)</h2>
+            <p class="robot-task-help" style="color:var(--muted); font-size:.8rem; margin-top:0;">
+              Descubre RTSP/ONVIF, centraliza streams (FFmpeg→HLS) y permite “ojo activo” por movimiento.
+            </p>
+            <div class="row" style="margin-top:.25rem; gap:.5rem; flex-wrap:wrap;">
+              <button type="button" class="small" onclick="ubiqDiscover()">Escanear LAN</button>
+              <button type="button" class="small secondary" onclick="ubiqLoad()">Refrescar lista</button>
+              <button type="button" class="small secondary" onclick="ubiqMotionStart()">Motion ON</button>
+              <button type="button" class="small secondary" onclick="ubiqMotionStop()">Motion OFF</button>
+              <span class="last-update" id="ubiq-status" style="color:var(--muted); font-size:.75rem;"></span>
+            </div>
+            <div class="row" style="margin-top:.35rem; gap:.5rem; flex-wrap:wrap;">
+              <button type="button" class="small secondary" onclick="ubiqFetchToken()">Obtener token móvil (local)</button>
+              <code id="ubiq-token" style="font-size:.72rem; color:var(--muted);">token: —</code>
+            </div>
+            <div id="ubiq-cameras" class="value" style="font-size:.82rem; margin-top:.5rem; max-height:220px; overflow:auto; color:var(--text);">—</div>
+          </div>
         </div>
 
         <div id="cc-panel-terminal" class="cc-panel">
@@ -1102,6 +1129,32 @@
             <button type="button" class="small secondary" onclick="scrollToSection('live-console-section')">Ir a Consola en vivo</button>
           </div>
           <pre id="cc-terminal-mini" class="cc-terminal-mini">—</pre>
+        </div>
+
+        <div id="cc-panel-architect" class="cc-panel">
+          <p class="robot-task-help" style="color:var(--muted); font-size:.8rem;">
+            ATLAS_ARCHITECT: scaffolding + parches atómicos + terminal feedback loop.
+            En <strong>GOVERNED</strong> genera diffs y crea una aprobación. En <strong>GROWTH</strong> aplica y prueba.
+          </p>
+          <div class="row" style="margin-top:.25rem; gap:.6rem; align-items:flex-start;">
+            <textarea id="cc-architect-order" class="robot-input" placeholder="Ej: Diseña una app de inventario para la panadería Rauli" rows="2" style="min-height:56px; flex:1;"></textarea>
+            <select id="cc-architect-mode" style="padding:.35rem .5rem; border-radius:8px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.85rem;">
+              <option value="governed" selected>GOVERNED</option>
+              <option value="growth">GROWTH</option>
+            </select>
+            <button type="button" class="small" onclick="ccArchitectRun()">Ejecutar</button>
+          </div>
+          <div class="row" style="margin-top:.35rem;">
+            <span class="last-update" id="cc-architect-status"></span>
+          </div>
+          <div class="card" style="margin-top:.6rem;">
+            <h2>Resultado</h2>
+            <pre id="cc-architect-out" class="cc-terminal-mini">—</pre>
+          </div>
+          <div class="card" style="margin-top:.6rem;">
+            <h2>Diffs (preview)</h2>
+            <div id="cc-architect-diffs" class="value" style="font-size:.8rem; color:var(--muted);">—</div>
+          </div>
         </div>
       </div>
     </section>
@@ -1123,6 +1176,109 @@
     </section>
   </div>
   </div>
+  <script>
+    // --- Anti-Silencio (watchdog independiente del resto del JS) ---
+    (function() {
+      function safeJson(x) { try { return JSON.stringify(x); } catch(e) { return '{}'; } }
+      var _localSpeakLast = {};
+      function localSpeak(text, key) {
+        try {
+          var k = String(key || 'default');
+          var now = Date.now();
+          if (_localSpeakLast[k] && (now - _localSpeakLast[k] < 15000)) return; // throttle 15s
+          _localSpeakLast[k] = now;
+          if (window.speechSynthesis && window.SpeechSynthesisUtterance) {
+            var u = new SpeechSynthesisUtterance(String(text || '').slice(0, 220));
+            u.lang = 'es-ES';
+            window.speechSynthesis.speak(u);
+          }
+        } catch (e) {}
+      }
+      function alertAtlas(kind, messageHuman, actionHuman, technical, level) {
+        // IMPORTANTE: evitar doble voz. Solo usar voz local si NO se pudo reportar al servidor.
+        try {
+          var payload = {
+            kind: kind || 'ui',
+            message_human: messageHuman || 'Alerta: el panel tuvo un problema.',
+            action_human: actionHuman || 'Reintentando conexión.',
+            technical: technical || {},
+            level: level || 'high'
+          };
+          var body = safeJson(payload);
+          return fetch('/api/comms/alert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: body,
+            cache: 'no-store',
+            keepalive: true
+          }).then(function() {
+            return true;
+          }).catch(function() {
+            // Fallback: solo si el servidor no recibió la alerta.
+            localSpeak(payload.message_human + ' ' + payload.action_human, String(payload.kind || 'alert'));
+            return false;
+          });
+        } catch (e) {
+          try { localSpeak('Alerta: el panel tuvo un problema.', 'alert_fallback'); } catch (_) {}
+          return Promise.resolve(false);
+        }
+      }
+
+      // Captura errores globales (incluye SyntaxError de scripts posteriores)
+      window.addEventListener('error', function(ev) {
+        try {
+          var msg = (ev && ev.message) ? String(ev.message) : 'Error en el panel';
+          var where = (ev && ev.filename) ? (String(ev.filename).split('/').pop() + ':' + (ev.lineno || 0)) : '';
+          alertAtlas(
+            'dashboard_js_error',
+            'Alerta: el panel se rompió y perdió funciones.',
+            'Registrando el error y reintentando.',
+            { message: msg, where: where }
+          );
+        } catch (e) {}
+      });
+      window.addEventListener('unhandledrejection', function(ev) {
+        try {
+          var reason = (ev && ev.reason) ? String(ev.reason) : 'Promesa rechazada';
+          alertAtlas(
+            'dashboard_unhandled_rejection',
+            'Alerta: el panel tuvo un fallo interno.',
+            'Registrando el error y reintentando.',
+            { reason: reason }
+          );
+        } catch (e) {}
+      });
+
+      // Watchdog de conexión: ping /health con backoff 5/10/30 para no spamear.
+      var backoff = [5000, 10000, 30000];
+      var idx = 0;
+      var nextAt = 0;
+      function loop() {
+        var now = Date.now();
+        if (now < nextAt) { setTimeout(loop, 1000); return; }
+        fetch('/health', { cache: 'no-store' })
+          .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json().catch(function(){return {};}); })
+          .then(function() {
+            idx = 0;
+            nextAt = Date.now() + 15000;
+            setTimeout(loop, 15000);
+          })
+          .catch(function(err) {
+            var wait = backoff[Math.min(idx, backoff.length - 1)];
+            if (idx < backoff.length - 1) idx++;
+            nextAt = Date.now() + wait;
+            alertAtlas(
+              'dashboard_connection_lost',
+              'Alerta: el panel perdió conexión con ATLAS.',
+              'Reintentando automáticamente.',
+              { error: String(err && err.message ? err.message : err) }
+            );
+            setTimeout(loop, wait);
+          });
+      }
+      setTimeout(loop, 8000);
+    })();
+  </script>
   <script>
     (function() {
       var q = new URLSearchParams(window.location.search);
@@ -1257,7 +1413,7 @@
     let _ccOpsTimer = null;
     function ccSelectTab(tab) {
       _ccTab = tab || 'chat';
-      ['chat','ops','web','vision','terminal'].forEach(function(t) {
+      ['chat','ops','web','vision','terminal','architect'].forEach(function(t) {
         const btn = document.getElementById('cc-tab-' + t);
         const panel = document.getElementById('cc-panel-' + t);
         if (btn) btn.classList.toggle('active', t === _ccTab);
@@ -1278,6 +1434,36 @@
           const dst = document.getElementById('cc-terminal-mini');
           if (src && dst) dst.textContent = (src.textContent || '').slice(-5000) || '—';
         } catch (e) {}
+      }
+    }
+
+    async function ccArchitectRun() {
+      const status = document.getElementById('cc-architect-status');
+      const outEl = document.getElementById('cc-architect-out');
+      const diffsEl = document.getElementById('cc-architect-diffs');
+      const order = (document.getElementById('cc-architect-order') || {}).value || '';
+      const mode = (document.getElementById('cc-architect-mode') || {}).value || 'governed';
+      if (status) status.textContent = 'EN PROCESO DE BÚSQUEDA...';
+      if (outEl) outEl.textContent = '—';
+      if (diffsEl) diffsEl.textContent = '—';
+      try {
+        const r = await post('/api/architect/order', { order: order, mode: mode, prefer_free: true, max_heal_attempts: 3 });
+        if (!r) { if (status) status.textContent = 'Sin respuesta'; return; }
+        if (status) status.textContent = (r.ok ? 'OK' : ('ERROR: ' + (r.error || 'fallo')));
+        if (outEl) outEl.textContent = JSON.stringify(r.data || r, null, 2).slice(-6000);
+        try {
+          const plan = (r.data && r.data.plan) ? r.data.plan : null;
+          if (plan && Array.isArray(plan.changes) && diffsEl) {
+            const previews = plan.changes
+              .filter(c => (c.diff_preview || '').trim().length > 0)
+              .slice(0, 8)
+              .map((c, i) => `#${i+1} ${c.path}\n${(c.diff_preview || '').slice(0, 1500)}`);
+            diffsEl.textContent = previews.length ? previews.join('\n\n') : '—';
+          }
+        } catch (e) {}
+      } catch (e) {
+        if (status) status.textContent = 'ERROR';
+        if (outEl) outEl.textContent = String(e);
       }
     }
 
@@ -1383,6 +1569,158 @@
         }
       } catch (e) {
         showToast('No se pudo capturar cámara: ' + ((e && e.message) || 'error'), true);
+      }
+    }
+
+    // --- Visión Ubicua (LAN) ---
+    var ubiqMobileToken = '';
+    function _ubiqSetStatus(msg, isErr) {
+      var el = document.getElementById('ubiq-status');
+      if (!el) return;
+      el.textContent = msg || '';
+      el.style.color = isErr ? 'var(--danger)' : 'var(--muted)';
+    }
+    function _ubiqSetToken(tok) {
+      ubiqMobileToken = String(tok || '').trim();
+      var el = document.getElementById('ubiq-token');
+      if (el) el.textContent = ubiqMobileToken ? ('token: ' + ubiqMobileToken) : 'token: —';
+    }
+
+    async function ubiqFetchToken() {
+      _ubiqSetStatus('Leyendo token…');
+      try {
+        var r = await get('/api/vision/ubiq/mobile-token');
+        if (r && r.ok && r.token) {
+          _ubiqSetToken(r.token);
+          _ubiqSetStatus('Token OK');
+        } else {
+          _ubiqSetStatus('Token no disponible', true);
+        }
+      } catch (e) {
+        _ubiqSetStatus('Error token', true);
+      }
+    }
+
+    async function ubiqDiscover() {
+      _ubiqSetStatus('Escaneando LAN…');
+      try {
+        var r = await post('/api/vision/ubiq/discover', { scan_ports: true, onvif: true });
+        if (r && r.ok) {
+          _ubiqSetStatus('OK: ' + ((r.data && r.data.new_count) || 0) + ' nuevos');
+          await ubiqLoad();
+        } else {
+          _ubiqSetStatus('Error: ' + ((r && r.error) || 'fallo'), true);
+        }
+      } catch (e) {
+        _ubiqSetStatus('Error escaneo', true);
+      }
+    }
+
+    async function ubiqMotionStart() {
+      _ubiqSetStatus('Motion ON…');
+      try {
+        var r = await post('/api/vision/ubiq/motion/start', {});
+        _ubiqSetStatus((r && r.ok) ? 'Motion ON' : 'Motion error', !(r && r.ok));
+      } catch (e) {
+        _ubiqSetStatus('Motion error', true);
+      }
+    }
+    async function ubiqMotionStop() {
+      _ubiqSetStatus('Motion OFF…');
+      try {
+        var r = await post('/api/vision/ubiq/motion/stop', {});
+        _ubiqSetStatus((r && r.ok) ? 'Motion OFF' : 'Motion error', !(r && r.ok));
+      } catch (e) {
+        _ubiqSetStatus('Motion error', true);
+      }
+    }
+
+    async function ubiqStreamStart(camId, variant) {
+      _ubiqSetStatus('Iniciando stream ' + variant + '…');
+      try {
+        var r = await post('/api/vision/ubiq/streams/' + encodeURIComponent(camId) + '/start', { variant: variant });
+        _ubiqSetStatus((r && r.ok) ? ('Stream ' + variant + ' OK') : ('Stream error: ' + ((r && r.error) || 'fallo')), !(r && r.ok));
+        await ubiqLoad();
+      } catch (e) {
+        _ubiqSetStatus('Stream error', true);
+      }
+    }
+    async function ubiqSetActiveEye(camId) {
+      _ubiqSetStatus('Fijando ojo activo…');
+      try {
+        var r = await post('/api/vision/ubiq/active-eye', { eye: 'ubiq:' + String(camId), hold_s: 25 });
+        _ubiqSetStatus((r && r.ok) ? 'Ojo activo OK' : 'Ojo activo error', !(r && r.ok));
+      } catch (e) {
+        _ubiqSetStatus('Ojo activo error', true);
+      }
+    }
+
+    function _ubiqRender(cams) {
+      var box = document.getElementById('ubiq-cameras');
+      if (!box) return;
+      if (!cams || !cams.length) { box.innerHTML = '<div style="color:var(--muted);">Sin cámaras registradas.</div>'; return; }
+      var html = '';
+      cams.forEach(function(c) {
+        var id = String(c.id || '');
+        var ip = String(c.ip || '');
+        var proto = String(c.protocol || '');
+        var model = String(c.model || '');
+        var url = String(c.url || '');
+        var localM3u8 = base + '/api/vision/ubiq/streams/' + encodeURIComponent(id) + '/local/index.m3u8';
+        var mobileM3u8 = base + '/mobile/vision/' + encodeURIComponent(id) + '.m3u8' + (ubiqMobileToken ? ('?token=' + encodeURIComponent(ubiqMobileToken)) : '');
+        html += '<div style="padding:.45rem .45rem; border:1px solid var(--card-border); border-radius:10px; margin:.35rem 0; background:rgba(255,255,255,.03);">' +
+          '<div style="display:flex; justify-content:space-between; gap:.5rem; align-items:flex-start;">' +
+            '<div style="min-width:0;">' +
+              '<div><strong>' + esc(model || id) + '</strong> <span style="color:var(--muted); font-size:.75rem;">(' + esc(proto) + ')</span></div>' +
+              '<div style="color:var(--muted); font-size:.75rem; word-break:break-all;">' + esc(ip || url).slice(0, 140) + '</div>' +
+            '</div>' +
+            '<div class="row" style="margin:0; gap:.35rem; flex-wrap:wrap; justify-content:flex-end;">' +
+              '<button class="small secondary" data-ubiq-action="start" data-variant="local" data-camid="' + esc(id) + '">Start local</button>' +
+              '<button class="small secondary" data-ubiq-action="start" data-variant="mobile" data-camid="' + esc(id) + '">Start mobile</button>' +
+              '<button class="small" data-ubiq-action="eye" data-camid="' + esc(id) + '">Ojo activo</button>' +
+            '</div>' +
+          '</div>' +
+          '<div style="margin-top:.35rem; display:flex; gap:.6rem; flex-wrap:wrap; font-size:.75rem;">' +
+            '<a href="' + localM3u8 + '" target="_blank" style="color:var(--purple-light);">local.m3u8</a>' +
+            '<a href="' + mobileM3u8 + '" target="_blank" style="color:var(--amber);">mobile.m3u8</a>' +
+          '</div>' +
+        '</div>';
+      });
+      box.innerHTML = html;
+      // Delegación de eventos: evita inline onclick (y escapes rotos)
+      if (!box.__ubiqBound) {
+        box.__ubiqBound = true;
+        box.addEventListener('click', function(ev) {
+          try {
+            var t = ev && ev.target ? ev.target : null;
+            if (!t) return;
+            var btn = (t.closest && t.closest('button[data-ubiq-action]')) ? t.closest('button[data-ubiq-action]') : null;
+            if (!btn) return;
+            var action = String(btn.getAttribute('data-ubiq-action') || '');
+            var camId = String(btn.getAttribute('data-camid') || '');
+            var variant = String(btn.getAttribute('data-variant') || '');
+            if (!camId) return;
+            if (action === 'start') return ubiqStreamStart(camId, variant || 'local');
+            if (action === 'eye') return ubiqSetActiveEye(camId);
+          } catch (e) {}
+        });
+      }
+    }
+
+    async function ubiqLoad() {
+      _ubiqSetStatus('Cargando cámaras…');
+      try {
+        var r = await get('/api/vision/ubiq/cameras?limit=80');
+        if (r && r.ok && r.data && r.data.cameras) {
+          _ubiqRender(r.data.cameras);
+          _ubiqSetStatus('OK (' + (r.data.count || r.data.cameras.length || 0) + ')');
+        } else {
+          _ubiqRender([]);
+          _ubiqSetStatus('Error', true);
+        }
+      } catch (e) {
+        _ubiqRender([]);
+        _ubiqSetStatus('Error', true);
       }
     }
 
@@ -1707,6 +2045,13 @@
               evidenceText.textContent = Array.isArray(out.data.evidence) ? out.data.evidence.join(' · ') : String(out.data.evidence);
               evidencePanel.style.display = 'block';
             }
+            // Mostrar terminal preview del cursor-run si existe
+            try {
+              if (out.data.terminal_preview) {
+                const term = document.getElementById('cc-terminal-mini');
+                if (term) term.textContent = String(out.data.terminal_preview || '').slice(-6000) || '—';
+              }
+            } catch (e) {}
           }
           if (out && out.error) responseEl.classList.add('error');
           else responseEl.classList.remove('error');
@@ -1793,7 +2138,24 @@
         alert(UI_STRINGS['voice.no_response_play'] || 'No hay respuesta que reproducir. Envía un comando primero.');
         return;
       }
-      const short = text.slice(0, 500);
+      function simplifyForSpeech(t) {
+        let s = String(t || '');
+        // reducir claves técnicas comunes
+        s = s.replace(/ga_refactor_plan/g, 'plan de mantenimiento del código');
+        s = s.replace(/architect_apply/g, 'aplicar un plan de creación de aplicación');
+        s = s.replace(/approval_id/g, 'identificador de aprobación');
+        // quitar IDs tipo uuid-corto
+        s = s.replace(/\b[0-9a-f]{8}-[0-9a-f]{3}\b/gi, 'ID');
+        // quitar JSON muy técnico
+        if (s.trim().startsWith('{') || s.trim().startsWith('[')) {
+          s = 'Evento recibido. Revisa el panel para ver el detalle.';
+        }
+        // cortar y suavizar
+        s = s.replace(/[_{}[\]"]/g, ' ');
+        s = s.replace(/\s+/g, ' ').trim();
+        return s;
+      }
+      const short = simplifyForSpeech(text).slice(0, 420);
       try {
         const r = await post('/voice/speak', { text: short });
         if (r && r.ok) return;
@@ -2443,8 +2805,84 @@
       const d = await get('/approvals/list');
       const list = document.getElementById('approvals-list');
       const items = (d && d.data && Array.isArray(d.data)) ? d.data : [];
+      function approvalExplain(a) {
+        const action = (a && a.action) ? String(a.action) : '';
+        const payload = (a && a.payload) ? a.payload : {};
+        if (action === 'ga_refactor_plan') {
+          const f = payload.finding || {};
+          const path = (f.path || '').toString();
+          const detail = (f.detail || '').toString();
+          return {
+            title: 'Mantenimiento del proyecto (plan)',
+            desc: (path ? ('Se detectó un archivo grande: ' + path + (detail ? (' (' + detail + ')') : '') + '.') : 'Plan de mantenimiento del repositorio.'),
+          };
+        }
+        if (action === 'architect_apply') {
+          const goal = (payload.goal || '').toString();
+          return {
+            title: 'Crear/editar app (ATLAS_ARCHITECT)',
+            desc: goal ? ('Acción propuesta: ' + goal + '.') : 'Acción propuesta por ATLAS_ARCHITECT.',
+          };
+        }
+        if (action === 'update_apply' || action === 'deploy_apply') {
+          return { title: 'Actualizar / desplegar', desc: 'Se solicita permiso para aplicar una actualización.' };
+        }
+        return { title: 'Aprobación requerida', desc: action ? ('Operación: ' + action) : 'Operación pendiente.' };
+      }
+      function isExpired(a) {
+        if (a && a.expired === true) return true;
+        const ex = a && a.expires_at ? Date.parse(String(a.expires_at)) : NaN;
+        return !Number.isNaN(ex) && ex <= Date.now();
+      }
+      function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+      // Si no hay pendientes, mostrar explicación humana + mini-historial
+      if (!items.length) {
+        try {
+          const h1 = await get('/approvals/list?status=approved&limit=3');
+          const h2 = await get('/approvals/list?status=rejected&limit=3');
+          const approved = (h1 && h1.data && Array.isArray(h1.data)) ? h1.data : [];
+          const rejected = (h2 && h2.data && Array.isArray(h2.data)) ? h2.data : [];
+          const last = approved.concat(rejected).slice(0, 6);
+          const rows = last.map(function(a) {
+            const act = (a.action || '').toString();
+            const st = (a.status || '').toString();
+            const when = (a.created_ts || '').toString().slice(0, 19).replace('T', ' ');
+            return '<div style="margin:.25rem 0; font-size:.75rem; color:var(--muted);">' +
+              '<span style="color:var(--text);">' + esc(act || 'evento') + '</span>' +
+              ' · ' + esc(st || '—') +
+              (when ? (' · ' + esc(when)) : '') +
+              '</div>';
+          }).join('');
+          list.innerHTML = '<li><div style="color:var(--muted);">No hay aprobaciones pendientes.</div>' +
+            '<div class="row" style="margin-top:.35rem;gap:.35rem;">' +
+            '<button class="small secondary" onclick="scrollToSection(\'owner-console-section\')">Abrir Owner Console</button>' +
+            '<button class="small secondary" onclick="ccSelectTab(\'architect\')">Ir a Architect</button>' +
+            '</div>' +
+            (rows ? ('<div style="margin-top:.35rem;"><strong style="font-size:.7rem;color:var(--muted);">Últimos eventos</strong>' + rows + '</div>') : '') +
+            '</li>';
+        } catch (e) {
+          list.innerHTML = '<li><div style="color:var(--muted);">No hay aprobaciones pendientes.</div></li>';
+        }
+        loadEvolutionPending();
+        return;
+      }
+
       list.innerHTML = items.length
-        ? items.map(a => '<li>' + a.id + ' ' + (a.action || '') + ' <button class="small" onclick="approve(\'' + a.id + '\')">Aprobar</button> <button class="small danger" onclick="reject(\'' + a.id + '\')">Rechazar</button></li>').join('')
+        ? items.map(function(a) {
+            const info = approvalExplain(a);
+            const expired = isExpired(a);
+            const id = esc(a.id);
+            const badge = expired ? '<span class="badge warn" style="margin-left:.35rem;">Expirada</span>' : '';
+            const btnApprove = expired ? '' : (' <button class="small" onclick="approve(\'' + id + '\')">Aprobar</button>');
+            const btnReject = ' <button class="small danger" onclick="reject(\'' + id + '\')">Rechazar</button>';
+            const btnView = ' <button class="small secondary" onclick="viewApproval(\'' + id + '\')">Ver</button>';
+            return '<li style="margin-bottom:.5rem;">' +
+              '<div><strong>' + esc(info.title) + '</strong>' + badge + '</div>' +
+              '<div style="font-size:.75rem;color:var(--muted);margin:.15rem 0 .25rem;">' + esc(info.desc) + '</div>' +
+              '<div style="font-size:.7rem;color:var(--muted);">ID: ' + id + '</div>' +
+              '<div class="row" style="margin-top:.25rem;gap:.35rem;">' + btnView + btnApprove + btnReject + '</div>' +
+              '</li>';
+          }).join('')
         : '<li>' + (UI_STRINGS['approvals.none'] || 'Ninguno') + '</li>';
       loadEvolutionPending();
     }
@@ -2484,16 +2922,56 @@
       loadUpdate();
     }
     async function approve(id) {
-      const r = await post('/approvals/approve', { id: id });
-      if (r && !r.ok && r.status === 'owner_session_required') {
-        document.getElementById('owner-session-msg').textContent = 'Sesión requerida para high/critical. Inicia sesión en Owner Console.';
+      const r = await post('/approvals/approve', { id: id, session_token: ownerSessionToken });
+      const msgEl = document.getElementById('owner-session-msg');
+      if (r && !r.ok) {
+        if (r.status === 'owner_session_required') {
+          if (msgEl) { msgEl.textContent = 'Sesión requerida. Inicia sesión en Owner Console (Rostro o Contraseña Windows) y vuelve a aprobar.'; msgEl.style.color = 'var(--amber)'; }
+          alert('Para aprobar esto necesitas sesión Owner. Ve a Owner Console y autentícate.');
+        } else if (r.status === 'expired') {
+          alert('Esta aprobación está expirada. Recházala y vuelve a generar el plan (Actualizar).');
+        } else {
+          alert('No se pudo aprobar: ' + (r.error || r.status || 'error'));
+        }
       }
       loadApprovals();
       loadOwnerStatus();
     }
     async function reject(id) {
-      await post('/approvals/reject', { id: id });
+      const r = await post('/approvals/reject', { id: id });
+      if (r && !r.ok) alert('No se pudo rechazar: ' + (r.error || r.status || 'error'));
       loadApprovals();
+    }
+
+    async function viewApproval(id) {
+      try {
+        const d = await get('/approvals/list?status=pending&limit=100');
+        const items = (d && d.data && Array.isArray(d.data)) ? d.data : [];
+        const it = items.find(x => x && x.id === id);
+        const title = 'Detalle de aprobación';
+        const body = document.getElementById('expand-modal-body');
+        const titleEl = document.getElementById('expand-modal-title');
+        const modal = document.getElementById('expand-modal');
+        if (!body || !titleEl || !modal) return;
+        body.innerHTML = '';
+        titleEl.textContent = title;
+        const pre = document.createElement('pre');
+        pre.className = 'cc-terminal-mini';
+        pre.style.whiteSpace = 'pre-wrap';
+        pre.textContent = JSON.stringify(it || { id: id, error: 'no encontrado' }, null, 2);
+        const hint = document.createElement('div');
+        hint.className = 'value';
+        hint.style.fontSize = '.8rem';
+        hint.style.color = 'var(--muted)';
+        hint.style.marginBottom = '.5rem';
+        hint.textContent = 'Resumen: esto es una solicitud de permiso. Si está expirada, recházala y regenera el plan.';
+        body.appendChild(hint);
+        body.appendChild(pre);
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+      } catch (e) {
+        alert('Error al cargar detalle: ' + (e.message || e));
+      }
     }
     let ownerFaceStream = null;
     async function ownerStartWithFace() {

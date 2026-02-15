@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,34 +40,45 @@ def _db_path() -> str:
     return str(Path(os.getcwd()) / "logs" / "atlas_approvals.sqlite")
 
 
+_LOCK = threading.Lock()
 _conn: Optional[sqlite3.Connection] = None
 
 
 def _ensure() -> sqlite3.Connection:
+    """
+    SQLite thread-safe:
+    - check_same_thread=False para permitir uso desde distintas threads del servidor
+    - lock global para serializar operaciones (evita corrupciones/locks raros)
+    """
     global _conn
-    if _conn is not None:
-        return _conn
-    path = _db_path()
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    _conn = sqlite3.connect(path)
-    _conn.executescript(SCHEMA)
-    for col, typ in [
-        ("requires_2fa", "INTEGER DEFAULT 0"),
-        ("expires_at", "TEXT"),
-        ("approval_signature", "TEXT"),
-        ("origin_node_id", "TEXT"),
-        ("chain_hash", "TEXT"),
-        ("request_hash", "TEXT"),
-        ("chain_prev_hash", "TEXT"),
-        ("approved_via", "TEXT"),
-        ("correlation_id", "TEXT"),
-    ]:
+    with _LOCK:
+        if _conn is not None:
+            return _conn
+        path = _db_path()
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        _conn = sqlite3.connect(path, check_same_thread=False)
         try:
-            _conn.execute(f"ALTER TABLE approvals ADD COLUMN {col} {typ}")
-        except sqlite3.OperationalError:
+            _conn.execute("PRAGMA journal_mode=WAL;")
+        except Exception:
             pass
-    _conn.commit()
-    return _conn
+        _conn.executescript(SCHEMA)
+        for col, typ in [
+            ("requires_2fa", "INTEGER DEFAULT 0"),
+            ("expires_at", "TEXT"),
+            ("approval_signature", "TEXT"),
+            ("origin_node_id", "TEXT"),
+            ("chain_hash", "TEXT"),
+            ("request_hash", "TEXT"),
+            ("chain_prev_hash", "TEXT"),
+            ("approved_via", "TEXT"),
+            ("correlation_id", "TEXT"),
+        ]:
+            try:
+                _conn.execute(f"ALTER TABLE approvals ADD COLUMN {col} {typ}")
+            except sqlite3.OperationalError:
+                pass
+        _conn.commit()
+        return _conn
 
 
 def _now() -> str:
@@ -89,12 +101,13 @@ def create(
     expires_at = expires_at_seconds()
     request_hash = compute_request_hash(payload) if chain_enabled() else ""
     conn = _ensure()
-    conn.execute(
+    with _LOCK:
+        conn.execute(
         """INSERT INTO approvals (id, created_ts, action, payload_json, risk, status, job_id, run_id, requires_2fa, expires_at, origin_node_id, request_hash)
            VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)""",
         (aid, now, action, json.dumps(payload), risk, job_id, run_id, 1 if requires_2fa else 0, expires_at, origin_node_id, request_hash[:64] if request_hash else None),
-    )
-    conn.commit()
+        )
+        conn.commit()
     return {
         "id": aid, "created_ts": now, "action": action, "payload": payload, "risk": risk, "status": "pending",
         "job_id": job_id, "run_id": run_id, "requires_2fa": requires_2fa, "expires_at": expires_at, "origin_node_id": origin_node_id,
@@ -120,7 +133,8 @@ def list_items(
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY created_ts DESC LIMIT ?"
-    rows = conn.execute(sql, params).fetchall()
+    with _LOCK:
+        rows = conn.execute(sql, params).fetchall()
     out = []
     for r in rows:
         d = {
@@ -134,6 +148,10 @@ def list_items(
         d["approval_signature"] = r[12] if len(r) > 12 else None
         d["origin_node_id"] = r[13] if len(r) > 13 else None
         d["chain_hash"] = r[14] if len(r) > 14 else None
+        try:
+            d["expired"] = _is_expired(d.get("expires_at"))
+        except Exception:
+            d["expired"] = False
         out.append(d)
     return out
 
@@ -141,7 +159,8 @@ def list_items(
 def get(aid: str) -> Optional[Dict[str, Any]]:
     conn = _ensure()
     cols = "id, created_ts, action, payload_json, risk, status, job_id, run_id, resolved_ts, resolved_by, requires_2fa, expires_at, approval_signature, origin_node_id, chain_hash"
-    row = conn.execute(f"SELECT {cols} FROM approvals WHERE id = ?", (aid,)).fetchone()
+    with _LOCK:
+        row = conn.execute(f"SELECT {cols} FROM approvals WHERE id = ?", (aid,)).fetchone()
     if not row:
         return None
     d = {
@@ -156,6 +175,10 @@ def get(aid: str) -> Optional[Dict[str, Any]]:
         d["approval_signature"] = row[12]
         d["origin_node_id"] = row[13]
         d["chain_hash"] = row[14]
+    try:
+        d["expired"] = _is_expired(d.get("expires_at"))
+    except Exception:
+        d["expired"] = False
     return d
 
 
@@ -183,14 +206,15 @@ def approve(aid: str, resolved_by: str = "api", signature: Optional[str] = None)
     if _is_expired(item.get("expires_at")):
         return False
     now = _now()
-    prev = _last_chain_hash(conn)
-    chain = _compute_chain_hash(prev, item, now, resolved_by)
-    cur = conn.execute(
-        "UPDATE approvals SET status = 'approved', resolved_ts = ?, resolved_by = ?, approval_signature = ?, chain_hash = ? WHERE id = ? AND status = 'pending'",
-        (now, resolved_by, signature or "", chain, aid),
-    )
-    conn.commit()
-    return cur.rowcount > 0
+    with _LOCK:
+        prev = _last_chain_hash(conn)
+        chain = _compute_chain_hash(prev, item, now, resolved_by)
+        cur = conn.execute(
+            "UPDATE approvals SET status = 'approved', resolved_ts = ?, resolved_by = ?, approval_signature = ?, chain_hash = ? WHERE id = ? AND status = 'pending'",
+            (now, resolved_by, signature or "", chain, aid),
+        )
+        conn.commit()
+        return cur.rowcount > 0
 
 
 def reject(aid: str, resolved_by: str = "api") -> bool:
@@ -199,16 +223,18 @@ def reject(aid: str, resolved_by: str = "api") -> bool:
     if not item or item.get("status") != "pending":
         return False
     now = _now()
-    cur = conn.execute("UPDATE approvals SET status = 'rejected', resolved_ts = ?, resolved_by = ? WHERE id = ? AND status = 'pending'", (now, resolved_by, aid))
-    conn.commit()
-    return cur.rowcount > 0
+    with _LOCK:
+        cur = conn.execute("UPDATE approvals SET status = 'rejected', resolved_ts = ?, resolved_by = ? WHERE id = ? AND status = 'pending'", (now, resolved_by, aid))
+        conn.commit()
+        return cur.rowcount > 0
 
 
 def list_for_chain() -> List[Dict[str, Any]]:
     """All approvals ordered by created_ts for chain verification."""
     conn = _ensure()
     cols = "id, created_ts, action, payload_json, risk, status, job_id, run_id, resolved_ts, resolved_by, requires_2fa, expires_at, approval_signature, origin_node_id, chain_hash"
-    rows = conn.execute(f"SELECT {cols} FROM approvals ORDER BY created_ts ASC").fetchall()
+    with _LOCK:
+        rows = conn.execute(f"SELECT {cols} FROM approvals ORDER BY created_ts ASC").fetchall()
     out = []
     for r in rows:
         d = {"id": r[0], "created_ts": r[1], "action": r[2], "payload": json.loads(r[3]) if r[3] else {}, "risk": r[4], "status": r[5], "job_id": r[6], "run_id": r[7], "resolved_ts": r[8], "resolved_by": r[9]}

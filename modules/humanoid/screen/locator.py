@@ -20,9 +20,11 @@ def locate(query: str, region: Optional[Tuple[int, int, int, int]] = None) -> Di
     full_text = (layout.get("full_text") or "").lower()
     matches: List[Dict[str, Any]] = []
     for reg in layout.get("regions", []):
-        text = (reg.get("text") or "").lower()
-        if q in text or q in full_text:
-            matches.append({"bbox": reg.get("bbox", [0, 0, 0, 0]), "text": (reg.get("text") or "")[:200]})
-    if not matches and full_text and q in full_text:
-        matches = [{"bbox": layout.get("regions", [{}])[0].get("bbox", [0, 0, layout.get("width", 0), layout.get("height", 0)]), "text": full_text[:200]}]
+        text = (reg.get("text") or "")
+        low = text.lower()
+        if q and q in low:
+            matches.append({"bbox": reg.get("bbox", [0, 0, 0, 0]), "text": text[:200]})
+    # Fallback: si solo hay full_text sin regiones granulares, devolver región completa
+    if not matches and full_text and q and q in full_text:
+        matches = [{"bbox": [0, 0, layout.get("width", 0), layout.get("height", 0)], "text": full_text[:200]}]
     return {"ok": True, "matches": matches, "error": None}

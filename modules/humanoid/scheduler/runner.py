@@ -53,6 +53,8 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_repo_monitor_after_fix(payload)
         elif kind == "repo_hygiene_cycle":
             out = _run_repo_hygiene_cycle(payload)
+        elif kind == "approvals_digest":
+            out = _run_approvals_digest(payload)
         else:
             out = {"ok": True, "result": "no-op", "kind": kind}
     except Exception as e:
@@ -74,6 +76,32 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
         pass
     result_json = json.dumps(out) if isinstance(out, dict) else json.dumps({"ok": ok, "raw": str(out)})
     return {"ok": ok, "result_json": result_json, "error": out.get("error"), "ms": ms}
+
+
+def _run_approvals_digest(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Send a periodic digest of pending approvals to Telegram (owner away)."""
+    try:
+        from modules.humanoid.approvals import list_pending
+        from modules.humanoid.comms.ops_bus import emit as ops_emit
+
+        limit = int((payload or {}).get("limit") or 8)
+        pending = list_pending(limit=max(1, min(limit, 20)))
+        if not pending:
+            return {"ok": True, "sent": False, "pending": 0}
+        # Mensaje compacto
+        lines = []
+        for a in pending[:limit]:
+            aid = a.get("id")
+            risk = (a.get("risk") or "med").upper()
+            action = (a.get("action") or "approval")
+            exp = a.get("expires_at") or ""
+            exp_s = exp[:19].replace("T", " ") if exp else ""
+            lines.append(f"- {aid} [{risk}] {action}" + (f" (exp {exp_s})" if exp_s else ""))
+        text = "Aprobaciones pendientes:\n" + "\n".join(lines)
+        ops_emit("approval", text, level="high", data={"pending": len(pending), "ids": [p.get("id") for p in pending[:limit]]})
+        return {"ok": True, "sent": True, "pending": len(pending), "shown": len(lines)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 def _run_update_check(payload: Dict[str, Any]) -> Dict[str, Any]:

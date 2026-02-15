@@ -63,6 +63,11 @@ _heartbeat_thread: Optional[threading.Thread] = None
 _heartbeat_stop = threading.Event()
 _on_status_change: Optional[Callable[[bool, str], None]] = None
 
+# Backoff para evitar spam en Bitácora durante reconexión.
+_DISCONNECT_EMIT_BACKOFF = [5, 10, 30]
+_disconnect_emit_idx = 0
+_disconnect_next_emit_ts: float = 0.0
+
 
 def ping_nexus() -> tuple[bool, str]:
     """GET NEXUS_HEALTH_URL; si falla (p. ej. 404), intenta /status. Devuelve (ok, mensaje)."""
@@ -200,13 +205,38 @@ def set_nexus_active(active: bool) -> None:
 
 def set_nexus_connected(connected: bool, message: str = "") -> None:
     """Actualiza estado y opcionalmente notifica (POST Dashboard / bitácora)."""
-    global _nexus_connected, _nexus_last_check_ts, _nexus_last_error
-    _nexus_connected = connected
+    global _nexus_connected, _nexus_last_check_ts, _nexus_last_error, _disconnect_emit_idx, _disconnect_next_emit_ts
+    prev = _nexus_connected
+    _nexus_connected = bool(connected)
     _nexus_last_check_ts = time.time()
     _nexus_last_error = message if not connected else ""
-    if _on_status_change:
+    # Notificación resiliente:
+    # - Conectado: solo cuando cambia de False->True (sin spam).
+    # - Desconectado: cuando cambia de True->False o en backoff (5s, 10s, 30s...) mientras sigue desconectado.
+    notify = False
+    now = time.time()
+    if _nexus_connected:
+        _disconnect_emit_idx = 0
+        _disconnect_next_emit_ts = 0.0
+        if not prev:
+            notify = True
+    else:
+        if prev:
+            _disconnect_emit_idx = 0
+            _disconnect_next_emit_ts = 0.0
+            notify = True
+        else:
+            if now >= float(_disconnect_next_emit_ts or 0.0):
+                notify = True
+        if notify:
+            backoff = _DISCONNECT_EMIT_BACKOFF[min(_disconnect_emit_idx, len(_DISCONNECT_EMIT_BACKOFF) - 1)]
+            _disconnect_next_emit_ts = now + float(backoff)
+            if _disconnect_emit_idx < len(_DISCONNECT_EMIT_BACKOFF) - 1:
+                _disconnect_emit_idx += 1
+
+    if notify and _on_status_change:
         try:
-            _on_status_change(connected, message)
+            _on_status_change(_nexus_connected, message)
         except Exception:
             pass
 
@@ -218,7 +248,7 @@ def register_status_callback(callback: Callable[[bool, str], None]) -> None:
 
 
 # Backoff (segundos) antes de cada reintento de restart (resiliencia prompt Claude NEXUS)
-_RESTART_BACKOFF = [10, 30, 60]
+_RESTART_BACKOFF = [5, 10, 30]
 _restart_count = 0
 
 

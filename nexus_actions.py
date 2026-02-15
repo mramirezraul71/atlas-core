@@ -157,8 +157,83 @@ def mouse_move_to_refresh_button() -> tuple[bool, str]:
     x = REFRESH_BUTTON_X
     y = REFRESH_BUTTON_Y
     if x == 0 and y == 0:
-        return mouse_move_verify(None, None)
+        return mouse_move_and_click_text("Actualizar")
     return mouse_move_verify(x, y)
+
+
+def mouse_move_and_click_text(query: str = "Actualizar") -> tuple[bool, str]:
+    """
+    Ubica texto en pantalla vía OCR y mueve/clickea el centro del bbox.
+    Fallback: mouse_move_verify (centro de pantalla).
+    """
+    q = (query or "").strip()
+    if not q:
+        return mouse_move_verify(None, None)
+    _bitacora(f"[MOUSE] Buscando botón por texto OCR: '{q}'...", ok=True)
+    try:
+        from modules.humanoid.screen.locator import locate
+        r = locate(q)
+        matches = r.get("matches") or []
+        if not r.get("ok") or not matches:
+            _bitacora(f"[MOUSE] No se encontró '{q}' por OCR. Fallback a movimiento simple.", ok=False)
+            return mouse_move_verify(None, None)
+        # elegir match más "arriba" (y menor) para aproximar botones de header
+        matches.sort(key=lambda m: (m.get("bbox", [0, 10**9, 0, 0])[1], m.get("bbox", [0, 0, 0, 0])[0]))
+        bbox = matches[0].get("bbox") or [0, 0, 0, 0]
+        x, y, w, h = [int(v or 0) for v in bbox]
+        cx, cy = x + max(1, w) // 2, y + max(1, h) // 2
+        import pyautogui
+        pyautogui.moveTo(cx, cy, duration=0.25)
+        pyautogui.click(cx, cy)
+        _bitacora(f"[MOUSE] Movimiento+Click OK en '{q}' @ ({cx},{cy}).", ok=True)
+        return True, f"clicked '{q}' at {cx},{cy}"
+    except ImportError as e:
+        _bitacora(f"[MOUSE] Dependencias faltantes para OCR/mouse: {e}.", ok=False)
+        return False, str(e)
+    except Exception as e:
+        _bitacora(f"[MOUSE] Error ubicando/clickeando '{q}': {e}", ok=False)
+        return False, str(e)
+
+
+def camera_sweep_verify() -> tuple[bool, str]:
+    """
+    Barrido de cámara: captura 3 snapshots (digital sweep) desde Robot (8002) si está disponible.
+    Guarda evidencia en snapshots/nexus_actions/.
+    """
+    _bitacora("[NEXUS] Barrido de cámara (Insta360 Link 2): iniciando...", ok=True)
+    base = (os.getenv("NEXUS_ROBOT_API_URL") or os.getenv("ROBOT_BASE_URL") or "http://127.0.0.1:8002").rstrip("/")
+    out_dir = BASE / "snapshots" / "nexus_actions"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    combos = [
+        {"focus_x": 0.2, "focus_y": 0.5, "zoom": 1.0, "enhance": "max"},
+        {"focus_x": 0.5, "focus_y": 0.5, "zoom": 1.5, "enhance": "max"},
+        {"focus_x": 0.8, "focus_y": 0.5, "zoom": 1.0, "enhance": "max"},
+    ]
+    ok_any = False
+    try:
+        from urllib.parse import urlencode
+        from datetime import datetime, timezone
+        for i, c in enumerate(combos):
+            qs = urlencode({"source": "camera", **c})
+            url = f"{base}/api/vision/snapshot?{qs}"
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=5) as r:
+                if r.status != 200:
+                    continue
+                data = r.read()
+                ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                p = out_dir / f"cam_sweep_{ts}_{i}.jpg"
+                p.write_bytes(data)
+                _bitacora(f"[CÁMARA] Sweep snapshot OK: {p}", ok=True)
+                ok_any = True
+        if ok_any:
+            _bitacora("[NEXUS] Movimiento de cámara OK (barrido completado).", ok=True)
+            return True, "sweep snapshots OK"
+    except Exception as e:
+        logger.debug("camera_sweep_verify: %s", e)
+    # Fallback: verificación básica
+    ok = camera_verify()
+    return ok, "fallback camera_verify" if ok else "camera verify failed"
 
 
 # --- Prueba de nervios completa y reporte al Dashboard ---
@@ -187,11 +262,11 @@ def run_nerve_test() -> dict:
     Si todo es exitoso, envía POST al Dashboard para CONECTADO | ACTIVO.
     Usa credenciales de C:\\dev\\credenciales.txt para reportar estado (Dashboard/nube).
     """
-    _bitacora("[NEXUS] Ejecutando autodiagnóstico de motores...", ok=True)
+    _bitacora("[NEXUS] Prueba de vida física: mouse + cámara...", ok=True)
     results = {"mouse": False, "camera": False, "dashboard_updated": False}
-    mouse_ok, _ = mouse_move_verify()
+    mouse_ok, _ = mouse_move_to_refresh_button()
     results["mouse"] = mouse_ok
-    camera_ok = camera_verify()
+    camera_ok, _ = camera_sweep_verify()
     results["camera"] = camera_ok
     if mouse_ok and camera_ok:
         if post_dashboard_connected_active():

@@ -107,6 +107,15 @@ async def _lifespan(app):
         _executor = ThreadPoolExecutor(max_workers=2)
         start_scheduler(executor=_executor)
         start_watchdog()
+        # Visión Ubicua: preparar DB y watchdog de movimiento (best-effort, no bloquea arranque)
+        try:
+            if os.getenv("VISION_UBIQ_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on"):
+                from modules.humanoid.vision.ubiq import ensure_db, start_motion_watchdog
+
+                ensure_db()
+                start_motion_watchdog()
+        except Exception:
+            pass
         if not worker_only:
             try:
                 from modules.humanoid.ci import ensure_ci_jobs
@@ -166,12 +175,22 @@ async def _lifespan(app):
                 ensure_repo_hygiene_jobs()
             except Exception:
                 pass
+            try:
+                from modules.humanoid.approvals.scheduler_jobs import ensure_approvals_jobs
+                ensure_approvals_jobs()
+            except Exception:
+                pass
         # Heartbeat NEXUS: ping 8000/health, auto-reactivación con start_all.ps1, registro en Bitácora
         try:
             from modules.nexus_heartbeat import start_heartbeat, register_status_callback
             _dashboard_base = (os.getenv("ATLAS_DASHBOARD_URL") or "http://127.0.0.1:8791").rstrip("/")
             def _on_nexus_change(connected: bool, message: str) -> None:
-                text = "[CONEXIÓN] Buscando NEXUS en puerto 8000... OK." if connected else "[CONEXIÓN] Buscando NEXUS en puerto 8000... Desconectado."
+                if connected:
+                    text = "[CONEXIÓN] Buscando NEXUS en puerto 8000... OK."
+                else:
+                    extra = (message or "").strip()
+                    extra = (": " + extra[:120]) if extra else ""
+                    text = "[CONEXIÓN] Buscando NEXUS en puerto 8000... Desconectado" + extra
                 try:
                     import urllib.request
                     import json
@@ -1243,6 +1262,28 @@ def api_comms_test(body: dict):
         return {"ok": False, "error": str(e)}
 
 
+@app.post("/api/comms/telegram/selftest", tags=["Comms"])
+def api_comms_telegram_selftest(body: dict):
+    """Descubre chat_id (si falta) y envía un mensaje de prueba. Retorna detalles."""
+    try:
+        from modules.humanoid.comms.telegram_bridge import TelegramBridge
+        from modules.humanoid.comms.ops_bus import _telegram_chat_id  # type: ignore
+
+        bridge = TelegramBridge()
+        chat_id = (body or {}).get("chat_id") or _telegram_chat_id()
+        if not chat_id:
+            d = bridge.discover_chat_id(limit=10)
+            if d.get("ok"):
+                chat_id = d.get("chat_id") or ""
+        if not chat_id:
+            return {"ok": False, "error": "no_chat_id_available. Envía un mensaje al bot primero.", "chat_id": ""}
+        text = (body or {}).get("text") or "[ATLAS] Test Telegram: canal operativo."
+        r = bridge.send(str(chat_id), str(text))
+        return {"ok": bool(r.get("ok")), "chat_id": str(chat_id), "result": r, "error": r.get("error")}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "chat_id": ""}
+
+
 @app.post("/api/comms/speak", tags=["Comms"])
 def api_comms_speak(body: dict):
     """TTS directo (audio PC). Body: {text}."""
@@ -1252,6 +1293,63 @@ def api_comms_speak(body: dict):
         return speak(str(text))
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# --- Anti-Silencio: alertas multiciclo desde UI/Watchdogs ---
+_COMMS_ALERT_LAST: dict = {}  # key -> ts
+
+
+@app.post("/api/comms/alert", tags=["Comms"])
+def api_comms_alert(body: dict):
+    """
+    Alerta multiciclo (Audio PC + Telegram/WhatsApp via OPS Bus) + Bitácora ANS.
+    Body sugerido:
+      { kind, message_human, action_human, level, technical }
+    """
+    import time as _time
+    t0 = time.perf_counter()
+    try:
+        kind = str((body or {}).get("kind") or "ui").strip()[:40]
+        level = str((body or {}).get("level") or "high").strip().lower()
+        msg = str((body or {}).get("message_human") or "").strip()
+        action = str((body or {}).get("action_human") or "").strip()
+        technical = (body or {}).get("technical")
+
+        if not msg:
+            msg = "Alerta: el panel tuvo un error o perdió conexión."
+        if action:
+            msg2 = f"{msg} Acción: {action}"
+        else:
+            msg2 = msg
+
+        # Throttle por kind+msg (evitar spam por reconexión / loops JS)
+        key = f"{kind}:{msg2[:120]}"
+        now = _time.time()
+        last = float(_COMMS_ALERT_LAST.get(key) or 0.0)
+        if now - last < 10.0:
+            ms = int((time.perf_counter() - t0) * 1000)
+            return {"ok": True, "skipped": "throttled", "ms": ms}
+        _COMMS_ALERT_LAST[key] = now
+
+        # Bitácora ANS (humano)
+        try:
+            from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+            append_evolution_log(f"[ALERTA] {msg2}", ok=False, source="ui")
+        except Exception:
+            pass
+
+        # OPS Bus (multicanal)
+        try:
+            from modules.humanoid.comms.ops_bus import emit as ops_emit
+            ops_emit("dashboard", msg2, level=level, data={"kind": kind, "technical": technical or {}})
+        except Exception:
+            pass
+
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": True, "ms": ms}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": False, "error": str(e), "ms": ms}
 
 
 @app.get("/health", tags=["Health"])
@@ -1898,7 +1996,7 @@ class CursorStepBody(BaseModel):
 
 @app.post("/cursor/step/execute", tags=["Cursor"])
 def cursor_step_execute(body: CursorStepBody):
-    """Execute one step from last cursor run (policy/approvals)."""
+    """Execute one step from last cursor run (policy/approvals) con acciones reales."""
     t0 = time.perf_counter()
     try:
         from modules.humanoid.cursor import get_cursor_status
@@ -1910,8 +2008,50 @@ def cursor_step_execute(body: CursorStepBody):
         step = data["steps"][idx]
         if not body.approve:
             return _std_resp(True, {"step": step, "executed": False, "message": "Set approve=true to execute"}, int((time.perf_counter() - t0) * 1000), None)
-        data["steps"][idx]["status"] = "executed"
-        return _std_resp(True, {"step": step, "executed": True}, int((time.perf_counter() - t0) * 1000), None)
+        # Ejecutar de verdad usando el ejecutor de Cursor (genera script/log).
+        try:
+            from modules.humanoid.cursor.executor import CursorExecutor
+
+            ex = CursorExecutor(repo_root=Path(str(BASE_DIR)))
+            artifacts = None
+            # Reusar artifacts del run si existen
+            if isinstance(data.get("artifacts"), dict):
+                artifacts = data["artifacts"]
+            if not artifacts or not artifacts.get("run_dir"):
+                auto = ex.execute_steps([], goal=data.get("goal", "cursor_run"))
+                artifacts = auto.get("artifacts", {})
+                data["artifacts"] = artifacts
+            # Crear wrapper RunArtifacts desde artifacts path (mínimo necesario)
+            from modules.humanoid.cursor.executor import RunArtifacts
+
+            run_dir = Path(artifacts.get("run_dir") or (Path(str(BASE_DIR)) / "snapshots" / "cursor"))
+            ra = RunArtifacts(
+                run_id=str(artifacts.get("run_id") or "cursor_controlled"),
+                run_dir=run_dir,
+                log_path=Path(artifacts.get("terminal_log_path") or (run_dir / "terminal.log")),
+                script_path=Path(artifacts.get("script_path") or (run_dir / "run.ps1")),
+                json_path=Path(artifacts.get("run_json_path") or (run_dir / "run.json")),
+            )
+            r = ex.execute_step(ra, step)
+            data.setdefault("controlled_result", {"executed": []})
+            data["controlled_result"].setdefault("executed", []).append(r)
+            data["steps"][idx]["status"] = "done" if r.get("ok") else ("needs_human" if r.get("action") == "needs_human" else "failed")
+            # Preview terminal actualizado
+            try:
+                if ra.log_path.exists():
+                    data["terminal_preview"] = ra.log_path.read_text(encoding="utf-8", errors="ignore")[-6000:]
+            except Exception:
+                pass
+            # Persistir como last_run
+            try:
+                from modules.humanoid.cursor.status import set_last_run
+                set_last_run(data)
+            except Exception:
+                pass
+            return _std_resp(True, {"step": step, "executed": True, "result": r, "terminal_preview": data.get("terminal_preview"), "artifacts": data.get("artifacts")}, int((time.perf_counter() - t0) * 1000), None)
+        except Exception as e:
+            data["steps"][idx]["status"] = "failed"
+            return _std_resp(False, {"step": step, "executed": False}, int((time.perf_counter() - t0) * 1000), str(e))
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
@@ -2074,18 +2214,19 @@ def _get_learning_components():
             episodic_memory=episodic_memory,
             knowledge_base=kb,
         )
-        ai_tutor = None
         tutor_type = os.getenv("AI_TUTOR_TYPE", "disabled").lower()
-        if tutor_type in ("claude", "gpt4") and (os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")):
-            try:
-                ai_tutor = AITutor(
-                    tutor_type=tutor_type,
-                    api_key=os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY"),
-                    review_interval_hours=int(os.getenv("AI_TUTOR_REVIEW_HOURS", "6")),
-                    use_local_fallback=os.getenv("AI_TUTOR_USE_LOCAL_FALLBACK", "true").lower() in ("1", "true", "yes"),
-                )
-            except Exception:
-                ai_tutor = None
+        ai_tutor = None
+        try:
+            # Siempre crear tutor (offline-first). Si no hay API key o tutor_type=disabled,
+            # `AITutor.design_curriculum` caerá al fallback local.
+            ai_tutor = AITutor(
+                tutor_type=tutor_type,
+                api_key=os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY"),
+                review_interval_hours=int(os.getenv("AI_TUTOR_REVIEW_HOURS", "6")),
+                use_local_fallback=os.getenv("AI_TUTOR_USE_LOCAL_FALLBACK", "true").lower() in ("1", "true", "yes"),
+            )
+        except Exception:
+            ai_tutor = None
         learning_loop = ContinualLearningLoop(
             knowledge_base=kb,
             uncertainty_detector=uncertainty_detector,
@@ -2561,6 +2702,397 @@ def get_learning_tutor_stats():
         return {"ok": True, "data": data}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+class DesignCurriculumBody(BaseModel):
+    robot_capabilities: List[str] = []
+    learning_goals: List[str] = []
+    time_horizon_days: int = 30
+    difficulty_level: str = "progressive"
+
+
+@app.post(
+    "/api/learning/tutor/design-curriculum",
+    tags=["Learning"],
+    summary="Diseñar currículum (offline-first)",
+    response_description="ok, data={count, curriculum}",
+)
+def design_learning_curriculum(body: DesignCurriculumBody):
+    """Diseña/actualiza el currículum del tutor (sin requerir API externa)."""
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    tutor = comp.get("ai_tutor")
+    if not tutor:
+        try:
+            from brain.learning.ai_tutor import AITutor
+            tutor = AITutor(tutor_type="disabled")
+            comp["ai_tutor"] = tutor
+            if comp.get("learning_loop"):
+                comp["learning_loop"].ai_tutor = tutor
+        except Exception as e:
+            return {"ok": False, "error": f"AI Tutor no disponible: {e}"}
+    curriculum = tutor.design_curriculum(
+        robot_capabilities=body.robot_capabilities,
+        learning_goals=body.learning_goals,
+        time_horizon_days=body.time_horizon_days,
+        difficulty_level=body.difficulty_level,
+    )
+    return {"ok": True, "data": {"count": len(curriculum or []), "curriculum": curriculum}}
+
+
+@app.post(
+    "/api/learning/python-mastery/bootstrap",
+    tags=["Learning"],
+    summary="Bootstrap Python Mastery para ATLAS",
+    response_description="ok, data={count, current_lesson?}",
+)
+def bootstrap_python_mastery():
+    """Inicializa el currículum de dominio Python para ATLAS.
+
+    Uso: llamar una vez y luego usar /api/learning/daily-routine/start.
+    """
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    tutor = comp.get("ai_tutor")
+    if not tutor:
+        try:
+            from brain.learning.ai_tutor import AITutor
+            tutor = AITutor(tutor_type="disabled")
+            comp["ai_tutor"] = tutor
+            if comp.get("learning_loop"):
+                comp["learning_loop"].ai_tutor = tutor
+        except Exception as e:
+            return {"ok": False, "error": f"AI Tutor no disponible: {e}"}
+    curriculum = tutor.design_curriculum(
+        robot_capabilities=["repo_tools", "cli", "testing", "offline_first"],
+        learning_goals=["python_mastery", "python_scripting", "pytest", "sqlite", "tooling"],
+        time_horizon_days=int(os.getenv("PYTHON_MASTERY_HORIZON_DAYS", "30") or 30),
+        difficulty_level=os.getenv("PYTHON_MASTERY_DIFFICULTY", "progressive"),
+    )
+    # Preasignación opcional (para confirmar que hay lección elegible).
+    current = None
+    try:
+        current = tutor.assign_daily_lesson()
+    except Exception:
+        current = None
+    return {"ok": True, "data": {"count": len(curriculum or []), "current_lesson": current}}
+
+
+class PythonMasteryEvaluateBody(BaseModel):
+    lesson_id: Optional[str] = None  # default: current lesson si existe
+    timeout_s: int = 180
+
+
+@app.post(
+    "/api/learning/python-mastery/evaluate",
+    tags=["Learning"],
+    summary="Evaluar una lección Python Mastery (offline)",
+    response_description="ok, evaluation{score, passed, evidence}",
+)
+def evaluate_python_mastery(body: PythonMasteryEvaluateBody):
+    """Ejecuta evaluación determinista (archivos + pytest) para una lección PYxxx."""
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    lesson_id = (body.lesson_id or "").strip()
+    if not lesson_id:
+        try:
+            loop = comp.get("learning_loop")
+            current = getattr(loop, "current_lesson", None) if loop else None
+            lesson_id = (current or {}).get("lesson_id", "") if isinstance(current, dict) else ""
+        except Exception:
+            lesson_id = ""
+    if not lesson_id:
+        return {"ok": False, "error": "lesson_id requerido (o iniciar daily-routine para tener current_lesson)"}
+    try:
+        from brain.learning.python_mastery_evaluator import evaluate_python_mastery_lesson
+
+        evaluation = evaluate_python_mastery_lesson(
+            lesson_id=lesson_id,
+            repo_root=str(BASE_DIR),
+            timeout_s=int(body.timeout_s or 180),
+        )
+        snap = ""
+        try:
+            snap = _write_learning_snapshot("python_mastery_evaluate", {"lesson_id": lesson_id, "evaluation": evaluation})
+        except Exception:
+            snap = ""
+        return {"ok": True, "evaluation": evaluation, "snapshot": snap}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+class PythonMasteryCampaignStartBody(BaseModel):
+    reset: bool = False
+
+
+@app.post(
+    "/api/learning/python-mastery/campaign/start",
+    tags=["Learning"],
+    summary="Iniciar/reanudar campaña Python Mastery",
+    response_description="ok, status, current_lesson, state",
+)
+async def python_mastery_campaign_start(body: PythonMasteryCampaignStartBody):
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    tutor = comp.get("ai_tutor")
+    loop = comp.get("learning_loop")
+    if not tutor or not loop:
+        return {"ok": False, "error": "Componentes de learning no disponibles"}
+    try:
+        from brain.learning.python_mastery_campaign import start_or_resume_campaign
+
+        res = start_or_resume_campaign(tutor=tutor, loop=loop, repo_root=Path(str(BASE_DIR)), reset=bool(body.reset))
+        snap = ""
+        try:
+            snap = _write_learning_snapshot("python_mastery_campaign_start", res)
+        except Exception:
+            snap = ""
+        return {"ok": True, "status": res["state"].get("status"), "current_lesson": res.get("current_lesson"), "state": res.get("state"), "snapshot": snap}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+class PythonMasteryCampaignStepBody(BaseModel):
+    lesson_id: Optional[str] = None
+    timeout_s: int = 180
+    max_attempts: int = 1
+    backoff_s: float = 0.0
+    backoff_factor: float = 2.0
+    require_change: bool = False
+    auto_remediate: bool = False
+
+
+@app.post(
+    "/api/learning/python-mastery/campaign/step",
+    tags=["Learning"],
+    summary="Ejecutar un paso de campaña (evalúa y avanza)",
+    response_description="ok, status, evaluation, next_lesson, state",
+)
+def python_mastery_campaign_step(body: PythonMasteryCampaignStepBody):
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    tutor = comp.get("ai_tutor")
+    loop = comp.get("learning_loop")
+    if not tutor or not loop:
+        return {"ok": False, "error": "Componentes de learning no disponibles"}
+    try:
+        from brain.learning.python_mastery_campaign import campaign_step
+
+        res = campaign_step(
+            tutor=tutor,
+            loop=loop,
+            repo_root=Path(str(BASE_DIR)),
+            lesson_id=body.lesson_id,
+            timeout_s=int(body.timeout_s or 180),
+            max_attempts=int(body.max_attempts or 1),
+            backoff_s=float(body.backoff_s or 0.0),
+            backoff_factor=float(body.backoff_factor or 2.0),
+            require_change=bool(body.require_change),
+            auto_remediate=bool(body.auto_remediate),
+        )
+        snap = ""
+        try:
+            snap = _write_learning_snapshot("python_mastery_campaign_step", {"lesson_id": res.get("lesson_id"), "status": res.get("status"), "evaluation": res.get("evaluation")})
+        except Exception:
+            snap = ""
+        return {**res, "snapshot": snap}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get(
+    "/api/learning/python-mastery/campaign/state",
+    tags=["Learning"],
+    summary="Estado persistido de la campaña Python Mastery",
+    response_description="ok, state",
+)
+def python_mastery_campaign_state():
+    try:
+        from brain.learning.python_mastery_campaign import campaign_state_path, load_campaign_state
+
+        path = campaign_state_path(Path(str(BASE_DIR)))
+        state = load_campaign_state(path)
+        return {"ok": True, "state": state, "state_path": str(path)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+class PythonMasteryCampaignRunBody(BaseModel):
+    reset: bool = False
+    max_steps: int = 5
+    max_seconds: float = 60.0
+    step_timeout_s: int = 180
+    step_max_attempts: int = 1
+    step_backoff_s: float = 0.0
+    step_backoff_factor: float = 2.0
+    step_require_change: bool = False
+    step_auto_remediate: bool = False
+
+
+@app.post(
+    "/api/learning/python-mastery/campaign/run",
+    tags=["Learning"],
+    summary="Correr campaña en una sola orden (loop de steps)",
+    response_description="ok, status, steps_run, seconds, steps[]",
+)
+def python_mastery_campaign_run(body: PythonMasteryCampaignRunBody):
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    tutor = comp.get("ai_tutor")
+    loop = comp.get("learning_loop")
+    if not tutor or not loop:
+        return {"ok": False, "error": "Componentes de learning no disponibles"}
+    try:
+        from brain.learning.python_mastery_campaign import campaign_run
+
+        res = campaign_run(
+            tutor=tutor,
+            loop=loop,
+            repo_root=Path(str(BASE_DIR)),
+            reset=bool(body.reset),
+            max_steps=int(body.max_steps or 5),
+            max_seconds=float(body.max_seconds or 60.0),
+            step_timeout_s=int(body.step_timeout_s or 180),
+            step_max_attempts=int(body.step_max_attempts or 1),
+            step_backoff_s=float(body.step_backoff_s or 0.0),
+            step_backoff_factor=float(body.step_backoff_factor or 2.0),
+            step_require_change=bool(body.step_require_change),
+            step_auto_remediate=bool(body.step_auto_remediate),
+        )
+        snap = ""
+        try:
+            snap = _write_learning_snapshot("python_mastery_campaign_run", res)
+        except Exception:
+            snap = ""
+        return {**res, "snapshot": snap}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# --- ATLAS_ARCHITECT (agentic coding) ---
+_architect_singleton: Optional[object] = None
+
+
+def _get_architect():
+    global _architect_singleton
+    if _architect_singleton is not None:
+        return _architect_singleton
+    from modules.atlas_architect import AtlasArchitect
+
+    _architect_singleton = AtlasArchitect(repo_root=BASE_DIR)
+    return _architect_singleton
+
+
+@app.post("/api/architect/index", tags=["Architect"])
+def architect_index():
+    """Genera index de arquitectura (PUSH/NEXUS/ROBOT y puertos)."""
+    t0 = time.perf_counter()
+    try:
+        arch = _get_architect()
+        data = arch.index_architecture()
+        return {"ok": True, "data": data, "ms": int((time.perf_counter() - t0) * 1000), "error": None}
+    except Exception as e:
+        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+
+
+class ArchitectPytestBody(BaseModel):
+    nodeid: Optional[str] = None
+
+
+@app.post("/api/architect/pytest", tags=["Architect"])
+def architect_pytest(body: ArchitectPytestBody):
+    """Ejecuta pytest (real) y devuelve análisis de errores."""
+    t0 = time.perf_counter()
+    try:
+        arch = _get_architect()
+        data = arch.run_pytest_and_analyze(nodeid=body.nodeid)
+        ok = bool(data.get("ok"))
+        return {"ok": ok, "data": data, "ms": int((time.perf_counter() - t0) * 1000), "error": None if ok else "pytest_failed"}
+    except Exception as e:
+        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+
+
+class ArchitectProposeBody(BaseModel):
+    problem: str
+    prefer_free: bool = True
+    context: Optional[dict] = None
+
+
+@app.post("/api/architect/propose-fix", tags=["Architect"])
+def architect_propose_fix(body: ArchitectProposeBody):
+    """Genera una propuesta (no aplica cambios) para resolver un problema."""
+    t0 = time.perf_counter()
+    try:
+        arch = _get_architect()
+        data = arch.propose_code_fix(body.problem, context=body.context, prefer_free=bool(body.prefer_free))
+        ok = bool(data.get("ok"))
+        return {"ok": ok, "data": data, "ms": int((time.perf_counter() - t0) * 1000), "error": None if ok else "no_model_or_error"}
+    except Exception as e:
+        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+
+
+class ArchitectAgenticBody(BaseModel):
+    goal: str
+    prefer_free: bool = True
+    max_iters: int = 3
+
+
+@app.post("/api/architect/agentic/execute", tags=["Architect"])
+def architect_agentic_execute(body: ArchitectAgenticBody):
+    """Ejecución agentic: modelo decide tool_calls (FS/terminal) y se ejecutan realmente."""
+    t0 = time.perf_counter()
+    try:
+        arch = _get_architect()
+        data = arch.agentic_execute(body.goal, prefer_free=bool(body.prefer_free), max_iters=int(body.max_iters or 3))
+        return {"ok": True, "data": data, "ms": int((time.perf_counter() - t0) * 1000), "error": None}
+    except Exception as e:
+        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+
+
+class ArchitectOrderBody(BaseModel):
+    order: str
+    mode: str = "governed"  # governed | growth
+    prefer_free: bool = True
+    max_heal_attempts: int = 3
+
+
+@app.post("/api/architect/order", tags=["Architect"])
+def architect_order(body: ArchitectOrderBody):
+    """Orden de alto nivel: diseña/crea una app y ejecuta diagnóstico/autocorrección según modo."""
+    t0 = time.perf_counter()
+    try:
+        arch = _get_architect()
+        data = arch.execute_order(
+            body.order,
+            mode=body.mode,
+            prefer_free=bool(body.prefer_free),
+            max_heal_attempts=int(body.max_heal_attempts or 3),
+        )
+        return {"ok": bool(data.get("ok")), "data": data, "ms": int((time.perf_counter() - t0) * 1000), "error": None if data.get("ok") else "order_failed"}
+    except Exception as e:
+        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+
+
+class ArchitectApplyApprovedBody(BaseModel):
+    approval_id: str
+
+
+@app.post("/api/architect/apply-approved", tags=["Architect"])
+def architect_apply_approved(body: ArchitectApplyApprovedBody):
+    """Aplica un plan previamente aprobado en la cola de approvals."""
+    t0 = time.perf_counter()
+    try:
+        arch = _get_architect()
+        data = arch.apply_approved_plan(body.approval_id)
+        return {"ok": bool(data.get("ok")), "data": data, "ms": int((time.perf_counter() - t0) * 1000), "error": None if data.get("ok") else (data.get("error") or "apply_failed")}
+    except Exception as e:
+        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
 
 
 # --- Humanoid (kernel + modules) ---
@@ -4404,6 +4936,267 @@ def vision_status_endpoint():
         data = vision_status()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+# --- Vision Ubiqua (multidispositivo) ---
+class VisionUbiqDiscoverBody(BaseModel):
+    scan_ports: Optional[bool] = True
+    onvif: Optional[bool] = True
+
+
+@app.post("/api/vision/ubiq/discover", tags=["Vision"])
+def api_vision_ubiq_discover(body: Optional[VisionUbiqDiscoverBody] = None):
+    """Escaneo LAN: RTSP/MJPEG + ONVIF (WS-Discovery). Persiste y registra en ANS."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.vision.ubiq import ensure_db, discover_local_cameras
+
+        ensure_db()
+        out = discover_local_cameras(
+            scan_ports=bool(body.scan_ports) if body and body.scan_ports is not None else True,
+            onvif=bool(body.onvif) if body and body.onvif is not None else True,
+        )
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, out, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/api/vision/ubiq/cameras", tags=["Vision"])
+def api_vision_ubiq_cameras(limit: int = 200):
+    """Lista cámaras descubiertas/registradas."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.vision.ubiq import ensure_db, list_cameras
+
+        ensure_db()
+        cams = list_cameras(limit=int(limit))
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"cameras": cams, "count": len(cams)}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class VisionUbiqStreamBody(BaseModel):
+    variant: Optional[str] = "local"  # local|mobile
+
+
+@app.post("/api/vision/ubiq/streams/{cam_id}/start", tags=["Vision"])
+def api_vision_ubiq_stream_start(cam_id: str, body: Optional[VisionUbiqStreamBody] = None):
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.vision.ubiq import start_stream
+
+        variant = (body.variant if body and body.variant else "local") or "local"
+        out = start_stream(cam_id, variant=str(variant))
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(bool(out.get("ok")), out, ms, out.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/api/vision/ubiq/streams/{cam_id}/stop", tags=["Vision"])
+def api_vision_ubiq_stream_stop(cam_id: str, body: Optional[VisionUbiqStreamBody] = None):
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.vision.ubiq import stop_stream
+
+        variant = (body.variant if body and body.variant else "local") or "local"
+        out = stop_stream(cam_id, variant=str(variant))
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(bool(out.get("ok")), out, ms, out.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/api/vision/ubiq/streams/status", tags=["Vision"])
+def api_vision_ubiq_stream_status():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.vision.ubiq import stream_status, get_setting
+
+        st = stream_status()
+        active_eye = (get_setting("vision.active_eye") or "").strip()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"streams": st, "active_eye": active_eye}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+class VisionUbiqActiveEyeBody(BaseModel):
+    eye: str  # "" | "ubiq:<cam_id>"
+    hold_s: Optional[float] = 25.0
+
+
+@app.post("/api/vision/ubiq/active-eye", tags=["Vision"])
+def api_vision_ubiq_set_active_eye(body: VisionUbiqActiveEyeBody):
+    """Fija el ojo activo (persistente) para `eyes_capture`."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.vision.ubiq import set_setting
+        eye = (body.eye or "").strip()
+        if eye and not eye.lower().startswith("ubiq:"):
+            return _std_resp(False, {"ok": False, "error": "eye must be '' or 'ubiq:<cam_id>'"}, 0, "bad eye")
+        set_setting("vision.active_eye", eye)
+        if eye:
+            import time as _time
+            set_setting("vision.active_eye_until", str(_time.time() + max(3.0, float(body.hold_s or 25.0))))
+        else:
+            set_setting("vision.active_eye_until", "")
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"eye": eye}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/api/vision/ubiq/snapshot/{cam_id}", tags=["Vision"])
+def api_vision_ubiq_snapshot(cam_id: str):
+    """Un frame JPEG base64 (uso debug/preview)."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.vision.ubiq import take_snapshot
+
+        out = take_snapshot(cam_id, timeout_s=4.0)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(bool(out.get("ok")), {k: v for k, v in out.items() if k != "jpeg_bytes"}, ms, out.get("error"))
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+def _safe_stream_file(cam_id: str, variant: str, rel: str):
+    from pathlib import Path
+    from fastapi import HTTPException
+
+    cid = (cam_id or "").strip()
+    var = (variant or "").strip().lower()
+    if var not in ("local", "mobile"):
+        raise HTTPException(status_code=400, detail="bad variant")
+    root = (Path(__file__).resolve().parents[1] / "snapshots" / "vision" / "ubiq_streams" / cid / var).resolve()
+    p = (root / rel).resolve()
+    if root not in p.parents and p != root:
+        raise HTTPException(status_code=400, detail="bad path")
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="not found")
+    return p
+
+
+@app.get("/api/vision/ubiq/streams/{cam_id}/{variant}/index.m3u8", tags=["Vision"])
+def api_vision_ubiq_stream_playlist(cam_id: str, variant: str = "local"):
+    from fastapi.responses import FileResponse
+
+    p = _safe_stream_file(cam_id, variant, "index.m3u8")
+    return FileResponse(str(p), media_type="application/vnd.apple.mpegurl")
+
+
+@app.get("/api/vision/ubiq/streams/{cam_id}/{variant}/{segment}", tags=["Vision"])
+def api_vision_ubiq_stream_segment(cam_id: str, variant: str, segment: str):
+    from fastapi.responses import FileResponse
+
+    seg = (segment or "").strip()
+    if not (seg.endswith(".ts") or seg.endswith(".m3u8")):
+        # limitar superficie
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=400, detail="bad segment")
+    p = _safe_stream_file(cam_id, variant, seg)
+    mt = "video/MP2T" if seg.endswith(".ts") else "application/vnd.apple.mpegurl"
+    return FileResponse(str(p), media_type=mt)
+
+
+@app.get("/api/vision/ubiq/streams/{cam_id}/key", tags=["Vision"])
+def api_vision_ubiq_stream_key(cam_id: str, token: str = ""):
+    """Key AES-128 para HLS mobile. Requiere token."""
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+    from modules.humanoid.vision.ubiq.streaming import get_mobile_token
+
+    tok = (token or "").strip()
+    if not tok or tok != get_mobile_token():
+        raise HTTPException(status_code=401, detail="unauthorized")
+    p = _safe_stream_file(cam_id, "mobile", "enc.key")
+    return FileResponse(str(p), media_type="application/octet-stream")
+
+
+@app.get("/api/vision/ubiq/mobile-token", tags=["Vision"])
+def api_vision_ubiq_mobile_token(request: Request):
+    """Devuelve token mobile (solo localhost) para armar el link en Dashboard."""
+    from fastapi import HTTPException
+    from modules.humanoid.vision.ubiq.streaming import get_mobile_token
+
+    host = ""
+    try:
+        host = str(getattr(getattr(request, "client", None), "host", "") or "")
+    except Exception:
+        host = ""
+    if host not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(status_code=403, detail="forbidden")
+    return {"ok": True, "token": get_mobile_token()}
+
+
+@app.get("/mobile/vision/{cam_id}.m3u8", tags=["Vision"])
+def mobile_vision_playlist(cam_id: str, token: str = ""):
+    """Playlist mobile cifrada. Requiere token (para no divulgar URLs/keys)."""
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+    from modules.humanoid.vision.ubiq.streaming import get_mobile_token
+
+    tok = (token or "").strip()
+    if not tok or tok != get_mobile_token():
+        raise HTTPException(status_code=401, detail="unauthorized")
+    p = _safe_stream_file(cam_id, "mobile", "index.m3u8")
+    return FileResponse(str(p), media_type="application/vnd.apple.mpegurl")
+
+
+@app.get("/mobile/vision/{cam_id}/{segment}", tags=["Vision"])
+def mobile_vision_segment(cam_id: str, segment: str, token: str = ""):
+    """Segmentos mobile cifrados. Requiere token."""
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+    from modules.humanoid.vision.ubiq.streaming import get_mobile_token
+
+    tok = (token or "").strip()
+    if not tok or tok != get_mobile_token():
+        raise HTTPException(status_code=401, detail="unauthorized")
+    seg = (segment or "").strip()
+    if not seg.endswith(".ts"):
+        raise HTTPException(status_code=400, detail="bad segment")
+    p = _safe_stream_file(cam_id, "mobile", seg)
+    return FileResponse(str(p), media_type="video/MP2T")
+
+
+@app.post("/api/vision/ubiq/motion/start", tags=["Vision"])
+def api_vision_ubiq_motion_start():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.vision.ubiq import start_motion_watchdog
+
+        out = start_motion_watchdog()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, out, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/api/vision/ubiq/motion/stop", tags=["Vision"])
+def api_vision_ubiq_motion_stop():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.vision.ubiq import stop_motion_watchdog
+
+        out = stop_motion_watchdog()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, out, ms, None)
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))

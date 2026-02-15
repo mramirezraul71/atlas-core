@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
@@ -360,6 +361,39 @@ class ContinualLearningLoop:
             "self_assessment": self._self_assess(success_rate),
         }
         print(f"Tareas: {len(tasks)}, Éxito: {success_rate:.1%}, Ayuda: {report['times_asked_for_help']}")
+
+        # --- Python Mastery: evaluación determinista/offline (score objetivo) ---
+        try:
+            lesson_id = str(self.current_lesson.get("lesson_id") or "").strip()
+            if lesson_id.upper().startswith("PY"):
+                from pathlib import Path
+                from brain.learning.python_mastery_evaluator import evaluate_python_mastery_lesson
+
+                repo_root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or ""
+                if repo_root:
+                    root = Path(repo_root)
+                else:
+                    # brain/learning/continual_learning_loop.py -> repo_root
+                    root = Path(__file__).resolve().parents[2]
+                evaluation = evaluate_python_mastery_lesson(lesson_id=lesson_id, repo_root=root)
+                # Registrar en tutor si soporta recording offline (offline-first).
+                if getattr(self.ai_tutor, "record_offline_evaluation", None):
+                    try:
+                        evaluation = self.ai_tutor.record_offline_evaluation(
+                            lesson_id=lesson_id,
+                            evaluation=evaluation,
+                            robot_report=report,
+                            lesson=self.current_lesson,
+                        )
+                    except Exception:
+                        pass
+                for correction in (evaluation.get("knowledge_corrected") or []):
+                    await self._apply_knowledge_correction(correction)
+                return evaluation
+        except Exception:
+            # Si algo falla, caemos al tutor estándar.
+            pass
+
         if getattr(self.ai_tutor, "review_robot_performance", None):
             evaluation = self.ai_tutor.review_robot_performance(
                 lesson_id=self.current_lesson.get("lesson_id"),

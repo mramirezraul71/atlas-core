@@ -1,0 +1,10 @@
+[project]
+name = "atlas-py-tool"
+version = "0.1.0"
+description = "Sample tool package for ATLAS Python Mastery (PY012)"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+atlas-py-tool = "atlas_py_tool.cli:main"
+

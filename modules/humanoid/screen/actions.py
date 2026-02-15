@@ -74,6 +74,17 @@ def _guard(action_kind: str, payload: Optional[Dict[str, Any]] = None, weight: i
         except Exception:
             # no bloquear si no podemos validar bounds
             pass
+    if action_kind == "move" and payload:
+        try:
+            x = int(payload.get("x", 0))
+            y = int(payload.get("y", 0))
+            import pyautogui
+
+            w, h = pyautogui.size()
+            if x < 0 or y < 0 or x >= w or y >= h:
+                return "out_of_bounds"
+        except Exception:
+            pass
     if action_kind == "type" and payload:
         t = str(payload.get("text", "") or "")
         if len(t) > 2000:
@@ -91,6 +102,21 @@ def do_click(x: int, y: int) -> Dict[str, Any]:
     try:
         import pyautogui
         pyautogui.click(x, y)
+        return {"ok": True, "error": None}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def do_move(x: int, y: int, duration: float = 0.2) -> Dict[str, Any]:
+    """Move mouse to (x,y). Returns {ok, error}."""
+    if not _screen_deps_ok():
+        return {"ok": False, "error": "screen_deps_missing"}
+    err = _guard("move", {"x": x, "y": y}, weight=1)
+    if err:
+        return {"ok": False, "error": err}
+    try:
+        import pyautogui
+        pyautogui.moveTo(int(x), int(y), duration=float(duration or 0.0))
         return {"ok": True, "error": None}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -161,6 +187,17 @@ def execute_action(action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         try:
             from modules.humanoid.comms.ops_bus import emit as ops_emit
             ops_emit("hands", f"Click en ({x},{y}) => {'OK' if r.get('ok') else 'FAIL'}", level="med" if not r.get("ok") else "info", data={"action": "click", "x": x, "y": y, "ok": r.get("ok")})
+        except Exception:
+            pass
+        return r
+    if action == "move":
+        x = int(payload.get("x", 0))
+        y = int(payload.get("y", 0))
+        dur = float(payload.get("duration", 0.2) or 0.2)
+        r = do_move(x, y, duration=dur)
+        try:
+            from modules.humanoid.comms.ops_bus import emit as ops_emit
+            ops_emit("hands", f"Move a ({x},{y}) => {'OK' if r.get('ok') else 'FAIL'}", level="med" if not r.get("ok") else "info", data={"action": "move", "x": x, "y": y, "ok": r.get("ok")})
         except Exception:
             pass
         return r

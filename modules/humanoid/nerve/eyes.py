@@ -87,12 +87,40 @@ def eyes_capture(
     focus_y: float = 0.5,
     zoom: float = 1.0,
     index: int = 0,
+    eye: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Captura lo que ven los ojos: local (pantalla) o Nexus (ojos externos).
     use_nexus_if_available=True y Nexus conectado → snapshot desde Robot 8002.
     Retorna {ok, image_base64, source: "local"|"nexus", evidence_path?, error?}.
     """
+    # 0) Visión Ubicua (ojo activo): si está seleccionado, priorizarlo.
+    # Formato: "ubiq:<cam_id>" o setting persistente `vision.active_eye`.
+    try:
+        requested = (eye or "").strip()
+        if not requested:
+            from modules.humanoid.vision.ubiq.registry import get_setting
+
+            requested = (get_setting("vision.active_eye") or "").strip()
+        if requested.lower().startswith("ubiq:"):
+            cam_id = requested.split(":", 1)[1].strip()
+            if cam_id:
+                from modules.humanoid.vision.ubiq.streaming import take_snapshot
+
+                snap = take_snapshot(cam_id, timeout_s=3.5)
+                if snap.get("ok") and snap.get("image_base64"):
+                    return {
+                        "ok": True,
+                        "image_base64": snap["image_base64"],
+                        "source": "ubiq",
+                        "evidence_path": None,
+                        "error": None,
+                        "eye": requested,
+                        "cam_id": cam_id,
+                    }
+    except Exception:
+        pass
+
     if use_nexus_if_available and _nexus_eyes_available():
         raw = _nexus_snapshot_advanced(
             source=source,

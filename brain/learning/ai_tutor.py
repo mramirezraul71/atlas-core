@@ -12,6 +12,12 @@ try:
 except ImportError:
     requests = None
 
+try:
+    # Currículum offline para dominio de Python (sin depender de LLM externo)
+    from .python_mastery_curriculum import generate_python_mastery_curriculum
+except Exception:
+    generate_python_mastery_curriculum = None  # type: ignore[assignment]
+
 
 class AITutor:
     """
@@ -104,7 +110,12 @@ Genera {min(time_horizon_days // 2, 15)} lecciones. Responde solo con un array J
                 return curriculum
 
         print("[AI TUTOR] Warning: Error disenando curriculum, usando fallback")
-        self.curriculum = self._generate_basic_curriculum()
+        self.curriculum = self._generate_fallback_curriculum(
+            robot_capabilities=robot_capabilities,
+            learning_goals=learning_goals,
+            time_horizon_days=time_horizon_days,
+            difficulty_level=difficulty_level,
+        )
         return self.curriculum
 
     def assign_daily_lesson(self) -> Optional[Dict[str, Any]]:
@@ -186,6 +197,80 @@ Evalúa y responde en JSON con: score (0-100), evaluation (texto), grade, passed
 
         print("[AI TUTOR] Warning: Error en evaluacion, usando fallback")
         return self._generate_basic_evaluation(robot_report)
+
+    def record_offline_evaluation(
+        self,
+        lesson_id: str,
+        evaluation: Dict[str, Any],
+        robot_report: Optional[Dict[str, Any]] = None,
+        lesson: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Registrar una evaluación determinista/offline (p. ej. Python Mastery evaluator).
+
+        Esto actualiza el estado interno igual que `review_robot_performance`, pero
+        sin depender de LLM externo.
+        """
+        lesson_id = (lesson_id or "").strip()
+        if not lesson_id:
+            return {"error": "lesson_id requerido", "score": 0, "passed": False}
+
+        # Normalizar score/passed
+        score = evaluation.get("score")
+        try:
+            score = int(score) if score is not None else 0
+        except Exception:
+            score = 0
+        passed = evaluation.get("passed")
+        if passed is None:
+            passed = score >= 60
+        passed = bool(passed)
+
+        if lesson is None:
+            lesson = next((l for l in self.curriculum if l.get("lesson_id") == lesson_id), None)
+        if lesson is None:
+            lesson = {"lesson_id": lesson_id, "name": lesson_id, "difficulty": "unknown"}
+
+        self.stats["total_evaluations"] += 1
+        try:
+            self._update_robot_profile({**evaluation, "score": score, "passed": passed}, lesson)
+        except Exception:
+            pass
+
+        try:
+            self.tutor_sessions.append(
+                {
+                    "session_id": f"session_{len(self.tutor_sessions) + 1}",
+                    "timestamp": datetime.now().isoformat(),
+                    "lesson_id": lesson_id,
+                    "evaluation": {**evaluation, "score": score, "passed": passed},
+                    "robot_report": robot_report or {},
+                    "offline": True,
+                }
+            )
+        except Exception:
+            pass
+
+        # Completar / fallar
+        if score >= 60:
+            self.completed_lessons.append(
+                {
+                    "lesson_id": lesson_id,
+                    "completed_at": datetime.now().isoformat(),
+                    "score": score,
+                    "attempts": 1,
+                }
+            )
+            print(f"[AI TUTOR] Leccion completada (offline): {score}/100")
+        else:
+            self.failed_lessons.append(
+                {"lesson_id": lesson_id, "failed_at": datetime.now().isoformat(), "score": score}
+            )
+            print(f"[AI TUTOR] Leccion fallada (offline): {score}/100")
+
+        self.last_review = datetime.now()
+        self.stats["total_feedback_given"] += 1
+        self.stats["total_corrections_made"] += len(evaluation.get("knowledge_corrected", []) or [])
+        return {**evaluation, "score": score, "passed": passed}
 
     def validate_learned_knowledge(self, knowledge_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Valida items de conocimiento aprendidos (correcto/parcial/incorrecto)."""
@@ -353,6 +438,39 @@ CONOCIMIENTO: {json.dumps(knowledge_items, indent=2)}"""
                 "next_lessons": [],
             },
         ]
+
+    def _generate_fallback_curriculum(
+        self,
+        robot_capabilities: List[str],
+        learning_goals: List[str],
+        time_horizon_days: int,
+        difficulty_level: str,
+    ) -> List[Dict[str, Any]]:
+        """Fallback local cuando no hay API key o el tutor está deshabilitado.
+
+        Prioriza currículum de Python si los objetivos lo indican.
+        """
+        goals = [(g or "").strip().lower() for g in (learning_goals or [])]
+        caps = [(c or "").strip().lower() for c in (robot_capabilities or [])]
+        is_python = any(
+            ("python" in g)
+            or ("py" == g)
+            or ("python_mastery" in g)
+            or ("scripting" in g)
+            or ("cli" in g)
+            or ("pytest" in g)
+            for g in goals
+        ) or any(("python" in c) or ("cli" in c) for c in caps)
+
+        if is_python and generate_python_mastery_curriculum is not None:
+            curriculum = generate_python_mastery_curriculum(
+                time_horizon_days=time_horizon_days,
+                difficulty_level=difficulty_level,
+            )
+            if curriculum:
+                return curriculum
+
+        return self._generate_basic_curriculum()
 
     def _generate_basic_evaluation(self, report: Dict[str, Any]) -> Dict[str, Any]:
         success_rate = report.get("success_rate", 0.5)

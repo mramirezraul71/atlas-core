@@ -48,8 +48,25 @@ class SafeShellExecutor:
                 return False
         if self.allowed_cmds:
             parts = shlex.split(cmd) or [cmd]
-            first = (parts[0] or "").lower()
-            return first in [a.lower() for a in self.allowed_cmds]
+            first_raw = (parts[0] or "")
+            first = first_raw.lower()
+            allowed = [a.lower() for a in self.allowed_cmds]
+            if first in allowed:
+                return True
+            # Permitir ejecutables de venv (aislamiento por app) sin abrir la allowlist global.
+            # Ejemplos Windows: .venv\Scripts\python.exe, C:\...\apps\X\backend\.venv\Scripts\pip.exe
+            try:
+                from pathlib import Path
+
+                p = Path(first_raw.strip('"').strip("'"))
+                name = p.name.lower()
+                if name in ("python", "python.exe", "pip", "pip.exe"):
+                    s = str(p).replace("/", "\\").lower()
+                    if "\\.venv\\" in s or "\\venv\\" in s:
+                        return True
+            except Exception:
+                pass
+            return False
         return True
 
     def run(self, cmd: str, cwd: Optional[str] = None, timeout_sec: int = 60, actor: Optional[Any] = None) -> Dict[str, Any]:
