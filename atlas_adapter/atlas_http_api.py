@@ -180,6 +180,11 @@ async def _lifespan(app):
                 ensure_approvals_jobs()
             except Exception:
                 pass
+            try:
+                from modules.humanoid.repo.git_hooks import ensure_post_commit_hook
+                ensure_post_commit_hook()
+            except Exception:
+                pass
         # Heartbeat NEXUS: ping 8000/health, auto-reactivación con start_all.ps1, registro en Bitácora
         try:
             from modules.nexus_heartbeat import start_heartbeat, register_status_callback

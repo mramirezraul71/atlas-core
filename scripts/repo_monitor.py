@@ -386,19 +386,54 @@ def run_after_fix(cfg: Dict[str, Any], message: Optional[str] = None) -> int:
         _bitacora(cfg, "[REPO] After-fix: sin archivos tras filtros", ok=True)
         return 0
 
-    # add
-    for p in paths_to_add:
-        _git(repo, "add", p, timeout_sec=5)
-    # commit
-    r = _git(repo, "commit", "-m", msg, timeout_sec=10)
-    if not r.get("ok"):
-        if "nothing to commit" in (r.get("stdout") or "") + (r.get("stderr") or ""):
-            log.info("Nada que commitear.")
-            _bitacora(cfg, "[REPO] After-fix: nada que commitear", ok=True)
-            return 0
-        log.error("Commit falló: %s %s", r.get("stdout"), r.get("stderr"))
-        _bitacora(cfg, "[REPO] After-fix: commit fallido", ok=False)
-        return 1
+    # POT: evitar megacommits. Si son demasiados archivos, dividir por grupos.
+    max_files = int(os.getenv("REPO_AFTERFIX_MAX_FILES", "25") or 25)
+    groups = {}
+    if len(paths_to_add) > max_files:
+        for p in paths_to_add:
+            p2 = p.replace("\\", "/")
+            top = p2.split("/", 1)[0] if "/" in p2 else p2
+            # agrupar módulos de forma estable
+            if p2.startswith("modules/"):
+                top = "modules"
+            if p2.startswith("atlas_adapter/"):
+                top = "atlas_adapter"
+            if p2.startswith("brain/") or p2.startswith("training/") or p2.startswith("tests/"):
+                top = "learning"
+            groups.setdefault(top, []).append(p)
+    else:
+        groups = {"all": list(paths_to_add)}
+
+    # commit(s)
+    did_commit = False
+    for gname, gpaths in groups.items():
+        # add por grupo
+        for p in gpaths:
+            _git(repo, "add", p, timeout_sec=5)
+        gmsg = msg if gname == "all" else f"{msg} ({gname})"
+        r = _git(repo, "commit", "-m", gmsg, timeout_sec=15)
+        if not r.get("ok"):
+            if "nothing to commit" in (r.get("stdout") or "") + (r.get("stderr") or ""):
+                continue
+            log.error("Commit falló: %s %s", r.get("stdout"), r.get("stderr"))
+            _bitacora(cfg, "[REPO] After-fix: commit fallido", ok=False)
+            return 1
+        did_commit = True
+        # Notificación multicanal (sin depender del dashboard)
+        try:
+            bc = cfg.get("bitacora") or {}
+            url = (bc.get("dashboard_url") or "").rstrip("/")
+            if url:
+                data = json.dumps({"message": "Repositorio actualizado: cambios guardados en Git.", "subsystem": "repo", "level": "info"}).encode("utf-8")
+                req = urllib.request.Request(f"{url}/api/comms/test", data=data, method="POST", headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=3).read()
+        except Exception:
+            pass
+
+    if not did_commit and not allow_empty:
+        log.info("Nada que commitear.")
+        _bitacora(cfg, "[REPO] After-fix: nada que commitear", ok=True)
+        return 0
 
     # push
     on_err = (cfg.get("on_error") or {}).get("push_fail") or {}
@@ -409,6 +444,15 @@ def run_after_fix(cfg: Dict[str, Any], message: Optional[str] = None) -> int:
         if push_r.get("ok"):
             log.info("Push OK a %s/%s", remote, branch)
             _bitacora(cfg, "[REPO] After-fix: push OK a %s/%s" % (remote, branch), ok=True)
+            try:
+                bc = cfg.get("bitacora") or {}
+                url = (bc.get("dashboard_url") or "").rstrip("/")
+                if url:
+                    data = json.dumps({"message": "Cambios subidos a GitHub.", "subsystem": "repo", "level": "info"}).encode("utf-8")
+                    req = urllib.request.Request(f"{url}/api/comms/test", data=data, method="POST", headers={"Content-Type": "application/json"})
+                    urllib.request.urlopen(req, timeout=3).read()
+            except Exception:
+                pass
             return 0
         log.warning("Push intento %s/%s: %s", attempt, retries, push_r.get("stderr"))
         if attempt < retries:
