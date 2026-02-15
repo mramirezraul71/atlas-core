@@ -32,6 +32,9 @@ __pycache__/
 # CI reportes generados
 snapshots/ci/
 
+# Snapshots / evidencia generada (LOCAL) - nunca subir
+snapshots/**
+
 # API keys guardadas desde el dashboard (nunca subir)
 config/provider_api_keys.json
 
@@ -45,6 +48,8 @@ logs/*.err.log
 logs/*.out.log
 logs/*.json
 logs/*.txt
+# Logs (LOCAL) - nunca subir
+logs/**
 # Repo monitor (tarea asignada)
 logs/repo_monitor.log*
 # Task/orchestrator local state
@@ -57,6 +62,18 @@ snapshots/support/
 snapshots/brain/
 snapshots/hands_eyes/
 snapshots/ans/
+
+# Capturas sueltas de cámara/evidencia (LOCAL)
+camera_*.jpg
+camera_*.png
+*_camera_*.jpg
+*_camera_*.png
+direct_camera_*.jpg
+direct_camera_*.png
+proxy_camera_*.jpg
+proxy_camera_*.png
+vision_camera_*.jpg
+vision_camera_*.png
 
 # Scripts generados por CoderAgent / AtlasCoder (sandbox)
 temp_scripts/

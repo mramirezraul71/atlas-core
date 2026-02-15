@@ -51,6 +51,8 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_repo_monitor_cycle(payload)
         elif kind == "repo_monitor_after_fix":
             out = _run_repo_monitor_after_fix(payload)
+        elif kind == "repo_hygiene_cycle":
+            out = _run_repo_hygiene_cycle(payload)
         else:
             out = {"ok": True, "result": "no-op", "kind": kind}
     except Exception as e:
@@ -293,5 +295,41 @@ def _run_repo_monitor_after_fix(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "repo_monitor after-fix timeout 90s"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _run_repo_hygiene_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Repo hygiene periódico: scan o auto (según env). Usa scripts/repo_hygiene.py."""
+    import subprocess
+
+    root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or payload.get("repo_root")
+    if not root:
+        root = str(Path(__file__).resolve().parent.parent.parent.parent)
+    root = Path(root).resolve()
+    script = root / "scripts" / "repo_hygiene.py"
+    if not script.is_file():
+        return {"ok": False, "error": "scripts/repo_hygiene.py not found"}
+
+    auto = os.getenv("REPO_HYGIENE_AUTO", "false").strip().lower() in ("1", "true", "yes")
+    argv = [sys.executable, str(script), "--auto" if auto else "--scan"]
+    try:
+        r = subprocess.run(
+            argv,
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=180,
+            env={**os.environ, "ATLAS_REPO_PATH": str(root), "ATLAS_PUSH_ROOT": str(root)},
+        )
+        return {
+            "ok": r.returncode == 0,
+            "exit_code": r.returncode,
+            "mode": "auto" if auto else "scan",
+            "stdout": (r.stdout or "")[-500:],
+            "stderr": (r.stderr or "")[-300:],
+        }
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "repo_hygiene timeout 180s"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
