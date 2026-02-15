@@ -43,10 +43,14 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_remote_hands(payload)
         elif kind == "ans_cycle":
             out = _run_ans_cycle(payload)
+        elif kind == "nervous_cycle":
+            out = _run_nervous_cycle(payload)
         elif kind == "makeplay_scanner":
             out = _run_makeplay_scanner(payload)
         elif kind == "repo_monitor_cycle":
             out = _run_repo_monitor_cycle(payload)
+        elif kind == "repo_monitor_after_fix":
+            out = _run_repo_monitor_after_fix(payload)
         else:
             out = {"ok": True, "result": "no-op", "kind": kind}
     except Exception as e:
@@ -202,6 +206,16 @@ def _run_ans_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": False, "error": str(e)}
 
 
+def _run_nervous_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run Sistema Nervioso: sensores -> score -> persistencia + bitácora/incidentes."""
+    try:
+        from modules.humanoid.nervous.engine import run_nervous_cycle
+        mode = (payload.get("mode") or os.getenv("NERVOUS_MODE", "auto")).strip() or "auto"
+        return run_nervous_cycle(mode=mode)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 def _run_makeplay_scanner(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Scanner permanente: estado ATLAS -> webhook MakePlay."""
     try:
@@ -228,7 +242,12 @@ def _run_repo_monitor_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=120,
-            env={**os.environ, "REPO_MONITOR_CONFIG": str(root / "config" / "repo_monitor.yaml")},
+            env={
+                **os.environ,
+                "ATLAS_REPO_PATH": str(root),
+                "ATLAS_PUSH_ROOT": str(root),
+                "REPO_MONITOR_CONFIG": str(root / "config" / "repo_monitor.yaml"),
+            },
         )
         return {
             "ok": r.returncode == 0,
@@ -238,5 +257,41 @@ def _run_repo_monitor_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "repo_monitor cycle timeout 120s"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _run_repo_monitor_after_fix(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Ejecutar commit + push del monitor de repo (actualizacion automatica al remoto)."""
+    import subprocess
+    root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT")
+    if not root:
+        root = str(Path(__file__).resolve().parent.parent.parent.parent)
+    root = Path(root).resolve()
+    script = root / "scripts" / "repo_monitor.py"
+    if not script.is_file():
+        return {"ok": False, "error": "scripts/repo_monitor.py not found"}
+    try:
+        r = subprocess.run(
+            [sys.executable, str(script), "--after-fix"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=90,
+            env={
+                **os.environ,
+                "ATLAS_REPO_PATH": str(root),
+                "ATLAS_PUSH_ROOT": str(root),
+                "REPO_MONITOR_CONFIG": str(root / "config" / "repo_monitor.yaml"),
+            },
+        )
+        return {
+            "ok": r.returncode == 0,
+            "exit_code": r.returncode,
+            "stdout": (r.stdout or "")[:500],
+            "stderr": (r.stderr or "")[:300],
+        }
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "repo_monitor after-fix timeout 90s"}
     except Exception as e:
         return {"ok": False, "error": str(e)}

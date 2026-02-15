@@ -23,6 +23,8 @@ class EnvScanner:
                 [sys.executable, "-m", "pip", "--version"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=10,
             )
             out = (r.stdout or r.stderr or "").strip()
@@ -36,6 +38,8 @@ class EnvScanner:
                 ["where", "python"] if sys.platform == "win32" else ["which", "python"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=5,
             )
             out = (r.stdout or "").strip()
@@ -57,6 +61,8 @@ class EnvScanner:
                 [sys.executable, "-m", "pip", "list", "--format=json"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=30,
             )
             if r.returncode != 0:

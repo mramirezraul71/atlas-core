@@ -32,10 +32,21 @@ __pycache__/
 # CI reportes generados
 snapshots/ci/
 
+# API keys guardadas desde el dashboard (nunca subir)
+config/provider_api_keys.json
+
 # Audit DB (local)
 logs/*.sqlite
 logs/*.sqlite-shm
 logs/*.sqlite-wal
+# Runtime logs / bitácoras (local)
+logs/*.log
+logs/*.err.log
+logs/*.out.log
+logs/*.json
+logs/*.txt
+# Repo monitor (tarea asignada)
+logs/repo_monitor.log*
 # Task/orchestrator local state
 atlas_task_memory.sqlite
 

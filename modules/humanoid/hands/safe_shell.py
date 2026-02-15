@@ -81,7 +81,14 @@ class SafeShellExecutor:
             return out
         try:
             r = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, cwd=cwd, timeout=timeout_sec,
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=cwd,
+                timeout=timeout_sec,
             )
             out = {
                 "ok": r.returncode == 0,

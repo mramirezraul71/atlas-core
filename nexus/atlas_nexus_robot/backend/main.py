@@ -19,20 +19,19 @@ import cv2
 import numpy as np
 from pydantic import BaseModel
 
+# Asegurar imports locales (brain/, api/, vision/, etc.) aunque se ejecute desde otro cwd
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
 # Import YOLO detector
 from yolo_detector import YOLODetector, get_detector
 
 # Import vision routes
 from api.vision_routes import router as vision_router
 
-# Import brain routes
-from api.brain_routes import router as brain_router
-
 # Import camera service routes
 from api.camera_service_routes import router as camera_router
-
-# Agregar rutas al path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Configurar logging
 logging.basicConfig(
@@ -62,8 +61,12 @@ app.add_middleware(
 # Include vision routes
 app.include_router(vision_router)
 
-# Include brain routes
-app.include_router(brain_router)
+# Include brain routes (optional: may require heavy deps like langchain)
+try:
+    from api.brain_routes import router as brain_router  # type: ignore
+    app.include_router(brain_router)
+except Exception as e:
+    logger.warning("Brain routes disabled (missing deps): %s", e)
 
 # Include camera service routes
 app.include_router(camera_router)

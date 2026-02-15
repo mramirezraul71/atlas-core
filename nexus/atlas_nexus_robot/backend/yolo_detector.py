@@ -6,8 +6,15 @@ Real-time object detection using YOLOv8
 
 import cv2
 import numpy as np
-from ultralytics import YOLO
-import torch
+try:
+    # Optional dependency (YOLOv8). If missing, the Robot backend must still boot.
+    from ultralytics import YOLO  # type: ignore
+except Exception:  # pragma: no cover
+    YOLO = None
+try:
+    import torch  # type: ignore
+except Exception:  # pragma: no cover
+    torch = None
 from typing import List, Dict, Tuple, Optional
 import logging
 from pathlib import Path
@@ -31,7 +38,11 @@ class YOLODetector:
         """
         self.confidence_threshold = confidence_threshold
         self.model = None
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # torch/ultralytics are optional; keep backend alive if absent
+        if torch is not None:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        else:
+            self.device = "cpu"
         self.detection_history = []
         self.max_history = 100
         
@@ -54,10 +65,15 @@ class YOLODetector:
             'toothbrush'
         ]
         
+        if YOLO is None:
+            logger.warning("YOLO not available (ultralytics missing). Detection disabled.")
         logger.info(f"YOLO Detector initialized on {self.device}")
     
     def _load_model(self, model_path: Optional[str] = None):
         """Load YOLO model"""
+        if YOLO is None:
+            self.model = None
+            return
         try:
             if model_path and Path(model_path).exists():
                 self.model = YOLO(model_path)
@@ -67,12 +83,17 @@ class YOLODetector:
                 self.model = YOLO('yolov8n.pt')
                 logger.info("Loaded YOLOv8n model (nano)")
                 
-            # Move model to device
-            self.model.to(self.device)
+            # Move model to device (if torch available)
+            try:
+                self.model.to(self.device)  # type: ignore[attr-defined]
+            except Exception:
+                pass
             
         except Exception as e:
             logger.error(f"Failed to load YOLO model: {e}")
-            raise
+            # Do not crash the whole backend
+            self.model = None
+            return
     
     def detect_objects(self, image: np.ndarray) -> List[Dict]:
         """

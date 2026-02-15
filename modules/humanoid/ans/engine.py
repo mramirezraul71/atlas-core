@@ -97,7 +97,13 @@ def _run_full(timeout_sec: int) -> Dict[str, Any]:
     results: List[Dict] = []
     incidents_created: List[str] = []
     actions_taken: List[Dict] = []
-    check_ids = list(get_checks().keys())[:14]
+    max_checks = _env_int("ANS_MAX_CHECKS", 25)
+    all_ids = list(get_checks().keys())
+    check_ids = all_ids[:max(1, min(max_checks, 50))]
+    # Forzar checks críticos aunque queden fuera del corte (sensibilidad industrial).
+    for critical_id in ("nervous_health", "nexus_services_health", "robot_camera_health"):
+        if critical_id in all_ids and critical_id not in check_ids:
+            check_ids.append(critical_id)
     max_workers = min(8, len(check_ids), _env_int("ANS_PARALLEL_WORKERS", 6))
 
     # Fase 1: ejecutar checks en paralelo (acelera ~3-4x vs secuencial)

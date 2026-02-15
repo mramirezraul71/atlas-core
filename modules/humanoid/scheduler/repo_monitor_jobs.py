@@ -34,7 +34,7 @@ def _load_repo_monitor_config() -> dict:
 
 
 def ensure_repo_monitor_jobs() -> None:
-    """Crea el job repo_monitor_cycle si cycle.enabled y no existe. Actualiza intervalo si ya existe."""
+    """Crea/actualiza jobs repo_monitor_cycle y repo_monitor_after_fix segun config."""
     if not _sched_enabled():
         return
     try:
@@ -42,33 +42,52 @@ def ensure_repo_monitor_jobs() -> None:
         from modules.humanoid.scheduler.models import JobSpec
 
         cfg = _load_repo_monitor_config()
-        cycle = cfg.get("cycle") or {}
-        if not cycle.get("enabled", True):
-            return
-
-        interval_sec = int(cycle.get("interval_seconds", 600) or 600)
-        interval_sec = max(60, min(interval_sec, 86400))  # entre 1 min y 24 h
-
         db = get_scheduler_db()
         jobs = db.list_jobs(limit=100) or []
-        repo_job = next((j for j in jobs if j.get("name") == "repo_monitor_cycle"), None)
-
-        if repo_job:
-            conn = db._ensure()
-            conn.execute(
-                "UPDATE jobs SET interval_seconds = ?, updated_ts = ? WHERE id = ?",
-                (interval_sec, datetime.now(timezone.utc).isoformat(), repo_job.get("id")),
-            )
-            conn.commit()
-            return
-
         now = datetime.now(timezone.utc).isoformat()
-        db.create_job(JobSpec(
-            name="repo_monitor_cycle",
-            kind="repo_monitor_cycle",
-            payload={},
-            run_at=now,
-            interval_seconds=interval_sec,
-        ))
+
+        # Job 1: ciclo (fetch + status) cada N segundos
+        cycle = cfg.get("cycle") or {}
+        if cycle.get("enabled", True):
+            interval_sec = int(cycle.get("interval_seconds", 600) or 600)
+            interval_sec = max(60, min(interval_sec, 86400))
+            repo_job = next((j for j in jobs if j.get("name") == "repo_monitor_cycle"), None)
+            if repo_job:
+                conn = db._ensure()
+                conn.execute(
+                    "UPDATE jobs SET interval_seconds = ?, updated_ts = ? WHERE id = ?",
+                    (interval_sec, now, repo_job.get("id")),
+                )
+                conn.commit()
+            else:
+                db.create_job(JobSpec(
+                    name="repo_monitor_cycle",
+                    kind="repo_monitor_cycle",
+                    payload={},
+                    run_at=now,
+                    interval_seconds=interval_sec,
+                ))
+
+        # Job 2: after-fix (commit + push) cada N segundos si esta habilitado
+        af = cfg.get("after_fix") or {}
+        auto_interval = int(af.get("auto_schedule_interval_seconds", 0) or 0)
+        if af.get("enabled", True) and auto_interval > 0:
+            auto_interval = max(300, min(auto_interval, 86400))  # entre 5 min y 24 h
+            after_job = next((j for j in jobs if j.get("name") == "repo_monitor_after_fix"), None)
+            if after_job:
+                conn = db._ensure()
+                conn.execute(
+                    "UPDATE jobs SET interval_seconds = ?, updated_ts = ? WHERE id = ?",
+                    (auto_interval, now, after_job.get("id")),
+                )
+                conn.commit()
+            else:
+                db.create_job(JobSpec(
+                    name="repo_monitor_after_fix",
+                    kind="repo_monitor_after_fix",
+                    payload={},
+                    run_at=now,
+                    interval_seconds=auto_interval,
+                ))
     except Exception:
         pass

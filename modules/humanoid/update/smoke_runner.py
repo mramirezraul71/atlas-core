@@ -35,7 +35,15 @@ def run_smoke(repo_path: str | None = None, port: int = 8791, timeout_sec: int =
         return {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": f"Script not found: {script}", "ms": ms}
     try:
         cmd = ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(script), "-RepoPath", repo, "-AtlasPort", str(port)]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_sec, cwd=repo)
+        r = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_sec,
+            cwd=repo,
+        )
         ms = int((time.perf_counter() - t0) * 1000)
         return {
             "ok": r.returncode == 0,

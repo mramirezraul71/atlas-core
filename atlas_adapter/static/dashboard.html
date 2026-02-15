@@ -123,6 +123,18 @@
       border-color: var(--purple);
     }
     button.small { padding: .25rem .5rem; font-size: .75rem; }
+    button.btn-brain-active { background: var(--green); color: #fff; border: 1px solid var(--green); }
+    button.btn-brain-active:hover { filter: brightness(1.1); }
+    .brain-model-panel .brain-model-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .5rem 0; border-bottom: 1px solid rgba(139,92,246,0.12); font-size: .8rem; min-height: 2rem; }
+    .brain-model-panel .brain-model-row:last-child { border-bottom: none; }
+    .brain-model-panel .brain-model-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: .5rem; }
+    .brain-model-panel .brain-model-actions { display: flex; align-items: center; gap: .5rem; flex-shrink: 0; flex-wrap: nowrap; }
+    .brain-model-panel .brain-model-actions button { padding: .2rem .4rem; font-size: .7rem; }
+    .brain-panel-hint { font-size: .75rem; color: var(--muted); margin: 0 0 .75rem; line-height: 1.4; }
+    .brain-providers-header { margin-top: .75rem; padding-top: .6rem; border-top: 1px solid rgba(139,92,246,0.2); font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .25rem; }
+    .brain-status-configured { font-size: .75rem; color: var(--green); margin-right: .5rem; white-space: nowrap; }
+    .brain-dominant-connected { color: var(--green) !important; font-weight: 600; }
+    .brain-dominant-error { color: var(--red) !important; }
     .badge { display: inline-block; padding: .2rem .45rem; border-radius: 4px; font-size: .75rem; font-weight: 500; }
     .badge.ok { background: rgba(34,197,94,.25); color: var(--green); }
     .badge.warn { background: rgba(234,179,8,.25); color: var(--amber); }
@@ -168,6 +180,54 @@
     .nav-dropdown-panel h3 { font-size: .8rem; color: var(--muted); margin: 1rem 0 .5rem; text-transform: uppercase; letter-spacing: .05em; }
     .nav-dropdown-panel h3:first-child { margin-top: 0; }
     .metrics-list span { display: block; }
+
+    /* Sidebar izquierdo: menú con hamburguesa (☰) desplegable */
+    .app-sidebar {
+      position: fixed;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 52px;
+      background: var(--card);
+      border-right: 1px solid var(--card-border);
+      z-index: 200;
+      display: flex;
+      flex-direction: column;
+      transition: width .25s ease, box-shadow .25s ease;
+      overflow: hidden;
+    }
+    .app-sidebar.open {
+      width: min(320px, 90vw);
+      box-shadow: 4px 0 20px rgba(0,0,0,.3);
+    }
+    .sidebar-toggle {
+      flex-shrink: 0;
+      width: 52px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--accent-muted);
+      border: none;
+      border-bottom: 1px solid var(--card-border);
+      color: var(--purple-light);
+      font-size: 1.4rem;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    .sidebar-toggle:hover { background: rgba(139, 92, 246, 0.3); }
+    .sidebar-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      min-width: 0;
+      display: none;
+    }
+    .app-sidebar.open .sidebar-content { display: block; }
+    .sidebar-content .card { margin-bottom: .75rem; }
+    .sidebar-content .grid { grid-template-columns: 1fr; }
+    .main-wrap { margin-left: 52px; transition: margin-left .25s ease; min-height: 100vh; }
+    .app-sidebar.open ~ .main-wrap { margin-left: min(320px, 90vw); }
     /* Interacción robot */
     .robot-section { margin-top: 1.5rem; }
     .robot-section .card { padding: 1.25rem; }
@@ -231,6 +291,222 @@
       border-radius: 4px; margin-left: .35rem; vertical-align: middle;
     }
     .btn-expand:hover { color: var(--purple-light); opacity: 1; background: var(--accent-muted); }
+    .atlas-card-header {
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+      gap: .5rem; margin-bottom: .5rem;
+    }
+    .atlas-card-header h2 { margin: 0; }
+    .btn-expand-atlas {
+      font-size: .75rem; padding: .4rem .65rem;
+      background: var(--bg-elevated); border: 1px solid var(--card-border);
+      color: var(--purple-light); border-radius: 6px; cursor: pointer;
+    }
+    .btn-expand-atlas:hover { background: var(--accent-muted); border-color: var(--purple-light); }
+    .btn-expand-atlas .btn-expand-icon { margin-right: .3rem; }
+
+    /* Command Center (tipo Cursor) */
+    .cc-topbar { display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap; margin:.25rem 0 .75rem; }
+    .cc-tabs { display:flex; gap:.4rem; flex-wrap:wrap; align-items:center; }
+    .cc-tabbtn {
+      background: var(--bg-elevated);
+      color: var(--muted);
+      border: 1px solid var(--card-border);
+      padding: .28rem .55rem;
+      border-radius: 999px;
+      font-size: .75rem;
+    }
+    .cc-tabbtn:hover { background: rgba(139, 92, 246, 0.18); color: var(--purple-light); }
+    .cc-tabbtn.active { background: rgba(139, 92, 246, 0.24); color: var(--text); border-color: rgba(139, 92, 246, 0.35); }
+    .cc-panel { display:none; }
+    .cc-panel.active { display:block; }
+    .cc-split { display:grid; grid-template-columns: 1fr 320px; gap:.75rem; align-items:start; }
+    @media (max-width: 880px) { .cc-split { grid-template-columns: 1fr; } }
+    .cc-side {
+      background: var(--bg-elevated);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: .75rem;
+      min-height: 120px;
+    }
+    .cc-side h3 { margin: 0 0 .5rem; font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    .cc-evidence-img { width:100%; max-height: 180px; object-fit: cover; border-radius: 8px; border: 1px solid var(--card-border); background:#000; }
+    .cc-ops-list { max-height: 320px; overflow:auto; font-size: .78rem; }
+    .cc-ops-item { padding:.5rem .55rem; border:1px solid rgba(139,92,246,0.12); border-radius:10px; margin-bottom:.45rem; background: rgba(255,255,255,0.02); }
+    .cc-ops-item .meta { color: var(--muted); font-size: .72rem; margin-top: .25rem; }
+    .cc-ops-item .msg { white-space: pre-wrap; word-break: break-word; }
+    .cc-ops-thumb { margin-top:.45rem; width:100%; max-height: 160px; object-fit: cover; border-radius: 8px; border: 1px solid var(--card-border); }
+    .cc-terminal-mini { font-family: Consolas, monospace; font-size: .75rem; background: #0a0a0f; color:#a5d6ff; padding:.6rem; border-radius:8px; border:1px solid var(--card-border); max-height: 220px; overflow:auto; white-space: pre-wrap; word-break: break-all; }
+
+    /* Cursor-ATLAS full-screen shell (IDE-like) */
+    .cursor-atlas-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 12000;
+      background: rgba(0,0,0,0.86);
+      backdrop-filter: blur(10px);
+      align-items: stretch;
+      justify-content: stretch;
+      padding: .75rem;
+    }
+    .cursor-atlas-overlay.open { display: flex; }
+    .cursor-atlas-shell {
+      width: 100%;
+      height: 100%;
+      border-radius: 12px;
+      background: rgba(22, 20, 31, 0.92);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      grid-template-rows: 44px 1fr;
+      grid-template-areas:
+        "top top"
+        "side main";
+    }
+    @media (max-width: 980px) {
+      .cursor-atlas-shell { grid-template-columns: 1fr; grid-template-rows: 44px 1fr 220px; grid-template-areas: "top" "main" "side"; }
+    }
+    .cursor-atlas-topbar {
+      grid-area: top;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:.5rem;
+      padding: .5rem .75rem;
+      background: rgba(20, 18, 27, 0.9);
+      border-bottom: 1px solid rgba(139, 92, 246, 0.18);
+    }
+    .cursor-atlas-topbar .title {
+      font-weight: 650;
+      font-size: .85rem;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+    .cursor-atlas-topbar .title span { color: var(--purple-light); }
+    .cursor-atlas-topbar .cmdbar {
+      display:flex; align-items:center; gap:.5rem; flex: 1; justify-content: center;
+    }
+    .cursor-atlas-topbar input.cmdbar-input {
+      width: min(720px, 100%);
+      padding: .38rem .6rem;
+      border-radius: 10px;
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      background: rgba(13, 12, 18, 0.65);
+      color: var(--text);
+      font-size: .85rem;
+      outline: none;
+    }
+    .cursor-atlas-topbar input.cmdbar-input:focus {
+      border-color: rgba(139, 92, 246, 0.55);
+      box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.18);
+    }
+    .cursor-atlas-side {
+      grid-area: side;
+      padding: .65rem;
+      overflow: auto;
+      border-right: 1px solid rgba(139, 92, 246, 0.15);
+      background: rgba(13, 12, 18, 0.35);
+    }
+    .cursor-atlas-main {
+      grid-area: main;
+      padding: .65rem;
+      overflow: auto;
+      min-height: 0;
+    }
+    .ca-group {
+      margin-bottom: .75rem;
+      padding: .6rem;
+      border-radius: 12px;
+      border: 1px solid rgba(139, 92, 246, 0.12);
+      background: rgba(255,255,255,0.02);
+    }
+    .ca-group h3 {
+      margin: 0 0 .5rem;
+      font-size: .72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .ca-item {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:.5rem;
+      padding: .38rem .45rem;
+      border-radius: 10px;
+      cursor:pointer;
+      border: 1px solid transparent;
+      color: var(--text);
+      font-size: .82rem;
+    }
+    .ca-item:hover {
+      background: rgba(139, 92, 246, 0.10);
+      border-color: rgba(139, 92, 246, 0.18);
+    }
+    .ca-item small { color: var(--muted); font-size: .72rem; }
+    .kbd {
+      font-family: Consolas, monospace;
+      font-size: .72rem;
+      color: var(--purple-light);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      background: rgba(139, 92, 246, 0.10);
+      padding: .08rem .35rem;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    /* Command palette (Ctrl+K) */
+    .cmdk-overlay {
+      display:none;
+      position: fixed;
+      inset: 0;
+      z-index: 13000;
+      background: rgba(0,0,0,0.80);
+      backdrop-filter: blur(8px);
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 12vh;
+    }
+    .cmdk-overlay.open { display:flex; }
+    .cmdk-box {
+      width: min(860px, 94vw);
+      border-radius: 14px;
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      background: rgba(20, 18, 27, 0.92);
+      box-shadow: 0 18px 70px rgba(0,0,0,0.65);
+      overflow: hidden;
+    }
+    .cmdk-head { padding: .75rem .85rem; border-bottom: 1px solid rgba(139, 92, 246, 0.15); display:flex; align-items:center; gap:.6rem; }
+    .cmdk-head input {
+      flex: 1;
+      padding: .5rem .6rem;
+      border-radius: 10px;
+      border: 1px solid rgba(139, 92, 246, 0.22);
+      background: rgba(13, 12, 18, 0.55);
+      color: var(--text);
+      outline: none;
+      font-size: .9rem;
+    }
+    .cmdk-head .hint { color: var(--muted); font-size: .78rem; }
+    .cmdk-list { max-height: 52vh; overflow:auto; padding: .35rem; }
+    .cmdk-item {
+      padding: .55rem .65rem;
+      border-radius: 12px;
+      cursor:pointer;
+      border: 1px solid transparent;
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:.8rem;
+    }
+    .cmdk-item:hover { background: rgba(139, 92, 246, 0.10); border-color: rgba(139, 92, 246, 0.18); }
+    .cmdk-item.active { background: rgba(139, 92, 246, 0.18); border-color: rgba(139, 92, 246, 0.28); }
+    .cmdk-item .t { font-weight: 600; font-size: .88rem; }
+    .cmdk-item .d { color: var(--muted); font-size: .78rem; margin-top:.15rem; }
+    .cmdk-foot { padding: .55rem .85rem; border-top: 1px solid rgba(139, 92, 246, 0.12); display:flex; align-items:center; justify-content:space-between; color: var(--muted); font-size: .78rem; }
     .expand-modal {
       display: none; position: fixed; inset: 0; z-index: 9999;
       background: rgba(0,0,0,.85); backdrop-filter: blur(6px);
@@ -242,6 +518,41 @@
       border-radius: 12px; max-width: 95vw; max-height: 90vh;
       width: 100%; overflow: auto; padding: 1.5rem;
       box-shadow: 0 8px 32px rgba(0,0,0,.5);
+    }
+    /* Ventana de ampliación tipo Cursor: casi pantalla completa, mismo panel interactivo */
+    .expand-modal.expand-modal--atlas { padding: .75rem; align-items: stretch; justify-content: stretch; }
+    .expand-modal.expand-modal--atlas .expand-modal-content {
+      max-width: none; max-height: none; width: 100%; height: 100%;
+      border-radius: 10px; display: flex; flex-direction: column;
+      min-height: 0; overflow: hidden;
+    }
+    .expand-modal.expand-modal--atlas #expand-modal-body {
+      flex: 1; overflow: auto; min-height: 0; padding: 0;
+    }
+    .expand-modal.expand-modal--atlas #expand-modal-body .card {
+      min-height: min(100%, 85vh); display: flex; flex-direction: column;
+    }
+    .expand-modal.expand-modal--atlas #expand-modal-body .robot-response {
+      flex: 1; min-height: 200px; max-height: none;
+    }
+    .expand-modal.expand-modal--atlas #expand-modal-body .robot-input {
+      min-height: 80px;
+    }
+    /* Ventana de ampliación Cámaras: casi pantalla completa, streams más grandes */
+    .expand-modal.expand-modal--cameras { padding: .75rem; align-items: stretch; justify-content: stretch; }
+    .expand-modal.expand-modal--cameras .expand-modal-content {
+      max-width: none; max-height: none; width: 100%; height: 100%;
+      border-radius: 10px; display: flex; flex-direction: column;
+      min-height: 0; overflow: hidden;
+    }
+    .expand-modal.expand-modal--cameras #expand-modal-body {
+      flex: 1; overflow: auto; min-height: 0; padding: 0;
+    }
+    .expand-modal.expand-modal--cameras #expand-modal-body .card {
+      min-height: min(100%, 85vh); display: flex; flex-direction: column;
+    }
+    .expand-modal.expand-modal--cameras #expand-modal-body .nexus-panel-iframe-wrap {
+      min-height: 280px;
     }
     .expand-modal-content .pre-expand { max-height: none !important; height: 70vh !important; font-size: .85rem !important; }
     .expand-modal-content .list-expand { max-height: none !important; height: 70vh !important; }
@@ -319,9 +630,26 @@
       padding: 2rem;
       text-align: center;
     }
+
   </style>
 </head>
 <body>
+  <aside id="app-sidebar" class="app-sidebar" aria-label="Menú principal">
+    <button type="button" class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Abrir o cerrar menú" title="Menú">☰</button>
+    <div class="sidebar-content">
+      <div id="nav-opciones-content" style="display:flex;flex-direction:column;gap:1rem;">
+        <div class="grid" style="grid-template-columns:1fr;gap:.75rem;">
+          <div class="card" id="metrics-card"><h2 data-i18n="card.metrics">Métricas</h2><div class="value">—</div><div class="metrics-list" id="metrics-detail"></div></div>
+          <div class="card" id="scheduler-card"><h2 data-i18n="card.scheduler">Programador</h2><div class="value">—</div><div class="row"></div></div>
+          <div class="card" id="cluster-card"><h2 data-i18n="card.cluster">Cluster</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadCluster()" data-i18n="cluster.view">Ver nodos</button></div></div>
+          <div class="card" id="gateway-card"><h2 data-i18n="card.gateway">Gateway</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadGateway()" data-i18n="gateway.view">Ver</button></div></div>
+          <div class="card" id="approvals-card"><h2 data-i18n="card.approvals">Aprobaciones</h2><div class="value"><ul id="approvals-list"></ul><div id="evolution-pending" style="margin-top:.5rem;font-size:.8rem;"></div></div></div>
+        </div>
+        <div id="nav-opciones-sections"></div>
+      </div>
+    </div>
+  </aside>
+  <div class="main-wrap">
   <div id="nexus-panel-overlay" class="nexus-panel-overlay" onclick="if(event.target===this) closeNexusPanel()">
     <div class="nexus-panel-box" onclick="event.stopPropagation()">
       <div class="nexus-panel-header">
@@ -332,15 +660,6 @@
         <iframe id="nexus-panel-iframe" title="Panel NEXUS (Cuerpo)" style="display:none;"></iframe>
         <div id="nexus-panel-unavailable" class="nexus-unavailable" style="display:none;">NEXUS no está disponible en el puerto 8000.<br>Pulsa «Reconectar NEXUS» en la tarjeta Estado y vuelve a abrir este panel.</div>
       </div>
-    </div>
-  </div>
-  <div id="expand-modal" class="expand-modal" onclick="if(event.target===this) closeExpandModal()">
-    <div class="expand-modal-content" onclick="event.stopPropagation()">
-      <div class="expand-modal-header">
-        <h2 id="expand-modal-title">—</h2>
-        <button type="button" class="btn-close-expand" onclick="closeExpandModal()">Cerrar</button>
-      </div>
-      <div id="expand-modal-body"></div>
     </div>
   </div>
   <div class="container">
@@ -354,24 +673,8 @@
         </span>
         <span class="last-update" id="last-update">—</span>
         <button class="secondary" id="btn-refresh" onclick="refreshAll()" data-i18n="app.refresh">Actualizar</button>
+        <button class="small" id="btn-cursor-atlas" onclick="openCursorAtlas()" title="Abrir Cursor‑ATLAS (centro de mando)"><span class="kbd">Ctrl</span>+<span class="kbd">K</span> Cursor‑ATLAS</button>
         <button class="small secondary" id="btn-clear-cache" onclick="clearCacheAndRefresh()" title="Limpiar cache del navegador y del servidor (proceso pendiente se mata al reconectar)">Limpiar caché</button>
-        <div class="nav-dropdown-wrap">
-          <button type="button" class="nav-dropdown-btn" id="nav-opciones-btn" onclick="toggleOpcionesMenu()" aria-expanded="false">
-            Opciones <span class="chevron">▼</span>
-          </button>
-          <div class="nav-dropdown-panel" id="nav-opciones-panel">
-            <div id="nav-opciones-content" style="display:flex;flex-direction:column;gap:1rem;">
-              <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.75rem;">
-                <div class="card" id="metrics-card"><h2 data-i18n="card.metrics">Métricas</h2><div class="value">—</div><div class="metrics-list" id="metrics-detail"></div></div>
-                <div class="card" id="scheduler-card"><h2 data-i18n="card.scheduler">Programador</h2><div class="value">—</div><div class="row"></div></div>
-                <div class="card" id="cluster-card"><h2 data-i18n="card.cluster">Cluster</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadCluster()" data-i18n="cluster.view">Ver nodos</button></div></div>
-                <div class="card" id="gateway-card"><h2 data-i18n="card.gateway">Gateway</h2><div class="value">—</div><div class="row"><button class="small" onclick="loadGateway()" data-i18n="gateway.view">Ver</button></div></div>
-                <div class="card" id="approvals-card"><h2 data-i18n="card.approvals">Aprobaciones</h2><div class="value"><ul id="approvals-list"></ul><div id="evolution-pending" style="margin-top:.5rem;font-size:.8rem;"></div></div></div>
-              </div>
-              <div id="nav-opciones-sections"></div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
     <!-- Governance bar: GROWTH / GOVERNED / EMERGENCY STOP -->
@@ -385,16 +688,69 @@
     </div>
     <!-- Grid principal: siempre visible -->
     <div class="grid">
-      <div class="card" id="status-card"><h2 data-i18n="card.status">Estado</h2><div class="value">—</div><div class="row" style="margin-top:.35rem;flex-wrap:wrap;gap:.35rem;"><button class="small secondary" id="btn-reconnect-nexus" onclick="reconnectNexus()" title="Arrancar NEXUS (puerto 8000) y actualizar estado">Reconectar NEXUS</button><button class="small secondary" id="btn-nexus-panel" onclick="openNexusPanel()" title="Abrir panel del Cuerpo (NEXUS) integrado">Panel Cuerpo (NEXUS)</button></div></div>
-      <div class="card" id="cameras-card" style="grid-column: span 1;">
-        <h2>Cámaras (Cuerpo)</h2>
-        <div class="value" id="cameras-status">Robot: —</div>
-        <div class="nexus-panel-iframe-wrap" id="cameras-panel-wrap" style="height:180px;margin-top:.5rem;border-radius:8px;overflow:hidden;background:var(--bg-elevated);border:1px solid var(--card-border);">
-          <img id="camera-stream-img" src="" alt="Stream cámara Robot" style="width:100%;height:100%;object-fit:contain;display:none;" onerror="this.style.display='none'; document.getElementById('cameras-no-stream').style.display='block';">
-          <div id="cameras-no-stream" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.8rem;">Robot (8002) no disponible. Arranca el backend para ver el stream.</div>
+      <div class="card" id="status-card"><h2 data-i18n="card.status">Estado</h2><div class="value">—</div><div class="row" style="margin-top:.35rem;flex-wrap:wrap;gap:.35rem;"><button class="small secondary" id="btn-reconnect-nexus" onclick="reconnectNexus()" title="Arrancar Cuerpo (NEXUS+Robot) y actualizar estado">Reconectar Cuerpo</button><button class="small secondary" id="btn-nexus-panel" onclick="openNexusPanel()" title="Abrir panel NEXUS integrado (proxy)">Panel NEXUS</button>
+          <button class="small secondary" id="btn-robot-panel" onclick="openRobotPanel()" title="Abrir página del Robot (cámaras/visión) vía proxy /cuerpo/">Página del Robot</button></div></div>
+      <div class="card" id="brain-card">
+        <h2>Cerebro</h2>
+        <div class="value" id="brain-dominant">IA dominante: —</div>
+        <div class="metrics-list" id="brain-config-line" style="margin-top:.25rem;font-size:.72rem;"></div>
+        <p class="robot-task-help" style="color:var(--muted);font-size:.7rem;margin:.35rem 0;">Auto: multi-IA free, el router elige el especialista. Manual: eliges una IA (suscripción/API).</p>
+        <div class="row brain-mode-row" style="margin-top:.35rem;flex-wrap:wrap;gap:.35rem;align-items:center;">
+          <button class="small btn-brain-active" id="brain-btn-auto" onclick="setBrainMode('auto')" title="Multi-IA: el router elige por tarea">Auto</button>
+          <button class="small secondary" id="brain-btn-manual" onclick="setBrainMode('manual')" title="Elegir una IA concreta">Manual</button>
+          <button class="small secondary" id="brain-btn-elegir" onclick="toggleBrainModelPanel()" title="Abrir lista de modelos (free y suscripción/API)">Elegir modelo</button>
+          <button class="small secondary" id="brain-btn-audit" onclick="openBrainAudit()" title="Auditoría técnica del cerebro (latencias, IA, validadores)">Auditar</button>
         </div>
-        <div class="row" style="margin-top:.35rem;">
-          <button class="small secondary" onclick="loadCamerasStatus()" title="Comprobar Robot y refrescar stream">Actualizar cámaras</button>
+        <div id="brain-model-panel" class="brain-model-panel" style="display:none;margin-top:.75rem;padding:1rem;background:var(--bg-elevated);border-radius:10px;border:1px solid var(--card-border);max-height:320px;overflow-y:auto;">
+          <p class="brain-panel-hint">
+            Selecciona una IA. Suscripción/API: <strong>Conectar</strong> abre la página del proveedor.
+            Credenciales: <strong>Cargar Bóveda</strong> lee `credenciales.txt` y configura el cerebro sin pegar claves.
+          </p>
+          <div class="row" style="margin:.25rem 0 .75rem;gap:.4rem;">
+            <button class="small secondary" id="brain-btn-vault" onclick="loadBrainVault()" title="Cargar claves desde Bóveda">Cargar Bóveda</button>
+            <button class="small secondary" onclick="loadBrainState()" title="Refrescar estado del cerebro">Refrescar</button>
+          </div>
+          <div id="brain-model-list"></div>
+        </div>
+      </div>
+      <div class="card" id="organs-card">
+        <h2>Órganos</h2>
+        <div class="value" id="organs-status">—</div>
+        <div class="metrics-list" id="organs-detail"></div>
+      </div>
+      <div class="card" id="cameras-card" style="grid-column: span 2;">
+        <div class="atlas-card-header">
+          <h2>Cámaras (Cuerpo)</h2>
+          <button type="button" class="btn-expand-atlas" onclick="expandCamerasPanel()" title="Abrir en ventana ampliada"><span class="btn-expand-icon">⛶</span> Ampliar ventana</button>
+        </div>
+        <div class="value" id="cameras-status">Robot: —</div>
+        <p id="cameras-disconnected-hint" class="robot-task-help" style="display:none;color:var(--muted);font-size:.75rem;margin:.35rem 0 0;">Arranca el servicio del Robot (pulsa «Reconectar Robot») o <a href="#" id="cameras-show-commands" onclick="showRobotStartCommands(); return false;" style="color:var(--purple-light);">ver comandos para arrancar a mano</a>.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;margin-top:.5rem;">
+          <div>
+            <div style="font-size:.7rem;color:var(--muted);margin-bottom:.25rem;">NexiGo N930W IR (0)</div>
+            <div class="nexus-panel-iframe-wrap" style="height:160px;border-radius:8px;overflow:hidden;background:var(--bg-elevated);border:1px solid var(--card-border);position:relative;">
+              <img id="camera-stream-img-0" src="" alt="Stream cámara 0" style="width:100%;height:100%;object-fit:contain;display:none;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+              <div id="cameras-no-stream-0" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.7rem;text-align:center;padding:.5rem;">Cámara 0 offline</div>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:.7rem;color:var(--muted);margin-bottom:.25rem;">NexiGo N930W (1)</div>
+            <div class="nexus-panel-iframe-wrap" style="height:160px;border-radius:8px;overflow:hidden;background:var(--bg-elevated);border:1px solid var(--card-border);position:relative;">
+              <img id="camera-stream-img-1" src="" alt="Stream cámara 1" style="width:100%;height:100%;object-fit:contain;display:none;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+              <div id="cameras-no-stream-1" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.7rem;text-align:center;padding:.5rem;">Cámara 1 offline</div>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:.7rem;color:var(--muted);margin-bottom:.25rem;">Insta360 Link 2 (2)</div>
+            <div class="nexus-panel-iframe-wrap" style="height:160px;border-radius:8px;overflow:hidden;background:var(--bg-elevated);border:1px solid var(--card-border);position:relative;">
+              <img id="camera-stream-img-2" src="" alt="Stream cámara 2" style="width:100%;height:100%;object-fit:contain;display:none;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+              <div id="cameras-no-stream-2" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.7rem;text-align:center;padding:.5rem;">Cámara 2 offline</div>
+            </div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:.35rem; flex-wrap:wrap; gap:.35rem;">
+          <button class="small secondary" id="btn-actualizar-camaras" onclick="loadCamerasStatus()" title="Comprobar Robot y refrescar stream">Actualizar cámaras</button>
+          <button class="small" id="btn-reconectar-robot" onclick="reconnectRobot()" title="Arrancar backend del Robot (cámaras) si está parado">Reconectar Robot</button>
         </div>
       </div>
       <div class="card" id="version-card"><h2 data-i18n="card.version">Versión</h2><div class="value">—</div></div>
@@ -583,87 +939,169 @@
     </section>
 
     <section class="robot-section" id="robot-section-id">
-      <div class="card">
-        <h2 data-i18n="robot.title">Interactuar con ATLAS <button class="btn-expand" onclick="expandPanel('robot-section-id','Interactuar','#robot-response,#robot-input')" title="Ampliar">⛶</button></h2>
-        <p class="robot-task-help" id="robot-task-help" data-i18n="robot.task_quick_help">Comando directo: /status, /doctor, /modules. Sin IA.</p>
-        <div class="robot-task-type">
-          <label for="robot-task-type" data-i18n="robot.task_type">Envergadura de la tarea</label>
-          <select id="robot-task-type" onchange="updateTaskHelp()">
-            <option value="quick" data-i18n="robot.task_quick">Rápida (comando)</option>
-            <option value="medium" data-i18n="robot.task_medium">Media (IA plan)</option>
-            <option value="full" data-i18n="robot.task_full">Compleja (IA plan + ejecución)</option>
-          </select>
+      <div class="card" id="atlas-interact-card">
+        <div class="atlas-card-header">
+          <h2 data-i18n="robot.title">Interactuar con ATLAS</h2>
+          <button type="button" class="btn-expand-atlas" onclick="expandAtlasPanel()" title="Abrir en ventana ampliada (como Consola en vivo)"><span class="btn-expand-icon">⛶</span> Ampliar ventana</button>
         </div>
-        <textarea id="robot-input" class="robot-input" data-i18n-placeholder="robot.placeholder" placeholder="Escribe un comando (ej. /status) o un objetivo para la IA…"></textarea>
-        <div class="robot-actions">
-          <button id="robot-send" onclick="sendToRobot()" data-i18n="robot.send">Enviar</button>
-          <span class="last-update" id="robot-status"></span>
+        <div class="cc-topbar">
+          <div class="cc-tabs" role="tablist" aria-label="Atlas Command Center">
+            <button type="button" class="cc-tabbtn active" id="cc-tab-chat" onclick="ccSelectTab('chat')">Chat</button>
+            <button type="button" class="cc-tabbtn" id="cc-tab-ops" onclick="ccSelectTab('ops')">OPS</button>
+            <button type="button" class="cc-tabbtn" id="cc-tab-web" onclick="ccSelectTab('web')">Web (Pies)</button>
+            <button type="button" class="cc-tabbtn" id="cc-tab-vision" onclick="ccSelectTab('vision')">Visión</button>
+            <button type="button" class="cc-tabbtn" id="cc-tab-terminal" onclick="ccSelectTab('terminal')">Terminal</button>
+          </div>
+          <div class="row" style="margin:0;">
+            <span class="badge" id="cc-comms-badge">COMMS: —</span>
+            <button type="button" class="small secondary" onclick="ccRefreshOps()">Actualizar OPS</button>
+          </div>
         </div>
-        <div class="robot-actions" style="margin-top:0.5rem;">
-          <button type="button" class="small secondary" id="btn-voice-mic" onclick="startVoiceRecognition()" data-i18n="voice.talk">🎤 Hablar por voz</button>
-          <button type="button" class="small secondary" id="btn-voice-play" onclick="playResponseWithVoice()" data-i18n="voice.speak">🔊 Reproducir respuesta por PC</button>
-        </div>
-        <div class="robot-response empty" id="robot-response" data-i18n="cursor.response_placeholder">La respuesta aparecerá aquí.</div>
-      </div>
-    </section>
 
-    <section class="robot-section" id="cursor-mode-section">
-      <div class="card">
-        <h2 data-i18n="cursor.panel">Cursor Mode <button class="btn-expand" onclick="expandPanel('cursor-mode-section','Cursor Mode','#cursor-goal,#cursor-steps-panel,#cursor-evidence-panel')" title="Ampliar">⛶</button></h2>
-        <p class="robot-task-help" data-i18n="cursor.help" style="color:var(--muted); font-size:.8rem;">Objetivo único, plan con IA (free-first), pasos y evidencia.</p>
-        <div class="robot-task-type">
-          <label for="cursor-goal" data-i18n="cursor.goal">Objetivo</label>
-          <textarea id="cursor-goal" class="robot-input" data-i18n-placeholder="cursor.placeholder" placeholder="Ej: Listar archivos del directorio actual" rows="2" style="min-height:60px;"></textarea>
-        </div>
-        <div class="row" style="margin-top:.5rem; gap:1rem; flex-wrap:wrap;">
-          <div class="robot-task-type">
-            <label for="cursor-mode" data-i18n="cursor.mode_label">Modo</label>
-            <select id="cursor-mode" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
-              <option value="plan_only" data-i18n="cursor.mode_plan_only">Solo plan</option>
-              <option value="controlled" data-i18n="cursor.mode_controlled">Controlado</option>
-              <option value="auto" data-i18n="cursor.mode_auto">Auto</option>
-            </select>
+        <div id="cc-panel-chat" class="cc-panel active">
+          <p class="robot-task-help" id="robot-task-help" style="color:var(--muted); font-size:.8rem;">Comando directo: /status, /doctor, /modules. Objetivo: plan con IA (Modo, Recursos, IA, Perfil).</p>
+          <div class="cc-split">
+            <div>
+              <div class="robot-task-type">
+                <label for="robot-input" data-i18n="cursor.goal">Objetivo</label>
+                <textarea id="robot-input" class="robot-input" data-i18n-placeholder="robot.placeholder" placeholder="Escribe un comando (ej. /status) o un objetivo para la IA…" rows="2" style="min-height:56px;"></textarea>
+              </div>
+              <div class="row" style="margin-top:.5rem; gap:1rem; flex-wrap:wrap;">
+                <div class="robot-task-type">
+                  <label for="atlas-mode" data-i18n="cursor.mode_label">Modo</label>
+                  <select id="atlas-mode" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
+                    <option value="plan_only" data-i18n="cursor.mode_plan_only">Solo plan</option>
+                    <option value="controlled" data-i18n="cursor.mode_controlled">Controlado</option>
+                    <option value="auto" data-i18n="cursor.mode_auto">Auto</option>
+                  </select>
+                </div>
+                <div class="robot-task-type">
+                  <label for="atlas-resources" data-i18n="cursor.resources_label">Recursos</label>
+                  <select id="atlas-resources" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
+                    <option value="lite" data-i18n="cursor.resources_lite">Lite</option>
+                    <option value="pro" selected data-i18n="cursor.resources_pro">Pro</option>
+                    <option value="ultra" data-i18n="cursor.resources_ultra">Ultra</option>
+                  </select>
+                </div>
+                <div class="robot-task-type">
+                  <label for="atlas-ai" data-i18n="cursor.ai_label">IA</label>
+                  <select id="atlas-ai" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
+                    <option value="free_only" data-i18n="cursor.ai_free_only">Solo gratis (Ollama)</option>
+                    <option value="auto" data-i18n="cursor.ai_auto">Auto</option>
+                    <option value="allow_paid" data-i18n="cursor.ai_allow_paid">Permitir pago (Owner)</option>
+                  </select>
+                </div>
+                <div class="robot-task-type">
+                  <label for="atlas-profile" data-i18n="cursor.profile_label">Perfil</label>
+                  <select id="atlas-profile" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
+                    <option value="owner" data-i18n="cursor.profile_owner">Owner</option>
+                    <option value="operario" data-i18n="cursor.profile_operario">Operario</option>
+                    <option value="contadora" data-i18n="cursor.profile_contadora">Contadora</option>
+                  </select>
+                </div>
+              </div>
+              <div class="robot-actions" style="margin-top:.75rem;">
+                <button id="robot-send" onclick="sendToRobot()" data-i18n="robot.send">Enviar</button>
+                <span class="last-update" id="robot-status"></span>
+                <span class="last-update" style="color:var(--muted); font-size:.7rem;" data-i18n="cursor.plan_hint">Máx. ~12 s (Pro) / ~18 s (Ultra). Si no hay IA disponible, responde con plan determinístico.</span>
+              </div>
+              <div class="robot-actions" style="margin-top:0.5rem;">
+                <button type="button" class="small secondary" id="btn-voice-mic" onclick="startVoiceRecognition()" data-i18n="voice.talk">🎤 Hablar por voz</button>
+                <button type="button" class="small secondary" id="btn-voice-play" onclick="playResponseWithVoice()" data-i18n="voice.speak">🔊 Reproducir respuesta por PC</button>
+              </div>
+              <div id="atlas-steps-panel" class="metrics-list" style="margin-top:.75rem; display:none;">
+                <strong data-i18n="cursor.steps">Pasos</strong>
+                <ul id="atlas-steps-list"></ul>
+              </div>
+              <div id="atlas-routing-panel" class="metrics-list" style="margin-top:.5rem; display:none;">
+                <strong data-i18n="cursor.model">Modelo</strong>
+                <span id="atlas-routing-text"></span>
+              </div>
+              <div id="atlas-evidence-panel" class="metrics-list" style="margin-top:.35rem; display:none;">
+                <strong data-i18n="cursor.evidence">Evidencia</strong>
+                <span id="atlas-evidence-text"></span>
+              </div>
+              <div class="robot-response empty" id="robot-response" data-i18n="cursor.response_placeholder" style="margin-top:.75rem;">La respuesta aparecerá aquí.</div>
+            </div>
+
+            <div class="cc-side">
+              <h3>Contexto rápido</h3>
+              <div class="row" style="margin-top:0;">
+                <button type="button" class="small secondary" onclick="ccCaptureVision()">📷 Capturar cámara</button>
+                <select id="cc-vision-enhance" style="padding:.25rem .4rem; border-radius:6px; background:var(--bg); border:1px solid var(--card-border); color:var(--text); font-size:.75rem;">
+                  <option value="auto">auto</option>
+                  <option value="sharp">sharp</option>
+                  <option value="max" selected>max</option>
+                  <option value="ocr">ocr</option>
+                </select>
+              </div>
+              <div class="row" style="margin-top:.45rem;">
+                <img id="cc-vision-preview" class="cc-evidence-img" alt="Vista previa cámara" src="" style="display:none;">
+              </div>
+              <div class="row" style="margin-top:.45rem;">
+                <button type="button" class="small secondary" onclick="ccSelectTab('ops')">Ver OPS</button>
+                <button type="button" class="small secondary" onclick="scrollToSection('owner-console-section')">Aprobaciones</button>
+              </div>
+              <div class="value" id="cc-side-hint" style="font-size:.78rem; color:var(--muted); margin-top:.5rem;">Consejo: usa slash commands para diagnóstico inmediato y “Web (Pies)” para tareas en páginas con evidencia por screenshot.</div>
+            </div>
           </div>
-          <div class="robot-task-type">
-            <label for="cursor-resources" data-i18n="cursor.resources_label">Recursos</label>
-            <select id="cursor-resources" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
-              <option value="lite" data-i18n="cursor.resources_lite">Lite</option>
-              <option value="pro" selected data-i18n="cursor.resources_pro">Pro</option>
-              <option value="ultra" data-i18n="cursor.resources_ultra">Ultra</option>
-            </select>
+        </div>
+
+        <div id="cc-panel-ops" class="cc-panel">
+          <div class="row" style="margin-top:0;">
+            <button type="button" class="small secondary" onclick="ccRefreshComms()">Estado COMMS</button>
+            <button type="button" class="small secondary" onclick="ccEmitOpsTest()">Emitir test</button>
+            <span class="last-update" id="cc-ops-status"></span>
           </div>
-          <div class="robot-task-type">
-            <label for="cursor-free" data-i18n="cursor.ai_label">IA</label>
-            <select id="cursor-free" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
-              <option value="free_only" data-i18n="cursor.ai_free_only">Solo gratis (Ollama)</option>
-              <option value="auto" data-i18n="cursor.ai_auto">Auto</option>
-              <option value="allow_paid" data-i18n="cursor.ai_allow_paid">Permitir pago (Owner)</option>
-            </select>
+          <div id="cc-ops-list" class="cc-ops-list" style="margin-top:.5rem;"></div>
+        </div>
+
+        <div id="cc-panel-web" class="cc-panel">
+          <p class="robot-task-help" style="color:var(--muted); font-size:.8rem;">Pies digitales (Playwright). Ejecuta navegación con evidencia (screenshot) y narración OPS.</p>
+          <div class="row" style="margin-top:.25rem;">
+            <input id="cc-web-url" type="text" placeholder="URL (ej. https://example.com)" style="flex:1; min-width:220px; padding:.35rem .5rem; border-radius:8px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.85rem;">
+            <label style="font-size:.75rem; color:var(--muted); display:flex; align-items:center; gap:.35rem;">
+              <input id="cc-web-show" type="checkbox" style="accent-color: var(--purple);"> Mostrar navegador
+            </label>
+            <button type="button" class="small" onclick="ccWebOpen()">Abrir</button>
+            <button type="button" class="small secondary" onclick="ccWebShot()">Screenshot</button>
           </div>
-          <div class="robot-task-type">
-            <label for="cursor-profile" data-i18n="cursor.profile_label">Perfil</label>
-            <select id="cursor-profile" style="padding:.35rem .5rem; border-radius:6px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.8rem;">
-              <option value="owner" data-i18n="cursor.profile_owner">Owner</option>
-              <option value="operario" data-i18n="cursor.profile_operario">Operario</option>
-              <option value="contadora" data-i18n="cursor.profile_contadora">Contadora</option>
+          <div class="robot-response empty" id="cc-web-result" style="margin-top:.6rem;">Sin ejecución.</div>
+        </div>
+
+        <div id="cc-panel-vision" class="cc-panel">
+          <p class="robot-task-help" style="color:var(--muted); font-size:.8rem;">Cámara del robot (proxy) con perfil de nitidez y zoom digital.</p>
+          <div class="row" style="margin-top:.25rem;">
+            <select id="cc-vision-index" style="padding:.35rem .5rem; border-radius:8px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.85rem;">
+              <option value="0" selected>Cam 0</option>
+              <option value="1">Cam 1</option>
+              <option value="2">Cam 2</option>
             </select>
+            <select id="cc-vision-enhance2" style="padding:.35rem .5rem; border-radius:8px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.85rem;">
+              <option value="auto">auto</option>
+              <option value="sharp">sharp</option>
+              <option value="max" selected>max</option>
+              <option value="ocr">ocr</option>
+            </select>
+            <select id="cc-vision-zoom" style="padding:.35rem .5rem; border-radius:8px; background:var(--bg-elevated); border:1px solid var(--card-border); color:var(--text); font-size:.85rem;">
+              <option value="1.0" selected>Zoom 1.0</option>
+              <option value="1.2">Zoom 1.2</option>
+              <option value="1.5">Zoom 1.5</option>
+              <option value="2.0">Zoom 2.0</option>
+            </select>
+            <button type="button" class="small" onclick="ccCaptureVision(true)">Capturar</button>
+          </div>
+          <div class="row" style="margin-top:.5rem;">
+            <img id="cc-vision-preview2" class="cc-evidence-img" alt="Snapshot cámara" src="" style="display:none;">
           </div>
         </div>
-        <div class="robot-actions" style="margin-top:.75rem;">
-          <button id="cursor-run-btn" onclick="cursorRun()" data-i18n="cursor.ejecutar">Run</button>
-          <span class="last-update" id="cursor-status"></span>
-        </div>
-        <div id="cursor-steps-panel" class="metrics-list" style="margin-top:.75rem; display:none;">
-          <strong data-i18n="cursor.steps">Pasos</strong>
-          <ul id="cursor-steps-list"></ul>
-        </div>
-        <div id="cursor-routing-panel" class="metrics-list" style="margin-top:.5rem; display:none;">
-          <strong data-i18n="cursor.model">Modelo</strong>
-          <span id="cursor-routing-text"></span>
-        </div>
-        <div id="cursor-evidence-panel" class="metrics-list" style="margin-top:.35rem; display:none;">
-          <strong data-i18n="cursor.evidence">Evidencia</strong>
-          <span id="cursor-evidence-text"></span>
+
+        <div id="cc-panel-terminal" class="cc-panel">
+          <p class="robot-task-help" style="color:var(--muted); font-size:.8rem;">Vista rápida de la Consola en vivo. Para vista completa, abre el panel “Consola en vivo”.</p>
+          <div class="row" style="margin-top:.25rem;">
+            <button type="button" class="small secondary" onclick="scrollToSection('live-console-section')">Ir a Consola en vivo</button>
+          </div>
+          <pre id="cc-terminal-mini" class="cc-terminal-mini">—</pre>
         </div>
       </div>
     </section>
@@ -684,32 +1122,65 @@
       </div>
     </section>
   </div>
+  </div>
   <script>
-    const base = window.location.origin;
+    (function() {
+      var q = new URLSearchParams(window.location.search);
+      var fromQ = q.get('api_base');
+      if (fromQ) {
+        try { localStorage.setItem('atlas_api_base', fromQ); } catch (e) {}
+      }
+    })();
+    var base = (function() {
+      try {
+        var stored = (localStorage.getItem('atlas_api_base') || '').trim().replace(/\/$/, '');
+        if (stored) return stored;
+      } catch (e) {}
+      return window.location.origin;
+    })();
+    if (typeof window._apiBase === 'undefined') window._apiBase = base;
+    window._base = base;
     let ownerSessionToken = null;
+    function showToast(msg, isError) {
+      if (typeof window._toast === 'function') { window._toast(msg); return; }
+      var el = document.getElementById('brain-toast');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'brain-toast';
+        el.style.cssText = 'position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);color:#fff;padding:.6rem 1.2rem;border-radius:8px;font-size:.9rem;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3);transition:opacity .3s;';
+        document.body.appendChild(el);
+      }
+      el.style.background = isError ? 'var(--red)' : 'var(--green)';
+      el.textContent = msg;
+      el.style.opacity = '1';
+      el.style.display = 'block';
+      clearTimeout(el._toastT);
+      el._toastT = setTimeout(function() { el.style.opacity = '0'; setTimeout(function() { el.style.display = 'none'; }, 300); }, isError ? 6000 : 4000);
+    }
 
-    function toggleOpcionesMenu() {
-      const btn = document.getElementById('nav-opciones-btn');
-      const panel = document.getElementById('nav-opciones-panel');
-      if (!btn || !panel) return;
-      btn.classList.toggle('open');
-      panel.classList.toggle('open');
-      btn.setAttribute('aria-expanded', panel.classList.contains('open'));
+    function toggleSidebar() {
+      const sidebar = document.getElementById('app-sidebar');
+      if (!sidebar) return;
+      sidebar.classList.toggle('open');
+      sidebar.setAttribute('aria-expanded', sidebar.classList.contains('open'));
     }
     document.addEventListener('click', function(e) {
-      const wrap = document.querySelector('.nav-dropdown-wrap');
-      const panel = document.getElementById('nav-opciones-panel');
-      const btn = document.getElementById('nav-opciones-btn');
-      if (panel && panel.classList.contains('open') && wrap && !wrap.contains(e.target)) {
-        panel.classList.remove('open');
-        if (btn) btn.classList.remove('open');
+      const sidebar = document.getElementById('app-sidebar');
+      if (sidebar && sidebar.classList.contains('open') && !sidebar.contains(e.target)) {
+        sidebar.classList.remove('open');
       }
     });
     let currentLocale = localStorage.getItem('ui_locale') || 'es';
     let UI_STRINGS = {};
     async function get(path) {
-      const r = await fetch(base + path, { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
-      return r.ok ? r.json() : null;
+      const url = base + path;
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
+      if (r.ok) return r.json();
+      if (r.status === 404 && !window._api404Shown) {
+        window._api404Shown = true;
+        showToast('API 404. Inicia el servidor Atlas en este puerto: uvicorn atlas_adapter.atlas_http_api:app --port 8791 . Luego abre http://127.0.0.1:8791/ui', true);
+      }
+      return null;
     }
     async function setLocale(locale) {
       if (locale !== 'es' && locale !== 'en') return;
@@ -749,7 +1220,9 @@
       const h = { 'Content-Type': 'application/json', ...(headers || {}) };
       if (ownerSessionToken) h['X-Owner-Session'] = ownerSessionToken;
       const r = await fetch(base + path, { method: 'POST', headers: h, body: JSON.stringify(body || {}), cache: 'no-store' });
-      return r.ok ? r.json() : null;
+      const data = await r.json().catch(function() { return {}; });
+      if (r.ok) return data;
+      return data && data.error ? { ok: false, error: data.error } : { ok: false, error: 'Error ' + r.status };
     }
     function setLastUpdate() {
       const s = UI_STRINGS['app.last_update'] ? (UI_STRINGS['app.last_update'] + ': ') : (currentLocale === 'en' ? 'Last update: ' : 'Última actualización: ');
@@ -772,19 +1245,401 @@
       card.classList.remove('loading', 'error');
       if (data && data.ok === false) card.classList.add('error');
     }
-    function updateTaskHelp() {
-      const sel = document.getElementById('robot-task-type');
-      const help = document.getElementById('robot-task-help');
-      if (!help || !sel) return;
-      const key = 'robot.task_' + sel.value + '_help';
-      help.textContent = UI_STRINGS[key] || UI_STRINGS['robot.task_quick_help'] || '';
+    function updateTaskHelp() {}
+    function scrollToSection(id) {
+      try {
+        const el = document.getElementById(id);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (e) {}
+    }
+
+    let _ccTab = 'chat';
+    let _ccOpsTimer = null;
+    function ccSelectTab(tab) {
+      _ccTab = tab || 'chat';
+      ['chat','ops','web','vision','terminal'].forEach(function(t) {
+        const btn = document.getElementById('cc-tab-' + t);
+        const panel = document.getElementById('cc-panel-' + t);
+        if (btn) btn.classList.toggle('active', t === _ccTab);
+        if (panel) panel.classList.toggle('active', t === _ccTab);
+      });
+      if (_ccTab === 'ops') {
+        ccRefreshComms();
+        ccRefreshOps();
+        if (_ccOpsTimer) clearInterval(_ccOpsTimer);
+        _ccOpsTimer = setInterval(function() { ccRefreshOps(); }, 3000);
+      } else {
+        if (_ccOpsTimer) clearInterval(_ccOpsTimer);
+        _ccOpsTimer = null;
+      }
+      if (_ccTab === 'terminal') {
+        try {
+          const src = document.getElementById('live-console-output');
+          const dst = document.getElementById('cc-terminal-mini');
+          if (src && dst) dst.textContent = (src.textContent || '').slice(-5000) || '—';
+        } catch (e) {}
+      }
+    }
+
+    function _evImgUrl(path) {
+      if (!path) return '';
+      return base + '/api/evidence/image?path=' + encodeURIComponent(path);
+    }
+
+    async function ccRefreshComms() {
+      const badge = document.getElementById('cc-comms-badge');
+      try {
+        const r = await get('/api/comms/status');
+        if (!badge) return;
+        if (!r) { badge.textContent = 'COMMS: sin conexión'; badge.className = 'badge warn'; return; }
+        // soporta ambos formatos: {audio_enabled, telegram_enabled, whatsapp_enabled} o {channels:{...}}
+        const st = (r.status && r.status.channels) ? r.status : r;
+        const channels = (st && st.channels) ? st.channels : null;
+        const tts = channels ? !!(channels.tts && channels.tts.enabled) : !!st.audio_enabled;
+        const tg = channels ? !!(channels.telegram && channels.telegram.enabled) : !!st.telegram_enabled;
+        const wa = channels ? !!(channels.whatsapp && channels.whatsapp.enabled) : !!st.whatsapp_enabled;
+        badge.textContent = 'COMMS: ' + (tts ? 'AUDIO' : 'audio×') + ' · ' + (tg ? 'TG' : 'tg×') + ' · ' + (wa ? 'WA' : 'wa×');
+        badge.className = 'badge ' + ((tts || tg || wa) ? 'ok' : 'warn');
+      } catch (e) {
+        if (badge) { badge.textContent = 'COMMS: error'; badge.className = 'badge err'; }
+      }
+    }
+
+    function ccRenderOps(events) {
+      const list = document.getElementById('cc-ops-list');
+      if (!list) return;
+      const evs = Array.isArray(events) ? events : [];
+      if (!evs.length) { list.innerHTML = '<div class="value" style="color:var(--muted);">Sin eventos OPS recientes.</div>'; return; }
+      list.innerHTML = '';
+      evs.forEach(function(ev) {
+        const div = document.createElement('div');
+        div.className = 'cc-ops-item';
+        let when = '';
+        try {
+          if (ev.ts) {
+            const d = new Date(ev.ts);
+            if (!isNaN(d.getTime())) when = d.toLocaleTimeString(currentLocale === 'es' ? 'es-ES' : 'en-US');
+          }
+        } catch (e) {}
+        const level = (ev.level || 'info').toUpperCase();
+        const subs = ev.subsystem || 'ops';
+        div.innerHTML = '<div class="msg"><strong>[' + level + ']</strong> ' + subs + ': ' + (ev.message || '') + '</div>'
+          + '<div class="meta">' + (when ? (when + ' · ') : '') + (ev.id ? ('id ' + String(ev.id).slice(0,8)) : '') + '</div>';
+        if (ev.evidence_path) {
+          const img = document.createElement('img');
+          img.className = 'cc-ops-thumb';
+          img.src = _evImgUrl(ev.evidence_path);
+          img.alt = 'evidencia';
+          div.appendChild(img);
+        }
+        list.appendChild(div);
+      });
+    }
+
+    async function ccRefreshOps() {
+      const statusEl = document.getElementById('cc-ops-status');
+      try {
+        if (statusEl) statusEl.textContent = 'Cargando…';
+        const r = await get('/api/comms/recent?limit=30');
+        if (r && r.ok) {
+          ccRenderOps(r.events || []);
+          if (statusEl) statusEl.textContent = 'OK';
+        } else {
+          ccRenderOps([]);
+          if (statusEl) statusEl.textContent = (r && r.error) ? String(r.error).slice(0, 60) : 'Error';
+        }
+      } catch (e) {
+        ccRenderOps([]);
+        if (statusEl) statusEl.textContent = 'Error';
+      }
+    }
+
+    async function ccEmitOpsTest() {
+      const statusEl = document.getElementById('cc-ops-status');
+      try {
+        if (statusEl) statusEl.textContent = 'Enviando…';
+        const r = await post('/api/comms/test', { message: 'UI test: evento OPS emitido desde Command Center.', subsystem: 'ui', level: 'info' });
+        if (statusEl) statusEl.textContent = (r && r.ok) ? 'OK' : ((r && r.error) ? r.error : 'Error');
+        ccRefreshOps();
+      } catch (e) {
+        if (statusEl) statusEl.textContent = 'Error';
+      }
+    }
+
+    async function ccCaptureVision(forceSecondPreview) {
+      const enhance = (document.getElementById(forceSecondPreview ? 'cc-vision-enhance2' : 'cc-vision-enhance') || {}).value || 'max';
+      const idx = (document.getElementById('cc-vision-index') || {}).value || '0';
+      const zoom = (document.getElementById('cc-vision-zoom') || {}).value || '1.0';
+      const imgEl = document.getElementById(forceSecondPreview ? 'cc-vision-preview2' : 'cc-vision-preview');
+      try {
+        const url = base + '/cuerpo/vision/snapshot?index=' + encodeURIComponent(idx) + '&enhance=' + encodeURIComponent(enhance) + '&zoom=' + encodeURIComponent(zoom);
+        const r = await fetch(url, { method: 'GET', cache: 'no-store' });
+        const blob = await r.blob();
+        const objUrl = URL.createObjectURL(blob);
+        if (imgEl) { imgEl.src = objUrl; imgEl.style.display = 'block'; }
+        if (!forceSecondPreview) {
+          const sideHint = document.getElementById('cc-side-hint');
+          if (sideHint) sideHint.textContent = 'Snapshot capturado. Si ejecutas Web/acciones, verás evidencia también en OPS.';
+        }
+      } catch (e) {
+        showToast('No se pudo capturar cámara: ' + ((e && e.message) || 'error'), true);
+      }
+    }
+
+    async function ccWebOpen() {
+      const url = (document.getElementById('cc-web-url') && document.getElementById('cc-web-url').value || '').trim();
+      const show = !!(document.getElementById('cc-web-show') && document.getElementById('cc-web-show').checked);
+      const outEl = document.getElementById('cc-web-result');
+      if (!url) { if (outEl) outEl.textContent = 'Especifica una URL.'; return; }
+      if (outEl) { outEl.textContent = 'Ejecutando…'; outEl.classList.remove('error'); }
+      const shotName = 'ui_open_' + Date.now() + '.png';
+      const body = {
+        command: 'workflow',
+        payload: { driver: 'digital', show_browser: show, steps: [{ kind: 'goto', url: url }, { kind: 'screenshot', name: shotName }] }
+      };
+      try {
+        const r = await post('/api/feet/execute', body);
+        if (r && r.ok && r.result) {
+          const res = r.result;
+          const shot = res.screenshot_path || (res.result && res.result.screenshot_path);
+          let msg = 'OK (' + (res.ms || 0) + 'ms)';
+          if (res.last_url) msg += '\nURL: ' + res.last_url;
+          if (shot) msg += '\nScreenshot: ' + shot;
+          if (outEl) outEl.textContent = msg;
+          ccSelectTab('ops');
+        } else {
+          if (outEl) { outEl.textContent = 'Error: ' + ((r && (r.error || (r.result && r.result.error))) || 'fallo'); outEl.classList.add('error'); }
+        }
+      } catch (e) {
+        if (outEl) { outEl.textContent = 'Error: ' + ((e && e.message) || e); outEl.classList.add('error'); }
+      }
+    }
+
+    async function ccWebShot() {
+      const show = !!(document.getElementById('cc-web-show') && document.getElementById('cc-web-show').checked);
+      const outEl = document.getElementById('cc-web-result');
+      if (outEl) { outEl.textContent = 'Capturando…'; outEl.classList.remove('error'); }
+      const shotName = 'ui_shot_' + Date.now() + '.png';
+      const body = { command: 'workflow', payload: { driver: 'digital', show_browser: show, steps: [{ kind: 'screenshot', name: shotName }] } };
+      try {
+        const r = await post('/api/feet/execute', body);
+        if (r && r.ok && r.result) {
+          const res = r.result;
+          const shot = res.screenshot_path || (res.result && res.result.screenshot_path);
+          if (outEl) outEl.textContent = shot ? ('Screenshot: ' + shot) : JSON.stringify(res).slice(0, 600);
+          ccSelectTab('ops');
+        } else {
+          if (outEl) { outEl.textContent = 'Error: ' + ((r && (r.error || (r.result && r.result.error))) || 'fallo'); outEl.classList.add('error'); }
+        }
+      } catch (e) {
+        if (outEl) { outEl.textContent = 'Error: ' + ((e && e.message) || e); outEl.classList.add('error'); }
+      }
+    }
+
+    // Cursor-ATLAS shell + command palette (Ctrl+K)
+    var cursorAtlasCardOriginalParent = null;
+    var cursorAtlasCardOriginalNext = null;
+    function openCursorAtlas() {
+      const overlay = document.getElementById('cursor-atlas-overlay');
+      const slot = document.getElementById('cursor-atlas-main-slot');
+      const card = document.getElementById('atlas-interact-card');
+      if (!overlay || !slot || !card) return;
+      // evita conflictos con el expand modal
+      try { closeExpandModal(); } catch (e) {}
+      cursorAtlasCardOriginalParent = card.parentNode;
+      cursorAtlasCardOriginalNext = card.nextElementSibling;
+      slot.innerHTML = '';
+      slot.appendChild(card);
+      overlay.classList.add('open');
+      overlay.setAttribute('aria-hidden', 'false');
+      // estado inicial
+      try { ccSelectTab('chat'); ccRefreshComms(); } catch (e) {}
+      // focus barra de mando
+      setTimeout(function() {
+        const inp = document.getElementById('cursor-atlas-cmd');
+        if (inp) inp.focus();
+      }, 50);
+    }
+    function closeCursorAtlas() {
+      const overlay = document.getElementById('cursor-atlas-overlay');
+      const slot = document.getElementById('cursor-atlas-main-slot');
+      const card = document.getElementById('atlas-interact-card');
+      if (overlay) { overlay.classList.remove('open'); overlay.setAttribute('aria-hidden', 'true'); }
+      if (slot) slot.innerHTML = '';
+      if (card && cursorAtlasCardOriginalParent) {
+        if (cursorAtlasCardOriginalNext) cursorAtlasCardOriginalParent.insertBefore(card, cursorAtlasCardOriginalNext);
+        else cursorAtlasCardOriginalParent.appendChild(card);
+      }
+      cursorAtlasCardOriginalParent = null;
+      cursorAtlasCardOriginalNext = null;
+    }
+    function cursorAtlasNav(tab) {
+      try { openCursorAtlas(); } catch (e) {}
+      setTimeout(function() {
+        try { ccSelectTab(tab); } catch (e) {}
+        if (tab === 'web') {
+          const el = document.getElementById('cc-web-url');
+          if (el) el.focus();
+        }
+      }, 60);
+    }
+    async function cursorAtlasRunCommand(text) {
+      const t = (text || '').trim();
+      if (!t) return;
+      openCursorAtlas();
+      try { ccSelectTab('chat'); } catch (e) {}
+      const input = document.getElementById('robot-input');
+      if (input) input.value = t;
+      try { await sendToRobot(); } catch (e) {}
+    }
+
+    async function pcWalk(command, payload) {
+      try {
+        showToast('PC-Windows: ejecutando ' + command + '…');
+        const r = await post('/api/pc/walk', { command: command, payload: payload || {} });
+        if (r && r.ok) {
+          showToast('PC-Windows: OK (' + ((r.ms || 0) + 'ms') + ')');
+          try { cursorAtlasNav('ops'); } catch (e) {}
+          try { ccRefreshOps(); } catch (e) {}
+          return r;
+        }
+        showToast('PC-Windows: FAIL ' + ((r && r.error) || ''), true);
+        return r;
+      } catch (e) {
+        showToast('PC-Windows: Error ' + ((e && e.message) || e), true);
+        return { ok: false, error: (e && e.message) || String(e) };
+      }
+    }
+
+    function _cmdkActions() {
+      // Se evalúa on-demand para que pueda llamar funciones ya definidas.
+      return [
+        { id: 'open_ca', title: 'Abrir Cursor‑ATLAS', desc: 'Centro de mando (IDE) en pantalla completa', keys: 'Ctrl+K', run: function() { openCursorAtlas(); } },
+        { id: 'close_ca', title: 'Cerrar Cursor‑ATLAS', desc: 'Volver al dashboard', keys: 'Esc', run: function() { closeCursorAtlas(); } },
+        { id: 'refresh', title: 'Actualizar todo', desc: 'Refrescar estado, salud, ANS, approvals, etc.', keys: 'R', run: function() { refreshAll(); } },
+        { id: 'ops', title: 'OPS: abrir monitor', desc: 'Eventos recientes + evidencia', keys: 'O', run: function() { cursorAtlasNav('ops'); } },
+        { id: 'web', title: 'Web (Pies): abrir', desc: 'Automatización web con screenshots', keys: 'W', run: function() { cursorAtlasNav('web'); } },
+        { id: 'vision', title: 'Visión: snapshot', desc: 'Capturar cámara del robot (enhance/max)', keys: 'V', run: function() { cursorAtlasNav('vision'); setTimeout(function(){ ccCaptureVision(true); }, 100); } },
+        { id: 'terminal', title: 'Terminal: consola en vivo', desc: 'Ver ANS live y logs', keys: 'T', run: function() { cursorAtlasNav('terminal'); scrollToSection('live-console-section'); } },
+        { id: 'toggle_live', title: 'Consola en vivo: iniciar/detener', desc: 'Stream ANS live (SSE)', keys: 'L', run: function() { toggleLiveConsole(); } },
+        { id: 'status', title: 'Ejecutar: /status', desc: 'Diagnóstico rápido del sistema', keys: '/s', run: function() { cursorAtlasRunCommand('/status'); } },
+        { id: 'doctor', title: 'Ejecutar: /doctor', desc: 'Doctor + checks', keys: '/d', run: function() { cursorAtlasRunCommand('/doctor'); } },
+        { id: 'modules', title: 'Ejecutar: /modules', desc: 'Listado de módulos', keys: '/m', run: function() { cursorAtlasRunCommand('/modules'); } },
+        { id: 'approvals', title: 'Owner: approvals', desc: 'Ir a aprobaciones y sesión', keys: 'A', run: function() { closeCursorAtlas(); scrollToSection('owner-console-section'); } },
+        { id: 'nexus_panel', title: 'Cuerpo: abrir Panel NEXUS', desc: 'Vista integrada del cuerpo', keys: 'P', run: function() { openNexusPanel(); } },
+        { id: 'reconnect', title: 'Cuerpo: reconectar', desc: 'Arranca/valida NEXUS+Robot', keys: 'C', run: function() { reconnectNexus(); } },
+        { id: 'emergency', title: 'Emergency Stop', desc: 'Activar/Desactivar (requiere confirmación)', keys: 'E', run: function() { govEmergencyStop(); } },
+        { id: 'ops_test', title: 'OPS: emitir evento test', desc: 'Verifica audio/telegram/wa', keys: 'X', run: function() { cursorAtlasNav('ops'); setTimeout(function(){ ccEmitOpsTest(); }, 100); } },
+        { id: 'pc_explorer', title: 'PC-Windows: abrir Explorador', desc: 'Caminar por el PC (abrir Explorador de archivos)', keys: 'PE', run: function() { openCursorAtlas(); pcWalk('open_app', { name: 'explorer.exe', sleep_ms: 0 }); } },
+        { id: 'pc_snapshots', title: 'PC-Windows: abrir Snapshots', desc: 'Abrir carpeta de evidencia local', keys: 'PS', run: function() { openCursorAtlas(); pcWalk('open_path', { path: 'C:/ATLAS_PUSH/snapshots', sleep_ms: 0 }); } },
+        { id: 'pc_shot', title: 'PC-Windows: screenshot', desc: 'Captura de pantalla (evidencia en snapshots/pc_walk)', keys: 'PX', run: function() { openCursorAtlas(); pcWalk('screenshot', { name: 'ui_pc', sleep_ms: 0 }); } },
+        { id: 'clear_cache', title: 'Limpiar caché', desc: 'Borra cache UI y reinicia', keys: 'K', run: function() { clearCacheAndRefresh(); } },
+      ];
+    }
+
+    var _cmdkOpen = false;
+    var _cmdkIndex = 0;
+    var _cmdkFiltered = [];
+    function openCmdk() {
+      const ov = document.getElementById('cmdk-overlay');
+      const inp = document.getElementById('cmdk-input');
+      if (!ov || !inp) return;
+      _cmdkOpen = true;
+      _cmdkIndex = 0;
+      ov.classList.add('open');
+      ov.setAttribute('aria-hidden', 'false');
+      inp.value = '';
+      renderCmdk('');
+      setTimeout(function(){ inp.focus(); }, 30);
+    }
+    function closeCmdk() {
+      const ov = document.getElementById('cmdk-overlay');
+      if (!ov) return;
+      _cmdkOpen = false;
+      ov.classList.remove('open');
+      ov.setAttribute('aria-hidden', 'true');
+    }
+    function renderCmdk(q) {
+      const list = document.getElementById('cmdk-list');
+      if (!list) return;
+      const query = (q || '').trim().toLowerCase();
+      const all = _cmdkActions();
+      _cmdkFiltered = all.filter(function(a) {
+        if (!query) return true;
+        return (a.title || '').toLowerCase().includes(query) || (a.desc || '').toLowerCase().includes(query) || (a.id || '').toLowerCase().includes(query);
+      });
+      if (_cmdkIndex >= _cmdkFiltered.length) _cmdkIndex = Math.max(0, _cmdkFiltered.length - 1);
+      list.innerHTML = '';
+      if (!_cmdkFiltered.length) {
+        list.innerHTML = '<div class="value" style="padding:.9rem;color:var(--muted);">Sin coincidencias.</div>';
+        return;
+      }
+      _cmdkFiltered.forEach(function(a, i) {
+        const div = document.createElement('div');
+        div.className = 'cmdk-item' + (i === _cmdkIndex ? ' active' : '');
+        div.onclick = function() { runCmdk(i); };
+        div.innerHTML = '<div><div class="t">' + (a.title || '') + '</div><div class="d">' + (a.desc || '') + '</div></div>'
+          + '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:.25rem;">'
+          + (a.keys ? ('<span class="kbd">' + a.keys + '</span>') : '')
+          + '</div>';
+        list.appendChild(div);
+      });
+    }
+    function runCmdk(i) {
+      const a = _cmdkFiltered[i];
+      if (!a || typeof a.run !== 'function') return;
+      closeCmdk();
+      try { a.run(); } catch (e) { showToast('Acción falló: ' + ((e && e.message) || e), true); }
+    }
+
+    // Atajos globales
+    document.addEventListener('keydown', function(e) {
+      // CmdK: abrir paleta
+      if ((e.ctrlKey || e.metaKey) && (e.key || '').toLowerCase() === 'k') {
+        e.preventDefault();
+        if (_cmdkOpen) closeCmdk(); else openCmdk();
+        return;
+      }
+      // Escape: cerrar overlays
+      if (e.key === 'Escape') {
+        if (_cmdkOpen) { closeCmdk(); return; }
+        const ca = document.getElementById('cursor-atlas-overlay');
+        if (ca && ca.classList.contains('open')) { closeCursorAtlas(); return; }
+      }
+      // Navegación dentro de cmdk
+      if (_cmdkOpen) {
+        if (e.key === 'ArrowDown') { e.preventDefault(); _cmdkIndex = Math.min(_cmdkIndex + 1, Math.max(0, _cmdkFiltered.length - 1)); renderCmdk((document.getElementById('cmdk-input') || {}).value || ''); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); _cmdkIndex = Math.max(_cmdkIndex - 1, 0); renderCmdk((document.getElementById('cmdk-input') || {}).value || ''); }
+        else if (e.key === 'Enter') { e.preventDefault(); runCmdk(_cmdkIndex); }
+      }
+    });
+
+    function cursorAtlasCmdSubmit() {
+      const inp = document.getElementById('cursor-atlas-cmd');
+      if (!inp) return;
+      const text = (inp.value || '').trim();
+      if (!text) return;
+      // comportamiento: si es url -> manda a Web; si empieza / -> quick cmd; si no -> goal
+      const lower = text.toLowerCase();
+      if (lower.startsWith('http://') || lower.startsWith('https://')) {
+        cursorAtlasNav('web');
+        const u = document.getElementById('cc-web-url');
+        if (u) u.value = text;
+        ccWebOpen();
+      } else {
+        cursorAtlasRunCommand(text);
+      }
+      inp.value = '';
+    }
+    function isQuickCommand(text) {
+      const t = (text || '').trim().toLowerCase();
+      return t.startsWith('/status') || t.startsWith('/doctor') || t.startsWith('/modules') || t.startsWith('/repo-push') || t.startsWith('aprobar ') || t.startsWith('confirmar ');
     }
     async function sendToRobot() {
       const input = document.getElementById('robot-input');
       const responseEl = document.getElementById('robot-response');
       const statusEl = document.getElementById('robot-status');
       const btn = document.getElementById('robot-send');
-      const taskType = document.getElementById('robot-task-type').value;
       const text = (input && input.value || '').trim();
       if (!text) {
         responseEl.textContent = UI_STRINGS['robot.no_input'] || 'Escribe un comando o objetivo.';
@@ -795,16 +1650,19 @@
       statusEl.textContent = UI_STRINGS['robot.sending'] || 'Enviando…';
       responseEl.classList.remove('error', 'empty');
       responseEl.textContent = '…';
+      document.getElementById('atlas-steps-panel').style.display = 'none';
+      document.getElementById('atlas-routing-panel').style.display = 'none';
+      document.getElementById('atlas-evidence-panel').style.display = 'none';
       try {
         let out;
         const textLower = text.trim().toLowerCase();
-        if (taskType === 'quick' && (textLower.startsWith('aprobar ') || textLower.startsWith('confirmar '))) {
+        if (textLower.startsWith('aprobar ') || textLower.startsWith('confirmar ')) {
           out = await post('/owner/voice/command', { transcript: text.trim(), device_source: 'ui' });
           const msg = (out && out.response !== undefined) ? out.response : (out && out.error ? 'Error: ' + out.error : 'Sin respuesta');
           responseEl.textContent = msg;
           if (out && out.approved) responseEl.classList.remove('error'); else if (out && out.error) responseEl.classList.add('error');
           setLastResponseText(msg);
-        } else if (taskType === 'quick') {
+        } else if (isQuickCommand(text)) {
           out = await post('/intent', { text: text });
           let msg = formatRobotResponse(out, 'quick');
           if (out && out.error) responseEl.classList.add('error');
@@ -812,11 +1670,44 @@
           responseEl.textContent = msg;
           setLastResponseText(msg);
         } else {
-          const mode = taskType === 'medium' ? 'plan_only' : 'controlled';
-          const depth = taskType === 'medium' ? 1 : 2;
-          out = await post('/agent/goal', { goal: text, mode: mode, depth: depth, fast: taskType === 'medium' });
-          let msg = formatRobotResponse(out, taskType);
-          if (out && out.data && (out.data.steps || out.data.plan)) msg += '\n\n' + (out.data.resumen || JSON.stringify({ steps: out.data.steps || out.data.plan }, null, 2).slice(0, 1500));
+          const mode = (document.getElementById('atlas-mode') && document.getElementById('atlas-mode').value) || 'plan_only';
+          const resourcesEl = document.getElementById('atlas-resources');
+          const resources = (resourcesEl && resourcesEl.value) || 'pro';
+          const depthMap = { lite: 1, pro: 2, ultra: 3 };
+          const depth = depthMap[resources] || 2;
+          const freeSel = document.getElementById('atlas-ai') && document.getElementById('atlas-ai').value;
+          const prefer_free = freeSel !== 'allow_paid';
+          const allow_paid = freeSel === 'allow_paid';
+          const profile = (document.getElementById('atlas-profile') && document.getElementById('atlas-profile').value) || 'owner';
+          statusEl.textContent = UI_STRINGS['cursor.running'] || 'Generando plan…';
+          out = await post('/cursor/run', { goal: text, mode: mode, depth: depth, prefer_free: prefer_free, allow_paid: allow_paid, profile: profile, resources: resources, context: { source: 'ui_command_center' } });
+          let msg = formatRobotResponse(out, 'plan');
+          if (out && out.data && (out.data.steps || out.data.plan)) {
+            msg += '\n\n' + (out.data.resumen || '');
+            const stepsList = document.getElementById('atlas-steps-list');
+            const stepsPanel = document.getElementById('atlas-steps-panel');
+            const routingPanel = document.getElementById('atlas-routing-panel');
+            const routingText = document.getElementById('atlas-routing-text');
+            const evidencePanel = document.getElementById('atlas-evidence-panel');
+            const evidenceText = document.getElementById('atlas-evidence-text');
+            if (stepsList && (out.data.steps || out.data.plan)) {
+              stepsList.innerHTML = '';
+              (out.data.steps || out.data.plan || []).forEach(function(s, i) {
+                const li = document.createElement('li');
+                li.textContent = (typeof s === 'string') ? s : (s.description || s.step || JSON.stringify(s).slice(0, 80));
+                stepsList.appendChild(li);
+              });
+              stepsPanel.style.display = 'block';
+            }
+            if (routingText && (out.data.model || out.data.model_routing)) {
+              routingText.textContent = out.data.model ? String(out.data.model) : formatModelRouting(out.data.model_routing);
+              routingPanel.style.display = 'block';
+            }
+            if (evidenceText && out.data.evidence) {
+              evidenceText.textContent = Array.isArray(out.data.evidence) ? out.data.evidence.join(' · ') : String(out.data.evidence);
+              evidencePanel.style.display = 'block';
+            }
+          }
           if (out && out.error) responseEl.classList.add('error');
           else responseEl.classList.remove('error');
           responseEl.textContent = msg;
@@ -830,64 +1721,14 @@
       btn.disabled = false;
     }
 
-    async function cursorRun() {
-      const goalEl = document.getElementById('cursor-goal');
-      const statusEl = document.getElementById('cursor-status');
-      const btn = document.getElementById('cursor-run-btn');
-      const stepsPanel = document.getElementById('cursor-steps-panel');
-      const stepsList = document.getElementById('cursor-steps-list');
-      const routingPanel = document.getElementById('cursor-routing-panel');
-      const routingText = document.getElementById('cursor-routing-text');
-      const evidencePanel = document.getElementById('cursor-evidence-panel');
-      const evidenceText = document.getElementById('cursor-evidence-text');
-      const goal = (goalEl && goalEl.value || '').trim();
-      if (!goal) {
-        statusEl.textContent = UI_STRINGS['cursor.no_goal'] || 'Escribe un objetivo.';
-        return;
-      }
-      const mode = (document.getElementById('cursor-mode') && document.getElementById('cursor-mode').value) || 'plan_only';
-      const depth = 1;
-      const freeSel = document.getElementById('cursor-free') && document.getElementById('cursor-free').value;
-      const prefer_free = freeSel !== 'allow_paid';
-      const allow_paid = freeSel === 'allow_paid';
-      const profile = (document.getElementById('cursor-profile') && document.getElementById('cursor-profile').value) || 'owner';
-      btn.disabled = true;
-      statusEl.textContent = UI_STRINGS['cursor.running'] || 'Ejecutando…';
-      stepsPanel.style.display = 'none';
-      routingPanel.style.display = 'none';
-      evidencePanel.style.display = 'none';
-      try {
-        const out = await post('/cursor/run', { goal: goal, mode: mode, depth: depth, prefer_free: prefer_free, allow_paid: allow_paid, profile: profile });
-        if (out && out.data) {
-          const d = out.data;
-          if (d.steps && d.steps.length) {
-            stepsPanel.style.display = 'block';
-            stepsList.innerHTML = d.steps.map(function(s) {
-              const desc = typeof s === 'object' ? (s.description || s) : s;
-              return '<li>' + (desc || '').slice(0, 120) + '</li>';
-            }).join('');
-          }
-          if (d.model_routing && (d.model_routing.provider_id || d.model_routing.route)) {
-            routingPanel.style.display = 'block';
-            routingText.textContent = (d.model_routing.provider_id || '') + ' / ' + (d.model_routing.route || '') + ' (' + (d.model_routing.reason || '') + ')';
-          }
-          if (d.evidence && d.evidence.length) { evidenceText.textContent = d.evidence.join(', '); evidencePanel.style.display = 'block'; }
-          else if (d.evidence) { evidenceText.textContent = String(d.evidence); evidencePanel.style.display = 'block'; }
-          if (d.next_actions && d.next_actions.length) { evidenceText.textContent = (evidenceText.textContent || '') + (evidenceText.textContent ? ' | ' : '') + (UI_STRINGS['cursor.next_actions'] || 'Siguientes: ') + ' ' + d.next_actions.join('; '); evidencePanel.style.display = 'block'; }
-        }
-        statusEl.textContent = out && out.ok ? (out.data && out.data.summary ? out.data.summary : 'OK') : (out && out.error ? out.error : 'Error');
-      } catch (e) {
-        statusEl.textContent = 'Error: ' + (e.message || String(e));
-      }
-      btn.disabled = false;
-    }
-
     let lastResponseText = '';
     function setLastResponseText(t) { lastResponseText = (t || '').trim(); }
 
     function formatRobotResponse(out, taskType) {
       if (!out) return UI_STRINGS['robot.no_response'] || 'No hubo respuesta del robot.';
       if (out.error) return (UI_STRINGS['robot.error'] || 'Error') + ': ' + (out.error || '');
+      // Cursor-run shape: {ok, data:{summary,...}}
+      if (out.data && out.data.summary) return String(out.data.summary);
       if (taskType === 'quick' && out.output !== undefined) {
         var o = out.output;
         if (typeof o === 'string') return o;
@@ -901,6 +1742,21 @@
       if (out.resumen) return out.resumen;
       if (out.message) return out.message;
       return UI_STRINGS['robot.done'] || 'Listo. Revisa los detalles si los hay.';
+    }
+
+    function formatModelRouting(mr) {
+      if (!mr) return '';
+      if (typeof mr === 'string') return mr;
+      if (typeof mr === 'object') {
+        const prov = mr.provider_id || mr.provider || mr.source || '';
+        const mk = mr.model_key || mr.model || '';
+        const modelShort = (typeof mk === 'string' && mk.indexOf(':') >= 0) ? mk.split(':', 2)[1] : mk;
+        const route = mr.route || '';
+        const reason = mr.reason || '';
+        const lat = (mr.latency_ms !== undefined && mr.latency_ms !== null) ? (Math.round(Number(mr.latency_ms)) + 'ms') : '';
+        return [prov && ('prov=' + prov), modelShort && ('model=' + modelShort), route && ('route=' + route), reason && ('reason=' + reason), lat].filter(Boolean).join(' · ');
+      }
+      return String(mr);
     }
 
     function startVoiceRecognition() {
@@ -1023,7 +1879,7 @@
           const nexusLabel = nexusConnected ? (nexusActive ? 'CONECTADO | ACTIVO' : 'Conectado') : 'Desconectado';
           const robotConnected = d && d.robot_connected === true;
           const robotLabel = robotConnected ? 'Conectado' : 'Desconectado';
-          val.textContent = (atlasOk ? 'OK' : (d && d.error) || 'Error') + ' | NEXUS (8000): ' + nexusLabel + ' | Robot (8002): ' + robotLabel;
+          val.textContent = (atlasOk ? 'OK' : (d && d.error) || 'Error') + ' | CUERPO: NEXUS=' + nexusLabel + ' | ROBOT=' + robotLabel;
           card.classList.toggle('error', !atlasOk);
           card.classList.remove('loading');
         }
@@ -1032,11 +1888,14 @@
       }
     }
     function openNexusPanel() {
-      var url = window._nexusDashboardUrl || 'http://127.0.0.1:8000/dashboard';
+      var base = (window._base || window._apiBase || window.location.origin).replace(/\/$/, '');
+      // Unificado: NEXUS se accede por proxy bajo el mismo puerto (sin 8000 directo)
+      var url = base + '/cuerpo/nexus/dashboard';
       var overlay = document.getElementById('nexus-panel-overlay');
       var iframe = document.getElementById('nexus-panel-iframe');
       var unav = document.getElementById('nexus-panel-unavailable');
       if (!overlay || !iframe) return;
+      if (unav) unav.innerHTML = 'NEXUS no está disponible.<br>Pulsa «Reconectar Cuerpo» en la tarjeta Estado y vuelve a abrir este panel.';
       overlay.classList.add('open');
       if (window._nexusConnected !== false) {
         iframe.style.display = 'block';
@@ -1048,6 +1907,22 @@
         if (unav) unav.style.display = 'flex';
       }
     }
+    function openRobotPanel() {
+      var url = (window._base || window._apiBase || window.location.origin) + '/cuerpo/';
+      var overlay = document.getElementById('nexus-panel-overlay');
+      var iframe = document.getElementById('nexus-panel-iframe');
+      var unav = document.getElementById('nexus-panel-unavailable');
+      if (!overlay || !iframe) return;
+      if (unav) unav.innerHTML = 'Robot no disponible. Comprueba que el backend del Robot esté en marcha (NEXUS_ROBOT_URL, p. ej. 8002 o 5174) y vuelve a abrir.';
+      overlay.classList.add('open');
+      iframe.style.display = 'block';
+      iframe.src = url;
+      if (unav) unav.style.display = 'none';
+      iframe.onerror = function() {
+        iframe.style.display = 'none';
+        if (unav) { unav.style.display = 'flex'; }
+      };
+    }
     function closeNexusPanel() {
       var overlay = document.getElementById('nexus-panel-overlay');
       var iframe = document.getElementById('nexus-panel-iframe');
@@ -1058,24 +1933,76 @@
     }
     async function loadCamerasStatus() {
       var statusEl = document.getElementById('cameras-status');
-      var imgEl = document.getElementById('camera-stream-img');
-      var noStreamEl = document.getElementById('cameras-no-stream');
+      var btnCameras = document.getElementById('btn-actualizar-camaras');
+      var cams = [0, 1, 2];
+      var base = window._base || window._apiBase || window.location.origin;
+      if (btnCameras) { btnCameras.disabled = true; btnCameras.textContent = 'Actualizando…'; }
       try {
         const r = await get('/api/robot/status');
-        if (statusEl) statusEl.textContent = 'Robot (8002): ' + (r && r.connected ? 'Conectado' : 'Desconectado');
-        if (r && r.connected && imgEl) {
-          imgEl.src = (window._base || '') + '/cuerpo/camera/stream?t=' + Date.now();
-          imgEl.style.display = 'block';
-          if (noStreamEl) noStreamEl.style.display = 'none';
-          imgEl.onerror = function() { imgEl.style.display = 'none'; if (noStreamEl) noStreamEl.style.display = 'flex'; };
-        } else {
-          if (imgEl) { imgEl.src = ''; imgEl.style.display = 'none'; }
-          if (noStreamEl) noStreamEl.style.display = 'flex';
-        }
+        var connected = r && r.connected;
+        var robotUrl = (r && r.robot_url) ? r.robot_url : 'http://127.0.0.1:8002';
+        var portLabel = robotUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+        if (statusEl) statusEl.textContent = 'Robot (' + portLabel + '): ' + (connected ? 'Conectado' : 'Desconectado');
+        var hintEl = document.getElementById('cameras-disconnected-hint');
+        if (hintEl) hintEl.style.display = connected ? 'none' : 'block';
+        cams.forEach(function(idx) {
+          var img = document.getElementById('camera-stream-img-' + idx);
+          var noStream = document.getElementById('cameras-no-stream-' + idx);
+          if (!img) return;
+          if (connected) {
+            var streamUrl = base.replace(/\/$/, '') + '/cuerpo/camera/stream?index=' + idx;
+            img.src = streamUrl;
+            img.style.display = 'block';
+            if (noStream) noStream.style.display = 'none';
+            img.onerror = (function(im, ns) {
+              return function() {
+                im.style.display = 'none';
+                if (ns) ns.style.display = 'flex';
+              };
+            })(img, noStream);
+          } else {
+            img.src = '';
+            img.style.display = 'none';
+            if (noStream) noStream.style.display = 'flex';
+          }
+        });
       } catch (e) {
         if (statusEl) statusEl.textContent = 'Robot (8002): Error';
-        if (imgEl) imgEl.style.display = 'none';
-        if (noStreamEl) noStreamEl.style.display = 'flex';
+        cams.forEach(function(idx) {
+          var img = document.getElementById('camera-stream-img-' + idx);
+          var noStream = document.getElementById('cameras-no-stream-' + idx);
+          if (img) { img.src = ''; img.style.display = 'none'; }
+          if (noStream) noStream.style.display = 'flex';
+        });
+      }
+      if (btnCameras) { btnCameras.disabled = false; btnCameras.textContent = 'Actualizar cámaras'; }
+    }
+    async function reconnectRobot() {
+      var btn = document.getElementById('btn-reconectar-robot');
+      var statusEl = document.getElementById('cameras-status');
+      if (btn) { btn.disabled = true; btn.textContent = 'Conectando…'; }
+      try {
+        var r = await post('/api/robot/reconnect', {});
+        var msg = (r && r.message) ? r.message : (r && r.error) ? r.error : 'Sin respuesta';
+        if (statusEl) statusEl.textContent = 'Robot: ' + msg;
+        if (window._toast) window._toast(msg); else if (statusEl) statusEl.textContent = 'Robot: ' + msg;
+        await loadCamerasStatus();
+      } catch (e) {
+        var err = (e && e.message) ? e.message : String(e);
+        if (statusEl) statusEl.textContent = 'Robot: Error – ' + err;
+        if (window._toast) window._toast('Error: ' + err); else alert('Error: ' + err);
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Reconectar Robot'; }
+      }
+    }
+    async function showRobotStartCommands() {
+      try {
+        var d = await get('/api/robot/start-commands');
+        if (!d || !d.commands) { alert('No se obtuvieron comandos'); return; }
+        var t = (d.hint || '') + '\n\nRobot (8002):\n' + (d.commands.robot || '') + '\n\nNEXUS (8000):\n' + (d.commands.nexus || '');
+        alert(t);
+      } catch (e) {
+        alert('Error: ' + (e.message || e));
       }
     }
     async function clearCacheAndRefresh() {
@@ -1094,18 +2021,229 @@
       const btn = document.getElementById('btn-reconnect-nexus');
       if (btn) { btn.disabled = true; btn.textContent = 'Conectando…'; }
       try {
-        const r = await post('/api/nexus/reconnect?clear_cache=true', {});
+        const r = await post('/api/cuerpo/reconnect', {});
         await loadStatus();
-        if (r && r.connected) {
-          if (btn) { btn.textContent = 'Reconectar NEXUS'; btn.classList.remove('error'); }
-        } else {
-          if (btn) { btn.textContent = 'Reconectar NEXUS'; btn.classList.add('error'); btn.title = (r && r.error) ? r.error : 'NEXUS no respondió en puerto 8000';
-          }
+        const msg = (r && (r.message || r.error)) ? (r.message || r.error) : 'Cuerpo: comando enviado';
+        if (window._toast) window._toast(msg);
+        if (btn) {
+          btn.textContent = 'Reconectar Cuerpo';
+          btn.classList.toggle('error', !(r && r.ok));
+          btn.title = msg;
         }
       } catch (e) {
-        if (btn) { btn.textContent = 'Reconectar NEXUS'; btn.disabled = false; btn.title = (e && e.message) || 'Error'; }
+        if (btn) { btn.textContent = 'Reconectar Cuerpo'; btn.disabled = false; btn.title = (e && e.message) || 'Error'; }
       }
       if (btn) btn.disabled = false;
+    }
+    var _brainState = null;
+    function isDominantConnected(state) {
+      if (!state || !state.credentials) return false;
+      if (state.mode !== 'manual' || !state.override_model) return false;
+      var providerId = (state.override_model.indexOf(':') >= 0 ? state.override_model.split(':')[0] : state.override_model).toLowerCase();
+      return !!(state.credentials[providerId] && state.credentials[providerId].configured);
+    }
+    function hasAnyProviderConnected(state) {
+      if (!state || !state.credentials) return false;
+      return Object.keys(state.credentials).some(function(id) { return state.credentials[id] && state.credentials[id].configured; });
+    }
+    var _brainProviderOptionsFallback = [
+      { id: 'openai', name: 'OpenAI (GPT)', connect_url: 'https://platform.openai.com/api-keys' },
+      { id: 'anthropic', name: 'Anthropic (Claude)', connect_url: 'https://console.anthropic.com/' },
+      { id: 'gemini', name: 'Google Gemini', connect_url: 'https://aistudio.google.com/app/apikey' },
+      { id: 'perplexity', name: 'Perplexity', connect_url: 'https://www.perplexity.ai/settings/api' }
+    ];
+    async function loadBrainState() {
+      try {
+        var d = await get('/api/brain/state');
+        if (!d) {
+          _brainState = { ok: false, mode: 'auto', available_models: [], provider_options: _brainProviderOptionsFallback, credentials: {} };
+          var errEl = document.getElementById('brain-dominant');
+          if (errEl) { errEl.textContent = 'IA dominante: Error al cargar'; errEl.className = 'value brain-dominant-error'; errEl.style.color = ''; }
+          return;
+        }
+        _brainState = d;
+        const dominantEl = document.getElementById('brain-dominant');
+        const cfgEl = document.getElementById('brain-config-line');
+        const btnAuto = document.getElementById('brain-btn-auto');
+        const btnManual = document.getElementById('brain-btn-manual');
+        if (!dominantEl) return;
+        dominantEl.textContent = 'IA dominante: ' + (d.dominant_display ? d.dominant_display : '—');
+        if (cfgEl) {
+          var mode = (d.mode || 'auto').toUpperCase();
+          var ov = (d.override_model || '—');
+          var creds = d.credentials || {};
+          var connectedCount = Object.keys(creds).filter(function(k){ return creds[k] && creds[k].configured; }).length;
+          cfgEl.innerHTML =
+            '<span style="color:var(--muted);">Modo:</span> <strong>' + mode + '</strong>' +
+            (d.mode === 'manual' ? (' · <span style="color:var(--muted);">Override:</span> <span style="color:var(--purple-light);">' + (ov.replace(/</g,'&lt;').replace(/>/g,'&gt;')) + '</span>') : '') +
+            (' · <span style="color:var(--muted);">Claves:</span> <strong>' + connectedCount + '</strong>');
+        }
+        var connected = isDominantConnected(d) || (d.mode === 'auto' && hasAnyProviderConnected(d));
+        dominantEl.classList.toggle('brain-dominant-connected', connected);
+        dominantEl.classList.remove('brain-dominant-error');
+        if (dominantEl.style) dominantEl.style.removeProperty('color');
+        const isManual = (d.mode === 'manual');
+        var panel = document.getElementById('brain-model-panel');
+        var btnElegir = document.getElementById('brain-btn-elegir');
+        var panelOpen = panel && panel.style.display === 'block';
+        if (btnAuto) { btnAuto.className = (panelOpen ? 'small secondary' : (isManual ? 'small secondary' : 'small btn-brain-active')); }
+        if (btnManual) { btnManual.className = (panelOpen ? 'small secondary' : (isManual ? 'small btn-brain-active' : 'small secondary')); }
+        if (btnElegir) { btnElegir.className = panelOpen ? 'small btn-brain-active' : 'small secondary'; }
+        if (panel && panelOpen) renderBrainModelList();
+      } catch (e) {
+        _brainState = { ok: false, mode: 'auto', available_models: [], provider_options: _brainProviderOptionsFallback, credentials: {} };
+        var errEl = document.getElementById('brain-dominant');
+        if (errEl) { errEl.textContent = 'IA dominante: Error al cargar'; errEl.className = 'value brain-dominant-error'; errEl.classList.remove('brain-dominant-connected'); }
+      }
+    }
+    function updateBrainElegirButtonState() {
+      var panel = document.getElementById('brain-model-panel');
+      var btnElegir = document.getElementById('brain-btn-elegir');
+      var btnAuto = document.getElementById('brain-btn-auto');
+      var btnManual = document.getElementById('brain-btn-manual');
+      var panelOpen = panel && panel.style.display === 'block';
+      var isManual = _brainState && _brainState.mode === 'manual';
+      if (btnElegir) btnElegir.className = panelOpen ? 'small btn-brain-active' : 'small secondary';
+      if (btnAuto) btnAuto.className = (panelOpen ? 'small secondary' : (isManual ? 'small secondary' : 'small btn-brain-active'));
+      if (btnManual) btnManual.className = (panelOpen ? 'small secondary' : (isManual ? 'small btn-brain-active' : 'small secondary'));
+    }
+    async function toggleBrainModelPanel() {
+      var panel = document.getElementById('brain-model-panel');
+      if (!panel) return;
+      if (panel.style.display === 'block') {
+        panel.style.display = 'none';
+        updateBrainElegirButtonState();
+        return;
+      }
+      panel.style.display = 'block';
+      updateBrainElegirButtonState();
+      var listEl = document.getElementById('brain-model-list');
+      if (listEl) listEl.innerHTML = '<div style="color:var(--muted);font-size:.8rem;">Cargando…</div>';
+      await loadBrainState();
+      updateBrainElegirButtonState();
+      renderBrainModelList();
+    }
+    function renderBrainModelList() {
+      var listEl = document.getElementById('brain-model-list');
+      if (!listEl) return;
+      if (!_brainState) { listEl.innerHTML = '<div style="color:var(--muted);font-size:.8rem;">Error al cargar. <button class="small" onclick="toggleBrainModelPanel()">Reintentar</button></div>'; return; }
+      var models = _brainState.available_models || [];
+      var connectUrls = _brainState.provider_connect_urls || {};
+      var providerOptions = _brainState.provider_options || [];
+      var cur = _brainState.override_model || '';
+      var html = '';
+      html += models.map(function(m) {
+        var key = m.full_key || '';
+        var keyAttr = key.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        var label = (m.label || m.full_key) + (m.is_free ? ' (free)' : '');
+        var labelSafe = (label || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        var isPaid = !m.is_free && m.provider_id;
+        var connectUrl = isPaid && connectUrls[m.provider_id] ? connectUrls[m.provider_id] : '';
+        var usarBtn = '<button class="small ' + (key === cur ? 'btn-brain-active' : '') + '" data-brain-key="' + keyAttr + '" onclick="setBrainModelAndClose(this.getAttribute(\'data-brain-key\'))" title="Usar esta IA como dominante">Usar</button>';
+        var conectarBtn = isPaid && connectUrl ? '<a href="' + connectUrl.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener" class="small secondary" style="padding:.2rem .4rem;font-size:.7rem;text-decoration:none;border-radius:6px;display:inline-block;" title="Abrir página para API key / suscripción">Conectar</a>' : '';
+        return '<div class="brain-model-row"><span class="brain-model-label">' + labelSafe + '</span><div class="brain-model-actions">' + usarBtn + (conectarBtn ? ' ' + conectarBtn : '') + '</div></div>';
+      }).join('');
+      if (providerOptions.length) {
+        var creds = _brainState.credentials || {};
+        html += '<div class="brain-providers-header">Otras (suscripción/API)</div>';
+        html += providerOptions.map(function(p) {
+          var url = (p.connect_url || '').replace(/"/g, '&quot;');
+          var nameSafe = (p.name || p.id || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+          var idSafe = (p.id || '').replace(/"/g, '&quot;');
+          var c = creds[p.id] || {};
+          var configured = c.configured;
+          var masked = (c.masked || '***').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          var labelColor = configured ? 'color:var(--green);' : 'color:var(--text);';
+          var conectarStyle = configured
+            ? 'padding:.25rem .5rem;font-size:.7rem;text-decoration:none;border-radius:6px;display:inline-block;color:var(--green);white-space:nowrap;'
+            : 'padding:.25rem .5rem;font-size:.7rem;text-decoration:none;border-radius:6px;display:inline-block;color:var(--purple-light);white-space:nowrap;';
+          var conectarTitle = configured ? 'Conectado (API key configurada)' : 'Abrir página del proveedor para obtener la API key';
+          var conectarLink = '<a href="' + url + '" target="_blank" rel="noopener" class="small" style="' + conectarStyle + '" title="' + conectarTitle + '">Conectar</a>';
+          var configBtn = configured
+            ? '<span class="brain-status-configured">Configurado (' + masked + ')</span><button type="button" class="small secondary" onclick="clearBrainCredential(\'' + idSafe + '\')" title="Borrar clave guardada">Borrar</button>'
+            : '<span style="font-size:.75rem;color:var(--muted);white-space:nowrap;">Usa “Cargar Bóveda”</span>';
+          return '<div class="brain-model-row"><span class="brain-model-label" style="' + labelColor + '">' + nameSafe + '</span><div class="brain-model-actions">' + conectarLink + ' ' + configBtn + '</div></div>';
+        }).join('');
+      }
+      listEl.innerHTML = html || '<div style="color:var(--muted);font-size:.8rem;">No hay modelos configurados. Usa Ollama (free) o Conectar para API.</div>';
+    }
+    async function setBrainModelAndClose(fullKey) {
+      if (!fullKey) return;
+      await setBrainModel(fullKey);
+      var panel = document.getElementById('brain-model-panel');
+      if (panel) { panel.style.display = 'none'; updateBrainElegirButtonState(); }
+      if (window._toast) window._toast('Entorno: ' + (fullKey.split(':')[1] || fullKey));
+    }
+    async function setBrainMode(mode) {
+      try {
+        // Si el panel de "Elegir modelo" está abierto, ciérralo al cambiar de modo.
+        // Esto evita que el botón "Auto" se quede en estado secundario por panelOpen=true.
+        var panel = document.getElementById('brain-model-panel');
+        if (panel && panel.style.display === 'block') {
+          panel.style.display = 'none';
+          updateBrainElegirButtonState();
+        }
+        var r = await post('/api/brain/state', { mode: mode });
+        if (!r || r.ok === false) throw new Error(r && r.error ? r.error : 'No se pudo cambiar el modo');
+        await loadBrainState();
+        updateBrainElegirButtonState();
+        if (window._toast) window._toast(mode === 'auto' ? 'Cerebro en Auto (multi-IA)' : 'Cerebro en Manual: elige una IA');
+      } catch (e) {
+        await loadBrainState();
+        updateBrainElegirButtonState();
+        var msg = (e && e.message) ? e.message : 'Error al cambiar modo';
+        if (window._toast) window._toast(msg); else alert(msg);
+      }
+    }
+    function setBrainModelFromSelect() {
+      const sel = document.getElementById('brain-model-select');
+      if (!sel) return;
+      setBrainModel(sel.value || null);
+    }
+    async function setBrainModel(fullKey) {
+      try {
+        await post('/api/brain/state', { mode: 'manual', override_model: fullKey || null });
+        await loadBrainState();
+        if (window._toast) window._toast(fullKey ? 'IA fijada: ' + (fullKey.split(':')[1] || fullKey) : 'Selecciona una IA');
+      } catch (e) {
+        if (window._toast) window._toast('Error: ' + (e && e.message) || 'brain');
+      }
+    }
+    async function loadBrainVault() {
+      var btn = document.getElementById('brain-btn-vault');
+      var old = btn ? btn.textContent : '';
+      if (btn) { btn.disabled = true; btn.textContent = 'Cargando…'; }
+      try {
+        var r = await post('/api/brain/credentials/load-vault', {});
+        if (!r || r.ok === false) throw new Error((r && r.error) ? r.error : 'vault_failed');
+        _brainState = _brainState || {};
+        if (r.credentials) _brainState.credentials = r.credentials;
+        await loadBrainState();
+        renderBrainModelList();
+        showToast('Bóveda cargada. Proveedores: ' + ((r.loaded_providers || []).join(', ') || 'ninguno'));
+      } catch (e) {
+        showToast('Error Bóveda: ' + ((e && e.message) || 'vault'), true);
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = old || 'Cargar Bóveda'; }
+      }
+    }
+    async function clearBrainCredential(providerId) {
+      if (!providerId) return;
+      try {
+        var r = await post('/api/brain/credentials', { provider_id: providerId, api_key: null });
+        if (r && r.credentials) {
+          _brainState = _brainState || {};
+          _brainState.credentials = r.credentials;
+        }
+        await loadBrainState();
+        renderBrainModelList();
+        showToast('Clave eliminada: ' + providerId);
+      } catch (e) {
+        showToast('Error al borrar: ' + ((e && e.message) || providerId), true);
+      }
+    }
+    function openBrainAudit() {
+      try { window.open((window._apiBase || '') + '/nervous/brain/audit', '_blank', 'width=980,height=700'); } catch(e) {}
     }
     async function loadVersion() {
       const d = await get('/version');
@@ -1466,6 +2604,40 @@
       const emergencyBtn = document.getElementById('owner-emergency-btn');
       if (emergencyBtn) emergencyBtn.textContent = (UI_STRINGS['owner.emergency'] || 'Emergency:') + ' ' + (data.emergency ? (UI_STRINGS['owner.emergency_on'] || 'ON') : (UI_STRINGS['owner.emergency_off'] || 'OFF'));
     }
+    async function loadNerveStatus() {
+      const val = document.getElementById('organs-status');
+      const detail = document.getElementById('organs-detail');
+      try {
+        const d = await get('/api/nerve/status');
+        if (!d || d.ok === false) {
+          if (val) val.textContent = '—';
+          if (detail) detail.innerHTML = '<span style="color:var(--red);">Error al cargar</span>';
+          return;
+        }
+        const eyes = d.eyes || {};
+        const hands = d.hands || {};
+        const feet = d.feet || {};
+        const eyesOk = !!eyes.nexus_available;
+        const handsOk = hands.deps_ok === null ? null : !!hands.deps_ok;
+        const feetDriver = (feet.driver || 'none');
+        if (val) {
+          val.innerHTML =
+            'Ojos: <span style="color:' + (eyesOk ? 'var(--green)' : 'var(--amber)') + ';">' + (eyesOk ? 'NEXUS OK' : 'Local') + '</span>' +
+            ' · Manos: <span style="color:' + (handsOk === null ? 'var(--muted)' : (handsOk ? 'var(--green)' : 'var(--red)')) + ';">' + (handsOk === null ? '—' : (handsOk ? 'OK' : 'Deps')) + '</span>' +
+            ' · Pies: <span style="color:' + (feetDriver !== 'none' ? 'var(--green)' : 'var(--muted)') + ';">' + feetDriver.toUpperCase() + '</span>';
+        }
+        if (detail) {
+          const supports = (eyes.nexus_snapshot_supports || []).join(', ');
+          const snap = eyes.nexus_snapshot_url || '';
+          detail.innerHTML =
+            (snap ? ('<span style="color:var(--muted);">snapshot:</span> <span style="color:var(--purple-light);">' + snap + '</span><br>') : '') +
+            (supports ? ('<span style="color:var(--muted);">params:</span> ' + supports) : '');
+        }
+      } catch (e) {
+        if (val) val.textContent = '—';
+        if (detail) detail.innerHTML = '<span style="color:var(--red);">Sin conexión</span>';
+      }
+    }
     async function ownerToggleEmergency() {
       const d = await get('/owner/status');
       const next = !(d && d.data && d.data.emergency);
@@ -1576,6 +2748,8 @@
       try {
         await Promise.all([
           loadStatus(),
+          loadBrainState(),
+          loadNerveStatus(),
           loadCamerasStatus(),
           loadVersion(),
           loadHealth(),
@@ -1592,7 +2766,8 @@
           loadOwnerStatus(),
           loadGAStatus(),
           loadProductStatus(),
-          loadGovernanceStatus()
+          loadGovernanceStatus(),
+          ccRefreshComms()
         ]);
         setLastUpdate();
       } catch (e) {
@@ -1716,6 +2891,7 @@
       const titleEl = document.getElementById('expand-modal-title');
       const modal = document.getElementById('expand-modal');
       if (!body || !titleEl || !modal) return;
+      modal.classList.remove('expand-modal--atlas');
       const selectors = (selector || '').split(',').map(s => s.trim()).filter(Boolean);
       body.innerHTML = '';
       if (!selectors.length) {
@@ -1753,10 +2929,67 @@
       }
       titleEl.textContent = title || 'Ampliar';
       modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
+    }
+    var atlasExpandCardOriginalParent = null;
+    var atlasExpandCardOriginalNext = null;
+    var camerasExpandCardOriginalParent = null;
+    var camerasExpandCardOriginalNext = null;
+    function expandCamerasPanel() {
+      const modal = document.getElementById('expand-modal');
+      const body = document.getElementById('expand-modal-body');
+      const titleEl = document.getElementById('expand-modal-title');
+      const card = document.getElementById('cameras-card');
+      if (!modal || !body || !titleEl || !card) return;
+      body.innerHTML = '';
+      titleEl.textContent = 'Cámaras (Cuerpo)';
+      modal.classList.remove('expand-modal--atlas');
+      modal.classList.add('expand-modal--cameras');
+      camerasExpandCardOriginalParent = card.parentNode;
+      camerasExpandCardOriginalNext = card.nextElementSibling;
+      body.appendChild(card);
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
+    }
+    function expandAtlasPanel() {
+      const modal = document.getElementById('expand-modal');
+      const body = document.getElementById('expand-modal-body');
+      const titleEl = document.getElementById('expand-modal-title');
+      const card = document.getElementById('atlas-interact-card');
+      if (!modal || !body || !titleEl || !card) return;
+      body.innerHTML = '';
+      titleEl.textContent = UI_STRINGS['robot.title'] || 'Interactuar con ATLAS';
+      modal.classList.remove('expand-modal--cameras');
+      modal.classList.add('expand-modal--atlas');
+      atlasExpandCardOriginalParent = card.parentNode;
+      atlasExpandCardOriginalNext = card.nextElementSibling;
+      body.appendChild(card);
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
     }
     function closeExpandModal() {
       const modal = document.getElementById('expand-modal');
-      if (modal) modal.classList.remove('open');
+      if (!modal) return;
+      const body = document.getElementById('expand-modal-body');
+      const atlasCard = document.getElementById('atlas-interact-card');
+      const camerasCard = document.getElementById('cameras-card');
+      if (atlasCard && body && body.contains(atlasCard) && atlasExpandCardOriginalParent) {
+        if (atlasExpandCardOriginalNext) atlasExpandCardOriginalParent.insertBefore(atlasCard, atlasExpandCardOriginalNext);
+        else atlasExpandCardOriginalParent.appendChild(atlasCard);
+        atlasExpandCardOriginalParent = null;
+        atlasExpandCardOriginalNext = null;
+      }
+      if (camerasCard && body && body.contains(camerasCard) && camerasExpandCardOriginalParent) {
+        if (camerasExpandCardOriginalNext) camerasExpandCardOriginalParent.insertBefore(camerasCard, camerasExpandCardOriginalNext);
+        else camerasExpandCardOriginalParent.appendChild(camerasCard);
+        camerasExpandCardOriginalParent = null;
+        camerasExpandCardOriginalNext = null;
+      }
+      body.innerHTML = '';
+      modal.classList.remove('expand-modal--atlas');
+      modal.classList.remove('expand-modal--cameras');
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden', 'true');
     }
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') closeExpandModal();
@@ -1803,12 +3036,18 @@
         if (status) { status.textContent = 'Error: ' + (err.message || err); status.className = 'badge err'; }
       }
     }
+    function formatLocalTime(isoStr) {
+      if (!isoStr) return '--:--:--';
+      try {
+        var d = new Date(isoStr);
+        return d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+      } catch (_) { return (isoStr.split('T')[1] || '').substring(0, 8); }
+    }
     function appendLiveEvent(ev) {
       const pre = document.getElementById('live-console-output');
       if (!pre) return;
       const phase = ev.phase || '?';
-      const ts = (ev.ts || '').split('T')[1] || '';
-      const t = ts.substring(0, 12);
+      const t = formatLocalTime(ev.ts);
       let line = '[' + t + '] ';
       if (phase === 'cycle_start') line += '>> Ciclo ANS iniciado';
       else if (phase === 'cycle_end') line += '<< Ciclo finalizado: ' + (ev.message || '');
@@ -1828,7 +3067,19 @@
         line += '  << pip ' + (ev.ok ? 'OK' : 'FAIL') + (cmt ? ': ' + cmt.substring(0, 50) : '') + (ev.message && !cmt ? ': ' + ev.message.substring(0, 40) : '');
       }
       else if (phase === 'heartbeat') line += '.';
-      else if (phase === 'evolution_log') line += '  ' + (ev.message || '').substring(0, 120) + (ev.ok === false ? ' [ERROR]' : '');
+      else if (phase === 'evolution_log') {
+        line += '  ' + (ev.message || '').substring(0, 120) + (ev.ok === false ? ' [ERROR]' : '');
+        var bitacoraList = document.getElementById('bitacora-list');
+        var bitacoraEmpty = document.getElementById('bitacora-empty');
+        if (bitacoraList) {
+          if (bitacoraEmpty) bitacoraEmpty.style.display = 'none';
+          var row = document.createElement('div');
+          row.className = 'bitacora-row';
+          row.innerHTML = '<span style="color:var(--muted);">' + t + '</span> <strong>Problema:</strong> Evolución → <strong>Acción:</strong> — → <span class="badge ' + (ev.ok === false ? 'err' : 'ok') + '">' + (ev.ok === false ? 'Error' : 'OK') + '</span> <span style="color:var(--muted);">' + (ev.message || '').substring(0, 60) + '</span>';
+          row.style.marginBottom = '.35rem';
+          bitacoraList.insertBefore(row, bitacoraList.firstChild);
+        }
+      }
       else line += '  ' + phase + ': ' + (ev.message || JSON.stringify(ev)).substring(0, 80);
       pre.textContent += line + '\n';
       pre.scrollTop = pre.scrollHeight;
@@ -1868,18 +3119,18 @@
     }
 
     async function loadBitacora() {
-      const r = await get('/ans/bitacora?limit=20');
       const list = document.getElementById('bitacora-list');
       const empty = document.getElementById('bitacora-empty');
       if (!list) return;
-      list.querySelectorAll('.bitacora-row').forEach(el => el.remove());
+      const r = await get('/ans/bitacora?limit=50').catch(function() { return null; });
       const items = r && r.ok && r.data ? r.data : [];
+      if (items.length === 0 && (!r || !r.ok)) return;
+      list.querySelectorAll('.bitacora-row').forEach(el => el.remove());
       if (empty) empty.style.display = items.length ? 'none' : 'block';
       items.forEach(function(e) {
         const row = document.createElement('div');
         row.className = 'bitacora-row';
-        const t = (e.timestamp || '').split('T')[1] || '';
-        const time = t.substring(0, 8);
+        const time = formatLocalTime(e.timestamp);
         row.innerHTML = '<span style="color:var(--muted);">' + time + '</span> ' +
           '<strong>Problema:</strong> ' + (e.problema || '—') + ' → ' +
           '<strong>Acción:</strong> ' + (e.accion || '—') + ' → ' +
@@ -1891,12 +3142,81 @@
     }
     (function() {
       var target = document.getElementById('nav-opciones-sections');
-      var ids = ['scanner-downloads-section','live-console-section','product-section','ans-section','owner-console-section','governance-panel','gateway-section','cluster-section','cursor-mode-section','voice-section'];
+      var ids = ['scanner-downloads-section','live-console-section','product-section','ans-section','owner-console-section','governance-panel','gateway-section','cluster-section','voice-section'];
       if (target) ids.forEach(function(id) { var el = document.getElementById(id); if (el) target.appendChild(el); });
     })();
     refreshAll();
     loadLocale();
     setInterval(refreshAll, 30000);
+    setInterval(loadBitacora, 10000);
   </script>
+  <!-- Ventana de ampliación ATLAS (hija directa de body para quedar siempre encima) -->
+  <div id="expand-modal" class="expand-modal" aria-hidden="true" onclick="if(event.target===this) closeExpandModal()">
+    <div class="expand-modal-content" onclick="event.stopPropagation()">
+      <div class="expand-modal-header">
+        <h2 id="expand-modal-title">Interactuar con ATLAS</h2>
+        <button type="button" class="btn-close-expand" onclick="closeExpandModal()" title="Cerrar (Esc)">Cerrar</button>
+      </div>
+      <div id="expand-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Cursor‑ATLAS: centro de mando tipo IDE -->
+  <div id="cursor-atlas-overlay" class="cursor-atlas-overlay" aria-hidden="true" onclick="if(event.target===this) closeCursorAtlas()">
+    <div class="cursor-atlas-shell" onclick="event.stopPropagation()">
+      <div class="cursor-atlas-topbar">
+        <div class="title">CURSOR<span>‑ATLAS</span></div>
+        <div class="cmdbar">
+          <input id="cursor-atlas-cmd" class="cmdbar-input" type="text" placeholder="Orden rápida: /status, /doctor… o pega una URL… (Enter)" onkeydown="if(event.key==='Enter'){ cursorAtlasCmdSubmit(); }">
+        </div>
+        <div class="row" style="margin:0;gap:.35rem;">
+          <button type="button" class="small secondary" onclick="openCmdk()" title="Paleta de comandos (Ctrl+K)"><span class="kbd">Ctrl</span>+<span class="kbd">K</span></button>
+          <button type="button" class="small danger" onclick="closeCursorAtlas()" title="Cerrar (Esc)">Cerrar</button>
+        </div>
+      </div>
+      <div class="cursor-atlas-side">
+        <div class="ca-group">
+          <h3>Navegación</h3>
+          <div class="ca-item" onclick="cursorAtlasNav('chat')"><span>Chat / Plan</span><small class="kbd">1</small></div>
+          <div class="ca-item" onclick="cursorAtlasNav('ops')"><span>OPS Monitor</span><small class="kbd">2</small></div>
+          <div class="ca-item" onclick="cursorAtlasNav('web')"><span>Web (Pies)</span><small class="kbd">3</small></div>
+          <div class="ca-item" onclick="cursorAtlasNav('vision')"><span>Visión (Snapshot)</span><small class="kbd">4</small></div>
+          <div class="ca-item" onclick="cursorAtlasNav('terminal')"><span>Terminal / Consola</span><small class="kbd">5</small></div>
+        </div>
+        <div class="ca-group">
+          <h3>Acciones</h3>
+          <div class="ca-item" onclick="cursorAtlasRunCommand('/status')"><span>/status</span><small>Diagnóstico</small></div>
+          <div class="ca-item" onclick="cursorAtlasRunCommand('/doctor')"><span>/doctor</span><small>Checks</small></div>
+          <div class="ca-item" onclick="cursorAtlasRunCommand('/modules')"><span>/modules</span><small>Inventario</small></div>
+          <div class="ca-item" onclick="reconnectNexus()"><span>Reconectar Cuerpo</span><small>nexus/robot</small></div>
+          <div class="ca-item" onclick="govEmergencyStop()"><span>Emergency Stop</span><small>doble-confirmación</small></div>
+        </div>
+        <div class="ca-group">
+          <h3>Comms</h3>
+          <div class="ca-item" onclick="ccRefreshComms();ccRefreshOps();"><span>Actualizar COMMS/OPS</span><small>estado</small></div>
+          <div class="ca-item" onclick="ccEmitOpsTest()"><span>Emitir OPS test</span><small>audio/telegram</small></div>
+        </div>
+        <div class="value" style="font-size:.78rem;color:var(--muted);">
+          Consejo: todo lo que ATLAS haga en Web/Manos/Pies se verá en <strong>OPS</strong> con evidencia.
+        </div>
+      </div>
+      <div class="cursor-atlas-main" id="cursor-atlas-main-slot"></div>
+    </div>
+  </div>
+
+  <!-- Paleta de comandos -->
+  <div id="cmdk-overlay" class="cmdk-overlay" aria-hidden="true" onclick="if(event.target===this) closeCmdk()">
+    <div class="cmdk-box" onclick="event.stopPropagation()">
+      <div class="cmdk-head">
+        <input id="cmdk-input" type="text" placeholder="Buscar comando… (Enter para ejecutar)" oninput="renderCmdk(this.value)" onkeydown="if(event.key==='Escape'){closeCmdk();}">
+        <span class="hint"><span class="kbd">↑</span>/<span class="kbd">↓</span> navegar · <span class="kbd">Enter</span> ejecutar</span>
+      </div>
+      <div id="cmdk-list" class="cmdk-list"></div>
+      <div class="cmdk-foot">
+        <span>Cursor‑ATLAS</span>
+        <span><span class="kbd">Ctrl</span>+<span class="kbd">K</span> abrir/cerrar</span>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

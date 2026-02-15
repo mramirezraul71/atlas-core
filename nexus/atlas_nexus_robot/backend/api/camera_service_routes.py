@@ -39,14 +39,16 @@ class AddRemoteCameraBody(BaseModel):
 
 
 @router.get("/service/status")
-def camera_service_status():
+def camera_service_status(fast: bool = True):
     """
     Estado del módulo de cámara.
     Siempre incluye la lista de todas las cámaras instaladas (detected).
     """
-    info = get_camera_info()
+    info = get_camera_info(fast=fast)
     base_url = os.getenv("NEXUS_BASE_URL", "http://localhost:8002")
-    detected = detect_cameras_list()
+    # `detect_cameras_list()` puede ser lento (escaneo OpenCV/PnP).
+    # Para health/UX del dashboard, por defecto usamos fast=True.
+    detected = [] if fast else detect_cameras_list()
     network_cameras = get_network_cameras()
     return {
         "ok": True,
@@ -58,6 +60,8 @@ def camera_service_status():
         "stream_url": f"{base_url}{info.get('stream_url', '/api/vision/camera/stream')}",
         "screen_stream_url": f"{base_url}/api/vision/screen/stream",
         "external_eyes_url": f"{base_url}{info.get('external_eyes_url', '/api/vision/external/eyes')}",
+        "fast": fast,
+        "detected_hint": None if not fast else "Usa /api/camera/detect para escanear cámaras (puede tardar).",
     }
 
 
@@ -80,7 +84,7 @@ def camera_connect():
     try:
         from vision.cameras.factory import get_camera, get_camera_info, detect_cameras_list
         cam = get_camera(force_detect=True)
-        info = get_camera_info()
+        info = get_camera_info(fast=False)
         detected = detect_cameras_list()
         if cam and cam.is_opened:
             # Probar lectura

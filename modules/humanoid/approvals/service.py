@@ -49,6 +49,11 @@ def create(action: str, payload: Dict[str, Any], job_id: Optional[str] = None, r
             pass
         if risk in ("high", "critical"):
             _notify_telegram_approval_pending(item)
+            try:
+                from modules.humanoid.comms.ops_bus import emit as ops_emit
+                ops_emit("approval", f"Aprobación pendiente {risk.upper()}: id={item.get('id')} action={action}", level="high", data={"id": item.get("id"), "action": action, "risk": risk})
+            except Exception:
+                pass
         return {"ok": True, "approval_id": item["id"], "error": None}
     except Exception as e:
         return {"ok": False, "approval_id": None, "error": str(e)}

@@ -23,7 +23,10 @@
 - Hace: `git fetch`, comprueba estado (branch, head, remote), aplica filtros a `git status` y, si está configurado, puede hacer `pull` (o solo reportar "update available").
 
 - **Ejecución automática por ATLAS:**  
-  Al arrancar el servidor ATLAS (con `SCHED_ENABLED=true`), se registra un job del scheduler llamado `repo_monitor_cycle` que ejecuta `scripts/repo_monitor.py --cycle` cada `cycle.interval_seconds` segundos (por defecto 600). No hace falta Programador de tareas de Windows: el ciclo corre en segundo plano. Ver `modules/humanoid/scheduler/repo_monitor_jobs.py` y `runner.py` (kind `repo_monitor_cycle`).
+  Al arrancar el servidor ATLAS (con `SCHED_ENABLED=true`), se registran dos jobs:
+  - **repo_monitor_cycle:** ejecuta `--cycle` (fetch + status) cada `cycle.interval_seconds` (por defecto 600).
+  - **repo_monitor_after_fix:** ejecuta `--after-fix` (commit + push) cada `after_fix.auto_schedule_interval_seconds` si es > 0 (por defecto 1800 = 30 min). Así los cambios locales se suben al remoto de forma automática.
+  Ver `modules/humanoid/scheduler/repo_monitor_jobs.py` y `runner.py` (kinds `repo_monitor_cycle`, `repo_monitor_after_fix`).
 
 - **Programar ciclos (Windows, sin ATLAS):**  
   Si no usas el servidor ATLAS, Programador de tareas: ejecutar `powershell.exe -File "C:\ATLAS_PUSH\scripts\run_repo_monitor.ps1" -Cycle` con la periodicidad deseada.
@@ -34,6 +37,8 @@
   `scripts\run_repo_monitor.ps1 -AfterFix`  
   Con mensaje:  
   `scripts\run_repo_monitor.ps1 -AfterFix -Message "fix: descripción"`
+
+- **Automático:** Si en `config/repo_monitor.yaml` tienes `after_fix.auto_schedule_interval_seconds: 1800` (o otro valor en segundos), el scheduler ejecuta after-fix cada ese intervalo y los cambios del repo se suben solos a la rama configurada en `repo.push_branch` (p. ej. `intent-input-rename`).
 
 - Solo se añaden y commitean archivos que **no** estén en `git.exclude_paths`. Si se define `include_paths_for_commit`, solo se consideran rutas que coincidan con esos patrones.
 
@@ -83,9 +88,10 @@ En la Bitácora aparecen como problema **"Monitor repo"** y el detalle es el men
 
 ## Configuración de ejemplo
 
+- **Rama de push:** `repo.push_branch: "intent-input-rename"` (ya configurado) para que after-fix suba a esa rama.
+- **Actualización automática al repo:** `after_fix.auto_schedule_interval_seconds: 1800` (30 min) para que el scheduler ejecute commit+push periódicamente. Si es 0, solo se hace push manual o vía API.
 - **Solo monitoreo (report_only):** `cycle.report_only: true`, `cycle.pull_on_cycle: false` → solo fetch y log de "update available".
 - **Pull automático en ciclo:** `cycle.pull_on_cycle: true`, `cycle.report_only: false`.
-- **Rama de push distinta:** `repo.push_branch: "intent-input-rename"` para hacer push a esa rama en after-fix.
 
 ## Códigos de salida
 

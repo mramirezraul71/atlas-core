@@ -4,7 +4,11 @@ ATLAS NEXUS - Object Detection con YOLOv8
 
 import cv2
 import numpy as np
-from ultralytics import YOLO
+try:
+    # Optional dependency. If missing, backend must still boot.
+    from ultralytics import YOLO  # type: ignore
+except Exception:  # pragma: no cover
+    YOLO = None
 import logging
 from typing import List, Dict, Optional
 from pathlib import Path
@@ -21,7 +25,7 @@ class ObjectDetector:
             model_name: Modelo YOLO (yolov8n.pt = nano, más rápido)
         """
         self.model_name = model_name
-        self.model: Optional[YOLO] = None
+        self.model = None
         self.is_loaded = False
         
         # Clases COCO en español
@@ -38,6 +42,11 @@ class ObjectDetector:
     
     def load_model(self) -> bool:
         """Carga el modelo YOLO"""
+        if YOLO is None:
+            logger.warning("YOLO deshabilitado: falta ultralytics. Instala 'ultralytics' para detección.")
+            self.is_loaded = False
+            self.model = None
+            return False
         try:
             logger.info(f"Cargando modelo YOLO {self.model_name}...")
             self.model = YOLO(self.model_name)

@@ -49,6 +49,8 @@ class Updater:
                 cwd=cwd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=10,
             )
             out["status_output"] = (r.stdout or r.stderr or "").strip()
@@ -61,6 +63,8 @@ class Updater:
                 cwd=cwd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=10,
             )
             out["diff_output"] = (r2.stdout or "").strip()[:8192]
@@ -162,6 +166,8 @@ class Updater:
                     [sys.executable, "-m", "pip", "install", cmd.replace("pip install ", "").strip()],
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=300,
                 )
                 out["applied_commands"].append({"cmd": cmd, "returncode": r.returncode, "stderr": (r.stderr or "")[:500]})

@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 from modules.humanoid.kernel import BaseModule, HealthCheckMixin
 from .telegram_bridge import TelegramBridge
+from .ops_bus import emit as ops_emit, status as ops_status, recent as ops_recent
 
 
 class CommsModule(BaseModule, HealthCheckMixin):
@@ -24,3 +25,6 @@ class CommsModule(BaseModule, HealthCheckMixin):
 
 
 __all__ = ["CommsModule", "TelegramBridge"]
+
+# Convenience exports
+__all__ += ["ops_emit", "ops_status", "ops_recent"]

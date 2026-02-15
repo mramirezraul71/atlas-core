@@ -1,17 +1,46 @@
-"""Proxy para Robot (cámaras, visión): /cuerpo/* -> NEXUS_ROBOT_URL (5174).
-Permite embed del dashboard Robot sin perder funcionalidad de NEXUS."""
+"""Proxy para Robot (cámaras, visión): /cuerpo/* -> Robot UI (5174) y Robot API (8002).
+
+Problema histórico:
+- `NEXUS_ROBOT_URL` suele apuntar al FRONTEND (5174).
+- La API real de cámaras/visión vive en `NEXUS_ROBOT_API_URL` (8002).
+Si se usa una sola base para todo, rutas tipo `/cuerpo/api/...` terminan yendo al frontend y fallan.
+
+Solución:
+- Enrutado por prefijo: UI para HTML/assets; API para `/api/*`, `/docs`, `/openapi.json`, `/health`, `/status`, `/ws`, etc.
+"""
 import os
 import httpx
 from fastapi import Request
 from fastapi.responses import Response
 
-ROBOT_BASE = (os.getenv("NEXUS_ROBOT_URL") or "http://127.0.0.1:8002").rstrip("/")
+ROBOT_UI_BASE = (os.getenv("NEXUS_ROBOT_URL") or "http://127.0.0.1:5174").rstrip("/")
+ROBOT_API_BASE = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
 TIMEOUT = float(os.getenv("NEXUS_TIMEOUT", "30"))
+
+_API_PREFIXES = (
+    "api/",
+    "docs",
+    "redoc",
+    "openapi",
+    "openapi.json",
+    "ws",
+    "health",
+    "status",
+)
+
+
+def _pick_base(path: str) -> str:
+    p = (path or "").lstrip("/")
+    for pref in _API_PREFIXES:
+        if p == pref or p.startswith(pref):
+            return ROBOT_API_BASE
+    return ROBOT_UI_BASE
 
 
 async def proxy_to_cuerpo(request: Request, path: str) -> Response:
     """Reenvía a Robot frontend (cámaras, visión, dashboard)."""
-    url = f"{ROBOT_BASE}/{path}" if path else ROBOT_BASE + "/"
+    base = _pick_base(path)
+    url = f"{base}/{path}" if path else base + "/"
     headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "connection")}
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:

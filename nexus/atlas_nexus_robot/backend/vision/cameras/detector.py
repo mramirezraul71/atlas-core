@@ -73,24 +73,35 @@ def _detect_windows_pnp() -> List[Dict[str, str]]:
 
 
 def _detect_opencv_indices() -> List[Dict[str, Any]]:
-    """Enumerar índices de cámara que OpenCV puede abrir (0-7 para Insta360, etc.)."""
-    available = []
-    backends = [cv2.CAP_MSMF] if hasattr(cv2, "CAP_MSMF") and sys.platform == "win32" else [cv2.CAP_ANY]
+    """Enumerar índices de cámara que OpenCV puede abrir (0-9, múltiples backends)."""
+    seen = {}
+    if sys.platform == "win32":
+        backends = []
+        if hasattr(cv2, "CAP_DSHOW"):
+            backends.append(cv2.CAP_DSHOW)
+        if hasattr(cv2, "CAP_MSMF"):
+            backends.append(cv2.CAP_MSMF)
+        backends.append(cv2.CAP_ANY)
+    else:
+        backends = [cv2.CAP_ANY]
     for backend in backends:
-        for i in range(8):
-            cap = cv2.VideoCapture(i, backend)
-            if cap.isOpened():
-                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
-                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
-                cap.release()
-                available.append({
-                    "index": i,
-                    "backend": int(backend),
-                    "resolution": [w or 640, h or 480],
-                })
-        if available:
-            break
-    return available
+        for i in range(10):
+            if i in seen:
+                continue
+            try:
+                cap = cv2.VideoCapture(i, backend)
+                if cap.isOpened():
+                    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+                    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+                    cap.release()
+                    seen[i] = {
+                        "index": i,
+                        "backend": int(backend),
+                        "resolution": [w or 640, h or 480],
+                    }
+            except Exception:
+                pass
+    return [seen[k] for k in sorted(seen)]
 
 
 def _match_to_registry(device_name: str, vid_pid: str = "") -> Optional[Dict[str, Any]]:

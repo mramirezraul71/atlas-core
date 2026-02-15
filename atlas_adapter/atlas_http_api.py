@@ -1,7 +1,11 @@
-"""ATLAS HTTP API adapter
+r"""ATLAS HTTP API adapter
 Expone /status /tools /execute usando el command_router.handle de C:\ATLAS\modules\command_router.py
 """
+import asyncio
+import json
 import os
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Cargar config ANTES de importar módulos que usan os.getenv (audit, policy, etc.)
@@ -38,12 +42,16 @@ _ensure_db_path("SCHED_DB_PATH", "atlas_sched.sqlite")
 _ensure_db_path("ATLAS_MEMORY_DB_PATH", "atlas_memory.sqlite")
 _ensure_db_path("MEMORY_DB_PATH", "atlas_memory.sqlite")
 _ensure_db_path("AUDIT_DB_PATH", "atlas_audit.sqlite")
+_ensure_db_path("LEARNING_EPISODIC_DB_PATH", "learning_episodic.sqlite")
+_ensure_db_path("NERVOUS_DB_PATH", "atlas_nervous.sqlite")
+_ensure_db_path("NERVOUS_DB_PATH", "nervous_system.sqlite")
+_ensure_db_path("NERVOUS_DB_PATH", "nervous_system.sqlite")
 
 from typing import List, Optional
 
 from fastapi import FastAPI, Request, Header, WebSocket, File, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 import importlib.util
 
 ATLAS_ROOT = Path(r"C:\ATLAS")
@@ -69,6 +77,19 @@ async def _lifespan(app):
     try:
         from modules.humanoid.deploy.healthcheck import _set_app_start_time
         _set_app_start_time()
+    except Exception:
+        pass
+    # Cargar Bóveda al arranque (tokens Telegram/WhatsApp, etc.) sin pedir .env.
+    try:
+        from dotenv import load_dotenv
+        from pathlib import Path
+        vault_path = (os.getenv("ATLAS_VAULT_PATH") or r"C:\Users\Raul\OneDrive\RAUL - Personal\Escritorio\credenciales.txt").strip()
+        candidates = [vault_path, r"C:\dev\credenciales.txt"]
+        for c in candidates:
+            p = Path(c)
+            if p.is_file():
+                load_dotenv(str(p), override=False)
+                break
     except Exception:
         pass
     try:
@@ -119,8 +140,20 @@ async def _lifespan(app):
             except Exception:
                 pass
             try:
+                # Sistema Nervioso: sensores -> score -> bitácora/incidentes (scheduler job)
+                from modules.humanoid.nervous.scheduler_jobs import ensure_nervous_jobs
+                ensure_nervous_jobs()
+            except Exception:
+                pass
+            try:
                 from modules.humanoid.comms.makeplay_scheduler import ensure_makeplay_jobs
                 ensure_makeplay_jobs()
+            except Exception:
+                pass
+            try:
+                # Telegram polling (aprobaciones remotas sin webhook)
+                from modules.humanoid.comms.telegram_poller import start_polling
+                start_polling()
             except Exception:
                 pass
             try:
@@ -224,6 +257,10 @@ app = FastAPI(
         {"name": "Deploy", "description": "Blue-green deployment, canary ramp-up, deploy status y reportes."},
         {"name": "Cluster", "description": "Atlas Cluster: nodos, heartbeat, routing, ejecución remota (hands/web/vision/voice)."},
         {"name": "Gateway", "description": "Stealth Gateway: Cloudflare / Tailscale / SSH / LAN, bootstrap, health."},
+        {
+            "name": "Learning",
+            "description": "Aprendizaje continuo: procesar situaciones, consolidar conocimiento, rutina diaria (lección del tutor), base de conocimiento, incertidumbre y métricas de crecimiento.",
+        },
     ],
 )
 
@@ -242,16 +279,20 @@ class Step(BaseModel):
     args: dict = {}
 
 def _robot_connected() -> bool:
-    """Ping Robot (8002) para estado cámaras."""
+    """Ping Robot: prueba backend (8002) y luego UI (NEXUS_ROBOT_URL)."""
     import urllib.request
     import os
-    url = (os.getenv("NEXUS_ROBOT_API_URL") or os.getenv("NEXUS_ROBOT_URL") or "http://127.0.0.1:8002").rstrip("/") + "/"
-    try:
-        req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=2) as r:
-            return r.status == 200
-    except Exception:
-        return False
+    base_api = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
+    base_ui = (os.getenv("NEXUS_ROBOT_URL") or base_api).rstrip("/")
+    for base in (base_api, base_ui):
+        try:
+            req = urllib.request.Request(base + "/", method="GET")
+            with urllib.request.urlopen(req, timeout=2) as r:
+                if r.status == 200:
+                    return True
+        except Exception:
+            pass
+    return False
 
 
 @app.get("/status")
@@ -307,14 +348,21 @@ def post_nexus_connection(body: NexusConnectionBody):
 
 @app.post("/api/nexus/reconnect", tags=["NEXUS"])
 def nexus_reconnect(clear_cache: bool = False):
-    """Reconectar NEXUS: mata proceso en 8000, opcionalmente limpia cache, arranca servicio y hace ping."""
+    """Reconectar NEXUS (no-bloqueante): opcionalmente limpia cache, lanza arranque y devuelve de inmediato."""
     try:
         if clear_cache:
             from modules.nexus_heartbeat import clear_nexus_cache
             clear_nexus_cache()
-        from modules.nexus_heartbeat import reconnect_nexus_and_poll
-        state = reconnect_nexus_and_poll(wait_after_start_sec=6, poll_interval_sec=2, max_polls=15)
-        return {"ok": True, "connected": state.get("connected", False), **state}
+        from modules.nexus_heartbeat import restart_nexus, get_nexus_connection_state
+        started = restart_nexus()
+        state = get_nexus_connection_state()
+        return {
+            "ok": True,
+            "started": bool(started),
+            "connected": state.get("connected", False),
+            **state,
+            "message": "NEXUS arrancando en segundo plano. Espera 10-20s y pulsa Actualizar/Estado.",
+        }
     except Exception as e:
         return {"ok": False, "connected": False, "error": str(e)}
 
@@ -377,6 +425,242 @@ def api_memory_stats():
         return get_semantic_memory().get_statistics()
     except Exception as e:
         return {"error": str(e), "total_experiences": 0, "embedding_dimension": 0, "storage_size_mb": 0}
+
+
+# ---------- Cerebro: modo Auto/Manual e IA dominante ----------
+class BrainStateBody(BaseModel):
+    mode: Optional[str] = None   # "auto" | "manual"
+    override_model: Optional[str] = None  # full_key ej. ollama:llama3.1:latest, o null
+
+
+class ProviderCredentialBody(BaseModel):
+    provider_id: str   # openai | anthropic | gemini | perplexity
+    api_key: Optional[str] = None  # null o vacío = borrar clave
+
+
+def _brain_ollama_available() -> bool:
+    try:
+        from modules.humanoid.deploy.healthcheck import _check_llm_reachable
+        return _check_llm_reachable().get("ok", False)
+    except Exception:
+        return False
+
+
+def _brain_ollama_available_timeout(seconds: float = 2.0) -> bool:
+    """Comprueba Ollama con timeout para no bloquear el dashboard."""
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        fut = ex.submit(_brain_ollama_available)
+        try:
+            return fut.result(timeout=seconds)
+        except (concurrent.futures.TimeoutError, Exception):
+            return False
+
+
+@app.get("/api/brain/state", tags=["Cerebro"])
+def api_brain_state():
+    """Estado del cerebro: modo (auto/manual), IA dominante, lista de modelos para el selector."""
+    try:
+        from modules.humanoid.ai.brain_state import get_brain_state
+        from modules.humanoid.ai.registry import get_model_specs
+        state = get_brain_state()
+        ollama_ok = _brain_ollama_available_timeout(2.0)
+        specs = get_model_specs(ollama_ok)
+        # Lista para dropdown: full_key, label (model_name + route), is_free
+        models = [
+            {
+                "full_key": s.full_key,
+                "label": "%s (%s)" % (s.model_name, s.route),
+                "model_name": s.model_name,
+                "route": s.route,
+                "is_free": s.is_free,
+                "provider_id": s.provider_id,
+            }
+            for s in specs
+        ]
+        from modules.humanoid.ai.provider_credentials import get_credentials_status
+        _credentials = get_credentials_status()
+        _allow_external = (os.getenv("AI_ALLOW_EXTERNAL_APIS") or "").strip().lower() in ("1", "true", "yes", "y", "on")
+        _paid_default_models = {
+            "gemini": "gemini-1.5-flash",
+            "openai": "gpt-4o-mini",
+            "anthropic": "claude-3-5-sonnet-20241022",
+            "perplexity": "sonar",
+        }
+        for pid, default_model in _paid_default_models.items():
+            if _allow_external and (_credentials.get(pid) or {}).get("configured"):
+                full_key = "%s:%s" % (pid, default_model)
+                models.append({
+                    "full_key": full_key,
+                    "label": "%s (manual)" % default_model,
+                    "model_name": default_model,
+                    "route": "CHAT",
+                    "is_free": False,
+                    "provider_id": pid,
+                })
+        mode = state.get("mode") or "auto"
+        override = state.get("override_model")
+        provider_connect_urls = {
+            "openai": "https://platform.openai.com/api-keys",
+            "anthropic": "https://console.anthropic.com/",
+            "gemini": "https://aistudio.google.com/app/apikey",
+            "perplexity": "https://www.perplexity.ai/settings/api",
+        }
+        provider_options = [
+            {"id": "openai", "name": "OpenAI (GPT)", "connect_url": provider_connect_urls["openai"]},
+            {"id": "anthropic", "name": "Anthropic (Claude)", "connect_url": provider_connect_urls["anthropic"]},
+            {"id": "gemini", "name": "Google Gemini", "connect_url": provider_connect_urls["gemini"]},
+            {"id": "perplexity", "name": "Perplexity", "connect_url": provider_connect_urls["perplexity"]},
+        ]
+        if mode == "auto":
+            connected_names = [p["name"] for p in provider_options if (_credentials.get(p["id"]) or {}).get("configured")]
+            dominant_display = "Multi-IA (auto): el router elige el especialista por tarea"
+            if connected_names:
+                dominant_display += " · " + ", ".join(connected_names) + " conectado(s)"
+        else:
+            dominant_display = override or "— Selecciona una IA —"
+            if override and ":" in override:
+                prov_id = override.split(":", 1)[0].strip().lower()
+                model_part = override.split(":", 1)[1].strip()
+                for p in provider_options:
+                    if p.get("id") == prov_id:
+                        dominant_display = p.get("name", model_part)
+                        break
+                else:
+                    dominant_display = model_part
+        credentials = _credentials
+        return {
+            "ok": True,
+            "mode": mode,
+            "override_model": override,
+            "dominant_display": dominant_display,
+            "available_models": models,
+            "provider_connect_urls": provider_connect_urls,
+            "provider_options": provider_options,
+            "credentials": credentials,
+        }
+    except Exception as e:
+        provider_connect_urls = {
+            "openai": "https://platform.openai.com/api-keys",
+            "anthropic": "https://console.anthropic.com/",
+            "gemini": "https://aistudio.google.com/app/apikey",
+            "perplexity": "https://www.perplexity.ai/settings/api",
+        }
+        provider_options = [
+            {"id": "openai", "name": "OpenAI (GPT)", "connect_url": provider_connect_urls["openai"]},
+            {"id": "anthropic", "name": "Anthropic (Claude)", "connect_url": provider_connect_urls["anthropic"]},
+            {"id": "gemini", "name": "Google Gemini", "connect_url": provider_connect_urls["gemini"]},
+            {"id": "perplexity", "name": "Perplexity", "connect_url": provider_connect_urls["perplexity"]},
+        ]
+        credentials = {}
+        try:
+            from modules.humanoid.ai.provider_credentials import get_credentials_status
+            credentials = get_credentials_status()
+        except Exception:
+            pass
+        return {
+            "ok": False, "error": str(e), "mode": "auto", "override_model": None,
+            "dominant_display": "Multi-IA (auto): el router elige el especialista por tarea",
+            "available_models": [], "provider_connect_urls": provider_connect_urls, "provider_options": provider_options,
+            "credentials": credentials,
+        }
+
+
+@app.post("/api/brain/state", tags=["Cerebro"])
+def api_brain_state_post(body: BrainStateBody):
+    """Fija modo (auto/manual) y/o modelo override. En auto se ignora override."""
+    try:
+        from modules.humanoid.ai.brain_state import set_brain_state
+        state = set_brain_state(mode=body.mode, override_model=body.override_model)
+        return {"ok": True, "state": state}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/brain/credentials/status", tags=["Cerebro"])
+def api_brain_credentials_status():
+    """Estado de API keys por proveedor (configured, masked). Nunca devuelve la clave en claro."""
+    try:
+        from modules.humanoid.ai.provider_credentials import get_credentials_status
+        return {"ok": True, "credentials": get_credentials_status()}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "credentials": {}}
+
+
+@app.post("/api/brain/credentials/load-vault", tags=["Cerebro"])
+def api_brain_credentials_load_vault():
+    """Carga credenciales desde la Bóveda (credenciales.txt) y las persiste.
+
+    - No devuelve claves en claro.
+    - Usa ruta por directiva (o ATLAS_VAULT_PATH si está definida).
+    """
+    try:
+        from pathlib import Path
+        from dotenv import load_dotenv
+        from modules.humanoid.ai.provider_credentials import set_provider_api_key, get_credentials_status
+
+        vault_path = (os.getenv("ATLAS_VAULT_PATH") or r"C:\Users\Raul\OneDrive\RAUL - Personal\Escritorio\credenciales.txt").strip()
+        candidates = [vault_path, r"C:\dev\credenciales.txt"]
+        used = ""
+        for c in candidates:
+            p = Path(c)
+            if p.is_file():
+                used = str(p)
+                load_dotenv(str(p), override=True)
+                break
+        if not used:
+            return {"ok": False, "error": "vault_not_found", "vault_candidates": candidates, "credentials": get_credentials_status()}
+
+        mapping = {
+            "openai": "OPENAI_API_KEY",
+            "anthropic": "ANTHROPIC_API_KEY",
+            "gemini": "GEMINI_API_KEY",
+            "perplexity": "PERPLEXITY_API_KEY",
+        }
+        loaded = []
+        for pid, env_key in mapping.items():
+            v = (os.getenv(env_key) or "").strip()
+            if v:
+                try:
+                    set_provider_api_key(pid, v)
+                    loaded.append(pid)
+                except Exception:
+                    pass
+        return {"ok": True, "vault_path": used, "loaded_providers": loaded, "credentials": get_credentials_status()}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "credentials": {}}
+
+
+@app.post("/api/brain/credentials", tags=["Cerebro"])
+def api_brain_credentials_post(body: ProviderCredentialBody):
+    """Guarda o borra la API key de un proveedor (openai, anthropic, gemini, perplexity). La clave se guarda en config y el robot la usa para ese proveedor."""
+    try:
+        from modules.humanoid.ai.provider_credentials import set_provider_api_key
+        set_provider_api_key(body.provider_id, body.api_key)
+        from modules.humanoid.ai.provider_credentials import get_credentials_status
+        return {"ok": True, "credentials": get_credentials_status()}
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/brain/models", tags=["Cerebro"])
+def api_brain_models():
+    """Lista de modelos disponibles (free + suscripción/API) para el selector del cerebro."""
+    try:
+        from modules.humanoid.ai.registry import get_model_specs
+        ollama_ok = _brain_ollama_available_timeout(2.0)
+        specs = get_model_specs(ollama_ok)
+        free = [s for s in specs if s.is_free]
+        paid = [s for s in specs if not s.is_free]
+        return {
+            "ok": True,
+            "free": [{"full_key": s.full_key, "label": "%s (%s)" % (s.model_name, s.route), "route": s.route} for s in free],
+            "paid": [{"full_key": s.full_key, "label": "%s (%s)" % (s.model_name, s.route), "route": s.route} for s in paid],
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e), "free": [], "paid": []}
 
 
 # ---------- Fase 2: Vision (depth + scene) ----------
@@ -707,36 +991,262 @@ def api_self_programming_execute_sandbox(body: SelfProgramExecuteBody):
 
 @app.get("/api/robot/status", tags=["NEXUS"])
 def robot_status():
-    """Estado del Robot (cámaras, visión) en puerto 8002. Para panel de cámaras."""
+    """Estado del Robot (cámaras, visión). Prueba backend (8002) y luego UI (NEXUS_ROBOT_URL)."""
     import urllib.request
     import os
-    url = (os.getenv("NEXUS_ROBOT_URL") or os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/") + "/api/camera/service/status"
+    base_api = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
+    base_ui = (os.getenv("NEXUS_ROBOT_URL") or base_api).rstrip("/")
+    for base in (base_api, base_ui):
+        try:
+            req = urllib.request.Request(base + "/", method="GET")
+            with urllib.request.urlopen(req, timeout=3) as r:
+                if r.status == 200:
+                    return {"ok": True, "connected": True, "robot_url": base}
+        except Exception:
+            pass
+        try:
+            req = urllib.request.Request(base + "/api/camera/service/status", method="GET", headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=3) as r:
+                if r.status == 200:
+                    return {"ok": True, "connected": True, "robot_url": base}
+        except Exception:
+            pass
+    return {"ok": False, "connected": False, "robot_url": base_ui or base_api}
+
+
+@app.post("/api/robot/reconnect", tags=["NEXUS"])
+def robot_reconnect():
+    """Arranca el backend del Robot (cámaras). Devuelve enseguida; el usuario debe pulsar Actualizar cámaras en 10-15 s."""
+    import subprocess
+    import urllib.request
+    from pathlib import Path
+    if ENV_PATH.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(ENV_PATH, override=True)
+        except Exception:
+            pass
+    robot_path = Path(os.getenv("NEXUS_ROBOT_PATH") or str(BASE_DIR / "nexus" / "atlas_nexus_robot" / "backend"))
+    base_api = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
+    repo_root = BASE_DIR
+    script = repo_root / "scripts" / "start_nexus_services.py"
+    if not script.exists():
+        return {"ok": False, "connected": False, "robot_url": base_api, "message": "Script no encontrado.", "robot_path": str(robot_path)}
+    if not robot_path.exists():
+        return {"ok": False, "connected": False, "robot_url": base_api, "message": "Carpeta del Robot no existe: " + str(robot_path), "robot_path": str(robot_path)}
     try:
-        req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=4) as r:
-            if r.status == 200:
-                return {"ok": True, "connected": True, "robot_url": url.rsplit("/", 1)[0]}
+        py = os.getenv("PYTHON", "python")
+        flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+        env = os.environ.copy()
+        env["NEXUS_ROBOT_PATH"] = str(robot_path)
+        env["NEXUS_ATLAS_PATH"] = os.getenv("NEXUS_ATLAS_PATH") or str(repo_root / "nexus" / "atlas_nexus")
+        r = subprocess.run(
+            [py, str(script), "--robot-only"],
+            cwd=str(repo_root),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=flags if os.name == "nt" else 0,
+        )
+        out = (r.stdout or "").strip() or (r.stderr or "")[:200]
+        if "Robot" in out:
+            return {"ok": True, "connected": False, "robot_url": base_api, "message": "Robot arrancando. Espera 10-15 s y pulsa «Actualizar cámaras».", "robot_path": str(robot_path)}
+        return {"ok": False, "connected": False, "robot_url": base_api, "message": "No arrancó (salida: %s). Comprueba que en %s exista main.py." % (out or "vacío", robot_path), "robot_path": str(robot_path)}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "connected": False, "robot_url": base_api, "message": "Script tardó demasiado.", "robot_path": str(robot_path)}
     except Exception as e:
-        pass
-    url_health = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/") + "/"
+        return {"ok": False, "connected": False, "robot_url": base_api, "message": str(e), "robot_path": str(robot_path)}
+
+
+@app.post("/api/cuerpo/reconnect", tags=["NEXUS"])
+def cuerpo_reconnect():
+    """Arranca Cuerpo completo (NEXUS 8000 + Robot 8002). Responde rápido (no-bloqueante)."""
+    import subprocess
+    from pathlib import Path
+    if ENV_PATH.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(ENV_PATH, override=True)
+        except Exception:
+            pass
+    repo_root = BASE_DIR
+    script = repo_root / "scripts" / "start_nexus_services.py"
+    nexus_path = Path(os.getenv("NEXUS_ATLAS_PATH") or str(repo_root / "nexus" / "atlas_nexus"))
+    robot_path = Path(os.getenv("NEXUS_ROBOT_PATH") or str(repo_root / "nexus" / "atlas_nexus_robot" / "backend"))
+    if not script.exists():
+        return {"ok": False, "started": False, "message": "Script no encontrado: scripts/start_nexus_services.py"}
+    if not nexus_path.exists():
+        return {"ok": False, "started": False, "message": "Carpeta NEXUS no existe: " + str(nexus_path)}
+    if not robot_path.exists():
+        return {"ok": False, "started": False, "message": "Carpeta Robot no existe: " + str(robot_path)}
     try:
-        req = urllib.request.Request(url_health, method="GET")
-        with urllib.request.urlopen(req, timeout=3) as r:
-            return {"ok": True, "connected": True, "robot_url": url_health.rstrip("/")}
+        py = os.getenv("PYTHON", "python")
+        flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+        env = os.environ.copy()
+        env["NEXUS_ATLAS_PATH"] = str(nexus_path)
+        env["NEXUS_ROBOT_PATH"] = str(robot_path)
+        r = subprocess.run(
+            [py, str(script)],
+            cwd=str(repo_root),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=flags if os.name == "nt" else 0,
+        )
+        out = (r.stdout or "").strip() or (r.stderr or "")[:200]
+        started = ("NEXUS" in out) or ("Robot" in out)
+        return {
+            "ok": True,
+            "started": bool(started),
+            "message": "Cuerpo arrancando (NEXUS+Robot). Espera 10-20s y revisa Estado.",
+            "output": out,
+        }
+    except subprocess.TimeoutExpired:
+        return {"ok": True, "started": True, "message": "Cuerpo lanzado (timeout corto). Espera 10-20s y revisa Estado."}
+    except Exception as e:
+        return {"ok": False, "started": False, "message": str(e)}
+
+
+@app.get("/api/robot/start-commands", tags=["NEXUS"])
+def robot_start_commands():
+    """Devuelve los comandos para arrancar NEXUS y Robot a mano (por si Reconectar no da resultado)."""
+    if ENV_PATH.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(ENV_PATH, override=True)
+        except Exception:
+            pass
+    robot_path = Path(os.getenv("NEXUS_ROBOT_PATH") or str(BASE_DIR / "nexus" / "atlas_nexus_robot" / "backend"))
+    nexus_path = Path(os.getenv("NEXUS_ATLAS_PATH") or str(BASE_DIR / "nexus" / "atlas_nexus"))
+    py = os.getenv("PYTHON", "python")
+    return {
+        "ok": True,
+        "robot_path": str(robot_path),
+        "nexus_path": str(nexus_path),
+        "commands": {
+            "robot": "cd /d \"%s\" && %s main.py" % (robot_path, py) if os.name == "nt" else "cd \"%s\" && %s main.py" % (robot_path, py),
+            "nexus": "cd /d \"%s\" && %s nexus.py --mode api" % (nexus_path, py) if os.name == "nt" else "cd \"%s\" && %s nexus.py --mode api" % (nexus_path, py),
+        },
+        "hint": "Abre dos terminales, ejecuta uno en cada una. Robot usa puerto 8002, NEXUS 8000.",
+    }
+
+
+def _tail_text_file(path: Path, max_bytes: int = 65536, lines: int = 200) -> str:
+    try:
+        if not path.exists():
+            return ""
+        with open(path, "rb") as f:
+            try:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                f.seek(max(0, size - max_bytes))
+            except Exception:
+                pass
+            data = f.read()
+        text = data.decode("utf-8", errors="replace")
+        parts = text.splitlines()
+        return "\n".join(parts[-max(1, int(lines)):])
     except Exception:
-        pass
-    return {"ok": False, "connected": False, "robot_url": "http://127.0.0.1:8002"}
+        return ""
+
+
+@app.get("/api/robot/log/tail", tags=["NEXUS"])
+def robot_log_tail(lines: int = 200):
+    """Últimas líneas del log del backend Robot (arranque/errores)."""
+    p = BASE_DIR / "logs" / "robot_backend.log"
+    return {"ok": True, "path": str(p), "lines": int(lines), "text": _tail_text_file(p, lines=int(lines))}
+
+
+@app.get("/api/nexus/log/tail", tags=["NEXUS"])
+def nexus_log_tail(lines: int = 200):
+    """Últimas líneas del log de NEXUS (si se arrancó con script start_nexus_services)."""
+    p = BASE_DIR / "logs" / "nexus_api.log"
+    return {"ok": True, "path": str(p), "lines": int(lines), "text": _tail_text_file(p, lines=int(lines))}
 
 
 @app.get("/api/nerve/status", tags=["NEXUS"])
 def nerve_status():
     """Estado del nervio: ojos (Nexus disponible, snapshot_url), manos (local). Cerebro → Nexus/manos."""
     try:
-        from modules.humanoid.nerve import nerve_eyes_status
+        from modules.humanoid.nerve import nerve_eyes_status, feet_status
         eyes = nerve_eyes_status()
-        return {"ok": True, "eyes": eyes, "hands": {"local": True}}
+        hands_deps_ok = None
+        try:
+            from modules.humanoid.screen.status import _screen_deps_ok as _ok
+            hands_deps_ok = bool(_ok())
+        except Exception:
+            hands_deps_ok = None
+        feet = feet_status()
+        return {
+            "ok": True,
+            "eyes": eyes,
+            "hands": {"local": True, "deps_ok": hands_deps_ok},
+            "feet": feet,
+        }
     except Exception as e:
-        return {"ok": False, "eyes": {}, "hands": {}, "error": str(e)}
+        return {"ok": False, "eyes": {}, "hands": {}, "feet": {}, "error": str(e)}
+
+
+@app.post("/api/feet/execute", tags=["NEXUS"])
+def api_feet_execute(body: dict):
+    """Ejecuta 'pies' (incluye pies internos digitales si FEET_DRIVER=digital).
+
+    Body: {command: str, payload: dict}
+    """
+    try:
+        from modules.humanoid.nerve import feet_execute
+        cmd = (body or {}).get("command") or ""
+        payload = (body or {}).get("payload") or {}
+        return feet_execute(str(cmd), payload if isinstance(payload, dict) else {})
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/comms/status", tags=["Comms"])
+def api_comms_status():
+    """Estado del sistema de comunicación permanente (audio/telegram/whatsapp)."""
+    try:
+        from modules.humanoid.comms.ops_bus import status as ops_status
+        return ops_status()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/comms/recent", tags=["Comms"])
+def api_comms_recent(limit: int = 50):
+    """Últimos eventos OPS emitidos."""
+    try:
+        from modules.humanoid.comms.ops_bus import recent as ops_recent
+        return {"ok": True, "events": ops_recent(limit=limit)}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "events": []}
+
+
+@app.post("/api/comms/test", tags=["Comms"])
+def api_comms_test(body: dict):
+    """Emite un evento de prueba (audio+telegram+whatsapp según configuración)."""
+    try:
+        from modules.humanoid.comms.ops_bus import emit as ops_emit
+        msg = (body or {}).get("message") or "Test OPS: sistema de comunicación activo."
+        subsystem = (body or {}).get("subsystem") or "ops"
+        level = (body or {}).get("level") or "info"
+        ops_emit(str(subsystem), str(msg), level=str(level))
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/speak", tags=["Comms"])
+def api_comms_speak(body: dict):
+    """TTS directo (audio PC). Body: {text}."""
+    try:
+        text = (body or {}).get("text") or ""
+        from modules.humanoid.voice.tts import speak
+        return speak(str(text))
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @app.get("/health", tags=["Health"])
@@ -790,22 +1300,47 @@ def version():
         return {"ok": False, "version": "0.0.0", "git_sha": "", "channel": "canary", "error": str(e)}
 
 
-@app.get("/cuerpo/camera/stream")
-def camera_stream_proxy():
-    """Proxy para stream de cámara del robot (puerto 8002)."""
+def _camera_stream_generator(stream_url: str):
+    """Generador que mantiene la conexión HTTP abierta para MJPEG streaming."""
+    import urllib.request
+    resp = None
     try:
-        import urllib.request
-        import urllib.error
-        import os
-        stream_url = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/") + "/api/camera/stream"
         req = urllib.request.Request(stream_url, method="GET")
-        with urllib.request.urlopen(req, timeout=5) as r:
-            if r.status == 200:
-                content_type = r.headers.get("Content-Type", "image/jpeg")
-                from fastapi.responses import Response
-                return Response(content=r.read(), media_type=content_type)
+        resp = urllib.request.urlopen(req, timeout=15)
+        while True:
+            chunk = resp.read(16384)
+            if not chunk:
+                break
+            yield chunk
+    except GeneratorExit:
+        pass
     except Exception as e:
-        print(f"Camera proxy error: {e}")  # Debug
+        print(f"Camera stream generator error: {e}")
+    finally:
+        if resp:
+            try:
+                resp.close()
+            except Exception:
+                pass
+
+
+@app.get("/cuerpo/camera/stream")
+def camera_stream_proxy(index: int = 0):
+    """Proxy para stream de cámara del robot (puerto 8002). index: 0, 1, 2... para cada cámara."""
+    import urllib.request
+    base_url = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
+    stream_url = f"{base_url}/api/vision/camera/stream?index={index}"
+    try:
+        test_req = urllib.request.Request(base_url + "/status", method="GET")
+        with urllib.request.urlopen(test_req, timeout=3) as r:
+            if r.status == 200:
+                from fastapi.responses import StreamingResponse
+                return StreamingResponse(
+                    _camera_stream_generator(stream_url),
+                    media_type="multipart/x-mixed-replace; boundary=frame"
+                )
+    except Exception as e:
+        print(f"Camera proxy error (index={index}): {e}")
     
     # Si falla, devolver imagen placeholder
     try:
@@ -813,7 +1348,7 @@ def camera_stream_proxy():
         import cv2
         img = np.zeros((480, 640, 3), dtype=np.uint8)
         img[:] = (50, 50, 50)
-        cv2.putText(img, "CAMERA OFFLINE", (150, 240), 0, 1.5, (255, 255, 255), 3)
+        cv2.putText(img, f"CAMERA {index} OFFLINE", (150, 240), 0, 1.5, (255, 255, 255), 3)
         cv2.putText(img, "Robot Backend (8002) not running", (100, 280), 0, 0.8, (200, 200, 200), 2)
         _, buffer = cv2.imencode('.jpg', img)
         from fastapi.responses import Response
@@ -821,6 +1356,98 @@ def camera_stream_proxy():
     except Exception:
         from fastapi.responses import JSONResponse
         return JSONResponse(content={"error": "Camera service unavailable"}, status_code=503)
+
+
+@app.get("/cuerpo/vision/snapshot")
+def cuerpo_vision_snapshot(
+    index: int = 0,
+    enhance: str = "max",
+    jpeg_quality: int = 92,
+    focus_x: float = 0.5,
+    focus_y: float = 0.5,
+    zoom: float = 1.0,
+):
+    """Proxy de snapshot (JPEG) del robot: evita CORS y centraliza la ruta.
+
+    Params:
+    - index: cámara
+    - enhance: auto|sharp|max|ocr
+    - jpeg_quality: 50-98
+    - focus_x/focus_y: 0..1 (pan digital)
+    - zoom: 1..3
+    """
+    import urllib.request
+    import urllib.parse
+    base_url = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
+    url = (
+        f"{base_url}/api/vision/snapshot"
+        f"?index={int(index)}"
+        f"&enhance={urllib.parse.quote(str(enhance))}"
+        f"&jpeg_quality={int(jpeg_quality)}"
+        f"&focus_x={float(focus_x)}"
+        f"&focus_y={float(focus_y)}"
+        f"&zoom={float(zoom)}"
+    )
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            img = r.read()
+        from fastapi.responses import Response
+        return Response(content=img, media_type="image/jpeg")
+    except Exception as e:
+        # placeholder coherente para UI
+        try:
+            import numpy as np
+            import cv2
+            img = np.zeros((360, 640, 3), dtype=np.uint8)
+            img[:] = (40, 40, 45)
+            cv2.putText(img, "SNAPSHOT OFFLINE", (160, 185), 0, 1.2, (255, 255, 255), 3)
+            cv2.putText(img, f"{type(e).__name__}: {str(e)[:60]}", (30, 230), 0, 0.6, (200, 200, 200), 2)
+            _, buffer = cv2.imencode(".jpg", img)
+            from fastapi.responses import Response
+            return Response(content=buffer.tobytes(), media_type="image/jpeg")
+        except Exception:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(content={"ok": False, "error": str(e)}, status_code=503)
+
+
+@app.get("/api/evidence/image", tags=["Evidence"])
+def api_evidence_image(path: str):
+    """Sirve una imagen (png/jpg/webp) desde snapshots/ de forma segura.
+
+    Acepta path absoluto o relativo a la raíz del repo. Solo permite archivos
+    bajo `snapshots/` para evitar lectura arbitraria.
+    """
+    from pathlib import Path
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+
+    repo_root = Path(__file__).resolve().parents[1]
+    allowed_root = (repo_root / "snapshots").resolve()
+
+    raw = (path or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="missing path")
+
+    p = Path(raw)
+    if not p.is_absolute():
+        p = (repo_root / p)
+    try:
+        resolved = p.resolve()
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid path")
+
+    # allow only snapshots/*
+    if resolved != allowed_root and allowed_root not in resolved.parents:
+        raise HTTPException(status_code=403, detail="path not allowed")
+    if not resolved.exists() or not resolved.is_file():
+        raise HTTPException(status_code=404, detail="not found")
+
+    ext = resolved.suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+        raise HTTPException(status_code=415, detail="unsupported file type")
+
+    return FileResponse(str(resolved))
 
 
 @app.get("/product/status")
@@ -885,12 +1512,19 @@ STATIC_DIR = BASE_DIR / "atlas_adapter" / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
 
+@app.get("/")
+def root_redirect():
+    """Redirige a /ui para que el dashboard cargue desde el mismo servidor que expone /api."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/ui", status_code=302)
+
+
 @app.get("/ui")
 def serve_ui():
     """Dashboard: estado, versión, salud, métricas, programador, actualización, despliegue, aprobaciones e interacción con el robot."""
     path = STATIC_DIR / "dashboard.html"
     if path.exists():
-        return FileResponse(path)
+        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
     return {"ok": False, "error": "dashboard.html not found"}
 
 
@@ -1287,6 +1921,70 @@ def cursor_status_endpoint():
         return {"ok": False, "data": None, "message": str(e)}
 
 
+# --- PC Walker (Windows navigation) ---
+class PcWalkBody(BaseModel):
+    command: str = "workflow"  # workflow | open_app | open_path | screenshot | ocr | alt_tab
+    payload: Optional[dict] = None
+
+
+@app.get("/api/pc/status", tags=["PC"])
+def api_pc_status():
+    """Estado del subsistema 'caminar' por Windows (deps + snapshots path)."""
+    try:
+        from modules.humanoid.pc_walker import status as pc_status
+
+        return {"ok": True, "data": pc_status()}
+    except Exception as e:
+        return {"ok": False, "data": None, "error": str(e)}
+
+
+@app.post("/api/pc/walk", tags=["PC"])
+def api_pc_walk(body: PcWalkBody):
+    """Ejecuta navegación Windows (pies-PC) con evidencia y OPS.
+
+    Body:
+    - command: workflow|open_app|open_path|screenshot|ocr|alt_tab
+    - payload: {steps:[...], allow_destructive?:bool, sleep_ms?:int, name/app/path/count...}
+    """
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.pc_walker import run_workflow
+
+        cmd = (body.command or "").strip().lower()
+        payload = body.payload or {}
+        allow_destructive = bool(payload.get("allow_destructive", False))
+        sleep_ms = int(payload.get("sleep_ms", 250) or 250)
+        step_timeout_s = float(payload.get("step_timeout_s", 4.0) or 4.0)
+
+        if cmd == "workflow":
+            steps = payload.get("steps") or []
+            if not isinstance(steps, list):
+                steps = []
+            result = run_workflow(steps, allow_destructive=allow_destructive, sleep_ms=sleep_ms, step_timeout_s=step_timeout_s)
+        elif cmd == "open_app":
+            name = str(payload.get("name") or payload.get("app") or "")
+            result = run_workflow([{"kind": "open_app", "name": name}], allow_destructive=allow_destructive, sleep_ms=sleep_ms, step_timeout_s=step_timeout_s)
+        elif cmd == "open_path":
+            path = str(payload.get("path") or "")
+            result = run_workflow([{"kind": "open_path", "path": path}], allow_destructive=allow_destructive, sleep_ms=sleep_ms, step_timeout_s=step_timeout_s)
+        elif cmd == "screenshot":
+            name = str(payload.get("name") or "pc_ui")
+            result = run_workflow([{"kind": "screenshot", "name": name}], allow_destructive=allow_destructive, sleep_ms=sleep_ms, step_timeout_s=step_timeout_s)
+        elif cmd == "ocr":
+            result = run_workflow([{"kind": "ocr"}], allow_destructive=allow_destructive, sleep_ms=sleep_ms, step_timeout_s=step_timeout_s)
+        elif cmd == "alt_tab":
+            count = int(payload.get("count") or 1)
+            result = run_workflow([{"kind": "alt_tab", "count": count}], allow_destructive=allow_destructive, sleep_ms=sleep_ms, step_timeout_s=step_timeout_s)
+        else:
+            result = {"ok": False, "error": "unsupported_command", "steps": [], "ms": 0}
+
+        ms = int((time.perf_counter() - t0) * 1000)
+        ok = bool(result.get("ok", False))
+        return _std_resp(ok, result, ms, result.get("error"))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
 class RepoPushBody(BaseModel):
     """Solicitud de push de repo (esta u otra app). Desde Cursor o chat."""
     app_id: Optional[str] = None   # atlas_push | atlas_nexus | robot | ...
@@ -1355,6 +2053,7 @@ def _get_learning_components():
         from brain.learning.ai_consultant import AIConsultant
         from brain.learning.knowledge_consolidator import KnowledgeConsolidator
         from brain.learning.continual_learning_loop import ContinualLearningLoop
+        from brain.learning.ai_tutor import AITutor
         kb = InitialKnowledgeBase()
         uncertainty_detector = UncertaintyDetector(uncertainty_threshold=0.6)
         ai_consultant = AIConsultant()
@@ -1370,6 +2069,18 @@ def _get_learning_components():
             episodic_memory=episodic_memory,
             knowledge_base=kb,
         )
+        ai_tutor = None
+        tutor_type = os.getenv("AI_TUTOR_TYPE", "disabled").lower()
+        if tutor_type in ("claude", "gpt4") and (os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")):
+            try:
+                ai_tutor = AITutor(
+                    tutor_type=tutor_type,
+                    api_key=os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY"),
+                    review_interval_hours=int(os.getenv("AI_TUTOR_REVIEW_HOURS", "6")),
+                    use_local_fallback=os.getenv("AI_TUTOR_USE_LOCAL_FALLBACK", "true").lower() in ("1", "true", "yes"),
+                )
+            except Exception:
+                ai_tutor = None
         learning_loop = ContinualLearningLoop(
             knowledge_base=kb,
             uncertainty_detector=uncertainty_detector,
@@ -1378,11 +2089,13 @@ def _get_learning_components():
             episodic_memory=episodic_memory,
             consolidator=consolidator,
             action_executor=None,
+            ai_tutor=ai_tutor,
         )
         _learning_components = {
             "kb": kb,
             "uncertainty_detector": uncertainty_detector,
             "ai_consultant": ai_consultant,
+            "ai_tutor": ai_tutor,
             "semantic_memory": semantic_memory,
             "episodic_memory": episodic_memory,
             "consolidator": consolidator,
@@ -1394,25 +2107,221 @@ def _get_learning_components():
         return _learning_components
 
 
+_LEARNING_SNAPSHOT_DIR: str = ""
+
+
+def _learning_snapshot_dir() -> Path:
+    """Directorio de snapshots para aprendizaje (ordenado y persistente)."""
+    global _LEARNING_SNAPSHOT_DIR
+    if not _LEARNING_SNAPSHOT_DIR:
+        v = os.getenv("LEARNING_SNAPSHOT_DIR", "").strip()
+        if v:
+            _LEARNING_SNAPSHOT_DIR = v
+        else:
+            _LEARNING_SNAPSHOT_DIR = str(BASE_DIR / "snapshots" / "learning")
+    p = Path(_LEARNING_SNAPSHOT_DIR)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _atomic_write_json(path: Path, payload: dict) -> None:
+    """Escritura atómica (Windows-safe) para JSON UTF-8."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+    tmp_name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=str(path.parent),
+            delete=False,
+            suffix=".tmp",
+        ) as f:
+            tmp_name = f.name
+            f.write(content)
+        os.replace(tmp_name, str(path))
+    finally:
+        try:
+            if tmp_name and Path(tmp_name).exists():
+                Path(tmp_name).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def _cleanup_learning_snapshots(keep_last_n: Optional[int] = None) -> int:
+    keep = keep_last_n if keep_last_n is not None else int(os.getenv("LEARNING_SNAPSHOT_KEEP_LAST", "500"))
+    if keep <= 0:
+        return 0
+    d = _learning_snapshot_dir()
+    files = sorted(d.glob("LEARNING_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    removed = 0
+    for f in files[keep:]:
+        try:
+            f.unlink(missing_ok=True)
+            removed += 1
+        except Exception:
+            pass
+    return removed
+
+
+def _write_learning_snapshot(kind: str, data: dict) -> str:
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    safe_kind = "".join(c if (c.isalnum() or c in ("-", "_")) else "_" for c in (kind or "event"))[:48]
+    path = _learning_snapshot_dir() / f"LEARNING_{safe_kind}_{ts}.json"
+    payload = {
+        "kind": safe_kind,
+        "ts_utc": datetime.now(timezone.utc).isoformat(),
+        "data": data,
+    }
+    _atomic_write_json(path, payload)
+    _cleanup_learning_snapshots()
+    return str(path)
+
+
+VALID_RISK_LEVELS = ("low", "normal", "high", "critical")
+
+
 class ProcessSituationBody(BaseModel):
     description: str = ""
     type: Optional[str] = None
     goal: Optional[str] = None
     entities: Optional[List[str]] = None
     constraints: Optional[List[str]] = None
+    risk_level: Optional[str] = None  # low | normal | high | critical (para should_ask_for_help)
+
+    @field_validator("risk_level")
+    @classmethod
+    def risk_level_allowed(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return None
+        v = (v or "").strip().lower()
+        if v in VALID_RISK_LEVELS:
+            return v
+        return "normal"  # fallback seguro
 
 
 @app.post("/api/learning/process-situation", tags=["Learning"])
 async def process_situation_with_learning(body: ProcessSituationBody):
-    """Procesar situación con aprendizaje continuo: percibe, razona, actúa, aprende, consolida."""
+    """Procesar situación con aprendizaje continuo: persiste episodio y responde rápido; procesamiento pesado en background."""
     comp = _get_learning_components()
     if "error" in comp:
         return {"ok": False, "error": comp["error"]}
     situation = body.model_dump(exclude_none=True)
     if not situation.get("description"):
         situation["description"] = body.description or (body.goal or "unknown")
-    result = await comp["learning_loop"].process_situation(situation)
-    return {"ok": True, "data": result}
+
+    # 1) Persistencia inmediata (memoria episódica) + snapshot ordenado
+    episode_id = None
+    try:
+        ep = comp.get("episodic_memory")
+        if ep and getattr(ep, "add_episode", None):
+            episode_id = ep.add_episode(
+                situation_type=situation.get("type") or "learning",
+                description=situation.get("description") or "",
+                action="api:learning/process-situation",
+                outcome="queued",
+                success=True,
+                context=situation,
+                asked_for_help=False,
+            )
+    except Exception:
+        episode_id = None
+
+    snapshot_queued = ""
+    try:
+        snapshot_queued = _write_learning_snapshot(
+            "process_situation_queued",
+            {"episode_id": episode_id, "situation": situation},
+        )
+    except Exception:
+        snapshot_queued = ""
+
+    async def _bg_job() -> None:
+        try:
+            res = await comp["learning_loop"].process_situation(situation)
+            try:
+                if episode_id is not None and comp.get("episodic_memory") and getattr(comp["episodic_memory"], "update_episode", None):
+                    comp["episodic_memory"].update_episode(
+                        int(episode_id),
+                        action_taken="learn:process_situation",
+                        result=res,
+                        success=True,
+                        new_knowledge_count=int(res.get("new_knowledge_count", 0)) if isinstance(res, dict) else None,
+                        asked_for_help=bool(res.get("asked_for_help")) if isinstance(res, dict) and "asked_for_help" in res else None,
+                        uncertainty_score=float(res.get("uncertainty_score", 0.0)) if isinstance(res, dict) and "uncertainty_score" in res else None,
+                        tags=["learning", "process_situation"],
+                    )
+            except Exception:
+                pass
+            try:
+                _write_learning_snapshot("process_situation_done", {"episode_id": episode_id, "result": res})
+            except Exception:
+                pass
+            try:
+                from modules.humanoid.memory_engine.store import memory_write
+                memory_write(
+                    thread_id=None,
+                    kind="decision",
+                    payload={
+                        "title": "learning",
+                        "decision_type": "process_situation_done",
+                        "episode_id": episode_id,
+                        "situation": situation,
+                        "result": res,
+                    },
+                    task_id=str(episode_id or ""),
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                if episode_id is not None and comp.get("episodic_memory") and getattr(comp["episodic_memory"], "update_episode", None):
+                    comp["episodic_memory"].update_episode(int(episode_id), action_taken="learn:process_situation", result=str(e), success=False, tags=["learning", "error"])
+            except Exception:
+                pass
+            try:
+                _write_learning_snapshot("process_situation_error", {"episode_id": episode_id, "error": str(e), "situation": situation})
+            except Exception:
+                pass
+            try:
+                from modules.humanoid.memory_engine.store import memory_write
+                memory_write(
+                    thread_id=None,
+                    kind="decision",
+                    payload={
+                        "title": "learning",
+                        "decision_type": "process_situation_error",
+                        "episode_id": episode_id,
+                        "situation": situation,
+                        "error": str(e),
+                    },
+                    task_id=str(episode_id or ""),
+                )
+            except Exception:
+                pass
+
+    # 2) Siempre en background (thread) para evitar bloqueos/timeout del request.
+    def _bg_job_sync() -> None:
+        try:
+            asyncio.run(_bg_job())
+        except Exception:
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(_bg_job())
+                loop.close()
+            except Exception:
+                pass
+
+    try:
+        asyncio.create_task(asyncio.to_thread(_bg_job_sync))
+    except Exception:
+        # Fallback: al menos no romper la request
+        try:
+            asyncio.create_task(_bg_job())
+        except Exception:
+            pass
+    return {"ok": True, "queued": True, "episode_id": episode_id, "snapshot": snapshot_queued, "status": "processing"}
 
 
 @app.get("/api/learning/knowledge-base", tags=["Learning"])
@@ -1441,8 +2350,12 @@ async def trigger_learning_consolidation():
     if "error" in comp:
         return {"ok": False, "error": comp["error"]}
     report = comp["consolidator"].consolidate_knowledge()
-    from datetime import datetime
-    return {"ok": True, "status": "consolidated", "report": report, "timestamp": datetime.now().isoformat()}
+    snap = ""
+    try:
+        snap = _write_learning_snapshot("consolidate", {"report": report})
+    except Exception:
+        snap = ""
+    return {"ok": True, "status": "consolidated", "report": report, "snapshot": snap, "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
 @app.get("/api/learning/uncertainty-status", tags=["Learning"])
@@ -1531,6 +2444,120 @@ def get_learning_growth_metrics():
     }
 
 
+@app.get(
+    "/api/learning/consolidator/stats",
+    tags=["Learning"],
+    summary="Estadísticas del consolidador",
+    response_description="total_consolidations, patterns_found_total, concepts_created_total, rules_updated_total, contradictions_resolved_total, last_consolidation, hours_since_last",
+)
+def get_learning_consolidator_stats():
+    """Estadísticas del consolidador de conocimiento (patrones, conceptos, reglas, contradicciones)."""
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    consolidator = comp.get("consolidator")
+    if not consolidator or not hasattr(consolidator, "get_statistics"):
+        return {"ok": True, "data": {}}
+    try:
+        data = consolidator.get_statistics()
+        return {"ok": True, "data": data}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post(
+    "/api/learning/daily-routine/start",
+    tags=["Learning"],
+    summary="Iniciar rutina diaria",
+    response_description="ok, status=started, current_lesson, lesson_start_time (ISO)",
+)
+async def start_learning_daily_routine():
+    """Iniciar rutina diaria: lección del tutor (si existe) y tareas en background (consolidación periódica)."""
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    loop = comp.get("learning_loop")
+    if not loop or not hasattr(loop, "start_daily_routine"):
+        return {"ok": False, "error": "Learning loop sin start_daily_routine"}
+    try:
+        await loop.start_daily_routine()
+        snap = ""
+        try:
+            snap = _write_learning_snapshot(
+                "daily_routine_start",
+                {
+                    "current_lesson": getattr(loop, "current_lesson", None),
+                    "lesson_start_time": (lambda t: t.isoformat() if t and hasattr(t, "isoformat") else None)(getattr(loop, "lesson_start_time", None)),
+                },
+            )
+        except Exception:
+            snap = ""
+        return {
+            "ok": True,
+            "status": "started",
+            "current_lesson": getattr(loop, "current_lesson", None),
+            "lesson_start_time": (lambda t: t.isoformat() if t and hasattr(t, "isoformat") else None)(getattr(loop, "lesson_start_time", None)),
+            "snapshot": snap,
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post(
+    "/api/learning/daily-routine/end-report",
+    tags=["Learning"],
+    summary="Reporte fin de día",
+    response_description="ok, status=no_lesson|evaluated, message|evaluation",
+)
+async def end_learning_daily_report():
+    """Generar reporte fin de día y obtener evaluación del tutor (si hay lección activa)."""
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    loop = comp.get("learning_loop")
+    if not loop or not hasattr(loop, "end_of_day_report"):
+        return {"ok": False, "error": "Learning loop sin end_of_day_report"}
+    try:
+        evaluation = await loop.end_of_day_report()
+        if evaluation is None:
+            snap = ""
+            try:
+                snap = _write_learning_snapshot("daily_routine_end", {"evaluation": None, "status": "no_lesson"})
+            except Exception:
+                snap = ""
+            return {"ok": True, "status": "no_lesson", "message": "No hay lección activa o tutor configurado"}
+        snap = ""
+        try:
+            snap = _write_learning_snapshot("daily_routine_end", {"evaluation": evaluation, "status": "evaluated"})
+        except Exception:
+            snap = ""
+        return {"ok": True, "status": "evaluated", "evaluation": evaluation, "snapshot": snap}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get(
+    "/api/learning/tutor/stats",
+    tags=["Learning"],
+    summary="Estadísticas del IA Tutor",
+    response_description="tutor_type, curriculum, completed/failed, robot_level, api_calls, cost",
+)
+def get_learning_tutor_stats():
+    """Estadísticas del IA Tutor (si está configurado): curriculum, lecciones completadas, nivel del robot, coste API."""
+    comp = _get_learning_components()
+    if "error" in comp:
+        return {"ok": False, "error": comp["error"]}
+    tutor = comp.get("ai_tutor")
+    if not tutor or not hasattr(tutor, "get_statistics"):
+        return {"ok": True, "data": {"enabled": False, "message": "IA Tutor no configurado (AI_TUTOR_TYPE=claude|gpt4 y API key)"}}
+    try:
+        data = tutor.get_statistics()
+        data["enabled"] = True
+        return {"ok": True, "data": data}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 # --- Humanoid (kernel + modules) ---
 from modules.humanoid.api import router as humanoid_router
 from modules.humanoid.ga.api import router as ga_router
@@ -1538,12 +2565,14 @@ from modules.humanoid.metalearn.api import router as metalearn_router
 
 from modules.humanoid.ans.api import router as ans_router
 from modules.humanoid.governance.api import router as governance_router
+from modules.humanoid.nervous.api import router as nervous_router
 
 app.include_router(humanoid_router)
 app.include_router(ga_router)
 app.include_router(metalearn_router)
 app.include_router(ans_router)
 app.include_router(governance_router)
+app.include_router(nervous_router)
 
 # ATLAS AUTONOMOUS (health, healing, evolution, telemetry, resilience, learning)
 try:
@@ -1641,15 +2670,26 @@ async def proxy_websocket(websocket: WebSocket):
         except Exception:
             pass
 
-# --- Cuerpo (Robot): proxy cámaras y API Robot 8002 ---
-from modules.cuerpo_proxy import proxy_to_cuerpo
+# --- Cuerpo (NEXUS+Robot): proxies bajo el puerto de PUSH ---
 from fastapi import Request
 from fastapi.responses import Response
+
+# IMPORTANTE (orden de rutas):
+# - /cuerpo/{path:path} es catch-all y debe ir DESPUÉS de rutas más específicas como /cuerpo/nexus/*
+from modules.nexus_proxy import proxy_to_nexus
+
+@app.api_route("/cuerpo/nexus", methods=["GET", "POST"])
+@app.api_route("/cuerpo/nexus/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+async def nexus_proxy_route(request: Request, path: str = "") -> Response:
+    """Proxy a NEXUS (dashboard + API) bajo el mismo puerto de PUSH."""
+    return await proxy_to_nexus(request, path)
+
+from modules.cuerpo_proxy import proxy_to_cuerpo
 
 @app.api_route("/cuerpo", methods=["GET", "POST"])
 @app.api_route("/cuerpo/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 async def cuerpo_proxy_route(request: Request, path: str = "") -> Response:
-    """Proxy a Robot (cámaras, visión) en NEXUS_ROBOT_URL (8002). Panel de cámaras integrado."""
+    """Proxy a Robot (cámaras, visión) en NEXUS_ROBOT_URL/NEXUS_ROBOT_API_URL. Panel de cámaras integrado."""
     return await proxy_to_cuerpo(request, path)
 
 

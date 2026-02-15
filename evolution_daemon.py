@@ -290,7 +290,7 @@ class AtlasEvolutionDaemon:
                     if n == pkg_name and parsed_orig == original_line:
                         new_content.append(new_line + "\n")
                     else:
-                        new_content.append(file_line)
+                        new_content.append(file_line if file_line.endswith("\n") else file_line + "\n")
                 REQUIREMENTS_TXT.write_text("".join(new_content), encoding="utf-8")
                 await _notify_dashboard({
                     "worker": "pypi",
@@ -496,7 +496,17 @@ class AtlasEvolutionDaemon:
 
 
 def main() -> None:
+    import argparse
+    parser = argparse.ArgumentParser(description="ATLAS_EVOLUTION — Tríada PyPI/GitHub/Hugging Face")
+    parser.add_argument("--run-once", action="store_true", help="Ejecutar un solo ciclo y salir (para forzar actualización vía API)")
+    args = parser.parse_args()
+
     daemon = AtlasEvolutionDaemon()
+    if args.run_once:
+        logger.info("Ejecutando un solo ciclo de la Tríada (PyPI | GitHub | HF)...")
+        asyncio.run(daemon._run_cycle())
+        logger.info("Ciclo completado.")
+        return
     try:
         asyncio.run(daemon.run_forever())
     except KeyboardInterrupt:

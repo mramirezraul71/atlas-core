@@ -9,8 +9,8 @@ repo:
   path: null   # null = detectar desde script (raíz del repo)
   remote: origin
   branch: main
-  # Rama desde la que se hace push en modo after-fix (p. ej. intent-input-rename)
-  push_branch: null  # null = usar branch actual
+  # Rama a la que se hace push en modo after-fix (debe coincidir con la rama de trabajo)
+  push_branch: intent-input-rename
 
 # Otras apps: cuando Cursor o el chat piden "sube el repo de X", se resuelve por app_id
 known_apps:
@@ -55,6 +55,8 @@ cycle:
 # Modo "después de arreglos" (--after-fix): commit + push de cambios filtrados
 after_fix:
   enabled: true
+  # Programar after-fix en el scheduler cada N segundos (0 = no programar; solo manual o API)
+  auto_schedule_interval_seconds: 1800
   default_message: "chore: auto-sync repo (monitor)"
   allow_empty_commit: false
 

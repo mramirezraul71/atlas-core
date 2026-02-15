@@ -7,6 +7,7 @@ import numpy as np
 from typing import Optional, Tuple, Dict, Any
 
 from .base import CameraBase
+from .backend import preferred_backends
 
 
 class StandardWebcam(CameraBase):
@@ -21,7 +22,8 @@ class StandardWebcam(CameraBase):
         model_name: str = "Webcam estándar",
     ):
         self.index = index
-        self.backend = backend or (cv2.CAP_MSMF if hasattr(cv2, "CAP_MSMF") else cv2.CAP_ANY)
+        # En Windows, preferimos DSHOW por estabilidad; fallback a MSMF/ANY.
+        self.backend = backend if backend is not None else preferred_backends()[0]
         self.width = width
         self.height = height
         self.model_name = model_name
@@ -30,7 +32,18 @@ class StandardWebcam(CameraBase):
     def open(self) -> bool:
         if self._cap is not None:
             return self._cap.isOpened()
-        self._cap = cv2.VideoCapture(self.index, self.backend)
+        # Intento robusto: prueba backend preferido y fallback.
+        tried = []
+        for b in ([self.backend] + [x for x in preferred_backends() if x != self.backend]):
+            tried.append(int(b))
+            cap = cv2.VideoCapture(self.index, b)
+            if cap.isOpened():
+                self._cap = cap
+                break
+            try:
+                cap.release()
+            except Exception:
+                pass
         if self._cap.isOpened() and (self.width or self.height):
             self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
             self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)

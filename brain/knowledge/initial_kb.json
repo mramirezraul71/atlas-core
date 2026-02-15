@@ -1,0 +1,459 @@
+{
+  "metadata": {
+    "created_at": "2026-02-14T17:32:35.314461",
+    "version": "1.0",
+    "total_learned_concepts": 0,
+    "last_saved": "2026-02-14T17:33:47.798076"
+  },
+  "concepts": {
+    "object": {
+      "type": "physical_entity",
+      "definition": "Any physical thing that can be perceived and manipulated",
+      "properties": [
+        "position",
+        "size",
+        "color",
+        "weight",
+        "shape"
+      ],
+      "can": [
+        "move",
+        "grab",
+        "observe",
+        "identify"
+      ],
+      "is_a": null,
+      "learned_from": "initial_knowledge"
+    },
+    "container": {
+      "type": "object",
+      "definition": "Object that can hold other objects inside",
+      "is_a": "object",
+      "properties": [
+        "capacity",
+        "contents",
+        "open_status"
+      ],
+      "can": [
+        "contain",
+        "store",
+        "protect"
+      ],
+      "examples": [
+        "box",
+        "bag",
+        "cup",
+        "drawer"
+      ],
+      "learned_from": "initial_knowledge"
+    },
+    "tool": {
+      "type": "object",
+      "definition": "Object designed to perform specific tasks",
+      "is_a": "object",
+      "properties": [
+        "function",
+        "usage_method",
+        "maintenance_needs"
+      ],
+      "can": [
+        "perform_task",
+        "extend_capability"
+      ],
+      "examples": [
+        "hammer",
+        "wrench",
+        "knife",
+        "screwdriver"
+      ],
+      "learned_from": "initial_knowledge"
+    },
+    "surface": {
+      "type": "physical_entity",
+      "definition": "Flat or curved area where objects can be placed",
+      "properties": [
+        "height",
+        "material",
+        "stability",
+        "area"
+      ],
+      "can": [
+        "support_object",
+        "provide_workspace"
+      ],
+      "examples": [
+        "table",
+        "floor",
+        "shelf",
+        "counter"
+      ],
+      "learned_from": "initial_knowledge"
+    },
+    "move": {
+      "type": "action",
+      "definition": "Change position from one location to another",
+      "requires": [
+        "target_position"
+      ],
+      "effects": [
+        "position_changed"
+      ],
+      "can_fail": true,
+      "failure_reasons": [
+        "obstacle_blocking",
+        "unreachable",
+        "collision"
+      ],
+      "learned_from": "initial_knowledge"
+    },
+    "grab": {
+      "type": "action",
+      "definition": "Use gripper to hold an object",
+      "requires": [
+        "object",
+        "gripper_available"
+      ],
+      "effects": [
+        "object_held",
+        "gripper_occupied"
+      ],
+      "preconditions": [
+        "object_reachable",
+        "object_graspable"
+      ],
+      "can_fail": true,
+      "failure_reasons": [
+        "object_too_far",
+        "object_too_heavy",
+        "object_slippery"
+      ],
+      "learned_from": "initial_knowledge"
+    },
+    "place": {
+      "type": "action",
+      "definition": "Release held object at target position",
+      "requires": [
+        "object_held",
+        "target_position"
+      ],
+      "effects": [
+        "object_at_position",
+        "gripper_free"
+      ],
+      "preconditions": [
+        "holding_object"
+      ],
+      "can_fail": true,
+      "failure_reasons": [
+        "target_unreachable",
+        "unstable_placement"
+      ],
+      "learned_from": "initial_knowledge"
+    },
+    "push": {
+      "type": "action",
+      "definition": "Apply force to move object without grasping",
+      "requires": [
+        "object",
+        "direction",
+        "force"
+      ],
+      "effects": [
+        "object_displaced"
+      ],
+      "can_fail": true,
+      "failure_reasons": [
+        "object_too_heavy",
+        "object_fixed"
+      ],
+      "learned_from": "initial_knowledge"
+    },
+    "pull": {
+      "type": "action",
+      "definition": "Apply force to bring object closer",
+      "requires": [
+        "object",
+        "contact_point"
+      ],
+      "effects": [
+        "object_moved_closer"
+      ],
+      "can_fail": true,
+      "learned_from": "initial_knowledge"
+    },
+    "success": {
+      "type": "state",
+      "definition": "Task completed successfully",
+      "means": "goal_achieved",
+      "should": "reinforce_strategy",
+      "learned_from": "initial_knowledge"
+    },
+    "failure": {
+      "type": "state",
+      "definition": "Task did not complete successfully",
+      "means": "goal_not_achieved",
+      "should": "analyze_reason_and_learn",
+      "learned_from": "initial_knowledge"
+    },
+    "uncertain": {
+      "type": "state",
+      "definition": "Not enough information or confidence to proceed",
+      "means": "need_more_information",
+      "should": "ask_ai_or_human_or_explore",
+      "learned_from": "initial_knowledge"
+    },
+    "blocked": {
+      "type": "state",
+      "definition": "Cannot proceed due to obstacle or constraint",
+      "means": "path_or_action_obstructed",
+      "should": "find_alternative_or_remove_obstacle",
+      "learned_from": "initial_knowledge"
+    },
+    "fragile": {
+      "type": "property",
+      "definition": "Easily broken or damaged",
+      "applies_to": "object",
+      "handling_rule": "handle_carefully",
+      "examples": [
+        "glass",
+        "egg",
+        "ceramic"
+      ],
+      "learned_from": "initial_knowledge"
+    },
+    "heavy": {
+      "type": "property",
+      "definition": "Has significant weight requiring more force",
+      "applies_to": "object",
+      "handling_rule": "use_more_force_or_assistance",
+      "threshold": "weight > gripper_capacity * 0.8",
+      "learned_from": "initial_knowledge"
+    },
+    "slippery": {
+      "type": "property",
+      "definition": "Difficult to grip due to smooth or wet surface",
+      "applies_to": "object",
+      "handling_rule": "increase_grip_force_or_use_tool",
+      "causes": [
+        "wet",
+        "smooth_material",
+        "oily"
+      ],
+      "learned_from": "initial_knowledge"
+    }
+  },
+  "skills": {
+    "identify_object": {
+      "description": "Identify what an object is using vision",
+      "category": "perception",
+      "inputs": [
+        "image",
+        "bounding_box"
+      ],
+      "outputs": [
+        "object_name",
+        "confidence",
+        "properties"
+      ],
+      "uses_tools": [
+        "yolo_detection",
+        "scene_understanding"
+      ],
+      "when_uncertain": "confidence < 0.7",
+      "fallback": "ask_llm_for_identification",
+      "learned_from": "initial_knowledge"
+    },
+    "pick_and_place": {
+      "description": "Pick up object and place it at target location",
+      "category": "manipulation",
+      "inputs": [
+        "object_id",
+        "target_position"
+      ],
+      "outputs": [
+        "success",
+        "final_position",
+        "errors"
+      ],
+      "steps": [
+        "approach_object",
+        "open_gripper",
+        "align_gripper",
+        "close_gripper",
+        "lift_object",
+        "move_to_target",
+        "lower_object",
+        "open_gripper"
+      ],
+      "can_fail": true,
+      "failure_recovery": "retry_with_adjustment_or_ask_help",
+      "learned_from": "initial_knowledge"
+    },
+    "search_memory": {
+      "description": "Search for similar past experiences in memory",
+      "category": "reasoning",
+      "inputs": [
+        "situation_description",
+        "context"
+      ],
+      "outputs": [
+        "similar_experiences",
+        "similarity_scores"
+      ],
+      "uses_tools": [
+        "semantic_memory"
+      ],
+      "when_to_use": "facing_new_or_uncertain_situation",
+      "learned_from": "initial_knowledge"
+    },
+    "ask_for_help": {
+      "description": "Request assistance when uncertain or failed repeatedly",
+      "category": "meta",
+      "inputs": [
+        "situation",
+        "uncertainty_reason",
+        "previous_attempts"
+      ],
+      "outputs": [
+        "guidance",
+        "new_knowledge",
+        "suggested_action"
+      ],
+      "uses_tools": [
+        "llm_consultant"
+      ],
+      "triggers": [
+        "uncertainty_score > 0.6",
+        "repeated_failures >= 3",
+        "completely_novel_situation"
+      ],
+      "learned_from": "initial_knowledge"
+    },
+    "explore_object": {
+      "description": "Learn about unfamiliar object through interaction",
+      "category": "exploration",
+      "inputs": [
+        "object_id"
+      ],
+      "outputs": [
+        "properties_discovered",
+        "affordances"
+      ],
+      "steps": [
+        "observe_visual_properties",
+        "touch_gently",
+        "test_weight",
+        "try_basic_interactions"
+      ],
+      "safety_constraint": "low_risk_actions_only",
+      "learned_from": "initial_knowledge"
+    },
+    "plan_task": {
+      "description": "Decompose high-level goal into actionable steps",
+      "category": "planning",
+      "inputs": [
+        "goal",
+        "current_state",
+        "available_actions"
+      ],
+      "outputs": [
+        "action_sequence",
+        "expected_outcome"
+      ],
+      "uses_tools": [
+        "world_model",
+        "causal_reasoning"
+      ],
+      "when_uncertain": "no_clear_plan_or_multiple_options",
+      "learned_from": "initial_knowledge"
+    }
+  },
+  "rules": {
+    "rule_uncertainty_threshold": {
+      "name": "Ask for help when uncertain",
+      "condition": "confidence < 0.6",
+      "action": "call_llm_consultant",
+      "priority": "high",
+      "explanation": "Low confidence indicates lack of knowledge - consult AI",
+      "learned_from": "initial_knowledge"
+    },
+    "rule_repeated_failure": {
+      "name": "Change strategy after repeated failures",
+      "condition": "same_task_failed >= 3 times",
+      "action": "try_different_approach_or_ask_help",
+      "priority": "high",
+      "explanation": "Repeating failed approach is inefficient - need new strategy",
+      "learned_from": "initial_knowledge"
+    },
+    "rule_novel_situation": {
+      "name": "Explore cautiously in new situations",
+      "condition": "no_similar_experience_in_memory",
+      "action": "explore_cautiously_and_ask_if_risky",
+      "priority": "medium",
+      "explanation": "Novel situations require careful exploration to learn safely",
+      "learned_from": "initial_knowledge"
+    },
+    "rule_consolidation": {
+      "name": "Consolidate knowledge periodically",
+      "condition": "time_since_last_consolidation > 1_hour OR new_experiences > 50",
+      "action": "run_knowledge_consolidation",
+      "priority": "low",
+      "explanation": "Regular consolidation extracts patterns from experiences",
+      "learned_from": "initial_knowledge"
+    },
+    "rule_fragile_objects": {
+      "name": "Handle fragile objects carefully",
+      "condition": "object.has_property('fragile')",
+      "action": "reduce_grip_force AND move_slowly",
+      "priority": "high",
+      "explanation": "Fragile objects break easily - require gentle handling",
+      "learned_from": "initial_knowledge"
+    },
+    "rule_verify_before_irreversible": {
+      "name": "Verify before irreversible actions",
+      "condition": "action.is_irreversible AND uncertainty > 0.3",
+      "action": "ask_for_confirmation",
+      "priority": "critical",
+      "explanation": "Irreversible actions (cut, break, delete) need high confidence",
+      "learned_from": "initial_knowledge"
+    }
+  },
+  "relations": {
+    "push->object": {
+      "relation": "causes",
+      "effect": "object_moves",
+      "confidence": 0.95,
+      "conditions": [
+        "object_movable",
+        "sufficient_force"
+      ],
+      "learned_from": "initial_knowledge"
+    },
+    "grab->object": {
+      "relation": "requires",
+      "precondition": "object_reachable AND object_graspable",
+      "confidence": 0.99,
+      "learned_from": "initial_knowledge"
+    },
+    "drop->fragile_object": {
+      "relation": "causes",
+      "effect": "object_breaks",
+      "confidence": 0.8,
+      "probability": "depends_on_height_and_material",
+      "learned_from": "initial_knowledge"
+    },
+    "place_on_unstable_surface->object": {
+      "relation": "causes",
+      "effect": "object_falls",
+      "confidence": 0.7,
+      "learned_from": "initial_knowledge"
+    },
+    "wet_surface->slippery": {
+      "relation": "causes",
+      "effect": "difficult_to_grip",
+      "confidence": 0.9,
+      "learned_from": "initial_knowledge"
+    }
+  },
+  "saved_at": "2026-02-14T17:33:47.798076"
+}

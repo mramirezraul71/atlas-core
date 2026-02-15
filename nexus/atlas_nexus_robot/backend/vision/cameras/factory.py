@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any, List
 
 from .standard_webcam import StandardWebcam
 from .detector import detect_cameras, load_active_config, save_active_config
+from .backend import preferred_backends
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ def get_camera(force_detect: bool = False):
         idx = config.get("index", 0)
         res = config.get("resolution", [640, 480])
         model = config.get("model", "Webcam estándar")
-        backend = cv2.CAP_MSMF if hasattr(cv2, "CAP_MSMF") else cv2.CAP_ANY
+        backend = preferred_backends()[0]
         cam = StandardWebcam(
             index=idx,
             backend=backend,
@@ -52,7 +53,7 @@ def get_camera(force_detect: bool = False):
     idx = first.get("index", 0)
     res = first.get("resolution", [640, 480])
     model = first.get("model", "Webcam estándar")
-    backend = cv2.CAP_MSMF if hasattr(cv2, "CAP_MSMF") else cv2.CAP_ANY
+    backend = preferred_backends()[0]
 
     cam = StandardWebcam(
         index=idx,
@@ -73,8 +74,11 @@ def get_camera(force_detect: bool = False):
     return None
 
 
-def get_camera_info() -> Dict[str, Any]:
-    """Info de la cámara activa para API externa (PUSH)."""
+def get_camera_info(fast: bool = True) -> Dict[str, Any]:
+    """Info de la cámara activa para API externa (PUSH).
+
+    `fast=True` evita auto-detección lenta cuando no hay cámara activa.
+    """
     cam = _camera_instance
     if cam and cam.is_opened:
         return {
@@ -83,7 +87,10 @@ def get_camera_info() -> Dict[str, Any]:
             "stream_url": "/api/vision/camera/stream",
             "external_eyes_url": "/api/vision/external/eyes",
         }
-    detected = detect_cameras()
+    if fast:
+        detected = []
+    else:
+        detected = detect_cameras()
     return {
         "active": False,
         "detected": detected,

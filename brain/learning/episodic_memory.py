@@ -11,6 +11,9 @@ from typing import Any, Dict, List, Optional
 
 
 def _db_path() -> Path:
+    forced = os.getenv("LEARNING_EPISODIC_DB_PATH") or os.getenv("ATLAS_LEARNING_EPISODIC_DB_PATH")
+    if forced:
+        return Path(forced).resolve()
     root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or ""
     if root:
         return Path(root).resolve() / "logs" / "learning_episodic.sqlite"
@@ -331,6 +334,66 @@ class EpisodicMemory:
             "total_knowledge_learned": total_knowledge,
             "top_task_types": [{"task": t[0], "count": t[1]} for t in top_tasks],
         }
+
+    def update_episode(
+        self,
+        episode_id: int,
+        *,
+        action_taken: Optional[str] = None,
+        result: Any = None,
+        success: Optional[bool] = None,
+        uncertainty_score: Optional[float] = None,
+        asked_for_help: Optional[bool] = None,
+        new_knowledge_count: Optional[int] = None,
+        tags: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """
+        Actualiza un episodio existente con el resultado final.
+        Retorna True si actualizó 1 fila.
+        """
+        fields = []
+        params: List[Any] = []
+        if action_taken is not None:
+            fields.append("action_taken = ?")
+            params.append(str(action_taken)[:500])
+        if result is not None:
+            if isinstance(result, dict):
+                result_str = json.dumps(result, ensure_ascii=False)
+            else:
+                result_str = str(result)
+            fields.append("result = ?")
+            params.append(result_str[:2000])
+        if success is not None:
+            fields.append("success = ?")
+            params.append(1 if bool(success) else 0)
+        if uncertainty_score is not None:
+            fields.append("uncertainty_score = ?")
+            params.append(float(uncertainty_score))
+        if asked_for_help is not None:
+            fields.append("asked_for_help = ?")
+            params.append(1 if bool(asked_for_help) else 0)
+        if new_knowledge_count is not None:
+            fields.append("new_knowledge_count = ?")
+            params.append(int(new_knowledge_count))
+        if tags is not None:
+            fields.append("tags = ?")
+            params.append(",".join(tags)[:1000] if tags else "")
+        if metadata is not None:
+            fields.append("metadata = ?")
+            params.append(json.dumps(metadata, ensure_ascii=False)[:5000])
+
+        if not fields:
+            return False
+
+        params.append(int(episode_id))
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(f"UPDATE episodes SET {', '.join(fields)} WHERE id = ?", params)
+        conn.commit()
+        updated = cursor.rowcount == 1
+        conn.close()
+        return updated
 
 
 def _row_to_dict(r: sqlite3.Row) -> Dict[str, Any]:

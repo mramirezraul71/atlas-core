@@ -27,6 +27,8 @@ def run(**kwargs) -> dict:
             capture_output=True,
             timeout=30,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             creationflags=flags,
         )
         out = (r.stdout or "").strip() or (r.stderr or "")[:150]

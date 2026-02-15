@@ -263,6 +263,17 @@ def run_health_verbose(base_url: Optional[str] = None, active_port: Optional[int
     except Exception:
         pass
 
+    # Nervous System: puntos por envergadura (señales persistidas) + score derivado (sin recursión).
+    nervous_points = {"points_total": 0, "by_severity": {}, "count_open": 0}
+    nervous_score = None
+    try:
+        from modules.humanoid.nervous import db as nervous_db
+        from modules.humanoid.nervous.scoring import compute_score as compute_nervous_score
+        nervous_points = nervous_db.open_points()
+        nervous_score = compute_nervous_score(base_health_score=int(score), open_points_total=int(nervous_points.get("points_total", 0) or 0))
+    except Exception:
+        nervous_score = None
+
     checks = {
         "api_up": api_up,
         "memory_writable": memory_writable,
@@ -272,6 +283,10 @@ def run_health_verbose(base_url: Optional[str] = None, active_port: Optional[int
         "avg_latency_ms": round(avg_latency_ms, 1) if isinstance(avg_latency_ms, (int, float)) else None,
         "error_rate": round(error_rate, 4),
         "ans_open_incidents": ans_open_incidents,
+        "nervous_score": nervous_score,
+        "nervous_points_total": nervous_points.get("points_total", 0),
+        "nervous_open_signals": nervous_points.get("count_open", 0),
+        "nervous_by_severity_points": nervous_points.get("by_severity", {}),
         "active_port": port,
         "version": version,
         "channel": channel,

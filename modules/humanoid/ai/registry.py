@@ -17,6 +17,15 @@ def _env_bool(name: str, default: bool) -> bool:
     return v in ("1", "true", "yes", "y", "on")
 
 
+def _provider_has_key(provider_id: str) -> bool:
+    """True si el proveedor tiene API key (env o almacén del dashboard)."""
+    try:
+        from .provider_credentials import get_provider_api_key
+        return bool(get_provider_api_key(provider_id))
+    except Exception:
+        return False
+
+
 def _parse_model_key(key: str) -> tuple[str, str]:
     """Return (provider_id, model_name) for keys like ollama:llama3.2:3b."""
     if ":" in key:
@@ -51,21 +60,21 @@ def list_providers(ollama_available: bool) -> List[Provider]:
         )
     )
 
-    # 2–5) Optional paid (available only if key set and APIs allowed)
+    # 2–5) Optional paid (available only if key set and APIs allowed; clave en env o en almacén del dashboard)
     allow_external = _env_bool("AI_ALLOW_EXTERNAL_APIS", False)
-    if _env("OPENAI_API_KEY", "").strip() and allow_external:
+    if _provider_has_key("openai") and allow_external:
         providers.append(
             Provider(id="openai", name="OpenAI", is_free=False, supports_vision=True, available=True, models=[])
         )
-    if _env("ANTHROPIC_API_KEY", "").strip() and allow_external:
+    if _provider_has_key("anthropic") and allow_external:
         providers.append(
             Provider(id="anthropic", name="Anthropic", is_free=False, supports_vision=True, available=True, models=[])
         )
-    if _env("GEMINI_API_KEY", "").strip() and allow_external:
+    if _provider_has_key("gemini") and allow_external:
         providers.append(
             Provider(id="gemini", name="Google Gemini", is_free=False, supports_vision=True, available=True, models=[])
         )
-    if _env("PERPLEXITY_API_KEY", "").strip() and allow_external:
+    if _provider_has_key("perplexity") and allow_external:
         providers.append(
             Provider(id="perplexity", name="Perplexity", is_free=False, supports_vision=False, available=True, models=[])
         )

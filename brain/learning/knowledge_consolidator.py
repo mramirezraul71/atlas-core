@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 from collections import defaultdict
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Tuple
 
 
@@ -10,6 +11,8 @@ class KnowledgeConsolidator:
     """
     Consolida experiencias en conocimiento generalizado.
     Similar a consolidación durante 'sueño': extrae patrones de experiencias.
+    Funciones: patrones recurrentes, generalizar casos, conceptos emergentes,
+    actualizar relaciones causales, limpiar contradicciones.
     """
 
     def __init__(
@@ -17,46 +20,121 @@ class KnowledgeConsolidator:
         semantic_memory: Any,
         episodic_memory: Any,
         knowledge_base: Any,
+        consolidation_threshold_hours: int = 4,
     ) -> None:
         self.semantic_memory = semantic_memory
         self.episodic_memory = episodic_memory
         self.knowledge_base = knowledge_base
-        self.last_consolidation = time.time()
+        self.consolidation_interval = timedelta(hours=consolidation_threshold_hours)
+        self.last_consolidation = datetime.now()
+        self.consolidation_history: List[Dict[str, Any]] = []
+        self.stats: Dict[str, int] = {
+            "total_consolidations": 0,
+            "patterns_found": 0,
+            "concepts_created": 0,
+            "rules_updated": 0,
+            "contradictions_resolved": 0,
+        }
 
-    def should_consolidate(self) -> bool:
-        """Determinar si es hora de consolidar (p. ej. cada hora)."""
-        time_threshold = 3600
-        return (time.time() - self.last_consolidation) > time_threshold
+    def should_consolidate(self, force: bool = False) -> bool:
+        """Determinar si es momento de consolidar."""
+        if force:
+            return True
+        time_elapsed = datetime.now() - self.last_consolidation
+        if time_elapsed > self.consolidation_interval:
+            return True
+        get_recent = getattr(self.episodic_memory, "get_recent_episodes", None) or getattr(
+            self.episodic_memory, "get_recent", None
+        )
+        if get_recent:
+            try:
+                recent = get_recent(limit=100) if callable(get_recent) else get_recent(limit=100)
+                if len(recent) >= 50:
+                    return True
+            except Exception:
+                pass
+        return False
 
     def consolidate_knowledge(self) -> Dict[str, Any]:
         """
-        Proceso de consolidación completo.
-        Returns: reporte de qué se aprendió/actualizó.
+        Ejecutar consolidación completa de conocimiento.
+        Returns: reporte de qué se aprendió/consolidó.
         """
+        print("[CONSOLIDATOR] 🌙 Iniciando consolidación de conocimiento...")
+        self.stats["total_consolidations"] += 1
+        start_time = datetime.now()
         report: Dict[str, Any] = {
+            "consolidation_id": f"consol_{int(start_time.timestamp())}",
+            "timestamp": start_time.isoformat(),
             "new_concepts": [],
             "new_rules": [],
+            "updated_relations": [],
             "strengthened_patterns": [],
             "weakened_beliefs": [],
             "generalizations": [],
+            "contradictions_resolved": [],
         }
-        report["strengthened_patterns"] = self._find_patterns_in_experiences()
+        print("[CONSOLIDATOR] Buscando patrones...")
+        patterns = self._find_patterns_in_experiences()
+        report["strengthened_patterns"] = patterns
+        self.stats["patterns_found"] += len(patterns)
+        print("[CONSOLIDATOR] Generalizando conocimiento...")
         report["generalizations"] = self._generalize_from_cases()
-        report["new_concepts"] = self._identify_new_concepts()
-        report["new_rules"] = self._update_causal_rules()
-        report["weakened_beliefs"] = self._clean_contradictions()
-        self.last_consolidation = time.time()
+        print("[CONSOLIDATOR] Identificando conceptos emergentes...")
+        new_concepts = self._identify_new_concepts()
+        report["new_concepts"] = new_concepts
+        self.stats["concepts_created"] += len(new_concepts)
+        print("[CONSOLIDATOR] Actualizando relaciones causales...")
+        updated = self._update_causal_rules()
+        report["updated_relations"] = updated
+        self.stats["rules_updated"] += len(updated)
+        print("[CONSOLIDATOR] Resolviendo contradicciones...")
+        contradictions = self._resolve_contradictions()
+        report["contradictions_resolved"] = contradictions
+        self.stats["contradictions_resolved"] += len(contradictions)
+        self._apply_consolidated_knowledge(report)
+        self.last_consolidation = datetime.now()
+        self.consolidation_history.append(report)
+        duration = (datetime.now() - start_time).total_seconds()
+        print(
+            f"[CONSOLIDATOR] ✓ Consolidación completada en {duration:.1f}s - "
+            f"{len(patterns)} patrones, {len(new_concepts)} conceptos, {len(updated)} relaciones"
+        )
         return report
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """Estadísticas del consolidador."""
+        return {
+            "total_consolidations": self.stats["total_consolidations"],
+            "patterns_found_total": self.stats["patterns_found"],
+            "concepts_created_total": self.stats["concepts_created"],
+            "rules_updated_total": self.stats["rules_updated"],
+            "contradictions_resolved_total": self.stats["contradictions_resolved"],
+            "last_consolidation": self.last_consolidation.isoformat(),
+            "hours_since_last": (datetime.now() - self.last_consolidation).total_seconds() / 3600,
+        }
 
     def _get_recent_episodes(self, limit: int = 200) -> List[Dict[str, Any]]:
         """Obtener episodios recientes (episódica o semántica como fallback)."""
-        if getattr(self.episodic_memory, "get_recent", None):
+        get_recent = getattr(self.episodic_memory, "get_recent_episodes", None) or getattr(
+            self.episodic_memory, "get_recent", None
+        )
+        if get_recent:
             try:
-                return self.episodic_memory.get_recent(limit=limit)
+                raw = get_recent(limit=limit) if callable(get_recent) else get_recent(limit=limit)
+                out: List[Dict[str, Any]] = []
+                for ep in raw:
+                    e = dict(ep)
+                    e.setdefault("situation_type", e.get("task_type", "general"))
+                    e.setdefault("task_type", e.get("situation_type", "general"))
+                    e.setdefault("action", e.get("action_taken", ""))
+                    e.setdefault("action_taken", e.get("action", ""))
+                    e.setdefault("situation", e.get("description", e.get("situation", "")))
+                    out.append(e)
+                return out[:limit]
             except Exception:
                 pass
-        # Fallback: usar recall_similar de semántica para "success" y "failure"
-        out: List[Dict[str, Any]] = []
+        out = []
         if getattr(self.semantic_memory, "recall_similar", None):
             for query in ("success outcome", "failure outcome"):
                 try:
@@ -69,9 +147,13 @@ class KnowledgeConsolidator:
                         action = desc[1] if len(desc) > 1 else ""
                         out.append({
                             "situation_type": (it.get("tags") or ["general"])[0],
+                            "task_type": (it.get("tags") or ["general"])[0],
                             "description": it.get("description", ""),
+                            "situation": situation,
                             "action": action,
+                            "action_taken": action,
                             "outcome": it.get("outcome", ""),
+                            "result": it.get("outcome", ""),
                             "success": "success" in (it.get("outcome") or "").lower()
                             or "success" in query,
                         })
@@ -115,6 +197,7 @@ class KnowledgeConsolidator:
                 patterns.append({
                     "pattern": "reliable_situation_type",
                     "situation_type": sit_type,
+                    "task_type": sit_type,
                     "count": len(group),
                     "successes": sum(1 for e in group if e.get("success")),
                 })
@@ -233,3 +316,66 @@ class KnowledgeConsolidator:
                     "failure_count": len(outcomes) - sum(outcomes),
                 })
         return weakened
+
+    def _resolve_contradictions(self) -> List[Dict[str, Any]]:
+        """Detectar y resolver contradicciones en conocimiento (reglas con baja confirmación)."""
+        contradictions: List[Dict[str, Any]] = []
+        rules = getattr(self.knowledge_base, "rules", {})
+        for rule_id, rule in list(rules.items()):
+            if not isinstance(rule, dict):
+                continue
+            times_triggered = rule.get("times_triggered", 0)
+            times_successful = rule.get("times_successful", 0)
+            if times_triggered >= 5:
+                success_rate = times_successful / times_triggered
+                if success_rate < 0.4:
+                    contradictions.append({
+                        "rule_id": rule_id,
+                        "rule": rule,
+                        "success_rate": success_rate,
+                        "action": "weaken_or_remove",
+                        "reason": f"Regla solo exitosa {success_rate:.0%} del tiempo",
+                    })
+                    rule["confidence"] = success_rate
+        return contradictions
+
+    def _apply_consolidated_knowledge(self, report: Dict[str, Any]) -> None:
+        """Aplicar conocimiento consolidado a la base de conocimiento."""
+        kb = self.knowledge_base
+        for concept in report.get("new_concepts", []):
+            name = concept.get("concept_name") or concept.get("name")
+            if not name:
+                continue
+            if concept.get("needs_definition", True):
+                if not hasattr(kb, "concepts"):
+                    continue
+                kb.concepts[name] = {
+                    "type": "emergent",
+                    "definition": concept.get("definition", "PENDING_DEFINITION"),
+                    "frequency": concept.get("frequency", concept.get("occurrences", 0)),
+                    "confidence": concept.get("confidence", 0.7),
+                    "learned_from": "consolidation",
+                    "learned_at": datetime.now().isoformat(),
+                }
+            elif hasattr(kb, "add_learned_concept"):
+                kb.add_learned_concept(
+                    name=name,
+                    definition=concept.get("definition", ""),
+                    concept_type=concept.get("suggested_type", "learned"),
+                )
+        for gen in report.get("generalizations", []):
+            action = gen.get("action") or (gen.get("situation_type", "") + "_" + gen.get("action", ""))
+            if not action:
+                continue
+            rule_id = f"rule_{str(action).replace(' ', '_')[:50]}"
+            if hasattr(kb, "add_learned_rule") and rule_id not in getattr(kb, "rules", {}):
+                typical = gen.get("typical_result", "success" if gen.get("success_rate", 0) >= 0.5 else "failure")
+                kb.add_learned_rule(
+                    rule_id=rule_id,
+                    condition=f"action == '{action}'",
+                    action=f"expect_{typical}",
+                    confidence=gen.get("confidence", gen.get("success_rate", 0.7)),
+                    source="consolidation",
+                )
+        if hasattr(kb, "save_to_disk"):
+            kb.save_to_disk()

@@ -54,6 +54,64 @@ class TelegramBridge:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def send_photo(self, chat_id: str, photo_path: str, caption: str = "") -> Dict[str, Any]:
+        """Send a photo (screenshot evidence) to Telegram."""
+        token = _token()
+        if not token:
+            return {"ok": False, "error": "TELEGRAM_BOT_TOKEN not set"}
+        allowed = _allowed_chat_ids()
+        if allowed and chat_id not in allowed:
+            return {"ok": False, "error": "chat_id not allowed"}
+        if not _rate_limit(f"photo:{chat_id}"):
+            return {"ok": False, "error": "rate limit"}
+        try:
+            from pathlib import Path
+            p = Path(photo_path)
+            if not p.is_file():
+                return {"ok": False, "error": "photo_not_found"}
+            import urllib.request
+            import uuid
+
+            url = f"{TELEGRAM_API}{token}/sendPhoto"
+            boundary = "----atlas" + uuid.uuid4().hex
+            # Multipart form-data
+            def _part(name: str, value: str) -> bytes:
+                return (
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                    f"{value}\r\n"
+                ).encode("utf-8")
+
+            header = (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="photo"; filename="{p.name}"\r\n'
+                f"Content-Type: image/png\r\n\r\n"
+            ).encode("utf-8")
+            tail = f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+            body = b"".join(
+                [
+                    _part("chat_id", chat_id),
+                    _part("caption", (caption or "")[:900]),
+                    _part("parse_mode", "HTML"),
+                    header,
+                    p.read_bytes(),
+                    tail,
+                ]
+            )
+            req = urllib.request.Request(
+                url,
+                data=body,
+                method="POST",
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            )
+            with urllib.request.urlopen(req, timeout=30) as r:
+                import json
+                out = json.loads(r.read().decode("utf-8", errors="replace"))
+            return {"ok": out.get("ok", False), "result": out.get("result")}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def send_approval_inline(self, chat_id: str, approval_id: str, action: str, risk: str = "high") -> Dict[str, Any]:
         """Send message with inline buttons: Aprobar / Rechazar. callback_data: approve:ID / reject:ID."""
         token = _token()

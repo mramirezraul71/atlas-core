@@ -1,14 +1,17 @@
-"""Integración de credenciales para producción: lee C:\\dev\\credenciales.txt y extrae tokens de PyPI, GitHub y Hugging Face. Parser CLAVE=VALOR."""
+"""Integración de credenciales para producción: lee Bóveda (credenciales.txt) y extrae tokens de PyPI, GitHub y Hugging Face. Parser CLAVE=VALOR."""
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Dict, Optional
 
 logger = logging.getLogger("atlas.evolution.credentials")
 
-CREDENTIALS_PATH = Path(r"C:\dev\credenciales.txt")
+# Bóveda: ATLAS_CREDENTIALS_PATH o CREDENTIALS_PATH en env; si no, rutas por defecto
+_def = os.environ.get("ATLAS_CREDENTIALS_PATH") or os.environ.get("CREDENTIALS_PATH") or r"C:\dev\credenciales.txt"
+CREDENTIALS_PATH = Path(_def) if _def else Path(r"C:\dev\credenciales.txt")
 KEY_ALIASES = {
     "github_token": ["GITHUB_TOKEN", "GITHUB_ACCESS_TOKEN", "GH_TOKEN"],
     "hf_token": ["HF_TOKEN", "HUGGINGFACE_TOKEN", "HUGGING_FACE_TOKEN"],

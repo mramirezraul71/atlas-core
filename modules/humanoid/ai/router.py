@@ -125,7 +125,13 @@ def _call_ollama(model_name: str, prompt: str, system: Optional[str], timeout_s:
     from modules.llm.service import LLMService
     t0 = time.perf_counter()
     svc = LLMService()
-    req = LLMRequest(prompt=prompt, system=system, route=None, model=model_name)
+    req = LLMRequest(
+        prompt=prompt,
+        system=system,
+        route=None,
+        model=model_name,
+        timeout_override=timeout_s,
+    )
     try:
         resp = svc.run(req)
         ms = (time.perf_counter() - t0) * 1000
@@ -148,11 +154,13 @@ def route_and_run(
     modality: str = "text",
     prefer_free: bool = True,
     system_override: Optional[str] = None,
+    timeout_s: Optional[int] = None,
 ) -> Tuple[str, RouteDecision, dict]:
     """
     Infer profile -> decide route -> run (ollama or null). Apply fallback on failure.
     Returns (response_text, decision, meta).
     meta: latency_ms, used_fallback, approval_id (if proposed paid upgrade).
+    timeout_s: override for LLM call (default from OLLAMA_TIMEOUT_S env).
     """
     profile = infer_task_profile(prompt, intent_hint=intent_hint, modality=modality)
     decision = decide_route(profile, prefer_free=prefer_free)
@@ -162,10 +170,55 @@ def route_and_run(
     system = system_override or system_for_route(route)
 
     meta: dict = {"latency_ms": 0, "used_fallback": False, "approval_id": None}
+    last_error = ""
+
+    # Override desde Cerebro (modo manual): el usuario eligió una IA concreta (Ollama o externa)
+    try:
+        from .brain_state import get_override_full_key
+        from .provider_credentials import get_provider_api_key
+        from .external_llm import call_external
+        full_key = get_override_full_key()
+        if full_key and ":" in full_key:
+            provider_id = full_key.split(":", 1)[0].strip().lower()
+            model_name = full_key.split(":", 1)[1].strip()
+            _timeout = timeout_s if timeout_s is not None else int(os.getenv("OLLAMA_TIMEOUT_S", "60") or "60")
+            if provider_id == "ollama" and ollama_ok:
+                ok, out, ms = _call_ollama(model_name, prompt, system, _timeout)
+                meta["latency_ms"] = ms
+                telemetry_record("ollama", full_key, ms, ok, 0.0, "" if ok and out else "empty_response")
+                if ok and out:
+                    decision = RouteDecision(
+                        provider_id="ollama",
+                        model_key=full_key,
+                        route=route,
+                        reason="brain_manual_override",
+                        is_free=True,
+                        cost_estimate_usd=0.0,
+                    )
+                    return out, decision, meta
+                last_error = out or "unknown"
+            elif provider_id in ("openai", "anthropic", "gemini", "perplexity") and policies.paid_api_allowed():
+                api_key = get_provider_api_key(provider_id)
+                if api_key:
+                    ok, out, ms = call_external(provider_id, model_name, prompt, system, api_key, _timeout)
+                    meta["latency_ms"] = ms
+                    telemetry_record(provider_id, full_key, ms, ok, 0.01, "" if ok and out else (out or "")[:200])
+                    if ok and out:
+                        decision = RouteDecision(
+                            provider_id=provider_id,
+                            model_key=full_key,
+                            route=route,
+                            reason="brain_manual_override",
+                            is_free=False,
+                            cost_estimate_usd=0.01,
+                        )
+                        return out, decision, meta
+                    last_error = out or "unknown"
+    except Exception as e:
+        last_error = str(e)[:200]
 
     # Try primary then fallback chain (same route, free first)
     chain = fallback_chain(route, ollama_ok, prefer_free=prefer_free)
-    last_error = ""
     for spec in chain:
         if spec.provider_id == "null":
             t0 = time.perf_counter()
@@ -175,7 +228,8 @@ def route_and_run(
             return out, decision, meta
         if spec.provider_id == "ollama":
             model_name = spec.model_name
-            ok, out, ms = _call_ollama(model_name, prompt, system, timeout_s=int(os.getenv("OLLAMA_TIMEOUT_S", "60") or "60"))
+            _timeout = timeout_s if timeout_s is not None else int(os.getenv("OLLAMA_TIMEOUT_S", "60") or "60")
+            ok, out, ms = _call_ollama(model_name, prompt, system, _timeout)
             meta["latency_ms"] = ms
             telemetry_record("ollama", spec.full_key, ms, ok, 0.0, "" if ok and out else "empty_response")
             if ok and out:

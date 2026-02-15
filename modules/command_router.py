@@ -1,4 +1,4 @@
-﻿import os
+import os
 import re
 import json
 from datetime import datetime
@@ -230,6 +230,45 @@ def handle(text: str) -> str:
     # "Atlas, dime qué módulos tienes activos"
     if "módulos" in low and ("activos" in low or "tienes" in low):
         return modules_report()
+
+    # ----- Repo push: subir repo de esta u otra app (Cursor/chat) -----
+    # /repo-push [app_id]   o   /repo-push
+    if low.startswith("/repo-push") or low.startswith("/repo push"):
+        rest = re.sub(r"^/repo[- ]?push\s*", "", t, flags=re.IGNORECASE).strip()
+        app_id = rest if rest else None
+        try:
+            from modules.repo_push import push_repo, resolve_path, list_known_apps
+            repo = resolve_path(app_id=app_id, repo_path=None)
+            msg = "chore: sync (solicitado por chat)"
+            result = push_repo(repo_path=repo, message=msg)
+            return result.get("message", "OK" if result.get("ok") else "Error")
+        except Exception as e:
+            return "Error al subir repo: " + str(e)
+
+    # Natural: "sube el repo", "sube el repo de atlas_nexus", "haz push del repo (de) X"
+    if "repo" in low and ("sube" in low or "push" in low or "subir" in low or "actualiza" in low):
+        app_id = None
+        m_repo = re.search(r"(?:sube|subir|push|actualiza)(?:r?)\s+(?:el\s+)?repo(?:sitorio)?\s+(?:de\s+)?(\w[\w\-_]*)", low)
+        if m_repo:
+            app_id = m_repo.group(1).strip()
+        try:
+            from modules.repo_push import push_repo, resolve_path
+            repo = resolve_path(app_id=app_id, repo_path=None)
+            result = push_repo(repo_path=repo, message="chore: sync (solicitado por chat)")
+            return result.get("message", "OK" if result.get("ok") else "Error")
+        except Exception as e:
+            return "Error al subir repo: " + str(e)
+
+    # "Atlas, qué repos puedo subir" / "lista de repos"
+    if ("repo" in low or "repos" in low) and ("lista" in low or "cuáles" in low or "qué" in low or "listar" in low):
+        try:
+            from modules.repo_push import list_known_apps
+            apps = list_known_apps()
+            if not apps:
+                return "No hay apps configuradas en known_apps (config/repo_monitor.yaml)."
+            return "Repos que puedes subir: " + ", ".join("%s → %s" % (k, v) for k, v in list(apps.items())[:10])
+        except Exception as e:
+            return "Error: " + str(e)
 
     # fallback to inbox
     return inbox(t)

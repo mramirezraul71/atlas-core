@@ -1,8 +1,10 @@
 """Memoria semántica con embeddings (Sentence-BERT) y búsqueda por similaridad (FAISS)."""
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
+import ast
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -34,7 +36,12 @@ class SemanticMemory:
             if base:
                 db_path = str(Path(base).parent / "semantic_memory.sqlite")
             else:
-                db_path = "logs/semantic_memory.sqlite"
+                root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or ""
+                if root:
+                    db_path = str(Path(root).resolve() / "logs" / "semantic_memory.sqlite")
+                else:
+                    # repo_root/modules/humanoid/memory_engine/semantic_memory.py -> repo_root/logs/semantic_memory.sqlite
+                    db_path = str(Path(__file__).resolve().parents[3] / "logs" / "semantic_memory.sqlite")
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -102,7 +109,7 @@ class SemanticMemory:
                 description,
                 context,
                 outcome,
-                str(metadata) if metadata else None,
+                json.dumps(metadata, ensure_ascii=False) if metadata else None,
                 ",".join(tags) if tags else None,
                 datetime.now().timestamp(),
                 embedding_index,
@@ -164,7 +171,16 @@ class SemanticMemory:
                     continue
 
             try:
-                meta_dict = eval(meta) if meta else {}
+                # Prefer JSON (nuevo formato). Backward compatible con str(dict) via literal_eval.
+                if not meta:
+                    meta_dict = {}
+                else:
+                    try:
+                        meta_dict = json.loads(meta)
+                    except Exception:
+                        meta_dict = ast.literal_eval(meta)
+                if not isinstance(meta_dict, dict):
+                    meta_dict = {}
             except Exception:
                 meta_dict = {}
 

@@ -76,13 +76,15 @@ def ans_bitacora(limit: int = 50):
                     "source": "incident",
                 })
         for ev in get_evolution_entries(limit=limit):
+            src = ev.get("source", "evolution")
+            problema = "Monitor repo" if src == "repo_monitor" else ("Evolución" if src == "evolution" else src)
             entries.append({
                 "timestamp": ev.get("timestamp", ""),
-                "problema": "Evolución",
+                "problema": problema,
                 "accion": "—",
                 "resultado": "OK" if ev.get("ok", True) else "Error",
                 "detalle": (ev.get("message") or "")[:200],
-                "source": "evolution",
+                "source": src,
             })
         entries.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
         return {"ok": True, "data": entries[:limit]}
@@ -93,18 +95,20 @@ def ans_bitacora(limit: int = 50):
 class EvolutionLogBody(BaseModel):
     message: str = ""
     ok: Optional[bool] = True
+    source: Optional[str] = None  # evolution | repo_monitor | ...
 
 
 @router.post("/evolution-log")
 def ans_evolution_log(body: EvolutionLogBody):
-    """Registro industrial: el daemon ATLAS_EVOLUTION envía cada paso a la Bitácora ANS (sin silencio operativo)."""
+    """Registro industrial: daemon EVOLUTION, repo_monitor y otros envían cada paso a la Bitácora ANS."""
     try:
         from .evolution_bitacora import append_evolution_log
         from .live_stream import emit
         msg = (body.message or "").strip()
         ok = body.ok if body.ok is not None else True
+        source = (body.source or "evolution").strip() or "evolution"
         if msg:
-            append_evolution_log(msg, ok=ok)
+            append_evolution_log(msg, ok=ok, source=source)
             emit("evolution_log", message=msg, ok=ok)
         return {"ok": True, "logged": bool(msg)}
     except Exception as e:
