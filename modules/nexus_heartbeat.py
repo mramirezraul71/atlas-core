@@ -248,7 +248,12 @@ def register_status_callback(callback: Callable[[bool, str], None]) -> None:
 
 
 # Backoff (segundos) antes de cada reintento de restart (resiliencia prompt Claude NEXUS)
-_RESTART_BACKOFF = [5, 10, 30]
+try:
+    from modules.humanoid.resilience.retry_policy import RetryPolicy
+
+    _RESTART_POLICY = RetryPolicy.fixed([5, 10, 30], jitter=0.0)
+except Exception:
+    _RESTART_POLICY = None
 _restart_count = 0
 
 
@@ -311,7 +316,14 @@ def _heartbeat_loop() -> None:
                 except Exception as e:
                     logger.debug("Healing handle_error: %s", e)
             if consecutive_failures >= 2:
-                delay = _RESTART_BACKOFF[min(_restart_count, len(_RESTART_BACKOFF) - 1)]
+                delay = 5
+                try:
+                    if _RESTART_POLICY is not None:
+                        delay = float(_RESTART_POLICY.delay_for_attempt(_restart_count))
+                    else:
+                        delay = [5, 10, 30][min(_restart_count, 2)]
+                except Exception:
+                    delay = 5
                 logger.warning(
                     "[CONEXIÓN] NEXUS no responde. Auto-reactivación en %ss (intento %s): %s",
                     delay, _restart_count + 1, NEXUS_START_SCRIPT,

@@ -102,6 +102,19 @@ def eyes_capture(
             from modules.humanoid.vision.ubiq.registry import get_setting
 
             requested = (get_setting("vision.active_eye") or "").strip()
+            # Si expiró el hold (vision.active_eye_until), limpiar para permitir fallback inmediato.
+            raw_until = (get_setting("vision.active_eye_until") or "").strip()
+            if raw_until:
+                try:
+                    import time as _time
+                    until = float(raw_until)
+                    if _time.time() >= until:
+                        from modules.humanoid.vision.ubiq.registry import set_setting
+                        set_setting("vision.active_eye", "")
+                        set_setting("vision.active_eye_until", "")
+                        requested = ""
+                except Exception:
+                    pass
         if requested.lower().startswith("ubiq:"):
             cam_id = requested.split(":", 1)[1].strip()
             if cam_id:
@@ -109,6 +122,11 @@ def eyes_capture(
 
                 snap = take_snapshot(cam_id, timeout_s=3.5)
                 if snap.get("ok") and snap.get("image_base64"):
+                    try:
+                        from modules.humanoid.vision.ubiq.registry import set_setting
+                        set_setting("vision.active_eye_failures", "0")
+                    except Exception:
+                        pass
                     return {
                         "ok": True,
                         "image_base64": snap["image_base64"],
@@ -118,6 +136,24 @@ def eyes_capture(
                         "eye": requested,
                         "cam_id": cam_id,
                     }
+                # Falló snapshot: si se repite, desactivar active_eye para no bloquear la misión.
+                try:
+                    from modules.humanoid.vision.ubiq.registry import get_setting, set_setting
+                    cur = (get_setting("vision.active_eye_failures") or "0").strip()
+                    n = int(cur) if cur.isdigit() else 0
+                    n += 1
+                    set_setting("vision.active_eye_failures", str(n))
+                    if n >= 2:
+                        set_setting("vision.active_eye", "")
+                        set_setting("vision.active_eye_until", "")
+                        set_setting("vision.active_eye_failures", "0")
+                        try:
+                            from modules.humanoid.comms.ops_bus import emit
+                            emit("vision", "El ojo activo no respondio. Cambio automatico al ojo principal.", level="med", data={"cam_id": cam_id})
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
     except Exception:
         pass
 

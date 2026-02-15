@@ -55,6 +55,8 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_repo_hygiene_cycle(payload)
         elif kind == "approvals_digest":
             out = _run_approvals_digest(payload)
+        elif kind == "world_state_tick":
+            out = _run_world_state_tick(payload)
         else:
             out = {"ok": True, "result": "no-op", "kind": kind}
     except Exception as e:
@@ -115,6 +117,28 @@ def _run_update_check(payload: Dict[str, Any]) -> Dict[str, Any]:
             return {"ok": False, "error": "update module not available"}
         plan_result = update_mod.updater.plan(required)
         return plan_result
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _run_world_state_tick(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Captura WorldState y emite evento OPS best-effort."""
+    try:
+        from modules.humanoid.vision.world_state import capture_world_state
+        from modules.humanoid.comms.ops_bus import emit as ops_emit
+
+        include_items = bool((payload or {}).get("include_ocr_items", False))
+        use_llm = bool((payload or {}).get("use_llm_vision", False))
+        ws = capture_world_state(include_ocr_items=include_items, use_llm_vision=use_llm)
+        if ws.get("ok"):
+            # Mensaje corto: no spamear el canal
+            ops_emit(
+                "vision",
+                "WorldState actualizado (visión + OCR).",
+                level="low",
+                data={"source": ws.get("source"), "eye": ws.get("eye"), "cam_id": ws.get("cam_id")},
+            )
+        return {"ok": True, "world_state_ok": bool(ws.get("ok")), "source": ws.get("source"), "error": ws.get("error")}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

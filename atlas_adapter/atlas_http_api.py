@@ -155,6 +155,12 @@ async def _lifespan(app):
             except Exception:
                 pass
             try:
+                # WorldState: visión+OCR periódicos (representación mínima del entorno)
+                from modules.humanoid.vision.world_state_jobs import ensure_world_state_jobs
+                ensure_world_state_jobs()
+            except Exception:
+                pass
+            try:
                 from modules.humanoid.comms.makeplay_scheduler import ensure_makeplay_jobs
                 ensure_makeplay_jobs()
             except Exception:
