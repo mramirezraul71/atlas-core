@@ -161,6 +161,32 @@ def approve(
             ops_emit("approval", f"Aprobación APROBADA: id={aid} action={(item or {}).get('action')}", level="info", data={"id": aid, "status": "approved"})
         except Exception:
             pass
+        # Ejecutar acción aprobada (si hay ejecutor). No bloquea el approve.
+        exec_out = None
+        try:
+            from modules.humanoid.approvals.executor import execute_approved
+            exec_out = execute_approved(item or {}, approval_id=aid, resolved_by=resolved_by)
+            try:
+                from modules.humanoid.comms.ops_bus import emit as ops_emit
+                lvl = "info" if exec_out.get("ok") else "med"
+                ops_emit(
+                    "approval",
+                    "Acción aprobada ejecutada." if exec_out.get("ok") else "Aprobación aprobada, pero la ejecución falló.",
+                    level=lvl,
+                    data={"id": aid, "action": (item or {}).get("action"), "exec_ok": exec_out.get("ok"), "error": exec_out.get("error")},
+                )
+            except Exception:
+                pass
+        except Exception:
+            exec_out = None
+        return {
+            "ok": ok,
+            "id": aid,
+            "status": "approved",
+            "error": None,
+            "executed": bool(exec_out is not None),
+            "execution": exec_out,
+        }
     return {"ok": ok, "id": aid, "status": "approved" if ok else "not_found", "error": None if ok else "not_found"}
 
 

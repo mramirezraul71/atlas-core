@@ -86,6 +86,15 @@ def _guard(action_kind: str, payload: Optional[Dict[str, Any]] = None, weight: i
         destructive = bool(payload.get("destructive")) if payload else False
         confirm_text = str(payload.get("confirm_text") or "") if payload else ""
         if destructive or confirm_text:
+            # Si ya existe aprobación explícita (ejecutor), no volver a pedir approval.
+            if payload and bool(payload.get("approval_granted")):
+                if confirm_text:
+                    from .locator import locate
+                    m = locate(confirm_text)
+                    if not m.get("ok") or not (m.get("matches") or []):
+                        return "confirm_text_not_found"
+                # continuar sin generar approval
+                return None
             from modules.humanoid.governance.gates import decide
             d = decide("screen_act_destructive", context={"target": confirm_text, "expected_window": expected})
             if d.needs_approval and not d.allow:
@@ -104,6 +113,15 @@ def _guard(action_kind: str, payload: Optional[Dict[str, Any]] = None, weight: i
                     from modules.humanoid.approvals.service import create as create_approval
                     from modules.humanoid.governance.dynamic_risk import assess_action
                     a = assess_action("screen_act_destructive", {"confirm_text": confirm_text})
+                    # Guardar el action+payload original para ejecución post-aprobación.
+                    req_payload = dict(payload or {})
+                    # Sanitizar texto largo si existiera (evitar mega-payload en DB)
+                    try:
+                        t = req_payload.get("text")
+                        if isinstance(t, str) and len(t) > 200:
+                            req_payload["text"] = t[:200] + "..."
+                    except Exception:
+                        pass
                     cr = create_approval(
                         "screen_act_destructive",
                         {
@@ -116,6 +134,8 @@ def _guard(action_kind: str, payload: Optional[Dict[str, Any]] = None, weight: i
                             "reason": a.reason,
                             "signature": a.signature,
                             "evidence_path": evidence_path,
+                            "requested_action": action_kind,
+                            "requested_payload": req_payload,
                         },
                     )
                     # Enviar evidencia por OPS (Telegram/Audio) si existe

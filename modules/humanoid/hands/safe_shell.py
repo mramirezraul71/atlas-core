@@ -110,7 +110,7 @@ class SafeShellExecutor:
             return False
         return True
 
-    def run(self, cmd: str, cwd: Optional[str] = None, timeout_sec: int = 60, actor: Optional[Any] = None) -> Dict[str, Any]:
+    def run(self, cmd: str, cwd: Optional[str] = None, timeout_sec: int = 60, actor: Optional[Any] = None, *, approval_granted: bool = False) -> Dict[str, Any]:
         """Run cmd. Policy check first; then execute; then audit log. Returns {ok, stdout, stderr, returncode, error}."""
         t0 = time.perf_counter()
         actor_ctx = actor or _default_actor()
@@ -127,9 +127,12 @@ class SafeShellExecutor:
             pass
         # Gobernanza dinámica: si el comando es de alto riesgo, encolar aprobación y no ejecutar.
         try:
-            from modules.humanoid.governance.gates import decide
-            d = decide("shell_exec", context={"command": cmd, "cwd": cwd or ""})
-            if d.needs_approval and not d.allow:
+            if not approval_granted:
+                from modules.humanoid.governance.gates import decide
+                d = decide("shell_exec", context={"command": cmd, "cwd": cwd or ""})
+            else:
+                d = None
+            if d and d.needs_approval and not d.allow:
                 try:
                     from modules.humanoid.approvals.service import create as create_approval
                     from modules.humanoid.governance.dynamic_risk import assess_shell_command
