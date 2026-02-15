@@ -41,6 +41,7 @@ _RE_NETWORK = re.compile(r"\b(netsh|route\s+add|iptables|ufw|firewall|portproxy|
 _RE_SYSTEM_PATH = re.compile(r"\b([a-z]:\\windows\\|[a-z]:\\windows\\system32\\)\b", re.IGNORECASE)
 _RE_SECRETS = re.compile(r"\b(credenciales\.txt|\.env|id_rsa|token|apikey|secret)\b", re.IGNORECASE)
 _RE_GIT_DANGEROUS = re.compile(r"\bgit\s+(reset\s+--hard|clean\s+-fd|push\s+--force|rebase)\b", re.IGNORECASE)
+_RE_CWD_CHANGE = re.compile(r"(^|\s)(cd|set-location)\s+[^&|]+", re.IGNORECASE)
 
 
 def assess_shell_command(command: str, *, cwd: str = "") -> RiskAssessment:
@@ -60,6 +61,9 @@ def assess_shell_command(command: str, *, cwd: str = "") -> RiskAssessment:
         risk, reason = _max_risk(risk, "high"), "system_path_target"
     if _RE_SECRETS.search(cmd):
         risk, reason = _max_risk(risk, "high"), "secrets_sensitive_target"
+    if _RE_CWD_CHANGE.search(cmd):
+        # Cambiar de directorio en un comando compuesto suele ocultar targets: pedir aprobación.
+        risk, reason = _max_risk(risk, "high"), "changes_working_directory"
 
     requires = _RISK_ORDER.get(risk, 0) >= _RISK_ORDER["high"]
     return RiskAssessment(risk=risk, reason=reason, signature=_sig(f"shell:{risk}:{reason}:{cmd}"), requires_approval=requires)
@@ -70,6 +74,10 @@ def assess_action(action_kind: str, context: Optional[Dict[str, Any]] = None) ->
     ctx = context or {}
     if k in ("shell_exec", "shell"):
         return assess_shell_command(str(ctx.get("command") or ""), cwd=str(ctx.get("cwd") or ""))
+    if k in ("screen_act_destructive", "screen_destructive"):
+        target = str(ctx.get("target") or ctx.get("confirm_text") or "").strip()
+        sig = _sig(f"screen:critical:{target}")
+        return RiskAssessment(risk="critical", reason="destructive_screen_action", signature=sig, requires_approval=True)
     # Default conservative: unknown actions are medium (no approval), unless explicitly flagged
     base = str(ctx.get("risk") or "").strip().lower()
     if base in ("high", "critical"):

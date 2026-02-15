@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import subprocess
 import time
 from typing import Any, Dict, List, Optional
 
 BLOCKED_PATTERNS = ("rm -rf /", "format ", "del /f /s", "rd /s /q", "mkfs", "> /dev/sd")
+_RE_WIN_ABS = re.compile(r"(?i)\b[a-z]:\\[^\\s\"']+")
 
 
 def _env_list(name: str, default: str) -> List[str]:
@@ -19,6 +21,45 @@ def _default_actor():
     from modules.humanoid.policy import ActorContext
     role = os.getenv("POLICY_DEFAULT_ROLE", "owner")
     return ActorContext(actor="api", role=role)
+
+
+def _norm_win(p: str) -> str:
+    try:
+        from pathlib import Path
+        return str(Path(p).resolve()).replace("/", "\\").lower()
+    except Exception:
+        return (p or "").replace("/", "\\").lower()
+
+
+def _allowed_prefixes() -> List[str]:
+    """
+    Directorios permitidos para ejecutar con cwd/paths.
+    - POLICY_ALLOWED_PATHS (coma-separado) si existe
+    - HANDS_ALLOWED_CWD_PREFIXES como override
+    - default: repo root
+    """
+    v = (os.getenv("HANDS_ALLOWED_CWD_PREFIXES") or "").strip()
+    if v:
+        return [_norm_win(x.strip()) for x in v.split(",") if x.strip()]
+    v2 = (os.getenv("POLICY_ALLOWED_PATHS") or "").strip()
+    if v2:
+        return [_norm_win(x.strip()) for x in v2.split(",") if x.strip()]
+    try:
+        from pathlib import Path
+        base = Path(__file__).resolve().parents[3]  # .../modules/humanoid/hands -> repo root
+        return [_norm_win(str(base))]
+    except Exception:
+        return []
+
+
+def _path_allowed(path: str, prefixes: List[str]) -> bool:
+    if not path:
+        return True
+    p = _norm_win(path)
+    for pref in prefixes:
+        if pref and (p == pref or p.startswith(pref.rstrip("\\") + "\\")):
+            return True
+    return False
 
 
 class SafeShellExecutor:
@@ -73,6 +114,17 @@ class SafeShellExecutor:
         """Run cmd. Policy check first; then execute; then audit log. Returns {ok, stdout, stderr, returncode, error}."""
         t0 = time.perf_counter()
         actor_ctx = actor or _default_actor()
+        # Sandbox de cwd/paths: si sale del perímetro permitido, bloquear.
+        prefixes = _allowed_prefixes()
+        if cwd and prefixes and not _path_allowed(cwd, prefixes):
+            return {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": "cwd_not_allowed"}
+        # Si el comando contiene paths absolutos fuera del perímetro, bloquear.
+        try:
+            for m in _RE_WIN_ABS.findall(cmd or ""):
+                if prefixes and not _path_allowed(m, prefixes):
+                    return {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": "path_not_allowed"}
+        except Exception:
+            pass
         # Gobernanza dinámica: si el comando es de alto riesgo, encolar aprobación y no ejecutar.
         try:
             from modules.humanoid.governance.gates import decide

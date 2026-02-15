@@ -5,6 +5,7 @@ import time
 from typing import Any, Dict, Optional, Tuple
 
 from .status import _screen_deps_ok
+from .window_focus import active_window_matches, get_active_window_title
 
 
 _rate_window_s = 1.0
@@ -61,6 +62,44 @@ def _guard(action_kind: str, payload: Optional[Dict[str, Any]] = None, weight: i
         return reason or "blocked"
     if not _rate_limit_ok(weight=weight):
         return "rate_limited"
+    # Preflight: ventana activa esperada (evita clicks fuera de contexto)
+    try:
+        expected = ""
+        if payload:
+            expected = str(payload.get("expected_window") or payload.get("expected_window_title") or "")
+        if not expected:
+            import os
+            expected = (os.getenv("HANDS_EXPECT_WINDOW_TITLE") or "").strip()
+        if expected and not active_window_matches(expected):
+            return "wrong_active_window"
+    except Exception:
+        pass
+    # Preflight: confirmación visual para acciones destructivas (OCR)
+    try:
+        destructive = bool(payload.get("destructive")) if payload else False
+        confirm_text = str(payload.get("confirm_text") or "") if payload else ""
+        if destructive or confirm_text:
+            from modules.humanoid.governance.gates import decide
+            d = decide("screen_act_destructive", context={"target": confirm_text, "expected_window": expected})
+            if d.needs_approval and not d.allow:
+                try:
+                    from modules.humanoid.approvals.service import create as create_approval
+                    from modules.humanoid.governance.dynamic_risk import assess_action
+                    a = assess_action("screen_act_destructive", {"confirm_text": confirm_text})
+                    cr = create_approval(
+                        "screen_act_destructive",
+                        {"confirm_text": confirm_text, "expected_window": expected, "risk": a.risk, "reason": a.reason, "signature": a.signature},
+                    )
+                    return f"approval_required:{cr.get('approval_id') or ''}".rstrip(":")
+                except Exception:
+                    return "approval_required"
+            if confirm_text:
+                from .locator import locate
+                m = locate(confirm_text)
+                if not m.get("ok") or not (m.get("matches") or []):
+                    return "confirm_text_not_found"
+    except Exception:
+        pass
     # validaciones ligeras por tipo
     if action_kind == "click" and payload:
         try:
@@ -183,6 +222,20 @@ def execute_action(action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     if action == "click":
         x = int(payload.get("x", 0))
         y = int(payload.get("y", 0))
+        # Permite preflight: expected_window_title / confirm_text / destructive
+        err = _guard("click", {"x": x, "y": y, **(payload or {})}, weight=1)
+        if err:
+            # Enriquecer error con contexto humano mínimo
+            try:
+                title = get_active_window_title()
+            except Exception:
+                title = ""
+            out = {"ok": False, "error": err, "active_window": title[:120] if title else ""}
+            # Si la guard devolvió approval_required:<id>, devolver id separado
+            if err.startswith("approval_required:"):
+                out["approval_id"] = err.split(":", 1)[1]
+                out["error"] = "approval_required"
+            return out
         r = do_click(x, y)
         try:
             from modules.humanoid.comms.ops_bus import emit as ops_emit
