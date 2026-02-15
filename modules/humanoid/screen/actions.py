@@ -5,7 +5,7 @@ import time
 from typing import Any, Dict, Optional, Tuple
 
 from .status import _screen_deps_ok
-from .window_focus import active_window_matches, get_active_window_title
+from .window_focus import active_window_matches, active_window_process_matches, get_active_window_title, get_active_window_process_path
 
 
 _rate_window_s = 1.0
@@ -65,13 +65,20 @@ def _guard(action_kind: str, payload: Optional[Dict[str, Any]] = None, weight: i
     # Preflight: ventana activa esperada (evita clicks fuera de contexto)
     try:
         expected = ""
+        expected_proc = ""
         if payload:
             expected = str(payload.get("expected_window") or payload.get("expected_window_title") or "")
+            expected_proc = str(payload.get("expected_process") or payload.get("expected_exe") or payload.get("expected_process_path") or "")
         if not expected:
             import os
             expected = (os.getenv("HANDS_EXPECT_WINDOW_TITLE") or "").strip()
+        if not expected_proc:
+            import os
+            expected_proc = (os.getenv("HANDS_EXPECT_WINDOW_PROCESS") or "").strip()
         if expected and not active_window_matches(expected):
             return "wrong_active_window"
+        if expected_proc and not active_window_process_matches(expected_proc):
+            return "wrong_active_process"
     except Exception:
         pass
     # Preflight: confirmación visual para acciones destructivas (OCR)
@@ -83,13 +90,41 @@ def _guard(action_kind: str, payload: Optional[Dict[str, Any]] = None, weight: i
             d = decide("screen_act_destructive", context={"target": confirm_text, "expected_window": expected})
             if d.needs_approval and not d.allow:
                 try:
+                    # Evidencia (antes): screenshot + ventana activa
+                    evidence_path = ""
+                    try:
+                        from pathlib import Path
+                        from .capture import capture_screen, save_capture_to_file
+                        root = Path(__file__).resolve().parents[3]
+                        png, err = capture_screen()
+                        if png and not err:
+                            evidence_path = save_capture_to_file(png, str(root / "snapshots" / "hands_eyes" / "preflight"), prefix="preflight")
+                    except Exception:
+                        evidence_path = ""
                     from modules.humanoid.approvals.service import create as create_approval
                     from modules.humanoid.governance.dynamic_risk import assess_action
                     a = assess_action("screen_act_destructive", {"confirm_text": confirm_text})
                     cr = create_approval(
                         "screen_act_destructive",
-                        {"confirm_text": confirm_text, "expected_window": expected, "risk": a.risk, "reason": a.reason, "signature": a.signature},
+                        {
+                            "confirm_text": confirm_text,
+                            "expected_window": expected,
+                            "expected_process": expected_proc,
+                            "active_window": get_active_window_title(),
+                            "active_process_path": get_active_window_process_path(),
+                            "risk": a.risk,
+                            "reason": a.reason,
+                            "signature": a.signature,
+                            "evidence_path": evidence_path,
+                        },
                     )
+                    # Enviar evidencia por OPS (Telegram/Audio) si existe
+                    try:
+                        if evidence_path:
+                            from modules.humanoid.comms.ops_bus import emit as ops_emit
+                            ops_emit("approval", "Confirmación requerida para acción destructiva (evidencia adjunta).", level="high", evidence_path=evidence_path)
+                    except Exception:
+                        pass
                     return f"approval_required:{cr.get('approval_id') or ''}".rstrip(":")
                 except Exception:
                     return "approval_required"
@@ -230,13 +265,46 @@ def execute_action(action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
                 title = get_active_window_title()
             except Exception:
                 title = ""
+            try:
+                proc = get_active_window_process_path()
+            except Exception:
+                proc = ""
             out = {"ok": False, "error": err, "active_window": title[:120] if title else ""}
+            if proc:
+                out["active_process_path"] = proc[:220]
             # Si la guard devolvió approval_required:<id>, devolver id separado
             if err.startswith("approval_required:"):
                 out["approval_id"] = err.split(":", 1)[1]
                 out["error"] = "approval_required"
             return out
+        # Evidencia before/after (opcional; default off para no spamear)
+        evidence = bool(payload.get("record_evidence") or payload.get("evidence"))
+        before_path = ""
+        after_path = ""
+        if evidence:
+            try:
+                from pathlib import Path
+                from .capture import capture_screen, save_capture_to_file
+                root = Path(__file__).resolve().parents[3]
+                png, e = capture_screen()
+                if png and not e:
+                    before_path = save_capture_to_file(png, str(root / "snapshots" / "hands_eyes" / "actions"), prefix="before")
+            except Exception:
+                before_path = ""
         r = do_click(x, y)
+        if evidence:
+            try:
+                time.sleep(0.25)
+                from pathlib import Path
+                from .capture import capture_screen, save_capture_to_file
+                root = Path(__file__).resolve().parents[3]
+                png, e = capture_screen()
+                if png and not e:
+                    after_path = save_capture_to_file(png, str(root / "snapshots" / "hands_eyes" / "actions"), prefix="after")
+            except Exception:
+                after_path = ""
+            if before_path or after_path:
+                r["evidence"] = {"before": before_path or None, "after": after_path or None}
         try:
             from modules.humanoid.comms.ops_bus import emit as ops_emit
             ops_emit("hands", f"Click en ({x},{y}) => {'OK' if r.get('ok') else 'FAIL'}", level="med" if not r.get("ok") else "info", data={"action": "click", "x": x, "y": y, "ok": r.get("ok")})
