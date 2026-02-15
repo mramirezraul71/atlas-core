@@ -73,6 +73,25 @@ class SafeShellExecutor:
         """Run cmd. Policy check first; then execute; then audit log. Returns {ok, stdout, stderr, returncode, error}."""
         t0 = time.perf_counter()
         actor_ctx = actor or _default_actor()
+        # Gobernanza dinámica: si el comando es de alto riesgo, encolar aprobación y no ejecutar.
+        try:
+            from modules.humanoid.governance.gates import decide
+            d = decide("shell_exec", context={"command": cmd, "cwd": cwd or ""})
+            if d.needs_approval and not d.allow:
+                try:
+                    from modules.humanoid.approvals.service import create as create_approval
+                    from modules.humanoid.governance.dynamic_risk import assess_shell_command
+                    a = assess_shell_command(cmd, cwd=cwd or "")
+                    cr = create_approval(
+                        "shell_exec",
+                        {"command": cmd, "cwd": cwd or "", "risk": a.risk, "reason": a.reason, "signature": a.signature},
+                    )
+                    aid = cr.get("approval_id")
+                    return {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": "approval_required", "approval_id": aid}
+                except Exception:
+                    return {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": "approval_required"}
+        except Exception:
+            pass
         try:
             from modules.humanoid.policy import get_policy_engine
             decision = get_policy_engine().can(actor_ctx, "hands", "exec_command", target=cmd)

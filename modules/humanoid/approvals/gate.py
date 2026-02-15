@@ -17,6 +17,17 @@ def requires_approval(action: str, payload: Optional[Dict[str, Any]] = None) -> 
     action_lower = (action or "").strip().lower()
     if action_lower in SAFE_OR_READ_ACTIONS:
         return False
+    # Acciones sensibles aunque no contengan "apply/execute" en el nombre
+    if action_lower in ("shell_exec", "remote_execute", "screen_act_destructive"):
+        # Si payload trae riesgo alto/crítico, siempre requiere aprobación
+        try:
+            r = ((payload or {}).get("risk") or "").strip().lower()
+            if r in ("high", "critical"):
+                return True
+        except Exception:
+            return True
+        # Por defecto, requerir aprobación (mejor seguro que roto)
+        return True
     if action_lower in ("execute", "apply", "run", "update_apply", "promote", "run_now"):
         return True
     if "apply" in action_lower or "execute" in action_lower or "delete" in action_lower:

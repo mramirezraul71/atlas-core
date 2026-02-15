@@ -246,6 +246,12 @@ def _run_full(timeout_sec: int) -> Dict[str, Any]:
             notify_telegram(f"ANS: {inc.get('check_id')} - {inc.get('message')}", inc.get("severity", "med"))
 
     summary = generate_summary(open_incidents, actions_taken)
+    # MTTR (autonomía): incluir estadística de recuperación reciente en el reporte.
+    try:
+        from modules.humanoid.ans.mttr import format_stats_human
+        summary = (summary or "").strip() + ("\n" if summary else "") + format_stats_human(hours=int(os.getenv("ANS_MTTR_HOURS", "24") or 24))
+    except Exception:
+        pass
     diagnosis = {}
     try:
         from modules.humanoid.brain.ans_diagnoser import diagnose_with_self_model

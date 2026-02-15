@@ -54,6 +54,7 @@ def needs_approval(action_kind: str) -> bool:
         "update_apply": "GOVERNED_REQUIRE_APPROVAL_FOR_UPDATE",
         "refactor": "GOVERNED_REQUIRE_APPROVAL_FOR_REFACTOR",
         "remote_execute": "GOVERNED_REQUIRE_APPROVAL_FOR_REMOTE_EXEC",
+        "shell_exec": "GOVERNED_REQUIRE_APPROVAL_FOR_SHELL",
         "deploy_apply": "GOVERNED_REQUIRE_APPROVAL_FOR_UPDATE",
         "ans_heal": "GOVERNED_REQUIRE_APPROVAL_FOR_CODE",
         "ga_autorun": "GOVERNED_REQUIRE_APPROVAL_FOR_CODE",
@@ -79,6 +80,22 @@ def decide(action_kind: str, context: Optional[dict] = None) -> Decision:
             needs_approval=False,
             reason="emergency_stop_block",
         )
+    # Riesgo dinámico: incluso en GROWTH, acciones de riesgo alto/crítico requieren aprobación.
+    try:
+        if _env_bool("DYNAMIC_RISK_GOVERNANCE_ENABLED", True):
+            from modules.humanoid.governance.dynamic_risk import assess_action
+
+            a = assess_action(k, context)
+            if a.requires_approval:
+                return Decision(
+                    allow=False,
+                    blocked_by_emergency=False,
+                    needs_approval=True,
+                    reason=f"dynamic_risk_requires_approval:{a.risk}:{a.reason}",
+                    approval_id=None,
+                )
+    except Exception:
+        pass
     if needs_approval(k):
         return Decision(
             allow=False,

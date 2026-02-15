@@ -205,6 +205,7 @@ def run_goal(goal: str, mode: str = "plan_only", fast: bool = True) -> Dict[str,
     MAX_REPLANS_PER_GOAL = _env_int("ORCH_MAX_REPLANS_PER_GOAL", 2, min_v=0, max_v=5)
     replans_used = 0
     completed_descs: List[str] = []
+    open_mttr_id: Optional[int] = None
 
     i = 0
     while i < len(steps_data):
@@ -225,12 +226,33 @@ def run_goal(goal: str, mode: str = "plan_only", fast: bool = True) -> Dict[str,
 
         # Si sigue fallando: intentar healing (FailureMemory + estrategias) antes de replanear
         if step_result.get("status") != "success":
+            # Abrir MTTR si no hay uno abierto
+            if open_mttr_id is None:
+                try:
+                    from modules.humanoid.ans.mttr import start as mttr_start
+                    from modules.humanoid.governance.dynamic_risk import _sig as _sig_fn  # type: ignore
+
+                    open_mttr_id = mttr_start(
+                        "orchestrator",
+                        _sig_fn(str(step_result.get("error") or "")),
+                        {"task_id": task_id, "goal": goal[:200], "step": desc[:200]},
+                    )
+                except Exception:
+                    open_mttr_id = None
             heal = _try_heal_step(step, step_result, goal=goal, task_id=task_id)
             if heal.get("attempted"):
                 execution_log.append({"step_id": step.get("id"), "status": "healing", "result": heal})
             if heal.get("success"):
                 # reintento inmediato del paso
                 step_result = _execute_step_internal(step, task_id)
+                if step_result.get("status") == "success" and open_mttr_id is not None:
+                    try:
+                        from modules.humanoid.ans.mttr import resolve as mttr_resolve
+
+                        mttr_resolve(open_mttr_id, ok=True)
+                    except Exception:
+                        pass
+                    open_mttr_id = None
 
         execution_log.append(step_result)
         if step_result.get("status") == "success":
@@ -273,6 +295,13 @@ def run_goal(goal: str, mode: str = "plan_only", fast: bool = True) -> Dict[str,
         except Exception:
             pass
     ms = int((time.perf_counter() - t0) * 1000)
+    if open_mttr_id is not None:
+        try:
+            from modules.humanoid.ans.mttr import resolve as mttr_resolve
+
+            mttr_resolve(open_mttr_id, ok=(len([e for e in execution_log if e.get("status") == "failed"]) == 0))
+        except Exception:
+            pass
     try:
         ok_steps = len([e for e in execution_log if e.get("status") == "success"])
         fail_steps = len([e for e in execution_log if e.get("status") == "failed"])
