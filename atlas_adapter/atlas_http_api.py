@@ -1239,6 +1239,233 @@ def api_feet_execute(body: dict):
         return {"ok": False, "error": str(e)}
 
 
+# -----------------------------------------------------------------------------
+# Primitivas (API) — wrappers explícitos por dominio (sin ejecutor genérico)
+# -----------------------------------------------------------------------------
+
+@app.get("/api/primitives/nexus/pulse-check", tags=["Primitives"])
+def api_prim_nexus_pulse_check():
+    try:
+        from modules.nexus_core.primitives import pulse_check
+        return pulse_check()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/nexus/navigate-to", tags=["Primitives"])
+def api_prim_nexus_navigate_to(body: dict):
+    try:
+        from modules.nexus_core.primitives import navigate_to
+        x = int((body or {}).get("x", 0))
+        y = int((body or {}).get("y", 0))
+        duration = float((body or {}).get("duration", 0.2) or 0.2)
+        expected_window = str((body or {}).get("expected_window") or (body or {}).get("expected_window_title") or "")
+        expected_process = str((body or {}).get("expected_process") or (body or {}).get("expected_exe") or "")
+        return navigate_to(x, y, duration=duration, expected_window=expected_window, expected_process=expected_process)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/nexus/reach-pose", tags=["Primitives"])
+def api_prim_nexus_reach_pose(body: dict):
+    try:
+        from modules.nexus_core.primitives import reach_pose
+        pan = float((body or {}).get("pan", 0.0) or 0.0)
+        tilt = float((body or {}).get("tilt", 0.0) or 0.0)
+        zoom = float((body or {}).get("zoom", 1.0) or 1.0)
+        source = str((body or {}).get("source") or "camera")
+        return reach_pose(pan, tilt, zoom, source=source)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/nexus/grasp", tags=["Primitives"])
+def api_prim_nexus_grasp(body: dict):
+    try:
+        from modules.nexus_core.primitives import grasp
+        target_id = str((body or {}).get("target_id") or "screen")
+        region = (body or {}).get("region")
+        region_t = None
+        if isinstance(region, (list, tuple)) and len(region) == 4:
+            region_t = (int(region[0]), int(region[1]), int(region[2]), int(region[3]))
+        return grasp(target_id, region=region_t)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/nexus/release", tags=["Primitives"])
+def api_prim_nexus_release(body: dict):
+    try:
+        from modules.nexus_core.primitives import release
+        rid = str((body or {}).get("resource_id") or "")
+        return release(rid)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/vision/scan-network", tags=["Primitives"])
+def api_prim_vision_scan_network(body: dict):
+    try:
+        from modules.global_vision.primitives import scan_network
+        protocol = str((body or {}).get("protocol") or "rtsp")
+        return scan_network(protocol)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/vision/stream-proxy", tags=["Primitives"])
+def api_prim_vision_stream_proxy(body: dict):
+    try:
+        from modules.global_vision.primitives import stream_proxy
+        source_ip = str((body or {}).get("source_ip") or "")
+        variant = str((body or {}).get("variant") or "mobile")
+        return stream_proxy(source_ip, variant=variant)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/vision/perimeter-check", tags=["Primitives"])
+def api_prim_vision_perimeter_check(body: dict):
+    try:
+        from modules.global_vision.primitives import perimeter_check
+        snapshot_limit = int((body or {}).get("snapshot_limit", 8) or 8)
+        emit_ops = bool((body or {}).get("emit_ops", True))
+        return perimeter_check(snapshot_limit=snapshot_limit, emit_ops=emit_ops)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/architect/create-environment", tags=["Primitives"])
+def api_prim_arch_create_environment(body: dict):
+    try:
+        from modules.atlas_architect.primitives import create_environment
+        project_name = str((body or {}).get("project_name") or "")
+        return create_environment(project_name)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/architect/patch-code", tags=["Primitives"])
+def api_prim_arch_patch_code(body: dict):
+    try:
+        from modules.atlas_architect.primitives import patch_code
+        file = str((body or {}).get("file") or "")
+        pattern = str((body or {}).get("pattern") or "")
+        replacement = str((body or {}).get("replacement") or "")
+        pattern_is_regex = bool((body or {}).get("pattern_is_regex", False))
+        return patch_code(file, pattern, replacement, pattern_is_regex=pattern_is_regex)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/architect/run-debug", tags=["Primitives"])
+def api_prim_arch_run_debug(body: dict):
+    try:
+        from modules.atlas_architect.primitives import run_debug
+        script_path = str((body or {}).get("script_path") or "")
+        max_attempts = int((body or {}).get("max_attempts", 3) or 3)
+        cwd = str((body or {}).get("cwd") or "")
+        return run_debug(script_path, max_attempts=max_attempts, cwd=cwd)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/architect/generate-docs", tags=["Primitives"])
+def api_prim_arch_generate_docs(body: dict):
+    try:
+        from modules.atlas_architect.primitives import generate_docs
+        ctx = (body or {}).get("app_context") or {}
+        return generate_docs(ctx if isinstance(ctx, dict) else {})
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/productividad/schedule-event", tags=["Primitives"])
+def api_prim_prod_schedule_event(body: dict):
+    try:
+        from modules.productividad.primitives import schedule_event
+        title = str((body or {}).get("title") or "")
+        time_text = str((body or {}).get("time") or (body or {}).get("time_text") or "")
+        desc = str((body or {}).get("desc") or "")
+        return schedule_event(title, time_text, desc)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/productividad/check-rauli-inventory", tags=["Primitives"])
+def api_prim_prod_check_rauli_inventory(body: dict):
+    try:
+        from modules.productividad.primitives import check_rauli_inventory
+        camera_id = str((body or {}).get("camera_id") or "")
+        use_llm = bool((body or {}).get("use_llm_vision", False))
+        return check_rauli_inventory(camera_id, use_llm_vision=use_llm)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/productividad/digest-notifications", tags=["Primitives"])
+def api_prim_prod_digest_notifications(body: dict):
+    try:
+        from modules.productividad.primitives import digest_notifications
+        return digest_notifications()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/productividad/alert-user", tags=["Primitives"])
+def api_prim_prod_alert_user(body: dict):
+    try:
+        from modules.productividad.primitives import alert_user
+        priority = str((body or {}).get("priority") or "info")
+        message = str((body or {}).get("message") or "")
+        return alert_user(priority, message)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/finanzas/grasp-market-data", tags=["Primitives"])
+def api_prim_fin_grasp_market_data(body: dict):
+    try:
+        from modules.finanzas.primitives import grasp_market_data
+        ticker = str((body or {}).get("ticker") or "")
+        timeframe = str((body or {}).get("timeframe") or "1m")
+        return grasp_market_data(ticker, timeframe)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/finanzas/execute-trade", tags=["Primitives"])
+def api_prim_fin_execute_trade(body: dict):
+    try:
+        from modules.finanzas.primitives import execute_trade
+        ticker = str((body or {}).get("ticker") or "")
+        side = str((body or {}).get("side") or "")
+        qty = float((body or {}).get("qty") or 0)
+        typ = str((body or {}).get("type") or "market")
+        return execute_trade(ticker, side, qty, typ)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/finanzas/monitor-pnl", tags=["Primitives"])
+def api_prim_fin_monitor_pnl(body: dict):
+    try:
+        from modules.finanzas.primitives import monitor_pnl
+        return monitor_pnl()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/primitives/finanzas/hedge-position", tags=["Primitives"])
+def api_prim_fin_hedge_position(body: dict):
+    try:
+        from modules.finanzas.primitives import hedge_position
+        strategy = str((body or {}).get("strategy") or "")
+        return hedge_position(strategy)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.get("/api/comms/status", tags=["Comms"])
 def api_comms_status():
     """Estado del sistema de comunicación permanente (audio/telegram/whatsapp)."""
