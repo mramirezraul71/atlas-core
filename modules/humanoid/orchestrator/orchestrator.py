@@ -84,6 +84,69 @@ def _decompose(goal: str, fast: bool = True) -> Dict[str, Any]:
     return {"ok": True, "steps": steps, "raw_steps": raw, "error": None}
 
 
+def _env_int(name: str, default: int, *, min_v: int = 0, max_v: int = 100) -> int:
+    try:
+        v = int(os.getenv(name, str(default)) or default)
+        return max(min_v, min(v, max_v))
+    except Exception:
+        return default
+
+
+def _try_heal_step(step: Dict[str, Any], step_result: Dict[str, Any], *, goal: str, task_id: str) -> Dict[str, Any]:
+    """
+    Intento de recuperación antes de replanear:
+    - Usa HealingOrchestrator (incluye FailureMemory persistente) si está disponible.
+    - Provee retry_func que re-ejecuta el paso y lanza si falla (para backoff).
+    Retorna {"attempted": bool, "success": bool, "message": str}.
+    """
+    err = (step_result.get("error") or "")[:200]
+    if not err:
+        return {"attempted": False, "success": False, "message": "no_error"}
+    try:
+        from autonomous.self_healing.healing_orchestrator import HealingOrchestrator
+    except Exception:
+        return {"attempted": False, "success": False, "message": "healing_unavailable"}
+
+    def _retry_once() -> Dict[str, Any]:
+        r = _execute_step_internal(step, task_id)
+        if r.get("status") != "success":
+            raise Exception((r.get("error") or "step_failed")[:200])
+        return r
+
+    svc = "nexus" if ("8000" in err or "nexus" in err.lower()) else "push"
+    ctx = {
+        "service": svc,
+        "goal": goal[:300],
+        "step": (step.get("description") or "")[:500],
+        "task_id": task_id,
+        "retry_func": _retry_once,
+    }
+    try:
+        orch = HealingOrchestrator()
+        res = orch.handle_error(Exception(err), ctx)
+        return {"attempted": True, "success": bool(res.get("success")), "message": str(res.get("message") or "")[:200], "strategy": res.get("strategy_used")}
+    except Exception as e:
+        return {"attempted": True, "success": False, "message": str(e)[:200]}
+
+
+def _replan_goal(goal: str, *, completed: List[str], last_failed_step: str, last_error: str, fast: bool) -> Dict[str, Any]:
+    """
+    Replanificación con backtracking:
+    - Indica al planner qué ya se completó para no repetir.
+    - Provee el error y el paso fallido para proponer alternativa.
+    """
+    completed_s = "; ".join([c[:120] for c in completed[-12:]]) if completed else ""
+    ctx_goal = (
+        f"{goal.strip()}\n\n"
+        f"Contexto de replanificación (no repetir lo ya hecho):\n"
+        f"- Pasos completados: {completed_s or '(ninguno)'}\n"
+        f"- Paso fallido: {last_failed_step[:220]}\n"
+        f"- Error observado: {last_error[:220]}\n"
+        f"Propón un plan alterno para lograr el objetivo evitando repetir pasos completados."
+    )
+    return _decompose(ctx_goal, fast=fast)
+
+
 def run_goal(goal: str, mode: str = "plan_only", fast: bool = True) -> Dict[str, Any]:
     """
     Pipeline: Goal → Decompose → Plan → Execute → Verify → Critic → Store → Report.
@@ -138,21 +201,40 @@ def run_goal(goal: str, mode: str = "plan_only", fast: bool = True) -> Dict[str,
         return {"ok": True, "plan": plan, "steps": steps_data, "task_id": task_id, "execution_log": [], "artifacts": [], "error": None, "ms": ms, "message": "Ejecute cada paso vía POST /agent/step/execute con approve=true"}
 
     # execute / execute_auto: run steps; on failure use critic and one retry with suggested fix
-    MAX_RETRIES_PER_STEP = 1
-    for i, step in enumerate(steps_data):
+    MAX_RETRIES_PER_STEP = _env_int("ORCH_MAX_RETRIES_PER_STEP", 1, min_v=0, max_v=5)
+    MAX_REPLANS_PER_GOAL = _env_int("ORCH_MAX_REPLANS_PER_GOAL", 2, min_v=0, max_v=5)
+    replans_used = 0
+    completed_descs: List[str] = []
+
+    i = 0
+    while i < len(steps_data):
+        step = steps_data[i]
         desc = step.get("description", "")
         if not validate_no_destructive(desc):
             execution_log.append({"step_id": step.get("id"), "status": "skipped", "error": "destructive step blocked"})
+            i += 1
             continue
         step_result = _execute_step_internal(step, task_id)
-        # Replan con critic: si falló, critic sugiere revisión y reintentamos una vez
+        # Retry con critic: si falló, critic sugiere revisión y reintentamos N veces
         retries = 0
         while step_result.get("status") != "success" and retries < MAX_RETRIES_PER_STEP:
             revised_desc, _hint = suggest_fix_for_failed_step(desc, step_result, goal)
             step_revised = {**step, "description": revised_desc}
             step_result = _execute_step_internal(step_revised, task_id)
             retries += 1
+
+        # Si sigue fallando: intentar healing (FailureMemory + estrategias) antes de replanear
+        if step_result.get("status") != "success":
+            heal = _try_heal_step(step, step_result, goal=goal, task_id=task_id)
+            if heal.get("attempted"):
+                execution_log.append({"step_id": step.get("id"), "status": "healing", "result": heal})
+            if heal.get("success"):
+                # reintento inmediato del paso
+                step_result = _execute_step_internal(step, task_id)
+
         execution_log.append(step_result)
+        if step_result.get("status") == "success":
+            completed_descs.append(desc)
         if step_result.get("artifacts"):
             artifacts.extend(step_result["artifacts"])
         try:
@@ -160,6 +242,20 @@ def run_goal(goal: str, mode: str = "plan_only", fast: bool = True) -> Dict[str,
             store_run(task_id, step_result.get("step_id"), step_result.get("status") == "success", result=step_result.get("result"), error=step_result.get("error"))
         except Exception:
             pass
+
+        # Si falló de forma definitiva, replanear con backtracking si quedan intentos
+        if step_result.get("status") != "success" and replans_used < MAX_REPLANS_PER_GOAL:
+            replans_used += 1
+            re = _replan_goal(goal, completed=completed_descs, last_failed_step=desc, last_error=str(step_result.get("error") or ""), fast=fast)
+            if re.get("ok") and re.get("steps"):
+                steps_data = re["steps"]
+                plan = {"goal": goal, "steps": steps_data, "raw_steps": re.get("raw_steps", [])}
+                execution_log.append({"status": "replan", "replans_used": replans_used, "reason": (step_result.get("error") or "")[:200]})
+                save_task(task_id, goal, plan, execution_log, "planned")
+                i = 0
+                continue
+
+        i += 1
 
     save_task(task_id, goal, plan, execution_log, "completed")
     for art in artifacts:
@@ -177,8 +273,20 @@ def run_goal(goal: str, mode: str = "plan_only", fast: bool = True) -> Dict[str,
         except Exception:
             pass
     ms = int((time.perf_counter() - t0) * 1000)
-    _audit("orchestrator", "run_goal", True, {"task_id": task_id, "mode": "execute", "steps": len(steps_data)}, None, ms)
-    return {"ok": True, "plan": plan, "steps": steps_data, "task_id": task_id, "execution_log": execution_log, "artifacts": artifacts, "error": None, "ms": ms}
+    try:
+        ok_steps = len([e for e in execution_log if e.get("status") == "success"])
+        fail_steps = len([e for e in execution_log if e.get("status") == "failed"])
+        from modules.humanoid.comms.ops_bus import emit as ops_emit
+        ops_emit(
+            "autonomy",
+            "Ejecucion autonoma finalizada.",
+            level="info" if fail_steps == 0 else "med",
+            data={"task_id": task_id, "ms": ms, "replans": replans_used, "ok_steps": ok_steps, "failed_steps": fail_steps},
+        )
+    except Exception:
+        pass
+    _audit("orchestrator", "run_goal", True, {"task_id": task_id, "mode": "execute", "steps": len(steps_data), "replans_used": replans_used}, None, ms)
+    return {"ok": True, "plan": plan, "steps": steps_data, "task_id": task_id, "execution_log": execution_log, "artifacts": artifacts, "error": None, "ms": ms, "replans_used": replans_used}
 
 
 def run_goal_with_plan(goal: str, steps_list: List[str], mode: str = "plan_only") -> Dict[str, Any]:
