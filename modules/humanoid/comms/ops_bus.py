@@ -35,6 +35,12 @@ def _bool(name: str, default: bool) -> bool:
 
 
 def _telegram_chat_id() -> str:
+    try:
+        from modules.humanoid.config.vault import load_vault_env
+
+        load_vault_env(override=False)
+    except Exception:
+        pass
     raw = (os.getenv("TELEGRAM_ALLOWED_CHAT_IDS") or os.getenv("TELEGRAM_CHAT_ID", "") or "").strip()
     chat_ids = [x.strip() for x in raw.replace(",", " ").split() if x.strip()]
     if chat_ids:
@@ -211,6 +217,13 @@ def emit(
     evidence_path: str = "",
 ) -> Dict[str, Any]:
     """Emite un evento (no lanza)."""
+    # Asegura carga de Bóveda antes de leer TELEGRAM_* / rutas.
+    try:
+        from modules.humanoid.config.vault import load_vault_env
+
+        load_vault_env(override=False)
+    except Exception:
+        pass
     lvl = (level or "info").strip().lower()
     if lvl == "medium":
         lvl = "med"

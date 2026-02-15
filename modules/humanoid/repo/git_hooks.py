@@ -8,7 +8,16 @@ def _repo_root() -> Path:
     root = (os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or "").strip()
     if root:
         return Path(root).resolve()
-    return Path(__file__).resolve().parents[4]
+    # Fallback: subir hasta encontrar ".git"
+    here = Path(__file__).resolve()
+    for parent in [here.parent, *here.parents]:
+        try:
+            if (parent / ".git").is_dir():
+                return parent
+        except Exception:
+            continue
+    # Último recurso
+    return here.parents[4]
 
 
 def ensure_post_commit_hook() -> dict:

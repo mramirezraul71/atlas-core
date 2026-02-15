@@ -36,6 +36,12 @@ def _rate_limit(key: str) -> bool:
 
 
 def _token() -> Optional[str]:
+    try:
+        from modules.humanoid.config.vault import load_vault_env
+
+        load_vault_env(override=False)
+    except Exception:
+        pass
     return (os.getenv("TELEGRAM_BOT_TOKEN", "") or os.getenv("TELEGRAM_TOKEN", "") or "").strip() or None
 
 
