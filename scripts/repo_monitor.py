@@ -419,7 +419,7 @@ def run_after_fix(cfg: Dict[str, Any], message: Optional[str] = None) -> int:
             _bitacora(cfg, "[REPO] After-fix: commit fallido", ok=False)
             return 1
         did_commit = True
-        # Notificación multicanal (sin depender del dashboard)
+        # Notificación multicanal (dashboard si está disponible; fallback OPS Bus)
         try:
             bc = cfg.get("bitacora") or {}
             url = (bc.get("dashboard_url") or "").rstrip("/")
@@ -428,7 +428,12 @@ def run_after_fix(cfg: Dict[str, Any], message: Optional[str] = None) -> int:
                 req = urllib.request.Request(f"{url}/api/comms/test", data=data, method="POST", headers={"Content-Type": "application/json"})
                 urllib.request.urlopen(req, timeout=3).read()
         except Exception:
-            pass
+            try:
+                from modules.humanoid.comms.ops_bus import emit as ops_emit  # type: ignore
+
+                ops_emit("repo", "Repositorio actualizado: cambios guardados en Git.", level="info")
+            except Exception:
+                pass
 
     if not did_commit and not allow_empty:
         log.info("Nada que commitear.")
@@ -452,7 +457,12 @@ def run_after_fix(cfg: Dict[str, Any], message: Optional[str] = None) -> int:
                     req = urllib.request.Request(f"{url}/api/comms/test", data=data, method="POST", headers={"Content-Type": "application/json"})
                     urllib.request.urlopen(req, timeout=3).read()
             except Exception:
-                pass
+                try:
+                    from modules.humanoid.comms.ops_bus import emit as ops_emit  # type: ignore
+
+                    ops_emit("repo", "Cambios subidos a GitHub.", level="info")
+                except Exception:
+                    pass
             return 0
         log.warning("Push intento %s/%s: %s", attempt, retries, push_r.get("stderr"))
         if attempt < retries:

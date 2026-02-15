@@ -56,7 +56,7 @@ cycle:
 after_fix:
   enabled: true
   # Programar after-fix en el scheduler cada N segundos (0 = no programar; solo manual o API)
-  auto_schedule_interval_seconds: 1800
+  auto_schedule_interval_seconds: 900
   default_message: "chore: auto-sync repo (monitor)"
   allow_empty_commit: false
 

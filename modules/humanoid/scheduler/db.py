@@ -51,15 +51,32 @@ CREATE TABLE IF NOT EXISTS job_runs (
 
 class SchedulerDB:
     def __init__(self, path: Optional[str] = None) -> None:
-        self._path = path or os.getenv("SCHED_DB_PATH")
+        # Fallback: si no se define SCHED_DB_PATH, usar logs/scheduler.db en el repo.
+        self._path = path or os.getenv("SCHED_DB_PATH") or self._default_path()
         self._connection: Optional[sqlite3.Connection] = None
+
+    @staticmethod
+    def _default_path() -> str:
+        root = (os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or "").strip()
+        if root:
+            return str((Path(root).resolve() / "logs" / "scheduler.db"))
+        # db.py -> modules/humanoid/scheduler/db.py, subir a raíz y usar logs/
+        try:
+            here = Path(__file__).resolve()
+            for parent in [here.parent, *here.parents]:
+                if (parent / ".git").is_dir():
+                    return str((parent / "logs" / "scheduler.db"))
+        except Exception:
+            pass
+        return str((Path.cwd() / "logs" / "scheduler.db"))
 
     def _ensure(self) -> sqlite3.Connection:
         if self._connection is not None:
             return self._connection
         p = self._path or os.getenv("SCHED_DB_PATH")
         if not p:
-            raise RuntimeError("SCHED_DB_PATH not set")
+            # Último recurso: default path
+            p = self._default_path()
         Path(p).parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(p, check_same_thread=False)
         self._connection.execute(JOBS_SCHEMA)
