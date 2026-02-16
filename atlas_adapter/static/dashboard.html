@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ATLAS Dashboard v3.1.0</title>
+  <title>ATLAS Dashboard v3.2.0</title>
   <style>
     :root {
       --bg: #0d1117;
@@ -474,7 +474,7 @@
       <!-- Botón Actualizar -->
       <button class="btn-update" id="btn-check-update" onclick="checkForUpdates()" title="Buscar actualizaciones">🔄 Actualizar</button>
       <!-- Badge de versión -->
-      <div class="version-badge" id="version-badge">v3.1.0</div>
+      <div class="version-badge" id="version-badge">v3.2.0</div>
       <div class="status-indicator">
         <div class="status-dot" id="cerebro-dot"></div>
         <span>Cerebro</span>
@@ -747,14 +747,14 @@
 
   <!-- VERSION FOOTER -->
   <div class="version-footer">
-    <span>ATLAS</span> v3.1.0 | 2026-02-16
+    <span>ATLAS</span> v3.2.0 | 2026-02-16
   </div>
 
   <script>
     // ═══════════════════════════════════════════════════════════════
     // ATLAS Dashboard v3.0.0 - JavaScript
     // ═══════════════════════════════════════════════════════════════
-    const ATLAS_VERSION = '3.1.0';
+    const ATLAS_VERSION = '3.2.0';
     const ATLAS_BUILD_DATE = '2026-02-16';
     const API_BASE = window.location.origin;
 
@@ -839,10 +839,23 @@
 
     async function reconnectModule(moduleId) {
       addActivity(`Reconectando módulo: ${moduleId}...`, 'info');
-      // Simular reconexión
-      setTimeout(() => {
-        addActivity(`Módulo ${moduleId} reconectado`, 'success');
-      }, 1000);
+      try {
+        const res = await fetch(`${API_BASE}/modules/reconnect/${moduleId}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          addActivity(`Módulo ${moduleId} reconectado`, 'success');
+          // Actualizar estado del módulo en la UI
+          const idx = MODULES.findIndex(m => m.id === moduleId);
+          if (idx >= 0) {
+            MODULES[idx].status = 'ok';
+            renderModules();
+          }
+        } else {
+          addActivity(`Error reconectando ${moduleId}: ${data.error}`, 'error');
+        }
+      } catch (e) {
+        addActivity(`Error: ${e.message}`, 'error');
+      }
     }
 
     async function runFullDiagnostic() {
@@ -980,25 +993,131 @@
     // API calls
     async function loadInitialData() {
       try {
-        addActivity('Probando conexión ollama...', 'info');
-        const res = await fetch(`${API_BASE}/status`);
-        if (res.ok) {
-          addActivity('Ollama conectado', 'success');
-          addActivity('Cerebro conectado', 'success');
-          document.getElementById('cerebro-dot').classList.remove('offline');
+        addActivity('Conectando al cerebro...', 'info');
+        
+        // 1. Verificar estado del cerebro
+        const brainRes = await fetch(`${API_BASE}/brain/status`);
+        if (brainRes.ok) {
+          const brain = await brainRes.json();
+          if (brain.connected) {
+            addActivity('Cerebro conectado', 'success');
+            document.getElementById('cerebro-dot').classList.remove('offline');
+          }
+        }
+        
+        // 2. Cargar estado de todos los módulos
+        await loadModulesFromAPI();
+        
+        // 3. Cargar configuración de IA
+        await loadAIConfig();
+        
+        // 4. Cargar estado de gobernanza
+        await loadGovernanceStatus();
+        
+        // 5. Verificar cámaras
+        await loadCameras();
+        
+        addActivity('Sistema inicializado correctamente', 'success');
+      } catch (e) {
+        addActivity('Error conectando: ' + e.message, 'error');
+        document.getElementById('cerebro-dot').classList.add('offline');
+      }
+    }
+
+    async function loadModulesFromAPI() {
+      try {
+        const res = await fetch(`${API_BASE}/modules/check-all`);
+        const data = await res.json();
+        if (data.ok && data.modules) {
+          // Actualizar MODULES con datos reales
+          data.modules.forEach(mod => {
+            const idx = MODULES.findIndex(m => m.id === mod.id);
+            if (idx >= 0) {
+              MODULES[idx].status = mod.status;
+            }
+          });
+          renderModules();
+          document.getElementById('stat-connected').textContent = data.connected;
+          document.getElementById('stat-health').textContent = data.health + '%';
         }
       } catch (e) {
-        addActivity('Error: ' + e.message, 'error');
-        document.getElementById('cerebro-dot').classList.add('offline');
+        console.error('Error loading modules:', e);
+      }
+    }
+
+    async function loadAIConfig() {
+      try {
+        const res = await fetch(`${API_BASE}/config/ai`);
+        const data = await res.json();
+        if (data.ok) {
+          document.getElementById('ai-mode').value = data.mode || 'auto';
+          document.getElementById('ai-provider').value = data.provider || 'ollama';
+          document.getElementById('ai-model').value = data.model || 'llama3.2';
+        }
+      } catch (e) {
+        console.error('Error loading AI config:', e);
+      }
+    }
+
+    async function loadGovernanceStatus() {
+      try {
+        const res = await fetch(`${API_BASE}/governance/status`);
+        const data = await res.json();
+        if (data.ok) {
+          document.getElementById('gov-mode').textContent = (data.mode || 'governed').toUpperCase();
+          document.getElementById('gov-approvals').textContent = data.approvals_pending || 0;
+          document.getElementById('gov-policies').textContent = data.policies_active || 0;
+          document.getElementById('gov-score').textContent = data.security_score || 100;
+        }
+      } catch (e) {
+        console.error('Error loading governance:', e);
+      }
+    }
+
+    async function loadCameras() {
+      try {
+        const res = await fetch(`${API_BASE}/vision/cameras`);
+        const data = await res.json();
+        if (data.ok && data.cameras) {
+          document.getElementById('vision-cameras').textContent = data.count || 0;
+          // Renderizar lista de cámaras
+          const camerasList = document.getElementById('cameras-list');
+          if (camerasList && data.cameras.length > 0) {
+            camerasList.innerHTML = data.cameras.map(cam => `
+              <div class="module-row">
+                <div class="module-info">
+                  <div class="module-dot"></div>
+                  <span class="module-name-text">📷 ${cam.name} (${cam.id})</span>
+                </div>
+                <div class="module-actions">
+                  <button class="btn-check" onclick="selectCamera(${cam.id})">SELECCIONAR</button>
+                  <button class="btn-reconnect" onclick="streamCamera(${cam.id})">🔴 STREAM</button>
+                </div>
+              </div>
+            `).join('');
+          }
+        }
+      } catch (e) {
+        console.error('Error loading cameras:', e);
       }
     }
 
     async function checkAllModules() {
       addActivity('Verificando todos los módulos...', 'info');
       try {
-        const res = await fetch(`${API_BASE}/modules`);
+        const res = await fetch(`${API_BASE}/modules/check-all`);
         const data = await res.json();
-        addActivity(`Módulos verificados: ${MODULES.length} OK`, 'success');
+        if (data.ok) {
+          // Actualizar MODULES con datos reales
+          data.modules.forEach(mod => {
+            const idx = MODULES.findIndex(m => m.id === mod.id);
+            if (idx >= 0) {
+              MODULES[idx].status = mod.status;
+            }
+          });
+          renderModules();
+          addActivity(`Módulos verificados: ${data.connected}/${data.total} OK (${data.health}%)`, 'success');
+        }
       } catch (e) {
         addActivity('Error verificando módulos: ' + e.message, 'error');
       }
@@ -1026,24 +1145,56 @@
       if (!message) return;
 
       const messagesDiv = document.getElementById('chat-messages');
-      messagesDiv.innerHTML += `<div class="chat-message user">${message}</div>`;
+      messagesDiv.innerHTML += `<div class="chat-message user">${escapeHtml(message)}</div>`;
       input.value = '';
       addActivity(`Usuario: ${message.substring(0, 30)}...`, 'info');
 
+      // Mostrar indicador de "pensando"
+      const thinkingId = 'thinking-' + Date.now();
+      messagesDiv.innerHTML += `<div class="chat-message assistant" id="${thinkingId}" style="opacity: 0.6;">🧠 Pensando...</div>`;
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
       try {
-        const res = await fetch(`${API_BASE}/run`, {
+        // Enviar al cerebro
+        const res = await fetch(`${API_BASE}/brain/process`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: message })
         });
         const data = await res.json();
-        const response = data.result || data.response || JSON.stringify(data);
-        messagesDiv.innerHTML += `<div class="chat-message assistant">${response}</div>`;
+        
+        // Remover indicador de pensando
+        const thinkingEl = document.getElementById(thinkingId);
+        if (thinkingEl) thinkingEl.remove();
+        
+        if (data.ok) {
+          const response = data.response || data.result || 'Sin respuesta';
+          messagesDiv.innerHTML += `<div class="chat-message assistant">${formatResponse(response)}</div>`;
+          addActivity('Cerebro respondió', 'success');
+        } else {
+          messagesDiv.innerHTML += `<div class="chat-message assistant" style="border-color: var(--accent-red);">Error: ${data.error || 'Sin respuesta'}</div>`;
+          addActivity('Error del cerebro: ' + (data.error || 'desconocido'), 'error');
+        }
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
       } catch (e) {
-        messagesDiv.innerHTML += `<div class="chat-message assistant" style="border-color: var(--accent-red);">Error: ${e.message}</div>`;
+        const thinkingEl = document.getElementById(thinkingId);
+        if (thinkingEl) thinkingEl.remove();
+        messagesDiv.innerHTML += `<div class="chat-message assistant" style="border-color: var(--accent-red);">Error de conexión: ${e.message}</div>`;
         addActivity('Error: ' + e.message, 'error');
       }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function formatResponse(response) {
+      if (typeof response === 'object') {
+        return '<pre style="white-space: pre-wrap; font-size: 0.85rem;">' + JSON.stringify(response, null, 2) + '</pre>';
+      }
+      return escapeHtml(String(response));
     }
 
     document.getElementById('chat-input')?.addEventListener('keypress', (e) => {
@@ -1051,20 +1202,58 @@
     });
 
     // Governance
-    function setGovMode(mode) {
-      document.getElementById('gov-mode').textContent = mode.toUpperCase();
-      addActivity(`Modo cambiado a: ${mode}`, 'success');
+    async function setGovMode(mode) {
+      try {
+        const res = await fetch(`${API_BASE}/governance/mode/${mode}`, { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          document.getElementById('gov-mode').textContent = mode.toUpperCase();
+          addActivity(`Modo de gobernanza: ${mode.toUpperCase()}`, 'success');
+        } else {
+          addActivity(`Error: ${data.error}`, 'error');
+        }
+      } catch (e) {
+        addActivity(`Error: ${e.message}`, 'error');
+      }
     }
 
-    function emergencyStop() {
-      if (confirm('¿Confirmar EMERGENCY STOP?')) {
-        addActivity('EMERGENCY STOP activado', 'error');
-        document.getElementById('gov-mode').textContent = 'EMERGENCY';
+    async function emergencyStop() {
+      if (confirm('⚠️ ¿Confirmar EMERGENCY STOP?\n\nEsto detendrá todas las operaciones automáticas.')) {
+        try {
+          await fetch(`${API_BASE}/governance/mode/emergency`, { method: 'POST' });
+          document.getElementById('gov-mode').textContent = 'EMERGENCY';
+          document.getElementById('gov-mode').style.color = 'var(--accent-red)';
+          addActivity('🚨 EMERGENCY STOP ACTIVADO', 'error');
+        } catch (e) {
+          addActivity(`Error: ${e.message}`, 'error');
+        }
       }
     }
 
     // Vision
-    function captureSnapshot() {
+    async function captureSnapshot() {
+      if (selectedCamera === null) {
+        addActivity('Selecciona una cámara primero', 'error');
+        return;
+      }
+      addActivity(`Capturando de cámara ${selectedCamera}...`, 'info');
+      try {
+        const res = await fetch(`${API_BASE}/vision/capture/${selectedCamera}`);
+        const data = await res.json();
+        if (data.ok && data.image_base64) {
+          const preview = document.getElementById('vision-preview');
+          preview.innerHTML = `<img src="data:image/jpeg;base64,${data.image_base64}" style="max-width: 100%; border-radius: 8px;">`;
+          document.getElementById('camera-info').textContent = `Cámara ${selectedCamera} - ${data.width}x${data.height}`;
+          addActivity('Captura exitosa', 'success');
+        } else {
+          addActivity(`Error: ${data.error || 'No se pudo capturar'}`, 'error');
+        }
+      } catch (e) {
+        addActivity(`Error: ${e.message}`, 'error');
+      }
+    }
+
+    function captureSnapshotOld() {
       addActivity('Capturando snapshot...', 'info');
     }
 
