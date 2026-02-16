@@ -206,7 +206,7 @@ class TriggerRegistry:
 # CONDITION CHECKERS
 # ============================================================================
 
-def check_git_changes() -> Dict[str, Any]:
+def check_git_changes(min_changes: int = 1) -> Dict[str, Any]:
     """Verifica si hay cambios pendientes en Git."""
     try:
         result = subprocess.run(
@@ -218,7 +218,7 @@ def check_git_changes() -> Dict[str, Any]:
         )
         changes = [l for l in (result.stdout or "").strip().split("\n") if l.strip()]
         return {
-            "triggered": len(changes) > 0,
+            "triggered": len(changes) >= min_changes,
             "changes_count": len(changes),
             "files": changes[:10],
         }
@@ -256,7 +256,7 @@ def check_git_behind() -> Dict[str, Any]:
         return {"triggered": False, "error": str(e)}
 
 
-def check_service_down(services: List[str] = None) -> Dict[str, Any]:
+def check_service_down(services: Optional[List[str]] = None) -> Dict[str, Any]:
     """Verifica si algún servicio está caído."""
     services = services or ["atlas_api", "scheduler"]
     down_services = []

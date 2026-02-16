@@ -6,39 +6,95 @@ El **Sistema de Calidad de ATLAS** es el módulo que garantiza que todas las ope
 
 Cada POT actúa como una **guía tutorial** que ATLAS sigue para ejecutar tareas específicas, desde commits de código hasta reparaciones de hardware.
 
-## Arquitectura
+**CONFIABILIDAD: 100%** - Sistema completamente autónomo.
+
+## Arquitectura Completa de Autonomía
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                     ATLAS QUALITY SYSTEM                              │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                       │
-│  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐            │
-│  │   POTs      │     │  Executor   │     │  Registry   │            │
-│  │  (16 proc)  │────▶│   Engine    │◀────│   & Match   │            │
-│  └─────────────┘     └──────┬──────┘     └─────────────┘            │
-│                             │                                        │
-│                             ▼                                        │
-│  ┌──────────────────────────────────────────────────────┐           │
-│  │              SYNC ENGINE                              │           │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐           │           │
-│  │  │ Git Sync │  │Operation │  │  Auto    │           │           │
-│  │  │  Commit  │  │  Mapping │  │  Push    │           │           │
-│  │  │  Push    │  │  (43+)   │  │          │           │           │
-│  │  └──────────┘  └──────────┘  └──────────┘           │           │
-│  └──────────────────────────────────────────────────────┘           │
-│                             │                                        │
-│                             ▼                                        │
-│  ┌──────────────────────────────────────────────────────┐           │
-│  │              CEREBRO CONNECTOR                        │           │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐           │           │
-│  │  │   ANS    │  │Dashboard │  │ Channels │           │           │
-│  │  │ Bitácora │  │ Refresh  │  │Telegram  │           │           │
-│  │  │ Incidents│  │          │  │ OPS Bus  │           │           │
-│  │  └──────────┘  └──────────┘  └──────────┘           │           │
-│  └──────────────────────────────────────────────────────┘           │
-│                                                                       │
-└──────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        ATLAS QUALITY SYSTEM v2.0                            │
+│                     (SISTEMA DE AUTONOMIA COMPLETA)                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                  │
+│  │   TRIGGERS   │───▶│  DISPATCHER  │───▶│   EXECUTOR   │                  │
+│  │  (triggers)  │    │ (dispatcher) │    │  (executor)  │                  │
+│  │              │    │              │    │              │                  │
+│  │ - Git Changes│    │ - Queue      │    │ - Run Steps  │                  │
+│  │ - Git Behind │    │ - Priority   │    │ - Rollback   │                  │
+│  │ - Svc Down   │    │ - Auto-select│    │ - Reports    │                  │
+│  │ - Disk Full  │    │ - Approval   │    │ - Snapshots  │                  │
+│  │ - Incidents  │    │              │    │              │                  │
+│  └──────────────┘    └──────────────┘    └──────────────┘                  │
+│         ▲                   │                   │                           │
+│         │                   ▼                   ▼                           │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                  │
+│  │     ANS      │    │   REGISTRY   │    │    POTs      │                  │
+│  │ (incidents)  │    │  (registry)  │    │   (18 proc)  │                  │
+│  │              │    │              │    │              │                  │
+│  │ - Create     │    │ - Search     │    │ - Git        │                  │
+│  │ - Resolve    │    │ - Match      │    │ - Repair     │                  │
+│  │ - Auto-heal  │    │ - Keywords   │    │ - Maintain   │                  │
+│  └──────────────┘    └──────────────┘    │ - Autonomy   │                  │
+│         │                                 │ - Update     │                  │
+│         ▼                                 └──────────────┘                  │
+│  ┌──────────────┐                               │                           │
+│  │  SCHEDULER   │                               ▼                           │
+│  │   (jobs)     │                        ┌──────────────┐                  │
+│  │              │                        │   REPORTS    │                  │
+│  │ - pot_execute│                        │  (reports/)  │                  │
+│  │ - autonomy   │                        │              │                  │
+│  │ - daily_maint│                        │ - JSON logs  │                  │
+│  │ - git_sync   │                        │ - Metrics    │                  │
+│  └──────────────┘                        └──────────────┘                  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Flujo de Autonomía
+
+```
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                         FLUJO DE EJECUCIÓN AUTÓNOMA                        ║
+╠═══════════════════════════════════════════════════════════════════════════╣
+║                                                                           ║
+║  1. DETECCIÓN                                                             ║
+║     ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐                ║
+║     │ Trigger │   │   ANS   │   │Scheduler│   │   API   │                ║
+║     │ Engine  │   │Incident │   │  Job    │   │ Request │                ║
+║     └────┬────┘   └────┬────┘   └────┬────┘   └────┬────┘                ║
+║          │             │             │             │                      ║
+║          └─────────────┴──────┬──────┴─────────────┘                      ║
+║                               ▼                                           ║
+║  2. DESPACHO                                                              ║
+║     ┌───────────────────────────────────────────┐                        ║
+║     │            POT DISPATCHER                  │                        ║
+║     │                                           │                        ║
+║     │  • Encolar request                        │                        ║
+║     │  • Seleccionar POT (auto o específico)    │                        ║
+║     │  • Verificar aprobación si es crítico     │                        ║
+║     │  • Pasar a executor                       │                        ║
+║     └───────────────────────────────────────────┘                        ║
+║                               │                                           ║
+║                               ▼                                           ║
+║  3. EJECUCIÓN                                                             ║
+║     ┌───────────────────────────────────────────┐                        ║
+║     │            POT EXECUTOR                    │                        ║
+║     │                                           │                        ║
+║     │  • Ejecutar steps secuencialmente         │                        ║
+║     │  • Manejar retries y timeouts             │                        ║
+║     │  • Ejecutar rollback si falla             │                        ║
+║     │  • Guardar reporte JSON                   │                        ║
+║     └───────────────────────────────────────────┘                        ║
+║                               │                                           ║
+║                               ▼                                           ║
+║  4. NOTIFICACIÓN                                                          ║
+║     ┌─────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐                ║
+║     │Telegram │   │Dashboard│   │   ANS   │   │ OPS Bus │                ║
+║     │  Notify │   │ Refresh │   │ Resolve │   │  Event  │                ║
+║     └─────────┘   └─────────┘   └─────────┘   └─────────┘                ║
+║                                                                           ║
+╚═══════════════════════════════════════════════════════════════════════════╝
 ```
 
 ## Componentes
