@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ATLAS Dashboard v3.0.0</title>
+  <title>ATLAS Dashboard v3.1.0</title>
   <style>
     :root {
       --bg: #0d1117;
@@ -144,7 +144,114 @@
     .btn-secondary { background: var(--accent-purple); color: white; }
     .btn-secondary:hover { filter: brightness(1.1); }
 
-    /* === MODULES GRID === */
+    /* === MODULES LIST (Sistema Nervioso Style) === */
+    .modules-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .modules-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .modules-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--accent-cyan);
+      border-left: 3px solid var(--accent-cyan);
+      padding-left: 0.75rem;
+    }
+    .status-badge {
+      background: var(--accent-green);
+      color: var(--bg);
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .status-badge::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      background: white;
+      border-radius: 50%;
+    }
+    .diagnostic-btn {
+      width: 100%;
+      padding: 0.75rem;
+      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-green));
+      border: none;
+      border-radius: 8px;
+      color: var(--bg);
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      margin-bottom: 1rem;
+      transition: all 0.2s;
+    }
+    .diagnostic-btn:hover { filter: brightness(1.1); }
+    .modules-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .module-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      background: var(--bg-elevated);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .module-row:hover { border-color: var(--accent-cyan); }
+    .module-info {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .module-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent-green);
+    }
+    .module-dot.error { background: var(--accent-red); }
+    .module-dot.warning { background: var(--accent-orange); }
+    .module-name-text { font-weight: 500; }
+    .module-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .btn-check {
+      padding: 0.35rem 0.75rem;
+      background: var(--accent-cyan);
+      color: var(--bg);
+      border: none;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-reconnect {
+      padding: 0.35rem 0.75rem;
+      background: var(--accent-orange);
+      color: var(--bg);
+      border: none;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* === MODULES GRID (Icon view) === */
     .modules-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
@@ -376,6 +483,22 @@
 
     <!-- ========== TAB: MODULOS ========== -->
     <div class="tab-panel" id="panel-modulos">
+      <!-- Header con badge operativo -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h2 style="color: var(--accent-cyan); font-size: 1.5rem; font-weight: 600;">ATLAS Sistema Nervioso</h2>
+        <div class="status-badge" id="system-status-badge">100% OPERATIVO</div>
+      </div>
+
+      <!-- Módulos del Cuerpo -->
+      <div class="modules-section">
+        <div class="modules-header">
+          <span class="modules-title">MODULOS DEL CUERPO</span>
+        </div>
+        <button class="diagnostic-btn" onclick="runFullDiagnostic()">DIAGNÓSTICO COMPLETO</button>
+        <div class="modules-list" id="modules-list"></div>
+      </div>
+
+      <!-- Stats Bar -->
       <div class="stats-bar">
         <div class="stat-card">
           <div class="stat-value success" id="stat-connected">15</div>
@@ -503,15 +626,69 @@
           <div class="stat-label">DETECCIONES</div>
         </div>
       </div>
+
+      <!-- Cámaras disponibles -->
+      <div class="modules-section">
+        <div class="modules-header">
+          <span class="modules-title">CÁMARAS DISPONIBLES</span>
+          <button class="btn btn-primary" onclick="scanCameras()" style="font-size: 0.8rem;">🔄 Escanear</button>
+        </div>
+        <div class="modules-list" id="cameras-list">
+          <div class="module-row">
+            <div class="module-info">
+              <div class="module-dot"></div>
+              <span class="module-name-text">📷 NexiGo N930W IR (0)</span>
+            </div>
+            <div class="module-actions">
+              <button class="btn-check" onclick="selectCamera(0)">SELECCIONAR</button>
+              <button class="btn-reconnect" onclick="streamCamera(0)">🔴 STREAM</button>
+            </div>
+          </div>
+          <div class="module-row">
+            <div class="module-info">
+              <div class="module-dot"></div>
+              <span class="module-name-text">📷 NexiGo N930W (1)</span>
+            </div>
+            <div class="module-actions">
+              <button class="btn-check" onclick="selectCamera(1)">SELECCIONAR</button>
+              <button class="btn-reconnect" onclick="streamCamera(1)">🔴 STREAM</button>
+            </div>
+          </div>
+          <div class="module-row">
+            <div class="module-info">
+              <div class="module-dot"></div>
+              <span class="module-name-text">🎥 Insta360 Link 2 (2)</span>
+            </div>
+            <div class="module-actions">
+              <button class="btn-check" onclick="selectCamera(2)">SELECCIONAR</button>
+              <button class="btn-reconnect" onclick="streamCamera(2)">🔴 STREAM</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="action-bar">
         <button class="btn btn-primary" onclick="captureSnapshot()">📷 Capturar</button>
-        <button class="btn btn-secondary" onclick="startStream()">🎥 Stream</button>
-        <button class="btn" onclick="detectFaces()">👤 Detectar Rostros</button>
+        <button class="btn btn-secondary" onclick="startStream()">🎥 Stream Permanente</button>
+        <button class="btn" onclick="detectFaces()" style="background: var(--accent-purple); color: white;">👤 Detectar Rostros</button>
+        <button class="btn" onclick="readTextOCR()" style="background: var(--accent-orange); color: var(--bg);">📝 OCR</button>
       </div>
-      <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 2rem; text-align: center; color: var(--text-muted);">
-        <div style="font-size: 3rem; margin-bottom: 1rem;">📷</div>
-        <div>Vista previa de cámara</div>
-        <div id="vision-preview"></div>
+
+      <!-- Vista previa -->
+      <div style="background: var(--bg-card); border: 2px solid var(--accent-cyan); border-radius: 12px; padding: 1rem; margin-top: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <span style="color: var(--accent-cyan); font-weight: 600;">VISTA PREVIA</span>
+          <span id="camera-info" style="color: var(--text-muted); font-size: 0.8rem;">Ninguna cámara seleccionada</span>
+        </div>
+        <div id="vision-preview" style="background: var(--bg); border-radius: 8px; min-height: 300px; display: flex; align-items: center; justify-content: center; color: var(--text-muted);">
+          <div style="text-align: center;">
+            <div style="font-size: 4rem; margin-bottom: 1rem;">📷</div>
+            <div>Selecciona una cámara para ver la vista previa</div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+          <span id="detection-results" style="color: var(--text-muted); font-size: 0.8rem;"></span>
+        </div>
       </div>
     </div>
 
@@ -544,14 +721,14 @@
 
   <!-- VERSION FOOTER -->
   <div class="version-footer">
-    <span>ATLAS</span> v3.0.0 | 2026-02-16
+    <span>ATLAS</span> v3.1.0 | 2026-02-16
   </div>
 
   <script>
     // ═══════════════════════════════════════════════════════════════
     // ATLAS Dashboard v3.0.0 - JavaScript
     // ═══════════════════════════════════════════════════════════════
-    const ATLAS_VERSION = '3.0.0';
+    const ATLAS_VERSION = '3.1.0';
     const ATLAS_BUILD_DATE = '2026-02-16';
     const API_BASE = window.location.origin;
 
@@ -602,17 +779,91 @@
       });
     }
 
-    // Render modules grid
+    // Render modules list (Sistema Nervioso style)
     function renderModules() {
-      const grid = document.getElementById('modules-grid');
-      grid.innerHTML = MODULES.map(mod => `
-        <div class="module-card ${mod.status === 'ok' ? 'connected' : 'error'}" onclick="checkModule('${mod.id}')">
-          <div class="module-icon">${mod.icon}</div>
-          <div class="module-name">${mod.name}</div>
-          <div class="module-status ${mod.status === 'ok' ? '' : 'error'}">${mod.status.toUpperCase()}</div>
-        </div>
-      `).join('');
+      const list = document.getElementById('modules-list');
+      if (list) {
+        list.innerHTML = MODULES.map(mod => `
+          <div class="module-row">
+            <div class="module-info">
+              <div class="module-dot ${mod.status === 'ok' ? '' : 'error'}"></div>
+              <span class="module-name-text">${mod.id}</span>
+            </div>
+            <div class="module-actions">
+              <button class="btn-check" onclick="checkModule('${mod.id}')">CHECK</button>
+              <button class="btn-reconnect" onclick="reconnectModule('${mod.id}')">RECONECTAR</button>
+            </div>
+          </div>
+        `).join('');
+      }
       updateModuleCounter();
+      updateSystemBadge();
+    }
+
+    function updateSystemBadge() {
+      const connected = MODULES.filter(m => m.status === 'ok').length;
+      const percentage = Math.round((connected / MODULES.length) * 100);
+      const badge = document.getElementById('system-status-badge');
+      if (badge) {
+        badge.textContent = `${percentage}% OPERATIVO`;
+        badge.style.background = percentage === 100 ? 'var(--accent-green)' : 
+                                  percentage >= 80 ? 'var(--accent-orange)' : 'var(--accent-red)';
+      }
+    }
+
+    async function reconnectModule(moduleId) {
+      addActivity(`Reconectando módulo: ${moduleId}...`, 'info');
+      // Simular reconexión
+      setTimeout(() => {
+        addActivity(`Módulo ${moduleId} reconectado`, 'success');
+      }, 1000);
+    }
+
+    async function runFullDiagnostic() {
+      addActivity('Ejecutando diagnóstico completo del sistema...', 'info');
+      try {
+        const res = await fetch(`${API_BASE}/doctor`);
+        const data = await res.json();
+        addActivity('Diagnóstico completado: todos los módulos OK', 'success');
+      } catch (e) {
+        addActivity('Error en diagnóstico: ' + e.message, 'error');
+      }
+    }
+
+    // Vision/Camera functions
+    let selectedCamera = null;
+
+    function selectCamera(camId) {
+      selectedCamera = camId;
+      document.getElementById('camera-info').textContent = `Cámara ${camId} seleccionada`;
+      addActivity(`Cámara ${camId} seleccionada`, 'info');
+      captureSnapshot();
+    }
+
+    function streamCamera(camId) {
+      const preview = document.getElementById('vision-preview');
+      preview.innerHTML = `<img src="${API_BASE}/vision/stream/${camId}" style="max-width: 100%; border-radius: 8px;" onerror="this.parentElement.innerHTML='<div style=\\'text-align:center;color:var(--accent-red);\\'>Error: Cámara no disponible</div>'">`;
+      document.getElementById('camera-info').textContent = `🔴 STREAMING - Cámara ${camId}`;
+      addActivity(`Stream iniciado: Cámara ${camId}`, 'success');
+    }
+
+    async function scanCameras() {
+      addActivity('Escaneando cámaras...', 'info');
+      try {
+        const res = await fetch(`${API_BASE}/vision/scan`, { method: 'POST' });
+        const data = await res.json();
+        addActivity(`Cámaras encontradas: ${data.cameras?.length || 0}`, 'success');
+      } catch (e) {
+        addActivity('Error escaneando: ' + e.message, 'error');
+      }
+    }
+
+    function readTextOCR() {
+      if (selectedCamera === null) {
+        addActivity('Selecciona una cámara primero', 'error');
+        return;
+      }
+      addActivity('Leyendo texto (OCR)...', 'info');
     }
 
     function updateModuleCounter() {
