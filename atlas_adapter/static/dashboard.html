@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ATLAS Dashboard v3.2.1</title>
+  <title>ATLAS Dashboard v3.3.0</title>
   <style>
     :root {
       --bg: #0d1117;
@@ -440,6 +440,33 @@
       grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
       gap: 1rem;
     }
+    .config-grid-full {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+    @media (max-width: 1400px) {
+      .config-grid-full { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 900px) {
+      .config-grid-full { grid-template-columns: 1fr; }
+    }
+    .config-status-bar {
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+      padding: 0.75rem 1rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 1rem;
+    }
+    .config-status-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+    }
     .config-card {
       background: var(--bg-card);
       border: 1px solid var(--border);
@@ -452,6 +479,154 @@
       margin-bottom: 1rem;
       color: var(--accent-purple);
     }
+    .config-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+      gap: 1rem;
+    }
+    .config-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .config-select {
+      padding: 0.35rem 0.5rem;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 0.8rem;
+      min-width: 150px;
+    }
+    .config-select:focus {
+      border-color: var(--accent-cyan);
+      outline: none;
+    }
+    .config-select-mini {
+      padding: 0.25rem 0.4rem;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 0.7rem;
+      min-width: 100px;
+    }
+    .config-input {
+      padding: 0.35rem 0.5rem;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 0.8rem;
+      width: 100%;
+    }
+    .config-input:focus {
+      border-color: var(--accent-cyan);
+      outline: none;
+    }
+    .config-slider {
+      width: 100%;
+      -webkit-appearance: none;
+      height: 6px;
+      background: var(--bg-elevated);
+      border-radius: 3px;
+      margin: 0.5rem 0;
+    }
+    .config-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      background: var(--accent-cyan);
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.65rem;
+      color: var(--text-muted);
+    }
+    .config-textarea {
+      width: 100%;
+      padding: 0.5rem;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 0.8rem;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 80px;
+    }
+    .config-textarea:focus {
+      border-color: var(--accent-cyan);
+      outline: none;
+    }
+    .specialist-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .specialist-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem;
+      background: var(--bg-elevated);
+      border-radius: 4px;
+    }
+    .specialist-item input[type="checkbox"] {
+      accent-color: var(--accent-cyan);
+    }
+    .specialist-item label {
+      flex: 1;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    .models-list {
+      max-height: 200px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .model-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.4rem 0.6rem;
+      background: var(--bg-elevated);
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+    .model-item.active {
+      border: 1px solid var(--accent-green);
+      background: rgba(16, 185, 129, 0.1);
+    }
+    .model-size {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+    .ai-log-preview {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.5rem;
+      max-height: 120px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 0.7rem;
+    }
+    .log-entry {
+      padding: 0.15rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .log-entry:last-child { border-bottom: none; }
+    .log-info { color: var(--accent-cyan); }
+    .log-warn { color: var(--accent-orange); }
+    .log-error { color: var(--accent-red); }
+    .log-debug { color: var(--text-muted); }
     .config-item {
       display: flex;
       justify-content: space-between;
@@ -504,7 +679,7 @@
       <!-- Botón Actualizar -->
       <button class="btn-update" id="btn-check-update" onclick="checkForUpdates()" title="Buscar actualizaciones">🔄 Actualizar</button>
       <!-- Badge de versión -->
-      <div class="version-badge" id="version-badge">v3.2.1</div>
+      <div class="version-badge" id="version-badge">v3.3.0</div>
       <div class="status-indicator">
         <div class="status-dot" id="cerebro-dot"></div>
         <span>Cerebro</span>
@@ -619,44 +794,212 @@
 
     <!-- ========== TAB: CONFIG IA ========== -->
     <div class="tab-panel" id="panel-config">
-      <div class="config-grid">
+      <!-- Estado de conexión -->
+      <div class="config-status-bar">
+        <div class="config-status-item">
+          <span class="status-dot" id="ai-status-dot"></span>
+          <span id="ai-status-text">Conectando...</span>
+        </div>
+        <div class="config-status-item">
+          <span style="color: var(--text-muted);">Latencia:</span>
+          <span id="ai-latency">--</span>ms
+        </div>
+        <div class="config-status-item">
+          <span style="color: var(--text-muted);">Tokens usados hoy:</span>
+          <span id="ai-tokens-used">0</span>
+        </div>
+        <button class="btn btn-primary" onclick="testAIConnection()" style="margin-left: auto;">🔌 Test Conexión</button>
+        <button class="btn btn-secondary" onclick="saveAIConfig()">💾 Guardar Config</button>
+      </div>
+
+      <div class="config-grid-full">
+        <!-- Columna 1: Proveedor y Modelo -->
         <div class="config-card">
           <div class="config-title">🧠 Proveedor de IA</div>
           <div class="config-item">
-            <span class="config-label">Modo</span>
-            <select class="config-select" id="ai-mode">
-              <option value="auto">Automático</option>
-              <option value="manual">Manual</option>
+            <span class="config-label">Modo de Operación</span>
+            <select class="config-select" id="ai-mode" onchange="onAIModeChange()">
+              <option value="auto">🤖 Automático (Cerebro decide)</option>
+              <option value="local">💻 Solo Local (Ollama)</option>
+              <option value="cloud">☁️ Solo Cloud (API)</option>
+              <option value="hybrid">🔄 Híbrido (Local + Fallback Cloud)</option>
             </select>
           </div>
           <div class="config-item">
-            <span class="config-label">Proveedor</span>
-            <select class="config-select" id="ai-provider">
-              <option value="ollama">Ollama (Local)</option>
-              <option value="deepseek">DeepSeek</option>
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="gemini">Google Gemini</option>
+            <span class="config-label">Proveedor Principal</span>
+            <select class="config-select" id="ai-provider" onchange="onProviderChange()">
+              <option value="ollama">🦙 Ollama (Local)</option>
+              <option value="deepseek">🔮 DeepSeek</option>
+              <option value="openai">🟢 OpenAI</option>
+              <option value="anthropic">🟣 Anthropic Claude</option>
+              <option value="gemini">🔵 Google Gemini</option>
+              <option value="groq">⚡ Groq</option>
+              <option value="mistral">🌀 Mistral AI</option>
+              <option value="cohere">🟠 Cohere</option>
             </select>
           </div>
           <div class="config-item">
             <span class="config-label">Modelo</span>
             <select class="config-select" id="ai-model">
-              <option value="llama3.2">llama3.2</option>
-              <option value="deepseek-coder">deepseek-coder</option>
-              <option value="mistral">mistral</option>
+              <!-- Se llena dinámicamente según proveedor -->
             </select>
           </div>
+          <div class="config-item" id="ollama-url-item">
+            <span class="config-label">URL Ollama</span>
+            <input type="text" class="config-input" id="ollama-url" value="http://localhost:11434" placeholder="http://localhost:11434">
+          </div>
+          <div class="config-item" id="api-key-item" style="display: none;">
+            <span class="config-label">API Key</span>
+            <div style="display: flex; gap: 0.5rem;">
+              <input type="password" class="config-input" id="ai-api-key" placeholder="sk-..." style="flex: 1;">
+              <button class="btn btn-secondary" onclick="toggleApiKeyVisibility()" style="padding: 0.25rem 0.5rem;">👁</button>
+            </div>
+          </div>
         </div>
+
+        <!-- Columna 2: Parámetros de Generación -->
         <div class="config-card">
-          <div class="config-title">⚙️ Parámetros</div>
+          <div class="config-title">⚙️ Parámetros de Generación</div>
           <div class="config-item">
-            <span class="config-label">Temperatura</span>
-            <input type="range" min="0" max="100" value="70" style="width: 100px;">
+            <span class="config-label">Temperatura <span id="temp-value">0.7</span></span>
+            <input type="range" class="config-slider" id="ai-temperature" min="0" max="200" value="70" oninput="updateSliderValue('temperature')">
+            <div class="slider-labels"><span>Preciso</span><span>Creativo</span></div>
+          </div>
+          <div class="config-item">
+            <span class="config-label">Top P <span id="top-p-value">0.9</span></span>
+            <input type="range" class="config-slider" id="ai-top-p" min="0" max="100" value="90" oninput="updateSliderValue('top-p')">
+          </div>
+          <div class="config-item">
+            <span class="config-label">Top K <span id="top-k-value">40</span></span>
+            <input type="range" class="config-slider" id="ai-top-k" min="1" max="100" value="40" oninput="updateSliderValue('top-k')">
           </div>
           <div class="config-item">
             <span class="config-label">Max Tokens</span>
-            <input type="number" value="2048" style="width: 80px; padding: 0.25rem; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 4px; color: var(--text);">
+            <input type="number" class="config-input" id="ai-max-tokens" value="2048" min="128" max="32768">
+          </div>
+          <div class="config-item">
+            <span class="config-label">Repeat Penalty <span id="repeat-penalty-value">1.1</span></span>
+            <input type="range" class="config-slider" id="ai-repeat-penalty" min="100" max="200" value="110" oninput="updateSliderValue('repeat-penalty')">
+          </div>
+        </div>
+
+        <!-- Columna 3: Contexto y Sistema -->
+        <div class="config-card">
+          <div class="config-title">📝 Contexto del Sistema</div>
+          <div class="config-item" style="flex-direction: column; align-items: stretch;">
+            <span class="config-label">System Prompt</span>
+            <textarea class="config-textarea" id="ai-system-prompt" rows="4" placeholder="Eres ATLAS, un asistente de IA...">Eres ATLAS, un sistema de inteligencia artificial avanzado. Responde de forma concisa, precisa y útil. Tienes acceso a módulos de visión, memoria, análisis y control.</textarea>
+          </div>
+          <div class="config-item">
+            <span class="config-label">Contexto de Memoria</span>
+            <select class="config-select" id="ai-memory-context">
+              <option value="none">Sin memoria</option>
+              <option value="session">Solo sesión actual</option>
+              <option value="short">Corto plazo (últimas 10 conversaciones)</option>
+              <option value="long" selected>Largo plazo (memoria persistente)</option>
+            </select>
+          </div>
+          <div class="config-item">
+            <span class="config-label">Ventana de Contexto</span>
+            <input type="number" class="config-input" id="ai-context-window" value="8192" min="1024" max="128000">
+          </div>
+        </div>
+
+        <!-- Columna 4: Especialistas IA -->
+        <div class="config-card">
+          <div class="config-title">🎯 Especialistas IA (Modo Auto)</div>
+          <div class="specialist-list" id="specialist-list">
+            <div class="specialist-item">
+              <input type="checkbox" id="spec-code" checked>
+              <label for="spec-code">💻 Código</label>
+              <select class="config-select-mini" id="spec-code-model">
+                <option value="deepseek-coder">deepseek-coder</option>
+                <option value="codellama">codellama</option>
+                <option value="gpt-4">gpt-4</option>
+              </select>
+            </div>
+            <div class="specialist-item">
+              <input type="checkbox" id="spec-vision" checked>
+              <label for="spec-vision">👁️ Visión</label>
+              <select class="config-select-mini" id="spec-vision-model">
+                <option value="llava">llava</option>
+                <option value="gpt-4-vision">gpt-4-vision</option>
+                <option value="gemini-pro-vision">gemini-pro-vision</option>
+              </select>
+            </div>
+            <div class="specialist-item">
+              <input type="checkbox" id="spec-chat" checked>
+              <label for="spec-chat">💬 Chat</label>
+              <select class="config-select-mini" id="spec-chat-model">
+                <option value="llama3.2" selected>llama3.2</option>
+                <option value="mistral">mistral</option>
+                <option value="claude-3">claude-3</option>
+              </select>
+            </div>
+            <div class="specialist-item">
+              <input type="checkbox" id="spec-analysis" checked>
+              <label for="spec-analysis">📊 Análisis</label>
+              <select class="config-select-mini" id="spec-analysis-model">
+                <option value="llama3.2">llama3.2</option>
+                <option value="mixtral">mixtral</option>
+              </select>
+            </div>
+            <div class="specialist-item">
+              <input type="checkbox" id="spec-creative">
+              <label for="spec-creative">🎨 Creativo</label>
+              <select class="config-select-mini" id="spec-creative-model">
+                <option value="llama3.2">llama3.2</option>
+                <option value="claude-3">claude-3</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Columna 5: Modelos Disponibles -->
+        <div class="config-card">
+          <div class="config-title">📦 Modelos Disponibles (Ollama)</div>
+          <div class="models-list" id="ollama-models-list">
+            <div style="color: var(--text-muted); text-align: center; padding: 1rem;">
+              Cargando modelos...
+            </div>
+          </div>
+          <button class="btn btn-secondary" onclick="refreshOllamaModels()" style="width: 100%; margin-top: 0.5rem;">🔄 Actualizar Lista</button>
+          <button class="btn" onclick="pullOllamaModel()" style="width: 100%; margin-top: 0.5rem; background: var(--accent-purple); color: white;">⬇️ Descargar Modelo</button>
+        </div>
+
+        <!-- Columna 6: Logs y Debug -->
+        <div class="config-card">
+          <div class="config-title">🔧 Debug & Logs</div>
+          <div class="config-item">
+            <span class="config-label">Nivel de Log</span>
+            <select class="config-select" id="ai-log-level">
+              <option value="error">Solo Errores</option>
+              <option value="warn">Advertencias</option>
+              <option value="info" selected>Info</option>
+              <option value="debug">Debug</option>
+              <option value="trace">Trace (Verboso)</option>
+            </select>
+          </div>
+          <div class="config-item">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+              <input type="checkbox" id="ai-stream-response" checked>
+              <span>Respuesta en Streaming</span>
+            </label>
+          </div>
+          <div class="config-item">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+              <input type="checkbox" id="ai-save-history" checked>
+              <span>Guardar historial</span>
+            </label>
+          </div>
+          <div class="config-item">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+              <input type="checkbox" id="ai-show-thinking">
+              <span>Mostrar "pensamiento"</span>
+            </label>
+          </div>
+          <div class="ai-log-preview" id="ai-log-preview">
+            <div class="log-entry log-info">[INFO] Sistema listo</div>
           </div>
         </div>
       </div>
@@ -787,14 +1130,14 @@
 
   <!-- VERSION FOOTER -->
   <div class="version-footer">
-    <span>ATLAS</span> v3.2.1 | 2026-02-16
+    <span>ATLAS</span> v3.3.0 | 2026-02-16
   </div>
 
   <script>
     // ═══════════════════════════════════════════════════════════════
     // ATLAS Dashboard v3.0.0 - JavaScript
     // ═══════════════════════════════════════════════════════════════
-    const ATLAS_VERSION = '3.2.1';
+    const ATLAS_VERSION = '3.3.0';
     const ATLAS_BUILD_DATE = '2026-02-16';
     const API_BASE = window.location.origin;
 
@@ -1198,17 +1541,297 @@
       }
     }
 
+    // Modelos por proveedor
+    const MODELS_BY_PROVIDER = {
+      ollama: ['llama3.2', 'llama3.1', 'mistral', 'mixtral', 'codellama', 'deepseek-coder', 'llava', 'phi3', 'gemma2', 'qwen2'],
+      deepseek: ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner'],
+      openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo', 'o1-preview', 'o1-mini'],
+      anthropic: ['claude-3-opus', 'claude-3-sonnet', 'claude-3-haiku', 'claude-3.5-sonnet'],
+      gemini: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-pro', 'gemini-pro-vision'],
+      groq: ['llama-3.3-70b', 'llama-3.1-8b', 'mixtral-8x7b', 'gemma2-9b'],
+      mistral: ['mistral-large', 'mistral-medium', 'mistral-small', 'codestral'],
+      cohere: ['command-r-plus', 'command-r', 'command']
+    };
+
     async function loadAIConfig() {
       try {
+        // Cargar configuración del servidor
         const res = await fetch(`${API_BASE}/config/ai`);
         const data = await res.json();
         if (data.ok) {
           document.getElementById('ai-mode').value = data.mode || 'auto';
           document.getElementById('ai-provider').value = data.provider || 'ollama';
-          document.getElementById('ai-model').value = data.model || 'llama3.2';
+          
+          // Cargar modelos del proveedor y seleccionar el actual
+          onProviderChange();
+          setTimeout(() => {
+            document.getElementById('ai-model').value = data.model || 'llama3.2';
+          }, 100);
+          
+          // Parámetros
+          if (data.temperature !== undefined) {
+            document.getElementById('ai-temperature').value = data.temperature * 100;
+            updateSliderValue('temperature');
+          }
+          if (data.top_p !== undefined) {
+            document.getElementById('ai-top-p').value = data.top_p * 100;
+            updateSliderValue('top-p');
+          }
+          if (data.top_k !== undefined) {
+            document.getElementById('ai-top-k').value = data.top_k;
+            updateSliderValue('top-k');
+          }
+          if (data.max_tokens !== undefined) {
+            document.getElementById('ai-max-tokens').value = data.max_tokens;
+          }
+          if (data.repeat_penalty !== undefined) {
+            document.getElementById('ai-repeat-penalty').value = data.repeat_penalty * 100;
+            updateSliderValue('repeat-penalty');
+          }
+          if (data.system_prompt) {
+            document.getElementById('ai-system-prompt').value = data.system_prompt;
+          }
+          if (data.context_window) {
+            document.getElementById('ai-context-window').value = data.context_window;
+          }
+          if (data.memory_context) {
+            document.getElementById('ai-memory-context').value = data.memory_context;
+          }
+          if (data.ollama_url) {
+            document.getElementById('ollama-url').value = data.ollama_url;
+          }
+          
+          // Estado de conexión
+          document.getElementById('ai-status-dot').classList.remove('offline');
+          document.getElementById('ai-status-text').textContent = 'Conectado';
+          addAILog('info', `Configuración cargada: ${data.provider}/${data.model}`);
         }
+        
+        // Cargar modelos de Ollama si está seleccionado
+        if (document.getElementById('ai-provider').value === 'ollama') {
+          refreshOllamaModels();
+        }
+        
       } catch (e) {
         console.error('Error loading AI config:', e);
+        document.getElementById('ai-status-dot').classList.add('offline');
+        document.getElementById('ai-status-text').textContent = 'Desconectado';
+        addAILog('error', 'Error cargando configuración: ' + e.message);
+      }
+    }
+
+    function onProviderChange() {
+      const provider = document.getElementById('ai-provider').value;
+      const modelSelect = document.getElementById('ai-model');
+      const apiKeyItem = document.getElementById('api-key-item');
+      const ollamaUrlItem = document.getElementById('ollama-url-item');
+      
+      // Mostrar/ocultar campos según proveedor
+      if (provider === 'ollama') {
+        apiKeyItem.style.display = 'none';
+        ollamaUrlItem.style.display = 'flex';
+      } else {
+        apiKeyItem.style.display = 'flex';
+        ollamaUrlItem.style.display = 'none';
+      }
+      
+      // Cargar modelos del proveedor
+      const models = MODELS_BY_PROVIDER[provider] || [];
+      modelSelect.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+      
+      addAILog('info', `Proveedor cambiado a: ${provider}`);
+    }
+
+    function onAIModeChange() {
+      const mode = document.getElementById('ai-mode').value;
+      addAILog('info', `Modo de operación: ${mode}`);
+    }
+
+    function updateSliderValue(type) {
+      const slider = document.getElementById(`ai-${type.replace('-', '-')}`);
+      const valueSpan = document.getElementById(`${type}-value`);
+      if (!slider || !valueSpan) return;
+      
+      let value;
+      switch(type) {
+        case 'temperature':
+          value = (slider.value / 100).toFixed(1);
+          break;
+        case 'top-p':
+          value = (slider.value / 100).toFixed(2);
+          break;
+        case 'top-k':
+          value = slider.value;
+          break;
+        case 'repeat-penalty':
+          value = (slider.value / 100).toFixed(2);
+          break;
+        default:
+          value = slider.value;
+      }
+      valueSpan.textContent = value;
+    }
+
+    function toggleApiKeyVisibility() {
+      const input = document.getElementById('ai-api-key');
+      input.type = input.type === 'password' ? 'text' : 'password';
+    }
+
+    async function saveAIConfig() {
+      const config = {
+        mode: document.getElementById('ai-mode').value,
+        provider: document.getElementById('ai-provider').value,
+        model: document.getElementById('ai-model').value,
+        temperature: parseFloat(document.getElementById('ai-temperature').value) / 100,
+        top_p: parseFloat(document.getElementById('ai-top-p').value) / 100,
+        top_k: parseInt(document.getElementById('ai-top-k').value),
+        max_tokens: parseInt(document.getElementById('ai-max-tokens').value),
+        repeat_penalty: parseFloat(document.getElementById('ai-repeat-penalty').value) / 100,
+        system_prompt: document.getElementById('ai-system-prompt').value,
+        memory_context: document.getElementById('ai-memory-context').value,
+        context_window: parseInt(document.getElementById('ai-context-window').value),
+        ollama_url: document.getElementById('ollama-url').value,
+        stream_response: document.getElementById('ai-stream-response').checked,
+        save_history: document.getElementById('ai-save-history').checked,
+        log_level: document.getElementById('ai-log-level').value
+      };
+      
+      // API Key si no es Ollama
+      if (config.provider !== 'ollama') {
+        config.api_key = document.getElementById('ai-api-key').value;
+      }
+      
+      try {
+        const res = await fetch(`${API_BASE}/config/ai`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config)
+        });
+        const data = await res.json();
+        if (data.ok) {
+          addActivity('Configuración de IA guardada', 'success');
+          addAILog('info', 'Configuración guardada correctamente');
+        } else {
+          addAILog('error', 'Error guardando: ' + (data.error || 'desconocido'));
+        }
+      } catch (e) {
+        addAILog('error', 'Error de conexión: ' + e.message);
+      }
+    }
+
+    async function testAIConnection() {
+      const provider = document.getElementById('ai-provider').value;
+      const statusDot = document.getElementById('ai-status-dot');
+      const statusText = document.getElementById('ai-status-text');
+      const latencyEl = document.getElementById('ai-latency');
+      
+      statusText.textContent = 'Probando...';
+      addAILog('info', `Probando conexión a ${provider}...`);
+      
+      const startTime = Date.now();
+      
+      try {
+        const res = await fetch(`${API_BASE}/config/ai/test`, { method: 'POST' });
+        const data = await res.json();
+        const latency = Date.now() - startTime;
+        
+        latencyEl.textContent = latency;
+        
+        if (data.ok) {
+          statusDot.classList.remove('offline');
+          statusText.textContent = 'Conectado';
+          addAILog('info', `Conexión OK (${latency}ms)`);
+          addActivity(`IA ${provider} conectada`, 'success');
+        } else {
+          statusDot.classList.add('offline');
+          statusText.textContent = 'Error';
+          addAILog('error', data.error || 'Conexión fallida');
+        }
+      } catch (e) {
+        statusDot.classList.add('offline');
+        statusText.textContent = 'Desconectado';
+        latencyEl.textContent = '--';
+        addAILog('error', 'Error: ' + e.message);
+      }
+    }
+
+    async function refreshOllamaModels() {
+      const listEl = document.getElementById('ollama-models-list');
+      listEl.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 0.5rem;">Cargando...</div>';
+      
+      try {
+        const res = await fetch(`${API_BASE}/config/ai/ollama-models`);
+        const data = await res.json();
+        
+        if (data.ok && data.models && data.models.length > 0) {
+          const currentModel = document.getElementById('ai-model').value;
+          listEl.innerHTML = data.models.map(m => `
+            <div class="model-item ${m.name === currentModel ? 'active' : ''}" onclick="selectOllamaModel('${m.name}')">
+              <span>🦙 ${m.name}</span>
+              <span class="model-size">${m.size || ''}</span>
+            </div>
+          `).join('');
+          addAILog('info', `${data.models.length} modelos encontrados`);
+        } else {
+          listEl.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 0.5rem;">No hay modelos instalados</div>';
+        }
+      } catch (e) {
+        listEl.innerHTML = `<div style="color: var(--accent-red); text-align: center; padding: 0.5rem;">Error: ${e.message}</div>`;
+        addAILog('error', 'Error cargando modelos: ' + e.message);
+      }
+    }
+
+    function selectOllamaModel(modelName) {
+      document.getElementById('ai-model').value = modelName;
+      document.querySelectorAll('#ollama-models-list .model-item').forEach(el => {
+        el.classList.remove('active');
+        if (el.textContent.includes(modelName)) {
+          el.classList.add('active');
+        }
+      });
+      addAILog('info', `Modelo seleccionado: ${modelName}`);
+    }
+
+    async function pullOllamaModel() {
+      const modelName = prompt('Nombre del modelo a descargar (ej: llama3.2, mistral, codellama):');
+      if (!modelName) return;
+      
+      addAILog('info', `Descargando modelo: ${modelName}...`);
+      addActivity(`Descargando modelo ${modelName}...`, 'info');
+      
+      try {
+        const res = await fetch(`${API_BASE}/config/ai/ollama-pull`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: modelName })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          addAILog('info', `Modelo ${modelName} descargado`);
+          addActivity(`Modelo ${modelName} instalado`, 'success');
+          refreshOllamaModels();
+        } else {
+          addAILog('error', data.error || 'Error descargando');
+        }
+      } catch (e) {
+        addAILog('error', 'Error: ' + e.message);
+      }
+    }
+
+    function addAILog(level, message) {
+      const logEl = document.getElementById('ai-log-preview');
+      if (!logEl) return;
+      
+      const time = new Date().toLocaleTimeString();
+      const entry = document.createElement('div');
+      entry.className = `log-entry log-${level}`;
+      entry.textContent = `[${time}] ${message}`;
+      logEl.appendChild(entry);
+      logEl.scrollTop = logEl.scrollHeight;
+      
+      // Limitar a 50 entradas
+      while (logEl.children.length > 50) {
+        logEl.removeChild(logEl.firstChild);
       }
     }
 

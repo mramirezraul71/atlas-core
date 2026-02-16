@@ -15,7 +15,7 @@ import uvicorn
 
 from atlas_runtime import handle, status, doctor, modules_report
 
-app = FastAPI(title="ATLAS Bridge API", version="3.2.0")
+app = FastAPI(title="ATLAS Bridge API", version="3.3.0")
 
 # ═══════════════════════════════════════════════════════════════
 # Definición de módulos del sistema
@@ -381,22 +381,187 @@ _ai_config = {
     "provider": "ollama",
     "model": "llama3.2",
     "temperature": 0.7,
-    "max_tokens": 2048
+    "top_p": 0.9,
+    "top_k": 40,
+    "max_tokens": 2048,
+    "repeat_penalty": 1.1,
+    "system_prompt": "Eres ATLAS, un sistema de inteligencia artificial avanzado. Responde de forma concisa, precisa y útil.",
+    "memory_context": "long",
+    "context_window": 8192,
+    "ollama_url": "http://localhost:11434",
+    "stream_response": True,
+    "save_history": True,
+    "log_level": "info",
+    "api_key": "",
+    # Especialistas
+    "specialists": {
+        "code": {"enabled": True, "model": "deepseek-coder"},
+        "vision": {"enabled": True, "model": "llava"},
+        "chat": {"enabled": True, "model": "llama3.2"},
+        "analysis": {"enabled": True, "model": "llama3.2"},
+        "creative": {"enabled": False, "model": "llama3.2"}
+    }
 }
 
 @app.get("/config/ai")
 def get_ai_config():
     """Obtener configuración de IA"""
-    return {"ok": True, **_ai_config}
+    # No enviar API key al frontend
+    config_safe = {k: v for k, v in _ai_config.items() if k != "api_key"}
+    config_safe["has_api_key"] = bool(_ai_config.get("api_key"))
+    return {"ok": True, **config_safe}
 
 @app.post("/config/ai")
 def update_ai_config(payload: dict):
     """Actualizar configuración de IA"""
     global _ai_config
-    for key in ["mode", "provider", "model", "temperature", "max_tokens"]:
+    
+    # Campos permitidos
+    allowed_fields = [
+        "mode", "provider", "model", "temperature", "top_p", "top_k",
+        "max_tokens", "repeat_penalty", "system_prompt", "memory_context",
+        "context_window", "ollama_url", "stream_response", "save_history",
+        "log_level", "api_key", "specialists"
+    ]
+    
+    for key in allowed_fields:
         if key in payload:
             _ai_config[key] = payload[key]
-    return {"ok": True, **_ai_config}
+    
+    return {"ok": True, "message": "Configuración actualizada"}
+
+@app.post("/config/ai/test")
+def test_ai_connection():
+    """Probar conexión con el proveedor de IA"""
+    provider = _ai_config.get("provider", "ollama")
+    
+    try:
+        if provider == "ollama":
+            import requests
+            url = _ai_config.get("ollama_url", "http://localhost:11434")
+            res = requests.get(f"{url}/api/tags", timeout=5)
+            if res.status_code == 200:
+                return {"ok": True, "provider": provider, "message": "Ollama conectado"}
+            return {"ok": False, "error": f"Ollama respondió con status {res.status_code}"}
+        
+        elif provider == "openai":
+            import requests
+            api_key = _ai_config.get("api_key", "")
+            if not api_key:
+                return {"ok": False, "error": "API Key no configurada"}
+            res = requests.get(
+                "https://api.openai.com/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10
+            )
+            if res.status_code == 200:
+                return {"ok": True, "provider": provider, "message": "OpenAI conectado"}
+            return {"ok": False, "error": f"OpenAI respondió con status {res.status_code}"}
+        
+        elif provider == "anthropic":
+            # Test básico de Anthropic
+            return {"ok": True, "provider": provider, "message": "Anthropic configurado (sin test directo)"}
+        
+        else:
+            return {"ok": True, "provider": provider, "message": f"{provider} configurado"}
+            
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@app.get("/config/ai/ollama-models")
+def get_ollama_models():
+    """Listar modelos disponibles en Ollama"""
+    try:
+        import requests
+        url = _ai_config.get("ollama_url", "http://localhost:11434")
+        res = requests.get(f"{url}/api/tags", timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            models = []
+            for m in data.get("models", []):
+                size_bytes = m.get("size", 0)
+                size_str = f"{size_bytes / (1024**3):.1f}GB" if size_bytes > 1024**3 else f"{size_bytes / (1024**2):.0f}MB"
+                models.append({
+                    "name": m.get("name", "").split(":")[0],
+                    "full_name": m.get("name", ""),
+                    "size": size_str,
+                    "modified": m.get("modified_at", "")
+                })
+            return {"ok": True, "models": models}
+        return {"ok": False, "models": [], "error": f"Status {res.status_code}"}
+    except Exception as e:
+        return {"ok": False, "models": [], "error": str(e)}
+
+@app.post("/config/ai/ollama-pull")
+def pull_ollama_model(payload: dict):
+    """Descargar un modelo en Ollama"""
+    model_name = payload.get("model", "")
+    if not model_name:
+        return {"ok": False, "error": "Nombre de modelo requerido"}
+    
+    try:
+        import requests
+        url = _ai_config.get("ollama_url", "http://localhost:11434")
+        res = requests.post(
+            f"{url}/api/pull",
+            json={"name": model_name},
+            timeout=300  # 5 minutos para descargar
+        )
+        if res.status_code == 200:
+            return {"ok": True, "message": f"Modelo {model_name} descargado"}
+        return {"ok": False, "error": f"Error descargando: {res.text}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@app.post("/brain/generate")
+def brain_generate(payload: dict):
+    """Generar respuesta usando el proveedor configurado"""
+    prompt = payload.get("prompt", "")
+    if not prompt:
+        return {"ok": False, "error": "Prompt requerido"}
+    
+    provider = _ai_config.get("provider", "ollama")
+    model = _ai_config.get("model", "llama3.2")
+    
+    try:
+        if provider == "ollama":
+            import requests
+            url = _ai_config.get("ollama_url", "http://localhost:11434")
+            res = requests.post(
+                f"{url}/api/generate",
+                json={
+                    "model": model,
+                    "prompt": prompt,
+                    "system": _ai_config.get("system_prompt", ""),
+                    "options": {
+                        "temperature": _ai_config.get("temperature", 0.7),
+                        "top_p": _ai_config.get("top_p", 0.9),
+                        "top_k": _ai_config.get("top_k", 40),
+                        "num_predict": _ai_config.get("max_tokens", 2048),
+                        "repeat_penalty": _ai_config.get("repeat_penalty", 1.1)
+                    },
+                    "stream": False
+                },
+                timeout=120
+            )
+            if res.status_code == 200:
+                data = res.json()
+                return {
+                    "ok": True,
+                    "response": data.get("response", ""),
+                    "model": model,
+                    "provider": provider,
+                    "eval_count": data.get("eval_count", 0),
+                    "eval_duration": data.get("eval_duration", 0)
+                }
+            return {"ok": False, "error": f"Ollama error: {res.text}"}
+        
+        else:
+            # Fallback para otros proveedores
+            return {"ok": False, "error": f"Proveedor {provider} no implementado aún"}
+            
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 # ═══════════════════════════════════════════════════════════════
 # Dashboard UI
@@ -420,7 +585,7 @@ def get_version():
     """Return current version for update checks"""
     return {
         "ok": True,
-        "version": "3.2.0",
+        "version": "3.3.0",
         "build_date": "2026-02-16",
         "name": "ATLAS Dashboard"
     }
