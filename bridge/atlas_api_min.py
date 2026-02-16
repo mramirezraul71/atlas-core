@@ -12,7 +12,7 @@ import uvicorn
 
 from atlas_runtime import handle, status, doctor, modules_report
 
-app = FastAPI(title="ATLAS Bridge API", version="2.5.0")
+app = FastAPI(title="ATLAS Bridge API", version="2.6.0")
 
 # Ruta al dashboard
 DASHBOARD_PATH = ROOT / "atlas_adapter" / "static" / "dashboard.html"
@@ -75,7 +75,7 @@ def get_version():
     """Return current version for update checks"""
     return {
         "ok": True,
-        "version": "2.5.0",
+        "version": "2.6.0",
         "build_date": "2026-02-16",
         "name": "ATLAS Dashboard"
     }
