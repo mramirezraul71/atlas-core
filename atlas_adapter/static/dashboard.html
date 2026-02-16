@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ATLAS Dashboard v3.6.0</title>
+  <title>ATLAS Dashboard v3.7.0</title>
   <style>
     /* === THEME: Default (Cyan) === */
     :root, [data-theme="cyan"] {
@@ -2248,7 +2248,7 @@
     // Bitácora Central
     // ═══════════════════════════════════════════════════════════════
     
-    function addToBitacora(message, type = 'info', source = 'system') {
+    function addToBitacora(message, type = 'info', source = 'system', syncToServer = true) {
       const time = new Date().toLocaleTimeString('es-ES');
       const entry = {
         id: Date.now(),
@@ -2270,6 +2270,11 @@
       if (panel && panel.classList.contains('minimized')) {
         unreadCount++;
         document.getElementById('bitacora-badge').textContent = unreadCount;
+      }
+      
+      // Sincronizar con servidor (opcional)
+      if (syncToServer && source !== 'server') {
+        syncBitacoraToServer(message, type, source);
       }
     }
     
@@ -2390,9 +2395,81 @@
       // Actualizar tiempo de sesión cada segundo
       setInterval(updateBitacoraStats, 1000);
       
+      // Cargar bitácora del servidor
+      loadBitacoraFromServer();
+      
+      // Polling para nuevas entradas cada 2 segundos
+      setInterval(pollBitacora, 2000);
+      
       // Entrada inicial
       addToBitacora('Sistema ATLAS iniciado', 'success', 'system');
       addToBitacora(`Dashboard v${ATLAS_VERSION} cargado`, 'info', 'system');
+    }
+    
+    let lastBitacoraId = 0;
+    
+    async function loadBitacoraFromServer() {
+      try {
+        const res = await fetch(`${API_BASE}/bitacora?limit=100`);
+        const data = await res.json();
+        if (data.ok && data.entries) {
+          // Combinar con entradas locales, evitando duplicados
+          data.entries.forEach(entry => {
+            if (!bitacoraLog.find(e => e.id === entry.id)) {
+              entry.type = entry.level; // Mapear level a type
+              bitacoraLog.push(entry);
+            }
+          });
+          // Ordenar por timestamp
+          bitacoraLog.sort((a, b) => b.id - a.id);
+          if (bitacoraLog.length > 0) {
+            lastBitacoraId = bitacoraLog[0].id;
+          }
+          renderBitacora();
+          updateBitacoraStats();
+        }
+      } catch (e) {
+        console.error('Error loading bitacora:', e);
+      }
+    }
+    
+    async function pollBitacora() {
+      try {
+        const res = await fetch(`${API_BASE}/bitacora/stream?since_id=${lastBitacoraId}`);
+        const data = await res.json();
+        if (data.ok && data.entries && data.entries.length > 0) {
+          data.entries.forEach(entry => {
+            entry.type = entry.level;
+            if (!bitacoraLog.find(e => e.id === entry.id)) {
+              bitacoraLog.unshift(entry);
+              
+              // Notificar si panel minimizado
+              const panel = document.getElementById('bitacora-panel');
+              if (panel && panel.classList.contains('minimized')) {
+                unreadCount++;
+                document.getElementById('bitacora-badge').textContent = unreadCount;
+              }
+            }
+          });
+          lastBitacoraId = data.latest_id;
+          renderBitacora();
+          updateBitacoraStats();
+        }
+      } catch (e) {
+        // Silenciar errores de polling
+      }
+    }
+    
+    async function syncBitacoraToServer(message, level, source) {
+      try {
+        await fetch(`${API_BASE}/bitacora/log`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, level, source })
+        });
+      } catch (e) {
+        // Silenciar errores
+      }
     }
 
     function renderActivity() {
