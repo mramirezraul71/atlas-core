@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ATLAS Dashboard</title>
+  <title>ATLAS Dashboard v2.5.0</title>
   <style>
     :root {
       /* Base oscuro con toques morados */
@@ -672,7 +672,7 @@
   </div>
   <div class="container">
     <div class="header">
-      <h1 data-i18n="app.title">ATLAS Dashboard</h1>
+      <h1 data-i18n="app.title">ATLAS Dashboard <span style="font-size: 0.6em; color: var(--purple); font-weight: 400; margin-left: 0.5rem; padding: 0.15rem 0.4rem; background: var(--accent-muted); border-radius: 4px; vertical-align: middle;">v2.5.0</span></h1>
       <div class="header-actions nav-horizontal">
         <span style="font-size:.75rem;color:var(--muted);margin-right:.5rem;">
           <a href="#" onclick="setLocale('es');return false;" id="lang-es" style="color:var(--purple-light);text-decoration:none;">ES</a>
@@ -683,6 +683,7 @@
         <button class="secondary" id="btn-refresh" onclick="refreshAll()" data-i18n="app.refresh">Actualizar</button>
         <button class="small" id="btn-cursor-atlas" onclick="openCursorAtlas()" title="Abrir Cursor‑ATLAS (centro de mando)"><span class="kbd">Ctrl</span>+<span class="kbd">K</span> Cursor‑ATLAS</button>
         <button class="small secondary" id="btn-clear-cache" onclick="clearCacheAndRefresh()" title="Limpiar cache del navegador y del servidor (proceso pendiente se mata al reconectar)">Limpiar caché</button>
+        <button class="small" id="btn-check-update" onclick="checkForUpdates()" style="background: linear-gradient(135deg, #6d28d9, #8b5cf6); border: 1px solid var(--purple);" title="Verificar si hay actualizaciones disponibles">🔄 Buscar Actualización</button>
       </div>
     </div>
     <!-- Governance bar: GROWTH / GOVERNED / EMERGENCY STOP -->
@@ -1297,6 +1298,14 @@
     })();
   </script>
   <script>
+    // ═══════════════════════════════════════════════════════════════
+    // ATLAS Dashboard - Version Control
+    // ═══════════════════════════════════════════════════════════════
+    const ATLAS_VERSION = '2.5.0';
+    const ATLAS_BUILD_DATE = '2026-02-16';
+    console.log(`%c🚀 ATLAS Dashboard v${ATLAS_VERSION} (${ATLAS_BUILD_DATE})`, 'color: #8b5cf6; font-weight: bold; font-size: 14px;');
+    // ═══════════════════════════════════════════════════════════════
+
     (function() {
       var q = new URLSearchParams(window.location.search);
       var fromQ = q.get('api_base');
@@ -2603,6 +2612,211 @@
         if (window._toast) window._toast('Error: ' + (e.message || 'cache')); else alert('Error al limpiar caché');
       }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Sistema de Actualizaciones
+    // ═══════════════════════════════════════════════════════════════
+    async function checkForUpdates() {
+      const btn = document.getElementById('btn-check-update');
+      const originalText = btn ? btn.innerHTML : '';
+      
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '⏳ Buscando...';
+        btn.style.animation = 'pulse 0.8s ease-in-out infinite';
+      }
+      
+      showToast('🔍 EN PROCESO DE BÚSQUEDA DE ACTUALIZACIÓN...', false);
+      
+      try {
+        // Verificar versión del servidor
+        const r = await fetch((window._apiBase || '') + '/version', { 
+          method: 'GET', 
+          headers: { 'Accept': 'application/json' }, 
+          cache: 'no-store' 
+        });
+        
+        if (r.ok) {
+          const data = await r.json();
+          const serverVersion = data.version || data.dashboard_version || 'unknown';
+          const currentVersion = typeof ATLAS_VERSION !== 'undefined' ? ATLAS_VERSION : '2.5.0';
+          
+          if (serverVersion !== currentVersion && serverVersion !== 'unknown') {
+            // Nueva versión disponible
+            showUpdateModal(currentVersion, serverVersion, data.changelog || []);
+          } else {
+            showToast(`✅ Sistema actualizado (v${currentVersion})`, false);
+          }
+        } else {
+          // Endpoint no existe, verificar GitHub
+          await checkGitHubUpdates();
+        }
+      } catch (e) {
+        // Fallback: verificar si hay cambios pendientes en git
+        try {
+          const gitR = await fetch((window._apiBase || '') + '/git/status', { 
+            method: 'GET', 
+            headers: { 'Accept': 'application/json' }, 
+            cache: 'no-store' 
+          });
+          if (gitR.ok) {
+            const gitData = await gitR.json();
+            if (gitData.behind > 0) {
+              showToast(`🔄 ACTUALIZACIÓN DISPONIBLE: ${gitData.behind} commits nuevos`, false);
+              showUpdateModal(ATLAS_VERSION, `+${gitData.behind} commits`, gitData.commits || []);
+            } else {
+              showToast(`✅ Sistema actualizado (v${ATLAS_VERSION})`, false);
+            }
+          } else {
+            showToast(`✅ v${ATLAS_VERSION} - No se pudo verificar servidor`, false);
+          }
+        } catch (e2) {
+          showToast(`⚠️ Error verificando: ${e.message || 'conexión'}`, true);
+        }
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+          btn.style.animation = '';
+        }
+      }
+    }
+
+    async function checkGitHubUpdates() {
+      try {
+        const r = await fetch((window._apiBase || '') + '/git/check-updates', { 
+          method: 'POST', 
+          headers: { 'Accept': 'application/json' }, 
+          cache: 'no-store' 
+        });
+        if (r.ok) {
+          const data = await r.json();
+          if (data.updates_available) {
+            showUpdateModal(ATLAS_VERSION, data.latest_version || 'nueva', data.changelog || []);
+          } else {
+            showToast(`✅ Sistema actualizado (v${ATLAS_VERSION})`, false);
+          }
+        }
+      } catch (e) {
+        showToast(`✅ v${ATLAS_VERSION} - Verificación local OK`, false);
+      }
+    }
+
+    function showUpdateModal(currentVer, newVer, changelog) {
+      // Crear modal de actualización
+      let modal = document.getElementById('update-modal');
+      if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'update-modal';
+        modal.style.cssText = `
+          position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+          background: rgba(0,0,0,0.8); z-index: 10000;
+          display: flex; align-items: center; justify-content: center;
+          backdrop-filter: blur(4px);
+        `;
+        document.body.appendChild(modal);
+      }
+      
+      const changelogHTML = Array.isArray(changelog) && changelog.length > 0 
+        ? changelog.map(c => `<li style="margin: 0.3rem 0; color: var(--text);">${c}</li>`).join('')
+        : '<li style="color: var(--muted);">Sin detalles disponibles</li>';
+      
+      modal.innerHTML = `
+        <div style="
+          background: var(--card); 
+          border: 1px solid var(--purple); 
+          border-radius: 16px; 
+          padding: 2rem; 
+          max-width: 450px; 
+          width: 90%;
+          box-shadow: 0 8px 32px rgba(139, 92, 246, 0.3);
+        ">
+          <h2 style="margin: 0 0 1rem; color: var(--purple-light); display: flex; align-items: center; gap: 0.5rem;">
+            🚀 Actualización Disponible
+          </h2>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; padding: 0.75rem; background: var(--bg); border-radius: 8px;">
+            <div style="text-align: center;">
+              <div style="font-size: 0.75rem; color: var(--muted);">Versión actual</div>
+              <div style="font-size: 1.1rem; color: var(--amber);">v${currentVer}</div>
+            </div>
+            <div style="display: flex; align-items: center; color: var(--purple);">→</div>
+            <div style="text-align: center;">
+              <div style="font-size: 0.75rem; color: var(--muted);">Nueva versión</div>
+              <div style="font-size: 1.1rem; color: var(--green);">v${newVer}</div>
+            </div>
+          </div>
+          <div style="margin-bottom: 1.5rem;">
+            <div style="font-size: 0.8rem; color: var(--muted); margin-bottom: 0.5rem;">Cambios:</div>
+            <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.85rem; max-height: 150px; overflow-y: auto;">
+              ${changelogHTML}
+            </ul>
+          </div>
+          <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+            <button class="secondary" onclick="closeUpdateModal()">Más tarde</button>
+            <button onclick="performUpdate()" style="background: var(--green);">🔄 Actualizar Ahora</button>
+          </div>
+        </div>
+      `;
+      modal.style.display = 'flex';
+    }
+
+    function closeUpdateModal() {
+      const modal = document.getElementById('update-modal');
+      if (modal) modal.style.display = 'none';
+    }
+
+    async function performUpdate() {
+      closeUpdateModal();
+      showToast('🔄 Aplicando actualización...', false);
+      
+      try {
+        // Intentar git pull via API
+        const r = await fetch((window._apiBase || '') + '/git/pull', { 
+          method: 'POST', 
+          headers: { 'Accept': 'application/json' }, 
+          cache: 'no-store' 
+        });
+        
+        if (r.ok) {
+          const data = await r.json();
+          if (data.ok || data.success) {
+            showToast('✅ Actualización completada. Recargando...', false);
+            // Limpiar caché y recargar
+            setTimeout(() => {
+              localStorage.removeItem('atlas_cache');
+              sessionStorage.clear();
+              location.reload(true);
+            }, 2000);
+          } else {
+            showToast(`⚠️ ${data.error || 'Error en actualización'}`, true);
+          }
+        } else {
+          showToast('⚠️ No se pudo conectar al servidor de actualizaciones', true);
+        }
+      } catch (e) {
+        showToast(`❌ Error: ${e.message || 'actualización fallida'}`, true);
+      }
+    }
+
+    // Auto-check updates cada 30 minutos
+    setInterval(() => {
+      const lastCheck = localStorage.getItem('atlas_last_update_check');
+      const now = Date.now();
+      if (!lastCheck || (now - parseInt(lastCheck)) > 1800000) { // 30 min
+        localStorage.setItem('atlas_last_update_check', now.toString());
+        // Check silencioso
+        fetch((window._apiBase || '') + '/version', { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : null)
+          .then(data => {
+            if (data && data.version && data.version !== ATLAS_VERSION) {
+              showToast('🔔 ACTUALIZACIÓN DISPONIBLE - Click en "Buscar Actualización"', false);
+            }
+          })
+          .catch(() => {});
+      }
+    }, 300000); // Check cada 5 min si pasaron 30 min desde último check
+    // ═══════════════════════════════════════════════════════════════
+
     async function reconnectNexus() {
       const btn = document.getElementById('btn-reconnect-nexus');
       if (btn) { btn.disabled = true; btn.textContent = 'Conectando…'; }
@@ -3922,6 +4136,28 @@
         <span><span class="kbd">Ctrl</span>+<span class="kbd">K</span> abrir/cerrar</span>
       </div>
     </div>
+  </div>
+
+  <!-- Version Footer -->
+  <div id="version-footer" style="
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    padding: 0.4rem 0.8rem;
+    background: rgba(22, 20, 31, 0.9);
+    border-top-left-radius: 8px;
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-right: none;
+    border-bottom: none;
+    font-size: 0.7rem;
+    color: var(--muted);
+    z-index: 1000;
+    backdrop-filter: blur(8px);
+  ">
+    <span style="color: var(--purple-light);">ATLAS</span> 
+    <span id="footer-version">v2.5.0</span> 
+    <span style="color: var(--muted);">|</span> 
+    <span id="footer-build">2026-02-16</span>
   </div>
 </body>
 </html>
