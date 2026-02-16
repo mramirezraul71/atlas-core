@@ -254,6 +254,16 @@
       color: var(--accent-red);
       margin-left: 0.5rem;
     }
+    .camera-details {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+    .camera-specs {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: monospace;
+    }
     .module-info {
       display: flex;
       align-items: center;
@@ -1208,7 +1218,10 @@
               <div class="module-row" data-cam-id="${cam.id}">
                 <div class="module-info">
                   <div class="module-dot"></div>
-                  <span class="module-name-text">📷 ${cam.name} (${cam.id})</span>
+                  <div class="camera-details">
+                    <span class="module-name-text">${getCameraIcon(cam.name)} ${cam.name}</span>
+                    <span class="camera-specs">${cam.resolution || '1920x1080'} @ ${cam.fps || 30}fps</span>
+                  </div>
                 </div>
                 <div class="module-actions">
                   <button class="btn-check" onclick="selectCamera(${cam.id}, event)">SELECCIONAR</button>
