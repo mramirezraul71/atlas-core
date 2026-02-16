@@ -59,6 +59,20 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_world_state_tick(payload)
         elif kind == "workshop_cycle":
             out = _run_workshop_cycle(payload)
+        elif kind == "pot_execute":
+            out = _run_pot_execute(payload)
+        elif kind == "pot_dispatch":
+            out = _run_pot_dispatch(payload)
+        elif kind == "autonomy_cycle":
+            out = _run_autonomy_cycle(payload)
+        elif kind == "auto_update_cycle":
+            out = _run_auto_update_cycle(payload)
+        elif kind == "daily_maintenance":
+            out = _run_daily_maintenance(payload)
+        elif kind == "weekly_maintenance":
+            out = _run_weekly_maintenance(payload)
+        elif kind == "git_sync":
+            out = _run_git_sync(payload)
         else:
             out = {"ok": True, "result": "no-op", "kind": kind}
     except Exception as e:
@@ -488,6 +502,175 @@ def _run_workshop_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": False, "error": "workshop_cycle timeout 300s", "mode": mode}
     except Exception as e:
         return {"ok": False, "error": str(e), "mode": mode}
+
+
+# ============================================================================
+# POT INTEGRATION - EJECUCIÓN AUTOMÁTICA DE POTS
+# ============================================================================
+
+def _run_pot_execute(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Ejecuta un POT directamente. Payload: pot_id, context, dry_run.
+    
+    Esta es la integración directa scheduler → quality module.
+    """
+    pot_id = payload.get("pot_id")
+    if not pot_id:
+        return {"ok": False, "error": "pot_id required in payload"}
+    
+    context = payload.get("context") or {}
+    dry_run = bool(payload.get("dry_run", False))
+    
+    try:
+        from modules.humanoid.quality.registry import get_pot
+        from modules.humanoid.quality.executor import execute_pot
+        
+        pot = get_pot(pot_id)
+        if not pot:
+            return {"ok": False, "error": f"POT not found: {pot_id}"}
+        
+        result = execute_pot(
+            pot=pot,
+            context=context,
+            dry_run=dry_run,
+            stop_on_failure=True,
+            sync_to_cerebro=True,
+            notify_on_complete=True,
+        )
+        
+        return {
+            "ok": result.ok,
+            "pot_id": pot_id,
+            "steps_ok": result.steps_ok,
+            "steps_total": result.steps_total,
+            "elapsed_ms": result.elapsed_ms,
+            "report_path": result.report_path,
+            "rollback_executed": result.rollback_executed,
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e), "pot_id": pot_id}
+
+
+def _run_pot_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Despacha un POT via el dispatcher (queue async).
+    Payload: pot_id, context, priority.
+    """
+    pot_id = payload.get("pot_id")
+    context = payload.get("context") or {}
+    priority = int(payload.get("priority", 5))
+    
+    try:
+        from modules.humanoid.quality.dispatcher import dispatch_pot, get_dispatcher
+        
+        # Asegurar que el dispatcher está corriendo
+        dispatcher = get_dispatcher()
+        if not dispatcher.is_running():
+            dispatcher.start()
+        
+        request_id = dispatch_pot(pot_id, context=context, priority=priority)
+        
+        return {
+            "ok": True,
+            "request_id": request_id,
+            "pot_id": pot_id,
+            "dispatched": True,
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e), "pot_id": pot_id}
+
+
+def _run_autonomy_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Ejecuta el ciclo de autonomía completo via POT.
+    Shortcut para pot_execute con pot_id=autonomy_full_cycle.
+    """
+    return _run_pot_execute({
+        "pot_id": "autonomy_full_cycle",
+        "context": payload.get("context") or {},
+        "dry_run": payload.get("dry_run", False),
+    })
+
+
+def _run_auto_update_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Ejecuta el ciclo de actualización automática via POT.
+    Shortcut para pot_execute con pot_id=auto_update_full.
+    """
+    return _run_pot_execute({
+        "pot_id": "auto_update_full",
+        "context": payload.get("context") or {},
+        "dry_run": payload.get("dry_run", False),
+    })
+
+
+def _run_daily_maintenance(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Ejecuta mantenimiento diario via POT.
+    """
+    return _run_pot_execute({
+        "pot_id": "maintenance_daily",
+        "context": payload.get("context") or {},
+        "dry_run": payload.get("dry_run", False),
+    })
+
+
+def _run_weekly_maintenance(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Ejecuta mantenimiento semanal via POT.
+    """
+    return _run_pot_execute({
+        "pot_id": "maintenance_weekly",
+        "context": payload.get("context") or {},
+        "dry_run": payload.get("dry_run", False),
+    })
+
+
+def _run_git_sync(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Ejecuta sincronización Git (commit + push) via POT.
+    """
+    message = payload.get("message", "chore: scheduled sync by ATLAS")
+    
+    # Primero verificar si hay cambios
+    import subprocess
+    root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT")
+    if not root:
+        root = str(Path(__file__).resolve().parent.parent.parent.parent)
+    
+    try:
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if not (status.stdout or "").strip():
+            return {"ok": True, "result": "no_changes", "skipped": True}
+    except Exception as e:
+        return {"ok": False, "error": f"git_status_check: {e}"}
+    
+    # Ejecutar POT de commit
+    commit_result = _run_pot_execute({
+        "pot_id": "git_commit",
+        "context": {"commit_message": message},
+    })
+    
+    if not commit_result.get("ok"):
+        return commit_result
+    
+    # Ejecutar POT de push
+    push_result = _run_pot_execute({
+        "pot_id": "git_push",
+        "context": {},
+    })
+    
+    return {
+        "ok": push_result.get("ok", False),
+        "commit_result": commit_result,
+        "push_result": push_result,
+    }
 
 
 def _run_repo_hygiene_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
