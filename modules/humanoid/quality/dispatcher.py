@@ -262,10 +262,11 @@ class POTDispatcher:
     # ========================================================================
     
     def _worker_loop(self) -> None:
-        """Loop principal del worker que procesa la cola."""
+        """Loop principal del worker que procesa la cola (TURBO: 100ms polling)."""
         while self._running:
             try:
-                request = self._queue.get(timeout=1.0)
+                # TURBO: Polling cada 100ms en lugar de 1s
+                request = self._queue.get(timeout=0.1)
             except Empty:
                 continue
             

@@ -42,25 +42,32 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 @dataclass
 class AutonomyConfig:
     """Configuración del daemon de autonomía."""
-    # Intervals
-    health_check_interval: int = 30  # segundos
-    maintenance_check_interval: int = 300  # 5 min
-    sync_check_interval: int = 120  # 2 min
+    # Intervals - TURBO MODE (valores agresivos)
+    health_check_interval: float = 5.0    # Era 30s, ahora 5s
+    maintenance_check_interval: int = 120  # Era 300s, ahora 2min
+    sync_check_interval: int = 30          # Era 120s, ahora 30s
+    watchdog_interval: float = 3.0         # Watchdog cada 3s
+    dispatcher_poll_interval: float = 0.1  # 100ms polling
     
     # Thresholds
-    max_consecutive_failures: int = 3
+    max_consecutive_failures: int = 2      # Era 3, ahora 2 (reaccionar más rápido)
     auto_restart_on_failure: bool = True
     
-    # Features
+    # Features - ALL ON
     enable_auto_commit: bool = True
     enable_auto_repair: bool = True
     enable_scheduled_maintenance: bool = True
     enable_incident_response: bool = True
+    enable_parallel_checks: bool = True    # Nuevo: checks en paralelo
     
     # Notifications
     notify_on_start: bool = True
     notify_on_critical: bool = True
     telegram_on_errors: bool = True
+    
+    # Performance
+    executor_pool_size: int = 4            # Thread pool
+    max_concurrent_pots: int = 3           # POTs simultáneos
 
 
 # ============================================================================
@@ -127,29 +134,61 @@ class HealthMonitor:
             time.sleep(self.config.health_check_interval)
     
     def _run_all_checks(self) -> None:
-        """Ejecuta todos los health checks."""
+        """Ejecuta todos los health checks (en paralelo si está habilitado)."""
+        if self.config.enable_parallel_checks and len(self._checks) > 1:
+            self._run_checks_parallel()
+        else:
+            self._run_checks_sequential()
+    
+    def _run_checks_parallel(self) -> None:
+        """Ejecuta checks en paralelo usando threads."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        def run_single_check(name: str, check_fn: Callable[[], bool]):
+            try:
+                return (name, check_fn(), None)
+            except Exception as e:
+                return (name, False, str(e))
+        
+        with ThreadPoolExecutor(max_workers=len(self._checks)) as executor:
+            futures = {
+                executor.submit(run_single_check, name, fn): name
+                for name, fn in self._checks.items()
+            }
+            
+            for future in as_completed(futures, timeout=10):
+                try:
+                    name, healthy, error = future.result()
+                    self._update_check_status(name, healthy, error)
+                except Exception as e:
+                    name = futures[future]
+                    self._update_check_status(name, False, str(e))
+    
+    def _run_checks_sequential(self) -> None:
+        """Ejecuta checks secuencialmente."""
         for name, check_fn in self._checks.items():
             try:
                 healthy = check_fn()
-                with self._lock:
-                    status = self._status[name]
-                    status.healthy = healthy
-                    status.last_check = datetime.now(timezone.utc).isoformat()
-                    if healthy:
-                        status.consecutive_failures = 0
-                        status.error = None
-                    else:
-                        status.consecutive_failures += 1
-                        
-                        # Disparar reparación si supera umbral
-                        if status.consecutive_failures >= self.config.max_consecutive_failures:
-                            self._trigger_repair(name)
-                            
+                self._update_check_status(name, healthy, None)
             except Exception as e:
-                with self._lock:
-                    status = self._status[name]
-                    status.healthy = False
-                    status.error = str(e)
+                self._update_check_status(name, False, str(e))
+    
+    def _update_check_status(self, name: str, healthy: bool, error: Optional[str]) -> None:
+        """Actualiza el estado de un check."""
+        with self._lock:
+            status = self._status[name]
+            status.healthy = healthy
+            status.last_check = datetime.now(timezone.utc).isoformat()
+            if healthy:
+                status.consecutive_failures = 0
+                status.error = None
+            else:
+                status.consecutive_failures += 1
+                status.error = error
+                
+                # Disparar reparación si supera umbral
+                if status.consecutive_failures >= self.config.max_consecutive_failures:
+                    self._trigger_repair(name)
                     status.consecutive_failures += 1
                     status.last_check = datetime.now(timezone.utc).isoformat()
     

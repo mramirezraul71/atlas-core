@@ -63,9 +63,12 @@ class TriggerRule:
 # TRIGGER REGISTRY
 # ============================================================================
 
-# Reglas predefinidas
+# ============================================================================
+# TURBO TRIGGER RULES (optimizados para velocidad)
+# ============================================================================
+
 DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
-    # Git Triggers
+    # Git Triggers - TURBO
     TriggerRule(
         id="git_changes_auto_commit",
         name="Auto-commit cuando hay cambios",
@@ -73,8 +76,8 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         pot_id="git_commit",
         enabled=True,
         priority=6,
-        cooldown_seconds=600,  # 10 min entre commits
-        check_interval_seconds=120,  # Check cada 2 min
+        cooldown_seconds=60,   # TURBO: Era 600s, ahora 60s
+        check_interval_seconds=15,  # TURBO: Era 120s, ahora 15s
         params={"min_changes": 1},
     ),
     TriggerRule(
@@ -84,19 +87,20 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         pot_id="git_pull",
         enabled=True,
         priority=4,
-        cooldown_seconds=300,
-        check_interval_seconds=300,  # Check cada 5 min
+        cooldown_seconds=60,   # TURBO: Era 300s, ahora 60s
+        check_interval_seconds=30,  # TURBO: Era 300s, ahora 30s
     ),
     
-    # Service Health Triggers
+    # Service Health Triggers - TURBO
     TriggerRule(
         id="service_down_repair",
         name="Reparar servicio caído",
         condition=TriggerCondition.SERVICE_DOWN,
         pot_id="services_repair",
         enabled=True,
-        priority=2,
-        cooldown_seconds=120,
+        priority=1,  # TURBO: Máxima prioridad
+        cooldown_seconds=30,   # TURBO: Era 120s, ahora 30s
+        check_interval_seconds=5,  # TURBO: Check cada 5s
         require_approval=False,
         params={"services": ["atlas_api", "scheduler", "ans"]},
     ),
@@ -106,31 +110,34 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         condition=TriggerCondition.API_ERROR,
         pot_id="api_repair",
         enabled=True,
-        priority=3,
-        cooldown_seconds=180,
+        priority=2,
+        cooldown_seconds=30,   # TURBO: Era 180s, ahora 30s
+        check_interval_seconds=5,
     ),
     
-    # System Health Triggers
+    # System Health Triggers - TURBO
     TriggerRule(
         id="disk_full_cleanup",
         name="Limpiar cuando disco lleno",
         condition=TriggerCondition.DISK_FULL,
         pot_id="maintenance_daily",
         enabled=True,
-        priority=2,
-        cooldown_seconds=3600,  # 1 hora
-        params={"threshold_percent": 90},
+        priority=3,
+        cooldown_seconds=600,  # TURBO: Era 3600s, ahora 600s
+        check_interval_seconds=60,
+        params={"threshold_percent": 85},  # TURBO: threshold más bajo
     ),
     
-    # Incident Triggers
+    # Incident Triggers - TURBO
     TriggerRule(
         id="incident_auto_triage",
         name="Triage automático de incidentes",
         condition=TriggerCondition.INCIDENT_NEW,
         pot_id="incident_triage",
         enabled=True,
-        priority=3,
-        cooldown_seconds=60,
+        priority=2,
+        cooldown_seconds=15,   # TURBO: Era 60s, ahora 15s
+        check_interval_seconds=5,
     ),
     
     # Startup/Shutdown Triggers
