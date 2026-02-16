@@ -314,6 +314,78 @@
       flex-direction: column;
       gap: 0.5rem;
     }
+    /* Modules Grid Style */
+    .modules-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 1rem;
+    }
+    .module-tile {
+      background: var(--bg-elevated);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+    .module-tile:hover {
+      border-color: var(--accent-cyan);
+      transform: translateY(-4px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    }
+    .module-tile.connected {
+      border-color: var(--accent-green);
+    }
+    .module-tile.connected::after {
+      content: '';
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 10px;
+      height: 10px;
+      background: var(--accent-green);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--accent-green);
+    }
+    .module-tile.error {
+      border-color: var(--accent-red);
+    }
+    .module-tile.error::after {
+      content: '';
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 10px;
+      height: 10px;
+      background: var(--accent-red);
+      border-radius: 50%;
+      animation: pulse-red 1.5s infinite;
+    }
+    @keyframes pulse-red {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .module-emoji {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+    .module-tile-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text);
+      text-transform: capitalize;
+    }
+    .module-tile-status {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+    .module-tile.connected .module-tile-status {
+      color: var(--accent-green);
+    }
     .module-row {
       display: flex;
       align-items: center;
@@ -825,9 +897,11 @@
       <div class="modules-section">
         <div class="modules-header">
           <span class="modules-title">MODULOS DEL CUERPO</span>
+          <button class="diagnostic-btn" onclick="runFullDiagnostic()" style="margin: 0;">🔬 DIAGNÓSTICO</button>
         </div>
-        <button class="diagnostic-btn" onclick="runFullDiagnostic()">DIAGNÓSTICO COMPLETO</button>
-        <div class="modules-list" id="modules-list"></div>
+        <div class="modules-grid" id="modules-grid">
+          <!-- Se llena dinámicamente -->
+        </div>
       </div>
 
       <!-- Stats Bar -->
