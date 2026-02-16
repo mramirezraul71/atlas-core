@@ -693,7 +693,10 @@
           <div class="module-row" data-cam-id="0">
             <div class="module-info">
               <div class="module-dot"></div>
-              <span class="module-name-text">📷 NexiGo N930W IR (0)</span>
+              <div class="camera-details">
+                <span class="module-name-text">👁️ NexiGo N930W IR</span>
+                <span class="camera-specs">1920x1080 @ 30fps</span>
+              </div>
             </div>
             <div class="module-actions">
               <button class="btn-check" onclick="selectCamera(0, event)">SELECCIONAR</button>
@@ -703,7 +706,10 @@
           <div class="module-row" data-cam-id="1">
             <div class="module-info">
               <div class="module-dot"></div>
-              <span class="module-name-text">📷 NexiGo N930W (1)</span>
+              <div class="camera-details">
+                <span class="module-name-text">📹 NexiGo N930W</span>
+                <span class="camera-specs">1920x1080 @ 30fps</span>
+              </div>
             </div>
             <div class="module-actions">
               <button class="btn-check" onclick="selectCamera(1, event)">SELECCIONAR</button>
@@ -713,7 +719,10 @@
           <div class="module-row" data-cam-id="2">
             <div class="module-info">
               <div class="module-dot"></div>
-              <span class="module-name-text">🎥 Insta360 Link 2 (2)</span>
+              <div class="camera-details">
+                <span class="module-name-text">🎥 Insta360 Link 2</span>
+                <span class="camera-specs">3840x2160 @ 30fps</span>
+              </div>
             </div>
             <div class="module-actions">
               <button class="btn-check" onclick="selectCamera(2, event)">SELECCIONAR</button>
@@ -902,6 +911,19 @@
 
     // Vision/Camera functions
     let selectedCamera = null;
+    
+    function getCameraIcon(name) {
+      const nameLower = (name || '').toLowerCase();
+      if (nameLower.includes('insta360') || nameLower.includes('360')) return '🎥';
+      if (nameLower.includes('ir') || nameLower.includes('infrared')) return '👁️';
+      if (nameLower.includes('webcam') || nameLower.includes('web cam')) return '💻';
+      if (nameLower.includes('usb')) return '🔌';
+      if (nameLower.includes('nexigo')) return '📹';
+      if (nameLower.includes('logitech')) return '🎬';
+      if (nameLower.includes('microsoft')) return '🪟';
+      if (nameLower.includes('integrated') || nameLower.includes('built-in')) return '💻';
+      return '📷';
+    }
     let streamingCamera = null;
 
     function selectCamera(camId, event) {

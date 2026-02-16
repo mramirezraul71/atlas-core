@@ -236,23 +236,78 @@ def nervous_diagnostic():
 # Vision / Cámaras
 # ═══════════════════════════════════════════════════════════════
 
+def get_camera_names_windows() -> Dict[int, str]:
+    """Obtener nombres reales de cámaras en Windows usando WMI"""
+    camera_names = {}
+    try:
+        import subprocess
+        # Usar PowerShell para obtener dispositivos de video
+        cmd = 'Get-PnpDevice -Class Camera -Status OK | Select-Object -ExpandProperty FriendlyName'
+        result = subprocess.run(
+            ['powershell', '-Command', cmd],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            names = [n.strip() for n in result.stdout.strip().split('\n') if n.strip()]
+            for idx, name in enumerate(names):
+                camera_names[idx] = name
+    except Exception:
+        pass
+    
+    # Fallback: intentar con DirectShow names via cv2 backend info
+    if not camera_names:
+        try:
+            import subprocess
+            cmd = '''
+            Get-CimInstance Win32_PnPEntity | 
+            Where-Object { $_.PNPClass -eq 'Camera' -or $_.PNPClass -eq 'Image' } | 
+            Select-Object -ExpandProperty Name
+            '''
+            result = subprocess.run(
+                ['powershell', '-Command', cmd],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                names = [n.strip() for n in result.stdout.strip().split('\n') if n.strip()]
+                for idx, name in enumerate(names):
+                    camera_names[idx] = name
+        except Exception:
+            pass
+    
+    return camera_names
+
 @app.get("/vision/cameras")
 def list_cameras():
-    """Listar cámaras disponibles"""
+    """Listar cámaras disponibles con nombres reales"""
     try:
         import cv2
+        
+        # Obtener nombres reales de Windows
+        camera_names = get_camera_names_windows()
+        
         cameras = []
         for i in range(5):
             cap = cv2.VideoCapture(i)
             if cap.isOpened():
-                ret, _ = cap.read()
+                ret, frame = cap.read()
                 if ret:
+                    # Obtener resolución
+                    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
+                    
+                    # Usar nombre real si está disponible
+                    name = camera_names.get(i, f"Camera {i}")
+                    
                     cameras.append({
                         "id": i,
-                        "name": f"Camera {i}",
+                        "name": name,
+                        "resolution": f"{width}x{height}",
+                        "fps": fps,
                         "status": "available"
                     })
                 cap.release()
+        
         return {"ok": True, "cameras": cameras, "count": len(cameras)}
     except Exception as e:
         return {"ok": False, "cameras": [], "error": str(e)}
