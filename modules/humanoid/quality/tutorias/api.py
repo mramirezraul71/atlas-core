@@ -469,3 +469,89 @@ def generar_dashboard():
         "ok": True,
         "dashboard_path": path
     }
+
+
+@router.get("/instrucciones", summary="Ver instrucciones para especialistas")
+def ver_instrucciones():
+    """
+    Muestra las instrucciones obligatorias para especialistas.
+    TODO ESPECIALISTA DEBE LEER ESTO ANTES DE TRABAJAR CON ATLAS.
+    """
+    from pathlib import Path
+    
+    instrucciones_path = Path(__file__).parent / "INSTRUCCIONES_ESPECIALISTA.md"
+    
+    if instrucciones_path.exists():
+        contenido = instrucciones_path.read_text(encoding="utf-8")
+    else:
+        contenido = """
+# SISTEMA DE TUTORÍAS - ATLAS
+
+## INSTRUCCIONES BÁSICAS
+
+1. Registrarse como especialista en /tutorias/especialistas
+2. Iniciar visita en /tutorias/visitas
+3. Documentar trabajo realizado
+4. Finalizar con informe firmado
+
+Consulte el dashboard para más detalles.
+        """
+    
+    return {
+        "ok": True,
+        "titulo": "INSTRUCCIONES OBLIGATORIAS PARA ESPECIALISTAS",
+        "mensaje": "⚠️ DEBE leer estas instrucciones antes de trabajar con ATLAS",
+        "contenido": contenido,
+        "endpoints_principales": {
+            "registrar_especialista": "POST /tutorias/especialistas",
+            "iniciar_visita": "POST /tutorias/visitas",
+            "finalizar_visita": "POST /tutorias/visitas/{id}/finalizar",
+            "ver_estadisticas": "GET /tutorias/estadisticas"
+        }
+    }
+
+
+@router.get("/bienvenida", summary="Mensaje de bienvenida para nuevos especialistas")
+def bienvenida():
+    """
+    Endpoint de bienvenida que orienta a nuevos especialistas.
+    Muestra qué hacer primero.
+    """
+    manager = get_manager()
+    stats = manager.obtener_estadisticas()
+    
+    return {
+        "ok": True,
+        "bienvenida": "🤖 Bienvenido al Sistema ATLAS",
+        "mensaje": """
+╔════════════════════════════════════════════════════════════════╗
+║  ⚠️  ATENCIÓN: REGISTRO OBLIGATORIO PARA ESPECIALISTAS  ⚠️    ║
+╠════════════════════════════════════════════════════════════════╣
+║                                                                ║
+║  Antes de hacer CUALQUIER cambio en ATLAS, debe:               ║
+║                                                                ║
+║  1. 📝 Registrarse como especialista                           ║
+║  2. 🚀 Iniciar una visita formal                               ║
+║  3. 📋 Documentar su trabajo                                   ║
+║  4. ✍️  Firmar su informe                                       ║
+║                                                                ║
+║  Dashboard: http://127.0.0.1:8791 → Tab "Tutorías"             ║
+║  Instrucciones: GET /tutorias/instrucciones                    ║
+║                                                                ║
+╚════════════════════════════════════════════════════════════════╝
+        """,
+        "estado_sistema": {
+            "especialistas_registrados": stats.get("total_especialistas", 0),
+            "visitas_realizadas": stats.get("total_visitas", 0),
+            "recomendaciones_pendientes": sum(
+                stats.get("recomendaciones_por_estado", {}).values()
+            ) - stats.get("recomendaciones_por_estado", {}).get("COMPLETADA", 0)
+        },
+        "proximos_pasos": [
+            "1. Leer instrucciones: GET /tutorias/instrucciones",
+            "2. Registrarse: POST /tutorias/especialistas",
+            "3. Iniciar visita: POST /tutorias/visitas",
+            "4. Trabajar y documentar",
+            "5. Finalizar: POST /tutorias/visitas/{id}/finalizar"
+        ]
+    }

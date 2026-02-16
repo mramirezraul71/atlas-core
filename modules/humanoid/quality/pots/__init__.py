@@ -56,6 +56,9 @@ from . import manipulation_grasp
 from . import hri_interaction
 from . import vision_pipeline
 
+# === QUALITY / TUTORIAS ===
+from . import specialist_visit
+
 
 # ============================================================================
 # REGISTRY DE POTs
@@ -105,6 +108,9 @@ _POT_MODULES: Dict[str, Callable] = {
     "manipulation_grasp": manipulation_grasp.get_pot,
     "hri_interaction": hri_interaction.get_pot,
     "vision_pipeline": vision_pipeline.get_pot,
+    
+    # Quality / Tutorias
+    "specialist_visit": specialist_visit.get_pot,
 }
 
 
