@@ -131,6 +131,11 @@ from .triggers import (
     register_trigger,
     get_trigger_stats,
 )
+from .robotics_bridge import (
+    RoboticsBridge,
+    get_robotics_bridge,
+    init_robotics_bridge,
+)
 
 
 def start_autonomous_system() -> dict:
@@ -175,6 +180,16 @@ def start_autonomous_system() -> dict:
         results["ans_integration"] = ans_result
     except Exception as e:
         results["ans_integration"] = {"ok": False, "error": str(e)}
+    
+    # 4. Iniciar Robotics Bridge (conecta módulos robóticos con cerebro)
+    try:
+        robotics_bridge = init_robotics_bridge()
+        results["robotics_bridge"] = {
+            "ok": True,
+            "modules": robotics_bridge.get_status(),
+        }
+    except Exception as e:
+        results["robotics_bridge"] = {"ok": False, "error": str(e)}
     
     results["all_ok"] = all(r.get("ok", False) for r in results.values())
     return results
@@ -243,6 +258,11 @@ __all__ = [
     "DashboardConnector",
     "ChannelConnector",
     "get_bridge",
+    
+    # Robotics Bridge
+    "RoboticsBridge",
+    "get_robotics_bridge",
+    "init_robotics_bridge",
     
     # Dispatcher
     "POTDispatcher",
