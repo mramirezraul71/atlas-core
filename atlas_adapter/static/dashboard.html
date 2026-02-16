@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ATLAS Dashboard v3.3.0</title>
   <style>
-    :root {
+    /* === THEME: Default (Cyan) === */
+    :root, [data-theme="cyan"] {
       --bg: #0d1117;
       --bg-card: #161b22;
       --bg-elevated: #21262d;
@@ -19,6 +20,70 @@
       --accent-pink: #f778ba;
       --accent-orange: #d29922;
       --accent-red: #f85149;
+      --accent-primary: #39d3c4;
+    }
+    /* === THEME: Purple === */
+    [data-theme="purple"] {
+      --bg: #0f0a1a;
+      --bg-card: #1a1225;
+      --bg-elevated: #251a35;
+      --border: #3d2a5a;
+      --accent-cyan: #a371f7;
+      --accent-primary: #a371f7;
+    }
+    /* === THEME: Green (Matrix) === */
+    [data-theme="green"] {
+      --bg: #0a1208;
+      --bg-card: #0f1a0c;
+      --bg-elevated: #162212;
+      --border: #2a4020;
+      --accent-cyan: #3fb950;
+      --accent-primary: #3fb950;
+    }
+    /* === THEME: Orange === */
+    [data-theme="orange"] {
+      --bg: #1a1008;
+      --bg-card: #221508;
+      --bg-elevated: #2d1c0a;
+      --border: #4a3010;
+      --accent-cyan: #f59e0b;
+      --accent-primary: #f59e0b;
+    }
+    /* === THEME: Pink === */
+    [data-theme="pink"] {
+      --bg: #1a0a14;
+      --bg-card: #22101a;
+      --bg-elevated: #2d1522;
+      --border: #4a2040;
+      --accent-cyan: #f778ba;
+      --accent-primary: #f778ba;
+    }
+    /* === THEME: Blue === */
+    [data-theme="blue"] {
+      --bg: #0a101a;
+      --bg-card: #0f1622;
+      --bg-elevated: #152030;
+      --border: #203050;
+      --accent-cyan: #3b82f6;
+      --accent-primary: #3b82f6;
+    }
+    /* === THEME: Red === */
+    [data-theme="red"] {
+      --bg: #1a0a0a;
+      --bg-card: #221010;
+      --bg-elevated: #2d1515;
+      --border: #4a2020;
+      --accent-cyan: #ef4444;
+      --accent-primary: #ef4444;
+    }
+    /* === THEME: Gold === */
+    [data-theme="gold"] {
+      --bg: #12100a;
+      --bg-card: #1a1608;
+      --bg-elevated: #221c0a;
+      --border: #3d3010;
+      --accent-cyan: #fbbf24;
+      --accent-primary: #fbbf24;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -61,6 +126,31 @@
     .nav-tab:hover { background: var(--bg-elevated); color: var(--text); }
     .nav-tab.active { background: var(--accent-cyan); color: var(--bg); font-weight: 600; }
     .nav-spacer { flex: 1; }
+    
+    /* Theme Selector */
+    .theme-selector {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      background: var(--bg-elevated);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .theme-btn {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .theme-btn:hover {
+      transform: scale(1.2);
+    }
+    .theme-btn.active {
+      border-color: white;
+      box-shadow: 0 0 8px currentColor;
+    }
     .nav-status {
       display: flex;
       align-items: center;
@@ -676,6 +766,17 @@
     </div>
     <div class="nav-spacer"></div>
     <div class="nav-status">
+      <!-- Selector de Tema -->
+      <div class="theme-selector">
+        <button class="theme-btn" data-theme="cyan" title="Cyan" style="background: #39d3c4;"></button>
+        <button class="theme-btn" data-theme="purple" title="Purple" style="background: #a371f7;"></button>
+        <button class="theme-btn" data-theme="green" title="Matrix" style="background: #3fb950;"></button>
+        <button class="theme-btn" data-theme="blue" title="Blue" style="background: #3b82f6;"></button>
+        <button class="theme-btn" data-theme="orange" title="Orange" style="background: #f59e0b;"></button>
+        <button class="theme-btn" data-theme="pink" title="Pink" style="background: #f778ba;"></button>
+        <button class="theme-btn" data-theme="red" title="Red" style="background: #ef4444;"></button>
+        <button class="theme-btn" data-theme="gold" title="Gold" style="background: #fbbf24;"></button>
+      </div>
       <!-- Botón Actualizar -->
       <button class="btn-update" id="btn-check-update" onclick="checkForUpdates()" title="Buscar actualizaciones">🔄 Actualizar</button>
       <!-- Badge de versión -->
