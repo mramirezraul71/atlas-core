@@ -15,7 +15,17 @@ import uvicorn
 
 from atlas_runtime import handle, status, doctor, modules_report
 
-app = FastAPI(title="ATLAS Bridge API", version="3.7.0")
+app = FastAPI(title="ATLAS Bridge API", version="3.8.0")
+
+# ═══════════════════════════════════════════════════════════════
+# Integrar API de Tutorías
+# ═══════════════════════════════════════════════════════════════
+try:
+    from modules.humanoid.quality.tutorias.api import router as tutorias_router
+    app.include_router(tutorias_router)
+    TUTORIAS_ENABLED = True
+except ImportError:
+    TUTORIAS_ENABLED = False
 
 # ═══════════════════════════════════════════════════════════════
 # Definición de módulos del sistema
@@ -825,9 +835,12 @@ def get_version():
     """Return current version for update checks"""
     return {
         "ok": True,
-        "version": "3.7.0",
+        "version": "3.8.0",
         "build_date": "2026-02-16",
-        "name": "ATLAS Dashboard"
+        "name": "ATLAS Dashboard",
+        "modules": {
+            "tutorias": TUTORIAS_ENABLED
+        }
     }
 
 if __name__ == "__main__":
