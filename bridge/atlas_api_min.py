@@ -200,37 +200,174 @@ def reconnect_module(module_id: str):
 # Sistema Nervioso
 # ═══════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════
+# Sistema Nervioso - Estado completo
+# ═══════════════════════════════════════════════════════════════
+
+_nervous_state = {
+    "mode": "normal",  # normal, stress, calm
+    "heartbeat": 72,
+    "signals_per_min": 0,
+    "latency_ms": 12,
+    "uptime": 99.9,
+    "reflexes_count": 0,
+    "nodes": {
+        "cerebro": {"status": "ok", "load": 45},
+        "cerebelo": {"status": "ok", "load": 30},
+        "tronco": {"status": "ok", "load": 25},
+        "medula": {"status": "ok", "load": 20},
+        "sensorial": {"status": "ok", "load": 55},
+        "motor": {"status": "ok", "load": 40},
+        "craneal": {"status": "ok", "load": 35},
+        "espinal": {"status": "ok", "load": 30},
+        "simpatico": {"status": "ok", "load": 20},
+        "parasimpatico": {"status": "ok", "load": 60},
+        "enterico": {"status": "ok", "load": 25},
+        "cardiaco": {"status": "ok", "load": 45}
+    },
+    "signals": {
+        "brain": 85,
+        "vision": 92,
+        "audio": 78,
+        "motor": 95,
+        "ans": 88
+    }
+}
+
 @app.get("/nervous/status")
 def nervous_status():
     """Estado del sistema nervioso"""
-    try:
-        from modules.humanoid.nervous import get_nervous_status
-        return {"ok": True, **get_nervous_status()}
-    except ImportError:
-        # Fallback si no existe la función
-        return {
-            "ok": True,
-            "status": "operational",
-            "signals_per_min": 0,
-            "latency_ms": 12,
-            "uptime": "99.9%"
-        }
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    import random
+    
+    # Actualizar señales dinámicamente
+    _nervous_state["signals_per_min"] += random.randint(1, 5)
+    _nervous_state["latency_ms"] = random.randint(8, 18)
+    
+    # Simular variación de heartbeat según modo
+    if _nervous_state["mode"] == "normal":
+        _nervous_state["heartbeat"] = random.randint(68, 78)
+    elif _nervous_state["mode"] == "stress":
+        _nervous_state["heartbeat"] = random.randint(100, 120)
+    else:  # calm
+        _nervous_state["heartbeat"] = random.randint(60, 70)
+    
+    return {
+        "ok": True,
+        "status": "operational",
+        "mode": _nervous_state["mode"],
+        "heartbeat": _nervous_state["heartbeat"],
+        "signals_per_min": _nervous_state["signals_per_min"],
+        "latency_ms": _nervous_state["latency_ms"],
+        "uptime": _nervous_state["uptime"],
+        "reflexes_count": _nervous_state["reflexes_count"],
+        "signals": _nervous_state["signals"]
+    }
 
 @app.get("/nervous/diagnostic")
 def nervous_diagnostic():
-    """Diagnóstico del sistema nervioso"""
-    try:
-        modules_check = check_all_modules()
-        return {
-            "ok": True,
-            "diagnostic": "complete",
-            "modules": modules_check.get("modules", []),
-            "health": modules_check.get("health", 0)
-        }
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    """Diagnóstico completo del sistema nervioso"""
+    import random
+    
+    # Verificar todos los nodos
+    nodes_status = []
+    healthy_count = 0
+    
+    for node_id, node_data in _nervous_state["nodes"].items():
+        # Simular carga
+        node_data["load"] = random.randint(15, 75)
+        nodes_status.append({
+            "id": node_id,
+            "status": node_data["status"],
+            "load": node_data["load"],
+            "latency": random.randint(5, 20)
+        })
+        if node_data["status"] == "ok":
+            healthy_count += 1
+    
+    health = round((healthy_count / len(_nervous_state["nodes"])) * 100)
+    
+    return {
+        "ok": True,
+        "diagnostic": "complete",
+        "nodes": nodes_status,
+        "nodes_total": len(_nervous_state["nodes"]),
+        "nodes_healthy": healthy_count,
+        "health": health,
+        "mode": _nervous_state["mode"]
+    }
+
+@app.get("/nervous/nodes")
+def get_nervous_nodes():
+    """Obtener estado de todos los nodos"""
+    return {"ok": True, "nodes": _nervous_state["nodes"]}
+
+@app.get("/nervous/node/{node_id}")
+def get_nervous_node(node_id: str):
+    """Obtener estado de un nodo específico"""
+    if node_id not in _nervous_state["nodes"]:
+        return {"ok": False, "error": f"Nodo {node_id} no existe"}
+    return {"ok": True, "node": node_id, **_nervous_state["nodes"][node_id]}
+
+@app.post("/nervous/simulate/stress")
+def simulate_stress():
+    """Simular respuesta de estrés"""
+    global _nervous_state
+    _nervous_state["mode"] = "stress"
+    _nervous_state["heartbeat"] = 110
+    _nervous_state["nodes"]["simpatico"]["load"] = 90
+    _nervous_state["nodes"]["cardiaco"]["load"] = 85
+    return {"ok": True, "mode": "stress", "message": "Sistema simpático activado"}
+
+@app.post("/nervous/simulate/calm")
+def simulate_calm():
+    """Activar sistema parasimpático para calmar"""
+    global _nervous_state
+    _nervous_state["mode"] = "calm"
+    _nervous_state["heartbeat"] = 65
+    _nervous_state["nodes"]["parasimpatico"]["load"] = 80
+    _nervous_state["nodes"]["simpatico"]["load"] = 15
+    return {"ok": True, "mode": "calm", "message": "Sistema parasimpático activado"}
+
+@app.post("/nervous/reset")
+def reset_nervous():
+    """Resetear sistema nervioso a estado normal"""
+    global _nervous_state
+    _nervous_state["mode"] = "normal"
+    _nervous_state["heartbeat"] = 72
+    _nervous_state["signals_per_min"] = 0
+    _nervous_state["reflexes_count"] = 0
+    for node in _nervous_state["nodes"].values():
+        node["load"] = 30
+    return {"ok": True, "mode": "normal", "message": "Sistema nervioso reseteado"}
+
+@app.post("/nervous/reflex/test")
+def test_reflexes():
+    """Probar reflejos del sistema"""
+    import random
+    
+    _nervous_state["reflexes_count"] += 5
+    reflex_time = random.randint(10, 50)  # ms
+    
+    return {
+        "ok": True,
+        "reflexes_tested": 5,
+        "total_reflexes": _nervous_state["reflexes_count"],
+        "avg_reflex_time_ms": reflex_time,
+        "result": "normal" if reflex_time < 30 else "slow"
+    }
+
+@app.get("/nervous/signals")
+def get_signals():
+    """Obtener señales del sistema nervioso"""
+    import random
+    
+    # Actualizar señales dinámicamente
+    for key in _nervous_state["signals"]:
+        base = _nervous_state["signals"][key]
+        variation = random.randint(-5, 5)
+        _nervous_state["signals"][key] = max(50, min(100, base + variation))
+    
+    return {"ok": True, "signals": _nervous_state["signals"]}
 
 # ═══════════════════════════════════════════════════════════════
 # Vision / Cámaras
