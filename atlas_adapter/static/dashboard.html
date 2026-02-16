@@ -2020,14 +2020,14 @@
 
   <!-- VERSION FOOTER -->
   <div class="version-footer">
-    <span>ATLAS</span> v3.7.0 | 2026-02-16
+    <span>ATLAS</span> v3.8.0 | 2026-02-16
   </div>
 
   <script>
     // ═══════════════════════════════════════════════════════════════
     // ATLAS Dashboard v3.0.0 - JavaScript
     // ═══════════════════════════════════════════════════════════════
-    const ATLAS_VERSION = '3.7.0';
+    const ATLAS_VERSION = '3.8.0';
     const ATLAS_BUILD_DATE = '2026-02-16';
     const API_BASE = window.location.origin;
 
@@ -3555,9 +3555,618 @@
           if (tab.getAttribute('data-tab') === 'nervioso') {
             initNervousSystem();
           }
+          if (tab.getAttribute('data-tab') === 'tutorias') {
+            initTutorias();
+          }
         });
       });
     };
+
+    // ═══════════════════════════════════════════════════════════════
+    // Sistema de Tutorías y Visitas
+    // ═══════════════════════════════════════════════════════════════
+    let visitaEnCurso = null;
+    let visitaTimer = null;
+    let visitaStartTime = null;
+    let especialistasCache = [];
+
+    async function initTutorias() {
+      await refreshTutorias();
+    }
+
+    async function refreshTutorias() {
+      addToBitacora('Actualizando sistema de tutorías...', 'info', 'tutorias');
+      await Promise.all([
+        cargarEstadisticas(),
+        cargarEspecialistas(),
+        cargarHistorialVisitas(),
+        cargarRecomendaciones(),
+        cargarSeguimientos()
+      ]);
+      addToBitacora('Sistema de tutorías actualizado', 'success', 'tutorias');
+    }
+
+    async function cargarEstadisticas() {
+      try {
+        const res = await fetch(`${API_BASE}/tutorias/estadisticas`);
+        const data = await res.json();
+        if (data.ok) {
+          const stats = data.estadisticas;
+          document.getElementById('tut-stat-especialistas').textContent = stats.total_especialistas || 0;
+          document.getElementById('tut-stat-visitas').textContent = stats.total_visitas || 0;
+          document.getElementById('tut-stat-informes').textContent = stats.informes_firmados || 0;
+          document.getElementById('tut-stat-puntuacion').textContent = (stats.puntuacion_promedio || 0).toFixed(1);
+        }
+      } catch (e) {
+        console.log('Error cargando estadísticas:', e);
+      }
+    }
+
+    async function cargarEspecialistas() {
+      try {
+        const res = await fetch(`${API_BASE}/tutorias/especialistas`);
+        const data = await res.json();
+        if (data.ok) {
+          especialistasCache = data.especialistas || [];
+          renderEspecialistas(especialistasCache);
+          actualizarSelectEspecialistas(especialistasCache);
+        }
+      } catch (e) {
+        console.log('Error cargando especialistas:', e);
+      }
+    }
+
+    function renderEspecialistas(especialistas) {
+      const container = document.getElementById('lista-especialistas');
+      if (!container) return;
+      
+      if (!especialistas.length) {
+        container.innerHTML = `<div style="color: var(--text-muted); text-align: center; padding: 2rem;">
+          No hay especialistas registrados aún
+        </div>`;
+        return;
+      }
+      
+      container.innerHTML = especialistas.map(esp => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: var(--bg-elevated); border-radius: 8px; margin-bottom: 0.5rem;">
+          <div>
+            <strong style="color: var(--accent-cyan);">${esp.nombre}</strong>
+            <span style="color: var(--text-muted); margin-left: 0.5rem;">${esp.rol}</span>
+            <div style="font-size: 0.85rem; color: var(--text-muted);">
+              ${esp.especialidad} | ${esp.visitas_realizadas || 0} visitas
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <span style="font-family: monospace; font-size: 0.75rem; color: var(--accent-purple);">
+              🔏 ${esp.firma_digital?.substring(0, 8) || 'N/A'}
+            </span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function actualizarSelectEspecialistas(especialistas) {
+      const select = document.getElementById('visita-especialista');
+      if (!select) return;
+      
+      select.innerHTML = '<option value="">Seleccionar especialista...</option>' +
+        especialistas.map(esp => `<option value="${esp.id}">${esp.nombre} (${esp.rol})</option>`).join('');
+    }
+
+    async function registrarEspecialista() {
+      const nombre = document.getElementById('esp-nombre').value.trim();
+      const rol = document.getElementById('esp-rol').value;
+      const especialidad = document.getElementById('esp-especialidad').value.trim();
+      const email = document.getElementById('esp-email').value.trim();
+      
+      if (!nombre || !especialidad) {
+        alert('Por favor ingrese nombre y especialidad');
+        return;
+      }
+      
+      try {
+        const res = await fetch(`${API_BASE}/tutorias/especialistas`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre, rol, especialidad, email })
+        });
+        const data = await res.json();
+        
+        if (data.ok) {
+          addToBitacora(`Especialista registrado: ${nombre}`, 'success', 'tutorias');
+          addActivity(`Nuevo especialista: ${nombre}`, 'success');
+          
+          // Limpiar campos
+          document.getElementById('esp-nombre').value = '';
+          document.getElementById('esp-especialidad').value = '';
+          document.getElementById('esp-email').value = '';
+          
+          // Recargar lista
+          await cargarEspecialistas();
+          await cargarEstadisticas();
+        } else {
+          alert('Error: ' + (data.detail || 'No se pudo registrar'));
+        }
+      } catch (e) {
+        alert('Error de conexión');
+      }
+    }
+
+    async function iniciarVisita() {
+      const especialistaId = document.getElementById('visita-especialista').value;
+      const tipo = document.getElementById('visita-tipo').value;
+      const motivo = document.getElementById('visita-motivo').value.trim();
+      
+      const modulosChecked = document.querySelectorAll('.modulo-check:checked');
+      const modulos = Array.from(modulosChecked).map(cb => cb.value);
+      
+      if (!especialistaId) {
+        alert('Por favor seleccione un especialista');
+        return;
+      }
+      if (!motivo) {
+        alert('Por favor ingrese el motivo de la visita');
+        return;
+      }
+      
+      try {
+        const res = await fetch(`${API_BASE}/tutorias/visitas`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tipo,
+            especialista_id: especialistaId,
+            motivo,
+            modulos_revisados: modulos,
+            objetivos: []
+          })
+        });
+        const data = await res.json();
+        
+        if (data.ok) {
+          visitaEnCurso = {
+            id: data.visita_id,
+            tipo,
+            especialista: data.especialista,
+            inicio: new Date()
+          };
+          
+          // Mostrar panel de visita en curso
+          document.getElementById('visita-en-curso').style.display = 'block';
+          document.getElementById('visita-actual-tipo').textContent = tipo.toUpperCase();
+          document.getElementById('visita-actual-esp').textContent = data.especialista;
+          
+          // Iniciar timer
+          visitaStartTime = Date.now();
+          visitaTimer = setInterval(updateVisitaTimer, 1000);
+          
+          addToBitacora(`Visita iniciada: ${tipo} por ${data.especialista}`, 'success', 'tutorias');
+          addActivity(`Visita ${tipo} iniciada`, 'info');
+          
+          // Limpiar formulario
+          document.getElementById('visita-motivo').value = '';
+          document.querySelectorAll('.modulo-check').forEach(cb => cb.checked = false);
+        } else {
+          alert('Error: ' + (data.detail || 'No se pudo iniciar la visita'));
+        }
+      } catch (e) {
+        alert('Error de conexión');
+      }
+    }
+
+    function updateVisitaTimer() {
+      const elapsed = Date.now() - visitaStartTime;
+      const hours = Math.floor(elapsed / 3600000);
+      const mins = Math.floor((elapsed % 3600000) / 60000);
+      const secs = Math.floor((elapsed % 60000) / 1000);
+      document.getElementById('visita-timer').textContent = 
+        `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    function cancelarVisita() {
+      if (confirm('¿Está seguro de cancelar la visita en curso?')) {
+        if (visitaTimer) clearInterval(visitaTimer);
+        visitaEnCurso = null;
+        document.getElementById('visita-en-curso').style.display = 'none';
+        addToBitacora('Visita cancelada', 'warning', 'tutorias');
+      }
+    }
+
+    function mostrarFormularioInforme() {
+      const notas = document.getElementById('visita-notas').value;
+      
+      // Crear modal para informe
+      const modal = document.createElement('div');
+      modal.id = 'informe-modal';
+      modal.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.8); z-index: 10000;
+        display: flex; align-items: center; justify-content: center;
+      `;
+      modal.innerHTML = `
+        <div style="background: var(--bg-card); border-radius: 16px; padding: 2rem; width: 90%; max-width: 700px; max-height: 90vh; overflow-y: auto; border: 1px solid var(--border);">
+          <h2 style="color: var(--accent-cyan); margin-bottom: 1.5rem;">📝 Crear Informe de Visita</h2>
+          
+          <div style="margin-bottom: 1rem;">
+            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-muted);">Título del Informe</label>
+            <input type="text" id="inf-titulo" value="Informe de ${visitaEnCurso?.tipo || 'visita'} - ${new Date().toLocaleDateString()}" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text);">
+          </div>
+          
+          <div style="margin-bottom: 1rem;">
+            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-muted);">Resumen</label>
+            <input type="text" id="inf-resumen" placeholder="Resumen breve del informe" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text);">
+          </div>
+          
+          <div style="margin-bottom: 1rem;">
+            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-muted);">Contenido Detallado</label>
+            <textarea id="inf-contenido" rows="5" placeholder="Descripción detallada de la visita...">${notas}</textarea>
+          </div>
+          
+          <div style="margin-bottom: 1rem;">
+            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-cyan);">📊 Evaluaciones</label>
+            <div id="evaluaciones-list">
+              <div class="eval-item" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem; padding: 0.75rem; background: var(--bg-elevated); border-radius: 8px;">
+                <input type="text" class="eval-aspecto" placeholder="Aspecto" style="padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
+                <select class="eval-nivel" style="padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
+                  <option value="EXCELENTE">⭐ Excelente (5)</option>
+                  <option value="BUENO">✅ Bueno (4)</option>
+                  <option value="ACEPTABLE" selected>🔵 Aceptable (3)</option>
+                  <option value="MEJORABLE">⚠️ Mejorable (2)</option>
+                  <option value="CRITICO">🔴 Crítico (1)</option>
+                </select>
+                <input type="text" class="eval-comentario" placeholder="Comentario" style="padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
+              </div>
+            </div>
+            <button onclick="agregarEvaluacion()" style="padding: 0.5rem 1rem; background: var(--bg-elevated); color: var(--accent-cyan); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">+ Agregar Evaluación</button>
+          </div>
+          
+          <div style="margin-bottom: 1rem;">
+            <label style="display: block; margin-bottom: 0.5rem; color: var(--accent-orange);">💡 Recomendaciones</label>
+            <div id="recomendaciones-list">
+              <div class="rec-item" style="padding: 0.75rem; background: var(--bg-elevated); border-radius: 8px; margin-bottom: 0.5rem;">
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem;">
+                  <input type="text" class="rec-titulo" placeholder="Título de la recomendación" style="padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
+                  <select class="rec-prioridad" style="padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
+                    <option value="CRITICA">🔴 Crítica</option>
+                    <option value="ALTA">🟠 Alta</option>
+                    <option value="MEDIA" selected>🟡 Media</option>
+                    <option value="BAJA">🟢 Baja</option>
+                    <option value="OPCIONAL">⚪ Opcional</option>
+                  </select>
+                </div>
+                <input type="text" class="rec-descripcion" placeholder="Descripción de la recomendación" style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); margin-bottom: 0.5rem;">
+                <input type="text" class="rec-modulo" placeholder="Módulo afectado (ej: vision, brain)" style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
+              </div>
+            </div>
+            <button onclick="agregarRecomendacion()" style="padding: 0.5rem 1rem; background: var(--bg-elevated); color: var(--accent-orange); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">+ Agregar Recomendación</button>
+          </div>
+          
+          <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+            <button class="btn btn-primary" onclick="enviarInforme()" style="flex: 1;">✍️ Firmar y Enviar Informe</button>
+            <button class="btn" onclick="cerrarModalInforme()" style="background: var(--bg-elevated);">Cancelar</button>
+          </div>
+        </div>
+      `;
+      
+      document.body.appendChild(modal);
+    }
+
+    function agregarEvaluacion() {
+      const list = document.getElementById('evaluaciones-list');
+      const item = document.createElement('div');
+      item.className = 'eval-item';
+      item.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem; padding: 0.75rem; background: var(--bg-elevated); border-radius: 8px;';
+      item.innerHTML = `
+        <input type="text" class="eval-aspecto" placeholder="Aspecto" style="padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
+        <select class="eval-nivel" style="padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
+          <option value="EXCELENTE">⭐ Excelente (5)</option>
+          <option value="BUENO">✅ Bueno (4)</option>
+          <option value="ACEPTABLE" selected>🔵 Aceptable (3)</option>
+          <option value="MEJORABLE">⚠️ Mejorable (2)</option>
+          <option value="CRITICO">🔴 Crítico (1)</option>
+        </select>
+        <input type="text" class="eval-comentario" placeholder="Comentario" style="padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
+      `;
+      list.appendChild(item);
+    }
+
+    function agregarRecomendacion() {
+      const list = document.getElementById('recomendaciones-list');
+      const item = document.createElement('div');
+      item.className = 'rec-item';
+      item.style.cssText = 'padding: 0.75rem; background: var(--bg-elevated); border-radius: 8px; margin-bottom: 0.5rem;';
+      item.innerHTML = `
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.5rem; margin-bottom: 0.5rem;">
+          <input type="text" class="rec-titulo" placeholder="Título de la recomendación" style="padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
+          <select class="rec-prioridad" style="padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
+            <option value="CRITICA">🔴 Crítica</option>
+            <option value="ALTA">🟠 Alta</option>
+            <option value="MEDIA" selected>🟡 Media</option>
+            <option value="BAJA">🟢 Baja</option>
+            <option value="OPCIONAL">⚪ Opcional</option>
+          </select>
+        </div>
+        <input type="text" class="rec-descripcion" placeholder="Descripción de la recomendación" style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); margin-bottom: 0.5rem;">
+        <input type="text" class="rec-modulo" placeholder="Módulo afectado (ej: vision, brain)" style="width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text);">
+      `;
+      list.appendChild(item);
+    }
+
+    function cerrarModalInforme() {
+      const modal = document.getElementById('informe-modal');
+      if (modal) modal.remove();
+    }
+
+    async function enviarInforme() {
+      const titulo = document.getElementById('inf-titulo').value.trim();
+      const resumen = document.getElementById('inf-resumen').value.trim();
+      const contenido = document.getElementById('inf-contenido').value.trim();
+      
+      // Recoger evaluaciones
+      const evalItems = document.querySelectorAll('.eval-item');
+      const evaluaciones = [];
+      const nivelPuntuacion = { EXCELENTE: 5, BUENO: 4, ACEPTABLE: 3, MEJORABLE: 2, CRITICO: 1 };
+      
+      evalItems.forEach(item => {
+        const aspecto = item.querySelector('.eval-aspecto').value.trim();
+        const nivel = item.querySelector('.eval-nivel').value;
+        const comentario = item.querySelector('.eval-comentario').value.trim();
+        if (aspecto) {
+          evaluaciones.push({
+            aspecto,
+            nivel,
+            puntuacion: nivelPuntuacion[nivel] || 3,
+            comentario
+          });
+        }
+      });
+      
+      // Recoger recomendaciones
+      const recItems = document.querySelectorAll('.rec-item');
+      const recomendaciones = [];
+      
+      recItems.forEach(item => {
+        const rec_titulo = item.querySelector('.rec-titulo').value.trim();
+        const prioridad = item.querySelector('.rec-prioridad').value;
+        const descripcion = item.querySelector('.rec-descripcion').value.trim();
+        const modulo = item.querySelector('.rec-modulo').value.trim();
+        if (rec_titulo) {
+          recomendaciones.push({
+            titulo: rec_titulo,
+            prioridad,
+            descripcion,
+            modulo_afectado: modulo || 'general',
+            pasos_implementacion: []
+          });
+        }
+      });
+      
+      if (!titulo || !resumen) {
+        alert('Por favor complete el título y resumen del informe');
+        return;
+      }
+      
+      try {
+        const res = await fetch(`${API_BASE}/tutorias/visitas/${visitaEnCurso.id}/finalizar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            titulo,
+            resumen,
+            contenido,
+            evaluaciones,
+            recomendaciones,
+            objetivos_cumplidos: [],
+            objetivos_pendientes: [],
+            proximos_pasos: []
+          })
+        });
+        const data = await res.json();
+        
+        if (data.ok) {
+          addToBitacora(`Informe firmado: ${titulo}`, 'success', 'tutorias');
+          addActivity(`Visita finalizada - Informe: ${data.informe?.firma?.substring(0, 8)}`, 'success');
+          
+          // Cerrar modal y limpiar
+          cerrarModalInforme();
+          if (visitaTimer) clearInterval(visitaTimer);
+          visitaEnCurso = null;
+          document.getElementById('visita-en-curso').style.display = 'none';
+          
+          // Actualizar datos
+          await refreshTutorias();
+          
+          alert(`✅ Informe firmado exitosamente!\n\nFirma: ${data.informe?.firma || 'N/A'}\nHash: ${data.informe?.hash?.substring(0, 16) || 'N/A'}\nPuntuación: ${data.informe?.puntuacion_global?.toFixed(1) || 'N/A'}/5`);
+        } else {
+          alert('Error: ' + (data.detail || 'No se pudo enviar el informe'));
+        }
+      } catch (e) {
+        alert('Error de conexión: ' + e.message);
+      }
+    }
+
+    async function cargarHistorialVisitas() {
+      try {
+        const res = await fetch(`${API_BASE}/tutorias/visitas?limite=10&solo_completadas=true`);
+        const data = await res.json();
+        if (data.ok) {
+          renderHistorialVisitas(data.visitas || []);
+        }
+      } catch (e) {
+        console.log('Error cargando historial:', e);
+      }
+    }
+
+    function renderHistorialVisitas(visitas) {
+      const container = document.getElementById('historial-visitas');
+      if (!container) return;
+      
+      if (!visitas.length) {
+        container.innerHTML = `<div style="color: var(--text-muted); text-align: center; padding: 2rem;">
+          No hay visitas registradas aún
+        </div>`;
+        return;
+      }
+      
+      const tipoEmojis = {
+        tutoria: '📚', revision: '🔍', auditoria: '📊', capacitacion: '🎓',
+        mantenimiento: '🔧', emergencia: '🚨', seguimiento: '📌'
+      };
+      
+      container.innerHTML = visitas.map(v => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: var(--bg-elevated); border-radius: 8px; margin-bottom: 0.5rem;">
+          <div>
+            <span style="margin-right: 0.5rem;">${tipoEmojis[v.tipo] || '📋'}</span>
+            <strong style="color: var(--accent-cyan);">${v.tipo?.toUpperCase() || 'VISITA'}</strong>
+            <span style="color: var(--text-muted); margin-left: 0.5rem;">
+              por ${v.especialista?.nombre || 'N/A'}
+            </span>
+            <div style="font-size: 0.85rem; color: var(--text-muted);">
+              ${v.motivo || 'Sin motivo'} | ${v.duracion_minutos || 0} min
+            </div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 0.85rem; color: var(--text-muted);">
+              ${new Date(v.fecha_inicio).toLocaleDateString()}
+            </div>
+            ${v.informe?.firmado ? `<span style="color: var(--accent-green); font-size: 0.75rem;">✅ Firmado</span>` : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function cargarRecomendaciones() {
+      try {
+        const res = await fetch(`${API_BASE}/tutorias/recomendaciones?estado=PENDIENTE&limite=10`);
+        const data = await res.json();
+        if (data.ok) {
+          renderRecomendaciones(data.recomendaciones || []);
+        }
+      } catch (e) {
+        console.log('Error cargando recomendaciones:', e);
+      }
+    }
+
+    function renderRecomendaciones(recomendaciones) {
+      const container = document.getElementById('lista-recomendaciones');
+      if (!container) return;
+      
+      if (!recomendaciones.length) {
+        container.innerHTML = `<div style="color: var(--text-muted); text-align: center; padding: 2rem;">
+          No hay recomendaciones pendientes 👍
+        </div>`;
+        return;
+      }
+      
+      const prioridadColors = {
+        CRITICA: 'var(--accent-red)', ALTA: 'var(--accent-orange)',
+        MEDIA: 'var(--accent-orange)', BAJA: 'var(--accent-green)', OPCIONAL: 'var(--text-muted)'
+      };
+      
+      container.innerHTML = recomendaciones.map(r => `
+        <div style="padding: 0.75rem; background: var(--bg-elevated); border-radius: 8px; margin-bottom: 0.5rem; border-left: 3px solid ${prioridadColors[r.prioridad] || 'var(--border)'};">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+              <strong style="color: var(--text);">${r.titulo}</strong>
+              <span style="font-size: 0.75rem; padding: 0.2rem 0.5rem; background: ${prioridadColors[r.prioridad]}; color: white; border-radius: 10px; margin-left: 0.5rem;">${r.prioridad}</span>
+              <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">
+                ${r.descripcion || 'Sin descripción'}
+              </div>
+              <div style="font-size: 0.75rem; color: var(--accent-purple); margin-top: 0.25rem;">
+                Módulo: ${r.modulo_afectado || 'general'}
+              </div>
+            </div>
+            <button onclick="marcarRecomendacion('${r.id}', 'COMPLETADA')" style="padding: 0.25rem 0.5rem; background: var(--accent-green); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.75rem;">✓</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function marcarRecomendacion(id, estado) {
+      try {
+        await fetch(`${API_BASE}/tutorias/recomendaciones/${id}/estado?estado=${estado}`, {
+          method: 'PUT'
+        });
+        addToBitacora(`Recomendación ${estado.toLowerCase()}`, 'success', 'tutorias');
+        await cargarRecomendaciones();
+        await cargarEstadisticas();
+      } catch (e) {
+        console.log('Error actualizando recomendación:', e);
+      }
+    }
+
+    async function cargarSeguimientos() {
+      try {
+        const res = await fetch(`${API_BASE}/tutorias/seguimientos?solo_activos=true`);
+        const data = await res.json();
+        if (data.ok) {
+          renderSeguimientos(data.seguimientos || []);
+        }
+      } catch (e) {
+        console.log('Error cargando seguimientos:', e);
+      }
+    }
+
+    function renderSeguimientos(seguimientos) {
+      const container = document.getElementById('lista-seguimientos');
+      if (!container) return;
+      
+      if (!seguimientos.length) {
+        container.innerHTML = `<div style="color: var(--text-muted); text-align: center; padding: 2rem;">
+          No hay seguimientos activos
+        </div>`;
+        return;
+      }
+      
+      container.innerHTML = seguimientos.map(s => `
+        <div style="padding: 0.75rem; background: var(--bg-elevated); border-radius: 8px; margin-bottom: 0.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <strong style="color: var(--text);">${s.titulo}</strong>
+            <span style="color: var(--accent-cyan); font-weight: bold;">${s.porcentaje_avance}%</span>
+          </div>
+          <div style="background: rgba(255,255,255,0.1); border-radius: 4px; height: 8px; overflow: hidden;">
+            <div style="background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple)); height: 100%; width: ${s.porcentaje_avance}%; transition: width 0.3s;"></div>
+          </div>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">
+            Responsable: ${s.responsable || 'ATLAS'} | ${s.hitos?.length || 0} hitos
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function generarDashboardTutorias() {
+      try {
+        const res = await fetch(`${API_BASE}/tutorias/dashboard`);
+        const data = await res.json();
+        if (data.ok) {
+          addToBitacora(`Dashboard generado: ${data.dashboard_path}`, 'success', 'tutorias');
+          alert('Dashboard generado en:\n' + data.dashboard_path);
+        }
+      } catch (e) {
+        alert('Error generando dashboard');
+      }
+    }
+
+    async function exportarRecomendaciones() {
+      addToBitacora('Exportando recomendaciones...', 'info', 'tutorias');
+      // Simplemente descargar lista actual
+      try {
+        const res = await fetch(`${API_BASE}/tutorias/recomendaciones?limite=100`);
+        const data = await res.json();
+        if (data.ok) {
+          const blob = new Blob([JSON.stringify(data.recomendaciones, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `recomendaciones_${new Date().toISOString().split('T')[0]}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+          addToBitacora('Recomendaciones exportadas', 'success', 'tutorias');
+        }
+      } catch (e) {
+        alert('Error exportando recomendaciones');
+      }
+    }
   </script>
 </body>
 </html>
