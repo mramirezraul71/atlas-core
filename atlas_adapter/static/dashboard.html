@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ATLAS Dashboard v3.5.0</title>
+  <title>ATLAS Dashboard v3.6.0</title>
   <style>
     /* === THEME: Default (Cyan) === */
     :root, [data-theme="cyan"] {
@@ -985,6 +985,163 @@
     .nervous-log-entry.error .log-msg { color: var(--accent-red); }
     .nervous-log-entry.success .log-msg { color: var(--accent-green); }
     .nervous-log-entry.warning .log-msg { color: var(--accent-orange); }
+
+    /* === BITÁCORA CENTRAL FLOTANTE === */
+    .bitacora-panel {
+      position: fixed;
+      bottom: 60px;
+      right: 20px;
+      width: 400px;
+      max-height: 400px;
+      background: var(--bg-card);
+      border: 2px solid var(--accent-cyan);
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      transition: all 0.3s ease;
+    }
+    .bitacora-panel.minimized {
+      max-height: 45px;
+      overflow: hidden;
+    }
+    .bitacora-panel.expanded {
+      width: 600px;
+      max-height: 600px;
+    }
+    .bitacora-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      background: linear-gradient(90deg, var(--bg-elevated), var(--bg-card));
+      border-bottom: 1px solid var(--border);
+      border-radius: 10px 10px 0 0;
+      cursor: move;
+    }
+    .bitacora-title {
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--accent-cyan);
+    }
+    .bitacora-controls {
+      display: flex;
+      gap: 0.25rem;
+    }
+    .bitacora-btn {
+      background: transparent;
+      border: none;
+      font-size: 0.8rem;
+      cursor: pointer;
+      padding: 0.25rem 0.4rem;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+    .bitacora-btn:hover {
+      background: var(--bg-elevated);
+    }
+    .bitacora-filters {
+      display: flex;
+      gap: 0.25rem;
+      padding: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .bitacora-filter {
+      padding: 0.25rem 0.5rem;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 0.7rem;
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: all 0.2s;
+    }
+    .bitacora-filter:hover, .bitacora-filter.active {
+      border-color: var(--accent-cyan);
+      color: var(--accent-cyan);
+    }
+    .bitacora-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.5rem;
+      max-height: 280px;
+    }
+    .bitacora-panel.expanded .bitacora-content {
+      max-height: 480px;
+    }
+    .bitacora-entry {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.4rem 0.5rem;
+      border-radius: 4px;
+      margin-bottom: 0.25rem;
+      font-size: 0.8rem;
+      background: var(--bg-elevated);
+      border-left: 3px solid var(--accent-cyan);
+      animation: slideIn 0.2s ease;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .bitacora-entry.success { border-left-color: var(--accent-green); }
+    .bitacora-entry.error { border-left-color: var(--accent-red); }
+    .bitacora-entry.warning { border-left-color: var(--accent-orange); }
+    .bitacora-entry.brain { border-left-color: var(--accent-purple); }
+    .bitacora-entry.vision { border-left-color: var(--accent-pink); }
+    .bitacora-entry.nervous { border-left-color: var(--accent-orange); }
+    .bitacora-time {
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      min-width: 60px;
+      font-family: monospace;
+    }
+    .bitacora-source {
+      font-size: 0.75rem;
+      min-width: 20px;
+    }
+    .bitacora-msg {
+      flex: 1;
+      color: var(--text);
+      word-break: break-word;
+    }
+    .bitacora-stats {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.5rem 1rem;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border);
+      background: var(--bg-elevated);
+      border-radius: 0 0 10px 10px;
+    }
+    .bitacora-toggle-btn {
+      position: fixed;
+      bottom: 70px;
+      right: 20px;
+      background: var(--accent-cyan);
+      color: var(--bg);
+      border: none;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      z-index: 999;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .bitacora-toggle-btn:hover {
+      filter: brightness(1.1);
+    }
+    #bitacora-badge {
+      background: var(--accent-red);
+      color: white;
+      padding: 0.1rem 0.4rem;
+      border-radius: 10px;
+      font-size: 0.7rem;
+      margin-left: 0.25rem;
+    }
   </style>
 </head>
 <body>
@@ -1015,7 +1172,7 @@
       <!-- Botón Actualizar -->
       <button class="btn-update" id="btn-check-update" onclick="checkForUpdates()" title="Buscar actualizaciones">🔄 Actualizar</button>
       <!-- Badge de versión -->
-      <div class="version-badge" id="version-badge">v3.5.0</div>
+      <div class="version-badge" id="version-badge">v3.6.0</div>
       <div class="status-indicator">
         <div class="status-dot" id="cerebro-dot"></div>
         <span>Cerebro</span>
@@ -1620,16 +1777,51 @@
     </div>
   </div>
 
+  </div>
+
+  <!-- BITÁCORA FLOTANTE (siempre visible) -->
+  <div class="bitacora-panel" id="bitacora-panel">
+    <div class="bitacora-header">
+      <span class="bitacora-title">📋 BITÁCORA CENTRAL</span>
+      <div class="bitacora-controls">
+        <button class="bitacora-btn" onclick="toggleBitacoraSize()" title="Expandir/Contraer">⬜</button>
+        <button class="bitacora-btn" onclick="clearBitacora()" title="Limpiar">🗑️</button>
+        <button class="bitacora-btn" onclick="toggleBitacora()" title="Minimizar">➖</button>
+      </div>
+    </div>
+    <div class="bitacora-filters">
+      <button class="bitacora-filter active" data-filter="all">Todo</button>
+      <button class="bitacora-filter" data-filter="success">✅</button>
+      <button class="bitacora-filter" data-filter="info">ℹ️</button>
+      <button class="bitacora-filter" data-filter="error">❌</button>
+      <button class="bitacora-filter" data-filter="brain">🧠</button>
+      <button class="bitacora-filter" data-filter="vision">👁️</button>
+      <button class="bitacora-filter" data-filter="nervous">🔗</button>
+    </div>
+    <div class="bitacora-content" id="bitacora-content">
+      <!-- Entradas de bitácora -->
+    </div>
+    <div class="bitacora-stats">
+      <span id="bitacora-count">0 eventos</span>
+      <span id="bitacora-session">Sesión: 00:00:00</span>
+    </div>
+  </div>
+
+  <!-- Botón para mostrar bitácora cuando está oculta -->
+  <button class="bitacora-toggle-btn" id="bitacora-toggle-btn" onclick="showBitacora()" style="display: none;">
+    📋 <span id="bitacora-badge">0</span>
+  </button>
+
   <!-- VERSION FOOTER -->
   <div class="version-footer">
-    <span>ATLAS</span> v3.5.0 | 2026-02-16
+    <span>ATLAS</span> v3.6.0 | 2026-02-16
   </div>
 
   <script>
     // ═══════════════════════════════════════════════════════════════
     // ATLAS Dashboard v3.0.0 - JavaScript
     // ═══════════════════════════════════════════════════════════════
-    const ATLAS_VERSION = '3.5.0';
+    const ATLAS_VERSION = '3.6.0';
     const ATLAS_BUILD_DATE = '2026-02-16';
     const API_BASE = window.location.origin;
 
@@ -1656,16 +1848,22 @@
 
     // Activity log
     let activityLog = [];
+    
+    // Bitácora central
+    let bitacoraLog = [];
+    let bitacoraFilter = 'all';
+    let sessionStartTime = Date.now();
+    let unreadCount = 0;
 
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
       initTabs();
       initThemeSelector();
+      initBitacora();
       renderModules();
       updateTime();
       setInterval(updateTime, 1000);
       loadInitialData();
-      addActivity('Dashboard iniciado', 'success');
     });
     
     // Theme selector
@@ -2036,11 +2234,165 @@
     }
 
     // Activity log
-    function addActivity(message, type = 'info') {
+    function addActivity(message, type = 'info', source = 'system') {
       const time = new Date().toLocaleTimeString('es-ES');
       activityLog.unshift({ time, message, type });
       if (activityLog.length > 50) activityLog.pop();
       renderActivity();
+      
+      // También agregar a la bitácora central
+      addToBitacora(message, type, source);
+    }
+    
+    // ═══════════════════════════════════════════════════════════════
+    // Bitácora Central
+    // ═══════════════════════════════════════════════════════════════
+    
+    function addToBitacora(message, type = 'info', source = 'system') {
+      const time = new Date().toLocaleTimeString('es-ES');
+      const entry = {
+        id: Date.now(),
+        time,
+        message,
+        type,
+        source,
+        timestamp: Date.now()
+      };
+      
+      bitacoraLog.unshift(entry);
+      if (bitacoraLog.length > 200) bitacoraLog.pop();
+      
+      renderBitacora();
+      updateBitacoraStats();
+      
+      // Incrementar contador si está minimizada
+      const panel = document.getElementById('bitacora-panel');
+      if (panel && panel.classList.contains('minimized')) {
+        unreadCount++;
+        document.getElementById('bitacora-badge').textContent = unreadCount;
+      }
+    }
+    
+    function renderBitacora() {
+      const content = document.getElementById('bitacora-content');
+      if (!content) return;
+      
+      let filtered = bitacoraLog;
+      if (bitacoraFilter !== 'all') {
+        filtered = bitacoraLog.filter(e => e.type === bitacoraFilter || e.source === bitacoraFilter);
+      }
+      
+      content.innerHTML = filtered.slice(0, 100).map(entry => {
+        const sourceIcon = getSourceIcon(entry.source);
+        return `
+          <div class="bitacora-entry ${entry.type} ${entry.source}">
+            <span class="bitacora-time">${entry.time}</span>
+            <span class="bitacora-source">${sourceIcon}</span>
+            <span class="bitacora-msg">${escapeHtml(entry.message)}</span>
+          </div>
+        `;
+      }).join('');
+      
+      // Auto-scroll si está cerca del final
+      if (content.scrollTop < 50) {
+        content.scrollTop = 0;
+      }
+    }
+    
+    function getSourceIcon(source) {
+      const icons = {
+        system: '⚙️',
+        brain: '🧠',
+        vision: '👁️',
+        nervous: '🔗',
+        modules: '📦',
+        chat: '💬',
+        ai: '🤖',
+        governance: '🛡️',
+        update: '🔄'
+      };
+      return icons[source] || '📋';
+    }
+    
+    function updateBitacoraStats() {
+      const countEl = document.getElementById('bitacora-count');
+      const sessionEl = document.getElementById('bitacora-session');
+      
+      if (countEl) {
+        countEl.textContent = `${bitacoraLog.length} eventos`;
+      }
+      
+      if (sessionEl) {
+        const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+        const hours = Math.floor(elapsed / 3600);
+        const mins = Math.floor((elapsed % 3600) / 60);
+        const secs = elapsed % 60;
+        sessionEl.textContent = `Sesión: ${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      }
+    }
+    
+    function toggleBitacora() {
+      const panel = document.getElementById('bitacora-panel');
+      const toggleBtn = document.getElementById('bitacora-toggle-btn');
+      
+      if (panel.classList.contains('minimized')) {
+        panel.classList.remove('minimized');
+        unreadCount = 0;
+        document.getElementById('bitacora-badge').textContent = '0';
+      } else {
+        panel.classList.add('minimized');
+      }
+    }
+    
+    function toggleBitacoraSize() {
+      const panel = document.getElementById('bitacora-panel');
+      panel.classList.toggle('expanded');
+    }
+    
+    function showBitacora() {
+      const panel = document.getElementById('bitacora-panel');
+      const toggleBtn = document.getElementById('bitacora-toggle-btn');
+      
+      panel.style.display = 'flex';
+      toggleBtn.style.display = 'none';
+      unreadCount = 0;
+      document.getElementById('bitacora-badge').textContent = '0';
+    }
+    
+    function hideBitacora() {
+      const panel = document.getElementById('bitacora-panel');
+      const toggleBtn = document.getElementById('bitacora-toggle-btn');
+      
+      panel.style.display = 'none';
+      toggleBtn.style.display = 'block';
+    }
+    
+    function clearBitacora() {
+      if (confirm('¿Limpiar toda la bitácora?')) {
+        bitacoraLog = [];
+        renderBitacora();
+        updateBitacoraStats();
+        addToBitacora('Bitácora limpiada', 'info', 'system');
+      }
+    }
+    
+    function initBitacora() {
+      // Event listeners para filtros
+      document.querySelectorAll('.bitacora-filter').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.bitacora-filter').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          bitacoraFilter = btn.getAttribute('data-filter');
+          renderBitacora();
+        });
+      });
+      
+      // Actualizar tiempo de sesión cada segundo
+      setInterval(updateBitacoraStats, 1000);
+      
+      // Entrada inicial
+      addToBitacora('Sistema ATLAS iniciado', 'success', 'system');
+      addToBitacora(`Dashboard v${ATLAS_VERSION} cargado`, 'info', 'system');
     }
 
     function renderActivity() {
@@ -2073,7 +2425,7 @@
         if (brainRes.ok) {
           const brain = await brainRes.json();
           if (brain.connected) {
-            addActivity('Cerebro conectado', 'success');
+            addActivity('Cerebro conectado', 'success', 'brain');
             document.getElementById('cerebro-dot').classList.remove('offline');
           }
         }
@@ -2526,7 +2878,7 @@
         if (data.ok) {
           const response = data.response || data.result || 'Sin respuesta';
           messagesDiv.innerHTML += `<div class="chat-message assistant">${formatResponse(response)}</div>`;
-          addActivity('Cerebro respondió', 'success');
+          addActivity('Cerebro respondió', 'success', 'brain');
         } else {
           messagesDiv.innerHTML += `<div class="chat-message assistant" style="border-color: var(--accent-red);">Error: ${data.error || 'Sin respuesta'}</div>`;
           addActivity('Error del cerebro: ' + (data.error || 'desconocido'), 'error');
