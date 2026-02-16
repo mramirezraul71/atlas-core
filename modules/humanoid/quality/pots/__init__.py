@@ -48,6 +48,14 @@ from . import autonomy_full_cycle
 # === AUTO-UPDATE ===
 from . import auto_update_full
 
+# === ROBOTICS ===
+from . import navigation_slam
+from . import simulation_training
+from . import sensor_fusion
+from . import manipulation_grasp
+from . import hri_interaction
+from . import vision_pipeline
+
 
 # ============================================================================
 # REGISTRY DE POTs
@@ -89,6 +97,14 @@ _POT_MODULES: Dict[str, Callable] = {
     
     # Auto-Update
     "auto_update_full": auto_update_full.get_pot,
+    
+    # Robotics
+    "navigation_slam": navigation_slam.get_pot,
+    "simulation_training": simulation_training.get_pot,
+    "sensor_fusion": sensor_fusion.get_pot,
+    "manipulation_grasp": manipulation_grasp.get_pot,
+    "hri_interaction": hri_interaction.get_pot,
+    "vision_pipeline": vision_pipeline.get_pot,
 }
 
 

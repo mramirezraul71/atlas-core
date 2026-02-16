@@ -21,6 +21,8 @@ class POTCategory(str, Enum):
     SECURITY = "security"       # Procedimientos de seguridad
     CALIBRATION = "calibration" # Calibración de sensores/cámaras
     UPGRADE = "upgrade"         # Actualizaciones de sistema
+    COMMUNICATION = "communication"  # Interacción humano-robot (HRI)
+    ROBOTICS = "robotics"       # Operaciones robóticas generales
 
 
 class POTSeverity(str, Enum):
