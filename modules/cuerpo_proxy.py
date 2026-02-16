@@ -16,6 +16,7 @@ from fastapi.responses import Response
 ROBOT_UI_BASE = (os.getenv("NEXUS_ROBOT_URL") or "http://127.0.0.1:5174").rstrip("/")
 ROBOT_API_BASE = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
 TIMEOUT = float(os.getenv("NEXUS_TIMEOUT", "30"))
+CAMERA_CONTROL_TIMEOUT = float(os.getenv("NEXUS_CAMERA_PROXY_TIMEOUT", "45"))
 
 _API_PREFIXES = (
     "api/",
@@ -42,8 +43,12 @@ async def proxy_to_cuerpo(request: Request, path: str) -> Response:
     base = _pick_base(path)
     url = f"{base}/{path}" if path else base + "/"
     headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "connection")}
+    p = (path or "").lstrip("/")
+    timeout = TIMEOUT
+    if p.startswith("api/camera/"):
+        timeout = CAMERA_CONTROL_TIMEOUT
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
             if request.method == "GET":
                 r = await client.get(url, headers=headers, params=request.query_params)
             elif request.method == "POST":
@@ -69,7 +74,13 @@ async def proxy_to_cuerpo(request: Request, path: str) -> Response:
     except httpx.RequestError as e:
         # 503 cuando Robot/cámara no está disponible (más claro que 502 para el cliente)
         err_msg = str(e).replace('"', "'")
-        if "stream" in path or "camera" in path:
+        if p.startswith("api/"):
+            return Response(
+                content=f'{{"ok":false,"error":"Robot no responde: {err_msg}","path":"{p}"}}',
+                status_code=503,
+                media_type="application/json",
+            )
+        if "stream" in p or "camera" in p:
             # Respuesta mínima para <img> para no mostrar icono roto
             html = (
                 '<html><body style="margin:0;background:#1a1a2e;color:#94a3b8;font-family:sans-serif;'

@@ -102,3 +102,16 @@ def get_camera_info(fast: bool = True) -> Dict[str, Any]:
 def detect_cameras_list() -> List[Dict[str, Any]]:
     """Wrapper para usar desde api."""
     return detect_cameras()
+
+
+def release_camera() -> bool:
+    """Libera la cámara activa, si existe."""
+    global _camera_instance
+    try:
+        if _camera_instance is not None:
+            _camera_instance.release()
+        _camera_instance = None
+        return True
+    except Exception:
+        _camera_instance = None
+        return False

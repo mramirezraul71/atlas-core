@@ -5,6 +5,8 @@ import asyncio
 import json
 import os
 import tempfile
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -187,6 +189,11 @@ async def _lifespan(app):
             except Exception:
                 pass
             try:
+                from modules.humanoid.scheduler.workshop_jobs import ensure_workshop_jobs
+                ensure_workshop_jobs()
+            except Exception:
+                pass
+            try:
                 from modules.humanoid.repo.git_hooks import ensure_post_commit_hook
                 ensure_post_commit_hook()
             except Exception:
@@ -330,6 +337,41 @@ def _robot_connected() -> bool:
     return False
 
 
+_ATLAS_STATUS_CACHE_TTL_SEC = float(os.getenv("ATLAS_STATUS_CACHE_TTL_SEC") or 12.0)
+_ATLAS_STATUS_CACHE = {"value": "[degraded] initializing", "ts": 0.0}
+_ATLAS_STATUS_INFLIGHT = False
+_ATLAS_STATUS_LOCK = threading.Lock()
+
+
+def _refresh_atlas_status_cache() -> None:
+    """Compute heavy atlas status once, update shared cache."""
+    global _ATLAS_STATUS_INFLIGHT
+    try:
+        value = handle("/status")
+    except Exception as e:
+        value = f"[degraded] /status error: {e}"
+    with _ATLAS_STATUS_LOCK:
+        _ATLAS_STATUS_CACHE["value"] = value
+        _ATLAS_STATUS_CACHE["ts"] = time.time()
+        _ATLAS_STATUS_INFLIGHT = False
+
+
+def _atlas_status_safe_cached() -> str:
+    """Never block request path; return cached value and refresh in background."""
+    global _ATLAS_STATUS_INFLIGHT
+    now = time.time()
+    with _ATLAS_STATUS_LOCK:
+        cached = _ATLAS_STATUS_CACHE.get("value", "[degraded] initializing")
+        ts = float(_ATLAS_STATUS_CACHE.get("ts") or 0.0)
+        is_fresh = (now - ts) <= _ATLAS_STATUS_CACHE_TTL_SEC
+        if is_fresh:
+            return str(cached)
+        if not _ATLAS_STATUS_INFLIGHT:
+            _ATLAS_STATUS_INFLIGHT = True
+            threading.Thread(target=_refresh_atlas_status_cache, daemon=True).start()
+        return str(cached)
+
+
 @app.get("/status")
 def status():
     try:
@@ -342,7 +384,7 @@ def status():
     robot_ok = _robot_connected()
     return {
         "ok": True,
-        "atlas": handle("/status"),
+        "atlas": _atlas_status_safe_cached(),
         "nexus_connected": nexus.get("connected", False),
         "nexus_active": nexus.get("active", False),
         "nexus_last_check_ts": nexus.get("last_check_ts", 0),
@@ -1026,7 +1068,12 @@ def api_self_programming_execute_sandbox(body: SelfProgramExecuteBody):
 
 @app.get("/api/robot/status", tags=["NEXUS"])
 def robot_status():
-    """Estado del Robot (cámaras, visión). Prueba backend (8002) y luego UI (NEXUS_ROBOT_URL)."""
+    """Estado del Robot (cámaras, visión).
+
+    Orden de detección:
+    1) Backend Robot/NEXUS (8002 / NEXUS_ROBOT_URL)
+    2) Fallback local USB (si hay cámara local disponible)
+    """
     import urllib.request
     import os
     base_api = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
@@ -1036,17 +1083,17 @@ def robot_status():
             req = urllib.request.Request(base + "/", method="GET")
             with urllib.request.urlopen(req, timeout=3) as r:
                 if r.status == 200:
-                    return {"ok": True, "connected": True, "robot_url": base}
+                    return {"ok": True, "connected": True, "robot_url": base, "source": "robot", "local_fallback": False}
         except Exception:
             pass
         try:
             req = urllib.request.Request(base + "/api/camera/service/status", method="GET", headers={"Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=3) as r:
                 if r.status == 200:
-                    return {"ok": True, "connected": True, "robot_url": base}
+                    return {"ok": True, "connected": True, "robot_url": base, "source": "robot", "local_fallback": False}
         except Exception:
             pass
-    return {"ok": False, "connected": False, "robot_url": base_ui or base_api}
+    return {"ok": False, "connected": False, "robot_url": base_ui or base_api, "source": "none", "local_fallback": False}
 
 
 @app.post("/api/robot/reconnect", tags=["NEXUS"])
@@ -1665,6 +1712,45 @@ def _camera_stream_generator(stream_url: str):
                 pass
 
 
+def _local_camera_stream_generator(index: int = 0):
+    """Fallback MJPEG local (USB) cuando backend Robot no responde."""
+    import cv2
+    cap = None
+    try:
+        backend = cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY
+        cap = cv2.VideoCapture(int(index), backend)
+        if cap is None or not cap.isOpened():
+            return
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        encode_params = [cv2.IMWRITE_JPEG_QUALITY, 72]
+        while True:
+            ok, frame = cap.read()
+            if not ok or frame is None:
+                break
+            ok_jpg, buf = cv2.imencode(".jpg", frame, encode_params)
+            if not ok_jpg:
+                continue
+            jpeg = buf.tobytes()
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n"
+                b"Content-Length: " + str(len(jpeg)).encode("ascii") + b"\r\n\r\n"
+                + jpeg + b"\r\n"
+            )
+    except GeneratorExit:
+        pass
+    except Exception:
+        pass
+    finally:
+        if cap is not None:
+            try:
+                cap.release()
+            except Exception:
+                pass
+
+
 @app.get("/cuerpo/camera/stream")
 def camera_stream_proxy(index: int = 0):
     """Proxy para stream de cámara del robot (puerto 8002). index: 0, 1, 2... para cada cámara."""
@@ -1682,8 +1768,23 @@ def camera_stream_proxy(index: int = 0):
                 )
     except Exception as e:
         print(f"Camera proxy error (index={index}): {e}")
-    
-    # Si falla, devolver imagen placeholder
+
+    # Fallback local USB opcional: desactivado por defecto para evitar bloqueos en Windows.
+    enable_local_fallback = (
+        os.getenv("ATLAS_ENABLE_LOCAL_CAMERA_FALLBACK", "false").strip().lower()
+        in ("1", "true", "yes", "y", "on")
+    )
+    if enable_local_fallback:
+        try:
+            from fastapi.responses import StreamingResponse
+            return StreamingResponse(
+                _local_camera_stream_generator(index=index),
+                media_type="multipart/x-mixed-replace; boundary=frame",
+            )
+        except Exception:
+            pass
+
+    # Último fallback: placeholder
     try:
         import numpy as np
         import cv2
@@ -3342,12 +3443,19 @@ from modules.humanoid.ans.api import router as ans_router
 from modules.humanoid.governance.api import router as governance_router
 from modules.humanoid.nervous.api import router as nervous_router
 
+try:
+    from modules.humanoid.quality.api import router as quality_router
+except ImportError:
+    quality_router = None
+
 app.include_router(humanoid_router)
 app.include_router(ga_router)
 app.include_router(metalearn_router)
 app.include_router(ans_router)
 app.include_router(governance_router)
 app.include_router(nervous_router)
+if quality_router:
+    app.include_router(quality_router)
 
 # ATLAS AUTONOMOUS (health, healing, evolution, telemetry, resilience, learning)
 try:

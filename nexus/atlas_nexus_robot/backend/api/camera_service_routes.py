@@ -4,6 +4,9 @@ API externa para ATLAS PUSH como "ojos externos".
 """
 
 import os
+import json
+import subprocess
+import sys
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -12,8 +15,8 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from vision.cameras.factory import get_camera, get_camera_info, detect_cameras_list
-from vision.cameras.detector import save_active_config
+from vision.cameras.factory import get_camera_info, detect_cameras_list, release_camera
+from vision.cameras.detector import save_active_config, load_active_config
 from vision.cameras.network import (
     discover_network_cameras,
     get_network_cameras,
@@ -30,12 +33,153 @@ class ConfigureCameraBody(BaseModel):
     resolution: Optional[list] = None
 
 
+class ConnectCameraBody(BaseModel):
+    index: int = 0
+    model: Optional[str] = None
+    resolution: Optional[list] = None
+
+
+class DisconnectCameraBody(BaseModel):
+    index: Optional[int] = None
+
+
 class AddRemoteCameraBody(BaseModel):
     """Cámara remota: fuera de la red local (dashcam en auto, etc.)."""
     url: str  # rtsp://host:port/path o http://host:port/path
     label: Optional[str] = None  # Nombre amigable (ej. "Dashcam frontal")
     connection_method: Optional[str] = "manual"  # manual, tailscale, zerotier, port_forward, other
     camera_type: Optional[str] = "auto"  # auto (dashcam), network
+
+
+def _probe_camera_subprocess(index: int, width: int = 640, height: int = 480, timeout_s: int = 12) -> dict:
+    """
+    Prueba apertura y lectura de frame en subproceso aislado.
+    Evita que fallos nativos de OpenCV derriben el proceso API.
+    """
+    code = """
+import json
+import cv2
+import sys
+
+idx = int(sys.argv[1])
+w = int(sys.argv[2])
+h = int(sys.argv[3])
+
+result = {"opened": False, "frame_ok": False, "resolution": [w, h], "error": ""}
+cap = None
+try:
+    cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW) if hasattr(cv2, "CAP_DSHOW") else cv2.VideoCapture(idx)
+    if cap is not None and cap.isOpened():
+        result["opened"] = True
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
+        ret, frame = cap.read()
+        result["frame_ok"] = bool(ret and frame is not None)
+        if frame is not None and hasattr(frame, "shape") and len(frame.shape) >= 2:
+            result["resolution"] = [int(frame.shape[1]), int(frame.shape[0])]
+    else:
+        result["error"] = "open_failed"
+except Exception as e:
+    result["error"] = str(e)
+finally:
+    try:
+        if cap is not None:
+            cap.release()
+    except Exception:
+        pass
+
+print(json.dumps(result))
+""".strip()
+    try:
+        p = subprocess.run(
+            [sys.executable, "-X", "utf8", "-c", code, str(index), str(width), str(height)],
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+        if p.returncode != 0:
+            return {"opened": False, "frame_ok": False, "resolution": [width, height], "error": (p.stderr or "").strip()[:300]}
+        out = (p.stdout or "").strip()
+        data = {}
+        if out:
+            # Algunos drivers (p.ej. Insta360/NexiGo) escriben logs en stdout.
+            # Extraemos el último bloque JSON para evitar errores de parseo.
+            try:
+                data = json.loads(out)
+            except Exception:
+                parsed = None
+                lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
+                for ln in reversed(lines):
+                    if ln.startswith("{") and ln.endswith("}"):
+                        try:
+                            parsed = json.loads(ln)
+                            break
+                        except Exception:
+                            continue
+                if parsed is None:
+                    first = out.find("{")
+                    last = out.rfind("}")
+                    if first >= 0 and last > first:
+                        chunk = out[first : last + 1]
+                        try:
+                            parsed = json.loads(chunk)
+                        except Exception:
+                            parsed = None
+                if parsed is None:
+                    return {
+                        "opened": False,
+                        "frame_ok": False,
+                        "resolution": [width, height],
+                        "error": "probe_output_parse_error: " + out[:180],
+                    }
+                data = parsed
+        return {
+            "opened": bool(data.get("opened")),
+            "frame_ok": bool(data.get("frame_ok")),
+            "resolution": data.get("resolution") or [width, height],
+            "error": data.get("error", ""),
+        }
+    except subprocess.TimeoutExpired:
+        return {"opened": False, "frame_ok": False, "resolution": [width, height], "error": "probe_timeout"}
+    except Exception as e:
+        return {"opened": False, "frame_ok": False, "resolution": [width, height], "error": str(e)}
+
+
+def _connect_camera_index(index: int, model: str, resolution: list, capabilities: list, detected_count: int = 0) -> dict:
+    width, height = 640, 480
+    if isinstance(resolution, list) and len(resolution) >= 2:
+        width, height = int(resolution[0]), int(resolution[1])
+    probe = _probe_camera_subprocess(index=int(index), width=width, height=height)
+    if probe.get("opened"):
+        cfg = {
+            "index": int(index),
+            "model": model or "Webcam estándar",
+            "resolution": probe.get("resolution") or [width, height],
+            "capabilities": capabilities or ["video"],
+        }
+        save_active_config(cfg)
+        return {
+            "ok": True,
+            "connected": True,
+            "message": "Cámara conectada y respondiendo",
+            "camera": {
+                "model": cfg["model"],
+                "driver": "uvc_standard",
+                "resolution": cfg["resolution"],
+                "capabilities": cfg["capabilities"],
+                "index": int(index),
+            },
+            "frame_ok": bool(probe.get("frame_ok")),
+            "detected_count": int(detected_count or 0),
+        }
+    return {
+        "ok": False,
+        "connected": False,
+        "message": "No se pudo abrir la cámara",
+        "detected_count": int(detected_count or 0),
+        "probe_error": probe.get("error", ""),
+        "camera": {"index": int(index)},
+    }
 
 
 @router.get("/service/status")
@@ -82,30 +226,61 @@ def camera_connect():
     Útil cuando la cámara no responde; fuerza re-detección.
     """
     try:
-        from vision.cameras.factory import get_camera, get_camera_info, detect_cameras_list
-        cam = get_camera(force_detect=True)
-        info = get_camera_info(fast=False)
         detected = detect_cameras_list()
-        if cam and cam.is_opened:
-            # Probar lectura
-            ret, frame = cam.read()
-            return {
-                "ok": True,
-                "connected": True,
-                "message": "Cámara conectada y respondiendo",
-                "camera": info.get("properties", {}),
-                "frame_ok": ret and frame is not None,
-                "detected_count": len(detected),
-            }
-        return {
-            "ok": False,
-            "connected": False,
-            "message": "No se pudo abrir la cámara",
-            "detected": detected,
-            "detected_count": len(detected),
-        }
+        cfg = load_active_config() or {}
+        idx = int(cfg.get("index", 0))
+        if detected:
+            idx = int(detected[0].get("index", idx))
+        return _connect_camera_index(
+            index=idx,
+            model=cfg.get("model") or "Webcam estándar",
+            resolution=cfg.get("resolution") or [640, 480],
+            capabilities=cfg.get("capabilities") or ["video"],
+            detected_count=len(detected),
+        )
     except Exception as e:
         return {"ok": False, "connected": False, "error": str(e), "message": str(e)}
+
+
+@router.post("/connect-index")
+def camera_connect_index(body: ConnectCameraBody):
+    """
+    Conecta una cámara específica por índice.
+    Útil para aislar fallos entre múltiples cámaras instaladas.
+    """
+    try:
+        idx = int(body.index)
+        if idx < 0:
+            return {"ok": False, "connected": False, "error": "Índice inválido"}
+        return _connect_camera_index(
+            index=idx,
+            model=body.model or "Webcam estándar",
+            resolution=body.resolution or [640, 480],
+            capabilities=["video"],
+            detected_count=0,
+        )
+    except Exception as e:
+        return {"ok": False, "connected": False, "error": str(e), "message": str(e)}
+
+
+@router.post("/disconnect")
+def camera_disconnect(body: Optional[DisconnectCameraBody] = None):
+    """
+    Apaga/desconecta la cámara activa del servicio.
+    """
+    try:
+        release_camera()
+        idx = None
+        if body is not None and body.index is not None:
+            idx = int(body.index)
+        return {
+            "ok": True,
+            "disconnected": True,
+            "message": "Cámara desconectada",
+            "index": idx,
+        }
+    except Exception as e:
+        return {"ok": False, "disconnected": False, "error": str(e), "message": str(e)}
 
 
 @router.post("/configure")
@@ -122,7 +297,6 @@ def camera_configure(body: ConfigureCameraBody):
             "capabilities": ["video"],
         }
         if save_active_config(config):
-            get_camera(force_detect=True)
             return {"ok": True, "message": "Cámara configurada", "config": config}
     return {"ok": False, "error": "Se requiere al menos 'index' para configurar"}
 

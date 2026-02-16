@@ -740,12 +740,22 @@
               <img id="camera-stream-img-0" src="" alt="Stream cámara 0" style="width:100%;height:100%;object-fit:contain;display:none;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
               <div id="cameras-no-stream-0" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.7rem;text-align:center;padding:.5rem;">Cámara 0 offline</div>
             </div>
+            <div class="row" style="margin-top:.35rem;gap:.25rem;flex-wrap:wrap;align-items:center;">
+              <button class="small secondary" id="btn-camera-connect-0" onclick="cameraConnect(0)" title="Conectar cámara 0">Conectar</button>
+              <button class="small secondary" id="btn-camera-off-0" onclick="cameraDisconnect(0)" title="Apagar cámara 0">Apagar</button>
+              <span id="camera-state-0" style="font-size:.7rem;color:var(--muted);">—</span>
+            </div>
           </div>
           <div>
             <div style="font-size:.7rem;color:var(--muted);margin-bottom:.25rem;">NexiGo N930W (1)</div>
             <div class="nexus-panel-iframe-wrap" style="height:160px;border-radius:8px;overflow:hidden;background:var(--bg-elevated);border:1px solid var(--card-border);position:relative;">
               <img id="camera-stream-img-1" src="" alt="Stream cámara 1" style="width:100%;height:100%;object-fit:contain;display:none;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
               <div id="cameras-no-stream-1" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.7rem;text-align:center;padding:.5rem;">Cámara 1 offline</div>
+            </div>
+            <div class="row" style="margin-top:.35rem;gap:.25rem;flex-wrap:wrap;align-items:center;">
+              <button class="small secondary" id="btn-camera-connect-1" onclick="cameraConnect(1)" title="Conectar cámara 1">Conectar</button>
+              <button class="small secondary" id="btn-camera-off-1" onclick="cameraDisconnect(1)" title="Apagar cámara 1">Apagar</button>
+              <span id="camera-state-1" style="font-size:.7rem;color:var(--muted);">—</span>
             </div>
           </div>
           <div>
@@ -754,11 +764,18 @@
               <img id="camera-stream-img-2" src="" alt="Stream cámara 2" style="width:100%;height:100%;object-fit:contain;display:none;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
               <div id="cameras-no-stream-2" style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:.7rem;text-align:center;padding:.5rem;">Cámara 2 offline</div>
             </div>
+            <div class="row" style="margin-top:.35rem;gap:.25rem;flex-wrap:wrap;align-items:center;">
+              <button class="small secondary" id="btn-camera-connect-2" onclick="cameraConnect(2)" title="Conectar cámara 2">Conectar</button>
+              <button class="small secondary" id="btn-camera-off-2" onclick="cameraDisconnect(2)" title="Apagar cámara 2">Apagar</button>
+              <span id="camera-state-2" style="font-size:.7rem;color:var(--muted);">—</span>
+            </div>
           </div>
         </div>
         <div class="row" style="margin-top:.35rem; flex-wrap:wrap; gap:.35rem;">
           <button class="small secondary" id="btn-actualizar-camaras" onclick="loadCamerasStatus()" title="Comprobar Robot y refrescar stream">Actualizar cámaras</button>
           <button class="small" id="btn-reconectar-robot" onclick="reconnectRobot()" title="Arrancar backend del Robot (cámaras) si está parado">Reconectar Robot</button>
+          <button class="small secondary" id="btn-diagnostico-camaras" onclick="runCamerasDiagnostic()" title="Prueba 0→1→2 y reporta cuál falla">Diagnóstico secuencial</button>
+          <span id="cameras-diagnostic-result" style="font-size:.72rem;color:var(--muted);">—</span>
         </div>
       </div>
       <div class="card" id="version-card"><h2 data-i18n="card.version">Versión</h2><div class="value">—</div></div>
@@ -1328,9 +1345,32 @@
     });
     let currentLocale = localStorage.getItem('ui_locale') || 'es';
     let UI_STRINGS = {};
+    const REQUEST_TIMEOUT_MS = 4500;
+    let _refreshInFlight = false;
+    const _nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+    async function _fetchWithTimeout(url, options, timeoutMs) {
+      if (!_nativeFetch) throw new Error('fetch unavailable');
+      const ctrl = new AbortController();
+      const tm = setTimeout(function() {
+        try { ctrl.abort(); } catch (e) {}
+      }, timeoutMs || REQUEST_TIMEOUT_MS);
+      try {
+        return await _nativeFetch(url, { ...(options || {}), signal: ctrl.signal });
+      } finally {
+        clearTimeout(tm);
+      }
+    }
+    // Forzar timeout por defecto en cualquier fetch del dashboard (incluye llamados legacy).
+    window.fetch = function(input, init) {
+      return _fetchWithTimeout(input, init || {}, REQUEST_TIMEOUT_MS);
+    };
     async function get(path) {
       const url = base + path;
-      const r = await fetch(url, { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
+      const r = await _fetchWithTimeout(
+        url,
+        { headers: { 'Accept': 'application/json' }, cache: 'no-store' },
+        REQUEST_TIMEOUT_MS
+      );
       if (r.ok) return r.json();
       if (r.status === 404 && !window._api404Shown) {
         window._api404Shown = true;
@@ -1372,10 +1412,14 @@
       if (langEs) { langEs.style.color = currentLocale === 'es' ? 'var(--purple-light)' : 'var(--muted)'; }
       if (langEn) { langEn.style.color = currentLocale === 'en' ? 'var(--purple-light)' : 'var(--muted)'; }
     }
-    async function post(path, body, headers) {
+    async function post(path, body, headers, timeoutMs) {
       const h = { 'Content-Type': 'application/json', ...(headers || {}) };
       if (ownerSessionToken) h['X-Owner-Session'] = ownerSessionToken;
-      const r = await fetch(base + path, { method: 'POST', headers: h, body: JSON.stringify(body || {}), cache: 'no-store' });
+      const r = await _fetchWithTimeout(
+        base + path,
+        { method: 'POST', headers: h, body: JSON.stringify(body || {}), cache: 'no-store' },
+        timeoutMs || REQUEST_TIMEOUT_MS
+      );
       const data = await r.json().catch(function() { return {}; });
       if (r.ok) return data;
       return data && data.error ? { ok: false, error: data.error } : { ok: false, error: 'Error ' + r.status };
@@ -2293,6 +2337,168 @@
       var unav = document.getElementById('nexus-panel-unavailable');
       if (unav) unav.style.display = 'none';
     }
+    window._cameraManualOff = window._cameraManualOff || { 0: false, 1: false, 2: false };
+    function _cameraSetState(idx, text, isError) {
+      var el = document.getElementById('camera-state-' + idx);
+      if (!el) return;
+      el.textContent = text || '—';
+      el.style.color = isError ? 'var(--danger)' : 'var(--muted)';
+    }
+    function _cameraSetBusy(idx, busy, connectLabel, offLabel) {
+      var c = document.getElementById('btn-camera-connect-' + idx);
+      var o = document.getElementById('btn-camera-off-' + idx);
+      if (c) { c.disabled = !!busy; if (connectLabel) c.textContent = connectLabel; else c.textContent = 'Conectar'; }
+      if (o) { o.disabled = !!busy; if (offLabel) o.textContent = offLabel; else o.textContent = 'Apagar'; }
+    }
+    function _sleep(ms) { return new Promise(function(resolve){ setTimeout(resolve, ms || 0); }); }
+    window._cameraDiagRunning = false;
+    async function cameraConnect(idx) {
+      _cameraSetBusy(idx, true, 'Conectando…', 'Apagar');
+      _cameraSetState(idx, 'Conectando…', false);
+      try {
+        var r = await post('/cuerpo/api/camera/connect-index', { index: idx, resolution: [640, 480] }, null, 25000);
+        if (r && r.ok && r.connected) {
+          window._cameraManualOff[idx] = false;
+          var img = document.getElementById('camera-stream-img-' + idx);
+          var noStream = document.getElementById('cameras-no-stream-' + idx);
+          if (img) {
+            var base = (window._base || window._apiBase || window.location.origin).replace(/\/$/, '');
+            var streamUrl = base + '/cuerpo/camera/stream?index=' + idx + '&t=' + Date.now();
+            img.src = streamUrl;
+            img.setAttribute('data-stream-url', streamUrl);
+            img.style.display = 'block';
+            img.onload = function() { _cameraSetState(idx, 'Conectada', false); };
+            img.onerror = function() {
+              img.style.display = 'none';
+              if (noStream) noStream.style.display = 'flex';
+              _cameraSetState(idx, 'Sin stream', true);
+            };
+          }
+          if (noStream) noStream.style.display = 'none';
+          if (window._toast) window._toast('Cámara ' + idx + ': conectada');
+        } else {
+          var err = (r && (r.probe_error || r.error || r.message)) || 'No conecta';
+          _cameraSetState(idx, 'Error: ' + err, true);
+          if (window._toast) window._toast('Cámara ' + idx + ': ' + err);
+        }
+      } catch (e) {
+        _cameraSetState(idx, 'Error de red', true);
+      } finally {
+        _cameraSetBusy(idx, false);
+      }
+    }
+    async function cameraDisconnect(idx) {
+      _cameraSetBusy(idx, true, 'Conectar', 'Apagando…');
+      try {
+        await post('/cuerpo/api/camera/disconnect', { index: idx }, null, 12000);
+      } catch (_) {}
+      window._cameraManualOff[idx] = true;
+      var img = document.getElementById('camera-stream-img-' + idx);
+      var noStream = document.getElementById('cameras-no-stream-' + idx);
+      if (img) {
+        img.src = '';
+        img.removeAttribute('data-stream-url');
+        img.style.display = 'none';
+      }
+      if (noStream) {
+        noStream.textContent = 'Cámara ' + idx + ' apagada';
+        noStream.style.display = 'flex';
+      }
+      _cameraSetState(idx, 'Apagada', false);
+      _cameraSetBusy(idx, false);
+    }
+    async function runCamerasDiagnostic() {
+      if (window._cameraDiagRunning) return;
+      window._cameraDiagRunning = true;
+      var cams = [0, 1, 2];
+      var btnDiag = document.getElementById('btn-diagnostico-camaras');
+      var btnRefresh = document.getElementById('btn-actualizar-camaras');
+      var btnReconnect = document.getElementById('btn-reconectar-robot');
+      var resEl = document.getElementById('cameras-diagnostic-result');
+      var base = (window._base || window._apiBase || window.location.origin).replace(/\/$/, '');
+      var report = [];
+      if (btnDiag) { btnDiag.disabled = true; btnDiag.textContent = 'Diagnosticando…'; }
+      if (btnRefresh) btnRefresh.disabled = true;
+      if (btnReconnect) btnReconnect.disabled = true;
+      if (resEl) { resEl.textContent = 'Ejecutando diagnóstico 0→1→2…'; resEl.style.color = 'var(--muted)'; }
+      try {
+        // Evita contención de dispositivo: cerrar streams activos antes de diagnosticar.
+        cams.forEach(function(idx) {
+          window._cameraManualOff[idx] = true;
+          var img = document.getElementById('camera-stream-img-' + idx);
+          var noStream = document.getElementById('cameras-no-stream-' + idx);
+          if (img) {
+            img.src = '';
+            img.removeAttribute('data-stream-url');
+            img.style.display = 'none';
+          }
+          if (noStream) {
+            noStream.textContent = 'Diagnóstico en curso…';
+            noStream.style.display = 'flex';
+          }
+        });
+        await _sleep(350);
+        for (var i = 0; i < cams.length; i++) {
+          var idx = cams[i];
+          _cameraSetBusy(idx, true, 'Test…', 'Apagar');
+          _cameraSetState(idx, 'Diagnóstico…', false);
+          var connect = await post('/cuerpo/api/camera/connect-index', { index: idx, resolution: [640, 480] }, null, 25000);
+          var connectOk = !!(connect && connect.ok && connect.connected);
+          var frameOk = !!(connect && connect.frame_ok);
+          var snapOk = false;
+          var snapErr = '';
+          if (connectOk) {
+            try {
+              var snapUrl = base + '/cuerpo/vision/snapshot?source=camera&index=' + idx + '&jpeg_quality=80&t=' + Date.now();
+              var rsp = await _fetchWithTimeout(snapUrl, { method: 'GET', cache: 'no-store' }, 12000);
+              if (rsp && rsp.ok) {
+                var blob = await rsp.blob();
+                snapOk = blob && blob.size > 2000;
+              } else {
+                snapErr = 'snapshot_' + (rsp ? rsp.status : 'error');
+              }
+            } catch (e) {
+              snapErr = (e && e.message) ? e.message : String(e);
+            }
+          }
+          try { await post('/cuerpo/api/camera/disconnect', { index: idx }, null, 12000); } catch (_) {}
+          window._cameraManualOff[idx] = true;
+          var finalOk = connectOk && (frameOk || snapOk);
+          if (finalOk) {
+            _cameraSetState(idx, 'OK (con frame)', false);
+            report.push({ index: idx, ok: true, detail: 'frame_ok=' + frameOk + ', snapshot_ok=' + snapOk });
+          } else if (connectOk) {
+            _cameraSetState(idx, 'Conecta sin frame', true);
+            report.push({ index: idx, ok: false, detail: 'conecta pero no hay frame (' + (snapErr || 'frame_ok=false') + ')' });
+          } else {
+            var err = (connect && (connect.probe_error || connect.error || connect.message)) || 'no_conecta';
+            _cameraSetState(idx, 'Falla conexión', true);
+            report.push({ index: idx, ok: false, detail: err });
+          }
+          _cameraSetBusy(idx, false);
+          await _sleep(400);
+        }
+        var oks = report.filter(function(x){ return x.ok; }).map(function(x){ return x.index; });
+        var fails = report.filter(function(x){ return !x.ok; });
+        var txt = 'OK: [' + (oks.length ? oks.join(',') : 'ninguna') + ']';
+        if (fails.length) txt += ' | Fallan: ' + fails.map(function(x){ return x.index + ' (' + x.detail + ')'; }).join('; ');
+        if (resEl) {
+          resEl.textContent = txt;
+          resEl.style.color = fails.length ? 'var(--danger)' : 'var(--success)';
+        }
+        if (window._toast) window._toast(txt);
+        await loadCamerasStatus();
+      } catch (e) {
+        var msg = 'Diagnóstico error: ' + ((e && e.message) ? e.message : String(e));
+        if (resEl) { resEl.textContent = msg; resEl.style.color = 'var(--danger)'; }
+        if (window._toast) window._toast(msg);
+      } finally {
+        window._cameraDiagRunning = false;
+        if (btnDiag) { btnDiag.disabled = false; btnDiag.textContent = 'Diagnóstico secuencial'; }
+        if (btnRefresh) btnRefresh.disabled = false;
+        if (btnReconnect) btnReconnect.disabled = false;
+      }
+    }
     async function loadCamerasStatus() {
       var statusEl = document.getElementById('cameras-status');
       var btnCameras = document.getElementById('btn-actualizar-camaras');
@@ -2303,30 +2509,48 @@
         const r = await get('/api/robot/status');
         var connected = r && r.connected;
         var robotUrl = (r && r.robot_url) ? r.robot_url : 'http://127.0.0.1:8002';
+        var source = (r && r.source) ? String(r.source) : 'none';
         var portLabel = robotUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-        if (statusEl) statusEl.textContent = 'Robot (' + portLabel + '): ' + (connected ? 'Conectado' : 'Desconectado');
+        if (statusEl) {
+          if (connected && source === 'local') statusEl.textContent = 'Robot: Fallback local USB activo';
+          else statusEl.textContent = 'Robot (' + portLabel + '): ' + (connected ? 'Conectado' : 'Desconectado');
+        }
         var hintEl = document.getElementById('cameras-disconnected-hint');
         if (hintEl) hintEl.style.display = connected ? 'none' : 'block';
         cams.forEach(function(idx) {
           var img = document.getElementById('camera-stream-img-' + idx);
           var noStream = document.getElementById('cameras-no-stream-' + idx);
           if (!img) return;
-          if (connected) {
-            var streamUrl = base.replace(/\/$/, '') + '/cuerpo/camera/stream?index=' + idx;
-            img.src = streamUrl;
-            img.style.display = 'block';
-            if (noStream) noStream.style.display = 'none';
-            img.onerror = (function(im, ns) {
-              return function() {
-                im.style.display = 'none';
-                if (ns) ns.style.display = 'flex';
-              };
-            })(img, noStream);
-          } else {
+          if (window._cameraManualOff && window._cameraManualOff[idx]) {
             img.src = '';
             img.style.display = 'none';
-            if (noStream) noStream.style.display = 'flex';
+            img.removeAttribute('data-stream-url');
+            if (noStream) {
+              noStream.textContent = 'Cámara ' + idx + ' apagada';
+              noStream.style.display = 'flex';
+            }
+            _cameraSetState(idx, 'Apagada', false);
+            return;
           }
+          var streamUrl = base.replace(/\/$/, '') + '/cuerpo/camera/stream?index=' + idx;
+          // Evita reconectar el MJPEG en cada refresh (reduce lag y CLOSE_WAIT en Windows).
+          if (img.getAttribute('data-stream-url') !== streamUrl) {
+            img.src = streamUrl;
+            img.setAttribute('data-stream-url', streamUrl);
+          }
+          img.style.display = 'block';
+          if (noStream) noStream.style.display = 'none';
+          _cameraSetState(idx, 'Conectando stream…', false);
+          img.onload = (function(i) {
+            return function() { _cameraSetState(i, 'Online', false); };
+          })(idx);
+          img.onerror = (function(im, ns, i) {
+            return function() {
+              im.style.display = 'none';
+              if (ns) ns.style.display = 'flex';
+              _cameraSetState(i, 'Offline', true);
+            };
+          })(img, noStream, idx);
         });
       } catch (e) {
         if (statusEl) statusEl.textContent = 'Robot (8002): Error';
@@ -3219,12 +3443,14 @@
       loadApprovals();
     }
     async function refreshAll() {
+      if (_refreshInFlight) return;
+      _refreshInFlight = true;
       const btn = document.getElementById('btn-refresh');
       const lastEl = document.getElementById('last-update');
       if (btn) { btn.disabled = true; btn.textContent = UI_STRINGS['app.updating'] || 'Actualizando…'; }
       if (lastEl) { lastEl.textContent = UI_STRINGS['app.updating'] || 'Actualizando…'; lastEl.style.color = 'var(--purple-light)'; lastEl.classList.add('updating'); }
       try {
-        await Promise.all([
+        await Promise.allSettled([
           loadStatus(),
           loadBrainState(),
           loadNerveStatus(),
@@ -3253,6 +3479,7 @@
       }
       if (lastEl) { lastEl.classList.remove('updating'); lastEl.style.color = ''; }
       if (btn) { btn.disabled = false; btn.textContent = UI_STRINGS['app.refresh'] || 'Actualizar'; }
+      _refreshInFlight = false;
     }
     async function loadGovernanceStatus() {
       const logEl = document.getElementById('governance-log');

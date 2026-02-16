@@ -1,0 +1,5 @@
+# Directorio de cuarentena para archivos/dependencias problemáticas
+# Estructura:
+#   quarantine/deps/     - Dependencias que fallaron tests
+#   quarantine/files/    - Archivos sospechosos
+#   quarantine/commits/  - Commits revertidos

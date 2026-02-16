@@ -191,3 +191,144 @@ def ans_run_now(body: Optional[RunNowBody] = None):
         return r
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Workshop Central: API para el Taller de Reparaciones
+# ─────────────────────────────────────────────────────────────────────────────
+
+class WorkshopRunBody(BaseModel):
+    mode: Optional[str] = "incidents"  # full | incidents | maintenance
+    limit: Optional[int] = 50
+    require_approval_heavy: Optional[bool] = True
+
+
+@router.get("/workshop/status")
+def workshop_status():
+    """Estado del Workshop Central: directorios, conteos, último reporte."""
+    import os
+    from pathlib import Path
+    try:
+        repo_root = Path(os.getenv("ATLAS_PUSH_ROOT") or os.getenv("ATLAS_REPO_PATH") or Path(__file__).resolve().parent.parent.parent.parent)
+        workshop_root = repo_root / "logs" / "workshop"
+        inbox = list((workshop_root / "inbox").glob("*.json")) if (workshop_root / "inbox").exists() else []
+        working = list((workshop_root / "working").glob("*.json")) if (workshop_root / "working").exists() else []
+        resolved = list((workshop_root / "resolved").glob("*.json")) if (workshop_root / "resolved").exists() else []
+        failed = list((workshop_root / "failed").glob("*.json")) if (workshop_root / "failed").exists() else []
+        reports = sorted((workshop_root / "reports").glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True) if (workshop_root / "reports").exists() else []
+        last_report = None
+        if reports:
+            try:
+                last_report = json.loads(reports[0].read_text(encoding="utf-8"))
+            except Exception:
+                last_report = {"path": str(reports[0])}
+        return {
+            "ok": True,
+            "inbox_count": len(inbox),
+            "working_count": len(working),
+            "resolved_count": len(resolved),
+            "failed_count": len(failed),
+            "reports_count": len(reports),
+            "last_report": last_report,
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/workshop/tickets")
+def workshop_tickets(tray: str = "inbox", limit: int = 50):
+    """Listar tickets del Workshop en una bandeja (inbox, working, resolved, failed)."""
+    import os
+    from pathlib import Path
+    try:
+        repo_root = Path(os.getenv("ATLAS_PUSH_ROOT") or os.getenv("ATLAS_REPO_PATH") or Path(__file__).resolve().parent.parent.parent.parent)
+        tray_dir = repo_root / "logs" / "workshop" / tray
+        if not tray_dir.exists():
+            return {"ok": True, "tickets": [], "count": 0, "tray": tray}
+        files = sorted(tray_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
+        tickets = []
+        for f in files:
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                tickets.append({
+                    "filename": f.name,
+                    "state": data.get("state"),
+                    "incident_id": (data.get("incident") or {}).get("id"),
+                    "check_id": (data.get("incident") or {}).get("check_id"),
+                    "created_at": data.get("ticket_created_at"),
+                    "last_processed_at": data.get("last_processed_at"),
+                })
+            except Exception:
+                tickets.append({"filename": f.name, "error": "parse_failed"})
+        return {"ok": True, "tickets": tickets, "count": len(tickets), "tray": tray}
+    except Exception as e:
+        return {"ok": False, "tickets": [], "error": str(e)}
+
+
+@router.post("/workshop/run-now")
+def workshop_run_now(body: Optional[WorkshopRunBody] = None):
+    """Ejecutar ciclo del Workshop ahora (modo: incidents, maintenance, full)."""
+    import subprocess
+    import sys
+    import os
+    from pathlib import Path
+    try:
+        repo_root = Path(os.getenv("ATLAS_PUSH_ROOT") or os.getenv("ATLAS_REPO_PATH") or Path(__file__).resolve().parent.parent.parent.parent)
+        script = repo_root / "scripts" / "atlas_central_workshop.py"
+        if not script.is_file():
+            return {"ok": False, "error": "script not found: scripts/atlas_central_workshop.py"}
+        mode = (body.mode or "incidents").strip().lower() if body else "incidents"
+        limit = int(body.limit or 50) if body else 50
+        require_approval = body.require_approval_heavy if body else True
+        argv = [sys.executable, str(script), "--mode", mode, "--limit", str(limit)]
+        if require_approval:
+            argv.append("--require-approval-heavy")
+        r = subprocess.run(
+            argv,
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env={**os.environ, "ATLAS_REPO_PATH": str(repo_root), "ATLAS_PUSH_ROOT": str(repo_root)},
+        )
+        return {
+            "ok": r.returncode in (0, 2),
+            "exit_code": r.returncode,
+            "mode": mode,
+            "stdout": (r.stdout or "")[-2000:],
+            "stderr": (r.stderr or "")[-500:],
+        }
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "workshop timeout 300s"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/workshop/reports")
+def workshop_reports(limit: int = 20):
+    """Listar reportes generados por el Workshop."""
+    import os
+    from pathlib import Path
+    try:
+        repo_root = Path(os.getenv("ATLAS_PUSH_ROOT") or os.getenv("ATLAS_REPO_PATH") or Path(__file__).resolve().parent.parent.parent.parent)
+        reports_dir = repo_root / "logs" / "workshop" / "reports"
+        if not reports_dir.exists():
+            return {"ok": True, "reports": [], "count": 0}
+        files = sorted(reports_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
+        reports = []
+        for f in files:
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                reports.append({
+                    "filename": f.name,
+                    "started_at": data.get("started_at"),
+                    "ended_at": data.get("ended_at"),
+                    "mode": data.get("mode"),
+                    "overall_ok": data.get("overall_ok"),
+                    "result": data.get("result"),
+                })
+            except Exception:
+                reports.append({"filename": f.name, "error": "parse_failed"})
+        return {"ok": True, "reports": reports, "count": len(reports)}
+    except Exception as e:
+        return {"ok": False, "reports": [], "error": str(e)}

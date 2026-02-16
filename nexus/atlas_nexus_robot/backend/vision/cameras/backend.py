@@ -39,11 +39,13 @@ def preferred_backends() -> List[int]:
         return [forced]
 
     if sys.platform == "win32":
+        # Política estable en Windows:
+        # 1) DSHOW preferido (más robusto en este entorno)
+        # 2) ANY como fallback genérico
+        # MSMF queda deshabilitado por defecto para evitar inestabilidad.
         out: List[int] = []
         if hasattr(cv2, "CAP_DSHOW"):
             out.append(cv2.CAP_DSHOW)
-        if hasattr(cv2, "CAP_MSMF"):
-            out.append(cv2.CAP_MSMF)
         out.append(cv2.CAP_ANY)
         return out
 

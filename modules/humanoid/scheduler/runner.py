@@ -57,6 +57,8 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_approvals_digest(payload)
         elif kind == "world_state_tick":
             out = _run_world_state_tick(payload)
+        elif kind == "workshop_cycle":
+            out = _run_workshop_cycle(payload)
         else:
             out = {"ok": True, "result": "no-op", "kind": kind}
     except Exception as e:
@@ -349,6 +351,143 @@ def _run_repo_monitor_after_fix(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": False, "error": "repo_monitor after-fix timeout 90s"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+def _run_workshop_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run central workshop via subprocess. Payload: mode, limit, require_approval_heavy, approval_cooldown_seconds."""
+    import subprocess
+    from datetime import datetime, timezone
+
+    root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT")
+    if not root:
+        root = str(Path(__file__).resolve().parent.parent.parent.parent)
+    root = Path(root).resolve()
+    script = root / "scripts" / "atlas_central_workshop.py"
+    if not script.is_file():
+        return {"ok": False, "error": "scripts/atlas_central_workshop.py not found"}
+
+    mode = (payload.get("mode") or "incidents").strip().lower()
+    limit = max(1, min(500, int(payload.get("limit") or 50)))
+    require_approval_heavy = bool(payload.get("require_approval_heavy", True))
+    approval_cooldown_seconds = max(60, int(payload.get("approval_cooldown_seconds") or 900))
+
+    approval_state_path = root / "logs" / "workshop" / "approval_state_runner.json"
+
+    def _load_runner_state() -> Dict[str, Any]:
+        try:
+            if approval_state_path.is_file():
+                return json.loads(approval_state_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        return {"consumed": [], "last_request_ts": "", "last_request_id": ""}
+
+    def _save_runner_state(state: Dict[str, Any]) -> None:
+        try:
+            approval_state_path.parent.mkdir(parents=True, exist_ok=True)
+            approval_state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _check_heavy_gate() -> Dict[str, Any]:
+        """Gate for heavy modes. Returns {granted, reason, approval_id?, pending?}."""
+        try:
+            from modules.humanoid.approvals import list_pending, list_all, create
+        except Exception as e:
+            return {"granted": False, "reason": f"approval_module_unavailable: {e}", "pending": False}
+
+        state = _load_runner_state()
+        consumed = set(state.get("consumed") or [])
+
+        approved = list_all(limit=50, status="approved")
+        for item in approved:
+            pl = item.get("payload") or {}
+            if pl.get("domain") == "workshop" and pl.get("operation") == "maintenance":
+                aid = str(item.get("id") or "")
+                if aid and aid not in consumed:
+                    consumed.add(aid)
+                    state["consumed"] = sorted(consumed)[-300:]
+                    _save_runner_state(state)
+                    return {"granted": True, "reason": "approved", "approval_id": aid}
+
+        pending = list_pending(limit=50)
+        for item in pending:
+            pl = item.get("payload") or {}
+            if pl.get("domain") == "workshop" and pl.get("operation") == "maintenance":
+                return {"granted": False, "reason": "pending", "pending": True, "approval_id": item.get("id")}
+
+        now = time.time()
+        try:
+            last_ts = state.get("last_request_ts") or ""
+            last_epoch = datetime.fromisoformat(last_ts.replace("Z", "+00:00")).timestamp() if last_ts else 0.0
+        except Exception:
+            last_epoch = 0.0
+        if now - last_epoch < approval_cooldown_seconds:
+            return {
+                "granted": False,
+                "reason": "cooldown",
+                "pending": True,
+                "approval_id": state.get("last_request_id"),
+            }
+
+        pl = {
+            "domain": "workshop",
+            "operation": "maintenance",
+            "source": "scheduler",
+            "mode": mode,
+            "intent": "central_workshop_heavy_run",
+            "details": "Execute maintenance/heavy repairs in Central Workshop",
+            "risk": "high",
+        }
+        out = create(action="execute", payload=pl, job_id="workshop_cycle")
+        if out.get("ok") and out.get("approval_id"):
+            state["last_request_ts"] = datetime.now(timezone.utc).isoformat()
+            state["last_request_id"] = out.get("approval_id")
+            _save_runner_state(state)
+            return {"granted": False, "reason": "created_pending", "pending": True, "approval_id": out.get("approval_id")}
+        return {"granted": False, "reason": out.get("error") or "approval_create_failed", "pending": False}
+
+    if mode == "incidents":
+        pass
+    elif mode in ("full", "maintenance") and require_approval_heavy:
+        gate = _check_heavy_gate()
+        if not gate.get("granted"):
+            return {
+                "ok": True,
+                "result": "awaiting_approval",
+                "state": "awaiting_approval",
+                "reason": gate.get("reason"),
+                "approval_id": gate.get("approval_id"),
+            }
+
+    argv = [sys.executable, str(script), "--mode", mode, "--limit", str(limit)]
+    try:
+        r = subprocess.run(
+            argv,
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env={**os.environ, "ATLAS_REPO_PATH": str(root), "ATLAS_PUSH_ROOT": str(root)},
+        )
+        stdout = (r.stdout or "").strip()
+        stderr = (r.stderr or "").strip()
+        out = {
+            "ok": r.returncode in (0, 2),
+            "exit_code": r.returncode,
+            "mode": mode,
+            "stdout": stdout[-1000:],
+            "stderr": stderr[-500:],
+        }
+        for line in stdout.splitlines():
+            if line.startswith("WORKSHOP_DONE:"):
+                out["workshop_done"] = line.split(":", 1)[-1].strip()
+            elif line.startswith("REPORT_JSON:"):
+                out["report_json"] = line.split(":", 1)[-1].strip()
+        return out
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "workshop_cycle timeout 300s", "mode": mode}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "mode": mode}
 
 
 def _run_repo_hygiene_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:

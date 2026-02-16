@@ -73,35 +73,110 @@ def _detect_windows_pnp() -> List[Dict[str, str]]:
 
 
 def _detect_opencv_indices() -> List[Dict[str, Any]]:
-    """Enumerar índices de cámara que OpenCV puede abrir (0-9, múltiples backends)."""
-    seen = {}
-    if sys.platform == "win32":
-        backends = []
-        if hasattr(cv2, "CAP_DSHOW"):
-            backends.append(cv2.CAP_DSHOW)
-        if hasattr(cv2, "CAP_MSMF"):
-            backends.append(cv2.CAP_MSMF)
-        backends.append(cv2.CAP_ANY)
-    else:
-        backends = [cv2.CAP_ANY]
-    for backend in backends:
-        for i in range(10):
-            if i in seen:
-                continue
+    """
+    Enumerar índices de cámara que OpenCV puede abrir.
+
+    Nota de robustez:
+    algunos drivers/backends de OpenCV en Windows pueden provocar excepciones
+    nativas (proceso abortado). Para no tumbar el backend API, el escaneo se
+    ejecuta en un subproceso aislado y solo se consume su JSON de salida.
+    """
+    max_index = int(os.getenv("NEXUS_CAMERA_SCAN_MAX_INDEX", "3"))
+    timeout_s = int(os.getenv("NEXUS_CAMERA_SCAN_TIMEOUT", "12"))
+    include_msmf = os.getenv("NEXUS_CAMERA_SCAN_INCLUDE_MSMF", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+    scanner_code = """
+import json
+import os
+import sys
+import cv2
+
+seen = {}
+max_index = int(os.getenv("NEXUS_CAMERA_SCAN_MAX_INDEX", "3"))
+include_msmf = os.getenv("NEXUS_CAMERA_SCAN_INCLUDE_MSMF", "").strip().lower() in ("1", "true", "yes", "on")
+backends = []
+forced = os.getenv("NEXUS_CAMERA_BACKEND", "").strip().upper()
+
+def add_backend(x):
+    if x is not None and x not in backends:
+        backends.append(x)
+
+if forced == "DSHOW" and hasattr(cv2, "CAP_DSHOW"):
+    add_backend(cv2.CAP_DSHOW)
+elif forced == "MSMF" and hasattr(cv2, "CAP_MSMF"):
+    add_backend(cv2.CAP_MSMF)
+elif forced == "ANY":
+    add_backend(cv2.CAP_ANY)
+elif sys.platform == "win32":
+    if hasattr(cv2, "CAP_DSHOW"):
+        add_backend(cv2.CAP_DSHOW)
+    if include_msmf and hasattr(cv2, "CAP_MSMF"):
+        add_backend(cv2.CAP_MSMF)
+    add_backend(cv2.CAP_ANY)
+else:
+    add_backend(cv2.CAP_ANY)
+
+for backend in backends:
+    for i in range(max_index):
+        if i in seen:
+            continue
+        cap = None
+        try:
+            cap = cv2.VideoCapture(i, backend)
+            if cap is not None and cap.isOpened():
+                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+                seen[i] = {"index": i, "backend": int(backend), "resolution": [w or 640, h or 480]}
+        except Exception:
+            pass
+        finally:
             try:
-                cap = cv2.VideoCapture(i, backend)
-                if cap.isOpened():
-                    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
-                    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+                if cap is not None:
                     cap.release()
-                    seen[i] = {
-                        "index": i,
-                        "backend": int(backend),
-                        "resolution": [w or 640, h or 480],
-                    }
             except Exception:
                 pass
-    return [seen[k] for k in sorted(seen)]
+
+print(json.dumps([seen[k] for k in sorted(seen)]))
+""".strip()
+
+    env = os.environ.copy()
+    env["NEXUS_CAMERA_SCAN_MAX_INDEX"] = str(max_index)
+    if include_msmf:
+        env["NEXUS_CAMERA_SCAN_INCLUDE_MSMF"] = "1"
+    else:
+        env.pop("NEXUS_CAMERA_SCAN_INCLUDE_MSMF", None)
+
+    try:
+        ps = subprocess.run(
+            [sys.executable, "-X", "utf8", "-c", scanner_code],
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            env=env,
+        )
+        if ps.returncode != 0:
+            logger.warning(
+                "OpenCV scan subprocess failed (rc=%s): %s",
+                ps.returncode,
+                (ps.stderr or "").strip()[:400],
+            )
+            return []
+        out = (ps.stdout or "").strip()
+        if not out:
+            return []
+        data = json.loads(out)
+        return data if isinstance(data, list) else []
+    except subprocess.TimeoutExpired:
+        logger.warning("OpenCV scan timed out after %ss", timeout_s)
+        return []
+    except Exception as e:
+        logger.warning("OpenCV scan failed: %s", e)
+        return []
 
 
 def _match_to_registry(device_name: str, vid_pid: str = "") -> Optional[Dict[str, Any]]:
