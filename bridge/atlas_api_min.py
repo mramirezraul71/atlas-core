@@ -168,7 +168,7 @@ def clear_bitacora():
 @app.get("/brain/status")
 def brain_status():
     """Estado completo del cerebro"""
-    log_to_bitacora("Consultando estado del cerebro", "info", "brain")
+    # No loguear consultas rutinarias de estado (evita spam en bitácora)
     try:
         from modules.humanoid.brain import BrainOrchestrator
         brain = BrainOrchestrator()
@@ -344,7 +344,7 @@ _nervous_state = {
 def nervous_status():
     """Estado del sistema nervioso"""
     import random
-    log_to_bitacora("Consultando estado del sistema nervioso", "info", "nervous")
+    # No loguear consultas rutinarias de estado (evita spam en bitácora)
     
     # Actualizar señales dinámicamente
     _nervous_state["signals_per_min"] += random.randint(1, 5)
