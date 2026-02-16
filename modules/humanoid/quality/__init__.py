@@ -136,6 +136,25 @@ from .robotics_bridge import (
     get_robotics_bridge,
     init_robotics_bridge,
 )
+from .autonomy_daemon import (
+    AtlasAutonomyDaemon,
+    AutonomyConfig,
+    HealthMonitor,
+    Watchdog,
+    start_autonomy,
+    stop_autonomy,
+    get_autonomy_status as get_daemon_status,
+    is_autonomy_running,
+)
+from .closed_loop import (
+    ClosedLoopEngine,
+    LoopContext,
+    LoopPhase,
+    LoopOutcome,
+    get_closed_loop_engine,
+    run_closed_loop,
+    get_loop_stats,
+)
 
 
 def start_autonomous_system() -> dict:
@@ -293,4 +312,23 @@ __all__ = [
     "start_autonomous_system",
     "stop_autonomous_system",
     "get_autonomy_status",
+    
+    # Autonomy Daemon (100% autonomy)
+    "AtlasAutonomyDaemon",
+    "AutonomyConfig",
+    "HealthMonitor",
+    "Watchdog",
+    "start_autonomy",
+    "stop_autonomy",
+    "get_daemon_status",
+    "is_autonomy_running",
+    
+    # Closed Loop (detect -> execute -> verify -> report)
+    "ClosedLoopEngine",
+    "LoopContext",
+    "LoopPhase",
+    "LoopOutcome",
+    "get_closed_loop_engine",
+    "run_closed_loop",
+    "get_loop_stats",
 ]
