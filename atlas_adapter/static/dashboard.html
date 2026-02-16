@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ATLAS Dashboard v3.7.0</title>
+  <title>ATLAS Dashboard v3.8.0</title>
   <style>
     /* === THEME: Default (Cyan) === */
     :root, [data-theme="cyan"] {
@@ -1155,6 +1155,7 @@
       <button class="nav-tab" data-tab="config">Config IA</button>
       <button class="nav-tab" data-tab="vision">👁 Vision</button>
       <button class="nav-tab" data-tab="nervioso">🔗 Nervioso</button>
+      <button class="nav-tab" data-tab="tutorias">📋 Tutorías</button>
     </div>
     <div class="nav-spacer"></div>
     <div class="nav-status">
@@ -1776,6 +1777,211 @@
       </div>
     </div>
   </div>
+
+  </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- TAB: TUTORÍAS Y VISITAS -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="tab-panel" id="panel-tutorias">
+      <!-- Header -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h2 style="color: var(--accent-cyan); font-size: 1.5rem; font-weight: 600;">📋 Sistema de Tutorías y Visitas</h2>
+        <div class="status-badge" id="tutorias-status">ACTIVO</div>
+      </div>
+
+      <!-- Estadísticas rápidas -->
+      <div class="ai-config-grid" style="margin-bottom: 1.5rem;">
+        <div class="ai-config-card">
+          <h3>👤 Especialistas</h3>
+          <div style="text-align: center; padding: 1rem;">
+            <div style="font-size: 2.5rem; font-weight: bold; color: var(--accent-cyan);" id="tut-stat-especialistas">0</div>
+            <div style="color: var(--text-muted);">Registrados</div>
+          </div>
+        </div>
+        <div class="ai-config-card">
+          <h3>📅 Visitas</h3>
+          <div style="text-align: center; padding: 1rem;">
+            <div style="font-size: 2.5rem; font-weight: bold; color: var(--accent-green);" id="tut-stat-visitas">0</div>
+            <div style="color: var(--text-muted);">Realizadas</div>
+          </div>
+        </div>
+        <div class="ai-config-card">
+          <h3>📝 Informes</h3>
+          <div style="text-align: center; padding: 1rem;">
+            <div style="font-size: 2.5rem; font-weight: bold; color: var(--accent-purple);" id="tut-stat-informes">0</div>
+            <div style="color: var(--text-muted);">Firmados</div>
+          </div>
+        </div>
+        <div class="ai-config-card">
+          <h3>⭐ Puntuación</h3>
+          <div style="text-align: center; padding: 1rem;">
+            <div style="font-size: 2.5rem; font-weight: bold; color: var(--accent-orange);" id="tut-stat-puntuacion">0.0</div>
+            <div style="color: var(--text-muted);">Promedio</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Registrar Especialista -->
+      <div class="ai-config-card" style="margin-bottom: 1rem;">
+        <h3>👤 Registrar Nuevo Especialista</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; padding: 1rem;">
+          <div>
+            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-muted);">Nombre</label>
+            <input type="text" id="esp-nombre" placeholder="Nombre completo" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text);">
+          </div>
+          <div>
+            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-muted);">Rol</label>
+            <select id="esp-rol" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text);">
+              <option value="Arquitecto de IA">Arquitecto de IA</option>
+              <option value="Desarrollador Senior">Desarrollador Senior</option>
+              <option value="QA Engineer">QA Engineer</option>
+              <option value="DevOps">DevOps</option>
+              <option value="Data Scientist">Data Scientist</option>
+              <option value="Security Analyst">Security Analyst</option>
+              <option value="UX Designer">UX Designer</option>
+              <option value="Project Manager">Project Manager</option>
+            </select>
+          </div>
+          <div>
+            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-muted);">Especialidad</label>
+            <input type="text" id="esp-especialidad" placeholder="Ej: Vision, NLP, Robotics" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text);">
+          </div>
+          <div>
+            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-muted);">Email</label>
+            <input type="email" id="esp-email" placeholder="email@ejemplo.com" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text);">
+          </div>
+        </div>
+        <div style="padding: 0 1rem 1rem;">
+          <button class="btn btn-primary" onclick="registrarEspecialista()">➕ Registrar Especialista</button>
+        </div>
+      </div>
+
+      <!-- Lista de Especialistas -->
+      <div class="ai-config-card" style="margin-bottom: 1rem;">
+        <h3>👥 Especialistas Registrados</h3>
+        <div id="lista-especialistas" style="padding: 1rem; max-height: 200px; overflow-y: auto;">
+          <div style="color: var(--text-muted); text-align: center; padding: 2rem;">
+            Cargando especialistas...
+          </div>
+        </div>
+      </div>
+
+      <!-- Iniciar Nueva Visita -->
+      <div class="ai-config-card" style="margin-bottom: 1rem;">
+        <h3>📅 Iniciar Nueva Visita</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; padding: 1rem;">
+          <div>
+            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-muted);">Especialista</label>
+            <select id="visita-especialista" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text);">
+              <option value="">Seleccionar especialista...</option>
+            </select>
+          </div>
+          <div>
+            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-muted);">Tipo de Visita</label>
+            <select id="visita-tipo" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text);">
+              <option value="tutoria">📚 Tutoría</option>
+              <option value="revision">🔍 Revisión</option>
+              <option value="auditoria">📊 Auditoría</option>
+              <option value="capacitacion">🎓 Capacitación</option>
+              <option value="mantenimiento">🔧 Mantenimiento</option>
+              <option value="emergencia">🚨 Emergencia</option>
+              <option value="seguimiento">📌 Seguimiento</option>
+            </select>
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-muted);">Motivo de la Visita</label>
+            <input type="text" id="visita-motivo" placeholder="Describir el motivo de la visita..." style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text);">
+          </div>
+          <div style="grid-column: span 2;">
+            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-muted);">Módulos a Revisar</label>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+              <label style="display: flex; align-items: center; gap: 0.25rem; padding: 0.5rem 0.75rem; background: var(--bg-elevated); border-radius: 8px; cursor: pointer;">
+                <input type="checkbox" class="modulo-check" value="brain"> 🧠 Brain
+              </label>
+              <label style="display: flex; align-items: center; gap: 0.25rem; padding: 0.5rem 0.75rem; background: var(--bg-elevated); border-radius: 8px; cursor: pointer;">
+                <input type="checkbox" class="modulo-check" value="vision"> 👁️ Vision
+              </label>
+              <label style="display: flex; align-items: center; gap: 0.25rem; padding: 0.5rem 0.75rem; background: var(--bg-elevated); border-radius: 8px; cursor: pointer;">
+                <input type="checkbox" class="modulo-check" value="nervous"> 🔗 Nervous
+              </label>
+              <label style="display: flex; align-items: center; gap: 0.25rem; padding: 0.5rem 0.75rem; background: var(--bg-elevated); border-radius: 8px; cursor: pointer;">
+                <input type="checkbox" class="modulo-check" value="memory"> 💾 Memory
+              </label>
+              <label style="display: flex; align-items: center; gap: 0.25rem; padding: 0.5rem 0.75rem; background: var(--bg-elevated); border-radius: 8px; cursor: pointer;">
+                <input type="checkbox" class="modulo-check" value="quality"> ✅ Quality
+              </label>
+              <label style="display: flex; align-items: center; gap: 0.25rem; padding: 0.5rem 0.75rem; background: var(--bg-elevated); border-radius: 8px; cursor: pointer;">
+                <input type="checkbox" class="modulo-check" value="comms"> 📡 Comms
+              </label>
+            </div>
+          </div>
+        </div>
+        <div style="padding: 0 1rem 1rem;">
+          <button class="btn btn-primary" onclick="iniciarVisita()">🚀 Iniciar Visita</button>
+        </div>
+      </div>
+
+      <!-- Visita en Curso -->
+      <div class="ai-config-card" id="visita-en-curso" style="margin-bottom: 1rem; display: none; border: 2px solid var(--accent-cyan);">
+        <h3>⏱️ Visita en Curso</h3>
+        <div style="padding: 1rem;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+            <div>
+              <strong id="visita-actual-tipo">Tutoría</strong>
+              <span style="color: var(--text-muted);"> por </span>
+              <strong id="visita-actual-esp">Especialista</strong>
+            </div>
+            <div style="color: var(--accent-cyan); font-weight: bold;" id="visita-timer">00:00:00</div>
+          </div>
+          <div style="margin-bottom: 1rem;">
+            <label style="display: block; margin-bottom: 0.5rem; color: var(--text-muted);">Notas de la Visita</label>
+            <textarea id="visita-notas" rows="3" placeholder="Agregar notas durante la visita..." style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text); resize: vertical;"></textarea>
+          </div>
+          <div style="display: flex; gap: 1rem;">
+            <button class="btn btn-primary" onclick="mostrarFormularioInforme()">📝 Crear Informe</button>
+            <button class="btn" style="background: var(--accent-red); color: white;" onclick="cancelarVisita()">❌ Cancelar Visita</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Historial de Visitas -->
+      <div class="ai-config-card" style="margin-bottom: 1rem;">
+        <h3>📚 Historial de Visitas</h3>
+        <div id="historial-visitas" style="padding: 1rem; max-height: 300px; overflow-y: auto;">
+          <div style="color: var(--text-muted); text-align: center; padding: 2rem;">
+            Cargando historial...
+          </div>
+        </div>
+      </div>
+
+      <!-- Recomendaciones Pendientes -->
+      <div class="ai-config-card" style="margin-bottom: 1rem;">
+        <h3>💡 Recomendaciones Pendientes</h3>
+        <div id="lista-recomendaciones" style="padding: 1rem; max-height: 250px; overflow-y: auto;">
+          <div style="color: var(--text-muted); text-align: center; padding: 2rem;">
+            Cargando recomendaciones...
+          </div>
+        </div>
+      </div>
+
+      <!-- Seguimientos Activos -->
+      <div class="ai-config-card">
+        <h3>📌 Seguimientos de Mejora</h3>
+        <div id="lista-seguimientos" style="padding: 1rem; max-height: 250px; overflow-y: auto;">
+          <div style="color: var(--text-muted); text-align: center; padding: 2rem;">
+            Cargando seguimientos...
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="action-bar" style="margin-top: 1rem;">
+        <button class="btn btn-primary" onclick="refreshTutorias()">🔄 Actualizar</button>
+        <button class="btn btn-secondary" onclick="generarDashboardTutorias()">📊 Generar Dashboard</button>
+        <button class="btn" style="background: var(--accent-orange); color: var(--bg);" onclick="exportarRecomendaciones()">📋 Exportar Recomendaciones</button>
+      </div>
+    </div>
 
   </div>
 
