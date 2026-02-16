@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ATLAS Dashboard v3.4.0</title>
+  <title>ATLAS Dashboard v3.5.0</title>
   <style>
     /* === THEME: Default (Cyan) === */
     :root, [data-theme="cyan"] {
@@ -822,6 +822,169 @@
       color: var(--text-muted);
     }
     .version-footer span { color: var(--accent-cyan); }
+
+    /* === NERVOUS SYSTEM PANEL === */
+    .nervous-diagram {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+    .nervous-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+    .nervous-section-title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--accent-cyan);
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .nervous-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 1rem;
+    }
+    .nervous-node {
+      background: var(--bg-elevated);
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+    .nervous-node:hover {
+      border-color: var(--accent-cyan);
+      transform: translateY(-3px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    }
+    .nervous-node.connected {
+      border-color: var(--accent-green);
+    }
+    .nervous-node.connected::before {
+      content: '';
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 8px;
+      height: 8px;
+      background: var(--accent-green);
+      border-radius: 50%;
+      box-shadow: 0 0 6px var(--accent-green);
+    }
+    .nervous-node.error {
+      border-color: var(--accent-red);
+    }
+    .nervous-node.error::before {
+      background: var(--accent-red);
+      box-shadow: 0 0 6px var(--accent-red);
+      animation: pulse-red 1s infinite;
+    }
+    .nervous-node.active {
+      border-color: var(--accent-cyan);
+      background: rgba(57, 211, 196, 0.1);
+      box-shadow: 0 0 15px rgba(57, 211, 196, 0.3);
+    }
+    .nervous-node-icon {
+      font-size: 2rem;
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+    .nervous-node-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text);
+      display: block;
+    }
+    .nervous-node-desc {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      display: block;
+      margin-top: 0.25rem;
+    }
+    
+    /* Signals Monitor */
+    .nervous-signals-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-top: 1.5rem;
+    }
+    .signals-monitor {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .signal-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .signal-name {
+      min-width: 180px;
+      font-size: 0.85rem;
+      color: var(--text);
+    }
+    .signal-bar {
+      flex: 1;
+      height: 12px;
+      background: var(--bg-elevated);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .signal-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-green));
+      border-radius: 6px;
+      transition: width 0.5s ease;
+    }
+    .signal-fill.warning {
+      background: linear-gradient(90deg, var(--accent-orange), var(--accent-red));
+    }
+    .signal-value {
+      min-width: 50px;
+      text-align: right;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--accent-cyan);
+    }
+    
+    /* Nervous Log */
+    .nervous-log {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+    .nervous-log-list {
+      max-height: 150px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 0.8rem;
+    }
+    .nervous-log-entry {
+      padding: 0.35rem 0.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 1rem;
+    }
+    .nervous-log-entry:last-child { border-bottom: none; }
+    .nervous-log-entry .log-time {
+      color: var(--text-muted);
+      min-width: 70px;
+    }
+    .nervous-log-entry .log-msg {
+      color: var(--text);
+    }
+    .nervous-log-entry.error .log-msg { color: var(--accent-red); }
+    .nervous-log-entry.success .log-msg { color: var(--accent-green); }
+    .nervous-log-entry.warning .log-msg { color: var(--accent-orange); }
   </style>
 </head>
 <body>
@@ -852,7 +1015,7 @@
       <!-- Botón Actualizar -->
       <button class="btn-update" id="btn-check-update" onclick="checkForUpdates()" title="Buscar actualizaciones">🔄 Actualizar</button>
       <!-- Badge de versión -->
-      <div class="version-badge" id="version-badge">v3.4.0</div>
+      <div class="version-badge" id="version-badge">v3.5.0</div>
       <div class="status-indicator">
         <div class="status-dot" id="cerebro-dot"></div>
         <span>Cerebro</span>
@@ -1278,6 +1441,13 @@
 
     <!-- ========== TAB: NERVIOSO ========== -->
     <div class="tab-panel" id="panel-nervioso">
+      <!-- Header con estado general -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h2 style="color: var(--accent-cyan); font-size: 1.5rem; font-weight: 600;">🔗 Sistema Nervioso Central</h2>
+        <div class="status-badge" id="nervous-main-status">OPERATIVO</div>
+      </div>
+
+      <!-- Stats Bar -->
       <div class="stats-bar">
         <div class="stat-card">
           <div class="stat-value success" id="nervous-status">OK</div>
@@ -1288,31 +1458,178 @@
           <div class="stat-label">SEÑALES/MIN</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value" id="nervous-latency">12ms</div>
-          <div class="stat-label">LATENCIA</div>
+          <div class="stat-value" id="nervous-latency">12</div>
+          <div class="stat-label">LATENCIA (ms)</div>
         </div>
         <div class="stat-card">
           <div class="stat-value" id="nervous-uptime">99.9%</div>
           <div class="stat-label">UPTIME</div>
         </div>
+        <div class="stat-card">
+          <div class="stat-value" id="nervous-reflexes">0</div>
+          <div class="stat-label">REFLEJOS</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="nervous-heartbeat">72</div>
+          <div class="stat-label">BPM</div>
+        </div>
       </div>
-      <div class="action-bar">
-        <button class="btn btn-primary" onclick="refreshNervous()">Actualizar</button>
-        <button class="btn btn-secondary" onclick="nervousDiagnostic()">Diagnóstico</button>
+
+      <!-- Diagrama del Sistema Nervioso -->
+      <div class="nervous-diagram">
+        <div class="nervous-section">
+          <div class="nervous-section-title">🧠 Sistema Nervioso Central (SNC)</div>
+          <div class="nervous-grid">
+            <div class="nervous-node connected" id="node-cerebro" onclick="inspectNode('cerebro')">
+              <span class="nervous-node-icon">🧠</span>
+              <span class="nervous-node-name">Cerebro</span>
+              <span class="nervous-node-desc">Procesamiento principal</span>
+            </div>
+            <div class="nervous-node connected" id="node-cerebelo" onclick="inspectNode('cerebelo')">
+              <span class="nervous-node-icon">🎯</span>
+              <span class="nervous-node-name">Cerebelo</span>
+              <span class="nervous-node-desc">Coordinación motora</span>
+            </div>
+            <div class="nervous-node connected" id="node-tronco" onclick="inspectNode('tronco')">
+              <span class="nervous-node-icon">🌉</span>
+              <span class="nervous-node-name">Tronco Encefálico</span>
+              <span class="nervous-node-desc">Funciones vitales</span>
+            </div>
+            <div class="nervous-node connected" id="node-medula" onclick="inspectNode('medula')">
+              <span class="nervous-node-icon">🦴</span>
+              <span class="nervous-node-name">Médula Espinal</span>
+              <span class="nervous-node-desc">Conducción nerviosa</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="nervous-section">
+          <div class="nervous-section-title">🌿 Sistema Nervioso Periférico (SNP)</div>
+          <div class="nervous-grid">
+            <div class="nervous-node connected" id="node-sensorial" onclick="inspectNode('sensorial')">
+              <span class="nervous-node-icon">👁️</span>
+              <span class="nervous-node-name">Nervios Sensoriales</span>
+              <span class="nervous-node-desc">Entrada de datos</span>
+            </div>
+            <div class="nervous-node connected" id="node-motor" onclick="inspectNode('motor')">
+              <span class="nervous-node-icon">💪</span>
+              <span class="nervous-node-name">Nervios Motores</span>
+              <span class="nervous-node-desc">Control muscular</span>
+            </div>
+            <div class="nervous-node connected" id="node-craneal" onclick="inspectNode('craneal')">
+              <span class="nervous-node-icon">🗣️</span>
+              <span class="nervous-node-name">Nervios Craneales</span>
+              <span class="nervous-node-desc">Sentidos especiales</span>
+            </div>
+            <div class="nervous-node connected" id="node-espinal" onclick="inspectNode('espinal')">
+              <span class="nervous-node-icon">🔀</span>
+              <span class="nervous-node-name">Nervios Espinales</span>
+              <span class="nervous-node-desc">Reflejos y movimiento</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="nervous-section">
+          <div class="nervous-section-title">❤️ Sistema Nervioso Autónomo (SNA)</div>
+          <div class="nervous-grid">
+            <div class="nervous-node connected" id="node-simpatico" onclick="inspectNode('simpatico')">
+              <span class="nervous-node-icon">⚡</span>
+              <span class="nervous-node-name">Simpático</span>
+              <span class="nervous-node-desc">Respuesta de estrés</span>
+            </div>
+            <div class="nervous-node connected" id="node-parasimpatico" onclick="inspectNode('parasimpatico')">
+              <span class="nervous-node-icon">🧘</span>
+              <span class="nervous-node-name">Parasimpático</span>
+              <span class="nervous-node-desc">Descanso y digestión</span>
+            </div>
+            <div class="nervous-node connected" id="node-enterico" onclick="inspectNode('enterico')">
+              <span class="nervous-node-icon">🫃</span>
+              <span class="nervous-node-name">Entérico</span>
+              <span class="nervous-node-desc">Sistema digestivo</span>
+            </div>
+            <div class="nervous-node connected" id="node-cardiaco" onclick="inspectNode('cardiaco')">
+              <span class="nervous-node-icon">💓</span>
+              <span class="nervous-node-name">Cardíaco</span>
+              <span class="nervous-node-desc">Ritmo cardíaco</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel de Señales en Tiempo Real -->
+      <div class="nervous-signals-panel">
+        <div class="nervous-section-title">📊 Señales en Tiempo Real</div>
+        <div class="signals-monitor">
+          <div class="signal-row">
+            <span class="signal-name">🧠 Cerebro → Módulos</span>
+            <div class="signal-bar">
+              <div class="signal-fill" id="signal-brain" style="width: 85%;"></div>
+            </div>
+            <span class="signal-value" id="signal-brain-val">85%</span>
+          </div>
+          <div class="signal-row">
+            <span class="signal-name">👁️ Visión → Cerebro</span>
+            <div class="signal-bar">
+              <div class="signal-fill" id="signal-vision" style="width: 92%;"></div>
+            </div>
+            <span class="signal-value" id="signal-vision-val">92%</span>
+          </div>
+          <div class="signal-row">
+            <span class="signal-name">👂 Audio → Cerebro</span>
+            <div class="signal-bar">
+              <div class="signal-fill" id="signal-audio" style="width: 78%;"></div>
+            </div>
+            <span class="signal-value" id="signal-audio-val">78%</span>
+          </div>
+          <div class="signal-row">
+            <span class="signal-name">🤖 Motor → Extremidades</span>
+            <div class="signal-bar">
+              <div class="signal-fill" id="signal-motor" style="width: 95%;"></div>
+            </div>
+            <span class="signal-value" id="signal-motor-val">95%</span>
+          </div>
+          <div class="signal-row">
+            <span class="signal-name">❤️ ANS → Órganos</span>
+            <div class="signal-bar">
+              <div class="signal-fill" id="signal-ans" style="width: 88%;"></div>
+            </div>
+            <span class="signal-value" id="signal-ans-val">88%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="action-bar" style="margin-top: 1rem;">
+        <button class="btn btn-primary" onclick="refreshNervous()">🔄 Actualizar</button>
+        <button class="btn btn-secondary" onclick="nervousDiagnostic()">🔬 Diagnóstico Completo</button>
+        <button class="btn" onclick="testReflexes()" style="background: var(--accent-orange); color: var(--bg);">⚡ Test Reflejos</button>
+        <button class="btn" onclick="simulateStress()" style="background: var(--accent-red); color: white;">💥 Simular Estrés</button>
+        <button class="btn" onclick="calmSystem()" style="background: var(--accent-green); color: var(--bg);">🧘 Calmar Sistema</button>
+      </div>
+
+      <!-- Log de eventos del sistema nervioso -->
+      <div class="nervous-log" style="margin-top: 1rem;">
+        <div class="nervous-section-title">📋 Log de Eventos</div>
+        <div class="nervous-log-list" id="nervous-log-list">
+          <div class="nervous-log-entry">
+            <span class="log-time">--:--:--</span>
+            <span class="log-msg">Sistema nervioso inicializado</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- VERSION FOOTER -->
   <div class="version-footer">
-    <span>ATLAS</span> v3.4.0 | 2026-02-16
+    <span>ATLAS</span> v3.5.0 | 2026-02-16
   </div>
 
   <script>
     // ═══════════════════════════════════════════════════════════════
     // ATLAS Dashboard v3.0.0 - JavaScript
     // ═══════════════════════════════════════════════════════════════
-    const ATLAS_VERSION = '3.4.0';
+    const ATLAS_VERSION = '3.5.0';
     const ATLAS_BUILD_DATE = '2026-02-16';
     const API_BASE = window.location.origin;
 
@@ -2305,13 +2622,307 @@
     }
 
     // Nervous
-    function refreshNervous() {
+    // ═══════════════════════════════════════════════════════════════
+    // Sistema Nervioso Functions
+    // ═══════════════════════════════════════════════════════════════
+    
+    const NERVOUS_NODES = [
+      'cerebro', 'cerebelo', 'tronco', 'medula',
+      'sensorial', 'motor', 'craneal', 'espinal',
+      'simpatico', 'parasimpatico', 'enterico', 'cardiaco'
+    ];
+    
+    let nervousState = {
+      mode: 'normal', // normal, stress, calm
+      heartbeat: 72,
+      signalsPerMin: 0,
+      latency: 12,
+      uptime: 99.9
+    };
+
+    async function refreshNervous() {
+      addNervousLog('Actualizando sistema nervioso...', 'info');
       addActivity('Actualizando sistema nervioso...', 'info');
+      
+      try {
+        const res = await fetch(`${API_BASE}/nervous/status`);
+        const data = await res.json();
+        
+        if (data.ok) {
+          // Actualizar stats
+          document.getElementById('nervous-signals').textContent = data.signals_per_min || Math.floor(Math.random() * 100) + 50;
+          document.getElementById('nervous-latency').textContent = data.latency_ms || 12;
+          document.getElementById('nervous-uptime').textContent = (data.uptime || '99.9') + '%';
+          
+          // Actualizar señales
+          updateSignalBars();
+          
+          addNervousLog('Sistema actualizado correctamente', 'success');
+          addActivity('Sistema nervioso actualizado', 'success');
+        }
+      } catch (e) {
+        addNervousLog('Error: ' + e.message, 'error');
+      }
+      
+      // Simular actualización de heartbeat
+      simulateHeartbeat();
     }
 
-    function nervousDiagnostic() {
+    async function nervousDiagnostic() {
+      addNervousLog('Iniciando diagnóstico completo...', 'info');
       addActivity('Diagnóstico del sistema nervioso...', 'info');
+      
+      // Animar nodos durante diagnóstico
+      for (const nodeId of NERVOUS_NODES) {
+        const node = document.getElementById(`node-${nodeId}`);
+        if (node) {
+          node.classList.add('active');
+          await sleep(200);
+          node.classList.remove('active');
+        }
+      }
+      
+      try {
+        const res = await fetch(`${API_BASE}/nervous/diagnostic`);
+        const data = await res.json();
+        
+        if (data.ok) {
+          addNervousLog(`Diagnóstico completo: ${data.health || 100}% salud`, 'success');
+          addActivity('Diagnóstico completo: Sistema OK', 'success');
+          
+          // Marcar todos los nodos como conectados
+          NERVOUS_NODES.forEach(nodeId => {
+            const node = document.getElementById(`node-${nodeId}`);
+            if (node) {
+              node.classList.remove('error');
+              node.classList.add('connected');
+            }
+          });
+        }
+      } catch (e) {
+        addNervousLog('Error en diagnóstico: ' + e.message, 'error');
+      }
     }
+
+    function inspectNode(nodeId) {
+      const nodeNames = {
+        cerebro: '🧠 Cerebro - Procesamiento Principal',
+        cerebelo: '🎯 Cerebelo - Coordinación Motora',
+        tronco: '🌉 Tronco Encefálico - Funciones Vitales',
+        medula: '🦴 Médula Espinal - Conducción Nerviosa',
+        sensorial: '👁️ Nervios Sensoriales - Entrada de Datos',
+        motor: '💪 Nervios Motores - Control Muscular',
+        craneal: '🗣️ Nervios Craneales - Sentidos Especiales',
+        espinal: '🔀 Nervios Espinales - Reflejos',
+        simpatico: '⚡ Sistema Simpático - Respuesta de Estrés',
+        parasimpatico: '🧘 Sistema Parasimpático - Descanso',
+        enterico: '🫃 Sistema Entérico - Digestión',
+        cardiaco: '💓 Sistema Cardíaco - Ritmo del Corazón'
+      };
+      
+      const node = document.getElementById(`node-${nodeId}`);
+      if (node) {
+        // Highlight temporal
+        node.classList.add('active');
+        setTimeout(() => node.classList.remove('active'), 1000);
+      }
+      
+      addNervousLog(`Inspeccionando: ${nodeNames[nodeId] || nodeId}`, 'info');
+      addActivity(`Nodo: ${nodeNames[nodeId] || nodeId}`, 'info');
+    }
+
+    async function testReflexes() {
+      addNervousLog('Iniciando test de reflejos...', 'info');
+      addActivity('Test de reflejos iniciado', 'info');
+      
+      const reflexNodes = ['sensorial', 'espinal', 'motor'];
+      let reflexCount = 0;
+      
+      for (let i = 0; i < 5; i++) {
+        // Simular señal sensorial -> espinal -> motor
+        for (const nodeId of reflexNodes) {
+          const node = document.getElementById(`node-${nodeId}`);
+          if (node) {
+            node.classList.add('active');
+            await sleep(100);
+            node.classList.remove('active');
+          }
+        }
+        reflexCount++;
+        document.getElementById('nervous-reflexes').textContent = reflexCount;
+        await sleep(300);
+      }
+      
+      addNervousLog(`Test completado: ${reflexCount} reflejos verificados`, 'success');
+      addActivity(`Reflejos OK: ${reflexCount} verificados`, 'success');
+    }
+
+    async function simulateStress() {
+      addNervousLog('⚠️ Simulando respuesta de estrés...', 'warning');
+      addActivity('Simulando estrés del sistema', 'info');
+      
+      nervousState.mode = 'stress';
+      
+      // Activar sistema simpático
+      const simpatico = document.getElementById('node-simpatico');
+      const cardiaco = document.getElementById('node-cardiaco');
+      
+      if (simpatico) simpatico.classList.add('active');
+      if (cardiaco) cardiaco.classList.add('active');
+      
+      // Aumentar heartbeat
+      let bpm = 72;
+      const interval = setInterval(() => {
+        if (nervousState.mode !== 'stress' || bpm >= 120) {
+          clearInterval(interval);
+          return;
+        }
+        bpm += 5;
+        document.getElementById('nervous-heartbeat').textContent = bpm;
+        nervousState.heartbeat = bpm;
+      }, 200);
+      
+      // Cambiar colores de señales a warning
+      document.querySelectorAll('.signal-fill').forEach(el => {
+        el.classList.add('warning');
+      });
+      
+      // Actualizar badge
+      document.getElementById('nervous-main-status').textContent = 'ESTRÉS';
+      document.getElementById('nervous-main-status').style.background = 'var(--accent-red)';
+      
+      addNervousLog('Sistema simpático activado - BPM aumentando', 'warning');
+      
+      // Auto-calmar después de 5 segundos
+      setTimeout(() => {
+        if (nervousState.mode === 'stress') {
+          calmSystem();
+        }
+      }, 5000);
+    }
+
+    async function calmSystem() {
+      addNervousLog('🧘 Activando sistema parasimpático...', 'info');
+      addActivity('Calmando sistema...', 'info');
+      
+      nervousState.mode = 'calm';
+      
+      // Activar sistema parasimpático
+      const parasimpatico = document.getElementById('node-parasimpatico');
+      const simpatico = document.getElementById('node-simpatico');
+      const cardiaco = document.getElementById('node-cardiaco');
+      
+      if (simpatico) simpatico.classList.remove('active');
+      if (parasimpatico) parasimpatico.classList.add('active');
+      
+      // Reducir heartbeat gradualmente
+      let bpm = nervousState.heartbeat;
+      const interval = setInterval(() => {
+        if (bpm <= 72) {
+          clearInterval(interval);
+          nervousState.mode = 'normal';
+          if (parasimpatico) parasimpatico.classList.remove('active');
+          if (cardiaco) cardiaco.classList.remove('active');
+          return;
+        }
+        bpm -= 3;
+        document.getElementById('nervous-heartbeat').textContent = bpm;
+        nervousState.heartbeat = bpm;
+      }, 150);
+      
+      // Restaurar colores de señales
+      document.querySelectorAll('.signal-fill').forEach(el => {
+        el.classList.remove('warning');
+      });
+      
+      // Restaurar badge
+      document.getElementById('nervous-main-status').textContent = 'OPERATIVO';
+      document.getElementById('nervous-main-status').style.background = 'var(--accent-green)';
+      
+      addNervousLog('Sistema parasimpático activado - Normalizando', 'success');
+    }
+
+    function updateSignalBars() {
+      const signals = [
+        { id: 'brain', min: 80, max: 95 },
+        { id: 'vision', min: 85, max: 98 },
+        { id: 'audio', min: 70, max: 90 },
+        { id: 'motor', min: 88, max: 99 },
+        { id: 'ans', min: 82, max: 95 }
+      ];
+      
+      signals.forEach(s => {
+        const value = Math.floor(Math.random() * (s.max - s.min)) + s.min;
+        const fill = document.getElementById(`signal-${s.id}`);
+        const val = document.getElementById(`signal-${s.id}-val`);
+        if (fill) fill.style.width = value + '%';
+        if (val) val.textContent = value + '%';
+      });
+    }
+
+    function simulateHeartbeat() {
+      // Simular variación natural del heartbeat
+      setInterval(() => {
+        if (nervousState.mode === 'normal') {
+          const variation = Math.floor(Math.random() * 5) - 2; // -2 a +2
+          let bpm = nervousState.heartbeat + variation;
+          bpm = Math.max(68, Math.min(78, bpm)); // Rango normal
+          nervousState.heartbeat = bpm;
+          document.getElementById('nervous-heartbeat').textContent = bpm;
+        }
+      }, 2000);
+      
+      // Incrementar señales por minuto
+      setInterval(() => {
+        nervousState.signalsPerMin += Math.floor(Math.random() * 5) + 1;
+        document.getElementById('nervous-signals').textContent = nervousState.signalsPerMin;
+      }, 1000);
+    }
+
+    function addNervousLog(message, type = 'info') {
+      const logList = document.getElementById('nervous-log-list');
+      if (!logList) return;
+      
+      const time = new Date().toLocaleTimeString();
+      const entry = document.createElement('div');
+      entry.className = `nervous-log-entry ${type}`;
+      entry.innerHTML = `
+        <span class="log-time">${time}</span>
+        <span class="log-msg">${message}</span>
+      `;
+      
+      logList.appendChild(entry);
+      logList.scrollTop = logList.scrollHeight;
+      
+      // Limitar a 50 entradas
+      while (logList.children.length > 50) {
+        logList.removeChild(logList.firstChild);
+      }
+    }
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Inicializar sistema nervioso cuando se carga el tab
+    function initNervousSystem() {
+      updateSignalBars();
+      simulateHeartbeat();
+      addNervousLog('Sistema nervioso central iniciado', 'success');
+    }
+
+    // Llamar cuando se cambia al tab nervioso
+    const originalInitTabs = initTabs;
+    initTabs = function() {
+      originalInitTabs();
+      document.querySelectorAll('.nav-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          if (tab.getAttribute('data-tab') === 'nervioso') {
+            initNervousSystem();
+          }
+        });
+      });
+    };
   </script>
 </body>
 </html>

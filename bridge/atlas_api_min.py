@@ -15,7 +15,7 @@ import uvicorn
 
 from atlas_runtime import handle, status, doctor, modules_report
 
-app = FastAPI(title="ATLAS Bridge API", version="3.3.0")
+app = FastAPI(title="ATLAS Bridge API", version="3.5.0")
 
 # ═══════════════════════════════════════════════════════════════
 # Definición de módulos del sistema
@@ -722,7 +722,7 @@ def get_version():
     """Return current version for update checks"""
     return {
         "ok": True,
-        "version": "3.3.0",
+        "version": "3.5.0",
         "build_date": "2026-02-16",
         "name": "ATLAS Dashboard"
     }
