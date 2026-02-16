@@ -15,7 +15,7 @@ import uvicorn
 
 from atlas_runtime import handle, status, doctor, modules_report
 
-app = FastAPI(title="ATLAS Bridge API", version="3.5.0")
+app = FastAPI(title="ATLAS Bridge API", version="3.7.0")
 
 # ═══════════════════════════════════════════════════════════════
 # Definición de módulos del sistema
@@ -29,6 +29,29 @@ HUMANOID_MODULES = [
 # Cache de estado de módulos
 _modules_cache: Dict[str, Dict[str, Any]] = {}
 _last_modules_check: float = 0
+
+# ═══════════════════════════════════════════════════════════════
+# Sistema de Bitácora Central
+# ═══════════════════════════════════════════════════════════════
+_bitacora: List[Dict[str, Any]] = []
+_bitacora_max_entries = 500
+
+def log_to_bitacora(message: str, level: str = "info", source: str = "system", data: Dict = None):
+    """Registrar evento en la bitácora central"""
+    import datetime
+    entry = {
+        "id": int(time.time() * 1000),
+        "timestamp": datetime.datetime.now().isoformat(),
+        "time": datetime.datetime.now().strftime("%H:%M:%S"),
+        "message": message,
+        "level": level,  # info, success, error, warning
+        "source": source,  # brain, vision, nervous, modules, ai, governance, system
+        "data": data or {}
+    }
+    _bitacora.insert(0, entry)
+    if len(_bitacora) > _bitacora_max_entries:
+        _bitacora.pop()
+    return entry
 
 # Ruta al dashboard
 DASHBOARD_PATH = ROOT / "atlas_adapter" / "static" / "dashboard.html"
@@ -73,9 +96,69 @@ def _run(payload: dict):
 # Conexión al Cerebro - Endpoints completos
 # ═══════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════
+# Endpoints de Bitácora
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/bitacora")
+def get_bitacora(limit: int = 100, source: str = None, level: str = None):
+    """Obtener entradas de la bitácora"""
+    entries = _bitacora
+    
+    if source:
+        entries = [e for e in entries if e["source"] == source]
+    if level:
+        entries = [e for e in entries if e["level"] == level]
+    
+    return {
+        "ok": True,
+        "entries": entries[:limit],
+        "total": len(_bitacora),
+        "filtered": len(entries)
+    }
+
+@app.get("/bitacora/stream")
+def get_bitacora_since(since_id: int = 0):
+    """Obtener entradas nuevas desde un ID específico (para polling)"""
+    new_entries = [e for e in _bitacora if e["id"] > since_id]
+    return {
+        "ok": True,
+        "entries": new_entries,
+        "count": len(new_entries),
+        "latest_id": _bitacora[0]["id"] if _bitacora else 0
+    }
+
+@app.post("/bitacora/log")
+def add_bitacora_entry(payload: dict):
+    """Agregar entrada a la bitácora desde el frontend"""
+    message = payload.get("message", "")
+    level = payload.get("level", "info")
+    source = payload.get("source", "system")
+    data = payload.get("data", {})
+    
+    if not message:
+        return {"ok": False, "error": "Message required"}
+    
+    entry = log_to_bitacora(message, level, source, data)
+    return {"ok": True, "entry": entry}
+
+@app.delete("/bitacora")
+def clear_bitacora():
+    """Limpiar la bitácora"""
+    global _bitacora
+    count = len(_bitacora)
+    _bitacora = []
+    log_to_bitacora("Bitácora limpiada", "info", "system", {"cleared": count})
+    return {"ok": True, "cleared": count}
+
+# ═══════════════════════════════════════════════════════════════
+# Conexión al Cerebro - Con logging
+# ═══════════════════════════════════════════════════════════════
+
 @app.get("/brain/status")
 def brain_status():
     """Estado completo del cerebro"""
+    log_to_bitacora("Consultando estado del cerebro", "info", "brain")
     try:
         from modules.humanoid.brain import BrainOrchestrator
         brain = BrainOrchestrator()
@@ -93,20 +176,26 @@ def brain_status():
 @app.get("/brain/think")
 def brain_think(query: str = ""):
     """El cerebro procesa una consulta"""
+    log_to_bitacora(f"Cerebro pensando: {query[:50]}...", "info", "brain", {"query": query})
     try:
         result = handle(query or "status")
+        log_to_bitacora("Pensamiento completado", "success", "brain")
         return {"ok": True, "thought": result}
     except Exception as e:
+        log_to_bitacora(f"Error en pensamiento: {e}", "error", "brain")
         return {"ok": False, "error": str(e)}
 
 @app.post("/brain/process")
 def brain_process(payload: dict):
     """Procesar entrada por el cerebro"""
     text = payload.get("text", "")
+    log_to_bitacora(f"Procesando: {text[:50]}...", "info", "brain", {"input_length": len(text)})
     try:
         result = handle(text)
+        log_to_bitacora("Respuesta generada", "success", "brain", {"output_length": len(str(result))})
         return {"ok": True, "response": result, "source": "brain"}
     except Exception as e:
+        log_to_bitacora(f"Error procesando: {e}", "error", "brain")
         return {"ok": False, "error": str(e)}
 
 # ═══════════════════════════════════════════════════════════════
@@ -142,9 +231,12 @@ def check_module(module_name: str) -> Dict[str, Any]:
 @app.get("/modules/check/{module_id}")
 def check_single_module(module_id: str):
     """Verificar un módulo específico"""
+    log_to_bitacora(f"Verificando módulo: {module_id}", "info", "modules")
     if module_id not in HUMANOID_MODULES:
+        log_to_bitacora(f"Módulo no existe: {module_id}", "error", "modules")
         return {"ok": False, "error": f"Módulo {module_id} no existe"}
     result = check_module(module_id)
+    log_to_bitacora(f"Módulo {module_id}: {result['status']}", "success" if result["status"] == "ok" else "error", "modules")
     return {"ok": result["status"] == "ok", **result}
 
 @app.get("/modules/check-all")
@@ -178,7 +270,9 @@ def check_all_modules():
 @app.post("/modules/reconnect/{module_id}")
 def reconnect_module(module_id: str):
     """Intentar reconectar un módulo"""
+    log_to_bitacora(f"Reconectando módulo: {module_id}", "info", "modules")
     if module_id not in HUMANOID_MODULES:
+        log_to_bitacora(f"Módulo no existe: {module_id}", "error", "modules")
         return {"ok": False, "error": f"Módulo {module_id} no existe"}
     
     # Forzar reimportación
@@ -192,8 +286,10 @@ def reconnect_module(module_id: str):
         
         # Actualizar cache
         _modules_cache[module_id] = check_module(module_id)
+        log_to_bitacora(f"Módulo {module_id} reconectado exitosamente", "success", "modules")
         return {"ok": True, "message": f"Módulo {module_id} reconectado"}
     except Exception as e:
+        log_to_bitacora(f"Error reconectando {module_id}: {e}", "error", "modules")
         return {"ok": False, "error": str(e)}
 
 # ═══════════════════════════════════════════════════════════════
@@ -238,6 +334,7 @@ _nervous_state = {
 def nervous_status():
     """Estado del sistema nervioso"""
     import random
+    log_to_bitacora("Consultando estado del sistema nervioso", "info", "nervous")
     
     # Actualizar señales dinámicamente
     _nervous_state["signals_per_min"] += random.randint(1, 5)
@@ -312,20 +409,24 @@ def get_nervous_node(node_id: str):
 def simulate_stress():
     """Simular respuesta de estrés"""
     global _nervous_state
+    log_to_bitacora("⚡ Simulación de estrés iniciada", "warning", "nervous")
     _nervous_state["mode"] = "stress"
     _nervous_state["heartbeat"] = 110
     _nervous_state["nodes"]["simpatico"]["load"] = 90
     _nervous_state["nodes"]["cardiaco"]["load"] = 85
+    log_to_bitacora("Sistema simpático activado - BPM: 110", "warning", "nervous")
     return {"ok": True, "mode": "stress", "message": "Sistema simpático activado"}
 
 @app.post("/nervous/simulate/calm")
 def simulate_calm():
     """Activar sistema parasimpático para calmar"""
     global _nervous_state
+    log_to_bitacora("🧘 Activando sistema parasimpático", "info", "nervous")
     _nervous_state["mode"] = "calm"
     _nervous_state["heartbeat"] = 65
     _nervous_state["nodes"]["parasimpatico"]["load"] = 80
     _nervous_state["nodes"]["simpatico"]["load"] = 15
+    log_to_bitacora("Sistema normalizado - BPM: 65", "success", "nervous")
     return {"ok": True, "mode": "calm", "message": "Sistema parasimpático activado"}
 
 @app.post("/nervous/reset")
@@ -457,11 +558,13 @@ def scan_cameras():
 @app.get("/vision/capture/{camera_id}")
 def capture_frame(camera_id: int):
     """Capturar frame de una cámara"""
+    log_to_bitacora(f"Capturando frame de cámara {camera_id}", "info", "vision")
     try:
         import cv2
         import base64
         cap = cv2.VideoCapture(camera_id)
         if not cap.isOpened():
+            log_to_bitacora(f"Cámara {camera_id} no disponible", "error", "vision")
             return {"ok": False, "error": f"Cámara {camera_id} no disponible"}
         
         ret, frame = cap.read()
@@ -722,7 +825,7 @@ def get_version():
     """Return current version for update checks"""
     return {
         "ok": True,
-        "version": "3.5.0",
+        "version": "3.7.0",
         "build_date": "2026-02-16",
         "name": "ATLAS Dashboard"
     }
