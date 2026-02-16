@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ATLAS Dashboard v3.3.0</title>
+  <title>ATLAS Dashboard v3.4.0</title>
   <style>
     /* === THEME: Default (Cyan) === */
     :root, [data-theme="cyan"] {
@@ -852,7 +852,7 @@
       <!-- Botón Actualizar -->
       <button class="btn-update" id="btn-check-update" onclick="checkForUpdates()" title="Buscar actualizaciones">🔄 Actualizar</button>
       <!-- Badge de versión -->
-      <div class="version-badge" id="version-badge">v3.3.0</div>
+      <div class="version-badge" id="version-badge">v3.4.0</div>
       <div class="status-indicator">
         <div class="status-dot" id="cerebro-dot"></div>
         <span>Cerebro</span>
@@ -1305,14 +1305,14 @@
 
   <!-- VERSION FOOTER -->
   <div class="version-footer">
-    <span>ATLAS</span> v3.3.0 | 2026-02-16
+    <span>ATLAS</span> v3.4.0 | 2026-02-16
   </div>
 
   <script>
     // ═══════════════════════════════════════════════════════════════
     // ATLAS Dashboard v3.0.0 - JavaScript
     // ═══════════════════════════════════════════════════════════════
-    const ATLAS_VERSION = '3.3.0';
+    const ATLAS_VERSION = '3.4.0';
     const ATLAS_BUILD_DATE = '2026-02-16';
     const API_BASE = window.location.origin;
 
@@ -1343,12 +1343,42 @@
     // Initialize
     document.addEventListener('DOMContentLoaded', () => {
       initTabs();
+      initThemeSelector();
       renderModules();
       updateTime();
       setInterval(updateTime, 1000);
       loadInitialData();
       addActivity('Dashboard iniciado', 'success');
     });
+    
+    // Theme selector
+    function initThemeSelector() {
+      // Cargar tema guardado
+      const savedTheme = localStorage.getItem('atlas-theme') || 'cyan';
+      setTheme(savedTheme);
+      
+      // Event listeners para botones de tema
+      document.querySelectorAll('.theme-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const theme = btn.getAttribute('data-theme');
+          setTheme(theme);
+          localStorage.setItem('atlas-theme', theme);
+          addActivity(`Tema cambiado: ${theme}`, 'info');
+        });
+      });
+    }
+    
+    function setTheme(themeName) {
+      document.documentElement.setAttribute('data-theme', themeName);
+      
+      // Actualizar botón activo
+      document.querySelectorAll('.theme-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.getAttribute('data-theme') === themeName) {
+          btn.classList.add('active');
+        }
+      });
+    }
 
     // Tab navigation
     function initTabs() {
@@ -1365,23 +1395,78 @@
 
     // Render modules list (Sistema Nervioso style)
     function renderModules() {
-      const list = document.getElementById('modules-list');
-      if (list) {
-        list.innerHTML = MODULES.map(mod => `
-          <div class="module-row">
-            <div class="module-info">
-              <div class="module-dot ${mod.status === 'ok' ? '' : 'error'}"></div>
-              <span class="module-name-text">${mod.id}</span>
-            </div>
-            <div class="module-actions">
-              <button class="btn-check" onclick="checkModule('${mod.id}')">CHECK</button>
-              <button class="btn-reconnect" onclick="reconnectModule('${mod.id}')">RECONECTAR</button>
-            </div>
+      const grid = document.getElementById('modules-grid');
+      if (grid) {
+        grid.innerHTML = MODULES.map(mod => `
+          <div class="module-tile ${mod.status === 'ok' ? 'connected' : 'error'}" 
+               onclick="toggleModuleActions('${mod.id}')" 
+               id="tile-${mod.id}">
+            <span class="module-emoji">${mod.icon}</span>
+            <div class="module-tile-name">${mod.name}</div>
+            <div class="module-tile-status">${mod.status === 'ok' ? 'Conectado' : 'Error'}</div>
           </div>
         `).join('');
       }
       updateModuleCounter();
       updateSystemBadge();
+    }
+    
+    function toggleModuleActions(moduleId) {
+      const mod = MODULES.find(m => m.id === moduleId);
+      if (!mod) return;
+      
+      // Crear menú contextual
+      const existing = document.getElementById('module-context-menu');
+      if (existing) existing.remove();
+      
+      const tile = document.getElementById(`tile-${moduleId}`);
+      const rect = tile.getBoundingClientRect();
+      
+      const menu = document.createElement('div');
+      menu.id = 'module-context-menu';
+      menu.style.cssText = `
+        position: fixed;
+        top: ${rect.bottom + 8}px;
+        left: ${rect.left}px;
+        background: var(--bg-card);
+        border: 1px solid var(--accent-cyan);
+        border-radius: 8px;
+        padding: 0.5rem;
+        z-index: 1000;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        min-width: 150px;
+      `;
+      menu.innerHTML = `
+        <div style="padding: 0.5rem; font-weight: 600; border-bottom: 1px solid var(--border); margin-bottom: 0.5rem;">
+          ${mod.icon} ${mod.name}
+        </div>
+        <button class="btn btn-primary" style="width: 100%; margin-bottom: 0.5rem; font-size: 0.8rem;" onclick="checkModule('${moduleId}'); closeModuleMenu();">
+          🔍 Check
+        </button>
+        <button class="btn btn-secondary" style="width: 100%; font-size: 0.8rem;" onclick="reconnectModule('${moduleId}'); closeModuleMenu();">
+          🔄 Reconectar
+        </button>
+      `;
+      
+      document.body.appendChild(menu);
+      
+      // Cerrar al hacer click fuera
+      setTimeout(() => {
+        document.addEventListener('click', closeModuleMenuOnOutside);
+      }, 100);
+    }
+    
+    function closeModuleMenu() {
+      const menu = document.getElementById('module-context-menu');
+      if (menu) menu.remove();
+      document.removeEventListener('click', closeModuleMenuOnOutside);
+    }
+    
+    function closeModuleMenuOnOutside(e) {
+      const menu = document.getElementById('module-context-menu');
+      if (menu && !menu.contains(e.target) && !e.target.closest('.module-tile')) {
+        closeModuleMenu();
+      }
     }
 
     function updateSystemBadge() {
