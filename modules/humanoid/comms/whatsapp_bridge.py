@@ -74,8 +74,10 @@ class WAHAProvider:
     WAHA es un servidor Docker que expone la API de WhatsApp Web.
     Requiere escanear código QR una vez para autenticar.
     
-    Instalación:
-        docker run -d -p 3000:3000 --name waha devlikeapro/waha
+    Instalación (sin autenticación para desarrollo):
+        docker run -d -p 3000:3000 --name waha \\
+            -e WHATSAPP_API_KEY=atlas123 \\
+            devlikeapro/waha
     
     Luego visita http://localhost:3000 para escanear el QR.
     """
@@ -83,6 +85,14 @@ class WAHAProvider:
     def __init__(self):
         self.api_url = _get("WAHA_API_URL", "http://localhost:3000")
         self.session = _get("WAHA_SESSION", "default")
+        self.api_key = _get("WAHA_API_KEY", "")
+    
+    def _headers(self) -> Dict[str, str]:
+        """Obtiene los headers para las peticiones."""
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["X-Api-Key"] = self.api_key
+        return headers
     
     def is_configured(self) -> bool:
         """Verifica si WAHA está configurado."""
@@ -92,7 +102,7 @@ class WAHAProvider:
         """Obtiene el estado de la sesión WAHA."""
         try:
             url = f"{self.api_url}/api/sessions/{self.session}"
-            req = urllib.request.Request(url, method="GET")
+            req = urllib.request.Request(url, method="GET", headers=self._headers())
             with urllib.request.urlopen(req, timeout=5) as r:
                 data = json.loads(r.read().decode())
             return {
@@ -104,6 +114,9 @@ class WAHAProvider:
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 return {"ok": False, "status": "not_found", "authenticated": False}
+            if e.code == 401:
+                return {"ok": False, "status": "unauthorized", "authenticated": False, 
+                        "hint": "Configura WAHA_API_KEY o reinicia WAHA sin autenticación"}
             return {"ok": False, "error": f"HTTP {e.code}", "authenticated": False}
         except Exception as e:
             return {"ok": False, "error": str(e), "authenticated": False}
@@ -116,11 +129,16 @@ class WAHAProvider:
                 url,
                 data=json.dumps({}).encode(),
                 method="POST",
-                headers={"Content-Type": "application/json"},
+                headers=self._headers(),
             )
             with urllib.request.urlopen(req, timeout=10) as r:
                 data = json.loads(r.read().decode())
             return {"ok": True, "data": data}
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                return {"ok": False, "error": "unauthorized", 
+                        "hint": "Configura WAHA_API_KEY"}
+            return {"ok": False, "error": f"HTTP {e.code}"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
     
@@ -128,7 +146,7 @@ class WAHAProvider:
         """Obtiene el código QR para autenticar."""
         try:
             url = f"{self.api_url}/api/sessions/{self.session}/auth/qr"
-            req = urllib.request.Request(url, method="GET")
+            req = urllib.request.Request(url, method="GET", headers=self._headers())
             with urllib.request.urlopen(req, timeout=10) as r:
                 data = json.loads(r.read().decode())
             return {
@@ -136,6 +154,10 @@ class WAHAProvider:
                 "qr": data.get("value"),
                 "format": data.get("format", "image"),
             }
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                return {"ok": False, "error": "unauthorized"}
+            return {"ok": False, "error": f"HTTP {e.code}"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
     
@@ -156,7 +178,7 @@ class WAHAProvider:
                 url,
                 data=json.dumps(payload).encode(),
                 method="POST",
-                headers={"Content-Type": "application/json"},
+                headers=self._headers(),
             )
             with urllib.request.urlopen(req, timeout=15) as r:
                 data = json.loads(r.read().decode())
@@ -167,6 +189,8 @@ class WAHAProvider:
             }
         except urllib.error.HTTPError as e:
             body = e.read().decode() if e.fp else ""
+            if e.code == 401:
+                return {"ok": False, "error": "unauthorized", "hint": "Configura WAHA_API_KEY"}
             return {"ok": False, "error": f"HTTP {e.code}: {body[:200]}"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -188,7 +212,7 @@ class WAHAProvider:
                 url,
                 data=json.dumps(payload).encode(),
                 method="POST",
-                headers={"Content-Type": "application/json"},
+                headers=self._headers(),
             )
             with urllib.request.urlopen(req, timeout=30) as r:
                 data = json.loads(r.read().decode())
