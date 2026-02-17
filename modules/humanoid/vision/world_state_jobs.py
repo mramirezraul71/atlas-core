@@ -14,7 +14,8 @@ def _sched_enabled() -> bool:
 
 
 def _world_state_enabled() -> bool:
-    return os.getenv("WORLD_STATE_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
+    # Desactivado por defecto - solo ejecución interna sin notificaciones
+    return os.getenv("WORLD_STATE_ENABLED", "false").strip().lower() in ("1", "true", "yes", "y", "on")
 
 
 def _interval_seconds() -> int:

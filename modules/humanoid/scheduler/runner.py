@@ -138,22 +138,14 @@ def _run_update_check(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _run_world_state_tick(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Captura WorldState y emite evento OPS best-effort."""
+    """Captura WorldState internamente (sin emitir a canales externos)."""
     try:
         from modules.humanoid.vision.world_state import capture_world_state
-        from modules.humanoid.comms.ops_bus import emit as ops_emit
 
         include_items = bool((payload or {}).get("include_ocr_items", False))
         use_llm = bool((payload or {}).get("use_llm_vision", False))
         ws = capture_world_state(include_ocr_items=include_items, use_llm_vision=use_llm)
-        if ws.get("ok"):
-            # Mensaje corto: no spamear el canal
-            ops_emit(
-                "vision",
-                "WorldState actualizado (visión + OCR).",
-                level="low",
-                data={"source": ws.get("source"), "eye": ws.get("eye"), "cam_id": ws.get("cam_id")},
-            )
+        # Solo log interno, sin notificaciones externas
         return {"ok": True, "world_state_ok": bool(ws.get("ok")), "source": ws.get("source"), "error": ws.get("error")}
     except Exception as e:
         return {"ok": False, "error": str(e)}
