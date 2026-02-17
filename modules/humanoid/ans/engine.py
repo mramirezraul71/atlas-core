@@ -7,7 +7,21 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-SAFE_HEALS = {"clear_stale_locks", "restart_scheduler", "fallback_models", "tune_router", "rotate_logs", "retry_gateway_bootstrap", "mark_node_offline", "regenerate_support_bundle", "install_optional_deps", "install_tesseract"}
+# Heals que Atlas puede ejecutar automáticamente sin supervisión
+SAFE_HEALS = {
+    # Básicos
+    "clear_stale_locks", "restart_scheduler", "rotate_logs",
+    # Modelos/Router
+    "fallback_models", "tune_router",
+    # Servicios
+    "restart_nexus_services", "restart_camera_service", "restart_robot_backend",
+    # Infraestructura
+    "retry_gateway_bootstrap", "mark_node_offline", "regenerate_support_bundle",
+    # Dependencias
+    "install_optional_deps", "install_tesseract",
+    # Docker/WAHA
+    "restart_waha", "restart_docker_container",
+}
 
 # Mapeo check→heal por defecto cuando suggested_heals está vacío (evita "0 actions" con issues)
 CHECK_DEFAULT_HEALS: Dict[str, List[str]] = {
@@ -15,6 +29,11 @@ CHECK_DEFAULT_HEALS: Dict[str, List[str]] = {
     "deploy_health": ["restart_scheduler"],
     "ui_health": ["clear_stale_locks"],
     "router_health": ["fallback_models", "tune_router"],
+    # Servicios NEXUS/Robot
+    "nexus_services_health": ["restart_nexus_services"],
+    "robot_camera_health": ["restart_nexus_services", "restart_camera_service"],
+    "nervous_health": ["restart_nexus_services"],
+    "camera_service": ["restart_nexus_services"],
 }
 
 
