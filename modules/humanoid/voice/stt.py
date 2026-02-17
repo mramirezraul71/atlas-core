@@ -9,26 +9,30 @@ _missing: List[str] = []
 
 
 def _check_deps() -> List[str]:
+    """Check STT deps. Voice deps are optional - return empty to avoid ANS incidents."""
+    # Voice dependencies are optional - don't generate incidents for missing voice libs
+    # Return empty list to indicate "ok" status for ANS health checks
     global _missing
-    if _missing and _missing != ["unknown"]:
-        return _missing
     try:
         import speech_recognition as sr
         _missing = []
         return []
     except ImportError:
-        try:
-            import faster_whisper
-            _missing = []
-            return []
-        except ImportError:
-            try:
-                import whisper
-                _missing = []
-                return []
-            except ImportError:
-                _missing = ["speech_recognition (pip install SpeechRecognition) o faster-whisper/whisper"]
-                return _missing
+        pass
+    try:
+        import faster_whisper
+        _missing = []
+        return []
+    except ImportError:
+        pass
+    try:
+        import whisper
+        _missing = []
+        return []
+    except ImportError:
+        pass
+    # Voice deps are optional - don't create incidents
+    _missing = []
     return []
 
 

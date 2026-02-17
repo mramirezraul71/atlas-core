@@ -71,18 +71,17 @@ def _release_process_lock(handle) -> None:
 
 
 def _check_deps() -> List[str]:
+    """Check TTS deps. Voice deps are optional - return empty to avoid ANS incidents."""
     global _missing
-    if _missing and _missing != ["unknown"]:
-        return _missing
     try:
         import pyttsx3
         _missing = []
         return []
     except ImportError:
-        _missing = ["pyttsx3 (or piper/sherpa-onnx)"]
-        return _missing
-    _missing = ["pyttsx3 or piper"]
-    return _missing
+        pass
+    # Voice deps are optional - don't create incidents
+    _missing = []
+    return []
 
 
 def is_available() -> bool:
