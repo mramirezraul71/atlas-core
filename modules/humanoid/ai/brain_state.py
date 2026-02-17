@@ -87,23 +87,101 @@ def _save(state: Dict[str, Any]) -> None:
 
 
 def get_brain_state() -> Dict[str, Any]:
-    """Estado actual: mode (auto|manual), override_model (full_key o null)."""
+    """Estado actual completo del cerebro."""
     return dict(_load())
 
 
-def set_brain_state(mode: Optional[str] = None, override_model: Optional[str] = None) -> Dict[str, Any]:
-    """Actualiza modo y/o modelo. mode: 'auto' | 'manual'. override_model: full_key (ej. ollama:llama3.1:latest) o null."""
+def set_brain_state(
+    mode: Optional[str] = None,
+    override_model: Optional[str] = None,
+    auto_route: Optional[bool] = None,
+    specialists: Optional[Dict[str, str]] = None,
+    parameters: Optional[Dict[str, Any]] = None,
+    features: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Actualiza configuración del cerebro.
+    
+    Args:
+        mode: 'auto' | 'manual'
+        override_model: full_key (ej. ollama:llama3.1:latest) o null
+        auto_route: True para enrutamiento inteligente automático
+        specialists: dict de task_type -> model_key
+        parameters: dict de parámetros de generación
+        features: dict de características habilitadas
+    """
     state = _load()
+    
+    # Mode
     if mode is not None and isinstance(mode, str):
         state["mode"] = "manual" if mode.strip().lower() == "manual" else "auto"
+    
+    # Override model
     if override_model is not None and isinstance(override_model, str):
         state["override_model"] = override_model.strip() or None
+    
+    # En modo auto, no hay override
     if state.get("mode") == "auto":
         state["override_model"] = None
+    
+    # Auto route
+    if auto_route is not None:
+        state["auto_route"] = bool(auto_route)
+    
+    # Specialists
+    if specialists is not None and isinstance(specialists, dict):
+        if "specialists" not in state:
+            state["specialists"] = {}
+        state["specialists"].update(specialists)
+    
+    # Parameters
+    if parameters is not None and isinstance(parameters, dict):
+        if "parameters" not in state:
+            state["parameters"] = {}
+        state["parameters"].update(parameters)
+    
+    # Features
+    if features is not None and isinstance(features, dict):
+        if "features" not in state:
+            state["features"] = {}
+        state["features"].update(features)
+    
     _save(state)
     global _BRAIN_STATE
     _BRAIN_STATE = state
     return get_brain_state()
+
+
+def set_full_auto_mode() -> Dict[str, Any]:
+    """Configura el sistema en modo full automático con todos los especialistas."""
+    return set_brain_state(
+        mode="auto",
+        auto_route=True,
+        features={
+            "auto_fallback": True,
+            "context_memory": "long_term",
+            "specialist_routing": True,
+        },
+    )
+
+
+def get_specialist_model(task_type: str) -> Optional[str]:
+    """Obtiene el modelo asignado para un tipo de tarea."""
+    state = _load()
+    specialists = state.get("specialists", {})
+    return specialists.get(task_type)
+
+
+def get_parameters() -> Dict[str, Any]:
+    """Obtiene parámetros de generación actuales."""
+    state = _load()
+    return state.get("parameters", DEFAULT_STATE["parameters"])
+
+
+def is_auto_route_enabled() -> bool:
+    """True si el enrutamiento automático está habilitado."""
+    state = _load()
+    return state.get("auto_route", True) and state.get("mode") == "auto"
 
 
 def get_override_model_for_router() -> Optional[str]:
