@@ -68,6 +68,12 @@ def create_api(nexus_engine) -> FastAPI:
     """Create FastAPI application"""
     app = FastAPI(title="ATLAS NEXUS API", version="1.0.0")
     
+    # Health endpoint PRIMERO (para heartbeat desde CEREBRO)
+    @app.get("/health")
+    async def health():
+        """Health check para CEREBRO (ATLAS_PUSH) heartbeat."""
+        return {"status": "healthy", "service": "ATLAS NEXUS", "ok": True}
+    
     # Importar y registrar router de directivas
     try:
         from directives.directives_api import register_directives_api
@@ -103,11 +109,6 @@ def create_api(nexus_engine) -> FastAPI:
     @app.get("/")
     async def root():
         return {"service": "ATLAS NEXUS", "status": "operational", "dashboard": "/dashboard"}
-
-    @app.get("/health")
-    async def health():
-        """Health para CEREBRO (ATLAS_PUSH) heartbeat en puerto 8000."""
-        return {"status": "healthy", "service": "ATLAS NEXUS"}
 
     @app.get("/dashboard")
     async def serve_dashboard():
