@@ -14,10 +14,52 @@ import re
 import time
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+
+def _load_env_file() -> None:
+    """Carga variables de entorno desde config/atlas.env si existen."""
+    # Buscar archivo .env
+    root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT")
+    if not root:
+        # Detectar root del proyecto
+        current = Path(__file__).resolve()
+        for _ in range(5):
+            current = current.parent
+            if (current / "config" / "atlas.env").exists():
+                root = str(current)
+                break
+    
+    if not root:
+        return
+    
+    env_file = Path(root) / "config" / "atlas.env"
+    if not env_file.exists():
+        return
+    
+    try:
+        with open(env_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    key = key.strip()
+                    value = value.strip()
+                    # Solo setear si no existe ya
+                    if key and not os.getenv(key):
+                        os.environ[key] = value
+    except Exception as e:
+        logger.debug(f"Could not load env file: {e}")
+
+
+# Cargar env al importar el módulo
+_load_env_file()
 
 
 class TaskType(Enum):
@@ -68,43 +110,57 @@ class AutoRouter:
     3. Historial de rendimiento
     """
     
-    # Patrones para detectar tipo de tarea
+    # Patrones para detectar tipo de tarea (mayor peso = más específico)
     PATTERNS = {
         TaskType.CODE: [
-            r'\b(code|código|programa|function|función|class|clase|def |import |from |async |await )\b',
-            r'\b(python|javascript|typescript|java|c\+\+|rust|go|sql)\b',
-            r'\b(error|bug|fix|debug|refactor|implement|implementa)\b',
-            r'```\w*\n',  # Code blocks
+            # Comandos directos de código (peso alto)
+            r'\b(escribe|write|crea|create|haz|make)\s+(una?\s+)?(función|function|código|code|programa|program|script|clase|class)\b',
+            r'\b(funcion|function|codigo|code|script|clase|class)\s+(que|para|en|in)\b',
+            # Lenguajes de programación
+            r'\b(python|javascript|typescript|java|c\+\+|rust|go|sql|html|css|react|vue|angular)\b',
+            # Símbolos de código
+            r'(def\s|class\s|import\s|from\s|async\s|await\s|return\s|if\s|for\s|while\s)',
+            # Code blocks
+            r'```',
+            # Debugging/fixing
+            r'\b(error|bug|fix|arregla|debug|depura|corrige)\b',
+            # Implementación
+            r'\b(implement|implementa|programa|desarrolla|develop)\b',
         ],
         TaskType.REASON: [
-            r'\b(why|por qué|explain|explica|analyze|analiza|reason|razon)\b',
-            r'\b(step by step|paso a paso|think|piensa|consider|considera)\b',
-            r'\b(compare|compara|evaluate|evalua|pros and cons)\b',
+            r'\b(why|por\s+qu[eé]|explain|explica|analyze|analiza|reason|raz[oó]n)\b',
+            r'\b(step\s+by\s+step|paso\s+a\s+paso|think|piensa|consider|considera)\b',
+            r'\b(compare|compara|evaluate|eval[uú]a|pros\s+and\s+cons|ventajas|desventajas)\b',
+            r'\b(how\s+does|c[oó]mo\s+funciona|what\s+happens|qu[eé]\s+pasa)\b',
         ],
         TaskType.VISION: [
-            r'\b(image|imagen|photo|foto|picture|see|ver|look|mira|visual)\b',
-            r'\b(describe|describe|what is in|qué hay en|show|muestra)\b',
+            r'\b(image|imagen|photo|foto|picture|visual|screenshot|captura)\b',
+            r'\b(see|ver|look|mira|observe|observa|watch)\b',
+            r'\b(what\s+is\s+in|qu[eé]\s+hay\s+en|describe\s+this|describe\s+esto)\b',
         ],
         TaskType.ARCHITECT: [
-            r'\b(architecture|arquitectura|design|diseño|system|sistema|structure|estructura)\b',
-            r'\b(pattern|patrón|module|módulo|component|componente|service|servicio)\b',
-            r'\b(scalable|escalable|distributed|distribuido|microservice)\b',
+            r'\b(architecture|arquitectura|design|dise[ñn]o|system\s+design|dise[ñn]o\s+de\s+sistema)\b',
+            r'\b(pattern|patr[oó]n|module|m[oó]dulo|component|componente|service|servicio)\b',
+            r'\b(scalable|escalable|distributed|distribuido|microservice|microservicio)\b',
+            r'\b(database\s+design|dise[ñn]o\s+de\s+base|api\s+design|dise[ñn]o\s+de\s+api)\b',
         ],
         TaskType.OPTIMIZER: [
-            r'\b(optimize|optimiza|improve|mejora|faster|más rápido|efficient|eficiente)\b',
-            r'\b(performance|rendimiento|speed|velocidad|memory|memoria)\b',
-            r'\b(refactor|reduce|complexity|complejidad)\b',
+            r'\b(optimize|optimiza|improve|mejora|faster|m[aá]s\s+r[aá]pido|efficient|eficiente)\b',
+            r'\b(performance|rendimiento|speed|velocidad|memory|memoria|cpu|ram)\b',
+            r'\b(reduce|complexity|complejidad|simplify|simplifica|clean|limpia)\b',
         ],
         TaskType.CREATIVE: [
-            r'\b(create|crea|generate|genera|write|escribe|story|historia|poem|poema)\b',
-            r'\b(creative|creativo|imagine|imagina|invent|inventa)\b',
+            r'\b(story|historia|poem|poema|novel|novela|tale|cuento)\b',
+            r'\b(creative|creativo|imagine|imagina|invent|inventa|fiction|ficci[oó]n)\b',
+            r'\b(write\s+a\s+story|escribe\s+una\s+historia|create\s+a\s+poem|crea\s+un\s+poema)\b',
         ],
         TaskType.ANALYSIS: [
-            r'\b(analyze|analiza|data|datos|statistics|estadísticas|trend|tendencia)\b',
-            r'\b(report|reporte|summary|resumen|insight|findings)\b',
+            r'\b(analyze|analiza|data|datos|statistics|estad[ií]sticas|trend|tendencia)\b',
+            r'\b(report|reporte|summary|resumen|insight|findings|m[eé]tricas|metrics)\b',
+            r'\b(chart|gr[aá]fico|plot|visualize|visualiza)\b',
         ],
         TaskType.TOOLS: [
-            r'\b(tool|herramienta|function call|llamada de función|api|execute|ejecuta)\b',
+            r'\b(tool|herramienta|function\s+call|llamada\s+de\s+funci[oó]n|api\s+call)\b',
             r'\b(search|busca|fetch|download|descarga|send|envía)\b',
         ],
     }
