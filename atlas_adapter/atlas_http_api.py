@@ -3796,6 +3796,12 @@ try:
 except ImportError:
     quality_router = None
 
+# Cognitive Architecture API
+try:
+    from modules.humanoid.cognitive.api import router as cognitive_router
+except ImportError:
+    cognitive_router = None
+
 app.include_router(humanoid_router)
 app.include_router(ga_router)
 app.include_router(metalearn_router)
@@ -3804,6 +3810,8 @@ app.include_router(governance_router)
 app.include_router(nervous_router)
 if quality_router:
     app.include_router(quality_router)
+if cognitive_router:
+    app.include_router(cognitive_router)
 
 # ATLAS AUTONOMOUS (health, healing, evolution, telemetry, resilience, learning)
 try:
