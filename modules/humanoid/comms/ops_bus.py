@@ -251,8 +251,8 @@ def emit(
     _RECENT.append(ev)
     _append_log(f"{ev['ts']} [{ev['level']}] {ev['subsystem']}: {ev['message']}")
 
-    # Audio PC
-    if _bool("OPS_AUDIO_ENABLED", True):
+    # Audio PC - Solo para niveles med, high, critical (evitar spam de eventos rutinarios)
+    if _bool("OPS_AUDIO_ENABLED", True) and lvl in ("med", "high", "critical"):
         try:
             from modules.humanoid.voice.tts import speak
 
@@ -271,7 +271,8 @@ def emit(
             pass
 
     # Telegram (mensaje + evidencia si hay)
-    if _bool("OPS_TELEGRAM_ENABLED", True):
+    # Solo enviar a Telegram si el nivel es med, high o critical (evitar spam de info/low)
+    if _bool("OPS_TELEGRAM_ENABLED", True) and lvl in ("med", "high", "critical"):
         chat_id = _telegram_chat_id()
         if chat_id:
             try:
@@ -287,8 +288,9 @@ def emit(
             except Exception:
                 pass
 
-    # WhatsApp (Twilio opcional)
-    if _bool("OPS_WHATSAPP_ENABLED", False):
+    # WhatsApp (Twilio opcional) - Solo para niveles altos
+    # WhatsApp se reserva para alertas críticas únicamente
+    if _bool("OPS_WHATSAPP_ENABLED", False) and lvl in ("high", "critical"):
         try:
             from modules.humanoid.comms.whatsapp_bridge import send_text
 
