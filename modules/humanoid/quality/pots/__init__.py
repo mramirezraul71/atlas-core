@@ -37,6 +37,7 @@ from . import diagnostic_full
 
 # === NOTIFICATIONS / COMMUNICATION ===
 from . import notification_broadcast
+from . import comms_management
 
 # === SESSION MANAGEMENT ===
 from . import session_startup
@@ -88,8 +89,9 @@ _POT_MODULES: Dict[str, Callable] = {
     # Diagnostics
     "diagnostic_full": diagnostic_full.get_pot,
     
-    # Notifications
+    # Notifications / Communications
     "notification_broadcast": notification_broadcast.get_pot,
+    "comms_management": comms_management.get_pot,
     
     # Session
     "session_startup": session_startup.get_pot,
