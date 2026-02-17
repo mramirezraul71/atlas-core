@@ -149,7 +149,7 @@ def eyes_capture(
                         set_setting("vision.active_eye_failures", "0")
                         try:
                             from modules.humanoid.comms.ops_bus import emit
-                            emit("vision", "El ojo activo no respondio. Cambio automatico al ojo principal.", level="med", data={"cam_id": cam_id})
+                            emit("vision", "El ojo activo no respondio. Cambio automatico al ojo principal.", level="low", data={"cam_id": cam_id})
                         except Exception:
                             pass
                 except Exception:

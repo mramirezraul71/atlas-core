@@ -111,7 +111,7 @@ def _run() -> None:
                     try:
                         from modules.humanoid.comms.ops_bus import emit
 
-                        emit("vision", f"Movimiento detectado. Ojo activo -> {cid}", level="med", data={"cam_id": cid})
+                        emit("vision", f"Movimiento detectado. Ojo activo -> {cid}", level="low", data={"cam_id": cid})
                     except Exception:
                         pass
 
