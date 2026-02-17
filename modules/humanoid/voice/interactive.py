@@ -338,16 +338,19 @@ class VoiceAssistant:
             except Exception:
                 pass
         
-        # Indicador visual en consola
+        # Indicador visual en consola (sin emojis para compatibilidad Windows)
         icons = {
-            AssistantState.IDLE: "💤",
-            AssistantState.LISTENING: "👂",
-            AssistantState.THINKING: "🧠",
-            AssistantState.SPEAKING: "🔊",
-            AssistantState.ERROR: "❌",
+            AssistantState.IDLE: "[...]",
+            AssistantState.LISTENING: "[OIR]",
+            AssistantState.THINKING: "[CPU]",
+            AssistantState.SPEAKING: "[VOZ]",
+            AssistantState.ERROR: "[ERR]",
         }
         icon = icons.get(state, "")
-        print(f"\r{icon} [{state.value.upper()}] {info[:60]:<60}", end="", flush=True)
+        try:
+            print(f"\r{icon} [{state.value.upper()}] {info[:60]:<60}", end="", flush=True)
+        except Exception:
+            pass
     
     def _is_wake_word(self, text: str) -> bool:
         """Detecta si el texto contiene la wake word."""
@@ -384,11 +387,11 @@ class VoiceAssistant:
         
         self._running = True
         print("\n" + "=" * 60)
-        print("🤖 ATLAS Voice Assistant - Iniciado")
+        print("ATLAS Voice Assistant - Iniciado")
         print("=" * 60)
         print(f"   Wake word: 'Atlas'")
         print(f"   Idioma: {self.config.language}")
-        print(f"   Para salir: Ctrl+C o di 'Atlas, apágate'")
+        print(f"   Para salir: Ctrl+C o di 'Atlas, apagate'")
         print("=" * 60 + "\n")
         
         # Saludo inicial
@@ -398,7 +401,7 @@ class VoiceAssistant:
             while self._running:
                 self._loop_iteration()
         except KeyboardInterrupt:
-            print("\n\n👋 Asistente detenido por usuario")
+            print("\n\nAsistente detenido por usuario")
         finally:
             self._running = False
             self._tts.speak("Hasta luego.")
