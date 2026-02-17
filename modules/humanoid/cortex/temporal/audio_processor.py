@@ -180,15 +180,19 @@ class AudioProcessor:
         self._current_utterance_start = 0
     
     def _load_asr(self) -> None:
-        """Carga modelo ASR de forma lazy."""
+        """Carga modelo ASR de forma lazy con CUDA si disponible."""
         if self._asr is not None:
             return
         
         try:
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            
             # Intentar cargar Whisper
             import whisper
-            self._asr = whisper.load_model(self.asr_model.replace("whisper-", ""))
-            logger.info(f"Loaded Whisper model: {self.asr_model}")
+            model_name = self.asr_model.replace("whisper-", "")
+            self._asr = whisper.load_model(model_name, device=device)
+            logger.info(f"Loaded Whisper model '{model_name}' on {device}")
         except ImportError:
             logger.warning("Whisper not available, using mock ASR")
             self._asr = "mock"
