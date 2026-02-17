@@ -3567,6 +3567,47 @@
       lastUpdate: null
     };
 
+    // Actualización silenciosa (auto-refresh, sin logs)
+    async function refreshCognitiveSilent() {
+      try {
+        const res = await fetch(`${API_BASE}/cognitive/status`);
+        const data = await res.json();
+        
+        if (data.ok !== false) {
+          // Actualizar stats principales
+          document.getElementById('nervous-signals').textContent = data.signals_per_minute || 0;
+          document.getElementById('nervous-latency').textContent = data.avg_latency_ms?.toFixed(1) || '0.0';
+          document.getElementById('nervous-uptime').textContent = ((data.uptime_seconds || 0) / 3600).toFixed(1) + 'h';
+          document.getElementById('nervous-goals').textContent = data.active_goals || 0;
+          document.getElementById('nervous-memory').textContent = data.memory_episodes || 0;
+          
+          // Actualizar estado de módulos del Cortex
+          updateCortexModules(data.cortex || {});
+          
+          // Actualizar señales de módulos
+          updateCognitiveSignals(data);
+          
+          // Actualizar estado de nodos
+          updateNodeStatus('limbic', data.limbic);
+          updateNodeStatus('hippo', data.hippo);
+          updateNodeStatus('brainstem', data.brainstem);
+          updateNodeStatus('basal', data.basal);
+          updateNodeStatus('motor', data.motor);
+          updateNodeStatus('medulla', data.medulla);
+          updateNodeStatus('learning', data.learning);
+          
+          cognitiveState.lastUpdate = Date.now();
+          document.getElementById('nervous-main-status').textContent = 'OPERATIVO';
+          document.getElementById('nervous-main-status').className = 'status-badge';
+        }
+      } catch (e) {
+        // Error silencioso - solo actualizar status visual
+        document.getElementById('nervous-main-status').textContent = 'ERROR';
+        document.getElementById('nervous-main-status').className = 'status-badge warning';
+      }
+    }
+
+    // Actualización manual (con logs para el usuario)
     async function refreshCognitive() {
       addNervousLog('Actualizando arquitectura cognitiva...', 'info');
       addActivity('Actualizando sistema cognitivo...', 'info');
@@ -3859,13 +3900,13 @@
       }
     }
 
-    // Auto-refresh cognitive status every 5 seconds when tab is visible
+    // Auto-refresh cognitive status every 10 seconds when tab is visible (silencioso)
     setInterval(() => {
       const panel = document.getElementById('panel-nervioso');
       if (panel && !panel.classList.contains('hidden') && !cognitiveState.connected) {
-        refreshCognitive();
+        refreshCognitiveSilent();  // Usar versión silenciosa para auto-refresh
       }
-    }, 5000);
+    }, 10000);  // Cada 10 segundos en lugar de 5
 
     // Legacy function for backwards compatibility
     async function refreshNervous() {
