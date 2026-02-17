@@ -35,8 +35,8 @@ def verify_all():
         from modules.humanoid.medulla import MedullaAtlas, SharedState
         bus = MedullaAtlas(use_zmq=False)
         state = SharedState()
-        state.set("test_key", "test_value")
-        assert state.get("test_key") == "test_value"
+        state.write("test_key", "test_value")
+        assert state.read("test_key") == "test_value"
         return f"Threading bus OK, SharedState OK"
     
     ok, msg = test_module("medulla", test_medulla)
