@@ -1602,7 +1602,7 @@
     <div class="tab-panel" id="panel-nervioso">
       <!-- Header con estado general -->
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-        <h2 style="color: var(--accent-cyan); font-size: 1.5rem; font-weight: 600;">🔗 Sistema Nervioso Central</h2>
+        <h2 style="color: var(--accent-cyan); font-size: 1.5rem; font-weight: 600;">🧠 Arquitectura Cognitiva Atlas</h2>
         <div class="status-badge" id="nervous-main-status">OPERATIVO</div>
       </div>
 
@@ -1625,91 +1625,154 @@
           <div class="stat-label">UPTIME</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value" id="nervous-reflexes">0</div>
-          <div class="stat-label">REFLEJOS</div>
+          <div class="stat-value" id="nervous-goals">0</div>
+          <div class="stat-label">GOALS ACTIVOS</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value" id="nervous-heartbeat">72</div>
-          <div class="stat-label">BPM</div>
+          <div class="stat-value" id="nervous-memory">0</div>
+          <div class="stat-label">EPISODIOS</div>
         </div>
       </div>
 
-      <!-- Diagrama del Sistema Nervioso -->
+      <!-- Diagrama de Arquitectura Cognitiva -->
       <div class="nervous-diagram">
+        <!-- CORTEX -->
         <div class="nervous-section">
-          <div class="nervous-section-title">🧠 Sistema Nervioso Central (SNC)</div>
+          <div class="nervous-section-title">🧠 Cortex (Procesamiento Cognitivo)</div>
           <div class="nervous-grid">
-            <div class="nervous-node connected" id="node-cerebro" onclick="inspectNode('cerebro')">
-              <span class="nervous-node-icon">🧠</span>
-              <span class="nervous-node-name">Cerebro</span>
-              <span class="nervous-node-desc">Procesamiento principal</span>
-            </div>
-            <div class="nervous-node connected" id="node-cerebelo" onclick="inspectNode('cerebelo')">
+            <div class="nervous-node connected" id="node-frontal" onclick="inspectCognitiveNode('cortex/frontal')">
               <span class="nervous-node-icon">🎯</span>
-              <span class="nervous-node-name">Cerebelo</span>
-              <span class="nervous-node-desc">Coordinación motora</span>
+              <span class="nervous-node-name">Frontal</span>
+              <span class="nervous-node-desc">Planificación y decisión</span>
+              <div class="node-modules" id="frontal-modules">
+                <span class="mini-module">TaskPlanner</span>
+                <span class="mini-module">DecisionMaker</span>
+                <span class="mini-module">InhibitoryControl</span>
+              </div>
             </div>
-            <div class="nervous-node connected" id="node-tronco" onclick="inspectNode('tronco')">
-              <span class="nervous-node-icon">🌉</span>
+            <div class="nervous-node connected" id="node-parietal" onclick="inspectCognitiveNode('cortex/parietal')">
+              <span class="nervous-node-icon">🗺️</span>
+              <span class="nervous-node-name">Parietal</span>
+              <span class="nervous-node-desc">Fusión sensorial</span>
+              <div class="node-modules" id="parietal-modules">
+                <span class="mini-module">SensoryFusion</span>
+                <span class="mini-module">SpatialMap</span>
+                <span class="mini-module">BodySchema</span>
+              </div>
+            </div>
+            <div class="nervous-node connected" id="node-temporal" onclick="inspectCognitiveNode('cortex/temporal')">
+              <span class="nervous-node-icon">👂</span>
+              <span class="nervous-node-name">Temporal</span>
+              <span class="nervous-node-desc">Audio y lenguaje</span>
+              <div class="node-modules" id="temporal-modules">
+                <span class="mini-module">AudioProcessor</span>
+                <span class="mini-module">LanguageUnderstanding</span>
+                <span class="mini-module">EpisodicRecall</span>
+              </div>
+            </div>
+            <div class="nervous-node connected" id="node-occipital" onclick="inspectCognitiveNode('cortex/occipital')">
+              <span class="nervous-node-icon">👁️</span>
+              <span class="nervous-node-name">Occipital</span>
+              <span class="nervous-node-desc">Visión y profundidad</span>
+              <div class="node-modules" id="occipital-modules">
+                <span class="mini-module">VisionPipeline</span>
+                <span class="mini-module">DepthEstimation</span>
+                <span class="mini-module">ObjectRecognition</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SISTEMAS SUBCORTICALES -->
+        <div class="nervous-section">
+          <div class="nervous-section-title">💜 Sistemas Subcorticales</div>
+          <div class="nervous-grid">
+            <div class="nervous-node connected" id="node-limbic" onclick="inspectCognitiveNode('limbic')">
+              <span class="nervous-node-icon">❤️</span>
+              <span class="nervous-node-name">Sistema Límbico</span>
+              <span class="nervous-node-desc">Motivación y emociones</span>
+              <div class="node-modules" id="limbic-modules">
+                <span class="mini-module">GoalManager</span>
+                <span class="mini-module">RewardEngine</span>
+                <span class="mini-module">StateRegulator</span>
+              </div>
+            </div>
+            <div class="nervous-node connected" id="node-hippo" onclick="inspectCognitiveNode('hippo')">
+              <span class="nervous-node-icon">🧩</span>
+              <span class="nervous-node-name">Hipocampo</span>
+              <span class="nervous-node-desc">Memoria episódica</span>
+              <div class="node-modules" id="hippo-modules">
+                <span class="mini-module">EpisodicMemory</span>
+                <span class="mini-module">SemanticMemory</span>
+                <span class="mini-module">Consolidator</span>
+              </div>
+            </div>
+            <div class="nervous-node connected" id="node-basal" onclick="inspectCognitiveNode('basal')">
+              <span class="nervous-node-icon">⚡</span>
+              <span class="nervous-node-name">Ganglios Basales</span>
+              <span class="nervous-node-desc">Selección de acciones</span>
+              <div class="node-modules" id="basal-modules">
+                <span class="mini-module">ActionSelector</span>
+                <span class="mini-module">Inhibitor</span>
+              </div>
+            </div>
+            <div class="nervous-node connected" id="node-learning" onclick="inspectCognitiveNode('learning')">
+              <span class="nervous-node-icon">📚</span>
+              <span class="nervous-node-name">Aprendizaje</span>
+              <span class="nervous-node-desc">LfD, RL, NL Feedback</span>
+              <div class="node-modules" id="learning-modules">
+                <span class="mini-module">Demonstration</span>
+                <span class="mini-module">Reinforcement</span>
+                <span class="mini-module">NLFeedback</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SISTEMAS VITALES -->
+        <div class="nervous-section">
+          <div class="nervous-section-title">🩺 Sistemas Vitales y Control</div>
+          <div class="nervous-grid">
+            <div class="nervous-node connected" id="node-brainstem" onclick="inspectCognitiveNode('brainstem')">
+              <span class="nervous-node-icon">🫀</span>
               <span class="nervous-node-name">Tronco Encefálico</span>
               <span class="nervous-node-desc">Funciones vitales</span>
+              <div class="node-modules" id="brainstem-modules">
+                <span class="mini-module">VitalsMonitor</span>
+                <span class="mini-module">SafetyPolicy</span>
+                <span class="mini-module">GlobalState</span>
+                <span class="mini-module">Watchdog</span>
+              </div>
             </div>
-            <div class="nervous-node connected" id="node-medula" onclick="inspectNode('medula')">
-              <span class="nervous-node-icon">🦴</span>
-              <span class="nervous-node-name">Médula Espinal</span>
-              <span class="nervous-node-desc">Conducción nerviosa</span>
+            <div class="nervous-node connected" id="node-medulla" onclick="inspectCognitiveNode('medulla')">
+              <span class="nervous-node-icon">🔌</span>
+              <span class="nervous-node-name">Médula Atlas</span>
+              <span class="nervous-node-desc">Bus de comunicación</span>
+              <div class="node-modules" id="medulla-modules">
+                <span class="mini-module">ZeroMQ Bus</span>
+                <span class="mini-module">SharedState</span>
+              </div>
             </div>
-          </div>
-        </div>
-
-        <div class="nervous-section">
-          <div class="nervous-section-title">🌿 Sistema Nervioso Periférico (SNP)</div>
-          <div class="nervous-grid">
-            <div class="nervous-node connected" id="node-sensorial" onclick="inspectNode('sensorial')">
-              <span class="nervous-node-icon">👁️</span>
-              <span class="nervous-node-name">Nervios Sensoriales</span>
-              <span class="nervous-node-desc">Entrada de datos</span>
+            <div class="nervous-node connected" id="node-motor" onclick="inspectCognitiveNode('motor')">
+              <span class="nervous-node-icon">🦾</span>
+              <span class="nervous-node-name">Control Motor</span>
+              <span class="nervous-node-desc">Trayectorias y PID</span>
+              <div class="node-modules" id="motor-modules">
+                <span class="mini-module">TrajectoryPlanner</span>
+                <span class="mini-module">MotorController</span>
+                <span class="mini-module">MotorInterface</span>
+              </div>
             </div>
-            <div class="nervous-node connected" id="node-motor" onclick="inspectNode('motor')">
-              <span class="nervous-node-icon">💪</span>
-              <span class="nervous-node-name">Nervios Motores</span>
-              <span class="nervous-node-desc">Control muscular</span>
-            </div>
-            <div class="nervous-node connected" id="node-craneal" onclick="inspectNode('craneal')">
-              <span class="nervous-node-icon">🗣️</span>
-              <span class="nervous-node-name">Nervios Craneales</span>
-              <span class="nervous-node-desc">Sentidos especiales</span>
-            </div>
-            <div class="nervous-node connected" id="node-espinal" onclick="inspectNode('espinal')">
-              <span class="nervous-node-icon">🔀</span>
-              <span class="nervous-node-name">Nervios Espinales</span>
-              <span class="nervous-node-desc">Reflejos y movimiento</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="nervous-section">
-          <div class="nervous-section-title">❤️ Sistema Nervioso Autónomo (SNA)</div>
-          <div class="nervous-grid">
-            <div class="nervous-node connected" id="node-simpatico" onclick="inspectNode('simpatico')">
-              <span class="nervous-node-icon">⚡</span>
-              <span class="nervous-node-name">Simpático</span>
-              <span class="nervous-node-desc">Respuesta de estrés</span>
-            </div>
-            <div class="nervous-node connected" id="node-parasimpatico" onclick="inspectNode('parasimpatico')">
-              <span class="nervous-node-icon">🧘</span>
-              <span class="nervous-node-name">Parasimpático</span>
-              <span class="nervous-node-desc">Descanso y digestión</span>
-            </div>
-            <div class="nervous-node connected" id="node-enterico" onclick="inspectNode('enterico')">
-              <span class="nervous-node-icon">🫃</span>
-              <span class="nervous-node-name">Entérico</span>
-              <span class="nervous-node-desc">Sistema digestivo</span>
-            </div>
-            <div class="nervous-node connected" id="node-cardiaco" onclick="inspectNode('cardiaco')">
-              <span class="nervous-node-icon">💓</span>
-              <span class="nervous-node-name">Cardíaco</span>
-              <span class="nervous-node-desc">Ritmo cardíaco</span>
+            <div class="nervous-node connected" id="node-snp" onclick="inspectCognitiveNode('snp')">
+              <span class="nervous-node-icon">🌐</span>
+              <span class="nervous-node-name">SNP (Sensores)</span>
+              <span class="nervous-node-desc">Drivers hardware</span>
+              <div class="node-modules" id="snp-modules">
+                <span class="mini-module">Vision</span>
+                <span class="mini-module">Audio</span>
+                <span class="mini-module">IMU</span>
+                <span class="mini-module">F/T</span>
+              </div>
             </div>
           </div>
         </div>
@@ -1717,62 +1780,69 @@
 
       <!-- Panel de Señales en Tiempo Real -->
       <div class="nervous-signals-panel">
-        <div class="nervous-section-title">📊 Señales en Tiempo Real</div>
+        <div class="nervous-section-title">📊 Módulos en Tiempo Real</div>
         <div class="signals-monitor">
           <div class="signal-row">
-            <span class="signal-name">🧠 Cerebro → Módulos</span>
+            <span class="signal-name">🧠 Cortex Frontal</span>
             <div class="signal-bar">
-              <div class="signal-fill" id="signal-brain" style="width: 85%;"></div>
+              <div class="signal-fill cognitive-signal" id="signal-frontal" style="width: 0%;"></div>
             </div>
-            <span class="signal-value" id="signal-brain-val">85%</span>
+            <span class="signal-value" id="signal-frontal-val">--</span>
           </div>
           <div class="signal-row">
-            <span class="signal-name">👁️ Visión → Cerebro</span>
+            <span class="signal-name">👁️ Cortex Occipital</span>
             <div class="signal-bar">
-              <div class="signal-fill" id="signal-vision" style="width: 92%;"></div>
+              <div class="signal-fill cognitive-signal" id="signal-occipital" style="width: 0%;"></div>
             </div>
-            <span class="signal-value" id="signal-vision-val">92%</span>
+            <span class="signal-value" id="signal-occipital-val">--</span>
           </div>
           <div class="signal-row">
-            <span class="signal-name">👂 Audio → Cerebro</span>
+            <span class="signal-name">❤️ Sistema Límbico</span>
             <div class="signal-bar">
-              <div class="signal-fill" id="signal-audio" style="width: 78%;"></div>
+              <div class="signal-fill cognitive-signal" id="signal-limbic" style="width: 0%;"></div>
             </div>
-            <span class="signal-value" id="signal-audio-val">78%</span>
+            <span class="signal-value" id="signal-limbic-val">--</span>
           </div>
           <div class="signal-row">
-            <span class="signal-name">🤖 Motor → Extremidades</span>
+            <span class="signal-name">🧩 Hipocampo</span>
             <div class="signal-bar">
-              <div class="signal-fill" id="signal-motor" style="width: 95%;"></div>
+              <div class="signal-fill cognitive-signal" id="signal-hippo" style="width: 0%;"></div>
             </div>
-            <span class="signal-value" id="signal-motor-val">95%</span>
+            <span class="signal-value" id="signal-hippo-val">--</span>
           </div>
           <div class="signal-row">
-            <span class="signal-name">❤️ ANS → Órganos</span>
+            <span class="signal-name">🫀 Brainstem</span>
             <div class="signal-bar">
-              <div class="signal-fill" id="signal-ans" style="width: 88%;"></div>
+              <div class="signal-fill cognitive-signal" id="signal-brainstem" style="width: 0%;"></div>
             </div>
-            <span class="signal-value" id="signal-ans-val">88%</span>
+            <span class="signal-value" id="signal-brainstem-val">--</span>
+          </div>
+          <div class="signal-row">
+            <span class="signal-name">🦾 Motor Control</span>
+            <div class="signal-bar">
+              <div class="signal-fill cognitive-signal" id="signal-motor-ctrl" style="width: 0%;"></div>
+            </div>
+            <span class="signal-value" id="signal-motor-ctrl-val">--</span>
           </div>
         </div>
       </div>
 
       <!-- Actions -->
       <div class="action-bar" style="margin-top: 1rem;">
-        <button class="btn btn-primary" onclick="refreshNervous()">🔄 Actualizar</button>
-        <button class="btn btn-secondary" onclick="nervousDiagnostic()">🔬 Diagnóstico Completo</button>
-        <button class="btn" onclick="testReflexes()" style="background: var(--accent-orange); color: var(--bg);">⚡ Test Reflejos</button>
-        <button class="btn" onclick="simulateStress()" style="background: var(--accent-red); color: white;">💥 Simular Estrés</button>
-        <button class="btn" onclick="calmSystem()" style="background: var(--accent-green); color: var(--bg);">🧘 Calmar Sistema</button>
+        <button class="btn btn-primary" onclick="refreshCognitive()">🔄 Actualizar</button>
+        <button class="btn btn-secondary" onclick="cognitiveDiagnostic()">🔬 Diagnóstico Completo</button>
+        <button class="btn" onclick="connectCognitiveWS()" style="background: var(--accent-purple); color: white;">📡 WebSocket Live</button>
+        <button class="btn" onclick="showGoals()" style="background: var(--accent-orange); color: var(--bg);">🎯 Ver Goals</button>
+        <button class="btn" onclick="showMemories()" style="background: var(--accent-green); color: var(--bg);">🧩 Ver Memorias</button>
       </div>
 
       <!-- Log de eventos del sistema nervioso -->
       <div class="nervous-log" style="margin-top: 1rem;">
-        <div class="nervous-section-title">📋 Log de Eventos</div>
+        <div class="nervous-section-title">📋 Log de Eventos Cognitivos</div>
         <div class="nervous-log-list" id="nervous-log-list">
           <div class="nervous-log-entry">
             <span class="log-time">--:--:--</span>
-            <span class="log-msg">Sistema nervioso inicializado</span>
+            <span class="log-msg">Sistema cognitivo Atlas inicializado</span>
           </div>
         </div>
       </div>
