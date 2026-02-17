@@ -1,4 +1,14 @@
-"""Estado del cerebro: modo (auto/manual) e IA dominante. Persistido en config para que el usuario decida qué IA usa."""
+"""
+Estado del cerebro: modo (auto/manual) e IA dominante.
+Persistido en config para que el usuario decida qué IA usa.
+
+Sistema Full Automático:
+- mode: auto (cerebro decide) | manual (usuario decide)
+- auto_route: True para enrutamiento inteligente
+- specialists: modelos por tipo de tarea
+- parameters: parámetros de generación
+- features: características habilitadas
+"""
 from __future__ import annotations
 
 import json
@@ -7,6 +17,32 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 _BRAIN_STATE: Optional[Dict[str, Any]] = None
+
+# Configuración por defecto para sistema full
+DEFAULT_STATE = {
+    "mode": "auto",
+    "override_model": None,
+    "auto_route": True,
+    "specialists": {
+        "code": "ollama:deepseek-coder:6.7b",
+        "vision": "ollama:llama3.2-vision:11b",
+        "chat": "ollama:llama3.1:latest",
+        "analysis": "ollama:deepseek-r1:14b",
+        "creative": "ollama:llama3.1:latest",
+    },
+    "parameters": {
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 40,
+        "max_tokens": 2048,
+        "repeat_penalty": 1.1,
+    },
+    "features": {
+        "auto_fallback": True,
+        "context_memory": "long_term",
+        "specialist_routing": True,
+    },
+}
 
 
 def _state_path() -> Path:
@@ -22,13 +58,19 @@ def _load() -> Dict[str, Any]:
         return _BRAIN_STATE
     p = _state_path()
     if not p.is_file():
-        _BRAIN_STATE = {"mode": "auto", "override_model": None}
+        _BRAIN_STATE = dict(DEFAULT_STATE)
         return _BRAIN_STATE
     try:
         with open(p, "r", encoding="utf-8") as f:
-            _BRAIN_STATE = json.load(f)
+            loaded = json.load(f)
+            # Merge con defaults para campos faltantes
+            _BRAIN_STATE = {**DEFAULT_STATE, **loaded}
+            # Merge nested dicts
+            for key in ("specialists", "parameters", "features"):
+                if key in DEFAULT_STATE and key in loaded:
+                    _BRAIN_STATE[key] = {**DEFAULT_STATE[key], **loaded.get(key, {})}
     except Exception:
-        _BRAIN_STATE = {"mode": "auto", "override_model": None}
+        _BRAIN_STATE = dict(DEFAULT_STATE)
     return _BRAIN_STATE
 
 
