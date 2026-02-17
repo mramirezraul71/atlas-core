@@ -196,7 +196,7 @@ class VisionPipeline:
                  enable_depth: bool = True,
                  enable_pose: bool = True,
                  enable_segmentation: bool = False,
-                 device: str = "cpu"):
+                 device: str = "auto"):
         """
         Inicializa el pipeline de visión.
         
@@ -205,13 +205,23 @@ class VisionPipeline:
             enable_depth: Habilitar estimación de profundidad
             enable_pose: Habilitar detección de pose humana
             enable_segmentation: Habilitar segmentación (más lento)
-            device: Dispositivo (cpu, cuda)
+            device: Dispositivo (cpu, cuda, auto)
         """
         self.detector_model = detector_model
         self.enable_depth = enable_depth
         self.enable_pose = enable_pose
         self.enable_segmentation = enable_segmentation
-        self.device = device
+        
+        # Auto-detectar GPU
+        if device == "auto":
+            try:
+                import torch
+                self.device = "cuda" if torch.cuda.is_available() else "cpu"
+                logger.info(f"VisionPipeline using device: {self.device}")
+            except ImportError:
+                self.device = "cpu"
+        else:
+            self.device = device
         
         # Modelos (lazy loading)
         self._detector = None
@@ -227,14 +237,17 @@ class VisionPipeline:
         self._next_track_id = 0
     
     def _load_detector(self) -> None:
-        """Carga modelo de detección."""
+        """Carga modelo de detección con CUDA si disponible."""
         if self._detector is not None:
             return
         
         try:
             from ultralytics import YOLO
             self._detector = YOLO(f"{self.detector_model}.pt")
-            logger.info(f"Loaded YOLO detector: {self.detector_model}")
+            # Mover a GPU si disponible
+            if self.device == "cuda":
+                self._detector.to("cuda")
+            logger.info(f"Loaded YOLO detector: {self.detector_model} on {self.device}")
         except ImportError:
             logger.warning("YOLO not available, using mock detector")
             self._detector = MockDetector()
