@@ -166,37 +166,89 @@ class DepthAnythingModel(DepthModel):
 
 
 class MiDaSModel(DepthModel):
-    """Wrapper para MiDaS depth estimation."""
+    """Wrapper para MiDaS depth estimation con GPU."""
     
     def __init__(self, model_type: str = "MiDaS_small"):
         super().__init__(f"midas_{model_type}")
         self.model_type = model_type
+        self._transform = None
+        self._device = None
     
     def load(self) -> bool:
-        """Carga modelo MiDaS."""
+        """Carga modelo MiDaS con CUDA si disponible."""
         try:
+            import torch
+            
             logger.info(f"Loading MiDaS {self.model_type}...")
             
-            # En produccion:
-            # import torch
-            # self._model = torch.hub.load("intel-isl/MiDaS", self.model_type)
+            # Determinar device
+            self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            logger.info(f"Using device: {self._device}")
+            
+            # Cargar modelo desde torch hub
+            self._model = torch.hub.load("intel-isl/MiDaS", self.model_type, trust_repo=True)
+            self._model.to(self._device)
+            self._model.eval()
+            
+            # Cargar transformaciones
+            midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms", trust_repo=True)
+            if "small" in self.model_type.lower():
+                self._transform = midas_transforms.small_transform
+            else:
+                self._transform = midas_transforms.default_transform
             
             self._loaded = True
-            logger.info("MiDaS model loaded (mock mode)")
+            logger.info(f"MiDaS model loaded on {self._device}")
             return True
             
         except Exception as e:
-            logger.warning(f"Could not load MiDaS: {e}")
+            logger.warning(f"Could not load MiDaS: {e}, falling back to mock")
             return False
     
     def predict(self, image: Any) -> Any:
         """Predice profundidad con MiDaS."""
-        if not self._loaded:
-            return None
+        if not self._loaded or self._model is None:
+            mock = MockDepthModel()
+            return mock.predict(image)
         
-        # Mock
-        mock = MockDepthModel()
-        return mock.predict(image)
+        try:
+            import torch
+            import cv2
+            
+            # Asegurar formato correcto
+            if hasattr(image, 'shape') and len(image.shape) == 3:
+                if image.shape[2] == 4:  # RGBA -> RGB
+                    image = image[:, :, :3]
+                if image.dtype != np.uint8:
+                    image = (image * 255).astype(np.uint8)
+            
+            # Aplicar transformacion
+            input_batch = self._transform(image).to(self._device)
+            
+            # Inferencia
+            with torch.no_grad():
+                prediction = self._model(input_batch)
+                prediction = torch.nn.functional.interpolate(
+                    prediction.unsqueeze(1),
+                    size=image.shape[:2],
+                    mode="bicubic",
+                    align_corners=False,
+                ).squeeze()
+            
+            # Convertir a numpy y normalizar a metros
+            depth = prediction.cpu().numpy()
+            
+            # MiDaS da profundidad inversa, convertir a metros
+            depth = depth - depth.min()
+            depth = depth / (depth.max() + 1e-8)
+            depth = 0.1 + depth * 9.9  # Rango 0.1 a 10 metros
+            
+            return depth.astype(np.float32)
+            
+        except Exception as e:
+            logger.error(f"MiDaS prediction error: {e}")
+            mock = MockDepthModel()
+            return mock.predict(image)
 
 
 class DepthEstimation:
