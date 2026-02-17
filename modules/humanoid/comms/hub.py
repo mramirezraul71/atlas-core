@@ -292,23 +292,27 @@ class CommsHub:
     
     def _is_channel_enabled(self, channel: str) -> bool:
         """Verifica si un canal está habilitado por configuración."""
+        # Mapeo de canal a variables de entorno (primera que exista)
         channel_env_map = {
-            "telegram": "OPS_TELEGRAM_ENABLED",
-            "whatsapp": "OPS_WHATSAPP_ENABLED",
-            "audio": "OPS_AUDIO_ENABLED",
-            "webhook": "MAKEPLAY_ENABLED",
+            "telegram": ["OPS_TELEGRAM_ENABLED"],
+            "whatsapp": ["WHATSAPP_ENABLED", "OPS_WHATSAPP_ENABLED"],
+            "audio": ["OPS_AUDIO_ENABLED"],
+            "webhook": ["MAKEPLAY_ENABLED"],
         }
-        env_var = channel_env_map.get(channel)
-        if not env_var:
+        env_vars = channel_env_map.get(channel, [])
+        if not env_vars:
             return True  # Canales sin var de env están siempre activos
         
-        value = (os.getenv(env_var) or "").strip().lower()
-        if not value:
-            # Defaults
-            if channel in ("telegram", "audio"):
-                return True
-            return False
-        return value in ("1", "true", "yes", "on")
+        # Buscar primera variable configurada
+        for env_var in env_vars:
+            value = (os.getenv(env_var) or "").strip().lower()
+            if value:
+                return value in ("1", "true", "yes", "on")
+        
+        # Defaults si no hay ninguna configurada
+        if channel in ("telegram", "audio"):
+            return True
+        return False
     
     def _send_telegram(self, msg: CommsMessage) -> Dict[str, Any]:
         """Envía mensaje a Telegram."""
