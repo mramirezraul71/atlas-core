@@ -39,13 +39,23 @@ def ans_resolve_incidents(check_id: Optional[str] = None):
 
 @router.get("/bitacora")
 def ans_bitacora(limit: int = 50):
-    """Bitácora: problema → acción ejecutada → resultado; incluye entradas EVOLUCIÓN. Sin duplicados por (check_id, problema)."""
+    """Bitácora Central: todos los eventos del sistema incluyendo evolución, comunicación, incidentes.
+    
+    Fuentes:
+    - Incidentes ANS (problemas detectados y acciones)
+    - Evolución (tríada PyPI/GitHub/HF)
+    - Comunicaciones (Telegram, WhatsApp, Audio)
+    - Sistema (startup, servicios, etc.)
+    """
     try:
         from .incident import get_incidents
         from .evolution_bitacora import get_evolution_entries
-        items = get_incidents(status=None, limit=limit * 3)
-        seen_key: set = set()
+        
         entries = []
+        seen_key: set = set()
+        
+        # 1. Incidentes ANS
+        items = get_incidents(status=None, limit=limit * 2)
         for inc in items:
             prob = (inc.get("message") or inc.get("check_id") or "?")[:120]
             cid = inc.get("check_id") or ""
@@ -65,6 +75,7 @@ def ans_bitacora(limit: int = 50):
                         "resultado": res,
                         "detalle": (a.get("message") or "")[:100],
                         "source": "incident",
+                        "icon": "🔧" if a.get("ok") else "❌",
                     })
             else:
                 entries.append({
@@ -74,20 +85,57 @@ def ans_bitacora(limit: int = 50):
                     "resultado": "pendiente" if inc.get("status") == "open" else "—",
                     "detalle": "",
                     "source": "incident",
+                    "icon": "⚠️" if inc.get("status") == "open" else "📋",
                 })
-        for ev in get_evolution_entries(limit=limit):
+        
+        # 2. Entradas de evolución y comunicación
+        for ev in get_evolution_entries(limit=limit * 2):
             src = ev.get("source", "evolution")
-            problema = "Monitor repo" if src == "repo_monitor" else ("Evolución" if src == "evolution" else src)
+            msg = ev.get("message", "")
+            
+            # Determinar icono y categoría según source y mensaje
+            icon = "⚙️"
+            if src in ("telegram", "whatsapp", "comms", "audio"):
+                icon = "📱" if src == "whatsapp" else ("📨" if src == "telegram" else ("🔊" if src == "audio" else "📡"))
+            elif src == "evolution":
+                icon = "🔄"
+            elif src == "repo_monitor":
+                icon = "📦"
+            elif src in ("startup", "services", "system"):
+                icon = "🚀"
+            elif src == "nervous":
+                icon = "⚡"
+            elif not ev.get("ok", True):
+                icon = "❌"
+            
+            # Categoría legible
+            categoria = {
+                "repo_monitor": "Repositorio",
+                "evolution": "Evolución",
+                "telegram": "Telegram",
+                "whatsapp": "WhatsApp",
+                "comms": "Comunicación",
+                "audio": "Audio",
+                "startup": "Inicio",
+                "services": "Servicios",
+                "system": "Sistema",
+                "nervous": "Sistema Nervioso",
+                "test": "Prueba",
+            }.get(src, src.capitalize())
+            
             entries.append({
                 "timestamp": ev.get("timestamp", ""),
-                "problema": problema,
+                "problema": categoria,
                 "accion": "—",
                 "resultado": "OK" if ev.get("ok", True) else "Error",
-                "detalle": (ev.get("message") or "")[:200],
+                "detalle": msg[:200],
                 "source": src,
+                "icon": icon,
             })
+        
+        # Ordenar por timestamp (más reciente primero)
         entries.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
-        return {"ok": True, "data": entries[:limit]}
+        return {"ok": True, "data": entries[:limit], "total": len(entries)}
     except Exception as e:
         return {"ok": False, "data": [], "error": str(e)}
 
@@ -332,3 +380,175 @@ def workshop_reports(limit: int = 20):
         return {"ok": True, "reports": reports, "count": len(reports)}
     except Exception as e:
         return {"ok": False, "reports": [], "error": str(e)}
+
+
+# ============================================================================
+# COMUNICACIONES - Estado completo del sistema de comunicación
+# ============================================================================
+
+@router.get("/comms/status")
+def ans_comms_status():
+    """Estado completo del sistema de comunicación: Telegram, WhatsApp (WAHA), Audio.
+    
+    Incluye:
+    - Estado de cada canal
+    - Configuración de WAHA
+    - URL del Dashboard de WAHA
+    - Estadísticas de mensajes
+    """
+    import os
+    import urllib.request
+    
+    result = {
+        "ok": True,
+        "channels": {},
+        "waha": {
+            "url": None,
+            "dashboard_url": None,
+            "status": "unknown",
+            "authenticated": False,
+            "session_name": None,
+        },
+        "telegram": {
+            "enabled": False,
+            "token_configured": False,
+            "chat_id_configured": False,
+        },
+        "audio": {
+            "enabled": False,
+            "engine": None,
+        },
+    }
+    
+    # WhatsApp (WAHA)
+    waha_url = os.getenv("WAHA_API_URL", "http://localhost:3010")
+    waha_key = os.getenv("WAHA_API_KEY", "atlas123")
+    result["waha"]["url"] = waha_url
+    result["waha"]["dashboard_url"] = waha_url  # WAHA dashboard está en la misma URL
+    
+    try:
+        headers = {"X-Api-Key": waha_key}
+        req = urllib.request.Request(f"{waha_url}/api/sessions/default", headers=headers)
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = json.loads(r.read().decode())
+            result["waha"]["status"] = data.get("status", "unknown")
+            result["waha"]["authenticated"] = data.get("status") == "WORKING"
+            result["waha"]["session_name"] = data.get("name", "default")
+            me = data.get("me", {})
+            if me:
+                result["waha"]["phone"] = me.get("id", "").split("@")[0]
+                result["waha"]["name"] = me.get("pushName", "")
+    except Exception as e:
+        result["waha"]["status"] = "error"
+        result["waha"]["error"] = str(e)[:100]
+    
+    # Telegram
+    telegram_token = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TG_BOT_TOKEN")
+    telegram_chat = os.getenv("TELEGRAM_CHAT_ID") or os.getenv("TG_CHAT_ID")
+    result["telegram"]["enabled"] = bool(telegram_token)
+    result["telegram"]["token_configured"] = bool(telegram_token)
+    result["telegram"]["chat_id_configured"] = bool(telegram_chat)
+    
+    # Audio
+    try:
+        import pyttsx3
+        result["audio"]["enabled"] = True
+        result["audio"]["engine"] = "pyttsx3"
+    except ImportError:
+        result["audio"]["enabled"] = False
+        result["audio"]["engine"] = None
+    
+    # CommsHub status
+    try:
+        from modules.humanoid.comms.hub import get_hub
+        hub = get_hub()
+        if hub:
+            hub_health = hub.health()
+            result["channels"] = hub_health.get("channels", {})
+    except Exception:
+        pass
+    
+    return result
+
+
+@router.get("/comms/waha/qr")
+def ans_comms_waha_qr():
+    """Obtener QR de WAHA para vincular WhatsApp."""
+    import os
+    import urllib.request
+    import base64
+    
+    waha_url = os.getenv("WAHA_API_URL", "http://localhost:3010")
+    waha_key = os.getenv("WAHA_API_KEY", "atlas123")
+    
+    try:
+        headers = {"X-Api-Key": waha_key}
+        req = urllib.request.Request(f"{waha_url}/api/default/auth/qr", headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as r:
+            qr_data = r.read()
+            # Devolver como base64 para mostrar en el dashboard
+            qr_b64 = base64.b64encode(qr_data).decode()
+            return {"ok": True, "qr_base64": qr_b64, "content_type": "image/png"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/comms/waha/restart")
+def ans_comms_waha_restart():
+    """Reiniciar sesión de WAHA."""
+    import os
+    import urllib.request
+    
+    waha_url = os.getenv("WAHA_API_URL", "http://localhost:3010")
+    waha_key = os.getenv("WAHA_API_KEY", "atlas123")
+    
+    try:
+        headers = {"X-Api-Key": waha_key, "Content-Type": "application/json"}
+        # Stop session
+        req = urllib.request.Request(f"{waha_url}/api/sessions/default/stop", data=b"{}", headers=headers, method="POST")
+        try:
+            urllib.request.urlopen(req, timeout=5)
+        except Exception:
+            pass
+        
+        # Start session
+        req = urllib.request.Request(f"{waha_url}/api/sessions/default/start", data=b"{}", headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return {"ok": True, "message": "Session restarted"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/comms/test")
+def ans_comms_test(channel: str = "all", message: str = "Mensaje de prueba desde ATLAS"):
+    """Enviar mensaje de prueba a un canal específico o todos.
+    
+    Canales: telegram, whatsapp, audio, all
+    """
+    results = {}
+    
+    if channel in ("telegram", "all"):
+        try:
+            from modules.humanoid.comms.telegram_bridge import send
+            ok = send(message)
+            results["telegram"] = {"ok": ok}
+        except Exception as e:
+            results["telegram"] = {"ok": False, "error": str(e)}
+    
+    if channel in ("whatsapp", "all"):
+        try:
+            from modules.humanoid.comms.whatsapp_bridge import send_text
+            result = send_text(message)
+            results["whatsapp"] = result
+        except Exception as e:
+            results["whatsapp"] = {"ok": False, "error": str(e)}
+    
+    if channel in ("audio", "all"):
+        try:
+            from modules.humanoid.comms.ops_bus import _subsystem_human
+            _subsystem_human(message, "info")
+            results["audio"] = {"ok": True}
+        except Exception as e:
+            results["audio"] = {"ok": False, "error": str(e)}
+    
+    return {"ok": all(r.get("ok", False) for r in results.values()), "results": results}
