@@ -4,13 +4,13 @@ Corteza Atlas: Módulos cognitivos de alto nivel.
 Análogo biológico: Corteza cerebral
 - Frontal: Planificación, decisión, control ejecutivo
 - Parietal: Integración sensorial, modelo espacial
-- Temporal: Procesamiento auditivo, lenguaje, memoria
-- Occipital: Procesamiento visual
+- Temporal: Procesamiento auditivo, lenguaje, memoria episódica
+- Occipital: Procesamiento visual, profundidad, reconocimiento
 """
 from .frontal import TaskPlanner, DecisionMaker, InhibitoryControl
 from .parietal import SensoryFusion, SpatialMap, BodySchema
-from .temporal import AudioProcessor, LanguageUnderstanding
-from .occipital import VisionPipeline
+from .temporal import AudioProcessor, LanguageUnderstanding, EpisodicRecall
+from .occipital import VisionPipeline, DepthEstimation, ObjectRecognition
 
 __all__ = [
     # Frontal
@@ -24,6 +24,9 @@ __all__ = [
     # Temporal
     "AudioProcessor",
     "LanguageUnderstanding",
+    "EpisodicRecall",
     # Occipital
     "VisionPipeline",
+    "DepthEstimation",
+    "ObjectRecognition",
 ]

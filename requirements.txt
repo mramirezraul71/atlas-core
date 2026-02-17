@@ -1,33 +1,49 @@
 # Atlas Product Pack - core runtime
 fastapi>=0.129.0
-uvicorn==0.41.0
-websockets==16.0
-pydantic==2.12.5
+uvicorn>=0.41.0
+websockets>=16.0
+pydantic>=2.12.5
 python-dotenv>=1.0.0
-httpx==0.28.1
+httpx>=0.28.1
 python-multipart>=0.0.22
 
 # ATLAS AUTONOMOUS (Health, Telemetry, Learning)
-psutil==7.2.2
+psutil>=7.2.2
 scikit-learn>=1.3.0
 py-cpuinfo>=9.0.0
 PyYAML>=6.0
 
-# Fase 1 - Semantic Memory (embeddings + FAISS)
+# Cognitive Architecture - Memory (embeddings + FAISS)
 sentence-transformers>=3.0.0
 faiss-cpu>=1.7.0
 
-# Fase 2 - Vision (depth MiDaS, scene)
+# Cognitive Architecture - Vision (depth, detection, segmentation)
 timm>=0.9.0
 torch>=2.0.0
+torchvision>=0.15.0
 opencv-python-headless>=4.8.0
 numpy>=1.24.0
+ultralytics>=8.0.0  # YOLOv8
 
-# Fase 4 - Causal reasoning (DAG)
+# Cognitive Architecture - Audio/Speech
+openai-whisper>=20231117
+sounddevice>=0.4.6
+webrtcvad>=2.0.10
+
+# Cognitive Architecture - Communication Bus
+pyzmq>=25.0.0
+
+# Cognitive Architecture - NLU/LLM
+ollama>=0.1.0
+
+# Cognitive Architecture - Graphs and Planning
 networkx>=3.0
 
-# Fase 4 - Self-Programming (sandbox)
+# Sandbox/Docker
 docker>=6.1.0
 
-# Fase 5 - Observabilidad (Prometheus)
+# Observability (Prometheus)
 prometheus_client>=0.19.0
+
+# MediaPipe for pose estimation (optional)
+# mediapipe>=0.10.0
