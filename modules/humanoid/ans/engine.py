@@ -202,7 +202,8 @@ def _run_full(timeout_sec: int) -> Dict[str, Any]:
                         continue
                     allowed, reason = can_auto_action(heal_id)
                     if not allowed:
-                        add_action(inc_id, "(omitido)", False, f"límite/cooldown: {heal_id}")
+                        # No registrar cooldown como acción para evitar spam en bitácora
+                        # Solo emitir al live_stream para debug
                         try:
                             from modules.humanoid.ans.live_stream import emit
                             emit("skip", check_id=cid, heal_id=heal_id, message=f"límite: {reason}")
