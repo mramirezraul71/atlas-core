@@ -1583,6 +1583,145 @@ def api_comms_speak(body: dict):
         return {"ok": False, "error": str(e)}
 
 
+# === WhatsApp API ===
+
+@app.get("/api/comms/whatsapp/status", tags=["Comms", "WhatsApp"])
+def api_whatsapp_status():
+    """Estado del servicio WhatsApp (proveedor, autenticación, configuración)."""
+    try:
+        from modules.humanoid.comms.whatsapp_bridge import status, health_check
+        st = status()
+        hc = health_check()
+        return {**st, "health": hc}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/whatsapp/send", tags=["Comms", "WhatsApp"])
+def api_whatsapp_send(body: dict):
+    """Envía un mensaje de WhatsApp.
+    
+    Body: {"text": "mensaje", "to": "+34612345678" (opcional)}
+    """
+    try:
+        from modules.humanoid.comms.whatsapp_bridge import send_text
+        
+        text = (body or {}).get("text") or ""
+        to = (body or {}).get("to")
+        
+        if not text:
+            return {"ok": False, "error": "text is required"}
+        
+        return send_text(text, to=to)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/whatsapp/test", tags=["Comms", "WhatsApp"])
+def api_whatsapp_test():
+    """Envía un mensaje de prueba a WhatsApp."""
+    try:
+        from modules.humanoid.comms.whatsapp_bridge import send_text, status
+        
+        st = status()
+        if not st.get("enabled"):
+            return {"ok": False, "error": "WhatsApp no está habilitado", "details": st}
+        
+        result = send_text("[ATLAS] Prueba de WhatsApp - Sistema de comunicación activo.")
+        return result
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/comms/whatsapp/qr", tags=["Comms", "WhatsApp"])
+def api_whatsapp_qr():
+    """Obtiene el código QR para autenticar WAHA.
+    
+    Solo disponible con proveedor WAHA.
+    Escanea este QR con tu WhatsApp para vincular.
+    """
+    try:
+        from modules.humanoid.comms.whatsapp_bridge import get_qr_code, status
+        
+        st = status()
+        if st.get("provider") != "waha":
+            return {"ok": False, "error": "QR solo disponible para proveedor WAHA"}
+        
+        return get_qr_code()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/whatsapp/start-session", tags=["Comms", "WhatsApp"])
+def api_whatsapp_start_session():
+    """Inicia la sesión WAHA (genera QR para autenticar).
+    
+    Solo disponible con proveedor WAHA.
+    Después de llamar esto, obtén el QR con GET /api/comms/whatsapp/qr
+    """
+    try:
+        from modules.humanoid.comms.whatsapp_bridge import start_session, status
+        
+        st = status()
+        if st.get("provider") != "waha":
+            return {"ok": False, "error": "Sesiones solo disponibles para proveedor WAHA"}
+        
+        return start_session()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/comms/whatsapp/setup-guide", tags=["Comms", "WhatsApp"])
+def api_whatsapp_setup_guide():
+    """Guía de configuración de WhatsApp con WAHA (gratuito)."""
+    return {
+        "provider": "WAHA (WhatsApp HTTP API)",
+        "description": "Servidor gratuito que expone WhatsApp Web como API REST",
+        "steps": [
+            {
+                "step": 1,
+                "title": "Instalar Docker Desktop",
+                "command": "https://www.docker.com/products/docker-desktop/",
+                "note": "Si ya tienes Docker, salta este paso",
+            },
+            {
+                "step": 2,
+                "title": "Ejecutar WAHA",
+                "command": "docker run -d -p 3000:3000 --name waha devlikeapro/waha",
+                "note": "Esto descarga e inicia el servidor WAHA",
+            },
+            {
+                "step": 3,
+                "title": "Configurar variables de entorno",
+                "variables": {
+                    "WHATSAPP_ENABLED": "true",
+                    "WHATSAPP_PROVIDER": "waha",
+                    "WHATSAPP_TO": "+34612345678  # Tu número personal",
+                    "WAHA_API_URL": "http://localhost:3000",
+                },
+                "note": "Añade estas variables a tu archivo .env o credenciales.txt",
+            },
+            {
+                "step": 4,
+                "title": "Escanear código QR",
+                "url": "http://localhost:3000",
+                "note": "Abre esta URL en el navegador y escanea el QR con tu WhatsApp",
+            },
+            {
+                "step": 5,
+                "title": "Probar envío",
+                "endpoint": "POST /api/comms/whatsapp/test",
+                "note": "Deberías recibir un mensaje de prueba",
+            },
+        ],
+        "troubleshooting": [
+            "Si el QR no aparece, llama POST /api/comms/whatsapp/start-session primero",
+            "Si el contenedor no inicia, verifica que Docker esté corriendo",
+            "El QR expira en ~60 segundos, refresca si es necesario",
+        ],
+    }
+
+
 # --- Anti-Silencio: alertas multiciclo desde UI/Watchdogs ---
 _COMMS_ALERT_LAST: dict = {}  # key -> ts
 
