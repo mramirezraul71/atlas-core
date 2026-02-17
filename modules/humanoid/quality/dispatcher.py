@@ -449,21 +449,69 @@ class POTDispatcher:
         return get_pot("diagnostic_full")
     
     def _request_approval(self, request: DispatchRequest, pot) -> bool:
-        """Solicita aprobación para ejecutar un POT crítico."""
+        """Solicita aprobación para ejecutar un POT crítico.
+        
+        Usa el sistema de aprobaciones de ATLAS que envía botones inline
+        a Telegram y espera la respuesta del usuario.
+        """
         try:
-            from modules.humanoid.comms.telegram_gw import send_approval_request
+            from modules.humanoid.approvals import create_approval, wait_for_resolution
             
-            message = (
-                f"🔐 **Aprobación Requerida**\n\n"
-                f"POT: `{pot.id}` - {pot.name}\n"
-                f"Trigger: {request.trigger_type.value}\n"
-                f"Severidad: {pot.severity.value}\n\n"
-                f"¿Aprobar ejecución?"
+            # Crear aprobación
+            approval_result = create_approval(
+                action=f"pot_execute:{pot.id}",
+                risk="high" if pot.severity.value in ("high", "critical") else "medium",
+                description=f"POT: {pot.id} - {pot.name}\nTrigger: {request.trigger_type.value}",
+                payload={"pot_id": pot.id, "trigger": request.trigger_type.value},
             )
             
-            # Timeout de 5 minutos para aprobación
-            approved = send_approval_request(message, timeout_seconds=300)
-            return approved
+            if not approval_result.get("ok"):
+                _log.warning("Could not create approval: %s", approval_result.get("error"))
+                return False
+            
+            approval_id = approval_result.get("id")
+            if not approval_id:
+                return False
+            
+            # Esperar resolución (máximo 5 minutos)
+            resolution = wait_for_resolution(approval_id, timeout_seconds=300)
+            
+            return resolution.get("status") == "approved"
+            
+        except ImportError:
+            # Fallback: usar Telegram inline buttons directamente
+            try:
+                from modules.humanoid.comms.telegram_bridge import TelegramBridge
+                from modules.humanoid.comms.ops_bus import _telegram_chat_id
+                
+                chat_id = _telegram_chat_id()
+                if not chat_id:
+                    _log.warning("No chat_id for approval request")
+                    return False
+                
+                bridge = TelegramBridge()
+                import uuid
+                approval_id = str(uuid.uuid4())[:8]
+                
+                result = bridge.send_approval_inline(
+                    chat_id=chat_id,
+                    approval_id=approval_id,
+                    action=f"pot_execute:{pot.id}",
+                    risk=pot.severity.value,
+                )
+                
+                if not result.get("ok"):
+                    _log.warning("Could not send approval request: %s", result.get("error"))
+                    return False
+                
+                # Nota: Este fallback no espera respuesta, asume denegado
+                # Para esperar respuesta se necesita el sistema completo de aprobaciones
+                _log.info("Approval request sent to Telegram. Auto-denying for safety.")
+                return False
+                
+            except Exception as e:
+                _log.warning("Fallback approval failed: %s", e)
+                return False
             
         except Exception as e:
             _log.warning("Could not request approval: %s. Auto-denying.", e)
