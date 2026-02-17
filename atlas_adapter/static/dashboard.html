@@ -2844,8 +2844,8 @@
       // Cargar bitácora del servidor
       loadBitacoraFromServer();
       
-      // Polling para nuevas entradas cada 2 segundos
-      setInterval(pollBitacora, 2000);
+      // Polling para nuevas entradas cada 15 segundos (reducido para evitar spam)
+      setInterval(pollBitacora, 15000);
       
       // Entrada inicial
       addToBitacora('Sistema ATLAS iniciado', 'success', 'system');
@@ -2909,12 +2909,14 @@
               source: entry.source || 'system',
               timestamp: ts.getTime()
             };
-            // Evitar duplicados
+            // Evitar duplicados (mismo mensaje en los últimos 60 segundos)
             const isDupe = bitacoraLog.some(e => 
-              Math.abs(e.timestamp - localEntry.timestamp) < 1000 && 
+              Math.abs(e.timestamp - localEntry.timestamp) < 60000 && 
               e.message === localEntry.message
             );
-            if (!isDupe) {
+            // También filtrar mensajes repetitivos del sistema (heals y checks periódicos)
+            const isRoutine = /^(Arquitectura cognitiva OK|Actualizando sistema cognitivo|Sistema cognitivo actualizado|nothing to install|límite\/cooldown)/i.test(localEntry.message);
+            if (!isDupe && !isRoutine) {
               bitacoraLog.unshift(localEntry);
               newEntries++;
             }
