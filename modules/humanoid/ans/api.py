@@ -573,3 +573,94 @@ def ans_comms_test(channel: str = "all", message: str = "Mensaje de prueba desde
             results["audio"] = {"ok": False, "error": str(e)}
     
     return {"ok": all(r.get("ok", False) for r in results.values()), "results": results}
+
+
+# ============================================================================
+# VOICE ASSISTANT - Control de interacción por voz
+# ============================================================================
+
+# Variable global para el proceso del asistente de voz
+_voice_process = None
+
+@router.get("/voice/status")
+def ans_voice_status():
+    """Estado del asistente de voz interactivo."""
+    global _voice_process
+    import subprocess
+    
+    running = False
+    if _voice_process is not None:
+        running = _voice_process.poll() is None
+    
+    return {
+        "ok": True,
+        "running": running,
+        "pid": _voice_process.pid if _voice_process and running else None,
+        "available": True,
+        "features": ["wake_word", "stt", "tts", "llm_integration"]
+    }
+
+
+@router.post("/voice/start")
+def ans_voice_start():
+    """Inicia el asistente de voz en background."""
+    global _voice_process
+    import subprocess
+    import os
+    
+    # Verificar si ya está corriendo
+    if _voice_process is not None and _voice_process.poll() is None:
+        return {"ok": True, "message": "Voice assistant already running", "pid": _voice_process.pid}
+    
+    try:
+        repo_root = os.getenv("ATLAS_PUSH_ROOT") or os.getenv("ATLAS_REPO_PATH") or "C:\\ATLAS_PUSH"
+        script_path = os.path.join(repo_root, "start_voice.py")
+        
+        _voice_process = subprocess.Popen(
+            ["python", script_path],
+            cwd=repo_root,
+            creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == "nt" else 0
+        )
+        
+        return {"ok": True, "message": "Voice assistant started", "pid": _voice_process.pid}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/voice/stop")
+def ans_voice_stop():
+    """Detiene el asistente de voz."""
+    global _voice_process
+    
+    if _voice_process is None:
+        return {"ok": True, "message": "Voice assistant not running"}
+    
+    try:
+        _voice_process.terminate()
+        _voice_process.wait(timeout=5)
+        _voice_process = None
+        return {"ok": True, "message": "Voice assistant stopped"}
+    except Exception as e:
+        try:
+            _voice_process.kill()
+            _voice_process = None
+        except Exception:
+            pass
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/voice/speak")
+def ans_voice_speak(text: str = ""):
+    """Hace que ATLAS hable un texto específico."""
+    if not text:
+        return {"ok": False, "error": "text is required"}
+    
+    try:
+        import pyttsx3
+        engine = pyttsx3.init()
+        engine.setProperty('rate', 140)
+        engine.say(text)
+        engine.runAndWait()
+        return {"ok": True, "spoken": text}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
