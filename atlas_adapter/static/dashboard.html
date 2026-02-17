@@ -2755,7 +2755,7 @@
     
     async function loadBitacoraFromServer() {
       try {
-        const res = await fetch(`${API_BASE}/bitacora?limit=100`);
+        const res = await fetch(`${API_BASE}/ans/bitacora?limit=100`);
         const data = await res.json();
         if (data.ok && data.entries) {
           // Combinar con entradas locales, evitando duplicados
@@ -2780,7 +2780,7 @@
     
     async function pollBitacora() {
       try {
-        const res = await fetch(`${API_BASE}/bitacora/stream?since_id=${lastBitacoraId}`);
+        const res = await fetch(`${API_BASE}/ans/bitacora?limit=20`);
         const data = await res.json();
         if (data.ok && data.entries && data.entries.length > 0) {
           data.entries.forEach(entry => {

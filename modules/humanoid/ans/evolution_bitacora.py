@@ -67,4 +67,6 @@ def append_evolution_log(message: str, ok: bool = True, source: str = "evolution
 
 def get_evolution_entries(limit: int = 100) -> List[Dict]:
     """Return the most recent evolution log entries (newest first for merge)."""
+    # Siempre recargar desde disco para asegurar datos frescos
+    _load_from_disk()
     return list(_evolution_entries)[-limit:][::-1]

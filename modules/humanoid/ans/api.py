@@ -67,25 +67,24 @@ def ans_bitacora(limit: int = 50):
             if actions:
                 for a in actions:
                     accion = a.get("heal_id", "—")
-                    res = "OK" if a.get("ok") else "Error"
+                    ok = a.get("ok", False)
                     entries.append({
                         "timestamp": inc.get("created_at"),
-                        "problema": prob,
-                        "accion": accion,
-                        "resultado": res,
-                        "detalle": (a.get("message") or "")[:100],
+                        "message": f"{prob} - {accion}: {(a.get('message') or '')[:80]}",
+                        "level": "success" if ok else "error",
                         "source": "incident",
-                        "icon": "🔧" if a.get("ok") else "❌",
+                        "icon": "🔧" if ok else "❌",
+                        "category": "Incidente",
                     })
             else:
+                is_open = inc.get("status") == "open"
                 entries.append({
                     "timestamp": inc.get("created_at"),
-                    "problema": prob,
-                    "accion": "—",
-                    "resultado": "pendiente" if inc.get("status") == "open" else "—",
-                    "detalle": "",
+                    "message": prob,
+                    "level": "warning" if is_open else "info",
                     "source": "incident",
-                    "icon": "⚠️" if inc.get("status") == "open" else "📋",
+                    "icon": "⚠️" if is_open else "📋",
+                    "category": "Incidente",
                 })
         
         # 2. Entradas de evolución y comunicación
@@ -125,19 +124,18 @@ def ans_bitacora(limit: int = 50):
             
             entries.append({
                 "timestamp": ev.get("timestamp", ""),
-                "problema": categoria,
-                "accion": "—",
-                "resultado": "OK" if ev.get("ok", True) else "Error",
-                "detalle": msg[:200],
+                "message": msg[:200],
+                "level": "success" if ev.get("ok", True) else "error",
                 "source": src,
                 "icon": icon,
+                "category": categoria,
             })
         
         # Ordenar por timestamp (más reciente primero)
         entries.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
-        return {"ok": True, "data": entries[:limit], "total": len(entries)}
+        return {"ok": True, "entries": entries[:limit], "total": len(entries)}
     except Exception as e:
-        return {"ok": False, "data": [], "error": str(e)}
+        return {"ok": False, "entries": [], "error": str(e)}
 
 
 class EvolutionLogBody(BaseModel):
