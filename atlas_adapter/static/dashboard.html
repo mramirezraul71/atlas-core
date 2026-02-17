@@ -2760,13 +2760,27 @@
         if (data.ok && data.entries) {
           // Combinar con entradas locales, evitando duplicados
           data.entries.forEach(entry => {
-            if (!bitacoraLog.find(e => e.id === entry.id)) {
-              entry.type = entry.level; // Mapear level a type
-              bitacoraLog.push(entry);
+            // Convertir formato del servidor al formato local
+            const ts = entry.timestamp ? new Date(entry.timestamp) : new Date();
+            const localEntry = {
+              id: ts.getTime(),
+              time: ts.toLocaleTimeString('es-ES', {hour: '2-digit', minute: '2-digit', second: '2-digit'}),
+              message: entry.message || '',
+              type: entry.level || 'info',
+              source: entry.source || 'system',
+              timestamp: ts.getTime()
+            };
+            // Evitar duplicados (por mensaje similar en mismo segundo)
+            const isDupe = bitacoraLog.some(e => 
+              Math.abs(e.timestamp - localEntry.timestamp) < 1000 && 
+              e.message === localEntry.message
+            );
+            if (!isDupe) {
+              bitacoraLog.push(localEntry);
             }
           });
-          // Ordenar por timestamp
-          bitacoraLog.sort((a, b) => b.id - a.id);
+          // Ordenar por timestamp (más reciente primero)
+          bitacoraLog.sort((a, b) => b.timestamp - a.timestamp);
           if (bitacoraLog.length > 0) {
             lastBitacoraId = bitacoraLog[0].id;
           }
@@ -2783,22 +2797,40 @@
         const res = await fetch(`${API_BASE}/ans/bitacora?limit=20`);
         const data = await res.json();
         if (data.ok && data.entries && data.entries.length > 0) {
+          let newEntries = 0;
           data.entries.forEach(entry => {
-            entry.type = entry.level;
-            if (!bitacoraLog.find(e => e.id === entry.id)) {
-              bitacoraLog.unshift(entry);
-              
-              // Notificar si panel minimizado
-              const panel = document.getElementById('bitacora-panel');
-              if (panel && panel.classList.contains('minimized')) {
-                unreadCount++;
-                document.getElementById('bitacora-badge').textContent = unreadCount;
-              }
+            const ts = entry.timestamp ? new Date(entry.timestamp) : new Date();
+            const localEntry = {
+              id: ts.getTime(),
+              time: ts.toLocaleTimeString('es-ES', {hour: '2-digit', minute: '2-digit', second: '2-digit'}),
+              message: entry.message || '',
+              type: entry.level || 'info',
+              source: entry.source || 'system',
+              timestamp: ts.getTime()
+            };
+            // Evitar duplicados
+            const isDupe = bitacoraLog.some(e => 
+              Math.abs(e.timestamp - localEntry.timestamp) < 1000 && 
+              e.message === localEntry.message
+            );
+            if (!isDupe) {
+              bitacoraLog.unshift(localEntry);
+              newEntries++;
             }
           });
-          lastBitacoraId = data.latest_id;
-          renderBitacora();
-          updateBitacoraStats();
+          
+          if (newEntries > 0) {
+            // Notificar si panel minimizado
+            const panel = document.getElementById('bitacora-panel');
+            if (panel && panel.classList.contains('minimized')) {
+              unreadCount += newEntries;
+              document.getElementById('bitacora-badge').textContent = unreadCount;
+            }
+            // Ordenar y renderizar
+            bitacoraLog.sort((a, b) => b.timestamp - a.timestamp);
+            renderBitacora();
+            updateBitacoraStats();
+          }
         }
       } catch (e) {
         // Silenciar errores de polling
