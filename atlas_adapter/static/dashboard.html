@@ -1871,20 +1871,30 @@
           </div>
         </div>
 
-        <!-- Audio Card -->
+        <!-- Audio & Voice Card -->
         <div class="card" style="padding: 1.5rem;">
-          <h3 style="color: var(--accent-orange); margin-bottom: 1rem;">🔊 Audio (TTS)</h3>
+          <h3 style="color: var(--accent-orange); margin-bottom: 1rem;">🎤 Audio & Voz Interactiva</h3>
           <div style="display: flex; flex-direction: column; gap: 0.75rem;">
             <div style="display: flex; justify-content: space-between;">
-              <span style="color: var(--text-muted);">Estado:</span>
+              <span style="color: var(--text-muted);">TTS:</span>
               <span id="audio-connection-status">--</span>
             </div>
             <div style="display: flex; justify-content: space-between;">
               <span style="color: var(--text-muted);">Motor:</span>
               <span id="audio-engine">pyttsx3</span>
             </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted);">Asistente:</span>
+              <span id="voice-assistant-status">--</span>
+            </div>
             <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
-              <button class="action-btn" style="flex: 1;" onclick="testAudio()">🧪 Test Audio</button>
+              <button class="action-btn" style="flex: 1;" onclick="testAudio()">🧪 Test</button>
+              <button class="action-btn" style="flex: 1;" id="voice-toggle-btn" onclick="toggleVoiceAssistant()">🎤 Iniciar Voz</button>
+            </div>
+            <div style="margin-top: 0.5rem;">
+              <input type="text" id="speak-text-input" placeholder="Escribe para que ATLAS hable..." 
+                     style="width: 100%; padding: 0.5rem; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; color: var(--text);">
+              <button class="action-btn" style="width: 100%; margin-top: 0.5rem;" onclick="speakCustomText()">🔊 Hablar</button>
             </div>
           </div>
         </div>
@@ -4533,6 +4543,100 @@
         commsTab.addEventListener('click', () => {
           refreshCommsStatus();
           loadCommsBitacora();
+          refreshVoiceStatus();
+        });
+      }
+    });
+    
+    // ═══════════════════════════════════════════════════════════════
+    // VOICE ASSISTANT - Control de interacción por voz
+    // ═══════════════════════════════════════════════════════════════
+    
+    let voiceAssistantRunning = false;
+    
+    async function refreshVoiceStatus() {
+      try {
+        const response = await fetch('/ans/voice/status');
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        voiceAssistantRunning = data.running;
+        
+        const statusEl = document.getElementById('voice-assistant-status');
+        const btnEl = document.getElementById('voice-toggle-btn');
+        
+        if (data.running) {
+          statusEl.textContent = '🟢 Activo (PID: ' + data.pid + ')';
+          statusEl.style.color = 'var(--accent-green)';
+          btnEl.textContent = '🛑 Detener Voz';
+          btnEl.style.background = 'var(--accent-red)';
+        } else {
+          statusEl.textContent = '⚪ Inactivo';
+          statusEl.style.color = 'var(--text-muted)';
+          btnEl.textContent = '🎤 Iniciar Voz';
+          btnEl.style.background = '';
+        }
+      } catch (e) {
+        console.error('Error refreshing voice status:', e);
+      }
+    }
+    
+    async function toggleVoiceAssistant() {
+      const endpoint = voiceAssistantRunning ? '/ans/voice/stop' : '/ans/voice/start';
+      const action = voiceAssistantRunning ? 'Deteniendo' : 'Iniciando';
+      
+      try {
+        addToBitacora(action + ' asistente de voz...', 'info', 'voice');
+        
+        const response = await fetch(endpoint, { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.ok) {
+          addToBitacora('Asistente de voz ' + (voiceAssistantRunning ? 'detenido' : 'iniciado'), 'success', 'voice');
+          setTimeout(refreshVoiceStatus, 1000);
+        } else {
+          throw new Error(data.error || 'Error');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+        addToBitacora('Error con asistente de voz: ' + e.message, 'error', 'voice');
+      }
+    }
+    
+    async function speakCustomText() {
+      const input = document.getElementById('speak-text-input');
+      const text = (input.value || '').trim();
+      
+      if (!text) {
+        alert('Escribe algo para que ATLAS hable');
+        return;
+      }
+      
+      try {
+        addToBitacora('ATLAS hablando: ' + text.substring(0, 30) + '...', 'info', 'voice');
+        
+        const response = await fetch('/ans/voice/speak?text=' + encodeURIComponent(text), {
+          method: 'POST'
+        });
+        const data = await response.json();
+        
+        if (data.ok) {
+          addToBitacora('ATLAS habló correctamente', 'success', 'voice');
+          input.value = '';
+        } else {
+          throw new Error(data.error || 'Error');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+    
+    // Enter key para hablar
+    document.addEventListener('DOMContentLoaded', () => {
+      const speakInput = document.getElementById('speak-text-input');
+      if (speakInput) {
+        speakInput.addEventListener('keypress', (e) => {
+          if (e.key === 'Enter') speakCustomText();
         });
       }
     });
