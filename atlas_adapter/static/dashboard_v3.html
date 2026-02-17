@@ -335,6 +335,7 @@
     <div class="nav-tabs">
       <button class="nav-tab active" data-tab="chat">Chat</button>
       <button class="nav-tab" data-tab="modulos">Modulos</button>
+      <button class="nav-tab" data-tab="comms">📱 Comms</button>
       <button class="nav-tab" data-tab="gobernanza">Gobernanza</button>
       <button class="nav-tab" data-tab="config">Config IA</button>
       <button class="nav-tab" data-tab="vision">👁 Vision</button>
@@ -408,6 +409,114 @@
           <button class="btn btn-secondary" onclick="clearActivity()">Limpiar</button>
         </div>
         <div class="activity-list" id="modules-activity-list"></div>
+      </div>
+    </div>
+
+    <!-- ========== TAB: COMUNICACIONES ========== -->
+    <div class="tab-panel" id="panel-comms">
+      <div class="stats-bar">
+        <div class="stat-card">
+          <div class="stat-value success" id="comms-whatsapp">--</div>
+          <div class="stat-label">WHATSAPP</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="comms-telegram">--</div>
+          <div class="stat-label">TELEGRAM</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="comms-audio">--</div>
+          <div class="stat-label">AUDIO</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="comms-messages">0</div>
+          <div class="stat-label">MENSAJES HOY</div>
+        </div>
+      </div>
+
+      <div class="action-bar">
+        <button class="btn btn-primary" onclick="refreshCommsStatus()">🔄 Actualizar Estado</button>
+        <button class="btn btn-secondary" onclick="openWahaDashboard()">📱 Abrir WAHA Dashboard</button>
+        <button class="btn" style="background: var(--accent-purple); color: white;" onclick="testComms()">📨 Enviar Prueba</button>
+      </div>
+
+      <div class="config-grid">
+        <!-- WhatsApp Card -->
+        <div class="config-card" id="whatsapp-card">
+          <div class="config-title">📱 WhatsApp (WAHA)</div>
+          <div class="config-item">
+            <span class="config-label">Estado</span>
+            <span id="waha-status" style="color: var(--accent-green);">Conectando...</span>
+          </div>
+          <div class="config-item">
+            <span class="config-label">Sesión</span>
+            <span id="waha-session">default</span>
+          </div>
+          <div class="config-item">
+            <span class="config-label">Teléfono</span>
+            <span id="waha-phone">--</span>
+          </div>
+          <div class="config-item">
+            <span class="config-label">Dashboard WAHA</span>
+            <a href="#" id="waha-link" target="_blank" style="color: var(--accent-cyan); text-decoration: none;">Abrir ↗</a>
+          </div>
+          <div style="margin-top: 1rem;">
+            <button class="btn btn-primary" onclick="restartWahaSession()" style="width: 100%;">🔄 Reiniciar Sesión</button>
+          </div>
+          <div id="waha-qr-container" style="display: none; margin-top: 1rem; text-align: center;">
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 0.5rem;">Escanea este QR con WhatsApp:</p>
+            <img id="waha-qr" style="max-width: 200px; border-radius: 8px;" />
+          </div>
+        </div>
+
+        <!-- Telegram Card -->
+        <div class="config-card" id="telegram-card">
+          <div class="config-title">📨 Telegram</div>
+          <div class="config-item">
+            <span class="config-label">Bot Token</span>
+            <span id="telegram-token-status">--</span>
+          </div>
+          <div class="config-item">
+            <span class="config-label">Chat ID</span>
+            <span id="telegram-chat-status">--</span>
+          </div>
+          <div style="margin-top: 1rem;">
+            <button class="btn btn-secondary" onclick="testTelegram()" style="width: 100%;">📨 Probar Telegram</button>
+          </div>
+        </div>
+
+        <!-- Audio Card -->
+        <div class="config-card" id="audio-card">
+          <div class="config-title">🔊 Audio (TTS)</div>
+          <div class="config-item">
+            <span class="config-label">Motor</span>
+            <span id="audio-engine">--</span>
+          </div>
+          <div class="config-item">
+            <span class="config-label">Estado</span>
+            <span id="audio-status">--</span>
+          </div>
+          <div style="margin-top: 1rem;">
+            <button class="btn btn-secondary" onclick="testAudio()" style="width: 100%;">🔊 Probar Audio</button>
+          </div>
+        </div>
+
+        <!-- Quick Actions Card -->
+        <div class="config-card">
+          <div class="config-title">⚡ Acciones Rápidas</div>
+          <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <button class="btn btn-primary" onclick="sendTestAll()">📢 Notificar en Todos los Canales</button>
+            <button class="btn btn-secondary" onclick="showQRCode()">📷 Mostrar QR de WhatsApp</button>
+            <button class="btn" style="background: var(--accent-orange); color: white;" onclick="refreshCommsStatus()">🔄 Reconectar Servicios</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="activity-section" style="margin-top: 1.5rem;">
+        <div class="activity-header">
+          <span class="activity-title">BITÁCORA DE COMUNICACIONES</span>
+          <button class="btn btn-secondary" onclick="loadCommsBitacora()">🔄 Actualizar</button>
+        </div>
+        <div class="activity-list" id="comms-activity-list"></div>
       </div>
     </div>
 
@@ -764,6 +873,185 @@
     function nervousDiagnostic() {
       addActivity('Diagnóstico del sistema nervioso...', 'info');
     }
+
+    // ========== COMUNICACIONES ==========
+    const WAHA_DEFAULT_URL = 'http://localhost:3010';
+    let wahaUrl = WAHA_DEFAULT_URL;
+
+    async function refreshCommsStatus() {
+      addActivity('Actualizando estado de comunicaciones...', 'info');
+      try {
+        const res = await fetch(`${API_BASE}/ans/comms/status`);
+        const data = await res.json();
+        
+        // WhatsApp
+        if (data.waha) {
+          const wahaStatus = data.waha.status || 'unknown';
+          const isWorking = wahaStatus === 'WORKING';
+          document.getElementById('comms-whatsapp').textContent = isWorking ? 'OK' : wahaStatus;
+          document.getElementById('comms-whatsapp').className = `stat-value ${isWorking ? 'success' : 'warning'}`;
+          document.getElementById('waha-status').textContent = wahaStatus;
+          document.getElementById('waha-status').style.color = isWorking ? 'var(--accent-green)' : 'var(--accent-orange)';
+          document.getElementById('waha-session').textContent = data.waha.session_name || 'default';
+          document.getElementById('waha-phone').textContent = data.waha.phone ? `+${data.waha.phone}` : '--';
+          wahaUrl = data.waha.dashboard_url || WAHA_DEFAULT_URL;
+          document.getElementById('waha-link').href = wahaUrl;
+          
+          // Show QR if not authenticated
+          if (!isWorking) {
+            showQRCode();
+          } else {
+            document.getElementById('waha-qr-container').style.display = 'none';
+          }
+        }
+        
+        // Telegram
+        if (data.telegram) {
+          const tgEnabled = data.telegram.enabled;
+          document.getElementById('comms-telegram').textContent = tgEnabled ? 'OK' : 'OFF';
+          document.getElementById('comms-telegram').className = `stat-value ${tgEnabled ? 'success' : ''}`;
+          document.getElementById('telegram-token-status').textContent = data.telegram.token_configured ? '✓ Configurado' : '✗ No configurado';
+          document.getElementById('telegram-token-status').style.color = data.telegram.token_configured ? 'var(--accent-green)' : 'var(--accent-red)';
+          document.getElementById('telegram-chat-status').textContent = data.telegram.chat_id_configured ? '✓ Configurado' : '✗ No configurado';
+          document.getElementById('telegram-chat-status').style.color = data.telegram.chat_id_configured ? 'var(--accent-green)' : 'var(--accent-red)';
+        }
+        
+        // Audio
+        if (data.audio) {
+          const audioEnabled = data.audio.enabled;
+          document.getElementById('comms-audio').textContent = audioEnabled ? 'OK' : 'OFF';
+          document.getElementById('comms-audio').className = `stat-value ${audioEnabled ? 'success' : ''}`;
+          document.getElementById('audio-engine').textContent = data.audio.engine || 'No disponible';
+          document.getElementById('audio-status').textContent = audioEnabled ? '✓ Activo' : '✗ No disponible';
+          document.getElementById('audio-status').style.color = audioEnabled ? 'var(--accent-green)' : 'var(--accent-red)';
+        }
+        
+        addActivity('Estado de comunicaciones actualizado', 'success');
+      } catch (e) {
+        addActivity('Error actualizando comms: ' + e.message, 'error');
+      }
+    }
+
+    function openWahaDashboard() {
+      window.open(wahaUrl, '_blank');
+      addActivity('Abriendo dashboard de WAHA...', 'info');
+    }
+
+    async function showQRCode() {
+      try {
+        const res = await fetch(`${API_BASE}/ans/comms/waha/qr`);
+        const data = await res.json();
+        if (data.ok && data.qr_base64) {
+          const container = document.getElementById('waha-qr-container');
+          const img = document.getElementById('waha-qr');
+          img.src = `data:image/png;base64,${data.qr_base64}`;
+          container.style.display = 'block';
+          addActivity('QR de WhatsApp mostrado', 'info');
+        } else {
+          addActivity('WhatsApp ya está conectado', 'success');
+        }
+      } catch (e) {
+        addActivity('Error obteniendo QR: ' + e.message, 'error');
+      }
+    }
+
+    async function restartWahaSession() {
+      addActivity('Reiniciando sesión de WAHA...', 'info');
+      try {
+        const res = await fetch(`${API_BASE}/ans/comms/waha/restart`, { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          addActivity('Sesión de WAHA reiniciada', 'success');
+          setTimeout(refreshCommsStatus, 3000);
+        } else {
+          addActivity('Error reiniciando WAHA: ' + (data.error || 'unknown'), 'error');
+        }
+      } catch (e) {
+        addActivity('Error reiniciando WAHA: ' + e.message, 'error');
+      }
+    }
+
+    async function testComms() {
+      addActivity('Enviando mensaje de prueba a todos los canales...', 'info');
+      try {
+        const res = await fetch(`${API_BASE}/ans/comms/test?channel=all&message=Prueba desde Dashboard ATLAS`, { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          addActivity('Mensaje de prueba enviado correctamente', 'success');
+        } else {
+          addActivity('Algunos canales fallaron: ' + JSON.stringify(data.results), 'warning');
+        }
+      } catch (e) {
+        addActivity('Error enviando prueba: ' + e.message, 'error');
+      }
+    }
+
+    async function testTelegram() {
+      addActivity('Probando Telegram...', 'info');
+      try {
+        const res = await fetch(`${API_BASE}/ans/comms/test?channel=telegram&message=Prueba desde Dashboard ATLAS`, { method: 'POST' });
+        const data = await res.json();
+        addActivity(data.results?.telegram?.ok ? 'Telegram OK' : 'Telegram falló', data.results?.telegram?.ok ? 'success' : 'error');
+      } catch (e) {
+        addActivity('Error: ' + e.message, 'error');
+      }
+    }
+
+    async function testAudio() {
+      addActivity('Probando Audio...', 'info');
+      try {
+        const res = await fetch(`${API_BASE}/ans/comms/test?channel=audio&message=Prueba de audio desde Dashboard ATLAS`, { method: 'POST' });
+        const data = await res.json();
+        addActivity(data.results?.audio?.ok ? 'Audio OK' : 'Audio falló', data.results?.audio?.ok ? 'success' : 'error');
+      } catch (e) {
+        addActivity('Error: ' + e.message, 'error');
+      }
+    }
+
+    async function sendTestAll() {
+      await testComms();
+    }
+
+    async function loadCommsBitacora() {
+      try {
+        const res = await fetch(`${API_BASE}/ans/bitacora?limit=20`);
+        const data = await res.json();
+        const list = document.getElementById('comms-activity-list');
+        if (data.ok && data.data) {
+          // Filter only comms-related entries
+          const commsEntries = data.data.filter(e => 
+            ['telegram', 'whatsapp', 'comms', 'audio', 'evolution', 'startup', 'services'].includes(e.source)
+          );
+          list.innerHTML = commsEntries.slice(0, 10).map(e => {
+            const time = e.timestamp ? new Date(e.timestamp).toLocaleTimeString('es-ES') : '--';
+            const icon = e.icon || '📋';
+            const typeClass = e.resultado === 'OK' ? 'success' : (e.resultado === 'Error' ? 'error' : 'info');
+            return `
+              <div class="activity-item ${typeClass}">
+                <div class="activity-time">${time}</div>
+                <div class="activity-message">${icon} ${e.detalle || e.problema || ''}</div>
+              </div>
+            `;
+          }).join('');
+        }
+      } catch (e) {
+        console.error('Error loading comms bitacora:', e);
+      }
+    }
+
+    // Load comms status on tab switch
+    document.querySelector('[data-tab="comms"]')?.addEventListener('click', () => {
+      refreshCommsStatus();
+      loadCommsBitacora();
+    });
+
+    // Auto-refresh comms status every 30 seconds when on comms tab
+    setInterval(() => {
+      const commsPanel = document.getElementById('panel-comms');
+      if (commsPanel && commsPanel.classList.contains('active')) {
+        refreshCommsStatus();
+      }
+    }, 30000);
   </script>
 </body>
 </html>
