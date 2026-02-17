@@ -23,7 +23,14 @@ from .auto_router import (
     get_auto_router,
     auto_route,
 )
-from .brain_state import get_brain_state, set_brain_state
+from .brain_state import (
+    get_brain_state,
+    set_brain_state,
+    set_full_auto_mode,
+    get_specialist_model,
+    get_parameters,
+    is_auto_route_enabled,
+)
 
 __all__ = [
     # Legacy
@@ -40,4 +47,8 @@ __all__ = [
     # Brain State
     "get_brain_state",
     "set_brain_state",
+    "set_full_auto_mode",
+    "get_specialist_model",
+    "get_parameters",
+    "is_auto_route_enabled",
 ]
