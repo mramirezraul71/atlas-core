@@ -273,13 +273,18 @@ class VisionPipeline:
             self._pose_estimator = MockPoseEstimator()
     
     def _load_depth_estimator(self) -> None:
-        """Carga estimador de profundidad."""
+        """Carga estimador de profundidad (MiDaS con CUDA)."""
         if self._depth_estimator is not None:
             return
         
-        # Por ahora usar mock - Depth Anything requiere setup específico
-        logger.info("Using mock depth estimator")
-        self._depth_estimator = MockDepthEstimator()
+        try:
+            from .depth_estimation import DepthEstimation
+            self._depth_estimator = DepthEstimation(model_name="midas", model_size="MiDaS_small")
+            self._depth_estimator.load()
+            logger.info("Loaded MiDaS depth estimator")
+        except Exception as e:
+            logger.warning(f"Could not load depth estimator: {e}, using mock")
+            self._depth_estimator = MockDepthEstimator()
     
     def process_frame(self, frame: Any, 
                      detect_objects: bool = True,
