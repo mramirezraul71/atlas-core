@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from . import clear_stale_locks, restart_scheduler, fallback_models, tune_router
 from . import rotate_logs, retry_gateway_bootstrap, mark_node_offline, regenerate_support_bundle
-from . import install_optional_deps, install_tesseract
+from . import install_optional_deps, install_tesseract, restart_nexus_services
 from modules.humanoid.ans.registry import register_heal
 
 
@@ -18,6 +18,7 @@ def _register_all() -> None:
     register_heal("regenerate_support_bundle", regenerate_support_bundle.run)
     register_heal("install_optional_deps", install_optional_deps.run)
     register_heal("install_tesseract", install_tesseract.run)
+    register_heal("restart_nexus_services", restart_nexus_services.run)
 
 
 _register_all()

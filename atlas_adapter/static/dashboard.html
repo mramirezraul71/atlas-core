@@ -3366,13 +3366,17 @@
     // Governance
     async function setGovMode(mode) {
       try {
-        const res = await fetch(`${API_BASE}/governance/mode/${mode}`, { method: 'POST' });
+        const res = await fetch(`${API_BASE}/governance/mode`, { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: mode })
+        });
         const data = await res.json();
         if (data.ok) {
           document.getElementById('gov-mode').textContent = mode.toUpperCase();
           addActivity(`Modo de gobernanza: ${mode.toUpperCase()}`, 'success');
         } else {
-          addActivity(`Error: ${data.error}`, 'error');
+          addActivity(`Error: ${data.error || 'No se pudo cambiar modo'}`, 'error');
         }
       } catch (e) {
         addActivity(`Error: ${e.message}`, 'error');
@@ -3382,10 +3386,19 @@
     async function emergencyStop() {
       if (confirm('⚠️ ¿Confirmar EMERGENCY STOP?\n\nEsto detendrá todas las operaciones automáticas.')) {
         try {
-          await fetch(`${API_BASE}/governance/mode/emergency`, { method: 'POST' });
-          document.getElementById('gov-mode').textContent = 'EMERGENCY';
-          document.getElementById('gov-mode').style.color = 'var(--accent-red)';
-          addActivity('🚨 EMERGENCY STOP ACTIVADO', 'error');
+          const res = await fetch(`${API_BASE}/governance/emergency`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ activate: true, reason: 'Manual emergency stop' })
+          });
+          const data = await res.json();
+          if (data.ok) {
+            document.getElementById('gov-mode').textContent = 'EMERGENCY';
+            document.getElementById('gov-mode').style.color = 'var(--accent-red)';
+            addActivity('🚨 EMERGENCY STOP ACTIVADO', 'error');
+          } else {
+            addActivity(`Error: ${data.error || 'No se pudo activar'}`, 'error');
+          }
         } catch (e) {
           addActivity(`Error: ${e.message}`, 'error');
         }
