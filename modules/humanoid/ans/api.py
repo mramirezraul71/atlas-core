@@ -426,6 +426,13 @@ def ans_comms_status():
     result["waha"]["url"] = waha_url
     result["waha"]["dashboard_url"] = waha_url  # WAHA dashboard está en la misma URL
     
+    # Formato para el frontend
+    result["whatsapp"] = {
+        "connected": False,
+        "session": "default",
+        "phone": None,
+    }
+    
     try:
         headers = {"X-Api-Key": waha_key}
         req = urllib.request.Request(f"{waha_url}/api/sessions/default", headers=headers)
@@ -434,10 +441,14 @@ def ans_comms_status():
             result["waha"]["status"] = data.get("status", "unknown")
             result["waha"]["authenticated"] = data.get("status") == "WORKING"
             result["waha"]["session_name"] = data.get("name", "default")
+            result["whatsapp"]["connected"] = data.get("status") == "WORKING"
+            result["whatsapp"]["session"] = data.get("name", "default")
             me = data.get("me", {})
             if me:
-                result["waha"]["phone"] = me.get("id", "").split("@")[0]
+                phone = me.get("id", "").split("@")[0]
+                result["waha"]["phone"] = phone
                 result["waha"]["name"] = me.get("pushName", "")
+                result["whatsapp"]["phone"] = phone
     except Exception as e:
         result["waha"]["status"] = "error"
         result["waha"]["error"] = str(e)[:100]
@@ -448,14 +459,21 @@ def ans_comms_status():
     result["telegram"]["enabled"] = bool(telegram_token)
     result["telegram"]["token_configured"] = bool(telegram_token)
     result["telegram"]["chat_id_configured"] = bool(telegram_chat)
+    result["telegram"]["configured"] = bool(telegram_token)
+    result["telegram"]["has_token"] = bool(telegram_token)
+    result["telegram"]["chat_id"] = telegram_chat[:6] + "..." if telegram_chat else None
     
     # Audio
     try:
         import pyttsx3
+        # Verificar que realmente puede inicializar
+        engine = pyttsx3.init()
         result["audio"]["enabled"] = True
+        result["audio"]["available"] = True
         result["audio"]["engine"] = "pyttsx3"
-    except ImportError:
+    except Exception:
         result["audio"]["enabled"] = False
+        result["audio"]["available"] = False
         result["audio"]["engine"] = None
     
     # CommsHub status
@@ -545,8 +563,11 @@ def ans_comms_test(channel: str = "all", message: str = "Mensaje de prueba desde
     
     if channel in ("audio", "all"):
         try:
-            from modules.humanoid.comms.ops_bus import _subsystem_human
-            _subsystem_human(message, "info")
+            import pyttsx3
+            engine = pyttsx3.init()
+            engine.setProperty('rate', 150)
+            engine.say(message)
+            engine.runAndWait()
             results["audio"] = {"ok": True}
         except Exception as e:
             results["audio"] = {"ok": False, "error": str(e)}

@@ -1155,6 +1155,7 @@
       <button class="nav-tab" data-tab="config">Config IA</button>
       <button class="nav-tab" data-tab="vision">👁 Vision</button>
       <button class="nav-tab" data-tab="nervioso">🔗 Nervioso</button>
+      <button class="nav-tab" data-tab="comms">📱 Comms</button>
       <button class="nav-tab" data-tab="tutorias">📋 Tutorías</button>
     </div>
     <div class="nav-spacer"></div>
@@ -1779,6 +1780,134 @@
   </div>
 
   </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!-- TAB: COMUNICACIONES -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <div class="tab-panel" id="panel-comms">
+      <!-- Header -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h2 style="color: var(--accent-cyan); font-size: 1.5rem; font-weight: 600;">📱 Centro de Comunicaciones</h2>
+        <div class="status-badge" id="comms-status">VERIFICANDO...</div>
+      </div>
+
+      <!-- Stats Bar -->
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+        <div class="metric-card">
+          <div class="metric-label">WhatsApp</div>
+          <div class="metric-value" id="comms-whatsapp-status" style="color: var(--accent-cyan);">--</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Telegram</div>
+          <div class="metric-value" id="comms-telegram-status" style="color: var(--accent-cyan);">--</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Audio TTS</div>
+          <div class="metric-value" id="comms-audio-status" style="color: var(--accent-cyan);">--</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Mensajes Hoy</div>
+          <div class="metric-value" id="comms-messages-today" style="color: var(--accent-green);">--</div>
+        </div>
+      </div>
+
+      <!-- Action Bar -->
+      <div style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+        <button class="action-btn" onclick="refreshCommsStatus()">🔄 Actualizar Estado</button>
+        <button class="action-btn" onclick="openWahaDashboard()">🌐 WAHA Dashboard</button>
+        <button class="action-btn" onclick="showQRCode()">📷 Mostrar QR</button>
+        <button class="action-btn" onclick="testAllComms()">🧪 Test Canales</button>
+      </div>
+
+      <!-- Main Grid -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+        <!-- WhatsApp Card -->
+        <div class="card" style="padding: 1.5rem;">
+          <h3 style="color: var(--accent-green); margin-bottom: 1rem;">💬 WhatsApp (WAHA)</h3>
+          <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted);">Estado:</span>
+              <span id="waha-connection-status">--</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted);">Sesión:</span>
+              <span id="waha-session-name">default</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted);">Teléfono:</span>
+              <span id="waha-phone-number">--</span>
+            </div>
+            <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+              <button class="action-btn" style="flex: 1;" onclick="restartWahaSession()">🔄 Reiniciar Sesión</button>
+              <button class="action-btn" style="flex: 1;" onclick="testWhatsApp()">🧪 Test</button>
+            </div>
+            <!-- QR Container -->
+            <div id="waha-qr-container" style="display: none; text-align: center; padding: 1rem; background: #fff; border-radius: 8px; margin-top: 0.5rem;">
+              <img id="waha-qr-image" style="max-width: 200px;" alt="QR WhatsApp"/>
+              <p style="color: #333; font-size: 0.8rem; margin-top: 0.5rem;">Escanea con WhatsApp</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Telegram Card -->
+        <div class="card" style="padding: 1.5rem;">
+          <h3 style="color: var(--accent-purple); margin-bottom: 1rem;">📨 Telegram</h3>
+          <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted);">Estado:</span>
+              <span id="telegram-connection-status">--</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted);">Token:</span>
+              <span id="telegram-token-status">--</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted);">Chat ID:</span>
+              <span id="telegram-chat-id">--</span>
+            </div>
+            <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+              <button class="action-btn" style="flex: 1;" onclick="testTelegram()">🧪 Test Mensaje</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Audio Card -->
+        <div class="card" style="padding: 1.5rem;">
+          <h3 style="color: var(--accent-orange); margin-bottom: 1rem;">🔊 Audio (TTS)</h3>
+          <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted);">Estado:</span>
+              <span id="audio-connection-status">--</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--text-muted);">Motor:</span>
+              <span id="audio-engine">pyttsx3</span>
+            </div>
+            <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+              <button class="action-btn" style="flex: 1;" onclick="testAudio()">🧪 Test Audio</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Actions Card -->
+        <div class="card" style="padding: 1.5rem;">
+          <h3 style="color: var(--accent-cyan); margin-bottom: 1rem;">⚡ Acciones Rápidas</h3>
+          <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <button class="action-btn" onclick="sendTestAll()">📢 Notificar en Todos los Canales</button>
+            <button class="action-btn" onclick="showQRCode()">📷 Mostrar QR de WhatsApp</button>
+            <button class="action-btn" onclick="reconnectAllComms()">🔌 Reconectar Servicios</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bitácora de Comunicaciones -->
+      <div class="card" style="padding: 1.5rem; margin-top: 1.5rem;">
+        <h3 style="color: var(--accent-cyan); margin-bottom: 1rem;">📋 Bitácora de Comunicaciones</h3>
+        <div id="comms-activity-list" style="max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.85rem;">
+          <p style="color: var(--text-muted);">Cargando eventos...</p>
+        </div>
+      </div>
+    </div>
 
     <!-- ═══════════════════════════════════════════════════════════════ -->
     <!-- TAB: TUTORÍAS Y VISITAS -->
@@ -4167,6 +4296,246 @@
         alert('Error exportando recomendaciones');
       }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // COMUNICACIONES
+    // ═══════════════════════════════════════════════════════════════
+    
+    async function refreshCommsStatus() {
+      try {
+        document.getElementById('comms-status').textContent = 'VERIFICANDO...';
+        document.getElementById('comms-status').style.background = 'var(--accent-orange)';
+        
+        const response = await fetch('/ans/comms/status');
+        if (!response.ok) throw new Error('API no disponible');
+        
+        const data = await response.json();
+        
+        // WhatsApp
+        const waStatus = data.whatsapp?.connected ? '✅ Conectado' : '❌ Desconectado';
+        document.getElementById('comms-whatsapp-status').textContent = waStatus;
+        document.getElementById('waha-connection-status').textContent = waStatus;
+        document.getElementById('waha-session-name').textContent = data.whatsapp?.session || 'default';
+        document.getElementById('waha-phone-number').textContent = data.whatsapp?.phone || '--';
+        
+        // Telegram
+        const tgStatus = data.telegram?.configured ? '✅ Configurado' : '⚠️ Sin configurar';
+        document.getElementById('comms-telegram-status').textContent = tgStatus;
+        document.getElementById('telegram-connection-status').textContent = tgStatus;
+        document.getElementById('telegram-token-status').textContent = data.telegram?.has_token ? '✅ Presente' : '❌ Falta';
+        document.getElementById('telegram-chat-id').textContent = data.telegram?.chat_id || '--';
+        
+        // Audio
+        const audioStatus = data.audio?.available ? '✅ Disponible' : '❌ No disponible';
+        document.getElementById('comms-audio-status').textContent = audioStatus;
+        document.getElementById('audio-connection-status').textContent = audioStatus;
+        document.getElementById('audio-engine').textContent = data.audio?.engine || 'pyttsx3';
+        
+        // Messages today
+        document.getElementById('comms-messages-today').textContent = data.messages_today || '0';
+        
+        // Overall status
+        const allOk = data.whatsapp?.connected && data.telegram?.configured && data.audio?.available;
+        document.getElementById('comms-status').textContent = allOk ? 'OPERATIVO' : 'PARCIAL';
+        document.getElementById('comms-status').style.background = allOk ? 'var(--accent-green)' : 'var(--accent-orange)';
+        
+        addToBitacora('Estado de comunicaciones actualizado', 'success', 'comms');
+      } catch (e) {
+        console.error('Error refreshing comms:', e);
+        document.getElementById('comms-status').textContent = 'ERROR';
+        document.getElementById('comms-status').style.background = 'var(--accent-red)';
+        addToBitacora('Error verificando comunicaciones: ' + e.message, 'error', 'comms');
+      }
+    }
+    
+    function openWahaDashboard() {
+      window.open('http://localhost:3000/dashboard', '_blank');
+      addToBitacora('Abriendo WAHA Dashboard', 'info', 'comms');
+    }
+    
+    async function showQRCode() {
+      try {
+        const container = document.getElementById('waha-qr-container');
+        const img = document.getElementById('waha-qr-image');
+        
+        addToBitacora('Obteniendo código QR de WhatsApp...', 'info', 'comms');
+        
+        const response = await fetch('/ans/comms/waha/qr');
+        if (!response.ok) throw new Error('No se pudo obtener QR');
+        
+        const data = await response.json();
+        if (data.qr_base64) {
+          img.src = 'data:image/png;base64,' + data.qr_base64;
+          container.style.display = 'block';
+          addToBitacora('QR obtenido - escanear con WhatsApp', 'success', 'comms');
+        } else {
+          alert(data.message || 'Sesión ya conectada o QR no disponible');
+          container.style.display = 'none';
+        }
+      } catch (e) {
+        alert('Error obteniendo QR: ' + e.message);
+        addToBitacora('Error obteniendo QR: ' + e.message, 'error', 'comms');
+      }
+    }
+    
+    async function restartWahaSession() {
+      if (!confirm('¿Reiniciar sesión de WhatsApp? Se desconectará temporalmente.')) return;
+      
+      try {
+        addToBitacora('Reiniciando sesión WAHA...', 'info', 'comms');
+        const response = await fetch('/ans/comms/waha/restart', { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.ok) {
+          addToBitacora('Sesión reiniciada - mostrando QR', 'success', 'comms');
+          setTimeout(showQRCode, 2000);
+        } else {
+          throw new Error(data.error || 'Error reiniciando');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+        addToBitacora('Error reiniciando sesión: ' + e.message, 'error', 'comms');
+      }
+    }
+    
+    async function testWhatsApp() {
+      try {
+        addToBitacora('Enviando test a WhatsApp...', 'info', 'comms');
+        const response = await fetch('/ans/comms/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: 'whatsapp', message: 'Test desde Dashboard ATLAS' })
+        });
+        const data = await response.json();
+        if (data.ok) {
+          addToBitacora('Test WhatsApp enviado', 'success', 'comms');
+          alert('Mensaje enviado a WhatsApp');
+        } else {
+          throw new Error(data.error || 'Error enviando');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+        addToBitacora('Error test WhatsApp: ' + e.message, 'error', 'comms');
+      }
+    }
+    
+    async function testTelegram() {
+      try {
+        addToBitacora('Enviando test a Telegram...', 'info', 'comms');
+        const response = await fetch('/ans/comms/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: 'telegram', message: 'Test desde Dashboard ATLAS' })
+        });
+        const data = await response.json();
+        if (data.ok) {
+          addToBitacora('Test Telegram enviado', 'success', 'comms');
+          alert('Mensaje enviado a Telegram');
+        } else {
+          throw new Error(data.error || 'Error enviando');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+        addToBitacora('Error test Telegram: ' + e.message, 'error', 'comms');
+      }
+    }
+    
+    async function testAudio() {
+      try {
+        addToBitacora('Probando audio TTS...', 'info', 'comms');
+        const response = await fetch('/ans/comms/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: 'audio', message: 'Test de audio desde Dashboard' })
+        });
+        const data = await response.json();
+        if (data.ok) {
+          addToBitacora('Test Audio ejecutado', 'success', 'comms');
+          alert('Audio reproducido');
+        } else {
+          throw new Error(data.error || 'Error');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+        addToBitacora('Error test Audio: ' + e.message, 'error', 'comms');
+      }
+    }
+    
+    async function testAllComms() {
+      addToBitacora('Probando todos los canales...', 'info', 'comms');
+      await testWhatsApp();
+      await testTelegram();
+      await testAudio();
+      addToBitacora('Test completo finalizado', 'success', 'comms');
+    }
+    
+    async function sendTestAll() {
+      try {
+        addToBitacora('Enviando notificación a todos los canales...', 'info', 'comms');
+        const response = await fetch('/ans/comms/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: 'all', message: 'Notificación broadcast desde ATLAS Dashboard' })
+        });
+        const data = await response.json();
+        if (data.ok) {
+          addToBitacora('Notificación broadcast enviada', 'success', 'comms');
+          alert('Notificación enviada a todos los canales');
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    }
+    
+    async function reconnectAllComms() {
+      addToBitacora('Reconectando servicios de comunicación...', 'info', 'comms');
+      await restartWahaSession();
+      setTimeout(refreshCommsStatus, 3000);
+    }
+    
+    async function loadCommsBitacora() {
+      try {
+        const response = await fetch('/ans/bitacora?limit=20');
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        const container = document.getElementById('comms-activity-list');
+        
+        // Filter comms-related entries
+        const commsEntries = (data.entries || []).filter(e => 
+          ['whatsapp', 'telegram', 'audio', 'comms'].includes(e.category?.toLowerCase())
+        );
+        
+        if (commsEntries.length === 0) {
+          container.innerHTML = '<p style="color: var(--text-muted);">Sin eventos de comunicación recientes</p>';
+          return;
+        }
+        
+        container.innerHTML = commsEntries.slice(0, 10).map(e => {
+          const time = new Date(e.timestamp || Date.now()).toLocaleTimeString();
+          const icon = e.icon || '📡';
+          const levelColor = e.level === 'error' ? 'var(--accent-red)' : 
+                             e.level === 'warning' ? 'var(--accent-orange)' : 'var(--text-muted)';
+          return `<div style="padding: 0.5rem; border-bottom: 1px solid var(--border);">
+            <span style="color: var(--text-muted);">${time}</span> ${icon} 
+            <span style="color: ${levelColor};">${e.message || e.event || '--'}</span>
+          </div>`;
+        }).join('');
+      } catch (e) {
+        console.error('Error loading comms bitacora:', e);
+      }
+    }
+    
+    // Auto-refresh comms when tab is active
+    document.addEventListener('DOMContentLoaded', () => {
+      const commsTab = document.querySelector('[data-tab="comms"]');
+      if (commsTab) {
+        commsTab.addEventListener('click', () => {
+          refreshCommsStatus();
+          loadCommsBitacora();
+        });
+      }
+    });
   </script>
 </body>
 </html>
