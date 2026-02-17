@@ -182,13 +182,14 @@ class CommsHub:
     """
     
     # Mapeo de nivel a canales por defecto
+    # Audio se incluye desde INFO para que ATLAS "hable" constantemente
     LEVEL_CHANNEL_MAP: Dict[MessageLevel, List[str]] = {
         MessageLevel.DEBUG: ["log"],
-        MessageLevel.INFO: ["log", "ops"],
-        MessageLevel.LOW: ["log", "ops"],
-        MessageLevel.MEDIUM: ["log", "ops", "bitacora"],
-        MessageLevel.HIGH: ["log", "ops", "bitacora", "telegram"],
-        MessageLevel.CRITICAL: ["log", "ops", "bitacora", "telegram", "audio"],
+        MessageLevel.INFO: ["log", "ops", "audio"],
+        MessageLevel.LOW: ["log", "ops", "audio"],
+        MessageLevel.MEDIUM: ["log", "ops", "audio", "bitacora"],
+        MessageLevel.HIGH: ["log", "ops", "audio", "bitacora", "telegram"],
+        MessageLevel.CRITICAL: ["log", "ops", "audio", "bitacora", "telegram", "whatsapp"],
     }
     
     def __init__(self) -> None:

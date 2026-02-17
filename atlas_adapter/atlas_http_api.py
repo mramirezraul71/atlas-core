@@ -162,17 +162,20 @@ async def _lifespan(app):
                 ensure_world_state_jobs()
             except Exception:
                 pass
+            # === Sistema de Comunicaciones Unificado ===
+            # Bootstrap centralizado de todos los servicios de comunicación
+            # (reemplaza las inicializaciones individuales de makeplay y telegram_poller)
             try:
-                from modules.humanoid.comms.makeplay_scheduler import ensure_makeplay_jobs
-                ensure_makeplay_jobs()
-            except Exception:
-                pass
-            try:
-                # Telegram polling (aprobaciones remotas sin webhook)
-                from modules.humanoid.comms.telegram_poller import start_polling
-                start_polling()
-            except Exception:
-                pass
+                from modules.humanoid.comms.bootstrap import bootstrap_comms
+                comms_result = bootstrap_comms(skip_tests=True)
+                if not comms_result.get("ok"):
+                    import logging
+                    _comms_logger = logging.getLogger("atlas.comms.startup")
+                    for warning in comms_result.get("warnings", []):
+                        _comms_logger.warning(f"Comms bootstrap: {warning}")
+            except Exception as _comms_err:
+                import logging
+                logging.getLogger("atlas.comms.startup").error(f"Comms bootstrap failed: {_comms_err}")
             try:
                 from modules.humanoid.scheduler.repo_monitor_jobs import ensure_repo_monitor_jobs
                 ensure_repo_monitor_jobs()
@@ -1635,6 +1638,212 @@ def api_comms_alert(body: dict):
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": False, "error": str(e), "ms": ms}
+
+
+# === Nuevos endpoints del Sistema de Comunicación Unificado ===
+
+@app.get("/api/comms/hub/health", tags=["Comms"])
+def api_comms_hub_health():
+    """Estado de salud del CommsHub central (canales, circuit breakers, métricas)."""
+    try:
+        from modules.humanoid.comms import get_hub
+        hub = get_hub()
+        return hub.get_health()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/comms/hub/messages", tags=["Comms"])
+def api_comms_hub_messages(limit: int = 50):
+    """Historial de mensajes del CommsHub."""
+    try:
+        from modules.humanoid.comms import get_hub
+        hub = get_hub()
+        return {"ok": True, "messages": hub.get_recent_messages(limit=limit)}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "messages": []}
+
+
+@app.post("/api/comms/hub/emit", tags=["Comms"])
+def api_comms_hub_emit(body: dict):
+    """Emite un mensaje a través del CommsHub (multicanal con retry/circuit breaker).
+    
+    Body:
+    {
+        "message": "Contenido del mensaje",
+        "level": "info|low|medium|high|critical",
+        "subsystem": "nombre_subsistema",
+        "data": {},  # opcional
+        "channels": ["telegram", "audio"]  # opcional, si no se especifica usa mapeo por nivel
+    }
+    """
+    try:
+        from modules.humanoid.comms import get_hub
+        hub = get_hub()
+        
+        message = (body or {}).get("message") or ""
+        level = (body or {}).get("level") or "info"
+        subsystem = (body or {}).get("subsystem") or "api"
+        data = (body or {}).get("data") or {}
+        channels = (body or {}).get("channels")
+        evidence_path = (body or {}).get("evidence_path") or ""
+        
+        if not message:
+            return {"ok": False, "error": "message is required"}
+        
+        result = hub.send(
+            content=message,
+            level=level,
+            subsystem=subsystem,
+            data=data,
+            evidence_path=evidence_path,
+            channels=channels,
+        )
+        
+        return {
+            "ok": len(result.channels_sent) > 0,
+            "message_id": result.id,
+            "channels_sent": result.channels_sent,
+            "channels_failed": result.channels_failed,
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/hub/reset-channel", tags=["Comms"])
+def api_comms_hub_reset_channel(body: dict):
+    """Resetea el estado de un canal (útil después de arreglar un problema).
+    
+    Body: {"channel": "telegram"}
+    """
+    try:
+        from modules.humanoid.comms import get_hub
+        hub = get_hub()
+        
+        channel = (body or {}).get("channel") or ""
+        if not channel:
+            return {"ok": False, "error": "channel is required"}
+        
+        return hub.reset_channel(channel)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/hub/disable-channel", tags=["Comms"])
+def api_comms_hub_disable_channel(body: dict):
+    """Deshabilita temporalmente un canal.
+    
+    Body: {"channel": "whatsapp"}
+    """
+    try:
+        from modules.humanoid.comms import get_hub
+        hub = get_hub()
+        
+        channel = (body or {}).get("channel") or ""
+        if not channel:
+            return {"ok": False, "error": "channel is required"}
+        
+        return hub.disable_channel(channel)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/hub/enable-channel", tags=["Comms"])
+def api_comms_hub_enable_channel(body: dict):
+    """Habilita un canal previamente deshabilitado.
+    
+    Body: {"channel": "whatsapp"}
+    """
+    try:
+        from modules.humanoid.comms import get_hub
+        hub = get_hub()
+        
+        channel = (body or {}).get("channel") or ""
+        if not channel:
+            return {"ok": False, "error": "channel is required"}
+        
+        return hub.enable_channel(channel)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/comms/bootstrap/status", tags=["Comms"])
+def api_comms_bootstrap_status():
+    """Estado de todos los servicios de comunicación inicializados por bootstrap."""
+    try:
+        from modules.humanoid.comms.bootstrap import get_status
+        return get_status()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/comms/bootstrap/health", tags=["Comms"])
+def api_comms_bootstrap_health():
+    """Health check completo de todos los servicios de comunicación."""
+    try:
+        from modules.humanoid.comms.bootstrap import health_check
+        return health_check()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/bootstrap/restart-service", tags=["Comms"])
+def api_comms_bootstrap_restart_service(body: dict):
+    """Reinicia un servicio de comunicación específico.
+    
+    Body: {"service": "telegram_poller"}
+    Servicios reiniciables: hub, telegram_poller, makeplay
+    """
+    try:
+        from modules.humanoid.comms.bootstrap import restart_service
+        
+        service = (body or {}).get("service") or ""
+        if not service:
+            return {"ok": False, "error": "service is required"}
+        
+        return restart_service(service)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/kernel/event-bus/stats", tags=["Kernel"])
+def api_kernel_event_bus_stats():
+    """Estadísticas del Event Bus interno (handlers, eventos, métricas)."""
+    try:
+        from modules.humanoid import get_humanoid_kernel
+        kernel = get_humanoid_kernel()
+        return {"ok": True, "stats": kernel.events.get_stats()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/kernel/event-bus/history", tags=["Kernel"])
+def api_kernel_event_bus_history(limit: int = 50):
+    """Historial de eventos del Event Bus."""
+    try:
+        from modules.humanoid import get_humanoid_kernel
+        kernel = get_humanoid_kernel()
+        return {"ok": True, "events": kernel.events.get_history(limit=limit)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/kernel/event-bus/reset-errors", tags=["Kernel"])
+def api_kernel_event_bus_reset_errors(body: dict):
+    """Resetea errores de handlers y rehabilita handlers desactivados.
+    
+    Body: {"topic": "specific.topic"} o {} para todos
+    """
+    try:
+        from modules.humanoid import get_humanoid_kernel
+        kernel = get_humanoid_kernel()
+        
+        topic = (body or {}).get("topic")
+        rehabilitated = kernel.events.reset_handler_errors(topic=topic)
+        
+        return {"ok": True, "rehabilitated_handlers": rehabilitated}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @app.get("/health", tags=["Health"])

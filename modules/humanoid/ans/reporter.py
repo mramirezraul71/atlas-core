@@ -60,15 +60,84 @@ def get_latest_report() -> str:
 
 
 def notify_telegram(message: str, severity: str = "medium") -> bool:
+    """Notifica vía Telegram y Audio usando el sistema de comunicación unificado.
+    
+    Args:
+        message: Mensaje a enviar
+        severity: Nivel de severidad (low, medium, high, critical)
+    
+    Returns:
+        True si se envió correctamente
+    """
     if os.getenv("ANS_TELEGRAM_NOTIFY", "true").strip().lower() not in ("1", "true", "yes"):
         return False
+    
     notify_level = (os.getenv("ANS_NOTIFY_LEVEL") or "medium").strip().lower()
-    level_order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+    level_order = {"low": 0, "medium": 1, "med": 1, "high": 2, "critical": 3}
     if level_order.get(severity, 0) < level_order.get(notify_level, 1):
         return False
+    
+    # Mapear severity a level para ops_bus
+    level_map = {"low": "low", "medium": "med", "med": "med", "high": "high", "critical": "critical"}
+    level = level_map.get(severity, "med")
+    
     try:
-        from modules.humanoid.comms.telegram_bridge import send_message
-        send_message(message)
+        # Usar ops_bus para enviar a Telegram + Audio + otros canales
+        from modules.humanoid.comms.ops_bus import emit as ops_emit
+        ops_emit("ans", message, level=level)
         return True
     except Exception:
+        # Fallback: intentar Telegram directo
+        try:
+            from modules.humanoid.comms.telegram_bridge import TelegramBridge
+            from modules.humanoid.comms.ops_bus import _telegram_chat_id
+            
+            chat_id = _telegram_chat_id()
+            if chat_id:
+                bridge = TelegramBridge()
+                result = bridge.send(chat_id, f"<b>ATLAS ANS</b>\n{message}")
+                return result.get("ok", False)
+        except Exception:
+            pass
         return False
+
+
+def notify_audio(message: str) -> bool:
+    """Notifica vía audio (TTS).
+    
+    Args:
+        message: Mensaje a hablar
+    
+    Returns:
+        True si se habló correctamente
+    """
+    if os.getenv("OPS_AUDIO_ENABLED", "true").strip().lower() not in ("1", "true", "yes"):
+        return False
+    
+    try:
+        from modules.humanoid.voice.tts import speak
+        result = speak(message[:240])
+        return result.get("ok", False)
+    except Exception:
+        return False
+
+
+def notify_all(message: str, severity: str = "medium", subsystem: str = "ans") -> Dict[str, Any]:
+    """Notifica por todos los canales disponibles usando el CommsHub.
+    
+    Args:
+        message: Mensaje a enviar
+        severity: Nivel de severidad
+        subsystem: Subsistema que envía
+    
+    Returns:
+        Dict con resultado del envío
+    """
+    level_map = {"low": "low", "medium": "med", "med": "med", "high": "high", "critical": "critical"}
+    level = level_map.get(severity, "med")
+    
+    try:
+        from modules.humanoid.comms.ops_bus import emit as ops_emit
+        return ops_emit(subsystem, message, level=level)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
