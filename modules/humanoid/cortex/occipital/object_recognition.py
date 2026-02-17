@@ -93,38 +93,62 @@ class KnownObject:
 
 
 class EmbeddingExtractor:
-    """Extractor de embeddings visuales."""
+    """Extractor de embeddings visuales usando CLIP."""
     
     def __init__(self, model_name: str = "clip"):
         self.model_name = model_name
         self._model = None
+        self._preprocess = None
         self._loaded = False
+        self._device = None
         self.embedding_dim = 512
+        self._use_real_clip = False
     
     def load(self) -> bool:
-        """Carga el modelo."""
+        """Carga el modelo CLIP con CUDA si disponible."""
         try:
-            logger.info(f"Loading embedding model: {self.model_name}")
+            import torch
             
-            # En produccion:
-            # if self.model_name == "clip":
-            #     import clip
-            #     self._model, self._preprocess = clip.load("ViT-B/32")
+            logger.info(f"Loading CLIP model...")
+            
+            self._device = "cuda" if torch.cuda.is_available() else "cpu"
+            
+            try:
+                import clip
+                self._model, self._preprocess = clip.load("ViT-B/32", device=self._device)
+                self._model.eval()
+                self._use_real_clip = True
+                self.embedding_dim = 512
+                logger.info(f"CLIP model loaded on {self._device}")
+            except ImportError:
+                # Fallback a transformers CLIP
+                try:
+                    from transformers import CLIPProcessor, CLIPModel
+                    self._model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+                    self._preprocess = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+                    self._model.to(self._device)
+                    self._model.eval()
+                    self._use_real_clip = True
+                    self.embedding_dim = 512
+                    logger.info(f"CLIP (transformers) loaded on {self._device}")
+                except Exception as e:
+                    logger.warning(f"CLIP not available: {e}, using mock embeddings")
+                    self._use_real_clip = False
             
             self._loaded = True
-            logger.info("Embedding model loaded (mock mode)")
             return True
             
         except Exception as e:
             logger.warning(f"Could not load embedding model: {e}")
+            self._loaded = True  # Mark as loaded but use mock
             return False
     
     def extract(self, image: Any, bbox: Optional[Tuple[int, int, int, int]] = None) -> List[float]:
         """
-        Extrae embedding de imagen o region.
+        Extrae embedding de imagen o region usando CLIP.
         
         Args:
-            image: Imagen completa
+            image: Imagen completa (numpy array HxWx3)
             bbox: Region de interes opcional
         
         Returns:
@@ -141,8 +165,37 @@ class EmbeddingExtractor:
             except:
                 pass
         
-        # En produccion: usar modelo real
-        # embedding = self._model.encode_image(image)
+        # Usar CLIP real si disponible
+        if self._use_real_clip and self._model is not None:
+            try:
+                import torch
+                from PIL import Image
+                
+                # Convertir a PIL
+                if hasattr(image, 'shape'):
+                    if image.dtype != np.uint8:
+                        image = (image * 255).astype(np.uint8)
+                    pil_image = Image.fromarray(image)
+                else:
+                    pil_image = image
+                
+                # Extraer embedding
+                with torch.no_grad():
+                    if hasattr(self._preprocess, '__call__'):
+                        # openai-clip style
+                        image_input = self._preprocess(pil_image).unsqueeze(0).to(self._device)
+                        embedding = self._model.encode_image(image_input)
+                    else:
+                        # transformers style
+                        inputs = self._preprocess(images=pil_image, return_tensors="pt").to(self._device)
+                        embedding = self._model.get_image_features(**inputs)
+                    
+                    # Normalizar
+                    embedding = embedding / embedding.norm(dim=-1, keepdim=True)
+                    return embedding.cpu().numpy().flatten().tolist()
+                    
+            except Exception as e:
+                logger.warning(f"CLIP extraction failed: {e}, using mock")
         
         # Mock: generar embedding aleatorio normalizado
         if HAS_NUMPY:
