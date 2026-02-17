@@ -202,11 +202,25 @@ class AutoRouter:
                 provider = "ollama"
                 model_name = full_key
             
+            # Si el modelo ya existe, merge task_types
+            if full_key in self._models:
+                existing = self._models[full_key]
+                # Agregar nuevos task_types sin duplicar
+                for tt in task_types:
+                    if tt not in existing.task_types:
+                        existing.task_types.append(tt)
+                # Actualizar visión si es true
+                if supports_vision:
+                    existing.supports_vision = True
+                # Usar la prioridad más alta (menor número)
+                existing.priority = min(existing.priority, priority)
+                continue
+            
             config = ModelConfig(
                 provider=provider,
                 model_name=model_name,
                 full_key=full_key,
-                task_types=task_types,
+                task_types=list(task_types),  # Copiar para evitar mutación
                 supports_vision=supports_vision,
                 priority=priority,
             )
