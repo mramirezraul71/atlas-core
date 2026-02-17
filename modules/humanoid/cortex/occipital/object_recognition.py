@@ -113,27 +113,25 @@ class EmbeddingExtractor:
             
             self._device = "cuda" if torch.cuda.is_available() else "cpu"
             
+            # Usar transformers CLIP con safetensors (más seguro y estable)
             try:
-                import clip
-                self._model, self._preprocess = clip.load("ViT-B/32", device=self._device)
+                from transformers import CLIPProcessor, CLIPModel
+                import os
+                os.environ['HF_HUB_DISABLE_SYMLINKS_WARNING'] = '1'
+                
+                self._model = CLIPModel.from_pretrained(
+                    "openai/clip-vit-base-patch32",
+                    use_safetensors=True
+                )
+                self._preprocess = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+                self._model.to(self._device)
                 self._model.eval()
                 self._use_real_clip = True
                 self.embedding_dim = 512
-                logger.info(f"CLIP model loaded on {self._device}")
-            except ImportError:
-                # Fallback a transformers CLIP
-                try:
-                    from transformers import CLIPProcessor, CLIPModel
-                    self._model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-                    self._preprocess = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-                    self._model.to(self._device)
-                    self._model.eval()
-                    self._use_real_clip = True
-                    self.embedding_dim = 512
-                    logger.info(f"CLIP (transformers) loaded on {self._device}")
-                except Exception as e:
-                    logger.warning(f"CLIP not available: {e}, using mock embeddings")
-                    self._use_real_clip = False
+                logger.info(f"CLIP (transformers) loaded on {self._device}")
+            except Exception as e:
+                logger.warning(f"CLIP not available: {e}, using mock embeddings")
+                self._use_real_clip = False
             
             self._loaded = True
             return True
