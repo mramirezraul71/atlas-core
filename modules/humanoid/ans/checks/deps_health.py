@@ -28,21 +28,26 @@ def run() -> dict:
         from modules.humanoid.deps_checker import check_all
         r = check_all()
         missing = r.get("missing_deps", [])
-        ok = len(missing) == 0 or all(m in ("ollama running",) for m in missing)
+        
+        # Dependencias opcionales de voz - no críticas, no generan incidentes
+        voice_deps = ("speech_recognition", "pyttsx3", "piper", "sherpa-onnx", "faster-whisper")
+        critical_missing = [m for m in missing if not any(v in m.lower() for v in voice_deps)]
+        
+        ok = len(critical_missing) == 0 or all(m in ("ollama running",) for m in critical_missing)
         suggested_heals = []
-        message = f"missing={missing}" if missing else "ok"
-        details = {"missing_deps": missing}
-        if "tesseract" in missing and not _tesseract_binary_exists():
+        message = f"missing={critical_missing}" if critical_missing else "ok"
+        details = {"missing_deps": critical_missing, "optional_missing": [m for m in missing if m not in critical_missing]}
+        if "tesseract" in critical_missing and not _tesseract_binary_exists():
             suggested_heals = ["install_tesseract"]
             message = "Falta binario Tesseract OCR en el OS (no es dependencia pip)"
             details["human_intervention_required"] = "Intervención Humana Requerida: Instalar Tesseract OCR en el OS si winget falla."
-        elif "tesseract" in missing and _tesseract_binary_exists():
-            missing = [m for m in missing if m != "tesseract"]
-            details["missing_deps"] = missing
-            message = f"missing={missing}" if missing else "ok"
-            ok = len(missing) == 0 or all(m in ("ollama running",) for m in missing)
-        elif missing:
-            pip_installable = [m for m in missing if m not in ("ollama running",)]
+        elif "tesseract" in critical_missing and _tesseract_binary_exists():
+            critical_missing = [m for m in critical_missing if m != "tesseract"]
+            details["missing_deps"] = critical_missing
+            message = f"missing={critical_missing}" if critical_missing else "ok"
+            ok = len(critical_missing) == 0 or all(m in ("ollama running",) for m in critical_missing)
+        elif critical_missing:
+            pip_installable = [m for m in critical_missing if m not in ("ollama running",)]
             if pip_installable:
                 suggested_heals = ["install_optional_deps"]
         return {
