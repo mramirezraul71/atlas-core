@@ -1,4 +1,24 @@
 {
   "mode": "auto",
-  "override_model": null
+  "override_model": null,
+  "auto_route": true,
+  "specialists": {
+    "code": "ollama:deepseek-coder:6.7b",
+    "vision": "ollama:llava",
+    "chat": "ollama:llama3.2",
+    "analysis": "ollama:llama3.2",
+    "creative": "ollama:llama3.2"
+  },
+  "parameters": {
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "top_k": 40,
+    "max_tokens": 2048,
+    "repeat_penalty": 1.1
+  },
+  "features": {
+    "auto_fallback": true,
+    "context_memory": "long_term",
+    "specialist_routing": true
+  }
 }
