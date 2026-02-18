@@ -70,9 +70,9 @@ canvas{display:block}
     </div>
     <div style="display:flex;align-items:center;gap:14px">
         <div class="hud-nav">
-            <a href="http://localhost:8791/ui" target="_blank">📊 Dashboard</a>
-            <a href="http://localhost:8791/workspace" target="_blank">⚡ Workspace</a>
-            <a href="http://localhost:8000/dashboard" target="_blank">🌐 Nexus</a>
+            <a id="link-dash">📊 Dashboard</a>
+            <a id="link-ws">⚡ Workspace</a>
+            <a id="link-nexus">🌐 Nexus</a>
         </div>
         <div class="hud-status on" id="robot-status"><span class="hud-pulse"></span> EN LINEA</div>
     </div>
@@ -115,6 +115,13 @@ canvas{display:block}
         <div class="stat-row"><span class="stat-label">Disco</span><span class="stat-val" id="s-disk">--</span></div>
         <div class="stat-row"><span class="stat-label">Python</span><span class="stat-val" id="s-python">--</span></div>
     </div>
+    <div class="mod-panel stats-panel" style="margin-top:12px">
+        <div class="mod-panel-title">🔗 Servicios</div>
+        <div class="stat-row"><span class="stat-label">PUSH</span><span class="stat-val" id="s-push" style="color:var(--muted)">--</span></div>
+        <div class="stat-row"><span class="stat-label">NEXUS</span><span class="stat-val" id="s-nexus" style="color:var(--muted)">--</span></div>
+        <div class="stat-row"><span class="stat-label">Modelos IA</span><span class="stat-val" id="s-models">--</span></div>
+        <div class="stat-row"><span class="stat-label">YOLO Det.</span><span class="stat-val" id="s-yolo">--</span></div>
+    </div>
 </div>
 
 <div class="hud hud-bottom">
@@ -125,8 +132,17 @@ canvas{display:block}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
-const ROBOT_API = 'http://' + location.hostname + ':8002';
-const PUSH_API = 'http://' + location.hostname + ':8791';
+const HOST = location.hostname;
+const ROBOT_API = 'http://' + HOST + ':8002';
+const PUSH_API = 'http://' + HOST + ':8791';
+const NEXUS_API = 'http://' + HOST + ':8000';
+
+document.getElementById('link-dash').href = 'http://'+HOST+':8791/ui';
+document.getElementById('link-dash').target = '_blank';
+document.getElementById('link-ws').href = 'http://'+HOST+':8791/workspace';
+document.getElementById('link-ws').target = '_blank';
+document.getElementById('link-nexus').href = 'http://'+HOST+':8000/dashboard';
+document.getElementById('link-nexus').target = '_blank';
 
 const MODULE_MAP = {
     ai:            {label:'Cerebro (AI)',     color:0xa78bfa, pos:[0, 2.6, 0],    size:0.35, bodyPart:'head'},
@@ -430,8 +446,43 @@ async function fetchData() {
         const s = await r2.json();
         if (s.cpu_percent !== undefined) document.getElementById('s-cpu').textContent = s.cpu_percent + '%';
         if (s.ram) document.getElementById('s-ram').textContent = s.ram.percent + '% (' + s.ram.used_gb + 'GB)';
+        else if (s.memory_available) document.getElementById('s-ram').textContent = s.memory_available;
         if (s.disk) document.getElementById('s-disk').textContent = s.disk.percent + '% (' + s.disk.used_gb + 'GB)';
+        else if (s.disk_usage) document.getElementById('s-disk').textContent = s.disk_usage;
         if (s.python_version) document.getElementById('s-python').textContent = s.python_version;
+    } catch(e) {}
+
+    try {
+        const rp = await fetch(PUSH_API + '/status', {signal: AbortSignal.timeout(3000)});
+        const pd = await rp.json();
+        const pushEl = document.getElementById('s-push');
+        if (pd && pd.ok !== false) { pushEl.textContent = 'Online'; pushEl.style.color = 'var(--green)'; }
+        else { pushEl.textContent = 'Offline'; pushEl.style.color = 'var(--red)'; }
+    } catch(e) { document.getElementById('s-push').textContent = 'Offline'; document.getElementById('s-push').style.color = 'var(--red)'; }
+
+    try {
+        const rn = await fetch(NEXUS_API + '/status', {signal: AbortSignal.timeout(3000)});
+        const nd = await rn.json();
+        const nexEl = document.getElementById('s-nexus');
+        if (nd && nd.status) { nexEl.textContent = 'Online (' + (nd.available_tools||0) + ' tools)'; nexEl.style.color = 'var(--green)'; }
+        else { nexEl.textContent = 'Offline'; nexEl.style.color = 'var(--red)'; }
+    } catch(e) { document.getElementById('s-nexus').textContent = 'Offline'; document.getElementById('s-nexus').style.color = 'var(--red)'; }
+
+    try {
+        const rm = await fetch(PUSH_API + '/agent/models', {signal: AbortSignal.timeout(3000)});
+        const md = await rm.json();
+        if (md && md.data) {
+            const avail = md.data.filter(m => m.available && m.id !== 'auto').length;
+            document.getElementById('s-models').textContent = avail + '/' + (md.data.length - 1);
+        }
+    } catch(e) {}
+
+    try {
+        const ry = await fetch(ROBOT_API + '/yolo/stats', {signal: AbortSignal.timeout(3000)});
+        const yd = await ry.json();
+        if (yd && yd.total_detections !== undefined) {
+            document.getElementById('s-yolo').textContent = yd.total_detections + ' obj';
+        }
     } catch(e) {}
 }
 
