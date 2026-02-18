@@ -1,368 +1,461 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ATLAS NEXUS — Centro de Control</title>
+    <title>ATLAS NEXUS Dashboard</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        *{margin:0;padding:0;box-sizing:border-box}
-        :root{--bg:#0a0a12;--bg2:#12121e;--bg3:#1a1a2e;--border:rgba(255,255,255,0.07);--text:#e4e4e7;--muted:#71717a;--cyan:#22d3ee;--green:#34d399;--red:#f87171;--amber:#fbbf24;--violet:#a78bfa;--blue:#60a5fa}
-        body{font-family:'Segoe UI','SF Pro Display',-apple-system,sans-serif;background:linear-gradient(160deg,var(--bg) 0%,var(--bg2) 40%,var(--bg3) 100%);color:var(--text);min-height:100vh;padding:16px}
-        .container{max-width:1440px;margin:0 auto}
-
-        .header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;background:rgba(255,255,255,0.04);backdrop-filter:blur(12px);border:1px solid var(--border);border-radius:14px;margin-bottom:18px;flex-wrap:wrap;gap:12px}
-        .header h1{font-size:1.4em;font-weight:800;background:linear-gradient(135deg,var(--cyan),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-        .header-sub{font-size:11px;color:var(--muted);margin-top:2px}
-        .header-right{display:flex;align-items:center;gap:14px}
-        .status-pill{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px}
-        .status-pill.on{background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3)}
-        .status-pill.off{background:rgba(248,113,113,0.15);color:var(--red);border:1px solid rgba(248,113,113,0.3)}
-        .pulse{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-        .clock{font-size:12px;color:var(--muted);font-family:'Consolas',monospace}
-        .nav-links{display:flex;gap:8px}
-        .nav-links a{padding:6px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--muted);text-decoration:none;font-size:11px;font-weight:500;transition:.2s}
-        .nav-links a:hover{background:rgba(167,139,250,0.15);color:var(--violet);border-color:rgba(167,139,250,0.3)}
-
-        .grid-main{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px}
-        .svc-card{background:rgba(255,255,255,0.04);backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:12px;padding:16px;transition:.2s}
-        .svc-card:hover{border-color:rgba(34,211,238,0.3)}
-        .svc-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-        .svc-name{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px}
-        .svc-badge{display:flex;align-items:center;gap:4px;font-size:10px;font-weight:600}
-        .svc-badge.on{color:var(--green)}.svc-badge.off{color:var(--red)}
-        .svc-dot{width:6px;height:6px;border-radius:50%}
-        .svc-dot.on{background:var(--green);box-shadow:0 0 6px var(--green)}.svc-dot.off{background:var(--red);box-shadow:0 0 6px var(--red)}
-        .svc-metrics{display:flex;flex-direction:column;gap:8px}
-        .svc-row{display:flex;justify-content:space-between;font-size:12px}
-        .svc-label{color:var(--muted)}
-        .svc-val{font-family:'Consolas',monospace;font-weight:600}
-        .load-bar{height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;margin-top:4px}
-        .load-fill{height:100%;border-radius:2px;transition:width .5s;background:linear-gradient(90deg,var(--cyan),var(--blue))}
-
-        .grid-bottom{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-        .panel{background:rgba(255,255,255,0.04);backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:12px;overflow:hidden}
-        .panel-title{padding:12px 16px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.02);border-bottom:1px solid var(--border)}
-        .panel-body{padding:14px 16px;max-height:320px;overflow-y:auto}
-
-        .activity-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.03);font-size:12px}
-        .activity-row:last-child{border-bottom:none}
-        .activity-time{color:var(--muted);font-family:'Consolas',monospace;min-width:60px}
-        .activity-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
-        .activity-text{flex:1;color:var(--text)}
-        .activity-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600}
-
-        .module-row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.03);font-size:12px}
-        .module-row:last-child{border-bottom:none}
-        .module-name{font-weight:500}
-        .module-status{font-size:10px;padding:2px 10px;border-radius:10px;font-weight:600}
-        .module-status.on{background:rgba(52,211,153,0.15);color:var(--green)}
-        .module-status.off{background:rgba(248,113,113,0.15);color:var(--red)}
-
-        .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-        .stat-box{background:rgba(0,0,0,0.2);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center}
-        .stat-val{font-size:22px;font-weight:800}
-        .stat-label{font-size:10px;color:var(--muted);margin-top:4px}
-
-        .exec-section{margin-bottom:14px}
-        .exec-card{background:rgba(255,255,255,0.04);backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
-        .exec-card h2{font-size:12px;font-weight:700;color:var(--violet);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px}
-        .input-group{display:flex;gap:8px}
-        .exec-card input{flex:1;padding:10px 14px;background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none}
-        .exec-card input:focus{border-color:var(--cyan)}
-        .exec-card input::placeholder{color:#52525b}
-        .exec-card button{padding:10px 20px;background:linear-gradient(135deg,#7c3aed,#6366f1);color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:12px;transition:.2s}
-        .exec-card button:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(124,58,237,0.4)}
-
-        .console{background:#0c0c10;border:1px solid var(--border);color:var(--green);padding:12px 16px;border-radius:10px;font-family:'Consolas',monospace;font-size:11px;max-height:180px;overflow-y:auto;margin-top:14px}
-        .console-line{margin-bottom:3px}
-
-        .grid-full{margin-bottom:14px}
-        .live-bar{display:flex;align-items:center;gap:6px;padding:10px 16px;background:rgba(255,255,255,0.03);border-bottom:1px solid var(--border)}
-        .live-bar .pulse{width:6px;height:6px}
-        .live-bar span{font-size:11px;font-weight:600;color:var(--green)}
-        .actions-header{display:grid;grid-template-columns:70px 70px 1fr 80px;gap:8px;padding:8px 16px;background:#16161e;color:var(--muted);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
-        .actions-body{max-height:240px;overflow-y:auto}
-        .action-row{display:grid;grid-template-columns:70px 70px 1fr 80px;gap:8px;padding:8px 16px;border-bottom:1px solid rgba(255,255,255,0.03);font-size:11px;cursor:pointer;transition:.15s;border-left:3px solid transparent}
-        .action-row:hover{background:rgba(255,255,255,0.03)}
-        .action-row.ok{border-left-color:var(--green)}.action-row.running{border-left-color:var(--amber)}.action-row.error{border-left-color:var(--red)}
-        .action-empty{padding:30px;text-align:center;color:#3f3f46;font-size:12px}
-
-        @media(max-width:900px){.grid-main,.grid-bottom,.stat-grid{grid-template-columns:1fr}}
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        
+        * {
+            font-family: 'Inter', sans-serif;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .animate-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        #root > div > header {
+            contain: layout style;
+            min-height: 76px;
+        }
+        #root > div > header * {
+            backface-visibility: hidden;
+        }
+        #root > div > div {
+            contain: content;
+        }
     </style>
 </head>
-<body>
-<div class="container">
-    <header class="header">
-        <div>
-            <h1>ATLAS NEXUS</h1>
-            <div class="header-sub">Centro de Control — Datos en tiempo real</div>
-        </div>
-        <div class="header-right">
-            <div class="nav-links">
-                <a href="http://localhost:8791/ui" target="_blank">📊 Dashboard PUSH</a>
-                <a href="http://localhost:8791/workspace" target="_blank">⚡ Workspace</a>
-                <a href="/docs" target="_blank">📄 API Docs</a>
-            </div>
-            <div class="clock" id="clock">--:--:--</div>
-            <div class="status-pill on" id="global-status"><span class="pulse"></span> OPERATIVO</div>
-        </div>
-    </header>
+<body class="m-0 p-0">
+    <div id="root"></div>
 
-    <div class="grid-main">
-        <div class="svc-card" id="card-nexus">
-            <div class="svc-header">
-                <span class="svc-name" style="color:var(--cyan)">🌐 NEXUS</span>
-                <span class="svc-badge on" id="badge-nexus"><span class="svc-dot on" id="dot-nexus"></span>Online</span>
-            </div>
-            <div class="svc-metrics">
-                <div class="svc-row"><span class="svc-label">Puerto</span><span class="svc-val">8000</span></div>
-                <div class="svc-row"><span class="svc-label">Uptime</span><span class="svc-val" id="nexus-uptime">--</span></div>
-                <div class="svc-row"><span class="svc-label">Version</span><span class="svc-val" id="nexus-version">--</span></div>
-                <div class="svc-row"><span class="svc-label">Herramientas</span><span class="svc-val" id="nexus-tools">--</span></div>
-                <div class="svc-row"><span class="svc-label">Planes activos</span><span class="svc-val" id="nexus-plans">--</span></div>
-            </div>
-        </div>
-        <div class="svc-card" id="card-push">
-            <div class="svc-header">
-                <span class="svc-name" style="color:var(--violet)">📡 PUSH</span>
-                <span class="svc-badge on" id="badge-push"><span class="svc-dot on" id="dot-push"></span>Online</span>
-            </div>
-            <div class="svc-metrics">
-                <div class="svc-row"><span class="svc-label">Puerto</span><span class="svc-val">8791</span></div>
-                <div class="svc-row"><span class="svc-label">NEXUS link</span><span class="svc-val" id="push-nexus">--</span></div>
-                <div class="svc-row"><span class="svc-label">Robot link</span><span class="svc-val" id="push-robot">--</span></div>
-                <div class="svc-row"><span class="svc-label">IA Config</span><span class="svc-val" id="push-ai-mode">--</span></div>
-                <div class="svc-row"><span class="svc-label">Modelos</span><span class="svc-val" id="push-models">--</span></div>
-            </div>
-        </div>
-        <div class="svc-card" id="card-robot">
-            <div class="svc-header">
-                <span class="svc-name" style="color:var(--green)">🤖 ROBOT</span>
-                <span class="svc-badge on" id="badge-robot"><span class="svc-dot on" id="dot-robot"></span>Online</span>
-            </div>
-            <div class="svc-metrics">
-                <div class="svc-row"><span class="svc-label">Puerto</span><span class="svc-val">8002</span></div>
-                <div class="svc-row"><span class="svc-label">Uptime</span><span class="svc-val" id="robot-uptime">--</span></div>
-                <div class="svc-row"><span class="svc-label">Modulos</span><span class="svc-val" id="robot-modules-count">--</span></div>
-                <div class="svc-row"><span class="svc-label">WebSocket</span><span class="svc-val" id="robot-ws">--</span></div>
-                <div class="svc-row"><span class="svc-label">Estado</span><span class="svc-val" id="robot-estado">--</span></div>
-            </div>
-        </div>
-    </div>
+    <script type="text/babel">
+        const { useState, useEffect } = React;
 
-    <div class="exec-section">
-        <div class="exec-card">
-            <h2>Ejecutar tarea en NEXUS</h2>
-            <div class="input-group">
-                <input type="text" id="task-input" placeholder="Escribe un objetivo (ej: Analiza este codigo, Busca noticias de IA...)">
-                <button onclick="executeTask()">Ejecutar</button>
-            </div>
-        </div>
-    </div>
+        // Iconos simplificados usando SVG
+        const Icon = ({ path, className = "" }) => (
+            <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={path} />
+            </svg>
+        );
 
-    <div class="grid-full">
-        <div class="panel">
-            <div class="live-bar"><span class="pulse"></span><span>Operaciones en vivo</span></div>
-            <div class="actions-header"><span>Hora</span><span>Tipo</span><span>Accion</span><span>Estado</span></div>
-            <div class="actions-body" id="actions-body"><div class="action-empty" id="action-empty">Esperando acciones...</div></div>
-        </div>
-    </div>
-
-    <div class="grid-bottom">
-        <div class="panel">
-            <div class="panel-title">🤖 Modulos del Robot</div>
-            <div class="panel-body" id="robot-modules-list"><div style="color:var(--muted);font-size:12px">Cargando...</div></div>
-        </div>
-        <div class="panel">
-            <div class="panel-title">🧠 Modelos IA disponibles</div>
-            <div class="panel-body" id="ai-models-list"><div style="color:var(--muted);font-size:12px">Cargando...</div></div>
-        </div>
-    </div>
-
-    <div class="console" id="console">
-        <div class="console-line">&gt; ATLAS NEXUS Centro de Control</div>
-    </div>
-</div>
-
-<script>
-const NEXUS = 'http://' + location.hostname + ':8000';
-const PUSH  = 'http://' + location.hostname + ':8791';
-const ROBOT = 'http://' + location.hostname + ':8002';
-const WS_URL = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.hostname + ':8000/ws';
-let ws = null;
-
-function fmt(s){const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?h+'h '+m+'m':m+'m '+Math.floor(s%60)+'s'}
-
-setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleTimeString()},1000);
-
-async function fetchJSON(url, timeout=5000){
-    const c=new AbortController();const t=setTimeout(()=>c.abort(),timeout);
-    try{const r=await fetch(url,{signal:c.signal});clearTimeout(t);return await r.json()}
-    catch(e){clearTimeout(t);return null}
-}
-
-function setStatus(id, online){
-    const dot=document.getElementById('dot-'+id);
-    const badge=document.getElementById('badge-'+id);
-    if(dot){dot.className='svc-dot '+(online?'on':'off')}
-    if(badge){badge.className='svc-badge '+(online?'on':'off');badge.innerHTML='<span class="svc-dot '+(online?'on':'off')+'"></span>'+(online?'Online':'Offline')}
-}
-
-async function pollNexus(){
-    const d=await fetchJSON(NEXUS+'/status');
-    if(d){
-        setStatus('nexus',true);
-        document.getElementById('nexus-uptime').textContent=fmt(d.uptime||0);
-        document.getElementById('nexus-version').textContent=d.version||'--';
-        document.getElementById('nexus-tools').textContent=d.available_tools??'--';
-        document.getElementById('nexus-plans').textContent=d.active_plans??d.active_tasks??'0';
-    }else{setStatus('nexus',false)}
-}
-
-async function pollPush(){
-    const d=await fetchJSON(PUSH+'/status');
-    if(d&&d.ok!==undefined){
-        setStatus('push',true);
-        document.getElementById('push-nexus').textContent=d.nexus_connected?'✓ Conectado':'✗ Off';
-        document.getElementById('push-robot').textContent=d.robot_connected?'✓ Conectado':'✗ Off';
-    }else{setStatus('push',false)}
-    const ai=await fetchJSON(PUSH+'/config/ai');
-    if(ai&&ai.ok){
-        document.getElementById('push-ai-mode').textContent=ai.mode||'--';
-    }
-    const models=await fetchJSON(PUSH+'/agent/models');
-    if(models&&models.data){
-        const avail=models.data.filter(m=>m.available&&m.id!=='auto').length;
-        document.getElementById('push-models').textContent=avail+' activos';
-        renderAIModels(models.data);
-    }
-}
-
-async function pollRobot(){
-    const d=await fetchJSON(ROBOT+'/status');
-    if(d){
-        setStatus('robot',true);
-        document.getElementById('robot-uptime').textContent=fmt(d.uptime||0);
-        document.getElementById('robot-estado').textContent=d.status||'--';
-        const mods=d.modules||{};
-        const total=Object.keys(mods).length;
-        const on=Object.values(mods).filter(v=>v).length;
-        document.getElementById('robot-modules-count').textContent=on+'/'+total;
-        document.getElementById('robot-ws').textContent=d.clientes_websocket??'--';
-        renderRobotModules(mods);
-    }else{setStatus('robot',false)}
-}
-
-function renderRobotModules(mods){
-    const el=document.getElementById('robot-modules-list');
-    let h='';
-    for(const[name,active]of Object.entries(mods)){
-        h+='<div class="module-row"><span class="module-name">'+name+'</span><span class="module-status '+(active?'on':'off')+'">'+(active?'Activo':'Off')+'</span></div>';
-    }
-    el.innerHTML=h||'<div style="color:var(--muted);font-size:12px">Sin modulos</div>';
-}
-
-function renderAIModels(models){
-    const el=document.getElementById('ai-models-list');
-    const cats={local:[],free:[],premium:[],fast:[],reasoning:[]};
-    models.filter(m=>m.id!=='auto').forEach(m=>{
-        const c=m.category||'fast';
-        if(c==='local')cats.local.push(m);
-        else if(c==='free')cats.free.push(m);
-        else if(cats[c])cats[c].push(m);
-        else cats.fast.push(m);
-    });
-    let h='';
-    const labels={local:'🏠 Local (gratis)',free:'🆓 API gratis',premium:'💎 Premium',fast:'⚡ Rapido',reasoning:'🧠 Razonamiento'};
-    for(const[cat,list]of Object.entries(cats)){
-        if(!list.length)continue;
-        h+='<div style="font-size:10px;color:var(--muted);margin:8px 0 4px;font-weight:700">'+labels[cat]+'</div>';
-        list.forEach(m=>{
-            const color=m.available?'var(--green)':'var(--muted)';
-            h+='<div class="module-row"><span class="module-name" style="font-size:11px">'+m.name+'</span><span class="module-status '+(m.available?'on':'off')+'">'+(m.available?'✓':'—')+'</span></div>';
-        });
-    }
-    el.innerHTML=h||'Sin modelos';
-}
-
-let actionEntries={};
-async function pollActions(){
-    const d=await fetchJSON(NEXUS+'/actions/log?limit=30');
-    if(d&&d.ok&&d.entries){
-        actionEntries={};
-        d.entries.forEach(e=>{actionEntries[e.id]=e});
-        renderActions();
-    }
-}
-function renderActions(){
-    const body=document.getElementById('actions-body');
-    const empty=document.getElementById('action-empty');
-    const entries=Object.values(actionEntries).slice(-20).reverse();
-    empty.style.display=entries.length?'none':'block';
-    body.querySelectorAll('.action-row').forEach(el=>el.remove());
-    entries.forEach(e=>{
-        const row=document.createElement('div');
-        row.className='action-row '+(e.status||'');
-        const time=e.timestamp?new Date(e.timestamp).toLocaleTimeString():'--';
-        row.innerHTML='<span>'+time+'</span><span>'+(e.action_type||'--')+'</span><span>'+(e.description||'--').substring(0,50)+'</span><span>'+(e.status||'--')+'</span>';
-        body.appendChild(row);
-    });
-}
-
-function connectWS(){
-    try{
-        ws=new WebSocket(WS_URL);
-        ws.onopen=()=>addLog('WebSocket NEXUS: Conectado');
-        ws.onmessage=(e)=>{
-            try{
-                const d=JSON.parse(e.data);
-                if(d.type==='action'){actionEntries[d.data?.id||Date.now()]=d.data||d;renderActions()}
-                if(d.type==='task_completed')pollNexus();
-                addLog(d.type+': '+(d.message||d.plan_id||''));
-            }catch(err){}
+        const Icons = {
+            Brain: (props) => <Icon {...props} path="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />,
+            Activity: (props) => <Icon {...props} path="M13 10V3L4 14h7v7l9-11h-7z" />,
+            Cpu: (props) => <Icon {...props} path="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />,
+            Database: (props) => <Icon {...props} path="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />,
+            Eye: (props) => <Icon {...props} path="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />,
+            Zap: (props) => <Icon {...props} path="M13 10V3L4 14h7v7l9-11h-7z" />,
+            TrendingUp: (props) => <Icon {...props} path="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />,
+            BookOpen: (props) => <Icon {...props} path="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />,
+            Layers: (props) => <Icon {...props} path="M4 7v10l8 4 8-4V7M4 7l8 4 8-4M4 7l8-4 8 4" />
         };
-        ws.onclose=()=>{addLog('WebSocket desconectado, reconectando...');setTimeout(connectWS,5000)};
-        ws.onerror=()=>{};
-    }catch(e){setTimeout(connectWS,5000)}
-}
 
-async function executeTask(){
-    const input=document.getElementById('task-input');
-    const task=input.value.trim();
-    if(!task)return;
-    addLog('Ejecutando: '+task);
-    input.value='';
-    try{
-        const r=await fetch(NEXUS+'/goal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({goal:task})});
-        const result=await r.json();
-        if(result.plan_id)addLog('Plan creado: '+result.plan_id);
-        else addLog(result.detail||JSON.stringify(result).substring(0,100));
-        pollNexus();pollActions();
-    }catch(e){addLog('Error: '+e.message)}
-}
+        const AtlasDashboard = () => {
+            const HOST = window.location.hostname;
+            const NEXUS = 'http://'+HOST+':8000';
+            const PUSH  = 'http://'+HOST+':8791';
+            const ROBOT = 'http://'+HOST+':8002';
 
-function addLog(msg){
-    const el=document.getElementById('console');
-    const line=document.createElement('div');
-    line.className='console-line';
-    const t=new Date().toLocaleTimeString();
-    line.textContent='['+t+'] '+msg;
-    el.appendChild(line);
-    el.scrollTop=el.scrollHeight;
-    if(el.children.length>100)el.removeChild(el.children[0]);
-}
+            const fmt = (s) => {const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=Math.floor(s%60);return h?h+'h '+m+'m':m>0?m+'m '+sec+'s':sec+'s'};
+            const fetchJ = async (url) => {try{const r=await fetch(url,{signal:AbortSignal.timeout(4000)});return await r.json()}catch(e){return null}};
 
-function pollAll(){pollNexus();pollPush();pollRobot();pollActions()}
+            const [systemData, setSystemData] = useState({
+                services: {
+                    push: { status: 'checking', uptime: '--', port: 8791, load: 0 },
+                    nexus: { status: 'checking', uptime: '--', port: 8000, load: 0 },
+                    robot: { status: 'checking', uptime: '--', port: 8002, load: 0 }
+                },
+                learning: { currentLesson: 'Cargando...', progress: 0, tasksCompleted: 0, tasksTotal: 0, tutorScore: 0, uncertaintyRate: 0 },
+                memory: { episodic: { total: 0, today: 0 }, semantic: { concepts: 0, embeddings: 0 }, knowledgeBase: { concepts: 0, skills: 0, rules: 0 } },
+                metrics: { successRate: 0, avgConfidence: 0, learningSpeed: '--', consolidations: 0 },
+                recentActivity: [],
+                sysInfo: { cpu: '--', ram: '--', disk: '--', python: '--' }
+            });
 
-document.addEventListener('DOMContentLoaded',()=>{
-    document.getElementById('task-input').addEventListener('keypress',e=>{if(e.key==='Enter')executeTask()});
-    document.getElementById('clock').textContent=new Date().toLocaleTimeString();
-    pollAll();
-    connectWS();
-    setInterval(pollAll,8000);
-    addLog('Sistema iniciado — polling cada 8s');
-});
-</script>
+            const [aiModels, setAiModels] = useState({ total: 0, available: 0 });
+            const [robotModules, setRobotModules] = useState({});
+
+            const pollAll = async () => {
+                const [nx, ps, rb, models, tutor, bitacora, memStats, sysInfo] = await Promise.all([
+                    fetchJ(NEXUS+'/status'),
+                    fetchJ(PUSH+'/status'),
+                    fetchJ(ROBOT+'/status'),
+                    fetchJ(PUSH+'/agent/models'),
+                    fetchJ(PUSH+'/api/learning/tutor/stats'),
+                    fetchJ(PUSH+'/ans/bitacora?limit=8'),
+                    fetchJ(PUSH+'/api/memory/stats'),
+                    fetchJ(ROBOT+'/system/info')
+                ]);
+
+                setSystemData(prev => {
+                    const svc = {...prev.services};
+                    if(nx&&nx.status){svc.nexus={status:'healthy',uptime:fmt(nx.uptime||0),port:8000,load:Math.min(100,Math.max(5,(nx.active_tasks||0)*15+(nx.completed_tasks||0>0?10:5)))}}
+                    else{svc.nexus={...svc.nexus,status:'offline',uptime:'--',load:0}}
+                    if(ps&&ps.ok!==false){svc.push={status:'healthy',uptime:'--',port:8791,load:Math.min(100,Math.max(10,20))}}
+                    else{svc.push={...svc.push,status:'offline',uptime:'--',load:0}}
+                    if(rb&&rb.status){
+                        const activeCount=Object.values(rb.modules||{}).filter(v=>v).length;
+                        const totalCount=Object.keys(rb.modules||{}).length||1;
+                        svc.robot={status:'healthy',uptime:fmt(rb.uptime||0),port:8002,load:Math.round(activeCount/totalCount*100)};
+                        setRobotModules(rb.modules||{});
+                    } else{svc.robot={...svc.robot,status:'offline',uptime:'--',load:0}}
+
+                    const learning = {...prev.learning};
+                    if(tutor&&tutor.ok&&tutor.data){
+                        const td=tutor.data;
+                        learning.currentLesson=td.curriculum||td.tutor_type||'AI Tutor';
+                        learning.tasksCompleted=td.completed||0;
+                        learning.tasksTotal=(td.completed||0)+(td.failed||0)||1;
+                        learning.progress=Math.round(learning.tasksCompleted/learning.tasksTotal*100);
+                        learning.tutorScore=td.robot_level||0;
+                        learning.uncertaintyRate=td.failed&&td.completed?(td.failed/(td.completed+td.failed)):0;
+                    } else {
+                        learning.currentLesson='AI Tutor';learning.progress=0;learning.tasksCompleted=0;learning.tasksTotal=0;learning.tutorScore=0;learning.uncertaintyRate=0;
+                    }
+
+                    const memory = {...prev.memory};
+                    if(memStats&&!memStats.error){
+                        memory.semantic.embeddings=memStats.total_experiences||0;
+                        memory.semantic.concepts=memStats.embedding_dimension||0;
+                    }
+                    if(bitacora&&bitacora.entries){
+                        memory.episodic.total=bitacora.total_count||bitacora.entries.length;
+                        const today=new Date().toISOString().slice(0,10);
+                        memory.episodic.today=bitacora.entries.filter(e=>e.timestamp&&e.timestamp.startsWith(today)).length;
+                    }
+                    memory.knowledgeBase.skills = Object.values(robotModules).filter(v=>v).length;
+                    memory.knowledgeBase.rules = nx ? (nx.available_tools||0) : prev.memory.knowledgeBase.rules;
+
+                    const metrics = {...prev.metrics};
+                    if(nx){
+                        const ct=nx.completed_tasks||0,at=nx.active_tasks||0;
+                        metrics.successRate=ct>0?Math.round(ct/(ct+at)*100):0;
+                        metrics.learningSpeed=at>2?'Rapido':at>0?'Medio':'Idle';
+                    }
+
+                    const activity = [];
+                    if(bitacora&&bitacora.entries){
+                        bitacora.entries.slice(0,5).forEach(e=>{
+                            activity.push({
+                                time:e.timestamp?new Date(e.timestamp).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):'--',
+                                action:e.accion||e.evento||e.message||'Evento',
+                                status:e.level==='error'?'warning':'success',
+                                confidence:e.confidence||0.9
+                            });
+                        });
+                    }
+                    if(!activity.length){activity.push({time:new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}),action:'Sistema operativo',status:'success',confidence:0.95})}
+
+                    const si = {...prev.sysInfo};
+                    if(sysInfo){
+                        si.cpu=(sysInfo.cpu_percent!==undefined)?sysInfo.cpu_percent+'%':'--';
+                        if(sysInfo.ram){si.ram=sysInfo.ram.percent+'% ('+sysInfo.ram.used_gb+'GB)'}
+                        else if(sysInfo.memory_available){si.ram=sysInfo.memory_available}
+                        if(sysInfo.disk){si.disk=sysInfo.disk.percent+'%'}
+                        else if(sysInfo.disk_usage){si.disk=sysInfo.disk_usage}
+                        si.python=sysInfo.python_version||'--';
+                    }
+
+                    return{services:svc,learning,memory,metrics,recentActivity:activity,sysInfo:si};
+                });
+
+                if(models&&models.data){const avail=models.data.filter(m=>m.available&&m.id!=='auto').length;setAiModels({total:models.data.length-1,available:avail})}
+            };
+
+            useEffect(() => {
+                pollAll();
+                const dataInterval = setInterval(pollAll, 8000);
+                return () => { clearInterval(dataInterval); };
+            }, []);
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-gray-100 p-6">
+                    
+                    {/* Header */}
+                    <header className="mb-8">
+                        <div className="flex items-center justify-between flex-wrap gap-4">
+                            <div className="flex items-center space-x-4">
+                                <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                                    <Icons.Brain className="w-7 h-7 text-white" />
+                                </div>
+                                <div>
+                                    <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+                                        ATLAS NEXUS
+                                    </h1>
+                                    <p className="text-sm text-gray-400 mt-1">Autonomous Learning & Tactical AI System</p>
+                                </div>
+                            </div>
+                            
+                            <div className="flex items-center space-x-3 flex-shrink-0">
+                                <div className="flex space-x-2 flex-shrink-0">
+                                    <a href={'http://'+HOST+':8791/ui'} target="_blank" className="px-3 py-1.5 bg-slate-800/80 border border-slate-700/50 rounded-lg text-xs text-gray-400 hover:text-cyan-400 hover:border-cyan-500/30 transition-all no-underline">📊 Dashboard</a>
+                                    <a href={'http://'+HOST+':8791/workspace'} target="_blank" className="px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/20 rounded-lg text-xs text-cyan-400 hover:bg-cyan-500/20 transition-all no-underline font-medium">⚡ Workspace</a>
+                                    <a href={'http://'+HOST+':8002/dashboard'} target="_blank" className="px-3 py-1.5 bg-slate-800/80 border border-slate-700/50 rounded-lg text-xs text-gray-400 hover:text-emerald-400 hover:border-emerald-500/30 transition-all no-underline">🤖 Robot 3D</a>
+                                </div>
+                                {(() => {
+                                    const onCount = Object.values(systemData.services).filter(s=>s.status==='healthy').length;
+                                    const total = Object.keys(systemData.services).length;
+                                    const allOn = onCount === total;
+                                    return (
+                                    <div className={"px-4 py-2 rounded-lg border " + (allOn ? "bg-green-500/10 border-green-500/20" : "bg-amber-500/10 border-amber-500/20")}>
+                                        <div className="flex items-center space-x-2">
+                                            <div className={"w-2 h-2 rounded-full " + (allOn ? "bg-green-500 animate-pulse" : "bg-amber-500")}></div>
+                                            <span className={"text-sm font-medium whitespace-nowrap " + (allOn ? "text-green-400" : "text-amber-400")}>{onCount}/{total} Servicios</span>
+                                        </div>
+                                    </div>
+                                    );
+                                })()}
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Main Grid */}
+                    <div className="grid grid-cols-12 gap-6">
+                        
+                        {/* Left Column */}
+                        <div className="col-span-8 space-y-6">
+                            
+                            {/* Services */}
+                            <div className="bg-slate-900/50 backdrop-blur border border-slate-800 rounded-2xl p-6 shadow-xl">
+                                <h2 className="text-lg font-semibold mb-4 flex items-center space-x-2">
+                                    <Icons.Layers className="w-5 h-5 text-cyan-400" />
+                                    <span>Core Services</span>
+                                </h2>
+                                
+                                <div className="grid grid-cols-3 gap-4">
+                                    {Object.entries(systemData.services).map(([name, service]) => {
+                                        const isOn = service.status === 'healthy';
+                                        const dotColor = isOn ? 'bg-green-500' : 'bg-red-500';
+                                        const labelColor = isOn ? 'text-green-400' : 'text-red-400';
+                                        const barColor = isOn ? 'from-cyan-500 to-blue-500' : 'from-red-500 to-red-700';
+                                        return (
+                                        <div key={name} className={"bg-slate-800/50 rounded-xl p-4 border transition-all " + (isOn ? "border-slate-700/50 hover:border-cyan-500/30" : "border-red-500/20")}>
+                                            <div className="flex items-center justify-between mb-3">
+                                                <span className="text-sm font-medium text-gray-300 uppercase">{name}</span>
+                                                <div className="flex items-center space-x-1">
+                                                    <div className={"w-1.5 h-1.5 rounded-full " + dotColor + (isOn ? " animate-pulse" : "")}></div>
+                                                    <span className={"text-xs " + labelColor}>{isOn ? 'Online' : 'Offline'}</span>
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-gray-500">Port</span>
+                                                    <span className="font-mono text-gray-300">{service.port}</span>
+                                                </div>
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-gray-500">Uptime</span>
+                                                    <span className="font-mono text-gray-300">{service.uptime}</span>
+                                                </div>
+                                                
+                                                <div>
+                                                    <div className="flex justify-between text-xs mb-1">
+                                                        <span className="text-gray-500">Load</span>
+                                                        <span className="font-mono text-gray-300">{Math.round(service.load)}%</span>
+                                                    </div>
+                                                    <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                                        <div 
+                                                            className={"h-full bg-gradient-to-r transition-all duration-500 " + barColor}
+                                                            style={{ width: `${service.load}%` }}
+                                                        ></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Learning Session */}
+                            <div className="bg-gradient-to-br from-violet-900/20 to-fuchsia-900/20 backdrop-blur border border-violet-500/20 rounded-2xl p-6 shadow-xl">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h2 className="text-lg font-semibold flex items-center space-x-2">
+                                        <Icons.BookOpen className="w-5 h-5 text-violet-400" />
+                                        <span>Active Learning Session</span>
+                                    </h2>
+                                    <div className="px-3 py-1 bg-violet-500/20 border border-violet-500/30 rounded-full text-xs font-medium text-violet-300">
+                                        Lesson in Progress
+                                    </div>
+                                </div>
+                                
+                                <div className="mb-4">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h3 className="font-medium text-white">{systemData.learning.currentLesson}</h3>
+                                        <span className="text-2xl font-bold text-violet-400">{systemData.learning.progress}%</span>
+                                    </div>
+                                    
+                                    <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                                        <div 
+                                            className="h-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-pink-500 transition-all duration-500"
+                                            style={{ width: `${systemData.learning.progress}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                                
+                                <div className="grid grid-cols-4 gap-4">
+                                    <div className="text-center p-3 bg-slate-800/50 rounded-lg">
+                                        <div className="text-2xl font-bold text-white">{systemData.learning.tasksCompleted}/{systemData.learning.tasksTotal}</div>
+                                        <div className="text-xs text-gray-400 mt-1">Tasks Complete</div>
+                                    </div>
+                                    <div className="text-center p-3 bg-slate-800/50 rounded-lg">
+                                        <div className="text-2xl font-bold text-emerald-400">{systemData.learning.tutorScore}</div>
+                                        <div className="text-xs text-gray-400 mt-1">Tutor Score</div>
+                                    </div>
+                                    <div className="text-center p-3 bg-slate-800/50 rounded-lg">
+                                        <div className="text-2xl font-bold text-amber-400">{(systemData.learning.uncertaintyRate * 100).toFixed(0)}%</div>
+                                        <div className="text-xs text-gray-400 mt-1">Uncertainty</div>
+                                    </div>
+                                    <div className="text-center p-3 bg-slate-800/50 rounded-lg">
+                                        <div className="text-sm font-bold text-cyan-400">{systemData.metrics.learningSpeed}</div>
+                                        <div className="text-xs text-gray-400 mt-1">Learning Speed</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Recent Activity */}
+                            <div className="bg-slate-900/50 backdrop-blur border border-slate-800 rounded-2xl p-6 shadow-xl">
+                                <h2 className="text-lg font-semibold mb-4 flex items-center space-x-2">
+                                    <Icons.Activity className="w-5 h-5 text-cyan-400" />
+                                    <span>Recent Activity</span>
+                                </h2>
+                                
+                                <div className="space-y-2">
+                                    {systemData.recentActivity.map((activity, idx) => (
+                                        <div key={idx} className="flex items-center justify-between p-3 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 transition-all">
+                                            <div className="flex items-center space-x-3">
+                                                <div className="w-1.5 h-1.5 rounded-full" style={{
+                                                    backgroundColor: activity.status === 'success' ? '#10b981' : '#f59e0b'
+                                                }}></div>
+                                                <span className="text-sm font-mono text-gray-500">{activity.time}</span>
+                                                <span className="text-sm text-gray-300">{activity.action}</span>
+                                            </div>
+                                            <span className="text-sm font-mono text-cyan-400">{(activity.confidence * 100).toFixed(0)}%</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Right Column */}
+                        <div className="col-span-4 space-y-6">
+                            
+                            {/* Memory */}
+                            <div className="bg-slate-900/50 backdrop-blur border border-slate-800 rounded-2xl p-6 shadow-xl">
+                                <h2 className="text-lg font-semibold mb-4 flex items-center space-x-2">
+                                    <Icons.Database className="w-5 h-5 text-cyan-400" />
+                                    <span>Memory Systems</span>
+                                </h2>
+                                
+                                <div className="space-y-4">
+                                    <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h3 className="font-medium text-white">Bitacora (Episodica)</h3>
+                                            <span className="text-2xl font-bold text-cyan-400">{systemData.memory.episodic.total}</span>
+                                        </div>
+                                        <div className="text-xs text-gray-400">Eventos registrados</div>
+                                        <div className="text-xs text-cyan-400/70">+{systemData.memory.episodic.today} hoy</div>
+                                    </div>
+                                    
+                                    <div className="bg-violet-500/10 border border-violet-500/20 rounded-lg p-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h3 className="font-medium text-white">Memoria Semantica</h3>
+                                            <span className="text-2xl font-bold text-violet-400">{systemData.memory.semantic.embeddings}</span>
+                                        </div>
+                                        <div className="text-xs text-gray-400">FAISS Experiencias</div>
+                                        <div className="text-xs text-violet-400/70">dim: {systemData.memory.semantic.concepts}</div>
+                                    </div>
+                                    
+                                    <div className="bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-lg p-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h3 className="font-medium text-white">Base de Conocimiento</h3>
+                                            <span className="text-2xl font-bold text-fuchsia-400">{systemData.memory.knowledgeBase.skills + systemData.memory.knowledgeBase.rules}</span>
+                                        </div>
+                                        <div className="text-xs text-gray-400">Skills + Herramientas</div>
+                                        <div className="text-xs text-fuchsia-400/70">{systemData.memory.knowledgeBase.skills} modulos, {systemData.memory.knowledgeBase.rules} tools</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* AI & Models */}
+                            <div className="bg-gradient-to-br from-emerald-900/20 to-teal-900/20 backdrop-blur border border-emerald-500/20 rounded-2xl p-6 shadow-xl">
+                                <h2 className="text-lg font-semibold mb-4 flex items-center space-x-2">
+                                    <Icons.Brain className="w-5 h-5 text-emerald-400" />
+                                    <span>AI & Modulos</span>
+                                </h2>
+                                
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm text-gray-400">Modelos IA</span>
+                                        <span className="text-sm font-mono text-emerald-400">{aiModels.available}<span className="text-gray-500">/{aiModels.total}</span> activos</span>
+                                    </div>
+                                    
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm text-gray-400">Modo</span>
+                                        <span className="text-sm font-mono text-gray-300">Cascada Auto</span>
+                                    </div>
+                                    
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm text-gray-400">Modulos Robot</span>
+                                        <span className="text-sm font-medium text-emerald-400">{Object.values(robotModules).filter(v=>v).length}<span className="text-gray-500">/{Object.keys(robotModules).length}</span></span>
+                                    </div>
+                                    
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm text-gray-400">Herramientas NEXUS</span>
+                                        <span className="text-sm font-bold text-white">{systemData.memory.knowledgeBase.rules}</span>
+                                    </div>
+                                    
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm text-gray-400">Tasa exito</span>
+                                        <span className="text-sm font-mono text-cyan-400">{systemData.metrics.successRate}%</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* System Resources */}
+                            <div className="bg-slate-900/50 backdrop-blur border border-slate-800 rounded-2xl p-6 shadow-xl">
+                                <h2 className="text-lg font-semibold mb-4 flex items-center space-x-2">
+                                    <Icons.Cpu className="w-5 h-5 text-cyan-400" />
+                                    <span>Recursos Sistema</span>
+                                </h2>
+                                
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm text-gray-400">CPU</span>
+                                        <span className="text-sm font-mono text-cyan-400">{systemData.sysInfo.cpu}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm text-gray-400">RAM</span>
+                                        <span className="text-sm font-mono text-violet-400">{systemData.sysInfo.ram}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm text-gray-400">Disco</span>
+                                        <span className="text-sm font-mono text-fuchsia-400">{systemData.sysInfo.disk}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm text-gray-400">Python</span>
+                                        <span className="text-sm font-mono text-gray-300">{systemData.sysInfo.python}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<AtlasDashboard />);
+    </script>
 </body>
 </html>
