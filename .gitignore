@@ -82,6 +82,9 @@ atlas_workspace/
 # Capturas del Agente Navegador
 temp_vision/
 
+# Reportes POT (generados en runtime) - nunca subir
+modules/humanoid/quality/reports/pot_report_*.json
+
 # ATLAS_EVOLUTION sandbox
 .temp_venv/
 temp_workspace/
