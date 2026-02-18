@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 _MAX_EVOLUTION_ENTRIES = 500
 _evolution_entries: deque = deque(maxlen=_MAX_EVOLUTION_ENTRIES)
+_DEDUP_LAST: Dict[Tuple[str, str], float] = {}  # (source, message) -> last_ts
 
 
 def _bitacora_path() -> Path:
@@ -21,16 +23,16 @@ def _bitacora_path() -> Path:
 
 
 def _load_from_disk() -> None:
-    """Carga entradas desde disco al arranque."""
+    """Carga entradas desde disco (sin duplicar en memoria)."""
     global _evolution_entries
     p = _bitacora_path()
     if not p.exists():
         return
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
-        entries = data.get("entries", [])
-        for e in entries[-_MAX_EVOLUTION_ENTRIES:]:
-            _evolution_entries.append(e)
+        entries = list((data.get("entries", []) or []))[-_MAX_EVOLUTION_ENTRIES:]
+        # Reemplazar por snapshot (evita duplicación cada vez que se consulta).
+        _evolution_entries = deque(entries, maxlen=_MAX_EVOLUTION_ENTRIES)
     except Exception:
         pass
 
@@ -55,11 +57,25 @@ _load_from_disk()
 
 def append_evolution_log(message: str, ok: bool = True, source: str = "evolution") -> None:
     """Append one step to the bitácora. Called by POST /ans/evolution-log. source: evolution | repo_monitor | ..."""
+    msg = (message or "").strip()
+    src = (source or "evolution").strip() or "evolution"
+    if not msg:
+        return
+
+    # Dedupe para evitar spam: mismo (source+message) en ventana corta.
+    now = time.time()
+    key = (src, msg[:220].lower())
+    last = float(_DEDUP_LAST.get(key) or 0.0)
+    window = float(os.getenv("EVOLUTION_BITACORA_DEDUP_SEC", "12") or "12")
+    if now - last < window:
+        return
+    _DEDUP_LAST[key] = now
+
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "message": (message or "")[:500],
+        "message": msg[:500],
         "ok": ok,
-        "source": (source or "evolution").strip() or "evolution",
+        "source": src,
     }
     _evolution_entries.append(entry)
     _save_to_disk()

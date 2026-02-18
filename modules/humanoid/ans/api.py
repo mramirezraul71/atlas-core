@@ -6,8 +6,25 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
 import json
+import time
+import re
+from datetime import datetime
 
 router = APIRouter(prefix="/ans", tags=["ANS"])
+
+_RE_SESSION_STARTED = re.compile(r"(listo para trabajar).*(sesión iniciada)", re.IGNORECASE)
+
+
+def _ts_to_epoch(ts: str) -> float:
+    t = (ts or "").strip()
+    if not t:
+        return 0.0
+    try:
+        # ISO 8601 (con o sin timezone)
+        dt = datetime.fromisoformat(t.replace("Z", "+00:00"))
+        return dt.timestamp()
+    except Exception:
+        return 0.0
 
 
 @router.get("/status")
@@ -206,7 +223,41 @@ def ans_bitacora(limit: int = 50):
         
         # Ordenar por timestamp (más reciente primero)
         entries.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
-        return {"ok": True, "entries": entries[:limit], "total": len(entries)}
+
+        # Dedupe defensivo: evitar que spam de INFO tape el resto.
+        # No tocamos warning/error (señales), solo "info/success" rutinarios.
+        now = time.time()
+        out = []
+        last_by_key: dict[tuple[str, str], float] = {}
+
+        for e in entries:
+            lvl = (e.get("level") or "info").strip().lower()
+            if lvl not in ("info", "success"):
+                out.append(e)
+                if len(out) >= limit:
+                    break
+                continue
+
+            src = (e.get("source") or "system").strip().lower()
+            msg = (e.get("message") or "").strip()
+            if not msg:
+                continue
+
+            msg_key = msg.lower()[:220]
+            key = (src, msg_key)
+
+            ts_epoch = _ts_to_epoch(e.get("timestamp") or "") or now
+            window = 300.0 if _RE_SESSION_STARTED.search(msg) else 20.0
+            last = float(last_by_key.get(key) or 0.0)
+            if last and abs(ts_epoch - last) < window:
+                continue
+            last_by_key[key] = ts_epoch
+
+            out.append(e)
+            if len(out) >= limit:
+                break
+
+        return {"ok": True, "entries": out, "total": len(entries)}
     except Exception as e:
         return {"ok": False, "entries": [], "error": str(e)}
 

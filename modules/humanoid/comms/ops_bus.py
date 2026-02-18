@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,10 @@ _LOG_PATH = Path(os.getenv("OPS_LOG_PATH", r"C:\ATLAS_PUSH\logs\ops_bus.log"))
 _TG_CHAT_CACHE: Optional[str] = None
 _TG_CHAT_CACHE_PATH = Path(os.getenv("TELEGRAM_CHAT_ID_CACHE_PATH", r"C:\ATLAS_PUSH\logs\telegram_chat_id.txt"))
 _AUDIO_LAST: Dict[str, float] = {}  # message_key -> ts (dedupe)
+_DEDUP_LAST: Dict[str, float] = {}  # key -> last_ts
+_RATE_1M: Dict[str, Deque[float]] = {}  # subsystem -> timestamps (sec)
+
+_RE_SESSION_STARTED = re.compile(r"(listo para trabajar).*(sesión iniciada)", re.IGNORECASE)
 
 
 def _ts() -> str:
@@ -238,6 +243,42 @@ def emit(
     msg_human = _human_message(subsystem, msg, lvl, data)
     if not msg_human:
         msg_human = msg
+
+    # Anti-spam: dedupe + rate-limit SOLO para niveles info/low.
+    # No silenciamos med/high/critical para no perder señales operativas.
+    if lvl in ("info", "low"):
+        now = time.time()
+        sub_key = (subsystem or "ops").strip().lower() or "ops"
+        text_key = (msg_human or msg).strip().lower()
+
+        # Ventana de dedupe: por defecto 20s; para "sesión iniciada" ampliar.
+        try:
+            base_window = float(os.getenv("OPS_DEDUP_WINDOW_SEC", "20") or "20")
+        except Exception:
+            base_window = 20.0
+        window = 300.0 if _RE_SESSION_STARTED.search(text_key) else base_window
+        key = f"{sub_key}|{lvl}|{text_key[:220]}"
+        last = float(_DEDUP_LAST.get(key) or 0.0)
+        if now - last < window:
+            return {"ok": True, "skipped": "dedupe"}
+        _DEDUP_LAST[key] = now
+
+        # Rate-limit por subsystem (1 minuto): por defecto 30 eventos/min para info/low.
+        try:
+            per_min = int(os.getenv("OPS_RATE_LIMIT_PER_MIN", "30") or "30")
+        except Exception:
+            per_min = 30
+        if per_min > 0:
+            dq = _RATE_1M.get(sub_key)
+            if dq is None:
+                dq = deque(maxlen=500)
+                _RATE_1M[sub_key] = dq
+            cutoff = now - 60.0
+            while dq and dq[0] < cutoff:
+                dq.popleft()
+            if len(dq) >= per_min:
+                return {"ok": True, "skipped": "rate_limited"}
+            dq.append(now)
 
     ev = {
         "ts": _ts(),
