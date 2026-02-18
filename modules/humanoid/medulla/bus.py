@@ -25,6 +25,15 @@ from .schemas import (
 
 logger = logging.getLogger(__name__)
 
+
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="medulla")
+    except Exception:
+        pass
+
+
 # Intentar importar ZeroMQ
 try:
     import zmq
@@ -312,12 +321,14 @@ class MedullaAtlas:
         self.subscribe("system.vitals", self._cache_vitals)
         
         logger.info("MedullaAtlas started")
+        _bitacora(f"MedullaAtlas started (ZMQ={self.use_zmq})")
     
     def stop(self) -> None:
         """Detiene la Médula Atlas."""
         self._running = False
         self._bus.stop()
         logger.info("MedullaAtlas stopped")
+        _bitacora("MedullaAtlas stopped")
     
     # === Publicación de Sensores ===
     
@@ -428,6 +439,7 @@ class MedullaAtlas:
         # Alertas críticas van al estado compartido
         if alert.level in ("critical", "emergency"):
             self.shared_state.write(f"alert.{alert.alert_id}", alert)
+            _bitacora(f"ALERT [{alert.level}] {alert.source}: {alert.message}", ok=False)
     
     # === Suscripciones ===
     

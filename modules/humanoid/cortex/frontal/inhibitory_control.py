@@ -15,6 +15,14 @@ from typing import Any, Callable, Dict, List, Optional, Set
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="cortex.frontal")
+    except Exception:
+        pass
+
+
 @dataclass
 class InhibitionRule:
     """Regla de inhibición."""
@@ -162,7 +170,7 @@ class InhibitoryControl:
             if rule.check(action, context):
                 # Regla activada
                 if rule.is_absolute:
-                    # No se puede override
+                    _bitacora(f"BLOQUEADO [{rule.id}]: {rule.description}", ok=False)
                     return InhibitionVerdict(
                         allowed=False,
                         blocked_by=rule.id,

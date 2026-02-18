@@ -18,6 +18,14 @@ from .consolidator import Consolidator, ConsolidationResult
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="hippo")
+    except Exception:
+        pass
+
+
 class HippoAPI:
     """
     API unificada del hipocampo.
@@ -86,6 +94,8 @@ class HippoAPI:
             ID del episodio
         """
         episode_id = self.episodic.record(episode)
+        
+        _bitacora(f"Episodio registrado vía API: {episode_id} goal={episode.goal[:50]}")
         
         # Verificar si es momento de consolidar
         if self.auto_consolidate:
@@ -360,7 +370,10 @@ class HippoAPI:
         Returns:
             Resultado de consolidacion o None
         """
-        return await self.consolidator.consolidate(force)
+        result = await self.consolidator.consolidate(force)
+        if result:
+            _bitacora(f"Consolidación ejecutada vía API: {result.episodes_processed} episodios, {result.concepts_created} conceptos")
+        return result
     
     async def _maybe_consolidate(self) -> None:
         """Ejecuta consolidacion si es necesario."""

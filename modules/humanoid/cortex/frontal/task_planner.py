@@ -18,6 +18,14 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="cortex.frontal")
+    except Exception:
+        pass
+
+
 @dataclass
 class TaskStep:
     """Paso individual de un plan."""
@@ -338,6 +346,7 @@ class TaskPlanner:
             symbolic_plan = self.symbolic_planner.plan(goal, world_state)
             if symbolic_plan and symbolic_plan.is_valid():
                 logger.info(f"Symbolic plan generated for: {goal}")
+                _bitacora(f"Plan simbólico generado: {goal} ({len(symbolic_plan.steps)} pasos)")
                 return symbolic_plan
         except Exception as e:
             logger.debug(f"Symbolic planning failed: {e}")
@@ -348,11 +357,14 @@ class TaskPlanner:
                 llm_plan = await self._plan_with_llm(goal, world_state, context)
                 if llm_plan and llm_plan.is_valid():
                     logger.info(f"LLM plan generated for: {goal}")
+                    _bitacora(f"Plan LLM generado: {goal} ({len(llm_plan.steps)} pasos)")
                     return llm_plan
             except Exception as e:
                 logger.error(f"LLM planning failed: {e}")
+                _bitacora(f"Planificación LLM falló: {goal} — {e}", ok=False)
         
         # 3. Fallback: plan simple
+        _bitacora(f"Plan fallback para: {goal}")
         return self._fallback_plan(goal)
     
     async def _plan_with_llm(self, goal: str, world_state: Any, context: Dict) -> TaskPlan:

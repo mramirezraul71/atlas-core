@@ -17,6 +17,14 @@ from typing import Any, Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="limbic")
+    except Exception:
+        pass
+
+
 @dataclass
 class RewardSignal:
     """Senal de recompensa."""
@@ -185,6 +193,11 @@ class RewardEngine:
             context=context,
         )
         
+        # Log significant rewards (high positive or negative)
+        task_id = context.get("task_id", context.get("goal_id", "unknown"))
+        if abs(total_reward) > 0.3:
+            _bitacora(f"Reward: {total_reward:.2f} for {task_id}", ok=total_reward > 0)
+        
         self._record_reward(signal)
         return signal
     
@@ -208,6 +221,11 @@ class RewardEngine:
             reason=reason,
             context=context or {},
         )
+        
+        # Log significant rewards (high positive or negative)
+        task_id = context.get("task_id", context.get("goal_id", "unknown")) if context else "unknown"
+        if abs(value) > 0.3:
+            _bitacora(f"Reward: {value:.2f} for {task_id}", ok=value > 0)
         
         self._record_reward(signal)
         return signal
@@ -236,11 +254,18 @@ class RewardEngine:
             base_reward = -0.3 - (0.3 * (1.0 - progress))
             reason = "goal_failure"
         
-        return self.emit_reward(base_reward, "goal", reason, {
+        signal = self.emit_reward(base_reward, "goal", reason, {
             "success": success,
             "progress": progress,
             "efficiency": efficiency,
         })
+        
+        # Log significant goal rewards
+        if abs(base_reward) > 0.3:
+            task_id = f"goal_{reason}"
+            _bitacora(f"Reward: {base_reward:.2f} for {task_id}", ok=success)
+        
+        return signal
     
     def emit_user_feedback(self, positive: bool, 
                           intensity: float = 1.0) -> RewardSignal:

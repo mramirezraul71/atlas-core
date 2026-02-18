@@ -18,6 +18,14 @@ from .motor_controller import MotorController, ControlMode, JointConfig
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="motor")
+    except Exception:
+        pass
+
+
 class CommandType(str, Enum):
     """Tipos de comandos de alto nivel."""
     MOVE_TO = "move_to"         # Navegar a ubicacion
@@ -175,6 +183,10 @@ class MotorInterface:
         command.start_time_ns = time.time_ns()
         self._current_command = command
         
+        # Bitácora
+        target = command.parameters.get("target") or command.parameters.get("pose") or command.parameters.get("object_pose")
+        _bitacora(f"Motor cmd: {command.command_type} target={target}")
+        
         # Notificar inicio
         for callback in self._on_start_callbacks:
             try:
@@ -233,6 +245,12 @@ class MotorInterface:
         
         command.end_time_ns = time.time_ns()
         self._current_command = None
+        
+        # Bitácora de resultado
+        if result.success:
+            _bitacora(f"Motor cmd completado: {command.id} dur={result.duration_ms:.0f}ms")
+        else:
+            _bitacora(f"Motor cmd falló: {command.id} error={result.error}", ok=False)
         
         # Guardar en historial
         self._execution_history.append(result)

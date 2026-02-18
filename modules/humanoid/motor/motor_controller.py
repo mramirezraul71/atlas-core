@@ -15,6 +15,14 @@ from enum import Enum
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="motor")
+    except Exception:
+        pass
+
+
 class ControlMode(str, Enum):
     """Modos de control."""
     POSITION = "position"       # Control de posicion
@@ -309,6 +317,9 @@ class MotorController:
         """Parada de emergencia."""
         self._emergency_stop = True
         
+        # Bitácora
+        _bitacora("Motor stop: emergency_stop", ok=False)
+        
         # Enviar torque cero a todos los joints
         for joint_id in self._joints:
             self._torque_commands[joint_id] = 0.0
@@ -327,6 +338,7 @@ class MotorController:
         """Resetea estado de emergencia."""
         self._emergency_stop = False
         logger.info("Emergency stop reset")
+        _bitacora("Motor stop reset: emergency cleared")
     
     async def _control_loop(self) -> None:
         """Loop principal de control."""

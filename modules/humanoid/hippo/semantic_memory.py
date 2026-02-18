@@ -19,6 +19,14 @@ from .schemas import Concept, Relation
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="hippo")
+    except Exception:
+        pass
+
+
 class SemanticMemory:
     """
     Memoria semantica del hipocampo.
@@ -162,6 +170,7 @@ class SemanticMemory:
         self._save_to_disk()
         
         logger.debug(f"Concept added: {concept.id} - {concept.name}")
+        _bitacora(f"Conocimiento actualizado: {concept.name} tipo={concept.concept_type}")
         return concept.id
     
     def create_concept(self, name: str, concept_type: str = "object",

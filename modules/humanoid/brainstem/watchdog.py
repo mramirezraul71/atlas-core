@@ -17,6 +17,14 @@ from typing import Any, Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="brainstem")
+    except Exception:
+        pass
+
+
 @dataclass
 class ModuleStatus:
     """Estado de un modulo monitoreado."""
@@ -145,6 +153,7 @@ class Watchdog:
                 
                 logger.error(f"Module {module.name} is DEAD "
                            f"(missed {module.consecutive_misses} heartbeats)")
+                _bitacora(f"Watchdog: módulo {module.module_id} sin respuesta", ok=False)
                 
                 # Notificar
                 await self._notify_module_dead(module)

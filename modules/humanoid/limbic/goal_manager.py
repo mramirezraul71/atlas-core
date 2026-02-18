@@ -18,6 +18,14 @@ from typing import Any, Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="limbic")
+    except Exception:
+        pass
+
+
 class GoalStatus(Enum):
     """Estado de un objetivo."""
     PENDING = "pending"
@@ -166,6 +174,7 @@ class GoalManager:
         
         self._goals[goal_id] = goal
         logger.info(f"Goal added: {goal_id} - {description}")
+        _bitacora(f"Goal añadido: {goal.description} prioridad={goal.priority.name}")
         
         # Auto-activar si es de alta prioridad y no hay objetivo actual
         if priority.value >= GoalPriority.HIGH.value:
@@ -278,6 +287,7 @@ class GoalManager:
         goal.reward = reward
         
         logger.info(f"Goal completed: {goal_id}, reward={reward}")
+        _bitacora(f"Goal completado: {goal.description}")
         
         # Si era el objetivo actual, seleccionar siguiente
         if self._current_goal_id == goal_id:
@@ -314,6 +324,7 @@ class GoalManager:
         goal.reward = -0.5  # Penalizacion
         
         logger.warning(f"Goal failed: {goal_id}, error={error}")
+        _bitacora(f"Goal falló: {goal.description}", ok=False)
         
         # Si era el objetivo actual, seleccionar siguiente
         if self._current_goal_id == goal_id:

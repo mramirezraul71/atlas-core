@@ -17,6 +17,14 @@ from typing import Any, Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="learning")
+    except Exception:
+        pass
+
+
 @dataclass
 class StateObservation:
     """Observacion de estado durante demostracion."""
@@ -271,6 +279,28 @@ class DemonstrationLearning:
         """
         self._get_state_callback = callback
     
+    async def add_action(self, action: str, parameters: Dict[str, Any] = None) -> bool:
+        """
+        Agrega anotacion de accion a la demostracion activa.
+        
+        Args:
+            action: Nombre de la accion
+            parameters: Parametros de la accion
+        
+        Returns:
+            True si se agrego exitosamente
+        """
+        if not self._recording or self._current_demo is None:
+            logger.warning("Cannot add action: not recording")
+            return False
+        
+        self._current_demo.annotations.append({
+            "timestamp_ns": time.time_ns(),
+            "action": action,
+            "parameters": parameters or {},
+        })
+        return True
+    
     async def start_recording(self, task_id: str, task_name: str) -> str:
         """
         Inicia grabacion de demostracion.
@@ -298,6 +328,7 @@ class DemonstrationLearning:
         self._record_task = asyncio.create_task(self._record_loop())
         
         logger.info(f"Started recording demonstration: {demo_id}")
+        _bitacora(f"Demo iniciada: {task_id}")
         return demo_id
     
     async def _record_loop(self) -> None:
@@ -367,6 +398,8 @@ class DemonstrationLearning:
         logger.info(f"Stopped recording: {demo.id}, "
                    f"observations={len(demo.observations)}, "
                    f"duration={demo.duration_ms:.0f}ms")
+        
+        _bitacora(f"Demo finalizada: {demo.id} obs={len(demo.observations)}")
         
         return demo
     

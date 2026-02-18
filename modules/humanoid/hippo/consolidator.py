@@ -22,6 +22,14 @@ from .semantic_memory import SemanticMemory
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="hippo")
+    except Exception:
+        pass
+
+
 @dataclass
 class ConsolidationResult:
     """Resultado de un ciclo de consolidacion."""
@@ -144,6 +152,8 @@ class Consolidator:
         
         logger.info(f"Consolidation complete: {episodes_processed} episodes, "
                    f"{concepts_created} concepts created, {patterns_found} patterns")
+        
+        _bitacora(f"Consolidación ejecutada: {episodes_processed} episodios procesados, {concepts_created} conceptos creados, {patterns_found} patrones")
         
         # Notificar
         for callback in self._on_consolidation_complete:

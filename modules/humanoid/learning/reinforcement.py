@@ -18,6 +18,14 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="learning")
+    except Exception:
+        pass
+
+
 @dataclass
 class Experience:
     """Experiencia individual (s, a, r, s', done)."""
@@ -424,6 +432,8 @@ class ReinforcementLearning:
         
         logger.info(f"Episode {result.episode_id} complete: "
                    f"reward={total_reward:.2f}, steps={steps}, success={success}")
+        
+        _bitacora(f"RL training: {task_id} episodes={result.episode_id}")
         
         return result
     

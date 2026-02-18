@@ -18,6 +18,14 @@ from typing import Any, Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="brainstem")
+    except Exception:
+        pass
+
+
 @dataclass
 class VitalsReading:
     """Lectura de signos vitales."""
@@ -313,6 +321,7 @@ class VitalsMonitor:
             }
             
             logger.warning(f"Vital warning: {vital_name} = {value}")
+            _bitacora(f"Vital warning: {vital_name}={value}", ok=False)
             
             for callback in self._on_warning:
                 try:
@@ -330,6 +339,7 @@ class VitalsMonitor:
             }
             
             logger.error(f"Vital CRITICAL: {vital_name} = {value}")
+            _bitacora(f"Vital crítico: {vital_name}={value}", ok=False)
             
             for callback in self._on_critical:
                 try:

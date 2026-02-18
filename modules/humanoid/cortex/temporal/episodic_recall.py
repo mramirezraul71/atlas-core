@@ -13,6 +13,14 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="cortex.temporal")
+    except Exception:
+        pass
+
+
 @dataclass
 class RecallQuery:
     """Consulta de recuperacion de memoria."""
@@ -186,6 +194,7 @@ class EpisodicRecall:
             except Exception as e:
                 logger.error(f"Error in recall callback: {e}")
         
+        _bitacora(f"Episodic recall: {len(result.episodes)} episodes retrieved")
         return result
     
     async def _search_episodes(self, query: RecallQuery) -> List[Any]:

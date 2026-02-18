@@ -17,6 +17,14 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="cortex.occipital")
+    except Exception:
+        pass
+
+
 @dataclass
 class BoundingBox:
     """Bounding box para detecciones."""
@@ -341,6 +349,7 @@ class VisionPipeline:
         )
         
         self._last_output = output
+        _bitacora(f"Vision: {len(output.detections)} detections, {len(output.humans)} humans")
         return output
     
     def _detect_objects(self, frame: Any) -> List[Detection]:

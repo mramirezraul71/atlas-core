@@ -2354,6 +2354,76 @@ def serve_workspace():
 
 
 # ----------------------------------------------------------------------------
+# Agent Models — Catálogo de modelos IA disponibles
+# ----------------------------------------------------------------------------
+
+_MODEL_CATALOG = [
+    {"id": "auto", "name": "Auto", "provider": "atlas", "desc": "Seleccion inteligente segun la tarea", "category": "auto"},
+    # OpenAI
+    {"id": "openai:gpt-4.1", "name": "GPT-4.1", "provider": "openai", "desc": "Modelo flagship mas reciente", "category": "premium"},
+    {"id": "openai:gpt-4.1-mini", "name": "GPT-4.1 Mini", "provider": "openai", "desc": "Rapido y economico", "category": "fast"},
+    {"id": "openai:gpt-4.1-nano", "name": "GPT-4.1 Nano", "provider": "openai", "desc": "Ultra rapido, tareas simples", "category": "fast"},
+    {"id": "openai:o4-mini", "name": "o4-mini", "provider": "openai", "desc": "Razonamiento avanzado compacto", "category": "reasoning"},
+    {"id": "openai:o3", "name": "o3", "provider": "openai", "desc": "Razonamiento profundo", "category": "reasoning"},
+    {"id": "openai:gpt-4o", "name": "GPT-4o", "provider": "openai", "desc": "Multimodal estable", "category": "premium"},
+    # Anthropic
+    {"id": "anthropic:claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "provider": "anthropic", "desc": "Codigo y analisis experto", "category": "premium"},
+    {"id": "anthropic:claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku", "provider": "anthropic", "desc": "Ultra rapido, buena calidad", "category": "fast"},
+    {"id": "anthropic:claude-opus-4-20250514", "name": "Claude Opus 4", "provider": "anthropic", "desc": "Maximo razonamiento", "category": "reasoning"},
+    # Google Gemini
+    {"id": "gemini:gemini-2.5-pro-preview-06-05", "name": "Gemini 2.5 Pro", "provider": "gemini", "desc": "Flagship de Google, largo contexto", "category": "premium"},
+    {"id": "gemini:gemini-2.5-flash-preview-05-20", "name": "Gemini 2.5 Flash", "provider": "gemini", "desc": "Rapido y economico", "category": "fast"},
+    {"id": "gemini:gemini-2.0-flash", "name": "Gemini 2.0 Flash", "provider": "gemini", "desc": "Estable, multimodal", "category": "fast"},
+    # xAI (Grok)
+    {"id": "xai:grok-3", "name": "Grok 3", "provider": "xai", "desc": "Flagship de xAI", "category": "premium"},
+    {"id": "xai:grok-3-mini", "name": "Grok 3 Mini", "provider": "xai", "desc": "Rapido y eficiente", "category": "fast"},
+    {"id": "xai:grok-3-fast", "name": "Grok 3 Fast", "provider": "xai", "desc": "Baja latencia", "category": "fast"},
+    # DeepSeek
+    {"id": "deepseek:deepseek-chat", "name": "DeepSeek V3", "provider": "deepseek", "desc": "Chat y codigo, muy economico", "category": "fast"},
+    {"id": "deepseek:deepseek-reasoner", "name": "DeepSeek R1", "provider": "deepseek", "desc": "Razonamiento profundo chain-of-thought", "category": "reasoning"},
+    # Groq (inferencia rapida)
+    {"id": "groq:llama-3.3-70b-versatile", "name": "Llama 3.3 70B", "provider": "groq", "desc": "Meta Llama via Groq (ultra rapido)", "category": "fast"},
+    {"id": "groq:llama-3.1-8b-instant", "name": "Llama 3.1 8B", "provider": "groq", "desc": "Instantaneo, tareas simples", "category": "fast"},
+    {"id": "groq:mixtral-8x7b-32768", "name": "Mixtral 8x7B", "provider": "groq", "desc": "Mistral MoE via Groq", "category": "fast"},
+    {"id": "groq:deepseek-r1-distill-llama-70b", "name": "DeepSeek R1 Distill 70B", "provider": "groq", "desc": "Razonamiento via Groq", "category": "reasoning"},
+    # Mistral
+    {"id": "mistral:mistral-large-latest", "name": "Mistral Large", "provider": "mistral", "desc": "Flagship de Mistral", "category": "premium"},
+    {"id": "mistral:codestral-latest", "name": "Codestral", "provider": "mistral", "desc": "Especializado en codigo", "category": "code"},
+    {"id": "mistral:mistral-small-latest", "name": "Mistral Small", "provider": "mistral", "desc": "Rapido y economico", "category": "fast"},
+    # Perplexity
+    {"id": "perplexity:sonar-pro", "name": "Sonar Pro", "provider": "perplexity", "desc": "Busqueda web + IA", "category": "search"},
+    {"id": "perplexity:sonar", "name": "Sonar", "provider": "perplexity", "desc": "Busqueda rapida", "category": "search"},
+    # Ollama (local)
+    {"id": "ollama:auto", "name": "Ollama (local)", "provider": "ollama", "desc": "Modelos locales sin costo", "category": "local"},
+]
+
+_PROVIDER_LABELS = {
+    "atlas": "ATLAS", "openai": "OpenAI", "anthropic": "Anthropic", "gemini": "Google",
+    "xai": "xAI", "deepseek": "DeepSeek", "groq": "Groq", "mistral": "Mistral",
+    "perplexity": "Perplexity", "ollama": "Ollama",
+}
+
+
+@app.get("/agent/models")
+def agent_models():
+    """Catalogo de modelos IA con status de API key."""
+    t0 = time.perf_counter()
+    from modules.humanoid.ai.provider_credentials import get_provider_api_key
+    status = {}
+    for pid in ("openai", "anthropic", "gemini", "xai", "deepseek", "groq", "mistral", "perplexity"):
+        key = get_provider_api_key(pid)
+        status[pid] = bool(key and key.strip())
+    status["ollama"] = True
+    status["atlas"] = True
+    models = []
+    for m in _MODEL_CATALOG:
+        available = status.get(m["provider"], False)
+        models.append({**m, "available": available, "provider_label": _PROVIDER_LABELS.get(m["provider"], m["provider"])})
+    ms = int((time.perf_counter() - t0) * 1000)
+    return {"ok": True, "data": models, "ms": ms}
+
+
+# ----------------------------------------------------------------------------
 # Bitácora Central (UI -> servidor)
 # ----------------------------------------------------------------------------
 

@@ -14,6 +14,14 @@ from enum import Enum
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="basal")
+    except Exception:
+        pass
+
+
 class InhibitionLevel(int, Enum):
     """Niveles de inhibicion."""
     NONE = 0          # Sin inhibicion
@@ -263,6 +271,13 @@ class Inhibitor:
         # Determinar veredicto
         go = len(triggered_rules) == 0 or max_level == InhibitionLevel.NONE
         can_override = max_level.value < InhibitionLevel.ABSOLUTE.value
+        
+        # Bitácora
+        if not go:
+            for rule_id in triggered_rules:
+                rule = self._rules.get(rule_id)
+                reason = rule.name if rule else rule_id
+                _bitacora(f"Inhibición: {rule_id} — {reason}", ok=False)
         
         # Determinar que se necesita para override
         override_requires = None

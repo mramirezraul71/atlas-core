@@ -20,6 +20,14 @@ from .schemas import Episode, Outcome
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="hippo")
+    except Exception:
+        pass
+
+
 class EpisodicMemory:
     """
     Memoria episodica del hipocampo.
@@ -232,6 +240,7 @@ class EpisodicMemory:
                 logger.error(f"Error in episode callback: {e}")
         
         logger.debug(f"Episode recorded: {episode.id}")
+        _bitacora(f"Episodio guardado: {episode.id} outcome={episode.outcome.value}")
         return episode.id
     
     def _add_to_index(self, episode: Episode) -> None:
@@ -333,6 +342,8 @@ class EpisodicMemory:
                                 episode.increment_recall()
                                 results.append(episode)
                     
+                    if results:
+                        _bitacora(f"Recuperación semántica: {len(results)} episodios encontrados para query='{query[:50]}'")
                     return results
                     
                 except ImportError:
@@ -384,6 +395,8 @@ class EpisodicMemory:
         for ep in episodes[:limit]:
             ep.increment_recall()
         
+        if episodes:
+            _bitacora(f"Recuperación por objetivo: {len(episodes[:limit])} episodios tipo={goal_type}")
         return episodes[:limit]
     
     def recall_successful(self, limit: int = 10) -> List[Episode]:

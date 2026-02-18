@@ -16,6 +16,14 @@ from typing import Any, Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="brainstem")
+    except Exception:
+        pass
+
+
 @dataclass
 class SafetyRule:
     """Regla de seguridad."""
@@ -266,6 +274,7 @@ class SafetyPolicy:
             self._block_history = self._block_history[-500:]
         
         logger.warning(f"Action blocked by {verdict.blocked_by}: {verdict.reason}")
+        _bitacora(f"Safety BLOCK: {verdict.blocked_by} — {verdict.reason}", ok=False)
         
         for callback in self._on_block:
             try:
@@ -319,6 +328,7 @@ class SafetyPolicy:
         self._emergency_reason = reason
         
         logger.critical(f"EMERGENCY STOP ACTIVATED: {reason}")
+        _bitacora("EMERGENCY STOP activado", ok=False)
         
         for callback in self._on_emergency:
             try:

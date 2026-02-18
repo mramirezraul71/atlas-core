@@ -18,6 +18,14 @@ from typing import Any, Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="brainstem")
+    except Exception:
+        pass
+
+
 class SystemMode(Enum):
     """Modos de operacion del sistema."""
     INITIALIZING = "initializing"
@@ -159,6 +167,7 @@ class GlobalState:
             self._transitions.append(transition)
             
             logger.info(f"Mode changed: {old_mode.value} -> {target_mode.value} ({reason})")
+            _bitacora(f"Modo global: {old_mode.value} → {target_mode.value}")
             
             # Ejecutar callbacks de entrada
             await self._execute_enter_callbacks(target_mode, old_mode)

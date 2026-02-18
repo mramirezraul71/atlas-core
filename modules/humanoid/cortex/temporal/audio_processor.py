@@ -18,6 +18,14 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="cortex.temporal")
+    except Exception:
+        pass
+
+
 @dataclass
 class AudioEvent:
     """Evento de audio procesado."""
@@ -238,6 +246,7 @@ class AudioProcessor:
                 transcript = await self._transcribe(audio_data, sample_rate)
                 
                 if transcript and transcript.text:
+                    _bitacora(f"ASR transcript: {len(transcript.text)} chars")
                     # Verificar wake word
                     if self.wake_word in transcript.text.lower():
                         self._wake_word_detected = True

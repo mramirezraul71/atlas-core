@@ -399,17 +399,16 @@ class CommsHub:
     def _send_bitacora(self, msg: CommsMessage) -> Dict[str, Any]:
         """Registra en la bitácora ANS."""
         try:
-            from modules.humanoid.ans.bitacora import log as bitacora_log
+            from modules.humanoid.ans.evolution_bitacora import append_evolution_log
             
-            bitacora_log(
-                subsystem=msg.subsystem,
-                message=msg.content,
-                level=msg.level.value,
-                data=msg.data,
+            ok = msg.level.value not in ("HIGH", "CRITICAL")
+            append_evolution_log(
+                f"[{msg.subsystem}] {msg.content[:400]}",
+                ok=ok,
+                source=msg.subsystem or "comms",
             )
             return {"ok": True}
         except Exception:
-            # Bitácora puede no existir, no es crítico
             return {"ok": True, "skipped": "bitacora_not_available"}
     
     def _send_log(self, msg: CommsMessage) -> Dict[str, Any]:

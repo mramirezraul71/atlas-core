@@ -17,6 +17,14 @@ from typing import Any, Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="limbic")
+    except Exception:
+        pass
+
+
 class SystemMode(Enum):
     """Modos de operacion del sistema."""
     NORMAL = "normal"           # Operacion normal
@@ -274,6 +282,7 @@ class StateRegulator:
         """Cambia el modo y notifica."""
         self._state.mode = new_mode
         logger.info(f"Mode changed: {old_mode.name} -> {new_mode.name}")
+        _bitacora(f"State change: {old_mode.name} → {new_mode.name}")
         
         # Ajustar parametros segun modo
         if new_mode == SystemMode.SAFETY:

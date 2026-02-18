@@ -17,6 +17,14 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="cortex.parietal")
+    except Exception:
+        pass
+
+
 @dataclass
 class JointState:
     """Estado de una articulación."""
@@ -260,11 +268,18 @@ class BodySchema:
     
     def get_joints_at_limits(self) -> List[str]:
         """Obtiene articulaciones que están en sus límites."""
-        return [jid for jid, joint in self.joints.items() if joint.is_at_limit()]
+        joints_at_limits = [jid for jid, joint in self.joints.items() if joint.is_at_limit()]
+        if joints_at_limits:
+            _bitacora(f"Joint limits detected: {', '.join(joints_at_limits)}", ok=False)
+        return joints_at_limits
     
     def get_overheating_joints(self, threshold: float = 60.0) -> List[str]:
         """Obtiene articulaciones con temperatura alta."""
-        return [jid for jid, joint in self.joints.items() if joint.temperature > threshold]
+        overheating = [jid for jid, joint in self.joints.items() if joint.temperature > threshold]
+        if overheating:
+            temps = {jid: self.joints[jid].temperature for jid in overheating}
+            _bitacora(f"Overheating detected: {', '.join(f'{jid}({temps[jid]:.1f}°C)' for jid in overheating)}", ok=False)
+        return overheating
     
     def get_high_effort_joints(self, threshold_ratio: float = 0.8) -> List[str]:
         """Obtiene articulaciones con esfuerzo alto."""

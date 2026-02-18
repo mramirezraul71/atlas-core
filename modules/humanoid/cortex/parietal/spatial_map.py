@@ -17,6 +17,14 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="cortex.parietal")
+    except Exception:
+        pass
+
+
 @dataclass
 class MapCell:
     """Celda del mapa de ocupación."""
@@ -229,7 +237,10 @@ class SpatialMap:
     def add_landmark(self, landmark: Landmark) -> None:
         """Agrega o actualiza un landmark."""
         landmark.last_seen_ns = time.time_ns()
+        is_new = landmark.id not in self.landmarks
         self.landmarks[landmark.id] = landmark
+        if is_new:
+            _bitacora(f"Landmark added: {landmark.name} ({landmark.landmark_type}) at ({landmark.position[0]:.2f}, {landmark.position[1]:.2f}, {landmark.position[2]:.2f})")
     
     def remove_landmark(self, landmark_id: str) -> bool:
         """Remueve un landmark."""

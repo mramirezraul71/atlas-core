@@ -12,6 +12,14 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="cortex.occipital")
+    except Exception:
+        pass
+
 # Intentar importar numpy
 try:
     import numpy as np
@@ -368,7 +376,7 @@ class ObjectRecognition:
             best_match.times_seen += 1
             best_match.last_seen_ns = time.time_ns()
             
-            return ObjectIdentity(
+            identity = ObjectIdentity(
                 id=best_match.id,
                 name=best_match.name,
                 category=best_match.category,
@@ -379,6 +387,8 @@ class ObjectRecognition:
                 embedding=embedding,
                 color=best_match.attributes.get("color"),
             )
+            _bitacora(f"Object recognized: {identity.name} ({identity.category}) - confidence: {best_similarity:.2f}")
+            return identity
         
         # Objeto no reconocido pero detectado
         return ObjectIdentity(
@@ -496,6 +506,7 @@ class ObjectRecognition:
         
         self._learning_count += 1
         logger.info(f"Learned object: {name} (id={obj_id})")
+        _bitacora(f"Object learned: {name} ({category}) - id: {obj_id}")
         
         return obj_id
     

@@ -14,6 +14,14 @@ from typing import Any, Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="learning")
+    except Exception:
+        pass
+
+
 class FeedbackType:
     """Tipos de feedback reconocidos."""
     CORRECTION = "correction"      # "No, hazlo asi"
@@ -232,6 +240,9 @@ class NaturalLanguageFeedback:
         
         # Parsear
         intent = self.parse_feedback(text, context)
+        
+        # Bitácora
+        _bitacora(f"Feedback procesado: tipo={intent.feedback_type}")
         
         # Crear registro
         self._feedback_count += 1

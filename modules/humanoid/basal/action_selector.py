@@ -15,6 +15,14 @@ from enum import Enum
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="basal")
+    except Exception:
+        pass
+
+
 class ActionType(str, Enum):
     """Tipos de acciones."""
     MOVE = "move"
@@ -200,6 +208,10 @@ class ActionSelector:
             reasoning=reasoning,
             alternatives=alternatives,
         )
+        
+        # Bitácora
+        if selected:
+            _bitacora(f"Acción seleccionada: {selected.action_type} conf={selected.confidence:.2f}")
         
         # Post-hooks
         for hook in self._post_selection_hooks:

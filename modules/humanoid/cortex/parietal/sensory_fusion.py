@@ -18,6 +18,14 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="cortex.parietal")
+    except Exception:
+        pass
+
+
 @dataclass
 class SensorData:
     """Datos de un sensor."""
@@ -283,6 +291,8 @@ class SensoryFusion:
                 callback(self._fused_state)
             except Exception as e:
                 logger.error(f"Error in fusion callback: {e}")
+        
+        _bitacora(f"Sensory fusion: confidence={self._fused_state.confidence:.2f}, joints={len(self._fused_state.joint_positions)}")
         
         return self._fused_state
     

@@ -15,6 +15,14 @@ from typing import Any, Callable, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="cortex.frontal")
+    except Exception:
+        pass
+
+
 @dataclass
 class ActionOption:
     """Opción de acción a evaluar."""
@@ -314,11 +322,12 @@ class DecisionMaker:
         
         # Verificar umbrales
         if best["risk"] > self.max_acceptable_risk and not context.urgency > 0.9:
-            # Riesgo muy alto, reconsiderar
             logger.warning(f"High risk action selected: {best['option'].description}, risk={best['risk']:.2f}")
+            _bitacora(f"Decisión de alto riesgo: {best['option'].description} risk={best['risk']:.2f}", ok=False)
         
         # Construir razonamiento
         reasoning = self._build_reasoning(best, context)
+        _bitacora(f"Decisión: {best['option'].description} score={best['score']:.2f}")
         
         # Alternativas (top 3)
         alternatives = [s["option"] for s in scored_options[1:4]]

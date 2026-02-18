@@ -16,6 +16,14 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+def _bitacora(msg: str, ok: bool = True) -> None:
+    try:
+        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        append_evolution_log(msg, ok=ok, source="cortex.temporal")
+    except Exception:
+        pass
+
+
 @dataclass
 class Entity:
     """Entidad extraída del texto."""
@@ -201,6 +209,7 @@ class LanguageUnderstanding:
         
         if rule_result.confidence > 0.7:
             self._add_to_context(text, rule_result)
+            _bitacora(f"NLU intent: {rule_result.action} entities={len(rule_result.entities)}")
             return rule_result
         
         # 2. Fallback a LLM si está disponible
@@ -209,12 +218,14 @@ class LanguageUnderstanding:
                 llm_result = await self._understand_with_llm(text, context)
                 if llm_result.confidence > rule_result.confidence:
                     self._add_to_context(text, llm_result)
+                    _bitacora(f"NLU intent: {llm_result.action} entities={len(llm_result.entities)}")
                     return llm_result
             except Exception as e:
                 logger.error(f"LLM understanding failed: {e}")
         
         # 3. Retornar mejor resultado disponible
         self._add_to_context(text, rule_result)
+        _bitacora(f"NLU intent: {rule_result.action} entities={len(rule_result.entities)}")
         return rule_result
     
     def _understand_with_rules(self, text: str) -> Intent:
