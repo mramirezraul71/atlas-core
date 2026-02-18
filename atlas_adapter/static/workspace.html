@@ -320,6 +320,15 @@
     .chat-send:hover { filter: brightness(1.15); transform: scale(1.04); }
     .chat-send:disabled { opacity: 0.4; cursor: not-allowed; }
     .chat-send svg { width: 16px; height: 16px; }
+    .chat-mode-bar {
+      display: flex; gap: 6px; align-items: center; margin-bottom: 4px;
+    }
+    .chat-mode-bar select {
+      font-family: inherit; font-size: 10px; background: var(--bg-elevated);
+      color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px;
+      padding: 3px 6px; cursor: pointer; outline: none;
+    }
+    .chat-mode-bar select:focus { border-color: var(--accent-primary); }
     .chat-hints {
       display: flex; gap: 6px; flex-wrap: wrap;
     }
@@ -697,12 +706,24 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           </button>
         </div>
+        <div class="chat-mode-bar">
+          <select id="agent-mode" title="Modo de ejecucion">
+            <option value="plan_only">Plan Only</option>
+            <option value="auto" selected>Auto (ejecutar)</option>
+            <option value="execute_controlled">Controlado</option>
+          </select>
+          <select id="agent-depth" title="Profundidad multi-agente">
+            <option value="1">Depth 1</option>
+            <option value="2">Depth 2</option>
+            <option value="3">Depth 3</option>
+          </select>
+        </div>
         <div class="chat-hints">
-          <span class="chat-hint" onclick="insertHint(this)">Crea una app</span>
-          <span class="chat-hint" onclick="insertHint(this)">Genera un script</span>
+          <span class="chat-hint" onclick="insertHint(this)">Crea una app web</span>
+          <span class="chat-hint" onclick="insertHint(this)">Genera un script Python</span>
           <span class="chat-hint" onclick="insertHint(this)">/atlas status</span>
-          <span class="chat-hint" onclick="insertHint(this)">Revisa los logs</span>
-          <span class="chat-hint" onclick="insertHint(this)">Configura sitio</span>
+          <span class="chat-hint" onclick="insertHint(this)">Deploy a produccion</span>
+          <span class="chat-hint" onclick="insertHint(this)">Revisa y corrige errores</span>
         </div>
       </div>
     </section>
@@ -993,7 +1014,7 @@ async function sendMessage() {
     const response = await fetch(API + '/agent/goal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goal: text, mode: 'plan_only', depth: 1, fast: true })
+      body: JSON.stringify({ goal: text, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true })
     });
     const elapsed = Math.round(performance.now() - t0);
     const data = await response.json();
@@ -1214,7 +1235,7 @@ async function executeTerminalCmd(cmd) {
     const r = await fetch(API + '/agent/goal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goal: 'Execute terminal command: ' + cmd, mode: 'plan_only', depth: 1, fast: true })
+      body: JSON.stringify({ goal: 'Execute terminal command: ' + cmd, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true })
     });
     const elapsed = Math.round(performance.now() - t0);
     const data = await r.json();
