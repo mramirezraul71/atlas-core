@@ -2344,6 +2344,15 @@ def serve_ui():
     return {"ok": False, "error": "dashboard.html not found"}
 
 
+@app.get("/workspace")
+def serve_workspace():
+    """ATLAS Agent Workspace — IDE-style interface para comandar ATLAS en tiempo real."""
+    path = STATIC_DIR / "workspace.html"
+    if path.exists():
+        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
+    return {"ok": False, "error": "workspace.html not found"}
+
+
 # ----------------------------------------------------------------------------
 # Bitácora Central (UI -> servidor)
 # ----------------------------------------------------------------------------

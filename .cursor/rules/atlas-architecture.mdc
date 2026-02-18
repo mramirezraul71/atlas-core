@@ -1,0 +1,42 @@
+---
+description: ATLAS arquitectura — estructura de proyecto, contexto tecnico permanente, valoracion
+alwaysApply: true
+---
+
+# ATLAS — Arquitectura y Contexto Tecnico
+
+## Estructura del Proyecto
+```
+C:\ATLAS_PUSH\
+├── nexus/                    # Servicio NEXUS :8000 (cerebro)
+│   ├── continual_learning/   # Aprendizaje 24/7
+│   │   ├── knowledge_base.py
+│   │   ├── uncertainty_detector.py
+│   │   ├── ai_consultant.py       # Opus como tutor
+│   │   ├── episodic_memory.py
+│   │   ├── knowledge_consolidator.py
+│   │   └── learning_loop.py
+│   └── docs/
+├── atlas_adapter/            # Adaptador + Dashboard UI
+│   └── static/dashboard.html # ⚠️ PROTEGIDO — no modificar sin autorizacion
+├── modules/                  # Modulos del sistema
+├── core/                     # Nucleo compartido
+├── brain/                    # Motor cognitivo
+├── scripts/                  # Scripts de utilidad
+├── tests/                    # Tests del sistema
+└── config/                   # Configuracion
+```
+
+## Contexto Tecnico Permanente
+- **Valoracion**: $645K (objetivo $1M-$1.2M)
+- **Nivel del sistema**: 9.5/10
+- **GitHub**: branch `intent-input-rename`
+- **Continual Learning**: Prompts 2/3 completos, APIs + Tests pendientes
+
+## Stack
+| Capa | Tecnologia |
+|------|-----------|
+| Backend | Python, FastAPI, uvicorn, WebSockets |
+| Frontend | Bloomberg-style UI (dashboard.html) |
+| AI | Claude Opus 4.6 (tutor), Claude Sonnet (agente) |
+| Infra | Windows, GitHub, SQLite (offline-first) |

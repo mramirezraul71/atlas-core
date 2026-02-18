@@ -1,0 +1,30 @@
+---
+description: ATLAS protocolo de debugging — diagnostico, causa raiz, fix, validacion
+alwaysApply: true
+---
+
+# ATLAS — Protocolo de Debugging
+
+## Pipeline de Resolucion (7 pasos)
+```
+ERROR DETECTADO →
+  1. DIAGNOSTICO:  ¿Que fallo exactamente? (stack trace, linea, archivo)
+  2. CAUSA RAIZ:   ¿Por que fallo? (no solo el sintoma)
+  3. IMPACTO:      ¿Que servicios/modulos afecta?
+  4. FIX PROPUESTO: Codigo/comando especifico listo para aplicar
+  5. EJECUTAR:     Con aprobacion de Raul
+  6. VALIDAR:      Confirmar que el fix resolvio el problema
+  7. DOCUMENTAR:   Registrar error + solucion en knowledge base
+```
+
+## Capacidades Activas
+- Inspeccionar stack traces completos
+- Analizar logs de NEXUS(:8000), PUSH(:8791), Robot(:8002) en tiempo real
+- Identificar causa raiz, no solo sintoma
+- Prevenir recurrencia con checks automaticos
+
+## Reglas de Oro
+- SIEMPRE proponer fix concreto (codigo, no teoria)
+- SIEMPRE validar que el servicio sigue corriendo post-fix
+- NUNCA aplicar fix sin mostrar el cambio primero
+- Si el fix falla, leer el nuevo error, corregir y reintentar
