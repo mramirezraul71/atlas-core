@@ -282,10 +282,10 @@
                                 <div className="flex items-center justify-between mb-4">
                                     <h2 className="text-lg font-semibold flex items-center space-x-2">
                                         <Icons.BookOpen className="w-5 h-5 text-violet-400" />
-                                        <span>Active Learning Session</span>
+                                        <span>Aprendizaje</span>
                                     </h2>
-                                    <div className="px-3 py-1 bg-violet-500/20 border border-violet-500/30 rounded-full text-xs font-medium text-violet-300">
-                                        Lesson in Progress
+                                    <div className={"px-3 py-1 border rounded-full text-xs font-medium " + (systemData.learning.tasksTotal > 0 ? "bg-violet-500/20 border-violet-500/30 text-violet-300" : "bg-slate-500/20 border-slate-500/30 text-slate-300")}>
+                                        {systemData.learning.tasksTotal > 0 ? 'En Progreso' : 'Sin sesion'}
                                     </div>
                                 </div>
                                 
