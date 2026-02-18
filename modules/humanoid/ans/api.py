@@ -50,6 +50,8 @@ def ans_bitacora(limit: int = 50):
     try:
         from .incident import get_incidents
         from .evolution_bitacora import get_evolution_entries
+        from modules.humanoid.comms import ops_bus
+        from modules.humanoid.comms.hub import recent as comms_recent
         
         entries = []
         seen_key: set = set()
@@ -130,6 +132,77 @@ def ans_bitacora(limit: int = 50):
                 "icon": icon,
                 "category": categoria,
             })
+
+        # 3. OPS bus (eventos operativos internos) — fuente real de muchos subsistemas
+        # Nota: ops_bus mantiene un buffer en memoria y log en disco. Aquí solo exponemos el buffer reciente.
+        try:
+            for ev in (ops_bus.recent(limit=limit * 4) or []):
+                ts = (ev.get("ts") or "").strip()
+                msg = (ev.get("message_human") or ev.get("message") or "").strip()
+                if not msg:
+                    continue
+                src = (ev.get("subsystem") or "ops").strip().lower() or "ops"
+                lvl = (ev.get("level") or "info").strip().lower()
+                # Mapear nivel OPS → nivel UI
+                if lvl in ("critical", "high"):
+                    level = "error"
+                    icon = "🛑" if lvl == "critical" else "⚠️"
+                elif lvl in ("med", "warn", "warning"):
+                    level = "warning"
+                    icon = "⚠️"
+                else:
+                    level = "info"
+                    icon = "🧾"
+                key = (ts[:19], src, msg[:120])
+                if key in seen_key:
+                    continue
+                seen_key.add(key)
+                entries.append({
+                    "timestamp": ts,
+                    "message": msg[:240],
+                    "level": level,
+                    "source": src,
+                    "icon": icon,
+                    "category": "OPS",
+                })
+        except Exception:
+            pass
+
+        # 4. CommsHub (historial unificado de mensajes/alertas)
+        try:
+            for m in (comms_recent(limit=limit * 4) or []):
+                ts = (m.get("timestamp") or "").strip()
+                msg = (m.get("content") or "").strip()
+                if not msg:
+                    continue
+                sub = (m.get("subsystem") or "comms").strip().lower() or "comms"
+                lvl = (m.get("level") or "info").strip().lower()
+                if lvl in ("critical",):
+                    level = "error"
+                    icon = "🛑"
+                elif lvl in ("high", "warning"):
+                    level = "warning"
+                    icon = "⚠️"
+                elif lvl in ("debug",):
+                    level = "info"
+                    icon = "🧪"
+                else:
+                    level = "info"
+                    icon = "📡"
+                key = (ts[:19], sub, msg[:120])
+                if key in seen_key:
+                    continue
+                seen_key.add(key)
+                entries.append({
+                    "timestamp": ts,
+                    "message": msg[:240],
+                    "level": level,
+                    "source": sub,
+                    "icon": icon,
+                    "category": "Comms",
+                })
+        except Exception:
+            pass
         
         # Ordenar por timestamp (más reciente primero)
         entries.sort(key=lambda x: x.get("timestamp") or "", reverse=True)

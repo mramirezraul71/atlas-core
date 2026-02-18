@@ -72,6 +72,7 @@ def load_handle():
 handle = load_handle()
 
 from contextlib import asynccontextmanager
+from typing import Any, Dict
 
 
 @asynccontextmanager
@@ -2316,6 +2317,41 @@ def serve_ui():
     if path.exists():
         return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
     return {"ok": False, "error": "dashboard.html not found"}
+
+
+# ----------------------------------------------------------------------------
+# Bitácora Central (UI -> servidor)
+# ----------------------------------------------------------------------------
+
+class BitacoraLogBody(BaseModel):
+    message: str = ""
+    level: str = "info"  # info|success|warning|error|low|med|high|critical
+    source: str = "ui"
+    data: Dict[str, Any] | None = None
+
+
+@app.post("/bitacora/log")
+def bitacora_log(body: BitacoraLogBody):
+    """
+    Endpoint de sincronización desde el Dashboard v3.8.0.
+    La UI llama este endpoint para persistir entradas locales en la Bitácora.
+    """
+    try:
+        msg = (body.message or "").strip()
+        if not msg:
+            return {"ok": True, "skipped": "empty"}
+        src = (body.source or "ui").strip()[:40] or "ui"
+        lvl = (body.level or "info").strip().lower()
+        # Mapear nivel UI → ok boolean (para evolution_bitacora)
+        ok = lvl not in ("error", "critical", "high", "fail", "failed")
+        try:
+            from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+            append_evolution_log(message=msg[:500], ok=ok, source=src)
+        except Exception:
+            pass
+        return {"ok": True, "logged": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @app.get("/ui/lang")

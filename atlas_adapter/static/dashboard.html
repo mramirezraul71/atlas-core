@@ -2909,14 +2909,15 @@
               source: entry.source || 'system',
               timestamp: ts.getTime()
             };
-            // Evitar duplicados (mismo mensaje en los últimos 60 segundos)
+            // Evitar duplicados (anti-spam corto: mismos mensajes muy cercanos)
             const isDupe = bitacoraLog.some(e => 
-              Math.abs(e.timestamp - localEntry.timestamp) < 60000 && 
+              Math.abs(e.timestamp - localEntry.timestamp) < 5000 && 
               e.message === localEntry.message
             );
             // También filtrar mensajes repetitivos del sistema (heals y checks periódicos)
-            const isRoutine = /^(Arquitectura cognitiva OK|Actualizando sistema cognitivo|Sistema cognitivo actualizado|nothing to install|límite\/cooldown)/i.test(localEntry.message);
-            if (!isDupe && !isRoutine) {
+            // Importante: NO filtrar "límite/cooldown" porque es señal operativa útil para el owner.
+            const isRoutine = /^(Arquitectura cognitiva OK|Actualizando sistema cognitivo|Sistema cognitivo actualizado|nothing to install)$/i.test(localEntry.message);
+            if (!isDupe) {
               bitacoraLog.unshift(localEntry);
               newEntries++;
             }
