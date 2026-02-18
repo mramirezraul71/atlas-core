@@ -140,14 +140,25 @@ manager = ConnectionManager()
 
 @app.get("/")
 async def root():
-    """Endpoint principal"""
+    """Endpoint principal — redirige al dashboard 3D"""
     return {
         "message": "🤖 ATLAS NEXUS Robot Backend API",
         "status": "online",
         "version": "1.0.0",
         "timestamp": datetime.now().isoformat(),
-        "websocket_clients": robot_status["websocket_clients"]
+        "websocket_clients": robot_status["websocket_clients"],
+        "dashboard": "/dashboard"
     }
+
+@app.get("/dashboard")
+async def serve_dashboard():
+    """Sirve el panel 3D del robot"""
+    from fastapi.responses import FileResponse
+    from pathlib import Path
+    p = Path(__file__).parent / "static" / "robot3d.html"
+    if p.exists():
+        return FileResponse(p, headers={"Cache-Control": "no-cache, no-store"})
+    return {"ok": False, "error": "robot3d.html not found"}
 
 @app.get("/status")
 @app.get("/api/status")
