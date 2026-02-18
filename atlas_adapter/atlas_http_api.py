@@ -177,9 +177,34 @@ async def _lifespan(app):
             except Exception as _comms_err:
                 import logging
                 logging.getLogger("atlas.comms.startup").error(f"Comms bootstrap failed: {_comms_err}")
+
+            # === Quality / POT Autonomy ===
+            # Activa dispatcher+triggers para ejecución autónoma de POTs.
+            # Control: QUALITY_AUTONOMY_ENABLED=true|false (default true)
+            try:
+                if os.getenv("QUALITY_AUTONOMY_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on"):
+                    from modules.humanoid.quality import start_autonomous_system
+                    q = start_autonomous_system()
+                    try:
+                        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+                        append_evolution_log(
+                            message="[QUALITY] Autonomía POT iniciada (dispatcher+triggers).",
+                            ok=bool(q.get("all_ok", False)),
+                            source="quality",
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             try:
                 from modules.humanoid.scheduler.repo_monitor_jobs import ensure_repo_monitor_jobs
                 ensure_repo_monitor_jobs()
+            except Exception:
+                pass
+            try:
+                # MakePlay Scanner: snapshot local + (opcional) webhook externo
+                from modules.humanoid.comms.makeplay_scheduler import ensure_makeplay_jobs
+                ensure_makeplay_jobs()
             except Exception:
                 pass
             try:

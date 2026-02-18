@@ -21,6 +21,7 @@ class POTCategory(str, Enum):
     SECURITY = "security"       # Procedimientos de seguridad
     CALIBRATION = "calibration" # Calibración de sensores/cámaras
     UPGRADE = "upgrade"         # Actualizaciones de sistema
+    QUALITY = "quality"         # Calidad / tutorías / auditorías (no-operacional)
     COMMUNICATION = "communication"  # Interacción humano-robot (HRI)
     ROBOTICS = "robotics"       # Operaciones robóticas generales
 
@@ -35,12 +36,14 @@ class POTSeverity(str, Enum):
 
 class StepType(str, Enum):
     """Tipos de pasos en un POT."""
+    SHELL = "shell"           # Alias de COMMAND (compatibilidad POTs legacy)
     COMMAND = "command"       # Ejecutar comando shell
     SCRIPT = "script"         # Ejecutar script Python
     HTTP = "http"             # Llamada HTTP
     CHECK = "check"           # Verificación de estado
     WAIT = "wait"             # Esperar tiempo
     CONFIRM = "confirm"       # Requiere confirmación manual
+    MANUAL = "manual"         # Alias de CONFIRM (compatibilidad tutorías)
     ROLLBACK = "rollback"     # Paso de rollback
     LOG = "log"               # Solo logging
     SNAPSHOT = "snapshot"     # Capturar snapshot
@@ -57,15 +60,21 @@ class POTStep:
     
     # Configuración del paso
     command: Optional[str] = None          # Para COMMAND
+    shell_command: Optional[str] = None    # Para SHELL (compatibilidad)
+    expected_output: Optional[str] = None  # Para COMMAND/SHELL (substring esperado en stdout)
     script_path: Optional[str] = None      # Para SCRIPT
     script_function: Optional[str] = None  # Para SCRIPT
     http_method: Optional[str] = None      # Para HTTP
     http_url: Optional[str] = None         # Para HTTP
     http_body: Optional[Dict[str, Any]] = None
+    http_headers: Optional[Dict[str, Any]] = None  # Para HTTP (headers extra)
+    expected_status: Optional[int] = None           # Para HTTP (status esperado)
+    expected_http_status: Optional[int] = None      # Alias legacy (compatibilidad)
     check_expression: Optional[str] = None # Para CHECK (Python expr)
     wait_seconds: Optional[int] = None     # Para WAIT
     notify_channel: Optional[str] = None   # Para NOTIFY
     notify_message: Optional[str] = None
+    on_failure: Optional[str] = None       # Compatibilidad: hint (no controla flujo en executor)
     
     # Control de flujo
     timeout_seconds: int = 60
@@ -85,6 +94,7 @@ class POTStep:
     
     # Metadata
     tutorial_notes: str = ""  # Notas tutoriales para el operador
+    manual_instructions: str = ""  # Compatibilidad: instrucciones extensas (StepType.MANUAL)
     common_errors: List[str] = field(default_factory=list)
     troubleshooting: str = ""
     
@@ -141,6 +151,7 @@ class POT:
     best_practices: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     related_pots: List[str] = field(default_factory=list)
+    additional_notes: str = ""  # Compatibilidad (POTs legacy)
     
     # Rollback
     has_rollback: bool = False

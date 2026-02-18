@@ -7,8 +7,17 @@ from datetime import datetime, timezone
 
 
 def _enabled() -> bool:
+    # Offline-first: permitir que el scanner corra y alimente `scanner_store` incluso sin webhook.
+    # Control:
+    # - MAKEPLAY_SCAN_ENABLED=true|false (default true)
+    # - MAKEPLAY_WEBHOOK_URL / EXTERNAL_WEBHOOK_URL (opcional)
+    # - MAKEPLAY_ENABLED=true fuerza habilitación explícita
+    scan = os.getenv("MAKEPLAY_SCAN_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
+    if not scan:
+        return False
     url = (os.getenv("MAKEPLAY_WEBHOOK_URL") or os.getenv("EXTERNAL_WEBHOOK_URL") or "").strip()
-    return bool(url.startswith("http")) or os.getenv("MAKEPLAY_ENABLED", "").strip().lower() in ("1", "true", "yes")
+    forced = os.getenv("MAKEPLAY_ENABLED", "").strip().lower() in ("1", "true", "yes", "y", "on")
+    return forced or bool(url.startswith("http")) or scan
 
 
 def _sched_enabled() -> bool:

@@ -36,12 +36,18 @@ def _http_request(
     method: str,
     url: str,
     body: Optional[Dict[str, Any]] = None,
+    headers: Optional[Dict[str, Any]] = None,
     timeout: int = 30,
 ) -> Dict[str, Any]:
     """Ejecuta request HTTP y retorna resultado estructurado."""
-    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    base_headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    if headers:
+        try:
+            base_headers.update({str(k): str(v) for k, v in headers.items()})
+        except Exception:
+            pass
     data = json.dumps(body).encode("utf-8") if body else None
-    req = request.Request(url, data=data, method=method.upper(), headers=headers)
+    req = request.Request(url, data=data, method=method.upper(), headers=base_headers)
     
     try:
         with request.urlopen(req, timeout=timeout) as r:
@@ -203,8 +209,14 @@ def execute_step(
     for attempt in range(step.retries + 1):
         retries_used = attempt
         
-        if step.step_type == StepType.COMMAND:
-            result = _run_command(step.command or "", timeout=step.timeout_seconds)
+        if step.step_type in (StepType.COMMAND, StepType.SHELL):
+            cmd = (step.command or step.shell_command or "").strip()
+            result = _run_command(cmd, timeout=step.timeout_seconds)
+            if result.get("ok") and step.expected_output:
+                out = (result.get("stdout") or "") + "\n" + (result.get("stderr") or "")
+                if str(step.expected_output) not in out:
+                    result["ok"] = False
+                    result["error"] = f"expected_output_not_found: {step.expected_output}"
         
         elif step.step_type == StepType.SCRIPT:
             result = _run_script(step.script_path or "", timeout=step.timeout_seconds)
@@ -214,12 +226,21 @@ def execute_step(
                 method=step.http_method or "GET",
                 url=step.http_url or "",
                 body=step.http_body,
+                headers=step.http_headers,
                 timeout=step.timeout_seconds,
             )
             # Guardar response en contexto para checks
             context["response"] = result.get("response", {})
             context["response_status"] = result.get("status", 0)
             context["response_body"] = result.get("body", "")
+            expected_status = step.expected_status if step.expected_status is not None else step.expected_http_status
+            if expected_status is not None:
+                try:
+                    if int(result.get("status", 0) or 0) != int(expected_status):
+                        result["ok"] = False
+                        result["error"] = f"unexpected_status: got={result.get('status')} expected={expected_status}"
+                except Exception:
+                    pass
         
         elif step.step_type == StepType.CHECK:
             check_ok = _evaluate_check(step.check_expression or "True", context)
@@ -252,9 +273,13 @@ def execute_step(
             except Exception as e:
                 result = {"ok": False, "error": str(e), "output": ""}
         
-        elif step.step_type == StepType.CONFIRM:
-            # En modo automático, asumimos confirmación positiva
-            result = {"ok": True, "output": "auto-confirmed (autonomous mode)"}
+        elif step.step_type in (StepType.CONFIRM, StepType.MANUAL):
+            # En modo automático, asumimos confirmación positiva.
+            # Si hay instrucciones manuales, dejarlas en output para evidencia.
+            extra = (step.manual_instructions or step.tutorial_notes or "").strip()
+            if extra:
+                extra = extra[:1200]
+            result = {"ok": True, "output": "auto-confirmed (autonomous mode)" + (f"\n{extra}" if extra else "")}
         
         elif step.step_type == StepType.ROLLBACK:
             # Los pasos de rollback se ejecutan igual que los normales

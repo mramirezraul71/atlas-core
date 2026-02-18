@@ -59,6 +59,14 @@ def ensure_repo_monitor_jobs() -> None:
                     (interval_sec, now, repo_job.get("id")),
                 )
                 conn.commit()
+                # Si quedó terminal sin next_run_ts, re-encolar.
+                try:
+                    status = (repo_job.get("status") or "").strip().lower()
+                    next_ts = (repo_job.get("next_run_ts") or "").strip()
+                    if status in ("failed", "success", "paused") and not next_ts:
+                        db.set_queued(repo_job.get("id"), now)
+                except Exception:
+                    pass
             else:
                 db.create_job(JobSpec(
                     name="repo_monitor_cycle",
@@ -81,6 +89,13 @@ def ensure_repo_monitor_jobs() -> None:
                     (auto_interval, now, after_job.get("id")),
                 )
                 conn.commit()
+                try:
+                    status = (after_job.get("status") or "").strip().lower()
+                    next_ts = (after_job.get("next_run_ts") or "").strip()
+                    if status in ("failed", "success", "paused") and not next_ts:
+                        db.set_queued(after_job.get("id"), now)
+                except Exception:
+                    pass
             else:
                 db.create_job(JobSpec(
                     name="repo_monitor_after_fix",
