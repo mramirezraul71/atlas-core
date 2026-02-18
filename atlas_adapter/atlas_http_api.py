@@ -5130,6 +5130,7 @@ class AgentGoalBody(BaseModel):
     mode: str = "plan_only"  # plan_only | controlled | auto
     fast: Optional[bool] = True
     depth: Optional[int] = 1  # 1-5: multi-agent depth (1=single planner, 2+=Executive pipeline)
+    model: Optional[str] = None  # auto | provider:model (e.g. "openai:gpt-4.1", "xai:grok-3")
 
 
 def _agent_goal_mode(mode: str) -> str:

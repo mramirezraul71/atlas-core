@@ -6,12 +6,16 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-_VALID_IDS = frozenset({"openai", "anthropic", "gemini", "perplexity"})
+_VALID_IDS = frozenset({"openai", "anthropic", "gemini", "perplexity", "groq", "xai", "deepseek", "mistral"})
 _ENV_KEYS = {
     "openai": "OPENAI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
     "gemini": "GEMINI_API_KEY",
     "perplexity": "PERPLEXITY_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "xai": "XAI_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "mistral": "MISTRAL_API_KEY",
 }
 
 _store: Optional[Dict[str, str]] = None
