@@ -249,6 +249,16 @@
       animation: orb-breathe 2s ease-in-out infinite;
     }
     .voice-orb.listening svg { color: var(--accent-primary); }
+    .voice-orb.speaking {
+      border-color: var(--accent-green);
+      box-shadow: 0 0 20px rgba(63,185,80,0.4);
+      animation: orb-speak 0.6s ease-in-out infinite alternate;
+    }
+    .voice-orb.speaking svg { color: var(--accent-green); }
+    @keyframes orb-speak {
+      0% { transform: scale(1); }
+      100% { transform: scale(1.08); }
+    }
     @keyframes orb-breathe {
       0%, 100% { box-shadow: 0 0 15px var(--glow); }
       50% { box-shadow: 0 0 30px var(--glow-strong), 0 0 60px var(--glow); }
@@ -329,6 +339,76 @@
       padding: 3px 6px; cursor: pointer; outline: none;
     }
     .chat-mode-bar select:focus { border-color: var(--accent-primary); }
+
+    /* ─── Model Selector (Cursor-style) ─── */
+    .model-selector-wrap { position: relative; }
+    .model-selector-btn {
+      display: flex; align-items: center; gap: 5px; padding: 3px 8px;
+      background: var(--bg-elevated); border: 1px solid var(--border);
+      border-radius: 4px; color: var(--text); font-family: inherit;
+      font-size: 11px; cursor: pointer; transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .model-selector-btn:hover { border-color: var(--accent-primary); background: var(--bg-card); }
+    .model-selector-btn .model-icon { font-size: 12px; }
+    .model-selector-btn svg { opacity: 0.5; margin-left: 2px; }
+    .model-dropdown {
+      display: none; position: absolute; bottom: calc(100% + 4px); left: 0;
+      width: 320px; max-height: 420px; overflow-y: auto;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      z-index: 1000; padding: 4px 0;
+    }
+    .model-dropdown.open { display: block; }
+    .model-dropdown .md-search {
+      width: calc(100% - 12px); margin: 4px 6px; padding: 6px 8px;
+      background: var(--bg-input); border: 1px solid var(--border);
+      border-radius: 4px; color: var(--text); font-family: inherit;
+      font-size: 11px; outline: none;
+    }
+    .model-dropdown .md-search:focus { border-color: var(--accent-primary); }
+    .model-dropdown .md-group {
+      padding: 6px 10px 2px; font-size: 9px; color: var(--text-dim);
+      text-transform: uppercase; letter-spacing: 1px; font-weight: 700;
+    }
+    .model-dropdown .md-item {
+      display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+      cursor: pointer; transition: background 0.1s; border-radius: 4px;
+      margin: 0 4px;
+    }
+    .model-dropdown .md-item:hover { background: var(--bg-elevated); }
+    .model-dropdown .md-item.active { background: var(--glow); }
+    .model-dropdown .md-item.unavailable { opacity: 0.4; }
+    .model-dropdown .md-item .md-icon {
+      width: 20px; height: 20px; border-radius: 4px; display: flex;
+      align-items: center; justify-content: center; font-size: 11px;
+      flex-shrink: 0; font-weight: 700;
+    }
+    .md-icon.openai { background: #10a37f22; color: #10a37f; }
+    .md-icon.anthropic { background: #d4a27422; color: #d4a274; }
+    .md-icon.gemini, .md-icon.google { background: #4285f422; color: #4285f4; }
+    .md-icon.xai { background: #e5e5e522; color: #e5e5e5; }
+    .md-icon.deepseek { background: #536dfe22; color: #536dfe; }
+    .md-icon.groq { background: #f5560022; color: #f55600; }
+    .md-icon.mistral { background: #ff720022; color: #ff7200; }
+    .md-icon.perplexity { background: #20b2aa22; color: #20b2aa; }
+    .md-icon.ollama { background: #80808022; color: #aaa; }
+    .md-icon.atlas { background: var(--glow); color: var(--accent-primary); }
+    .model-dropdown .md-item .md-info { flex: 1; min-width: 0; }
+    .model-dropdown .md-item .md-label {
+      font-size: 12px; color: var(--text); font-weight: 500; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    .model-dropdown .md-item .md-desc {
+      font-size: 9px; color: var(--text-dim); white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    .model-dropdown .md-item .md-badge {
+      font-size: 8px; padding: 1px 5px; border-radius: 3px;
+      font-weight: 600; flex-shrink: 0; text-transform: uppercase;
+    }
+    .md-badge.available { background: var(--accent-green); color: #000; opacity: 0.8; }
+    .md-badge.missing { background: var(--border); color: var(--text-dim); }
     .chat-hints {
       display: flex; gap: 6px; flex-wrap: wrap;
     }
@@ -687,15 +767,15 @@
       <div class="voice-section">
         <div class="voice-controls">
           <div class="voice-orb-wrap">
-            <button class="voice-orb" id="voice-orb" title="Push-to-Talk (mantener)" onmousedown="startVoice()" onmouseup="stopVoice()" ontouchstart="startVoice()" ontouchend="stopVoice()">
+            <button class="voice-orb" id="voice-orb" title="Click para hablar / Click de nuevo para parar">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
             </button>
             <div class="voice-orb-ring"></div>
           </div>
           <div class="voice-wave" id="voice-wave"></div>
-          <button class="voice-mode-toggle" id="voice-mode-btn" onclick="toggleVoiceMode()">Auto</button>
+          <button class="voice-mode-toggle" id="voice-tts-btn" onclick="toggleTTS()" title="Activar/desactivar respuesta por voz">🔊 Voz</button>
         </div>
-        <div class="voice-status" id="voice-status">Push-to-talk: mantn presionado el orbe | Ctrl+M</div>
+        <div class="voice-status" id="voice-status">Click en el orbe o Ctrl+M para hablar</div>
       </div>
 
       <!-- Chat Input -->
@@ -707,15 +787,23 @@
           </button>
         </div>
         <div class="chat-mode-bar">
+          <div class="model-selector-wrap" id="model-selector-wrap">
+            <button class="model-selector-btn" id="model-selector-btn" type="button">
+              <span class="model-icon" id="model-icon">⚡</span>
+              <span class="model-name" id="model-name">Auto</span>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M2 3.5L5 7L8 3.5z"/></svg>
+            </button>
+            <div class="model-dropdown" id="model-dropdown"></div>
+          </div>
           <select id="agent-mode" title="Modo de ejecucion">
-            <option value="plan_only">Plan Only</option>
-            <option value="auto" selected>Auto (ejecutar)</option>
+            <option value="plan_only">Plan</option>
+            <option value="auto" selected>Auto</option>
             <option value="execute_controlled">Controlado</option>
           </select>
-          <select id="agent-depth" title="Profundidad multi-agente">
-            <option value="1">Depth 1</option>
-            <option value="2">Depth 2</option>
-            <option value="3">Depth 3</option>
+          <select id="agent-depth" title="Profundidad">
+            <option value="1">D1</option>
+            <option value="2">D2</option>
+            <option value="3">D3</option>
           </select>
         </div>
         <div class="chat-hints">
@@ -837,13 +925,7 @@
 const API = window.location.origin;
 let sessionStartTime = Date.now();
 let isProcessing = false;
-let voiceMode = 'ptt';  // 'ptt' | 'auto'
 let isListening = false;
-let mediaRecorder = null;
-let audioChunks = [];
-let audioContext = null;
-let analyser = null;
-let animFrame = null;
 
 // ─── INIT ───
 document.addEventListener('DOMContentLoaded', () => {
@@ -852,6 +934,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initResize();
   initWaveformBars();
   initAutoResize();
+  initModelSelector();
   checkServices();
   setInterval(checkServices, 15000);
 
@@ -880,6 +963,100 @@ function applyTheme(t) {
   document.documentElement.setAttribute('data-theme', t);
   document.querySelectorAll('.tdot').forEach(b => b.classList.toggle('active', b.dataset.theme === t));
   localStorage.setItem('atlas-ws-theme', t);
+}
+
+// ─── MODEL SELECTOR ───
+let selectedModel = 'auto';
+let modelCatalog = [];
+
+const PROVIDER_ICONS = {
+  atlas: '⚡', openai: 'O', anthropic: 'A', gemini: 'G', google: 'G',
+  xai: 'X', deepseek: 'D', groq: 'Q', mistral: 'M', perplexity: 'P', ollama: '🏠'
+};
+
+async function initModelSelector() {
+  const saved = localStorage.getItem('atlas-ws-model');
+  if (saved) selectedModel = saved;
+  try {
+    const r = await fetch(API + '/agent/models');
+    const d = await r.json();
+    if (d.ok) modelCatalog = d.data;
+  } catch { modelCatalog = [{id:'auto',name:'Auto',provider:'atlas',desc:'Seleccion inteligente',available:true,provider_label:'ATLAS',category:'auto'}]; }
+  renderModelDropdown();
+  updateModelBtn();
+
+  const btn = document.getElementById('model-selector-btn');
+  const dd = document.getElementById('model-dropdown');
+  btn.addEventListener('click', e => { e.stopPropagation(); dd.classList.toggle('open'); if (dd.classList.contains('open')) { const si = dd.querySelector('.md-search'); if (si) { si.value = ''; filterModels(''); si.focus(); } } });
+  document.addEventListener('click', () => dd.classList.remove('open'));
+  dd.addEventListener('click', e => e.stopPropagation());
+}
+
+function renderModelDropdown() {
+  const dd = document.getElementById('model-dropdown');
+  let html = '<input class="md-search" id="model-search" placeholder="Buscar modelo..." autocomplete="off">';
+  const groups = {};
+  modelCatalog.forEach(m => {
+    const g = m.provider_label || m.provider;
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(m);
+  });
+  for (const [group, models] of Object.entries(groups)) {
+    html += '<div class="md-group" data-group="' + group + '">' + escapeHtml(group) + '</div>';
+    models.forEach(m => {
+      const active = m.id === selectedModel ? ' active' : '';
+      const avail = m.available !== false ? '' : ' unavailable';
+      const badge = m.id === 'auto' ? '' : (m.available !== false
+        ? '<span class="md-badge available">OK</span>'
+        : '<span class="md-badge missing">Sin key</span>');
+      html += '<div class="md-item' + active + avail + '" data-model-id="' + m.id + '">'
+        + '<div class="md-icon ' + m.provider + '">' + (PROVIDER_ICONS[m.provider] || '?') + '</div>'
+        + '<div class="md-info"><div class="md-label">' + escapeHtml(m.name) + '</div>'
+        + '<div class="md-desc">' + escapeHtml(m.desc || '') + '</div></div>' + badge + '</div>';
+    });
+  }
+  dd.innerHTML = html;
+  dd.querySelectorAll('.md-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const mid = el.dataset.modelId;
+      const model = modelCatalog.find(m => m.id === mid);
+      if (model && model.available === false) { emitLive('err', 'API key no configurada para ' + model.provider_label); return; }
+      selectModel(mid);
+      dd.classList.remove('open');
+    });
+  });
+  const searchInput = dd.querySelector('.md-search');
+  if (searchInput) searchInput.addEventListener('input', e => filterModels(e.target.value));
+}
+
+function filterModels(q) {
+  const dd = document.getElementById('model-dropdown');
+  const items = dd.querySelectorAll('.md-item');
+  const groups = dd.querySelectorAll('.md-group');
+  const ql = q.toLowerCase().trim();
+  const visibleGroups = new Set();
+  items.forEach(el => {
+    const m = modelCatalog.find(x => x.id === el.dataset.modelId);
+    const match = !ql || (m && (m.name.toLowerCase().includes(ql) || m.provider.toLowerCase().includes(ql) || (m.desc || '').toLowerCase().includes(ql)));
+    el.style.display = match ? '' : 'none';
+    if (match && m) visibleGroups.add(m.provider_label || m.provider);
+  });
+  groups.forEach(g => { g.style.display = visibleGroups.has(g.dataset.group) ? '' : 'none'; });
+}
+
+function selectModel(id) {
+  selectedModel = id;
+  localStorage.setItem('atlas-ws-model', id);
+  updateModelBtn();
+  renderModelDropdown();
+  const m = modelCatalog.find(x => x.id === id);
+  emitLive('info', '<strong>Modelo:</strong> ' + (m ? m.name : id));
+}
+
+function updateModelBtn() {
+  const m = modelCatalog.find(x => x.id === selectedModel);
+  document.getElementById('model-name').textContent = m ? m.name : selectedModel;
+  document.getElementById('model-icon').textContent = m ? (PROVIDER_ICONS[m.provider] || '?') : '⚡';
 }
 
 // ─── SERVICES CHECK ───
@@ -1011,11 +1188,15 @@ async function sendMessage() {
 
   try {
     const t0 = performance.now();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000);
     const response = await fetch(API + '/agent/goal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goal: text, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true })
+      body: JSON.stringify({ goal: text, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel }),
+      signal: controller.signal
     });
+    clearTimeout(timeout);
     const elapsed = Math.round(performance.now() - t0);
     const data = await response.json();
     removeThinking(thinkingId);
@@ -1024,9 +1205,22 @@ async function sendMessage() {
 
     if (data.ok) {
       let reply = '';
+      const modelUsed = data.data && data.data.model_used;
+      if (modelUsed) emitLive('info', '<strong>Modelo:</strong> <code>' + escapeHtml(modelUsed) + '</code>');
+
+      if (data.data && data.data.output && !data.data.plan && !data.data.steps) {
+        reply = data.data.output;
+        emitLive('exec', '<strong>Respuesta directa</strong> del modelo');
+        addChatMessage(reply, 'atlas');
+        emitLive('exec', '<strong>Completado</strong> (' + elapsed + 'ms)', true);
+        if (data.siguientes_pasos) data.siguientes_pasos.forEach(s => emitLive('info', 'Info: ' + escapeHtml(s)));
+        isProcessing = false; setLiveActive(false); document.getElementById('btn-send').disabled = false;
+        return;
+      }
+
       if (data.resumen) {
         reply += data.resumen + '\n\n';
-        emitLive('exec', '<strong>Resumen:</strong> ' + escapeHtml(data.resumen));
+        emitLive('exec', '<strong>Resumen:</strong> ' + escapeHtml(data.resumen.substring(0, 200)));
       }
       if (data.data) {
         const d = data.data;
@@ -1103,6 +1297,7 @@ function addChatMessage(text, type) {
   div.className = 'msg ' + type;
   if (type === 'atlas') {
     div.innerHTML = '<div class="msg-label">ATLAS</div>' + renderMarkdown(text);
+    atlasSpeak(text);
   } else {
     div.textContent = text;
   }
@@ -1235,7 +1430,7 @@ async function executeTerminalCmd(cmd) {
     const r = await fetch(API + '/agent/goal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goal: 'Execute terminal command: ' + cmd, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true })
+      body: JSON.stringify({ goal: 'Execute terminal command: ' + cmd, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel })
     });
     const elapsed = Math.round(performance.now() - t0);
     const data = await r.json();
@@ -1251,7 +1446,12 @@ async function executeTerminalCmd(cmd) {
   setLiveActive(false);
 }
 
-// ─── VOICE SYSTEM ───
+// ─── VOICE SYSTEM (Web Speech API — STT + TTS) ───
+let recognition = null;
+let ttsEnabled = true;
+let isSpeaking = false;
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
 function initWaveformBars() {
   const wave = document.getElementById('voice-wave');
   for (let i = 0; i < 32; i++) {
@@ -1259,123 +1459,167 @@ function initWaveformBars() {
     bar.className = 'bar';
     wave.appendChild(bar);
   }
+  const ttsState = localStorage.getItem('atlas-ws-tts');
+  if (ttsState === 'off') { ttsEnabled = false; }
+  updateTTSBtn();
+  document.getElementById('voice-orb').addEventListener('click', toggleListening);
 }
 
-async function startVoice() {
+function toggleListening() {
+  if (isSpeaking) { window.speechSynthesis.cancel(); isSpeaking = false; setOrbState('idle'); return; }
+  if (isListening) stopVoice(); else startVoice();
+}
+
+function setOrbState(state) {
   const orb = document.getElementById('voice-orb');
-  if (isListening) return;
-  isListening = true;
-  orb.classList.add('listening');
-  document.getElementById('voice-status').textContent = 'Escuchando...';
-  document.getElementById('voice-wave').classList.add('active');
+  orb.classList.remove('listening', 'speaking');
+  document.getElementById('voice-wave').classList.remove('active');
+  if (state === 'listening') { orb.classList.add('listening'); document.getElementById('voice-wave').classList.add('active'); }
+  if (state === 'speaking') { orb.classList.add('speaking'); }
+}
 
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 64;
-    const source = audioContext.createMediaStreamSource(stream);
-    source.connect(analyser);
-
-    mediaRecorder = new MediaRecorder(stream);
-    audioChunks = [];
-    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-    mediaRecorder.onstop = async () => {
-      stream.getTracks().forEach(t => t.stop());
-      if (audioChunks.length > 0) {
-        const blob = new Blob(audioChunks, { type: 'audio/wav' });
-        await processVoiceInput(blob);
-      }
-    };
-    mediaRecorder.start();
-    animateWaveform();
-  } catch (err) {
-    console.error('Mic error:', err);
-    document.getElementById('voice-status').textContent = 'Error: ' + err.message;
-    stopVoice();
+function startVoice() {
+  if (isListening || !SpeechRecognition) {
+    if (!SpeechRecognition) { document.getElementById('voice-status').textContent = 'Web Speech API no soportada en este navegador'; emitLive('err', 'Navegador no soporta Web Speech API'); }
+    return;
   }
+  if (isSpeaking) { window.speechSynthesis.cancel(); isSpeaking = false; }
+  isListening = true;
+  setOrbState('listening');
+  document.getElementById('voice-status').textContent = 'Escuchando...';
+  emitLive('voice', '<strong>Microfono activo</strong> — hablame');
+
+  recognition = new SpeechRecognition();
+  recognition.lang = 'es-ES';
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
+
+  let finalTranscript = '';
+  let interimDisplayed = false;
+
+  recognition.onresult = (event) => {
+    let interim = '';
+    finalTranscript = '';
+    for (let i = 0; i < event.results.length; i++) {
+      if (event.results[i].isFinal) {
+        finalTranscript += event.results[i][0].transcript;
+      } else {
+        interim += event.results[i][0].transcript;
+      }
+    }
+    if (interim && !interimDisplayed) {
+      document.getElementById('voice-status').textContent = '"' + interim + '..."';
+      simulateWaveform();
+    }
+  };
+
+  recognition.onend = () => {
+    isListening = false;
+    setOrbState('idle');
+    resetWaveform();
+    if (finalTranscript.trim()) {
+      const text = finalTranscript.trim();
+      document.getElementById('voice-status').textContent = 'Escuche: "' + text + '"';
+      emitLive('voice', '<strong>Tu:</strong> "' + escapeHtml(text) + '"');
+      document.getElementById('chat-input').value = text;
+      sendMessage();
+    } else {
+      document.getElementById('voice-status').textContent = 'No capte audio. Click en el orbe para reintentar.';
+    }
+  };
+
+  recognition.onerror = (event) => {
+    isListening = false;
+    setOrbState('idle');
+    resetWaveform();
+    const msgs = { 'no-speech': 'No detecte voz', 'audio-capture': 'No hay microfono', 'not-allowed': 'Permiso de microfono denegado' };
+    const msg = msgs[event.error] || 'Error: ' + event.error;
+    document.getElementById('voice-status').textContent = msg;
+    emitLive('err', 'STT: ' + msg);
+  };
+
+  recognition.start();
 }
 
 function stopVoice() {
-  const orb = document.getElementById('voice-orb');
+  if (recognition && isListening) {
+    recognition.stop();
+  }
   isListening = false;
-  orb.classList.remove('listening');
-  document.getElementById('voice-wave').classList.remove('active');
-  document.getElementById('voice-status').textContent = 'Push-to-talk: manten presionado el orbe | Ctrl+M';
-  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
-  if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
-  if (audioContext) { audioContext.close(); audioContext = null; }
+  setOrbState('idle');
   resetWaveform();
+  document.getElementById('voice-status').textContent = 'Click en el orbe o Ctrl+M para hablar';
 }
 
-function animateWaveform() {
-  if (!analyser || !isListening) return;
+function simulateWaveform() {
   const bars = document.querySelectorAll('#voice-wave .bar');
-  const data = new Uint8Array(analyser.frequencyBinCount);
-  analyser.getByteFrequencyData(data);
-
-  bars.forEach((bar, i) => {
-    const idx = Math.floor(i * data.length / bars.length);
-    const val = data[idx] || 0;
-    const h = Math.max(4, (val / 255) * 28);
-    bar.style.height = h + 'px';
-  });
-
-  animFrame = requestAnimationFrame(animateWaveform);
+  bars.forEach(bar => { bar.style.height = Math.max(4, Math.random() * 24) + 'px'; });
+  if (isListening) setTimeout(simulateWaveform, 100);
 }
 
 function resetWaveform() {
   document.querySelectorAll('#voice-wave .bar').forEach(b => b.style.height = '4px');
 }
 
-async function processVoiceInput(blob) {
-    emitLive('voice', '<strong>Audio capturado</strong> — transcribiendo...');
-  document.getElementById('voice-status').textContent = 'Transcribiendo...';
+function atlasSpeak(text) {
+  if (!ttsEnabled || !window.speechSynthesis || !text) return;
+  window.speechSynthesis.cancel();
+  let clean = text;
+  clean = clean.replace(/```[\s\S]*?```/g, '. Codigo generado. ');
+  clean = clean.replace(/`[^`]*`/g, '');
+  clean = clean.replace(/\*\*/g, '');
+  clean = clean.replace(/\*/g, '');
+  clean = clean.replace(/#{1,6}\s?/g, '');
+  clean = clean.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  clean = clean.replace(/^[-=]{3,}$/gm, '');
+  clean = clean.replace(/^\s*[-*]\s+/gm, '. ');
+  clean = clean.replace(/^\s*\d+\.\s+/gm, '. ');
+  clean = clean.replace(/[_~>|]/g, ' ');
+  clean = clean.replace(/\n+/g, '. ');
+  clean = clean.replace(/\.{2,}/g, '.');
+  clean = clean.replace(/\s{2,}/g, ' ');
+  clean = clean.trim().substring(0, 400);
+  if (!clean.trim()) return;
 
-  try {
-    const reader = new FileReader();
-    reader.readAsDataURL(blob);
-    reader.onloadend = async () => {
-      const base64 = reader.result.split(',')[1];
-      const r = await fetch(API + '/voice/transcribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audio_base64: base64, language: 'es-ES' })
-      });
-      const data = await r.json();
-      if (data.ok && data.data && data.data.text) {
-        const text = data.data.text;
-        emitLive('voice', '<strong>Voz:</strong> "' + escapeHtml(text) + '"');
-        document.getElementById('chat-input').value = text;
-        sendMessage();
-      } else {
-        document.getElementById('voice-status').textContent = 'No se pudo transcribir';
-        emitLive('err', 'STT fallo: ' + escapeHtml(data.error || 'sin respuesta'));
-      }
-    };
-  } catch (err) {
-    document.getElementById('voice-status').textContent = 'Error STT: ' + err.message;
-  }
+  const utter = new SpeechSynthesisUtterance(clean);
+  utter.lang = 'es-ES';
+  utter.rate = 1.05;
+  utter.pitch = 1.0;
+  utter.volume = 1.0;
+
+  const voices = window.speechSynthesis.getVoices();
+  const esVoice = voices.find(v => v.lang.startsWith('es') && v.name.includes('Google')) ||
+                  voices.find(v => v.lang.startsWith('es') && !v.localService) ||
+                  voices.find(v => v.lang.startsWith('es'));
+  if (esVoice) utter.voice = esVoice;
+
+  isSpeaking = true;
+  setOrbState('speaking');
+  document.getElementById('voice-status').textContent = 'ATLAS hablando...';
+  emitLive('voice', '<strong>ATLAS dice:</strong> ' + escapeHtml(clean.substring(0, 80)) + '...');
+
+  utter.onend = () => { isSpeaking = false; setOrbState('idle'); document.getElementById('voice-status').textContent = 'Click en el orbe o Ctrl+M para hablar'; };
+  utter.onerror = () => { isSpeaking = false; setOrbState('idle'); };
+
+  window.speechSynthesis.speak(utter);
 }
 
-function toggleVoiceMode() {
-  const btn = document.getElementById('voice-mode-btn');
-  voiceMode = voiceMode === 'ptt' ? 'auto' : 'ptt';
-  btn.textContent = voiceMode === 'ptt' ? 'Auto' : 'PTT';
-  btn.classList.toggle('active', voiceMode === 'auto');
-  document.getElementById('voice-status').textContent =
-    voiceMode === 'ptt' ? 'Push-to-talk: manten presionado el orbe | Ctrl+M' : 'Modo automatico: hablando se activa';
-
-  if (voiceMode === 'auto') startAutoVoice();
-  else stopAutoVoice();
+function toggleTTS() {
+  ttsEnabled = !ttsEnabled;
+  localStorage.setItem('atlas-ws-tts', ttsEnabled ? 'on' : 'off');
+  updateTTSBtn();
+  emitLive('info', 'Respuesta por voz: ' + (ttsEnabled ? 'ACTIVADA' : 'DESACTIVADA'));
 }
 
-let autoVoiceInterval = null;
-function startAutoVoice() {
-  startVoice();
+function updateTTSBtn() {
+  const btn = document.getElementById('voice-tts-btn');
+  btn.textContent = ttsEnabled ? '🔊 Voz' : '🔇 Mudo';
+  btn.classList.toggle('active', ttsEnabled);
 }
-function stopAutoVoice() {
-  stopVoice();
+
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = () => {};
 }
 
 // ─── KEYBOARD SHORTCUTS ───

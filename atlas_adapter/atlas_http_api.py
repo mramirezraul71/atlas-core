@@ -91,7 +91,7 @@ async def _lifespan(app):
         for c in candidates:
             p = Path(c)
             if p.is_file():
-                load_dotenv(str(p), override=False)
+                load_dotenv(str(p), override=True)
                 break
     except Exception:
         pass
@@ -2358,43 +2358,41 @@ def serve_workspace():
 # ----------------------------------------------------------------------------
 
 _MODEL_CATALOG = [
-    {"id": "auto", "name": "Auto", "provider": "atlas", "desc": "Seleccion inteligente segun la tarea", "category": "auto"},
-    # OpenAI
-    {"id": "openai:gpt-4.1", "name": "GPT-4.1", "provider": "openai", "desc": "Modelo flagship mas reciente", "category": "premium"},
+    {"id": "auto", "name": "Auto (Local→Gratis→Paga)", "provider": "atlas", "desc": "Cascada: PC gratis primero, luego API gratis, luego paga", "category": "auto"},
+    # ── Ollama LOCAL (gratis, tu PC) ──
+    {"id": "ollama:deepseek-r1:14b", "name": "DeepSeek R1 14B", "provider": "ollama", "desc": "Razonamiento local (gratis)", "category": "local"},
+    {"id": "ollama:deepseek-coder:6.7b", "name": "DeepSeek Coder 6.7B", "provider": "ollama", "desc": "Codigo local (gratis)", "category": "local"},
+    {"id": "ollama:qwen2.5:7b", "name": "Qwen 2.5 7B", "provider": "ollama", "desc": "General local (gratis)", "category": "local"},
+    {"id": "ollama:llama3.1:latest", "name": "Llama 3.1 8B", "provider": "ollama", "desc": "Meta local (gratis)", "category": "local"},
+    {"id": "ollama:deepseek-r1:latest", "name": "DeepSeek R1 7B", "provider": "ollama", "desc": "Razonamiento compacto (gratis)", "category": "local"},
+    {"id": "ollama:llama3.2-vision:11b", "name": "Llama 3.2 Vision 11B", "provider": "ollama", "desc": "Vision local (gratis)", "category": "local"},
+    # ── API GRATIS (tier gratuito) ──
+    {"id": "groq:llama-3.3-70b-versatile", "name": "Llama 3.3 70B (Groq)", "provider": "groq", "desc": "Ultra rapido, tier gratis", "category": "free"},
+    {"id": "groq:llama-3.1-8b-instant", "name": "Llama 3.1 8B (Groq)", "provider": "groq", "desc": "Instantaneo, tier gratis", "category": "free"},
+    {"id": "groq:mixtral-8x7b-32768", "name": "Mixtral 8x7B (Groq)", "provider": "groq", "desc": "MoE via Groq, tier gratis", "category": "free"},
+    {"id": "groq:deepseek-r1-distill-llama-70b", "name": "DeepSeek R1 Distill 70B (Groq)", "provider": "groq", "desc": "Razonamiento gratis via Groq", "category": "free"},
+    {"id": "gemini:gemini-2.5-flash", "name": "Gemini 2.5 Flash", "provider": "gemini", "desc": "Google rapido, tier gratis", "category": "free"},
+    {"id": "gemini:gemini-2.5-pro-preview-06-05", "name": "Gemini 2.5 Pro", "provider": "gemini", "desc": "Google flagship, tier gratis limitado", "category": "free"},
+    # ── API DE PAGO ──
+    {"id": "openai:gpt-4.1", "name": "GPT-4.1", "provider": "openai", "desc": "Flagship OpenAI", "category": "premium"},
     {"id": "openai:gpt-4.1-mini", "name": "GPT-4.1 Mini", "provider": "openai", "desc": "Rapido y economico", "category": "fast"},
     {"id": "openai:gpt-4.1-nano", "name": "GPT-4.1 Nano", "provider": "openai", "desc": "Ultra rapido, tareas simples", "category": "fast"},
-    {"id": "openai:o4-mini", "name": "o4-mini", "provider": "openai", "desc": "Razonamiento avanzado compacto", "category": "reasoning"},
+    {"id": "openai:o4-mini", "name": "o4-mini", "provider": "openai", "desc": "Razonamiento avanzado", "category": "reasoning"},
     {"id": "openai:o3", "name": "o3", "provider": "openai", "desc": "Razonamiento profundo", "category": "reasoning"},
     {"id": "openai:gpt-4o", "name": "GPT-4o", "provider": "openai", "desc": "Multimodal estable", "category": "premium"},
-    # Anthropic
-    {"id": "anthropic:claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "provider": "anthropic", "desc": "Codigo y analisis experto", "category": "premium"},
-    {"id": "anthropic:claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku", "provider": "anthropic", "desc": "Ultra rapido, buena calidad", "category": "fast"},
+    {"id": "anthropic:claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "provider": "anthropic", "desc": "Codigo y analisis", "category": "premium"},
+    {"id": "anthropic:claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku", "provider": "anthropic", "desc": "Ultra rapido", "category": "fast"},
     {"id": "anthropic:claude-opus-4-20250514", "name": "Claude Opus 4", "provider": "anthropic", "desc": "Maximo razonamiento", "category": "reasoning"},
-    # Google Gemini
-    {"id": "gemini:gemini-2.5-pro-preview-06-05", "name": "Gemini 2.5 Pro", "provider": "gemini", "desc": "Flagship de Google, largo contexto", "category": "premium"},
-    {"id": "gemini:gemini-2.5-flash-preview-05-20", "name": "Gemini 2.5 Flash", "provider": "gemini", "desc": "Rapido y economico", "category": "fast"},
-    {"id": "gemini:gemini-2.0-flash", "name": "Gemini 2.0 Flash", "provider": "gemini", "desc": "Estable, multimodal", "category": "fast"},
-    # xAI (Grok)
-    {"id": "xai:grok-3", "name": "Grok 3", "provider": "xai", "desc": "Flagship de xAI", "category": "premium"},
+    {"id": "deepseek:deepseek-chat", "name": "DeepSeek V3 (API)", "provider": "deepseek", "desc": "Chat y codigo, muy economico", "category": "fast"},
+    {"id": "deepseek:deepseek-reasoner", "name": "DeepSeek R1 (API)", "provider": "deepseek", "desc": "Razonamiento chain-of-thought", "category": "reasoning"},
+    {"id": "xai:grok-3", "name": "Grok 3", "provider": "xai", "desc": "Flagship xAI", "category": "premium"},
     {"id": "xai:grok-3-mini", "name": "Grok 3 Mini", "provider": "xai", "desc": "Rapido y eficiente", "category": "fast"},
     {"id": "xai:grok-3-fast", "name": "Grok 3 Fast", "provider": "xai", "desc": "Baja latencia", "category": "fast"},
-    # DeepSeek
-    {"id": "deepseek:deepseek-chat", "name": "DeepSeek V3", "provider": "deepseek", "desc": "Chat y codigo, muy economico", "category": "fast"},
-    {"id": "deepseek:deepseek-reasoner", "name": "DeepSeek R1", "provider": "deepseek", "desc": "Razonamiento profundo chain-of-thought", "category": "reasoning"},
-    # Groq (inferencia rapida)
-    {"id": "groq:llama-3.3-70b-versatile", "name": "Llama 3.3 70B", "provider": "groq", "desc": "Meta Llama via Groq (ultra rapido)", "category": "fast"},
-    {"id": "groq:llama-3.1-8b-instant", "name": "Llama 3.1 8B", "provider": "groq", "desc": "Instantaneo, tareas simples", "category": "fast"},
-    {"id": "groq:mixtral-8x7b-32768", "name": "Mixtral 8x7B", "provider": "groq", "desc": "Mistral MoE via Groq", "category": "fast"},
-    {"id": "groq:deepseek-r1-distill-llama-70b", "name": "DeepSeek R1 Distill 70B", "provider": "groq", "desc": "Razonamiento via Groq", "category": "reasoning"},
-    # Mistral
-    {"id": "mistral:mistral-large-latest", "name": "Mistral Large", "provider": "mistral", "desc": "Flagship de Mistral", "category": "premium"},
-    {"id": "mistral:codestral-latest", "name": "Codestral", "provider": "mistral", "desc": "Especializado en codigo", "category": "code"},
+    {"id": "mistral:mistral-large-latest", "name": "Mistral Large", "provider": "mistral", "desc": "Flagship Mistral", "category": "premium"},
+    {"id": "mistral:codestral-latest", "name": "Codestral", "provider": "mistral", "desc": "Codigo especializado", "category": "code"},
     {"id": "mistral:mistral-small-latest", "name": "Mistral Small", "provider": "mistral", "desc": "Rapido y economico", "category": "fast"},
-    # Perplexity
     {"id": "perplexity:sonar-pro", "name": "Sonar Pro", "provider": "perplexity", "desc": "Busqueda web + IA", "category": "search"},
     {"id": "perplexity:sonar", "name": "Sonar", "provider": "perplexity", "desc": "Busqueda rapida", "category": "search"},
-    # Ollama (local)
-    {"id": "ollama:auto", "name": "Ollama (local)", "provider": "ollama", "desc": "Modelos locales sin costo", "category": "local"},
 ]
 
 _PROVIDER_LABELS = {
@@ -5211,10 +5209,121 @@ def _agent_goal_mode(mode: str) -> str:
     return "plan_only"
 
 
+# ── Cascada inteligente: Local gratis → API gratis → API paga ──
+# Cada entrada: (provider, model, tier)  tier: "local"=Ollama, "free_api"=tier gratis, "paid_api"=paga
+
+_TASK_PROFILES = {
+    "code":      {"keywords": ["codigo", "code", "script", "funcion", "function", "programa", "debug", "error", "bug", "fix", "refactor", "implementa", "crea un", "desarrolla", "html", "css", "javascript", "python", "api", "endpoint", "clase", "class", "test"],
+                  "local": "deepseek-coder:6.7b"},
+    "reasoning": {"keywords": ["analiza", "explica", "por que", "porque", "razona", "compara", "evalua", "piensa", "plan", "estrategia", "arquitectura", "disena", "pros y contras", "ventajas", "desventajas", "opinion"],
+                  "local": "deepseek-r1:14b"},
+    "general":   {"keywords": [],
+                  "local": "qwen2.5:7b"},
+}
+
+_CASCADE_ORDER = [
+    # Tier 1: Local (gratis, tu PC)
+    ("ollama", "{local_model}", "local"),
+    # Tier 2: API con tier gratuito
+    ("groq",   "llama-3.3-70b-versatile", "free_api"),
+    ("gemini", "gemini-2.5-flash",        "free_api"),
+    # Tier 3: API de pago (solo si lo anterior falla)
+    ("openai",    "gpt-4.1-mini",                "paid_api"),
+    ("deepseek",  "deepseek-chat",               "paid_api"),
+    ("mistral",   "mistral-small-latest",         "paid_api"),
+    ("anthropic", "claude-3-5-haiku-20241022",    "paid_api"),
+    ("xai",       "grok-3-mini",                  "paid_api"),
+    ("perplexity","sonar",                        "paid_api"),
+]
+
+
+def _infer_task_type(goal: str) -> str:
+    """Detecta tipo de tarea para elegir modelo local optimo."""
+    g = goal.lower()
+    for ttype, cfg in _TASK_PROFILES.items():
+        if ttype == "general":
+            continue
+        if any(kw in g for kw in cfg["keywords"]):
+            return ttype
+    return "general"
+
+
+def _pick_local_model(goal: str) -> str:
+    """Elige el modelo Ollama mas adecuado segun la tarea."""
+    ttype = _infer_task_type(goal)
+    return _TASK_PROFILES[ttype]["local"]
+
+
+def _try_single_call(provider_id: str, model_name: str, goal: str) -> dict:
+    """Intenta una llamada a un modelo. Retorna dict con ok, output, ms, model_used."""
+    spec = "%s:%s" % (provider_id, model_name)
+    if provider_id == "ollama":
+        try:
+            from modules.humanoid.ai.router import _call_ollama
+            ok, output, ms = _call_ollama(model_name, goal, "Eres ATLAS Agent, asistente tecnico experto. Responde en espanol, conciso y natural.", 90)
+            if ok and output and output.strip():
+                return {"ok": True, "output": output, "ms": ms, "model_used": spec}
+            return {"ok": False, "error": "Ollama %s: respuesta vacia" % model_name, "ms": ms, "model_used": spec}
+        except Exception as e:
+            return {"ok": False, "error": "Ollama %s: %s" % (model_name, str(e)), "ms": 0, "model_used": spec}
+    from modules.humanoid.ai.provider_credentials import get_provider_api_key
+    api_key = get_provider_api_key(provider_id)
+    if not api_key:
+        return {"ok": False, "error": "Sin API key para %s" % provider_id, "ms": 0, "model_used": spec, "_skip": True}
+    from modules.humanoid.ai.external_llm import call_external
+    try:
+        ok, output, ms = call_external(provider_id, model_name, goal,
+                                       "Eres ATLAS Agent, asistente tecnico experto. Responde en espanol, conciso y natural. Usa texto plano sin emojis.",
+                                       api_key, timeout_s=120)
+        if ok and output and output.strip():
+            return {"ok": True, "output": output, "ms": ms, "model_used": spec}
+        return {"ok": False, "error": "%s:%s respuesta vacia o error" % (provider_id, model_name), "ms": ms, "model_used": spec}
+    except Exception as e:
+        return {"ok": False, "error": "%s:%s: %s" % (provider_id, model_name, str(e)), "ms": 0, "model_used": spec}
+
+
+def _direct_model_call(model_spec: str, goal: str) -> dict:
+    """Llamada con cascada inteligente: local → free API → paid API. Si un modelo falla, salta al siguiente."""
+    if model_spec == "auto" or not model_spec:
+        local_model = _pick_local_model(goal)
+        errors = []
+        for provider_id, model_tmpl, tier in _CASCADE_ORDER:
+            model_name = local_model if model_tmpl == "{local_model}" else model_tmpl
+            result = _try_single_call(provider_id, model_name, goal)
+            if result.get("ok"):
+                result["tier"] = tier
+                result["cascade_errors"] = len(errors)
+                return result
+            skip_reason = result.get("error", "unknown")
+            errors.append("%s:%s → %s" % (provider_id, model_name, skip_reason[:80]))
+        return {"ok": False, "error": "Todos los modelos fallaron. Intentos: %s" % "; ".join(errors), "ms": 0}
+
+    parts = model_spec.split(":", 1)
+    if len(parts) != 2:
+        return {"ok": False, "error": "Formato invalido: use provider:model"}
+    provider_id, model_name = parts[0].lower(), parts[1]
+    return _try_single_call(provider_id, model_name, goal)
+
+
 @app.post("/agent/goal")
 def agent_goal(body: AgentGoalBody):
     """Run goal: plan_only | controlled | auto. depth 1-5: multi-agent pipeline. Respuesta: resumen, data, pipeline, siguientes_pasos."""
     t0 = time.perf_counter()
+    model_spec = (body.model or "auto").strip()
+    if model_spec:
+        result = _direct_model_call(model_spec, body.goal)
+        ms = int((time.perf_counter() - t0) * 1000)
+        if result.get("ok"):
+            tier_label = {"local": "LOCAL (gratis)", "free_api": "API gratuita", "paid_api": "API paga"}.get(result.get("tier", ""), "")
+            cascade_note = ""
+            if result.get("cascade_errors", 0) > 0:
+                cascade_note = " (fallback: %d intentos previos)" % result["cascade_errors"]
+            info_line = "Modelo: %s | %s%s | %dms" % (result.get("model_used", model_spec), tier_label, cascade_note, ms)
+            return _professional_resp(True, {"output": result["output"], "model_used": result.get("model_used"), "tier": result.get("tier")}, ms, None,
+                                      resumen=result["output"][:500] if result.get("output") else "Procesado",
+                                      siguientes_pasos=[info_line])
+        err_detail = result.get("error") or result.get("output") or "Error desconocido"
+        return _professional_resp(False, {"error_detail": err_detail, "model_used": result.get("model_used")}, ms, err_detail, resumen=err_detail)
     mode = _agent_goal_mode(body.mode or "plan_only")
     depth = max(1, min(5, body.depth or 1))
     try:

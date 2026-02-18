@@ -41,6 +41,7 @@ def call_external(
 def _call_gemini(
     model: str, prompt: str, system: Optional[str], api_key: str, timeout_s: int, t0: float
 ) -> Tuple[bool, str, float]:
+    import httpx
     model_id = (model or "gemini-1.5-flash").replace("/", "-").strip()
     url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" % model_id
     params = {"key": api_key}
@@ -61,6 +62,7 @@ def _call_gemini(
 def _call_openai(
     model: str, prompt: str, system: Optional[str], api_key: str, timeout_s: int, t0: float
 ) -> Tuple[bool, str, float]:
+    import httpx
     url = "https://api.openai.com/v1/chat/completions"
     headers = {"Authorization": "Bearer %s" % api_key, "Content-Type": "application/json"}
     messages = []
@@ -82,6 +84,7 @@ def _call_openai(
 def _call_anthropic(
     model: str, prompt: str, system: Optional[str], api_key: str, timeout_s: int, t0: float
 ) -> Tuple[bool, str, float]:
+    import httpx
     url = "https://api.anthropic.com/v1/messages"
     headers = {
         "x-api-key": api_key,
