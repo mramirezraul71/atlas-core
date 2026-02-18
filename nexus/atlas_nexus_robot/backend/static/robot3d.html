@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATLAS Robot — Visualizacion 3D</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#050510;--cyan:#22d3ee;--green:#34d399;--red:#f87171;--amber:#fbbf24;--violet:#a78bfa;--blue:#60a5fa;--text:#e4e4e7;--muted:#71717a;--glass:rgba(255,255,255,0.04)}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',-apple-system,sans-serif;overflow:hidden;height:100vh}
+#canvas-container{position:fixed;inset:0;z-index:0}
+canvas{display:block}
+
+.hud{position:fixed;z-index:10;pointer-events:none}
+.hud *{pointer-events:auto}
+
+.hud-top{top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:16px 24px}
+.hud-title{font-size:20px;font-weight:800;background:linear-gradient(135deg,var(--cyan),var(--blue));-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-shadow:0 0 30px rgba(34,211,238,0.3)}
+.hud-title small{font-size:11px;font-weight:400;color:var(--muted);display:block;-webkit-text-fill-color:var(--muted)}
+.hud-status{display:flex;align-items:center;gap:8px;padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600;backdrop-filter:blur(10px)}
+.hud-status.on{background:rgba(52,211,153,0.12);color:var(--green);border:1px solid rgba(52,211,153,0.25)}
+.hud-status.off{background:rgba(248,113,113,0.12);color:var(--red);border:1px solid rgba(248,113,113,0.25)}
+.hud-pulse{width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.7)}}
+
+.hud-nav{display:flex;gap:8px}
+.hud-nav a{padding:6px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);border-radius:8px;color:var(--muted);text-decoration:none;font-size:11px;font-weight:500;transition:.2s;backdrop-filter:blur(6px)}
+.hud-nav a:hover{background:rgba(34,211,238,0.12);color:var(--cyan);border-color:rgba(34,211,238,0.3)}
+
+.panel-left{left:20px;top:50%;transform:translateY(-50%);width:200px}
+.panel-right{right:20px;top:50%;transform:translateY(-50%);width:220px}
+
+.mod-panel{background:rgba(0,0,0,0.5);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.06);border-radius:12px;overflow:hidden}
+.mod-panel-title{padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--cyan);border-bottom:1px solid rgba(255,255,255,0.05);display:flex;align-items:center;gap:6px}
+.mod-list{padding:6px 0}
+.mod-item{display:flex;align-items:center;gap:8px;padding:7px 14px;font-size:12px;cursor:pointer;transition:.15s}
+.mod-item:hover{background:rgba(255,255,255,0.04)}
+.mod-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;transition:.3s}
+.mod-dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}
+.mod-dot.off{background:var(--red);box-shadow:0 0 8px var(--red)}
+.mod-name{flex:1;font-weight:500}
+.mod-status{font-size:9px;padding:2px 8px;border-radius:8px;font-weight:600}
+.mod-status.on{background:rgba(52,211,153,0.12);color:var(--green)}
+.mod-status.off{background:rgba(248,113,113,0.12);color:var(--red)}
+
+.stats-panel{margin-top:12px}
+.stat-row{display:flex;justify-content:space-between;padding:7px 14px;font-size:11px;border-bottom:1px solid rgba(255,255,255,0.03)}
+.stat-row:last-child{border-bottom:none}
+.stat-label{color:var(--muted)}
+.stat-val{font-family:'Consolas',monospace;font-weight:600;color:var(--cyan)}
+
+.hud-bottom{bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:16px;align-items:center}
+.hud-hint{font-size:10px;color:var(--muted);background:rgba(0,0,0,0.4);backdrop-filter:blur(8px);padding:6px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.05)}
+
+.tooltip{position:fixed;z-index:100;background:rgba(0,0,0,0.85);backdrop-filter:blur(10px);border:1px solid rgba(34,211,238,0.3);border-radius:8px;padding:10px 14px;font-size:11px;pointer-events:none;display:none;min-width:140px}
+.tooltip h4{color:var(--cyan);font-size:12px;margin-bottom:4px}
+.tooltip p{color:var(--muted);font-size:10px}
+
+@keyframes scanline{0%{top:-2px}100%{top:100%}}
+.scanline{position:fixed;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,rgba(34,211,238,0.08),transparent);z-index:5;animation:scanline 4s linear infinite;pointer-events:none}
+</style>
+</head>
+<body>
+<div class="scanline"></div>
+<div id="canvas-container"></div>
+
+<div class="hud hud-top">
+    <div>
+        <div class="hud-title">ATLAS ROBOT<small>Visualizacion 3D en tiempo real</small></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px">
+        <div class="hud-nav">
+            <a href="http://localhost:8791/ui" target="_blank">📊 Dashboard</a>
+            <a href="http://localhost:8791/workspace" target="_blank">⚡ Workspace</a>
+            <a href="http://localhost:8000/dashboard" target="_blank">🌐 Nexus</a>
+        </div>
+        <div class="hud-status on" id="robot-status"><span class="hud-pulse"></span> EN LINEA</div>
+    </div>
+</div>
+
+<div class="hud panel-left">
+    <div class="mod-panel">
+        <div class="mod-panel-title">🧬 Modulos del Sistema</div>
+        <div class="mod-list" id="mod-list"></div>
+    </div>
+    <div class="mod-panel stats-panel">
+        <div class="mod-panel-title">📊 Metricas</div>
+        <div class="stat-row"><span class="stat-label">Uptime</span><span class="stat-val" id="s-uptime">--</span></div>
+        <div class="stat-row"><span class="stat-label">Version</span><span class="stat-val" id="s-version">1.0.0</span></div>
+        <div class="stat-row"><span class="stat-label">WebSocket</span><span class="stat-val" id="s-ws">--</span></div>
+        <div class="stat-row"><span class="stat-label">Estado</span><span class="stat-val" id="s-estado">--</span></div>
+        <div class="stat-row"><span class="stat-label">FPS</span><span class="stat-val" id="s-fps">--</span></div>
+    </div>
+</div>
+
+<div class="hud panel-right">
+    <div class="mod-panel">
+        <div class="mod-panel-title">🧠 Anatomia del Robot</div>
+        <div style="padding:12px 14px;font-size:10px;color:var(--muted);line-height:1.6">
+            <div id="anatomy-info">
+                <div style="margin-bottom:6px"><span style="color:var(--violet)">●</span> <strong>Cerebro (AI)</strong> — Motor de inteligencia</div>
+                <div style="margin-bottom:6px"><span style="color:var(--cyan)">●</span> <strong>Ojos (Camera+Vision)</strong> — Percepcion visual</div>
+                <div style="margin-bottom:6px"><span style="color:var(--amber)">●</span> <strong>Nucleo (YOLO)</strong> — Deteccion de objetos</div>
+                <div style="margin-bottom:6px"><span style="color:var(--green)">●</span> <strong>Columna (Control)</strong> — Sistema de control</div>
+                <div style="margin-bottom:6px"><span style="color:var(--blue)">●</span> <strong>Red (Sensors)</strong> — Sensores distribuidos</div>
+                <div style="margin-bottom:6px"><span style="color:var(--red)">●</span> <strong>Brazos (Actuators)</strong> — Ejecutores fisicos</div>
+                <div><span style="color:var(--green)">●</span> <strong>Antena (Comms)</strong> — Comunicacion</div>
+            </div>
+        </div>
+    </div>
+    <div class="mod-panel stats-panel">
+        <div class="mod-panel-title">⚡ Sistema</div>
+        <div class="stat-row"><span class="stat-label">CPU</span><span class="stat-val" id="s-cpu">--</span></div>
+        <div class="stat-row"><span class="stat-label">RAM</span><span class="stat-val" id="s-ram">--</span></div>
+        <div class="stat-row"><span class="stat-label">Disco</span><span class="stat-val" id="s-disk">--</span></div>
+        <div class="stat-row"><span class="stat-label">Python</span><span class="stat-val" id="s-python">--</span></div>
+    </div>
+</div>
+
+<div class="hud hud-bottom">
+    <div class="hud-hint">Arrastra para rotar · Scroll para zoom · Modulos en tiempo real</div>
+</div>
+
+<div class="tooltip" id="tooltip"><h4></h4><p></p></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const ROBOT_API = 'http://' + location.hostname + ':8002';
+const PUSH_API = 'http://' + location.hostname + ':8791';
+
+const MODULE_MAP = {
+    ai:            {label:'Cerebro (AI)',     color:0xa78bfa, pos:[0, 2.6, 0],    size:0.35, bodyPart:'head'},
+    camera:        {label:'Ojo Izq (Camera)', color:0x22d3ee, pos:[-0.22, 2.35, 0.28], size:0.1, bodyPart:'eye_l'},
+    vision:        {label:'Ojo Der (Vision)', color:0x22d3ee, pos:[0.22, 2.35, 0.28],  size:0.1, bodyPart:'eye_r'},
+    yolo:          {label:'Nucleo (YOLO)',    color:0xfbbf24, pos:[0, 1.2, 0],    size:0.25, bodyPart:'core'},
+    control:       {label:'Columna (Control)',color:0x34d399, pos:[0, 0.8, 0],    size:0.15, bodyPart:'spine'},
+    sensors:       {label:'Sensores',         color:0x60a5fa, pos:[0, 1.5, 0.3],  size:0.12, bodyPart:'torso'},
+    actuators:     {label:'Brazo Der (Act.)', color:0xf87171, pos:[0.9, 1.4, 0],  size:0.12, bodyPart:'arm_r'},
+    communication: {label:'Antena (Comms)',   color:0x34d399, pos:[0, 3.05, 0],   size:0.08, bodyPart:'antenna'}
+};
+
+let scene, camera, renderer, robot, moduleOrbs = {}, clock, mouseX = 0, mouseY = 0;
+let isDragging = false, prevMouse = {x:0, y:0}, rotY = 0, rotX = 0.1;
+let modulesData = {};
+let frameCount = 0, lastFpsTime = performance.now();
+
+function init() {
+    const container = document.getElementById('canvas-container');
+    scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x050510, 0.06);
+
+    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 1.8, 6);
+    camera.lookAt(0, 1.4, 0);
+
+    renderer = new THREE.WebGLRenderer({antialias: true, alpha: true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x050510);
+    container.appendChild(renderer.domElement);
+
+    clock = new THREE.Clock();
+
+    const ambLight = new THREE.AmbientLight(0x112244, 0.4);
+    scene.add(ambLight);
+    const dirLight = new THREE.DirectionalLight(0x22d3ee, 0.3);
+    dirLight.position.set(2, 5, 3);
+    scene.add(dirLight);
+    const pointLight = new THREE.PointLight(0xa78bfa, 0.6, 10);
+    pointLight.position.set(0, 3, 2);
+    scene.add(pointLight);
+
+    createGrid();
+    createParticles();
+    robot = createRobot();
+    scene.add(robot);
+
+    setupEvents();
+    animate();
+}
+
+function createGrid() {
+    const gridGeo = new THREE.BufferGeometry();
+    const verts = [];
+    const s = 20, d = 0.5;
+    for (let i = -s; i <= s; i += d) {
+        verts.push(-s, 0, i, s, 0, i);
+        verts.push(i, 0, -s, i, 0, s);
+    }
+    gridGeo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    const gridMat = new THREE.LineBasicMaterial({color: 0x22d3ee, opacity: 0.06, transparent: true});
+    scene.add(new THREE.LineSegments(gridGeo, gridMat));
+}
+
+function createParticles() {
+    const count = 600;
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+        pos[i*3] = (Math.random() - 0.5) * 30;
+        pos[i*3+1] = Math.random() * 15;
+        pos[i*3+2] = (Math.random() - 0.5) * 30;
+    }
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    const mat = new THREE.PointsMaterial({color: 0x22d3ee, size: 0.03, transparent: true, opacity: 0.5});
+    scene.add(new THREE.Points(geo, mat));
+}
+
+function glowMat(color, opacity) {
+    return new THREE.MeshBasicMaterial({color, transparent: true, opacity: opacity || 0.15, wireframe: true});
+}
+function solidMat(color, opacity) {
+    return new THREE.MeshPhongMaterial({color, transparent: true, opacity: opacity || 0.3, emissive: color, emissiveIntensity: 0.3});
+}
+
+function createRobot() {
+    const group = new THREE.Group();
+
+    // Head
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 12), glowMat(0x22d3ee, 0.12));
+    head.position.set(0, 2.5, 0);
+    group.add(head);
+    const headInner = new THREE.Mesh(new THREE.SphereGeometry(0.38, 16, 12), solidMat(0x1a1a3e, 0.4));
+    headInner.position.copy(head.position);
+    group.add(headInner);
+
+    // Visor
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.1), solidMat(0x22d3ee, 0.5));
+    visor.position.set(0, 2.38, 0.32);
+    group.add(visor);
+
+    // Neck
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 0.25, 8), glowMat(0x334466, 0.2));
+    neck.position.set(0, 2.05, 0);
+    group.add(neck);
+
+    // Torso
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.1, 0.5, 3, 3, 2), glowMat(0x22d3ee, 0.1));
+    torso.position.set(0, 1.35, 0);
+    group.add(torso);
+    const torsoInner = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.05, 0.45), solidMat(0x111128, 0.35));
+    torsoInner.position.copy(torso.position);
+    group.add(torsoInner);
+
+    // Chest plate
+    const chest = new THREE.Mesh(new THREE.RingGeometry(0.12, 0.2, 6), solidMat(0x22d3ee, 0.3));
+    chest.position.set(0, 1.5, 0.26);
+    group.add(chest);
+
+    // Shoulders
+    [-1, 1].forEach(side => {
+        const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), solidMat(0x334466, 0.5));
+        shoulder.position.set(side * 0.58, 1.75, 0);
+        group.add(shoulder);
+    });
+
+    // Arms
+    [-1, 1].forEach(side => {
+        const upperArm = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.06, 0.6, 8), glowMat(0x22d3ee, 0.12));
+        upperArm.position.set(side * 0.65, 1.4, 0);
+        group.add(upperArm);
+        const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), solidMat(0x334466, 0.5));
+        elbow.position.set(side * 0.7, 1.05, 0);
+        group.add(elbow);
+        const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.55, 8), glowMat(0x22d3ee, 0.12));
+        forearm.position.set(side * 0.75, 0.72, 0.05);
+        group.add(forearm);
+        const hand = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.06, 2, 2, 1), glowMat(0x60a5fa, 0.15));
+        hand.position.set(side * 0.78, 0.42, 0.05);
+        group.add(hand);
+    });
+
+    // Pelvis
+    const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.2, 0.35), solidMat(0x1a1a3e, 0.4));
+    pelvis.position.set(0, 0.7, 0);
+    group.add(pelvis);
+
+    // Legs
+    [-1, 1].forEach(side => {
+        const hip = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), solidMat(0x334466, 0.5));
+        hip.position.set(side * 0.2, 0.6, 0);
+        group.add(hip);
+        const upperLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.07, 0.6, 8), glowMat(0x22d3ee, 0.1));
+        upperLeg.position.set(side * 0.2, 0.25, 0);
+        group.add(upperLeg);
+        const knee = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), solidMat(0x334466, 0.5));
+        knee.position.set(side * 0.2, -0.08, 0);
+        group.add(knee);
+        const lowerLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.06, 0.55, 8), glowMat(0x22d3ee, 0.1));
+        lowerLeg.position.set(side * 0.2, -0.4, 0);
+        group.add(lowerLeg);
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, 0.22), solidMat(0x334466, 0.5));
+        foot.position.set(side * 0.2, -0.7, 0.04);
+        group.add(foot);
+    });
+
+    // Antenna
+    const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.3, 4), solidMat(0x34d399, 0.6));
+    ant.position.set(0, 2.95, 0);
+    group.add(ant);
+    const antTip = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 4), solidMat(0x34d399, 0.8));
+    antTip.position.set(0, 3.12, 0);
+    group.add(antTip);
+
+    // Spine line (internal)
+    const spineGeo = new THREE.BufferGeometry();
+    const spineVerts = [0,2.1,0, 0,1.8,0, 0,1.5,0, 0,1.2,0, 0,0.9,0, 0,0.7,0];
+    spineGeo.setAttribute('position', new THREE.Float32BufferAttribute(spineVerts, 3));
+    const spineLine = new THREE.Line(spineGeo, new THREE.LineBasicMaterial({color: 0x34d399, opacity: 0.4, transparent: true}));
+    group.add(spineLine);
+
+    // Module orbs (glowing indicators inside the body)
+    for (const [modId, cfg] of Object.entries(MODULE_MAP)) {
+        const orbGeo = new THREE.SphereGeometry(cfg.size, 12, 8);
+        const orbMat = new THREE.MeshBasicMaterial({color: cfg.color, transparent: true, opacity: 0.7});
+        const orb = new THREE.Mesh(orbGeo, orbMat);
+        orb.position.set(...cfg.pos);
+        orb.userData = {moduleId: modId, baseSize: cfg.size, label: cfg.label, color: cfg.color};
+
+        const glowGeo = new THREE.SphereGeometry(cfg.size * 1.6, 12, 8);
+        const glowMaterial = new THREE.MeshBasicMaterial({color: cfg.color, transparent: true, opacity: 0.12});
+        const glow = new THREE.Mesh(glowGeo, glowMaterial);
+        orb.add(glow);
+
+        group.add(orb);
+        moduleOrbs[modId] = orb;
+    }
+
+    // Neural connections (lines between modules)
+    const connections = [
+        ['ai','camera'],['ai','vision'],['ai','yolo'],['ai','control'],
+        ['control','sensors'],['control','actuators'],['ai','communication'],
+        ['yolo','sensors'],['yolo','camera'],['yolo','vision']
+    ];
+    connections.forEach(([a, b]) => {
+        const pa = MODULE_MAP[a].pos, pb = MODULE_MAP[b].pos;
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute([...pa, ...pb], 3));
+        const line = new THREE.Line(geo, new THREE.LineBasicMaterial({color: 0x22d3ee, opacity: 0.08, transparent: true}));
+        group.add(line);
+    });
+
+    group.position.y = -0.5;
+    return group;
+}
+
+function setupEvents() {
+    const c = renderer.domElement;
+    c.addEventListener('mousedown', e => {isDragging = true; prevMouse = {x: e.clientX, y: e.clientY}});
+    c.addEventListener('mousemove', e => {
+        mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+        mouseY = (e.clientY / window.innerHeight) * 2 - 1;
+        if (isDragging) {
+            rotY += (e.clientX - prevMouse.x) * 0.005;
+            rotX += (e.clientY - prevMouse.y) * 0.003;
+            rotX = Math.max(-0.5, Math.min(0.5, rotX));
+            prevMouse = {x: e.clientX, y: e.clientY};
+        }
+    });
+    c.addEventListener('mouseup', () => isDragging = false);
+    c.addEventListener('mouseleave', () => isDragging = false);
+    c.addEventListener('wheel', e => {
+        camera.position.z = Math.max(3, Math.min(12, camera.position.z + e.deltaY * 0.005));
+    });
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    const t = clock.getElapsedTime();
+
+    if (!isDragging) rotY += 0.002;
+    robot.rotation.y = rotY;
+    robot.rotation.x = rotX;
+
+    camera.position.x += (mouseX * 0.3 - camera.position.x) * 0.02;
+    camera.lookAt(0, 1.2, 0);
+
+    for (const [modId, orb] of Object.entries(moduleOrbs)) {
+        const active = modulesData[modId] !== false;
+        const base = orb.userData.baseSize;
+        const pulse = active ? 1 + Math.sin(t * 3 + Object.keys(MODULE_MAP).indexOf(modId)) * 0.15 : 0.6;
+        orb.scale.setScalar(pulse);
+        orb.material.opacity = active ? 0.6 + Math.sin(t * 2) * 0.2 : 0.15;
+        orb.material.color.setHex(active ? orb.userData.color : 0x333333);
+        if (orb.children[0]) {
+            orb.children[0].material.opacity = active ? 0.1 + Math.sin(t * 1.5) * 0.06 : 0.02;
+            orb.children[0].material.color.setHex(active ? orb.userData.color : 0x222222);
+        }
+    }
+
+    frameCount++;
+    const now = performance.now();
+    if (now - lastFpsTime >= 1000) {
+        document.getElementById('s-fps').textContent = frameCount + ' fps';
+        frameCount = 0;
+        lastFpsTime = now;
+    }
+
+    renderer.render(scene, camera);
+}
+
+function fmt(s) {
+    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+    return h ? h+'h '+m+'m' : m+'m '+Math.floor(s%60)+'s';
+}
+
+async function fetchData() {
+    try {
+        const r = await fetch(ROBOT_API + '/status', {signal: AbortSignal.timeout(5000)});
+        const d = await r.json();
+        document.getElementById('robot-status').className = 'hud-status on';
+        document.getElementById('robot-status').innerHTML = '<span class="hud-pulse"></span> EN LINEA';
+        document.getElementById('s-uptime').textContent = fmt(d.uptime || 0);
+        document.getElementById('s-estado').textContent = d.status || '--';
+        document.getElementById('s-ws').textContent = (d.clientes_websocket ?? '--') + ' clients';
+        modulesData = d.modules || {};
+        renderModuleList(modulesData);
+    } catch(e) {
+        document.getElementById('robot-status').className = 'hud-status off';
+        document.getElementById('robot-status').innerHTML = '<span class="hud-pulse"></span> DESCONECTADO';
+    }
+
+    try {
+        const r2 = await fetch(ROBOT_API + '/system/info', {signal: AbortSignal.timeout(5000)});
+        const s = await r2.json();
+        if (s.cpu_percent !== undefined) document.getElementById('s-cpu').textContent = s.cpu_percent + '%';
+        if (s.ram) document.getElementById('s-ram').textContent = s.ram.percent + '% (' + s.ram.used_gb + 'GB)';
+        if (s.disk) document.getElementById('s-disk').textContent = s.disk.percent + '% (' + s.disk.used_gb + 'GB)';
+        if (s.python_version) document.getElementById('s-python').textContent = s.python_version;
+    } catch(e) {}
+}
+
+function renderModuleList(mods) {
+    const el = document.getElementById('mod-list');
+    let h = '';
+    const icons = {ai:'🧠',camera:'📷',vision:'👁',yolo:'🎯',control:'🎮',sensors:'📡',actuators:'🦾',communication:'📶'};
+    for (const [name, active] of Object.entries(mods)) {
+        h += '<div class="mod-item" onmouseenter="highlightOrb(\''+name+'\',true)" onmouseleave="highlightOrb(\''+name+'\',false)">';
+        h += '<span class="mod-dot '+(active?'on':'off')+'"></span>';
+        h += '<span class="mod-name">'+(icons[name]||'●')+' '+name+'</span>';
+        h += '<span class="mod-status '+(active?'on':'off')+'">'+(active?'ON':'OFF')+'</span>';
+        h += '</div>';
+    }
+    el.innerHTML = h;
+}
+
+function highlightOrb(modId, on) {
+    const orb = moduleOrbs[modId];
+    if (!orb) return;
+    if (on) {
+        orb.scale.setScalar(1.8);
+        orb.material.opacity = 1;
+        if (orb.children[0]) orb.children[0].material.opacity = 0.3;
+    }
+}
+
+fetchData();
+setInterval(fetchData, 5000);
+init();
+</script>
+</body>
+</html>
