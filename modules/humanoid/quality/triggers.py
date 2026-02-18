@@ -23,6 +23,11 @@ _log = logging.getLogger("humanoid.quality.triggers")
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    v = os.getenv(name, "true" if default else "false").strip().lower()
+    return v in ("1", "true", "yes", "y", "on")
+
+
 class TriggerCondition(str, Enum):
     """Tipos de condiciones que pueden disparar POTs."""
     GIT_CHANGES = "git_changes"          # Cambios pendientes en Git
@@ -74,7 +79,8 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         name="Auto-commit cuando hay cambios",
         condition=TriggerCondition.GIT_CHANGES,
         pot_id="git_commit",
-        enabled=True,
+        # Seguridad: no auto-commitear por defecto (evita estados Git peligrosos).
+        enabled=_env_bool("QUALITY_GIT_TRIGGERS_ENABLED", False),
         priority=6,
         cooldown_seconds=60,   # TURBO: Era 600s, ahora 60s
         check_interval_seconds=15,  # TURBO: Era 120s, ahora 15s
@@ -85,7 +91,7 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         name="Auto-pull cuando estamos detrás",
         condition=TriggerCondition.GIT_BEHIND,
         pot_id="git_pull",
-        enabled=True,
+        enabled=_env_bool("QUALITY_GIT_TRIGGERS_ENABLED", False),
         priority=4,
         cooldown_seconds=60,   # TURBO: Era 300s, ahora 60s
         check_interval_seconds=30,  # TURBO: Era 300s, ahora 30s
