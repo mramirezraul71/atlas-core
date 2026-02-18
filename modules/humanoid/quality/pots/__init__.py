@@ -16,6 +16,7 @@ from typing import Dict, List, Callable
 from . import git_commit
 from . import git_push
 from . import git_pull
+from . import git_safe_sync
 from . import repo_update
 from . import deployment_full
 
@@ -70,6 +71,7 @@ _POT_MODULES: Dict[str, Callable] = {
     "git_commit": git_commit.get_pot,
     "git_push": git_push.get_pot,
     "git_pull": git_pull.get_pot,
+    "git_safe_sync": git_safe_sync.get_pot,
     "repo_update": repo_update.get_pot,
     "deployment_full": deployment_full.get_pot,
     

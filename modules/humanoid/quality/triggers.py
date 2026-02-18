@@ -32,6 +32,7 @@ class TriggerCondition(str, Enum):
     """Tipos de condiciones que pueden disparar POTs."""
     GIT_CHANGES = "git_changes"          # Cambios pendientes en Git
     GIT_BEHIND = "git_behind"            # Branch detrás del remoto
+    GIT_UNSAFE = "git_unsafe"            # Estado Git peligroso (lock/rebase/detached/conflicts)
     SERVICE_DOWN = "service_down"        # Servicio caído
     API_ERROR = "api_error"              # Error en API
     DISK_FULL = "disk_full"              # Disco lleno (>90%)
@@ -95,6 +96,18 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         priority=4,
         cooldown_seconds=60,   # TURBO: Era 300s, ahora 60s
         check_interval_seconds=30,  # TURBO: Era 300s, ahora 30s
+    ),
+    TriggerRule(
+        id="git_unsafe_self_heal",
+        name="Auto-reparación Git (estado peligroso)",
+        condition=TriggerCondition.GIT_UNSAFE,
+        pot_id="git_safe_sync",
+        enabled=_env_bool("QUALITY_GIT_UNSAFE_TRIGGERS_ENABLED", True),
+        priority=2,
+        cooldown_seconds=120,
+        check_interval_seconds=15,
+        # Por defecto exige aprobación: toca el repositorio.
+        require_approval=_env_bool("QUALITY_GIT_UNSAFE_REQUIRE_APPROVAL", True),
     ),
     
     # Service Health Triggers - TURBO
@@ -269,6 +282,66 @@ def check_git_behind() -> Dict[str, Any]:
         return {"triggered": False, "error": str(e)}
 
 
+def check_git_unsafe() -> Dict[str, Any]:
+    """
+    Detecta estados Git peligrosos que suelen romper la autonomía:
+    - index.lock persistente
+    - rebase/merge en progreso
+    - detached HEAD
+    - conflictos (unmerged)
+    """
+    try:
+        git_dir = REPO_ROOT / ".git"
+        lock_path = git_dir / "index.lock"
+        rebase_apply = git_dir / "rebase-apply"
+        rebase_merge = git_dir / "rebase-merge"
+        merge_head = git_dir / "MERGE_HEAD"
+
+        details: Dict[str, Any] = {
+            "lock_exists": lock_path.exists(),
+            "rebase_apply": rebase_apply.exists(),
+            "rebase_merge": rebase_merge.exists(),
+            "merge_in_progress": merge_head.exists(),
+        }
+
+        if details["lock_exists"] or details["rebase_apply"] or details["rebase_merge"] or details["merge_in_progress"]:
+            return {"triggered": True, "reason": "git_state_markers", "details": details}
+
+        st = subprocess.run(
+            ["git", "status", "-sb"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        out = ((st.stdout or "") + "\n" + (st.stderr or "")).strip()
+        low = out.lower()
+        details["status_sb"] = (st.stdout or "")[:800]
+
+        if "head (no branch)" in low or "detached" in low:
+            return {"triggered": True, "reason": "detached_head", "details": details}
+        if "rebase in progress" in low or "rebasing" in low:
+            return {"triggered": True, "reason": "rebase_in_progress", "details": details}
+        if "unmerged" in low:
+            return {"triggered": True, "reason": "unmerged_paths", "details": details}
+
+        ps = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        lines = [ln for ln in (ps.stdout or "").splitlines() if ln.strip()]
+        details["porcelain_count"] = len(lines)
+        if any((ln[:2] if len(ln) >= 2 else "") in ("UU", "AA", "DD", "UD", "DU") for ln in lines):
+            return {"triggered": True, "reason": "conflict_markers", "details": details}
+
+        return {"triggered": False, "details": details}
+    except Exception as e:
+        return {"triggered": False, "error": str(e)}
+
+
 def check_service_down(services: Optional[List[str]] = None) -> Dict[str, Any]:
     """Verifica si algún servicio está caído."""
     services = services or ["atlas_api", "scheduler"]
@@ -340,6 +413,7 @@ def check_incident_new() -> Dict[str, Any]:
 CONDITION_CHECKERS: Dict[TriggerCondition, Callable] = {
     TriggerCondition.GIT_CHANGES: check_git_changes,
     TriggerCondition.GIT_BEHIND: check_git_behind,
+    TriggerCondition.GIT_UNSAFE: check_git_unsafe,
     TriggerCondition.SERVICE_DOWN: check_service_down,
     TriggerCondition.DISK_FULL: check_disk_full,
     TriggerCondition.INCIDENT_NEW: check_incident_new,
