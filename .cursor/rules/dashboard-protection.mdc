@@ -1,0 +1,18 @@
+---
+description: Prohibición absoluta de tocar el Dashboard sin autorización explícita del Owner.
+alwaysApply: true
+---
+
+# Dashboard: PROTECCIÓN TOTAL (Owner-only)
+
+- **PROHIBIDO** modificar, reemplazar, renombrar, mover o borrar el Dashboard **sin autorización explícita del Owner**.
+- **Archivos protegidos**:
+  - `atlas_adapter/static/dashboard.html` (Dashboard oficial v3.8.0)
+  - Cualquier asset asociado en `atlas_adapter/static/` que el Owner declare como parte del Dashboard.
+- **Regla de trabajo**:
+  - Si el usuario pide “arregla UI”, primero **preguntar si autoriza** tocar el Dashboard.
+  - Si no hay autorización, solo se permite actuar en **API/back-end** y en endpoints, sin tocar HTML/CSS/JS del Dashboard.
+- **Unicidad**:
+  - Mantener **una sola** versión del Dashboard en el repo para evitar confusión.
+  - Evitar duplicados tipo `dashboard_v*.html`, `dashboard_backup*.html` dentro de `atlas_adapter/static/` salvo orden directa del Owner.
+
