@@ -1,18 +1,36 @@
 ---
-description: Prohibición absoluta de tocar el Dashboard sin autorización explícita del Owner.
+description: Proteccion absoluta de TODAS las interfaces UI del sistema ATLAS. Ninguna puede ser borrada, reemplazada ni confundida con otra.
 alwaysApply: true
 ---
 
-# Dashboard: PROTECCIÓN TOTAL (Owner-only)
+# PROTECCION TOTAL DE INTERFACES UI (Owner-only)
 
-- **PROHIBIDO** modificar, reemplazar, renombrar, mover o borrar el Dashboard **sin autorización explícita del Owner**.
-- **Archivos protegidos**:
-  - `atlas_adapter/static/dashboard.html` (Dashboard oficial v3.8.0)
-  - Cualquier asset asociado en `atlas_adapter/static/` que el Owner declare como parte del Dashboard.
-- **Regla de trabajo**:
-  - Si el usuario pide “arregla UI”, primero **preguntar si autoriza** tocar el Dashboard.
-  - Si no hay autorización, solo se permite actuar en **API/back-end** y en endpoints, sin tocar HTML/CSS/JS del Dashboard.
-- **Unicidad**:
-  - Mantener **una sola** versión del Dashboard en el repo para evitar confusión.
-  - Evitar duplicados tipo `dashboard_v*.html`, `dashboard_backup*.html` dentro de `atlas_adapter/static/` salvo orden directa del Owner.
+## PROHIBIDO sin autorizacion explicita del Owner:
+- Modificar, reemplazar, renombrar, mover o borrar **cualquiera** de las interfaces listadas abajo.
+- Crear duplicados o backups con nombres similares (dashboard_v2, dashboard_backup, etc.)
 
+## INVENTARIO OFICIAL — 3 interfaces, cada una es UNICA e INDEPENDIENTE:
+
+### 1. Dashboard PUSH (Panel principal ATLAS)
+- **Archivo**: `atlas_adapter/static/dashboard.html`
+- **Puerto**: 8791 (ruta `/ui`)
+- **Funcion**: Panel principal con Chat, Config IA, Modulos, Vision, Nervioso, Comms, Tutorias
+- **NO confundir** con el Workspace ni con el Dashboard NEXUS
+
+### 2. Workspace (IDE de trabajo con IA)
+- **Archivo**: `atlas_adapter/static/workspace.html`
+- **Puerto**: 8791 (ruta `/workspace`)
+- **Funcion**: Entorno tipo Cursor para programar, ejecutar tareas, selector de modelos IA, voz
+- **NO confundir** con el Dashboard PUSH ni con el Dashboard NEXUS
+
+### 3. Dashboard NEXUS (Panel de operaciones NEXUS)
+- **Archivo**: `nexus/atlas_nexus/dashboard/index.html`
+- **Puerto**: 8000 (ruta `/dashboard`)
+- **Funcion**: Panel de operaciones en vivo de NEXUS, servicios, learning, memoria, AI Tutor
+- **NO confundir** con el Dashboard PUSH ni con el Workspace
+
+## Reglas de trabajo:
+- Si el usuario pide "arregla UI" o "modifica dashboard", **PREGUNTAR CUAL** de las 3 interfaces.
+- Si no hay autorizacion explicita, solo actuar en API/back-end.
+- JAMAS asumir que un dashboard es duplicado de otro. Los 3 son diferentes y necesarios.
+- Si un agente anterior intenta borrar alguno, DETENER y alertar al Owner.
