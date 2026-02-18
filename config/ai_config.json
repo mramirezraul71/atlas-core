@@ -1,0 +1,39 @@
+{
+  "mode": "hybrid",
+  "provider": "ollama",
+  "model": "",
+  "temperature": 0.7,
+  "top_p": 0.9,
+  "top_k": 40,
+  "max_tokens": 2048,
+  "repeat_penalty": 1.1,
+  "system_prompt": "Eres ATLAS, un sistema de inteligencia artificial avanzado. Responde de forma concisa, precisa y útil. Tienes acceso a módulos de visión, memoria, análisis y control.",
+  "memory_context": "long",
+  "context_window": 8192,
+  "ollama_url": "http://localhost:11434",
+  "stream_response": true,
+  "save_history": true,
+  "log_level": "info",
+  "specialists": {
+    "code": {
+      "enabled": true,
+      "model": "deepseek-coder"
+    },
+    "vision": {
+      "enabled": true,
+      "model": "llava"
+    },
+    "chat": {
+      "enabled": true,
+      "model": "llama3.2"
+    },
+    "analysis": {
+      "enabled": true,
+      "model": "llama3.2"
+    },
+    "creative": {
+      "enabled": false,
+      "model": "llama3.2"
+    }
+  }
+}
