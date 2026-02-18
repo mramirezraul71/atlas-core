@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ATLAS Workspace — Agent IDE</title>
+  <style>
+    /* ═══════════════════════════════════════════
+       THEMES — Same system as Dashboard v3.8
+       ═══════════════════════════════════════════ */
+    :root, [data-theme="cyan"] {
+      --bg: #0d1117; --bg-card: #161b22; --bg-elevated: #21262d;
+      --bg-input: #0d1117; --border: #30363d; --border-focus: #58a6ff;
+      --text: #e6edf3; --text-muted: #8b949e; --text-dim: #484f58;
+      --accent: #58a6ff; --accent-cyan: #39d3c4; --accent-green: #3fb950;
+      --accent-purple: #a371f7; --accent-pink: #f778ba;
+      --accent-orange: #d29922; --accent-red: #f85149;
+      --accent-primary: #39d3c4;
+      --glow: rgba(57, 211, 196, 0.15);
+      --glow-strong: rgba(57, 211, 196, 0.4);
+    }
+    [data-theme="purple"] {
+      --bg: #0f0a1a; --bg-card: #1a1225; --bg-elevated: #251a35;
+      --bg-input: #0f0a1a; --border: #3d2a5a; --border-focus: #a371f7;
+      --accent-cyan: #a371f7; --accent-primary: #a371f7;
+      --glow: rgba(163,113,247,0.15); --glow-strong: rgba(163,113,247,0.4);
+    }
+    [data-theme="green"] {
+      --bg: #0a1208; --bg-card: #0f1a0c; --bg-elevated: #162212;
+      --bg-input: #0a1208; --border: #2a4020; --border-focus: #3fb950;
+      --accent-cyan: #3fb950; --accent-primary: #3fb950;
+      --glow: rgba(63,185,80,0.15); --glow-strong: rgba(63,185,80,0.4);
+    }
+    [data-theme="blue"] {
+      --bg: #0a101a; --bg-card: #0f1622; --bg-elevated: #152030;
+      --bg-input: #0a101a; --border: #203050; --border-focus: #3b82f6;
+      --accent-cyan: #3b82f6; --accent-primary: #3b82f6;
+      --glow: rgba(59,130,246,0.15); --glow-strong: rgba(59,130,246,0.4);
+    }
+    [data-theme="orange"] {
+      --bg: #1a1008; --bg-card: #221508; --bg-elevated: #2d1c0a;
+      --bg-input: #1a1008; --border: #4a3010; --border-focus: #f59e0b;
+      --accent-cyan: #f59e0b; --accent-primary: #f59e0b;
+      --glow: rgba(245,158,11,0.15); --glow-strong: rgba(245,158,11,0.4);
+    }
+    [data-theme="pink"] {
+      --bg: #1a0a14; --bg-card: #22101a; --bg-elevated: #2d1522;
+      --bg-input: #1a0a14; --border: #4a2040; --border-focus: #f778ba;
+      --accent-cyan: #f778ba; --accent-primary: #f778ba;
+      --glow: rgba(247,120,186,0.15); --glow-strong: rgba(247,120,186,0.4);
+    }
+    [data-theme="red"] {
+      --bg: #1a0a0a; --bg-card: #221010; --bg-elevated: #2d1515;
+      --bg-input: #1a0a0a; --border: #4a2020; --border-focus: #ef4444;
+      --accent-cyan: #ef4444; --accent-primary: #ef4444;
+      --glow: rgba(239,68,68,0.15); --glow-strong: rgba(239,68,68,0.4);
+    }
+    [data-theme="gold"] {
+      --bg: #12100a; --bg-card: #1a1608; --bg-elevated: #221c0a;
+      --bg-input: #12100a; --border: #3d3010; --border-focus: #fbbf24;
+      --accent-cyan: #fbbf24; --accent-primary: #fbbf24;
+      --glow: rgba(251,191,36,0.15); --glow-strong: rgba(251,191,36,0.4);
+    }
+
+    /* ═══════════════════════════════════════════
+       RESET & BASE
+       ═══════════════════════════════════════════ */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+      background: var(--bg); color: var(--text);
+      height: 100vh; overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+    ::selection { background: var(--glow-strong); color: var(--text); }
+
+    /* ═══════════════════════════════════════════
+       TOP BAR — Mission Control
+       ═══════════════════════════════════════════ */
+    .topbar {
+      display: flex; align-items: center; height: 40px;
+      background: var(--bg-card); border-bottom: 1px solid var(--border);
+      padding: 0 12px; gap: 10px; flex-shrink: 0;
+      user-select: none;
+    }
+    .topbar-brand {
+      font-weight: 800; font-size: 14px; color: var(--accent-primary);
+      letter-spacing: 1.5px; display: flex; align-items: center; gap: 6px;
+    }
+    .topbar-brand svg { width: 18px; height: 18px; }
+    .topbar-nav { display: flex; gap: 2px; margin-left: 16px; }
+    .topbar-btn {
+      padding: 4px 10px; background: transparent; border: none;
+      color: var(--text-muted); font-size: 12px; font-family: inherit;
+      cursor: pointer; border-radius: 4px; transition: all 0.15s;
+    }
+    .topbar-btn:hover { background: var(--bg-elevated); color: var(--text); }
+    .topbar-btn.active { background: var(--accent-primary); color: var(--bg); font-weight: 700; }
+    .topbar-spacer { flex: 1; }
+    .topbar-services { display: flex; gap: 12px; align-items: center; font-size: 11px; }
+    .svc { display: flex; align-items: center; gap: 4px; color: var(--text-muted); }
+    .svc-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); transition: background 0.3s; }
+    .svc-dot.on { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+    .svc-dot.off { background: var(--accent-red); box-shadow: 0 0 6px var(--accent-red); }
+    .theme-dots { display: flex; gap: 3px; margin-left: 8px; }
+    .tdot {
+      width: 14px; height: 14px; border-radius: 50%; border: 2px solid transparent;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .tdot:hover { transform: scale(1.25); }
+    .tdot.active { border-color: #fff; box-shadow: 0 0 6px currentColor; }
+    .topbar-time { color: var(--text-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .topbar-link {
+      color: var(--text-muted); text-decoration: none; font-size: 11px;
+      padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px;
+      transition: all 0.15s;
+    }
+    .topbar-link:hover { border-color: var(--accent-primary); color: var(--accent-primary); }
+
+    /* ═══════════════════════════════════════════
+       MAIN LAYOUT — 3-Column IDE
+       ═══════════════════════════════════════════ */
+    .ide-layout {
+      flex: 1; display: flex; overflow: hidden;
+    }
+
+    /* LEFT PANEL — Chat + Voice */
+    .panel-left {
+      width: 380px; min-width: 300px; max-width: 500px;
+      display: flex; flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: var(--bg-card);
+    }
+
+    /* Resize handle */
+    .resize-handle {
+      width: 4px; cursor: col-resize; background: transparent;
+      transition: background 0.2s; flex-shrink: 0; position: relative;
+    }
+    .resize-handle:hover, .resize-handle.dragging { background: var(--accent-primary); }
+
+    /* ═══════════════════════════════════════════
+       CHAT PANEL
+       ═══════════════════════════════════════════ */
+    .chat-header {
+      padding: 8px 12px; border-bottom: 1px solid var(--border);
+      font-size: 12px; font-weight: 600; color: var(--accent-primary);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .chat-header .badge {
+      background: var(--bg-elevated); color: var(--text-muted);
+      padding: 2px 6px; border-radius: 8px; font-size: 10px; font-weight: 400;
+    }
+    .chat-messages {
+      flex: 1; overflow-y: auto; padding: 12px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .msg {
+      padding: 10px 12px; border-radius: 8px; font-size: 13px;
+      line-height: 1.55; max-width: 95%; word-wrap: break-word;
+      animation: msgIn 0.2s ease-out;
+    }
+    @keyframes msgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    .msg.user {
+      background: var(--accent-primary); color: var(--bg);
+      align-self: flex-end; border-bottom-right-radius: 2px;
+      font-weight: 500;
+    }
+    .msg.atlas {
+      background: var(--bg-elevated); border: 1px solid var(--border);
+      align-self: flex-start; border-bottom-left-radius: 2px;
+    }
+    .msg.atlas .msg-label {
+      font-size: 10px; font-weight: 700; color: var(--accent-primary);
+      margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .msg.system {
+      background: transparent; color: var(--text-dim); font-size: 11px;
+      text-align: center; align-self: center; font-style: italic;
+    }
+    .msg pre {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 8px 10px; margin: 6px 0;
+      font-size: 12px; overflow-x: auto; white-space: pre-wrap;
+    }
+    .msg code {
+      background: var(--bg); padding: 1px 4px; border-radius: 3px;
+      font-size: 12px; color: var(--accent-cyan);
+    }
+    .msg pre code { background: none; padding: 0; color: var(--text); }
+
+    /* Thinking animation */
+    .msg.thinking {
+      background: var(--bg-elevated); border: 1px solid var(--border);
+      align-self: flex-start;
+    }
+    .thinking-dots { display: flex; gap: 4px; padding: 4px 0; }
+    .thinking-dots span {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--accent-primary); animation: pulse-dot 1.4s infinite;
+    }
+    .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes pulse-dot {
+      0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+      40% { opacity: 1; transform: scale(1.1); }
+    }
+
+    /* Plan steps */
+    .plan-steps { margin: 8px 0; }
+    .plan-step {
+      display: flex; align-items: center; gap: 8px; padding: 4px 0;
+      font-size: 12px; color: var(--text-muted);
+    }
+    .plan-step.done { color: var(--accent-green); }
+    .plan-step.active { color: var(--accent-primary); font-weight: 600; }
+    .plan-step .step-icon { width: 16px; text-align: center; flex-shrink: 0; }
+
+    /* ═══════════════════════════════════════════
+       VOICE ORB
+       ═══════════════════════════════════════════ */
+    .voice-section {
+      padding: 10px 12px; border-top: 1px solid var(--border);
+      background: var(--bg-elevated);
+    }
+    .voice-controls {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .voice-orb-wrap {
+      position: relative; width: 44px; height: 44px; flex-shrink: 0;
+    }
+    .voice-orb {
+      width: 44px; height: 44px; border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, var(--bg-elevated), var(--bg));
+      border: 2px solid var(--border); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.3s; position: relative; z-index: 2;
+    }
+    .voice-orb svg { width: 18px; height: 18px; color: var(--text-muted); transition: color 0.3s; }
+    .voice-orb:hover { border-color: var(--accent-primary); }
+    .voice-orb:hover svg { color: var(--accent-primary); }
+    .voice-orb.listening {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 20px var(--glow-strong);
+      animation: orb-breathe 2s ease-in-out infinite;
+    }
+    .voice-orb.listening svg { color: var(--accent-primary); }
+    @keyframes orb-breathe {
+      0%, 100% { box-shadow: 0 0 15px var(--glow); }
+      50% { box-shadow: 0 0 30px var(--glow-strong), 0 0 60px var(--glow); }
+    }
+    .voice-orb-ring {
+      position: absolute; inset: -6px; border-radius: 50%;
+      border: 1px solid var(--accent-primary); opacity: 0;
+      pointer-events: none; z-index: 1;
+    }
+    .voice-orb.listening ~ .voice-orb-ring {
+      animation: ring-expand 1.5s ease-out infinite;
+    }
+    @keyframes ring-expand {
+      0% { inset: -4px; opacity: 0.6; }
+      100% { inset: -20px; opacity: 0; }
+    }
+
+    /* Waveform */
+    .voice-wave {
+      flex: 1; height: 32px; display: flex; align-items: center;
+      gap: 2px; padding: 0 6px;
+    }
+    .voice-wave .bar {
+      flex: 1; max-width: 4px; background: var(--border);
+      border-radius: 2px; height: 4px; transition: height 0.08s ease;
+    }
+    .voice-wave.active .bar { background: var(--accent-primary); }
+
+    .voice-mode-toggle {
+      font-size: 10px; color: var(--text-dim); cursor: pointer;
+      padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px;
+      background: transparent; transition: all 0.15s; font-family: inherit;
+      white-space: nowrap;
+    }
+    .voice-mode-toggle:hover { border-color: var(--accent-primary); color: var(--text-muted); }
+    .voice-mode-toggle.active { background: var(--accent-primary); color: var(--bg); border-color: var(--accent-primary); }
+
+    .voice-status {
+      font-size: 10px; color: var(--text-dim); text-align: center;
+      padding-top: 4px;
+    }
+
+    /* ═══════════════════════════════════════════
+       CHAT INPUT
+       ═══════════════════════════════════════════ */
+    .chat-input-area {
+      padding: 10px 12px; border-top: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 6px;
+      background: var(--bg-card);
+    }
+    .chat-input-row {
+      display: flex; gap: 6px; align-items: flex-end;
+    }
+    .chat-textarea {
+      flex: 1; background: var(--bg-input); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 12px; color: var(--text);
+      font-family: inherit; font-size: 13px; resize: none;
+      min-height: 38px; max-height: 160px; line-height: 1.4;
+      outline: none; transition: border-color 0.2s;
+    }
+    .chat-textarea:focus { border-color: var(--accent-primary); }
+    .chat-textarea::placeholder { color: var(--text-dim); }
+    .chat-send {
+      width: 38px; height: 38px; border-radius: 8px; border: none;
+      background: var(--accent-primary); color: var(--bg);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s; flex-shrink: 0;
+    }
+    .chat-send:hover { filter: brightness(1.15); transform: scale(1.04); }
+    .chat-send:disabled { opacity: 0.4; cursor: not-allowed; }
+    .chat-send svg { width: 16px; height: 16px; }
+    .chat-hints {
+      display: flex; gap: 6px; flex-wrap: wrap;
+    }
+    .chat-hint {
+      font-size: 10px; color: var(--text-dim); background: var(--bg-elevated);
+      padding: 2px 8px; border-radius: 4px; cursor: pointer;
+      border: 1px solid transparent; transition: all 0.15s;
+    }
+    .chat-hint:hover { border-color: var(--border); color: var(--text-muted); }
+
+    /* ═══════════════════════════════════════════
+       RIGHT PANEL — Split View (Code + Live Feed)
+       ═══════════════════════════════════════════ */
+    .panel-right {
+      flex: 1; display: flex; flex-direction: column;
+      background: var(--bg);
+    }
+
+    /* Top sub-panel: Code / Preview */
+    .split-top {
+      flex: 1; display: flex; flex-direction: column;
+      min-height: 120px; overflow: hidden;
+    }
+    .split-top-tabs {
+      display: flex; align-items: center; height: 32px;
+      background: var(--bg-card); border-bottom: 1px solid var(--border);
+      padding: 0 8px; gap: 2px; flex-shrink: 0;
+    }
+    .split-tab {
+      padding: 3px 10px; background: transparent; border: none;
+      color: var(--text-muted); font-size: 11px; font-family: inherit;
+      cursor: pointer; border-radius: 4px 4px 0 0; transition: all 0.15s;
+      border-bottom: 2px solid transparent;
+    }
+    .split-tab:hover { color: var(--text); background: var(--bg-elevated); }
+    .split-tab.active { color: var(--accent-primary); border-bottom-color: var(--accent-primary); font-weight: 600; }
+    .split-tab-spacer { flex: 1; }
+    .split-tab-action {
+      font-size: 10px; color: var(--text-dim); background: transparent;
+      border: 1px solid var(--border); border-radius: 4px;
+      padding: 2px 8px; cursor: pointer; font-family: inherit;
+      transition: all 0.15s;
+    }
+    .split-tab-action:hover { border-color: var(--accent-primary); color: var(--accent-primary); }
+
+    .split-top-content {
+      flex: 1; overflow: hidden; position: relative;
+    }
+    .top-panel {
+      position: absolute; inset: 0; overflow: auto;
+      display: none; flex-direction: column;
+    }
+    .top-panel.active { display: flex; }
+
+    /* Horizontal resize between top and bottom */
+    .split-h-handle {
+      height: 4px; cursor: row-resize; background: transparent;
+      transition: background 0.2s; flex-shrink: 0;
+      border-top: 1px solid var(--border);
+    }
+    .split-h-handle:hover, .split-h-handle.dragging { background: var(--accent-primary); }
+
+    /* Bottom sub-panel: LIVE FEED (always visible) */
+    .split-bottom {
+      height: 240px; min-height: 100px; max-height: 60vh;
+      display: flex; flex-direction: column;
+      background: var(--bg-card);
+      overflow: hidden;
+    }
+    .live-header {
+      display: flex; align-items: center; gap: 8px; padding: 5px 12px;
+      background: var(--bg-elevated); border-bottom: 1px solid var(--border);
+      font-size: 11px; color: var(--text-muted); flex-shrink: 0;
+      user-select: none;
+    }
+    .live-indicator {
+      display: flex; align-items: center; gap: 5px;
+      font-weight: 700; font-size: 10px; text-transform: uppercase;
+      letter-spacing: 1px; color: var(--text-dim);
+      transition: color 0.3s;
+    }
+    .live-indicator.active { color: var(--accent-red); }
+    .live-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--text-dim); transition: background 0.3s;
+    }
+    .live-indicator.active .live-dot {
+      background: var(--accent-red);
+      animation: live-pulse 1s ease-in-out infinite;
+    }
+    @keyframes live-pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(248,81,73,0.4); }
+      50% { opacity: 0.7; box-shadow: 0 0 8px 2px rgba(248,81,73,0.3); }
+    }
+    .live-filter-tabs { display: flex; gap: 2px; margin-left: 8px; }
+    .live-filter {
+      padding: 2px 8px; background: transparent; border: 1px solid transparent;
+      color: var(--text-dim); font-size: 10px; font-family: inherit;
+      cursor: pointer; border-radius: 3px; transition: all 0.15s;
+    }
+    .live-filter:hover { color: var(--text-muted); border-color: var(--border); }
+    .live-filter.active { color: var(--accent-primary); border-color: var(--accent-primary); background: rgba(57,211,196,0.08); }
+    .live-count {
+      margin-left: auto; font-size: 10px; color: var(--text-dim);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .live-feed {
+      flex: 1; overflow-y: auto; padding: 4px 0;
+      font-size: 12px; scroll-behavior: smooth;
+    }
+    .live-entry {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 4px 12px; transition: background 0.15s;
+      animation: liveIn 0.25s ease-out;
+      border-left: 3px solid transparent;
+    }
+    .live-entry:hover { background: var(--bg-elevated); }
+    .live-entry.highlight { border-left-color: var(--accent-primary); background: var(--glow); }
+    @keyframes liveIn {
+      from { opacity: 0; transform: translateX(-8px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .live-ts {
+      color: var(--text-dim); font-size: 10px; flex-shrink: 0;
+      width: 52px; text-align: right; padding-top: 2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .live-badge {
+      flex-shrink: 0; font-size: 9px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.5px; padding: 1px 5px; border-radius: 3px;
+      min-width: 38px; text-align: center;
+    }
+    .live-badge.exec { background: rgba(57,211,196,0.15); color: var(--accent-cyan); }
+    .live-badge.code { background: rgba(163,113,247,0.15); color: var(--accent-purple); }
+    .live-badge.file { background: rgba(63,185,80,0.15); color: var(--accent-green); }
+    .live-badge.cmd { background: rgba(88,166,255,0.15); color: var(--accent); }
+    .live-badge.err { background: rgba(248,81,73,0.15); color: var(--accent-red); }
+    .live-badge.voice { background: rgba(247,120,186,0.15); color: var(--accent-pink); }
+    .live-badge.info { background: rgba(139,148,158,0.1); color: var(--text-muted); }
+    .live-badge.plan { background: rgba(210,153,34,0.15); color: var(--accent-orange); }
+    .live-text {
+      flex: 1; color: var(--text-muted); line-height: 1.45;
+      word-break: break-word;
+    }
+    .live-text strong { color: var(--text); font-weight: 600; }
+    .live-text code {
+      background: var(--bg); padding: 0 4px; border-radius: 3px;
+      font-size: 11px; color: var(--accent-cyan);
+    }
+    .live-text .term-line {
+      font-family: 'SF Mono','Cascadia Code','Consolas',monospace;
+      color: var(--text-muted); font-size: 11px;
+    }
+    .live-text .term-line.err { color: var(--accent-red); }
+    .live-text .term-line.ok { color: var(--accent-green); }
+
+    /* Terminal input inside live feed */
+    .live-terminal-input {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-top: 1px solid var(--border);
+      background: var(--bg); flex-shrink: 0;
+    }
+    .live-terminal-input label { color: var(--accent-primary); font-weight: 700; font-size: 11px; }
+    .live-terminal-input input {
+      flex: 1; background: transparent; border: none; color: var(--text);
+      font-family: inherit; font-size: 12px; outline: none;
+    }
+
+    /* CODE VIEWER */
+    .code-viewer {
+      flex: 1; overflow: auto; padding: 0;
+      font-size: 13px; line-height: 1.6;
+    }
+    .code-viewer .code-empty {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; color: var(--text-dim); flex-direction: column; gap: 12px;
+    }
+    .code-viewer .code-empty svg { width: 48px; height: 48px; opacity: 0.3; }
+    .code-viewer .code-empty p { font-size: 13px; }
+    .code-file-header {
+      display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+      background: var(--bg-elevated); border-bottom: 1px solid var(--border);
+      font-size: 12px; color: var(--text-muted); position: sticky; top: 0;
+      z-index: 2;
+    }
+    .code-file-header .filename { color: var(--accent-primary); font-weight: 600; }
+    .code-lines {
+      display: flex; flex: 1;
+    }
+    .code-gutter {
+      padding: 8px 8px 8px 12px; text-align: right;
+      color: var(--text-dim); font-size: 12px; line-height: 1.6;
+      user-select: none; border-right: 1px solid var(--border);
+      background: var(--bg-card); flex-shrink: 0; min-width: 44px;
+    }
+    .code-body {
+      padding: 8px 12px; flex: 1; overflow-x: auto;
+      white-space: pre; font-size: 12px; line-height: 1.6;
+      color: var(--text);
+    }
+    .code-body .kw { color: var(--accent-purple); }
+    .code-body .fn { color: var(--accent-cyan); }
+    .code-body .str { color: var(--accent-green); }
+    .code-body .cm { color: var(--text-dim); font-style: italic; }
+    .code-body .num { color: var(--accent-orange); }
+    .code-body .op { color: var(--accent-pink); }
+    .code-body .new-line {
+      background: rgba(63,185,80,0.08); border-left: 3px solid var(--accent-green);
+      margin-left: -12px; padding-left: 9px;
+      animation: lineHighlight 0.4s ease;
+    }
+    @keyframes lineHighlight { from { background: rgba(63,185,80,0.2); } }
+
+    /* PREVIEW */
+    .preview-panel { background: var(--bg); }
+    .preview-frame {
+      width: 100%; height: 100%; border: none; background: #fff;
+    }
+    .preview-empty {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; color: var(--text-dim); flex-direction: column; gap: 12px;
+    }
+
+    /* ═══════════════════════════════════════════
+       BOTTOM BAR — Status
+       ═══════════════════════════════════════════ */
+    .bottombar {
+      display: flex; align-items: center; height: 24px;
+      background: var(--bg-card); border-top: 1px solid var(--border);
+      padding: 0 12px; gap: 16px; font-size: 11px;
+      color: var(--text-dim); flex-shrink: 0; user-select: none;
+    }
+    .bottombar-section { display: flex; align-items: center; gap: 4px; }
+    .bottombar-section .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+    }
+    .bottombar-spacer { flex: 1; }
+    .bottombar-key {
+      background: var(--bg-elevated); padding: 0 4px; border-radius: 2px;
+      font-size: 10px; color: var(--text-muted);
+    }
+
+    /* ═══════════════════════════════════════════
+       QUICK ACTIONS — Floating
+       ═══════════════════════════════════════════ */
+    .quick-actions {
+      position: fixed; bottom: 36px; right: 16px;
+      display: flex; flex-direction: column; gap: 6px;
+      z-index: 100;
+    }
+    .qa-btn {
+      width: 40px; height: 40px; border-radius: 10px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      color: var(--text-muted); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; transition: all 0.2s;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .qa-btn:hover {
+      border-color: var(--accent-primary); color: var(--accent-primary);
+      transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    }
+    .qa-btn[title]::after {
+      content: attr(title); position: absolute; right: 52px;
+      background: var(--bg-elevated); color: var(--text);
+      padding: 4px 8px; border-radius: 4px; font-size: 11px;
+      white-space: nowrap; opacity: 0; pointer-events: none;
+      transition: opacity 0.2s; border: 1px solid var(--border);
+    }
+    .qa-btn:hover[title]::after { opacity: 1; }
+
+    /* ═══════════════════════════════════════════
+       KEYBOARD SHORTCUTS OVERLAY
+       ═══════════════════════════════════════════ */
+    .shortcuts-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+      display: none; align-items: center; justify-content: center;
+      z-index: 1000; backdrop-filter: blur(4px);
+    }
+    .shortcuts-overlay.visible { display: flex; }
+    .shortcuts-card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 24px 32px; max-width: 420px;
+      width: 90%;
+    }
+    .shortcuts-card h3 {
+      font-size: 14px; color: var(--accent-primary); margin-bottom: 16px;
+      font-weight: 700;
+    }
+    .shortcut-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 0; font-size: 12px; border-bottom: 1px solid var(--border);
+    }
+    .shortcut-row:last-child { border-bottom: none; }
+    .shortcut-keys {
+      display: flex; gap: 4px;
+    }
+    .shortcut-key {
+      background: var(--bg-elevated); padding: 2px 8px; border-radius: 4px;
+      font-size: 11px; font-weight: 600; color: var(--text);
+      border: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ═══════════ TOP BAR ═══════════ -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/><line x1="12" y1="22" x2="12" y2="15.5"/><polyline points="22 8.5 12 15.5 2 8.5"/></svg>
+      ATLAS WORKSPACE
+    </div>
+    <nav class="topbar-nav">
+      <button class="topbar-btn active" data-view="chat" title="Agent Chat">Agent</button>
+    </nav>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-services">
+      <span class="svc"><span class="svc-dot" id="svc-nexus"></span>NEXUS</span>
+      <span class="svc"><span class="svc-dot" id="svc-push"></span>PUSH</span>
+      <span class="svc"><span class="svc-dot" id="svc-robot"></span>ROBOT</span>
+    </div>
+    <div class="theme-dots">
+      <button class="tdot active" data-theme="cyan" style="background:#39d3c4" title="Cyan"></button>
+      <button class="tdot" data-theme="purple" style="background:#a371f7" title="Purple"></button>
+      <button class="tdot" data-theme="green" style="background:#3fb950" title="Matrix"></button>
+      <button class="tdot" data-theme="blue" style="background:#3b82f6" title="Blue"></button>
+      <button class="tdot" data-theme="orange" style="background:#f59e0b" title="Orange"></button>
+      <button class="tdot" data-theme="pink" style="background:#f778ba" title="Pink"></button>
+      <button class="tdot" data-theme="red" style="background:#ef4444" title="Red"></button>
+      <button class="tdot" data-theme="gold" style="background:#fbbf24" title="Gold"></button>
+    </div>
+    <span class="topbar-time" id="topbar-time">00:00:00</span>
+    <a href="/ui" class="topbar-link">Dashboard</a>
+  </header>
+
+  <!-- ═══════════ MAIN IDE LAYOUT ═══════════ -->
+  <main class="ide-layout">
+
+    <!-- LEFT: Chat + Voice -->
+    <section class="panel-left" id="panel-left">
+      <div class="chat-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        ATLAS AGENT
+        <span class="badge" id="session-badge">Session</span>
+      </div>
+
+      <div class="chat-messages" id="chat-messages">
+        <div class="msg atlas">
+          <div class="msg-label">ATLAS</div>
+          ATLAS Workspace listo. Escribe un objetivo, prompt, o comando para comenzar. Puedo crear apps, configurar sitios, generar scripts, y ejecutar tareas en tiempo real.
+        </div>
+      </div>
+
+      <!-- Voice Section -->
+      <div class="voice-section">
+        <div class="voice-controls">
+          <div class="voice-orb-wrap">
+            <button class="voice-orb" id="voice-orb" title="Push-to-Talk (mantener)" onmousedown="startVoice()" onmouseup="stopVoice()" ontouchstart="startVoice()" ontouchend="stopVoice()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            </button>
+            <div class="voice-orb-ring"></div>
+          </div>
+          <div class="voice-wave" id="voice-wave"></div>
+          <button class="voice-mode-toggle" id="voice-mode-btn" onclick="toggleVoiceMode()">Auto</button>
+        </div>
+        <div class="voice-status" id="voice-status">Push-to-talk: mantn presionado el orbe | Ctrl+M</div>
+      </div>
+
+      <!-- Chat Input -->
+      <div class="chat-input-area">
+        <div class="chat-input-row">
+          <textarea class="chat-textarea" id="chat-input" placeholder="Escribe un objetivo, prompt, o /comando..." rows="1"></textarea>
+          <button class="chat-send" id="btn-send" onclick="sendMessage()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+        <div class="chat-hints">
+          <span class="chat-hint" onclick="insertHint(this)">Crea una app</span>
+          <span class="chat-hint" onclick="insertHint(this)">Genera un script</span>
+          <span class="chat-hint" onclick="insertHint(this)">/atlas status</span>
+          <span class="chat-hint" onclick="insertHint(this)">Revisa los logs</span>
+          <span class="chat-hint" onclick="insertHint(this)">Configura sitio</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Resize Handle -->
+    <div class="resize-handle" id="resize-handle"></div>
+
+    <!-- RIGHT: Split View -->
+    <section class="panel-right">
+
+      <!-- ═══ TOP: Code / Preview ═══ -->
+      <div class="split-top" id="split-top">
+        <div class="split-top-tabs">
+          <button class="split-tab active" data-top="code">Code</button>
+          <button class="split-tab" data-top="preview">Preview</button>
+          <span class="split-tab-spacer"></span>
+          <button class="split-tab-action" onclick="clearCodeViewer()">Clear</button>
+        </div>
+        <div class="split-top-content">
+          <div class="top-panel active" id="top-code">
+            <div class="code-viewer" id="code-viewer">
+              <div class="code-empty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                <p>El codigo generado aparecera aqui en tiempo real</p>
+              </div>
+            </div>
+          </div>
+          <div class="top-panel" id="top-preview">
+            <div class="preview-empty" id="preview-empty">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.3"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              <p>Preview de apps web</p>
+            </div>
+            <iframe class="preview-frame" id="preview-frame" style="display:none"></iframe>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Resize Handle horizontal ═══ -->
+      <div class="split-h-handle" id="split-h-handle"></div>
+
+      <!-- ═══ BOTTOM: LIVE FEED (siempre visible) ═══ -->
+      <div class="split-bottom" id="split-bottom">
+        <div class="live-header">
+          <div class="live-indicator" id="live-indicator">
+            <span class="live-dot"></span>
+            LIVE
+          </div>
+          <div class="live-filter-tabs">
+            <button class="live-filter active" data-filter="all" onclick="filterLive('all')">All</button>
+            <button class="live-filter" data-filter="exec" onclick="filterLive('exec')">Exec</button>
+            <button class="live-filter" data-filter="cmd" onclick="filterLive('cmd')">Term</button>
+            <button class="live-filter" data-filter="code" onclick="filterLive('code')">Code</button>
+            <button class="live-filter" data-filter="err" onclick="filterLive('err')">Errors</button>
+          </div>
+          <span class="live-count" id="live-count">0 events</span>
+        </div>
+        <div class="live-feed" id="live-feed"></div>
+        <div class="live-terminal-input">
+          <label>ATLAS &gt;</label>
+          <input id="terminal-input" placeholder="Comando directo..." />
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- ═══════════ BOTTOM STATUS BAR ═══════════ -->
+  <footer class="bottombar">
+    <div class="bottombar-section">
+      <span class="dot" style="background:var(--accent-primary)"></span>
+      ATLAS Agent v3.0
+    </div>
+    <div class="bottombar-section" id="git-info">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 012 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>
+      intent-input-rename
+    </div>
+    <div class="bottombar-spacer"></div>
+    <div class="bottombar-section" style="gap:8px">
+      <span><span class="bottombar-key">Ctrl+Enter</span> Enviar</span>
+      <span><span class="bottombar-key">Ctrl+M</span> Voz</span>
+      <span><span class="bottombar-key">Ctrl+`</span> Terminal</span>
+      <span><span class="bottombar-key">?</span> Atajos</span>
+    </div>
+  </footer>
+
+  <!-- ═══════════ KEYBOARD SHORTCUTS OVERLAY ═══════════ -->
+  <div class="shortcuts-overlay" id="shortcuts-overlay" onclick="if(event.target===this)this.classList.remove('visible')">
+    <div class="shortcuts-card">
+      <h3>Atajos de Teclado</h3>
+      <div class="shortcut-row"><span>Enviar mensaje</span><span class="shortcut-keys"><span class="shortcut-key">Ctrl</span><span class="shortcut-key">Enter</span></span></div>
+      <div class="shortcut-row"><span>Push-to-Talk</span><span class="shortcut-keys"><span class="shortcut-key">Ctrl</span><span class="shortcut-key">M</span></span></div>
+      <div class="shortcut-row"><span>Ir a Terminal</span><span class="shortcut-keys"><span class="shortcut-key">Ctrl</span><span class="shortcut-key">`</span></span></div>
+      <div class="shortcut-row"><span>Panel Code</span><span class="shortcut-keys"><span class="shortcut-key">Ctrl</span><span class="shortcut-key">1</span></span></div>
+      <div class="shortcut-row"><span>Panel Preview</span><span class="shortcut-keys"><span class="shortcut-key">Ctrl</span><span class="shortcut-key">2</span></span></div>
+      <div class="shortcut-row"><span>Limpiar chat</span><span class="shortcut-keys"><span class="shortcut-key">Ctrl</span><span class="shortcut-key">L</span></span></div>
+      <div class="shortcut-row"><span>Cerrar overlay</span><span class="shortcut-keys"><span class="shortcut-key">Esc</span></span></div>
+    </div>
+  </div>
+
+  <!-- ═══════════ QUICK ACTION BUTTONS ═══════════ -->
+  <div class="quick-actions">
+    <button class="qa-btn" onclick="document.getElementById('shortcuts-overlay').classList.add('visible')" title="Atajos">&#9881;</button>
+    <button class="qa-btn" onclick="scrollChatBottom()" title="Ir al final">&#8595;</button>
+  </div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// ATLAS WORKSPACE — Engine
+// ═══════════════════════════════════════════════════════════════
+
+const API = window.location.origin;
+let sessionStartTime = Date.now();
+let isProcessing = false;
+let voiceMode = 'ptt';  // 'ptt' | 'auto'
+let isListening = false;
+let mediaRecorder = null;
+let audioChunks = [];
+let audioContext = null;
+let analyser = null;
+let animFrame = null;
+
+// ─── INIT ───
+document.addEventListener('DOMContentLoaded', () => {
+  initClock();
+  initTheme();
+  initResize();
+  initWaveformBars();
+  initAutoResize();
+  checkServices();
+  setInterval(checkServices, 15000);
+
+  emitLive('info', '<strong>ATLAS Workspace iniciado</strong> — Esperando instrucciones');
+  document.getElementById('chat-input').focus();
+});
+
+// ─── CLOCK ───
+function initClock() {
+  const el = document.getElementById('topbar-time');
+  setInterval(() => {
+    const now = new Date();
+    el.textContent = now.toLocaleTimeString('es-ES', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  }, 1000);
+}
+
+// ─── THEME ───
+function initTheme() {
+  const saved = localStorage.getItem('atlas-ws-theme') || 'cyan';
+  applyTheme(saved);
+  document.querySelectorAll('.tdot').forEach(btn => {
+    btn.addEventListener('click', () => applyTheme(btn.dataset.theme));
+  });
+}
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  document.querySelectorAll('.tdot').forEach(b => b.classList.toggle('active', b.dataset.theme === t));
+  localStorage.setItem('atlas-ws-theme', t);
+}
+
+// ─── SERVICES CHECK ───
+async function checkServices() {
+  const dots = { nexus: 'svc-nexus', push: 'svc-push', robot: 'svc-robot' };
+  try {
+    const r = await fetch(API + '/status');
+    const d = await r.json();
+    document.getElementById(dots.nexus).className = 'svc-dot ' + (d.nexus_connected ? 'on' : 'off');
+    document.getElementById(dots.push).className = 'svc-dot on';
+    document.getElementById(dots.robot).className = 'svc-dot ' + (d.robot_connected ? 'on' : 'off');
+  } catch {
+    Object.values(dots).forEach(id => document.getElementById(id).className = 'svc-dot off');
+  }
+}
+
+// ─── RESIZE PANELS ───
+function initResize() {
+  // Vertical resize (left/right)
+  const handle = document.getElementById('resize-handle');
+  const left = document.getElementById('panel-left');
+  let startX, startW;
+  handle.addEventListener('mousedown', e => {
+    e.preventDefault();
+    startX = e.clientX;
+    startW = left.offsetWidth;
+    handle.classList.add('dragging');
+    const onMove = ev => { left.style.width = Math.max(300, Math.min(500, startW + ev.clientX - startX)) + 'px'; };
+    const onUp = () => { handle.classList.remove('dragging'); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  // Horizontal resize (top/bottom split)
+  const hHandle = document.getElementById('split-h-handle');
+  const bottom = document.getElementById('split-bottom');
+  let startY, startH;
+  hHandle.addEventListener('mousedown', e => {
+    e.preventDefault();
+    startY = e.clientY;
+    startH = bottom.offsetHeight;
+    hHandle.classList.add('dragging');
+    const onMove = ev => {
+      const newH = Math.max(100, Math.min(window.innerHeight * 0.6, startH - (ev.clientY - startY)));
+      bottom.style.height = newH + 'px';
+    };
+    const onUp = () => { hHandle.classList.remove('dragging'); document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+// ─── TEXTAREA AUTO-RESIZE ───
+function initAutoResize() {
+  const ta = document.getElementById('chat-input');
+  ta.addEventListener('input', () => {
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
+  });
+}
+
+// ─── SPLIT TOP TABS (Code / Preview) ───
+document.querySelectorAll('.split-tab[data-top]').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.split-tab[data-top]').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.top-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('top-' + tab.dataset.top).classList.add('active');
+  });
+});
+
+// ─── LIVE FEED ENGINE ───
+let liveEventCount = 0;
+let liveFilter = 'all';
+
+function emitLive(type, html, highlight) {
+  const feed = document.getElementById('live-feed');
+  const ts = new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const entry = document.createElement('div');
+  entry.className = 'live-entry' + (highlight ? ' highlight' : '');
+  entry.dataset.type = type;
+  entry.innerHTML =
+    '<span class="live-ts">' + ts + '</span>' +
+    '<span class="live-badge ' + type + '">' + type.toUpperCase() + '</span>' +
+    '<span class="live-text">' + html + '</span>';
+
+  if (liveFilter !== 'all' && type !== liveFilter) entry.style.display = 'none';
+  feed.appendChild(entry);
+  feed.scrollTop = feed.scrollHeight;
+
+  liveEventCount++;
+  document.getElementById('live-count').textContent = liveEventCount + ' events';
+}
+
+function setLiveActive(active) {
+  document.getElementById('live-indicator').classList.toggle('active', active);
+}
+
+function filterLive(type) {
+  liveFilter = type;
+  document.querySelectorAll('.live-filter').forEach(b => b.classList.toggle('active', b.dataset.filter === type));
+  document.querySelectorAll('.live-entry').forEach(entry => {
+    entry.style.display = (type === 'all' || entry.dataset.type === type) ? '' : 'none';
+  });
+}
+
+function clearCodeViewer() {
+  document.getElementById('code-viewer').innerHTML =
+    '<div class="code-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><p>El codigo generado aparecera aqui</p></div>';
+}
+
+// ─── SEND MESSAGE ───
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text || isProcessing) return;
+
+  addChatMessage(text, 'user');
+  input.value = '';
+  input.style.height = 'auto';
+  isProcessing = true;
+  setLiveActive(true);
+  document.getElementById('btn-send').disabled = true;
+
+  const thinkingId = addThinking();
+
+  emitLive('exec', '<strong>Goal recibido</strong> — ' + escapeHtml(text.substring(0, 80)), true);
+  emitLive('info', 'Enviando a <code>/agent/goal</code>...');
+
+  try {
+    const t0 = performance.now();
+    const response = await fetch(API + '/agent/goal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ goal: text, mode: 'plan_only', depth: 1, fast: true })
+    });
+    const elapsed = Math.round(performance.now() - t0);
+    const data = await response.json();
+    removeThinking(thinkingId);
+
+    emitLive('info', 'Respuesta recibida en <code>' + elapsed + 'ms</code>');
+
+    if (data.ok) {
+      let reply = '';
+      if (data.resumen) {
+        reply += data.resumen + '\n\n';
+        emitLive('exec', '<strong>Resumen:</strong> ' + escapeHtml(data.resumen));
+      }
+      if (data.data) {
+        const d = data.data;
+        if (d.plan) {
+          reply += '**Plan:**\n' + d.plan + '\n\n';
+          emitLive('plan', '<strong>Plan generado</strong>');
+        }
+        if (d.steps && d.steps.length > 0) {
+          reply += '**Pasos:**\n';
+          d.steps.forEach((s, i) => {
+            const desc = typeof s === 'object' ? (s.description || JSON.stringify(s)) : s;
+            reply += (i + 1) + '. ' + desc + '\n';
+            emitLive('plan', 'Paso ' + (i+1) + ': ' + escapeHtml(desc));
+          });
+          reply += '\n';
+          showPlanInCode(d.steps, text);
+        }
+        if (d.execution_log && d.execution_log.length > 0) {
+          d.execution_log.forEach(log => {
+            const isOk = log.status === 'success';
+            emitLive('cmd', '<span class="term-line ' + (isOk ? 'ok' : 'err') + '">$ ' + escapeHtml(log.step || '') + '</span>');
+            if (log.result) {
+              const resultStr = typeof log.result === 'string' ? log.result : JSON.stringify(log.result, null, 2);
+              emitLive('cmd', '<span class="term-line">' + escapeHtml(resultStr.substring(0, 200)) + '</span>');
+            }
+          });
+        }
+        if (d.artifacts && d.artifacts.length > 0) {
+          d.artifacts.forEach(a => {
+            const name = typeof a === 'string' ? a : JSON.stringify(a);
+            emitLive('file', '<strong>Artifact:</strong> <code>' + escapeHtml(name) + '</code>');
+          });
+        }
+      }
+      if (data.archivos_creados && data.archivos_creados.length > 0) {
+        data.archivos_creados.forEach(a => {
+          const name = typeof a === 'string' ? a : JSON.stringify(a);
+          emitLive('file', '<strong>Archivo creado:</strong> <code>' + escapeHtml(name) + '</code>');
+          reply += '- Archivo: `' + name + '`\n';
+        });
+      }
+      if (data.siguientes_pasos && data.siguientes_pasos.length > 0) {
+        reply += '**Siguiente:**\n';
+        data.siguientes_pasos.forEach(s => {
+          reply += '- ' + s + '\n';
+          emitLive('info', 'Siguiente: ' + escapeHtml(s));
+        });
+      }
+      if (data.fallback) {
+        emitLive('info', '<strong>Fallback:</strong> ' + escapeHtml(data.message || 'Respuesta via fallback'));
+      }
+      addChatMessage(reply || 'Objetivo procesado correctamente.', 'atlas');
+      emitLive('exec', '<strong>Completado</strong> (' + elapsed + 'ms)', true);
+    } else {
+      const errMsg = data.error || data.message || 'Error al procesar el objetivo';
+      addChatMessage('Error: ' + errMsg, 'atlas');
+      emitLive('err', '<strong>Error:</strong> ' + escapeHtml(errMsg));
+    }
+  } catch (err) {
+    removeThinking(thinkingId);
+    addChatMessage('Error de conexion: ' + err.message, 'atlas');
+    emitLive('err', '<strong>Conexion fallida:</strong> ' + escapeHtml(err.message));
+  }
+
+  isProcessing = false;
+  setLiveActive(false);
+  document.getElementById('btn-send').disabled = false;
+}
+
+// ─── CHAT HELPERS ───
+function addChatMessage(text, type) {
+  const container = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'msg ' + type;
+  if (type === 'atlas') {
+    div.innerHTML = '<div class="msg-label">ATLAS</div>' + renderMarkdown(text);
+  } else {
+    div.textContent = text;
+  }
+  container.appendChild(div);
+  scrollChatBottom();
+}
+
+function addThinking() {
+  const container = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  const id = 'think-' + Date.now();
+  div.id = id;
+  div.className = 'msg thinking';
+  div.innerHTML = '<div class="msg-label">ATLAS</div><div class="thinking-dots"><span></span><span></span><span></span></div>';
+  container.appendChild(div);
+  scrollChatBottom();
+  return id;
+}
+
+function removeThinking(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+function scrollChatBottom() {
+  const c = document.getElementById('chat-messages');
+  c.scrollTop = c.scrollHeight;
+}
+
+function renderMarkdown(text) {
+  if (!text) return '';
+  return text
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n/g, '<br>');
+}
+
+function insertHint(el) {
+  const input = document.getElementById('chat-input');
+  input.value = el.textContent;
+  input.focus();
+}
+
+// ─── CODE VIEWER ───
+function showCodeInViewer(filename, code) {
+  const viewer = document.getElementById('code-viewer');
+  const lines = code.split('\n');
+  const gutter = lines.map((_, i) => i + 1).join('\n');
+  const highlighted = highlightCode(code);
+
+  viewer.innerHTML =
+    '<div class="code-file-header">' +
+      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>' +
+      '<span class="filename">' + filename + '</span>' +
+      '<span style="color:var(--text-dim);margin-left:auto;font-size:11px">' + lines.length + ' lines</span>' +
+    '</div>' +
+    '<div class="code-lines">' +
+      '<div class="code-gutter">' + gutter + '</div>' +
+      '<div class="code-body">' + highlighted + '</div>' +
+    '</div>';
+
+  switchTopPanel('code');
+  emitLive('code', '<strong>Archivo:</strong> <code>' + escapeHtml(filename) + '</code> (' + lines.length + ' lineas)');
+}
+
+function showPlanInCode(steps, goal) {
+  const viewer = document.getElementById('code-viewer');
+  let content = '<div class="code-file-header">' +
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>' +
+    '<span class="filename">plan.md</span></div>' +
+    '<div style="padding:16px;">';
+
+  content += '<div style="font-size:14px;font-weight:700;color:var(--accent-primary);margin-bottom:12px;">' + escapeHtml(goal) + '</div>';
+  content += '<div class="plan-steps">';
+  steps.forEach((s, i) => {
+    const desc = typeof s === 'object' ? (s.description || JSON.stringify(s)) : s;
+    content += '<div class="plan-step">' +
+      '<span class="step-icon" style="color:var(--text-dim);">' + (i + 1) + '</span>' +
+      '<span>' + escapeHtml(desc) + '</span></div>';
+  });
+  content += '</div></div>';
+  viewer.innerHTML = content;
+  switchTopPanel('code');
+}
+
+function switchTopPanel(name) {
+  document.querySelectorAll('.split-tab[data-top]').forEach(t => t.classList.toggle('active', t.dataset.top === name));
+  document.querySelectorAll('.top-panel').forEach(p => p.classList.toggle('active', p.id === 'top-' + name));
+}
+
+function highlightCode(code) {
+  const keywords = /\b(def|class|import|from|return|if|elif|else|for|while|try|except|finally|with|as|async|await|yield|lambda|pass|break|continue|raise|not|and|or|in|is|True|False|None|const|let|var|function|export|default)\b/g;
+  const strings = /(["'`])(?:(?=(\\?))\2[\s\S])*?\1/g;
+  const comments = /(#.*$|\/\/.*$|\/\*[\s\S]*?\*\/)/gm;
+  const numbers = /\b(\d+\.?\d*)\b/g;
+
+  let result = escapeHtml(code);
+  result = result.replace(comments, '<span class="cm">$1</span>');
+  result = result.replace(strings, '<span class="str">$&</span>');
+  result = result.replace(keywords, '<span class="kw">$1</span>');
+  result = result.replace(numbers, '<span class="num">$1</span>');
+  return result;
+}
+
+function escapeHtml(t) {
+  const d = document.createElement('div');
+  d.textContent = t;
+  return d.innerHTML;
+}
+
+// ─── TERMINAL (via Live Feed) ───
+document.getElementById('terminal-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const input = e.target;
+    const cmd = input.value.trim();
+    if (!cmd) return;
+    input.value = '';
+    emitLive('cmd', '<span class="term-line">$ ' + escapeHtml(cmd) + '</span>', true);
+    executeTerminalCmd(cmd);
+  }
+});
+
+async function executeTerminalCmd(cmd) {
+  setLiveActive(true);
+  emitLive('info', 'Ejecutando comando...');
+  try {
+    const t0 = performance.now();
+    const r = await fetch(API + '/agent/goal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ goal: 'Execute terminal command: ' + cmd, mode: 'plan_only', depth: 1, fast: true })
+    });
+    const elapsed = Math.round(performance.now() - t0);
+    const data = await r.json();
+    if (data.ok) {
+      emitLive('cmd', '<span class="term-line ok">' + escapeHtml(data.resumen || 'OK') + '</span>');
+      emitLive('info', 'Completado en <code>' + elapsed + 'ms</code>');
+    } else {
+      emitLive('err', '<span class="term-line err">' + escapeHtml(data.error || 'Error') + '</span>');
+    }
+  } catch (err) {
+    emitLive('err', '<strong>Error:</strong> ' + escapeHtml(err.message));
+  }
+  setLiveActive(false);
+}
+
+// ─── VOICE SYSTEM ───
+function initWaveformBars() {
+  const wave = document.getElementById('voice-wave');
+  for (let i = 0; i < 32; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    wave.appendChild(bar);
+  }
+}
+
+async function startVoice() {
+  const orb = document.getElementById('voice-orb');
+  if (isListening) return;
+  isListening = true;
+  orb.classList.add('listening');
+  document.getElementById('voice-status').textContent = 'Escuchando...';
+  document.getElementById('voice-wave').classList.add('active');
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 64;
+    const source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+
+    mediaRecorder = new MediaRecorder(stream);
+    audioChunks = [];
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      if (audioChunks.length > 0) {
+        const blob = new Blob(audioChunks, { type: 'audio/wav' });
+        await processVoiceInput(blob);
+      }
+    };
+    mediaRecorder.start();
+    animateWaveform();
+  } catch (err) {
+    console.error('Mic error:', err);
+    document.getElementById('voice-status').textContent = 'Error: ' + err.message;
+    stopVoice();
+  }
+}
+
+function stopVoice() {
+  const orb = document.getElementById('voice-orb');
+  isListening = false;
+  orb.classList.remove('listening');
+  document.getElementById('voice-wave').classList.remove('active');
+  document.getElementById('voice-status').textContent = 'Push-to-talk: manten presionado el orbe | Ctrl+M';
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+  if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+  if (audioContext) { audioContext.close(); audioContext = null; }
+  resetWaveform();
+}
+
+function animateWaveform() {
+  if (!analyser || !isListening) return;
+  const bars = document.querySelectorAll('#voice-wave .bar');
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(data);
+
+  bars.forEach((bar, i) => {
+    const idx = Math.floor(i * data.length / bars.length);
+    const val = data[idx] || 0;
+    const h = Math.max(4, (val / 255) * 28);
+    bar.style.height = h + 'px';
+  });
+
+  animFrame = requestAnimationFrame(animateWaveform);
+}
+
+function resetWaveform() {
+  document.querySelectorAll('#voice-wave .bar').forEach(b => b.style.height = '4px');
+}
+
+async function processVoiceInput(blob) {
+    emitLive('voice', '<strong>Audio capturado</strong> — transcribiendo...');
+  document.getElementById('voice-status').textContent = 'Transcribiendo...';
+
+  try {
+    const reader = new FileReader();
+    reader.readAsDataURL(blob);
+    reader.onloadend = async () => {
+      const base64 = reader.result.split(',')[1];
+      const r = await fetch(API + '/voice/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio_base64: base64, language: 'es-ES' })
+      });
+      const data = await r.json();
+      if (data.ok && data.data && data.data.text) {
+        const text = data.data.text;
+        emitLive('voice', '<strong>Voz:</strong> "' + escapeHtml(text) + '"');
+        document.getElementById('chat-input').value = text;
+        sendMessage();
+      } else {
+        document.getElementById('voice-status').textContent = 'No se pudo transcribir';
+        emitLive('err', 'STT fallo: ' + escapeHtml(data.error || 'sin respuesta'));
+      }
+    };
+  } catch (err) {
+    document.getElementById('voice-status').textContent = 'Error STT: ' + err.message;
+  }
+}
+
+function toggleVoiceMode() {
+  const btn = document.getElementById('voice-mode-btn');
+  voiceMode = voiceMode === 'ptt' ? 'auto' : 'ptt';
+  btn.textContent = voiceMode === 'ptt' ? 'Auto' : 'PTT';
+  btn.classList.toggle('active', voiceMode === 'auto');
+  document.getElementById('voice-status').textContent =
+    voiceMode === 'ptt' ? 'Push-to-talk: manten presionado el orbe | Ctrl+M' : 'Modo automatico: hablando se activa';
+
+  if (voiceMode === 'auto') startAutoVoice();
+  else stopAutoVoice();
+}
+
+let autoVoiceInterval = null;
+function startAutoVoice() {
+  startVoice();
+}
+function stopAutoVoice() {
+  stopVoice();
+}
+
+// ─── KEYBOARD SHORTCUTS ───
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); sendMessage(); }
+  if (e.ctrlKey && e.key === 'm') { e.preventDefault(); isListening ? stopVoice() : startVoice(); }
+  if (e.ctrlKey && e.key === '`') { e.preventDefault(); document.getElementById('terminal-input').focus(); }
+  if (e.ctrlKey && e.key === '1') { e.preventDefault(); switchTopPanel('code'); }
+  if (e.ctrlKey && e.key === '2') { e.preventDefault(); switchTopPanel('preview'); }
+  if (e.ctrlKey && e.key === 'l') { e.preventDefault(); document.getElementById('chat-messages').innerHTML = ''; }
+  if (e.key === '?' && !['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) {
+    document.getElementById('shortcuts-overlay').classList.toggle('visible');
+  }
+  if (e.key === 'Escape') { document.getElementById('shortcuts-overlay').classList.remove('visible'); }
+});
+
+// ─── INPUT ENTER ───
+document.getElementById('chat-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); sendMessage(); }
+  if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) { e.preventDefault(); sendMessage(); }
+});
+
+</script>
+</body>
+</html>

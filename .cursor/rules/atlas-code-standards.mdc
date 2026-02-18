@@ -1,0 +1,39 @@
+---
+description: ATLAS patrones de codigo Python — FastAPI, async, logging, errores
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# ATLAS — Estandares de Codigo Python
+
+## Stack
+- **Backend**: Python (FastAPI/uvicorn), WebSockets
+- **AI**: Claude Opus 4.6 (tutor), Claude Sonnet (agente)
+- **Infra**: Windows, SQLite (offline-first)
+
+## Patrones Obligatorios
+- FastAPI para todos los endpoints REST
+- WebSocket para comunicacion en tiempo real
+- `async/await` en toda operacion I/O
+- Logging estructurado con timestamps
+- Manejo explicito de errores con contexto
+- Documentacion inline en español
+
+## Ejemplo de Endpoint ATLAS
+```python
+@router.post("/api/v1/ejemplo")
+async def ejemplo_endpoint(request: EjemploRequest):
+    """Descripcion clara del proposito en español."""
+    try:
+        resultado = await servicio.procesar(request.datos)
+        logger.info(f"Procesado OK: {request.datos[:50]}")
+        return {"status": "ok", "data": resultado}
+    except Exception as e:
+        logger.error(f"Error en ejemplo_endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+```
+
+## Anti-patrones
+- NO dejar TODOs sin resolver en codigo de produccion
+- NO usar sync I/O donde se puede usar async
+- NO omitir try/except en operaciones criticas
