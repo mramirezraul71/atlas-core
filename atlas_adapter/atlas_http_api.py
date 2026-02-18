@@ -4871,6 +4871,114 @@ class CanaryConfigBody(BaseModel):
     features: Optional[List[str]] = None
 
 
+# ── Config IA centralizada (sync Dashboard ↔ Workspace) ──
+
+_ai_config = {
+    "mode": "auto",
+    "provider": "ollama",
+    "model": "llama3.2",
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "top_k": 40,
+    "max_tokens": 2048,
+    "repeat_penalty": 1.1,
+    "system_prompt": "Eres ATLAS, un sistema de inteligencia artificial avanzado. Responde de forma concisa, precisa y util.",
+    "memory_context": "long",
+    "context_window": 8192,
+    "ollama_url": "http://localhost:11434",
+    "stream_response": False,
+    "save_history": True,
+    "log_level": "info",
+    "specialists": {
+        "code": {"enabled": True, "model": "deepseek-coder"},
+        "vision": {"enabled": True, "model": "llava"},
+        "chat": {"enabled": True, "model": "llama3.2"},
+        "analysis": {"enabled": True, "model": "llama3.2"},
+        "creative": {"enabled": False, "model": "llama3.2"}
+    }
+}
+
+_AI_CONFIG_FILE = BASE_DIR / "config" / "ai_config.json"
+
+
+def _load_ai_config():
+    global _ai_config
+    if _AI_CONFIG_FILE.exists():
+        try:
+            with open(_AI_CONFIG_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            _ai_config.update(saved)
+        except Exception:
+            pass
+
+def _save_ai_config():
+    try:
+        _AI_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(_AI_CONFIG_FILE, "w", encoding="utf-8") as f:
+            safe = {k: v for k, v in _ai_config.items() if k != "api_key"}
+            json.dump(safe, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+
+_load_ai_config()
+
+
+@app.get("/config/ai", tags=["Config"])
+def get_ai_config():
+    config_safe = {k: v for k, v in _ai_config.items() if k != "api_key"}
+    config_safe["has_api_key"] = bool(_ai_config.get("api_key"))
+    return {"ok": True, **config_safe}
+
+
+@app.post("/config/ai", tags=["Config"])
+def update_ai_config(payload: dict):
+    global _ai_config
+    allowed = {"mode", "provider", "model", "temperature", "top_p", "top_k",
+               "max_tokens", "repeat_penalty", "system_prompt", "memory_context",
+               "context_window", "ollama_url", "stream_response", "save_history",
+               "log_level", "api_key", "specialists"}
+    for key in allowed:
+        if key in payload:
+            _ai_config[key] = payload[key]
+    _save_ai_config()
+    return {"ok": True, "message": "Configuracion actualizada"}
+
+
+@app.post("/config/ai/test", tags=["Config"])
+def test_ai_connection():
+    provider = _ai_config.get("provider", "ollama")
+    try:
+        if provider == "ollama":
+            import requests as req
+            url = _ai_config.get("ollama_url", "http://localhost:11434")
+            res = req.get(f"{url}/api/tags", timeout=5)
+            if res.status_code == 200:
+                return {"ok": True, "provider": provider, "message": "Ollama conectado"}
+            return {"ok": False, "error": f"Ollama status {res.status_code}"}
+        return {"ok": True, "provider": provider, "message": f"{provider} configurado"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/config/ai/ollama-models", tags=["Config"])
+def get_ollama_models():
+    try:
+        import requests as req
+        url = _ai_config.get("ollama_url", "http://localhost:11434")
+        res = req.get(f"{url}/api/tags", timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            models = []
+            for m in data.get("models", []):
+                sz = m.get("size", 0)
+                sz_str = f"{sz / (1024**3):.1f}GB" if sz > 1024**3 else f"{sz / (1024**2):.0f}MB"
+                models.append({"name": m.get("name", "").split(":")[0], "full_name": m.get("name", ""), "size": sz_str})
+            return {"ok": True, "models": models}
+        return {"ok": False, "error": f"Ollama status {res.status_code}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.post("/canary/config", tags=["Deploy"])
 def canary_config(body: Optional[CanaryConfigBody] = None):
     """Runtime canary config (owner only, policy-gated). Body: enabled?, percentage?, features?."""
@@ -5199,6 +5307,7 @@ class AgentGoalBody(BaseModel):
     fast: Optional[bool] = True
     depth: Optional[int] = 1  # 1-5: multi-agent depth (1=single planner, 2+=Executive pipeline)
     model: Optional[str] = None  # auto | provider:model (e.g. "openai:gpt-4.1", "xai:grok-3")
+    sync_config: Optional[bool] = False  # True = usar system prompt/temp de Config IA
 
 
 def _agent_goal_mode(mode: str) -> str:
@@ -5254,13 +5363,21 @@ def _pick_local_model(goal: str) -> str:
     return _TASK_PROFILES[ttype]["local"]
 
 
-def _try_single_call(provider_id: str, model_name: str, goal: str) -> dict:
+def _get_system_prompt(use_config: bool = False) -> str:
+    """Obtiene system prompt: de Config IA si sync activo, o default del Workspace."""
+    if use_config and _ai_config.get("system_prompt"):
+        return _ai_config["system_prompt"] + " Responde en espanol, conciso y natural. Usa texto plano sin emojis."
+    return "Eres ATLAS Agent, asistente tecnico experto. Responde en espanol, conciso y natural. Usa texto plano sin emojis."
+
+
+def _try_single_call(provider_id: str, model_name: str, goal: str, use_config: bool = False) -> dict:
     """Intenta una llamada a un modelo. Retorna dict con ok, output, ms, model_used."""
     spec = "%s:%s" % (provider_id, model_name)
+    sys_prompt = _get_system_prompt(use_config)
     if provider_id == "ollama":
         try:
             from modules.humanoid.ai.router import _call_ollama
-            ok, output, ms = _call_ollama(model_name, goal, "Eres ATLAS Agent, asistente tecnico experto. Responde en espanol, conciso y natural.", 90)
+            ok, output, ms = _call_ollama(model_name, goal, sys_prompt, 90)
             if ok and output and output.strip():
                 return {"ok": True, "output": output, "ms": ms, "model_used": spec}
             return {"ok": False, "error": "Ollama %s: respuesta vacia" % model_name, "ms": ms, "model_used": spec}
@@ -5272,9 +5389,7 @@ def _try_single_call(provider_id: str, model_name: str, goal: str) -> dict:
         return {"ok": False, "error": "Sin API key para %s" % provider_id, "ms": 0, "model_used": spec, "_skip": True}
     from modules.humanoid.ai.external_llm import call_external
     try:
-        ok, output, ms = call_external(provider_id, model_name, goal,
-                                       "Eres ATLAS Agent, asistente tecnico experto. Responde en espanol, conciso y natural. Usa texto plano sin emojis.",
-                                       api_key, timeout_s=120)
+        ok, output, ms = call_external(provider_id, model_name, goal, sys_prompt, api_key, timeout_s=120)
         if ok and output and output.strip():
             return {"ok": True, "output": output, "ms": ms, "model_used": spec}
         return {"ok": False, "error": "%s:%s respuesta vacia o error" % (provider_id, model_name), "ms": ms, "model_used": spec}
@@ -5282,14 +5397,14 @@ def _try_single_call(provider_id: str, model_name: str, goal: str) -> dict:
         return {"ok": False, "error": "%s:%s: %s" % (provider_id, model_name, str(e)), "ms": 0, "model_used": spec}
 
 
-def _direct_model_call(model_spec: str, goal: str) -> dict:
+def _direct_model_call(model_spec: str, goal: str, use_config: bool = False) -> dict:
     """Llamada con cascada inteligente: local → free API → paid API. Si un modelo falla, salta al siguiente."""
     if model_spec == "auto" or not model_spec:
         local_model = _pick_local_model(goal)
         errors = []
         for provider_id, model_tmpl, tier in _CASCADE_ORDER:
             model_name = local_model if model_tmpl == "{local_model}" else model_tmpl
-            result = _try_single_call(provider_id, model_name, goal)
+            result = _try_single_call(provider_id, model_name, goal, use_config)
             if result.get("ok"):
                 result["tier"] = tier
                 result["cascade_errors"] = len(errors)
@@ -5302,7 +5417,7 @@ def _direct_model_call(model_spec: str, goal: str) -> dict:
     if len(parts) != 2:
         return {"ok": False, "error": "Formato invalido: use provider:model"}
     provider_id, model_name = parts[0].lower(), parts[1]
-    return _try_single_call(provider_id, model_name, goal)
+    return _try_single_call(provider_id, model_name, goal, use_config)
 
 
 @app.post("/agent/goal")
@@ -5311,7 +5426,7 @@ def agent_goal(body: AgentGoalBody):
     t0 = time.perf_counter()
     model_spec = (body.model or "auto").strip()
     if model_spec:
-        result = _direct_model_call(model_spec, body.goal)
+        result = _direct_model_call(model_spec, body.goal, use_config=bool(body.sync_config))
         ms = int((time.perf_counter() - t0) * 1000)
         if result.get("ok"):
             tier_label = {"local": "LOCAL (gratis)", "free_api": "API gratuita", "paid_api": "API paga"}.get(result.get("tier", ""), "")

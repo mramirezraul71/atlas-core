@@ -339,6 +339,15 @@
       padding: 3px 6px; cursor: pointer; outline: none;
     }
     .chat-mode-bar select:focus { border-color: var(--accent-primary); }
+    .sync-toggle {
+      display: flex; align-items: center; gap: 3px; cursor: pointer;
+      font-size: 9px; color: var(--text-muted); user-select: none;
+      padding: 2px 6px; border-radius: 4px; border: 1px solid transparent;
+      transition: all 0.2s;
+    }
+    .sync-toggle:hover { border-color: var(--border); }
+    .sync-toggle input { width: 12px; height: 12px; cursor: pointer; accent-color: var(--accent-cyan); }
+    .sync-toggle.active { border-color: var(--accent-cyan); color: var(--accent-cyan); background: rgba(0,200,200,0.06); }
 
     /* ─── Model Selector (Cursor-style) ─── */
     .model-selector-wrap { position: relative; }
@@ -727,9 +736,9 @@
     </nav>
     <div class="topbar-spacer"></div>
     <div class="topbar-services">
-      <span class="svc"><span class="svc-dot" id="svc-nexus"></span>NEXUS</span>
+      <a class="svc" href="javascript:void(0)" onclick="window.open('http://'+location.hostname+':8000','_blank')" title="Abrir NEXUS (puerto 8000)" style="cursor:pointer;text-decoration:none;color:inherit;"><span class="svc-dot" id="svc-nexus"></span>NEXUS</a>
       <span class="svc"><span class="svc-dot" id="svc-push"></span>PUSH</span>
-      <span class="svc"><span class="svc-dot" id="svc-robot"></span>ROBOT</span>
+      <a class="svc" href="javascript:void(0)" onclick="window.open('http://'+location.hostname+':8002','_blank')" title="Abrir Robot (puerto 8002)" style="cursor:pointer;text-decoration:none;color:inherit;"><span class="svc-dot" id="svc-robot"></span>ROBOT</a>
     </div>
     <div class="theme-dots">
       <button class="tdot active" data-theme="cyan" style="background:#39d3c4" title="Cyan"></button>
@@ -805,6 +814,10 @@
             <option value="2">D2</option>
             <option value="3">D3</option>
           </select>
+          <label class="sync-toggle" title="Sincronizar con Config IA del Dashboard (system prompt, temperatura, especialistas)">
+            <input type="checkbox" id="sync-config-toggle" onchange="toggleSyncConfig(this.checked)">
+            <span class="sync-label" id="sync-label">🔗 Sync Config</span>
+          </label>
         </div>
         <div class="chat-hints">
           <span class="chat-hint" onclick="insertHint(this)">Crea una app web</span>
@@ -935,6 +948,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initWaveformBars();
   initAutoResize();
   initModelSelector();
+  initSyncToggle();
   checkServices();
   setInterval(checkServices, 15000);
 
@@ -963,6 +977,48 @@ function applyTheme(t) {
   document.documentElement.setAttribute('data-theme', t);
   document.querySelectorAll('.tdot').forEach(b => b.classList.toggle('active', b.dataset.theme === t));
   localStorage.setItem('atlas-ws-theme', t);
+}
+
+// ─── SYNC CONFIG ───
+let syncConfigActive = localStorage.getItem('atlas_sync_config') === 'true';
+let configIA = null;
+
+function toggleSyncConfig(on) {
+  syncConfigActive = on;
+  localStorage.setItem('atlas_sync_config', on ? 'true' : 'false');
+  const label = document.getElementById('sync-label');
+  const toggle = document.querySelector('.sync-toggle');
+  if (on) {
+    toggle.classList.add('active');
+    label.textContent = '🔗 Sync ON';
+    loadConfigIA();
+    emitLive('info', 'Sync Config IA: <strong>ACTIVADO</strong> — usando system prompt y parametros del Dashboard');
+  } else {
+    toggle.classList.remove('active');
+    label.textContent = '🔗 Sync Config';
+    emitLive('info', 'Sync Config IA: <strong>DESACTIVADO</strong> — Workspace usa sus propios parametros');
+  }
+}
+
+async function loadConfigIA() {
+  try {
+    const r = await fetch(API + '/config/ai');
+    const d = await r.json();
+    if (d.ok) {
+      configIA = d;
+      emitLive('success', 'Config IA cargada: prompt="' + escapeHtml((d.system_prompt||'').substring(0,60)) + '..." temp=' + d.temperature);
+    }
+  } catch(e) { emitLive('warn', 'No se pudo cargar Config IA: ' + e.message); }
+}
+
+function initSyncToggle() {
+  const cb = document.getElementById('sync-config-toggle');
+  cb.checked = syncConfigActive;
+  if (syncConfigActive) {
+    document.querySelector('.sync-toggle').classList.add('active');
+    document.getElementById('sync-label').textContent = '🔗 Sync ON';
+    loadConfigIA();
+  }
 }
 
 // ─── MODEL SELECTOR ───
@@ -1193,7 +1249,7 @@ async function sendMessage() {
     const response = await fetch(API + '/agent/goal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goal: text, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel }),
+      body: JSON.stringify({ goal: text, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel, sync_config: syncConfigActive }),
       signal: controller.signal
     });
     clearTimeout(timeout);
@@ -1430,7 +1486,7 @@ async function executeTerminalCmd(cmd) {
     const r = await fetch(API + '/agent/goal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goal: 'Execute terminal command: ' + cmd, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel })
+      body: JSON.stringify({ goal: 'Execute terminal command: ' + cmd, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel, sync_config: syncConfigActive })
     });
     const elapsed = Math.round(performance.now() - t0);
     const data = await r.json();
