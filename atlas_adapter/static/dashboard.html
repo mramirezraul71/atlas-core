@@ -1210,6 +1210,34 @@
       <button class="btn-update" id="btn-check-update" onclick="checkForUpdates()" title="Buscar actualizaciones">🔄 Actualizar</button>
       <!-- Badge de versión -->
       <div class="version-badge" id="version-badge">v3.7.0</div>
+      <div class="atlas-mini-robot" id="mini-robot" onclick="window.open('http://'+location.hostname+':8002/dashboard','_blank')" title="Click para ver Robot 3D" style="cursor:pointer;position:relative;width:36px;height:52px;margin:0 4px;">
+        <svg viewBox="0 0 36 52" width="36" height="52" style="display:block;">
+          <line x1="18" y1="3" x2="18" y2="8" stroke="var(--accent-cyan)" stroke-width="1" opacity="0.5"/>
+          <circle cx="18" cy="3" r="1.5" fill="var(--accent-cyan)" id="mr-comm" opacity="0.8"/>
+          <circle cx="18" cy="12" r="5" fill="none" stroke="var(--accent-cyan)" stroke-width="0.7" opacity="0.3"/>
+          <circle cx="18" cy="12" r="3" id="mr-ai" fill="var(--accent-cyan)" opacity="0.7"/>
+          <circle cx="15.5" cy="11" r="1.2" id="mr-cam" fill="var(--accent-cyan)" opacity="0.8"/>
+          <circle cx="20.5" cy="11" r="1.2" id="mr-vis" fill="var(--accent-cyan)" opacity="0.8"/>
+          <rect x="12" y="18" width="12" height="14" rx="2" fill="none" stroke="var(--accent-cyan)" stroke-width="0.7" opacity="0.3"/>
+          <circle cx="18" cy="22" r="2.5" id="mr-yolo" fill="var(--accent-orange)" opacity="0.6"/>
+          <circle cx="18" cy="28" r="1.5" id="mr-ctrl" fill="var(--accent-green)" opacity="0.6"/>
+          <circle cx="15" cy="25" r="1" id="mr-sens" fill="var(--accent-cyan)" opacity="0.5"/>
+          <line x1="11" y1="20" x2="6" y2="30" stroke="var(--accent-cyan)" stroke-width="0.8" opacity="0.3"/>
+          <circle cx="5" cy="31" r="1.5" id="mr-act" fill="var(--accent-red)" opacity="0.6"/>
+          <line x1="25" y1="20" x2="30" y2="30" stroke="var(--accent-cyan)" stroke-width="0.8" opacity="0.3"/>
+          <circle cx="31" cy="31" r="1.5" fill="var(--accent-red)" opacity="0.6"/>
+          <line x1="15" y1="33" x2="13" y2="46" stroke="var(--accent-cyan)" stroke-width="0.8" opacity="0.3"/>
+          <line x1="21" y1="33" x2="23" y2="46" stroke="var(--accent-cyan)" stroke-width="0.8" opacity="0.3"/>
+          <rect x="11" y="46" width="5" height="2" rx="1" fill="var(--accent-cyan)" opacity="0.2"/>
+          <rect x="21" y="46" width="5" height="2" rx="1" fill="var(--accent-cyan)" opacity="0.2"/>
+        </svg>
+        <style>
+          .atlas-mini-robot:hover svg circle,.atlas-mini-robot:hover svg rect{filter:drop-shadow(0 0 3px var(--accent-cyan))}
+          @keyframes mr-pulse{0%,100%{opacity:0.7}50%{opacity:0.3}}
+          #mr-ai{animation:mr-pulse 2s infinite}
+          #mr-yolo{animation:mr-pulse 2.5s infinite}
+        </style>
+      </div>
       <div class="status-indicator">
         <div class="status-dot" id="cerebro-dot"></div>
         <span>Cerebro</span>
