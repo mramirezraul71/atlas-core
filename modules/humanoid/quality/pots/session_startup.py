@@ -104,9 +104,9 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
             POTStep(
                 id="pull_if_needed",
                 name="Pull si hay cambios",
-                description="Traer cambios del remoto",
+                description="Traer cambios del remoto (modo seguro: solo fast-forward, sin rebase)",
                 step_type=StepType.COMMAND,
-                command="git pull --rebase origin HEAD",
+                command="git pull --ff-only",
                 timeout_seconds=120,
                 continue_on_failure=True,
             ),

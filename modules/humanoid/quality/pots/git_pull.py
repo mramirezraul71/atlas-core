@@ -68,7 +68,7 @@ Si hay conflictos después del pull:
         best_practices=[
             "Pull al inicio de cada sesión de trabajo",
             "Stash cambios locales antes de pull",
-            "Preferir --rebase para historial limpio",
+            "Preferir --ff-only para evitar estados Git peligrosos",
             "Resolver conflictos inmediatamente",
         ],
         
@@ -128,10 +128,10 @@ Si hay conflictos después del pull:
                 name="Ejecutar pull",
                 description="Traer y aplicar cambios del remoto",
                 step_type=StepType.COMMAND,
-                command="git pull --rebase origin HEAD",
+                command="git pull --ff-only",
                 timeout_seconds=180,
                 capture_output=True,
-                tutorial_notes="--rebase re-aplica commits locales sobre los remotos",
+                tutorial_notes="--ff-only evita rebase/merge automático; si no se puede fast-forward, falla sin modificar el repo",
             ),
             
             POTStep(
