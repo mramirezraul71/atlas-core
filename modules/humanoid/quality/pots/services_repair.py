@@ -9,7 +9,17 @@ Triggers:
 
 Severidad: HIGH (servicios caídos afectan funcionalidad core)
 """
+import os
+import sys
+from pathlib import Path
 from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+
+# Ruta absoluta al repo para que los comandos funcionen desde cualquier cwd
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent.parent.parent.parent)
+_SCRIPTS_DIR = os.path.join(_REPO_ROOT, "scripts")
+_PS1 = os.path.join(_SCRIPTS_DIR, "restart_service_clean.ps1")
+_START_SERVICES_PY = os.path.join(_SCRIPTS_DIR, "start_nexus_services.py")
+_PYTHON = sys.executable
 
 
 def get_pot() -> POT:
@@ -137,18 +147,23 @@ Si Robot responde 200, está OK. Si falla, necesita reinicio.
                 capture_output=True,
             ),
             
-            # Limpieza de procesos zombie
+            # Limpieza de procesos zombie — SOLO si robot NO responde
             POTStep(
                 id="kill_zombie_processes",
-                name="Limpiar procesos zombie",
-                description="Matar procesos Python que estén ocupando puertos",
+                name="Limpiar procesos zombie (solo si robot caído)",
+                description="Matar procesos que ocupen puertos solo cuando no responden",
                 step_type=StepType.COMMAND,
-                command='powershell -Command "Get-NetTCPConnection -LocalPort 8000,8002 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"',
+                command=(
+                    'powershell -Command "'
+                    'try { $r = Invoke-WebRequest -Uri http://127.0.0.1:8002/api/health -TimeoutSec 3 -UseBasicParsing -EA Stop; exit 0 } catch {};'
+                    'Get-NetTCPConnection -LocalPort 8000,8002 -State Listen -ErrorAction SilentlyContinue'
+                    ' | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"'
+                ),
                 timeout_seconds=15,
                 continue_on_failure=True,
                 tutorial_notes="""
-Importante: limpiar procesos zombie que puedan estar ocupando puertos.
-Esto evita errores de "address already in use" al reiniciar.
+Primero verifica si robot responde. Si responde, no mata nada.
+Si no responde, limpia procesos zombie para liberar puertos.
                 """,
             ),
             
@@ -166,8 +181,9 @@ Esto evita errores de "address already in use" al reiniciar.
                 name="Reiniciar Robot Backend",
                 description="Iniciar Robot backend (hardware layer)",
                 step_type=StepType.COMMAND,
-                command="powershell -ExecutionPolicy Bypass -File scripts/restart_service_clean.ps1 -Service robot",
+                command=f'"{_PYTHON}" "{_START_SERVICES_PY}" --robot-only',
                 timeout_seconds=60,
+                continue_on_failure=True,
                 capture_output=True,
                 tutorial_notes="""
 Robot Backend se inicia primero porque:
@@ -202,9 +218,9 @@ Robot Backend se inicia primero porque:
                 name="Reiniciar NEXUS",
                 description="Iniciar NEXUS (coordinación central)",
                 step_type=StepType.COMMAND,
-                command="powershell -ExecutionPolicy Bypass -File scripts/restart_service_clean.ps1 -Service nexus",
+                command=f'powershell -ExecutionPolicy Bypass -File "{_PS1}" -Service nexus',
                 timeout_seconds=90,
-                continue_on_failure=True,  # NEXUS es opcional en algunos setups
+                continue_on_failure=True,
                 capture_output=True,
                 condition="context.get('diagnose_nexus_failed', False)",
                 tutorial_notes="""
@@ -218,7 +234,7 @@ Es el servicio más pesado (carga modelos, etc).
                 name="Reiniciar Push Dashboard",
                 description="Reiniciar el dashboard si estaba caído",
                 step_type=StepType.COMMAND,
-                command="powershell -ExecutionPolicy Bypass -File scripts/restart_service_clean.ps1 -Service push",
+                command=f'powershell -ExecutionPolicy Bypass -File "{_PS1}" -Service push',
                 timeout_seconds=60,
                 continue_on_failure=True,
                 condition="context.get('diagnose_push_failed', False)",

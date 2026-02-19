@@ -7,6 +7,7 @@ import requests
 import time
 import json
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +27,28 @@ logger.addHandler(handler)
 logger.addHandler(logging.StreamHandler())
 
 OK, WARN, CRIT = "OK", "WARNING", "CRITICAL"
+_CONSOLE_OK = True
+
+
+def _safe_print(text: str = "") -> None:
+    """Evita que errores de consola en Windows rompan el ciclo."""
+    global _CONSOLE_OK
+    if not _CONSOLE_OK:
+        return
+    try:
+        print(text)
+    except OSError as e:
+        if getattr(e, "errno", None) == 22:
+            _CONSOLE_OK = False
+            logger.warning("Consola no disponible (Errno 22). Se desactiva salida por print.")
+            return
+        raise
+    except UnicodeEncodeError:
+        # Fallback para consolas legacy sin UTF-8
+        try:
+            print(text.encode("utf-8", errors="replace").decode(sys.stdout.encoding or "utf-8", errors="replace"))
+        except Exception:
+            _CONSOLE_OK = False
 
 
 def _get(url, timeout=TIMEOUT):
@@ -192,19 +215,19 @@ def run_scan():
     sep = "+" + "-"*22 + "+" + "-"*12 + "+" + "-"*52 + "+" + "-"*30 + "+"
     header = f"| {'Componente':<20} | {'Estado':<10} | {'Detalle':<50} | {'Acción':<28} |"
 
-    print(f"\n{'='*70}")
-    print(f"  ATLAS AUTODIAGNÓSTICO — {now}")
-    print(f"{'='*70}")
-    print(sep)
-    print(header)
-    print(sep)
+    _safe_print(f"\n{'='*70}")
+    _safe_print(f"  ATLAS AUTODIAGNÓSTICO — {now}")
+    _safe_print(f"{'='*70}")
+    _safe_print(sep)
+    _safe_print(header)
+    _safe_print(sep)
     for name, status, detail, action in results:
         icon = {"OK": "✅", "WARNING": "⚠️ ", "CRITICAL": "❌"}[status]
         act = (action or "—")[:28]
-        print(f"| {name:<20} | {icon} {status:<7} | {detail[:50]:<50} | {act:<28} |")
-    print(sep)
-    print(f"\n  Resumen: {ok_count}/{total} OK | {warn_count} warnings | {crit_count} críticos")
-    print(f"{'='*70}\n")
+        _safe_print(f"| {name:<20} | {icon} {status:<7} | {detail[:50]:<50} | {act:<28} |")
+    _safe_print(sep)
+    _safe_print(f"\n  Resumen: {ok_count}/{total} OK | {warn_count} warnings | {crit_count} críticos")
+    _safe_print(f"{'='*70}\n")
 
     logger.info(f"Scan: {ok_count}/{total} OK, {warn_count} WARN, {crit_count} CRIT")
     for name, status, detail, action in results:
@@ -225,10 +248,10 @@ def run_scan():
 
 
 def main():
-    print(f"\n{'#'*70}")
-    print(f"  ATLAS AUTODIAGNOSTIC SCANNER")
-    print(f"  Intervalo: {SCAN_INTERVAL}s | Log: {LOG_DIR / 'autodiagnostic.log'}")
-    print(f"{'#'*70}")
+    _safe_print(f"\n{'#'*70}")
+    _safe_print(f"  ATLAS AUTODIAGNOSTIC SCANNER")
+    _safe_print(f"  Intervalo: {SCAN_INTERVAL}s | Log: {LOG_DIR / 'autodiagnostic.log'}")
+    _safe_print(f"{'#'*70}")
     logger.info("Autodiagnostic scanner iniciado")
 
     cycle = 0
@@ -239,17 +262,17 @@ def main():
             run_scan()
         except KeyboardInterrupt:
             logger.info("Scanner detenido por usuario")
-            print("\n[Autodiagnóstico detenido]")
+            _safe_print("\n[Autodiagnóstico detenido]")
             break
         except Exception as e:
             logger.error(f"Error en ciclo {cycle}: {e}")
-            print(f"[Error ciclo {cycle}: {e}]")
+            _safe_print(f"[Error ciclo {cycle}: {e}]")
 
         try:
             time.sleep(SCAN_INTERVAL)
         except KeyboardInterrupt:
             logger.info("Scanner detenido por usuario")
-            print("\n[Autodiagnóstico detenido]")
+            _safe_print("\n[Autodiagnóstico detenido]")
             break
 
 

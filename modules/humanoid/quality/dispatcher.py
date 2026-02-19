@@ -91,6 +91,15 @@ class POTDispatcher:
     - Eventos → Dispatcher → POT → Ejecución → Reportes
     """
     
+    # Cooldown mínimo entre ejecuciones del mismo POT tras fallo (segundos)
+    _POT_COOLDOWN_ON_FAIL: Dict[str, int] = {
+        "services_repair": 300,   # 5 min: evita bucle reactor infinito
+        "camera_repair":   180,
+        "api_repair":      120,
+        "diagnostic_full": 600,
+    }
+    _DEFAULT_COOLDOWN = 60  # 1 min por defecto para cualquier POT que falle
+
     def __init__(self):
         self._queue: Queue[DispatchRequest] = Queue()
         self._running = False
@@ -104,13 +113,17 @@ class POTDispatcher:
         self._execution_history: List[DispatchResult] = []
         self._max_history = 100
         self._lock = threading.Lock()
-        
+
+        # Circuit breaker: {pot_id: {"last_fail_ts": float, "consecutive_fails": int}}
+        self._circuit_breaker: Dict[str, Dict] = {}
+
         # Estadísticas
         self._stats = {
             "total_dispatched": 0,
             "successful": 0,
             "failed": 0,
             "pending": 0,
+            "skipped_cooldown": 0,
             "by_trigger_type": {},
             "by_pot_id": {},
         }
@@ -173,6 +186,41 @@ class POTDispatcher:
     # DISPATCH
     # ========================================================================
     
+    def _circuit_open(self, pot_id: str) -> bool:
+        """
+        Devuelve True si el circuit breaker está abierto para este POT
+        (es decir, está en cooldown tras fallos consecutivos).
+        """
+        if not pot_id:
+            return False
+        with self._lock:
+            cb = self._circuit_breaker.get(pot_id)
+            if not cb:
+                return False
+            cooldown = self._POT_COOLDOWN_ON_FAIL.get(pot_id, self._DEFAULT_COOLDOWN)
+            # Escalar cooldown con fallos consecutivos (máx 10 min)
+            scaled = min(cooldown * max(1, cb.get("consecutive_fails", 1)), 600)
+            elapsed = time.time() - cb.get("last_fail_ts", 0)
+            if elapsed < scaled:
+                _log.warning(
+                    "Circuit breaker OPEN for POT %s (%d consecutive fails, %.0fs cooldown, %.0fs remaining)",
+                    pot_id, cb.get("consecutive_fails", 1), scaled, scaled - elapsed
+                )
+                return True
+            return False
+
+    def _circuit_record_result(self, pot_id: str, ok: bool) -> None:
+        """Actualiza el circuit breaker tras una ejecución."""
+        if not pot_id:
+            return
+        with self._lock:
+            if ok:
+                self._circuit_breaker.pop(pot_id, None)
+            else:
+                cb = self._circuit_breaker.setdefault(pot_id, {"consecutive_fails": 0, "last_fail_ts": 0})
+                cb["consecutive_fails"] += 1
+                cb["last_fail_ts"] = time.time()
+
     def dispatch(self, request: DispatchRequest) -> str:
         """
         Encola un request para ejecución.
@@ -185,6 +233,14 @@ class POTDispatcher:
         """
         request_id = f"{request.trigger_type.value}_{request.trigger_id}_{int(time.time()*1000)}"
         request.context["request_id"] = request_id
+
+        # Circuit breaker: bloquear si el POT está en cooldown por fallos
+        pot_id = request.pot_id or ""
+        if pot_id and self._circuit_open(pot_id):
+            with self._lock:
+                self._stats["skipped_cooldown"] = self._stats.get("skipped_cooldown", 0) + 1
+            _log.info("Skipped dispatch of POT %s (circuit breaker open)", pot_id)
+            return request_id  # Devuelve ID sin encolar
         
         with self._lock:
             self._stats["pending"] += 1
@@ -359,6 +415,9 @@ class POTDispatcher:
             )
             
             self._record_result(dispatch_result)
+
+            # Circuit breaker: registrar resultado
+            self._circuit_record_result(pot.id, result.ok)
             
             # Actualizar estadísticas
             with self._lock:
