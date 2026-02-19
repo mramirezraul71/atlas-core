@@ -86,7 +86,7 @@
             const [robotModules, setRobotModules] = useState({});
 
             const pollAll = async () => {
-                const [ps, rb, models, tutor, bitacora, memStats, sysInfo, cogMem, lifelog, brain, libroVida] = await Promise.all([
+                const [ps, rb, models, tutor, bitacora, memStats, sysInfo, cogMem, lifelog, brain, libroVida, toolsData, modulesData] = await Promise.all([
                     fetchJ(PUSH+'/status'),
                     fetchJ(ROBOT+'/status'),
                     fetchJ(PUSH+'/agent/models'),
@@ -98,6 +98,8 @@
                     fetchJ(PUSH+'/api/cognitive-memory/lifelog/status'),
                     fetchJ(PUSH+'/api/brain/state'),
                     fetchJ(PUSH+'/api/libro-vida/status'),
+                    fetchJ(PUSH+'/tools'),
+                    fetchJ(PUSH+'/modules/check-all'),
                 ]);
 
                 setSystemData(prev => {
@@ -114,14 +116,26 @@
                     const learning = {...prev.learning};
                     if(tutor&&tutor.ok&&tutor.data){
                         const td=tutor.data;
-                        learning.currentLesson=td.curriculum||td.tutor_type||'AI Tutor';
-                        learning.tasksCompleted=td.completed||0;
-                        learning.tasksTotal=(td.completed||0)+(td.failed||0)||1;
-                        learning.progress=Math.round(learning.tasksCompleted/learning.tasksTotal*100);
-                        learning.tutorScore=td.robot_level||0;
-                        learning.uncertaintyRate=td.failed&&td.completed?(td.failed/(td.completed+td.failed)):0;
-                    } else {
-                        learning.currentLesson='AI Tutor';learning.progress=0;learning.tasksCompleted=0;learning.tasksTotal=0;learning.tutorScore=0;learning.uncertaintyRate=0;
+                        const tutType=td.tutor_type||'';
+                        learning.currentLesson=td.curriculum||(tutType==='disabled'?'Aprendizaje Autonomo':tutType)||'AI Tutor';
+                        const comp=td.lessons_completed||td.completed||0;
+                        const fail=td.lessons_failed||td.failed||0;
+                        learning.tasksCompleted=comp;
+                        learning.tasksTotal=comp+fail||0;
+                        learning.progress=learning.tasksTotal>0?Math.round(comp/learning.tasksTotal*100):0;
+                        const rlvl=td.robot_level||'';
+                        learning.tutorScore=rlvl==='beginner'?'Principiante':rlvl==='intermediate'?'Intermedio':rlvl==='advanced'?'Avanzado':rlvl||'--';
+                        learning.uncertaintyRate=fail>0&&comp>0?(fail/(comp+fail)):0;
+                    }
+                    if(lifelog&&lifelog.ok){
+                        const comp2=lifelog.success_count||0;
+                        const fail2=lifelog.failure_count||0;
+                        if(comp2+fail2>learning.tasksTotal){
+                            learning.tasksCompleted=comp2;
+                            learning.tasksTotal=comp2+fail2;
+                            learning.progress=learning.tasksTotal>0?Math.round(comp2/learning.tasksTotal*100):0;
+                            learning.uncertaintyRate=fail2>0?(fail2/learning.tasksTotal):0;
+                        }
                     }
 
                     const memory = {...prev.memory};
@@ -137,8 +151,8 @@
                         memory.semantic.embeddings=se.total_experiences||0;
                         memory.semantic.concepts=sh.total_concepts||se.embedding_dimension||0;
                         memory.knowledgeBase.concepts=(wm.total_entities||0)+(ab.milestones||0);
-                        memory.knowledgeBase.skills=Object.values(robotModules).filter(v=>v).length;
-                        memory.knowledgeBase.rules=libroVida&&libroVida.ok?(libroVida.reglas_aprendidas||0):0;
+                        memory.knowledgeBase.skills=modulesData&&modulesData.ok?modulesData.connected:Object.values(robotModules).filter(v=>v).length;
+                        memory.knowledgeBase.rules=toolsData&&toolsData.tools?toolsData.tools.length:(libroVida&&libroVida.ok?(libroVida.reglas_aprendidas||0):0);
                     } else {
                         if(memStats&&!memStats.error){
                             memory.semantic.embeddings=memStats.total_experiences||0;
@@ -149,11 +163,15 @@
                             const today=new Date().toISOString().slice(0,10);
                             memory.episodic.today=bitacora.entries.filter(e=>e.timestamp&&e.timestamp.startsWith(today)).length;
                         }
-                        memory.knowledgeBase.skills=Object.values(robotModules).filter(v=>v).length;
-                        memory.knowledgeBase.rules=libroVida&&libroVida.ok?(libroVida.reglas_aprendidas||0):0;
+                        memory.knowledgeBase.skills=modulesData&&modulesData.ok?modulesData.connected:Object.values(robotModules).filter(v=>v).length;
+                        memory.knowledgeBase.rules=toolsData&&toolsData.tools?toolsData.tools.length:(libroVida&&libroVida.ok?(libroVida.reglas_aprendidas||0):0);
                     }
                     if(libroVida&&libroVida.ok){
                         memory.knowledgeBase.concepts+=(libroVida.total_episodios||0);
+                    }
+                    if(lifelog&&lifelog.ok){
+                        memory.episodic.total=Math.max(memory.episodic.total, lifelog.total_entries||0);
+                        memory.episodic.today=Math.max(memory.episodic.today, lifelog.current_session_events||0);
                     }
 
                     const metrics = {...prev.metrics};
@@ -192,8 +210,13 @@
                     return{services:svc,learning,memory,metrics,recentActivity:activity,sysInfo:si};
                 });
 
-                if(models&&models.data){const avail=models.data.filter(m=>m.available&&m.id!=='auto').length;setAiModels({total:models.data.length-1,available:avail})}
-                else if(brain&&brain.ok&&brain.available_models){setAiModels({total:brain.available_models.length,available:brain.available_models.filter(m=>m.available!==false).length})}
+                if(models&&models.data){
+                    const avail=models.data.filter(m=>m.available&&m.id!=='auto').length;
+                    setAiModels({total:models.data.length-1,available:avail});
+                } else if(brain&&brain.ok&&brain.available_models){
+                    setAiModels({total:brain.available_models.length,available:brain.available_models.filter(m=>m.available!==false).length});
+                }
+                if(rb&&rb.modules){setRobotModules(rb.modules)}
             };
 
             useEffect(() => {
@@ -227,9 +250,11 @@
                                     <a href={'http://'+HOST+':8002/dashboard'} target="_blank" className="px-3 py-1.5 bg-slate-800/80 border border-slate-700/50 rounded-lg text-xs text-gray-400 hover:text-emerald-400 hover:border-emerald-500/30 transition-all no-underline">🤖 Robot 3D</a>
                                 </div>
                                 {(() => {
-                                    const onCount = Object.values(systemData.services).filter(s=>s.status==='healthy').length;
-                                    const total = Object.keys(systemData.services).length;
-                                    const allOn = onCount === total;
+                                    const svcs = systemData.services||{};
+                                    const vals = Object.values(svcs);
+                                    const onCount = vals.filter(s=>s.status==='healthy').length;
+                                    const total = vals.length;
+                                    const allOn = total > 0 && onCount === total;
                                     return (
                                     <div className={"px-4 py-2 rounded-lg border " + (allOn ? "bg-green-500/10 border-green-500/20" : "bg-amber-500/10 border-amber-500/20")}>
                                         <div className="flex items-center space-x-2">
@@ -308,8 +333,8 @@
                                         <Icons.BookOpen className="w-5 h-5 text-violet-400" />
                                         <span>Aprendizaje</span>
                                     </h2>
-                                    <div className={"px-3 py-1 border rounded-full text-xs font-medium " + (systemData.learning.tasksTotal > 0 ? "bg-violet-500/20 border-violet-500/30 text-violet-300" : "bg-slate-500/20 border-slate-500/30 text-slate-300")}>
-                                        {systemData.learning.tasksTotal > 0 ? 'En Progreso' : 'Sin sesion'}
+                                    <div className={"px-3 py-1 border rounded-full text-xs font-medium " + (systemData.learning.tasksTotal > 0 ? "bg-violet-500/20 border-violet-500/30 text-violet-300" : "bg-emerald-500/20 border-emerald-500/30 text-emerald-300")}>
+                                        {systemData.learning.tasksTotal > 0 ? 'Activo' : 'Esperando'}
                                     </div>
                                 </div>
                                 
@@ -430,13 +455,18 @@
                                     </div>
                                     
                                     <div className="flex items-center justify-between">
-                                        <span className="text-sm text-gray-400">Modulos Robot</span>
-                                        <span className="text-sm font-medium text-emerald-400">{Object.values(robotModules).filter(v=>v).length}<span className="text-gray-500">/{Object.keys(robotModules).length}</span></span>
+                                        <span className="text-sm text-gray-400">Modulos ATLAS</span>
+                                        <span className="text-sm font-medium text-emerald-400">{systemData.memory.knowledgeBase.skills}<span className="text-gray-500">/{systemData.memory.knowledgeBase.skills > 0 ? systemData.memory.knowledgeBase.skills : '--'}</span></span>
                                     </div>
                                     
                                     <div className="flex items-center justify-between">
-                                        <span className="text-sm text-gray-400">Herramientas ATLAS</span>
+                                        <span className="text-sm text-gray-400">Herramientas</span>
                                         <span className="text-sm font-bold text-white">{systemData.memory.knowledgeBase.rules}</span>
+                                    </div>
+                                    
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm text-gray-400">Reglas aprendidas</span>
+                                        <span className="text-sm font-mono text-fuchsia-400">{(libroVida&&libroVida.ok)?libroVida.reglas_aprendidas||0:'--'}</span>
                                     </div>
                                     
                                     <div className="flex items-center justify-between">
