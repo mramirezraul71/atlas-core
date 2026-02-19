@@ -10,6 +10,17 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+
+def _ts_to_epoch(ts_str: str) -> float:
+    """Convert ISO timestamp string to epoch seconds."""
+    if not ts_str:
+        return 0.0
+    try:
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        return dt.timestamp()
+    except Exception:
+        return 0.0
+
 # Cargar config ANTES de importar módulos que usan os.getenv (audit, policy, etc.)
 BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_PATH = BASE_DIR / "config" / "atlas.env"
@@ -685,6 +696,12 @@ def api_brain_state():
         }
 
 
+@app.get("/brain/status", tags=["Cerebro"])
+def brain_status_alias():
+    """Alias de /api/brain/state para compatibilidad con dashboard."""
+    return api_brain_state()
+
+
 @app.post("/api/brain/state", tags=["Cerebro"])
 def api_brain_state_post(body: BrainStateBody):
     """Fija modo (auto/manual) y/o modelo override. En auto se ignora override."""
@@ -1288,6 +1305,12 @@ def nexus_log_tail(lines: int = 200):
     """Últimas líneas del log de NEXUS (si se arrancó con script start_nexus_services)."""
     p = BASE_DIR / "logs" / "nexus_api.log"
     return {"ok": True, "path": str(p), "lines": int(lines), "text": _tail_text_file(p, lines=int(lines))}
+
+
+@app.get("/nervous/services", tags=["NEXUS"])
+def nervous_services():
+    """Alias compacto del estado del sistema nervioso para compatibilidad."""
+    return nerve_status()
 
 
 @app.get("/api/nerve/status", tags=["NEXUS"])
@@ -2467,6 +2490,43 @@ def bitacora_log(body: BitacoraLogBody):
         src = (body.source or "ui").strip()[:40] or "ui"
         lvl = (body.level or "info").strip().lower()
         # Mapear nivel UI → ok boolean (para evolution_bitacora)
+        ok = lvl not in ("error", "critical", "high", "fail", "failed")
+        try:
+            from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+            append_evolution_log(message=msg[:500], ok=ok, source=src)
+        except Exception:
+            pass
+        return {"ok": True, "logged": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/bitacora/stream")
+def bitacora_stream(since_id: int = 0):
+    """Entradas nuevas de la bitacora desde un ID especifico (polling incremental)."""
+    try:
+        from modules.humanoid.ans.evolution_bitacora import get_evolution_entries
+        all_entries = get_evolution_entries(limit=200)
+        if since_id:
+            ts_threshold = since_id / 1000.0
+            filtered = [e for e in all_entries if _ts_to_epoch(e.get("timestamp", "")) > ts_threshold]
+        else:
+            filtered = all_entries[:50]
+        latest_id = int(time.time() * 1000)
+        return {"ok": True, "entries": filtered, "count": len(filtered), "latest_id": latest_id}
+    except Exception:
+        return {"ok": True, "entries": [], "count": 0, "latest_id": 0}
+
+
+@app.post("/ops/event")
+def ops_event(body: dict):
+    """Recibir evento del bus OPS (Quality, POTs, etc.) y registrar en bitacora."""
+    try:
+        msg = (body.get("message") or "").strip()
+        if not msg:
+            return {"ok": True, "skipped": "empty"}
+        src = (body.get("source") or "ops").strip()[:40]
+        lvl = (body.get("level") or "info").strip().lower()
         ok = lvl not in ("error", "critical", "high", "fail", "failed")
         try:
             from modules.humanoid.ans.evolution_bitacora import append_evolution_log
@@ -4031,8 +4091,8 @@ async def autonomous_dashboard():
 def actions_log_endpoint(limit: int = 50):
     """Log de acciones del sistema — datos locales de la bitacora."""
     try:
-        from modules.humanoid.ans.evolution_bitacora import get_evolution_log
-        entries = get_evolution_log(limit=limit)
+        from modules.humanoid.ans.evolution_bitacora import get_evolution_entries
+        entries = get_evolution_entries(limit=limit)
         return {"ok": True, "entries": entries[:limit]}
     except Exception:
         return {"ok": True, "entries": []}
