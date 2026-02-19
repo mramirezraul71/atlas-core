@@ -28,7 +28,7 @@ if ROOT not in sys.path:
 
 # Configuración
 HTTP_HOST = "0.0.0.0"
-HTTP_PORT = 8080
+HTTP_PORT = 8791
 DASHBOARD_URL = f"http://127.0.0.1:{HTTP_PORT}/ui"
 
 # Estado global
@@ -61,7 +61,10 @@ def print_banner() -> None:
     ║                                                               ║
     ╚═══════════════════════════════════════════════════════════════╝
     """
-    print(banner)
+    try:
+        print(banner)
+    except UnicodeEncodeError:
+        print("[ATLAS] COGNITIVE BRAIN ARCHITECTURE v3.8.0 - Unified Launcher")
 
 
 def init_cognitive_system() -> dict:
@@ -82,27 +85,31 @@ def init_cognitive_system() -> dict:
 
 
 def init_autonomy() -> bool:
-    """Inicializa el sistema de autonomía."""
-    print("\n[2/4] Inicializando Autonomía...")
-    try:
-        from modules.humanoid.quality.autonomy_daemon import start_autonomy, AutonomyConfig
-        config = AutonomyConfig(
-            enable_auto_commit=True,
-            enable_auto_repair=True,
-            enable_scheduled_maintenance=True,
-            enable_incident_response=True,
-            notify_on_start=False,  # No notificar al inicio
-            notify_on_critical=True,
-            telegram_on_errors=True,
-        )
-        result = start_autonomy(config)
-        ok_count = sum(1 for v in result.values() if isinstance(v, dict) and v.get("ok"))
-        total = len([v for v in result.values() if isinstance(v, dict)])
-        print(f"      ✅ Autonomía activa ({ok_count}/{total} componentes)")
-        return result.get("all_ok", False)
-    except Exception as e:
-        print(f"      ⚠️  Autonomía parcial: {e}")
-        return False
+    """Inicializa el sistema de autonomía en background (no bloquea el arranque)."""
+    print("\n[2/4] Iniciando Autonomía (background)...")
+    def _start_bg():
+        try:
+            import time as _t
+            _t.sleep(8)
+            from modules.humanoid.quality.autonomy_daemon import start_autonomy, AutonomyConfig
+            config = AutonomyConfig(
+                enable_auto_commit=True,
+                enable_auto_repair=True,
+                enable_scheduled_maintenance=True,
+                enable_incident_response=True,
+                notify_on_start=False,
+                notify_on_critical=True,
+                telegram_on_errors=True,
+            )
+            result = start_autonomy(config)
+            ok_count = sum(1 for v in result.values() if isinstance(v, dict) and v.get("ok"))
+            total = len([v for v in result.values() if isinstance(v, dict)])
+            print(f"      [Autonomy] {ok_count}/{total} componentes activos")
+        except Exception as e:
+            print(f"      [Autonomy] parcial: {e}")
+    threading.Thread(target=_start_bg, daemon=True).start()
+    print("      ✅ Autonomía programada (arranca tras HTTP)")
+    return True
 
 
 def init_voice() -> bool:
@@ -181,12 +188,13 @@ def signal_handler(signum, frame):
 
 def main():
     """Función principal."""
+    global HTTP_PORT, DASHBOARD_URL
+    
     parser = argparse.ArgumentParser(description="ATLAS Unified Launcher")
     parser.add_argument("--ui", action="store_true", help="Abrir navegador automáticamente")
     parser.add_argument("--port", type=int, default=HTTP_PORT, help="Puerto HTTP")
     args = parser.parse_args()
     
-    global HTTP_PORT, DASHBOARD_URL
     HTTP_PORT = args.port
     DASHBOARD_URL = f"http://127.0.0.1:{HTTP_PORT}/ui"
     
