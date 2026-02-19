@@ -2377,6 +2377,15 @@ def serve_workspace():
     return {"ok": False, "error": "workspace.html not found"}
 
 
+@app.get("/nexus")
+def serve_nexus():
+    """Panel de Control ATLAS — vista consolidada del sistema (antes en puerto 8000)."""
+    path = STATIC_DIR / "nexus.html"
+    if path.exists():
+        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
+    return {"ok": False, "error": "nexus.html not found"}
+
+
 # ----------------------------------------------------------------------------
 # Agent Models — Catálogo de modelos IA disponibles
 # ----------------------------------------------------------------------------
@@ -3990,6 +3999,22 @@ try:
 except Exception as _lve:
     import logging
     logging.getLogger(__name__).warning("Libro de Vida module not loaded: %s", _lve)
+
+# Directives (migrated from NEXUS)
+try:
+    from modules.humanoid.directives.api import router as directives_router
+    app.include_router(directives_router)
+except Exception as _de:
+    import logging
+    logging.getLogger(__name__).warning("Directives module not loaded: %s", _de)
+
+# Tools Registry (migrated from NEXUS)
+try:
+    from modules.humanoid.tools.api import router as tools_api_router
+    app.include_router(tools_api_router)
+except Exception as _te:
+    import logging
+    logging.getLogger(__name__).warning("Tools module not loaded: %s", _te)
 
 # ATLAS AUTONOMOUS (health, healing, evolution, telemetry, resilience, learning)
 try:

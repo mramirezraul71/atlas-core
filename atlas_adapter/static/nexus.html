@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ATLAS NEXUS Dashboard</title>
+    <title>ATLAS — Panel de Control</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -212,16 +212,16 @@
                                 </div>
                                 <div>
                                     <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
-                                        ATLAS NEXUS
+                                        ATLAS
                                     </h1>
-                                    <p className="text-sm text-gray-400 mt-1">Autonomous Learning & Tactical AI System <span className="text-xs font-mono text-gray-600 ml-2">v1.0.0</span></p>
+                                    <p className="text-sm text-gray-400 mt-1">Sistema autonomo de gestion inteligente <span className="text-xs font-mono text-gray-600 ml-2">v2.0.0</span></p>
                                 </div>
                             </div>
                             
                             <div className="flex items-center space-x-3 flex-shrink-0">
                                 <div className="flex space-x-2 flex-shrink-0">
-                                    <a href={'http://'+HOST+':8791/ui'} target="_blank" className="px-3 py-1.5 bg-slate-800/80 border border-slate-700/50 rounded-lg text-xs text-gray-400 hover:text-cyan-400 hover:border-cyan-500/30 transition-all no-underline">📊 Dashboard</a>
-                                    <a href={'http://'+HOST+':8791/workspace'} target="_blank" className="px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/20 rounded-lg text-xs text-cyan-400 hover:bg-cyan-500/20 transition-all no-underline font-medium">⚡ Workspace</a>
+                                    <a href={ORIGIN+'/ui'} className="px-3 py-1.5 bg-slate-800/80 border border-slate-700/50 rounded-lg text-xs text-gray-400 hover:text-cyan-400 hover:border-cyan-500/30 transition-all no-underline">📊 Bitacora</a>
+                                    <a href={ORIGIN+'/workspace'} className="px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/20 rounded-lg text-xs text-cyan-400 hover:bg-cyan-500/20 transition-all no-underline font-medium">⚡ Workspace</a>
                                     <a href={'http://'+HOST+':8002/dashboard'} target="_blank" className="px-3 py-1.5 bg-slate-800/80 border border-slate-700/50 rounded-lg text-xs text-gray-400 hover:text-emerald-400 hover:border-emerald-500/30 transition-all no-underline">🤖 Robot 3D</a>
                                 </div>
                                 {(() => {
@@ -254,7 +254,7 @@
                                     <span>Servicios Core</span>
                                 </h2>
                                 
-                                <div className="grid grid-cols-3 gap-4">
+                                <div className="grid grid-cols-2 gap-4">
                                     {Object.entries(systemData.services).map(([name, service]) => {
                                         const isOn = service.status === 'healthy';
                                         const dotColor = isOn ? 'bg-green-500' : 'bg-red-500';
