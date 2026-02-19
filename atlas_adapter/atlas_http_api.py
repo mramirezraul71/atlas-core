@@ -4028,13 +4028,12 @@ async def autonomous_dashboard():
 # --- /actions/log — log de acciones (antes proxy a NEXUS, ahora local) ---
 
 @app.get("/actions/log")
-async def actions_log_endpoint(limit: int = 50):
+def actions_log_endpoint(limit: int = 50):
     """Log de acciones del sistema — datos locales de la bitacora."""
     try:
-        from modules.humanoid.ans.api import router as _ans_r
-        import urllib.request, json
-        data = json.loads(urllib.request.urlopen(f"http://127.0.0.1:8791/ans/bitacora?limit={limit}", timeout=3).read())
-        return {"ok": True, "entries": data.get("events", [])[:limit]}
+        from modules.humanoid.ans.evolution_bitacora import get_evolution_log
+        entries = get_evolution_log(limit=limit)
+        return {"ok": True, "entries": entries[:limit]}
     except Exception:
         return {"ok": True, "entries": []}
 
