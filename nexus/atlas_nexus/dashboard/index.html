@@ -86,7 +86,7 @@
             const [robotModules, setRobotModules] = useState({});
 
             const pollAll = async () => {
-                const [nx, ps, rb, models, tutor, bitacora, memStats, sysInfo] = await Promise.all([
+                const [nx, ps, rb, models, tutor, bitacora, memStats, sysInfo, cogMem, lifelog, brain] = await Promise.all([
                     fetchJ(NEXUS+'/status'),
                     fetchJ(PUSH+'/status'),
                     fetchJ(ROBOT+'/status'),
@@ -94,7 +94,10 @@
                     fetchJ(PUSH+'/api/learning/tutor/stats'),
                     fetchJ(PUSH+'/ans/bitacora?limit=8'),
                     fetchJ(PUSH+'/api/memory/stats'),
-                    fetchJ(ROBOT+'/system/info')
+                    fetchJ(ROBOT+'/system/info'),
+                    fetchJ(PUSH+'/api/cognitive-memory/unified/stats'),
+                    fetchJ(PUSH+'/api/cognitive-memory/lifelog/status'),
+                    fetchJ(PUSH+'/api/brain/state'),
                 ]);
 
                 setSystemData(prev => {
@@ -124,20 +127,40 @@
                     }
 
                     const memory = {...prev.memory};
-                    if(memStats&&!memStats.error){
-                        memory.semantic.embeddings=memStats.total_experiences||0;
-                        memory.semantic.concepts=memStats.embedding_dimension||0;
+                    if(cogMem&&cogMem.ok){
+                        const eh=cogMem.episodic_hippo||{};
+                        const sh=cogMem.semantic_hippo||{};
+                        const se=cogMem.semantic_engine||{};
+                        const ll=cogMem.lifelog||{};
+                        const ab=cogMem.autobiographical||{};
+                        const wm=cogMem.world_model||{};
+                        memory.episodic.total=(eh.total_episodes||0)+(ll.total_entries||0);
+                        memory.episodic.today=ll.current_session_events||0;
+                        memory.semantic.embeddings=se.total_experiences||0;
+                        memory.semantic.concepts=sh.total_concepts||se.embedding_dimension||0;
+                        memory.knowledgeBase.concepts=(wm.total_entities||0)+(ab.milestones||0);
+                        memory.knowledgeBase.skills=Object.values(robotModules).filter(v=>v).length;
+                        memory.knowledgeBase.rules=nx?(nx.available_tools||8):8;
+                    } else {
+                        if(memStats&&!memStats.error){
+                            memory.semantic.embeddings=memStats.total_experiences||0;
+                            memory.semantic.concepts=memStats.embedding_dimension||0;
+                        }
+                        if(bitacora&&bitacora.entries){
+                            memory.episodic.total=bitacora.total||bitacora.entries.length;
+                            const today=new Date().toISOString().slice(0,10);
+                            memory.episodic.today=bitacora.entries.filter(e=>e.timestamp&&e.timestamp.startsWith(today)).length;
+                        }
+                        memory.knowledgeBase.skills=Object.values(robotModules).filter(v=>v).length;
+                        memory.knowledgeBase.rules=nx?(nx.available_tools||8):8;
                     }
-                    if(bitacora&&bitacora.entries){
-                        memory.episodic.total=bitacora.total_count||bitacora.entries.length;
-                        const today=new Date().toISOString().slice(0,10);
-                        memory.episodic.today=bitacora.entries.filter(e=>e.timestamp&&e.timestamp.startsWith(today)).length;
-                    }
-                    memory.knowledgeBase.skills = Object.values(robotModules).filter(v=>v).length;
-                    memory.knowledgeBase.rules = nx ? (nx.available_tools||0) : prev.memory.knowledgeBase.rules;
 
                     const metrics = {...prev.metrics};
-                    if(nx){
+                    if(lifelog&&lifelog.ok){
+                        const sr=lifelog.success_rate||0;
+                        metrics.successRate=Math.round(sr*100);
+                        metrics.learningSpeed=lifelog.total_entries>50?'Rapido':lifelog.total_entries>10?'Medio':'Inicial';
+                    } else if(nx){
                         const ct=nx.completed_tasks||0,at=nx.active_tasks||0;
                         metrics.successRate=ct>0?Math.round(ct/(ct+at)*100):0;
                         metrics.learningSpeed=at>2?'Rapido':at>0?'Medio':'Idle';
@@ -170,6 +193,7 @@
                 });
 
                 if(models&&models.data){const avail=models.data.filter(m=>m.available&&m.id!=='auto').length;setAiModels({total:models.data.length-1,available:avail})}
+                else if(brain&&brain.ok&&brain.available_models){setAiModels({total:brain.available_models.length,available:brain.available_models.filter(m=>m.available!==false).length})}
             };
 
             useEffect(() => {
