@@ -2529,7 +2529,7 @@ def serve_nexus():
 # ----------------------------------------------------------------------------
 
 _MODEL_CATALOG = [
-    {"id": "auto", "name": "Auto (Local→Gratis→Paga)", "provider": "atlas", "desc": "Cascada: PC gratis primero, luego API gratis, luego paga", "category": "auto"},
+    {"id": "auto", "name": "Auto (Inteligente→Gratis→Local)", "provider": "atlas", "desc": "Cascada: API gratis (Gemini/Groq), luego pago (GPT-4.1/Claude), luego local", "category": "auto"},
     # ── Ollama LOCAL (gratis, tu PC) ──
     {"id": "ollama:deepseek-r1:14b", "name": "DeepSeek R1 14B", "provider": "ollama", "desc": "Razonamiento local (gratis)", "category": "local"},
     {"id": "ollama:deepseek-coder:6.7b", "name": "DeepSeek Coder 6.7B", "provider": "ollama", "desc": "Codigo local (gratis)", "category": "local"},
@@ -5583,7 +5583,7 @@ _TASK_PROFILES = {
                                "tu salud", "tus servicios", "verifica tu", "revisa tu", "reporta tu",
                                "tu memoria", "repara", "corrige los errores", "selfcheck", "health check",
                                "que sabes de ti", "quien eres", "presentate"],
-                  "local": "qwen2.5:7b"},
+                  "local": "deepseek-r1:14b"},
     "code":      {"keywords": ["codigo", "code", "script", "funcion", "function", "programa", "debug",
                                "bug", "fix", "refactor", "implementa", "crea un", "desarrolla",
                                "html", "css", "javascript", "python", "api", "endpoint",
@@ -5594,22 +5594,23 @@ _TASK_PROFILES = {
                                "pros y contras", "ventajas", "desventajas", "opinion"],
                   "local": "deepseek-r1:14b"},
     "general":   {"keywords": [],
-                  "local": "qwen2.5:7b"},
+                  "local": "deepseek-r1:14b"},
 }
 
 _CASCADE_ORDER = [
-    # Tier 1: Local (gratis, tu PC)
-    ("ollama", "{local_model}", "local"),
-    # Tier 2: API con tier gratuito
-    ("groq",   "llama-3.3-70b-versatile", "free_api"),
-    ("gemini", "gemini-2.5-flash",        "free_api"),
-    # Tier 3: API de pago (solo si lo anterior falla)
-    ("openai",    "gpt-4.1-mini",                "paid_api"),
-    ("deepseek",  "deepseek-chat",               "paid_api"),
-    ("mistral",   "mistral-small-latest",         "paid_api"),
-    ("anthropic", "claude-3-5-haiku-20241022",    "paid_api"),
-    ("xai",       "grok-3-mini",                  "paid_api"),
-    ("perplexity","sonar",                        "paid_api"),
+    # Tier 1: API GRATIS — modelos potentes sin costo
+    ("gemini", "gemini-2.5-flash",              "free_api"),
+    ("groq",   "llama-3.3-70b-versatile",       "free_api"),
+    # Tier 2: API DE PAGO — maxima inteligencia disponible
+    ("openai",    "gpt-4.1",                    "paid_api"),
+    ("openai",    "gpt-4.1-mini",               "paid_api"),
+    ("anthropic", "claude-sonnet-4-20250514",   "paid_api"),
+    ("deepseek",  "deepseek-chat",              "paid_api"),
+    ("xai",       "grok-3",                     "paid_api"),
+    ("mistral",   "mistral-large-latest",       "paid_api"),
+    ("perplexity","sonar-pro",                  "paid_api"),
+    # Tier 3: LOCAL — fallback offline (sin internet)
+    ("ollama", "{local_model}",                 "local"),
 ]
 
 
