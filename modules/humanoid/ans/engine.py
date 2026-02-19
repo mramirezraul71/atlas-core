@@ -286,6 +286,43 @@ def _run_full(timeout_sec: int) -> Dict[str, Any]:
     except Exception:
         pass
 
+    # Sync World Model with check results
+    try:
+        from modules.humanoid.world_model.engine import get_world_model
+        wm = get_world_model()
+        for r in results:
+            cid = r.get("check_id", "unknown")
+            wm.upsert_entity(
+                name=cid, entity_type="service_check",
+                state={"ok": r.get("ok", False), "message": (r.get("message") or "")[:120]},
+                confidence=1.0 if r.get("ok") else 0.5,
+            )
+        for a in actions_taken:
+            wm.record_outcome(
+                action_type=a.get("heal_id", "unknown"),
+                context={"check_id": a.get("check_id", "")},
+                predicted="fix", actual="fixed" if a.get("ok") else "failed",
+                success=bool(a.get("ok")), duration_ms=ms,
+            )
+    except Exception:
+        pass
+
+    # Sync Lifelog
+    try:
+        from modules.humanoid.memory_engine.lifelog import get_lifelog
+        ll = get_lifelog()
+        issues = [r for r in results if not r.get("ok")]
+        ll.log(
+            event_type="ans_cycle", source="ans",
+            perception=f"{len(results)} checks ejecutados",
+            action=f"{len(actions_taken)} acciones tomadas",
+            outcome=f"{len(issues)} problemas",
+            success=len(issues) == 0,
+            importance=0.7 if issues else 0.3,
+        )
+    except Exception:
+        pass
+
     ms = int((time.perf_counter() - t0) * 1000)
     return {
         "ok": True,
