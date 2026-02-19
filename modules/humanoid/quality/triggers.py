@@ -104,8 +104,10 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         pot_id="git_safe_sync",
         enabled=_env_bool("QUALITY_GIT_UNSAFE_TRIGGERS_ENABLED", True),
         priority=2,
-        cooldown_seconds=120,
-        check_interval_seconds=15,
+        # Cooldown 600s (10 min): evita acumulación de aprobaciones por locks transitorios del IDE
+        cooldown_seconds=600,
+        # Check cada 60s (antes 15s): reduce falsos positivos con index.lock transitorios
+        check_interval_seconds=60,
         # Por defecto exige aprobación: toca el repositorio.
         require_approval=_env_bool("QUALITY_GIT_UNSAFE_REQUIRE_APPROVAL", True),
     ),
@@ -285,11 +287,17 @@ def check_git_behind() -> Dict[str, Any]:
 def check_git_unsafe() -> Dict[str, Any]:
     """
     Detecta estados Git peligrosos que suelen romper la autonomía:
-    - index.lock persistente
+    - index.lock persistente (>30s de edad — no transitorios del IDE)
     - rebase/merge en progreso
     - detached HEAD
     - conflictos (unmerged)
+
+    NOTA: index.lock transitorios (<30s) se ignoran — el IDE (Cursor, VSCode)
+    y los propios comandos git crean index.lock brevemente durante operaciones
+    normales. Solo un lock stale (zombie) indica un problema real.
     """
+    _LOCK_STALE_SECONDS = int(os.getenv("GIT_LOCK_STALE_SECONDS", "30"))
+
     try:
         git_dir = REPO_ROOT / ".git"
         lock_path = git_dir / "index.lock"
@@ -297,14 +305,24 @@ def check_git_unsafe() -> Dict[str, Any]:
         rebase_merge = git_dir / "rebase-merge"
         merge_head = git_dir / "MERGE_HEAD"
 
+        # index.lock: solo es peligroso si lleva >30s (stale/zombie)
+        lock_is_stale = False
+        if lock_path.exists():
+            try:
+                age_seconds = time.time() - lock_path.stat().st_mtime
+                lock_is_stale = age_seconds > _LOCK_STALE_SECONDS
+            except Exception:
+                lock_is_stale = False  # si no podemos leer, asumir no-stale
+
         details: Dict[str, Any] = {
             "lock_exists": lock_path.exists(),
+            "lock_is_stale": lock_is_stale,
             "rebase_apply": rebase_apply.exists(),
             "rebase_merge": rebase_merge.exists(),
             "merge_in_progress": merge_head.exists(),
         }
 
-        if details["lock_exists"] or details["rebase_apply"] or details["rebase_merge"] or details["merge_in_progress"]:
+        if lock_is_stale or details["rebase_apply"] or details["rebase_merge"] or details["merge_in_progress"]:
             return {"triggered": True, "reason": "git_state_markers", "details": details}
 
         st = subprocess.run(
