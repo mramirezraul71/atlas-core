@@ -68,26 +68,24 @@
             const ROBOT = 'http://'+HOST+':8002';
 
             const fmt = (s) => {const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=Math.floor(s%60);return h?h+'h '+m+'m':m>0?m+'m '+sec+'s':sec+'s'};
-            const fetchJ = async (url) => {try{const r=await fetch(url,{signal:AbortSignal.timeout(8000)});return await r.json()}catch(e){return null}};
+            const fetchJ = async (url) => {try{const r=await fetch(url,{signal:AbortSignal.timeout(12000)});return await r.json()}catch(e){console.warn('fetchJ fail:',url,e.message);return null}};
 
             const [systemData, setSystemData] = useState({
                 services: {
                     push: { status: 'checking', uptime: '--', port: 8791, load: 0 },
                     robot: { status: 'checking', uptime: '--', port: 8002, load: 0 }
                 },
-                learning: { currentLesson: 'Cargando...', progress: 0, tasksCompleted: 0, tasksTotal: 0, tutorScore: 0, uncertaintyRate: 0 },
+                learning: { currentLesson: 'Cargando...', progress: 0, tasksCompleted: 0, tasksTotal: 0, tutorScore: '--', uncertaintyRate: 0 },
                 memory: { episodic: { total: 0, today: 0 }, semantic: { concepts: 0, embeddings: 0 }, knowledgeBase: { concepts: 0, skills: 0, rules: 0 } },
                 metrics: { successRate: 0, avgConfidence: 0, learningSpeed: '--', consolidations: 0 },
                 recentActivity: [],
-                sysInfo: { cpu: '--', ram: '--', disk: '--', python: '--' }
+                sysInfo: { cpu: '--', ram: '--', disk: '--', python: '--' },
+                ai: { total: 0, available: 0 },
+                extra: { reglas: 0, principios: 0, episodios: 0, modulesConnected: 0, modulesTotal: 0, toolsCount: 0 }
             });
 
-            const [aiModels, setAiModels] = useState({ total: 0, available: 0 });
-            const [robotModules, setRobotModules] = useState({});
-            const [extraData, setExtraData] = useState({ reglas: 0, principios: 0, episodios: 0, tasaExito: 0, modulesConnected: 0, modulesTotal: 0, toolsCount: 0 });
-
             const pollAll = async () => {
-                const [ps, rb, models, tutor, bitacora, memStats, sysInfo, cogMem, lifelog, brain, libroVida, toolsData, modulesData] = await Promise.all([
+                const results = await Promise.allSettled([
                     fetchJ(PUSH+'/status'),
                     fetchJ(ROBOT+'/status'),
                     fetchJ(PUSH+'/agent/models'),
@@ -102,89 +100,89 @@
                     fetchJ(PUSH+'/tools'),
                     fetchJ(PUSH+'/modules/check-all'),
                 ]);
+                const v = (i) => results[i].status==='fulfilled'?results[i].value:null;
+                const ps=v(0),rb=v(1),models=v(2),tutor=v(3),bitacora=v(4),memStats=v(5),
+                      sysInfo=v(6),cogMem=v(7),lifelog=v(8),brain=v(9),libroVida=v(10),
+                      toolsData=v(11),modulesData=v(12);
 
                 setSystemData(prev => {
                     const svc = {...prev.services};
-                    if(ps&&ps.ok!==false){svc.push={status:'healthy',uptime:'--',port:8791,load:Math.min(100,Math.max(10,20))}}
-                    else{svc.push={...svc.push,status:'offline',uptime:'--',load:0}}
+                    if(ps&&ps.ok!==false){svc.push={status:'healthy',uptime:'--',port:8791,load:20}}
+                    else{svc.push={...svc.push,status:'offline',load:0}}
                     if(rb&&rb.status){
-                        const activeCount=Object.values(rb.modules||{}).filter(v=>v).length;
-                        const totalCount=Object.keys(rb.modules||{}).length||1;
+                        const mods=rb.modules||{};
+                        const activeCount=Object.values(mods).filter(v=>v).length;
+                        const totalCount=Object.keys(mods).length||1;
                         svc.robot={status:'healthy',uptime:fmt(rb.uptime||0),port:8002,load:Math.round(activeCount/totalCount*100)};
-                        setRobotModules(rb.modules||{});
                     } else{svc.robot={...svc.robot,status:'offline',uptime:'--',load:0}}
 
+                    // --- APRENDIZAJE: usar datos reales de Lifelog (corazon) ---
                     const learning = {...prev.learning};
-                    if(tutor&&tutor.ok&&tutor.data){
-                        const td=tutor.data;
-                        const tutType=td.tutor_type||'';
-                        learning.currentLesson=td.curriculum||(tutType==='disabled'?'Aprendizaje Autonomo':tutType)||'AI Tutor';
-                        const comp=td.lessons_completed||td.completed||0;
-                        const fail=td.lessons_failed||td.failed||0;
-                        learning.tasksCompleted=comp;
-                        learning.tasksTotal=comp+fail||0;
-                        learning.progress=learning.tasksTotal>0?Math.round(comp/learning.tasksTotal*100):0;
-                        const rlvl=td.robot_level||'';
-                        learning.tutorScore=rlvl==='beginner'?'Principiante':rlvl==='intermediate'?'Intermedio':rlvl==='advanced'?'Avanzado':rlvl||'--';
-                        learning.uncertaintyRate=fail>0&&comp>0?(fail/(comp+fail)):0;
-                    }
+                    learning.currentLesson='Aprendizaje Autonomo';
                     if(lifelog&&lifelog.ok){
-                        const comp2=lifelog.success_count||0;
-                        const fail2=lifelog.failure_count||0;
-                        if(comp2+fail2>learning.tasksTotal){
-                            learning.tasksCompleted=comp2;
-                            learning.tasksTotal=comp2+fail2;
-                            learning.progress=learning.tasksTotal>0?Math.round(comp2/learning.tasksTotal*100):0;
-                            learning.uncertaintyRate=fail2>0?(fail2/learning.tasksTotal):0;
-                        }
-                    }
-
-                    const memory = {...prev.memory};
-                    if(cogMem&&cogMem.ok){
-                        const eh=cogMem.episodic_hippo||{};
-                        const sh=cogMem.semantic_hippo||{};
-                        const se=cogMem.semantic_engine||{};
-                        const ll=cogMem.lifelog||{};
-                        const ab=cogMem.autobiographical||{};
-                        const wm=cogMem.world_model||{};
-                        memory.episodic.total=(eh.total_episodes||0)+(ll.total_entries||0);
-                        memory.episodic.today=ll.current_session_events||0;
-                        memory.semantic.embeddings=se.total_experiences||0;
-                        memory.semantic.concepts=sh.total_concepts||se.embedding_dimension||0;
-                        memory.knowledgeBase.concepts=(wm.total_entities||0)+(ab.milestones||0);
-                        memory.knowledgeBase.skills=modulesData&&modulesData.ok?modulesData.connected:Object.values(robotModules).filter(v=>v).length;
-                        memory.knowledgeBase.rules=toolsData&&toolsData.tools?toolsData.tools.length:(libroVida&&libroVida.ok?(libroVida.reglas_aprendidas||0):0);
-                    } else {
-                        if(memStats&&!memStats.error){
-                            memory.semantic.embeddings=memStats.total_experiences||0;
-                            memory.semantic.concepts=memStats.embedding_dimension||0;
-                        }
-                        if(bitacora&&bitacora.entries){
-                            memory.episodic.total=bitacora.total||bitacora.entries.length;
-                            const today=new Date().toISOString().slice(0,10);
-                            memory.episodic.today=bitacora.entries.filter(e=>e.timestamp&&e.timestamp.startsWith(today)).length;
-                        }
-                        memory.knowledgeBase.skills=modulesData&&modulesData.ok?modulesData.connected:Object.values(robotModules).filter(v=>v).length;
-                        memory.knowledgeBase.rules=toolsData&&toolsData.tools?toolsData.tools.length:(libroVida&&libroVida.ok?(libroVida.reglas_aprendidas||0):0);
+                        const comp=lifelog.success_count||0;
+                        const fail=lifelog.failure_count||0;
+                        const total=comp+fail;
+                        learning.tasksCompleted=comp;
+                        learning.tasksTotal=total;
+                        learning.progress=total>0?Math.round(comp/total*100):0;
+                        learning.uncertaintyRate=total>0?Math.round(fail/total*100):0;
+                    } else if(tutor&&tutor.ok&&tutor.data){
+                        const td=tutor.data;
+                        const comp=td.lessons_completed||0;
+                        const fail=td.lessons_failed||0;
+                        learning.tasksCompleted=comp;
+                        learning.tasksTotal=comp+fail;
+                        learning.progress=(comp+fail)>0?Math.round(comp/(comp+fail)*100):0;
+                        learning.uncertaintyRate=(comp+fail)>0?Math.round(fail/(comp+fail)*100):0;
                     }
                     if(libroVida&&libroVida.ok){
-                        memory.knowledgeBase.concepts+=(libroVida.total_episodios||0);
-                    }
-                    if(lifelog&&lifelog.ok){
-                        memory.episodic.total=Math.max(memory.episodic.total, lifelog.total_entries||0);
-                        memory.episodic.today=Math.max(memory.episodic.today, lifelog.current_session_events||0);
+                        const lvl=libroVida.total_episodios||0;
+                        learning.tutorScore=lvl>20?'Experto':lvl>10?'Avanzado':lvl>3?'Intermedio':'Principiante';
+                    } else {
+                        learning.tutorScore='Principiante';
                     }
 
+                    // --- MEMORIA: episodica, semantica, base de conocimiento ---
+                    const memory = {...prev.memory};
+                    if(lifelog&&lifelog.ok){
+                        memory.episodic.total=lifelog.total_entries||0;
+                        memory.episodic.today=lifelog.current_session_events||0;
+                    } else if(cogMem&&cogMem.ok){
+                        const eh=cogMem.episodic_hippo||{};
+                        const ll=cogMem.lifelog||{};
+                        memory.episodic.total=(eh.total_episodes||0)+(ll.total_entries||0);
+                        memory.episodic.today=ll.current_session_events||0;
+                    } else if(bitacora&&bitacora.entries){
+                        memory.episodic.total=bitacora.total||bitacora.entries.length;
+                        const today=new Date().toISOString().slice(0,10);
+                        memory.episodic.today=bitacora.entries.filter(e=>e.timestamp&&e.timestamp.startsWith(today)).length;
+                    }
+                    if(cogMem&&cogMem.ok){
+                        const sh=cogMem.semantic_hippo||{};
+                        const se=cogMem.semantic_engine||{};
+                        memory.semantic.embeddings=se.total_experiences||sh.total_concepts||0;
+                        memory.semantic.concepts=sh.total_concepts||se.embedding_dimension||0;
+                    } else if(memStats&&!memStats.error){
+                        memory.semantic.embeddings=memStats.total_experiences||0;
+                        memory.semantic.concepts=memStats.embedding_dimension||0;
+                    }
+                    if(libroVida&&libroVida.ok){
+                        memory.semantic.embeddings=Math.max(memory.semantic.embeddings, libroVida.total_episodios||0);
+                        memory.semantic.concepts=Math.max(memory.semantic.concepts, (libroVida.reglas_aprendidas||0)+(libroVida.principios_generales||0));
+                    }
+
+                    // --- METRICAS ---
                     const metrics = {...prev.metrics};
                     if(lifelog&&lifelog.ok){
-                        const sr=lifelog.success_rate||0;
-                        metrics.successRate=Math.round(sr*100);
+                        metrics.successRate=Math.round((lifelog.success_rate||0)*100);
                         metrics.learningSpeed=lifelog.total_entries>50?'Rapido':lifelog.total_entries>10?'Medio':'Inicial';
                     } else if(libroVida&&libroVida.ok){
                         metrics.successRate=Math.round((libroVida.tasa_exito||0)*100);
                         metrics.learningSpeed=libroVida.total_episodios>10?'Rapido':libroVida.total_episodios>3?'Medio':'Inicial';
                     }
 
+                    // --- ACTIVIDAD ---
                     const activity = [];
                     if(bitacora&&bitacora.entries){
                         bitacora.entries.slice(0,5).forEach(e=>{
@@ -198,6 +196,7 @@
                     }
                     if(!activity.length){activity.push({time:new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}),action:'Sistema operativo',status:'success',confidence:0.95})}
 
+                    // --- SISTEMA ---
                     const si = {...prev.sysInfo};
                     if(sysInfo){
                         si.cpu=(sysInfo.cpu_percent!==undefined)?sysInfo.cpu_percent+'%':'--';
@@ -208,21 +207,29 @@
                         si.python=sysInfo.python_version||'--';
                     }
 
-                    return{services:svc,learning,memory,metrics,recentActivity:activity,sysInfo:si};
-                });
+                    // --- IA MODELOS (consolidado, sin state separado) ---
+                    const ai = {...prev.ai};
+                    if(models&&models.data){
+                        ai.available=models.data.filter(m=>m.available&&m.id!=='auto').length;
+                        ai.total=models.data.length-1;
+                    } else if(brain&&brain.ok&&brain.available_models){
+                        ai.total=brain.available_models.length;
+                        ai.available=brain.available_models.filter(m=>m.available!==false).length;
+                    }
 
-                if(models&&models.data){
-                    const avail=models.data.filter(m=>m.available&&m.id!=='auto').length;
-                    setAiModels({total:models.data.length-1,available:avail});
-                } else if(brain&&brain.ok&&brain.available_models){
-                    setAiModels({total:brain.available_models.length,available:brain.available_models.filter(m=>m.available!==false).length});
-                }
-                if(rb&&rb.modules){setRobotModules(rb.modules)}
-                const ed = {};
-                if(libroVida&&libroVida.ok){ed.reglas=libroVida.reglas_aprendidas||0;ed.principios=libroVida.principios_generales||0;ed.episodios=libroVida.total_episodios||0;ed.tasaExito=Math.round((libroVida.tasa_exito||0)*100)}
-                if(modulesData&&modulesData.ok){ed.modulesConnected=modulesData.connected||0;ed.modulesTotal=modulesData.total||0}
-                if(toolsData&&toolsData.tools){ed.toolsCount=toolsData.tools.length}
-                setExtraData(prev=>({...prev,...ed}))
+                    // --- EXTRA DATA (consolidado, sin state separado) ---
+                    const extra = {...prev.extra};
+                    if(modulesData&&modulesData.ok){extra.modulesConnected=modulesData.connected||0;extra.modulesTotal=modulesData.total||0}
+                    if(toolsData&&toolsData.tools){extra.toolsCount=toolsData.tools.length}
+                    if(libroVida&&libroVida.ok){extra.reglas=libroVida.reglas_aprendidas||0;extra.principios=libroVida.principios_generales||0;extra.episodios=libroVida.total_episodios||0}
+
+                    // Base de conocimiento = modulos + tools + reglas
+                    memory.knowledgeBase.skills=extra.modulesConnected;
+                    memory.knowledgeBase.rules=extra.toolsCount;
+                    memory.knowledgeBase.concepts=extra.reglas+(libroVida&&libroVida.ok?(libroVida.total_episodios||0):0);
+
+                    return{services:svc,learning,memory,metrics,recentActivity:activity,sysInfo:si,ai,extra};
+                });
             };
 
             useEffect(() => {
@@ -434,10 +441,10 @@
                                     <div className="bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-lg p-4">
                                         <div className="flex items-center justify-between mb-2">
                                             <h3 className="font-medium text-white">Base de Conocimiento</h3>
-                                            <span className="text-2xl font-bold text-fuchsia-400">{extraData.modulesConnected + extraData.toolsCount + extraData.reglas}</span>
+                                            <span className="text-2xl font-bold text-fuchsia-400">{systemData.extra.modulesConnected + systemData.extra.toolsCount + systemData.extra.reglas}</span>
                                         </div>
                                         <div className="text-xs text-gray-400">Modulos + Tools + Reglas</div>
-                                        <div className="text-xs text-fuchsia-400/70">{extraData.modulesConnected} modulos, {extraData.toolsCount} tools, {extraData.reglas} reglas</div>
+                                        <div className="text-xs text-fuchsia-400/70">{systemData.extra.modulesConnected} modulos, {systemData.extra.toolsCount} tools, {systemData.extra.reglas} reglas</div>
                                     </div>
                                 </div>
                             </div>
@@ -452,7 +459,7 @@
                                 <div className="space-y-3">
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-400">Modelos IA</span>
-                                        <span className="text-sm font-mono text-emerald-400">{aiModels.available}<span className="text-gray-500">/{aiModels.total}</span> activos</span>
+                                        <span className="text-sm font-mono text-emerald-400">{systemData.ai.available}<span className="text-gray-500">/{systemData.ai.total}</span> activos</span>
                                     </div>
                                     
                                     <div className="flex items-center justify-between">
@@ -462,17 +469,17 @@
                                     
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-400">Modulos ATLAS</span>
-                                        <span className="text-sm font-medium text-emerald-400">{extraData.modulesConnected}<span className="text-gray-500">/{extraData.modulesTotal}</span></span>
+                                        <span className="text-sm font-medium text-emerald-400">{systemData.extra.modulesConnected}<span className="text-gray-500">/{systemData.extra.modulesTotal}</span></span>
                                     </div>
                                     
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-400">Herramientas</span>
-                                        <span className="text-sm font-bold text-white">{extraData.toolsCount}</span>
+                                        <span className="text-sm font-bold text-white">{systemData.extra.toolsCount}</span>
                                     </div>
                                     
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-400">Reglas aprendidas</span>
-                                        <span className="text-sm font-mono text-fuchsia-400">{extraData.reglas}</span>
+                                        <span className="text-sm font-mono text-fuchsia-400">{systemData.extra.reglas}</span>
                                     </div>
                                     
                                     <div className="flex items-center justify-between">
