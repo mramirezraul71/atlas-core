@@ -53,11 +53,11 @@ def start_robot_only() -> str:
     return "Robot" if _start([PYTHON, "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002"], ROBOT_DIR, "Robot") else "none"
 
 
-def main(robot_only: bool = False):
+def main(robot_only: bool = False, include_nexus: bool = False):
     started = []
     if robot_only:
         return start_robot_only()
-    if NEXUS_DIR.exists():
+    if include_nexus and NEXUS_DIR.exists():
         if _start([PYTHON, "nexus.py", "--mode", "api"], NEXUS_DIR, "NEXUS"):
             started.append("NEXUS")
     if ROBOT_DIR.exists():
@@ -73,4 +73,5 @@ def main(robot_only: bool = False):
 
 if __name__ == "__main__":
     robot_only = "--robot-only" in sys.argv
-    print(main(robot_only=robot_only))
+    include_nexus = "--include-nexus" in sys.argv
+    print(main(robot_only=robot_only, include_nexus=include_nexus))

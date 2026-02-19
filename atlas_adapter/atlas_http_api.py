@@ -2081,6 +2081,132 @@ def health_debug():
         return {"ok": False, "error": str(e)}
 
 
+@app.get("/doctor")
+def doctor_endpoint():
+    """Diagnostico rapido del sistema."""
+    try:
+        from atlas_runtime import doctor
+        return {"ok": True, "result": doctor()}
+    except Exception as e:
+        return {"ok": True, "result": f"Doctor unavailable: {e}"}
+
+
+@app.get("/modules/check-all")
+def modules_check_all():
+    """Verificar estado de todos los modulos."""
+    results = []
+    connected = 0
+    module_checks = [
+        ("ans", "modules.humanoid.ans.api"),
+        ("governance", "modules.humanoid.governance.api"),
+        ("nervous", "modules.humanoid.nervous.api"),
+        ("cognitive", "modules.humanoid.cognitive.api"),
+        ("quality", "modules.humanoid.quality.api"),
+        ("memory_engine", "modules.humanoid.memory_engine"),
+        ("brain", "modules.humanoid.brain"),
+        ("hippo", "modules.humanoid.hippo.api"),
+        ("learning", "modules.humanoid.learning.api"),
+        ("comms", "modules.humanoid.comms.hub"),
+        ("world_model", "modules.humanoid.world_model.api"),
+        ("libro_vida", "modules.humanoid.memory_engine.libro_vida"),
+        ("directives", "modules.humanoid.directives.api"),
+        ("tools", "modules.humanoid.tools.api"),
+        ("scheduler", "modules.humanoid.scheduler.api"),
+        ("tutorias", "modules.humanoid.quality.tutorias.api"),
+    ]
+    for name, mod_path in module_checks:
+        try:
+            __import__(mod_path)
+            results.append({"name": name, "status": "connected", "module": mod_path})
+            connected += 1
+        except Exception as e:
+            results.append({"name": name, "status": "error", "module": mod_path, "error": str(e)[:100]})
+    return {"ok": True, "modules": results, "connected": connected, "total": len(module_checks)}
+
+
+@app.post("/modules/reconnect/{module_id}")
+def modules_reconnect(module_id: str):
+    """Intentar reconectar un modulo especifico."""
+    try:
+        import importlib
+        mod_map = {
+            "ans": "modules.humanoid.ans.api",
+            "governance": "modules.humanoid.governance.api",
+            "nervous": "modules.humanoid.nervous.api",
+            "cognitive": "modules.humanoid.cognitive.api",
+            "quality": "modules.humanoid.quality.api",
+            "brain": "modules.humanoid.brain",
+            "hippo": "modules.humanoid.hippo.api",
+            "learning": "modules.humanoid.learning.api",
+            "comms": "modules.humanoid.comms.hub",
+            "world_model": "modules.humanoid.world_model.api",
+            "memory_engine": "modules.humanoid.memory_engine",
+        }
+        mod_path = mod_map.get(module_id, f"modules.humanoid.{module_id}")
+        mod = importlib.import_module(mod_path)
+        importlib.reload(mod)
+        return {"ok": True, "module": module_id, "status": "reconnected"}
+    except Exception as e:
+        return {"ok": False, "module": module_id, "error": str(e)[:200]}
+
+
+@app.get("/vision/cameras")
+def vision_cameras():
+    """Listar camaras disponibles."""
+    cameras = []
+    try:
+        import cv2
+        for i in range(3):
+            cap = cv2.VideoCapture(i)
+            if cap.isOpened():
+                cameras.append({"id": i, "name": f"Camera {i}", "active": True})
+                cap.release()
+    except Exception:
+        pass
+    return {"ok": True, "cameras": cameras, "count": len(cameras)}
+
+
+@app.get("/vision/capture/{cam_id}")
+def vision_capture(cam_id: int = 0):
+    """Capturar frame de una camara."""
+    try:
+        import cv2, base64
+        cap = cv2.VideoCapture(cam_id)
+        if not cap.isOpened():
+            return {"ok": False, "error": f"Camera {cam_id} not available"}
+        ret, frame = cap.read()
+        cap.release()
+        if not ret:
+            return {"ok": False, "error": "Failed to capture frame"}
+        _, buf = cv2.imencode('.jpg', frame)
+        b64 = base64.b64encode(buf).decode()
+        return {"ok": True, "image": f"data:image/jpeg;base64,{b64}", "camera": cam_id}
+    except ImportError:
+        return {"ok": False, "error": "OpenCV not installed"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/vision/scan")
+def vision_scan():
+    """Escanear camaras disponibles."""
+    return vision_cameras()
+
+
+@app.get("/nervous/diagnostic")
+def nervous_diagnostic():
+    """Diagnostico del sistema nervioso."""
+    try:
+        from modules.humanoid.nervous.api import nerve_full_status
+        return nerve_full_status()
+    except Exception:
+        try:
+            from modules.humanoid.nerve import nerve_eyes_status, feet_status
+            return {"ok": True, "eyes": nerve_eyes_status(), "feet": feet_status(), "nodes": []}
+        except Exception as e:
+            return {"ok": False, "error": str(e), "nodes": []}
+
+
 @app.get("/version")
 def version():
     """Release version, git sha, channel (stable/canary), edition, product_mode."""

@@ -1,4 +1,4 @@
-"""Reinicia NEXUS (8000) y Robot backend (8002) cuando no responden."""
+"""Reinicia Robot backend (8002) cuando no responde. NEXUS consolidado en PUSH."""
 from __future__ import annotations
 
 import os
@@ -16,14 +16,14 @@ def run(**kwargs) -> dict:
         return heal_result(False, "restart_nexus_services", f"Script no encontrado: {SCRIPT_PATH}", {})
     try:
         from modules.humanoid.ans.live_stream import emit
-        emit("heal_attempt", heal_id="restart_nexus_services", message="Iniciando NEXUS y Robot")
+        emit("heal_attempt", heal_id="restart_nexus_services", message="Iniciando Robot backend")
     except Exception:
         pass
     try:
         py = os.getenv("PYTHON", "python")
         flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" and hasattr(subprocess, "CREATE_NO_WINDOW") else 0
         r = subprocess.run(
-            [py, str(SCRIPT_PATH)],
+            [py, str(SCRIPT_PATH), "--robot-only"],
             capture_output=True,
             timeout=30,
             text=True,
@@ -32,8 +32,8 @@ def run(**kwargs) -> dict:
             creationflags=flags,
         )
         out = (r.stdout or "").strip() or (r.stderr or "")[:150]
-        ok = "NEXUS" in out or "Robot" in out
-        msg = f"Iniciados: {out}" if ok else f"No se pudo iniciar: {out or r.stderr or 'sin salida'}"
+        ok = "Robot" in out
+        msg = f"Iniciado: {out}" if ok else f"No se pudo iniciar: {out or r.stderr or 'sin salida'}"
         try:
             from modules.humanoid.ans.live_stream import emit
             emit("heal_end", heal_id="restart_nexus_services", ok=ok, message=msg[:80])
