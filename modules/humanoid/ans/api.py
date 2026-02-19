@@ -15,6 +15,24 @@ router = APIRouter(prefix="/ans", tags=["ANS"])
 
 _RE_SESSION_STARTED = re.compile(r"(listo para trabajar).*(sesión iniciada)", re.IGNORECASE)
 
+# Auto-initialize life period and lifelog session on module load
+try:
+    from modules.humanoid.memory_engine.autobiographical import get_autobiographical_memory
+    _am = get_autobiographical_memory()
+    if not _am.get_current_period():
+        _am.start_period("ATLAS Session", "Periodo iniciado automaticamente")
+    _am.update_trait("capability", "memory_systems", "world_model,autobiographical,lifelog,episodic,semantic")
+    _am.update_trait("personality", "role", "autonomous_system")
+except Exception:
+    pass
+
+try:
+    from modules.humanoid.memory_engine.lifelog import get_lifelog
+    _ll = get_lifelog()
+    _ll.log("system_startup", "ans", perception="ANS API loaded", importance=0.4)
+except Exception:
+    pass
+
 
 def _ts_to_epoch(ts: str) -> float:
     t = (ts or "").strip()
@@ -390,7 +408,46 @@ def ans_evolution_log(body: EvolutionLogBody):
         if msg:
             append_evolution_log(msg, ok=ok, source=source)
             emit("evolution_log", message=msg, ok=ok)
+            try:
+                from modules.humanoid.memory_engine.lifelog import get_lifelog
+                ll = get_lifelog()
+                ll.log(
+                    event_type="system_event", source=source,
+                    perception=msg, outcome="ok" if ok else "error",
+                    success=ok, importance=0.3 if ok else 0.7,
+                )
+            except Exception:
+                pass
         return {"ok": True, "logged": bool(msg)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+class MilestoneLogBody(BaseModel):
+    title: str
+    description: str = ""
+    category: str = "system"
+    importance: float = 0.7
+
+
+@router.post("/milestone")
+def ans_record_milestone(body: MilestoneLogBody):
+    """Registra un hito en la memoria autobiografica desde cualquier modulo."""
+    try:
+        from modules.humanoid.memory_engine.autobiographical import get_autobiographical_memory
+        am = get_autobiographical_memory()
+        mid = am.record_milestone(body.title, body.description,
+                                   body.category, body.importance)
+        try:
+            from modules.humanoid.memory_engine.lifelog import get_lifelog
+            get_lifelog().log(
+                event_type="milestone", source="autobiographical",
+                perception=body.title, action=body.description,
+                importance=body.importance,
+            )
+        except Exception:
+            pass
+        return {"ok": True, "milestone_id": mid}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

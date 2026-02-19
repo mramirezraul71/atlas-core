@@ -3097,6 +3097,10 @@
       pollHealing();
       setInterval(pollHealing, 60000);
 
+      // Cognitive Memory systems status
+      pollCognitiveMemory();
+      setInterval(pollCognitiveMemory, 120000);
+
       // Entrada inicial
       addToBitacora('Sistema ATLAS iniciado', 'success', 'system');
       addToBitacora(`Dashboard v${ATLAS_VERSION} cargado`, 'info', 'system');
@@ -3361,6 +3365,43 @@
           });
         }
         _lastHealingCount = history.length;
+      } catch(e) {}
+    }
+
+    let _prevCogMemState = {};
+    async function pollCognitiveMemory() {
+      try {
+        const [wmRes, llRes, abRes] = await Promise.allSettled([
+          fetch(`${API_BASE}/api/cognitive-memory/world-model/status`).then(r => r.json()),
+          fetch(`${API_BASE}/api/cognitive-memory/lifelog/status`).then(r => r.json()),
+          fetch(`${API_BASE}/api/cognitive-memory/autobiographical/status`).then(r => r.json()),
+        ]);
+
+        if (wmRes.status === 'fulfilled' && wmRes.value.ok) {
+          const wm = wmRes.value;
+          if (_prevCogMemState.wmEntities !== undefined && wm.total_entities > _prevCogMemState.wmEntities + 5) {
+            addToBitacora(`World Model: ${wm.total_entities} entidades (+${wm.total_entities - _prevCogMemState.wmEntities})`, 'info', 'brain');
+          }
+          _prevCogMemState.wmEntities = wm.total_entities;
+        }
+
+        if (llRes.status === 'fulfilled' && llRes.value.ok) {
+          const ll = llRes.value;
+          if (ll.failure_count > 0 && ll.failure_count !== _prevCogMemState.llFailures) {
+            if ((_prevCogMemState.llFailures || 0) < ll.failure_count) {
+              addToBitacora(`Lifelog: ${ll.failure_count} fallos registrados`, 'warning', 'system');
+            }
+          }
+          _prevCogMemState.llFailures = ll.failure_count;
+        }
+
+        if (abRes.status === 'fulfilled' && abRes.value.ok) {
+          const ab = abRes.value;
+          if (ab.milestones > (_prevCogMemState.abMilestones || 0)) {
+            addToBitacora(`Nuevo hito autobiografico registrado (total: ${ab.milestones})`, 'success', 'brain');
+          }
+          _prevCogMemState.abMilestones = ab.milestones;
+        }
       } catch(e) {}
     }
 

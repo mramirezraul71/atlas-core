@@ -3951,6 +3951,14 @@ if quality_router:
 if cognitive_router:
     app.include_router(cognitive_router)
 
+# Cognitive Memory (World Model, Autobiographical, Lifelog, Planner, Unified Memory)
+try:
+    from modules.humanoid.world_model.api import router as cognitive_memory_router
+    app.include_router(cognitive_memory_router)
+except Exception as _cme:
+    import logging
+    logging.getLogger(__name__).warning("Cognitive Memory module not loaded: %s", _cme)
+
 # ATLAS AUTONOMOUS (health, healing, evolution, telemetry, resilience, learning)
 try:
     import sys
