@@ -84,6 +84,7 @@
 
             const [aiModels, setAiModels] = useState({ total: 0, available: 0 });
             const [robotModules, setRobotModules] = useState({});
+            const [extraData, setExtraData] = useState({ reglas: 0, principios: 0, episodios: 0, tasaExito: 0, modulesConnected: 0, modulesTotal: 0, toolsCount: 0 });
 
             const pollAll = async () => {
                 const [ps, rb, models, tutor, bitacora, memStats, sysInfo, cogMem, lifelog, brain, libroVida, toolsData, modulesData] = await Promise.all([
@@ -217,6 +218,11 @@
                     setAiModels({total:brain.available_models.length,available:brain.available_models.filter(m=>m.available!==false).length});
                 }
                 if(rb&&rb.modules){setRobotModules(rb.modules)}
+                const ed = {};
+                if(libroVida&&libroVida.ok){ed.reglas=libroVida.reglas_aprendidas||0;ed.principios=libroVida.principios_generales||0;ed.episodios=libroVida.total_episodios||0;ed.tasaExito=Math.round((libroVida.tasa_exito||0)*100)}
+                if(modulesData&&modulesData.ok){ed.modulesConnected=modulesData.connected||0;ed.modulesTotal=modulesData.total||0}
+                if(toolsData&&toolsData.tools){ed.toolsCount=toolsData.tools.length}
+                setExtraData(prev=>({...prev,...ed}))
             };
 
             useEffect(() => {
@@ -428,10 +434,10 @@
                                     <div className="bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-lg p-4">
                                         <div className="flex items-center justify-between mb-2">
                                             <h3 className="font-medium text-white">Base de Conocimiento</h3>
-                                            <span className="text-2xl font-bold text-fuchsia-400">{systemData.memory.knowledgeBase.skills + systemData.memory.knowledgeBase.rules}</span>
+                                            <span className="text-2xl font-bold text-fuchsia-400">{extraData.modulesConnected + extraData.toolsCount + extraData.reglas}</span>
                                         </div>
-                                        <div className="text-xs text-gray-400">Skills + Herramientas</div>
-                                        <div className="text-xs text-fuchsia-400/70">{systemData.memory.knowledgeBase.skills} modulos, {systemData.memory.knowledgeBase.rules} tools</div>
+                                        <div className="text-xs text-gray-400">Modulos + Tools + Reglas</div>
+                                        <div className="text-xs text-fuchsia-400/70">{extraData.modulesConnected} modulos, {extraData.toolsCount} tools, {extraData.reglas} reglas</div>
                                     </div>
                                 </div>
                             </div>
@@ -456,22 +462,22 @@
                                     
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-400">Modulos ATLAS</span>
-                                        <span className="text-sm font-medium text-emerald-400">{systemData.memory.knowledgeBase.skills}<span className="text-gray-500">/{systemData.memory.knowledgeBase.skills > 0 ? systemData.memory.knowledgeBase.skills : '--'}</span></span>
+                                        <span className="text-sm font-medium text-emerald-400">{extraData.modulesConnected}<span className="text-gray-500">/{extraData.modulesTotal}</span></span>
                                     </div>
                                     
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-400">Herramientas</span>
-                                        <span className="text-sm font-bold text-white">{systemData.memory.knowledgeBase.rules}</span>
+                                        <span className="text-sm font-bold text-white">{extraData.toolsCount}</span>
                                     </div>
                                     
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-400">Reglas aprendidas</span>
-                                        <span className="text-sm font-mono text-fuchsia-400">{(libroVida&&libroVida.ok)?libroVida.reglas_aprendidas||0:'--'}</span>
+                                        <span className="text-sm font-mono text-fuchsia-400">{extraData.reglas}</span>
                                     </div>
                                     
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-400">Tasa exito</span>
-                                        <span className="text-sm font-mono text-cyan-400">{systemData.metrics.successRate}%</span>
+                                        <span className={"text-sm font-mono " + (systemData.metrics.successRate>=60?"text-emerald-400":systemData.metrics.successRate>=30?"text-amber-400":"text-red-400")}>{systemData.metrics.successRate}%</span>
                                     </div>
                                 </div>
                             </div>
