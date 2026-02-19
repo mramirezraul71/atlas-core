@@ -468,14 +468,31 @@ async def get_system_info():
     import platform
     import psutil
     
+    mem = psutil.virtual_memory()
+    try:
+        disk = psutil.disk_usage('/')
+    except Exception:
+        disk = psutil.disk_usage('C:\\')
+    
     return {
         "platform": platform.system(),
         "platform_version": platform.version(),
         "python_version": platform.python_version(),
         "cpu_count": psutil.cpu_count(),
-        "memory_total": f"{psutil.virtual_memory().total / (1024**3):.2f} GB",
-        "memory_available": f"{psutil.virtual_memory().available / (1024**3):.2f} GB",
-        "disk_usage": f"{psutil.disk_usage('/').percent}%",
+        "cpu_percent": psutil.cpu_percent(interval=0.5),
+        "ram": {
+            "percent": mem.percent,
+            "used_gb": round(mem.used / (1024**3), 1),
+            "total_gb": round(mem.total / (1024**3), 1)
+        },
+        "disk": {
+            "percent": disk.percent,
+            "used_gb": round(disk.used / (1024**3), 1),
+            "total_gb": round(disk.total / (1024**3), 1)
+        },
+        "memory_total": f"{mem.total / (1024**3):.2f} GB",
+        "memory_available": f"{mem.available / (1024**3):.2f} GB",
+        "disk_usage": f"{disk.percent}%",
         "timestamp": datetime.now().isoformat()
     }
 
