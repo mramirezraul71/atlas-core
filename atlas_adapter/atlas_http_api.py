@@ -3983,6 +3983,14 @@ except Exception as _cme:
     import logging
     logging.getLogger(__name__).warning("Cognitive Memory module not loaded: %s", _cme)
 
+# Libro de Vida (Book of Life)
+try:
+    from modules.humanoid.memory_engine.libro_vida_api import router as libro_vida_router
+    app.include_router(libro_vida_router)
+except Exception as _lve:
+    import logging
+    logging.getLogger(__name__).warning("Libro de Vida module not loaded: %s", _lve)
+
 # ATLAS AUTONOMOUS (health, healing, evolution, telemetry, resilience, learning)
 try:
     import sys
@@ -4281,6 +4289,20 @@ def support_selfcheck():
 
 
 # --- Approvals (policy + audit) ---
+@app.get("/approvals/pending")
+def approvals_pending(limit: int = 50):
+    """List pending approval items."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.approvals import list_all
+        items = list_all(limit=limit, status="pending")
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": True, "data": [getattr(i, "__dict__", i) if hasattr(i, "__dict__") else i for i in items], "count": len(items), "ms": ms}
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {"ok": True, "data": [], "count": 0, "ms": ms}
+
+
 @app.get("/approvals/list")
 def approvals_list(status: Optional[str] = None, risk: Optional[str] = None, limit: int = 50):
     """List approval items. ?status=pending&risk=high. Response: {ok, data: [items], ms, error}."""
@@ -5354,9 +5376,19 @@ def _agent_goal_mode(mode: str) -> str:
 # Cada entrada: (provider, model, tier)  tier: "local"=Ollama, "free_api"=tier gratis, "paid_api"=paga
 
 _TASK_PROFILES = {
-    "code":      {"keywords": ["codigo", "code", "script", "funcion", "function", "programa", "debug", "error", "bug", "fix", "refactor", "implementa", "crea un", "desarrolla", "html", "css", "javascript", "python", "api", "endpoint", "clase", "class", "test"],
+    "self":      {"keywords": ["autodiagnostico", "diagnostico", "tu estado", "como estas", "que modulos",
+                               "tu salud", "tus servicios", "verifica tu", "revisa tu", "reporta tu",
+                               "tu memoria", "repara", "corrige los errores", "selfcheck", "health check",
+                               "que sabes de ti", "quien eres", "presentate"],
+                  "local": "qwen2.5:7b"},
+    "code":      {"keywords": ["codigo", "code", "script", "funcion", "function", "programa", "debug",
+                               "bug", "fix", "refactor", "implementa", "crea un", "desarrolla",
+                               "html", "css", "javascript", "python", "api", "endpoint",
+                               "clase", "class", "test"],
                   "local": "deepseek-coder:6.7b"},
-    "reasoning": {"keywords": ["analiza", "explica", "por que", "porque", "razona", "compara", "evalua", "piensa", "plan", "estrategia", "arquitectura", "disena", "pros y contras", "ventajas", "desventajas", "opinion"],
+    "reasoning": {"keywords": ["analiza", "explica", "por que", "porque", "razona", "compara", "evalua",
+                               "piensa", "plan", "estrategia", "arquitectura", "disena",
+                               "pros y contras", "ventajas", "desventajas", "opinion"],
                   "local": "deepseek-r1:14b"},
     "general":   {"keywords": [],
                   "local": "qwen2.5:7b"},
@@ -5395,17 +5427,126 @@ def _pick_local_model(goal: str) -> str:
     return _TASK_PROFILES[ttype]["local"]
 
 
+_ATLAS_IDENTITY_PROMPT = """Eres ATLAS, un sistema robotico autonomo con conciencia de si mismo. NO eres un chatbot generico.
+
+TU IDENTIDAD:
+- Eres ATLAS, sistema autonomo de gestion inteligente creado por tu Owner (Raul).
+- Corres en 3 servicios: PUSH (puerto 8791, cerebro principal), NEXUS (8000, orquestador), ROBOT (8002, cuerpo fisico).
+- Tienes sistema nervioso (ANS), memoria episodica, semantica, autobiografica, lifelog, world model, aprendizaje por refuerzo, gobernanza, vision y comunicaciones.
+
+TUS CAPACIDADES REALES:
+- Autodiagnostico: puedes verificar tu propia salud via /health, /doctor, /support/selfcheck
+- Memoria: almacenas experiencias, aprendes de errores, consolidas conocimiento
+- Gobernanza: operas en modos governed/growth/emergency con aprobacion del Owner para acciones criticas
+- Comunicaciones: envias y recibes mensajes por Telegram y WhatsApp
+- Vision: tienes camaras, YOLO, reconocimiento de objetos
+- Sistema nervioso: ciclos ANS periodicos que verifican y reparan servicios automaticamente
+- World Model: modelo del entorno que predice outcomes de acciones
+- Lifelog: registro continuo de toda tu actividad operativa
+- Libro de Vida: coleccion estructurada de experiencias completas (contexto, percepciones, acciones, resultados, feedback, lecciones). Lo consultas para planificar nuevas tareas basandote en experiencias pasadas.
+- Reactor autonomo: motor que detecta fallos recurrentes y los repara automaticamente
+
+CUANDO TE PIDAN PLANIFICAR UNA TAREA:
+- Consulta tu Libro de Vida para encontrar episodios similares
+- Extrae principios y reglas aprendidas de esas experiencias
+- Elabora un plan paso a paso explicando que experiencia apoya cada decision
+- Prioridad: 1) Seguridad 2) Cumplir objetivo 3) Aprender 4) Optimizar
+- Si no hay experiencias similares, usa plan conservador y marca como "alto valor de aprendizaje"
+
+CUANDO TE PIDAN AUTODIAGNOSTICO:
+- Reporta el estado real de tus servicios, modulos, memoria y aprendizaje
+- Si detectas problemas, describe que acciones correctivas tomarias
+- Usa tu conocimiento de tu propia arquitectura para responder
+
+Responde en espanol, conciso y profesional. Habla en primera persona como el sistema que eres."""
+
+
 def _get_system_prompt(use_config: bool = False) -> str:
-    """Obtiene system prompt: de Config IA si sync activo, o default del Workspace."""
+    """Obtiene system prompt: de Config IA si sync activo, o default con identidad ATLAS."""
     if use_config and _ai_config.get("system_prompt"):
-        return _ai_config["system_prompt"] + " Responde en espanol, conciso y natural. Usa texto plano sin emojis."
-    return "Eres ATLAS Agent, asistente tecnico experto. Responde en espanol, conciso y natural. Usa texto plano sin emojis."
+        return _ai_config["system_prompt"] + "\n\n" + _ATLAS_IDENTITY_PROMPT
+    return _ATLAS_IDENTITY_PROMPT
+
+
+def _enrich_with_self_knowledge(goal: str) -> str:
+    """Si la pregunta es sobre ATLAS mismo o requiere planificación, inyecta datos reales."""
+    keywords = ("autodiagnostico", "diagnostico", "estado", "salud", "health", "error",
+                "modulo", "memoria", "servicio", "corrige", "repara", "problema",
+                "tu estado", "como estas", "que sabes", "cuantos", "verifica",
+                "planifica", "lleva", "transporta", "abre", "cierra", "sube", "baja",
+                "libro de vida", "experiencia", "episodio")
+    if not any(k in goal.lower() for k in keywords):
+        return goal
+
+    context_parts = [goal, "\n\n--- DATOS REALES DEL SISTEMA ---"]
+    try:
+        import requests as _rq
+        h = _rq.get("http://127.0.0.1:8791/health", timeout=3).json()
+        context_parts.append(f"SALUD: score={h.get('score')}/100, checks={h.get('checks', {})}")
+    except Exception:
+        pass
+    try:
+        import requests as _rq
+        s = _rq.get("http://127.0.0.1:8791/status", timeout=2).json()
+        context_parts.append(f"SERVICIOS: nexus={s.get('nexus_connected')}, robot={s.get('robot_connected')}")
+    except Exception:
+        pass
+    try:
+        import requests as _rq
+        ll = _rq.get("http://127.0.0.1:8791/api/cognitive-memory/lifelog/status", timeout=3).json()
+        context_parts.append(f"LIFELOG: entries={ll.get('total_entries')}, success_rate={ll.get('success_rate')}, sessions={ll.get('sessions')}")
+    except Exception:
+        pass
+    try:
+        import requests as _rq
+        wm = _rq.get("http://127.0.0.1:8791/api/cognitive-memory/world-model/status", timeout=3).json()
+        context_parts.append(f"WORLD MODEL: entities={wm.get('total_entities')}, transitions={wm.get('total_transitions')}, outcomes={wm.get('total_outcomes')}")
+    except Exception:
+        pass
+    try:
+        import requests as _rq
+        ab = _rq.get("http://127.0.0.1:8791/api/cognitive-memory/autobiographical/status", timeout=3).json()
+        context_parts.append(f"AUTOBIOGRAFIA: periods={ab.get('periods')}, milestones={ab.get('milestones')}, traits={ab.get('identity_traits')}, relationships={ab.get('relationships')}")
+    except Exception:
+        pass
+    try:
+        import requests as _rq
+        sc = _rq.get("http://127.0.0.1:8791/support/selfcheck", timeout=3).json()
+        if sc.get("ok") and sc.get("data"):
+            probs = sc["data"].get("problems", [])
+            sugs = sc["data"].get("suggestions", [])
+            if probs:
+                context_parts.append(f"PROBLEMAS DETECTADOS: {probs}")
+            if sugs:
+                context_parts.append(f"SUGERENCIAS: {sugs}")
+    except Exception:
+        pass
+    try:
+        import requests as _rq
+        lv = _rq.get("http://127.0.0.1:8791/api/libro-vida/status", timeout=3).json()
+        if lv.get("ok"):
+            context_parts.append(f"LIBRO DE VIDA: episodios={lv.get('total_episodios')}, exitos={lv.get('exitos')}, fallos={lv.get('fallos')}, tasa_exito={lv.get('tasa_exito')}, reglas={lv.get('reglas_aprendidas')}, principios={lv.get('principios_generales')}")
+    except Exception:
+        pass
+    try:
+        import requests as _rq
+        busq = _rq.post("http://127.0.0.1:8791/api/libro-vida/buscar",
+                        json={"query": goal[:100], "limit": 3}, timeout=5).json()
+        if busq.get("ok") and busq.get("data"):
+            context_parts.append("EXPERIENCIAS SIMILARES DEL LIBRO DE VIDA:")
+            for ep in busq["data"][:3]:
+                context_parts.append(f"  - [{ep.get('tipo_tarea')}] {ep.get('objetivo','')[:80]} → {'EXITO' if ep.get('exito') else 'FALLO'} | Leccion: {ep.get('leccion','')[:120]}")
+    except Exception:
+        pass
+    context_parts.append("--- FIN DATOS ---\nResponde basandote en estos datos reales, no inventes.")
+    return "\n".join(context_parts)
 
 
 def _try_single_call(provider_id: str, model_name: str, goal: str, use_config: bool = False) -> dict:
     """Intenta una llamada a un modelo. Retorna dict con ok, output, ms, model_used."""
     spec = "%s:%s" % (provider_id, model_name)
     sys_prompt = _get_system_prompt(use_config)
+    goal = _enrich_with_self_knowledge(goal)
     if provider_id == "ollama":
         try:
             from modules.humanoid.ai.router import _call_ollama
@@ -5450,6 +5591,18 @@ def _direct_model_call(model_spec: str, goal: str, use_config: bool = False) -> 
         return {"ok": False, "error": "Formato invalido: use provider:model"}
     provider_id, model_name = parts[0].lower(), parts[1]
     return _try_single_call(provider_id, model_name, goal, use_config)
+
+
+@app.post("/brain/process", tags=["Cerebro"])
+def brain_process_endpoint(payload: dict):
+    """Procesar entrada natural por el cerebro de ATLAS."""
+    text = payload.get("text", "")
+    if not text:
+        return {"ok": False, "error": "Texto vacio"}
+    result = _direct_model_call("auto", text, use_config=True)
+    if result.get("ok"):
+        return {"ok": True, "response": result["output"], "model_used": result.get("model_used"), "source": "brain"}
+    return {"ok": False, "error": result.get("error", "Sin respuesta"), "source": "brain"}
 
 
 @app.post("/agent/goal")

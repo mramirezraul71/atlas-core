@@ -33,6 +33,13 @@ try:
 except Exception:
     pass
 
+# Auto-start the autonomous reactor
+try:
+    from modules.humanoid.ans.reactor import start_reactor
+    start_reactor()
+except Exception:
+    pass
+
 
 def _ts_to_epoch(ts: str) -> float:
     t = (ts or "").strip()
@@ -50,6 +57,34 @@ def _ts_to_epoch(ts: str) -> float:
 def ans_status():
     from .engine import get_ans_status
     return get_ans_status()
+
+
+@router.get("/reactor/status")
+def reactor_status():
+    """Estado del reactor autonomo."""
+    from .reactor import _REACTOR_RUNNING
+    return {"ok": True, "running": _REACTOR_RUNNING}
+
+
+@router.post("/reactor/run")
+def reactor_run_now():
+    """Ejecutar un ciclo de reaccion ahora."""
+    from .reactor import run_reaction_cycle
+    return run_reaction_cycle()
+
+
+@router.post("/reactor/start")
+def reactor_start():
+    """Arrancar el reactor autonomo."""
+    from .reactor import start_reactor
+    return start_reactor()
+
+
+@router.post("/reactor/stop")
+def reactor_stop():
+    """Detener el reactor autonomo."""
+    from .reactor import stop_reactor
+    return stop_reactor()
 
 
 @router.get("/incidents")

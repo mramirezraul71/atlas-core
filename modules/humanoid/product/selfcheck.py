@@ -7,7 +7,12 @@ from typing import Any, Dict, List
 
 
 def _repo_root() -> Path:
-    p = os.getenv("ATLAS_REPO_PATH") or os.getenv("POLICY_ALLOWED_PATHS") or "C:\\ATLAS_PUSH"
+    p = os.getenv("ATLAS_REPO_PATH", "").strip()
+    if not p:
+        raw = os.getenv("POLICY_ALLOWED_PATHS", "").strip()
+        p = raw.split(",")[0].strip() if raw else ""
+    if not p:
+        p = "C:\\ATLAS_PUSH"
     return Path(p).resolve()
 
 

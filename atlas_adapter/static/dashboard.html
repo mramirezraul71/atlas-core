@@ -3101,6 +3101,10 @@
       pollCognitiveMemory();
       setInterval(pollCognitiveMemory, 120000);
 
+      // Reactor autonomo
+      pollReactor();
+      setInterval(pollReactor, 60000);
+
       // Entrada inicial
       addToBitacora('Sistema ATLAS iniciado', 'success', 'system');
       addToBitacora(`Dashboard v${ATLAS_VERSION} cargado`, 'info', 'system');
@@ -3387,10 +3391,12 @@
 
         if (llRes.status === 'fulfilled' && llRes.value.ok) {
           const ll = llRes.value;
-          if (ll.failure_count > 0 && ll.failure_count !== _prevCogMemState.llFailures) {
-            if ((_prevCogMemState.llFailures || 0) < ll.failure_count) {
-              addToBitacora(`Lifelog: ${ll.failure_count} fallos registrados`, 'warning', 'system');
-            }
+          const prevF = _prevCogMemState.llFailures || 0;
+          if (ll.failure_count > prevF) {
+            const newFails = ll.failure_count - prevF;
+            addToBitacora(`Lifelog: ${newFails} nuevo(s) fallo(s) detectados (total: ${ll.failure_count})`, 'warning', 'healing');
+            addToBitacora(`Reactor activado para analizar ${newFails} fallo(s)`, 'info', 'healing');
+            pollReactor();
           }
           _prevCogMemState.llFailures = ll.failure_count;
         }
@@ -3401,6 +3407,30 @@
             addToBitacora(`Nuevo hito autobiografico registrado (total: ${ab.milestones})`, 'success', 'brain');
           }
           _prevCogMemState.abMilestones = ab.milestones;
+        }
+      } catch(e) {}
+    }
+
+    let _prevReactorActions = 0;
+    async function pollReactor() {
+      try {
+        const res = await fetch(`${API_BASE}/ans/reactor/run`, { method: 'POST' });
+        const data = await res.json();
+        if (!data.ok) return;
+        if (data.issues_found > 0) {
+          for (const issue of (data.issues || [])) {
+            const sev = issue.severity === 'critical' ? 'error' : (issue.severity === 'high' ? 'warning' : 'info');
+            addToBitacora(`Reactor detectó: ${issue.message}`, sev, 'healing');
+          }
+          for (const action of (data.actions_taken || [])) {
+            if (action.ok) {
+              addToBitacora(`Reactor reparó: ${action.message}`, 'success', 'healing');
+              atlasSpeak(`Reparación automática: ${action.message}`);
+            } else {
+              addToBitacora(`Reactor falló al reparar: ${action.message}`, 'error', 'healing');
+              atlasSpeak(`Atención: no pude reparar ${action.action}`);
+            }
+          }
         }
       } catch(e) {}
     }
