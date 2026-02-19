@@ -2931,10 +2931,35 @@
     // TTS - ATLAS habla eventos importantes
     // ═══════════════════════════════════════════════════════════════
     let atlasTTSEnabled = localStorage.getItem('atlas-tts') !== 'off';
+    let _dashUserInteracting = false;
+    let _dashInteractTimer = null;
+    let _dashSpeechQueue = [];
+    let _dashIsSpeaking = false;
+
+    document.addEventListener('keydown', (e) => {
+      if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+        _dashUserInteracting = true;
+        if (_dashIsSpeaking) { window.speechSynthesis.cancel(); _dashIsSpeaking = false; }
+        clearTimeout(_dashInteractTimer);
+        _dashInteractTimer = setTimeout(() => { _dashUserInteracting = false; _dashDrainQueue(); }, 3000);
+      }
+    });
+    document.addEventListener('mousedown', (e) => {
+      if (e.target.closest('input,textarea,button,[contenteditable]')) {
+        _dashUserInteracting = true;
+        if (_dashIsSpeaking) { window.speechSynthesis.cancel(); _dashIsSpeaking = false; }
+        clearTimeout(_dashInteractTimer);
+        _dashInteractTimer = setTimeout(() => { _dashUserInteracting = false; _dashDrainQueue(); }, 3000);
+      }
+    });
+
+    function _dashDrainQueue() {
+      if (_dashUserInteracting || _dashIsSpeaking || !_dashSpeechQueue.length) return;
+      _dashDoSpeak(_dashSpeechQueue.shift());
+    }
 
     function atlasSpeak(text) {
       if (!atlasTTSEnabled || !window.speechSynthesis || !text) return;
-      window.speechSynthesis.cancel();
       let clean = String(text)
         .replace(/```[\s\S]*?```/g, '. Codigo. ')
         .replace(/`[^`]*`/g, '').replace(/\*\*/g, '').replace(/\*/g, '')
@@ -2943,6 +2968,16 @@
         .replace(/\.{2,}/g, '.').replace(/\s{2,}/g, ' ')
         .trim().substring(0, 300);
       if (!clean) return;
+      if (_dashUserInteracting || _dashIsSpeaking) {
+        _dashSpeechQueue = [clean];
+        return;
+      }
+      _dashDoSpeak(clean);
+    }
+
+    function _dashDoSpeak(clean) {
+      if (_dashUserInteracting || !atlasTTSEnabled || !window.speechSynthesis) return;
+      window.speechSynthesis.cancel();
       const utter = new SpeechSynthesisUtterance(clean);
       utter.lang = 'es-ES'; utter.rate = 1.05; utter.pitch = 1.0; utter.volume = 1.0;
       const voices = window.speechSynthesis.getVoices();
@@ -2950,6 +2985,9 @@
                       voices.find(v => v.lang.startsWith('es') && !v.localService) ||
                       voices.find(v => v.lang.startsWith('es'));
       if (esVoice) utter.voice = esVoice;
+      _dashIsSpeaking = true;
+      utter.onend = () => { _dashIsSpeaking = false; setTimeout(_dashDrainQueue, 500); };
+      utter.onerror = () => { _dashIsSpeaking = false; setTimeout(_dashDrainQueue, 500); };
       window.speechSynthesis.speak(utter);
     }
 

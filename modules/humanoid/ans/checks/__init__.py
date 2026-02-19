@@ -6,6 +6,7 @@ from . import ui_health, deploy_health, gateway_health, cluster_health, disk_hea
 from . import nexus_services_health
 from . import robot_camera_health
 from . import nervous_health
+from . import cge_health
 from modules.humanoid.ans.registry import register_check
 
 
@@ -27,6 +28,7 @@ def _register_all() -> None:
     register_check("nexus_services_health", nexus_services_health.run)
     register_check("robot_camera_health", robot_camera_health.run)
     register_check("nervous_health", nervous_health.run)
+    register_check("cge_health", cge_health.run)
 
 
 _register_all()
