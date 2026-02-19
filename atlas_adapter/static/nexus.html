@@ -138,7 +138,7 @@
                         memory.semantic.concepts=sh.total_concepts||se.embedding_dimension||0;
                         memory.knowledgeBase.concepts=(wm.total_entities||0)+(ab.milestones||0);
                         memory.knowledgeBase.skills=Object.values(robotModules).filter(v=>v).length;
-                        memory.knowledgeBase.rules=nx?(nx.available_tools||8):8;
+                        memory.knowledgeBase.rules=libroVida&&libroVida.ok?(libroVida.reglas_aprendidas||0):0;
                     } else {
                         if(memStats&&!memStats.error){
                             memory.semantic.embeddings=memStats.total_experiences||0;
@@ -150,7 +150,10 @@
                             memory.episodic.today=bitacora.entries.filter(e=>e.timestamp&&e.timestamp.startsWith(today)).length;
                         }
                         memory.knowledgeBase.skills=Object.values(robotModules).filter(v=>v).length;
-                        memory.knowledgeBase.rules=nx?(nx.available_tools||8):8;
+                        memory.knowledgeBase.rules=libroVida&&libroVida.ok?(libroVida.reglas_aprendidas||0):0;
+                    }
+                    if(libroVida&&libroVida.ok){
+                        memory.knowledgeBase.concepts+=(libroVida.total_episodios||0);
                     }
 
                     const metrics = {...prev.metrics};
@@ -158,10 +161,9 @@
                         const sr=lifelog.success_rate||0;
                         metrics.successRate=Math.round(sr*100);
                         metrics.learningSpeed=lifelog.total_entries>50?'Rapido':lifelog.total_entries>10?'Medio':'Inicial';
-                    } else if(nx){
-                        const ct=nx.completed_tasks||0,at=nx.active_tasks||0;
-                        metrics.successRate=ct>0?Math.round(ct/(ct+at)*100):0;
-                        metrics.learningSpeed=at>2?'Rapido':at>0?'Medio':'Idle';
+                    } else if(libroVida&&libroVida.ok){
+                        metrics.successRate=Math.round((libroVida.tasa_exito||0)*100);
+                        metrics.learningSpeed=libroVida.total_episodios>10?'Rapido':libroVida.total_episodios>3?'Medio':'Inicial';
                     }
 
                     const activity = [];
@@ -433,7 +435,7 @@
                                     </div>
                                     
                                     <div className="flex items-center justify-between">
-                                        <span className="text-sm text-gray-400">Herramientas NEXUS</span>
+                                        <span className="text-sm text-gray-400">Herramientas ATLAS</span>
                                         <span className="text-sm font-bold text-white">{systemData.memory.knowledgeBase.rules}</span>
                                     </div>
                                     

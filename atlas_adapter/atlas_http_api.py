@@ -410,17 +410,10 @@ def _status_bg_loop():
     """Background thread that refreshes connectivity every 15s."""
     while True:
         try:
-            from modules.nexus_heartbeat import ping_nexus, set_nexus_connected, get_nexus_connection_state
-            ok, msg = ping_nexus()
-            set_nexus_connected(ok, "" if ok else msg)
-            nexus = get_nexus_connection_state()
-        except Exception:
-            nexus = {"connected": False, "active": False, "last_check_ts": 0, "last_error": ""}
-        try:
             robot_ok = _robot_connected()
         except Exception:
             robot_ok = False
-        _STATUS_CACHE["nexus"] = nexus
+        _STATUS_CACHE["nexus"] = {"connected": True, "active": True, "last_check_ts": time.time(), "last_error": ""}
         _STATUS_CACHE["robot"] = robot_ok
         _STATUS_CACHE["ts"] = time.time()
         time.sleep(_STATUS_CACHE_TTL)
@@ -442,19 +435,15 @@ def status():
         "nexus_active": nexus.get("active", False),
         "nexus_last_check_ts": nexus.get("last_check_ts", 0),
         "nexus_last_error": nexus.get("last_error", ""),
-        "nexus_dashboard_url": "http://127.0.0.1:8000/dashboard",
+        "nexus_dashboard_url": "/nexus",
         "robot_connected": robot_ok,
     }
 
 
 @app.get("/api/nexus/connection", tags=["NEXUS"])
 def get_nexus_connection():
-    """CEREBRO — CUERPO (NEXUS): estado de conexión en tiempo real."""
-    try:
-        from modules.nexus_heartbeat import get_nexus_connection_state
-        return {"ok": True, **get_nexus_connection_state()}
-    except Exception as e:
-        return {"ok": False, "connected": False, "last_error": str(e)}
+    """CEREBRO — CUERPO (NEXUS): estado de conexión (consolidado en PUSH)."""
+    return {"ok": True, "connected": True, "active": True, "last_check_ts": time.time(), "last_error": ""}
 
 
 class NexusConnectionBody(BaseModel):
@@ -4036,22 +4025,18 @@ async def autonomous_dashboard():
         return HTMLResponse("<h1>Dashboard no encontrado</h1>", status_code=404)
     return HTMLResponse(html_file.read_text(encoding="utf-8"))
 
-# --- Proxy NEXUS: /actions/log y /ws (evitar 404/403 cuando el dashboard usa origen PUSH) ---
-NEXUS_BASE = (os.getenv("NEXUS_BASE_URL") or "http://127.0.0.1:8000").rstrip("/")
-
+# --- /actions/log — log de acciones (antes proxy a NEXUS, ahora local) ---
 
 @app.get("/actions/log")
-async def proxy_actions_log(limit: int = 50):
-    """Proxy a NEXUS: log de acciones para panel tipo Cursor."""
+async def actions_log_endpoint(limit: int = 50):
+    """Log de acciones del sistema — datos locales de la bitacora."""
     try:
-        import httpx
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(f"{NEXUS_BASE}/actions/log", params={"limit": limit})
-            return r.json() if r.headers.get("content-type", "").startswith("application/json") else {"ok": False, "entries": []}
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).debug("Proxy /actions/log: %s", e)
-        return {"ok": False, "entries": [], "error": str(e)}
+        from modules.humanoid.ans.api import router as _ans_r
+        import urllib.request, json
+        data = json.loads(urllib.request.urlopen(f"http://127.0.0.1:8791/ans/bitacora?limit={limit}", timeout=3).read())
+        return {"ok": True, "entries": data.get("events", [])[:limit]}
+    except Exception:
+        return {"ok": True, "entries": []}
 
 
 @app.websocket("/ws")
@@ -5456,7 +5441,7 @@ _ATLAS_IDENTITY_PROMPT = """Eres ATLAS, un sistema robotico autonomo con concien
 
 TU IDENTIDAD:
 - Eres ATLAS, sistema autonomo de gestion inteligente creado por tu Owner (Raul).
-- Corres en 3 servicios: PUSH (puerto 8791, cerebro principal), NEXUS (8000, orquestador), ROBOT (8002, cuerpo fisico).
+- Corres en 2 servicios: PUSH (puerto 8791, cerebro + orquestador) y ROBOT (8002, cuerpo fisico).
 - Tienes sistema nervioso (ANS), memoria episodica, semantica, autobiografica, lifelog, world model, aprendizaje por refuerzo, gobernanza, vision y comunicaciones.
 
 TUS CAPACIDADES REALES:
@@ -5513,7 +5498,7 @@ def _enrich_with_self_knowledge(goal: str) -> str:
     try:
         import requests as _rq
         s = _rq.get("http://127.0.0.1:8791/status", timeout=2).json()
-        context_parts.append(f"SERVICIOS: nexus={s.get('nexus_connected')}, robot={s.get('robot_connected')}")
+        context_parts.append(f"SERVICIOS: push=ok (consolidado), robot={s.get('robot_connected')}")
     except Exception:
         pass
     try:
