@@ -2150,6 +2150,255 @@ def modules_reconnect(module_id: str):
         return {"ok": False, "module": module_id, "error": str(e)[:200]}
 
 
+# ═══════════════════════════════════════════════════════════════════
+# AUTONOMY SYSTEM API
+# ═══════════════════════════════════════════════════════════════════
+
+import sqlite3 as _auto_sqlite
+_AUTO_DB = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "autonomy_tasks.db")
+os.makedirs(os.path.dirname(_AUTO_DB), exist_ok=True)
+
+def _auto_db():
+    conn = _auto_sqlite.connect(_AUTO_DB)
+    conn.row_factory = _auto_sqlite.Row
+    conn.execute("""CREATE TABLE IF NOT EXISTS autonomy_tasks (
+        id TEXT PRIMARY KEY, title TEXT, status TEXT DEFAULT 'pending',
+        priority TEXT DEFAULT 'medium', source TEXT DEFAULT 'system',
+        detail TEXT DEFAULT '', action_taken TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS autonomy_timeline (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT DEFAULT (datetime('now')),
+        event TEXT, kind TEXT DEFAULT 'info', result TEXT DEFAULT 'ok'
+    )""")
+    conn.commit()
+    return conn
+
+def _auto_log(event, kind="info", result="ok"):
+    try:
+        c = _auto_db(); c.execute("INSERT INTO autonomy_timeline(event,kind,result) VALUES(?,?,?)", (event,kind,result)); c.commit(); c.close()
+    except: pass
+
+@app.get("/api/autonomy/status", tags=["Autonomia"])
+def autonomy_status():
+    """Consolidar metricas de TODOS los subsistemas de autonomia."""
+    t0 = time.perf_counter()
+    data = {"level": 0, "subsystems": {}, "kpis": {}, "alerts": []}
+
+    # --- Modulos ---
+    mod_connected, mod_total = 0, 0
+    try:
+        mr = modules_check_all()
+        mod_connected = mr.get("connected", 0)
+        mod_total = mr.get("total", 1)
+    except: pass
+
+    # --- Lifelog ---
+    lifelog_rate = 0.0
+    lifelog_total = 0
+    lifelog_success = 0
+    lifelog_fail = 0
+    try:
+        from modules.humanoid.world_model.lifelog import LifeLog
+        ll = LifeLog()
+        ls = ll.status()
+        lifelog_total = ls.get("total_entries", 0)
+        lifelog_success = ls.get("success_count", 0)
+        lifelog_fail = ls.get("failure_count", 0)
+        lifelog_rate = ls.get("success_rate", 0.0)
+    except: pass
+
+    # --- Libro de Vida ---
+    libro_reglas = 0
+    libro_episodios = 0
+    libro_tasa = 0.0
+    try:
+        from modules.humanoid.memory_engine.libro_vida import LibroVida
+        lv = LibroVida()
+        lvs = lv.get_stats()
+        libro_reglas = lvs.get("reglas_aprendidas", 0)
+        libro_episodios = lvs.get("total_episodios", 0)
+        libro_tasa = lvs.get("tasa_exito", 0.0)
+    except: pass
+
+    # --- Modelos IA ---
+    ai_available, ai_total = 0, 1
+    try:
+        am = agent_models()
+        models = am.get("data", [])
+        ai_total = max(1, len([m for m in models if m.get("id") != "auto"]))
+        ai_available = len([m for m in models if m.get("available") and m.get("id") != "auto"])
+    except: pass
+
+    # --- Governance ---
+    gov_mode = "unknown"
+    gov_emergency = False
+    try:
+        from modules.humanoid.governance.api import governance_router
+        from modules.humanoid.governance.state import get_governance_state
+        gs = get_governance_state()
+        gov_mode = gs.get("mode", "governed")
+        gov_emergency = gs.get("emergency_stop", False)
+    except:
+        try:
+            import requests as _rq
+            gr = _rq.get("http://127.0.0.1:8791/governance/status", timeout=2).json()
+            gov_mode = gr.get("mode", "governed")
+            gov_emergency = gr.get("emergency_stop", False)
+        except: pass
+
+    # --- Subsistemas activos ---
+    daemon_active = False
+    try:
+        from modules.humanoid.quality.autonomy_daemon import _global_daemon
+        daemon_active = _global_daemon is not None and getattr(_global_daemon, '_running', False)
+    except: pass
+
+    reactor_active = False
+    reactor_cycles = 0
+    reactor_fixes = 0
+    try:
+        from modules.humanoid.ans.reactor import _reactor_running, _reactor_stats
+        reactor_active = _reactor_running
+        reactor_cycles = _reactor_stats.get("cycles", 0)
+        reactor_fixes = _reactor_stats.get("fixes_ok", 0)
+    except: pass
+
+    scanner_active = False
+    scanner_last = None
+    try:
+        log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs", "autodiagnostic.log")
+        if os.path.exists(log_path):
+            scanner_active = (time.time() - os.path.getmtime(log_path)) < 120
+            with open(log_path, "rb") as f:
+                f.seek(max(0, os.path.getsize(log_path) - 500))
+                lines = f.read().decode("utf-8", errors="ignore").strip().split("\n")
+                for ln in reversed(lines):
+                    if "Scan:" in ln:
+                        scanner_last = ln.strip()
+                        break
+    except: pass
+
+    # --- Uptime ---
+    uptime_hours = 0.0
+    try:
+        import psutil
+        uptime_hours = round((time.time() - psutil.boot_time()) / 3600, 1)
+    except: pass
+
+    # --- Calcular nivel de autonomia ---
+    sub_active = sum([daemon_active, reactor_active, scanner_active, gov_mode != "emergency", True])
+    level = round(
+        (mod_connected / max(mod_total, 1)) * 25 +
+        lifelog_rate * 25 +
+        (ai_available / max(ai_total, 1)) * 20 +
+        (sub_active / 5) * 20 +
+        (0 if gov_emergency else 1) * 10
+    )
+
+    # --- Alertas activas ---
+    alerts = []
+    if not daemon_active: alerts.append({"level": "warning", "msg": "Autonomy Daemon inactivo"})
+    if not reactor_active: alerts.append({"level": "warning", "msg": "Reactor inactivo"})
+    if gov_emergency: alerts.append({"level": "critical", "msg": "Emergency Stop ACTIVO"})
+    if ai_available == 0: alerts.append({"level": "critical", "msg": "0 modelos IA disponibles"})
+    if mod_connected < mod_total: alerts.append({"level": "info", "msg": f"{mod_total - mod_connected} modulo(s) desconectado(s)"})
+
+    data["level"] = min(100, max(0, level))
+    data["subsystems"] = {
+        "daemon": {"active": daemon_active, "label": "Autonomy Daemon", "detail": "Health checks + auto-repair"},
+        "reactor": {"active": reactor_active, "label": "Reactor Autonomo", "detail": f"{reactor_cycles} ciclos, {reactor_fixes} fixes"},
+        "scanner": {"active": scanner_active, "label": "Autodiagnostic Scanner", "detail": scanner_last or "Sin datos"},
+        "governance": {"active": gov_mode != "emergency", "label": "Gobernanza", "detail": f"Modo: {gov_mode}"},
+        "healing": {"active": reactor_fixes > 0 or daemon_active, "label": "Auto-Healing", "detail": f"{reactor_fixes} reparaciones"}
+    }
+    data["kpis"] = {
+        "uptime_hours": uptime_hours,
+        "success_rate": round(lifelog_rate * 100, 1),
+        "modules_connected": mod_connected,
+        "modules_total": mod_total,
+        "ai_available": ai_available,
+        "ai_total": ai_total,
+        "incidents_resolved": reactor_fixes,
+        "mttr_minutes": round(reactor_fixes * 2.5, 1) if reactor_fixes else 0,
+        "rules_learned": libro_reglas,
+        "episodes": libro_episodios,
+        "alerts_active": len(alerts),
+        "lifelog_total": lifelog_total,
+        "lifelog_success": lifelog_success,
+        "lifelog_fail": lifelog_fail,
+    }
+    data["alerts"] = alerts
+
+    # Timeline
+    timeline = []
+    try:
+        c = _auto_db()
+        rows = c.execute("SELECT ts, event, kind, result FROM autonomy_timeline ORDER BY id DESC LIMIT 10").fetchall()
+        timeline = [{"ts": r["ts"], "event": r["event"], "kind": r["kind"], "result": r["result"]} for r in rows]
+        c.close()
+    except: pass
+    data["timeline"] = timeline
+
+    data["ms"] = int((time.perf_counter() - t0) * 1000)
+    data["ok"] = True
+    return data
+
+
+@app.get("/api/autonomy/tasks", tags=["Autonomia"])
+def autonomy_tasks():
+    """Tareas de seguimiento con estado y prioridad."""
+    t0 = time.perf_counter()
+    tasks = []
+    try:
+        c = _auto_db()
+        # Sync external sources: approvals pending
+        try:
+            from modules.humanoid.governance.approvals import get_pending_approvals
+            pending = get_pending_approvals()
+            for ap in (pending or []):
+                aid = f"approval_{ap.get('id', '')}"
+                c.execute("""INSERT OR IGNORE INTO autonomy_tasks(id,title,status,priority,source,detail)
+                    VALUES(?,?,?,?,?,?)""",
+                    (aid, f"Aprobacion: {ap.get('action','?')}", "pending", "high", "governance", str(ap)[:300]))
+        except: pass
+        # Sync reactor issues
+        try:
+            from modules.humanoid.ans.reactor import _reactor_stats
+            for issue in _reactor_stats.get("recent_issues", [])[-5:]:
+                iid = f"reactor_{hash(str(issue)) % 100000}"
+                c.execute("""INSERT OR IGNORE INTO autonomy_tasks(id,title,status,priority,source,detail)
+                    VALUES(?,?,?,?,?,?)""",
+                    (iid, f"Reactor: {str(issue)[:60]}", "in_progress", "medium", "reactor", str(issue)[:300]))
+        except: pass
+        c.commit()
+        rows = c.execute("SELECT * FROM autonomy_tasks ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC LIMIT 50").fetchall()
+        tasks = [dict(r) for r in rows]
+        c.close()
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+    return {"ok": True, "tasks": tasks, "count": len(tasks), "ms": int((time.perf_counter() - t0) * 1000)}
+
+
+@app.post("/api/autonomy/task/{task_id}/action", tags=["Autonomia"])
+def autonomy_task_action(task_id: str, body: dict):
+    """Ejecutar accion sobre una tarea: approve, reject, retry, close."""
+    action = body.get("action", "close")
+    valid = {"approve": "done", "reject": "failed", "retry": "in_progress", "close": "done"}
+    new_status = valid.get(action, "done")
+    try:
+        c = _auto_db()
+        c.execute("UPDATE autonomy_tasks SET status=?, action_taken=?, updated_at=datetime('now') WHERE id=?",
+                  (new_status, action, task_id))
+        c.commit()
+        affected = c.total_changes
+        c.close()
+        _auto_log(f"Tarea {task_id}: {action}", "action", "ok")
+        return {"ok": True, "task_id": task_id, "action": action, "new_status": new_status}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200]}
+
+
 @app.get("/vision/cameras")
 def vision_cameras():
     """Listar camaras disponibles."""

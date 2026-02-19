@@ -18,6 +18,8 @@ log = logging.getLogger("atlas.reactor")
 
 _REACTOR_RUNNING = False
 _REACTOR_THREAD: Optional[threading.Thread] = None
+_reactor_running = False
+_reactor_stats: Dict[str, Any] = {"cycles": 0, "fixes_ok": 0, "fixes_failed": 0, "recent_issues": []}
 
 REACTION_REGISTRY: Dict[str, dict] = {
     "fix_logs_dir": {
@@ -182,6 +184,12 @@ def run_reaction_cycle() -> Dict[str, Any]:
 
     ms = int((time.perf_counter() - t0) * 1000)
 
+    global _reactor_stats
+    _reactor_stats["cycles"] += 1
+    _reactor_stats["fixes_ok"] += successful_fixes
+    _reactor_stats["fixes_failed"] += failed_fixes
+    _reactor_stats["recent_issues"] = issues_found[-10:]
+
     if actions_taken:
         summary = f"Reactor: {len(issues_found)} issues, {successful_fixes} reparados, {failed_fixes} fallidos ({ms}ms)"
         _emit_bitacora(summary, ok=failed_fixes == 0, source="reactor")
@@ -219,10 +227,11 @@ def _reactor_loop():
 
 def start_reactor():
     """Start the autonomous reactor in a background thread."""
-    global _REACTOR_RUNNING, _REACTOR_THREAD
+    global _REACTOR_RUNNING, _REACTOR_THREAD, _reactor_running
     if _REACTOR_RUNNING:
         return {"ok": True, "message": "Reactor ya corriendo"}
     _REACTOR_RUNNING = True
+    _reactor_running = True
     _REACTOR_THREAD = threading.Thread(target=_reactor_loop, daemon=True, name="atlas-reactor")
     _REACTOR_THREAD.start()
     return {"ok": True, "message": "Reactor iniciado"}
@@ -230,6 +239,7 @@ def start_reactor():
 
 def stop_reactor():
     """Stop the autonomous reactor."""
-    global _REACTOR_RUNNING
+    global _REACTOR_RUNNING, _reactor_running
     _REACTOR_RUNNING = False
+    _reactor_running = False
     return {"ok": True, "message": "Reactor detenido"}

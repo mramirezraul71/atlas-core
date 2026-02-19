@@ -1282,7 +1282,7 @@
     <div class="sidebar-nav">
       <button class="sidebar-tab" data-tab="chat">&#128172; Chat</button>
       <button class="sidebar-tab" data-tab="modulos">&#128230; Modulos</button>
-      <button class="sidebar-tab" data-tab="gobernanza">&#128220; Gobernanza</button>
+      <button class="sidebar-tab" data-tab="gobernanza">&#128737; Gobernanza &amp; Autonomía</button>
       <button class="sidebar-tab" data-tab="config">&#129302; Config IA</button>
       <button class="sidebar-tab" data-tab="vision">&#128065; Vision</button>
       <button class="sidebar-tab" data-tab="nervioso">&#128279; Nervioso</button>
@@ -1378,28 +1378,116 @@
 
     <!-- ========== TAB: GOBERNANZA ========== -->
     <div class="tab-panel" id="panel-gobernanza">
-      <div class="stats-bar">
-        <div class="stat-card">
-          <div class="stat-value" id="gov-mode">GOVERNED</div>
-          <div class="stat-label">MODO ACTUAL</div>
+      <!-- ===== GOBERNANZA: Controles ===== -->
+      <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+        <div style="display:flex;gap:8px;align-items:center;padding:8px 16px;border-radius:10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);">
+          <span style="font-size:11px;opacity:.6;text-transform:uppercase;">Modo</span>
+          <span id="gov-mode" style="font-weight:700;font-size:15px;color:var(--accent-green);">GOVERNED</span>
         </div>
-        <div class="stat-card">
-          <div class="stat-value" id="gov-approvals">0</div>
-          <div class="stat-label">APROBACIONES PENDIENTES</div>
+        <div style="display:flex;gap:8px;align-items:center;padding:8px 16px;border-radius:10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);">
+          <span style="font-size:11px;opacity:.6;text-transform:uppercase;">Aprobaciones</span>
+          <span id="gov-approvals" style="font-weight:700;font-size:15px;">0</span>
         </div>
-        <div class="stat-card">
-          <div class="stat-value" id="gov-policies">5</div>
-          <div class="stat-label">POLÍTICAS ACTIVAS</div>
+        <div style="display:flex;gap:8px;align-items:center;padding:8px 16px;border-radius:10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);">
+          <span style="font-size:11px;opacity:.6;text-transform:uppercase;">Políticas</span>
+          <span id="gov-policies" style="font-weight:700;font-size:15px;">5</span>
         </div>
-        <div class="stat-card">
-          <div class="stat-value" id="gov-score">100</div>
-          <div class="stat-label">SCORE SEGURIDAD</div>
+        <div style="display:flex;gap:8px;align-items:center;padding:8px 16px;border-radius:10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);">
+          <span style="font-size:11px;opacity:.6;text-transform:uppercase;">Seguridad</span>
+          <span id="gov-score" style="font-weight:700;font-size:15px;color:var(--accent-green);">100</span>
+        </div>
+        <div style="display:flex;gap:6px;margin-left:auto;">
+          <button class="btn btn-primary" onclick="setGovMode('growth')" style="font-size:11px;padding:6px 14px;">GROWTH</button>
+          <button class="btn btn-secondary" onclick="setGovMode('governed')" style="font-size:11px;padding:6px 14px;">GOVERNED</button>
+          <button class="btn" style="background:var(--accent-red);color:white;font-size:11px;padding:6px 14px;" onclick="emergencyStop()">EMERGENCY STOP</button>
         </div>
       </div>
-      <div class="action-bar">
-        <button class="btn btn-primary" onclick="setGovMode('growth')">GROWTH</button>
-        <button class="btn btn-secondary" onclick="setGovMode('governed')">GOVERNED</button>
-        <button class="btn" style="background: var(--accent-red); color: white;" onclick="emergencyStop()">EMERGENCY STOP</button>
+
+      <!-- ===== AUTONOMÍA: Gauge + KPIs ===== -->
+      <div style="display:grid;grid-template-columns:200px 1fr;gap:16px;margin-bottom:16px;">
+        <!-- Gauge circular -->
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;border-radius:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);">
+          <div style="position:relative;width:140px;height:140px;">
+            <svg viewBox="0 0 140 140" style="width:140px;height:140px;transform:rotate(-90deg);">
+              <circle cx="70" cy="70" r="60" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="10"/>
+              <circle id="auto-gauge-ring" cx="70" cy="70" r="60" fill="none" stroke="var(--accent-green)" stroke-width="10"
+                stroke-dasharray="377" stroke-dashoffset="377" stroke-linecap="round" style="transition:stroke-dashoffset 1s ease,stroke .3s;"/>
+            </svg>
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+              <span id="auto-gauge-pct" style="font-size:32px;font-weight:800;letter-spacing:-1px;">0%</span>
+              <span style="font-size:10px;opacity:.5;text-transform:uppercase;">Autonomía</span>
+            </div>
+          </div>
+          <span id="auto-gauge-label" style="margin-top:8px;font-size:11px;opacity:.6;">Calculando...</span>
+        </div>
+
+        <!-- KPIs grid -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+          <div class="stat-card" style="padding:12px;">
+            <div class="stat-value" id="auto-kpi-uptime" style="font-size:18px;">0h</div>
+            <div class="stat-label" style="font-size:10px;">UPTIME</div>
+          </div>
+          <div class="stat-card" style="padding:12px;">
+            <div class="stat-value" id="auto-kpi-success" style="font-size:18px;">0%</div>
+            <div class="stat-label" style="font-size:10px;">TASA ÉXITO</div>
+          </div>
+          <div class="stat-card" style="padding:12px;">
+            <div class="stat-value" id="auto-kpi-modules" style="font-size:18px;">0/0</div>
+            <div class="stat-label" style="font-size:10px;">MÓDULOS</div>
+          </div>
+          <div class="stat-card" style="padding:12px;">
+            <div class="stat-value" id="auto-kpi-ai" style="font-size:18px;">0/0</div>
+            <div class="stat-label" style="font-size:10px;">MODELOS IA</div>
+          </div>
+          <div class="stat-card" style="padding:12px;">
+            <div class="stat-value" id="auto-kpi-incidents" style="font-size:18px;">0</div>
+            <div class="stat-label" style="font-size:10px;">INCIDENTES RESUELTOS</div>
+          </div>
+          <div class="stat-card" style="padding:12px;">
+            <div class="stat-value" id="auto-kpi-mttr" style="font-size:18px;">0m</div>
+            <div class="stat-label" style="font-size:10px;">MTTR</div>
+          </div>
+          <div class="stat-card" style="padding:12px;">
+            <div class="stat-value" id="auto-kpi-rules" style="font-size:18px;">0</div>
+            <div class="stat-label" style="font-size:10px;">REGLAS APRENDIDAS</div>
+          </div>
+          <div class="stat-card" style="padding:12px;">
+            <div class="stat-value" id="auto-kpi-alerts" style="font-size:18px;">0</div>
+            <div class="stat-label" style="font-size:10px;">ALERTAS ACTIVAS</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== SUBSISTEMAS ===== -->
+      <div style="margin-bottom:16px;">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;opacity:.5;margin-bottom:8px;">Subsistemas Autónomos</div>
+        <div id="auto-subsystems" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;">
+          <div style="padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);font-size:12px;opacity:.4;">Cargando subsistemas...</div>
+        </div>
+      </div>
+
+      <!-- ===== TAREAS + TIMELINE ===== -->
+      <div style="display:grid;grid-template-columns:1fr 320px;gap:16px;">
+        <!-- Tareas de seguimiento -->
+        <div>
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;opacity:.5;margin-bottom:8px;">Tareas de Seguimiento</div>
+          <div id="auto-tasks" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;padding-right:4px;">
+            <div style="padding:12px;border-radius:10px;background:rgba(255,255,255,0.03);font-size:12px;opacity:.4;">Sin tareas pendientes</div>
+          </div>
+        </div>
+        <!-- Timeline -->
+        <div>
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;opacity:.5;margin-bottom:8px;">Timeline Reciente</div>
+          <div id="auto-timeline" style="display:flex;flex-direction:column;gap:4px;max-height:280px;overflow-y:auto;padding-right:4px;">
+            <div style="padding:8px;border-radius:8px;background:rgba(255,255,255,0.03);font-size:11px;opacity:.4;">Sin eventos</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== ALERTAS ===== -->
+      <div id="auto-alerts" style="margin-top:12px;display:none;">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;opacity:.5;margin-bottom:8px;">Alertas Activas</div>
+        <div id="auto-alerts-list" style="display:flex;flex-direction:column;gap:4px;"></div>
       </div>
     </div>
 
@@ -2469,7 +2557,7 @@
     }
 
     const TAB_LABELS = {
-      chat: '&#128172; Chat', modulos: '&#128230; Modulos', gobernanza: '&#128220; Gobernanza',
+      chat: '&#128172; Chat', modulos: '&#128230; Modulos', gobernanza: '&#128737; Gobernanza &amp; Autonomía',
       config: '&#129302; Config IA', vision: '&#128065; Vision', nervioso: '&#128279; Nervioso',
       comms: '&#128241; Comms', tutorias: '&#128203; Tutorias'
     };
@@ -3105,6 +3193,10 @@
       pollReactor();
       setInterval(pollReactor, 60000);
 
+      // Autonomia (cada 10s)
+      loadAutonomia();
+      setInterval(loadAutonomia, 10000);
+
       // Entrada inicial
       addToBitacora('Sistema ATLAS iniciado', 'success', 'system');
       addToBitacora(`Dashboard v${ATLAS_VERSION} cargado`, 'info', 'system');
@@ -3488,8 +3580,9 @@
         // 3. Cargar configuración de IA
         await loadAIConfig();
         
-        // 4. Cargar estado de gobernanza
+        // 4. Cargar estado de gobernanza + autonomía
         await loadGovernanceStatus();
+        await loadAutonomia();
         
         // 5. Verificar cámaras
         await loadCameras();
@@ -3845,6 +3938,128 @@
       } catch (e) {
         console.error('Error loading governance:', e);
       }
+    }
+
+    // ═══ AUTONOMÍA: Carga completa de datos ═══
+    let _autoInterval = null;
+    async function loadAutonomia() {
+      try {
+        const [statusRes, tasksRes] = await Promise.allSettled([
+          fetch(`${API_BASE}/api/autonomy/status`).then(r=>r.json()),
+          fetch(`${API_BASE}/api/autonomy/tasks`).then(r=>r.json())
+        ]);
+        const status = statusRes.status==='fulfilled' ? statusRes.value : null;
+        const tasks  = tasksRes.status==='fulfilled' ? tasksRes.value : null;
+
+        if (status && status.ok) {
+          const lvl = status.level || 0;
+          // Gauge
+          const ring = document.getElementById('auto-gauge-ring');
+          if (ring) { ring.style.strokeDashoffset = 377 - (377 * lvl / 100); ring.style.stroke = lvl>70?'var(--accent-green)':lvl>40?'var(--accent-yellow)':'var(--accent-red)'; }
+          const pct = document.getElementById('auto-gauge-pct');
+          if (pct) pct.textContent = lvl + '%';
+          const lbl = document.getElementById('auto-gauge-label');
+          if (lbl) lbl.textContent = lvl>80?'Operación autónoma':lvl>50?'Autonomía parcial':'Supervisión requerida';
+          // Gov data from status
+          const govSub = status.subsystems?.governance;
+          if (govSub) {
+            const modeEl = document.getElementById('gov-mode');
+            const modeStr = (govSub.detail||'').replace('Modo: ','').toUpperCase();
+            if (modeEl && modeStr) { modeEl.textContent = modeStr; modeEl.style.color = modeStr==='EMERGENCY'?'var(--accent-red)':'var(--accent-green)'; }
+          }
+          // KPIs
+          const k = status.kpis || {};
+          const se = (id,v) => { const e=document.getElementById(id); if(e) e.textContent=v; };
+          se('auto-kpi-uptime', k.uptime_hours ? k.uptime_hours+'h' : '0h');
+          se('auto-kpi-success', (k.success_rate||0)+'%');
+          se('auto-kpi-modules', (k.modules_connected||0)+'/'+(k.modules_total||0));
+          se('auto-kpi-ai', (k.ai_available||0)+'/'+(k.ai_total||0));
+          se('auto-kpi-incidents', k.incidents_resolved||0);
+          se('auto-kpi-mttr', (k.mttr_minutes||0)+'m');
+          se('auto-kpi-rules', k.rules_learned||0);
+          se('auto-kpi-alerts', k.alerts_active||0);
+          // Subsistemas
+          const subEl = document.getElementById('auto-subsystems');
+          if (subEl && status.subsystems) {
+            subEl.innerHTML = Object.entries(status.subsystems).map(([k,s]) => {
+              const color = s.active ? 'var(--accent-green)' : 'var(--accent-red)';
+              return `<div style="padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid ${s.active?'rgba(0,255,136,0.15)':'rgba(255,68,68,0.15)'};display:flex;align-items:center;gap:10px;">
+                <div style="width:8px;height:8px;border-radius:50%;background:${color};box-shadow:0 0 6px ${color};flex-shrink:0;"></div>
+                <div><div style="font-size:12px;font-weight:600;">${s.label}</div><div style="font-size:10px;opacity:.5;">${s.detail}</div></div>
+              </div>`;
+            }).join('');
+          }
+          // Alertas
+          const alertsBox = document.getElementById('auto-alerts');
+          const alertsList = document.getElementById('auto-alerts-list');
+          if (alertsBox && alertsList && status.alerts && status.alerts.length > 0) {
+            alertsBox.style.display = 'block';
+            alertsList.innerHTML = status.alerts.map(a => {
+              const c = a.level==='critical'?'var(--accent-red)':a.level==='warning'?'var(--accent-yellow)':'rgba(255,255,255,0.3)';
+              return `<div style="padding:6px 12px;border-radius:8px;background:rgba(255,255,255,0.03);border-left:3px solid ${c};font-size:11px;">${a.msg}</div>`;
+            }).join('');
+          } else if (alertsBox) { alertsBox.style.display = 'none'; }
+          // Timeline
+          const tlEl = document.getElementById('auto-timeline');
+          if (tlEl && status.timeline && status.timeline.length > 0) {
+            tlEl.innerHTML = status.timeline.map(t => {
+              const c = t.result==='ok'?'var(--accent-green)':'var(--accent-red)';
+              const ts = t.ts ? t.ts.split(' ')[1] || t.ts : '';
+              return `<div style="padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.03);font-size:11px;display:flex;gap:8px;align-items:center;">
+                <span style="color:${c};font-size:9px;">&#9679;</span>
+                <span style="opacity:.5;min-width:50px;">${ts}</span>
+                <span>${t.event}</span>
+              </div>`;
+            }).join('');
+          }
+        }
+
+        // Tareas
+        if (tasks && tasks.ok && tasks.tasks) {
+          const tEl = document.getElementById('auto-tasks');
+          if (tEl) {
+            if (tasks.tasks.length === 0) {
+              tEl.innerHTML = '<div style="padding:12px;border-radius:10px;background:rgba(255,255,255,0.03);font-size:12px;opacity:.4;">Sin tareas pendientes</div>';
+            } else {
+              tEl.innerHTML = tasks.tasks.map(t => {
+                const pc = {critical:'var(--accent-red)',high:'#f59e0b',medium:'var(--accent-cyan)',low:'rgba(255,255,255,0.3)'}[t.priority]||'rgba(255,255,255,0.3)';
+                const sc = {pending:'#f59e0b',in_progress:'var(--accent-cyan)',done:'var(--accent-green)',failed:'var(--accent-red)'}[t.status]||'rgba(255,255,255,0.3)';
+                const showActions = t.status === 'pending' || t.status === 'in_progress';
+                const actions = showActions ? `<div style="display:flex;gap:4px;margin-top:6px;">
+                  <button onclick="autoTaskAction('${t.id}','approve')" style="font-size:9px;padding:2px 8px;border-radius:4px;background:rgba(0,255,136,0.15);color:var(--accent-green);border:1px solid rgba(0,255,136,0.2);cursor:pointer;">Aprobar</button>
+                  <button onclick="autoTaskAction('${t.id}','reject')" style="font-size:9px;padding:2px 8px;border-radius:4px;background:rgba(255,68,68,0.15);color:var(--accent-red);border:1px solid rgba(255,68,68,0.2);cursor:pointer;">Rechazar</button>
+                  <button onclick="autoTaskAction('${t.id}','close')" style="font-size:9px;padding:2px 8px;border-radius:4px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.1);cursor:pointer;">Cerrar</button>
+                </div>` : '';
+                return `<div style="padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.03);border-left:3px solid ${pc};">
+                  <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-size:12px;font-weight:600;">${t.title||t.id}</span>
+                    <span style="font-size:9px;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,0.06);color:${sc};">${t.status}</span>
+                  </div>
+                  <div style="font-size:10px;opacity:.4;margin-top:2px;">${t.source||''} &middot; ${t.created_at||''}</div>
+                  ${actions}
+                </div>`;
+              }).join('');
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Error loading autonomia:', e);
+      }
+    }
+
+    async function autoTaskAction(taskId, action) {
+      try {
+        const res = await fetch(`${API_BASE}/api/autonomy/task/${taskId}/action`, {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({action})
+        });
+        const data = await res.json();
+        if (data.ok) {
+          addActivity(`Tarea ${taskId}: ${action}`, 'success');
+          addToBitacora(`Autonomia: tarea ${taskId} → ${action}`, 'info', 'governance');
+          loadAutonomia();
+        }
+      } catch(e) { console.error('autoTaskAction error:', e); }
     }
 
     async function loadCameras() {
