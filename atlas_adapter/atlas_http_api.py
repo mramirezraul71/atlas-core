@@ -4065,6 +4065,14 @@ except Exception as _te:
     import logging
     logging.getLogger(__name__).warning("Tools module not loaded: %s", _te)
 
+# Tutorias y Visitas
+try:
+    from modules.humanoid.quality.tutorias.api import router as tutorias_router
+    app.include_router(tutorias_router)
+except Exception as _tr:
+    import logging
+    logging.getLogger(__name__).warning("Tutorias module not loaded: %s", _tr)
+
 # ATLAS AUTONOMOUS (health, healing, evolution, telemetry, resilience, learning)
 try:
     import sys
