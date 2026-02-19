@@ -401,16 +401,42 @@ def _atlas_status_safe_cached() -> str:
         return str(cached)
 
 
+_STATUS_CACHE: Dict[str, Any] = {"nexus": {}, "robot": False, "ts": 0.0}
+_STATUS_CACHE_TTL = 10.0
+_STATUS_REFRESH_LOCK = threading.Lock()
+_STATUS_REFRESH_INFLIGHT = False
+
+
+def _refresh_status_bg():
+    global _STATUS_REFRESH_INFLIGHT
+    try:
+        try:
+            from modules.nexus_heartbeat import ping_nexus, set_nexus_connected, get_nexus_connection_state
+            ok, msg = ping_nexus()
+            set_nexus_connected(ok, "" if ok else msg)
+            nexus = get_nexus_connection_state()
+        except Exception:
+            nexus = {"connected": False, "active": False, "last_check_ts": 0, "last_error": ""}
+        robot_ok = _robot_connected()
+        _STATUS_CACHE["nexus"] = nexus
+        _STATUS_CACHE["robot"] = robot_ok
+        _STATUS_CACHE["ts"] = time.time()
+    finally:
+        _STATUS_REFRESH_INFLIGHT = False
+
+
 @app.get("/status")
 def status():
-    try:
-        from modules.nexus_heartbeat import ping_nexus, set_nexus_connected, get_nexus_connection_state
-        ok, msg = ping_nexus()
-        set_nexus_connected(ok, "" if ok else msg)
-        nexus = get_nexus_connection_state()
-    except Exception:
-        nexus = {"connected": False, "active": False, "last_check_ts": 0, "last_error": ""}
-    robot_ok = _robot_connected()
+    global _STATUS_REFRESH_INFLIGHT
+    now = time.time()
+    if now - _STATUS_CACHE.get("ts", 0) > _STATUS_CACHE_TTL:
+        with _STATUS_REFRESH_LOCK:
+            if not _STATUS_REFRESH_INFLIGHT:
+                _STATUS_REFRESH_INFLIGHT = True
+                threading.Thread(target=_refresh_status_bg, daemon=True).start()
+
+    nexus = _STATUS_CACHE.get("nexus", {})
+    robot_ok = _STATUS_CACHE.get("robot", False)
     return {
         "ok": True,
         "atlas": _atlas_status_safe_cached(),
