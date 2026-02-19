@@ -8,6 +8,7 @@ from typing import Optional
 import json
 import time
 import re
+import importlib
 from datetime import datetime
 
 router = APIRouter(prefix="/ans", tags=["ANS"])
@@ -221,6 +222,115 @@ def ans_bitacora(limit: int = 50):
         except Exception:
             pass
         
+        # 5. Audit trail (acciones auditadas, sobre todo fallos)
+        try:
+            audit_mod = importlib.import_module("modules.humanoid.ans.audit_log", None)
+            audit_entries = getattr(audit_mod, "tail", lambda n: [])(n=limit)
+            for ae in (audit_entries if isinstance(audit_entries, list) else []):
+                success = ae.get("success", True)
+                if not success:
+                    msg_a = f"[AUDIT] {ae.get('module','')}.{ae.get('action','')} FALLO: {(ae.get('error') or '')[:80]}"
+                    ts_a = ae.get("timestamp", "")
+                    key = (ts_a[:19], "audit", msg_a[:120])
+                    if key not in seen_key:
+                        seen_key.add(key)
+                        entries.append({
+                            "timestamp": ts_a,
+                            "message": msg_a[:240],
+                            "level": "error",
+                            "source": "audit",
+                            "icon": "🔒",
+                            "category": "Auditoria",
+                        })
+        except Exception:
+            pass
+
+        # 6. Governance log (cambios de modo, emergency)
+        try:
+            gov_mod = importlib.import_module("modules.humanoid.governance.engine", None)
+            gov_log = getattr(gov_mod, "get_log", lambda limit: [])(limit=limit)
+            for gl in (gov_log if isinstance(gov_log, list) else []):
+                msg_g = f"[GOV] {gl.get('action', gl.get('message', ''))}"[:200]
+                ts_g = gl.get("timestamp", "")
+                key = (ts_g[:19], "governance", msg_g[:120])
+                if key not in seen_key:
+                    seen_key.add(key)
+                    entries.append({
+                        "timestamp": ts_g,
+                        "message": msg_g,
+                        "level": "warning",
+                        "source": "governance",
+                        "icon": "🏛️",
+                        "category": "Gobernanza",
+                    })
+        except Exception:
+            pass
+
+        # 7. Approvals pendientes (acciones que requieren aprobación del Owner)
+        try:
+            approvals_mod = importlib.import_module("modules.humanoid.governance.approval_chain", None)
+            pending = getattr(approvals_mod, "list_approvals", lambda **kw: [])(status="pending")
+            for ap in (pending if isinstance(pending, list) else []):
+                msg_ap = f"[APROBACION] {ap.get('description', ap.get('action', ''))}"[:200]
+                ts_ap = ap.get("created_at", ap.get("timestamp", ""))
+                key = (str(ts_ap)[:19], "approval", msg_ap[:120])
+                if key not in seen_key:
+                    seen_key.add(key)
+                    entries.append({
+                        "timestamp": str(ts_ap),
+                        "message": msg_ap,
+                        "level": "warning",
+                        "source": "governance",
+                        "icon": "⏳",
+                        "category": "Aprobacion",
+                    })
+        except Exception:
+            pass
+
+        # 8. Healing events (auto-reparaciones)
+        try:
+            healing_mod = importlib.import_module("modules.humanoid.ans.healer", None)
+            heal_hist = getattr(healing_mod, "history", lambda n: [])(n=limit)
+            for hh in (heal_hist if isinstance(heal_hist, list) else []):
+                msg_h = f"[HEALING] {hh.get('strategy', '')}: {hh.get('result', hh.get('message', ''))}"[:200]
+                ts_h = hh.get("timestamp", "")
+                key = (str(ts_h)[:19], "healing", msg_h[:120])
+                if key not in seen_key:
+                    seen_key.add(key)
+                    entries.append({
+                        "timestamp": str(ts_h),
+                        "message": msg_h,
+                        "level": "success" if hh.get("ok", True) else "error",
+                        "source": "healing",
+                        "icon": "💊",
+                        "category": "Auto-reparacion",
+                    })
+        except Exception:
+            pass
+
+        # 9. Scheduler jobs (ejecuciones recientes)
+        try:
+            sched_mod = importlib.import_module("modules.humanoid.ans.scheduler", None)
+            runs = getattr(sched_mod, "recent_runs", lambda n: [])(n=limit)
+            for rr in (runs if isinstance(runs, list) else []):
+                ok_r = rr.get("ok", rr.get("success", True))
+                if not ok_r:
+                    msg_r = f"[SCHEDULER] {rr.get('job_id','')} FALLO: {(rr.get('error',''))[:80]}"
+                    ts_r = rr.get("timestamp", rr.get("started_at", ""))
+                    key = (str(ts_r)[:19], "scheduler", msg_r[:120])
+                    if key not in seen_key:
+                        seen_key.add(key)
+                        entries.append({
+                            "timestamp": str(ts_r),
+                            "message": msg_r[:240],
+                            "level": "error",
+                            "source": "scheduler",
+                            "icon": "⏰",
+                            "category": "Scheduler",
+                        })
+        except Exception:
+            pass
+
         # Ordenar por timestamp (más reciente primero)
         entries.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
 
