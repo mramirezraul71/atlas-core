@@ -73,6 +73,8 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_weekly_maintenance(payload)
         elif kind == "git_sync":
             out = _run_git_sync(payload)
+        elif kind == "cge_tick":
+            out = _run_cge_tick(payload)
         else:
             out = {"ok": True, "result": "no-op", "kind": kind}
     except Exception as e:
@@ -697,5 +699,14 @@ def _run_repo_hygiene_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "repo_hygiene timeout 180s"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _run_cge_tick(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Tick del Concurrent Goal Engine — ejecuta un ciclo del motor de metas concurrente."""
+    try:
+        from modules.humanoid.cortex.frontal.concurrent_engine import cge_tick
+        return cge_tick()
     except Exception as e:
         return {"ok": False, "error": str(e)}

@@ -5805,6 +5805,132 @@ def healing_status_endpoint():
         return _std_resp(False, None, ms, str(e))
 
 
+# --- Concurrent Goal Engine (CGE) ---
+
+
+class CGESubmitBody(BaseModel):
+    goal_type: str = "general"
+    description: str
+    priority: int = 1
+    parameters: Optional[dict] = None
+    source: str = "api"
+    parent_goal_id: Optional[str] = None
+    deadline_ts: Optional[float] = None
+    resources_needed: Optional[list] = None
+
+
+@app.post("/cge/submit", tags=["CGE"])
+def cge_submit(body: CGESubmitBody):
+    """Registra un nuevo goal concurrente en el CGE."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cortex.frontal.concurrent_engine import get_engine
+        engine = get_engine()
+        gid = engine.submit_goal(
+            goal_type=body.goal_type,
+            description=body.description,
+            priority=body.priority,
+            parameters=body.parameters,
+            source=body.source,
+            parent_goal_id=body.parent_goal_id,
+            deadline_ts=body.deadline_ts,
+            resources_needed=body.resources_needed,
+        )
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"goal_id": gid}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/cge/status", tags=["CGE"])
+def cge_status():
+    """Estado completo del motor concurrente: goals activos, recursos, executor."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cortex.frontal.concurrent_engine import get_engine
+        data = get_engine().get_status()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/cge/goal/{goal_id}", tags=["CGE"])
+def cge_goal_detail(goal_id: str):
+    """Detalle de un goal: contexto, plan, log de ejecucion, recursos."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cortex.frontal.concurrent_engine import get_engine
+        detail = get_engine().get_goal_detail(goal_id)
+        ms = int((time.perf_counter() - t0) * 1000)
+        if not detail:
+            return _std_resp(False, None, ms, "goal not found")
+        return _std_resp(True, detail, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/cge/cancel/{goal_id}", tags=["CGE"])
+def cge_cancel(goal_id: str, body: Optional[dict] = None):
+    """Cancela un goal concurrente."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cortex.frontal.concurrent_engine import get_engine
+        reason = (body or {}).get("reason", "cancelled via API")
+        ok = get_engine().cancel_goal(goal_id, reason)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(ok, {"goal_id": goal_id, "cancelled": ok}, ms,
+                         None if ok else "goal not found or already terminal")
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/cge/pause/{goal_id}", tags=["CGE"])
+def cge_pause(goal_id: str):
+    """Pausa un goal concurrente, liberando sus recursos."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cortex.frontal.concurrent_engine import get_engine
+        ok = get_engine().pause_goal(goal_id)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(ok, {"goal_id": goal_id, "paused": ok}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/cge/resume/{goal_id}", tags=["CGE"])
+def cge_resume(goal_id: str):
+    """Reanuda un goal pausado."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cortex.frontal.concurrent_engine import get_engine
+        ok = get_engine().resume_goal(goal_id)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(ok, {"goal_id": goal_id, "resumed": ok}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/cge/tick", tags=["CGE"])
+def cge_tick_endpoint():
+    """Ejecuta un tick manual del motor concurrente."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.cortex.frontal.concurrent_engine import get_engine
+        result = get_engine().tick()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, result, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
 # --- Agent / Scaffold / Scripts / Web / Voice / Deps ---
 
 class AgentGoalBody(BaseModel):
