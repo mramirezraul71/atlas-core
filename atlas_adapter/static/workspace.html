@@ -1226,6 +1226,7 @@ function clearCodeViewer() {
 
 // ─── SEND MESSAGE ───
 async function sendMessage() {
+  _globalMute();
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
   if (!text || isProcessing) return;
@@ -1506,26 +1507,29 @@ async function executeTerminalCmd(cmd) {
 let recognition = null;
 let ttsEnabled = true;
 let isSpeaking = false;
-let _userInteracting = false;
-let _interactTimer = null;
-let _speechQueue = [];
-let _speechDebounce = null;
 
-function _markUserInteracting() {
-  _userInteracting = true;
+const _MUTE_KEY = 'atlas-global-voice-mute-until';
+const _MUTE_DURATION_MS = 30000;
+
+function _globalMute() {
+  const until = Date.now() + _MUTE_DURATION_MS;
+  try { localStorage.setItem(_MUTE_KEY, String(until)); } catch(e) {}
   if (isSpeaking) { window.speechSynthesis.cancel(); isSpeaking = false; setOrbState('idle'); }
-  clearTimeout(_interactTimer);
-  _interactTimer = setTimeout(() => { _userInteracting = false; _drainSpeechQueue(); }, 3000);
 }
-document.addEventListener('keydown', (e) => { if (!e.ctrlKey && !e.altKey && !e.metaKey) _markUserInteracting(); });
-document.addEventListener('mousedown', (e) => {
-  if (e.target.closest('input,textarea,[contenteditable],.chat-input')) _markUserInteracting();
-});
 
-function _drainSpeechQueue() {
-  if (_userInteracting || isSpeaking || !_speechQueue.length) return;
-  const text = _speechQueue.shift();
-  _doSpeak(text);
+function _isGloballyMuted() {
+  try {
+    const until = parseInt(localStorage.getItem(_MUTE_KEY) || '0', 10);
+    return Date.now() < until;
+  } catch(e) { return false; }
+}
+
+function _shouldSuppress() {
+  if (_isGloballyMuted()) return true;
+  const el = document.activeElement;
+  if (el && (el.id === 'chat-input' || el.tagName === 'TEXTAREA' ||
+      (el.closest && el.closest('.chat-input,#chat-input,textarea')))) return true;
+  return false;
 }
 
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1642,6 +1646,8 @@ function resetWaveform() {
 
 function atlasSpeak(text) {
   if (!ttsEnabled || !window.speechSynthesis || !text) return;
+  if (_shouldSuppress()) return;
+  if (isSpeaking) return;
   let clean = text
     .replace(/```[\s\S]*?```/g, '. Codigo generado. ')
     .replace(/`[^`]*`/g, '').replace(/\*\*/g, '').replace(/\*/g, '')
@@ -1651,17 +1657,11 @@ function atlasSpeak(text) {
     .replace(/\n+/g, '. ').replace(/\.{2,}/g, '.').replace(/\s{2,}/g, ' ')
     .trim().substring(0, 400);
   if (!clean.trim()) return;
-
-  if (_userInteracting || isSpeaking) {
-    _speechQueue = [clean];
-    return;
-  }
-  clearTimeout(_speechDebounce);
-  _speechDebounce = setTimeout(() => _doSpeak(clean), 300);
+  _doSpeak(clean);
 }
 
 function _doSpeak(clean) {
-  if (_userInteracting || !ttsEnabled || !window.speechSynthesis) return;
+  if (_shouldSuppress() || !ttsEnabled || !window.speechSynthesis) return;
   window.speechSynthesis.cancel();
 
   const utter = new SpeechSynthesisUtterance(clean);
@@ -1680,8 +1680,8 @@ function _doSpeak(clean) {
   setOrbState('speaking');
   document.getElementById('voice-status').textContent = 'ATLAS hablando...';
 
-  utter.onend = () => { isSpeaking = false; setOrbState('idle'); document.getElementById('voice-status').textContent = 'Click en el orbe o Ctrl+M para hablar'; setTimeout(_drainSpeechQueue, 500); };
-  utter.onerror = () => { isSpeaking = false; setOrbState('idle'); setTimeout(_drainSpeechQueue, 500); };
+  utter.onend = () => { isSpeaking = false; setOrbState('idle'); document.getElementById('voice-status').textContent = 'Click en el orbe o Ctrl+M para hablar'; };
+  utter.onerror = () => { isSpeaking = false; setOrbState('idle'); };
 
   window.speechSynthesis.speak(utter);
 }
@@ -1718,10 +1718,14 @@ document.addEventListener('keydown', e => {
 });
 
 // ─── INPUT ENTER ───
-document.getElementById('chat-input').addEventListener('keydown', e => {
+const _chatInput = document.getElementById('chat-input');
+_chatInput.addEventListener('keydown', e => {
+  _globalMute();
   if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); sendMessage(); }
   if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) { e.preventDefault(); sendMessage(); }
 });
+_chatInput.addEventListener('focus', _globalMute);
+_chatInput.addEventListener('input', _globalMute);
 
 </script>
 </body>

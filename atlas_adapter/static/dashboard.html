@@ -2931,35 +2931,40 @@
     // TTS - ATLAS habla eventos importantes
     // ═══════════════════════════════════════════════════════════════
     let atlasTTSEnabled = localStorage.getItem('atlas-tts') !== 'off';
-    let _dashUserInteracting = false;
-    let _dashInteractTimer = null;
-    let _dashSpeechQueue = [];
     let _dashIsSpeaking = false;
 
+    const _MUTE_KEY = 'atlas-global-voice-mute-until';
+    const _MUTE_MS = 30000;
+
+    function _dashGlobalMute() {
+      const until = Date.now() + _MUTE_MS;
+      try { localStorage.setItem(_MUTE_KEY, String(until)); } catch(e) {}
+      if (_dashIsSpeaking) { window.speechSynthesis.cancel(); _dashIsSpeaking = false; }
+    }
+
+    function _dashShouldSuppress() {
+      try {
+        const until = parseInt(localStorage.getItem(_MUTE_KEY) || '0', 10);
+        if (Date.now() < until) return true;
+      } catch(e) {}
+      if (!document.hasFocus()) return true;
+      const el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' ||
+          (el.closest && el.closest('[contenteditable]')))) return true;
+      return false;
+    }
+
     document.addEventListener('keydown', (e) => {
-      if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-        _dashUserInteracting = true;
-        if (_dashIsSpeaking) { window.speechSynthesis.cancel(); _dashIsSpeaking = false; }
-        clearTimeout(_dashInteractTimer);
-        _dashInteractTimer = setTimeout(() => { _dashUserInteracting = false; _dashDrainQueue(); }, 3000);
-      }
+      if (!e.ctrlKey && !e.altKey && !e.metaKey) _dashGlobalMute();
     });
     document.addEventListener('mousedown', (e) => {
-      if (e.target.closest('input,textarea,button,[contenteditable]')) {
-        _dashUserInteracting = true;
-        if (_dashIsSpeaking) { window.speechSynthesis.cancel(); _dashIsSpeaking = false; }
-        clearTimeout(_dashInteractTimer);
-        _dashInteractTimer = setTimeout(() => { _dashUserInteracting = false; _dashDrainQueue(); }, 3000);
-      }
+      if (e.target.closest('input,textarea,button,[contenteditable]')) _dashGlobalMute();
     });
-
-    function _dashDrainQueue() {
-      if (_dashUserInteracting || _dashIsSpeaking || !_dashSpeechQueue.length) return;
-      _dashDoSpeak(_dashSpeechQueue.shift());
-    }
 
     function atlasSpeak(text) {
       if (!atlasTTSEnabled || !window.speechSynthesis || !text) return;
+      if (_dashShouldSuppress()) return;
+      if (_dashIsSpeaking) return;
       let clean = String(text)
         .replace(/```[\s\S]*?```/g, '. Codigo. ')
         .replace(/`[^`]*`/g, '').replace(/\*\*/g, '').replace(/\*/g, '')
@@ -2968,15 +2973,11 @@
         .replace(/\.{2,}/g, '.').replace(/\s{2,}/g, ' ')
         .trim().substring(0, 300);
       if (!clean) return;
-      if (_dashUserInteracting || _dashIsSpeaking) {
-        _dashSpeechQueue = [clean];
-        return;
-      }
       _dashDoSpeak(clean);
     }
 
     function _dashDoSpeak(clean) {
-      if (_dashUserInteracting || !atlasTTSEnabled || !window.speechSynthesis) return;
+      if (_dashShouldSuppress() || !atlasTTSEnabled || !window.speechSynthesis) return;
       window.speechSynthesis.cancel();
       const utter = new SpeechSynthesisUtterance(clean);
       utter.lang = 'es-ES'; utter.rate = 1.05; utter.pitch = 1.0; utter.volume = 1.0;
@@ -2986,8 +2987,8 @@
                       voices.find(v => v.lang.startsWith('es'));
       if (esVoice) utter.voice = esVoice;
       _dashIsSpeaking = true;
-      utter.onend = () => { _dashIsSpeaking = false; setTimeout(_dashDrainQueue, 500); };
-      utter.onerror = () => { _dashIsSpeaking = false; setTimeout(_dashDrainQueue, 500); };
+      utter.onend = () => { _dashIsSpeaking = false; };
+      utter.onerror = () => { _dashIsSpeaking = false; };
       window.speechSynthesis.speak(utter);
     }
 
@@ -4169,6 +4170,7 @@
 
     // Chat
     async function sendMessage() {
+      _dashGlobalMute();
       const input = document.getElementById('chat-input');
       const message = input.value.trim();
       if (!message) return;
@@ -4226,9 +4228,15 @@
       return escapeHtml(String(response));
     }
 
-    document.getElementById('chat-input')?.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') sendMessage();
-    });
+    const _dashChatEl = document.getElementById('chat-input');
+    if (_dashChatEl) {
+      _dashChatEl.addEventListener('keypress', (e) => {
+        _dashGlobalMute();
+        if (e.key === 'Enter') sendMessage();
+      });
+      _dashChatEl.addEventListener('focus', _dashGlobalMute);
+      _dashChatEl.addEventListener('input', _dashGlobalMute);
+    }
 
     // Governance
     async function setGovMode(mode) {
