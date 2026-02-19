@@ -31,11 +31,12 @@ def run() -> dict:
         except Exception:
             ts = None
         now = datetime.now(timezone.utc)
-        stale = ts is None or (now - ts) > timedelta(hours=13)
+        # Umbral 24h: el daemon de evolución corre tipicamente 1x/día; 13h generaba falsos positivos
+        stale = ts is None or (now - ts) > timedelta(hours=24)
         ok = cycle_ok and not stale
         message = data.get("message", "Asimilación Exitosa" if cycle_ok else "Ciclo con errores")
         if stale:
-            message = "Último ciclo Evolution hace >13h. Comprobar daemon atlas_evolution.py"
+            message = "Último ciclo Evolution hace >24h. Comprobar daemon atlas_evolution.py"
         return {
             "ok": ok,
             "check_id": "evolution_health",

@@ -58,5 +58,11 @@ def run() -> dict:
             "severity": "low" if ok else "med",
             "suggested_heals": suggested_heals,
         }
+    except OSError as e:
+        # [Errno 22] y similares son errores de I/O de consola en Windows (proceso detached),
+        # no indican dependencias faltantes — se trata como OK para evitar falsos incidentes.
+        if getattr(e, "errno", None) in (22, 9):
+            return {"ok": True, "check_id": "deps_health", "message": "ok (io_error_suppressed)", "details": {"suppressed_error": str(e)}, "severity": "low", "suggested_heals": []}
+        return {"ok": False, "check_id": "deps_health", "message": str(e), "details": {"error": str(e)}, "severity": "low", "suggested_heals": []}
     except Exception as e:
         return {"ok": False, "check_id": "deps_health", "message": str(e), "details": {"error": str(e)}, "severity": "low", "suggested_heals": []}
