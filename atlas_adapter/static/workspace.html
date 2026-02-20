@@ -2100,9 +2100,7 @@ function _isGloballyMuted() {
 
 function _shouldSuppress() {
   if (_isGloballyMuted()) return true;
-  const el = document.activeElement;
-  if (el && (el.id === 'chat-input' || el.tagName === 'TEXTAREA' ||
-      (el.closest && el.closest('.chat-input,#chat-input,textarea')))) return true;
+  // No suprimir si el usuario no está escribiendo activamente
   return false;
 }
 
