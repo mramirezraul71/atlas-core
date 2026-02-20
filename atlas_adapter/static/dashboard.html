@@ -320,6 +320,107 @@
       margin-top: 0.25rem;
     }
 
+    /* === HEALTH WIDGET === */
+    .health-widget {
+      background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-elevated) 100%);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+    .health-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+    }
+    .health-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .health-score-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.5rem 1.25rem;
+      background: var(--bg-elevated);
+      border: 2px solid var(--accent-green);
+      border-radius: 999px;
+      font-weight: 700;
+    }
+    .health-score-badge.warning { border-color: var(--accent-orange); }
+    .health-score-badge.critical { border-color: var(--accent-red); }
+    .health-score-value {
+      font-size: 1.5rem;
+      color: var(--accent-green);
+    }
+    .health-score-badge.warning .health-score-value { color: var(--accent-orange); }
+    .health-score-badge.critical .health-score-value { color: var(--accent-red); }
+    .health-score-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .health-metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.75rem;
+    }
+    .health-metric {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      transition: all 0.2s;
+    }
+    .health-metric:hover {
+      border-color: var(--accent-cyan);
+      transform: translateY(-2px);
+    }
+    .health-metric-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .health-metric-value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .health-metric-value.ok { color: var(--accent-green); }
+    .health-metric-value.warning { color: var(--accent-orange); }
+    .health-metric-value.error { color: var(--accent-red); }
+    .health-status-icon {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      box-shadow: 0 0 8px var(--accent-green);
+      animation: pulse-glow 2s infinite;
+    }
+    .health-status-icon.warning {
+      background: var(--accent-orange);
+      box-shadow: 0 0 8px var(--accent-orange);
+    }
+    .health-status-icon.critical {
+      background: var(--accent-red);
+      box-shadow: 0 0 8px var(--accent-red);
+    }
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
     /* === ACTION BAR === */
     .action-bar {
       display: flex;
@@ -1337,6 +1438,49 @@
         </div>
         <div class="modules-grid" id="modules-grid">
           <!-- Se llena dinámicamente -->
+        </div>
+      </div>
+
+      <!-- Health Widget -->
+      <div class="health-widget" id="health-widget">
+        <div class="health-header">
+          <div class="health-title">
+            <span>🏥</span>
+            <span>SALUD DEL SISTEMA</span>
+          </div>
+          <div class="health-score-badge" id="health-score-badge">
+            <div class="health-status-icon" id="health-status-icon"></div>
+            <div>
+              <div class="health-score-value" id="health-score-value">--</div>
+              <div class="health-score-label">Score</div>
+            </div>
+          </div>
+        </div>
+        <div class="health-metrics" id="health-metrics">
+          <div class="health-metric">
+            <div class="health-metric-label">Servicios</div>
+            <div class="health-metric-value" id="health-services">--</div>
+          </div>
+          <div class="health-metric">
+            <div class="health-metric-label">Memoria</div>
+            <div class="health-metric-value" id="health-memory">--</div>
+          </div>
+          <div class="health-metric">
+            <div class="health-metric-label">ANS Ciclos</div>
+            <div class="health-metric-value" id="health-ans">--</div>
+          </div>
+          <div class="health-metric">
+            <div class="health-metric-label">Uptime</div>
+            <div class="health-metric-value" id="health-uptime">--</div>
+          </div>
+          <div class="health-metric">
+            <div class="health-metric-label">Lifelog</div>
+            <div class="health-metric-value" id="health-lifelog">--</div>
+          </div>
+          <div class="health-metric">
+            <div class="health-metric-label">Incidentes</div>
+            <div class="health-metric-value" id="health-incidents">--</div>
+          </div>
         </div>
       </div>
 
@@ -5785,6 +5929,113 @@
       }
     }
     
+    // ═══════════════════════════════════════════════════════════════
+    // HEALTH WIDGET
+    // ═══════════════════════════════════════════════════════════════
+    
+    async function updateHealthWidget() {
+      try {
+        const response = await fetch('/health');
+        if (!response.ok) throw new Error('Health endpoint unavailable');
+        
+        const data = await response.json();
+        const score = data.score || 0;
+        const checks = data.checks || {};
+        
+        // Update score badge
+        const scoreBadge = document.getElementById('health-score-badge');
+        const scoreValue = document.getElementById('health-score-value');
+        const statusIcon = document.getElementById('health-status-icon');
+        
+        if (scoreValue) scoreValue.textContent = score;
+        
+        if (scoreBadge && statusIcon) {
+          scoreBadge.className = 'health-score-badge';
+          statusIcon.className = 'health-status-icon';
+          if (score >= 80) {
+            scoreBadge.classList.add('ok');
+          } else if (score >= 50) {
+            scoreBadge.classList.add('warning');
+            statusIcon.classList.add('warning');
+          } else {
+            scoreBadge.classList.add('critical');
+            statusIcon.classList.add('critical');
+          }
+        }
+        
+        // Update metrics
+        const servicesOk = Object.values(checks).filter(c => c === true).length;
+        const servicesTotal = Object.keys(checks).length;
+        document.getElementById('health-services').textContent = `${servicesOk}/${servicesTotal}`;
+        document.getElementById('health-services').className = 'health-metric-value ' + (servicesOk === servicesTotal ? 'ok' : 'warning');
+        
+        // Memory status
+        try {
+          const memRes = await fetch('/api/cognitive-memory/lifelog/status');
+          const memData = await memRes.json();
+          if (memData.ok) {
+            const entries = memData.total_entries || 0;
+            document.getElementById('health-memory').textContent = entries > 0 ? `${entries} entries` : 'OK';
+            document.getElementById('health-memory').className = 'health-metric-value ok';
+          }
+        } catch (e) {
+          document.getElementById('health-memory').textContent = 'N/A';
+          document.getElementById('health-memory').className = 'health-metric-value';
+        }
+        
+        // ANS cycles
+        try {
+          const ansRes = await fetch('/nervous/status');
+          const ansData = await ansRes.json();
+          if (ansData.ok) {
+            const cycles = ansData.cycles_completed || 0;
+            document.getElementById('health-ans').textContent = cycles;
+            document.getElementById('health-ans').className = 'health-metric-value ok';
+          }
+        } catch (e) {
+          document.getElementById('health-ans').textContent = 'N/A';
+          document.getElementById('health-ans').className = 'health-metric-value';
+        }
+        
+        // Uptime
+        const uptime = data.uptime_seconds || 0;
+        const hours = Math.floor(uptime / 3600);
+        const mins = Math.floor((uptime % 3600) / 60);
+        document.getElementById('health-uptime').textContent = `${hours}h ${mins}m`;
+        document.getElementById('health-uptime').className = 'health-metric-value ok';
+        
+        // Lifelog
+        try {
+          const llRes = await fetch('/api/cognitive-memory/lifelog/status');
+          const llData = await llRes.json();
+          if (llData.ok) {
+            const rate = llData.success_rate || 0;
+            document.getElementById('health-lifelog').textContent = `${Math.round(rate * 100)}%`;
+            document.getElementById('health-lifelog').className = 'health-metric-value ' + (rate >= 0.8 ? 'ok' : 'warning');
+          }
+        } catch (e) {
+          document.getElementById('health-lifelog').textContent = 'N/A';
+          document.getElementById('health-lifelog').className = 'health-metric-value';
+        }
+        
+        // Incidents
+        try {
+          const incRes = await fetch('/ans/incidents?status=open&limit=100');
+          const incData = await incRes.json();
+          const openCount = (incData.incidents || []).length;
+          document.getElementById('health-incidents').textContent = openCount;
+          document.getElementById('health-incidents').className = 'health-metric-value ' + (openCount === 0 ? 'ok' : 'warning');
+        } catch (e) {
+          document.getElementById('health-incidents').textContent = '0';
+          document.getElementById('health-incidents').className = 'health-metric-value ok';
+        }
+        
+      } catch (e) {
+        console.error('Error updating health widget:', e);
+        document.getElementById('health-score-value').textContent = 'ERR';
+      }
+    }
+
     // Auto-refresh comms when tab is active
     document.addEventListener('DOMContentLoaded', () => {
       const commsTab = document.querySelector('[data-tab="comms"]');
@@ -5795,6 +6046,20 @@
           refreshVoiceStatus();
         });
       }
+      
+      // Update health widget on modules tab load
+      const modulosTab = document.querySelector('[data-tab="modulos"]');
+      if (modulosTab) {
+        modulosTab.addEventListener('click', () => {
+          updateHealthWidget();
+        });
+      }
+      
+      // Initial health widget update
+      updateHealthWidget();
+      
+      // Auto-refresh health widget every 30 seconds
+      setInterval(updateHealthWidget, 30000);
     });
     
     // ═══════════════════════════════════════════════════════════════
