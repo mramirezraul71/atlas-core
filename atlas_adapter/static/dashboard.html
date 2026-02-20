@@ -3847,9 +3847,15 @@
       
       // Cargar bitácora del servidor
       loadBitacoraFromServer();
+
+      // Cargar aprobaciones pendientes reales
+      pollPendingApprovals();
       
       // Polling para nuevas entradas cada 15 segundos
       setInterval(pollBitacora, 15000);
+
+      // Polling de aprobaciones pendientes cada 10 segundos
+      setInterval(pollPendingApprovals, 10000);
 
       // Polling Telegram/WhatsApp cada 20 segundos
       pollComms();
@@ -3984,6 +3990,52 @@
     }
     
     let lastCommsTs = 0;
+    let _pendingSyncSig = '';
+
+    async function pollPendingApprovals() {
+      try {
+        const res = await fetch(`${API_BASE}/approvals/pending?limit=50`);
+        const data = await res.json();
+        const items = Array.isArray(data?.data) ? data.data : [];
+
+        const sig = items
+          .map(i => `${i.id || ''}:${i.status || ''}:${i.expires_at || ''}`)
+          .sort()
+          .join('|');
+        if (sig === _pendingSyncSig) return;
+        _pendingSyncSig = sig;
+
+        // Remover snapshot previo de pendientes sincronizados.
+        bitacoraLog = bitacoraLog.filter(e => !(e._pendingSync === true));
+
+        const now = Date.now();
+        items.forEach((it, idx) => {
+          const ts = now - idx;
+          const action = String(it.action || 'aprobación').trim();
+          const risk = String(it.risk || 'medium').toUpperCase();
+          const aid = String(it.id || '').trim();
+          bitacoraLog.unshift({
+            id: ts,
+            timestamp: ts,
+            time: new Date(ts).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            message: `Aprobación pendiente: ${action} [${risk}]${aid ? ` #${aid}` : ''}`,
+            type: 'warning',
+            source: 'governance',
+            approval: true,
+            state: null,
+            _pendingSync: true,
+            approval_id: aid
+          });
+        });
+
+        bitacoraLog.sort((a, b) => b.timestamp - a.timestamp);
+        renderBitacora();
+        updateBitacoraStats();
+      } catch (e) {
+        // Silenciar errores de polling para no ensuciar consola de usuario final.
+      }
+    }
+
     async function pollComms() {
       try {
         const res = await fetch(`${API_BASE}/api/comms/recent?limit=30`);
