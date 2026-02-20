@@ -1749,8 +1749,12 @@
           <span id="gov-mode" style="font-weight:700;font-size:15px;color:var(--accent-green);">GOVERNED</span>
         </div>
         <div style="display:flex;gap:8px;align-items:center;padding:8px 16px;border-radius:10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);">
-          <span style="font-size:11px;opacity:.6;text-transform:uppercase;">Aprobaciones</span>
+          <span style="font-size:11px;opacity:.6;text-transform:uppercase;">Aprob. pendientes</span>
           <span id="gov-approvals" style="font-weight:700;font-size:15px;">0</span>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;padding:8px 16px;border-radius:10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);">
+          <span style="font-size:11px;opacity:.6;text-transform:uppercase;">Cola activa</span>
+          <span id="gov-queue-active" style="font-weight:700;font-size:15px;">0</span>
         </div>
         <div style="display:flex;gap:8px;align-items:center;padding:8px 16px;border-radius:10px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);">
           <span style="font-size:11px;opacity:.6;text-transform:uppercase;">Políticas</span>
@@ -4744,6 +4748,8 @@
           // APROBACIONES = aprobaciones reales pendientes (no historial de tareas)
           const approvalsPending = Number(k.approvals_pending || 0);
           se('gov-approvals', approvalsPending);
+          const queueActiveKpi = Number(k.tasks_pending || 0) + Number(k.tasks_in_progress || 0);
+          se('gov-queue-active', queueActiveKpi);
           se('gov-policies', k.policies_count || 0);
           se('auto-kpi-uptime', k.uptime_hours ? k.uptime_hours+'h' : '0h');
           se('auto-kpi-success', (k.success_rate||0)+'%');
@@ -4804,6 +4810,8 @@
               govApprovalsEl.textContent = String(ap);
               govApprovalsEl.title = `Aprobaciones pendientes: ${ap} · Cola activa: ${activeTasks.length}`;
             }
+            const govQueueEl = document.getElementById('gov-queue-active');
+            if (govQueueEl) govQueueEl.textContent = String(activeTasks.length);
 
             if (activeTasks.length === 0) {
               tEl.innerHTML = '<div style="padding:12px;border-radius:10px;background:rgba(255,255,255,0.03);font-size:12px;opacity:.4;">Sin tareas pendientes</div>';
