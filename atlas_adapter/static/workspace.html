@@ -1401,16 +1401,62 @@ async function askSupervisor() {
   }
 }
 
+// =========================
+// ATLAS_RUN helpers (Supervisor -> Execute)
+// =========================
 function extractAtlasRun(text) {
+  const idx = text.lastIndexOf("ATLAS_RUN:");
+  if (idx === -1) return null;
+  const jsonPart = text.slice(idx + "ATLAS_RUN:".length).trim();
   try {
-    const match = text.match(/ATLAS_RUN:\s*({[\s\S]*?})(?=\n\n|$)/i);
-    if (match && match[1]) {
-      return JSON.parse(match[1]);
-    }
+    return JSON.parse(jsonPart);
   } catch (e) {
-    console.error('Error parsing ATLAS_RUN:', e);
+    console.warn("ATLAS_RUN JSON parse error", e);
+    return null;
   }
-  return null;
+}
+
+async function terminalExecute(cmd) {
+  const r = await fetch("/api/workspace/terminal/execute", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ command: cmd })
+  });
+  const data = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, data };
+}
+
+function splitSupervisorText(text) {
+  const idx = text.lastIndexOf("ATLAS_RUN:");
+  if (idx === -1) return { head: text.trim(), tail: "" };
+  return { head: text.slice(0, idx).trim(), tail: text.slice(idx).trim() };
+}
+
+async function approveHighPending() {
+  if (!window.__pendingHighSteps || window.__pendingHighSteps.length === 0) {
+    addSupervisorMessage('supervisor', "No hay pasos HIGH pendientes.");
+    return;
+  }
+  const saved = window.__pendingHighSteps.slice();
+  window.__pendingHighSteps = [];
+  addSupervisorMessage('supervisor', `Aprobados ${saved.length} pasos HIGH. Ejecutando...`);
+  
+  // Execute saved HIGH steps
+  let okCount = 0;
+  let errorCount = 0;
+  
+  for (const step of saved) {
+    const result = await executeStep(step);
+    if (result.ok) okCount++;
+    else errorCount++;
+  }
+  
+  const summaryHtml = `<div style="margin-top:8px;padding:8px;background:var(--bg-elevated);border-radius:4px;"><strong>HIGH EJECUTADOS:</strong> ✅ ${okCount} OK · ❌ ${errorCount} ERROR</div>`;
+  addSupervisorMessage('supervisor', summaryHtml);
+  
+  // Update button
+  const btn = document.getElementById('approve-high-btn');
+  if (btn) btn.disabled = true;
 }
 
 function renderPlan(plan) {
