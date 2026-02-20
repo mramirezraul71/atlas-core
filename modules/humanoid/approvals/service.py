@@ -201,14 +201,14 @@ def _log_to_autonomy_timeline(event: str, kind: str, result: str) -> None:
     try:
         import sqlite3
         from pathlib import Path
-        db_path = Path(__file__).resolve().parent.parent.parent.parent / "logs" / "autonomy.db"
+        db_path = Path(__file__).resolve().parent.parent.parent.parent / "data" / "autonomy_tasks.db"
         db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(db_path), timeout=5)
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS autonomy_timeline (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, event TEXT, kind TEXT, result TEXT)"
+            "CREATE TABLE IF NOT EXISTS autonomy_timeline (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT DEFAULT (datetime('now','localtime')), event TEXT, kind TEXT, result TEXT)"
         )
         conn.execute(
-            "INSERT INTO autonomy_timeline(ts, event, kind, result) VALUES(datetime('now'), ?, ?, ?)",
+            "INSERT INTO autonomy_timeline(event, kind, result) VALUES(?, ?, ?)",
             (event[:500], kind[:50], result[:500])
         )
         conn.commit()
