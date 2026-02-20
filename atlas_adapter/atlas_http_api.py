@@ -2481,6 +2481,108 @@ def _auto_log(event, kind="info", result="ok"):
         c = _auto_db(); c.execute("INSERT INTO autonomy_timeline(event,kind,result) VALUES(?,?,?)", (event,kind,result)); c.commit(); c.close()
     except: pass
 
+
+# Worker autónomo agresivo (vinculado a daemon + modo growth)
+_AGGR_LOCK = threading.RLock()
+_aggr_thread = None
+_aggr_stop = threading.Event()
+
+
+def _aggr_enabled() -> bool:
+    try:
+        v = (os.getenv("AUTONOMY_AGGRESSIVE_ENABLED") or "true").strip().lower()
+        return v in ("1", "true", "yes", "on")
+    except Exception:
+        return True
+
+
+def _run_aggressive_cycle() -> Dict[str, Any]:
+    out = {"hands_ok": False, "eyes_ok": False, "error": None}
+    # 1) Manos: ejecutar comando no destructivo para verificar control real.
+    try:
+        from modules.humanoid import get_humanoid_kernel
+        from modules.humanoid.policy import ActorContext
+
+        k = get_humanoid_kernel()
+        hands = k.registry.get("hands") if k else None
+        if hands and hasattr(hands, "shell"):
+            actor = ActorContext(actor="autonomy_aggressive", role="owner")
+            r = hands.shell.run("python -c \"print('ATLAS_AGGRESSIVE_HANDS_OK')\"", cwd=None, timeout_sec=20, actor=actor)
+            out["hands_ok"] = bool((r or {}).get("ok"))
+            if not out["hands_ok"] and not out.get("error"):
+                out["error"] = str((r or {}).get("error") or "hands command failed")[:200]
+    except Exception as e:
+        out["error"] = str(e)[:200]
+
+    # 2) Ojos/Pies digitales: navegar por paneles internos y extraer señal.
+    try:
+        from modules.humanoid.nerve import feet_execute
+
+        r1 = feet_execute("open_url", {"url": "http://127.0.0.1:8791/ui", "driver": "digital", "show_browser": False})
+        ok1 = bool((r1 or {}).get("ok"))
+        r2 = feet_execute("extract_text", {"selector": "body", "driver": "digital"})
+        ok2 = bool((r2 or {}).get("ok"))
+        out["eyes_ok"] = bool(ok1 or ok2)
+        try:
+            feet_execute("close_browser", {"driver": "digital"})
+        except Exception:
+            pass
+    except Exception as e:
+        if not out.get("error"):
+            out["error"] = str(e)[:200]
+
+    result = "ok" if (out["hands_ok"] or out["eyes_ok"]) else "warn"
+    err = f" err={out['error'][:120]}" if out.get("error") else ""
+    _auto_log(
+        f"Aggressive cycle: hands={'OK' if out['hands_ok'] else 'FAIL'} eyes={'OK' if out['eyes_ok'] else 'FAIL'}{err}",
+        "action",
+        result,
+    )
+    return out
+
+
+def _aggressive_worker_loop():
+    last_run = 0.0
+    while not _aggr_stop.is_set():
+        try:
+            if not _aggr_enabled():
+                _aggr_stop.wait(2.0)
+                continue
+            from modules.humanoid.quality.autonomy_daemon import is_autonomy_running
+            from modules.humanoid.governance.state import get_mode
+
+            if not is_autonomy_running() or get_mode() != "growth":
+                _aggr_stop.wait(2.0)
+                continue
+
+            interval = max(8, int((os.getenv("AUTONOMY_AGGRESSIVE_INTERVAL_SEC") or "25").strip() or "25"))
+            now = time.time()
+            if (now - last_run) < interval:
+                _aggr_stop.wait(1.0)
+                continue
+
+            last_run = now
+            _run_aggressive_cycle()
+        except Exception:
+            _aggr_stop.wait(2.0)
+
+
+def _ensure_aggressive_worker():
+    global _aggr_thread
+    with _AGGR_LOCK:
+        if _aggr_thread is not None and _aggr_thread.is_alive():
+            return
+        _aggr_stop.clear()
+        _aggr_thread = threading.Thread(target=_aggressive_worker_loop, name="atlas-aggressive-worker", daemon=True)
+        _aggr_thread.start()
+        _auto_log("Aggressive worker iniciado", "action", "ok")
+
+
+def _stop_aggressive_worker():
+    with _AGGR_LOCK:
+        _aggr_stop.set()
+        _auto_log("Aggressive worker detenido", "action", "ok")
+
 @app.get("/api/autonomy/status", tags=["Autonomia"])
 def autonomy_status():
     """Consolidar metricas de TODOS los subsistemas de autonomia."""
@@ -2771,9 +2873,11 @@ def autonomy_daemon_start():
         from modules.humanoid.quality.autonomy_daemon import start_autonomy, is_autonomy_running
 
         if is_autonomy_running():
-            return {"ok": True, "running": True, "already_running": True, "ms": int((time.perf_counter() - t0) * 1000)}
+            _ensure_aggressive_worker()
+            return {"ok": True, "running": True, "already_running": True, "aggressive_worker": True, "ms": int((time.perf_counter() - t0) * 1000)}
 
         result = start_autonomy()
+        _ensure_aggressive_worker()
         running = False
         try:
             running = bool(is_autonomy_running())
@@ -2783,6 +2887,7 @@ def autonomy_daemon_start():
             "ok": bool(running),
             "running": bool(running),
             "already_running": False,
+            "aggressive_worker": True,
             "result": result,
             "ms": int((time.perf_counter() - t0) * 1000),
         }
@@ -2798,6 +2903,7 @@ def autonomy_daemon_stop():
         from modules.humanoid.quality.autonomy_daemon import stop_autonomy, is_autonomy_running
 
         was_running = bool(is_autonomy_running())
+        _stop_aggressive_worker()
         result = stop_autonomy()
         running = bool(is_autonomy_running())
         return {
