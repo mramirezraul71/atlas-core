@@ -1364,47 +1364,62 @@ async function askSupervisor() {
   const loadingId = addSupervisorMessage('supervisor', '⏳ Generando plan operacional...');
   
   try {
-    const response = await fetch('/supervisor/advise', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ objective, context })
-    });
-    
-    const data = await response.json();
-    
+    // 1) Primera llamada
+    let data = await callSupervisor(objective, context);
+
     // Remove loading message
     const loadingMsg = document.getElementById(loadingId);
     if (loadingMsg) loadingMsg.remove();
-    
+
     if (!data.ok) {
       addSupervisorMessage('supervisor', '❌ Error: ' + (data.error || 'Unknown error'));
       return;
     }
-    
-    const result = data.result;
-    const supervisorText = result?.analysis || result?.text || result || "";
-    
-    // Split diagnosis from ATLAS_RUN
-    const parts = splitSupervisorText(supervisorText);
-    if (parts.head) {
-      addSupervisorMessage('supervisor', parts.head);
+
+    let supervisorText = normalizeSupervisorText(data);
+
+    // 2) Mostrar diagnóstico (sin el ATLAS_RUN)
+    let parts = splitSupervisorText(supervisorText);
+    if (parts.head) addSupervisorMessage('supervisor', parts.head);
+
+    // 3) Extraer plan
+    let plan = extractAtlasRun(supervisorText);
+
+    // 4) MODO ESTRICTO: si no hay plan, pedir regeneración 1 vez
+    if (!plan) {
+      addSupervisorMessage('supervisor', '⚠️ Plan ejecutable no encontrado. Reintentando generación (modo estricto)...');
+
+      const regenObjective =
+        objective +
+        "\n\nREGLA: RESPONDE SOLO con diagnóstico breve + ATLAS_RUN JSON válido al final. PROHIBIDO 'PROMPTS SUGERIDOS'.";
+
+      data = await callSupervisor(regenObjective, context);
+
+      if (!data.ok) {
+        addSupervisorMessage('supervisor', '❌ Error en regeneración: ' + (data.error || 'Unknown error'));
+        return;
+      }
+
+      supervisorText = normalizeSupervisorText(data);
+      parts = splitSupervisorText(supervisorText);
+      if (parts.head) addSupervisorMessage('supervisor', parts.head);
+
+      plan = extractAtlasRun(supervisorText);
     }
-    
-    // Si hay ATLAS_RUN, NO mostrar prompts sugeridos
-    const plan = extractAtlasRun(supervisorText);
-    if (plan) {
-      renderSupervisorPlan(plan);
-      // auto-ejecuta LOW (guarded) o todo (full)
-      await executePlan(plan);
-    } else {
-      addSupervisorMessage('supervisor', '⚠️ No se generó plan ejecutable (ATLAS_RUN no encontrado)');
+
+    // 5) Si todavía no hay plan -> fallo claro
+    if (!plan) {
+      addSupervisorMessage('supervisor', '❌ MODO ESTRICTO: El Supervisor no produjo ATLAS_RUN. Bloqueando ejecución.');
+      return;
     }
-    
-    // Speak diagnosis if TTS enabled
-    if (ttsEnabled && parts.head) {
-      speakSupervisor(parts.head);
-    }
-    
+
+    // 6) Render plan + ejecutar
+    renderSupervisorPlan(plan);
+    await executePlan(plan);
+
+    // 7) TTS (solo diagnóstico)
+    if (ttsEnabled && parts.head) speakSupervisor(parts.head);
+
     // Clear inputs
     document.getElementById('supervisor-objective').value = '';
     document.getElementById('supervisor-issues').value = '';
