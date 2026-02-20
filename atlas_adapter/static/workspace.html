@@ -1341,52 +1341,27 @@ async function askSupervisor() {
     }
     
     const result = data.result;
-    const responseText = result.analysis || '';
+    const supervisorText = result?.analysis || result?.text || result || "";
     
-    // Extract ATLAS_RUN JSON
-    const atlasRun = extractAtlasRun(responseText);
-    
-    // Extract diagnosis (text before ATLAS_RUN)
-    const diagnosis = responseText.split('ATLAS_RUN:')[0].replace(/##\s*DIAGNÓSTICO/i, '').trim();
-    
-    // Build response with diagnosis + plan
-    let html = '<div style="line-height:1.6;">';
-    
-    // Diagnosis
-    if (diagnosis) {
-      html += '<div style="margin-bottom:16px;"><strong style="color:var(--accent-cyan);">🔍 DIAGNÓSTICO</strong><br>';
-      html += '<div style="margin-top:8px;padding:8px;background:var(--bg-elevated);border-radius:4px;font-size:13px;">';
-      html += escapeHtml(diagnosis).replace(/\n/g, '<br>');
-      html += '</div></div>';
+    // Split diagnosis from ATLAS_RUN
+    const parts = splitSupervisorText(supervisorText);
+    if (parts.head) {
+      addSupervisorMessage('supervisor', parts.head);
     }
     
-    // Plan
-    if (atlasRun && atlasRun.steps) {
-      window.__currentPlan = atlasRun;
-      html += renderPlan(atlasRun);
+    // Si hay ATLAS_RUN, NO mostrar prompts sugeridos
+    const plan = extractAtlasRun(supervisorText);
+    if (plan) {
+      renderSupervisorPlan(plan);
+      // auto-ejecuta LOW (guarded) o todo (full)
+      await executePlan(plan);
     } else {
-      html += '<div style="color:var(--accent-red);">⚠️ No se generó plan ejecutable (ATLAS_RUN no encontrado)</div>';
+      addSupervisorMessage('supervisor', '⚠️ No se generó plan ejecutable (ATLAS_RUN no encontrado)');
     }
-    
-    // Provider info
-    const providerIcon = result.provider === 'ollama' ? '🖥️' : '☁️';
-    const fallbackText = result.fallback_used ? ' (fallback)' : '';
-    html += '<div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted);">';
-    html += providerIcon + ' ' + result.provider + ' · ' + result.model + fallbackText;
-    html += '</div>';
-    
-    html += '</div>';
-    
-    addSupervisorMessage('supervisor', html);
     
     // Speak diagnosis if TTS enabled
-    if (ttsEnabled && diagnosis) {
-      speakSupervisor(diagnosis);
-    }
-    
-    // Auto-execute LOW steps if plan exists
-    if (atlasRun && atlasRun.steps) {
-      setTimeout(() => executeLowSteps(atlasRun), 1000);
+    if (ttsEnabled && parts.head) {
+      speakSupervisor(parts.head);
     }
     
     // Clear inputs
@@ -1457,6 +1432,56 @@ async function approveHighPending() {
   // Update button
   const btn = document.getElementById('approve-high-btn');
   if (btn) btn.disabled = true;
+}
+
+function renderSupervisorPlan(plan) {
+  // Simplified version - just show plan summary in chat
+  if (!plan || !Array.isArray(plan.steps)) return;
+  const lines = plan.steps.map(s => `• [${s.risk}] ${s.cmd || s.op || s.type}`);
+  addSupervisorMessage('supervisor', "PLAN (ATLAS_RUN):\n" + lines.join("\n"));
+}
+
+async function executePlan(plan) {
+  const mode = window.__autorunMode || "guarded";
+  const results = [];
+  window.__pendingHighSteps = [];
+
+  for (const step of (plan.steps || [])) {
+    const risk = (step.risk || "low").toLowerCase();
+    const type = (step.type || "terminal").toLowerCase();
+
+    if (risk === "high" && mode !== "full") {
+      window.__pendingHighSteps.push(step);
+      results.push({ id: step.id, status: "pending_approval" });
+      continue;
+    }
+
+    if (type === "terminal") {
+      const cmd = step.cmd;
+      if (!cmd) {
+        results.push({ id: step.id, status: "blocked", reason: "missing cmd" });
+        continue;
+      }
+      const out = await terminalExecute(cmd);
+      results.push({ id: step.id, status: out.ok ? "ok" : "error", cmd, out });
+      addSupervisorMessage('supervisor', `EXEC: ${cmd}\nSTATUS: ${out.ok ? "OK" : "ERROR"} (${out.status})`);
+    } else {
+      results.push({ id: step.id, status: "blocked", reason: `unsupported type ${type}` });
+    }
+  }
+
+  const pending = window.__pendingHighSteps.length;
+  addSupervisorMessage('supervisor', `RESUMEN: OK/ERROR/PENDING = ${
+    results.filter(r=>r.status==="ok").length
+  } / ${
+    results.filter(r=>r.status==="error").length
+  } / ${pending}`);
+
+  // Update UI button if exists
+  const btn = document.getElementById("btn-approve-high");
+  if (btn) btn.textContent = pending > 0 ? `Aprobar HIGH (${pending})` : "Aprobar HIGH (0)";
+
+  return { results, pending };
 }
 
 function renderPlan(plan) {
