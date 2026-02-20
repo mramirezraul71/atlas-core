@@ -2595,6 +2595,38 @@ def autonomy_status():
         approvals_total = len(all_approvals)
     except: pass
 
+    # --- Cola de tareas (autonomia_tasks) ---
+    task_pending = 0
+    task_in_progress = 0
+    task_done = 0
+    task_failed = 0
+    try:
+        c = _auto_db()
+        tr = c.execute("""
+            SELECT
+                SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending_count,
+                SUM(CASE WHEN status='in_progress' THEN 1 ELSE 0 END) AS in_progress_count,
+                SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS done_count,
+                SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed_count
+            FROM autonomy_tasks
+        """).fetchone()
+        task_pending = int((tr["pending_count"] if tr else 0) or 0)
+        task_in_progress = int((tr["in_progress_count"] if tr else 0) or 0)
+        task_done = int((tr["done_count"] if tr else 0) or 0)
+        task_failed = int((tr["failed_count"] if tr else 0) or 0)
+        c.close()
+    except:
+        pass
+
+    pending_queue_count = approvals_pending + task_pending + task_in_progress
+
+    # KPI de éxito: usar lifelog si existe; fallback a resultados de tareas cuando no hay muestras de lifelog.
+    success_rate = round(lifelog_rate * 100, 1)
+    if lifelog_total <= 0:
+        denom = task_done + task_failed
+        if denom > 0:
+            success_rate = round((task_done / denom) * 100, 1)
+
     # --- Uptime ---
     uptime_hours = 0.0
     try:
@@ -2630,7 +2662,7 @@ def autonomy_status():
     }
     data["kpis"] = {
         "uptime_hours": uptime_hours,
-        "success_rate": round(lifelog_rate * 100, 1),
+        "success_rate": success_rate,
         "modules_connected": mod_connected,
         "modules_total": mod_total,
         "ai_available": ai_available,
@@ -2645,6 +2677,11 @@ def autonomy_status():
         "lifelog_fail": lifelog_fail,
         "approvals_pending": approvals_pending,
         "approvals_total": approvals_total,
+        "pending_queue_count": pending_queue_count,
+        "tasks_pending": task_pending,
+        "tasks_in_progress": task_in_progress,
+        "tasks_done": task_done,
+        "tasks_failed": task_failed,
         "policies_count": gov_policies_count,
     }
     data["alerts"] = alerts
