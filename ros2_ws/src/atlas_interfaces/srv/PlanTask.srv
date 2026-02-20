@@ -1,0 +1,11 @@
+# Request: plan a high-level task
+string goal_description
+string mode               # plan_only | controlled | auto
+int32 depth               # planning depth 1-5
+---
+# Response
+bool success
+string task_id
+string plan_json          # serialized plan steps
+string[] steps            # human-readable step list
+string error

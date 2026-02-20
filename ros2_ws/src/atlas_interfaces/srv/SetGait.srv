@@ -1,0 +1,9 @@
+# Request: set gait mode
+string gait_type          # stand | walk | trot | custom
+float64 velocity          # m/s
+float64 heading           # radians
+---
+# Response
+bool success
+string message
+string current_gait
