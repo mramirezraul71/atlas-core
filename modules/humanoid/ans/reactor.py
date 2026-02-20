@@ -127,7 +127,9 @@ def _get_recent_failures() -> List[dict]:
     try:
         from modules.humanoid.memory_engine.lifelog import get_lifelog
         ll = get_lifelog()
-        recent = ll.get_failures(limit=50)
+        # Limitar explícitamente a la última hora para evitar ruido histórico
+        # que dispara falsos "recurring_*" aunque el problema ya esté resuelto.
+        recent = ll.query(success=False, since_ts=time.time() - 3600, limit=50)
         failures.extend(recent)
     except Exception:
         pass
@@ -172,9 +174,26 @@ def run_reaction_cycle() -> Dict[str, Any]:
 
     for key, count in failure_counts.items():
         if count >= 3:
+            source = key.split(":", 1)[0]
+            msg_sample = key.split(":", 1)[1] if ":" in key else key
+            # Solo reportar patrones recurrentes accionables por el reactor.
+            # Evita ruido histórico/no accionable (p.ej. fallos de OCR antiguos)
+            # que no tienen fix asociado en REACTION_REGISTRY.
+            actionable = False
+            for _, cfg in REACTION_REGISTRY.items():
+                p = str(cfg.get("pattern") or "").lower()
+                src_match = str(cfg.get("source_match") or "").lower()
+                if src_match and src_match != source.lower():
+                    continue
+                if p and p in msg_sample.lower():
+                    actionable = True
+                    break
+            if not actionable:
+                continue
+
             issues_found.append({
                 "source": "lifelog_pattern",
-                "id": f"recurring_{key.split(':')[0]}",
+                "id": f"recurring_{source}",
                 "message": f"Fallo recurrente ({count}x): {key}",
                 "severity": "high",
             })
