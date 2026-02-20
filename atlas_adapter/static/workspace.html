@@ -1420,6 +1420,21 @@ async function askSupervisor() {
 // =========================
 // ATLAS_RUN helpers (Supervisor -> Execute)
 // =========================
+async function callSupervisor(objective, context) {
+  const response = await fetch('/supervisor/advise', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ objective, context })
+  });
+  const data = await response.json();
+  return data;
+}
+
+function normalizeSupervisorText(data){
+  const result = data?.result;
+  return result?.analysis || result?.text || result || "";
+}
+
 function extractAtlasRun(text) {
   const idx = text.lastIndexOf("ATLAS_RUN:");
   if (idx === -1) return null;
