@@ -1296,7 +1296,11 @@ function switchView(view) {
   }
 }
 
-// ─── SUPERVISOR FUNCTIONS ───
+// ─── SUPERVISOR OPERATIONAL FLOW ───
+window.__autorunMode = 'guarded'; // 'guarded' or 'full'
+window.__pendingHighSteps = [];
+window.__currentPlan = null;
+
 async function askSupervisor() {
   const objective = document.getElementById('supervisor-objective').value.trim();
   const issuesInput = document.getElementById('supervisor-issues').value.trim();
@@ -1316,7 +1320,7 @@ async function askSupervisor() {
   addSupervisorMessage('user', objective);
   
   // Show loading
-  const loadingId = addSupervisorMessage('supervisor', '⏳ Analizando y generando recomendaciones...');
+  const loadingId = addSupervisorMessage('supervisor', '⏳ Generando plan operacional...');
   
   try {
     const response = await fetch('/supervisor/advise', {
@@ -1337,36 +1341,31 @@ async function askSupervisor() {
     }
     
     const result = data.result;
+    const responseText = result.analysis || '';
     
-    // Build formatted response
+    // Extract ATLAS_RUN JSON
+    const atlasRun = extractAtlasRun(responseText);
+    
+    // Extract diagnosis (text before ATLAS_RUN)
+    const diagnosis = responseText.split('ATLAS_RUN:')[0].replace(/##\s*DIAGNÓSTICO/i, '').trim();
+    
+    // Build response with diagnosis + plan
     let html = '<div style="line-height:1.6;">';
     
-    // Analysis
-    if (result.analysis) {
-      html += '<div style="margin-bottom:16px;"><strong style="color:var(--accent-cyan);">📊 ANÁLISIS</strong><br>';
+    // Diagnosis
+    if (diagnosis) {
+      html += '<div style="margin-bottom:16px;"><strong style="color:var(--accent-cyan);">🔍 DIAGNÓSTICO</strong><br>';
       html += '<div style="margin-top:8px;padding:8px;background:var(--bg-elevated);border-radius:4px;font-size:13px;">';
-      html += escapeHtml(result.analysis).replace(/\n/g, '<br>');
+      html += escapeHtml(diagnosis).replace(/\n/g, '<br>');
       html += '</div></div>';
     }
     
-    // Recommendations
-    if (result.recommendations && result.recommendations.length > 0) {
-      html += '<div style="margin-bottom:16px;"><strong style="color:var(--accent-green);">✅ RECOMENDACIONES</strong><br>';
-      html += '<ul style="margin-top:8px;padding-left:20px;">';
-      result.recommendations.forEach(rec => {
-        html += '<li style="margin-bottom:6px;">' + escapeHtml(rec) + '</li>';
-      });
-      html += '</ul></div>';
-    }
-    
-    // Prompts
-    if (result.prompts && result.prompts.length > 0) {
-      html += '<div style="margin-bottom:16px;"><strong style="color:var(--accent-purple);">💡 PROMPTS SUGERIDOS</strong><br>';
-      html += '<ul style="margin-top:8px;padding-left:20px;">';
-      result.prompts.forEach(prompt => {
-        html += '<li style="margin-bottom:6px;">' + escapeHtml(prompt) + '</li>';
-      });
-      html += '</ul></div>';
+    // Plan
+    if (atlasRun && atlasRun.steps) {
+      window.__currentPlan = atlasRun;
+      html += renderPlan(atlasRun);
+    } else {
+      html += '<div style="color:var(--accent-red);">⚠️ No se generó plan ejecutable (ATLAS_RUN no encontrado)</div>';
     }
     
     // Provider info
@@ -1380,9 +1379,14 @@ async function askSupervisor() {
     
     addSupervisorMessage('supervisor', html);
     
-    // Speak the analysis if TTS is enabled
-    if (ttsEnabled && result.analysis) {
-      speakSupervisor(result.analysis);
+    // Speak diagnosis if TTS enabled
+    if (ttsEnabled && diagnosis) {
+      speakSupervisor(diagnosis);
+    }
+    
+    // Auto-execute LOW steps if plan exists
+    if (atlasRun && atlasRun.steps) {
+      setTimeout(() => executeLowSteps(atlasRun), 1000);
     }
     
     // Clear inputs
@@ -1395,6 +1399,171 @@ async function askSupervisor() {
     if (loadingMsg) loadingMsg.remove();
     addSupervisorMessage('supervisor', '❌ Error de conexión: ' + error.message);
   }
+}
+
+function extractAtlasRun(text) {
+  try {
+    const match = text.match(/ATLAS_RUN:\s*({[\s\S]*?})(?=\n\n|$)/i);
+    if (match && match[1]) {
+      return JSON.parse(match[1]);
+    }
+  } catch (e) {
+    console.error('Error parsing ATLAS_RUN:', e);
+  }
+  return null;
+}
+
+function renderPlan(plan) {
+  const lowSteps = plan.steps.filter(s => s.risk === 'low');
+  const highSteps = plan.steps.filter(s => s.risk === 'high');
+  
+  let html = '<div style="margin-bottom:16px;"><strong style="color:var(--accent-green);">📋 PLAN DE EJECUCIÓN</strong><br>';
+  html += '<div id="plan-container" style="margin-top:8px;">';
+  
+  plan.steps.forEach(step => {
+    const riskColor = step.risk === 'low' ? 'var(--accent-green)' : 'var(--accent-orange)';
+    const riskLabel = step.risk === 'low' ? 'LOW' : 'HIGH';
+    const cmd = step.cmd || (step.method + ' ' + step.url);
+    
+    html += `<div id="step-${step.id}" style="padding:6px;margin-bottom:4px;background:var(--bg-elevated);border-left:3px solid ${riskColor};border-radius:3px;font-size:12px;">`;
+    html += `<span style="color:${riskColor};font-weight:bold;">[${riskLabel}]</span> `;
+    html += `<code style="color:var(--text);">${escapeHtml(cmd)}</code>`;
+    html += `<span id="step-${step.id}-status" style="margin-left:8px;font-size:11px;"></span>`;
+    html += '</div>';
+  });
+  
+  html += '</div>';
+  
+  // Buttons
+  html += '<div style="margin-top:12px;display:flex;gap:8px;">';
+  html += `<button onclick="executeLowSteps(window.__currentPlan)" style="padding:6px 12px;background:var(--accent-green);color:var(--bg);border:none;border-radius:4px;cursor:pointer;font-weight:bold;">▶ AUTO-LOW (${lowSteps.length})</button>`;
+  
+  if (highSteps.length > 0) {
+    html += `<button id="approve-high-btn" onclick="executeHighSteps()" style="padding:6px 12px;background:var(--accent-orange);color:var(--bg);border:none;border-radius:4px;cursor:pointer;font-weight:bold;">⚠ APROBAR HIGH (${highSteps.length})</button>`;
+  }
+  
+  html += `<button onclick="toggleAutorunMode()" style="padding:6px 12px;background:var(--accent-purple);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;">`;
+  html += `<span id="autorun-mode-label">${window.__autorunMode === 'full' ? '🔓 FULL AUTO' : '🔒 GUARDED'}</span>`;
+  html += '</button>';
+  html += '</div></div>';
+  
+  return html;
+}
+
+async function executeLowSteps(plan) {
+  if (!plan || !plan.steps) return;
+  
+  const lowSteps = plan.steps.filter(s => s.risk === 'low');
+  emitLive('exec', `<strong>Ejecutando ${lowSteps.length} steps LOW...</strong>`);
+  
+  let okCount = 0;
+  let errorCount = 0;
+  
+  for (const step of lowSteps) {
+    const result = await executeStep(step);
+    if (result.ok) okCount++;
+    else errorCount++;
+  }
+  
+  // Store pending HIGH steps
+  const highSteps = plan.steps.filter(s => s.risk === 'high');
+  window.__pendingHighSteps = highSteps;
+  
+  // Show summary
+  const summaryHtml = `<div style="margin-top:8px;padding:8px;background:var(--bg-elevated);border-radius:4px;"><strong>RESUMEN:</strong> ✅ ${okCount} OK · ❌ ${errorCount} ERROR · ⏸ ${highSteps.length} HIGH PENDING</div>`;
+  addSupervisorMessage('supervisor', summaryHtml);
+  
+  // Auto-execute HIGH if FULL AUTO mode
+  if (window.__autorunMode === 'full' && highSteps.length > 0) {
+    setTimeout(() => executeHighSteps(), 1000);
+  }
+}
+
+async function executeHighSteps() {
+  const highSteps = window.__pendingHighSteps;
+  if (!highSteps || highSteps.length === 0) return;
+  
+  emitLive('exec', `<strong>Ejecutando ${highSteps.length} steps HIGH...</strong>`);
+  
+  let okCount = 0;
+  let errorCount = 0;
+  
+  for (const step of highSteps) {
+    const result = await executeStep(step);
+    if (result.ok) okCount++;
+    else errorCount++;
+  }
+  
+  window.__pendingHighSteps = [];
+  
+  const summaryHtml = `<div style="margin-top:8px;padding:8px;background:var(--bg-elevated);border-radius:4px;"><strong>HIGH EJECUTADOS:</strong> ✅ ${okCount} OK · ❌ ${errorCount} ERROR</div>`;
+  addSupervisorMessage('supervisor', summaryHtml);
+  
+  // Update button
+  const btn = document.getElementById('approve-high-btn');
+  if (btn) btn.disabled = true;
+}
+
+async function executeStep(step) {
+  const statusEl = document.getElementById(`step-${step.id}-status`);
+  if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-cyan);">⏳ ejecutando...</span>';
+  
+  try {
+    if (step.type === 'terminal') {
+      const response = await fetch('/api/workspace/terminal/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: step.cmd })
+      });
+      
+      const data = await response.json();
+      
+      if (data.ok) {
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-green);">✅ OK</span>';
+        emitLive('exec', `<strong>[${step.id}]</strong> ${escapeHtml(step.cmd)} → OK`);
+        return { ok: true };
+      } else {
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-red);">❌ ERROR</span>';
+        emitLive('err', `<strong>[${step.id}]</strong> ${escapeHtml(step.cmd)} → ERROR: ${data.error || 'unknown'}`);
+        return { ok: false };
+      }
+    } else if (step.type === 'http') {
+      // Only allow localhost calls
+      const url = new URL(step.url);
+      if (url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') {
+        throw new Error('Only localhost HTTP calls allowed');
+      }
+      
+      const response = await fetch(step.url, {
+        method: step.method || 'GET',
+        headers: step.json ? { 'Content-Type': 'application/json' } : {},
+        body: step.json ? JSON.stringify(step.json) : undefined
+      });
+      
+      if (response.ok) {
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-green);">✅ OK</span>';
+        emitLive('exec', `<strong>[${step.id}]</strong> ${step.method} ${step.url} → OK`);
+        return { ok: true };
+      } else {
+        if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-red);">❌ ERROR</span>';
+        emitLive('err', `<strong>[${step.id}]</strong> ${step.method} ${step.url} → ${response.status}`);
+        return { ok: false };
+      }
+    }
+  } catch (error) {
+    if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-red);">❌ ERROR</span>';
+    emitLive('err', `<strong>[${step.id}]</strong> ERROR: ${error.message}`);
+    return { ok: false };
+  }
+}
+
+function toggleAutorunMode() {
+  window.__autorunMode = window.__autorunMode === 'guarded' ? 'full' : 'guarded';
+  const label = document.getElementById('autorun-mode-label');
+  if (label) {
+    label.textContent = window.__autorunMode === 'full' ? '🔓 FULL AUTO' : '🔒 GUARDED';
+  }
+  emitLive('info', `Modo cambiado a: ${window.__autorunMode.toUpperCase()}`);
 }
 
 function addSupervisorMessage(type, content) {

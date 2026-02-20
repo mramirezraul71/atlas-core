@@ -67,7 +67,7 @@ class Supervisor:
         }
     
     def _build_prompt(self, objective: str, context: Dict[str, Any]) -> str:
-        """Build operational prompt with anti-corporate style."""
+        """Build operational prompt with ATLAS_RUN JSON format."""
         issues = context.get("issues", [])
         modules = context.get("modules", [])
         metrics = context.get("metrics", {})
@@ -78,7 +78,7 @@ ESTILO OPERACIONAL:
 - Sin formalidades corporativas
 - Directo y técnico
 - Diagnóstico preciso
-- Acción inmediata
+- Plan de ejecución automático
 - Cero ambigüedad
 
 OBJETIVO: {objective}
@@ -88,27 +88,33 @@ CONTEXTO:
 - Módulos: {', '.join(modules) if modules else 'Ninguno'}
 - Métricas: {metrics if metrics else 'N/A'}
 
-FORMATO OBLIGATORIO:
+FORMATO OBLIGATORIO (CRÍTICO - DEBES SEGUIRLO EXACTAMENTE):
 
 ## DIAGNÓSTICO
-[Qué está pasando - máximo 3 líneas]
+[Máximo 5 líneas - qué está pasando y por qué]
 
-## ACCIÓN INMEDIATA
-- [Acción 1 - específica y ejecutable]
-- [Acción 2 - específica y ejecutable]
-- [Acción 3 - específica y ejecutable]
+ATLAS_RUN:
+{{
+  "version": "1",
+  "mode": "execute",
+  "steps": [
+    {{"id": "s1", "risk": "low", "type": "terminal", "cmd": "atlas status"}},
+    {{"id": "s2", "risk": "low", "type": "terminal", "cmd": "atlas modules list --status"}},
+    {{"id": "s3", "risk": "high", "type": "terminal", "cmd": "atlas restart telegram"}}
+  ]
+}}
 
-## CORRECCIÓN
-[Qué arreglar para evitar recurrencia]
+REGLAS PARA ATLAS_RUN:
+1. SIEMPRE incluir el bloque ATLAS_RUN con JSON válido
+2. Usar comandos ATLAS reales: atlas status, atlas modules list, atlas restart <module>, etc.
+3. risk="low" para comandos de lectura/diagnóstico (status, list, logs)
+4. risk="high" para comandos que modifican estado (restart, stop, config)
+5. type="terminal" para comandos shell
+6. type="http" para llamadas API (ej: GET http://127.0.0.1:8791/health)
+7. NO incluir sección "PROMPT" ni "PROMPTS SUGERIDOS"
+8. Mínimo 3 steps, máximo 8 steps
 
-## VALIDACIÓN
-[Cómo verificar que se resolvió]
-
-## PROMPT
-- [Comando/pregunta técnica 1]
-- [Comando/pregunta técnica 2]
-
-Responde SIN introducciones, SIN conclusiones, SIN relleno."""
+Responde SOLO con DIAGNÓSTICO + ATLAS_RUN. SIN introducciones, SIN conclusiones."""
         
         return prompt
     
