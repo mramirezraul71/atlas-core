@@ -2515,8 +2515,8 @@ def autonomy_status():
     libro_episodios = 0
     libro_tasa = 0.0
     try:
-        from modules.humanoid.memory_engine.libro_vida import LibroVida
-        lv = LibroVida()
+        from modules.humanoid.memory_engine.libro_vida import get_libro_vida
+        lv = get_libro_vida()
         lvs = lv.get_stats()
         libro_reglas = lvs.get("reglas_aprendidas", 0)
         libro_episodios = lvs.get("total_episodios", 0)
@@ -2573,8 +2573,9 @@ def autonomy_status():
     scanner_last = None
     try:
         log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs", "autodiagnostic.log")
+        scanner_active_window_sec = int(os.getenv("AUTODIAGNOSTIC_ACTIVE_WINDOW_SEC", "7200") or "7200")
         if os.path.exists(log_path):
-            scanner_active = (time.time() - os.path.getmtime(log_path)) < 120
+            scanner_active = (time.time() - os.path.getmtime(log_path)) < max(60, scanner_active_window_sec)
             with open(log_path, "rb") as f:
                 f.seek(max(0, os.path.getsize(log_path) - 500))
                 lines = f.read().decode("utf-8", errors="ignore").strip().split("\n")
@@ -2691,10 +2692,11 @@ def autonomy_status():
     except: pass
 
     # --- Calcular nivel de autonomia ---
+    success_component = max(0.0, min(1.0, float(display_success_rate or 0.0) / 100.0))
     sub_active = sum([daemon_active, reactor_active, scanner_active, gov_mode != "emergency", True])
     level = round(
         (mod_connected / max(mod_total, 1)) * 25 +
-        lifelog_rate * 25 +
+        success_component * 25 +
         (ai_available / max(ai_total, 1)) * 20 +
         (sub_active / 5) * 20 +
         (0 if gov_emergency else 1) * 10
