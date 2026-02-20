@@ -1380,6 +1380,11 @@ async function askSupervisor() {
     
     addSupervisorMessage('supervisor', html);
     
+    // Speak the analysis if TTS is enabled
+    if (ttsEnabled && result.analysis) {
+      speakSupervisor(result.analysis);
+    }
+    
     // Clear inputs
     document.getElementById('supervisor-objective').value = '';
     document.getElementById('supervisor-issues').value = '';
@@ -2318,6 +2323,64 @@ function simulateWaveformSupervisor() {
 function resetWaveformSupervisor() {
   const bars = document.querySelectorAll('#voice-wave-supervisor .bar');
   bars.forEach(bar => { bar.style.height = '4px'; });
+}
+
+function speakSupervisor(text) {
+  if (!ttsEnabled || !window.speechSynthesis || !text) return;
+  if (_shouldSuppress()) return;
+  if (isSpeaking) return;
+  
+  // Clean text for TTS
+  let clean = text
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`[^`]+`/g, '')
+    .replace(/https?:\/\/[^\s]+/g, '')
+    .replace(/[#*_~\[\]()]/g, '')
+    .replace(/\n{2,}/g, '. ')
+    .replace(/\n/g, ' ')
+    .trim();
+  
+  if (!clean) return;
+  
+  // Limit length for TTS
+  if (clean.length > 500) {
+    clean = clean.substring(0, 500) + '...';
+  }
+  
+  _doSpeakSupervisor(clean);
+}
+
+function _doSpeakSupervisor(clean) {
+  if (_shouldSuppress() || !ttsEnabled || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+
+  const utter = new SpeechSynthesisUtterance(clean);
+  utter.lang = 'es-ES';
+  utter.rate = 1.05;
+  utter.pitch = 1.0;
+  utter.volume = 1.0;
+
+  const voices = window.speechSynthesis.getVoices();
+  const esVoice = voices.find(v => v.lang.startsWith('es') && v.name.includes('Google')) ||
+                  voices.find(v => v.lang.startsWith('es') && !v.localService) ||
+                  voices.find(v => v.lang.startsWith('es'));
+  if (esVoice) utter.voice = esVoice;
+
+  isSpeaking = true;
+  setOrbStateSupervisor('speaking');
+  document.getElementById('voice-status-supervisor').textContent = 'Hablando...';
+
+  utter.onend = () => { 
+    isSpeaking = false; 
+    setOrbStateSupervisor('idle'); 
+    document.getElementById('voice-status-supervisor').textContent = 'Click en el orbe para hablar'; 
+  };
+  utter.onerror = () => { 
+    isSpeaking = false; 
+    setOrbStateSupervisor('idle'); 
+  };
+
+  window.speechSynthesis.speak(utter);
 }
 
 function simulateWaveform() {
