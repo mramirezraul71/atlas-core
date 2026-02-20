@@ -1004,7 +1004,7 @@
             ⚠ APROBAR HIGH (0)
           </button>
           <button id="btn-toggle-autorun" onclick="toggleAutorunMode()" style="flex:1;padding:8px;background:var(--accent-purple);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:12px;">
-            <span id="autorun-mode-label">🔒 GUARDED</span>
+            <span id="autorun-mode-label">🔒 GUARDED (auto LOW)</span>
           </button>
         </div>
         
@@ -1624,7 +1624,7 @@ function toggleAutorunMode() {
   window.__autorunMode = window.__autorunMode === 'guarded' ? 'full' : 'guarded';
   const label = document.getElementById('autorun-mode-label');
   if (label) {
-    label.textContent = window.__autorunMode === 'full' ? '🔓 FULL AUTO' : '🔒 GUARDED';
+    label.textContent = window.__autorunMode === 'full' ? '⚠️ FULL AUTO (auto LOW+HIGH)' : '🔒 GUARDED (auto LOW)';
   }
   emitLive('info', `Modo cambiado a: ${window.__autorunMode.toUpperCase()}`);
 }
