@@ -1424,31 +1424,14 @@ async function approveHighPending() {
   }
   const saved = window.__pendingHighSteps.slice();
   window.__pendingHighSteps = [];
-  addSupervisorMessage('supervisor', `Aprobados ${saved.length} pasos HIGH. Ejecutando...`);
-  
-  // Execute saved HIGH steps
-  let okCount = 0;
-  let errorCount = 0;
-  
-  for (const step of saved) {
-    const result = await executeStep(step);
-    if (result.ok) okCount++;
-    else errorCount++;
-  }
-  
-  const summaryHtml = `<div style="margin-top:8px;padding:8px;background:var(--bg-elevated);border-radius:4px;"><strong>HIGH EJECUTADOS:</strong> ✅ ${okCount} OK · ❌ ${errorCount} ERROR</div>`;
-  addSupervisorMessage('supervisor', summaryHtml);
-  
-  // Update button
-  const btn = document.getElementById('approve-high-btn');
-  if (btn) btn.disabled = true;
+  addSupervisorMessage('supervisor', `🟠 Aprobados ${saved.length} pasos HIGH. Ejecutando...`);
+  await executePlan({ steps: saved });
 }
 
 function renderSupervisorPlan(plan) {
-  // Simplified version - just show plan summary in chat
   if (!plan || !Array.isArray(plan.steps)) return;
   const lines = plan.steps.map(s => `• [${s.risk}] ${s.cmd || s.op || s.type}`);
-  addSupervisorMessage('supervisor', "PLAN (ATLAS_RUN):\n" + lines.join("\n"));
+  addSupervisorMessage('supervisor', "📌 PLAN (ATLAS_RUN):\n" + lines.join("\n"));
 }
 
 async function executePlan(plan) {
@@ -1474,20 +1457,19 @@ async function executePlan(plan) {
       }
       const out = await terminalExecute(cmd);
       results.push({ id: step.id, status: out.ok ? "ok" : "error", cmd, out });
-      addSupervisorMessage('supervisor', `EXEC: ${cmd}\nSTATUS: ${out.ok ? "OK" : "ERROR"} (${out.status})`);
+      addSupervisorMessage('supervisor', `⚙️ EXEC: ${cmd}\n➡️ STATUS: ${out.ok ? "OK" : "ERROR"} (${out.status})`);
     } else {
       results.push({ id: step.id, status: "blocked", reason: `unsupported type ${type}` });
     }
   }
 
   const pending = window.__pendingHighSteps.length;
-  addSupervisorMessage('supervisor', `RESUMEN: OK/ERROR/PENDING = ${
+  addSupervisorMessage('supervisor', `✅ RESUMEN: OK/ERROR/PENDING = ${
     results.filter(r=>r.status==="ok").length
   } / ${
     results.filter(r=>r.status==="error").length
   } / ${pending}`);
 
-  // Update UI button if exists
   const btn = document.getElementById("btn-approve-high");
   if (btn) btn.textContent = pending > 0 ? `Aprobar HIGH (${pending})` : "Aprobar HIGH (0)";
 
