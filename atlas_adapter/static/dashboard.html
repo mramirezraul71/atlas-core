@@ -1767,8 +1767,9 @@
         <div style="display:flex;gap:6px;margin-left:auto;">
           <button class="btn btn-primary" onclick="setGovMode('growth')" style="font-size:11px;padding:6px 14px;">GROWTH</button>
           <button class="btn btn-secondary" onclick="setGovMode('governed')" style="font-size:11px;padding:6px 14px;">GOVERNED</button>
-          <button class="btn" onclick="startAutonomyDaemon()" style="background:rgba(34,197,94,0.18);color:#86efac;border:1px solid rgba(34,197,94,0.35);font-size:11px;padding:6px 12px;">START DAEMON</button>
-          <button class="btn" onclick="stopAutonomyDaemon()" style="background:rgba(245,158,11,0.18);color:#fcd34d;border:1px solid rgba(245,158,11,0.35);font-size:11px;padding:6px 12px;">STOP DAEMON</button>
+          <button id="btn-daemon-start" class="btn" onclick="startAutonomyDaemon()" style="background:rgba(34,197,94,0.18);color:#86efac;border:1px solid rgba(34,197,94,0.35);font-size:11px;padding:6px 12px;">START DAEMON</button>
+          <button id="btn-daemon-stop" class="btn" onclick="stopAutonomyDaemon()" style="background:rgba(245,158,11,0.18);color:#fcd34d;border:1px solid rgba(245,158,11,0.35);font-size:11px;padding:6px 12px;">STOP DAEMON</button>
+          <span id="daemon-control-state" style="display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,0.18);font-size:10px;opacity:.9;">DAEMON: --</span>
           <button class="btn" style="background:var(--accent-red);color:white;font-size:11px;padding:6px 14px;" onclick="emergencyStop()">EMERGENCY STOP</button>
         </div>
       </div>
@@ -4747,6 +4748,19 @@
             const modeStr = (govSub.detail||'').replace('Modo: ','').toUpperCase();
             if (modeEl && modeStr) { modeEl.textContent = modeStr; modeEl.style.color = modeStr==='EMERGENCY'?'var(--accent-red)':'var(--accent-green)'; }
           }
+          const daemonSub = status.subsystems?.daemon;
+          const daemonOn = !!(daemonSub && daemonSub.active);
+          const daemonCtl = document.getElementById('daemon-control-state');
+          if (daemonCtl) {
+            daemonCtl.textContent = daemonOn ? 'DAEMON: ON' : 'DAEMON: OFF';
+            daemonCtl.style.color = daemonOn ? '#86efac' : '#fca5a5';
+            daemonCtl.style.borderColor = daemonOn ? 'rgba(34,197,94,0.45)' : 'rgba(239,68,68,0.45)';
+            daemonCtl.style.background = daemonOn ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)';
+          }
+          const bStart = document.getElementById('btn-daemon-start');
+          const bStop = document.getElementById('btn-daemon-stop');
+          if (bStart) bStart.disabled = daemonOn;
+          if (bStop) bStop.disabled = !daemonOn;
           // APROBACIONES = aprobaciones reales pendientes (no historial de tareas)
           const approvalsPending = Number(k.approvals_pending || 0);
           se('gov-approvals', approvalsPending);
@@ -5046,6 +5060,10 @@
 
     async function startAutonomyDaemon() {
       try {
+        const bStart = document.getElementById('btn-daemon-start');
+        const bStop = document.getElementById('btn-daemon-stop');
+        if (bStart) bStart.disabled = true;
+        if (bStop) bStop.disabled = true;
         const res = await fetch(`${API_BASE}/api/autonomy/daemon/start`, { method: 'POST' });
         const data = await res.json();
         if (data.ok && data.running) {
@@ -5059,11 +5077,19 @@
         addActivity(`Error iniciando daemon: ${e.message}`, 'error');
       } finally {
         loadAutonomia();
+        const bStart = document.getElementById('btn-daemon-start');
+        const bStop = document.getElementById('btn-daemon-stop');
+        if (bStart) bStart.disabled = false;
+        if (bStop) bStop.disabled = false;
       }
     }
 
     async function stopAutonomyDaemon() {
       try {
+        const bStart = document.getElementById('btn-daemon-start');
+        const bStop = document.getElementById('btn-daemon-stop');
+        if (bStart) bStart.disabled = true;
+        if (bStop) bStop.disabled = true;
         const res = await fetch(`${API_BASE}/api/autonomy/daemon/stop`, { method: 'POST' });
         const data = await res.json();
         if (data.ok && !data.running) {
@@ -5077,6 +5103,10 @@
         addActivity(`Error deteniendo daemon: ${e.message}`, 'error');
       } finally {
         loadAutonomia();
+        const bStart = document.getElementById('btn-daemon-start');
+        const bStop = document.getElementById('btn-daemon-stop');
+        if (bStart) bStart.disabled = false;
+        if (bStop) bStop.disabled = false;
       }
     }
 
