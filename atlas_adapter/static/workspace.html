@@ -330,8 +330,70 @@
     .chat-send:hover { filter: brightness(1.15); transform: scale(1.04); }
     .chat-send:disabled { opacity: 0.4; cursor: not-allowed; }
     .chat-send svg { width: 16px; height: 16px; }
+    .chat-stop {
+      width: 38px; height: 38px; border-radius: 8px;
+      border: 1px solid var(--accent-red);
+      background: rgba(248,81,73,0.12);
+      color: var(--accent-red);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s; flex-shrink: 0;
+    }
+    .chat-stop:hover { background: rgba(248,81,73,0.2); transform: scale(1.03); }
+    .chat-stop:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .chat-stop svg { width: 14px; height: 14px; }
+    .chat-gen-indicator {
+      display: none; align-items: center; gap: 6px;
+      font-size: 11px; color: var(--text-muted);
+      padding: 0 2px; white-space: nowrap;
+      user-select: none;
+    }
+    .chat-gen-indicator.active { display: inline-flex; }
+    .chat-gen-spinner {
+      width: 12px; height: 12px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent-primary);
+      border-radius: 50%;
+      animation: gen-spin 0.75s linear infinite;
+    }
+    @keyframes gen-spin {
+      to { transform: rotate(360deg); }
+    }
     .chat-mode-bar {
       display: flex; gap: 6px; align-items: center; margin-bottom: 4px;
+    }
+    .token-bar {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 10px; color: var(--text-dim);
+      border-top: 1px dashed var(--border);
+      padding-top: 5px;
+      font-variant-numeric: tabular-nums;
+    }
+    .token-chip {
+      padding: 1px 6px; border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+    }
+    .token-chip strong { color: var(--text); }
+    .preset-row {
+      display: flex; gap: 6px; align-items: center;
+      margin-top: 2px;
+    }
+    .preset-btn {
+      font-family: inherit; font-size: 10px;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      border-radius: 999px;
+      padding: 3px 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .preset-btn:hover { border-color: var(--accent-primary); color: var(--text); }
+    .preset-btn.active {
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+      background: rgba(57,211,196,0.08);
     }
     .chat-mode-bar select {
       font-family: inherit; font-size: 10px; background: var(--bg-elevated);
@@ -794,6 +856,13 @@
           <button class="chat-send" id="btn-send" onclick="sendMessage()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           </button>
+          <button class="chat-stop" id="btn-stop" onclick="stopChatRequest()" title="Detener generación" disabled>
+            <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+          </button>
+          <div class="chat-gen-indicator" id="chat-gen-indicator" aria-live="polite">
+            <span class="chat-gen-spinner"></span>
+            <span>Generating…</span>
+          </div>
         </div>
         <div class="chat-mode-bar">
           <div class="model-selector-wrap" id="model-selector-wrap">
@@ -818,6 +887,17 @@
             <input type="checkbox" id="sync-config-toggle" onchange="toggleSyncConfig(this.checked)">
             <span class="sync-label" id="sync-label">🔗 Sync Config</span>
           </label>
+        </div>
+        <div class="preset-row" id="preset-row">
+          <button class="preset-btn" id="preset-architect" onclick="applyPreset('architect')">Architect</button>
+          <button class="preset-btn" id="preset-builder" onclick="applyPreset('builder')">Builder</button>
+          <button class="preset-btn" id="preset-multi" onclick="applyPreset('multifuncion')">Multi</button>
+        </div>
+        <div class="token-bar" id="token-bar">
+          <span class="token-chip">Prompt: <strong id="tok-prompt">0</strong></span>
+          <span class="token-chip">Completion: <strong id="tok-completion">0</strong></span>
+          <span class="token-chip">Total: <strong id="tok-total">0</strong></span>
+          <span class="token-chip">Input est.: <strong id="tok-input-est">0</strong></span>
         </div>
         <div class="chat-hints">
           <span class="chat-hint" onclick="insertHint(this)">Crea una app web</span>
@@ -939,6 +1019,46 @@ const API = window.location.origin;
 let sessionStartTime = Date.now();
 let isProcessing = false;
 let isListening = false;
+let currentRequestController = null;
+const tokenUsage = { prompt: 0, completion: 0, total: 0 };
+
+function estimateTokens(text) {
+  const t = (text || '').trim();
+  if (!t) return 0;
+  return Math.max(1, Math.ceil(t.length / 4));
+}
+
+function renderTokenUsage(inputEstimate) {
+  const inputEl = document.getElementById('tok-input-est');
+  const p = document.getElementById('tok-prompt');
+  const c = document.getElementById('tok-completion');
+  const tt = document.getElementById('tok-total');
+  if (p) p.textContent = String(tokenUsage.prompt);
+  if (c) c.textContent = String(tokenUsage.completion);
+  if (tt) tt.textContent = String(tokenUsage.total);
+  if (inputEl) inputEl.textContent = String(inputEstimate || 0);
+}
+
+function setChatProcessing(active) {
+  isProcessing = !!active;
+  setLiveActive(!!active);
+  const sendBtn = document.getElementById('btn-send');
+  const stopBtn = document.getElementById('btn-stop');
+  const gen = document.getElementById('chat-gen-indicator');
+  if (sendBtn) sendBtn.disabled = !!active;
+  if (stopBtn) stopBtn.disabled = !active;
+  if (gen) gen.classList.toggle('active', !!active);
+}
+
+function stopChatRequest() {
+  if (currentRequestController) {
+    currentRequestController.abort();
+    currentRequestController = null;
+    setChatProcessing(false);
+    emitLive('err', '<strong>Generación detenida por usuario</strong>');
+    addChatMessage('⏹️ Proceso detenido.', 'atlas');
+  }
+}
 
 // ─── INIT ───
 document.addEventListener('DOMContentLoaded', () => {
@@ -1024,6 +1144,7 @@ function initSyncToggle() {
 // ─── MODEL SELECTOR ───
 let selectedModel = 'auto';
 let modelCatalog = [];
+let selectedPreset = localStorage.getItem('atlas-ws-preset') || '';
 
 const PROVIDER_ICONS = {
   atlas: '⚡', openai: 'O', anthropic: 'A', gemini: 'G', google: 'G',
@@ -1046,6 +1167,11 @@ async function initModelSelector() {
   btn.addEventListener('click', e => { e.stopPropagation(); dd.classList.toggle('open'); if (dd.classList.contains('open')) { const si = dd.querySelector('.md-search'); if (si) { si.value = ''; filterModels(''); si.focus(); } } });
   document.addEventListener('click', () => dd.classList.remove('open'));
   dd.addEventListener('click', e => e.stopPropagation());
+
+  // Restaurar preset guardado (si existe) tras cargar catálogo.
+  if (selectedPreset && ['architect', 'builder', 'multifuncion'].includes(selectedPreset)) {
+    applyPreset(selectedPreset);
+  }
 }
 
 function renderModelDropdown() {
@@ -1115,6 +1241,48 @@ function updateModelBtn() {
   document.getElementById('model-icon').textContent = m ? (PROVIDER_ICONS[m.provider] || '?') : '⚡';
 }
 
+function applyPreset(kind) {
+  const modeEl = document.getElementById('agent-mode');
+  const depthEl = document.getElementById('agent-depth');
+  let modelId = 'auto';
+  let mode = 'auto';
+  let depth = '2';
+
+  if (kind === 'architect') {
+    modelId = 'ollama:deepseek-r1:14b';
+    mode = 'auto';
+    depth = '3';
+  } else if (kind === 'builder') {
+    modelId = 'ollama:deepseek-coder:6.7b';
+    mode = 'auto';
+    depth = '2';
+  } else if (kind === 'multifuncion') {
+    modelId = 'ollama:llama3.1:latest';
+    mode = 'auto';
+    depth = '2';
+  }
+
+  selectedPreset = kind;
+  localStorage.setItem('atlas-ws-preset', kind);
+
+  if (modeEl) modeEl.value = mode;
+  if (depthEl) depthEl.value = depth;
+
+  const chosen = modelCatalog.find(m => m.id === modelId && m.available !== false);
+  if (chosen) {
+    selectModel(modelId);
+  } else {
+    selectModel('auto');
+  }
+
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  if (kind === 'architect') document.getElementById('preset-architect')?.classList.add('active');
+  if (kind === 'builder') document.getElementById('preset-builder')?.classList.add('active');
+  if (kind === 'multifuncion') document.getElementById('preset-multi')?.classList.add('active');
+
+  emitLive('info', '<strong>Preset:</strong> ' + escapeHtml(kind) + ' | mode=' + mode + ' depth=' + depth + ' model=' + escapeHtml(chosen ? chosen.id : 'auto'));
+}
+
 // ─── SERVICES CHECK ───
 async function checkServices() {
   const dots = { nexus: 'svc-nexus', push: 'svc-push', robot: 'svc-robot' };
@@ -1171,6 +1339,7 @@ function initAutoResize() {
   ta.addEventListener('input', () => {
     ta.style.height = 'auto';
     ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
+    renderTokenUsage(estimateTokens(ta.value));
   });
 }
 
@@ -1234,9 +1403,11 @@ async function sendMessage() {
   addChatMessage(text, 'user');
   input.value = '';
   input.style.height = 'auto';
-  isProcessing = true;
-  setLiveActive(true);
-  document.getElementById('btn-send').disabled = true;
+  const promptTokens = estimateTokens(text);
+  tokenUsage.prompt += promptTokens;
+  tokenUsage.total += promptTokens;
+  renderTokenUsage(0);
+  setChatProcessing(true);
 
   const thinkingId = addThinking();
 
@@ -1246,7 +1417,10 @@ async function sendMessage() {
   try {
     const t0 = performance.now();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000);
+    currentRequestController = controller;
+    const timeout = setTimeout(() => {
+      if (currentRequestController) currentRequestController.abort();
+    }, 120000);
     const response = await fetch(API + '/agent/goal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1269,9 +1443,14 @@ async function sendMessage() {
         reply = data.data.output;
         emitLive('exec', '<strong>Respuesta directa</strong> del modelo');
         addChatMessage(reply, 'atlas');
+        const completionTokens = estimateTokens(reply);
+        tokenUsage.completion += completionTokens;
+        tokenUsage.total += completionTokens;
+        renderTokenUsage(0);
         emitLive('exec', '<strong>Completado</strong> (' + elapsed + 'ms)', true);
         if (data.siguientes_pasos) data.siguientes_pasos.forEach(s => emitLive('info', 'Info: ' + escapeHtml(s)));
-        isProcessing = false; setLiveActive(false); document.getElementById('btn-send').disabled = false;
+        setChatProcessing(false);
+        currentRequestController = null;
         return;
       }
 
@@ -1330,6 +1509,10 @@ async function sendMessage() {
         emitLive('info', '<strong>Fallback:</strong> ' + escapeHtml(data.message || 'Respuesta via fallback'));
       }
       addChatMessage(reply || 'Objetivo procesado correctamente.', 'atlas');
+      const completionTokens = estimateTokens(reply);
+      tokenUsage.completion += completionTokens;
+      tokenUsage.total += completionTokens;
+      renderTokenUsage(0);
       emitLive('exec', '<strong>Completado</strong> (' + elapsed + 'ms)', true);
     } else {
       const errMsg = data.error || data.message || 'Error al procesar el objetivo';
@@ -1338,13 +1521,13 @@ async function sendMessage() {
     }
   } catch (err) {
     removeThinking(thinkingId);
-    addChatMessage('Error de conexion: ' + err.message, 'atlas');
-    emitLive('err', '<strong>Conexion fallida:</strong> ' + escapeHtml(err.message));
+    const msg = String(err && err.name === 'AbortError' ? 'Solicitud abortada' : ('Error de conexion: ' + (err.message || err)));
+    addChatMessage(msg, 'atlas');
+    emitLive('err', '<strong>Conexion fallida:</strong> ' + escapeHtml(msg));
   }
 
-  isProcessing = false;
-  setLiveActive(false);
-  document.getElementById('btn-send').disabled = false;
+  currentRequestController = null;
+  setChatProcessing(false);
 }
 
 // ─── CHAT HELPERS ───
@@ -1484,15 +1667,52 @@ async function executeTerminalCmd(cmd) {
   emitLive('info', 'Ejecutando comando...');
   try {
     const t0 = performance.now();
-    const r = await fetch(API + '/agent/goal', {
+    const nav = cmd.match(/^nav\s+(open|click|fill|extract|screenshot|close)\s*(.*)$/i);
+    let endpoint = API + '/api/workspace/terminal/execute';
+    let body = {
+      command: cmd,
+      timeout_sec: 180,
+      actor: 'workspace_ui',
+      role: 'owner'
+    };
+
+    if (nav) {
+      const action = (nav[1] || '').toLowerCase();
+      const rest = (nav[2] || '').trim();
+      endpoint = API + '/api/workspace/navigate';
+      if (action === 'open') {
+        body = { action: 'open_url', payload: { url: rest, show_browser: true } };
+      } else if (action === 'click') {
+        body = { action: 'click', payload: { selector: rest } };
+      } else if (action === 'fill') {
+        const sep = rest.indexOf('|');
+        const selector = sep >= 0 ? rest.slice(0, sep).trim() : rest;
+        const value = sep >= 0 ? rest.slice(sep + 1).trim() : '';
+        body = { action: 'fill', payload: { selector, value } };
+      } else if (action === 'extract') {
+        body = { action: 'extract_text', payload: {} };
+      } else if (action === 'screenshot') {
+        body = { action: 'screenshot', payload: { path: rest || undefined } };
+      } else if (action === 'close') {
+        body = { action: 'close', payload: {} };
+      }
+      emitLive('info', 'Modo navegación digital activo');
+    }
+
+    const r = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goal: 'Execute terminal command: ' + cmd, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel, sync_config: syncConfigActive })
+      body: JSON.stringify(body)
     });
     const elapsed = Math.round(performance.now() - t0);
     const data = await r.json();
     if (data.ok) {
-      emitLive('cmd', '<span class="term-line ok">' + escapeHtml(data.resumen || 'OK') + '</span>');
+      const payload = data.data || {};
+      const navResult = payload.result && typeof payload.result === 'object' ? JSON.stringify(payload.result, null, 2) : '';
+      const out = (payload.stdout || payload.result?.output || payload.message || navResult || data.resumen || 'OK');
+      const err = (payload.stderr || payload.error || data.error || '');
+      emitLive('cmd', '<span class="term-line ok">' + escapeHtml(String(out).substring(0, 1200)) + '</span>');
+      if (err) emitLive('err', '<span class="term-line err">' + escapeHtml(String(err).substring(0, 1200)) + '</span>');
       emitLive('info', 'Completado en <code>' + elapsed + 'ms</code>');
     } else {
       emitLive('err', '<span class="term-line err">' + escapeHtml(data.error || 'Error') + '</span>');
@@ -1706,6 +1926,7 @@ if (window.speechSynthesis) {
 // ─── KEYBOARD SHORTCUTS ───
 document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); sendMessage(); }
+  if (e.ctrlKey && e.key === '.') { e.preventDefault(); stopChatRequest(); }
   if (e.ctrlKey && e.key === 'm') { e.preventDefault(); isListening ? stopVoice() : startVoice(); }
   if (e.ctrlKey && e.key === '`') { e.preventDefault(); document.getElementById('terminal-input').focus(); }
   if (e.ctrlKey && e.key === '1') { e.preventDefault(); switchTopPanel('code'); }
@@ -1726,6 +1947,7 @@ _chatInput.addEventListener('keydown', e => {
 });
 _chatInput.addEventListener('focus', _globalMute);
 _chatInput.addEventListener('input', _globalMute);
+renderTokenUsage(estimateTokens(_chatInput.value || ''));
 
 </script>
 </body>

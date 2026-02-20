@@ -1351,6 +1351,101 @@ def api_feet_execute(body: dict):
         return {"ok": False, "error": str(e)}
 
 
+class WorkspaceTerminalBody(BaseModel):
+    command: str
+    cwd: Optional[str] = None
+    timeout_sec: int = 90
+    actor: str = "workspace"
+    role: str = "owner"
+
+
+@app.get("/api/workspace/capabilities", tags=["Workspace"])
+def api_workspace_capabilities():
+    """Capacidades operativas del workspace (terminal real + navegación digital)."""
+    try:
+        from modules.humanoid import get_humanoid_kernel
+        from modules.humanoid.nerve import feet_status
+        from modules.humanoid.web import navigator
+
+        k = get_humanoid_kernel()
+        hands = k.registry.get("hands") if k else None
+        hands_ok = bool(hands and hasattr(hands, "shell"))
+        nav_ok = bool(navigator.is_available())
+        return {
+            "ok": True,
+            "data": {
+                "terminal": {"available": hands_ok},
+                "navigation": {
+                    "available": nav_ok,
+                    "missing_deps": navigator.get_missing_deps() if not nav_ok else [],
+                    "feet": feet_status(),
+                },
+            },
+        }
+    except Exception as e:
+        return {"ok": False, "data": None, "error": str(e)}
+
+
+@app.post("/api/workspace/terminal/execute", tags=["Workspace"])
+def api_workspace_terminal_execute(body: WorkspaceTerminalBody):
+    """Ejecución real de comandos en terminal desde Workspace UI (con policy/audit)."""
+    t0 = time.perf_counter()
+    cmd = (body.command or "").strip()
+    if not cmd:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "command is required")
+    try:
+        from modules.humanoid import get_humanoid_kernel
+        from modules.humanoid.policy import ActorContext, get_policy_engine
+
+        actor = ActorContext(actor=(body.actor or "workspace"), role=(body.role or "owner"))
+        decision = get_policy_engine().can(actor, "hands", "exec_command", target=cmd)
+        if not decision.allow:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason or "policy denied")
+
+        k = get_humanoid_kernel()
+        hands = k.registry.get("hands") if k else None
+        if not hands or not hasattr(hands, "shell"):
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "hands module not available")
+
+        timeout_sec = max(5, min(int(body.timeout_sec or 90), 300))
+        result = hands.shell.run(cmd, cwd=(body.cwd or None), timeout_sec=timeout_sec, actor=actor)
+        ms = int((time.perf_counter() - t0) * 1000)
+        data = {
+            "cmd": cmd,
+            "cwd": body.cwd,
+            "ok": bool(result.get("ok")),
+            "returncode": result.get("returncode"),
+            "stdout": str(result.get("stdout") or "")[-12000:],
+            "stderr": str(result.get("stderr") or "")[-8000:],
+            "error": result.get("error"),
+        }
+        return _std_resp(bool(result.get("ok")), data, ms, result.get("error"))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+class WorkspaceNavigateBody(BaseModel):
+    action: str = "open_url"  # open_url|click|fill|extract_text|screenshot|close|workflow
+    payload: Optional[dict] = None
+
+
+@app.post("/api/workspace/navigate", tags=["Workspace"])
+def api_workspace_navigate(body: WorkspaceNavigateBody):
+    """Navegación web digital desde Workspace usando feet driver digital (Playwright)."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.nerve import feet_execute
+
+        action = (body.action or "open_url").strip().lower()
+        payload = dict(body.payload or {})
+        payload.setdefault("driver", "digital")
+        result = feet_execute(action, payload)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(bool(result.get("ok")), result, ms, result.get("error"))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
 # -----------------------------------------------------------------------------
 # Primitivas (API) — wrappers explícitos por dominio (sin ejecutor genérico)
 # -----------------------------------------------------------------------------
