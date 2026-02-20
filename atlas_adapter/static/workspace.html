@@ -459,6 +459,30 @@
     .model-selector-btn:hover { border-color: var(--accent-primary); background: var(--bg-card); }
     .model-selector-btn .model-icon { font-size: 12px; }
     .model-selector-btn svg { opacity: 0.5; margin-left: 2px; }
+    .model-status-chip {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      background: var(--bg-elevated);
+      white-space: nowrap;
+    }
+    .model-status-chip.ok {
+      border-color: rgba(63,185,80,0.45);
+      color: var(--accent-green);
+      background: rgba(63,185,80,0.08);
+    }
+    .model-status-chip.warn {
+      border-color: rgba(210,153,34,0.45);
+      color: var(--accent-orange);
+      background: rgba(210,153,34,0.08);
+    }
+    .model-status-chip.err {
+      border-color: rgba(248,81,73,0.45);
+      color: var(--accent-red);
+      background: rgba(248,81,73,0.08);
+    }
     .model-dropdown {
       display: none; position: absolute; bottom: calc(100% + 4px); left: 0;
       width: 320px; max-height: 420px; overflow-y: auto;
@@ -941,6 +965,7 @@
             </button>
             <div class="model-dropdown" id="model-dropdown"></div>
           </div>
+          <span class="model-status-chip" id="model-status-chip">Estado: --</span>
           <select id="agent-mode" title="Modo de ejecucion">
             <option value="plan_only">Plan</option>
             <option value="auto" selected>Auto</option>
@@ -1813,6 +1838,13 @@ async function initModelSelector() {
     const d = await r.json();
     if (d.ok) modelCatalog = d.data;
   } catch { modelCatalog = [{id:'auto',name:'Auto',provider:'atlas',desc:'Seleccion inteligente',available:true,provider_label:'ATLAS',category:'auto'}]; }
+
+  // Si el modelo guardado ya no existe en catálogo, volver a auto.
+  if (!modelCatalog.find(m => m.id === selectedModel)) {
+    selectedModel = 'auto';
+    localStorage.setItem('atlas-ws-model', selectedModel);
+  }
+
   renderModelDropdown();
   updateModelBtn();
 
@@ -1893,6 +1925,21 @@ function updateModelBtn() {
   const m = modelCatalog.find(x => x.id === selectedModel);
   document.getElementById('model-name').textContent = m ? m.name : selectedModel;
   document.getElementById('model-icon').textContent = m ? (PROVIDER_ICONS[m.provider] || '?') : '⚡';
+
+  const chip = document.getElementById('model-status-chip');
+  if (chip) {
+    chip.classList.remove('ok', 'warn', 'err');
+    if (!m) {
+      chip.textContent = 'Estado: no encontrado';
+      chip.classList.add('err');
+    } else if (m.available === false) {
+      chip.textContent = `Estado: sin key (${m.provider_label || m.provider})`;
+      chip.classList.add('warn');
+    } else {
+      chip.textContent = `Estado: listo (${m.provider_label || m.provider})`;
+      chip.classList.add('ok');
+    }
+  }
 }
 
 function applyPreset(kind) {
