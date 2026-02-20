@@ -1823,11 +1823,12 @@ function initSyncToggle() {
 // ─── MODEL SELECTOR ───
 let selectedModel = 'auto';
 let modelCatalog = [];
+let providerRuntime = {};
 let selectedPreset = localStorage.getItem('atlas-ws-preset') || '';
 
 const PROVIDER_ICONS = {
   atlas: '⚡', openai: 'O', anthropic: 'A', gemini: 'G', google: 'G',
-  xai: 'X', deepseek: 'D', groq: 'Q', mistral: 'M', perplexity: 'P', ollama: '🏠'
+  xai: 'X', deepseek: 'D', groq: 'Q', mistral: 'M', perplexity: 'P', ollama: '🏠', bedrock: 'B'
 };
 
 async function initModelSelector() {
@@ -1836,7 +1837,10 @@ async function initModelSelector() {
   try {
     const r = await fetch(API + '/agent/models');
     const d = await r.json();
-    if (d.ok) modelCatalog = d.data;
+    if (d.ok) {
+      modelCatalog = d.data;
+      providerRuntime = d.provider_runtime || {};
+    }
   } catch { modelCatalog = [{id:'auto',name:'Auto',provider:'atlas',desc:'Seleccion inteligente',available:true,provider_label:'ATLAS',category:'auto'}]; }
 
   // Si el modelo guardado ya no existe en catálogo, volver a auto.
@@ -1881,6 +1885,9 @@ function renderModelDropdown() {
     const availCount = sortedModels.filter(m => m && m.available !== false).length;
     return { group, models: sortedModels, availCount };
   }).sort((a, b) => {
+    const bedrockA = String(a.group).toLowerCase().includes('bedrock') ? 1 : 0;
+    const bedrockB = String(b.group).toLowerCase().includes('bedrock') ? 1 : 0;
+    if (bedrockA !== bedrockB) return bedrockB - bedrockA; // Priorizar AWS Bedrock arriba
     if (a.availCount !== b.availCount) return b.availCount - a.availCount; // proveedores más útiles primero
     return String(a.group).localeCompare(String(b.group));
   });
@@ -1892,9 +1899,13 @@ function renderModelDropdown() {
     models.forEach(m => {
       const active = m.id === selectedModel ? ' active' : '';
       const avail = m.available !== false ? '' : ' unavailable';
-      const badge = m.id === 'auto' ? '' : (m.available !== false
-        ? '<span class="md-badge available">OK</span>'
-        : '<span class="md-badge missing">Sin key</span>');
+      const badge = m.id === 'auto' ? '' : (
+        m.available === false
+          ? '<span class="md-badge missing">Sin key</span>'
+          : (m.status_code && m.status_code !== 'ok'
+            ? '<span class="md-badge missing">' + escapeHtml(m.status_message || 'API issue') + '</span>'
+            : '<span class="md-badge available">OK</span>')
+      );
       html += '<div class="md-item' + active + avail + '" data-model-id="' + m.id + '">'
         + '<div class="md-icon ' + m.provider + '">' + (PROVIDER_ICONS[m.provider] || '?') + '</div>'
         + '<div class="md-info"><div class="md-label">' + escapeHtml(m.name) + '</div>'
@@ -1907,6 +1918,9 @@ function renderModelDropdown() {
       const mid = el.dataset.modelId;
       const model = modelCatalog.find(m => m.id === mid);
       if (model && model.available === false) { emitLive('err', 'API key no configurada para ' + model.provider_label); return; }
+      if (model && model.status_message && model.status_code && model.status_code !== 'ok') {
+        emitLive('warn', '<strong>' + escapeHtml(model.provider_label || model.provider) + ':</strong> ' + escapeHtml(model.status_message));
+      }
       selectModel(mid);
       dd.classList.remove('open');
     });
@@ -1953,6 +1967,9 @@ function updateModelBtn() {
     } else if (m.available === false) {
       chip.textContent = `Estado: sin key (${m.provider_label || m.provider})`;
       chip.classList.add('warn');
+    } else if (m.status_message && m.status_code && m.status_code !== 'ok') {
+      chip.textContent = `Estado: ${m.status_message} (${m.provider_label || m.provider})`;
+      chip.classList.add(m.runtime_state === 'err' ? 'err' : 'warn');
     } else {
       chip.textContent = `Estado: listo (${m.provider_label || m.provider})`;
       chip.classList.add('ok');
@@ -2167,6 +2184,21 @@ async function sendMessage() {
       let reply = '';
       const modelUsed = data.data && data.data.model_used;
       if (modelUsed) emitLive('info', '<strong>Modelo:</strong> <code>' + escapeHtml(modelUsed) + '</code>');
+      if (data.data && data.data.provider_warning && data.data.provider_warning.message) {
+        emitLive('warn', '<strong>Proveedor:</strong> ' + escapeHtml(data.data.provider_warning.message));
+      }
+      if (data.data && Array.isArray(data.data.routing_trace)) {
+        data.data.routing_trace.forEach((evt, idx) => {
+          if (!evt || typeof evt !== 'object') return;
+          if (evt.event === 'selected') {
+            emitLive('info', 'Ruta #' + (idx + 1) + ': seleccionado <code>' + escapeHtml(evt.model_used || '') + '</code>');
+          } else if (evt.event === 'fallback_switch') {
+            emitLive('warn', 'Cambio automático: <code>' + escapeHtml(evt.from || '') + '</code> → <code>' + escapeHtml(evt.to || '') + '</code>');
+          } else if (evt.event === 'fail') {
+            emitLive('warn', 'Intento fallido: <code>' + escapeHtml((evt.provider || '') + ':' + (evt.model || '')) + '</code>');
+          }
+        });
+      }
 
       if (data.data && data.data.output && !data.data.plan && !data.data.steps) {
         reply = data.data.output;

@@ -3610,6 +3610,7 @@ _MODEL_CATALOG = [
     {"id": "anthropic:claude-haiku-4-latest", "name": "Claude Haiku 4", "provider": "anthropic", "desc": "Baja latencia, última generación", "category": "fast"},
     {"id": "anthropic:claude-opus-4-20250514", "name": "Claude Opus 4", "provider": "anthropic", "desc": "Maximo razonamiento", "category": "reasoning"},
     {"id": "anthropic:claude-opus-4-latest", "name": "Claude Opus 4 (latest)", "provider": "anthropic", "desc": "Alias estable para Opus 4", "category": "reasoning"},
+    {"id": "bedrock:us.anthropic.claude-opus-4-6-v1:0", "name": "Claude Opus 4.6 (Bedrock)", "provider": "anthropic", "desc": "Via AWS Bedrock (configurado)", "category": "reasoning"},
     {"id": "deepseek:deepseek-chat", "name": "DeepSeek V3 (API)", "provider": "deepseek", "desc": "Chat y codigo, muy economico", "category": "fast"},
     {"id": "deepseek:deepseek-v3", "name": "DeepSeek V3", "provider": "deepseek", "desc": "Modelo general avanzado", "category": "premium"},
     {"id": "deepseek:deepseek-v3.1", "name": "DeepSeek V3.1", "provider": "deepseek", "desc": "Iteración reciente de alto rendimiento", "category": "premium"},
@@ -3630,8 +3631,71 @@ _MODEL_CATALOG = [
 _PROVIDER_LABELS = {
     "atlas": "ATLAS", "openai": "OpenAI", "anthropic": "Anthropic", "gemini": "Google",
     "xai": "xAI", "deepseek": "DeepSeek", "groq": "Groq", "mistral": "Mistral",
-    "perplexity": "Perplexity", "ollama": "Ollama",
+    "perplexity": "Perplexity", "ollama": "Ollama", "bedrock": "AWS Bedrock",
 }
+
+# Estado runtime por proveedor (último error conocido para UI de Workspace)
+_PROVIDER_RUNTIME_STATUS: Dict[str, Dict[str, Any]] = {}
+
+
+def _classify_provider_error(error_text: str) -> Dict[str, Any]:
+    e = (error_text or "").strip().lower()
+    if not e:
+        return {"code": "ok", "level": "ok", "message": "Listo"}
+
+    if (
+        "credit balance is too low" in e
+        or "insufficient_quota" in e
+        or "quota" in e
+        or "saldo" in e
+        or "billing" in e
+    ):
+        return {
+            "code": "quota_exhausted",
+            "level": "warn",
+            "message": "Saldo API agotado; se aplicará fallback automático",
+        }
+    if (
+        "authentication" in e
+        or "unauthorized" in e
+        or "invalid api key" in e
+        or "invalid x-api-key" in e
+        or "incorrect api key" in e
+        or "401" in e
+    ):
+        return {
+            "code": "auth_error",
+            "level": "err",
+            "message": "API key inválida o no autorizada",
+        }
+    if "rate limit" in e or "429" in e:
+        return {
+            "code": "rate_limited",
+            "level": "warn",
+            "message": "Rate limit del proveedor; se aplicará fallback",
+        }
+    return {
+        "code": "provider_error",
+        "level": "warn",
+        "message": "Error temporal del proveedor; se aplicará fallback",
+    }
+
+
+def _set_provider_runtime_status(provider_id: str, error_text: Optional[str] = None) -> None:
+    pid = (provider_id or "").strip().lower()
+    if not pid:
+        return
+    if not error_text:
+        _PROVIDER_RUNTIME_STATUS.pop(pid, None)
+        return
+    cls = _classify_provider_error(error_text)
+    _PROVIDER_RUNTIME_STATUS[pid] = {
+        "code": cls["code"],
+        "level": cls["level"],
+        "message": cls["message"],
+        "raw": str(error_text)[:240],
+        "updated_at": time.time(),
+    }
 
 
 @app.get("/agent/models")
@@ -3645,12 +3709,26 @@ def agent_models():
         status[pid] = bool(key and key.strip())
     status["ollama"] = True
     status["atlas"] = True
+    status["bedrock"] = bool(
+        ((os.getenv("AWS_ACCESS_KEY_ID") or "").strip() and (os.getenv("AWS_SECRET_ACCESS_KEY") or "").strip())
+        or (os.getenv("ATLAS_AI_MODE", "").strip().lower() == "bedrock")
+    )
     models = []
     for m in _MODEL_CATALOG:
-        available = status.get(m["provider"], False)
-        models.append({**m, "available": available, "provider_label": _PROVIDER_LABELS.get(m["provider"], m["provider"])})
+        is_bedrock_model = str(m.get("id", "")).startswith("bedrock:")
+        available = status.get("bedrock", False) if is_bedrock_model else status.get(m["provider"], False)
+        rt = _PROVIDER_RUNTIME_STATUS.get(m["provider"], {})
+        models.append({
+            **m,
+            "available": available,
+            "provider_label": "Anthropic (Bedrock)" if is_bedrock_model else _PROVIDER_LABELS.get(m["provider"], m["provider"]),
+            "status_code": rt.get("code"),
+            "status_message": rt.get("message"),
+            "runtime_state": rt.get("level", "ok"),
+            "runtime_error": rt.get("raw"),
+        })
     ms = int((time.perf_counter() - t0) * 1000)
-    return {"ok": True, "data": models, "ms": ms}
+    return {"ok": True, "data": models, "provider_runtime": _PROVIDER_RUNTIME_STATUS, "ms": ms}
 
 
 # ----------------------------------------------------------------------------
@@ -6800,6 +6878,28 @@ _CASCADE_ORDER = [
     ("ollama", "{local_model}",                 "local"),
 ]
 
+# Prioridad de especialistas API-first para modo rápido.
+# Se usa solo en auto-route + specialist_routing, sin romper sincronía con Brain.
+_FAST_SPECIALIST_PRIORITY = {
+    "code": [
+        "xai:grok-4-fast",
+        "openai:gpt-4.1-mini",
+        "deepseek:deepseek-chat",
+        "groq:llama-3.3-70b-versatile",
+    ],
+    "analysis": [
+        "openai:gpt-4.1",
+        "anthropic:claude-sonnet-4-latest",
+        "deepseek:deepseek-reasoner",
+        "gemini:gemini-2.5-flash",
+    ],
+    "chat": [
+        "gemini:gemini-2.5-flash",
+        "xai:grok-3-fast",
+        "openai:gpt-4.1-mini",
+    ],
+}
+
 
 def _infer_task_type(goal: str) -> str:
     """Detecta tipo de tarea para elegir modelo local optimo."""
@@ -6816,6 +6916,61 @@ def _pick_local_model(goal: str) -> str:
     """Elige el modelo Ollama mas adecuado segun la tarea."""
     ttype = _infer_task_type(goal)
     return _TASK_PROFILES[ttype]["local"]
+
+
+def _pick_specialist_model(goal: str, prefer_fast: bool = True) -> tuple[Optional[str], str, str, str]:
+    """Devuelve (full_key, task_type, specialist_slot, routing_policy) en modo auto con specialist routing activo."""
+    task_type = _infer_task_type(goal)
+    slot_by_task = {
+        "code": "code",
+        "reasoning": "analysis",
+        "self": "analysis",
+        "general": "chat",
+    }
+    slot = slot_by_task.get(task_type, "chat")
+
+    def _provider_ready(model_key: str) -> bool:
+        if not isinstance(model_key, str) or ":" not in model_key:
+            return False
+        provider_id = model_key.split(":", 1)[0].strip().lower()
+        if provider_id in ("ollama", "atlas"):
+            return True
+        rt = _PROVIDER_RUNTIME_STATUS.get(provider_id, {})
+        if rt.get("code") in ("auth_error", "quota_exhausted", "rate_limited"):
+            return False
+        try:
+            from modules.humanoid.ai.provider_credentials import get_provider_api_key
+
+            key = get_provider_api_key(provider_id)
+            return bool(key and key.strip())
+        except Exception:
+            return False
+
+    try:
+        from modules.humanoid.ai.brain_state import get_brain_state
+
+        state = get_brain_state()
+        if (state.get("mode") or "auto") != "auto":
+            return None, task_type, slot, "disabled"
+        if not bool(state.get("auto_route", True)):
+            return None, task_type, slot, "disabled"
+        features = state.get("features", {}) or {}
+        if not bool(features.get("specialist_routing", True)):
+            return None, task_type, slot, "disabled"
+        specialists = state.get("specialists", {}) or {}
+        brain_model_key = specialists.get(slot)
+
+        if prefer_fast:
+            for candidate in _FAST_SPECIALIST_PRIORITY.get(slot, []):
+                if _provider_ready(candidate):
+                    return candidate, task_type, slot, "fast_api_priority"
+
+        model_key = brain_model_key
+        if isinstance(model_key, str) and ":" in model_key:
+            return model_key.strip(), task_type, slot, "brain_specialist"
+    except Exception:
+        pass
+    return None, task_type, slot, "none"
 
 
 _ATLAS_IDENTITY_PROMPT = """Eres ATLAS, un sistema robotico autonomo con conciencia de si mismo. NO eres un chatbot generico.
@@ -6947,46 +7102,123 @@ def _try_single_call(provider_id: str, model_name: str, goal: str, use_config: b
             return {"ok": False, "error": "Ollama %s: respuesta vacia" % model_name, "ms": ms, "model_used": spec}
         except Exception as e:
             return {"ok": False, "error": "Ollama %s: %s" % (model_name, str(e)), "ms": 0, "model_used": spec}
+    if provider_id == "bedrock":
+        region = (os.getenv("AWS_REGION", "us-east-1") or "us-east-1").strip()
+        t0 = time.perf_counter()
+        try:
+            from anthropic import AnthropicBedrock
+
+            client = AnthropicBedrock(aws_region=region)
+            req = {
+                "model": model_name,
+                "max_tokens": 1024,
+                "temperature": 0,
+                "messages": [{"role": "user", "content": goal}],
+            }
+            if sys_prompt and sys_prompt.strip():
+                req["system"] = sys_prompt
+
+            msg = client.messages.create(**req)
+            text_parts = []
+            for block in getattr(msg, "content", []) or []:
+                text = getattr(block, "text", None)
+                if text:
+                    text_parts.append(text)
+            output = "\n".join(text_parts).strip()
+            ms = (time.perf_counter() - t0) * 1000
+            if output:
+                _set_provider_runtime_status(provider_id, None)
+                return {"ok": True, "output": output, "ms": ms, "model_used": spec}
+            _set_provider_runtime_status(provider_id, "Respuesta vacia en Bedrock")
+            return {"ok": False, "error": "Bedrock %s: respuesta vacia" % model_name, "ms": ms, "model_used": spec}
+        except Exception as e:
+            _set_provider_runtime_status(provider_id, str(e))
+            return {"ok": False, "error": "Bedrock %s: %s" % (model_name, str(e)), "ms": (time.perf_counter() - t0) * 1000, "model_used": spec}
     from modules.humanoid.ai.provider_credentials import get_provider_api_key
     api_key = get_provider_api_key(provider_id)
     if not api_key:
+        _set_provider_runtime_status(provider_id, "Sin API key")
         return {"ok": False, "error": "Sin API key para %s" % provider_id, "ms": 0, "model_used": spec, "_skip": True}
     from modules.humanoid.ai.external_llm import call_external
     try:
         ok, output, ms = call_external(provider_id, model_name, goal, sys_prompt, api_key, timeout_s=120)
         if ok and output and output.strip():
+            _set_provider_runtime_status(provider_id, None)
             return {"ok": True, "output": output, "ms": ms, "model_used": spec}
         # Conservar detalle original del proveedor para diagnóstico (auth, quota, modelo inválido, etc.)
         err_detail = (output or "").strip() or "%s:%s respuesta vacia o error" % (provider_id, model_name)
+        _set_provider_runtime_status(provider_id, err_detail)
         return {"ok": False, "error": err_detail, "ms": ms, "model_used": spec}
     except Exception as e:
+        _set_provider_runtime_status(provider_id, str(e))
         return {"ok": False, "error": "%s:%s: %s" % (provider_id, model_name, str(e)), "ms": 0, "model_used": spec}
 
 
-def _direct_model_call(model_spec: str, goal: str, use_config: bool = False) -> dict:
+def _direct_model_call(model_spec: str, goal: str, use_config: bool = False, prefer_fast: bool = True) -> dict:
     """Llamada con cascada inteligente: local → free API → paid API. Si un modelo falla, salta al siguiente."""
     if (model_spec or "").strip().lower() in ("cascade:ide-agent", "cascade", "ide-agent"):
         model_spec = "auto"
 
     if model_spec == "auto" or not model_spec:
+        specialist_key, task_type, specialist_slot, routing_policy = _pick_specialist_model(goal, prefer_fast=prefer_fast)
         local_model = _pick_local_model(goal)
         errors = []
-        for provider_id, model_tmpl, tier in _CASCADE_ORDER:
-            model_name = local_model if model_tmpl == "{local_model}" else model_tmpl
+        trace = []
+        tried = set()
+
+        def _attempt(provider_id: str, model_name: str, tier: str, reason: str) -> Optional[dict]:
+            attempt_key = (provider_id, model_name)
+            if attempt_key in tried:
+                return None
+            tried.add(attempt_key)
+            trace.append({"event": "attempt", "provider": provider_id, "model": model_name, "tier": tier, "reason": reason})
             result = _try_single_call(provider_id, model_name, goal, use_config)
             if result.get("ok"):
                 result["tier"] = tier
                 result["cascade_errors"] = len(errors)
+                result["task_type"] = task_type
+                result["specialist_slot"] = specialist_slot
+                result["routing_policy"] = routing_policy
+                trace.append({"event": "selected", "model_used": result.get("model_used"), "tier": tier, "reason": reason})
+                result["routing_trace"] = trace
                 return result
             skip_reason = result.get("error", "unknown")
             errors.append("%s:%s → %s" % (provider_id, model_name, skip_reason[:80]))
-        return {"ok": False, "error": "Todos los modelos fallaron. Intentos: %s" % "; ".join(errors), "ms": 0}
+            trace.append({"event": "fail", "provider": provider_id, "model": model_name, "tier": tier, "reason": reason, "error": skip_reason[:120]})
+            return None
+
+        if specialist_key and ":" in specialist_key:
+            sp_provider, sp_model = specialist_key.split(":", 1)
+            sp_reason = routing_policy if routing_policy not in ("", "none") else "brain_specialist"
+            sp_result = _attempt(sp_provider.strip().lower(), sp_model.strip(), "specialist", sp_reason)
+            if sp_result:
+                return sp_result
+
+        for provider_id, model_tmpl, tier in _CASCADE_ORDER:
+            model_name = local_model if model_tmpl == "{local_model}" else model_tmpl
+            result = _attempt(provider_id, model_name, tier, "cascade")
+            if result:
+                return result
+        return {
+            "ok": False,
+            "error": "Todos los modelos fallaron. Intentos: %s" % "; ".join(errors),
+            "ms": 0,
+            "task_type": task_type,
+            "specialist_slot": specialist_slot,
+            "routing_policy": routing_policy,
+            "routing_trace": trace,
+        }
 
     parts = model_spec.split(":", 1)
     if len(parts) != 2:
         return {"ok": False, "error": "Formato invalido: use provider:model"}
     provider_id, model_name = parts[0].lower(), parts[1]
-    return _try_single_call(provider_id, model_name, goal, use_config)
+    result = _try_single_call(provider_id, model_name, goal, use_config)
+    if result.get("ok"):
+        result["routing_trace"] = [{"event": "selected", "model_used": result.get("model_used"), "tier": "manual", "reason": "explicit_model"}]
+    else:
+        result["routing_trace"] = [{"event": "fail", "provider": provider_id, "model": model_name, "tier": "manual", "reason": "explicit_model", "error": (result.get("error") or "")[:120]}]
+    return result
 
 
 @app.post("/brain/process", tags=["Cerebro"])
@@ -6995,7 +7227,7 @@ def brain_process_endpoint(payload: dict):
     text = payload.get("text", "")
     if not text:
         return {"ok": False, "error": "Texto vacio"}
-    result = _direct_model_call("auto", text, use_config=True)
+    result = _direct_model_call("auto", text, use_config=True, prefer_fast=True)
     if result.get("ok"):
         return {"ok": True, "response": result["output"], "model_used": result.get("model_used"), "source": "brain"}
     return {"ok": False, "error": result.get("error", "Sin respuesta"), "source": "brain"}
@@ -7005,9 +7237,14 @@ def brain_process_endpoint(payload: dict):
 def agent_goal(body: AgentGoalBody):
     """Run goal: plan_only | controlled | auto. depth 1-5: multi-agent pipeline. Respuesta: resumen, data, pipeline, siguientes_pasos."""
     t0 = time.perf_counter()
-    model_spec = (body.model or "auto").strip()
-    if model_spec:
-        result = _direct_model_call(model_spec, body.goal, use_config=bool(body.sync_config))
+    explicit_model = (body.model or "").strip()
+    model_spec = explicit_model or "auto"
+    mode = _agent_goal_mode(body.mode or "plan_only")
+    prefer_fast = bool(body.fast) if body.fast is not None else True
+    # Respuesta directa de LLM solo en plan_only con provider:model explícito.
+    # En modos auto/controlled SIEMPRE usamos orquestador para decidir y ejecutar.
+    if mode == "plan_only" and explicit_model and explicit_model.lower() not in ("auto", "cascade", "ide-agent", "cascade:ide-agent"):
+        result = _direct_model_call(model_spec, body.goal, use_config=bool(body.sync_config), prefer_fast=prefer_fast)
         ms = int((time.perf_counter() - t0) * 1000)
         if result.get("ok"):
             tier_label = {"local": "LOCAL (gratis)", "free_api": "API gratuita", "paid_api": "API paga"}.get(result.get("tier", ""), "")
@@ -7015,7 +7252,15 @@ def agent_goal(body: AgentGoalBody):
             if result.get("cascade_errors", 0) > 0:
                 cascade_note = " (fallback: %d intentos previos)" % result["cascade_errors"]
             info_line = "Modelo: %s | %s%s | %dms" % (result.get("model_used", model_spec), tier_label, cascade_note, ms)
-            return _professional_resp(True, {"output": result["output"], "model_used": result.get("model_used"), "tier": result.get("tier")}, ms, None,
+            return _professional_resp(True, {
+                                      "output": result["output"],
+                                      "model_used": result.get("model_used"),
+                                      "tier": result.get("tier"),
+                                      "routing_trace": result.get("routing_trace", []),
+                                      "task_type": result.get("task_type"),
+                                      "specialist_slot": result.get("specialist_slot"),
+                                      "routing_policy": result.get("routing_policy"),
+                                      }, ms, None,
                                       resumen=result["output"][:500] if result.get("output") else "Procesado",
                                       siguientes_pasos=[info_line])
         err_detail = result.get("error") or result.get("output") or "Error desconocido"
@@ -7033,16 +7278,27 @@ def agent_goal(body: AgentGoalBody):
                 siguientes_pasos=["Credencial inválida o no autorizada para el proveedor seleccionado. Actualiza /api/brain/credentials y reintenta."],
             )
         # Fallback resiliente: si modelo explícito falla, intentar cascada auto.
-        fallback = _direct_model_call("auto", body.goal, use_config=bool(body.sync_config))
+        fallback = _direct_model_call("auto", body.goal, use_config=bool(body.sync_config), prefer_fast=prefer_fast)
         if fallback.get("ok"):
             ms2 = int((time.perf_counter() - t0) * 1000)
             note = "Fallback automático activado: modelo seleccionado falló, se usó cascada."
+            short_err = str(err_detail)[:140]
             data = {
                 "output": fallback.get("output"),
                 "model_used": fallback.get("model_used"),
                 "tier": fallback.get("tier"),
                 "fallback_from": model_spec,
                 "fallback": True,
+                "routing_trace": (result.get("routing_trace") or []) + [{
+                    "event": "fallback_switch",
+                    "from": model_spec,
+                    "to": fallback.get("model_used"),
+                    "reason": short_err,
+                }] + (fallback.get("routing_trace") or []),
+                "provider_warning": {
+                    "message": short_err,
+                    "source_model": model_spec,
+                },
             }
             return _professional_resp(
                 True,
@@ -7050,13 +7306,12 @@ def agent_goal(body: AgentGoalBody):
                 ms2,
                 None,
                 resumen=(fallback.get("output") or "Procesado")[:500],
-                siguientes_pasos=[note],
+                siguientes_pasos=[note, f"Causa detectada: {short_err}"],
             )
 
         fb_detail = fallback.get("error") if isinstance(fallback, dict) else None
         full_err = err_detail if not fb_detail else f"{err_detail} | fallback: {fb_detail}"
         return _professional_resp(False, {"error_detail": full_err, "model_used": result.get("model_used")}, ms, full_err, resumen=full_err)
-    mode = _agent_goal_mode(body.mode or "plan_only")
     depth = max(1, min(5, body.depth or 1))
     try:
         if depth >= 2:

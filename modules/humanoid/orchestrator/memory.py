@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,36 +29,40 @@ def _db_path() -> str:
 
 
 _conn: Optional[sqlite3.Connection] = None
+_LOCK = threading.Lock()
 
 
 def _ensure() -> sqlite3.Connection:
     global _conn
-    if _conn is not None:
+    with _LOCK:
+        if _conn is not None:
+            return _conn
+        path = _db_path()
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        _conn = sqlite3.connect(path, check_same_thread=False)
+        _conn.execute(SCHEMA)
+        _conn.commit()
         return _conn
-    path = _db_path()
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    _conn = sqlite3.connect(path)
-    _conn.execute(SCHEMA)
-    _conn.commit()
-    return _conn
 
 
 def save_task(task_id: str, goal: str, plan: Dict[str, Any], execution_log: List[Dict], status: str) -> None:
     now = datetime.now(timezone.utc).isoformat()
     conn = _ensure()
-    row = conn.execute("SELECT created_ts FROM task_memory WHERE id = ?", (task_id,)).fetchone()
-    created = row[0] if row else now
-    conn.execute(
-        """INSERT OR REPLACE INTO task_memory (id, goal, plan_json, execution_log_json, status, created_ts, updated_ts)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (task_id, goal, json.dumps(plan), json.dumps(execution_log), status, created, now),
-    )
-    conn.commit()
+    with _LOCK:
+        row = conn.execute("SELECT created_ts FROM task_memory WHERE id = ?", (task_id,)).fetchone()
+        created = row[0] if row else now
+        conn.execute(
+            """INSERT OR REPLACE INTO task_memory (id, goal, plan_json, execution_log_json, status, created_ts, updated_ts)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (task_id, goal, json.dumps(plan), json.dumps(execution_log), status, created, now),
+        )
+        conn.commit()
 
 
 def load_task(task_id: str) -> Optional[Dict[str, Any]]:
     conn = _ensure()
-    row = conn.execute("SELECT id, goal, plan_json, execution_log_json, status FROM task_memory WHERE id = ?", (task_id,)).fetchone()
+    with _LOCK:
+        row = conn.execute("SELECT id, goal, plan_json, execution_log_json, status FROM task_memory WHERE id = ?", (task_id,)).fetchone()
     if not row:
         return None
     return {
