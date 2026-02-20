@@ -1458,10 +1458,14 @@ function renderSupervisorPlan(plan) {
   if (!plan || !Array.isArray(plan.steps)) return;
 
   const rows = plan.steps.map(s => {
-    const riskIcon = s.risk === 'high' ? '🔴' : '🟢';
+    const risk = (s.risk || "low").toLowerCase();
+    const riskIcon = risk === "high" ? "🔴" : "🟢";
+    const label = risk.toUpperCase();
+    const cmd = (s.cmd || s.op || s.type || "").toString();
+
     return `<div class="plan-step">
-              <span class="risk">${riskIcon} ${s.risk.toUpperCase()}</span>
-              <code>${s.cmd || s.op || s.type}</code>
+              <span class="risk">${riskIcon} ${label}</span>
+              <code>${escapeHtml(cmd)}</code>
             </div>`;
   }).join("");
 
