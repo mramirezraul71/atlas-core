@@ -6,12 +6,14 @@ import logging
 import os
 import sys
 import time
+import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 RUNNER_TIMEOUT_SEC = 20
 _scheduler_actor = "scheduler"
+_APPROVAL_DIGEST_LAST_KEY = ""
 
 _log = logging.getLogger("humanoid.scheduler.runner")
 
@@ -55,6 +57,8 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_repo_hygiene_cycle(payload)
         elif kind == "approvals_digest":
             out = _run_approvals_digest(payload)
+        elif kind == "approvals_expiry_reaper":
+            out = _run_approvals_expiry_reaper(payload)
         elif kind == "world_state_tick":
             out = _run_world_state_tick(payload)
         elif kind == "workshop_cycle":
@@ -103,11 +107,30 @@ def _run_approvals_digest(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         from modules.humanoid.approvals import list_pending
         from modules.humanoid.comms.ops_bus import emit as ops_emit
+        from modules.humanoid.approvals.store import expire_pending
+
+        # Limpieza preventiva de vencidas (no bloqueante si falla).
+        try:
+            expire_pending(limit=2000)
+        except Exception:
+            pass
 
         limit = int((payload or {}).get("limit") or 8)
         pending = list_pending(limit=max(1, min(limit, 20)))
+        pending = [p for p in pending if not bool(p.get("expired"))]
         if not pending:
+            global _APPROVAL_DIGEST_LAST_KEY
+            _APPROVAL_DIGEST_LAST_KEY = ""
             return {"ok": True, "sent": False, "pending": 0}
+
+        ids = sorted([str(p.get("id") or "") for p in pending if (p.get("id") or "")])
+        digest_key = hashlib.sha1("|".join(ids).encode("utf-8", errors="ignore")).hexdigest()[:16]
+
+        # Notificar solo cuando cambie el set de pendientes.
+        if _APPROVAL_DIGEST_LAST_KEY == digest_key:
+            return {"ok": True, "sent": False, "pending": len(pending), "reason": "no_changes"}
+        _APPROVAL_DIGEST_LAST_KEY = digest_key
+
         # Mensaje compacto
         lines = []
         for a in pending[:limit]:
@@ -118,8 +141,30 @@ def _run_approvals_digest(payload: Dict[str, Any]) -> Dict[str, Any]:
             exp_s = exp[:19].replace("T", " ") if exp else ""
             lines.append(f"- {aid} [{risk}] {action}" + (f" (exp {exp_s})" if exp_s else ""))
         text = "Aprobaciones pendientes:\n" + "\n".join(lines)
-        ops_emit("approval", text, level="high", data={"pending": len(pending), "ids": [p.get("id") for p in pending[:limit]]})
+        level = "high" if any((str(p.get("risk") or "").lower() in ("high", "critical")) for p in pending) else "med"
+        ops_emit("approval", text, level=level, data={"pending": len(pending), "ids": [p.get("id") for p in pending[:limit]], "digest_key": digest_key})
         return {"ok": True, "sent": True, "pending": len(pending), "shown": len(lines)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _run_approvals_expiry_reaper(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Periodic cleanup for expired pending approvals."""
+    try:
+        from modules.humanoid.approvals.store import expire_pending
+        from modules.humanoid.comms.ops_bus import emit as ops_emit
+
+        limit = int((payload or {}).get("limit") or 2000)
+        out = expire_pending(limit=limit)
+        expired_count = int(out.get("expired_count") or 0)
+        if expired_count > 0:
+            ops_emit(
+                "approval",
+                f"Limpieza automática de aprobaciones: {expired_count} vencidas marcadas como expiradas.",
+                level="med",
+                data={"expired_count": expired_count, "source": "approvals_expiry_reaper"},
+            )
+        return {"ok": True, **out}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -518,10 +563,40 @@ def _run_pot_execute(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         from modules.humanoid.quality.registry import get_pot
         from modules.humanoid.quality.executor import execute_pot
+        from modules.humanoid.approvals import create as create_approval, wait_for_resolution
         
         pot = get_pot(pot_id)
         if not pot:
             return {"ok": False, "error": f"POT not found: {pot_id}"}
+
+        severity = str(pot.severity.value if hasattr(pot.severity, "value") else pot.severity).strip().lower()
+        require_approval = bool(payload.get("require_approval", True)) and not dry_run and severity in ("high", "critical")
+
+        if require_approval:
+            approval_result = create_approval(
+                action=f"pot_execute:{pot_id}",
+                payload={
+                    "pot_id": pot_id,
+                    "trigger": "scheduler",
+                    "risk": severity,
+                },
+                job_id="pot_execute",
+            )
+            if not approval_result.get("ok"):
+                return {"ok": False, "error": approval_result.get("error") or "approval_create_failed", "pot_id": pot_id}
+
+            approval_id = approval_result.get("approval_id")
+            if not approval_id:
+                return {"ok": False, "error": "approval_id_missing", "pot_id": pot_id}
+
+            resolution = wait_for_resolution(approval_id, timeout_seconds=int(payload.get("approval_timeout_seconds") or 300))
+            if resolution.get("status") != "approved":
+                return {
+                    "ok": False,
+                    "pot_id": pot_id,
+                    "error": f"approval_{resolution.get('status') or 'denied'}",
+                    "approval_id": approval_id,
+                }
         
         result = execute_pot(
             pot=pot,
@@ -535,6 +610,8 @@ def _run_pot_execute(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "ok": result.ok,
             "pot_id": pot_id,
+            "severity": severity,
+            "approval_required": require_approval,
             "steps_ok": result.steps_ok,
             "steps_total": result.steps_total,
             "elapsed_ms": result.elapsed_ms,

@@ -146,15 +146,8 @@ class POTDispatcher:
         )
         self._worker_thread.start()
         _log.info("POT Dispatcher started")
-        
-        # Ejecutar POT de inicio de sesión
-        self.dispatch(DispatchRequest(
-            trigger_type=TriggerType.STARTUP,
-            trigger_id="dispatcher_start",
-            pot_id="session_startup",
-            source="dispatcher",
-            priority=2,
-        ))
+        # Nota: el startup de sesión se dispara desde TriggerEngine.start().
+        # Evita duplicaciones/ruido cuando el dispatcher se reinicia por watchdog.
     
     def stop(self, graceful: bool = True) -> None:
         """Detiene el dispatcher."""

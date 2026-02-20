@@ -212,12 +212,16 @@ class HealthMonitor:
         pot_id = repair_map.get(component, "diagnostic_full")
         
         try:
-            from .dispatcher import dispatch_pot, TriggerType
+            from .dispatcher import dispatch_pot
             dispatch_pot(
                 pot_id=pot_id,
-                trigger_type=TriggerType.CONDITION,
-                trigger_id=f"health_monitor_{component}",
-                context={"component": component, "auto_repair": True},
+                context={
+                    "component": component,
+                    "auto_repair": True,
+                    "trigger_type": "condition",
+                    "trigger_id": f"health_monitor_{component}",
+                },
+                priority=2,
             )
         except Exception as e:
             _log.error("Failed to dispatch repair POT: %s", e)
@@ -390,12 +394,15 @@ class ScheduledTaskRunner:
         """Ejecuta mantenimiento diario."""
         _log.info("Running daily maintenance")
         try:
-            from .dispatcher import dispatch_pot, TriggerType
+            from .dispatcher import dispatch_pot
             dispatch_pot(
                 pot_id="maintenance_daily",
-                trigger_type=TriggerType.SCHEDULED,
-                trigger_id="autonomy_daily",
-                context={"scheduled": True},
+                context={
+                    "scheduled": True,
+                    "trigger_type": "scheduled",
+                    "trigger_id": "autonomy_daily",
+                },
+                priority=5,
             )
         except Exception as e:
             _log.error("Daily maintenance failed: %s", e)
@@ -404,12 +411,15 @@ class ScheduledTaskRunner:
         """Ejecuta mantenimiento semanal."""
         _log.info("Running weekly maintenance")
         try:
-            from .dispatcher import dispatch_pot, TriggerType
+            from .dispatcher import dispatch_pot
             dispatch_pot(
                 pot_id="maintenance_weekly",
-                trigger_type=TriggerType.SCHEDULED,
-                trigger_id="autonomy_weekly",
-                context={"scheduled": True},
+                context={
+                    "scheduled": True,
+                    "trigger_type": "scheduled",
+                    "trigger_id": "autonomy_weekly",
+                },
+                priority=5,
             )
         except Exception as e:
             _log.error("Weekly maintenance failed: %s", e)

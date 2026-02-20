@@ -143,10 +143,11 @@ def _evaluate_condition(condition: str, context: Dict[str, Any]) -> bool:
     if not condition:
         return True
     try:
-        return bool(eval(condition, {"__builtins__": {}}, context))
+        eval_ctx = {"context": context, **context}
+        return bool(eval(condition, {"__builtins__": {}}, eval_ctx))
     except Exception as e:
         _log.warning("Condition eval failed: %s -> %s", condition, e)
-        return True  # Por defecto ejecutar
+        return False
 
 
 def _evaluate_check(expression: str, context: Dict[str, Any]) -> bool:
@@ -154,7 +155,8 @@ def _evaluate_check(expression: str, context: Dict[str, Any]) -> bool:
     if not expression:
         return True
     try:
-        return bool(eval(expression, {"__builtins__": {}}, context))
+        eval_ctx = {"context": context, **context}
+        return bool(eval(expression, {"__builtins__": {}}, eval_ctx))
     except Exception as e:
         _log.warning("Check eval failed: %s -> %s", expression, e)
         return False

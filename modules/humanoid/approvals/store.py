@@ -182,6 +182,43 @@ def get(aid: str) -> Optional[Dict[str, Any]]:
     return d
 
 
+def find_pending_equivalent(action: str, risk: str, request_hash: str) -> Optional[Dict[str, Any]]:
+    """Return an active pending approval equivalent to the incoming request if any."""
+    if not (action or "").strip() or not (request_hash or "").strip():
+        return None
+    conn = _ensure()
+    cols = "id, created_ts, action, payload_json, risk, status, job_id, run_id, resolved_ts, resolved_by, requires_2fa, expires_at, approval_signature, origin_node_id, chain_hash"
+    try:
+        with _LOCK:
+            row = conn.execute(
+                f"SELECT {cols} FROM approvals WHERE status = 'pending' AND action = ? AND risk = ? AND request_hash = ? ORDER BY created_ts DESC LIMIT 1",
+                ((action or "").strip(), (risk or "").strip().lower(), (request_hash or "").strip()[:64]),
+            ).fetchone()
+    except Exception:
+        return None
+
+    if not row:
+        return None
+
+    d = {
+        "id": row[0], "created_ts": row[1], "action": row[2],
+        "payload": json.loads(row[3]) if row[3] else {},
+        "risk": row[4], "status": row[5], "job_id": row[6], "run_id": row[7],
+        "resolved_ts": row[8], "resolved_by": row[9],
+    }
+    if len(row) > 10:
+        d["requires_2fa"] = bool(row[10])
+        d["expires_at"] = row[11]
+        d["approval_signature"] = row[12]
+        d["origin_node_id"] = row[13]
+        d["chain_hash"] = row[14]
+    try:
+        d["expired"] = _is_expired(d.get("expires_at"))
+    except Exception:
+        d["expired"] = False
+    return d
+
+
 def _is_expired(expires_at: Optional[str]) -> bool:
     from .ttl import is_expired as ttl_expired
     return ttl_expired(expires_at)
@@ -227,6 +264,43 @@ def reject(aid: str, resolved_by: str = "api") -> bool:
         cur = conn.execute("UPDATE approvals SET status = 'rejected', resolved_ts = ?, resolved_by = ? WHERE id = ? AND status = 'pending'", (now, resolved_by, aid))
         conn.commit()
         return cur.rowcount > 0
+
+
+def expire_pending(limit: int = 500) -> Dict[str, Any]:
+    """Mark expired pending approvals as status='expired' (autonomous reaper)."""
+    from .ttl import is_expired
+
+    conn = _ensure()
+    lim = max(1, min(int(limit or 500), 5000))
+    now = _now()
+    expired_ids: List[str] = []
+
+    with _LOCK:
+        rows = conn.execute(
+            "SELECT id, expires_at FROM approvals WHERE status = 'pending' ORDER BY created_ts ASC LIMIT ?",
+            (lim,),
+        ).fetchall()
+
+        for row in rows:
+            aid = row[0]
+            expires_at = row[1] if len(row) > 1 else None
+            if not is_expired(expires_at):
+                continue
+            conn.execute(
+                "UPDATE approvals SET status = 'expired', resolved_ts = ?, resolved_by = ? WHERE id = ? AND status = 'pending'",
+                (now, "system_ttl_reaper", aid),
+            )
+            expired_ids.append(aid)
+
+        if expired_ids:
+            conn.commit()
+
+    return {
+        "ok": True,
+        "expired_count": len(expired_ids),
+        "expired_ids": expired_ids[:50],
+        "scanned": len(rows),
+    }
 
 
 def list_for_chain() -> List[Dict[str, Any]]:

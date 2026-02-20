@@ -29,24 +29,46 @@ def ensure_approvals_jobs() -> None:
         jobs = db.list_jobs(limit=80) or []
         interval_sec = int(os.getenv("TELEGRAM_APPROVALS_DIGEST_SECONDS", "180") or 180)
         interval_sec = max(60, min(interval_sec, 1800))
+        reaper_interval_sec = int(os.getenv("APPROVALS_REAPER_SECONDS", "60") or 60)
+        reaper_interval_sec = max(30, min(reaper_interval_sec, 900))
         job = next((j for j in jobs if j.get("name") == "approvals_digest_telegram"), None)
+        reaper_job = next((j for j in jobs if j.get("name") == "approvals_expiry_reaper"), None)
         now = datetime.now(timezone.utc).isoformat()
         payload = {"limit": 8}
+        reaper_payload = {"limit": 2000}
         if job:
             conn = db._ensure()
             conn.execute(
                 "UPDATE jobs SET interval_seconds = ?, payload_json = ?, updated_ts = ? WHERE id = ?",
                 (interval_sec, json.dumps(payload), now, job.get("id")),
             )
+        else:
+            db.create_job(
+                JobSpec(
+                    name="approvals_digest_telegram",
+                    kind="approvals_digest",
+                    payload=payload,
+                    run_at=now,
+                    interval_seconds=interval_sec,
+                )
+            )
+
+        if reaper_job:
+            conn = db._ensure()
+            conn.execute(
+                "UPDATE jobs SET interval_seconds = ?, payload_json = ?, updated_ts = ? WHERE id = ?",
+                (reaper_interval_sec, json.dumps(reaper_payload), now, reaper_job.get("id")),
+            )
             conn.commit()
             return
+
         db.create_job(
             JobSpec(
-                name="approvals_digest_telegram",
-                kind="approvals_digest",
-                payload=payload,
+                name="approvals_expiry_reaper",
+                kind="approvals_expiry_reaper",
+                payload=reaper_payload,
                 run_at=now,
-                interval_seconds=interval_sec,
+                interval_seconds=reaper_interval_sec,
             )
         )
     except Exception:

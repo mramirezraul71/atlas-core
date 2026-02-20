@@ -205,6 +205,24 @@ def create(action: str, payload: Dict[str, Any], job_id: Optional[str] = None, r
         override_risk = (payload.get("risk") if isinstance(payload, dict) else None) or ""
         override_risk = (str(override_risk).strip().lower() if override_risk else "")
         risk = override_risk if override_risk in ("low", "medium", "high", "critical") else risk_level(action, payload)
+
+        # Dedupe en origen: si ya existe pending equivalente vigente, reutilizarla.
+        try:
+            from .chain import compute_request_hash
+            from .store import find_pending_equivalent
+
+            req_hash = compute_request_hash(payload or {})
+            existing = find_pending_equivalent(action=action, risk=risk, request_hash=req_hash)
+            if existing and not bool(existing.get("expired")):
+                return {
+                    "ok": True,
+                    "approval_id": existing.get("id"),
+                    "error": None,
+                    "duplicated": True,
+                }
+        except Exception:
+            pass
+
         node_id = origin_node_id or (payload.get("origin_node_id") if isinstance(payload, dict) else None) or os.getenv("CLUSTER_NODE_ID")
         item = store_create(action=action, payload=payload, risk=risk, job_id=job_id, run_id=run_id, requires_2fa=requires_2fa_for_risk(risk), origin_node_id=node_id)
         try:
@@ -235,7 +253,16 @@ def create(action: str, payload: Dict[str, Any], job_id: Optional[str] = None, r
 
 
 def list_pending(limit: int = 50, risk: Optional[str] = None) -> List[Dict[str, Any]]:
-    return list_items(status="pending", risk=risk, limit=limit)
+    # Reaper liviano: evita backlog zombie de approvals vencidas.
+    try:
+        from .store import expire_pending
+        expire_pending(limit=max(100, int(limit or 50) * 4))
+    except Exception:
+        pass
+
+    items = list_items(status="pending", risk=risk, limit=limit * 2)
+    alive = [it for it in items if not bool(it.get("expired"))]
+    return alive[: max(1, int(limit or 50))]
 
 
 def list_all(limit: int = 50, status: Optional[str] = None, risk: Optional[str] = None) -> List[Dict[str, Any]]:
