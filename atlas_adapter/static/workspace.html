@@ -1869,7 +1869,25 @@ function renderModelDropdown() {
     if (!groups[g]) groups[g] = [];
     groups[g].push(m);
   });
-  for (const [group, models] of Object.entries(groups)) {
+  const grouped = Object.entries(groups).map(([group, models]) => {
+    const sortedModels = [...models].sort((a, b) => {
+      const avA = a && a.available !== false ? 1 : 0;
+      const avB = b && b.available !== false ? 1 : 0;
+      if (avA !== avB) return avB - avA; // disponibles primero
+      const nameA = String((a && a.name) || '').toLowerCase();
+      const nameB = String((b && b.name) || '').toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+    const availCount = sortedModels.filter(m => m && m.available !== false).length;
+    return { group, models: sortedModels, availCount };
+  }).sort((a, b) => {
+    if (a.availCount !== b.availCount) return b.availCount - a.availCount; // proveedores más útiles primero
+    return String(a.group).localeCompare(String(b.group));
+  });
+
+  for (const item of grouped) {
+    const group = item.group;
+    const models = item.models;
     html += '<div class="md-group" data-group="' + group + '">' + escapeHtml(group) + '</div>';
     models.forEach(m => {
       const active = m.id === selectedModel ? ' active' : '';
