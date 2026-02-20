@@ -2131,10 +2131,11 @@ async function sendMessage() {
     const timeout = setTimeout(() => {
       if (currentRequestController) currentRequestController.abort();
     }, 120000);
+    const requestBody = { goal: goalText, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel, sync_config: syncConfigActive };
     const response = await fetch(API + '/agent/goal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goal: goalText, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel, sync_config: syncConfigActive }),
+      body: JSON.stringify(requestBody),
       signal: controller.signal
     });
     clearTimeout(timeout);
@@ -2225,7 +2226,34 @@ async function sendMessage() {
       renderTokenUsage(0);
       emitLive('exec', '<strong>Completado</strong> (' + elapsed + 'ms)', true);
     } else {
-      const errMsg = data.error || data.message || 'Error al procesar el objetivo';
+      let errMsg = data.error || data.message || 'Error al procesar el objetivo';
+
+      // Fallback resiliente desde UI si falló modelo explícito (ej. openai:o3 respuesta vacía)
+      if (selectedModel && selectedModel !== 'auto') {
+        const looksLikeModelFailure = /respuesta vacia|respuesta vacía|error|timeout|rate limit|sin api key/i.test(String(errMsg));
+        if (looksLikeModelFailure) {
+          emitLive('warn', '<strong>Modelo seleccionado falló</strong> — reintentando con <code>auto</code>...');
+          try {
+            const fbRes = await fetch(API + '/agent/goal', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...requestBody, model: 'auto' })
+            });
+            const fbData = await fbRes.json();
+            if (fbData && fbData.ok) {
+              const modelUsed = fbData.data && fbData.data.model_used;
+              const reply = (fbData.data && fbData.data.output) || fbData.resumen || 'Objetivo procesado con fallback.';
+              addChatMessage(reply, 'atlas');
+              emitLive('info', '<strong>Fallback UI:</strong> respuesta obtenida con <code>auto</code>' + (modelUsed ? (' → ' + escapeHtml(modelUsed)) : ''));
+              setChatProcessing(false);
+              currentRequestController = null;
+              return;
+            }
+            errMsg = (fbData && (fbData.error || fbData.message)) || errMsg;
+          } catch (_) {}
+        }
+      }
+
       addChatMessage('Error: ' + errMsg, 'atlas');
       emitLive('err', '<strong>Error:</strong> ' + escapeHtml(errMsg));
     }

@@ -7001,8 +7001,31 @@ def agent_goal(body: AgentGoalBody):
             return _professional_resp(True, {"output": result["output"], "model_used": result.get("model_used"), "tier": result.get("tier")}, ms, None,
                                       resumen=result["output"][:500] if result.get("output") else "Procesado",
                                       siguientes_pasos=[info_line])
+        # Fallback resiliente: si modelo explícito falla, intentar cascada auto.
+        fallback = _direct_model_call("auto", body.goal, use_config=bool(body.sync_config))
+        if fallback.get("ok"):
+            ms2 = int((time.perf_counter() - t0) * 1000)
+            note = "Fallback automático activado: modelo seleccionado falló, se usó cascada."
+            data = {
+                "output": fallback.get("output"),
+                "model_used": fallback.get("model_used"),
+                "tier": fallback.get("tier"),
+                "fallback_from": model_spec,
+                "fallback": True,
+            }
+            return _professional_resp(
+                True,
+                data,
+                ms2,
+                None,
+                resumen=(fallback.get("output") or "Procesado")[:500],
+                siguientes_pasos=[note],
+            )
+
         err_detail = result.get("error") or result.get("output") or "Error desconocido"
-        return _professional_resp(False, {"error_detail": err_detail, "model_used": result.get("model_used")}, ms, err_detail, resumen=err_detail)
+        fb_detail = fallback.get("error") if isinstance(fallback, dict) else None
+        full_err = err_detail if not fb_detail else f"{err_detail} | fallback: {fb_detail}"
+        return _professional_resp(False, {"error_detail": full_err, "model_used": result.get("model_used")}, ms, full_err, resumen=full_err)
     mode = _agent_goal_mode(body.mode or "plan_only")
     depth = max(1, min(5, body.depth or 1))
     try:
