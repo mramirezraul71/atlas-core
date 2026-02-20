@@ -2602,6 +2602,8 @@ def autonomy_status():
     task_in_progress = 0
     task_done = 0
     task_failed = 0
+    task_done_24h = 0
+    task_failed_24h = 0
     reactor_resolved_count = 0
     reactor_mttr_samples = []
     try:
@@ -2637,6 +2639,22 @@ def autonomy_status():
                             reactor_mttr_samples.append(mins)
                 except:
                     pass
+
+        # Ventana 24h para tasa de éxito más representativa en tiempo real.
+        try:
+            rows24 = c.execute("""
+                SELECT status FROM autonomy_tasks
+                WHERE updated_at >= datetime('now', '-1 day')
+            """).fetchall()
+            for r24 in rows24 or []:
+                st24 = str(r24["status"] if isinstance(r24, dict) or hasattr(r24, "keys") else r24[0]).strip().lower()
+                if st24 == "done":
+                    task_done_24h += 1
+                elif st24 == "failed":
+                    task_failed_24h += 1
+        except:
+            pass
+
         c.close()
     except:
         pass
@@ -2649,6 +2667,14 @@ def autonomy_status():
         denom = task_done + task_failed
         if denom > 0:
             success_rate = round((task_done / denom) * 100, 1)
+
+    # Priorizar ventana 24h cuando existe muestra suficiente.
+    success_rate_24h = None
+    denom_24h = task_done_24h + task_failed_24h
+    if denom_24h > 0:
+        success_rate_24h = round((task_done_24h / denom_24h) * 100, 1)
+
+    display_success_rate = success_rate_24h if success_rate_24h is not None else success_rate
 
     incidents_resolved_kpi = max(int(reactor_fixes or 0), int(reactor_resolved_count or 0))
     mttr_kpi = 0
@@ -2692,7 +2718,9 @@ def autonomy_status():
     }
     data["kpis"] = {
         "uptime_hours": uptime_hours,
-        "success_rate": success_rate,
+        "success_rate": display_success_rate,
+        "success_rate_24h": success_rate_24h,
+        "success_rate_all_time": success_rate,
         "modules_connected": mod_connected,
         "modules_total": mod_total,
         "ai_available": ai_available,
@@ -2712,6 +2740,8 @@ def autonomy_status():
         "tasks_in_progress": task_in_progress,
         "tasks_done": task_done,
         "tasks_failed": task_failed,
+        "tasks_done_24h": task_done_24h,
+        "tasks_failed_24h": task_failed_24h,
         "policies_count": gov_policies_count,
     }
     data["alerts"] = alerts
