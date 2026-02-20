@@ -6956,7 +6956,9 @@ def _try_single_call(provider_id: str, model_name: str, goal: str, use_config: b
         ok, output, ms = call_external(provider_id, model_name, goal, sys_prompt, api_key, timeout_s=120)
         if ok and output and output.strip():
             return {"ok": True, "output": output, "ms": ms, "model_used": spec}
-        return {"ok": False, "error": "%s:%s respuesta vacia o error" % (provider_id, model_name), "ms": ms, "model_used": spec}
+        # Conservar detalle original del proveedor para diagnóstico (auth, quota, modelo inválido, etc.)
+        err_detail = (output or "").strip() or "%s:%s respuesta vacia o error" % (provider_id, model_name)
+        return {"ok": False, "error": err_detail, "ms": ms, "model_used": spec}
     except Exception as e:
         return {"ok": False, "error": "%s:%s: %s" % (provider_id, model_name, str(e)), "ms": 0, "model_used": spec}
 
@@ -7016,6 +7018,20 @@ def agent_goal(body: AgentGoalBody):
             return _professional_resp(True, {"output": result["output"], "model_used": result.get("model_used"), "tier": result.get("tier")}, ms, None,
                                       resumen=result["output"][:500] if result.get("output") else "Procesado",
                                       siguientes_pasos=[info_line])
+        err_detail = result.get("error") or result.get("output") or "Error desconocido"
+        err_l = str(err_detail).lower()
+        # No ocultar credenciales inválidas detrás de fallback automático.
+        # Si el modelo explícito falla por auth/API key, devolvemos error directo y accionable.
+        auth_tokens = ("authentication", "unauthorized", "invalid api key", "incorrect api key", "invalid x-api-key", "401")
+        if any(tok in err_l for tok in auth_tokens):
+            return _professional_resp(
+                False,
+                {"error_detail": err_detail, "model_used": result.get("model_used"), "auth_error": True},
+                ms,
+                err_detail,
+                resumen=err_detail,
+                siguientes_pasos=["Credencial inválida o no autorizada para el proveedor seleccionado. Actualiza /api/brain/credentials y reintenta."],
+            )
         # Fallback resiliente: si modelo explícito falla, intentar cascada auto.
         fallback = _direct_model_call("auto", body.goal, use_config=bool(body.sync_config))
         if fallback.get("ok"):
@@ -7037,7 +7053,6 @@ def agent_goal(body: AgentGoalBody):
                 siguientes_pasos=[note],
             )
 
-        err_detail = result.get("error") or result.get("output") or "Error desconocido"
         fb_detail = fallback.get("error") if isinstance(fallback, dict) else None
         full_err = err_detail if not fb_detail else f"{err_detail} | fallback: {fb_detail}"
         return _professional_resp(False, {"error_detail": full_err, "model_used": result.get("model_used")}, ms, full_err, resumen=full_err)
