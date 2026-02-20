@@ -196,6 +196,27 @@ def _notify_telegram_approval_resolved(item: Optional[Dict[str, Any]], aid: str,
 from .store import create as store_create, list_items, get, approve as store_approve, reject as store_reject
 
 
+def _log_to_autonomy_timeline(event: str, kind: str, result: str) -> None:
+    """Registra evento en autonomy_timeline para el dashboard."""
+    try:
+        import sqlite3
+        from pathlib import Path
+        db_path = Path(__file__).resolve().parent.parent.parent.parent / "logs" / "autonomy.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path), timeout=5)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS autonomy_timeline (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, event TEXT, kind TEXT, result TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO autonomy_timeline(ts, event, kind, result) VALUES(datetime('now'), ?, ?, ?)",
+            (event[:500], kind[:50], result[:500])
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
 def create(action: str, payload: Dict[str, Any], job_id: Optional[str] = None, run_id: Optional[int] = None, origin_node_id: Optional[str] = None) -> Dict[str, Any]:
     """Enqueue item if it requires approval. Returns {ok, approval_id?, error}."""
     if not requires_approval(action, payload):
@@ -245,6 +266,11 @@ def create(action: str, payload: Dict[str, Any], job_id: Optional[str] = None, r
                 level=lvl,
                 data={"id": item.get("id"), "action": action, "risk": risk},
             )
+        except Exception:
+            pass
+        # Registrar en autonomy_timeline para dashboard
+        try:
+            _log_to_autonomy_timeline(f"Aprobación creada: {action}", "approval", f"pending:{item.get('id')}")
         except Exception:
             pass
         return {"ok": True, "approval_id": item["id"], "error": None}
@@ -324,6 +350,11 @@ def approve(
             ops_emit("approval", f"Aprobación APROBADA: id={aid} action={(item or {}).get('action')}", level="info", data={"id": aid, "status": "approved"})
         except Exception:
             pass
+        # Registrar en autonomy_timeline
+        try:
+            _log_to_autonomy_timeline(f"Aprobación aprobada: {(item or {}).get('action')}", "approval", f"approved:{aid}")
+        except Exception:
+            pass
         # Ejecutar acción aprobada (si hay ejecutor). No bloquea el approve.
         exec_out = None
         try:
@@ -379,6 +410,11 @@ def reject(aid: str, resolved_by: str = "api") -> Dict[str, Any]:
         try:
             from modules.humanoid.comms.ops_bus import emit as ops_emit
             ops_emit("approval", f"Aprobación RECHAZADA: id={aid} action={(item or {}).get('action')}", level="info", data={"id": aid, "status": "rejected"})
+        except Exception:
+            pass
+        # Registrar en autonomy_timeline
+        try:
+            _log_to_autonomy_timeline(f"Aprobación rechazada: {(item or {}).get('action')}", "approval", f"rejected:{aid}")
         except Exception:
             pass
     return {"ok": ok, "id": aid, "status": "rejected" if ok else "not_found"}

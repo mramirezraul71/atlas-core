@@ -2535,25 +2535,28 @@ def autonomy_status():
     # --- Governance ---
     gov_mode = "unknown"
     gov_emergency = False
+    gov_policies_count = 0
     try:
         from modules.humanoid.governance.api import governance_router
         from modules.humanoid.governance.state import get_governance_state
         gs = get_governance_state()
         gov_mode = gs.get("mode", "governed")
         gov_emergency = gs.get("emergency_stop", False)
+        gov_policies_count = len(gs.get("policies", []))
     except:
         try:
             import requests as _rq
             gr = _rq.get("http://127.0.0.1:8791/governance/status", timeout=2).json()
             gov_mode = gr.get("mode", "governed")
             gov_emergency = gr.get("emergency_stop", False)
+            gov_policies_count = len(gr.get("policies", []))
         except: pass
 
     # --- Subsistemas activos ---
     daemon_active = False
     try:
-        from modules.humanoid.quality.autonomy_daemon import _global_daemon
-        daemon_active = _global_daemon is not None and getattr(_global_daemon, '_running', False)
+        from modules.humanoid.quality.autonomy_daemon import _daemon
+        daemon_active = _daemon is not None and getattr(_daemon, '_running', False)
     except: pass
 
     reactor_active = False
@@ -2579,6 +2582,17 @@ def autonomy_status():
                     if "Scan:" in ln:
                         scanner_last = ln.strip()
                         break
+    except: pass
+
+    # --- Aprobaciones pendientes ---
+    approvals_pending = 0
+    approvals_total = 0
+    try:
+        from modules.humanoid.approvals import list_pending, list_all
+        pending = list_pending(limit=100)
+        approvals_pending = len([p for p in pending if not p.get("expired")])
+        all_approvals = list_all(limit=1000)
+        approvals_total = len(all_approvals)
     except: pass
 
     # --- Uptime ---
@@ -2629,6 +2643,9 @@ def autonomy_status():
         "lifelog_total": lifelog_total,
         "lifelog_success": lifelog_success,
         "lifelog_fail": lifelog_fail,
+        "approvals_pending": approvals_pending,
+        "approvals_total": approvals_total,
+        "policies_count": gov_policies_count,
     }
     data["alerts"] = alerts
 
