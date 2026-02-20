@@ -2488,6 +2488,8 @@ _aggr_thread = None
 _aggr_stop = threading.Event()
 _aggr_nav_idx = 0
 _aggr_last_user_active_log = 0.0
+_autodiag_kick_lock = threading.RLock()
+_autodiag_last_kick_ts = 0.0
 _aggr_config = {
     "enabled": (os.getenv("AUTONOMY_AGGRESSIVE_ENABLED") or "true").strip().lower() in ("1", "true", "yes", "on"),
     "idle_sec": max(5, int((os.getenv("AUTONOMY_USER_IDLE_SEC") or "25").strip() or "25")),
@@ -2692,6 +2694,49 @@ def _stop_aggressive_worker():
         _aggr_stop.set()
         _auto_log("Aggressive worker detenido", "action", "ok")
 
+
+def _autodiag_log_path() -> Path:
+    return (BASE_DIR / "logs" / "autodiagnostic.log").resolve()
+
+
+def _run_autodiag_once_async():
+    try:
+        import importlib.util
+
+        p = (BASE_DIR / "scripts" / "atlas_autodiagnostic.py").resolve()
+        if not p.exists():
+            _auto_log("Autodiagnostic cycle: script no encontrado", "action", "warn")
+            return
+        spec = importlib.util.spec_from_file_location("atlas_autodiagnostic_runtime", str(p))
+        if not spec or not spec.loader:
+            _auto_log("Autodiagnostic cycle: loader no disponible", "action", "warn")
+            return
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        run_fn = getattr(mod, "run_scan", None)
+        if callable(run_fn):
+            ok_count, warn_count, crit_count = run_fn()
+            _auto_log(f"Autodiagnostic cycle ejecutado: {ok_count} OK, {warn_count} WARN, {crit_count} CRIT", "action", "ok")
+        else:
+            _auto_log("Autodiagnostic cycle: run_scan no disponible", "action", "warn")
+    except Exception as e:
+        _auto_log(f"Autodiagnostic cycle error: {str(e)[:160]}", "action", "warn")
+
+
+def _kick_autodiag_if_stale(stale_sec: float, max_age_sec: int):
+    global _autodiag_last_kick_ts
+    try:
+        if stale_sec < max_age_sec:
+            return
+        now = time.time()
+        with _autodiag_kick_lock:
+            if (now - _autodiag_last_kick_ts) < 45:
+                return
+            _autodiag_last_kick_ts = now
+        threading.Thread(target=_run_autodiag_once_async, name="atlas-autodiag-once", daemon=True).start()
+    except Exception:
+        pass
+
 @app.get("/api/autonomy/status", tags=["Autonomia"])
 def autonomy_status():
     """Consolidar metricas de TODOS los subsistemas de autonomia."""
@@ -2783,10 +2828,12 @@ def autonomy_status():
     scanner_active = False
     scanner_last = None
     try:
-        log_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs", "autodiagnostic.log")
+        log_path = str(_autodiag_log_path())
         scanner_active_window_sec = int(os.getenv("AUTODIAGNOSTIC_ACTIVE_WINDOW_SEC", "7200") or "7200")
         if os.path.exists(log_path):
-            scanner_active = (time.time() - os.path.getmtime(log_path)) < max(60, scanner_active_window_sec)
+            scanner_age_sec = max(0.0, time.time() - os.path.getmtime(log_path))
+            scanner_active = scanner_age_sec < max(60, scanner_active_window_sec)
+            _kick_autodiag_if_stale(scanner_age_sec, max(60, scanner_active_window_sec))
             with open(log_path, "rb") as f:
                 f.seek(max(0, os.path.getsize(log_path) - 500))
                 lines = f.read().decode("utf-8", errors="ignore").strip().split("\n")
@@ -2794,6 +2841,8 @@ def autonomy_status():
                     if "Scan:" in ln:
                         scanner_last = ln.strip()
                         break
+            if not scanner_active and scanner_last:
+                scanner_last = f"{scanner_last} | refresh requested"
     except: pass
 
     # --- Aprobaciones pendientes ---
@@ -3024,6 +3073,17 @@ def autonomy_daemon_stop():
         }
     except Exception as e:
         return {"ok": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
+
+
+@app.post("/api/autonomy/scanner/run-once", tags=["Autonomia"])
+def autonomy_scanner_run_once():
+    """Ejecuta un ciclo único de autodiagnóstico para refrescar estado del scanner."""
+    t0 = time.perf_counter()
+    try:
+        _run_autodiag_once_async()
+        return {"ok": True, "triggered": True, "ms": int((time.perf_counter() - t0) * 1000)}
+    except Exception as e:
+        return {"ok": False, "triggered": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
 
 
 @app.get("/api/autonomy/aggressive/config", tags=["Autonomia"])
