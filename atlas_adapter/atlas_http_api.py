@@ -2602,16 +2602,19 @@ def autonomy_status():
     task_in_progress = 0
     task_done = 0
     task_failed = 0
+    reactor_resolved_count = 0
+    reactor_mttr_samples = []
     try:
         c = _auto_db()
         rows = c.execute("""
-            SELECT status FROM autonomy_tasks
+            SELECT status, source, created_at, updated_at FROM autonomy_tasks
             ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
                      created_at DESC
             LIMIT 50
         """).fetchall()
         for r in rows or []:
             st = str(r["status"] if isinstance(r, dict) or hasattr(r, "keys") else r[0]).strip().lower()
+            src = str(r["source"] if isinstance(r, dict) or hasattr(r, "keys") else "").strip().lower()
             if st == "pending":
                 task_pending += 1
             elif st == "in_progress":
@@ -2620,6 +2623,20 @@ def autonomy_status():
                 task_done += 1
             elif st == "failed":
                 task_failed += 1
+
+            if src == "reactor" and st in ("done", "failed"):
+                reactor_resolved_count += 1
+                try:
+                    c_at = r["created_at"] if isinstance(r, dict) or hasattr(r, "keys") else None
+                    u_at = r["updated_at"] if isinstance(r, dict) or hasattr(r, "keys") else None
+                    if c_at and u_at:
+                        dt_c = datetime.fromisoformat(str(c_at).replace("Z", "+00:00"))
+                        dt_u = datetime.fromisoformat(str(u_at).replace("Z", "+00:00"))
+                        mins = (dt_u - dt_c).total_seconds() / 60.0
+                        if mins >= 0:
+                            reactor_mttr_samples.append(mins)
+                except:
+                    pass
         c.close()
     except:
         pass
@@ -2632,6 +2649,13 @@ def autonomy_status():
         denom = task_done + task_failed
         if denom > 0:
             success_rate = round((task_done / denom) * 100, 1)
+
+    incidents_resolved_kpi = max(int(reactor_fixes or 0), int(reactor_resolved_count or 0))
+    mttr_kpi = 0
+    if reactor_mttr_samples:
+        mttr_kpi = round(sum(reactor_mttr_samples) / max(1, len(reactor_mttr_samples)), 1)
+    elif reactor_fixes:
+        mttr_kpi = round(reactor_fixes * 2.5, 1)
 
     # --- Uptime ---
     uptime_hours = 0.0
@@ -2673,8 +2697,8 @@ def autonomy_status():
         "modules_total": mod_total,
         "ai_available": ai_available,
         "ai_total": ai_total,
-        "incidents_resolved": reactor_fixes,
-        "mttr_minutes": round(reactor_fixes * 2.5, 1) if reactor_fixes else 0,
+        "incidents_resolved": incidents_resolved_kpi,
+        "mttr_minutes": mttr_kpi,
         "rules_learned": libro_reglas,
         "episodes": libro_episodios,
         "alerts_active": len(alerts),
