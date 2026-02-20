@@ -4779,15 +4779,27 @@
 
         if (status && status.ok) {
           const lvl = status.level || 0;
+          const k = status.kpis || {};
           // Gauge
           const ring = document.getElementById('auto-gauge-ring');
           if (ring) { ring.style.strokeDashoffset = 377 - (377 * lvl / 100); ring.style.stroke = lvl>70?'var(--accent-green)':lvl>40?'var(--accent-yellow)':'var(--accent-red)'; }
           const pct = document.getElementById('auto-gauge-pct');
           if (pct) pct.textContent = lvl + '%';
           const lbl = document.getElementById('auto-gauge-label');
-          if (lbl) lbl.textContent = lvl>80?'Operación autónoma':lvl>50?'Autonomía parcial':'Supervisión requerida';
+          if (lbl) {
+            const aiAvail = Number(k.ai_available || 0);
+            const aiReq = Number(k.ai_required_for_full || 16);
+            const aggrCycles = Number(k.aggressive_cycles || 0);
+            const aggrPage = String(k.aggressive_last_page || '').trim();
+            if (lvl < 100 && aiAvail < aiReq) {
+              lbl.textContent = `Limitado por IA: ${aiAvail}/${aiReq} requeridos`;
+            } else if (aggrCycles > 0 && aggrPage) {
+              lbl.textContent = `Navegación autónoma: ${aggrPage} (ciclo ${aggrCycles})`;
+            } else {
+              lbl.textContent = lvl>80?'Operación autónoma':lvl>50?'Autonomía parcial':'Supervisión requerida';
+            }
+          }
           // KPIs
-          const k = status.kpis || {};
           const se = (id,v) => { const e=document.getElementById(id); if(e) e.textContent=v; };
           // Gov data from status
           const govSub = status.subsystems?.governance;

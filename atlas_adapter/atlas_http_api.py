@@ -2487,6 +2487,8 @@ _AGGR_LOCK = threading.RLock()
 _aggr_thread = None
 _aggr_stop = threading.Event()
 _aggr_nav_idx = 0
+_aggr_cycle_count = 0
+_aggr_last_page = ""
 _aggr_last_user_active_log = 0.0
 _autodiag_kick_lock = threading.RLock()
 _autodiag_last_kick_ts = 0.0
@@ -2560,7 +2562,7 @@ def _user_idle_seconds() -> float:
 
 
 def _run_aggressive_cycle() -> Dict[str, Any]:
-    global _aggr_nav_idx
+    global _aggr_nav_idx, _aggr_cycle_count, _aggr_last_page
     out = {
         "hands_ok": False,
         "eyes_ok": False,
@@ -2633,6 +2635,8 @@ def _run_aggressive_cycle() -> Dict[str, Any]:
         "action",
         result,
     )
+    _aggr_cycle_count += 1
+    _aggr_last_page = str(out.get("page") or "")
     return out
 
 
@@ -2953,11 +2957,13 @@ def autonomy_status():
 
     # --- Calcular nivel de autonomia ---
     success_component = max(0.0, min(1.0, float(display_success_rate or 0.0) / 100.0))
+    ai_required_for_full = max(1, int((os.getenv("AUTONOMY_AI_REQUIRED_FOR_FULL") or "16").strip() or "16"))
+    ai_component = max(0.0, min(1.0, float(ai_available) / float(ai_required_for_full)))
     sub_active = sum([daemon_active, reactor_active, scanner_active, gov_mode != "emergency", True])
     level = round(
         (mod_connected / max(mod_total, 1)) * 25 +
         success_component * 25 +
-        (ai_available / max(ai_total, 1)) * 20 +
+        ai_component * 20 +
         (sub_active / 5) * 20 +
         (0 if gov_emergency else 1) * 10
     )
@@ -2969,6 +2975,23 @@ def autonomy_status():
     if gov_emergency: alerts.append({"level": "critical", "msg": "Emergency Stop ACTIVO"})
     if ai_available == 0: alerts.append({"level": "critical", "msg": "0 modelos IA disponibles"})
     if mod_connected < mod_total: alerts.append({"level": "info", "msg": f"{mod_total - mod_connected} modulo(s) desconectado(s)"})
+
+    aggressive_cycles_seen = 0
+    aggressive_last_page_seen = str(_aggr_last_page or "")
+    try:
+        c = _auto_db()
+        row_cnt = c.execute("SELECT COUNT(*) FROM autonomy_timeline WHERE event LIKE 'Aggressive cycle:%'").fetchone()
+        aggressive_cycles_seen = int((row_cnt[0] if row_cnt else 0) or 0)
+        row_last = c.execute(
+            "SELECT event FROM autonomy_timeline WHERE event LIKE 'Aggressive cycle:%' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        evt = str((row_last[0] if row_last else "") or "")
+        if "page=" in evt:
+            tail = evt.split("page=", 1)[1]
+            aggressive_last_page_seen = tail.split(" ", 1)[0].strip()
+        c.close()
+    except Exception:
+        pass
 
     data["level"] = min(100, max(0, level))
     data["subsystems"] = {
@@ -2987,6 +3010,8 @@ def autonomy_status():
         "modules_total": mod_total,
         "ai_available": ai_available,
         "ai_total": ai_total,
+        "ai_required_for_full": ai_required_for_full,
+        "ai_component_pct": round(ai_component * 100, 1),
         "incidents_resolved": incidents_resolved_kpi,
         "mttr_minutes": mttr_kpi,
         "rules_learned": libro_reglas,
@@ -3004,6 +3029,8 @@ def autonomy_status():
         "tasks_failed": task_failed,
         "tasks_done_24h": task_done_24h,
         "tasks_failed_24h": task_failed_24h,
+        "aggressive_cycles": int(aggressive_cycles_seen or 0),
+        "aggressive_last_page": str(aggressive_last_page_seen or ""),
         "policies_count": gov_policies_count,
     }
     data["alerts"] = alerts
