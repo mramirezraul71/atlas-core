@@ -129,6 +129,20 @@ REGLAS PARA ATLAS_RUN:
 7. NO incluir sección "PROMPT" ni "PROMPTS SUGERIDOS"
 8. Mínimo 3 steps, máximo 8 steps
 
+REGLA ESTRICTA:
+- Tu respuesta DEBE contener SIEMPRE un bloque final exacto:
+
+ATLAS_RUN:
+{{JSON válido}}
+
+- Si no puedes proponer pasos, devuelve:
+ATLAS_RUN:
+{{"version":"1","mode":"draft","steps":[]}}
+
+PROHIBIDO:
+- "PROMPTS SUGERIDOS"
+- sugerir comandos sin incluirlos dentro de steps[]
+
 Responde SOLO con DIAGNÓSTICO + ATLAS_RUN. SIN introducciones, SIN conclusiones."""
         
         return prompt
