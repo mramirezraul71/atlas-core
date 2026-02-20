@@ -88,6 +88,21 @@ CONTEXTO:
 - Módulos: {', '.join(modules) if modules else 'Ninguno'}
 - Métricas: {metrics if metrics else 'N/A'}
 
+PROHIBIDO:
+- Sección "PROMPTS SUGERIDOS"
+- Listas de prompts en texto
+
+OBLIGATORIO:
+- Termina SIEMPRE tu respuesta con:
+ATLAS_RUN:
+{{JSON válido}}
+
+JSON SPEC:
+- Debe ser JSON estricto.
+- Debe incluir: version, mode, steps[]
+- Cada step: id, risk ("low"|"high"), type ("terminal"), cmd
+- Para Workspace usa type:"terminal" y cmd con comandos reales de ATLAS.
+
 FORMATO OBLIGATORIO (CRÍTICO - DEBES SEGUIRLO EXACTAMENTE):
 
 ## DIAGNÓSTICO
