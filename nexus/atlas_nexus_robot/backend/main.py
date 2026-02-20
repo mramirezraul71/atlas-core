@@ -23,6 +23,9 @@ from pydantic import BaseModel
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
+REPO_ROOT = os.path.abspath(os.path.join(BASE_DIR, "..", "..", ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 # Import YOLO detector
 from yolo_detector import YOLODetector, get_detector
@@ -137,6 +140,7 @@ class ConnectionManager:
                 self.active_connections.remove(connection)
 
 manager = ConnectionManager()
+ai_consultant_instance = None
 
 @app.get("/")
 async def root():
@@ -750,7 +754,21 @@ async def startup_event():
     robot_status["modules"]["sensors"] = True
     robot_status["modules"]["actuators"] = True
     robot_status["modules"]["communication"] = True
-    
+
+    # Inicializar AI Consultant (Bedrock/Direct) para aprendizaje continuo.
+    global ai_consultant_instance
+    try:
+        from brain.learning.ai_consultant import AIConsultant
+
+        ai_consultant_instance = AIConsultant()
+        logger.info(
+            "AI Consultant inicializado (modo=%s, region=%s)",
+            getattr(ai_consultant_instance, "ai_mode", "unknown"),
+            getattr(ai_consultant_instance, "aws_region", "unknown"),
+        )
+    except Exception as e:
+        logger.warning("No se pudo inicializar AI Consultant: %s", e)
+
     # Iniciar background task para broadcast de status
     asyncio.create_task(broadcast_status())
     

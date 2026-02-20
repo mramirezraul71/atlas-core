@@ -1,7 +1,9 @@
 """Consulta al LLM cuando el robot tiene dudas (aprendizaje progresivo ATLAS). Usa router ATLAS."""
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import re
 import time
 from datetime import datetime
@@ -22,8 +24,22 @@ class AIConsultant:
         fallback_model: Optional[str] = None,
     ) -> None:
         self.llm_endpoint = llm_endpoint
-        self.model = model or "deepseek-r1:14b"
-        self.fallback_model = fallback_model or "llama3.2:latest"
+        self.bedrock_tutor_model = os.getenv(
+            "ATLAS_BEDROCK_TUTOR_MODEL", "us.anthropic.claude-opus-4-6-v1:0"
+        )
+        self.bedrock_fast_model = os.getenv(
+            "ATLAS_BEDROCK_FAST_MODEL", "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+        )
+        self.direct_tutor_model = os.getenv(
+            "ATLAS_DIRECT_TUTOR_MODEL", "claude-opus-4-1-20250805"
+        )
+        self.direct_fast_model = os.getenv(
+            "ATLAS_DIRECT_FAST_MODEL", "claude-3-5-haiku-20241022"
+        )
+        self.model = model or self.bedrock_tutor_model
+        self.fallback_model = fallback_model or self.bedrock_fast_model
+        self.ai_mode = (os.getenv("ATLAS_AI_MODE", "bedrock") or "bedrock").strip().lower()
+        self.aws_region = (os.getenv("AWS_REGION", "us-east-1") or "us-east-1").strip()
         self.stats: Dict[str, Any] = {
             "total_consultations": 0,
             "successful_consultations": 0,
@@ -187,8 +203,96 @@ Sé específico, práctico y educativo. Este conocimiento se guardará en mi mem
 """
         return prompt
 
+    def _run_async(self, coro: Any) -> Any:
+        """Ejecutar corrutina en contexto síncrono (compatible con hilo/event-loop)."""
+        try:
+            return asyncio.run(coro)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(loop)
+                return loop.run_until_complete(coro)
+            finally:
+                try:
+                    loop.close()
+                except Exception:
+                    pass
+
+    async def _call_bedrock_async(self, prompt: str, model: str) -> str:
+        from anthropic import AsyncAnthropicBedrock
+
+        client = AsyncAnthropicBedrock(aws_region=self.aws_region)
+        msg = await client.messages.create(
+            model=model,
+            max_tokens=900,
+            temperature=0.2,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        parts = []
+        for block in getattr(msg, "content", []) or []:
+            txt = getattr(block, "text", None)
+            if txt:
+                parts.append(txt)
+        return "\n".join(parts).strip()
+
+    async def _call_direct_async(self, prompt: str, model: str) -> str:
+        from anthropic import AsyncAnthropic
+
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            raise RuntimeError("ANTHROPIC_API_KEY no configurada")
+        client = AsyncAnthropic(api_key=api_key)
+        msg = await client.messages.create(
+            model=model,
+            max_tokens=900,
+            temperature=0.2,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        parts = []
+        for block in getattr(msg, "content", []) or []:
+            txt = getattr(block, "text", None)
+            if txt:
+                parts.append(txt)
+        return "\n".join(parts).strip()
+
+    def _normalize_model_for_backend(self, model: str, backend: str) -> str:
+        raw = (model or "").strip()
+        if backend == "bedrock":
+            if raw.startswith("us.anthropic."):
+                return raw
+            if "haiku" in raw.lower() or raw == self.fallback_model:
+                return self.bedrock_fast_model
+            return self.bedrock_tutor_model
+        if raw.startswith("claude-"):
+            return raw
+        if "haiku" in raw.lower() or raw == self.fallback_model:
+            return self.direct_fast_model
+        return self.direct_tutor_model
+
     def _call_llm(self, prompt: str, model: str) -> str:
-        """Llamar LLM vía router ATLAS (Ollama free-first)."""
+        """Llamar LLM con soporte dual Bedrock/Direct Anthropic y fallback automático."""
+        mode = self.ai_mode
+        backend_order = ["bedrock", "direct"] if mode == "bedrock" else ["direct", "bedrock"]
+        if mode not in ("bedrock", "direct"):
+            backend_order = ["bedrock", "direct"]
+
+        errors: List[str] = []
+        for backend in backend_order:
+            try:
+                backend_model = self._normalize_model_for_backend(model, backend)
+                if backend == "bedrock":
+                    out = self._run_async(self._call_bedrock_async(prompt, backend_model))
+                else:
+                    out = self._run_async(self._call_direct_async(prompt, backend_model))
+                if out and out.strip():
+                    return out.strip()
+                errors.append(f"{backend}:{backend_model} respuesta vacia")
+            except Exception as e:
+                errors.append(f"{backend}:{str(e)}")
+        return "Error: " + " | ".join(errors)
+
+    def _call_llm_legacy_router(self, prompt: str) -> str:
+        """Fallback legado vía router ATLAS (solo contingencia)."""
         try:
             from modules.humanoid.ai.router import route_and_run
 
