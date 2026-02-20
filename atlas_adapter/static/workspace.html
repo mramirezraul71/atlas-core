@@ -1430,8 +1430,23 @@ async function approveHighPending() {
 
 function renderSupervisorPlan(plan) {
   if (!plan || !Array.isArray(plan.steps)) return;
-  const lines = plan.steps.map(s => `• [${s.risk}] ${s.cmd || s.op || s.type}`);
-  addSupervisorMessage('supervisor', "📌 PLAN (ATLAS_RUN):\n" + lines.join("\n"));
+
+  const rows = plan.steps.map(s => {
+    const riskIcon = s.risk === 'high' ? '🔴' : '🟢';
+    return `<div class="plan-step">
+              <span class="risk">${riskIcon} ${s.risk.toUpperCase()}</span>
+              <code>${s.cmd || s.op || s.type}</code>
+            </div>`;
+  }).join("");
+
+  const html = `
+    <div class="plan-container">
+      <div class="plan-title">📌 PLAN OPERACIONAL</div>
+      ${rows}
+    </div>
+  `;
+
+  addSupervisorMessage('supervisor', html);
 }
 
 async function executePlan(plan) {
