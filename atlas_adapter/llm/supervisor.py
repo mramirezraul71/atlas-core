@@ -29,7 +29,7 @@ class Supervisor:
             Dict with recommendations, prompts, and analysis
         """
         # Audit log with style and objective
-        self.audit.log_event("supervisor_request", {
+        self.audit.log("supervisor_request", {
             "style": self.style,
             "objective": objective,
             "context_keys": list(context.keys())
