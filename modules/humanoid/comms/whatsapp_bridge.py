@@ -83,7 +83,7 @@ class WAHAProvider:
     """
     
     def __init__(self):
-        self.api_url = _get("WAHA_API_URL", "http://localhost:3000")
+        self.api_url = _get("WAHA_API_URL", "http://localhost:3010")
         self.session = _get("WAHA_SESSION", "default")
         self.api_key = _get("WAHA_API_KEY", "")
     
