@@ -963,6 +963,21 @@
         </div>
       </div>
 
+      <!-- Voice Section for Supervisor -->
+      <div class="voice-section">
+        <div class="voice-controls">
+          <div class="voice-orb-wrap">
+            <button class="voice-orb" id="voice-orb-supervisor" title="Click para hablar / Click de nuevo para parar">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            </button>
+            <div class="voice-orb-ring"></div>
+          </div>
+          <div class="voice-wave" id="voice-wave-supervisor"></div>
+          <button class="voice-mode-toggle" id="voice-tts-btn-supervisor" onclick="toggleTTS()" title="Activar/desactivar respuesta por voz">🔊 Voz</button>
+        </div>
+        <div class="voice-status" id="voice-status-supervisor">Click en el orbe para hablar</div>
+      </div>
+
       <!-- Supervisor Input -->
       <div class="chat-input-area">
         <div style="padding:8px 12px;background:var(--bg-elevated);border-radius:6px;margin-bottom:8px;">
@@ -2099,6 +2114,20 @@ function initWaveformBars() {
   if (ttsState === 'off') { ttsEnabled = false; }
   updateTTSBtn();
   document.getElementById('voice-orb').addEventListener('click', toggleListening);
+  
+  // Supervisor voice orb
+  const supervisorWave = document.getElementById('voice-wave-supervisor');
+  if (supervisorWave) {
+    for (let i = 0; i < 20; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      supervisorWave.appendChild(bar);
+    }
+  }
+  const supervisorOrb = document.getElementById('voice-orb-supervisor');
+  if (supervisorOrb) {
+    supervisorOrb.addEventListener('click', toggleListeningSupervisor);
+  }
 }
 
 function toggleListening() {
@@ -2186,6 +2215,109 @@ function stopVoice() {
   setOrbState('idle');
   resetWaveform();
   document.getElementById('voice-status').textContent = 'Click en el orbe o Ctrl+M para hablar';
+}
+
+// ─── SUPERVISOR VOICE FUNCTIONS ───
+function toggleListeningSupervisor() {
+  if (isSpeaking) { window.speechSynthesis.cancel(); isSpeaking = false; setOrbStateSupervisor('idle'); return; }
+  if (isListening) stopVoiceSupervisor(); else startVoiceSupervisor();
+}
+
+function setOrbStateSupervisor(state) {
+  const orb = document.getElementById('voice-orb-supervisor');
+  if (!orb) return;
+  orb.classList.remove('listening', 'speaking');
+  document.getElementById('voice-wave-supervisor').classList.remove('active');
+  if (state === 'listening') { orb.classList.add('listening'); document.getElementById('voice-wave-supervisor').classList.add('active'); }
+  if (state === 'speaking') { orb.classList.add('speaking'); }
+}
+
+function startVoiceSupervisor() {
+  if (isListening || !SpeechRecognition) {
+    if (!SpeechRecognition) { 
+      document.getElementById('voice-status-supervisor').textContent = 'Web Speech API no soportada';
+      emitLive('err', 'Navegador no soporta Web Speech API');
+    }
+    return;
+  }
+  if (isSpeaking) { window.speechSynthesis.cancel(); isSpeaking = false; }
+  isListening = true;
+  setOrbStateSupervisor('listening');
+  document.getElementById('voice-status-supervisor').textContent = 'Escuchando...';
+  emitLive('voice', '<strong>Supervisor - Micrófono activo</strong>');
+
+  recognition = new SpeechRecognition();
+  recognition.lang = 'es-ES';
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
+
+  let finalTranscript = '';
+  let interimDisplayed = false;
+
+  recognition.onresult = (event) => {
+    let interim = '';
+    finalTranscript = '';
+    for (let i = 0; i < event.results.length; i++) {
+      if (event.results[i].isFinal) {
+        finalTranscript += event.results[i][0].transcript;
+      } else {
+        interim += event.results[i][0].transcript;
+      }
+    }
+    if (interim && !interimDisplayed) {
+      document.getElementById('voice-status-supervisor').textContent = '"' + interim + '..."';
+      simulateWaveformSupervisor();
+    }
+  };
+
+  recognition.onend = () => {
+    isListening = false;
+    setOrbStateSupervisor('idle');
+    resetWaveformSupervisor();
+    if (finalTranscript.trim()) {
+      const text = finalTranscript.trim();
+      document.getElementById('voice-status-supervisor').textContent = 'Escuché: "' + text + '"';
+      emitLive('voice', '<strong>Supervisor - Tu:</strong> "' + escapeHtml(text) + '"');
+      document.getElementById('supervisor-objective').value = text;
+      document.getElementById('supervisor-objective').focus();
+    } else {
+      document.getElementById('voice-status-supervisor').textContent = 'No capté audio. Click para reintentar.';
+    }
+  };
+
+  recognition.onerror = (event) => {
+    isListening = false;
+    setOrbStateSupervisor('idle');
+    resetWaveformSupervisor();
+    const msgs = { 'no-speech': 'No detecté voz', 'audio-capture': 'No hay micrófono', 'not-allowed': 'Permiso denegado' };
+    const msg = msgs[event.error] || 'Error: ' + event.error;
+    document.getElementById('voice-status-supervisor').textContent = msg;
+    emitLive('err', 'STT Supervisor: ' + msg);
+  };
+
+  recognition.start();
+}
+
+function stopVoiceSupervisor() {
+  if (recognition && isListening) {
+    recognition.stop();
+  }
+  isListening = false;
+  setOrbStateSupervisor('idle');
+  resetWaveformSupervisor();
+  document.getElementById('voice-status-supervisor').textContent = 'Click en el orbe para hablar';
+}
+
+function simulateWaveformSupervisor() {
+  const bars = document.querySelectorAll('#voice-wave-supervisor .bar');
+  bars.forEach(bar => { bar.style.height = Math.max(4, Math.random() * 24) + 'px'; });
+  if (isListening) setTimeout(simulateWaveformSupervisor, 100);
+}
+
+function resetWaveformSupervisor() {
+  const bars = document.querySelectorAll('#voice-wave-supervisor .bar');
+  bars.forEach(bar => { bar.style.height = '4px'; });
 }
 
 function simulateWaveform() {
