@@ -4608,18 +4608,14 @@
         if (data.ok) {
           const mode = (data.mode || 'governed').toUpperCase();
           document.getElementById('gov-mode').textContent = mode;
-          document.getElementById('gov-approvals').textContent = data.approvals_pending || 0;
-          document.getElementById('gov-policies').textContent = data.policies_active || 0;
+          // Aprobaciones y políticas ahora vienen de /api/autonomy/status
+          // Se actualizan en loadAutonomia()
           document.getElementById('gov-score').textContent = data.security_score || 100;
 
           if (_prevGovMode && _prevGovMode !== mode) {
             addToBitacora(`Gobernanza: modo cambiado a ${mode}`, 'warning', 'governance');
           }
           _prevGovMode = mode;
-
-          if ((data.approvals_pending || 0) > 0) {
-            addToBitacora(`Gobernanza: ${data.approvals_pending} aprobaciones pendientes`, 'warning', 'governance');
-          }
         }
       } catch (e) {
         console.error('Error loading governance:', e);
@@ -4646,6 +4642,9 @@
           if (pct) pct.textContent = lvl + '%';
           const lbl = document.getElementById('auto-gauge-label');
           if (lbl) lbl.textContent = lvl>80?'Operación autónoma':lvl>50?'Autonomía parcial':'Supervisión requerida';
+          // KPIs
+          const k = status.kpis || {};
+          const se = (id,v) => { const e=document.getElementById(id); if(e) e.textContent=v; };
           // Gov data from status
           const govSub = status.subsystems?.governance;
           if (govSub) {
@@ -4653,9 +4652,9 @@
             const modeStr = (govSub.detail||'').replace('Modo: ','').toUpperCase();
             if (modeEl && modeStr) { modeEl.textContent = modeStr; modeEl.style.color = modeStr==='EMERGENCY'?'var(--accent-red)':'var(--accent-green)'; }
           }
-          // KPIs
-          const k = status.kpis || {};
-          const se = (id,v) => { const e=document.getElementById(id); if(e) e.textContent=v; };
+          // Actualizar contadores de aprobaciones y políticas
+          se('gov-approvals', k.approvals_pending || 0);
+          se('gov-policies', k.policies_count || 0);
           se('auto-kpi-uptime', k.uptime_hours ? k.uptime_hours+'h' : '0h');
           se('auto-kpi-success', (k.success_rate||0)+'%');
           se('auto-kpi-modules', (k.modules_connected||0)+'/'+(k.modules_total||0));
