@@ -2486,6 +2486,8 @@ def _auto_log(event, kind="info", result="ok"):
 _AGGR_LOCK = threading.RLock()
 _aggr_thread = None
 _aggr_stop = threading.Event()
+_aggr_nav_idx = 0
+_aggr_last_user_active_log = 0.0
 
 
 def _aggr_enabled() -> bool:
@@ -2496,7 +2498,28 @@ def _aggr_enabled() -> bool:
         return True
 
 
+def _user_idle_seconds() -> float:
+    """Segundos desde la última interacción local (mouse/teclado)."""
+    try:
+        import ctypes
+
+        class LASTINPUTINFO(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+
+        lii = LASTINPUTINFO()
+        lii.cbSize = ctypes.sizeof(LASTINPUTINFO)
+        if ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii)):
+            now_ms = int(ctypes.windll.kernel32.GetTickCount())
+            idle_ms = max(0, now_ms - int(lii.dwTime))
+            return idle_ms / 1000.0
+    except Exception:
+        pass
+    # Fallback: asumir idle para no bloquear worker por entorno sin API Win32.
+    return 9999.0
+
+
 def _run_aggressive_cycle() -> Dict[str, Any]:
+    global _aggr_nav_idx
     out = {"hands_ok": False, "eyes_ok": False, "error": None}
     # 1) Manos: ejecutar comando no destructivo para verificar control real.
     try:
@@ -2518,11 +2541,25 @@ def _run_aggressive_cycle() -> Dict[str, Any]:
     try:
         from modules.humanoid.nerve import feet_execute
 
-        r1 = feet_execute("open_url", {"url": "http://127.0.0.1:8791/ui", "driver": "digital", "show_browser": False})
+        raw_pages = (os.getenv("AUTONOMY_AGGRESSIVE_PAGES") or "/ui,/workspace,/nexus").split(",")
+        pages = [p.strip() for p in raw_pages if str(p).strip()]
+        if not pages:
+            pages = ["/ui", "/workspace", "/nexus"]
+        path = pages[_aggr_nav_idx % len(pages)]
+        _aggr_nav_idx += 1
+        if path.startswith("http://") or path.startswith("https://"):
+            target_url = path
+        else:
+            target_url = f"http://127.0.0.1:8791{path if path.startswith('/') else '/' + path}"
+
+        r1 = feet_execute("open_url", {"url": target_url, "driver": "digital", "show_browser": False})
         ok1 = bool((r1 or {}).get("ok"))
         r2 = feet_execute("extract_text", {"selector": "body", "driver": "digital"})
         ok2 = bool((r2 or {}).get("ok"))
-        out["eyes_ok"] = bool(ok1 or ok2)
+        r3 = feet_execute("screenshot", {"driver": "digital"})
+        ok3 = bool((r3 or {}).get("ok"))
+        out["eyes_ok"] = bool(ok1 or ok2 or ok3)
+        out["page"] = path
         try:
             feet_execute("close_browser", {"driver": "digital"})
         except Exception:
@@ -2533,8 +2570,9 @@ def _run_aggressive_cycle() -> Dict[str, Any]:
 
     result = "ok" if (out["hands_ok"] or out["eyes_ok"]) else "warn"
     err = f" err={out['error'][:120]}" if out.get("error") else ""
+    page_tag = f" page={out.get('page','?')}"
     _auto_log(
-        f"Aggressive cycle: hands={'OK' if out['hands_ok'] else 'FAIL'} eyes={'OK' if out['eyes_ok'] else 'FAIL'}{err}",
+        f"Aggressive cycle:{page_tag} hands={'OK' if out['hands_ok'] else 'FAIL'} eyes={'OK' if out['eyes_ok'] else 'FAIL'}{err}",
         "action",
         result,
     )
@@ -2553,6 +2591,21 @@ def _aggressive_worker_loop():
 
             if not is_autonomy_running() or get_mode() != "growth":
                 _aggr_stop.wait(2.0)
+                continue
+
+            idle_required = max(5, int((os.getenv("AUTONOMY_USER_IDLE_SEC") or "25").strip() or "25"))
+            idle_now = _user_idle_seconds()
+            if idle_now < idle_required:
+                global _aggr_last_user_active_log
+                now = time.time()
+                if (now - _aggr_last_user_active_log) > 30:
+                    _aggr_last_user_active_log = now
+                    _auto_log(
+                        f"Aggressive paused: user active ({round(idle_now,1)}s < {idle_required}s)",
+                        "action",
+                        "ok",
+                    )
+                _aggr_stop.wait(1.0)
                 continue
 
             interval = max(8, int((os.getenv("AUTONOMY_AGGRESSIVE_INTERVAL_SEC") or "25").strip() or "25"))
