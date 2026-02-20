@@ -1767,6 +1767,8 @@
         <div style="display:flex;gap:6px;margin-left:auto;">
           <button class="btn btn-primary" onclick="setGovMode('growth')" style="font-size:11px;padding:6px 14px;">GROWTH</button>
           <button class="btn btn-secondary" onclick="setGovMode('governed')" style="font-size:11px;padding:6px 14px;">GOVERNED</button>
+          <button class="btn" onclick="startAutonomyDaemon()" style="background:rgba(34,197,94,0.18);color:#86efac;border:1px solid rgba(34,197,94,0.35);font-size:11px;padding:6px 12px;">START DAEMON</button>
+          <button class="btn" onclick="stopAutonomyDaemon()" style="background:rgba(245,158,11,0.18);color:#fcd34d;border:1px solid rgba(245,158,11,0.35);font-size:11px;padding:6px 12px;">STOP DAEMON</button>
           <button class="btn" style="background:var(--accent-red);color:white;font-size:11px;padding:6px 14px;" onclick="emergencyStop()">EMERGENCY STOP</button>
         </div>
       </div>
@@ -5039,6 +5041,42 @@
         } catch (e) {
           addActivity(`Error: ${e.message}`, 'error');
         }
+      }
+    }
+
+    async function startAutonomyDaemon() {
+      try {
+        const res = await fetch(`${API_BASE}/api/autonomy/daemon/start`, { method: 'POST' });
+        const data = await res.json();
+        if (data.ok && data.running) {
+          addActivity('Daemon de autonomía INICIADO', 'success');
+          addToBitacora('Autonomía: daemon iniciado manualmente', 'success', 'governance');
+        } else {
+          addActivity(`No se pudo iniciar daemon: ${data.error || 'error'}`, 'error');
+          addToBitacora(`Autonomía: fallo al iniciar daemon (${data.error || 'error'})`, 'error', 'governance');
+        }
+      } catch (e) {
+        addActivity(`Error iniciando daemon: ${e.message}`, 'error');
+      } finally {
+        loadAutonomia();
+      }
+    }
+
+    async function stopAutonomyDaemon() {
+      try {
+        const res = await fetch(`${API_BASE}/api/autonomy/daemon/stop`, { method: 'POST' });
+        const data = await res.json();
+        if (data.ok && !data.running) {
+          addActivity('Daemon de autonomía DETENIDO', 'warning');
+          addToBitacora('Autonomía: daemon detenido manualmente', 'warning', 'governance');
+        } else {
+          addActivity(`No se pudo detener daemon: ${data.error || 'error'}`, 'error');
+          addToBitacora(`Autonomía: fallo al detener daemon (${data.error || 'error'})`, 'error', 'governance');
+        }
+      } catch (e) {
+        addActivity(`Error deteniendo daemon: ${e.message}`, 'error');
+      } finally {
+        loadAutonomia();
       }
     }
 
