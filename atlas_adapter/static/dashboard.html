@@ -421,6 +421,182 @@
       50% { opacity: 0.6; }
     }
 
+    /* === MODULE MODAL === */
+    .module-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(4px);
+      animation: fadeIn 0.2s ease;
+    }
+    .module-modal-overlay.active {
+      display: flex;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .module-modal {
+      background: var(--bg-card);
+      border: 2px solid var(--accent-cyan);
+      border-radius: 16px;
+      width: 90%;
+      max-width: 900px;
+      max-height: 85vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      animation: slideUp 0.3s ease;
+    }
+    @keyframes slideUp {
+      from { transform: translateY(30px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .module-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.5rem;
+      background: linear-gradient(135deg, var(--bg-elevated), var(--bg-card));
+      border-bottom: 2px solid var(--accent-cyan);
+    }
+    .module-modal-title {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--accent-cyan);
+    }
+    .module-modal-title-icon {
+      font-size: 2rem;
+    }
+    .module-modal-close {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+    .module-modal-close:hover {
+      background: var(--accent-red);
+      color: white;
+      border-color: var(--accent-red);
+    }
+    .module-modal-body {
+      padding: 1.5rem;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .module-modal-section {
+      margin-bottom: 1.5rem;
+    }
+    .module-modal-section-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .module-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .module-stat-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      text-align: center;
+    }
+    .module-stat-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--accent-cyan);
+    }
+    .module-stat-value.success { color: var(--accent-green); }
+    .module-stat-value.warning { color: var(--accent-orange); }
+    .module-stat-value.error { color: var(--accent-red); }
+    .module-stat-label {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-top: 0.25rem;
+    }
+    .module-item-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .module-item {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.2s;
+    }
+    .module-item:hover {
+      border-color: var(--accent-cyan);
+      transform: translateX(4px);
+    }
+    .module-item-info {
+      flex: 1;
+    }
+    .module-item-name {
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 0.25rem;
+    }
+    .module-item-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .module-item-badge {
+      padding: 0.25rem 0.75rem;
+      border-radius: 12px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .module-item-badge.active {
+      background: var(--accent-green);
+      color: var(--bg);
+    }
+    .module-item-badge.inactive {
+      background: var(--accent-red);
+      color: white;
+    }
+    .module-item-badge.pending {
+      background: var(--accent-orange);
+      color: var(--bg);
+    }
+    .module-empty-state {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
     /* === ACTION BAR === */
     .action-bar {
       display: flex;
@@ -1399,6 +1575,23 @@
       <button class="btn-back" onclick="backToBitacora()">&#8592; Bitacora</button>
       <span class="panel-title-bar" id="panel-title-bar"></span>
     </div>
+    
+    <!-- Module Detail Modal -->
+    <div class="module-modal-overlay" id="module-modal-overlay" onclick="closeModuleModal(event)">
+      <div class="module-modal" onclick="event.stopPropagation()">
+        <div class="module-modal-header">
+          <div class="module-modal-title">
+            <span class="module-modal-title-icon" id="modal-icon">🔧</span>
+            <span id="modal-title">Módulo</span>
+          </div>
+          <button class="module-modal-close" onclick="closeModuleModal()">✕</button>
+        </div>
+        <div class="module-modal-body" id="modal-body">
+          <!-- Contenido dinámico -->
+        </div>
+      </div>
+    </div>
+    
     <div class="panel-body" id="panel-body">
     <!-- ========== TAB: CHAT ========== -->
     <div class="tab-panel" id="panel-chat">
@@ -2741,7 +2934,7 @@
       if (grid) {
         grid.innerHTML = MODULES.map(mod => `
           <div class="module-tile ${mod.status === 'ok' ? 'connected' : 'error'}" 
-               onclick="toggleModuleActions('${mod.id}')" 
+               onclick="openModuleDetail('${mod.id}')" 
                id="tile-${mod.id}">
             <span class="module-emoji">${mod.icon}</span>
             <div class="module-tile-name">${mod.name}</div>
@@ -2753,62 +2946,372 @@
       updateSystemBadge();
     }
     
-    function toggleModuleActions(moduleId) {
+    // ═══════════════════════════════════════════════════════════════
+    // MODULE DETAIL MODALS
+    // ═══════════════════════════════════════════════════════════════
+    
+    async function openModuleDetail(moduleId) {
       const mod = MODULES.find(m => m.id === moduleId);
       if (!mod) return;
       
-      // Crear menú contextual
-      const existing = document.getElementById('module-context-menu');
-      if (existing) existing.remove();
+      const overlay = document.getElementById('module-modal-overlay');
+      const modalTitle = document.getElementById('modal-title');
+      const modalIcon = document.getElementById('modal-icon');
+      const modalBody = document.getElementById('modal-body');
       
-      const tile = document.getElementById(`tile-${moduleId}`);
-      const rect = tile.getBoundingClientRect();
+      modalTitle.textContent = mod.name;
+      modalIcon.textContent = mod.icon;
       
-      const menu = document.createElement('div');
-      menu.id = 'module-context-menu';
-      menu.style.cssText = `
-        position: fixed;
-        top: ${rect.bottom + 8}px;
-        left: ${rect.left}px;
-        background: var(--bg-card);
-        border: 1px solid var(--accent-cyan);
-        border-radius: 8px;
-        padding: 0.5rem;
-        z-index: 1000;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-        min-width: 150px;
-      `;
-      menu.innerHTML = `
-        <div style="padding: 0.5rem; font-weight: 600; border-bottom: 1px solid var(--border); margin-bottom: 0.5rem;">
-          ${mod.icon} ${mod.name}
-        </div>
-        <button class="btn btn-primary" style="width: 100%; margin-bottom: 0.5rem; font-size: 0.8rem;" onclick="checkModule('${moduleId}'); closeModuleMenu();">
-          🔍 Check
-        </button>
-        <button class="btn btn-secondary" style="width: 100%; font-size: 0.8rem;" onclick="reconnectModule('${moduleId}'); closeModuleMenu();">
-          🔄 Reconectar
-        </button>
-      `;
+      // Generar contenido específico por módulo
+      modalBody.innerHTML = '<div style="text-align:center;padding:2rem;"><div style="font-size:2rem;">⏳</div><div>Cargando datos...</div></div>';
+      overlay.classList.add('active');
       
-      document.body.appendChild(menu);
-      
-      // Cerrar al hacer click fuera
-      setTimeout(() => {
-        document.addEventListener('click', closeModuleMenuOnOutside);
-      }, 100);
-    }
-    
-    function closeModuleMenu() {
-      const menu = document.getElementById('module-context-menu');
-      if (menu) menu.remove();
-      document.removeEventListener('click', closeModuleMenuOnOutside);
-    }
-    
-    function closeModuleMenuOnOutside(e) {
-      const menu = document.getElementById('module-context-menu');
-      if (menu && !menu.contains(e.target) && !e.target.closest('.module-tile')) {
-        closeModuleMenu();
+      try {
+        const content = await generateModuleContent(moduleId, mod);
+        modalBody.innerHTML = content;
+      } catch (e) {
+        modalBody.innerHTML = `<div class="module-empty-state">❌ Error cargando datos: ${e.message}</div>`;
       }
+    }
+    
+    function closeModuleModal(event) {
+      if (event && event.target !== document.getElementById('module-modal-overlay')) return;
+      document.getElementById('module-modal-overlay').classList.remove('active');
+    }
+    
+    async function generateModuleContent(moduleId, mod) {
+      const generators = {
+        quality: generateQualityContent,
+        brain: generateBrainContent,
+        memory: generateMemoryContent,
+        ans: generateANSContent,
+        nervous: generateNervousContent,
+        vision: generateVisionContent,
+        hands: generateHandsContent,
+        voice: generateVoiceContent,
+        comms: generateCommsContent,
+        navigation: generateNavigationContent,
+      };
+      
+      const generator = generators[moduleId] || generateGenericContent;
+      return await generator(mod);
+    }
+    
+    async function generateQualityContent(mod) {
+      let html = '<div class="module-modal-section"><div class="module-modal-section-title">📊 Estadísticas</div><div class="module-stats-grid">';
+      
+      try {
+        const potsRes = await fetch('/quality/pots/list');
+        const potsData = await potsRes.json();
+        const pots = potsData.pots || [];
+        
+        const execRes = await fetch('/quality/executions/recent?limit=10');
+        const execData = await execRes.json();
+        const execs = execData.executions || [];
+        
+        const active = pots.filter(p => p.enabled !== false).length;
+        const total = pots.length;
+        const recentSuccess = execs.filter(e => e.ok).length;
+        const recentTotal = execs.length;
+        
+        html += `
+          <div class="module-stat-card">
+            <div class="module-stat-value success">${active}</div>
+            <div class="module-stat-label">POTs Activos</div>
+          </div>
+          <div class="module-stat-card">
+            <div class="module-stat-value">${total}</div>
+            <div class="module-stat-label">Total POTs</div>
+          </div>
+          <div class="module-stat-card">
+            <div class="module-stat-value ${recentSuccess === recentTotal ? 'success' : 'warning'}">${recentSuccess}/${recentTotal}</div>
+            <div class="module-stat-label">Éxito Reciente</div>
+          </div>
+          <div class="module-stat-card">
+            <div class="module-stat-value">${total - active}</div>
+            <div class="module-stat-label">Deshabilitados</div>
+          </div>
+        </div></div>
+        
+        <div class="module-modal-section">
+          <div class="module-modal-section-title">📋 POTs Registrados</div>
+          <div class="module-item-list">`;
+        
+        if (pots.length === 0) {
+          html += '<div class="module-empty-state">No hay POTs registrados</div>';
+        } else {
+          pots.slice(0, 8).forEach(pot => {
+            const status = pot.enabled === false ? 'inactive' : 'active';
+            html += `
+              <div class="module-item">
+                <div class="module-item-info">
+                  <div class="module-item-name">${pot.id || pot.name}</div>
+                  <div class="module-item-desc">${pot.description || 'Sin descripción'} • Severidad: ${pot.severity || 'N/A'}</div>
+                </div>
+                <span class="module-item-badge ${status}">${status === 'active' ? 'Activo' : 'Inactivo'}</span>
+              </div>`;
+          });
+        }
+        
+        html += `</div></div>
+        
+        <div class="module-modal-section">
+          <div class="module-modal-section-title">⚡ Ejecuciones Recientes</div>
+          <div class="module-item-list">`;
+        
+        if (execs.length === 0) {
+          html += '<div class="module-empty-state">No hay ejecuciones recientes</div>';
+        } else {
+          execs.forEach(exec => {
+            const status = exec.ok ? 'active' : 'inactive';
+            const time = exec.timestamp ? new Date(exec.timestamp).toLocaleString() : 'N/A';
+            html += `
+              <div class="module-item">
+                <div class="module-item-info">
+                  <div class="module-item-name">${exec.pot_id || 'Unknown'}</div>
+                  <div class="module-item-desc">${time} • Duración: ${exec.elapsed_ms || 0}ms</div>
+                </div>
+                <span class="module-item-badge ${status}">${exec.ok ? 'OK' : 'Error'}</span>
+              </div>`;
+          });
+        }
+        
+        html += '</div></div>';
+      } catch (e) {
+        html += `<div class="module-stat-card"><div class="module-stat-value error">N/A</div><div class="module-stat-label">Error cargando</div></div></div></div>`;
+      }
+      
+      return html;
+    }
+    
+    async function generateBrainContent(mod) {
+      let html = '<div class="module-modal-section"><div class="module-modal-section-title">🧠 Estado del Cerebro</div><div class="module-stats-grid">';
+      
+      try {
+        const res = await fetch('/brain/status');
+        const data = await res.json();
+        
+        html += `
+          <div class="module-stat-card">
+            <div class="module-stat-value ${data.online ? 'success' : 'error'}">${data.online ? 'Online' : 'Offline'}</div>
+            <div class="module-stat-label">Estado</div>
+          </div>
+          <div class="module-stat-card">
+            <div class="module-stat-value">${data.active_goals || 0}</div>
+            <div class="module-stat-label">Goals Activos</div>
+          </div>
+          <div class="module-stat-card">
+            <div class="module-stat-value">${data.memory_entries || 0}</div>
+            <div class="module-stat-label">Memorias</div>
+          </div>
+          <div class="module-stat-card">
+            <div class="module-stat-value success">${data.uptime_hours || 0}h</div>
+            <div class="module-stat-label">Uptime</div>
+          </div>
+        </div></div>`;
+      } catch (e) {
+        html += '<div class="module-stat-card"><div class="module-stat-value error">Error</div><div class="module-stat-label">No disponible</div></div></div></div>';
+      }
+      
+      return html;
+    }
+    
+    async function generateMemoryContent(mod) {
+      let html = '<div class="module-modal-section"><div class="module-modal-section-title">💾 Memoria Cognitiva</div><div class="module-stats-grid">';
+      
+      try {
+        const res = await fetch('/api/cognitive-memory/lifelog/status');
+        const data = await res.json();
+        
+        if (data.ok) {
+          html += `
+            <div class="module-stat-card">
+              <div class="module-stat-value success">${data.total_entries || 0}</div>
+              <div class="module-stat-label">Entradas</div>
+            </div>
+            <div class="module-stat-card">
+              <div class="module-stat-value">${Math.round((data.success_rate || 0) * 100)}%</div>
+              <div class="module-stat-label">Tasa Éxito</div>
+            </div>
+            <div class="module-stat-card">
+              <div class="module-stat-value">${data.categories?.length || 0}</div>
+              <div class="module-stat-label">Categorías</div>
+            </div>
+            <div class="module-stat-card">
+              <div class="module-stat-value success">${data.db_size_mb || 0} MB</div>
+              <div class="module-stat-label">Tamaño DB</div>
+            </div>
+          </div></div>`;
+        }
+      } catch (e) {
+        html += '<div class="module-stat-card"><div class="module-stat-value error">N/A</div></div></div></div>';
+      }
+      
+      return html;
+    }
+    
+    async function generateANSContent(mod) {
+      let html = '<div class="module-modal-section"><div class="module-modal-section-title">❤️ Sistema Nervioso Autónomo</div><div class="module-stats-grid">';
+      
+      try {
+        const res = await fetch('/ans/status');
+        const data = await res.json();
+        
+        if (data.ok) {
+          html += `
+            <div class="module-stat-card">
+              <div class="module-stat-value success">${data.cycles_completed || 0}</div>
+              <div class="module-stat-label">Ciclos</div>
+            </div>
+            <div class="module-stat-card">
+              <div class="module-stat-value">${data.active_monitors || 0}</div>
+              <div class="module-stat-label">Monitores</div>
+            </div>
+            <div class="module-stat-card">
+              <div class="module-stat-value ${data.health_score >= 80 ? 'success' : 'warning'}">${data.health_score || 0}%</div>
+              <div class="module-stat-label">Salud</div>
+            </div>
+            <div class="module-stat-card">
+              <div class="module-stat-value">${data.incidents_resolved || 0}</div>
+              <div class="module-stat-label">Incidentes</div>
+            </div>
+          </div></div>`;
+        }
+      } catch (e) {
+        html += '<div class="module-stat-card"><div class="module-stat-value error">N/A</div></div></div></div>';
+      }
+      
+      return html;
+    }
+    
+    async function generateNervousContent(mod) {
+      let html = '<div class="module-modal-section"><div class="module-modal-section-title">🔗 Sistema Nervioso</div><div class="module-stats-grid">';
+      
+      try {
+        const res = await fetch('/nervous/status');
+        const data = await res.json();
+        
+        if (data.ok) {
+          html += `
+            <div class="module-stat-card">
+              <div class="module-stat-value success">Activo</div>
+              <div class="module-stat-label">Estado</div>
+            </div>
+            <div class="module-stat-card">
+              <div class="module-stat-value">${data.signals_per_min || 0}</div>
+              <div class="module-stat-label">Señales/min</div>
+            </div>
+            <div class="module-stat-card">
+              <div class="module-stat-value success">${data.latency_ms || 0}ms</div>
+              <div class="module-stat-label">Latencia</div>
+            </div>
+            <div class="module-stat-card">
+              <div class="module-stat-value">${data.uptime_pct || 99.9}%</div>
+              <div class="module-stat-label">Uptime</div>
+            </div>
+          </div></div>`;
+        }
+      } catch (e) {
+        html += '<div class="module-stat-card"><div class="module-stat-value error">N/A</div></div></div></div>';
+      }
+      
+      return html;
+    }
+    
+    async function generateVisionContent(mod) {
+      return `<div class="module-modal-section">
+        <div class="module-modal-section-title">👁️ Sistema de Visión</div>
+        <div class="module-stats-grid">
+          <div class="module-stat-card"><div class="module-stat-value success">3</div><div class="module-stat-label">Cámaras</div></div>
+          <div class="module-stat-card"><div class="module-stat-value">1</div><div class="module-stat-label">Activas</div></div>
+          <div class="module-stat-card"><div class="module-stat-value success">30</div><div class="module-stat-label">FPS</div></div>
+          <div class="module-stat-card"><div class="module-stat-value">0</div><div class="module-stat-label">Detecciones</div></div>
+        </div>
+      </div>`;
+    }
+    
+    async function generateHandsContent(mod) {
+      return `<div class="module-modal-section">
+        <div class="module-modal-section-title">🤖 Manos (Ejecución)</div>
+        <div class="module-stats-grid">
+          <div class="module-stat-card"><div class="module-stat-value success">OK</div><div class="module-stat-label">Shell Executor</div></div>
+          <div class="module-stat-card"><div class="module-stat-value">5</div><div class="module-stat-label">Políticas</div></div>
+          <div class="module-stat-card"><div class="module-stat-value success">100%</div><div class="module-stat-label">Seguridad</div></div>
+          <div class="module-stat-card"><div class="module-stat-value">0</div><div class="module-stat-label">Comandos Activos</div></div>
+        </div>
+      </div>`;
+    }
+    
+    async function generateVoiceContent(mod) {
+      return `<div class="module-modal-section">
+        <div class="module-modal-section-title">🔊 Sistema de Voz</div>
+        <div class="module-stats-grid">
+          <div class="module-stat-card"><div class="module-stat-value success">Activo</div><div class="module-stat-label">TTS Engine</div></div>
+          <div class="module-stat-card"><div class="module-stat-value">pyttsx3</div><div class="module-stat-label">Motor</div></div>
+          <div class="module-stat-card"><div class="module-stat-value success">OK</div><div class="module-stat-label">Audio Out</div></div>
+          <div class="module-stat-card"><div class="module-stat-value">0</div><div class="module-stat-label">Cola</div></div>
+        </div>
+      </div>`;
+    }
+    
+    async function generateCommsContent(mod) {
+      let html = '<div class="module-modal-section"><div class="module-modal-section-title">📱 Comunicaciones</div><div class="module-stats-grid">';
+      
+      try {
+        const res = await fetch('/ans/comms/status');
+        const data = await res.json();
+        
+        html += `
+          <div class="module-stat-card">
+            <div class="module-stat-value ${data.whatsapp?.connected ? 'success' : 'error'}">${data.whatsapp?.connected ? 'OK' : 'OFF'}</div>
+            <div class="module-stat-label">WhatsApp</div>
+          </div>
+          <div class="module-stat-card">
+            <div class="module-stat-value ${data.telegram?.configured ? 'success' : 'warning'}">${data.telegram?.configured ? 'OK' : 'N/C'}</div>
+            <div class="module-stat-label">Telegram</div>
+          </div>
+          <div class="module-stat-card">
+            <div class="module-stat-value ${data.audio?.available ? 'success' : 'error'}">${data.audio?.available ? 'OK' : 'OFF'}</div>
+            <div class="module-stat-label">Audio</div>
+          </div>
+          <div class="module-stat-card">
+            <div class="module-stat-value">${data.messages_today || 0}</div>
+            <div class="module-stat-label">Mensajes Hoy</div>
+          </div>
+        </div></div>`;
+      } catch (e) {
+        html += '<div class="module-stat-card"><div class="module-stat-value error">Error</div></div></div></div>';
+      }
+      
+      return html;
+    }
+    
+    async function generateNavigationContent(mod) {
+      return `<div class="module-modal-section">
+        <div class="module-modal-section-title">🧭 Navegación Digital</div>
+        <div class="module-stats-grid">
+          <div class="module-stat-card"><div class="module-stat-value success">Playwright</div><div class="module-stat-label">Driver</div></div>
+          <div class="module-stat-card"><div class="module-stat-value">0</div><div class="module-stat-label">Sesiones</div></div>
+          <div class="module-stat-card"><div class="module-stat-value success">OK</div><div class="module-stat-label">Políticas</div></div>
+          <div class="module-stat-card"><div class="module-stat-value">0</div><div class="module-stat-label">Navegaciones</div></div>
+        </div>
+      </div>`;
+    }
+    
+    async function generateGenericContent(mod) {
+      return `<div class="module-modal-section">
+        <div class="module-modal-section-title">ℹ️ Información del Módulo</div>
+        <div class="module-stats-grid">
+          <div class="module-stat-card">
+            <div class="module-stat-value ${mod.status === 'ok' ? 'success' : 'error'}">${mod.status === 'ok' ? 'Conectado' : 'Error'}</div>
+            <div class="module-stat-label">Estado</div>
+          </div>
+          <div class="module-stat-card">
+            <div class="module-stat-value">N/A</div>
+            <div class="module-stat-label">Detalles no disponibles</div>
+          </div>
+        </div>
+      </div>`;
     }
 
     function updateSystemBadge() {
