@@ -1797,6 +1797,8 @@
         <div style="display:flex;gap:6px;margin-left:auto;">
           <button class="btn btn-primary" onclick="setGovMode('growth')" style="font-size:11px;padding:6px 14px;">GROWTH</button>
           <button class="btn btn-secondary" onclick="setGovMode('governed')" style="font-size:11px;padding:6px 14px;">GOVERNED</button>
+          <button id="btn-aggr-toggle" class="btn" onclick="toggleAggressiveAuto()" style="background:rgba(59,130,246,0.18);color:#93c5fd;border:1px solid rgba(59,130,246,0.35);font-size:11px;padding:6px 12px;">AGGR AUTO</button>
+          <span id="aggr-auto-state" style="display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,0.18);font-size:10px;opacity:.9;">AGGR: --</span>
           <button id="btn-daemon-start" class="btn" onclick="startAutonomyDaemon()" style="background:rgba(34,197,94,0.18);color:#86efac;border:1px solid rgba(34,197,94,0.35);font-size:11px;padding:6px 12px;">START DAEMON</button>
           <button id="btn-daemon-stop" class="btn" onclick="stopAutonomyDaemon()" style="background:rgba(245,158,11,0.18);color:#fcd34d;border:1px solid rgba(245,158,11,0.35);font-size:11px;padding:6px 12px;">STOP DAEMON</button>
           <span id="daemon-control-state" style="display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;border:1px solid rgba(255,255,255,0.18);font-size:10px;opacity:.9;">DAEMON: --</span>
@@ -3966,6 +3968,8 @@
       // Autonomia (cada 10s)
       loadAutonomia();
       setInterval(loadAutonomia, 10000);
+      loadAggressiveConfig();
+      setInterval(loadAggressiveConfig, 15000);
 
       // Entrada inicial
       addToBitacora('Sistema ATLAS iniciado', 'success', 'system');
@@ -5124,6 +5128,7 @@
         showToast(`Error iniciando daemon: ${e.message}`, 'error', 3600);
       } finally {
         loadAutonomia();
+        loadAggressiveConfig();
         const bStart = document.getElementById('btn-daemon-start');
         const bStop = document.getElementById('btn-daemon-stop');
         if (bStart) bStart.disabled = false;
@@ -5153,10 +5158,67 @@
         showToast(`Error deteniendo daemon: ${e.message}`, 'error', 3600);
       } finally {
         loadAutonomia();
+        loadAggressiveConfig();
         const bStart = document.getElementById('btn-daemon-start');
         const bStop = document.getElementById('btn-daemon-stop');
         if (bStart) bStart.disabled = false;
         if (bStop) bStop.disabled = false;
+      }
+    }
+
+    async function loadAggressiveConfig() {
+      try {
+        const res = await fetch(`${API_BASE}/api/autonomy/aggressive/config`);
+        const data = await res.json();
+        if (!data || !data.ok) return;
+        const cfg = data.config || {};
+        const on = !!cfg.enabled;
+        const s = document.getElementById('aggr-auto-state');
+        const t = document.getElementById('btn-aggr-toggle');
+        if (s) {
+          const idle = Number(cfg.idle_sec || 0);
+          const interval = Number(cfg.interval_sec || 0);
+          s.textContent = on ? `AGGR: ON (${idle}s/${interval}s)` : 'AGGR: OFF';
+          s.style.color = on ? '#93c5fd' : '#fca5a5';
+          s.style.borderColor = on ? 'rgba(59,130,246,0.45)' : 'rgba(239,68,68,0.45)';
+          s.style.background = on ? 'rgba(59,130,246,0.12)' : 'rgba(239,68,68,0.12)';
+          s.title = 'Regla: verificación visual antes y después de cada tarea autónoma.';
+        }
+        if (t) {
+          t.textContent = on ? 'AGGR AUTO ON' : 'AGGR AUTO OFF';
+          t.style.opacity = on ? '1' : '.75';
+        }
+      } catch (_) {}
+    }
+
+    async function toggleAggressiveAuto() {
+      try {
+        const getRes = await fetch(`${API_BASE}/api/autonomy/aggressive/config`);
+        const getData = await getRes.json();
+        const current = !!(getData && getData.ok && getData.config && getData.config.enabled);
+        const next = !current;
+        const currentCfg = (getData && getData.config) ? getData.config : {};
+        const body = {
+          enabled: next,
+          idle_sec: Number(currentCfg.idle_sec || 20),
+          interval_sec: Number(currentCfg.interval_sec || 20),
+          pages: currentCfg.pages || ['/ui', '/workspace', '/nexus']
+        };
+        const setRes = await fetch(`${API_BASE}/api/autonomy/aggressive/config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const setData = await setRes.json();
+        if (setData && setData.ok) {
+          showToast(next ? 'Modo agresivo activado' : 'Modo agresivo desactivado', next ? 'success' : 'warning');
+          addToBitacora(next ? 'Autonomía agresiva ACTIVADA por Owner' : 'Autonomía agresiva DESACTIVADA por Owner', next ? 'success' : 'warning', 'governance');
+          loadAggressiveConfig();
+        } else {
+          showToast(`No se pudo actualizar modo agresivo: ${(setData && setData.error) || 'error'}`, 'error', 3600);
+        }
+      } catch (e) {
+        showToast(`Error en toggle agresivo: ${e.message}`, 'error', 3600);
       }
     }
 

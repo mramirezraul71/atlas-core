@@ -2488,12 +2488,51 @@ _aggr_thread = None
 _aggr_stop = threading.Event()
 _aggr_nav_idx = 0
 _aggr_last_user_active_log = 0.0
+_aggr_config = {
+    "enabled": (os.getenv("AUTONOMY_AGGRESSIVE_ENABLED") or "true").strip().lower() in ("1", "true", "yes", "on"),
+    "idle_sec": max(5, int((os.getenv("AUTONOMY_USER_IDLE_SEC") or "25").strip() or "25")),
+    "interval_sec": max(8, int((os.getenv("AUTONOMY_AGGRESSIVE_INTERVAL_SEC") or "25").strip() or "25")),
+    "pages": [p.strip() for p in (os.getenv("AUTONOMY_AGGRESSIVE_PAGES") or "/ui,/workspace,/nexus").split(",") if str(p).strip()],
+}
+
+
+def _get_aggr_config() -> Dict[str, Any]:
+    with _AGGR_LOCK:
+        pages = list(_aggr_config.get("pages") or ["/ui", "/workspace", "/nexus"])
+        if not pages:
+            pages = ["/ui", "/workspace", "/nexus"]
+        return {
+            "enabled": bool(_aggr_config.get("enabled", True)),
+            "idle_sec": int(_aggr_config.get("idle_sec", 25) or 25),
+            "interval_sec": int(_aggr_config.get("interval_sec", 25) or 25),
+            "pages": pages,
+        }
+
+
+def _set_aggr_config(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return _get_aggr_config()
+    with _AGGR_LOCK:
+        if "enabled" in payload:
+            _aggr_config["enabled"] = bool(payload.get("enabled"))
+        if "idle_sec" in payload:
+            _aggr_config["idle_sec"] = max(5, int(payload.get("idle_sec") or 25))
+        if "interval_sec" in payload:
+            _aggr_config["interval_sec"] = max(8, int(payload.get("interval_sec") or 25))
+        if "pages" in payload:
+            raw_pages = payload.get("pages")
+            pages = []
+            if isinstance(raw_pages, str):
+                pages = [p.strip() for p in raw_pages.split(",") if p.strip()]
+            elif isinstance(raw_pages, list):
+                pages = [str(p).strip() for p in raw_pages if str(p).strip()]
+            _aggr_config["pages"] = pages or ["/ui", "/workspace", "/nexus"]
+    return _get_aggr_config()
 
 
 def _aggr_enabled() -> bool:
     try:
-        v = (os.getenv("AUTONOMY_AGGRESSIVE_ENABLED") or "true").strip().lower()
-        return v in ("1", "true", "yes", "on")
+        return bool(_get_aggr_config().get("enabled", True))
     except Exception:
         return True
 
@@ -2520,7 +2559,13 @@ def _user_idle_seconds() -> float:
 
 def _run_aggressive_cycle() -> Dict[str, Any]:
     global _aggr_nav_idx
-    out = {"hands_ok": False, "eyes_ok": False, "error": None}
+    out = {
+        "hands_ok": False,
+        "eyes_ok": False,
+        "visual_pre_ok": False,
+        "visual_post_ok": False,
+        "error": None,
+    }
     # 1) Manos: ejecutar comando no destructivo para verificar control real.
     try:
         from modules.humanoid import get_humanoid_kernel
@@ -2541,7 +2586,8 @@ def _run_aggressive_cycle() -> Dict[str, Any]:
     try:
         from modules.humanoid.nerve import feet_execute
 
-        raw_pages = (os.getenv("AUTONOMY_AGGRESSIVE_PAGES") or "/ui,/workspace,/nexus").split(",")
+        cfg = _get_aggr_config()
+        raw_pages = cfg.get("pages") or ["/ui", "/workspace", "/nexus"]
         pages = [p.strip() for p in raw_pages if str(p).strip()]
         if not pages:
             pages = ["/ui", "/workspace", "/nexus"]
@@ -2552,13 +2598,20 @@ def _run_aggressive_cycle() -> Dict[str, Any]:
         else:
             target_url = f"http://127.0.0.1:8791{path if path.startswith('/') else '/' + path}"
 
-        r1 = feet_execute("open_url", {"url": target_url, "driver": "digital", "show_browser": False})
-        ok1 = bool((r1 or {}).get("ok"))
-        r2 = feet_execute("extract_text", {"selector": "body", "driver": "digital"})
-        ok2 = bool((r2 or {}).get("ok"))
-        r3 = feet_execute("screenshot", {"driver": "digital"})
-        ok3 = bool((r3 or {}).get("ok"))
-        out["eyes_ok"] = bool(ok1 or ok2 or ok3)
+        r_open = feet_execute("open_url", {"url": target_url, "driver": "digital", "show_browser": False})
+        ok_open = bool((r_open or {}).get("ok"))
+
+        # Regla general: verificación visual ANTES y DESPUÉS.
+        r_pre = feet_execute("screenshot", {"driver": "digital"})
+        out["visual_pre_ok"] = bool((r_pre or {}).get("ok"))
+
+        r_extract = feet_execute("extract_text", {"selector": "body", "driver": "digital"})
+        ok_extract = bool((r_extract or {}).get("ok"))
+
+        r_post = feet_execute("screenshot", {"driver": "digital"})
+        out["visual_post_ok"] = bool((r_post or {}).get("ok"))
+
+        out["eyes_ok"] = bool(ok_open or ok_extract)
         out["page"] = path
         try:
             feet_execute("close_browser", {"driver": "digital"})
@@ -2568,11 +2621,13 @@ def _run_aggressive_cycle() -> Dict[str, Any]:
         if not out.get("error"):
             out["error"] = str(e)[:200]
 
-    result = "ok" if (out["hands_ok"] or out["eyes_ok"]) else "warn"
+    visual_ok = bool(out["visual_pre_ok"] and out["visual_post_ok"])
+    result = "ok" if (out["hands_ok"] or out["eyes_ok"]) and visual_ok else "warn"
     err = f" err={out['error'][:120]}" if out.get("error") else ""
     page_tag = f" page={out.get('page','?')}"
+    vis_tag = f" visual_pre={'OK' if out['visual_pre_ok'] else 'FAIL'} visual_post={'OK' if out['visual_post_ok'] else 'FAIL'}"
     _auto_log(
-        f"Aggressive cycle:{page_tag} hands={'OK' if out['hands_ok'] else 'FAIL'} eyes={'OK' if out['eyes_ok'] else 'FAIL'}{err}",
+        f"Aggressive cycle:{page_tag}{vis_tag} hands={'OK' if out['hands_ok'] else 'FAIL'} eyes={'OK' if out['eyes_ok'] else 'FAIL'}{err}",
         "action",
         result,
     )
@@ -2593,7 +2648,8 @@ def _aggressive_worker_loop():
                 _aggr_stop.wait(2.0)
                 continue
 
-            idle_required = max(5, int((os.getenv("AUTONOMY_USER_IDLE_SEC") or "25").strip() or "25"))
+            cfg = _get_aggr_config()
+            idle_required = max(5, int(cfg.get("idle_sec") or 25))
             idle_now = _user_idle_seconds()
             if idle_now < idle_required:
                 global _aggr_last_user_active_log
@@ -2608,7 +2664,7 @@ def _aggressive_worker_loop():
                 _aggr_stop.wait(1.0)
                 continue
 
-            interval = max(8, int((os.getenv("AUTONOMY_AGGRESSIVE_INTERVAL_SEC") or "25").strip() or "25"))
+            interval = max(8, int(cfg.get("interval_sec") or 25))
             now = time.time()
             if (now - last_run) < interval:
                 _aggr_stop.wait(1.0)
@@ -2966,6 +3022,34 @@ def autonomy_daemon_stop():
             "result": result,
             "ms": int((time.perf_counter() - t0) * 1000),
         }
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
+
+
+@app.get("/api/autonomy/aggressive/config", tags=["Autonomia"])
+def autonomy_aggressive_config_get():
+    """Obtiene configuración runtime del modo agresivo."""
+    t0 = time.perf_counter()
+    try:
+        cfg = _get_aggr_config()
+        return {"ok": True, "config": cfg, "ms": int((time.perf_counter() - t0) * 1000)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
+
+
+@app.post("/api/autonomy/aggressive/config", tags=["Autonomia"])
+def autonomy_aggressive_config_set(body: dict):
+    """Actualiza configuración runtime del modo agresivo (enabled, idle_sec, interval_sec, pages)."""
+    t0 = time.perf_counter()
+    try:
+        cfg = _set_aggr_config(body if isinstance(body, dict) else {})
+        try:
+            from modules.humanoid.quality.autonomy_daemon import is_autonomy_running
+            if cfg.get("enabled") and is_autonomy_running():
+                _ensure_aggressive_worker()
+        except Exception:
+            pass
+        return {"ok": True, "config": cfg, "ms": int((time.perf_counter() - t0) * 1000)}
     except Exception as e:
         return {"ok": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
 
