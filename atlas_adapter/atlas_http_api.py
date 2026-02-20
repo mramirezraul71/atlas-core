@@ -2763,6 +2763,54 @@ def autonomy_status():
     return data
 
 
+@app.post("/api/autonomy/daemon/start", tags=["Autonomia"])
+def autonomy_daemon_start():
+    """Inicia el daemon de autonomía en el proceso actual de la API."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.quality.autonomy_daemon import start_autonomy, is_autonomy_running
+
+        if is_autonomy_running():
+            return {"ok": True, "running": True, "already_running": True, "ms": int((time.perf_counter() - t0) * 1000)}
+
+        result = start_autonomy()
+        running = False
+        try:
+            running = bool(is_autonomy_running())
+        except Exception:
+            running = False
+        return {
+            "ok": bool(running),
+            "running": bool(running),
+            "already_running": False,
+            "result": result,
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
+    except Exception as e:
+        return {"ok": False, "running": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
+
+
+@app.post("/api/autonomy/daemon/stop", tags=["Autonomia"])
+def autonomy_daemon_stop():
+    """Detiene el daemon de autonomía en el proceso actual de la API."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.quality.autonomy_daemon import stop_autonomy, is_autonomy_running
+
+        was_running = bool(is_autonomy_running())
+        result = stop_autonomy()
+        running = bool(is_autonomy_running())
+        return {
+            "ok": not running,
+            "was_running": was_running,
+            "running": running,
+            "result": result,
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
+
+
 @app.get("/api/autonomy/tasks", tags=["Autonomia"])
 def autonomy_tasks():
     """Tareas de seguimiento con estado y prioridad."""
