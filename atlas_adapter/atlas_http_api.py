@@ -6863,6 +6863,9 @@ _TASK_PROFILES = {
 }
 
 _CASCADE_ORDER = [
+    # Tier 0: BEDROCK — configured and available (AWS credentials)
+    ("bedrock", "us.anthropic.claude-haiku-4-5-20251001-v1:0", "paid_api"),
+    ("bedrock", "us.anthropic.claude-opus-4-6-v1:0",           "paid_api"),
     # Tier 1: API GRATIS — modelos potentes sin costo
     ("gemini", "gemini-2.5-flash",              "free_api"),
     ("groq",   "llama-3.3-70b-versatile",       "free_api"),
@@ -7313,29 +7316,59 @@ def agent_goal(body: AgentGoalBody):
         full_err = err_detail if not fb_detail else f"{err_detail} | fallback: {fb_detail}"
         return _professional_resp(False, {"error_detail": full_err, "model_used": result.get("model_used")}, ms, full_err, resumen=full_err)
     depth = max(1, min(5, body.depth or 1))
+    ORCH_TIMEOUT_SEC = 20  # max seconds for orchestrator before falling back to direct LLM
     try:
-        if depth >= 2:
-            from modules.humanoid.agents import run_multi_agent_goal
-            from modules.humanoid.orchestrator import run_goal_with_plan
-            ma = run_multi_agent_goal(body.goal, depth=depth, mode=mode)
-            if not ma.get("ok"):
-                ms = int((time.perf_counter() - t0) * 1000)
-                return _professional_resp(False, ma, ms, ma.get("error"), resumen=ma.get("error") or "Multi-agent failed")
-            if ma.get("decision") == "replan":
-                ms = int((time.perf_counter() - t0) * 1000)
-                data = {k: v for k, v in ma.items() if k not in ("ok", "error")}
-                return _professional_resp(True, data, ms, None, resumen="Reviewer rechazó; replan sugerido", siguientes_pasos=["Ajuste objetivo o replan"])
-            steps_raw = ma.get("steps") or []
-            steps_list = [s.get("description", s) if isinstance(s, dict) else str(s) for s in steps_raw]
-            if mode != "plan_only" and steps_list and ma.get("decision") == "approve":
-                result = run_goal_with_plan(body.goal, steps_list, mode=mode)
+        import concurrent.futures
+        def _run_orchestrator():
+            if depth >= 2:
+                from modules.humanoid.agents import run_multi_agent_goal
+                from modules.humanoid.orchestrator import run_goal_with_plan
+                ma = run_multi_agent_goal(body.goal, depth=depth, mode=mode)
+                if not ma.get("ok"):
+                    return ma
+                if ma.get("decision") == "replan":
+                    return {"ok": True, "_replan": True, **{k: v for k, v in ma.items() if k not in ("ok",)}}
+                steps_raw = ma.get("steps") or []
+                steps_list = [s.get("description", s) if isinstance(s, dict) else str(s) for s in steps_raw]
+                if mode != "plan_only" and steps_list and ma.get("decision") == "approve":
+                    return run_goal_with_plan(body.goal, steps_list, mode=mode)
+                return {"ok": True, "plan": ma.get("plan"), "steps": steps_raw, "task_id": ma.get("task_id"), "execution_log": [], "artifacts": [], "pipeline": ma.get("pipeline", [])}
             else:
-                result = {"ok": True, "plan": ma.get("plan"), "steps": steps_raw, "task_id": ma.get("task_id"), "execution_log": [], "artifacts": [], "pipeline": ma.get("pipeline", [])}
-        else:
-            from modules.humanoid.orchestrator import run_goal
-            result = run_goal(body.goal, mode=mode, fast=body.fast if body.fast is not None else True)
+                from modules.humanoid.orchestrator import run_goal
+                return run_goal(body.goal, mode=mode, fast=body.fast if body.fast is not None else True)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_run_orchestrator)
+            try:
+                result = future.result(timeout=ORCH_TIMEOUT_SEC)
+            except concurrent.futures.TimeoutError:
+                result = {"ok": False, "error": "orchestrator_timeout", "steps": []}
+
+        # Handle replan marker from multi-agent
+        if result.get("_replan"):
+            ms = int((time.perf_counter() - t0) * 1000)
+            data = {k: v for k, v in result.items() if k not in ("ok", "error", "_replan")}
+            return _professional_resp(True, data, ms, None, resumen="Reviewer rechazó; replan sugerido", siguientes_pasos=["Ajuste objetivo o replan"])
         ms = int((time.perf_counter() - t0) * 1000)
         ok = result.get("ok", False)
+
+        # Resilient fallback: if orchestrator failed, try direct LLM so user always gets a response
+        if not ok and not result.get("steps"):
+            orch_err = result.get("error") or result.get("message") or "orchestrator_failed"
+            fb = _direct_model_call("auto", body.goal, use_config=bool(body.sync_config), prefer_fast=prefer_fast)
+            if fb.get("ok"):
+                ms2 = int((time.perf_counter() - t0) * 1000)
+                return _professional_resp(True, {
+                    "output": fb["output"],
+                    "model_used": fb.get("model_used"),
+                    "tier": fb.get("tier"),
+                    "fallback_from": "orchestrator",
+                    "fallback": True,
+                    "routing_trace": fb.get("routing_trace", []) + [{"event": "fallback_switch", "from": "orchestrator", "to": fb.get("model_used"), "reason": orch_err[:140]}],
+                }, ms2, None,
+                resumen=(fb["output"] or "Procesado")[:500],
+                siguientes_pasos=[f"Fallback LLM directo (orquestador: {orch_err[:100]})"])
+
         data = {k: v for k, v in result.items() if k not in ("ok", "error", "fallback", "message")}
         steps_count = len(result.get("steps") or [])
         exec_log = result.get("execution_log") or []
@@ -7353,6 +7386,20 @@ def agent_goal(body: AgentGoalBody):
             out["message"] = result.get("message")
         return out
     except Exception as e:
+        # Last resort: try direct LLM even on exception
+        try:
+            fb = _direct_model_call("auto", body.goal, use_config=bool(body.sync_config), prefer_fast=prefer_fast)
+            if fb.get("ok"):
+                ms2 = int((time.perf_counter() - t0) * 1000)
+                return _professional_resp(True, {
+                    "output": fb["output"],
+                    "model_used": fb.get("model_used"),
+                    "fallback_from": "exception",
+                    "fallback": True,
+                }, ms2, None, resumen=(fb["output"] or "")[:500],
+                siguientes_pasos=[f"Fallback LLM (error: {str(e)[:100]})"])
+        except Exception:
+            pass
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
 

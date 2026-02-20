@@ -56,10 +56,58 @@ _DECOMPOSE_FALLBACK = {
 }
 
 
+def _llm_decompose_fallback(goal: str, fast: bool = True) -> Dict[str, Any]:
+    """Fallback: use LLM directly to decompose a goal into steps when kernel planner is unavailable."""
+    try:
+        import importlib
+        mod = importlib.import_module("atlas_adapter.atlas_http_api")
+        call_fn = getattr(mod, "_direct_model_call", None)
+        if not call_fn:
+            return None
+        prompt = (
+            f"Descompone este objetivo en 2-5 pasos concretos y ejecutables. "
+            f"Responde SOLO con una lista numerada (1. ... 2. ... etc), sin explicaciones extra.\n\n"
+            f"Objetivo: {goal.strip()}"
+        )
+        result = call_fn("auto", prompt, use_config=False, prefer_fast=fast)
+        if not result.get("ok") or not result.get("output"):
+            return None
+        # Parse numbered list from LLM output
+        import re
+        lines = result["output"].strip().split("\n")
+        steps = []
+        for line in lines:
+            line = line.strip()
+            m = re.match(r"^\d+[.)\-]\s*(.+)", line)
+            if m:
+                steps.append(m.group(1).strip())
+            elif line and len(steps) == 0 and len(lines) <= 5:
+                steps.append(line)
+        if steps:
+            return {"ok": True, "steps": steps, "model_used": result.get("model_used")}
+    except Exception as e:
+        _log.warning("LLM decompose fallback failed: %s", e)
+    return None
+
+
 def _decompose(goal: str, fast: bool = True) -> Dict[str, Any]:
     """Convert goal into steps (definition of done per step). Uses planner. Fallback determinista si LLM falla."""
     planner = _get_planner()
     if not planner:
+        # Fallback: try direct LLM decomposition
+        llm_result = _llm_decompose_fallback(goal, fast=fast)
+        if llm_result and llm_result.get("ok"):
+            raw = llm_result["steps"]
+            steps = []
+            for i, s in enumerate(raw):
+                steps.append({
+                    "id": f"step_{i+1}",
+                    "description": s if isinstance(s, str) else str(s),
+                    "definition_of_done": None,
+                    "status": "pending",
+                })
+            _log.info("Decomposed via LLM fallback: %d steps (model=%s)", len(steps), llm_result.get("model_used", "?"))
+            return {"ok": True, "steps": steps, "raw_steps": raw, "error": None}
         return {**_DECOMPOSE_FALLBACK, "error": "Planner not available"}
     try:
         r = planner.plan(goal, fast=fast)
