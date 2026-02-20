@@ -1429,6 +1429,50 @@ class WorkspaceNavigateBody(BaseModel):
     payload: Optional[dict] = None
 
 
+@app.post("/api/workspace/chat/upload-image", tags=["Workspace"])
+async def api_workspace_chat_upload_image(file: UploadFile = File(...)):
+    """Upload image for Workspace chat paste/drop and return local evidence URL."""
+    t0 = time.perf_counter()
+    try:
+        content_type = (file.content_type or "").lower()
+        name = (file.filename or "image").strip()
+        ext = Path(name).suffix.lower()
+        if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+            # fallback by content type
+            if "png" in content_type:
+                ext = ".png"
+            elif "jpeg" in content_type or "jpg" in content_type:
+                ext = ".jpg"
+            elif "webp" in content_type:
+                ext = ".webp"
+            else:
+                ext = ".png"
+
+        if content_type and not content_type.startswith("image/"):
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "only image files are allowed")
+
+        raw = await file.read()
+        if not raw:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "empty file")
+        if len(raw) > 10 * 1024 * 1024:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "file too large (max 10MB)")
+
+        target_dir = (BASE_DIR / "snapshots" / "chat_uploads").resolve()
+        target_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = f"chat_{int(time.time()*1000)}_{abs(hash(name)) % 100000}{ext}"
+        dst = (target_dir / safe_name).resolve()
+        if target_dir not in dst.parents and dst != target_dir:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "bad target path")
+        dst.write_bytes(raw)
+
+        rel = f"snapshots/chat_uploads/{safe_name}".replace("\\", "/")
+        url = f"/api/evidence/image?path={rel}"
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"name": safe_name, "path": rel, "url": url, "bytes": len(raw)}, ms, None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
 @app.post("/api/workspace/navigate", tags=["Workspace"])
 def api_workspace_navigate(body: WorkspaceNavigateBody):
     """Navegación web digital desde Workspace usando feet driver digital (Playwright)."""
@@ -2874,6 +2918,7 @@ def serve_nexus():
 
 _MODEL_CATALOG = [
     {"id": "auto", "name": "Auto (Inteligente→Gratis→Local)", "provider": "atlas", "desc": "Cascada: API gratis (Gemini/Groq), luego pago (GPT-4.1/Claude), luego local", "category": "auto"},
+    {"id": "cascade:ide-agent", "name": "Cascade (IDE Agent)", "provider": "atlas", "desc": "Asistente del IDE; usa enrutamiento ATLAS auto para ejecución interna", "category": "assistant"},
     # ── Ollama LOCAL (gratis, tu PC) ──
     {"id": "ollama:deepseek-r1:14b", "name": "DeepSeek R1 14B", "provider": "ollama", "desc": "Razonamiento local (gratis)", "category": "local"},
     {"id": "ollama:deepseek-coder:6.7b", "name": "DeepSeek Coder 6.7B", "provider": "ollama", "desc": "Codigo local (gratis)", "category": "local"},
@@ -6246,6 +6291,9 @@ def _try_single_call(provider_id: str, model_name: str, goal: str, use_config: b
 
 def _direct_model_call(model_spec: str, goal: str, use_config: bool = False) -> dict:
     """Llamada con cascada inteligente: local → free API → paid API. Si un modelo falla, salta al siguiente."""
+    if (model_spec or "").strip().lower() in ("cascade:ide-agent", "cascade", "ide-agent"):
+        model_spec = "auto"
+
     if model_spec == "auto" or not model_spec:
         local_model = _pick_local_model(goal)
         errors = []

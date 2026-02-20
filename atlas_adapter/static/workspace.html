@@ -375,6 +375,42 @@
       color: var(--text-muted);
     }
     .token-chip strong { color: var(--text); }
+    .chat-attachments {
+      display: none;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 2px;
+    }
+    .chat-attachments.active { display: flex; }
+    .attach-item {
+      display: inline-flex; align-items: center; gap: 6px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-elevated);
+      padding: 4px 6px;
+      max-width: 220px;
+    }
+    .attach-item img {
+      width: 24px; height: 24px; object-fit: cover;
+      border-radius: 4px; border: 1px solid var(--border);
+    }
+    .attach-name {
+      font-size: 10px; color: var(--text-muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      max-width: 150px;
+    }
+    .attach-remove {
+      width: 18px; height: 18px; border-radius: 999px;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--text-dim); font-size: 11px; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .attach-remove:hover { color: var(--accent-red); border-color: var(--accent-red); }
+    .chat-attach-hint {
+      font-size: 10px; color: var(--text-dim);
+      margin-top: 2px;
+    }
     .preset-row {
       display: flex; gap: 6px; align-items: center;
       margin-top: 2px;
@@ -893,6 +929,8 @@
           <button class="preset-btn" id="preset-builder" onclick="applyPreset('builder')">Builder</button>
           <button class="preset-btn" id="preset-multi" onclick="applyPreset('multifuncion')">Multi</button>
         </div>
+        <div class="chat-attachments" id="chat-attachments"></div>
+        <div class="chat-attach-hint">Tip: pega una imagen con Ctrl+V o arrástrala al cuadro de chat.</div>
         <div class="token-bar" id="token-bar">
           <span class="token-chip">Prompt: <strong id="tok-prompt">0</strong></span>
           <span class="token-chip">Completion: <strong id="tok-completion">0</strong></span>
@@ -1021,6 +1059,100 @@ let isProcessing = false;
 let isListening = false;
 let currentRequestController = null;
 const tokenUsage = { prompt: 0, completion: 0, total: 0 };
+let chatAttachments = [];
+
+function renderAttachments() {
+  const box = document.getElementById('chat-attachments');
+  if (!box) return;
+  box.innerHTML = '';
+  if (!chatAttachments.length) {
+    box.classList.remove('active');
+    return;
+  }
+  chatAttachments.forEach((a, idx) => {
+    const item = document.createElement('div');
+    item.className = 'attach-item';
+    const preview = a.preview || (a.url ? a.url : '');
+    item.innerHTML = '<img src="' + escapeHtml(preview) + '" alt="img">'
+      + '<span class="attach-name" title="' + escapeHtml(a.name || ('image_'+idx)) + '">' + escapeHtml(a.name || ('image_'+idx)) + '</span>'
+      + '<button class="attach-remove" type="button" title="Quitar" data-idx="' + idx + '">×</button>';
+    box.appendChild(item);
+  });
+  box.classList.add('active');
+  box.querySelectorAll('.attach-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.idx || '-1', 10);
+      if (i >= 0) {
+        chatAttachments.splice(i, 1);
+        renderAttachments();
+      }
+    });
+  });
+}
+
+async function uploadChatImage(file) {
+  const fd = new FormData();
+  fd.append('file', file, file.name || 'paste.png');
+  const r = await fetch(API + '/api/workspace/chat/upload-image', {
+    method: 'POST',
+    body: fd
+  });
+  const data = await r.json();
+  if (!data.ok || !data.data || !data.data.url) {
+    throw new Error(data.error || 'No se pudo subir la imagen');
+  }
+  return data.data;
+}
+
+async function attachImageFile(file) {
+  if (!file) return;
+  if (!(file.type || '').startsWith('image/')) return;
+  try {
+    emitLive('file', 'Subiendo imagen: <code>' + escapeHtml(file.name || 'paste.png') + '</code>');
+    const uploaded = await uploadChatImage(file);
+    const preview = URL.createObjectURL(file);
+    chatAttachments.push({
+      name: uploaded.name || file.name || 'image',
+      url: uploaded.url,
+      path: uploaded.path,
+      bytes: uploaded.bytes,
+      preview,
+    });
+    renderAttachments();
+    emitLive('file', 'Imagen adjunta: <code>' + escapeHtml(uploaded.url) + '</code>');
+  } catch (e) {
+    emitLive('err', '<strong>Upload imagen falló:</strong> ' + escapeHtml(e.message || String(e)));
+  }
+}
+
+function initChatImagePaste() {
+  const input = document.getElementById('chat-input');
+  const row = document.querySelector('.chat-input-row');
+  if (!input || !row) return;
+
+  input.addEventListener('paste', (e) => {
+    const items = Array.from((e.clipboardData && e.clipboardData.items) || []);
+    const imgItem = items.find(it => (it.type || '').startsWith('image/'));
+    if (!imgItem) return;
+    e.preventDefault();
+    const file = imgItem.getAsFile();
+    if (file) attachImageFile(file);
+  });
+
+  row.addEventListener('dragover', (e) => {
+    if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) {
+      e.preventDefault();
+    }
+  });
+
+  row.addEventListener('drop', (e) => {
+    const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+    const img = files.find(f => (f.type || '').startsWith('image/'));
+    if (!img) return;
+    e.preventDefault();
+    attachImageFile(img);
+  });
+}
 
 function estimateTokens(text) {
   const t = (text || '').trim();
@@ -1067,6 +1199,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initResize();
   initWaveformBars();
   initAutoResize();
+  initChatImagePaste();
   initModelSelector();
   initSyncToggle();
   checkServices();
@@ -1400,9 +1533,18 @@ async function sendMessage() {
   const text = input.value.trim();
   if (!text || isProcessing) return;
 
-  addChatMessage(text, 'user');
+  const attachments = [...chatAttachments];
+  let goalText = text;
+  if (attachments.length > 0) {
+    const lines = attachments.map((a, i) => '- image_' + (i + 1) + ': ' + window.location.origin + String(a.url || ''));
+    goalText += '\n\nImagenes adjuntas (evidencia):\n' + lines.join('\n');
+  }
+
+  addChatMessage(text + (attachments.length ? ('\n\n[' + attachments.length + ' imagen(es) adjuntas]') : ''), 'user');
   input.value = '';
   input.style.height = 'auto';
+  chatAttachments = [];
+  renderAttachments();
   const promptTokens = estimateTokens(text);
   tokenUsage.prompt += promptTokens;
   tokenUsage.total += promptTokens;
@@ -1424,7 +1566,7 @@ async function sendMessage() {
     const response = await fetch(API + '/agent/goal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goal: text, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel, sync_config: syncConfigActive }),
+      body: JSON.stringify({ goal: goalText, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel, sync_config: syncConfigActive }),
       signal: controller.signal
     });
     clearTimeout(timeout);
