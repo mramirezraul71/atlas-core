@@ -831,6 +831,7 @@
     </div>
     <nav class="topbar-nav">
       <button class="topbar-btn active" data-view="chat" title="Agent Chat">Agent</button>
+      <button class="topbar-btn" data-view="supervisor" title="Supervisor LLM">Supervisor</button>
     </nav>
     <div class="topbar-spacer"></div>
     <div class="topbar-services">
@@ -943,6 +944,50 @@
           <span class="chat-hint" onclick="insertHint(this)">/atlas status</span>
           <span class="chat-hint" onclick="insertHint(this)">Deploy a produccion</span>
           <span class="chat-hint" onclick="insertHint(this)">Revisa y corrige errores</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SUPERVISOR PANEL (hidden by default) -->
+    <section class="panel-left" id="panel-supervisor" style="display:none;">
+      <div class="chat-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        SUPERVISOR LLM
+        <span class="badge" style="background:var(--accent-purple)">AI Advisor</span>
+      </div>
+
+      <div class="chat-messages" id="supervisor-messages">
+        <div class="msg atlas">
+          <div class="msg-label">SUPERVISOR</div>
+          Hola Raúl, soy tu Supervisor LLM. Puedo analizar el estado de ATLAS, generar recomendaciones profesionales y proponer próximos pasos. Describe qué necesitas revisar o analizar.
+        </div>
+      </div>
+
+      <!-- Supervisor Input -->
+      <div class="chat-input-area">
+        <div style="padding:8px 12px;background:var(--bg-elevated);border-radius:6px;margin-bottom:8px;">
+          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">OBJETIVO</label>
+          <textarea class="chat-textarea" id="supervisor-objective" placeholder="Ej: Revisar módulos activos y proponer próximos pasos" rows="2" style="margin-bottom:8px;"></textarea>
+          
+          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">CONTEXTO (opcional)</label>
+          <div style="display:flex;gap:6px;margin-bottom:6px;">
+            <input type="text" id="supervisor-issues" placeholder="Issues: intermitencia, errores..." style="flex:1;padding:6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;">
+            <input type="text" id="supervisor-modules" placeholder="Módulos: telegram, quality..." style="flex:1;padding:6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;">
+          </div>
+        </div>
+        
+        <div class="chat-input-row">
+          <button class="chat-send" id="btn-supervisor-send" onclick="askSupervisor()" style="width:100%;justify-content:center;gap:8px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            Consultar Supervisor
+          </button>
+        </div>
+        
+        <div class="chat-hints">
+          <span class="chat-hint" onclick="setSupervisorHint(this)">Revisar salud del sistema</span>
+          <span class="chat-hint" onclick="setSupervisorHint(this)">Analizar módulos con errores</span>
+          <span class="chat-hint" onclick="setSupervisorHint(this)">Proponer optimizaciones</span>
+          <span class="chat-hint" onclick="setSupervisorHint(this)">Diagnosticar intermitencias</span>
         </div>
       </div>
     </section>
@@ -1202,12 +1247,159 @@ document.addEventListener('DOMContentLoaded', () => {
   initChatImagePaste();
   initModelSelector();
   initSyncToggle();
+  initViewSwitcher();
   checkServices();
   setInterval(checkServices, 15000);
 
   emitLive('info', '<strong>ATLAS Workspace iniciado</strong> — Esperando instrucciones');
   document.getElementById('chat-input').focus();
 });
+
+// ─── VIEW SWITCHER (Agent / Supervisor) ───
+function initViewSwitcher() {
+  const btns = document.querySelectorAll('.topbar-btn[data-view]');
+  btns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const view = btn.dataset.view;
+      switchView(view);
+      btns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+}
+
+function switchView(view) {
+  const panelAgent = document.getElementById('panel-left');
+  const panelSupervisor = document.getElementById('panel-supervisor');
+  
+  if (view === 'chat') {
+    panelAgent.style.display = 'flex';
+    panelSupervisor.style.display = 'none';
+  } else if (view === 'supervisor') {
+    panelAgent.style.display = 'none';
+    panelSupervisor.style.display = 'flex';
+  }
+}
+
+// ─── SUPERVISOR FUNCTIONS ───
+async function askSupervisor() {
+  const objective = document.getElementById('supervisor-objective').value.trim();
+  const issuesInput = document.getElementById('supervisor-issues').value.trim();
+  const modulesInput = document.getElementById('supervisor-modules').value.trim();
+  
+  if (!objective) {
+    alert('Por favor ingresa un objetivo para el Supervisor');
+    return;
+  }
+  
+  const issues = issuesInput ? issuesInput.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const modules = modulesInput ? modulesInput.split(',').map(s => s.trim()).filter(Boolean) : [];
+  
+  const context = { issues, modules };
+  
+  // Add user message
+  addSupervisorMessage('user', objective);
+  
+  // Show loading
+  const loadingId = addSupervisorMessage('supervisor', '⏳ Analizando y generando recomendaciones...');
+  
+  try {
+    const response = await fetch('/supervisor/advise', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ objective, context })
+    });
+    
+    const data = await response.json();
+    
+    // Remove loading message
+    const loadingMsg = document.getElementById(loadingId);
+    if (loadingMsg) loadingMsg.remove();
+    
+    if (!data.ok) {
+      addSupervisorMessage('supervisor', '❌ Error: ' + (data.error || 'Unknown error'));
+      return;
+    }
+    
+    const result = data.result;
+    
+    // Build formatted response
+    let html = '<div style="line-height:1.6;">';
+    
+    // Analysis
+    if (result.analysis) {
+      html += '<div style="margin-bottom:16px;"><strong style="color:var(--accent-cyan);">📊 ANÁLISIS</strong><br>';
+      html += '<div style="margin-top:8px;padding:8px;background:var(--bg-elevated);border-radius:4px;font-size:13px;">';
+      html += escapeHtml(result.analysis).replace(/\n/g, '<br>');
+      html += '</div></div>';
+    }
+    
+    // Recommendations
+    if (result.recommendations && result.recommendations.length > 0) {
+      html += '<div style="margin-bottom:16px;"><strong style="color:var(--accent-green);">✅ RECOMENDACIONES</strong><br>';
+      html += '<ul style="margin-top:8px;padding-left:20px;">';
+      result.recommendations.forEach(rec => {
+        html += '<li style="margin-bottom:6px;">' + escapeHtml(rec) + '</li>';
+      });
+      html += '</ul></div>';
+    }
+    
+    // Prompts
+    if (result.prompts && result.prompts.length > 0) {
+      html += '<div style="margin-bottom:16px;"><strong style="color:var(--accent-purple);">💡 PROMPTS SUGERIDOS</strong><br>';
+      html += '<ul style="margin-top:8px;padding-left:20px;">';
+      result.prompts.forEach(prompt => {
+        html += '<li style="margin-bottom:6px;">' + escapeHtml(prompt) + '</li>';
+      });
+      html += '</ul></div>';
+    }
+    
+    // Provider info
+    const providerIcon = result.provider === 'ollama' ? '🖥️' : '☁️';
+    const fallbackText = result.fallback_used ? ' (fallback)' : '';
+    html += '<div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted);">';
+    html += providerIcon + ' ' + result.provider + ' · ' + result.model + fallbackText;
+    html += '</div>';
+    
+    html += '</div>';
+    
+    addSupervisorMessage('supervisor', html);
+    
+    // Clear inputs
+    document.getElementById('supervisor-objective').value = '';
+    document.getElementById('supervisor-issues').value = '';
+    document.getElementById('supervisor-modules').value = '';
+    
+  } catch (error) {
+    const loadingMsg = document.getElementById(loadingId);
+    if (loadingMsg) loadingMsg.remove();
+    addSupervisorMessage('supervisor', '❌ Error de conexión: ' + error.message);
+  }
+}
+
+function addSupervisorMessage(type, content) {
+  const container = document.getElementById('supervisor-messages');
+  const msgId = 'sup-msg-' + Date.now();
+  const div = document.createElement('div');
+  div.id = msgId;
+  div.className = 'msg ' + (type === 'user' ? 'user' : 'atlas');
+  
+  if (type === 'user') {
+    div.innerHTML = '<div class="msg-label">RAÚL</div>' + escapeHtml(content);
+  } else {
+    div.innerHTML = '<div class="msg-label">SUPERVISOR</div>' + content;
+  }
+  
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  
+  return msgId;
+}
+
+function setSupervisorHint(el) {
+  document.getElementById('supervisor-objective').value = el.textContent;
+  document.getElementById('supervisor-objective').focus();
+}
 
 // ─── CLOCK ───
 function initClock() {
