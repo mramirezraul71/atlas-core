@@ -2596,24 +2596,30 @@ def autonomy_status():
     except: pass
 
     # --- Cola de tareas (autonomia_tasks) ---
+    # IMPORTANTE: contar sobre la misma "ventana operativa" que ve el dashboard
+    # (top 50 por prioridad/created_at), para evitar inflar cola con históricos viejos.
     task_pending = 0
     task_in_progress = 0
     task_done = 0
     task_failed = 0
     try:
         c = _auto_db()
-        tr = c.execute("""
-            SELECT
-                SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending_count,
-                SUM(CASE WHEN status='in_progress' THEN 1 ELSE 0 END) AS in_progress_count,
-                SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS done_count,
-                SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed_count
-            FROM autonomy_tasks
-        """).fetchone()
-        task_pending = int((tr["pending_count"] if tr else 0) or 0)
-        task_in_progress = int((tr["in_progress_count"] if tr else 0) or 0)
-        task_done = int((tr["done_count"] if tr else 0) or 0)
-        task_failed = int((tr["failed_count"] if tr else 0) or 0)
+        rows = c.execute("""
+            SELECT status FROM autonomy_tasks
+            ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+                     created_at DESC
+            LIMIT 50
+        """).fetchall()
+        for r in rows or []:
+            st = str(r["status"] if isinstance(r, dict) or hasattr(r, "keys") else r[0]).strip().lower()
+            if st == "pending":
+                task_pending += 1
+            elif st == "in_progress":
+                task_in_progress += 1
+            elif st == "done":
+                task_done += 1
+            elif st == "failed":
+                task_failed += 1
         c.close()
     except:
         pass

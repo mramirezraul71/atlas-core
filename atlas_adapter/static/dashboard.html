@@ -4741,9 +4741,9 @@
             const modeStr = (govSub.detail||'').replace('Modo: ','').toUpperCase();
             if (modeEl && modeStr) { modeEl.textContent = modeStr; modeEl.style.color = modeStr==='EMERGENCY'?'var(--accent-red)':'var(--accent-green)'; }
           }
-          // Actualizar cola de pendientes y políticas (tiempo real)
-          const queueCount = Number(k.pending_queue_count || 0);
-          se('gov-approvals', queueCount);
+          // APROBACIONES = aprobaciones reales pendientes (no historial de tareas)
+          const approvalsPending = Number(k.approvals_pending || 0);
+          se('gov-approvals', approvalsPending);
           se('gov-policies', k.policies_count || 0);
           se('auto-kpi-uptime', k.uptime_hours ? k.uptime_hours+'h' : '0h');
           se('auto-kpi-success', (k.success_rate||0)+'%');
@@ -4796,14 +4796,13 @@
             const allTasks = Array.isArray(tasks.tasks) ? tasks.tasks : [];
             const activeTasks = allTasks.filter(t => t && (t.status === 'pending' || t.status === 'in_progress'));
 
-            // Si backend aún no envía pending_queue_count, fallback local.
+            // Exponer cola activa como contexto (tooltip), sin inflar APROBACIONES.
             const govApprovalsEl = document.getElementById('gov-approvals');
             if (govApprovalsEl && status && status.ok) {
               const k = status.kpis || {};
-              if (!(Number(k.pending_queue_count) >= 0)) {
-                const approvalsPending = Number(k.approvals_pending || 0);
-                govApprovalsEl.textContent = String(approvalsPending + activeTasks.length);
-              }
+              const ap = Number(k.approvals_pending || 0);
+              govApprovalsEl.textContent = String(ap);
+              govApprovalsEl.title = `Aprobaciones pendientes: ${ap} · Cola activa: ${activeTasks.length}`;
             }
 
             if (activeTasks.length === 0) {
