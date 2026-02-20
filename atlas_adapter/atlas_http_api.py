@@ -698,8 +698,51 @@ def api_brain_state():
 
 @app.get("/brain/status", tags=["Cerebro"])
 def brain_status_alias():
-    """Alias de /api/brain/state para compatibilidad con dashboard."""
-    return api_brain_state()
+    """Estado del cerebro para dashboard modals."""
+    try:
+        from modules.humanoid.ai.brain_state import get_brain_state
+        state = get_brain_state()
+        
+        # Verificar si hay modelos disponibles (Ollama online)
+        ollama_online = _brain_ollama_available_timeout(2.0)
+        
+        # Contar goals activos (placeholder - integrar con sistema real)
+        active_goals = 0
+        
+        # Contar memorias (placeholder - integrar con lifelog)
+        memory_entries = 0
+        try:
+            from modules.humanoid.cognitive.memory.lifelog import get_lifelog_stats
+            stats = get_lifelog_stats()
+            memory_entries = stats.get("total_entries", 0)
+        except:
+            pass
+        
+        # Calcular uptime
+        uptime_hours = 0
+        try:
+            from modules.humanoid.deploy.healthcheck import get_uptime_seconds
+            uptime_hours = int(get_uptime_seconds() / 3600)
+        except:
+            pass
+        
+        return {
+            "ok": True,
+            "online": ollama_online,  # Brain está online si Ollama responde
+            "active_goals": active_goals,
+            "memory_entries": memory_entries,
+            "uptime_hours": uptime_hours,
+            "mode": state.get("mode", "auto"),
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": str(e),
+            "online": False,
+            "active_goals": 0,
+            "memory_entries": 0,
+            "uptime_hours": 0,
+        }
 
 
 @app.get("/quality/pots/list", tags=["Quality"])
