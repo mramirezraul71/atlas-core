@@ -1,21 +1,25 @@
-"""Supervisor - Generates recommendations and prompts for ATLAS Owner (Raúl)."""
+"""Supervisor - Operational mode for ATLAS Owner (Raúl)."""
+import os
 from typing import Dict, Any, List
 from .router import LLMRouter
+from .audit import AuditLogger
 
 
 class Supervisor:
     """
-    Supervisor subordinado al Owner (Raúl).
-    Genera recomendaciones y prompts basados en el estado del sistema.
+    Supervisor operacional subordinado al Owner (Raúl).
+    Estilo anti-corporativo, directo, técnico.
     """
     
     def __init__(self):
         self.router = LLMRouter()
+        self.audit = AuditLogger()
         self.owner = "Raúl"
+        self.style = os.getenv("ATLAS_SUPERVISOR_STYLE", "operational")
     
     def advise(self, objective: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Generate advice and recommendations for the Owner.
+        Generate operational advice for the Owner.
         
         Args:
             objective: The objective or question to address
@@ -24,11 +28,21 @@ class Supervisor:
         Returns:
             Dict with recommendations, prompts, and analysis
         """
-        # Build comprehensive prompt for the LLM
+        # Audit log with style and objective
+        self.audit.log_event("supervisor_request", {
+            "style": self.style,
+            "objective": objective,
+            "context_keys": list(context.keys())
+        })
+        
+        # Build operational prompt
         prompt = self._build_prompt(objective, context)
         
-        # Get LLM response
-        llm_result = self.router.generate(prompt, context)
+        # Get LLM response with task "auditoria_tecnica"
+        llm_result = self.router.generate(
+            prompt=prompt,
+            context={"task": "auditoria_tecnica", **context}
+        )
         
         if not llm_result["ok"]:
             return {
@@ -36,7 +50,7 @@ class Supervisor:
                 "error": llm_result.get("error"),
                 "recommendations": [],
                 "prompts": [],
-                "analysis": "No se pudo generar análisis debido a error en LLM"
+                "analysis": "Error en LLM - no se pudo generar análisis"
             }
         
         # Parse and structure the response
@@ -53,40 +67,48 @@ class Supervisor:
         }
     
     def _build_prompt(self, objective: str, context: Dict[str, Any]) -> str:
-        """Build a comprehensive prompt for the LLM."""
+        """Build operational prompt with anti-corporate style."""
         issues = context.get("issues", [])
         modules = context.get("modules", [])
         metrics = context.get("metrics", {})
         
-        prompt = f"""Eres el Supervisor de ATLAS, subordinado al Owner {self.owner}.
+        prompt = f"""SYSTEM: Eres el Supervisor técnico de ATLAS, subordinado al Owner {self.owner}.
+
+ESTILO OPERACIONAL:
+- Sin formalidades corporativas
+- Directo y técnico
+- Diagnóstico preciso
+- Acción inmediata
+- Cero ambigüedad
 
 OBJETIVO: {objective}
 
-CONTEXTO DEL SISTEMA:
-- Issues reportados: {', '.join(issues) if issues else 'Ninguno'}
-- Módulos involucrados: {', '.join(modules) if modules else 'Ninguno'}
-- Métricas: {metrics if metrics else 'No disponibles'}
+CONTEXTO:
+- Issues: {', '.join(issues) if issues else 'Ninguno'}
+- Módulos: {', '.join(modules) if modules else 'Ninguno'}
+- Métricas: {metrics if metrics else 'N/A'}
 
-INSTRUCCIONES:
-1. Analiza la situación actual
-2. Identifica problemas y oportunidades
-3. Genera recomendaciones concretas y accionables
-4. Propón prompts específicos para investigar o resolver issues
+FORMATO OBLIGATORIO:
 
-FORMATO DE RESPUESTA:
-## Análisis
-[Tu análisis aquí]
+## DIAGNÓSTICO
+[Qué está pasando - máximo 3 líneas]
 
-## Recomendaciones
-- [Recomendación 1]
-- [Recomendación 2]
-- [Recomendación 3]
+## ACCIÓN INMEDIATA
+- [Acción 1 - específica y ejecutable]
+- [Acción 2 - específica y ejecutable]
+- [Acción 3 - específica y ejecutable]
 
-## Prompts Sugeridos
-- [Prompt 1 para investigar X]
-- [Prompt 2 para resolver Y]
+## CORRECCIÓN
+[Qué arreglar para evitar recurrencia]
 
-Responde de forma concisa y profesional."""
+## VALIDACIÓN
+[Cómo verificar que se resolvió]
+
+## PROMPT
+- [Comando/pregunta técnica 1]
+- [Comando/pregunta técnica 2]
+
+Responde SIN introducciones, SIN conclusiones, SIN relleno."""
         
         return prompt
     
