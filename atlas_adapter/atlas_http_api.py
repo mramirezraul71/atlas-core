@@ -844,6 +844,38 @@ def api_brain_state_post(body: BrainStateBody):
         return {"ok": False, "error": str(e)}
 
 
+@app.post("/supervisor/advise", tags=["LLM Supervisor"])
+def supervisor_advise(payload: dict):
+    """
+    Supervisor LLM - Genera recomendaciones y prompts para el Owner (Raúl).
+    
+    Usa arquitectura híbrida: Ollama (local) + OpenAI (cloud) con fallback automático.
+    """
+    try:
+        from atlas_adapter.llm.supervisor import Supervisor
+        
+        supervisor = Supervisor()
+        objective = payload.get("objective", "Revisar estado del sistema")
+        context = payload.get("context", {})
+        
+        result = supervisor.advise(objective, context)
+        
+        return {
+            "ok": result.get("ok", True),
+            "result": result
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": str(e),
+            "result": {
+                "recommendations": [],
+                "prompts": [],
+                "analysis": f"Error: {str(e)}"
+            }
+        }
+
+
 @app.get("/api/brain/credentials/status", tags=["Cerebro"])
 def api_brain_credentials_status():
     """Estado de API keys por proveedor (configured, masked). Nunca devuelve la clave en claro."""
