@@ -881,6 +881,89 @@
       max-width: 100%;
       overflow-x:auto;
     }
+
+    /* ─── MONITOR PANEL ─── */
+    .monitor-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      padding: 8px; overflow-y: auto; flex: 1;
+    }
+    .monitor-card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px; overflow: hidden;
+    }
+    .monitor-card-title {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 8px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .monitor-card-title .mc-dot {
+      width: 6px; height: 6px; border-radius: 50%; display: inline-block;
+    }
+    .mc-dot.green { background: var(--accent-green); }
+    .mc-dot.red { background: var(--accent-red); }
+    .mc-dot.orange { background: var(--accent-orange); }
+    .mc-dot.cyan { background: var(--accent-cyan); }
+    .mc-dot.purple { background: var(--accent-purple); }
+
+    .monitor-card.full-width { grid-column: 1 / -1; }
+
+    .monitor-bar {
+      height: 6px; border-radius: 3px; background: var(--bg-elevated);
+      overflow: hidden; margin: 4px 0;
+    }
+    .monitor-bar-fill {
+      height: 100%; border-radius: 3px; transition: width 0.5s ease;
+    }
+    .monitor-metric {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 11px; margin-bottom: 3px;
+    }
+    .monitor-metric .mv { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    .monitor-feed {
+      max-height: 250px; overflow-y: auto; font-size: 11px;
+    }
+    .monitor-feed-entry {
+      padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+      display: flex; gap: 6px; align-items: flex-start;
+    }
+    .monitor-feed-entry:last-child { border-bottom: none; }
+    .mfe-ts { color: var(--text-dim); font-size: 10px; white-space: nowrap; min-width: 55px; }
+    .mfe-badge {
+      font-size: 8px; font-weight: 700; padding: 1px 4px; border-radius: 3px;
+      text-transform: uppercase; white-space: nowrap;
+    }
+    .mfe-badge.ok { background: rgba(63,185,80,0.15); color: var(--accent-green); }
+    .mfe-badge.err { background: rgba(248,81,73,0.15); color: var(--accent-red); }
+    .mfe-badge.task { background: rgba(163,113,247,0.15); color: var(--accent-purple); }
+    .mfe-badge.shell { background: rgba(56,189,248,0.15); color: var(--accent-cyan); }
+    .mfe-badge.sys { background: rgba(210,153,34,0.15); color: var(--accent-orange); }
+    .mfe-text { flex: 1; color: var(--text); word-break: break-word; }
+
+    .monitor-process-row {
+      display: flex; gap: 6px; font-size: 11px; padding: 2px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+    }
+    .monitor-process-row:last-child { border-bottom: none; }
+    .mpr-name { flex: 1; color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mpr-val { color: var(--text-muted); font-variant-numeric: tabular-nums; min-width: 50px; text-align: right; }
+
+    .monitor-status-row {
+      display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px;
+    }
+    .monitor-pill {
+      font-size: 9px; padding: 2px 6px; border-radius: 9px;
+      border: 1px solid var(--border); color: var(--text-muted);
+    }
+    .monitor-pill.active { border-color: var(--accent-green); color: var(--accent-green); background: rgba(63,185,80,0.08); }
+    .monitor-pill.warn { border-color: var(--accent-orange); color: var(--accent-orange); }
+    .monitor-pill.err { border-color: var(--accent-red); color: var(--accent-red); }
+
+    @keyframes monitor-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .monitor-streaming { animation: monitor-pulse 1.5s ease infinite; }
   </style>
 </head>
 <body>
@@ -894,6 +977,7 @@
     <nav class="topbar-nav">
       <button class="topbar-btn active" data-view="chat" title="Agent Chat">Agent</button>
       <button class="topbar-btn" data-view="supervisor" title="Supervisor LLM">Supervisor</button>
+      <button class="topbar-btn" data-view="monitor" title="Monitor Autonomo — Actividad en tiempo real">Monitor</button>
     </nav>
     <div class="topbar-spacer"></div>
     <div class="topbar-services">
@@ -1079,6 +1163,83 @@
           <span class="chat-hint" onclick="setSupervisorHint(this)">Proponer optimizaciones</span>
           <span class="chat-hint" onclick="setSupervisorHint(this)">Diagnosticar intermitencias</span>
         </div>
+      </div>
+    </section>
+
+    <!-- MONITOR PANEL -->
+    <section class="panel-left" id="panel-monitor" style="display:none;">
+      <div class="chat-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        MONITOR AUTONOMO
+        <span class="badge monitor-streaming" id="monitor-badge" style="background:var(--accent-red)">LIVE</span>
+        <span style="flex:1"></span>
+        <span style="font-size:10px;color:var(--text-dim);" id="monitor-uptime">--</span>
+      </div>
+
+      <div class="monitor-grid" id="monitor-grid">
+
+        <!-- SYSTEM HEALTH -->
+        <div class="monitor-card" id="mc-health">
+          <div class="monitor-card-title"><span class="mc-dot green"></span>SISTEMA</div>
+          <div class="monitor-metric"><span>CPU</span><span class="mv" id="mon-cpu">--%</span></div>
+          <div class="monitor-bar"><div class="monitor-bar-fill" id="mon-cpu-bar" style="width:0%;background:var(--accent-green);"></div></div>
+          <div class="monitor-metric"><span>RAM</span><span class="mv" id="mon-ram">-- / -- GB</span></div>
+          <div class="monitor-bar"><div class="monitor-bar-fill" id="mon-ram-bar" style="width:0%;background:var(--accent-cyan);"></div></div>
+          <div class="monitor-metric"><span>Disco</span><span class="mv" id="mon-disk">-- libre</span></div>
+          <div class="monitor-bar"><div class="monitor-bar-fill" id="mon-disk-bar" style="width:0%;background:var(--accent-purple);"></div></div>
+        </div>
+
+        <!-- ACTIVE TASKS -->
+        <div class="monitor-card" id="mc-tasks">
+          <div class="monitor-card-title"><span class="mc-dot purple"></span>TAREAS ACTIVAS</div>
+          <div id="mon-tasks-list" style="font-size:11px;color:var(--text-muted);">Cargando...</div>
+        </div>
+
+        <!-- PROCESS LIST -->
+        <div class="monitor-card" id="mc-processes">
+          <div class="monitor-card-title"><span class="mc-dot cyan"></span>PROCESOS (Top CPU)</div>
+          <div id="mon-process-list" style="max-height:180px;overflow-y:auto;">
+            <div style="font-size:11px;color:var(--text-dim);">Cargando...</div>
+          </div>
+        </div>
+
+        <!-- SHELL HISTORY -->
+        <div class="monitor-card" id="mc-shell">
+          <div class="monitor-card-title"><span class="mc-dot orange"></span>TERMINAL / SHELL</div>
+          <div class="monitor-feed" id="mon-shell-feed">
+            <div style="font-size:11px;color:var(--text-dim);">Esperando actividad...</div>
+          </div>
+        </div>
+
+        <!-- AUDIT LOG -->
+        <div class="monitor-card full-width" id="mc-audit">
+          <div class="monitor-card-title"><span class="mc-dot green"></span>AUDITORIA EN TIEMPO REAL
+            <span style="flex:1"></span>
+            <select id="mon-audit-filter" style="font-size:9px;padding:1px 4px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:3px;color:var(--text-muted);" onchange="filterMonitorAudit(this.value)">
+              <option value="all">Todos</option>
+              <option value="hands">Shell/Hands</option>
+              <option value="interpreter">Interpreter</option>
+              <option value="orchestrator">Orchestrator</option>
+              <option value="brain">Brain</option>
+              <option value="vision">Vision</option>
+            </select>
+          </div>
+          <div class="monitor-feed" id="mon-audit-feed" style="max-height:300px;">
+            <div style="font-size:11px;color:var(--text-dim);">Conectando al stream...</div>
+          </div>
+        </div>
+
+        <!-- BITACORA -->
+        <div class="monitor-card full-width" id="mc-bitacora">
+          <div class="monitor-card-title"><span class="mc-dot green"></span>BITACORA DE EVOLUCION
+            <span style="flex:1"></span>
+            <span style="font-size:9px;color:var(--text-dim);" id="mon-bitacora-count">0 entradas</span>
+          </div>
+          <div class="monitor-feed" id="mon-bitacora-feed" style="max-height:200px;">
+            <div style="font-size:11px;color:var(--text-dim);">Cargando...</div>
+          </div>
+        </div>
+
       </div>
     </section>
 
@@ -1411,10 +1572,12 @@ function switchView(view) {
   const panelAgent = document.getElementById('panel-left');
   const panelSupervisor = document.getElementById('panel-supervisor');
   const panelInterpreter = document.getElementById('panel-interpreter');
+  const panelMonitor = document.getElementById('panel-monitor');
   
   panelAgent.style.display = 'none';
   panelSupervisor.style.display = 'none';
   if (panelInterpreter) panelInterpreter.style.display = 'none';
+  if (panelMonitor) panelMonitor.style.display = 'none';
 
   if (view === 'chat') {
     panelAgent.style.display = 'flex';
@@ -1424,6 +1587,9 @@ function switchView(view) {
     if (panelInterpreter) panelInterpreter.style.display = 'flex';
     loadInterpModels();
     loadInterpStatus();
+  } else if (view === 'monitor') {
+    if (panelMonitor) panelMonitor.style.display = 'flex';
+    initMonitor();
   }
 }
 
@@ -3369,6 +3535,237 @@ if (_interpInput) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendInterpreterTask(); }
   });
 }
+
+
+// ═══════════════════════════════════════════════════════════════
+// MONITOR AUTONOMO
+// ═══════════════════════════════════════════════════════════════
+let monitorInitialized = false;
+let monitorSSE = null;
+let monitorAuditFilter = 'all';
+let monitorStartTime = null;
+let monitorUptimeTimer = null;
+let monitorAuditEntries = [];
+
+function initMonitor() {
+  if (monitorInitialized) return;
+  monitorInitialized = true;
+  monitorStartTime = Date.now();
+  loadMonitorSnapshot();
+  connectMonitorSSE();
+  monitorUptimeTimer = setInterval(updateMonitorUptime, 1000);
+}
+
+function updateMonitorUptime() {
+  if (!monitorStartTime) return;
+  const el = document.getElementById('monitor-uptime');
+  if (!el) return;
+  const sec = Math.floor((Date.now() - monitorStartTime) / 1000);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  el.textContent = (h > 0 ? h + 'h ' : '') + m + 'm ' + s + 's monitoreando';
+}
+
+async function loadMonitorSnapshot() {
+  try {
+    const r = await fetch(API + '/api/monitor/snapshot');
+    const d = await r.json();
+    if (!d.ok) return;
+    const data = d.data;
+
+    if (data.health) renderMonitorHealth(data.health);
+    if (data.processes) renderMonitorProcesses(data.processes);
+    if (data.tasks) renderMonitorTasks(data.tasks);
+    if (data.audit) renderMonitorAuditBatch(data.audit);
+    if (data.shell_history) renderMonitorShell(data.shell_history);
+    if (data.bitacora) renderMonitorBitacora(data.bitacora);
+  } catch (e) {
+    console.warn('Monitor snapshot error:', e);
+  }
+}
+
+function connectMonitorSSE() {
+  if (monitorSSE) { monitorSSE.close(); monitorSSE = null; }
+  const badge = document.getElementById('monitor-badge');
+
+  const evtSource = new EventSource(API + '/api/monitor/stream');
+  monitorSSE = evtSource;
+
+  evtSource.onopen = () => {
+    badge.textContent = 'LIVE';
+    badge.style.background = 'var(--accent-red)';
+    badge.classList.add('monitor-streaming');
+  };
+
+  evtSource.onmessage = (e) => {
+    try {
+      const events = JSON.parse(e.data);
+      events.forEach(evt => {
+        if (evt.type === 'system') renderMonitorHealth(evt.data);
+        else if (evt.type === 'audit') appendMonitorAuditEntry(evt.data);
+        else if (evt.type === 'task') appendMonitorTask(evt.data);
+        else if (evt.type === 'heartbeat') { /* keep-alive */ }
+      });
+    } catch (_) {}
+  };
+
+  evtSource.onerror = () => {
+    badge.textContent = 'RECONECTANDO';
+    badge.style.background = 'var(--accent-orange)';
+    badge.classList.remove('monitor-streaming');
+  };
+}
+
+function renderMonitorHealth(h) {
+  const cpuEl = document.getElementById('mon-cpu');
+  const cpuBar = document.getElementById('mon-cpu-bar');
+  const ramEl = document.getElementById('mon-ram');
+  const ramBar = document.getElementById('mon-ram-bar');
+  const diskEl = document.getElementById('mon-disk');
+  const diskBar = document.getElementById('mon-disk-bar');
+
+  if (h.cpu_pct !== undefined) {
+    cpuEl.textContent = h.cpu_pct.toFixed(1) + '%';
+    cpuBar.style.width = Math.min(h.cpu_pct, 100) + '%';
+    cpuBar.style.background = h.cpu_pct > 80 ? 'var(--accent-red)' : h.cpu_pct > 50 ? 'var(--accent-orange)' : 'var(--accent-green)';
+  }
+  if (h.ram_pct !== undefined) {
+    const ramPct = Math.min(h.ram_pct, 100);
+    ramEl.textContent = (h.ram_used_gb || '--') + ' / ' + (h.ram_total_gb || '--') + ' GB (' + ramPct.toFixed(0) + '%)';
+    ramBar.style.width = ramPct + '%';
+    ramBar.style.background = ramPct > 85 ? 'var(--accent-red)' : ramPct > 65 ? 'var(--accent-orange)' : 'var(--accent-cyan)';
+  }
+  if (h.disk_pct !== undefined) {
+    diskEl.textContent = (h.disk_free_gb || '--') + ' GB libre (' + (100 - h.disk_pct).toFixed(0) + '%)';
+    diskBar.style.width = Math.min(h.disk_pct, 100) + '%';
+    diskBar.style.background = h.disk_pct > 90 ? 'var(--accent-red)' : h.disk_pct > 75 ? 'var(--accent-orange)' : 'var(--accent-purple)';
+  }
+}
+
+function renderMonitorProcesses(procs) {
+  const el = document.getElementById('mon-process-list');
+  if (!procs.length) { el.innerHTML = '<div style="font-size:11px;color:var(--text-dim);">Sin procesos activos</div>'; return; }
+  el.innerHTML = procs.map(p =>
+    '<div class="monitor-process-row">' +
+    '<span class="mpr-name">' + escapeHtml(p.name) + '</span>' +
+    '<span class="mpr-val">' + p.cpu.toFixed(1) + 's</span>' +
+    '<span class="mpr-val">' + p.mem_mb.toFixed(0) + 'MB</span>' +
+    '</div>'
+  ).join('');
+}
+
+function renderMonitorTasks(tasks) {
+  const el = document.getElementById('mon-tasks-list');
+  if (!tasks.length) { el.innerHTML = '<div style="color:var(--text-dim);">Sin tareas recientes</div>'; return; }
+  el.innerHTML = tasks.map(t => {
+    const statusColor = t.status === 'completed' ? 'var(--accent-green)' : t.status === 'running' ? 'var(--accent-cyan)' : t.status === 'failed' ? 'var(--accent-red)' : 'var(--text-muted)';
+    const goal = (t.goal || '').substring(0, 60);
+    return '<div style="padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;gap:6px;align-items:center;">' +
+      '<span style="width:6px;height:6px;border-radius:50%;background:' + statusColor + ';flex-shrink:0;"></span>' +
+      '<span style="flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(goal) + '</span>' +
+      '<span style="font-size:9px;color:var(--text-dim);">' + (t.status || '') + '</span>' +
+      '</div>';
+  }).join('');
+}
+
+function appendMonitorTask(t) {
+  const el = document.getElementById('mon-tasks-list');
+  const statusColor = t.status === 'completed' ? 'var(--accent-green)' : t.status === 'running' ? 'var(--accent-cyan)' : t.status === 'failed' ? 'var(--accent-red)' : 'var(--text-muted)';
+  const goal = (t.goal || '').substring(0, 60);
+  const row = document.createElement('div');
+  row.style.cssText = 'padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;gap:6px;align-items:center;';
+  row.innerHTML =
+    '<span style="width:6px;height:6px;border-radius:50%;background:' + statusColor + ';flex-shrink:0;"></span>' +
+    '<span style="flex:1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(goal) + '</span>' +
+    '<span style="font-size:9px;color:var(--text-dim);">' + (t.status || '') + '</span>';
+  el.prepend(row);
+  while (el.children.length > 15) el.removeChild(el.lastChild);
+}
+
+function renderMonitorAuditBatch(entries) {
+  monitorAuditEntries = entries;
+  const feed = document.getElementById('mon-audit-feed');
+  feed.innerHTML = '';
+  entries.forEach(e => _appendAuditRow(feed, e));
+}
+
+function appendMonitorAuditEntry(e) {
+  monitorAuditEntries.unshift(e);
+  if (monitorAuditEntries.length > 100) monitorAuditEntries.pop();
+  const feed = document.getElementById('mon-audit-feed');
+  _appendAuditRow(feed, e, true);
+  while (feed.children.length > 60) feed.removeChild(feed.lastChild);
+}
+
+function _appendAuditRow(feed, e, prepend) {
+  if (monitorAuditFilter !== 'all' && (e.module || '').toLowerCase().indexOf(monitorAuditFilter) === -1) return;
+  const ts = (e.ts || '').substring(11, 19) || '--:--:--';
+  const ok = e.ok !== false;
+  const badgeClass = e.action && (e.action.includes('shell') || e.action.includes('exec') || e.action.includes('run')) ? 'shell' :
+                     ok ? 'ok' : 'err';
+  const label = (e.module || '') + '.' + (e.action || '');
+  const detail = e.error ? ' — ' + e.error : '';
+  const row = document.createElement('div');
+  row.className = 'monitor-feed-entry';
+  row.dataset.module = (e.module || '').toLowerCase();
+  row.innerHTML =
+    '<span class="mfe-ts">' + ts + '</span>' +
+    '<span class="mfe-badge ' + badgeClass + '">' + (ok ? 'OK' : 'ERR') + '</span>' +
+    '<span class="mfe-text">' + escapeHtml(label) + (e.ms ? ' <span style="color:var(--text-dim);">(' + e.ms + 'ms)</span>' : '') + escapeHtml(detail) + '</span>';
+  if (prepend) feed.prepend(row); else feed.appendChild(row);
+}
+
+function filterMonitorAudit(val) {
+  monitorAuditFilter = val;
+  const feed = document.getElementById('mon-audit-feed');
+  feed.querySelectorAll('.monitor-feed-entry').forEach(row => {
+    if (val === 'all') { row.style.display = ''; return; }
+    row.style.display = (row.dataset.module || '').indexOf(val) !== -1 ? '' : 'none';
+  });
+}
+
+function renderMonitorShell(entries) {
+  const feed = document.getElementById('mon-shell-feed');
+  if (!entries.length) { feed.innerHTML = '<div style="font-size:11px;color:var(--text-dim);">Sin comandos recientes</div>'; return; }
+  feed.innerHTML = '';
+  entries.forEach(e => {
+    const ts = (e.ts || '').substring(11, 19) || '';
+    const ok = e.ok !== false;
+    const payload = e.payload_json ? (typeof e.payload_json === 'string' ? (() => { try { return JSON.parse(e.payload_json); } catch(_) { return {}; } })() : e.payload_json) : {};
+    const cmd = payload.command || payload.cmd || e.action || '';
+    const row = document.createElement('div');
+    row.className = 'monitor-feed-entry';
+    row.innerHTML =
+      '<span class="mfe-ts">' + ts + '</span>' +
+      '<span class="mfe-badge ' + (ok ? 'shell' : 'err') + '">' + (ok ? '$' : '!') + '</span>' +
+      '<span class="mfe-text" style="font-family:monospace;font-size:11px;">' + escapeHtml(cmd.substring(0, 120)) +
+      (e.ms ? ' <span style="color:var(--text-dim);">(' + e.ms + 'ms)</span>' : '') + '</span>';
+    feed.appendChild(row);
+  });
+}
+
+function renderMonitorBitacora(entries) {
+  const feed = document.getElementById('mon-bitacora-feed');
+  const countEl = document.getElementById('mon-bitacora-count');
+  if (!entries.length) { feed.innerHTML = '<div style="font-size:11px;color:var(--text-dim);">Sin entradas</div>'; return; }
+  countEl.textContent = entries.length + ' entradas';
+  feed.innerHTML = '';
+  entries.forEach(e => {
+    const ts = (e.timestamp || e.ts || '').substring(11, 19) || '';
+    const ok = e.ok !== false;
+    const msg = e.message || e.msg || '';
+    const src = e.source || '';
+    const row = document.createElement('div');
+    row.className = 'monitor-feed-entry';
+    row.innerHTML =
+      '<span class="mfe-ts">' + ts + '</span>' +
+      '<span class="mfe-badge ' + (ok ? 'ok' : 'err') + '">' + escapeHtml(src.substring(0, 8) || (ok ? 'OK' : 'ERR')) + '</span>' +
+      '<span class="mfe-text">' + escapeHtml(msg.substring(0, 200)) + '</span>';
+    feed.appendChild(row);
+  });
+}
+
 
 </script>
 </body>

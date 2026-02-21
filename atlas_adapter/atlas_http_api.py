@@ -5607,6 +5607,133 @@ def audit_tail(n: int = 50, module: Optional[str] = None):
     return {"ok": True, "entries": entries, "error": None}
 
 
+# ────────────────────────────────────────────────────────────
+# Monitor Autónomo — SSE stream + snapshot
+# ────────────────────────────────────────────────────────────
+
+@app.get("/api/monitor/snapshot", tags=["Monitor"])
+def monitor_snapshot():
+    """Snapshot completo del estado actual del sistema para el Monitor autónomo."""
+    t0 = time.perf_counter()
+    result = {"ts": datetime.now(timezone.utc).isoformat(), "processes": [], "audit": [], "tasks": [], "bitacora": [], "health": {}, "shell_history": []}
+    try:
+        import subprocess
+        ps = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-Process | Where-Object {$_.CPU -gt 0} | Sort-Object CPU -Descending | Select-Object -First 20 Id,ProcessName,CPU,WorkingSet64,StartTime | ConvertTo-Json -Compress"],
+            capture_output=True, text=True, timeout=5
+        )
+        if ps.returncode == 0 and ps.stdout.strip():
+            import json as _j
+            procs = _j.loads(ps.stdout)
+            if isinstance(procs, dict):
+                procs = [procs]
+            result["processes"] = [{"pid": p.get("Id"), "name": p.get("ProcessName"), "cpu": round(p.get("CPU", 0), 1), "mem_mb": round((p.get("WorkingSet64") or 0) / 1048576, 1)} for p in procs[:20]]
+    except Exception:
+        pass
+    try:
+        result["audit"] = get_audit_logger().tail(n=30) or []
+    except Exception:
+        pass
+    try:
+        from modules.humanoid.orchestrator.memory import TaskMemory
+        mem = TaskMemory()
+        import sqlite3
+        conn = sqlite3.connect(str(mem.db_path))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT id, goal, status, created_ts, updated_ts FROM task_memory ORDER BY updated_ts DESC LIMIT 15").fetchall()
+        result["tasks"] = [dict(r) for r in rows]
+        conn.close()
+    except Exception:
+        pass
+    try:
+        from modules.humanoid.ans.evolution_bitacora import get_evolution_entries
+        result["bitacora"] = get_evolution_entries(limit=20) or []
+    except Exception:
+        pass
+    try:
+        import psutil
+        cpu = psutil.cpu_percent(interval=0.3)
+        mem = psutil.virtual_memory()
+        disk = psutil.disk_usage("C:\\")
+        result["health"] = {
+            "cpu_pct": cpu, "ram_pct": mem.percent,
+            "ram_used_gb": round(mem.used / 1073741824, 1), "ram_total_gb": round(mem.total / 1073741824, 1),
+            "disk_pct": disk.percent, "disk_free_gb": round(disk.free / 1073741824, 1),
+        }
+    except Exception:
+        try:
+            import shutil
+            du = shutil.disk_usage("C:\\")
+            result["health"] = {"disk_pct": round(du.used / du.total * 100, 1), "disk_free_gb": round(du.free / 1073741824, 1)}
+        except Exception:
+            pass
+    try:
+        entries = get_audit_logger().tail(n=20, module="hands")
+        result["shell_history"] = [e for e in (entries or []) if e.get("action") in ("exec_command", "shell_exec", "run")]
+    except Exception:
+        pass
+    ms = int((time.perf_counter() - t0) * 1000)
+    return {"ok": True, "data": result, "ms": ms}
+
+
+@app.get("/api/monitor/stream", tags=["Monitor"])
+async def monitor_stream():
+    """SSE stream que emite actividad del sistema cada 3 segundos."""
+    from fastapi.responses import StreamingResponse
+
+    async def _generate():
+        last_audit_count = 0
+        last_task_ts = ""
+        while True:
+            events = []
+            try:
+                audit_entries = get_audit_logger().tail(n=10) or []
+                if len(audit_entries) != last_audit_count:
+                    for entry in audit_entries:
+                        events.append({"type": "audit", "data": {
+                            "ts": entry.get("ts", ""), "actor": entry.get("actor", ""),
+                            "module": entry.get("module", ""), "action": entry.get("action", ""),
+                            "ok": entry.get("ok", True), "ms": entry.get("ms", 0),
+                            "error": entry.get("error", ""),
+                        }})
+                    last_audit_count = len(audit_entries)
+            except Exception:
+                pass
+            try:
+                import psutil
+                cpu = psutil.cpu_percent(interval=0)
+                mem = psutil.virtual_memory()
+                events.append({"type": "system", "data": {
+                    "cpu_pct": cpu, "ram_pct": mem.percent,
+                    "ram_used_gb": round(mem.used / 1073741824, 1),
+                }})
+            except Exception:
+                pass
+            try:
+                from modules.humanoid.orchestrator.memory import TaskMemory
+                mem_db = TaskMemory()
+                import sqlite3
+                conn = sqlite3.connect(str(mem_db.db_path))
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute("SELECT id, goal, status, updated_ts FROM task_memory ORDER BY updated_ts DESC LIMIT 3").fetchall()
+                tasks = [dict(r) for r in rows]
+                conn.close()
+                if tasks and tasks[0].get("updated_ts", "") != last_task_ts:
+                    last_task_ts = tasks[0].get("updated_ts", "")
+                    for t in tasks:
+                        events.append({"type": "task", "data": t})
+            except Exception:
+                pass
+            if events:
+                yield f"data: {json.dumps(events, ensure_ascii=False, default=str)}\n\n"
+            else:
+                yield f"data: {json.dumps([{'type': 'heartbeat', 'data': {'ts': datetime.now(timezone.utc).isoformat()}}], default=str)}\n\n"
+            await asyncio.sleep(3)
+
+    return StreamingResponse(_generate(), media_type="text/event-stream")
+
+
 def _redact_tokens(text: str) -> str:
     """Redact token/secret-like substrings for support bundle."""
     import re
