@@ -886,6 +886,7 @@
     </div>
     <nav class="topbar-nav">
       <button class="topbar-btn active" data-view="chat" title="Agent Chat">Agent</button>
+      <button class="topbar-btn" data-view="interpreter" title="Open Interpreter — Ejecucion autonoma">Interpreter</button>
       <button class="topbar-btn" data-view="supervisor" title="Supervisor LLM">Supervisor</button>
     </nav>
     <div class="topbar-spacer"></div>
@@ -1069,6 +1070,55 @@
           <span class="chat-hint" onclick="setSupervisorHint(this)">Analizar módulos con errores</span>
           <span class="chat-hint" onclick="setSupervisorHint(this)">Proponer optimizaciones</span>
           <span class="chat-hint" onclick="setSupervisorHint(this)">Diagnosticar intermitencias</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- INTERPRETER PANEL (hidden by default) -->
+    <section class="panel-left" id="panel-interpreter" style="display:none;">
+      <div class="chat-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        OPEN INTERPRETER
+        <span class="badge" id="interp-status-badge" style="background:var(--accent-green)">Ready</span>
+      </div>
+
+      <div class="chat-messages" id="interp-messages">
+        <div class="msg atlas">
+          <div class="msg-label">INTERPRETER</div>
+          Open Interpreter listo. Escribe una tarea en lenguaje natural y la ejecutare de forma autonoma: codigo, terminal, archivos, git, navegacion web.
+        </div>
+      </div>
+
+      <div class="chat-input-area">
+        <div style="padding:8px 12px;background:var(--bg-elevated);border-radius:6px;margin-bottom:8px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <label style="font-size:11px;color:var(--text-muted);">MODELO</label>
+            <select id="interp-model" style="padding:4px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:11px;font-family:inherit;">
+              <option value="">Auto (detectar mejor)</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <label style="font-size:11px;color:var(--text-muted);white-space:nowrap;">
+              <input type="checkbox" id="interp-autorun" style="margin-right:4px;">
+              Auto-run
+            </label>
+            <span style="font-size:10px;color:var(--text-dim);flex:1;">Ejecutar codigo sin pedir confirmacion</span>
+            <button onclick="loadInterpStatus()" style="padding:3px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-muted);font-size:10px;cursor:pointer;font-family:inherit;">Refresh</button>
+          </div>
+        </div>
+
+        <div class="chat-input-row">
+          <textarea class="chat-textarea" id="interp-input" placeholder="Ej: Cuenta los archivos .py en el proyecto y muestra los 5 mas grandes..." rows="2"></textarea>
+          <button class="chat-send" id="btn-interp-send" onclick="sendInterpreterTask()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+        <div id="interp-session-info" style="font-size:10px;color:var(--text-dim);padding:4px 0;"></div>
+        <div class="chat-hints">
+          <span class="chat-hint" onclick="setInterpHint(this)">Cuenta archivos .py en el proyecto</span>
+          <span class="chat-hint" onclick="setInterpHint(this)">Muestra espacio libre en disco</span>
+          <span class="chat-hint" onclick="setInterpHint(this)">Lista los ultimos 5 commits de git</span>
+          <span class="chat-hint" onclick="setInterpHint(this)">Crea un script hello_atlas.py y ejecutalo</span>
         </div>
       </div>
     </section>
@@ -1352,13 +1402,20 @@ function initViewSwitcher() {
 function switchView(view) {
   const panelAgent = document.getElementById('panel-left');
   const panelSupervisor = document.getElementById('panel-supervisor');
+  const panelInterpreter = document.getElementById('panel-interpreter');
   
+  panelAgent.style.display = 'none';
+  panelSupervisor.style.display = 'none';
+  if (panelInterpreter) panelInterpreter.style.display = 'none';
+
   if (view === 'chat') {
     panelAgent.style.display = 'flex';
-    panelSupervisor.style.display = 'none';
   } else if (view === 'supervisor') {
-    panelAgent.style.display = 'none';
     panelSupervisor.style.display = 'flex';
+  } else if (view === 'interpreter') {
+    if (panelInterpreter) panelInterpreter.style.display = 'flex';
+    loadInterpModels();
+    loadInterpStatus();
   }
 }
 
@@ -2884,6 +2941,192 @@ if (window.speechSynthesis) {
   window.speechSynthesis.onvoiceschanged = () => {};
 }
 
+// ═══════════════════════════════════════════
+// OPEN INTERPRETER — Panel Logic
+// ═══════════════════════════════════════════
+
+let interpSessionId = null;
+let interpProcessing = false;
+
+function setInterpHint(el) {
+  document.getElementById('interp-input').value = el.textContent;
+  document.getElementById('interp-input').focus();
+}
+
+function addInterpMessage(text, role) {
+  const box = document.getElementById('interp-messages');
+  const div = document.createElement('div');
+  div.className = 'msg ' + (role === 'user' ? 'user' : 'atlas');
+  div.innerHTML = '<div class="msg-label">' + (role === 'user' ? 'TU' : 'INTERPRETER') + '</div>' + escapeHtml(text).replace(/\n/g, '<br>');
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function addInterpChunk(type, content, lang) {
+  const box = document.getElementById('interp-messages');
+  let lastMsg = box.lastElementChild;
+
+  if (type === 'status') {
+    const div = document.createElement('div');
+    div.className = 'msg atlas';
+    div.style.cssText = 'font-size:11px;color:var(--text-muted);padding:4px 12px;';
+    div.textContent = content;
+    box.appendChild(div);
+  } else if (type === 'message') {
+    if (!lastMsg || lastMsg.dataset.chunkType !== 'message') {
+      const div = document.createElement('div');
+      div.className = 'msg atlas';
+      div.dataset.chunkType = 'message';
+      div.innerHTML = '<div class="msg-label">INTERPRETER</div><span class="interp-text"></span>';
+      box.appendChild(div);
+      lastMsg = div;
+    }
+    const span = lastMsg.querySelector('.interp-text');
+    if (span) span.textContent += content;
+  } else if (type === 'code') {
+    if (!lastMsg || lastMsg.dataset.chunkType !== 'code') {
+      const div = document.createElement('div');
+      div.className = 'msg atlas';
+      div.dataset.chunkType = 'code';
+      div.innerHTML = '<div class="msg-label" style="color:var(--accent-purple);">CODE' + (lang ? ' (' + lang + ')' : '') + '</div><pre style="background:var(--bg);padding:8px;border-radius:4px;overflow-x:auto;font-size:12px;margin-top:4px;border:1px solid var(--border);"><code></code></pre>';
+      box.appendChild(div);
+      lastMsg = div;
+    }
+    const code = lastMsg.querySelector('code');
+    if (code) code.textContent += content;
+  } else if (type === 'output') {
+    const div = document.createElement('div');
+    div.className = 'msg atlas';
+    div.dataset.chunkType = 'output';
+    div.innerHTML = '<div class="msg-label" style="color:var(--accent-green);">OUTPUT</div><pre style="background:#0a160a;padding:8px;border-radius:4px;font-size:12px;margin-top:4px;color:var(--accent-green);border:1px solid #1a3a1a;overflow-x:auto;"><code>' + escapeHtml(content) + '</code></pre>';
+    box.appendChild(div);
+  } else if (type === 'error') {
+    const div = document.createElement('div');
+    div.className = 'msg atlas';
+    div.innerHTML = '<div class="msg-label" style="color:var(--accent-red);">ERROR</div><span style="color:var(--accent-red);">' + escapeHtml(content) + '</span>';
+    box.appendChild(div);
+  } else if (type === 'done') {
+    const div = document.createElement('div');
+    div.className = 'msg atlas';
+    div.style.cssText = 'font-size:11px;color:var(--accent-green);padding:4px 12px;border-top:1px solid var(--border);';
+    div.textContent = content;
+    box.appendChild(div);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+async function sendInterpreterTask() {
+  const input = document.getElementById('interp-input');
+  const task = input.value.trim();
+  if (!task || interpProcessing) return;
+
+  interpProcessing = true;
+  const sendBtn = document.getElementById('btn-interp-send');
+  sendBtn.disabled = true;
+  sendBtn.style.opacity = '0.5';
+  document.getElementById('interp-status-badge').textContent = 'Running...';
+  document.getElementById('interp-status-badge').style.background = 'var(--accent-orange)';
+
+  addInterpMessage(task, 'user');
+  input.value = '';
+  emitLive('exec', '<strong>[Interpreter]</strong> ' + escapeHtml(task.substring(0, 80)));
+
+  const model = document.getElementById('interp-model').value || null;
+  const autoRun = document.getElementById('interp-autorun').checked;
+
+  try {
+    const body = { task: task, auto_run: autoRun };
+    if (model) body.model = model;
+    if (interpSessionId) body.session_id = interpSessionId;
+
+    const response = await fetch(API + '/api/workspace/interpreter/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const chunk = JSON.parse(line.substring(6));
+          if (chunk.session_id) interpSessionId = chunk.session_id;
+
+          addInterpChunk(chunk.type, chunk.content || '', chunk.language || '');
+
+          if (chunk.type === 'code') {
+            emitLive('code', '<strong>[Interpreter]</strong> ' + escapeHtml((chunk.content || '').substring(0, 100)));
+          } else if (chunk.type === 'output') {
+            emitLive('cmd', '<strong>[Interpreter Output]</strong> ' + escapeHtml((chunk.content || '').substring(0, 100)));
+          } else if (chunk.type === 'error') {
+            emitLive('err', '<strong>[Interpreter]</strong> ' + escapeHtml(chunk.content || ''));
+          } else if (chunk.type === 'done') {
+            emitLive('exec', '<strong>[Interpreter]</strong> Completado (' + (chunk.elapsed_ms || '?') + 'ms)');
+          }
+        } catch (e) {}
+      }
+    }
+  } catch (err) {
+    addInterpChunk('error', 'Conexion perdida: ' + err.message);
+    emitLive('err', '<strong>[Interpreter]</strong> ' + escapeHtml(err.message));
+  }
+
+  interpProcessing = false;
+  sendBtn.disabled = false;
+  sendBtn.style.opacity = '1';
+  document.getElementById('interp-status-badge').textContent = 'Ready';
+  document.getElementById('interp-status-badge').style.background = 'var(--accent-green)';
+
+  const info = document.getElementById('interp-session-info');
+  if (interpSessionId) info.textContent = 'Session: ' + interpSessionId;
+}
+
+async function loadInterpModels() {
+  try {
+    const r = await fetch(API + '/api/workspace/interpreter/models');
+    const d = await r.json();
+    if (!d.ok) return;
+    const sel = document.getElementById('interp-model');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">Auto (' + escapeHtml(d.data.default || 'detectar') + ')</option>';
+    (d.data.models || []).forEach(function(m) {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.label + ' [' + m.tier + ']';
+      sel.appendChild(opt);
+    });
+    if (current) sel.value = current;
+  } catch (e) {}
+}
+
+async function loadInterpStatus() {
+  try {
+    const r = await fetch(API + '/api/workspace/interpreter/status');
+    const d = await r.json();
+    if (!d.ok) return;
+    const badge = document.getElementById('interp-status-badge');
+    badge.textContent = d.data.installed ? 'v' + d.data.version : 'Not installed';
+    badge.style.background = d.data.installed ? 'var(--accent-green)' : 'var(--accent-red)';
+    const info = document.getElementById('interp-session-info');
+    const sessions = d.data.active_sessions || [];
+    info.textContent = sessions.length + ' sesion(es) activa(s) | AI mode: ' + (d.data.ai_mode || 'auto') + ' | Max: ' + d.data.max_sessions;
+    if (sessions.length > 0 && !interpSessionId) {
+      interpSessionId = sessions[0].session_id;
+    }
+  } catch (e) {}
+}
+
 // ─── KEYBOARD SHORTCUTS ───
 document.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); sendMessage(); }
@@ -2909,6 +3152,14 @@ _chatInput.addEventListener('keydown', e => {
 _chatInput.addEventListener('focus', _globalMute);
 _chatInput.addEventListener('input', _globalMute);
 renderTokenUsage(estimateTokens(_chatInput.value || ''));
+
+// ─── INTERPRETER INPUT ENTER ───
+const _interpInput = document.getElementById('interp-input');
+if (_interpInput) {
+  _interpInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendInterpreterTask(); }
+  });
+}
 
 </script>
 </body>
