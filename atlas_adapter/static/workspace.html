@@ -193,7 +193,7 @@
     }
     .msg pre code { background: none; padding: 0; color: var(--text); }
 
-    /* Thinking animation */
+    /* Thinking animation (legacy dots) */
     .msg.thinking {
       background: var(--bg-elevated); border: 1px solid var(--border);
       align-self: flex-start;
@@ -209,6 +209,118 @@
       0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
       40% { opacity: 1; transform: scale(1.1); }
     }
+
+    /* ─── THOUGHT DIALOG (Cursor-style) ─── */
+    .thought-dialog {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin: 6px 0;
+      overflow: hidden;
+      align-self: flex-start;
+      width: 100%;
+      transition: border-color 0.3s;
+    }
+    .thought-dialog.active { border-color: rgba(88,166,255,0.3); }
+    .thought-dialog.done { border-color: rgba(63,185,80,0.3); }
+    .thought-dialog.error { border-color: rgba(248,81,73,0.3); }
+
+    .thought-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; cursor: pointer; user-select: none;
+    }
+    .thought-header:hover { background: rgba(255,255,255,0.02); }
+
+    .thought-spinner {
+      width: 14px; height: 14px; border: 2px solid var(--border);
+      border-top-color: var(--accent-primary); border-radius: 50%;
+      animation: thought-spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    .thought-dialog.done .thought-spinner,
+    .thought-dialog.error .thought-spinner { display: none; }
+    .thought-dialog.done .thought-check,
+    .thought-dialog.error .thought-check { display: inline-flex; }
+    .thought-check {
+      display: none; width: 14px; height: 14px; border-radius: 50%;
+      align-items: center; justify-content: center; flex-shrink: 0;
+      font-size: 10px;
+    }
+    .thought-dialog.done .thought-check { background: var(--accent-green); color: #000; }
+    .thought-dialog.error .thought-check { background: var(--accent-red); color: #fff; }
+
+    @keyframes thought-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .thought-title {
+      font-size: 12px; font-weight: 600; color: var(--text);
+      flex: 1;
+    }
+    .thought-timer {
+      font-size: 11px; color: var(--accent-primary); font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      min-width: 40px; text-align: right;
+      background: rgba(88,166,255,0.1); padding: 1px 6px; border-radius: 8px;
+    }
+    .thought-dialog.done .thought-timer { color: var(--accent-green); background: rgba(63,185,80,0.1); }
+    .thought-dialog.error .thought-timer { color: var(--accent-red); background: rgba(248,81,73,0.1); }
+    .thought-chevron {
+      font-size: 10px; color: var(--text-dim); transition: transform 0.2s;
+      flex-shrink: 0;
+    }
+    .thought-dialog.expanded .thought-chevron { transform: rotate(90deg); }
+
+    .thought-body {
+      max-height: 0; overflow: hidden;
+      transition: max-height 0.3s ease;
+      border-top: 0 solid transparent;
+    }
+    .thought-dialog.expanded .thought-body {
+      max-height: 600px; overflow-y: auto;
+      border-top: 1px solid var(--border);
+    }
+
+    .thought-steps {
+      padding: 8px 12px; font-size: 11px;
+    }
+    .thought-step {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 4px 0; color: var(--text-muted);
+    }
+    .thought-step.active { color: var(--text); }
+    .thought-step.done { color: var(--accent-green); }
+    .thought-step.error { color: var(--accent-red); }
+
+    .ts-icon {
+      width: 16px; height: 16px; display: flex; align-items: center;
+      justify-content: center; flex-shrink: 0; font-size: 10px;
+      margin-top: 1px;
+    }
+    .ts-icon.pending { color: var(--text-dim); }
+    .ts-icon.active { color: var(--accent-primary); }
+    .ts-icon.done { color: var(--accent-green); }
+    .ts-icon.error { color: var(--accent-red); }
+
+    .ts-text { flex: 1; line-height: 1.4; }
+    .ts-detail {
+      font-size: 10px; color: var(--text-dim); margin-top: 2px;
+      padding-left: 24px;
+    }
+
+    .thought-action {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 12px; font-size: 10px; color: var(--text-dim);
+      background: rgba(88,166,255,0.04);
+      border-top: 1px solid rgba(255,255,255,0.03);
+      animation: thought-action-pulse 2s ease infinite;
+    }
+    @keyframes thought-action-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    .thought-action-icon { font-size: 11px; }
+    .thought-action-text { flex: 1; font-style: italic; }
 
     /* Plan steps */
     .plan-steps { margin: 8px 0; }
@@ -2411,26 +2523,24 @@ async function sendMessage() {
   renderTokenUsage(0);
   setChatProcessing(true);
 
-  const thinkingId = addThinking();
-
-  const _chip = document.getElementById('model-status-chip');
   const _agentModeForRoute = document.getElementById('agent-mode').value;
   const _routeTag = _agentModeForRoute === 'auto' ? 'Auto > Agent' : 'Agent';
+  const thinkingId = addThinking('Pensando...');
+
+  const _chip = document.getElementById('model-status-chip');
   _chip.textContent = _routeTag + ' procesando...';
   _chip.style.color = 'var(--accent-cyan)';
 
-  if (_agentModeForRoute === 'auto') {
-    const routeBanner = document.createElement('div');
-    routeBanner.className = 'msg atlas';
-    routeBanner.style.cssText = 'padding:4px 12px;font-size:11px;border-left:3px solid var(--accent-cyan);background:rgba(56,189,248,0.05);';
-    routeBanner.innerHTML = '<span style="color:var(--accent-cyan);font-weight:600;">Auto > Agent</span> <span style="color:var(--text-muted);">— tarea enviada al agente de razonamiento</span>';
-    document.getElementById('chat-messages').appendChild(routeBanner);
-  }
+  const sAnalize = thoughtAddStep(thinkingId, 'Analizando objetivo: "' + text.substring(0, 50) + (text.length > 50 ? '...' : '') + '"', 'active');
+  thoughtSetAction(thinkingId, 'Clasificando tipo de tarea y seleccionando modelo...', '🧠');
 
   emitLive('exec', '<strong>[' + _routeTag + ']</strong> ' + escapeHtml(text.substring(0, 80)), true);
-  emitLive('info', 'Enviando a <code>/agent/goal</code>...');
 
   try {
+    thoughtUpdateStep(thinkingId, sAnalize, 'done');
+    const sRoute = thoughtAddStep(thinkingId, 'Seleccionando ruta: ' + _routeTag, 'active');
+    thoughtSetAction(thinkingId, 'Preparando request a /agent/goal...', '📡');
+
     const t0 = performance.now();
     const controller = new AbortController();
     currentRequestController = controller;
@@ -2438,6 +2548,12 @@ async function sendMessage() {
       if (currentRequestController) currentRequestController.abort();
     }, 120000);
     const requestBody = { goal: goalText, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel, sync_config: syncConfigActive };
+
+    thoughtUpdateStep(thinkingId, sRoute, 'done');
+    const sModel = thoughtAddStep(thinkingId, 'Enviando al modelo (' + (selectedModel || 'auto') + ')', 'active');
+    thoughtSetAction(thinkingId, 'Esperando respuesta del LLM...', '🤖');
+    thoughtSetTitle(thinkingId, 'Procesando con ' + _routeTag);
+
     const response = await fetch(API + '/agent/goal', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2447,15 +2563,20 @@ async function sendMessage() {
     clearTimeout(timeout);
     const elapsed = Math.round(performance.now() - t0);
     const data = await response.json();
-    removeThinking(thinkingId);
 
+    thoughtUpdateStep(thinkingId, sModel, 'done', 'Respuesta en ' + elapsed + 'ms');
     emitLive('info', 'Respuesta recibida en <code>' + elapsed + 'ms</code>');
 
     if (data.ok) {
       let reply = '';
       const modelUsed = data.data && data.data.model_used;
-      if (modelUsed) emitLive('info', '<strong>Modelo:</strong> <code>' + escapeHtml(modelUsed) + '</code>');
+
+      if (modelUsed) {
+        thoughtAddStep(thinkingId, 'Modelo usado: ' + modelUsed, 'done');
+        emitLive('info', '<strong>Modelo:</strong> <code>' + escapeHtml(modelUsed) + '</code>');
+      }
       if (data.data && data.data.provider_warning && data.data.provider_warning.message) {
+        thoughtAddStep(thinkingId, 'Advertencia: ' + data.data.provider_warning.message, 'error');
         emitLive('warn', '<strong>Proveedor:</strong> ' + escapeHtml(data.data.provider_warning.message));
       }
       if (data.data && Array.isArray(data.data.routing_trace)) {
@@ -2464,8 +2585,10 @@ async function sendMessage() {
           if (evt.event === 'selected') {
             emitLive('info', 'Ruta #' + (idx + 1) + ': seleccionado <code>' + escapeHtml(evt.model_used || '') + '</code>');
           } else if (evt.event === 'fallback_switch') {
+            thoughtAddStep(thinkingId, 'Fallback: ' + (evt.from || '') + ' → ' + (evt.to || ''), 'done');
             emitLive('warn', 'Cambio automático: <code>' + escapeHtml(evt.from || '') + '</code> → <code>' + escapeHtml(evt.to || '') + '</code>');
           } else if (evt.event === 'fail') {
+            thoughtAddStep(thinkingId, 'Intento fallido: ' + (evt.provider || '') + ':' + (evt.model || ''), 'error');
             emitLive('warn', 'Intento fallido: <code>' + escapeHtml((evt.provider || '') + ':' + (evt.model || '')) + '</code>');
           }
         });
@@ -2473,14 +2596,19 @@ async function sendMessage() {
 
       if (data.data && data.data.output && !data.data.plan && !data.data.steps) {
         reply = data.data.output;
+        const sRender = thoughtAddStep(thinkingId, 'Renderizando respuesta directa', 'active');
+        thoughtSetAction(thinkingId, 'Formateando salida...', '📝');
         emitLive('exec', '<strong>Respuesta directa</strong> del modelo');
         addChatMessage(reply, 'atlas');
+        thoughtUpdateStep(thinkingId, sRender, 'done');
         const completionTokens = estimateTokens(reply);
         tokenUsage.completion += completionTokens;
         tokenUsage.total += completionTokens;
         renderTokenUsage(0);
         emitLive('exec', '<strong>Completado</strong> (' + elapsed + 'ms)', true);
         if (data.siguientes_pasos) data.siguientes_pasos.forEach(s => emitLive('info', 'Info: ' + escapeHtml(s)));
+        thoughtSetTitle(thinkingId, 'Pensó por ' + Math.round(elapsed / 1000) + 's');
+        removeThinking(thinkingId);
         _chip.textContent = 'Agent listo (' + elapsed + 'ms)';
         _chip.style.color = 'var(--accent-green)';
         setTimeout(() => { _chip.textContent = 'Listo'; _chip.style.color = ''; }, 5000);
@@ -2488,6 +2616,9 @@ async function sendMessage() {
         currentRequestController = null;
         return;
       }
+
+      const sPlan = thoughtAddStep(thinkingId, 'Procesando plan y pasos', 'active');
+      thoughtSetAction(thinkingId, 'Construyendo respuesta estructurada...', '🔧');
 
       if (data.resumen) {
         reply += data.resumen + '\n\n';
@@ -2497,6 +2628,7 @@ async function sendMessage() {
         const d = data.data;
         if (d.plan) {
           reply += '**Plan:**\n' + d.plan + '\n\n';
+          thoughtAddStep(thinkingId, 'Plan generado', 'done');
           emitLive('plan', '<strong>Plan generado</strong>');
         }
         if (d.steps && d.steps.length > 0) {
@@ -2504,6 +2636,7 @@ async function sendMessage() {
           d.steps.forEach((s, i) => {
             const desc = typeof s === 'object' ? (s.description || JSON.stringify(s)) : s;
             reply += (i + 1) + '. ' + desc + '\n';
+            thoughtAddStep(thinkingId, 'Paso ' + (i + 1) + ': ' + desc.substring(0, 60), 'done');
             emitLive('plan', 'Paso ' + (i+1) + ': ' + escapeHtml(desc));
           });
           reply += '\n';
@@ -2512,6 +2645,7 @@ async function sendMessage() {
         if (d.execution_log && d.execution_log.length > 0) {
           d.execution_log.forEach(log => {
             const isOk = log.status === 'success';
+            thoughtAddStep(thinkingId, (isOk ? 'Ejecutado: ' : 'Fallo: ') + (log.step || '').substring(0, 50), isOk ? 'done' : 'error');
             emitLive('cmd', '<span class="term-line ' + (isOk ? 'ok' : 'err') + '">$ ' + escapeHtml(log.step || '') + '</span>');
             if (log.result) {
               const resultStr = typeof log.result === 'string' ? log.result : JSON.stringify(log.result, null, 2);
@@ -2522,6 +2656,7 @@ async function sendMessage() {
         if (d.artifacts && d.artifacts.length > 0) {
           d.artifacts.forEach(a => {
             const name = typeof a === 'string' ? a : JSON.stringify(a);
+            thoughtAddStep(thinkingId, 'Artifact: ' + name, 'done');
             emitLive('file', '<strong>Artifact:</strong> <code>' + escapeHtml(name) + '</code>');
           });
         }
@@ -2529,6 +2664,7 @@ async function sendMessage() {
       if (data.archivos_creados && data.archivos_creados.length > 0) {
         data.archivos_creados.forEach(a => {
           const name = typeof a === 'string' ? a : JSON.stringify(a);
+          thoughtAddStep(thinkingId, 'Archivo creado: ' + name, 'done');
           emitLive('file', '<strong>Archivo creado:</strong> <code>' + escapeHtml(name) + '</code>');
           reply += '- Archivo: `' + name + '`\n';
         });
@@ -2541,21 +2677,27 @@ async function sendMessage() {
         });
       }
       if (data.fallback) {
+        thoughtAddStep(thinkingId, 'Respuesta via fallback', 'done');
         emitLive('info', '<strong>Fallback:</strong> ' + escapeHtml(data.message || 'Respuesta via fallback'));
       }
+      thoughtUpdateStep(thinkingId, sPlan, 'done');
       addChatMessage(reply || 'Objetivo procesado correctamente.', 'atlas');
       const completionTokens = estimateTokens(reply);
       tokenUsage.completion += completionTokens;
       tokenUsage.total += completionTokens;
       renderTokenUsage(0);
+      thoughtSetTitle(thinkingId, 'Pensó por ' + Math.round(elapsed / 1000) + 's');
+      removeThinking(thinkingId);
       emitLive('exec', '<strong>Completado</strong> (' + elapsed + 'ms)', true);
     } else {
       let errMsg = data.error || data.message || 'Error al procesar el objetivo';
+      thoughtAddStep(thinkingId, 'Error: ' + errMsg.substring(0, 80), 'error');
 
-      // Fallback resiliente desde UI si falló modelo explícito (ej. openai:o3 respuesta vacía)
       if (selectedModel && selectedModel !== 'auto') {
         const looksLikeModelFailure = /respuesta vacia|respuesta vacía|error|timeout|rate limit|sin api key/i.test(String(errMsg));
         if (looksLikeModelFailure) {
+          const sFallback = thoughtAddStep(thinkingId, 'Reintentando con modelo auto...', 'active');
+          thoughtSetAction(thinkingId, 'Fallback: probando cascada automática...', '🔄');
           emitLive('warn', '<strong>Modelo seleccionado falló</strong> — reintentando con <code>auto</code>...');
           try {
             const fbRes = await fetch(API + '/agent/goal', {
@@ -2567,22 +2709,31 @@ async function sendMessage() {
             if (fbData && fbData.ok) {
               const modelUsed = fbData.data && fbData.data.model_used;
               const reply = (fbData.data && fbData.data.output) || fbData.resumen || 'Objetivo procesado con fallback.';
+              thoughtUpdateStep(thinkingId, sFallback, 'done', 'Resuelto via ' + (modelUsed || 'auto'));
+              thoughtSetTitle(thinkingId, 'Pensó (con fallback)');
+              removeThinking(thinkingId);
               addChatMessage(reply, 'atlas');
               emitLive('info', '<strong>Fallback UI:</strong> respuesta obtenida con <code>auto</code>' + (modelUsed ? (' → ' + escapeHtml(modelUsed)) : ''));
               setChatProcessing(false);
               currentRequestController = null;
+              _chip.textContent = 'Listo'; _chip.style.color = '';
               return;
             }
             errMsg = (fbData && (fbData.error || fbData.message)) || errMsg;
+            thoughtUpdateStep(thinkingId, sFallback, 'error', 'Fallback también falló');
           } catch (_) {}
         }
       }
 
+      thoughtSetError(thinkingId);
+      thoughtSetTitle(thinkingId, 'Error al procesar');
       addChatMessage('Error: ' + errMsg, 'atlas');
       emitLive('err', '<strong>Error:</strong> ' + escapeHtml(errMsg));
     }
   } catch (err) {
-    removeThinking(thinkingId);
+    thoughtSetError(thinkingId);
+    thoughtSetTitle(thinkingId, 'Conexión fallida');
+    thoughtAddStep(thinkingId, err.name === 'AbortError' ? 'Solicitud abortada por el usuario' : 'Error: ' + err.message, 'error');
     const msg = String(err && err.name === 'AbortError' ? 'Solicitud abortada' : ('Error de conexion: ' + (err.message || err)));
     addChatMessage(msg, 'atlas');
     emitLive('err', '<strong>Conexion fallida:</strong> ' + escapeHtml(msg));
@@ -2609,21 +2760,144 @@ function addChatMessage(text, type) {
   scrollChatBottom();
 }
 
-function addThinking() {
+// ═══════════════════════════════════════════════════════════════
+// THOUGHT DIALOG SYSTEM (Cursor-style thinking)
+// ═══════════════════════════════════════════════════════════════
+const _thoughtRegistry = {};
+
+function addThinking(label) {
   const container = document.getElementById('chat-messages');
-  const div = document.createElement('div');
   const id = 'think-' + Date.now();
+  const div = document.createElement('div');
   div.id = id;
-  div.className = 'msg thinking';
-  div.innerHTML = '<div class="msg-label">ATLAS</div><div class="thinking-dots"><span></span><span></span><span></span></div>';
+  div.className = 'thought-dialog active expanded';
+  div.innerHTML =
+    '<div class="thought-header" onclick="toggleThought(\'' + id + '\')">' +
+      '<div class="thought-spinner"></div>' +
+      '<div class="thought-check">✓</div>' +
+      '<div class="thought-title">' + escapeHtml(label || 'Pensando') + '</div>' +
+      '<div class="thought-timer" id="' + id + '-timer">0s</div>' +
+      '<div class="thought-chevron">▶</div>' +
+    '</div>' +
+    '<div class="thought-body">' +
+      '<div class="thought-steps" id="' + id + '-steps"></div>' +
+      '<div class="thought-action" id="' + id + '-action">' +
+        '<span class="thought-action-icon">⚙</span>' +
+        '<span class="thought-action-text">Iniciando...</span>' +
+      '</div>' +
+    '</div>';
   container.appendChild(div);
   scrollChatBottom();
+
+  const startTime = Date.now();
+  const timerInterval = setInterval(() => {
+    const el = document.getElementById(id + '-timer');
+    if (!el) { clearInterval(timerInterval); return; }
+    const sec = Math.round((Date.now() - startTime) / 1000);
+    el.textContent = sec + 's';
+  }, 1000);
+
+  _thoughtRegistry[id] = { startTime, timerInterval, steps: [], stepIndex: 0 };
   return id;
 }
 
+function thoughtAddStep(id, text, status) {
+  const reg = _thoughtRegistry[id];
+  if (!reg) return;
+  const stepsEl = document.getElementById(id + '-steps');
+  if (!stepsEl) return;
+
+  const stepId = id + '-step-' + reg.stepIndex++;
+  const step = document.createElement('div');
+  step.className = 'thought-step ' + (status || 'active');
+  step.id = stepId;
+  const iconMap = { pending: '○', active: '◉', done: '✓', error: '✗' };
+  step.innerHTML =
+    '<span class="ts-icon ' + (status || 'active') + '">' + (iconMap[status] || '◉') + '</span>' +
+    '<span class="ts-text">' + escapeHtml(text) + '</span>';
+  stepsEl.appendChild(step);
+  reg.steps.push({ id: stepId, text, status: status || 'active' });
+  scrollChatBottom();
+  return stepId;
+}
+
+function thoughtUpdateStep(id, stepId, status, detail) {
+  const step = document.getElementById(stepId);
+  if (!step) return;
+  step.className = 'thought-step ' + status;
+  const iconMap = { pending: '○', active: '◉', done: '✓', error: '✗' };
+  const icon = step.querySelector('.ts-icon');
+  if (icon) { icon.className = 'ts-icon ' + status; icon.textContent = iconMap[status] || '○'; }
+  if (detail) {
+    let detailEl = step.parentNode.querySelector('.ts-detail[data-for="' + stepId + '"]');
+    if (!detailEl) {
+      detailEl = document.createElement('div');
+      detailEl.className = 'ts-detail';
+      detailEl.dataset.for = stepId;
+      step.after(detailEl);
+    }
+    detailEl.textContent = detail;
+  }
+}
+
+function thoughtSetAction(id, text, icon) {
+  const el = document.getElementById(id + '-action');
+  if (!el) return;
+  const iconEl = el.querySelector('.thought-action-icon');
+  const textEl = el.querySelector('.thought-action-text');
+  if (iconEl) iconEl.textContent = icon || '⚙';
+  if (textEl) textEl.textContent = text;
+  scrollChatBottom();
+}
+
+function thoughtSetTitle(id, text) {
+  const dialog = document.getElementById(id);
+  if (!dialog) return;
+  const title = dialog.querySelector('.thought-title');
+  if (title) title.textContent = text;
+}
+
 function removeThinking(id) {
-  const el = document.getElementById(id);
-  if (el) el.remove();
+  const reg = _thoughtRegistry[id];
+  if (reg) {
+    clearInterval(reg.timerInterval);
+    const elapsed = Math.round((Date.now() - reg.startTime) / 1000);
+    const timerEl = document.getElementById(id + '-timer');
+    if (timerEl) timerEl.textContent = elapsed + 's';
+    delete _thoughtRegistry[id];
+  }
+  const dialog = document.getElementById(id);
+  if (dialog) {
+    dialog.classList.remove('active');
+    dialog.classList.add('done');
+    dialog.classList.remove('expanded');
+    const actionEl = document.getElementById(id + '-action');
+    if (actionEl) actionEl.remove();
+    reg && reg.steps.forEach(s => {
+      if (s.status === 'active') thoughtUpdateStep(id, s.id, 'done');
+    });
+  }
+}
+
+function thoughtSetError(id) {
+  const reg = _thoughtRegistry[id];
+  if (reg) {
+    clearInterval(reg.timerInterval);
+    delete _thoughtRegistry[id];
+  }
+  const dialog = document.getElementById(id);
+  if (dialog) {
+    dialog.classList.remove('active');
+    dialog.classList.add('error');
+    dialog.classList.remove('expanded');
+    const actionEl = document.getElementById(id + '-action');
+    if (actionEl) actionEl.remove();
+  }
+}
+
+function toggleThought(id) {
+  const dialog = document.getElementById(id);
+  if (dialog) dialog.classList.toggle('expanded');
 }
 
 function scrollChatBottom() {
@@ -3188,6 +3462,10 @@ async function sendViaInterpreter(text) {
   input.style.height = 'auto';
   setChatProcessing(true);
 
+  const interpThinkId = addThinking('Ejecutando con Interpreter');
+  const sInterpInit = thoughtAddStep(interpThinkId, 'Preparando sesión de Interpreter', 'active');
+  thoughtSetAction(interpThinkId, 'Conectando al motor de ejecución...', '⚙');
+
   const chip = document.getElementById('model-status-chip');
   const prevChip = chip.textContent;
   const prevColor = chip.style.color;
@@ -3212,22 +3490,29 @@ async function sendViaInterpreter(text) {
   let currentType = null;
   let chunkCount = 0;
 
+  thoughtUpdateStep(interpThinkId, sInterpInit, 'done');
+  const sInterpExec = thoughtAddStep(interpThinkId, 'Ejecutando tarea', 'active');
+  thoughtSetAction(interpThinkId, 'Procesando con Open Interpreter...', '🤖');
+
   function appendChunk(type, content, lang) {
     chunkCount++;
     if (chunkCount % 10 === 0) chip.textContent = 'Interpreter... ' + chunkCount + ' chunks';
+    if (chunkCount === 1) thoughtSetAction(interpThinkId, 'Recibiendo respuesta del Interpreter...', '📥');
 
     if (type === 'status') {
       emitLive('info', '<strong>[' + routeLabel + ']</strong> ' + escapeHtml(content));
       return;
     }
     if (type === 'done') {
-      const ms = content.match(/\d+/) ? content : '';
       const doneDiv = document.createElement('div');
       doneDiv.className = 'msg atlas';
       doneDiv.style.cssText = 'padding:4px 12px;font-size:11px;border-left:3px solid var(--accent-green);background:rgba(63,185,80,0.05);';
       doneDiv.innerHTML = '<span style="color:var(--accent-green);">Completado</span>';
       msgBox.appendChild(doneDiv);
       msgBox.scrollTop = msgBox.scrollHeight;
+      thoughtUpdateStep(interpThinkId, sInterpExec, 'done');
+      thoughtSetTitle(interpThinkId, 'Interpreter completado');
+      removeThinking(interpThinkId);
       emitLive('exec', '<strong>[' + routeLabel + ']</strong> Completado', true);
       return;
     }
@@ -3261,6 +3546,8 @@ async function sendViaInterpreter(text) {
         currentDiv.innerHTML = '<div class="msg-label" style="color:var(--accent-purple);">CODE' + (lang ? ' (' + escapeHtml(lang) + ')' : '') + '</div><pre style="background:var(--bg);padding:8px;border-radius:4px;overflow-x:auto;font-size:12px;margin-top:4px;border:1px solid var(--border);white-space:pre-wrap;"><code></code></pre>';
         msgBox.appendChild(currentDiv);
         currentType = 'code';
+        thoughtAddStep(interpThinkId, 'Ejecutando código' + (lang ? ' (' + lang + ')' : ''), 'active');
+        thoughtSetAction(interpThinkId, 'Compilando y ejecutando...', '💻');
         emitLive('code', '<strong>[' + routeLabel + ']</strong> ejecutando codigo...');
       }
       const code = currentDiv.querySelector('code');
@@ -3273,6 +3560,8 @@ async function sendViaInterpreter(text) {
       currentDiv.innerHTML = '<div class="msg-label" style="color:var(--accent-green);">OUTPUT</div><pre style="background:#0a160a;padding:8px;border-radius:4px;font-size:12px;margin-top:4px;color:var(--accent-green);border:1px solid #1a3a1a;overflow-x:auto;white-space:pre-wrap;"><code>' + escapeHtml(content) + '</code></pre>';
       msgBox.appendChild(currentDiv);
       currentType = 'output';
+      thoughtAddStep(interpThinkId, 'Output recibido: ' + (content || '').substring(0, 50), 'done');
+      thoughtSetAction(interpThinkId, 'Procesando resultado...', '📊');
       emitLive('cmd', '<strong>[Output]</strong> ' + escapeHtml((content || '').substring(0, 100)));
     }
     msgBox.scrollTop = msgBox.scrollHeight;
@@ -3314,7 +3603,15 @@ async function sendViaInterpreter(text) {
     errDiv.className = 'msg atlas';
     errDiv.innerHTML = '<div class="msg-label" style="color:var(--accent-red);">ERROR</div><span style="color:var(--accent-red);">Conexion perdida: ' + escapeHtml(err.message) + '</span>';
     msgBox.appendChild(errDiv);
+    thoughtSetError(interpThinkId);
+    thoughtSetTitle(interpThinkId, 'Error de conexión');
     emitLive('err', '<strong>[' + routeLabel + ']</strong> ' + escapeHtml(err.message));
+  }
+
+  if (document.getElementById(interpThinkId) && document.getElementById(interpThinkId).classList.contains('active')) {
+    thoughtUpdateStep(interpThinkId, sInterpExec, 'done');
+    thoughtSetTitle(interpThinkId, 'Interpreter completado');
+    removeThinking(interpThinkId);
   }
 
   chip.textContent = prevChip || 'Listo';
