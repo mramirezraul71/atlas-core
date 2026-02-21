@@ -6885,18 +6885,22 @@ _CASCADE_ORDER = [
 # Se usa solo en auto-route + specialist_routing, sin romper sincronía con Brain.
 _FAST_SPECIALIST_PRIORITY = {
     "code": [
+        "bedrock:us.anthropic.claude-haiku-4-5-20251001-v1:0",
         "xai:grok-4-fast",
         "openai:gpt-4.1-mini",
         "deepseek:deepseek-chat",
         "groq:llama-3.3-70b-versatile",
     ],
     "analysis": [
+        "bedrock:us.anthropic.claude-opus-4-6-v1:0",
+        "bedrock:us.anthropic.claude-haiku-4-5-20251001-v1:0",
         "openai:gpt-4.1",
         "anthropic:claude-sonnet-4-latest",
         "deepseek:deepseek-reasoner",
         "gemini:gemini-2.5-flash",
     ],
     "chat": [
+        "bedrock:us.anthropic.claude-haiku-4-5-20251001-v1:0",
         "gemini:gemini-2.5-flash",
         "xai:grok-3-fast",
         "openai:gpt-4.1-mini",
@@ -6938,6 +6942,14 @@ def _pick_specialist_model(goal: str, prefer_fast: bool = True) -> tuple[Optiona
         provider_id = model_key.split(":", 1)[0].strip().lower()
         if provider_id in ("ollama", "atlas"):
             return True
+        if provider_id == "bedrock":
+            # Bedrock no usa API key en provider_credentials; depende de AWS env (o modo forzado).
+            if (os.getenv("ATLAS_AI_MODE", "") or "").strip().lower() == "bedrock":
+                return True
+            return bool(
+                ((os.getenv("AWS_ACCESS_KEY_ID") or "").strip() and (os.getenv("AWS_SECRET_ACCESS_KEY") or "").strip())
+                or (os.getenv("AWS_PROFILE") or "").strip()
+            )
         rt = _PROVIDER_RUNTIME_STATUS.get(provider_id, {})
         if rt.get("code") in ("auth_error", "quota_exhausted", "rate_limited"):
             return False
