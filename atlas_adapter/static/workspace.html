@@ -359,7 +359,7 @@
       to { transform: rotate(360deg); }
     }
     .chat-mode-bar {
-      display: flex; gap: 6px; align-items: center; margin-bottom: 4px;
+      display: flex; gap: 6px; align-items: center; margin-bottom: 4px; flex-wrap: wrap;
     }
     .token-bar {
       display: flex; align-items: center; gap: 8px;
@@ -437,6 +437,12 @@
       padding: 3px 6px; cursor: pointer; outline: none;
     }
     .chat-mode-bar select:focus { border-color: var(--accent-primary); }
+    #agent-mode {
+      font-size: 11px; font-weight: 600; padding: 4px 10px;
+      background: var(--bg-card); color: var(--accent-cyan);
+      border: 1px solid var(--accent-cyan); border-radius: 6px;
+    }
+    #agent-mode:hover { background: rgba(57,211,196,0.1); }
     .sync-toggle {
       display: flex; align-items: center; gap: 3px; cursor: pointer;
       font-size: 9px; color: var(--text-muted); user-select: none;
@@ -467,6 +473,7 @@
       color: var(--text-dim);
       background: var(--bg-elevated);
       white-space: nowrap;
+      transition: color 0.3s, border-color 0.3s, background 0.3s;
     }
     .model-status-chip.ok {
       border-color: rgba(63,185,80,0.45);
@@ -886,7 +893,6 @@
     </div>
     <nav class="topbar-nav">
       <button class="topbar-btn active" data-view="chat" title="Agent Chat">Agent</button>
-      <button class="topbar-btn" data-view="interpreter" title="Open Interpreter — Ejecucion autonoma">Interpreter</button>
       <button class="topbar-btn" data-view="supervisor" title="Supervisor LLM">Supervisor</button>
     </nav>
     <div class="topbar-spacer"></div>
@@ -967,11 +973,12 @@
             <div class="model-dropdown" id="model-dropdown"></div>
           </div>
           <span class="model-status-chip" id="model-status-chip">Estado: --</span>
-          <select id="agent-mode" title="Modo de ejecucion" onchange="onAgentModeChange(this.value)">
-            <option value="plan_only">Plan</option>
-            <option value="auto" selected>Auto</option>
+          <span style="font-size:9px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Modo:</span>
+          <select id="agent-mode" title="Modo de ejecucion: Auto detecta si usar Agent o Interpreter" onchange="onAgentModeChange(this.value)">
+            <option value="auto" selected>Auto (Agent+Interpreter)</option>
+            <option value="plan_only">Solo Plan</option>
+            <option value="interpreter">Solo Interpreter</option>
             <option value="execute_controlled">Controlado</option>
-            <option value="interpreter">Interpreter</option>
           </select>
           <select id="agent-depth" title="Profundidad">
             <option value="1">D1</option>
@@ -2048,10 +2055,10 @@ function applyPreset(kind) {
     depth = '3';
   } else if (kind === 'builder') {
     modelId = 'ollama:deepseek-coder:6.7b';
-    mode = 'auto';
+    mode = 'interpreter';
     depth = '2';
   } else if (kind === 'multifuncion') {
-    modelId = 'ollama:llama3.1:latest';
+    modelId = 'auto';
     mode = 'auto';
     depth = '2';
   }
@@ -2187,6 +2194,24 @@ function clearCodeViewer() {
     '<div class="code-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><p>El codigo generado aparecera aqui</p></div>';
 }
 
+// ─── AUTO-DETECT: should this go to Interpreter? ───
+function shouldUseInterpreter(text) {
+  const lower = text.toLowerCase();
+  const execPatterns = [
+    /\b(ejecuta|ejecutar|corre|correr|run|exec)\b/,
+    /\b(crea|crear|genera|generar|escribe|escribir)\s+(un\s+)?(archivo|script|fichero|file)/,
+    /\b(cuenta|contar|lista|listar|busca|buscar|analiza|analizar)\s+(los\s+)?(archivos|carpetas|ficheros)/,
+    /\b(instala|instalar|pip|npm|git\s+(clone|pull|push|commit))\b/,
+    /\b(muestra|mostrar|dime|show)\s+(el\s+)?(espacio|disco|memoria|cpu|procesos)/,
+    /\b(borra|borrar|elimina|eliminar|mueve|mover|copia|copiar|renombra|rename)\b/,
+    /\b(deploy|desplegar|compilar|compile|build|test|pytest)\b/,
+    /\bprint\s*\(/,
+    /\bpython\s/,
+    /\.py\b.*\b(ejecut|corr|run)/,
+  ];
+  return execPatterns.some(p => p.test(lower));
+}
+
 // ─── SEND MESSAGE ───
 async function sendMessage() {
   _globalMute();
@@ -2196,6 +2221,9 @@ async function sendMessage() {
 
   const agentMode = document.getElementById('agent-mode').value;
   if (agentMode === 'interpreter') {
+    return sendViaInterpreter(text);
+  }
+  if (agentMode === 'auto' && shouldUseInterpreter(text)) {
     return sendViaInterpreter(text);
   }
 
@@ -2219,7 +2247,21 @@ async function sendMessage() {
 
   const thinkingId = addThinking();
 
-  emitLive('exec', '<strong>Goal recibido</strong> — ' + escapeHtml(text.substring(0, 80)), true);
+  const _chip = document.getElementById('model-status-chip');
+  const _agentModeForRoute = document.getElementById('agent-mode').value;
+  const _routeTag = _agentModeForRoute === 'auto' ? 'Auto > Agent' : 'Agent';
+  _chip.textContent = _routeTag + ' procesando...';
+  _chip.style.color = 'var(--accent-cyan)';
+
+  if (_agentModeForRoute === 'auto') {
+    const routeBanner = document.createElement('div');
+    routeBanner.className = 'msg atlas';
+    routeBanner.style.cssText = 'padding:4px 12px;font-size:11px;border-left:3px solid var(--accent-cyan);background:rgba(56,189,248,0.05);';
+    routeBanner.innerHTML = '<span style="color:var(--accent-cyan);font-weight:600;">Auto > Agent</span> <span style="color:var(--text-muted);">— tarea enviada al agente de razonamiento</span>';
+    document.getElementById('chat-messages').appendChild(routeBanner);
+  }
+
+  emitLive('exec', '<strong>[' + _routeTag + ']</strong> ' + escapeHtml(text.substring(0, 80)), true);
   emitLive('info', 'Enviando a <code>/agent/goal</code>...');
 
   try {
@@ -2273,6 +2315,9 @@ async function sendMessage() {
         renderTokenUsage(0);
         emitLive('exec', '<strong>Completado</strong> (' + elapsed + 'ms)', true);
         if (data.siguientes_pasos) data.siguientes_pasos.forEach(s => emitLive('info', 'Info: ' + escapeHtml(s)));
+        _chip.textContent = 'Agent listo (' + elapsed + 'ms)';
+        _chip.style.color = 'var(--accent-green)';
+        setTimeout(() => { _chip.textContent = 'Listo'; _chip.style.color = ''; }, 5000);
         setChatProcessing(false);
         currentRequestController = null;
         return;
@@ -2378,6 +2423,8 @@ async function sendMessage() {
   }
 
   currentRequestController = null;
+  _chip.textContent = 'Listo';
+  _chip.style.color = '';
   setChatProcessing(false);
 }
 
@@ -2956,13 +3003,16 @@ let interpProcessing = false;
 
 function onAgentModeChange(mode) {
   const chip = document.getElementById('model-status-chip');
-  if (mode === 'interpreter') {
-    chip.textContent = 'Interpreter activo';
-    chip.style.color = 'var(--accent-green)';
-    emitLive('info', '<strong>Modo Interpreter activado</strong> — las tareas se ejecutan con Open Interpreter (codigo, terminal, archivos)');
-  } else {
-    chip.style.color = '';
-  }
+  const modeLabels = {
+    interpreter: { text: 'Modo: Interpreter', color: 'var(--accent-green)', desc: 'todas las tareas se ejecutan con Open Interpreter' },
+    auto:        { text: 'Modo: Auto (Agent + Interpreter)', color: 'var(--accent-cyan)', desc: 'auto-detecta si usar Agent o Interpreter segun la tarea' },
+    plan_only:   { text: 'Modo: Solo Plan', color: 'var(--accent-orange)', desc: 'solo genera plan sin ejecutar' },
+    execute_controlled: { text: 'Modo: Controlado', color: 'var(--accent-cyan)', desc: 'ejecucion paso a paso con confirmacion' }
+  };
+  const info = modeLabels[mode] || { text: 'Modo: ' + mode, color: '', desc: '' };
+  chip.textContent = info.text;
+  chip.style.color = info.color;
+  if (info.desc) emitLive('info', '<strong>' + info.text + '</strong> — ' + info.desc);
 }
 
 async function sendViaInterpreter(text) {
@@ -2972,26 +3022,47 @@ async function sendViaInterpreter(text) {
   input.style.height = 'auto';
   setChatProcessing(true);
 
-  emitLive('exec', '<strong>[Interpreter]</strong> ' + escapeHtml(text.substring(0, 80)), true);
-  emitLive('info', 'Enviando a <code>/api/workspace/interpreter/execute</code>...');
+  const chip = document.getElementById('model-status-chip');
+  const prevChip = chip.textContent;
+  const prevColor = chip.style.color;
+  chip.textContent = 'Interpreter ejecutando...';
+  chip.style.color = 'var(--accent-orange)';
+
+  const agentMode = document.getElementById('agent-mode').value;
+  const routeLabel = agentMode === 'auto' ? 'Auto > Interpreter' : 'Interpreter';
+
+  emitLive('exec', '<strong>[' + routeLabel + ']</strong> ' + escapeHtml(text.substring(0, 80)), true);
 
   const msgBox = document.getElementById('chat-messages');
+
+  const routeBanner = document.createElement('div');
+  routeBanner.className = 'msg atlas';
+  routeBanner.style.cssText = 'padding:4px 12px;font-size:11px;border-left:3px solid var(--accent-green);background:rgba(63,185,80,0.05);';
+  routeBanner.innerHTML = '<span style="color:var(--accent-green);font-weight:600;">' + routeLabel + '</span> <span style="color:var(--text-muted);">— ejecutando tarea con Open Interpreter</span>';
+  msgBox.appendChild(routeBanner);
+  msgBox.scrollTop = msgBox.scrollHeight;
+
   let currentDiv = null;
   let currentType = null;
+  let chunkCount = 0;
 
   function appendChunk(type, content, lang) {
+    chunkCount++;
+    if (chunkCount % 10 === 0) chip.textContent = 'Interpreter... ' + chunkCount + ' chunks';
+
     if (type === 'status') {
-      emitLive('info', '<strong>[Interpreter]</strong> ' + escapeHtml(content));
+      emitLive('info', '<strong>[' + routeLabel + ']</strong> ' + escapeHtml(content));
       return;
     }
     if (type === 'done') {
+      const ms = content.match(/\d+/) ? content : '';
       const doneDiv = document.createElement('div');
       doneDiv.className = 'msg atlas';
-      doneDiv.style.cssText = 'font-size:11px;color:var(--accent-green);border-top:1px solid var(--border);padding-top:6px;';
-      doneDiv.textContent = content;
+      doneDiv.style.cssText = 'padding:4px 12px;font-size:11px;border-left:3px solid var(--accent-green);background:rgba(63,185,80,0.05);';
+      doneDiv.innerHTML = '<span style="color:var(--accent-green);">Completado</span>';
       msgBox.appendChild(doneDiv);
       msgBox.scrollTop = msgBox.scrollHeight;
-      emitLive('exec', '<strong>[Interpreter]</strong> Completado', true);
+      emitLive('exec', '<strong>[' + routeLabel + ']</strong> Completado', true);
       return;
     }
     if (type === 'error') {
@@ -3000,7 +3071,7 @@ async function sendViaInterpreter(text) {
       errDiv.innerHTML = '<div class="msg-label" style="color:var(--accent-red);">ERROR</div><span style="color:var(--accent-red);">' + escapeHtml(content) + '</span>';
       msgBox.appendChild(errDiv);
       msgBox.scrollTop = msgBox.scrollHeight;
-      emitLive('err', '<strong>[Interpreter]</strong> ' + escapeHtml(content));
+      emitLive('err', '<strong>[' + routeLabel + ']</strong> ' + escapeHtml(content));
       currentDiv = null;
       currentType = null;
       return;
@@ -3009,7 +3080,7 @@ async function sendViaInterpreter(text) {
       if (currentType !== 'message') {
         currentDiv = document.createElement('div');
         currentDiv.className = 'msg atlas';
-        currentDiv.innerHTML = '<div class="msg-label">ATLAS (Interpreter)</div><span class="interp-text"></span>';
+        currentDiv.innerHTML = '<div class="msg-label">ATLAS <span style="font-size:10px;color:var(--accent-green);font-weight:400;">via Interpreter</span></div><span class="interp-text"></span>';
         msgBox.appendChild(currentDiv);
         currentType = 'message';
       }
@@ -3017,16 +3088,20 @@ async function sendViaInterpreter(text) {
       if (span) span.textContent += content;
     } else if (type === 'code') {
       if (currentType !== 'code') {
+        chip.textContent = 'Interpreter: ejecutando codigo...';
+        chip.style.color = 'var(--accent-purple)';
         currentDiv = document.createElement('div');
         currentDiv.className = 'msg atlas';
         currentDiv.innerHTML = '<div class="msg-label" style="color:var(--accent-purple);">CODE' + (lang ? ' (' + escapeHtml(lang) + ')' : '') + '</div><pre style="background:var(--bg);padding:8px;border-radius:4px;overflow-x:auto;font-size:12px;margin-top:4px;border:1px solid var(--border);white-space:pre-wrap;"><code></code></pre>';
         msgBox.appendChild(currentDiv);
         currentType = 'code';
-        emitLive('code', '<strong>[Interpreter]</strong> ejecutando codigo...');
+        emitLive('code', '<strong>[' + routeLabel + ']</strong> ejecutando codigo...');
       }
       const code = currentDiv.querySelector('code');
       if (code) code.textContent += content;
     } else if (type === 'output') {
+      chip.textContent = 'Interpreter: output recibido';
+      chip.style.color = 'var(--accent-green)';
       currentDiv = document.createElement('div');
       currentDiv.className = 'msg atlas';
       currentDiv.innerHTML = '<div class="msg-label" style="color:var(--accent-green);">OUTPUT</div><pre style="background:#0a160a;padding:8px;border-radius:4px;font-size:12px;margin-top:4px;color:var(--accent-green);border:1px solid #1a3a1a;overflow-x:auto;white-space:pre-wrap;"><code>' + escapeHtml(content) + '</code></pre>';
@@ -3073,9 +3148,11 @@ async function sendViaInterpreter(text) {
     errDiv.className = 'msg atlas';
     errDiv.innerHTML = '<div class="msg-label" style="color:var(--accent-red);">ERROR</div><span style="color:var(--accent-red);">Conexion perdida: ' + escapeHtml(err.message) + '</span>';
     msgBox.appendChild(errDiv);
-    emitLive('err', '<strong>[Interpreter]</strong> ' + escapeHtml(err.message));
+    emitLive('err', '<strong>[' + routeLabel + ']</strong> ' + escapeHtml(err.message));
   }
 
+  chip.textContent = prevChip || 'Listo';
+  chip.style.color = prevColor || '';
   setChatProcessing(false);
   currentRequestController = null;
 }
