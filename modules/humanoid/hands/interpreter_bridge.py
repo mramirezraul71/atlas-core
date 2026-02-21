@@ -170,7 +170,6 @@ class InterpreterSession:
 
         prov = model_id.split("/")[0] if "/" in model_id else model_id.split(":")[0]
         if prov == "bedrock":
-            oi.llm.api_key = "bedrock"
             os.environ.setdefault("AWS_REGION_NAME", os.getenv("AWS_REGION", "us-east-1"))
         elif prov == "ollama":
             oi.llm.api_base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")

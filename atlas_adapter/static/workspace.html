@@ -967,10 +967,11 @@
             <div class="model-dropdown" id="model-dropdown"></div>
           </div>
           <span class="model-status-chip" id="model-status-chip">Estado: --</span>
-          <select id="agent-mode" title="Modo de ejecucion">
+          <select id="agent-mode" title="Modo de ejecucion" onchange="onAgentModeChange(this.value)">
             <option value="plan_only">Plan</option>
             <option value="auto" selected>Auto</option>
             <option value="execute_controlled">Controlado</option>
+            <option value="interpreter">Interpreter</option>
           </select>
           <select id="agent-depth" title="Profundidad">
             <option value="1">D1</option>
@@ -2193,6 +2194,11 @@ async function sendMessage() {
   const text = input.value.trim();
   if (!text || isProcessing) return;
 
+  const agentMode = document.getElementById('agent-mode').value;
+  if (agentMode === 'interpreter') {
+    return sendViaInterpreter(text);
+  }
+
   const attachments = [...chatAttachments];
   let goalText = text;
   if (attachments.length > 0) {
@@ -2942,11 +2948,137 @@ if (window.speechSynthesis) {
 }
 
 // ═══════════════════════════════════════════
-// OPEN INTERPRETER — Panel Logic
+// OPEN INTERPRETER — Integrated into Agent Chat
 // ═══════════════════════════════════════════
 
 let interpSessionId = null;
 let interpProcessing = false;
+
+function onAgentModeChange(mode) {
+  const chip = document.getElementById('model-status-chip');
+  if (mode === 'interpreter') {
+    chip.textContent = 'Interpreter activo';
+    chip.style.color = 'var(--accent-green)';
+    emitLive('info', '<strong>Modo Interpreter activado</strong> — las tareas se ejecutan con Open Interpreter (codigo, terminal, archivos)');
+  } else {
+    chip.style.color = '';
+  }
+}
+
+async function sendViaInterpreter(text) {
+  const input = document.getElementById('chat-input');
+  addChatMessage(text, 'user');
+  input.value = '';
+  input.style.height = 'auto';
+  setChatProcessing(true);
+
+  emitLive('exec', '<strong>[Interpreter]</strong> ' + escapeHtml(text.substring(0, 80)), true);
+  emitLive('info', 'Enviando a <code>/api/workspace/interpreter/execute</code>...');
+
+  const msgBox = document.getElementById('chat-messages');
+  let currentDiv = null;
+  let currentType = null;
+
+  function appendChunk(type, content, lang) {
+    if (type === 'status') {
+      emitLive('info', '<strong>[Interpreter]</strong> ' + escapeHtml(content));
+      return;
+    }
+    if (type === 'done') {
+      const doneDiv = document.createElement('div');
+      doneDiv.className = 'msg atlas';
+      doneDiv.style.cssText = 'font-size:11px;color:var(--accent-green);border-top:1px solid var(--border);padding-top:6px;';
+      doneDiv.textContent = content;
+      msgBox.appendChild(doneDiv);
+      msgBox.scrollTop = msgBox.scrollHeight;
+      emitLive('exec', '<strong>[Interpreter]</strong> Completado', true);
+      return;
+    }
+    if (type === 'error') {
+      const errDiv = document.createElement('div');
+      errDiv.className = 'msg atlas';
+      errDiv.innerHTML = '<div class="msg-label" style="color:var(--accent-red);">ERROR</div><span style="color:var(--accent-red);">' + escapeHtml(content) + '</span>';
+      msgBox.appendChild(errDiv);
+      msgBox.scrollTop = msgBox.scrollHeight;
+      emitLive('err', '<strong>[Interpreter]</strong> ' + escapeHtml(content));
+      currentDiv = null;
+      currentType = null;
+      return;
+    }
+    if (type === 'message') {
+      if (currentType !== 'message') {
+        currentDiv = document.createElement('div');
+        currentDiv.className = 'msg atlas';
+        currentDiv.innerHTML = '<div class="msg-label">ATLAS (Interpreter)</div><span class="interp-text"></span>';
+        msgBox.appendChild(currentDiv);
+        currentType = 'message';
+      }
+      const span = currentDiv.querySelector('.interp-text');
+      if (span) span.textContent += content;
+    } else if (type === 'code') {
+      if (currentType !== 'code') {
+        currentDiv = document.createElement('div');
+        currentDiv.className = 'msg atlas';
+        currentDiv.innerHTML = '<div class="msg-label" style="color:var(--accent-purple);">CODE' + (lang ? ' (' + escapeHtml(lang) + ')' : '') + '</div><pre style="background:var(--bg);padding:8px;border-radius:4px;overflow-x:auto;font-size:12px;margin-top:4px;border:1px solid var(--border);white-space:pre-wrap;"><code></code></pre>';
+        msgBox.appendChild(currentDiv);
+        currentType = 'code';
+        emitLive('code', '<strong>[Interpreter]</strong> ejecutando codigo...');
+      }
+      const code = currentDiv.querySelector('code');
+      if (code) code.textContent += content;
+    } else if (type === 'output') {
+      currentDiv = document.createElement('div');
+      currentDiv.className = 'msg atlas';
+      currentDiv.innerHTML = '<div class="msg-label" style="color:var(--accent-green);">OUTPUT</div><pre style="background:#0a160a;padding:8px;border-radius:4px;font-size:12px;margin-top:4px;color:var(--accent-green);border:1px solid #1a3a1a;overflow-x:auto;white-space:pre-wrap;"><code>' + escapeHtml(content) + '</code></pre>';
+      msgBox.appendChild(currentDiv);
+      currentType = 'output';
+      emitLive('cmd', '<strong>[Output]</strong> ' + escapeHtml((content || '').substring(0, 100)));
+    }
+    msgBox.scrollTop = msgBox.scrollHeight;
+  }
+
+  try {
+    const body = { task: text, auto_run: true };
+    if (interpSessionId) body.session_id = interpSessionId;
+
+    const response = await fetch(API + '/api/workspace/interpreter/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const chunk = JSON.parse(line.substring(6));
+          if (chunk.session_id) interpSessionId = chunk.session_id;
+          appendChunk(chunk.type, chunk.content || '', chunk.language || '');
+        } catch (e) {}
+      }
+    }
+  } catch (err) {
+    const errDiv = document.createElement('div');
+    errDiv.className = 'msg atlas';
+    errDiv.innerHTML = '<div class="msg-label" style="color:var(--accent-red);">ERROR</div><span style="color:var(--accent-red);">Conexion perdida: ' + escapeHtml(err.message) + '</span>';
+    msgBox.appendChild(errDiv);
+    emitLive('err', '<strong>[Interpreter]</strong> ' + escapeHtml(err.message));
+  }
+
+  setChatProcessing(false);
+  currentRequestController = null;
+}
 
 function setInterpHint(el) {
   document.getElementById('interp-input').value = el.textContent;
