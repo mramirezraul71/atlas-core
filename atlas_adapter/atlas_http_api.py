@@ -1654,6 +1654,98 @@ def api_workspace_navigate(body: WorkspaceNavigateBody):
 
 
 # -----------------------------------------------------------------------------
+# Open Interpreter — Motor de ejecucion autonoma del Workspace
+# -----------------------------------------------------------------------------
+
+class InterpreterExecuteBody(BaseModel):
+    task: str
+    model: Optional[str] = None
+    auto_run: bool = False
+    session_id: Optional[str] = None
+
+
+@app.post("/api/workspace/interpreter/execute", tags=["Workspace"])
+async def api_workspace_interpreter_execute(body: InterpreterExecuteBody):
+    """Execute a task via Open Interpreter with SSE streaming."""
+    from fastapi.responses import StreamingResponse
+
+    task = (body.task or "").strip()
+    if not task:
+        return _std_resp(False, None, 0, "task is required")
+
+    async def _sse_stream():
+        try:
+            from modules.humanoid.hands.interpreter_bridge import execute_streaming
+            async for chunk in execute_streaming(
+                task=task,
+                model=body.model,
+                auto_run=body.auto_run,
+                session_id=body.session_id,
+            ):
+                yield f"data: {json.dumps(chunk, ensure_ascii=True)}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=True)}\n\n"
+
+    return StreamingResponse(_sse_stream(), media_type="text/event-stream")
+
+
+@app.get("/api/workspace/interpreter/status", tags=["Workspace"])
+def api_workspace_interpreter_status():
+    """Return Open Interpreter engine status, available models and active sessions."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.hands.interpreter_bridge import interpreter_status
+        data = interpreter_status()
+        return _std_resp(True, data, int((time.perf_counter() - t0) * 1000), None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.delete("/api/workspace/interpreter/session/{session_id}", tags=["Workspace"])
+def api_workspace_interpreter_session_delete(session_id: str):
+    """Close and dispose a specific interpreter session."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.hands.interpreter_bridge import get_session_manager
+        ok = get_session_manager().close(session_id)
+        ms = int((time.perf_counter() - t0) * 1000)
+        if ok:
+            return _std_resp(True, {"session_id": session_id, "closed": True}, ms, None)
+        return _std_resp(False, None, ms, f"session {session_id} not found")
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/api/workspace/interpreter/models", tags=["Workspace"])
+def api_workspace_interpreter_models():
+    """List all AI models available for the interpreter engine."""
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.hands.interpreter_bridge import list_available_models, resolve_model
+        models = list_available_models()
+        default = resolve_model()
+        return _std_resp(True, {"models": models, "default": default, "total": len(models)}, int((time.perf_counter() - t0) * 1000), None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.post("/api/workspace/interpreter/quick", tags=["Workspace"])
+async def api_workspace_interpreter_quick(body: InterpreterExecuteBody):
+    """Execute a simple task and return the full result (no streaming)."""
+    t0 = time.perf_counter()
+    task = (body.task or "").strip()
+    if not task:
+        return _std_resp(False, None, 0, "task is required")
+    try:
+        from modules.humanoid.hands.interpreter_bridge import execute_quick
+        result = await execute_quick(task=task, model=body.model)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(result.get("ok", False), result, ms, result.get("error"))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+# -----------------------------------------------------------------------------
 # Primitivas (API) — wrappers explícitos por dominio (sin ejecutor genérico)
 # -----------------------------------------------------------------------------
 
