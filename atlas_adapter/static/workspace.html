@@ -873,6 +873,62 @@
     }
     @keyframes lineHighlight { from { background: rgba(63,185,80,0.2); } }
 
+    /* ACTIVITY FEED (real-time ops in code panel) */
+    .activity-feed { padding: 0; font-family: var(--mono); font-size: 12px; }
+    .activity-header {
+      display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+      background: var(--bg-elevated); border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 2;
+    }
+    .activity-header .activity-title { font-weight: 700; color: var(--accent-primary); font-size: 12px; }
+    .activity-header .activity-stats { margin-left: auto; color: var(--text-dim); font-size: 11px; }
+
+    .activity-progress {
+      padding: 8px 12px; border-bottom: 1px solid var(--border);
+      background: var(--bg-card);
+    }
+    .progress-bar-track {
+      width: 100%; height: 6px; background: var(--bg); border-radius: 3px;
+      overflow: hidden; margin-bottom: 6px;
+    }
+    .progress-bar-fill {
+      height: 100%; border-radius: 3px;
+      background: linear-gradient(90deg, var(--accent-cyan), var(--accent-primary));
+      transition: width 0.4s ease;
+      box-shadow: 0 0 8px rgba(0,180,216,0.3);
+    }
+    .progress-info {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 11px; color: var(--text-muted);
+    }
+    .progress-pct { font-weight: 700; color: var(--accent-primary); font-size: 13px; }
+    .progress-model { color: var(--accent-cyan); }
+
+    .activity-entries { max-height: calc(100vh - 200px); overflow-y: auto; }
+    .activity-entry {
+      display: flex; gap: 8px; padding: 6px 12px; border-bottom: 1px solid rgba(255,255,255,0.03);
+      align-items: flex-start; animation: fadeSlideIn 0.3s ease;
+    }
+    .activity-entry:hover { background: rgba(255,255,255,0.02); }
+    .activity-entry .ae-icon { flex-shrink: 0; width: 18px; text-align: center; font-size: 13px; }
+    .activity-entry .ae-time { flex-shrink: 0; width: 42px; color: var(--text-dim); font-size: 10px; text-align: right; }
+    .activity-entry .ae-body { flex: 1; color: var(--text-muted); word-break: break-word; }
+    .activity-entry .ae-body code {
+      background: rgba(0,0,0,0.3); padding: 1px 5px; border-radius: 3px; font-size: 11px;
+    }
+    .activity-entry.ae-tool-call { border-left: 2px solid var(--accent-cyan); }
+    .activity-entry.ae-tool-result { border-left: 2px solid var(--accent-green); }
+    .activity-entry.ae-tool-result.ae-fail { border-left-color: var(--accent-red); }
+    .activity-entry.ae-progress { border-left: 2px solid var(--accent-orange); opacity: 0.85; }
+    .activity-entry.ae-thinking { border-left: 2px solid var(--accent-purple); opacity: 0.7; }
+    .activity-entry.ae-text { border-left: 2px solid var(--accent-primary); }
+    .activity-entry.ae-file {
+      background: rgba(0,180,216,0.04); cursor: pointer; border-left: 2px solid var(--accent-primary);
+    }
+    .activity-entry.ae-file:hover { background: rgba(0,180,216,0.08); }
+
+    @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
     /* PREVIEW */
     .preview-panel { background: var(--bg); }
     .preview-frame {
@@ -2916,8 +2972,10 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
       _chip.innerHTML = '<span style="color:' + tColor + ';font-weight:700;">' + tName + '</span> → ' + (modelShort || '');
       thoughtAddStep(thinkingId, 'Complejidad: ' + tName + ' → ' + modelShort, 'done');
       emitLive('info', '<strong>Routing:</strong> <span style="color:' + tColor + '">' + tName + '</span> → <code>' + escapeHtml(data.model || '') + '</code>');
+      initActivityFeed(tier, data.model || '');
     } else {
       emitLive('info', escapeHtml(msg));
+      activityOnThinking(msg);
     }
   }
   else if (eventType === 'tool_call') {
@@ -2928,6 +2986,7 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
     _chip.textContent = data.name + '...';
     emitLive('cmd', '<strong>' + icon + ' ' + escapeHtml(data.name) + '</strong> ' + escapeHtml(label));
     window.__lastToolStep = stepId;
+    activityOnToolCall(data.name, data.input);
   }
   else if (eventType === 'tool_progress') {
     const line = data.line || '';
@@ -2937,6 +2996,7 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
         data.name + ' ' + elapsed + 's: ' + line.substring(0, 80));
     }
     emitLive('info', '<code style="color:var(--accent-cyan);">[' + elapsed + 's]</code> ' + escapeHtml(line.substring(0, 120)));
+    activityOnProgress(data.name, line, elapsed);
   }
   else if (eventType === 'tool_result') {
     const ok = data.ok !== false;
@@ -2949,6 +3009,7 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
       const preview = data.output.substring(0, 150).replace(/\n/g, ' ');
       emitLive(ok ? 'info' : 'err', '<code>' + icon + ' ' + escapeHtml(data.name) + '</code> ' + escapeHtml(preview));
     }
+    activityOnToolResult(data.name, data.output || '', ok, data.ms || 0);
   }
   else if (eventType === 'text') {
     thoughtAddStep(thinkingId, 'Respuesta generada (' + (data.llm_ms || 0) + 'ms)', 'done');
@@ -2964,11 +3025,13 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
     _chip.style.color = 'var(--accent-green)';
     if (data.model) emitLive('info', '<strong>Modelo:</strong> <code>' + escapeHtml(data.model) + '</code> | ' + (data.iterations || 0) + ' iteraciones | ' + (data.tools_used || []).length + ' tools');
     setTimeout(() => { _chip.textContent = 'Listo'; _chip.style.color = ''; }, 5000);
+    activityOnDone(data);
   }
   else if (eventType === 'error') {
     thoughtSetError(thinkingId);
     thoughtAddStep(thinkingId, 'Error: ' + (data.message || ''), 'error');
     emitLive('err', '<strong>Error:</strong> ' + escapeHtml(data.message || ''));
+    activityOnError(data.message || 'Error desconocido');
   }
 }
 
@@ -3166,6 +3229,124 @@ function insertHint(el) {
   const input = document.getElementById('chat-input');
   input.value = el.textContent;
   input.focus();
+}
+
+// ─── ACTIVITY FEED (right panel real-time ops) ───
+let _activityState = { entries: [], totalTools: 0, completedTools: 0, startTime: 0, model: '', complexity: '', files: [] };
+
+function initActivityFeed(complexity, model) {
+  _activityState = { entries: [], totalTools: 0, completedTools: 0, startTime: Date.now(), model: model || '', complexity: complexity || '', files: [] };
+  const viewer = document.getElementById('code-viewer');
+  viewer.innerHTML =
+    '<div class="activity-feed" id="activity-feed">' +
+      '<div class="activity-header">' +
+        '<span class="activity-title">Operaciones en tiempo real</span>' +
+        '<span class="activity-stats" id="activity-stats">0 ops</span>' +
+      '</div>' +
+      '<div class="activity-progress" id="activity-progress">' +
+        '<div class="progress-bar-track"><div class="progress-bar-fill" id="progress-fill" style="width:2%"></div></div>' +
+        '<div class="progress-info">' +
+          '<span class="progress-pct" id="progress-pct">0%</span>' +
+          '<span id="progress-step">Iniciando...</span>' +
+          '<span class="progress-model" id="progress-model">' + escapeHtml(model || '') + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="activity-entries" id="activity-entries"></div>' +
+    '</div>';
+  switchTopPanel('code');
+}
+
+function activityAddEntry(type, icon, body, extra) {
+  const container = document.getElementById('activity-entries');
+  if (!container) return;
+  const elapsed = ((Date.now() - _activityState.startTime) / 1000).toFixed(1);
+  const cssClass = 'activity-entry ae-' + type + (extra || '');
+  const div = document.createElement('div');
+  div.className = cssClass;
+  div.innerHTML =
+    '<span class="ae-icon">' + icon + '</span>' +
+    '<span class="ae-time">' + elapsed + 's</span>' +
+    '<span class="ae-body">' + body + '</span>';
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  _activityState.entries.push({ type, elapsed, body });
+  const statsEl = document.getElementById('activity-stats');
+  if (statsEl) statsEl.textContent = _activityState.entries.length + ' ops | ' + elapsed + 's';
+}
+
+function activityUpdateProgress(pct, stepLabel) {
+  const fill = document.getElementById('progress-fill');
+  const pctEl = document.getElementById('progress-pct');
+  const stepEl = document.getElementById('progress-step');
+  if (fill) fill.style.width = Math.min(pct, 100) + '%';
+  if (pctEl) pctEl.textContent = Math.round(pct) + '%';
+  if (stepEl) stepEl.textContent = stepLabel || '';
+}
+
+function activityOnToolCall(name, input) {
+  _activityState.totalTools++;
+  const label = _toolLabel(name, input || {});
+  const icon = _toolIcon(name);
+  activityAddEntry('tool-call', icon, '<strong>' + escapeHtml(name) + '</strong> ' + escapeHtml(label));
+  activityUpdateProgress(
+    Math.min((_activityState.completedTools / Math.max(_activityState.totalTools + 2, 5)) * 85, 85),
+    'Ejecutando ' + name + '...'
+  );
+}
+
+function activityOnToolResult(name, output, ok, ms) {
+  _activityState.completedTools++;
+  const icon = ok ? '✓' : '✗';
+  const cls = ok ? '' : ' ae-fail';
+  const preview = (output || '').substring(0, 200).replace(/\n/g, ' ');
+  activityAddEntry('tool-result' + cls, icon,
+    '<code>' + escapeHtml(name) + '</code> <span style="color:var(--text-dim)">' + ms + 'ms</span> ' + escapeHtml(preview));
+  activityUpdateProgress(
+    Math.min((_activityState.completedTools / Math.max(_activityState.totalTools + 1, 3)) * 85, 85),
+    name + ' completado'
+  );
+
+  if (name === 'read_file' && ok && output) {
+    const path = output.split('\n')[0] || '';
+    const fname = path.split(/[/\\]/).pop() || name;
+    if (!_activityState.files.includes(fname)) _activityState.files.push(fname);
+    activityAddEntry('file', '📄', 'Archivo leido: <code>' + escapeHtml(fname) + '</code> — click para ver');
+  }
+  if (name === 'write_file' && ok) {
+    activityAddEntry('file', '📝', 'Archivo escrito: <code>' + escapeHtml(output.substring(0, 100)) + '</code>');
+  }
+  if (name === 'edit_file' && ok) {
+    activityAddEntry('file', '✏️', 'Archivo editado: <code>' + escapeHtml(output.substring(0, 100)) + '</code>');
+  }
+}
+
+function activityOnProgress(name, line, elapsed_s) {
+  activityAddEntry('progress', '⟳', '<code>' + escapeHtml(name) + '</code> [' + elapsed_s + 's] ' + escapeHtml(line));
+}
+
+function activityOnThinking(msg) {
+  if (msg.length > 10) {
+    activityAddEntry('thinking', '🧠', escapeHtml(msg.substring(0, 150)));
+  }
+}
+
+function activityOnDone(data) {
+  const ms = data.ms || 0;
+  const iters = data.iterations || 0;
+  const tools = (data.tools_used || []).length;
+  const elapsed = (ms / 1000).toFixed(1);
+  activityUpdateProgress(100, 'Completado');
+  activityAddEntry('text', '✅',
+    '<strong>Tarea completada</strong> — ' + iters + ' iteraciones, ' + tools + ' herramientas, ' + elapsed + 's');
+  const fill = document.getElementById('progress-fill');
+  if (fill) fill.style.background = 'linear-gradient(90deg, var(--accent-green), var(--accent-cyan))';
+}
+
+function activityOnError(msg) {
+  activityAddEntry('text', '❌', '<strong>Error:</strong> ' + escapeHtml(msg));
+  activityUpdateProgress(0, 'Error');
+  const fill = document.getElementById('progress-fill');
+  if (fill) { fill.style.width = '100%'; fill.style.background = 'var(--accent-red)'; }
 }
 
 // ─── CODE VIEWER ───
