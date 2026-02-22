@@ -56,41 +56,94 @@ _DECOMPOSE_FALLBACK = {
 }
 
 
+_GENERIC_KEYWORDS = (
+    "herramienta de recopilacion", "configurar base de datos para",
+    "desarrollar algoritmo", "implementar plataforma", "establecer acuerdos",
+    "crear herramienta", "sistema de notificaciones", "informe diario",
+    "proceso de seguimiento", "revision periodica", "analisis de patrones",
+    "recopilacion de datos", "plataforma de gestion",
+)
+
+
+def _is_generic_plan(steps: List[str]) -> bool:
+    """Reject plans that read like consulting decks instead of technical actions."""
+    if len(steps) > 7:
+        return True
+    generic_count = 0
+    for s in steps:
+        low = s.lower()
+        if any(kw in low for kw in _GENERIC_KEYWORDS):
+            generic_count += 1
+    return generic_count >= 2
+
+
+def _parse_numbered_steps(text: str) -> List[str]:
+    import re
+    lines = text.strip().split("\n")
+    steps = []
+    for line in lines:
+        line = line.strip()
+        m = re.match(r"^\d+[.)\-]\s*(.+)", line)
+        if m:
+            steps.append(m.group(1).strip())
+        elif line.startswith("- ") and line[2:].strip():
+            steps.append(line[2:].strip())
+    return steps[:5]
+
+
 def _llm_decompose_fallback(goal: str, fast: bool = True) -> Dict[str, Any]:
-    """Fallback: use LLM directly to decompose a goal into steps when kernel planner is unavailable."""
+    """Primary decomposition via the full model cascade with a strong prompt."""
     try:
         import importlib
         mod = importlib.import_module("atlas_adapter.atlas_http_api")
         call_fn = getattr(mod, "_direct_model_call", None)
         if not call_fn:
             return None
+
         prompt = (
-            f"Eres ATLAS, un sistema tecnico. Descompone este objetivo en 2-5 pasos TECNICOS y EJECUTABLES.\n"
-            f"Cada paso DEBE ser una accion concreta: un comando de terminal, una consulta a endpoint/API, "
-            f"una edicion de archivo con ruta especifica, una query SQL, o una llamada a funcion.\n"
-            f"NUNCA escribas pasos abstractos como 'crear herramienta', 'establecer proceso', 'implementar plataforma'.\n"
-            f"Si el problema es interno de ATLAS, usa endpoints reales: /health, /audit/tail, /api/autonomy/status, /watchdog/status.\n"
-            f"Responde SOLO con la lista numerada (1. ... 2. ...), sin explicaciones extra.\n\n"
-            f"Objetivo: {goal.strip()}"
+            f"TAREA: Descomponer este objetivo en 3-5 pasos EJECUTABLES.\n\n"
+            f"Objetivo: {goal.strip()}\n\n"
+            f"REGLAS ESTRICTAS:\n"
+            f"- Cada paso es UNA accion concreta: comando de terminal, GET/POST a endpoint, edicion de archivo con ruta, query SQL\n"
+            f"- Formato: '1. [verbo tecnico]: [accion exacta]'\n"
+            f"- Maximo 5 pasos. Si son mas, agrupa.\n"
+            f"- Endpoints de ATLAS disponibles: GET /health, GET /audit/tail, GET /api/autonomy/status, GET /watchdog/status, POST /api/workspace/terminal/execute\n"
+            f"- Para archivos de ATLAS, la raiz es C:\\ATLAS_PUSH\\\n\n"
+            f"PROHIBIDO (si escribes algo de esto, FALLAS):\n"
+            f"- 'Crear herramienta de...' 'Implementar plataforma...' 'Establecer proceso...' 'Desarrollar algoritmo de...'\n"
+            f"- Mas de 5 pasos\n"
+            f"- Pasos sin un verbo tecnico directo (leer, ejecutar, consultar, editar, reiniciar, instalar)\n\n"
+            f"Responde SOLO la lista numerada:"
         )
-        result = call_fn("auto", prompt, use_config=False, prefer_fast=fast)
+
+        result = call_fn("auto", prompt, use_config=False, prefer_fast=fast, enrich=False)
         if not result.get("ok") or not result.get("output"):
             return None
-        # Parse numbered list from LLM output
-        import re
-        lines = result["output"].strip().split("\n")
-        steps = []
-        for line in lines:
-            line = line.strip()
-            m = re.match(r"^\d+[.)\-]\s*(.+)", line)
-            if m:
-                steps.append(m.group(1).strip())
-            elif line and len(steps) == 0 and len(lines) <= 5:
-                steps.append(line)
+
+        steps = _parse_numbered_steps(result["output"])
+
+        if steps and _is_generic_plan(steps):
+            _log.warning("Rejected generic plan (%d steps), retrying with strict prompt", len(steps))
+            strict_prompt = (
+                f"Objetivo: {goal.strip()}\n\n"
+                f"Dame EXACTAMENTE 3 pasos tecnicos para resolver esto. Cada paso debe ser un comando o endpoint real.\n"
+                f"Formato estricto:\n"
+                f"1. Ejecutar: [comando exacto o GET/POST endpoint]\n"
+                f"2. Leer: [archivo o resultado]\n"
+                f"3. Aplicar: [cambio concreto]\n"
+                f"Solo la lista, nada mas."
+            )
+            result2 = call_fn("auto", strict_prompt, use_config=False, prefer_fast=False, enrich=False)
+            if result2.get("ok") and result2.get("output"):
+                steps2 = _parse_numbered_steps(result2["output"])
+                if steps2 and not _is_generic_plan(steps2):
+                    steps = steps2
+                    result = result2
+
         if steps:
             return {"ok": True, "steps": steps, "model_used": result.get("model_used")}
     except Exception as e:
-        _log.warning("LLM decompose fallback failed: %s", e)
+        _log.warning("LLM decompose failed: %s", e)
     return None
 
 

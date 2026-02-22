@@ -7282,74 +7282,54 @@ def _enrich_with_self_knowledge(goal: str) -> str:
         return goal
 
     context_parts = [goal, "\n\n--- DATOS REALES DEL SISTEMA ---"]
-    try:
-        import requests as _rq
-        h = _rq.get("http://127.0.0.1:8791/health", timeout=3).json()
+    import concurrent.futures as _cf, requests as _rq
+    _SELF = "http://127.0.0.1:8791"
+    _T = 2  # timeout per call
+
+    def _fetch(path, method="get", **kw):
+        try:
+            fn = getattr(_rq, method)
+            return fn(f"{_SELF}{path}", timeout=_T, **kw).json()
+        except Exception:
+            return None
+
+    with _cf.ThreadPoolExecutor(max_workers=4) as pool:
+        futs = {
+            "health": pool.submit(_fetch, "/health"),
+            "status": pool.submit(_fetch, "/status"),
+            "lifelog": pool.submit(_fetch, "/api/cognitive-memory/lifelog/status"),
+            "lv": pool.submit(_fetch, "/api/libro-vida/status"),
+            "buscar": pool.submit(_fetch, "/api/libro-vida/buscar", method="post", json={"query": goal[:100], "limit": 3}),
+        }
+        done, _ = _cf.wait(futs.values(), timeout=4)
+
+    h = futs["health"].result() if futs["health"].done() else None
+    if h:
         context_parts.append(f"SALUD: score={h.get('score')}/100, checks={h.get('checks', {})}")
-    except Exception:
-        pass
-    try:
-        import requests as _rq
-        s = _rq.get("http://127.0.0.1:8791/status", timeout=2).json()
-        context_parts.append(f"SERVICIOS: push=ok (consolidado), robot={s.get('robot_connected')}")
-    except Exception:
-        pass
-    try:
-        import requests as _rq
-        ll = _rq.get("http://127.0.0.1:8791/api/cognitive-memory/lifelog/status", timeout=3).json()
-        context_parts.append(f"LIFELOG: entries={ll.get('total_entries')}, success_rate={ll.get('success_rate')}, sessions={ll.get('sessions')}")
-    except Exception:
-        pass
-    try:
-        import requests as _rq
-        wm = _rq.get("http://127.0.0.1:8791/api/cognitive-memory/world-model/status", timeout=3).json()
-        context_parts.append(f"WORLD MODEL: entities={wm.get('total_entities')}, transitions={wm.get('total_transitions')}, outcomes={wm.get('total_outcomes')}")
-    except Exception:
-        pass
-    try:
-        import requests as _rq
-        ab = _rq.get("http://127.0.0.1:8791/api/cognitive-memory/autobiographical/status", timeout=3).json()
-        context_parts.append(f"AUTOBIOGRAFIA: periods={ab.get('periods')}, milestones={ab.get('milestones')}, traits={ab.get('identity_traits')}, relationships={ab.get('relationships')}")
-    except Exception:
-        pass
-    try:
-        import requests as _rq
-        sc = _rq.get("http://127.0.0.1:8791/support/selfcheck", timeout=3).json()
-        if sc.get("ok") and sc.get("data"):
-            probs = sc["data"].get("problems", [])
-            sugs = sc["data"].get("suggestions", [])
-            if probs:
-                context_parts.append(f"PROBLEMAS DETECTADOS: {probs}")
-            if sugs:
-                context_parts.append(f"SUGERENCIAS: {sugs}")
-    except Exception:
-        pass
-    try:
-        import requests as _rq
-        lv = _rq.get("http://127.0.0.1:8791/api/libro-vida/status", timeout=3).json()
-        if lv.get("ok"):
-            context_parts.append(f"LIBRO DE VIDA: episodios={lv.get('total_episodios')}, exitos={lv.get('exitos')}, fallos={lv.get('fallos')}, tasa_exito={lv.get('tasa_exito')}, reglas={lv.get('reglas_aprendidas')}, principios={lv.get('principios_generales')}")
-    except Exception:
-        pass
-    try:
-        import requests as _rq
-        busq = _rq.post("http://127.0.0.1:8791/api/libro-vida/buscar",
-                        json={"query": goal[:100], "limit": 3}, timeout=5).json()
-        if busq.get("ok") and busq.get("data"):
-            context_parts.append("EXPERIENCIAS SIMILARES DEL LIBRO DE VIDA:")
-            for ep in busq["data"][:3]:
-                context_parts.append(f"  - [{ep.get('tipo_tarea')}] {ep.get('objetivo','')[:80]} → {'EXITO' if ep.get('exito') else 'FALLO'} | Leccion: {ep.get('leccion','')[:120]}")
-    except Exception:
-        pass
+    s = futs["status"].result() if futs["status"].done() else None
+    if s:
+        context_parts.append(f"SERVICIOS: push=ok, robot={s.get('robot_connected')}")
+    ll = futs["lifelog"].result() if futs["lifelog"].done() else None
+    if ll:
+        context_parts.append(f"LIFELOG: entries={ll.get('total_entries')}, success_rate={ll.get('success_rate')}")
+    lv = futs["lv"].result() if futs["lv"].done() else None
+    if lv and lv.get("ok"):
+        context_parts.append(f"LIBRO DE VIDA: episodios={lv.get('total_episodios')}, exitos={lv.get('exitos')}, fallos={lv.get('fallos')}, tasa_exito={lv.get('tasa_exito')}")
+    busq = futs["buscar"].result() if futs["buscar"].done() else None
+    if busq and busq.get("ok") and busq.get("data"):
+        context_parts.append("EXPERIENCIAS SIMILARES:")
+        for ep in busq["data"][:3]:
+            context_parts.append(f"  - [{ep.get('tipo_tarea')}] {ep.get('objetivo','')[:80]} -> {'EXITO' if ep.get('exito') else 'FALLO'}")
     context_parts.append("--- FIN DATOS ---\nResponde basandote en estos datos reales, no inventes.")
     return "\n".join(context_parts)
 
 
-def _try_single_call(provider_id: str, model_name: str, goal: str, use_config: bool = False) -> dict:
+def _try_single_call(provider_id: str, model_name: str, goal: str, use_config: bool = False, enrich: bool = True) -> dict:
     """Intenta una llamada a un modelo. Retorna dict con ok, output, ms, model_used."""
     spec = "%s:%s" % (provider_id, model_name)
     sys_prompt = _get_system_prompt(use_config)
-    goal = _enrich_with_self_knowledge(goal)
+    if enrich:
+        goal = _enrich_with_self_knowledge(goal)
     if provider_id == "ollama":
         try:
             from modules.humanoid.ai.router import _call_ollama
@@ -7411,7 +7391,7 @@ def _try_single_call(provider_id: str, model_name: str, goal: str, use_config: b
         return {"ok": False, "error": "%s:%s: %s" % (provider_id, model_name, str(e)), "ms": 0, "model_used": spec}
 
 
-def _direct_model_call(model_spec: str, goal: str, use_config: bool = False, prefer_fast: bool = True) -> dict:
+def _direct_model_call(model_spec: str, goal: str, use_config: bool = False, prefer_fast: bool = True, enrich: bool = True) -> dict:
     """Llamada con cascada inteligente: local → free API → paid API. Si un modelo falla, salta al siguiente."""
     if (model_spec or "").strip().lower() in ("cascade:ide-agent", "cascade", "ide-agent"):
         model_spec = "auto"
@@ -7429,7 +7409,7 @@ def _direct_model_call(model_spec: str, goal: str, use_config: bool = False, pre
                 return None
             tried.add(attempt_key)
             trace.append({"event": "attempt", "provider": provider_id, "model": model_name, "tier": tier, "reason": reason})
-            result = _try_single_call(provider_id, model_name, goal, use_config)
+            result = _try_single_call(provider_id, model_name, goal, use_config, enrich=enrich)
             if result.get("ok"):
                 result["tier"] = tier
                 result["cascade_errors"] = len(errors)
@@ -7470,7 +7450,7 @@ def _direct_model_call(model_spec: str, goal: str, use_config: bool = False, pre
     if len(parts) != 2:
         return {"ok": False, "error": "Formato invalido: use provider:model"}
     provider_id, model_name = parts[0].lower(), parts[1]
-    result = _try_single_call(provider_id, model_name, goal, use_config)
+    result = _try_single_call(provider_id, model_name, goal, use_config, enrich=enrich)
     if result.get("ok"):
         result["routing_trace"] = [{"event": "selected", "model_used": result.get("model_used"), "tier": "manual", "reason": "explicit_model"}]
     else:
@@ -7570,7 +7550,7 @@ def agent_goal(body: AgentGoalBody):
         full_err = err_detail if not fb_detail else f"{err_detail} | fallback: {fb_detail}"
         return _professional_resp(False, {"error_detail": full_err, "model_used": result.get("model_used")}, ms, full_err, resumen=full_err)
     depth = max(1, min(5, body.depth or 1))
-    ORCH_TIMEOUT_SEC = 20  # max seconds for orchestrator before falling back to direct LLM
+    ORCH_TIMEOUT_SEC = 30  # max seconds for orchestrator before falling back to direct LLM
     try:
         import concurrent.futures
         def _run_orchestrator():
@@ -7609,7 +7589,7 @@ def agent_goal(body: AgentGoalBody):
         # Resilient fallback: if orchestrator failed, try direct LLM so user always gets a response
         if not ok and not result.get("steps"):
             orch_err = result.get("error") or result.get("message") or "orchestrator_failed"
-            fb = _direct_model_call("auto", body.goal, use_config=bool(body.sync_config), prefer_fast=prefer_fast)
+            fb = _direct_model_call("auto", body.goal, use_config=bool(body.sync_config), prefer_fast=prefer_fast, enrich=False)
             if fb.get("ok"):
                 ms2 = int((time.perf_counter() - t0) * 1000)
                 return _professional_resp(True, {
@@ -7624,10 +7604,25 @@ def agent_goal(body: AgentGoalBody):
                 siguientes_pasos=[f"Fallback LLM directo (orquestador: {orch_err[:100]})"])
 
         data = {k: v for k, v in result.items() if k not in ("ok", "error", "fallback", "message")}
-        steps_count = len(result.get("steps") or [])
+        steps_raw = result.get("steps") or []
         exec_log = result.get("execution_log") or []
-        done = len([e for e in exec_log if e.get("status") == "success"])
-        resumen = f"Goal: {steps_count} pasos, {done} ejecutados" if ok else (result.get("message") or result.get("error") or "Error")
+        done_count = len([e for e in exec_log if e.get("status") == "success"])
+        fail_count = len([e for e in exec_log if e.get("status") != "success" and e.get("status")])
+
+        if ok:
+            if exec_log:
+                resumen = f"Ejecutados: {done_count} OK, {fail_count} fallidos de {len(steps_raw)} pasos"
+            elif steps_raw:
+                step_descs = []
+                for s in steps_raw[:3]:
+                    d = s.get("description", s) if isinstance(s, dict) else str(s)
+                    step_descs.append(d[:80])
+                resumen = "Plan (%d pasos):\n%s" % (len(steps_raw), "\n".join("• " + d for d in step_descs))
+            else:
+                resumen = result.get("plan") or "Objetivo procesado"
+        else:
+            resumen = result.get("message") or result.get("error") or "Error al procesar"
+
         archivos = result.get("artifacts") or []
         siguientes = []
         if mode == "execute_controlled":
@@ -7642,7 +7637,7 @@ def agent_goal(body: AgentGoalBody):
     except Exception as e:
         # Last resort: try direct LLM even on exception
         try:
-            fb = _direct_model_call("auto", body.goal, use_config=bool(body.sync_config), prefer_fast=prefer_fast)
+            fb = _direct_model_call("auto", body.goal, use_config=bool(body.sync_config), prefer_fast=prefer_fast, enrich=False)
             if fb.get("ok"):
                 ms2 = int((time.perf_counter() - t0) * 1000)
                 return _professional_resp(True, {

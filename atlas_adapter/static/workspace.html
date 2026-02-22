@@ -1714,119 +1714,119 @@ async function askSupervisor() {
   const objective = document.getElementById('supervisor-objective').value.trim();
   const issuesInput = document.getElementById('supervisor-issues').value.trim();
   const modulesInput = document.getElementById('supervisor-modules').value.trim();
-  
-  if (!objective) {
-    alert('Por favor ingresa un objetivo para el Supervisor');
-    return;
-  }
-  
+
+  if (!objective) { alert('Ingresa un objetivo para el Supervisor'); return; }
+
   const issues = issuesInput ? issuesInput.split(',').map(s => s.trim()).filter(Boolean) : [];
   const modules = modulesInput ? modulesInput.split(',').map(s => s.trim()).filter(Boolean) : [];
-  
   const context = { issues, modules };
-  
-  // Add user message
-  addSupervisorMessage('user', objective);
-  
-  // Show loading
-  const loadingId = addSupervisorMessage('supervisor', '⏳ Generando plan operacional...');
-  
-  try {
-    // 1) Primera llamada
-    let data = await callSupervisor(objective, context);
 
-    // Remove loading message
-    const loadingMsg = document.getElementById(loadingId);
-    if (loadingMsg) loadingMsg.remove();
+  addSupervisorMessage('user', objective);
+  const thinkId = addThinking('Supervisor analizando...');
+  thoughtAddStep(thinkId, 'Recopilando datos reales del sistema', 'active');
+  thoughtSetAction(thinkId, 'Consultando /health, /status, /audit, /watchdog...', '📡');
+
+  try {
+    const t0 = performance.now();
+    const response = await fetch(API + '/supervisor/advise', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ objective, context })
+    });
+    const data = await response.json();
+    const elapsed = Math.round(performance.now() - t0);
 
     if (!data.ok) {
-      addSupervisorMessage('supervisor', '❌ Error: ' + (data.error || 'Unknown error'));
+      thoughtSetError(thinkId);
+      thoughtSetTitle(thinkId, 'Supervisor: error');
+      addSupervisorMessage('supervisor', '<strong style="color:var(--accent-red);">Error:</strong> ' + escapeHtml(data.error || data.result?.error || 'Unknown'));
       return;
     }
 
-    let supervisorText = normalizeSupervisorText(data);
+    const result = data.result || {};
+    const diagnosis = result.diagnosis || {};
+    const snapshot = result.snapshot || {};
+    const actions = result.actions || [];
+    const analysis = result.analysis || '';
 
-    // 2) Mostrar diagnóstico (sin el ATLAS_RUN)
-    let parts = splitSupervisorText(supervisorText);
-    if (parts.head) addSupervisorMessage('supervisor', parts.head);
+    thoughtAddStep(thinkId, 'Datos recopilados en ' + (result.gather_ms || '?') + 'ms', 'done');
+    thoughtAddStep(thinkId, 'Severidad: ' + (diagnosis.severity || 'unknown').toUpperCase(), diagnosis.severity === 'critical' ? 'error' : 'done');
+    if (result.model_used) thoughtAddStep(thinkId, 'Modelo: ' + result.model_used, 'done');
+    thoughtAddStep(thinkId, 'Análisis completado en ' + elapsed + 'ms', 'done');
+    thoughtSetTitle(thinkId, 'Supervisor analizó en ' + Math.round(elapsed / 1000) + 's');
+    removeThinking(thinkId);
 
-    // 3) Extraer plan
-    let plan = extractAtlasRun(supervisorText);
+    // 1) Diagnóstico automático (datos reales, sin LLM)
+    let diagHtml = '<div style="margin-bottom:8px;"><strong style="color:var(--accent-cyan);">DIAGNÓSTICO AUTOMÁTICO</strong>';
+    diagHtml += ' <span style="font-size:10px;padding:2px 6px;border-radius:4px;' +
+      (diagnosis.severity === 'critical' ? 'background:rgba(248,81,73,0.15);color:var(--accent-red);' :
+       diagnosis.severity === 'warning' ? 'background:rgba(210,153,34,0.15);color:var(--accent-orange);' :
+       'background:rgba(63,185,80,0.15);color:var(--accent-green);') + '">' +
+      (diagnosis.severity || 'unknown').toUpperCase() + '</span></div>';
 
-    // 4) MODO ESTRICTO: si no hay plan, pedir regeneración 1 vez
-    if (!plan) {
-      addSupervisorMessage('supervisor', '⚠️ Plan ejecutable no encontrado. Reintentando generación (modo estricto)...');
+    if (diagnosis.issues && diagnosis.issues.length > 0) {
+      diagHtml += '<div style="margin:4px 0;">';
+      diagnosis.issues.forEach(i => { diagHtml += '<div style="color:var(--accent-red);font-size:12px;">⛔ ' + escapeHtml(i) + '</div>'; });
+      diagHtml += '</div>';
+    }
+    if (diagnosis.warnings && diagnosis.warnings.length > 0) {
+      diagnosis.warnings.forEach(w => { diagHtml += '<div style="color:var(--accent-orange);font-size:12px;">⚠ ' + escapeHtml(w) + '</div>'; });
+    }
+    if (diagnosis.ok_items && diagnosis.ok_items.length > 0) {
+      diagnosis.ok_items.forEach(o => { diagHtml += '<div style="color:var(--accent-green);font-size:12px;">✓ ' + escapeHtml(o) + '</div>'; });
+    }
 
-      const regenObjective =
-        objective +
-        "\n\nREGLA: RESPONDE SOLO con diagnóstico breve + ATLAS_RUN JSON válido al final. PROHIBIDO 'PROMPTS SUGERIDOS'.";
+    const sysHealth = snapshot.health || {};
+    if (sysHealth.score !== undefined) {
+      diagHtml += '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);">Health: ' + sysHealth.score + '/100 | ' +
+        'CPU: ' + (snapshot.system?.cpu_pct || '?') + '% | RAM: ' + (snapshot.system?.ram_pct || '?') + '%</div>';
+    }
 
-      data = await callSupervisor(regenObjective, context);
+    addSupervisorMessage('supervisor', diagHtml);
 
-      if (!data.ok) {
-        addSupervisorMessage('supervisor', '❌ Error en regeneración: ' + (data.error || 'Unknown error'));
-        return;
+    // 2) Análisis del LLM
+    if (analysis) {
+      addSupervisorMessage('supervisor', '<div style="margin-bottom:4px;"><strong>ANÁLISIS</strong>' +
+        (result.model_used ? ' <span style="font-size:9px;color:var(--text-dim);">via ' + escapeHtml(result.model_used) + '</span>' : '') +
+        '</div>' + renderMarkdown(analysis));
+    }
+
+    // 3) Acciones ejecutables
+    if (actions.length > 0) {
+      let actionsHtml = '<div class="plan-container"><div class="plan-title">ACCIONES PROPUESTAS (' + actions.length + ')</div>';
+      actions.forEach((a, i) => {
+        const riskColor = a.risk === 'high' ? 'var(--accent-red)' : 'var(--accent-green)';
+        const riskIcon = a.risk === 'high' ? '🔴' : '🟢';
+        actionsHtml += '<div class="plan-step">' +
+          '<span class="risk" style="color:' + riskColor + ';">' + riskIcon + ' ' + (a.risk || 'low').toUpperCase() + '</span> ' +
+          escapeHtml(a.description || '') +
+          (a.execute ? '<br><code style="font-size:11px;">' + escapeHtml(a.execute) + '</code>' : '') +
+          '</div>';
+      });
+      actionsHtml += '</div>';
+      addSupervisorMessage('supervisor', actionsHtml);
+
+      const execActions = actions.filter(a => a.execute);
+      if (execActions.length > 0) {
+        const plan = { steps: execActions.map((a, i) => ({
+          id: 's' + (i + 1), risk: a.risk || 'low', type: 'terminal',
+          cmd: a.execute
+        })) };
+        renderSupervisorPlan(plan);
+        await executePlan(plan);
       }
-
-      supervisorText = normalizeSupervisorText(data);
-      parts = splitSupervisorText(supervisorText);
-      if (parts.head) addSupervisorMessage('supervisor', parts.head);
-
-      plan = extractAtlasRun(supervisorText);
     }
 
-    // 5) Si todavía no hay plan -> fallo claro
-    if (!plan) {
-      addSupervisorMessage('supervisor', '❌ MODO ESTRICTO: El Supervisor no produjo ATLAS_RUN. Bloqueando ejecución.');
-      return;
-    }
+    if (ttsEnabled && analysis) speakSupervisor(analysis.substring(0, 300));
 
-    // 6) Render plan + ejecutar
-    renderSupervisorPlan(plan);
-    await executePlan(plan);
-
-    // 7) TTS (solo diagnóstico)
-    if (ttsEnabled && parts.head) speakSupervisor(parts.head);
-
-    // Clear inputs
     document.getElementById('supervisor-objective').value = '';
     document.getElementById('supervisor-issues').value = '';
     document.getElementById('supervisor-modules').value = '';
-    
+
   } catch (error) {
-    const loadingMsg = document.getElementById(loadingId);
-    if (loadingMsg) loadingMsg.remove();
-    addSupervisorMessage('supervisor', '❌ Error de conexión: ' + error.message);
-  }
-}
-
-// =========================
-// ATLAS_RUN helpers (Supervisor -> Execute)
-// =========================
-async function callSupervisor(objective, context) {
-  const response = await fetch('/supervisor/advise', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ objective, context })
-  });
-  const data = await response.json();
-  return data;
-}
-
-function normalizeSupervisorText(data){
-  const result = data?.result;
-  return result?.analysis || result?.text || result || "";
-}
-
-function extractAtlasRun(text) {
-  const idx = text.lastIndexOf("ATLAS_RUN:");
-  if (idx === -1) return null;
-  const jsonPart = text.slice(idx + "ATLAS_RUN:".length).trim();
-  try {
-    return JSON.parse(jsonPart);
-  } catch (e) {
-    console.warn("ATLAS_RUN JSON parse error", e);
-    return null;
+    thoughtSetError(thinkId);
+    thoughtSetTitle(thinkId, 'Error de conexión');
+    addSupervisorMessage('supervisor', '<strong style="color:var(--accent-red);">Error de conexión:</strong> ' + escapeHtml(error.message));
   }
 }
 
@@ -2547,7 +2547,9 @@ async function sendMessage() {
     const timeout = setTimeout(() => {
       if (currentRequestController) currentRequestController.abort();
     }, 120000);
-    const requestBody = { goal: goalText, mode: document.getElementById('agent-mode').value, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel, sync_config: syncConfigActive };
+    const rawMode = document.getElementById('agent-mode').value;
+    const backendMode = rawMode === 'auto' ? 'plan_only' : rawMode;
+    const requestBody = { goal: goalText, mode: backendMode, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel, sync_config: syncConfigActive };
 
     thoughtUpdateStep(thinkingId, sRoute, 'done');
     const sModel = thoughtAddStep(thinkingId, 'Enviando al modelo (' + (selectedModel || 'auto') + ')', 'active');
