@@ -77,16 +77,16 @@ def init_cognitive_system() -> dict:
             len(v) if isinstance(v, dict) else 1
             for v in system.values()
         )
-        print(f"      ✅ {modules_count} módulos cognitivos cargados")
+        print(f"      [OK] {modules_count} modulos cognitivos cargados")
         return system
     except Exception as e:
-        print(f"      ⚠️  Sistema cognitivo parcial: {e}")
+        print(f"      [WARN] Sistema cognitivo parcial: {e}")
         return {}
 
 
 def init_autonomy() -> bool:
     """Inicializa el sistema de autonomía en background (no bloquea el arranque)."""
-    print("\n[2/4] Iniciando Autonomía (background)...")
+    print("\n[2/4] Iniciando Autonomia (background)...")
     def _start_bg():
         try:
             import time as _t
@@ -108,7 +108,7 @@ def init_autonomy() -> bool:
         except Exception as e:
             print(f"      [Autonomy] parcial: {e}")
     threading.Thread(target=_start_bg, daemon=True).start()
-    print("      ✅ Autonomía programada (arranca tras HTTP)")
+    print("      [OK] Autonomia programada (arranca tras HTTP)")
     return True
 
 
@@ -116,16 +116,15 @@ def init_voice() -> bool:
     """Inicializa el asistente de voz."""
     print("\n[3/4] Inicializando Voice Assistant...")
     try:
-        # Verificar si el módulo de voz existe
         voice_path = os.path.join(ROOT, "modules", "humanoid", "voice")
         if os.path.exists(voice_path):
-            print("      ✅ Voice Assistant disponible")
+            print("      [OK] Voice Assistant disponible")
             return True
         else:
-            print("      ⚠️  Voice Assistant no instalado")
+            print("      [WARN] Voice Assistant no instalado")
             return False
     except Exception as e:
-        print(f"      ⚠️  Voice: {e}")
+        print(f"      [WARN] Voice: {e}")
         return False
 
 
@@ -137,9 +136,9 @@ def start_http_server(open_browser: bool = False) -> None:
         import uvicorn
         from atlas_adapter.atlas_http_api import app
         
-        print(f"      ✅ Dashboard: {DASHBOARD_URL}")
-        print(f"      ✅ API: http://127.0.0.1:{HTTP_PORT}/docs")
-        print(f"      ✅ Cognitive API: http://127.0.0.1:{HTTP_PORT}/cognitive/status")
+        print(f"      [OK] Dashboard: {DASHBOARD_URL}")
+        print(f"      [OK] API: http://127.0.0.1:{HTTP_PORT}/docs")
+        print(f"      [OK] Cognitive API: http://127.0.0.1:{HTTP_PORT}/cognitive/status")
         
         if open_browser:
             def open_browser_delayed():
@@ -148,7 +147,7 @@ def start_http_server(open_browser: bool = False) -> None:
             threading.Thread(target=open_browser_delayed, daemon=True).start()
         
         print("\n" + "=" * 65)
-        print("  🟢 ATLAS SISTEMA COMPLETO ACTIVO")
+        print("  [ONLINE] ATLAS SISTEMA COMPLETO ACTIVO")
         print("=" * 65)
         print(f"\n  Dashboard: {DASHBOARD_URL}")
         print("  Presiona Ctrl+C para detener.\n")
@@ -163,10 +162,10 @@ def start_http_server(open_browser: bool = False) -> None:
         )
         
     except ImportError:
-        print("      ❌ uvicorn no instalado. Ejecuta: pip install uvicorn")
+        print("      [ERROR] uvicorn no instalado. Ejecuta: pip install uvicorn")
         sys.exit(1)
     except Exception as e:
-        print(f"      ❌ Error iniciando servidor: {e}")
+        print(f"      [ERROR] Error iniciando servidor: {e}")
         sys.exit(1)
 
 

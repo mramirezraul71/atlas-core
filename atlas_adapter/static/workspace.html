@@ -1170,11 +1170,9 @@
           </div>
           <span class="model-status-chip" id="model-status-chip">Estado: --</span>
           <span style="font-size:9px;color:var(--text-dim);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Modo:</span>
-          <select id="agent-mode" title="Modo de ejecucion: Auto detecta si usar Agent o Interpreter" onchange="onAgentModeChange(this.value)">
-            <option value="auto" selected>Auto (Agent+Interpreter)</option>
+          <select id="agent-mode" title="Modo de ejecucion: Auto selecciona modelo por complejidad" onchange="onAgentModeChange(this.value)">
+            <option value="auto" selected>Auto (Haiku/Sonnet/Opus)</option>
             <option value="plan_only">Solo Plan</option>
-            <option value="interpreter">Solo Interpreter</option>
-            <option value="execute_controlled">Controlado</option>
           </select>
           <select id="agent-depth" title="Profundidad">
             <option value="1">D1</option>
@@ -2555,24 +2553,6 @@ function clearCodeViewer() {
     '<div class="code-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg><p>El codigo generado aparecera aqui</p></div>';
 }
 
-// ─── AUTO-DETECT: should this go to Interpreter? ───
-function shouldUseInterpreter(text) {
-  const lower = text.toLowerCase();
-  const execPatterns = [
-    /\b(ejecuta|ejecutar|corre|correr|run|exec)\b/,
-    /\b(crea|crear|genera|generar|escribe|escribir)\s+(un\s+)?(archivo|script|fichero|file)/,
-    /\b(cuenta|contar|lista|listar|busca|buscar|analiza|analizar)\s+(los\s+)?(archivos|carpetas|ficheros)/,
-    /\b(instala|instalar|pip|npm|git\s+(clone|pull|push|commit))\b/,
-    /\b(muestra|mostrar|dime|show)\s+(el\s+)?(espacio|disco|memoria|cpu|procesos)/,
-    /\b(borra|borrar|elimina|eliminar|mueve|mover|copia|copiar|renombra|rename)\b/,
-    /\b(deploy|desplegar|compilar|compile|build|test|pytest)\b/,
-    /\bprint\s*\(/,
-    /\bpython\s/,
-    /\.py\b.*\b(ejecut|corr|run)/,
-  ];
-  return execPatterns.some(p => p.test(lower));
-}
-
 // ─── SEND MESSAGE ───
 async function sendMessage() {
   _globalMute();
@@ -2581,12 +2561,6 @@ async function sendMessage() {
   if (!text || isProcessing) return;
 
   const agentMode = document.getElementById('agent-mode').value;
-  if (agentMode === 'interpreter') {
-    return sendViaInterpreter(text);
-  }
-  if (agentMode === 'auto' && shouldUseInterpreter(text)) {
-    return sendViaInterpreter(text);
-  }
 
   const attachments = [...chatAttachments];
   let goalText = text;
@@ -2928,9 +2902,23 @@ async function sendViaAgentEngine(goalText, _chip) {
 }
 
 function _handleAgentEvent(thinkingId, eventType, data, _chip) {
+  const tierColors = { fast: 'var(--accent-green)', balanced: 'var(--accent-cyan)', complex: 'var(--accent-purple)' };
+  const tierNames = { fast: 'Rapido', balanced: 'Balanceado', complex: 'Complejo' };
+
   if (eventType === 'thinking') {
-    thoughtSetAction(thinkingId, data.message || 'Pensando...', '🧠');
-    emitLive('info', escapeHtml(data.message || ''));
+    const msg = data.message || 'Pensando...';
+    thoughtSetAction(thinkingId, msg, '🧠');
+    if (data.complexity) {
+      const tier = data.complexity;
+      const tColor = tierColors[tier] || 'var(--text-muted)';
+      const tName = tierNames[tier] || tier;
+      const modelShort = (data.model || '').split('.').pop() || data.model;
+      _chip.innerHTML = '<span style="color:' + tColor + ';font-weight:700;">' + tName + '</span> → ' + (modelShort || '');
+      thoughtAddStep(thinkingId, 'Complejidad: ' + tName + ' → ' + modelShort, 'done');
+      emitLive('info', '<strong>Routing:</strong> <span style="color:' + tColor + '">' + tName + '</span> → <code>' + escapeHtml(data.model || '') + '</code>');
+    } else {
+      emitLive('info', escapeHtml(msg));
+    }
   }
   else if (eventType === 'tool_call') {
     const icon = _toolIcon(data.name);
@@ -2959,10 +2947,13 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
   }
   else if (eventType === 'done') {
     const ms = data.ms || 0;
-    thoughtSetTitle(thinkingId, 'Completado en ' + Math.round(ms / 1000) + 's');
+    const tier = data.complexity || '';
+    const tName = tierNames[tier] || '';
+    const title = 'Completado en ' + Math.round(ms / 1000) + 's' + (tName ? ' [' + tName + ']' : '');
+    thoughtSetTitle(thinkingId, title);
     _chip.textContent = 'Listo (' + Math.round(ms / 1000) + 's)';
     _chip.style.color = 'var(--accent-green)';
-    if (data.model) emitLive('info', '<strong>Modelo:</strong> <code>' + escapeHtml(data.model) + '</code>');
+    if (data.model) emitLive('info', '<strong>Modelo:</strong> <code>' + escapeHtml(data.model) + '</code> | ' + (data.iterations || 0) + ' iteraciones | ' + (data.tools_used || []).length + ' tools');
     setTimeout(() => { _chip.textContent = 'Listo'; _chip.style.color = ''; }, 5000);
   }
   else if (eventType === 'error') {
@@ -2976,7 +2967,7 @@ function _toolIcon(name) {
   const icons = {
     read_file: '📄', write_file: '📝', edit_file: '✏️',
     execute_command: '⚡', search_text: '🔍',
-    list_directory: '📁', atlas_api: '📡'
+    list_directory: '📁', atlas_api: '📡', interpreter: '🤖'
   };
   return icons[name] || '🔧';
 }
@@ -2988,6 +2979,7 @@ function _toolLabel(name, input) {
   if (name === 'execute_command') return (input.command || '').substring(0, 60);
   if (name === 'search_text') return 'Buscando "' + (input.pattern || '').substring(0, 40) + '"';
   if (name === 'list_directory') return 'Listando ' + (input.path || '').split(/[/\\]/).pop();
+  if (name === 'interpreter') return 'Interpreter: ' + (input.task || '').substring(0, 60);
   if (name === 'atlas_api') return input.method + ' ' + (input.endpoint || '');
   return name;
 }

@@ -1,10 +1,11 @@
 """
 Agentic execution engine for Atlas Workspace.
 
-Implements a Cursor-like tool-calling loop:
-  User message → LLM (with tools) → tool_use → execute → result → LLM → ... → final text
-
-Supports: Bedrock (Claude), Anthropic, OpenAI, Gemini via their native tool calling APIs.
+Implements a Cursor-like tool-calling loop with intelligent model routing:
+  - Task complexity classification (simple/medium/complex)
+  - Model selection: Haiku (fast) → Sonnet (balanced) → Opus (complex)
+  - Interpreter integrated as a tool, not a separate path
+  - Bedrock Converse API (boto3) + Anthropic direct + Ollama fallback
 """
 from __future__ import annotations
 
@@ -21,7 +22,96 @@ _log = logging.getLogger("atlas.agent_engine")
 ATLAS_ROOT = Path(os.getenv("ATLAS_ROOT", r"C:\ATLAS_PUSH"))
 MAX_ITERATIONS = 20
 MAX_TOOL_OUTPUT = 8000
-COMMAND_TIMEOUT = 30
+COMMAND_TIMEOUT = 60
+
+# ──────────────────────────────────────────────
+#  Model tiers for intelligent routing
+# ──────────────────────────────────────────────
+MODEL_TIERS = {
+    "bedrock": {
+        "fast":    "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "balanced": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "complex": "us.anthropic.claude-opus-4-6-v1",
+    },
+    "anthropic": {
+        "fast":    "claude-haiku-4-5-20251001",
+        "balanced": "claude-sonnet-4-5-20250929",
+        "complex": "claude-opus-4-6-20250918",
+    },
+}
+
+COMPLEXITY_INDICATORS = {
+    "complex": [
+        r"\b(refactor|redesign|architect|implement|migrat|rewrit|reestructur)",
+        r"\b(debug|investig|diagnos|audit)",
+        r"\b(crea|implement|build|construy)\w*\b.*\b(sistema|modul|servicio|api|engine|feature)",
+        r"\b(optimiz|performanc|rendimiento|seguridad|security)",
+        r"\b(complej|complex|profund|deep)\b",
+        r"\b(analiz|analys|evalua|review|revis)\w*\b.*\b(codigo|code|sistema|system|arquitect|bug|error)",
+        r"\b(configur|deploy|desplieg|integr)\w*\b.*\b(complet|todo|entire|full)",
+    ],
+    "balanced": [
+        r"\b(lee|leer|read|busca|buscar|search|encuentra|find)\w*\b.*\b(archivo|file|codigo|code|log)",
+        r"\b(ejecuta|ejecutar|run|corre|correr)\b",
+        r"\b(edita|editar|modifica|modificar|cambia|cambiar|edit|fix|arregl)",
+        r"\b(instala|instalar|pip|npm|git)\b",
+        r"\b(cuenta|contar|lista|listar|muestra|mostrar)\w*\b.*\b(archivo|carpeta|proceso|servicio)",
+        r"\b(crea|crear|genera|generar|escrib)\w*\b.*\b(archivo|script|fichero|file)",
+        r"\b(verifica|verificar|comprueba|comprobar|check|test|prueba)",
+        r"\b(estado|status|health|memoria|disco|cpu)\b",
+    ],
+    "simple": [
+        r"^\s*(hola|hi|hello|hey|que tal|como estas|buenos?\s+dias?|buenas?\s+tardes?|buenas?\s+noches?)\s*[?!.,]?\s*$",
+        r"^\s*(gracias|thanks|ok|si|no|bien|perfecto|entendido|claro|dale)\s*[?!.,]?\s*$",
+        r"^\s*(que|what|cual|which)\s+(es|is|son|are)\s",
+        r"^\s*(dime|tell me)\s+(que|what|quien|who)\s+(eres|are you)\b",
+        r"^\s*(ping|version)\s*$",
+    ],
+}
+
+
+def classify_complexity(text: str) -> str:
+    """Classify task complexity: fast (Haiku), balanced (Sonnet), or complex (Opus)."""
+    import re
+    lower = text.lower().strip()
+
+    for pattern in COMPLEXITY_INDICATORS["simple"]:
+        if re.search(pattern, lower, re.IGNORECASE):
+            return "fast"
+
+    complex_score = 0
+    for pattern in COMPLEXITY_INDICATORS["complex"]:
+        if re.search(pattern, lower, re.IGNORECASE):
+            complex_score += 1
+
+    if len(lower) > 300:
+        complex_score += 1
+    if lower.count("\n") > 3:
+        complex_score += 1
+
+    if complex_score >= 1:
+        return "complex"
+
+    balanced_score = 0
+    for pattern in COMPLEXITY_INDICATORS["balanced"]:
+        if re.search(pattern, lower, re.IGNORECASE):
+            balanced_score += 1
+
+    if balanced_score >= 1:
+        return "balanced"
+    if len(lower) > 100:
+        return "balanced"
+
+    return "fast"
+
+
+def select_model(backend: str, complexity: str, model_override: Optional[str] = None) -> str:
+    """Select the best model for the given complexity tier."""
+    if model_override:
+        return model_override
+    tiers = MODEL_TIERS.get(backend, MODEL_TIERS.get("bedrock", {}))
+    return tiers.get(complexity, tiers.get("balanced", "us.anthropic.claude-sonnet-4-5-20250929-v1:0"))
+
 
 # ──────────────────────────────────────────────
 #  Tool definitions (Claude/Anthropic format)
@@ -29,7 +119,7 @@ COMMAND_TIMEOUT = 30
 TOOLS = [
     {
         "name": "read_file",
-        "description": "Read a file and return its contents. Use for inspecting source code, configs, logs.",
+        "description": "Read a file and return its contents with line numbers. Use for inspecting source code, configs, logs.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -52,7 +142,7 @@ TOOLS = [
     },
     {
         "name": "edit_file",
-        "description": "Replace exact text in a file. old_text must match exactly (including whitespace).",
+        "description": "Replace exact text in a file. old_text must match exactly (including whitespace and indentation).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -65,19 +155,20 @@ TOOLS = [
     },
     {
         "name": "execute_command",
-        "description": "Execute a shell command (PowerShell on Windows). Returns stdout + stderr.",
+        "description": "Execute a shell command (PowerShell on Windows). Returns stdout + stderr. Use for: running scripts, installing packages, git operations, system diagnostics, file operations, compiling, testing.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "command": {"type": "string"},
+                "command": {"type": "string", "description": "The command to execute"},
                 "working_directory": {"type": "string", "description": "Working directory (default: ATLAS_ROOT)"},
+                "timeout": {"type": "integer", "description": "Timeout in seconds (default: 60, max: 300)"},
             },
             "required": ["command"],
         },
     },
     {
         "name": "search_text",
-        "description": "Search for text pattern across files using ripgrep. Returns matching lines with file paths.",
+        "description": "Search for text pattern across files using ripgrep. Returns matching lines with file paths and line numbers.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -90,7 +181,7 @@ TOOLS = [
     },
     {
         "name": "list_directory",
-        "description": "List files and subdirectories at a path.",
+        "description": "List files and subdirectories at a path with sizes.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -101,7 +192,7 @@ TOOLS = [
     },
     {
         "name": "atlas_api",
-        "description": "Call an internal ATLAS REST endpoint. Use for diagnostics: /health, /audit/tail, /status, /api/autonomy/status, /watchdog/status, /api/libro-vida/status, etc.",
+        "description": "Call an internal ATLAS REST endpoint for diagnostics and control. Endpoints: /health, /audit/tail, /status, /api/autonomy/status, /watchdog/status, /api/libro-vida/status, /agent/models, /api/monitor/snapshot.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -110,6 +201,18 @@ TOOLS = [
                 "body": {"type": "object", "description": "JSON body for POST requests"},
             },
             "required": ["method", "endpoint"],
+        },
+    },
+    {
+        "name": "interpreter",
+        "description": "Execute a complex autonomous task using Open Interpreter. Use for tasks that require multiple steps of code execution, web browsing, data processing, or interactive programming. The interpreter runs Python, shell commands, and can install packages autonomously. Prefer this over execute_command for multi-step programming tasks, data analysis, web scraping, or when the task needs iterative code execution with state.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "Natural language description of the task to execute"},
+                "language": {"type": "string", "description": "Preferred language: python, shell, javascript (default: auto)"},
+            },
+            "required": ["task"],
         },
     },
 ]
@@ -128,22 +231,20 @@ def _truncate(text: str, limit: int = MAX_TOOL_OUTPUT) -> str:
 def execute_tool(name: str, inp: Dict[str, Any]) -> str:
     """Execute a tool and return the result as text."""
     try:
-        if name == "read_file":
-            return _tool_read_file(inp)
-        elif name == "write_file":
-            return _tool_write_file(inp)
-        elif name == "edit_file":
-            return _tool_edit_file(inp)
-        elif name == "execute_command":
-            return _tool_execute_command(inp)
-        elif name == "search_text":
-            return _tool_search_text(inp)
-        elif name == "list_directory":
-            return _tool_list_directory(inp)
-        elif name == "atlas_api":
-            return _tool_atlas_api(inp)
-        else:
+        dispatch = {
+            "read_file": _tool_read_file,
+            "write_file": _tool_write_file,
+            "edit_file": _tool_edit_file,
+            "execute_command": _tool_execute_command,
+            "search_text": _tool_search_text,
+            "list_directory": _tool_list_directory,
+            "atlas_api": _tool_atlas_api,
+            "interpreter": _tool_interpreter,
+        }
+        fn = dispatch.get(name)
+        if not fn:
             return f"Error: unknown tool '{name}'"
+        return fn(inp)
     except Exception as e:
         return f"Error executing {name}: {str(e)}"
 
@@ -193,10 +294,11 @@ def _tool_edit_file(inp: Dict) -> str:
 def _tool_execute_command(inp: Dict) -> str:
     cmd = inp["command"]
     cwd = inp.get("working_directory", str(ATLAS_ROOT))
+    timeout = min(inp.get("timeout", COMMAND_TIMEOUT), 300)
     try:
         result = subprocess.run(
             ["powershell", "-Command", cmd],
-            capture_output=True, text=True, timeout=COMMAND_TIMEOUT,
+            capture_output=True, text=True, timeout=timeout,
             cwd=cwd, encoding="utf-8", errors="replace",
         )
         out = ""
@@ -208,7 +310,7 @@ def _tool_execute_command(inp: Dict) -> str:
             out += f"\n[exit code: {result.returncode}]"
         return _truncate(out.strip() or "(no output)")
     except subprocess.TimeoutExpired:
-        return f"Command timed out after {COMMAND_TIMEOUT}s"
+        return f"Command timed out after {timeout}s"
     except Exception as e:
         return f"Command error: {e}"
 
@@ -231,7 +333,6 @@ def _tool_search_text(inp: Dict) -> str:
             return f"No matches for '{pattern}' in {directory}"
         return _truncate(out)
     except FileNotFoundError:
-        # rg not available, fallback to findstr on Windows
         cmd_ps = f'Get-ChildItem -Path "{directory}" -Recurse -Filter "{file_glob or "*.py"}" | Select-String -Pattern "{pattern}" | Select-Object -First 30'
         try:
             r = subprocess.run(
@@ -288,27 +389,61 @@ def _tool_atlas_api(inp: Dict) -> str:
         return f"API error: {e}"
 
 
+def _tool_interpreter(inp: Dict) -> str:
+    """Execute a task via Open Interpreter, integrated as an agent tool."""
+    task = inp["task"]
+    language = inp.get("language", "")
+    import requests
+
+    try:
+        payload = {"prompt": task, "auto_run": True}
+        if language:
+            payload["language"] = language
+        r = requests.post(
+            "http://127.0.0.1:8791/api/workspace/interpreter/quick",
+            json=payload, timeout=120,
+        )
+        data = r.json()
+        if data.get("ok"):
+            output = data.get("output", "")
+            exec_ms = data.get("ms", 0)
+            model_used = data.get("model", "auto")
+            return f"[Interpreter OK | {exec_ms}ms | model: {model_used}]\n{_truncate(output, 6000)}"
+        else:
+            return f"Interpreter error: {data.get('error', 'unknown')}"
+    except requests.Timeout:
+        return "Interpreter timed out after 120s"
+    except Exception as e:
+        return f"Interpreter error: {e}"
+
+
 # ──────────────────────────────────────────────
 #  Agent system prompt
 # ──────────────────────────────────────────────
 AGENT_SYSTEM_PROMPT = """Eres ATLAS, un agente tecnico autonomo con capacidad de ejecutar acciones reales en el sistema.
 
-CAPACIDADES:
-- Leer, crear y editar archivos del sistema
-- Ejecutar comandos de terminal (PowerShell en Windows)
-- Buscar texto en el codigo fuente
-- Consultar endpoints internos de ATLAS para diagnostico
+CAPACIDADES (herramientas disponibles):
+- read_file, write_file, edit_file: Leer, crear y editar archivos
+- execute_command: Ejecutar comandos de terminal (PowerShell en Windows)
+- search_text: Buscar texto en el codigo fuente con ripgrep
+- list_directory: Listar archivos y carpetas
+- atlas_api: Consultar endpoints internos de ATLAS (/health, /status, /audit/tail, etc.)
+- interpreter: Ejecutar tareas complejas autonomas (scripts multi-paso, analisis de datos, web scraping, programacion interactiva)
+
+CUANDO USAR INTERPRETER vs EXECUTE_COMMAND:
+- execute_command: comandos simples, one-liners, diagnosticos rapidos (python --version, git status, pip install X)
+- interpreter: tareas que requieren multiples pasos de codigo, analisis de datos, procesamiento iterativo, tareas complejas de programacion
 
 REGLAS:
 1. Usa las herramientas para HACER, no solo para planificar
 2. Cuando te pidan investigar algo, LEE el codigo real, los logs, la base de datos
 3. Cuando te pidan arreglar algo, EDITA el archivo directamente
-4. Cuando te pidan ejecutar algo, USA execute_command
-5. Para diagnostico de ATLAS, usa atlas_api con /health, /audit/tail, /status, etc.
+4. Cuando te pidan ejecutar algo, USA execute_command o interpreter segun la complejidad
+5. Para diagnostico de ATLAS, usa atlas_api con /health, /audit/tail, /status
 6. Siempre verifica tu trabajo: despues de editar, lee el archivo para confirmar
 7. Responde en espanol, conciso y directo
 8. La raiz del proyecto es """ + str(ATLAS_ROOT) + """
-9. Maximo 3-5 acciones por tarea. No sobre-analices.
+9. Maximo 3-5 acciones por tarea simple. Hasta 15 para tareas complejas.
 
 PROHIBIDO:
 - Generar planes abstractos sin ejecutarlos
@@ -317,7 +452,7 @@ PROHIBIDO:
 
 
 # ──────────────────────────────────────────────
-#  Agentic loop (yields events for SSE)
+#  Bedrock Converse API (boto3)
 # ──────────────────────────────────────────────
 def _bedrock_converse(model: str, system: str, messages: List[Dict], tools: List[Dict]) -> Dict:
     """Call Bedrock Converse API with tool support via boto3."""
@@ -387,6 +522,9 @@ def _bedrock_converse(model: str, system: str, messages: List[Dict], tools: List
     return type("R", (), {"content": result_content, "stop_reason": resp.get("stopReason", "")})()
 
 
+# ──────────────────────────────────────────────
+#  Ollama (structured prompt tool calling)
+# ──────────────────────────────────────────────
 def _ollama_available() -> Optional[str]:
     """Check if Ollama is running and return best model for tool calling."""
     try:
@@ -406,10 +544,7 @@ def _ollama_available() -> Optional[str]:
 
 
 def _ollama_chat(model: str, system: str, messages: List[Dict], tools: List[Dict]):
-    """Call Ollama with tool-calling via structured prompt.
-    
-    Returns a response object compatible with the Anthropic format.
-    """
+    """Call Ollama with tool-calling via structured prompt."""
     import httpx
 
     tools_desc = []
@@ -489,11 +624,14 @@ IMPORTANT: Use ONE tool call per response. After seeing the result, decide next 
     })()
 
 
+# ──────────────────────────────────────────────
+#  LLM backend selection
+# ──────────────────────────────────────────────
 def _get_llm_backend(model_override: Optional[str] = None):
     """Determine which LLM backend to use for tool calling.
-    
+
     Priority: Bedrock boto3 > Anthropic direct > Ollama.
-    Returns (backend_type, client_or_None, model_id).
+    Returns (backend_type, client_or_None, model_id_or_None).
     """
     region = (os.getenv("AWS_REGION", "us-east-1") or "us-east-1").strip()
 
@@ -506,9 +644,8 @@ def _get_llm_backend(model_override: Optional[str] = None):
         try:
             import boto3
             boto3.client("bedrock-runtime", region_name=region)
-            model = model_override or "us.anthropic.claude-opus-4-6-v1"
-            _log.info("Agent engine: using Bedrock boto3 (%s)", model)
-            return "bedrock_boto3", None, model
+            _log.info("Agent engine: Bedrock boto3 available")
+            return "bedrock", None, model_override
         except Exception as e:
             _log.warning("Bedrock boto3 init failed: %s", e)
 
@@ -524,21 +661,23 @@ def _get_llm_backend(model_override: Optional[str] = None):
         try:
             from anthropic import Anthropic
             client = Anthropic(api_key=api_key.strip())
-            model = model_override or "claude-sonnet-4-20250514"
-            _log.info("Agent engine: using Anthropic direct (%s)", model)
-            return "anthropic", client, model
+            _log.info("Agent engine: Anthropic direct available")
+            return "anthropic", client, model_override
         except Exception as e:
             _log.warning("Anthropic client init failed: %s", e)
+
     ollama_model = _ollama_available()
     if ollama_model:
-        model = model_override or ollama_model
-        _log.info("Agent engine: using Ollama (%s)", model)
-        return "ollama", None, model
+        _log.info("Agent engine: Ollama available (%s)", ollama_model)
+        return "ollama", None, model_override or ollama_model
 
     _log.error("No LLM backend available for agent engine")
     return None, None, None
 
 
+# ──────────────────────────────────────────────
+#  Agentic loop (yields events for SSE)
+# ──────────────────────────────────────────────
 def run_agent(
     user_message: str,
     conversation_history: Optional[List[Dict]] = None,
@@ -546,55 +685,72 @@ def run_agent(
     model: Optional[str] = None,
 ) -> Generator[Dict[str, Any], None, None]:
     """
-    Run the agentic tool-calling loop. Yields event dicts for SSE streaming.
+    Run the agentic tool-calling loop with intelligent model routing.
 
-    Uses Bedrock Converse API (boto3) for reliable tool calling with Claude.
+    Classifies task complexity and selects the appropriate model tier:
+    - fast (Haiku): simple questions, greetings, status checks
+    - balanced (Sonnet): medium tasks, file reads, searches
+    - complex (Opus): refactoring, debugging, multi-step implementation
+
+    Yields SSE events: thinking, tool_call, tool_result, text, done, error
     """
-    backend, client, default_model = _get_llm_backend(model)
-    if not backend:
+    backend_type, client, model_override = _get_llm_backend(model)
+    if not backend_type:
         yield {"event": "error", "data": {"message": "No LLM backend available. Configure AWS credentials for Bedrock or set ANTHROPIC_API_KEY."}}
         return
 
-    model = model or default_model
-    sys_prompt = system_prompt or AGENT_SYSTEM_PROMPT
+    complexity = classify_complexity(user_message)
+    selected_model = select_model(backend_type, complexity, model_override)
 
+    sys_prompt = system_prompt or AGENT_SYSTEM_PROMPT
     messages = list(conversation_history or [])
     messages.append({"role": "user", "content": user_message})
 
     tools_used = []
     total_t0 = time.perf_counter()
 
-    yield {"event": "thinking", "data": {"message": f"Conectando con {model.split(':')[-1] if ':' in model else model}..."}}
+    tier_labels = {"fast": "Rapido", "balanced": "Balanceado", "complex": "Complejo"}
+    tier_label = tier_labels.get(complexity, complexity)
+    model_short = selected_model.split(".")[-1] if "." in selected_model else selected_model
+
+    yield {"event": "thinking", "data": {
+        "message": f"Complejidad: {tier_label} → {model_short}",
+        "complexity": complexity,
+        "model": selected_model,
+    }}
 
     for iteration in range(MAX_ITERATIONS):
         try:
             t0 = time.perf_counter()
 
-            if backend == "bedrock_boto3":
-                response = _bedrock_converse(model, sys_prompt, messages, TOOLS)
-            elif backend in ("bedrock_anthropic", "anthropic"):
+            if backend_type == "bedrock":
+                response = _bedrock_converse(selected_model, sys_prompt, messages, TOOLS)
+            elif backend_type == "anthropic":
                 response = client.messages.create(
-                    model=model, max_tokens=4096, system=sys_prompt,
+                    model=selected_model, max_tokens=4096, system=sys_prompt,
                     tools=TOOLS, messages=messages,
                 )
-            elif backend == "ollama":
-                response = _ollama_chat(model, sys_prompt, messages, TOOLS)
+            elif backend_type == "ollama":
+                response = _ollama_chat(selected_model, sys_prompt, messages, TOOLS)
             else:
-                yield {"event": "error", "data": {"message": f"Unknown backend: {backend}"}}
+                yield {"event": "error", "data": {"message": f"Unknown backend: {backend_type}"}}
                 return
 
             llm_ms = int((time.perf_counter() - t0) * 1000)
         except Exception as e:
             err_msg = str(e)
-            _log.error("LLM call failed (iteration %d, backend=%s): %s", iteration, backend, err_msg)
-            if iteration == 0 and backend != "ollama" and ("credit" in err_msg.lower() or "balance" in err_msg.lower()
-                                                           or "auth" in err_msg.lower() or "401" in err_msg):
+            _log.error("LLM call failed (iteration %d, backend=%s, model=%s): %s", iteration, backend_type, selected_model, err_msg)
+
+            if iteration == 0 and backend_type != "ollama" and (
+                "credit" in err_msg.lower() or "balance" in err_msg.lower()
+                or "auth" in err_msg.lower() or "401" in err_msg
+            ):
                 fallback_model = _ollama_available()
                 if fallback_model:
                     _log.info("Falling back to Ollama (%s)", fallback_model)
-                    yield {"event": "thinking", "data": {"message": f"API error, switching to Ollama ({fallback_model})..."}}
-                    backend = "ollama"
-                    model = fallback_model
+                    yield {"event": "thinking", "data": {"message": f"API error, fallback a Ollama ({fallback_model})..."}}
+                    backend_type = "ollama"
+                    selected_model = fallback_model
                     client = None
                     continue
             yield {"event": "error", "data": {"message": f"LLM error: {err_msg[:300]}", "iteration": iteration}}
@@ -610,7 +766,6 @@ def run_agent(
                 elif block.type == "text" and block.text.strip():
                     text_parts.append(block.text)
 
-        # Final text response (no more tool calls)
         if text_parts and not tool_use_blocks:
             final_text = "\n".join(text_parts)
             yield {"event": "text", "data": {"content": final_text, "llm_ms": llm_ms}}
@@ -619,16 +774,15 @@ def run_agent(
                 "iterations": iteration + 1,
                 "tools_used": tools_used,
                 "ms": total_ms,
-                "model": model,
+                "model": selected_model,
+                "complexity": complexity,
             }}
             return
 
-        # Intermediate thinking text
         if text_parts:
             for txt in text_parts:
                 yield {"event": "thinking", "data": {"message": txt[:300]}}
 
-        # Build assistant message with tool_use blocks
         assistant_content = []
         for block in response.content:
             if block.type == "text":
@@ -642,7 +796,6 @@ def run_agent(
                 })
         messages.append({"role": "assistant", "content": assistant_content})
 
-        # Execute tools and collect results
         tool_results = []
         for tool_block in tool_use_blocks:
             tool_name = tool_block.name
@@ -678,7 +831,7 @@ def run_agent(
 
     total_ms = int((time.perf_counter() - total_t0) * 1000)
     yield {"event": "text", "data": {"content": "Alcancé el límite de iteraciones.", "llm_ms": 0}}
-    yield {"event": "done", "data": {"iterations": MAX_ITERATIONS, "tools_used": tools_used, "ms": total_ms, "model": model}}
+    yield {"event": "done", "data": {"iterations": MAX_ITERATIONS, "tools_used": tools_used, "ms": total_ms, "model": selected_model, "complexity": complexity}}
 
 
 def _sanitize_input(name: str, inp: Dict) -> Dict:
