@@ -2971,8 +2971,11 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
       const modelShort = (data.model || '').split('.').pop() || data.model;
       _chip.innerHTML = '<span style="color:' + tColor + ';font-weight:700;">' + tName + '</span> → ' + (modelShort || '');
       thoughtAddStep(thinkingId, 'Complejidad: ' + tName + ' → ' + modelShort, 'done');
-      emitLive('info', '<strong>Routing:</strong> <span style="color:' + tColor + '">' + tName + '</span> → <code>' + escapeHtml(data.model || '') + '</code>');
-      initActivityFeed(tier, data.model || '');
+      const provider = data.provider || '';
+      const chainInfo = (data.failover_chain || []).join(' → ');
+      emitLive('info', '<strong>Routing:</strong> <span style="color:' + tColor + '">' + tName + '</span> → <code>' + escapeHtml((provider ? provider + ':' : '') + (data.model || '')) + '</code>');
+      if (chainInfo) emitLive('info', '<strong>Failover:</strong> ' + escapeHtml(chainInfo));
+      initActivityFeed(tier, (provider ? provider + ':' : '') + (data.model || ''));
     } else {
       emitLive('info', escapeHtml(msg));
       activityOnThinking(msg);
@@ -2986,7 +2989,7 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
     _chip.textContent = data.name + '...';
     emitLive('cmd', '<strong>' + icon + ' ' + escapeHtml(data.name) + '</strong> ' + escapeHtml(label));
     window.__lastToolStep = stepId;
-    activityOnToolCall(data.name, data.input);
+    activityOnToolCall(data.name, data.input, data.progress_pct);
   }
   else if (eventType === 'tool_progress') {
     const line = data.line || '';
@@ -3009,7 +3012,7 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
       const preview = data.output.substring(0, 150).replace(/\n/g, ' ');
       emitLive(ok ? 'info' : 'err', '<code>' + icon + ' ' + escapeHtml(data.name) + '</code> ' + escapeHtml(preview));
     }
-    activityOnToolResult(data.name, data.output || '', ok, data.ms || 0);
+    activityOnToolResult(data.name, data.output || '', ok, data.ms || 0, data.progress_pct);
   }
   else if (eventType === 'text') {
     thoughtAddStep(thinkingId, 'Respuesta generada (' + (data.llm_ms || 0) + 'ms)', 'done');
@@ -3023,7 +3026,8 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
     thoughtSetTitle(thinkingId, title);
     _chip.textContent = 'Listo (' + Math.round(ms / 1000) + 's)';
     _chip.style.color = 'var(--accent-green)';
-    if (data.model) emitLive('info', '<strong>Modelo:</strong> <code>' + escapeHtml(data.model) + '</code> | ' + (data.iterations || 0) + ' iteraciones | ' + (data.tools_used || []).length + ' tools');
+    const providerLabel = data.provider ? data.provider + ':' : '';
+    if (data.model) emitLive('info', '<strong>Modelo:</strong> <code>' + escapeHtml(providerLabel + data.model) + '</code> | ' + (data.iterations || 0) + ' iteraciones | ' + (data.tools_used || []).length + ' tools');
     setTimeout(() => { _chip.textContent = 'Listo'; _chip.style.color = ''; }, 5000);
     activityOnDone(data);
   }
@@ -3283,28 +3287,24 @@ function activityUpdateProgress(pct, stepLabel) {
   if (stepEl) stepEl.textContent = stepLabel || '';
 }
 
-function activityOnToolCall(name, input) {
+function activityOnToolCall(name, input, serverPct) {
   _activityState.totalTools++;
   const label = _toolLabel(name, input || {});
   const icon = _toolIcon(name);
   activityAddEntry('tool-call', icon, '<strong>' + escapeHtml(name) + '</strong> ' + escapeHtml(label));
-  activityUpdateProgress(
-    Math.min((_activityState.completedTools / Math.max(_activityState.totalTools + 2, 5)) * 85, 85),
-    'Ejecutando ' + name + '...'
-  );
+  const pct = serverPct || Math.min((_activityState.completedTools / Math.max(_activityState.totalTools + 2, 5)) * 85, 85);
+  activityUpdateProgress(pct, 'Ejecutando ' + name + '...');
 }
 
-function activityOnToolResult(name, output, ok, ms) {
+function activityOnToolResult(name, output, ok, ms, serverPct) {
   _activityState.completedTools++;
   const icon = ok ? '✓' : '✗';
   const cls = ok ? '' : ' ae-fail';
   const preview = (output || '').substring(0, 200).replace(/\n/g, ' ');
   activityAddEntry('tool-result' + cls, icon,
     '<code>' + escapeHtml(name) + '</code> <span style="color:var(--text-dim)">' + ms + 'ms</span> ' + escapeHtml(preview));
-  activityUpdateProgress(
-    Math.min((_activityState.completedTools / Math.max(_activityState.totalTools + 1, 3)) * 85, 85),
-    name + ' completado'
-  );
+  const pct = serverPct || Math.min((_activityState.completedTools / Math.max(_activityState.totalTools + 1, 3)) * 85, 85);
+  activityUpdateProgress(pct, name + ' completado');
 
   if (name === 'read_file' && ok && output) {
     const path = output.split('\n')[0] || '';
