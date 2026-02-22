@@ -198,8 +198,55 @@
 
             useEffect(() => {
                 pollAll();
-                const dataInterval = setInterval(pollAll, 8000);
-                return () => { clearInterval(dataInterval); };
+                // Reducir intervalo de polling a 2 segundos para datos más en tiempo real
+                const dataInterval = setInterval(pollAll, 2000);
+                
+                // Conectar WebSocket para actualizaciones en tiempo real
+                const wsUrl = `ws://${HOST}:8000/ws`;
+                let ws = null;
+                let reconnectTimeout = null;
+                
+                const connectWebSocket = () => {
+                    try {
+                        ws = new WebSocket(wsUrl);
+                        
+                        ws.onopen = () => {
+                            console.log('✅ WebSocket conectado - Actualizaciones en tiempo real activas');
+                        };
+                        
+                        ws.onmessage = (event) => {
+                            try {
+                                const data = JSON.parse(event.data);
+                                // Actualizar datos cuando lleguen por WebSocket
+                                if (data.type === 'update' || data.type === 'goal_created' || data.type === 'message') {
+                                    pollAll(); // Refrescar datos inmediatamente
+                                }
+                            } catch (e) {
+                                console.error('Error procesando mensaje WebSocket:', e);
+                            }
+                        };
+                        
+                        ws.onerror = (error) => {
+                            console.warn('⚠️ Error WebSocket:', error);
+                        };
+                        
+                        ws.onclose = () => {
+                            console.log('🔄 WebSocket desconectado - Intentando reconectar en 5s...');
+                            reconnectTimeout = setTimeout(connectWebSocket, 5000);
+                        };
+                    } catch (e) {
+                        console.error('Error conectando WebSocket:', e);
+                        reconnectTimeout = setTimeout(connectWebSocket, 5000);
+                    }
+                };
+                
+                connectWebSocket();
+                
+                return () => { 
+                    clearInterval(dataInterval);
+                    if (ws) ws.close();
+                    if (reconnectTimeout) clearTimeout(reconnectTimeout);
+                };
             }, []);
 
             return (

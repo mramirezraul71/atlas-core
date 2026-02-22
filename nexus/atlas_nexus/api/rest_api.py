@@ -214,11 +214,40 @@ def create_api(nexus_engine) -> FastAPI:
     async def websocket_endpoint(websocket: WebSocket):
         await ws_manager.connect(websocket)
         try:
-            await websocket.send_json({"type": "connected", "message": "ATLAS NEXUS"})
+            await websocket.send_json({"type": "connected", "message": "ATLAS NEXUS - Real-time updates active"})
+            
+            # Tarea para enviar heartbeat y actualizaciones periódicas
+            async def send_updates():
+                while True:
+                    try:
+                        await asyncio.sleep(2)  # Cada 2 segundos
+                        uptime = (datetime.now() - start_time).total_seconds()
+                        active = len(nexus_engine.autonomous_engine.active_plans)
+                        await websocket.send_json({
+                            "type": "update",
+                            "timestamp": datetime.now().isoformat(),
+                            "data": {
+                                "uptime": uptime,
+                                "active_plans": active,
+                                "active_tasks": active,
+                                "available_tools": len(nexus_engine.tools_registry.tools),
+                                "ws_clients": len(ws_manager.active_connections)
+                            }
+                        })
+                    except:
+                        break
+            
+            # Iniciar tarea de actualizaciones
+            update_task = asyncio.create_task(send_updates())
+            
+            # Escuchar mensajes del cliente
             while True:
                 data = await websocket.receive_json()
                 await ws_manager.broadcast({"type": "message", "data": data})
+                
         except WebSocketDisconnect:
             ws_manager.disconnect(websocket)
+            if 'update_task' in locals():
+                update_task.cancel()
     
     return app

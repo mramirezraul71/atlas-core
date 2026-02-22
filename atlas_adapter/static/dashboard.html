@@ -2920,7 +2920,7 @@
       setInterval(updateTime, 1000);
       loadInitialData();
       updateMiniRobot();
-      setInterval(updateMiniRobot, 10000);
+      setInterval(updateMiniRobot, 3000);
     });
     
     // Theme selector
@@ -3932,44 +3932,44 @@
       pollPendingApprovals();
       
       // Polling para nuevas entradas cada 15 segundos
-      setInterval(pollBitacora, 15000);
+      setInterval(pollBitacora, 5000);
 
       // Polling de aprobaciones pendientes cada 10 segundos
-      setInterval(pollPendingApprovals, 10000);
+      setInterval(pollPendingApprovals, 3000);
 
       // Polling Telegram/WhatsApp cada 20 segundos
       pollComms();
-      setInterval(pollComms, 20000);
+      setInterval(pollComms, 8000);
 
       // Polling centralizado: todos los sistemas vitales
       setTimeout(pollAllSystems, 3000);
-      setInterval(pollAllSystems, 30000);
+      setInterval(pollAllSystems, 10000);
 
       // Kernel Event Bus: eventos internos
       pollEventBus();
-      setInterval(pollEventBus, 25000);
+      setInterval(pollEventBus, 8000);
 
       // Audit trail
       pollAudit();
-      setInterval(pollAudit, 45000);
+      setInterval(pollAudit, 15000);
 
       // Healing / anomalias
       pollHealing();
-      setInterval(pollHealing, 60000);
+      setInterval(pollHealing, 20000);
 
       // Cognitive Memory systems status
       pollCognitiveMemory();
-      setInterval(pollCognitiveMemory, 120000);
+      setInterval(pollCognitiveMemory, 30000);
 
       // Reactor autonomo
       pollReactor();
-      setInterval(pollReactor, 60000);
+      setInterval(pollReactor, 20000);
 
       // Autonomia (cada 10s)
       loadAutonomia();
-      setInterval(loadAutonomia, 10000);
+      setInterval(loadAutonomia, 5000);
       loadAggressiveConfig();
-      setInterval(loadAggressiveConfig, 15000);
+      setInterval(loadAggressiveConfig, 8000);
 
       // Entrada inicial
       addToBitacora('Sistema ATLAS iniciado', 'success', 'system');
@@ -6869,7 +6869,7 @@
       updateHealthWidget();
       
       // Auto-refresh health widget every 30 seconds
-      setInterval(updateHealthWidget, 30000);
+      setInterval(updateHealthWidget, 10000);
     });
     
     // ═══════════════════════════════════════════════════════════════
