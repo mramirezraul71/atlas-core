@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 # Defaults for plan: fast model, small output, low temp, 15s timeout
 PLAN_ROUTE_FAST = "FAST"
-PLAN_MAX_TOKENS = 256
+PLAN_MAX_TOKENS = 512
 PLAN_TEMPERATURE = 0.2
 PLAN_TIMEOUT_SEC = 15
 
@@ -24,7 +24,13 @@ class TaskPlanner:
         if not self._brain or not hasattr(self._brain, "run_llm"):
             return {"ok": False, "steps": [], "error": "Brain/LLM not available"}
         route = PLAN_ROUTE_FAST if fast else "REASON"
-        prompt = f"Desglosa en pasos concretos y numerados (solo lista, sin explicación): {goal}"
+        prompt = (
+            f"Eres ATLAS, sistema tecnico. Descompone en 3-5 pasos EJECUTABLES (comando, endpoint, archivo, query).\n"
+            f"Cada paso debe ser una accion tecnica directa, NO conceptos abstractos.\n"
+            f"Para problemas internos de ATLAS usa: /health, /audit/tail, /api/autonomy/status, /watchdog/status.\n"
+            f"Solo lista numerada, sin explicaciones.\n\n"
+            f"Objetivo: {goal}"
+        )
         try:
             r = self._brain.run_llm(
                 prompt,

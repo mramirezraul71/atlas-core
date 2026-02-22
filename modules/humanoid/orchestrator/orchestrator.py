@@ -65,8 +65,12 @@ def _llm_decompose_fallback(goal: str, fast: bool = True) -> Dict[str, Any]:
         if not call_fn:
             return None
         prompt = (
-            f"Descompone este objetivo en 2-5 pasos concretos y ejecutables. "
-            f"Responde SOLO con una lista numerada (1. ... 2. ... etc), sin explicaciones extra.\n\n"
+            f"Eres ATLAS, un sistema tecnico. Descompone este objetivo en 2-5 pasos TECNICOS y EJECUTABLES.\n"
+            f"Cada paso DEBE ser una accion concreta: un comando de terminal, una consulta a endpoint/API, "
+            f"una edicion de archivo con ruta especifica, una query SQL, o una llamada a funcion.\n"
+            f"NUNCA escribas pasos abstractos como 'crear herramienta', 'establecer proceso', 'implementar plataforma'.\n"
+            f"Si el problema es interno de ATLAS, usa endpoints reales: /health, /audit/tail, /api/autonomy/status, /watchdog/status.\n"
+            f"Responde SOLO con la lista numerada (1. ... 2. ...), sin explicaciones extra.\n\n"
             f"Objetivo: {goal.strip()}"
         )
         result = call_fn("auto", prompt, use_config=False, prefer_fast=fast)
