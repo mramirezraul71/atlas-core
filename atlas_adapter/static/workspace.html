@@ -2929,6 +2929,15 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
     emitLive('cmd', '<strong>' + icon + ' ' + escapeHtml(data.name) + '</strong> ' + escapeHtml(label));
     window.__lastToolStep = stepId;
   }
+  else if (eventType === 'tool_progress') {
+    const line = data.line || '';
+    const elapsed = data.elapsed_s || 0;
+    if (window.__lastToolStep) {
+      thoughtUpdateStep(thinkingId, window.__lastToolStep, 'active',
+        data.name + ' ' + elapsed + 's: ' + line.substring(0, 80));
+    }
+    emitLive('info', '<code style="color:var(--accent-cyan);">[' + elapsed + 's]</code> ' + escapeHtml(line.substring(0, 120)));
+  }
   else if (eventType === 'tool_result') {
     const ok = data.ok !== false;
     const icon = ok ? '✓' : '✗';

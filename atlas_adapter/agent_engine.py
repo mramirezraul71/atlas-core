@@ -228,14 +228,16 @@ def _truncate(text: str, limit: int = MAX_TOOL_OUTPUT) -> str:
     return text[:half] + f"\n\n... ({len(text) - limit} chars truncated) ...\n\n" + text[-half:]
 
 
-def execute_tool(name: str, inp: Dict[str, Any]) -> str:
-    """Execute a tool and return the result as text."""
+def execute_tool(name: str, inp: Dict[str, Any], progress_callback=None) -> str:
+    """Execute a tool and return the result as text. Streaming tools accept progress_callback."""
     try:
+        if name == "execute_command":
+            return _tool_execute_command(inp, progress_callback=progress_callback)
+
         dispatch = {
             "read_file": _tool_read_file,
             "write_file": _tool_write_file,
             "edit_file": _tool_edit_file,
-            "execute_command": _tool_execute_command,
             "search_text": _tool_search_text,
             "list_directory": _tool_list_directory,
             "atlas_api": _tool_atlas_api,
@@ -291,26 +293,51 @@ def _tool_edit_file(inp: Dict) -> str:
     return f"Edited {path}: replaced {len(old_text)} chars with {len(new_text)} chars"
 
 
-def _tool_execute_command(inp: Dict) -> str:
+def _tool_execute_command(inp: Dict, progress_callback=None) -> str:
+    """Execute command with optional real-time progress streaming."""
     cmd = inp["command"]
     cwd = inp.get("working_directory", str(ATLAS_ROOT))
     timeout = min(inp.get("timeout", COMMAND_TIMEOUT), 300)
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             ["powershell", "-Command", cmd],
-            capture_output=True, text=True, timeout=timeout,
-            cwd=cwd, encoding="utf-8", errors="replace",
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            cwd=cwd, text=True, encoding="utf-8", errors="replace",
+            bufsize=1,
         )
-        out = ""
-        if result.stdout:
-            out += result.stdout
-        if result.stderr:
-            out += "\nSTDERR:\n" + result.stderr
-        if result.returncode != 0:
-            out += f"\n[exit code: {result.returncode}]"
+
+        stdout_lines = []
+        start = time.perf_counter()
+
+        while True:
+            line = proc.stdout.readline()
+            if line:
+                stripped = line.rstrip("\n\r")
+                stdout_lines.append(stripped)
+                if progress_callback and stripped.strip():
+                    progress_callback(stripped[:200])
+            elif proc.poll() is not None:
+                break
+
+            if time.perf_counter() - start > timeout:
+                proc.kill()
+                return f"Command timed out after {timeout}s. Partial output:\n" + "\n".join(stdout_lines[-20:])
+
+        remaining = proc.stdout.read()
+        if remaining:
+            for rl in remaining.strip().split("\n"):
+                stdout_lines.append(rl)
+                if progress_callback and rl.strip():
+                    progress_callback(rl[:200])
+
+        stderr_text = proc.stderr.read()
+
+        out = "\n".join(stdout_lines)
+        if stderr_text and stderr_text.strip():
+            out += "\nSTDERR:\n" + stderr_text
+        if proc.returncode != 0:
+            out += f"\n[exit code: {proc.returncode}]"
         return _truncate(out.strip() or "(no output)")
-    except subprocess.TimeoutExpired:
-        return f"Command timed out after {timeout}s"
     except Exception as e:
         return f"Command error: {e}"
 
@@ -808,7 +835,50 @@ def run_agent(
             }}
 
             t0 = time.perf_counter()
-            result_text = execute_tool(tool_name, tool_input)
+
+            if tool_name in ("execute_command", "interpreter"):
+                import queue, threading
+                progress_q = queue.Queue()
+                result_holder = [None]
+
+                def _run_tool():
+                    result_holder[0] = execute_tool(
+                        tool_name, tool_input,
+                        progress_callback=lambda line: progress_q.put(line),
+                    )
+                    progress_q.put(None)
+
+                th = threading.Thread(target=_run_tool, daemon=True)
+                th.start()
+
+                last_emit = time.perf_counter()
+                while True:
+                    try:
+                        line = progress_q.get(timeout=0.5)
+                        if line is None:
+                            break
+                        now = time.perf_counter()
+                        if now - last_emit > 0.3:
+                            yield {"event": "tool_progress", "data": {
+                                "name": tool_name,
+                                "line": line[:200],
+                                "elapsed_s": round(now - t0, 1),
+                            }}
+                            last_emit = now
+                    except queue.Empty:
+                        elapsed = time.perf_counter() - t0
+                        if elapsed > 5 and int(elapsed) % 5 == 0:
+                            yield {"event": "tool_progress", "data": {
+                                "name": tool_name,
+                                "line": f"... ejecutando ({int(elapsed)}s)",
+                                "elapsed_s": round(elapsed, 1),
+                            }}
+
+                th.join(timeout=5)
+                result_text = result_holder[0] or "Error: tool did not return"
+            else:
+                result_text = execute_tool(tool_name, tool_input)
+
             tool_ms = int((time.perf_counter() - t0) * 1000)
 
             tools_used.append({"name": tool_name, "ms": tool_ms})
