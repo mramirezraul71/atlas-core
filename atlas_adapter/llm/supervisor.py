@@ -1,14 +1,19 @@
-"""Supervisor - Technical diagnostic engine for ATLAS.
-
-Pattern: Gather real data FIRST, then LLM analyzes and recommends.
-Never ask the LLM to invent data or use fake commands.
 """
+Supervisor - Meta-agent that audits Atlas, directs the Agent, and reports to the Owner.
+
+Role hierarchy: Owner (Raúl) → Supervisor → Agent/Atlas
+The Supervisor:
+  1. Monitors Atlas health, audit logs, task execution
+  2. Can investigate issues using tool calling (same engine as Agent)
+  3. Gives directives to Atlas and the Agent
+  4. Reports findings and status to the Owner
+"""
+from __future__ import annotations
+
 import json
 import os
 import time
-from typing import Any, Dict, List, Optional
-
-import requests
+from typing import Any, Dict, Generator, List, Optional
 
 from .audit import AuditLogger
 
@@ -18,31 +23,54 @@ _TIMEOUT = 5
 
 def _get(path: str) -> Optional[dict]:
     try:
+        import requests
         r = requests.get(f"{_ATLAS_BASE}{path}", timeout=_TIMEOUT)
         return r.json() if r.ok else None
     except Exception:
         return None
 
 
-def _post(path: str, body: dict) -> Optional[dict]:
-    try:
-        r = requests.post(f"{_ATLAS_BASE}{path}", json=body, timeout=_TIMEOUT)
-        return r.json() if r.ok else None
-    except Exception:
-        return None
+SUPERVISOR_SYSTEM_PROMPT = """Eres el SUPERVISOR de ATLAS, un meta-agente subordinado al Owner (Raúl).
+
+TU ROL:
+- Auditas el trabajo de ATLAS y del Agente
+- Investigas problemas usando herramientas reales (leer archivos, ejecutar comandos, consultar APIs)
+- Das instrucciones concretas y directivas a Atlas
+- Reportas al Owner con datos reales, no suposiciones
+
+REGLAS:
+1. Siempre VERIFICA antes de reportar: lee logs, consulta endpoints, revisa código
+2. Cada hallazgo debe tener EVIDENCIA (archivo, log, endpoint consultado)
+3. Cada recomendación debe ser EJECUTABLE (comando, cambio de código, endpoint)
+4. Si detectas un problema, intenta diagnosticarlo a fondo usando las herramientas
+5. Responde en español, profesional y directo
+6. La raíz del proyecto ATLAS es C:\\ATLAS_PUSH
+
+FORMATO DE REPORTE:
+## ESTADO ACTUAL
+[Resumen de salud con datos reales]
+
+## HALLAZGOS
+[Problemas encontrados con evidencia]
+
+## DIRECTIVAS
+[Acciones que Atlas debe tomar, con comandos/endpoints concretos]
+
+## RECOMENDACIONES AL OWNER
+[Lo que Raúl necesita saber o decidir]"""
 
 
 class Supervisor:
     """
-    Technical Supervisor that gathers REAL system data before asking the LLM.
-    The LLM receives facts, not prompts to guess.
+    Meta-agent that audits Atlas, investigates with tools, and reports to Owner.
+    Uses the same AgentEngine as the main Agent for deep investigation.
     """
 
     def __init__(self):
         self.audit = AuditLogger()
-        self.owner = "Raúl"
 
     def advise(self, objective: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Quick advisory: gather data + LLM analysis without tool calling."""
         self.audit.log("supervisor_request", {
             "objective": objective,
             "context_keys": list(context.keys()),
@@ -57,7 +85,7 @@ class Supervisor:
 
         try:
             from atlas_adapter.atlas_http_api import _direct_model_call
-            result = _direct_model_call("auto", prompt, use_config=False, prefer_fast=False)
+            result = _direct_model_call("auto", prompt, use_config=False, prefer_fast=False, enrich=False)
         except Exception as e:
             return {"ok": False, "error": str(e), "analysis": f"Error LLM: {e}",
                     "recommendations": [], "snapshot": snapshot, "diagnosis": diagnosis}
@@ -82,8 +110,40 @@ class Supervisor:
             "ms": int(result.get("ms", 0)),
         }
 
+    def investigate(self, objective: str, context: Dict[str, Any]) -> Generator[Dict[str, Any], None, None]:
+        """
+        Deep investigation using tool calling (like the Agent).
+        Yields SSE events for streaming to the frontend.
+        """
+        self.audit.log("supervisor_investigate", {"objective": objective})
+
+        snapshot = self._gather_system_snapshot()
+        diagnosis = self._diagnose(snapshot)
+
+        enriched_msg = (
+            f"OBJETIVO DEL OWNER: {objective}\n\n"
+            f"DIAGNÓSTICO AUTOMÁTICO (severidad: {diagnosis['severity']}):\n"
+        )
+        for i in diagnosis.get("issues", []):
+            enriched_msg += f"- PROBLEMA: {i}\n"
+        for w in diagnosis.get("warnings", []):
+            enriched_msg += f"- ADVERTENCIA: {w}\n"
+        for o in diagnosis.get("ok_items", []):
+            enriched_msg += f"- OK: {o}\n"
+
+        snap_json = json.dumps(snapshot, ensure_ascii=False, default=str)
+        if len(snap_json) > 2000:
+            snap_json = snap_json[:2000] + "..."
+        enriched_msg += f"\nDATOS DEL SISTEMA:\n{snap_json}\n\n"
+        enriched_msg += "Investiga a fondo usando las herramientas disponibles. Lee archivos, consulta endpoints, ejecuta comandos según necesites."
+
+        from atlas_adapter.agent_engine import run_agent
+        yield from run_agent(
+            enriched_msg,
+            system_prompt=SUPERVISOR_SYSTEM_PROMPT,
+        )
+
     def _gather_system_snapshot(self) -> Dict[str, Any]:
-        """Gather REAL data from all available ATLAS endpoints."""
         snap: Dict[str, Any] = {}
 
         h = _get("/health")
@@ -115,10 +175,6 @@ class Supervisor:
         if wd:
             snap["watchdog"] = wd
 
-        heal = _get("/healing/status")
-        if heal:
-            snap["healing"] = heal
-
         bit = _get("/bitacora/stream?since_id=0")
         if bit and bit.get("entries"):
             snap["bitacora_recent"] = [
@@ -140,7 +196,6 @@ class Supervisor:
         return snap
 
     def _diagnose(self, snap: Dict[str, Any]) -> Dict[str, Any]:
-        """Deterministic diagnosis from snapshot data (no LLM needed)."""
         issues: List[str] = []
         warnings: List[str] = []
         ok_items: List[str] = []
@@ -212,41 +267,30 @@ class Supervisor:
         for o in diagnosis.get("ok_items", []):
             diag_lines.append(f"OK: {o}")
 
-        return f"""Eres el Supervisor técnico de ATLAS. Analiza estos DATOS REALES del sistema y responde al objetivo del Owner.
+        return f"""Eres el Supervisor técnico de ATLAS, subordinado al Owner (Raúl).
 
 OBJETIVO DEL OWNER: {objective}
 {f"Issues reportados: {', '.join(issues_ctx)}" if issues_ctx else ""}
 {f"Módulos de interés: {', '.join(modules_ctx)}" if modules_ctx else ""}
 
-═══ DIAGNÓSTICO AUTOMÁTICO ═══
-Severidad: {diagnosis['severity'].upper()}
+DIAGNÓSTICO AUTOMÁTICO (Severidad: {diagnosis['severity'].upper()}):
 {chr(10).join(diag_lines) if diag_lines else "Sin problemas detectados"}
 
-═══ DATOS REALES DEL SISTEMA ═══
+DATOS REALES DEL SISTEMA:
 {snap_json}
 
-═══ INSTRUCCIONES ═══
-Basándote SOLO en los datos reales de arriba:
+INSTRUCCIONES:
+1. DIAGNÓSTICO (máx 5 líneas): qué está pasando, citando datos del snapshot.
+2. ACCIONES (3-5): Cada una con formato:
+   ACTION: [tipo] [descripción]
+   RISK: low|high
+   EXECUTE: [endpoint/comando/archivo exacto]
+3. DIRECTIVAS PARA ATLAS: Qué debe hacer Atlas automáticamente.
+4. REPORTE AL OWNER: Qué necesita saber Raúl.
 
-1. DIAGNÓSTICO (máximo 5 líneas): ¿qué está pasando y por qué? Cita datos concretos del snapshot.
-
-2. ACCIONES (3-5 acciones ejecutables):
-Cada acción debe ser UNA de estas:
-- ENDPOINT: método + URL real de ATLAS (ej: GET /health, POST /api/workspace/terminal/execute)
-- COMANDO: comando de terminal real (ej: python script.py, pip install X)
-- ARCHIVO: ruta real + qué cambiar (ej: editar modules/humanoid/X.py línea Y)
-
-Formato de cada acción:
-ACTION: [tipo] [descripción corta]
-RISK: low|high
-EXECUTE: [endpoint/comando/archivo exacto]
-
-3. VERIFICACIÓN: Cómo confirmar que se resolvió (1 endpoint o comando).
-
-NO inventes datos. NO uses comandos que no existen. Solo endpoints reales de ATLAS (/health, /audit/tail, /status, /api/autonomy/status, /watchdog/status, /api/workspace/terminal/execute, etc)."""
+Solo usa endpoints reales de ATLAS."""
 
     def _extract_actions(self, text: str) -> List[Dict[str, Any]]:
-        """Extract structured actions from LLM response."""
         actions = []
         lines = text.split("\n")
         current: Optional[Dict[str, Any]] = None
@@ -266,7 +310,6 @@ NO inventes datos. NO uses comandos que no existen. Solo endpoints reales de ATL
 
         if current:
             actions.append(current)
-
         return actions
 
     def _extract_lines(self, text: str, keyword: str) -> List[str]:

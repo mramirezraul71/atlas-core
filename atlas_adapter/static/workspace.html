@@ -1252,10 +1252,13 @@
           </div>
         </div>
         
-        <div class="chat-input-row">
-          <button class="chat-send" id="btn-supervisor-send" onclick="askSupervisor()" style="width:100%;justify-content:center;gap:8px;">
+        <div class="chat-input-row" style="display:flex;gap:6px;">
+          <button class="chat-send" id="btn-supervisor-send" onclick="askSupervisor()" style="flex:1;justify-content:center;gap:6px;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-            Consultar Supervisor
+            Consultar
+          </button>
+          <button class="chat-send" id="btn-supervisor-investigate" onclick="supervisorInvestigate()" style="flex:1;justify-content:center;gap:6px;background:var(--accent-purple);">
+            🔍 Investigar
           </button>
         </div>
         
@@ -1827,6 +1830,86 @@ async function askSupervisor() {
     thoughtSetError(thinkId);
     thoughtSetTitle(thinkId, 'Error de conexión');
     addSupervisorMessage('supervisor', '<strong style="color:var(--accent-red);">Error de conexión:</strong> ' + escapeHtml(error.message));
+  }
+}
+
+async function supervisorInvestigate() {
+  const objective = document.getElementById('supervisor-objective').value.trim();
+  if (!objective) { alert('Ingresa un objetivo'); return; }
+
+  const issuesInput = document.getElementById('supervisor-issues').value.trim();
+  const modulesInput = document.getElementById('supervisor-modules').value.trim();
+  const issues = issuesInput ? issuesInput.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const modules = modulesInput ? modulesInput.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+  addSupervisorMessage('user', '🔍 ' + objective);
+  const thinkId = addThinking('Supervisor investigando con herramientas...');
+  thoughtAddStep(thinkId, 'Recopilando datos del sistema', 'active');
+  thoughtSetAction(thinkId, 'Iniciando investigación profunda...', '🔍');
+
+  try {
+    const response = await fetch(API + '/supervisor/investigate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ objective, context: { issues, modules } }),
+    });
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalText = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      let eventType = '';
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.substring(7).trim();
+        } else if (line.startsWith('data: ') && eventType) {
+          try {
+            const data = JSON.parse(line.substring(6));
+            if (eventType === 'thinking') {
+              thoughtSetAction(thinkId, data.message || '', '🧠');
+            } else if (eventType === 'tool_call') {
+              const icon = _toolIcon(data.name);
+              thoughtAddStep(thinkId, icon + ' ' + _toolLabel(data.name, data.input), 'active');
+            } else if (eventType === 'tool_result') {
+              const preview = (data.output || '').substring(0, 100);
+              thoughtAddStep(thinkId, (data.ok !== false ? '✓' : '✗') + ' ' + data.name + ' (' + (data.ms||0) + 'ms)', data.ok !== false ? 'done' : 'error');
+            } else if (eventType === 'text') {
+              finalText = data.content || '';
+            } else if (eventType === 'done') {
+              thoughtSetTitle(thinkId, 'Investigación completada (' + Math.round((data.ms||0)/1000) + 's)');
+              if (data.model) thoughtAddStep(thinkId, 'Modelo: ' + data.model, 'done');
+            } else if (eventType === 'error') {
+              thoughtSetError(thinkId);
+              addSupervisorMessage('supervisor', '<strong style="color:var(--accent-red);">Error:</strong> ' + escapeHtml(data.message || ''));
+            }
+          } catch (e) {}
+          eventType = '';
+        }
+      }
+    }
+
+    removeThinking(thinkId);
+    if (finalText) {
+      addSupervisorMessage('supervisor', renderMarkdown(finalText));
+      if (ttsEnabled) speakSupervisor(finalText.substring(0, 300));
+    }
+
+    document.getElementById('supervisor-objective').value = '';
+    document.getElementById('supervisor-issues').value = '';
+    document.getElementById('supervisor-modules').value = '';
+
+  } catch (error) {
+    thoughtSetError(thinkId);
+    addSupervisorMessage('supervisor', '<strong style="color:var(--accent-red);">Error:</strong> ' + escapeHtml(error.message));
   }
 }
 
@@ -2524,10 +2607,16 @@ async function sendMessage() {
   setChatProcessing(true);
 
   const _agentModeForRoute = document.getElementById('agent-mode').value;
-  const _routeTag = _agentModeForRoute === 'auto' ? 'Auto > Agent' : 'Agent';
+  const _chip = document.getElementById('model-status-chip');
+
+  // AUTO mode: use agentic tool-calling loop (like Cursor)
+  if (_agentModeForRoute === 'auto') {
+    return sendViaAgentEngine(goalText, _chip);
+  }
+
+  const _routeTag = 'Agent';
   const thinkingId = addThinking('Pensando...');
 
-  const _chip = document.getElementById('model-status-chip');
   _chip.textContent = _routeTag + ' procesando...';
   _chip.style.color = 'var(--accent-cyan)';
 
@@ -2745,6 +2834,162 @@ async function sendMessage() {
   _chip.textContent = 'Listo';
   _chip.style.color = '';
   setChatProcessing(false);
+}
+
+// ─── AGENTIC ENGINE (Cursor-like tool calling) ───
+async function sendViaAgentEngine(goalText, _chip) {
+  const thinkingId = addThinking('Agente analizando...');
+  _chip.textContent = 'Agent ejecutando...';
+  _chip.style.color = 'var(--accent-cyan)';
+  thoughtAddStep(thinkingId, 'Conectando con motor agéntico', 'active');
+  thoughtSetAction(thinkingId, 'Iniciando loop de herramientas...', '🔧');
+  emitLive('exec', '<strong>[Agent Engine]</strong> ' + escapeHtml(goalText.substring(0, 80)), true);
+
+  let toolsUsed = [];
+  let iterations = 0;
+  let finalText = '';
+
+  try {
+    const response = await fetch(API + '/agent/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: goalText, model: selectedModel !== 'auto' ? selectedModel : null }),
+    });
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      let eventType = '';
+      let eventData = '';
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          eventType = line.substring(7).trim();
+        } else if (line.startsWith('data: ')) {
+          eventData = line.substring(6);
+          if (eventType && eventData) {
+            try {
+              const data = JSON.parse(eventData);
+              _handleAgentEvent(thinkingId, eventType, data, _chip);
+              if (eventType === 'text') finalText = data.content || '';
+              if (eventType === 'done') {
+                toolsUsed = data.tools_used || [];
+                iterations = data.iterations || 0;
+              }
+              if (eventType === 'error') {
+                finalText = 'Error: ' + (data.message || 'desconocido');
+              }
+            } catch (e) { console.warn('SSE parse error', e); }
+          }
+          eventType = '';
+          eventData = '';
+        }
+      }
+    }
+
+    if (finalText) {
+      addChatMessage(finalText, 'atlas');
+      const completionTokens = estimateTokens(finalText);
+      tokenUsage.completion += completionTokens;
+      tokenUsage.total += completionTokens;
+      renderTokenUsage(0);
+    }
+
+    if (toolsUsed.length > 0) {
+      let toolSummary = '<div style="margin-top:6px;font-size:11px;color:var(--text-muted);">';
+      toolSummary += '<strong>Herramientas usadas:</strong> ';
+      const grouped = {};
+      toolsUsed.forEach(t => { grouped[t.name] = (grouped[t.name] || 0) + 1; });
+      toolSummary += Object.entries(grouped).map(([n, c]) => n + (c > 1 ? ' x' + c : '')).join(', ');
+      toolSummary += ' | ' + iterations + ' iteraciones</div>';
+      const lastMsg = document.querySelector('#chat-messages .msg.atlas:last-child');
+      if (lastMsg) lastMsg.innerHTML += toolSummary;
+    }
+
+  } catch (err) {
+    thoughtSetError(thinkingId);
+    addChatMessage('Error de conexión: ' + err.message, 'atlas');
+  }
+
+  removeThinking(thinkingId);
+  currentRequestController = null;
+  _chip.textContent = 'Listo';
+  _chip.style.color = '';
+  setChatProcessing(false);
+}
+
+function _handleAgentEvent(thinkingId, eventType, data, _chip) {
+  if (eventType === 'thinking') {
+    thoughtSetAction(thinkingId, data.message || 'Pensando...', '🧠');
+    emitLive('info', escapeHtml(data.message || ''));
+  }
+  else if (eventType === 'tool_call') {
+    const icon = _toolIcon(data.name);
+    const label = _toolLabel(data.name, data.input);
+    const stepId = thoughtAddStep(thinkingId, icon + ' ' + label, 'active');
+    thoughtSetAction(thinkingId, 'Ejecutando ' + data.name + '...', icon);
+    _chip.textContent = data.name + '...';
+    emitLive('cmd', '<strong>' + icon + ' ' + escapeHtml(data.name) + '</strong> ' + escapeHtml(label));
+    window.__lastToolStep = stepId;
+  }
+  else if (eventType === 'tool_result') {
+    const ok = data.ok !== false;
+    const icon = ok ? '✓' : '✗';
+    if (window.__lastToolStep) {
+      thoughtUpdateStep(thinkingId, window.__lastToolStep, ok ? 'done' : 'error',
+        data.name + ' ' + (data.ms || 0) + 'ms');
+    }
+    if (data.output) {
+      const preview = data.output.substring(0, 150).replace(/\n/g, ' ');
+      emitLive(ok ? 'info' : 'err', '<code>' + icon + ' ' + escapeHtml(data.name) + '</code> ' + escapeHtml(preview));
+    }
+  }
+  else if (eventType === 'text') {
+    thoughtAddStep(thinkingId, 'Respuesta generada (' + (data.llm_ms || 0) + 'ms)', 'done');
+    _chip.textContent = 'Generando respuesta...';
+  }
+  else if (eventType === 'done') {
+    const ms = data.ms || 0;
+    thoughtSetTitle(thinkingId, 'Completado en ' + Math.round(ms / 1000) + 's');
+    _chip.textContent = 'Listo (' + Math.round(ms / 1000) + 's)';
+    _chip.style.color = 'var(--accent-green)';
+    if (data.model) emitLive('info', '<strong>Modelo:</strong> <code>' + escapeHtml(data.model) + '</code>');
+    setTimeout(() => { _chip.textContent = 'Listo'; _chip.style.color = ''; }, 5000);
+  }
+  else if (eventType === 'error') {
+    thoughtSetError(thinkingId);
+    thoughtAddStep(thinkingId, 'Error: ' + (data.message || ''), 'error');
+    emitLive('err', '<strong>Error:</strong> ' + escapeHtml(data.message || ''));
+  }
+}
+
+function _toolIcon(name) {
+  const icons = {
+    read_file: '📄', write_file: '📝', edit_file: '✏️',
+    execute_command: '⚡', search_text: '🔍',
+    list_directory: '📁', atlas_api: '📡'
+  };
+  return icons[name] || '🔧';
+}
+
+function _toolLabel(name, input) {
+  if (name === 'read_file') return 'Leyendo ' + (input.path || '').split(/[/\\]/).pop();
+  if (name === 'write_file') return 'Escribiendo ' + (input.path || '').split(/[/\\]/).pop();
+  if (name === 'edit_file') return 'Editando ' + (input.path || '').split(/[/\\]/).pop();
+  if (name === 'execute_command') return (input.command || '').substring(0, 60);
+  if (name === 'search_text') return 'Buscando "' + (input.pattern || '').substring(0, 40) + '"';
+  if (name === 'list_directory') return 'Listando ' + (input.path || '').split(/[/\\]/).pop();
+  if (name === 'atlas_api') return input.method + ' ' + (input.endpoint || '');
+  return name;
 }
 
 // ─── CHAT HELPERS ───

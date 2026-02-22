@@ -876,6 +876,33 @@ def supervisor_advise(payload: dict):
         }
 
 
+@app.post("/supervisor/investigate", tags=["LLM Supervisor"])
+def supervisor_investigate(payload: dict):
+    """
+    Supervisor deep investigation with tool calling. Streams SSE events.
+    Body: { objective: str, context?: {} }
+    """
+    from fastapi.responses import StreamingResponse
+    from atlas_adapter.llm.supervisor import Supervisor
+
+    objective = payload.get("objective", "Revisar estado del sistema")
+    context = payload.get("context", {})
+
+    supervisor = Supervisor()
+
+    def _sse_gen():
+        try:
+            for event in supervisor.investigate(objective, context):
+                evt_type = event.get("event", "info")
+                data = json.dumps(event.get("data", {}), ensure_ascii=False, default=str)
+                yield f"event: {evt_type}\ndata: {data}\n\n"
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+        yield "event: close\ndata: {}\n\n"
+
+    return StreamingResponse(_sse_gen(), media_type="text/event-stream")
+
+
 @app.get("/api/brain/credentials/status", tags=["Cerebro"])
 def api_brain_credentials_status():
     """Estado de API keys por proveedor (configured, masked). Nunca devuelve la clave en claro."""
@@ -7671,6 +7698,35 @@ def agent_step_execute(body: AgentStepBody):
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/agent/chat", tags=["Agent Engine"])
+def agent_chat(payload: dict):
+    """
+    Agentic tool-calling loop (like Cursor). Streams events via SSE.
+    Body: { message: str, history?: [...], model?: str }
+    Events: thinking, tool_call, tool_result, text, done, error
+    """
+    from fastapi.responses import StreamingResponse
+    from atlas_adapter.agent_engine import run_agent
+
+    user_msg = payload.get("message", "").strip()
+    if not user_msg:
+        return {"ok": False, "error": "Empty message"}
+    history = payload.get("history") or []
+    model = payload.get("model") or None
+
+    def _sse_generator():
+        try:
+            for event in run_agent(user_msg, conversation_history=history, model=model):
+                evt_type = event.get("event", "info")
+                data = json.dumps(event.get("data", {}), ensure_ascii=False, default=str)
+                yield f"event: {evt_type}\ndata: {data}\n\n"
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+        yield "event: close\ndata: {}\n\n"
+
+    return StreamingResponse(_sse_generator(), media_type="text/event-stream")
 
 
 @app.post("/agent/benchmark")
