@@ -506,7 +506,7 @@ def _get_llm_backend(model_override: Optional[str] = None):
         try:
             import boto3
             boto3.client("bedrock-runtime", region_name=region)
-            model = model_override or "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+            model = model_override or "us.anthropic.claude-opus-4-6-v1"
             _log.info("Agent engine: using Bedrock boto3 (%s)", model)
             return "bedrock_boto3", None, model
         except Exception as e:
