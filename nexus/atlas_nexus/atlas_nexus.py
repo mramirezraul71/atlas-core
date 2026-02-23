@@ -15,6 +15,7 @@ sys.path.insert(0, str(project_root))
 from config.nexus_config import config
 from brain.neural_router import NeuralRouter
 from brain.autonomous_engine import AutonomousEngine
+from brain.memory_integration import get_memory_integration, enhance_agent_response_with_memory
 from tools.tools_manager import ToolsManager
 
 
@@ -48,6 +49,11 @@ class AtlasNexus:
         self.engine = AutonomousEngine(self.router, self.tools, config)
         print("  ✅ Autonomous Engine initialized")
         
+        # Initialize memory integration
+        self.memory = get_memory_integration()
+        self.memory.set_session(user_id="atlas_user")
+        print("  ✅ Memory Integration initialized")
+        
         # Telegram bot (if enabled)
         self.telegram_bot = None
         
@@ -57,11 +63,34 @@ class AtlasNexus:
     
     async def execute(self, user_input: str, context: dict = None):
         """
-        Execute user command
+        Execute user command with memory integration
         
         This is the main entry point for all user interactions
         """
-        return await self.engine.execute(user_input, context)
+        # Enhance input with memory context
+        enhanced_input = self.memory.enhance_prompt_with_memory(user_input, "conversation")
+        
+        # Execute with enhanced input
+        result = await self.engine.execute(enhanced_input, context)
+        
+        # Enhance response with memory
+        if result.get('response'):
+            enhanced_response = enhance_agent_response_with_memory(
+                user_input, 
+                result['response'], 
+                "conversation"
+            )
+            result['response'] = enhanced_response
+        
+        # Store task result if applicable
+        if result.get('success') and result.get('task'):
+            self.memory.store_task_result(
+                task=result['task'],
+                result=result.get('output'),
+                status="completed" if result['success'] else "failed"
+            )
+        
+        return result
     
     async def interactive_mode(self):
         """
@@ -91,6 +120,10 @@ class AtlasNexus:
                 
                 if user_input.lower() == 'tools':
                     self._show_tools()
+                    continue
+                
+                if user_input.lower() == 'memory':
+                    self._show_memory_stats()
                     continue
                 
                 # Execute command
@@ -200,6 +233,44 @@ class AtlasNexus:
                 name = tool.name[:25]
                 desc = tool.description[:30]
                 print(f"║    • {name:<25} {desc:<27} ║")
+        
+        print(f"""║                                                              ║
+╚══════════════════════════════════════════════════════════════╝
+""")
+    
+    def _show_memory_stats(self):
+        """Show memory system statistics"""
+        summary = self.memory.get_memory_summary()
+        
+        print(f"""
+╔══════════════════════════════════════════════════════════════╗
+║                   ATLAS NEXUS - MEMORY STATUS                ║
+╠══════════════════════════════════════════════════════════════╣
+║                                                              ║
+║  MEMORY ENABLED: {str(summary['memory_enabled']):<50} ║
+║  SESSION ID: {summary.get('session_id', 'N/A')[:48]:<48} ║
+║  USER ID: {summary.get('user_id', 'N/A')[:52]:<52} ║
+║                                                              ║
+║  SYSTEMS:                                                    ║
+""")
+        
+        for system_name, stats in summary['systems'].items():
+            status = stats.get('status', 'unknown')
+            if isinstance(stats, dict) and 'error' in stats:
+                status = "error"
+            
+            print(f"║    • {system_name:<20} {status:<30} ║")
+        
+        # Chat memory details
+        if 'chat_memory' in summary['systems']:
+            chat_stats = summary['systems']['chat_memory']
+            if isinstance(chat_stats, dict) and 'total_chat_messages' in chat_stats:
+                print(f"""║                                                              ║
+║  CHAT MEMORY:                                               ║
+║    Messages: {chat_stats['total_chat_messages']:<45} ║
+║    Sessions: {chat_stats['total_sessions']:<47} ║
+║    Active: {chat_stats['active_sessions']:<48} ║
+""")
         
         print(f"""║                                                              ║
 ╚══════════════════════════════════════════════════════════════╝
