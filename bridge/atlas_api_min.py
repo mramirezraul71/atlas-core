@@ -28,6 +28,16 @@ except ImportError:
     TUTORIAS_ENABLED = False
 
 # ═══════════════════════════════════════════════════════════════
+# Integrar API de Chat Thread Manager
+# ═══════════════════════════════════════════════════════════════
+try:
+    from chat_api_router import router as chat_router
+    app.include_router(chat_router)
+    CHAT_ENABLED = True
+except ImportError:
+    CHAT_ENABLED = False
+
+# ═══════════════════════════════════════════════════════════════
 # Definición de módulos del sistema
 # ═══════════════════════════════════════════════════════════════
 HUMANOID_MODULES = [
@@ -839,7 +849,8 @@ def get_version():
         "build_date": "2026-02-16",
         "name": "ATLAS Dashboard",
         "modules": {
-            "tutorias": TUTORIAS_ENABLED
+            "tutorias": TUTORIAS_ENABLED,
+            "chat": CHAT_ENABLED
         }
     }
 

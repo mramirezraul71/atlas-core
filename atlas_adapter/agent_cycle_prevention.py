@@ -18,7 +18,7 @@ CYCLE_PREVENTION_CONFIG = {
     "tool_repetition_limit": 3,       # Máximo de repetición del mismo tool
     "file_repetition_limit": 2,       # Máximo de acceso al mismo archivo
     "command_repetition_limit": 2,    # Máximo del mismo comando
-    "progress_stagnation_limit": 5,  # Iteraciones sin progreso antes de escape
+    "progress_stagnation_limit": 10,  # Iteraciones sin progreso antes de escape (aumentado de 5)
     "memory_window": 10,              # Ventana de memoria para análisis
     "escape_strategies": [
         "summarize_and_continue",

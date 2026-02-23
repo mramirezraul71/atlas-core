@@ -857,7 +857,7 @@ def run_agent(
     iteration = 0
     while iteration < SAFETY_MAX_ITERATIONS:
         iteration += 1
-        progress_pct = min(int((iteration / max(iteration + 3, 5)) * 80), 90)
+        progress_pct = min(int((iteration / SAFETY_MAX_ITERATIONS) * 100), 95)
 
         # Verificar prevención de ciclos
         if cycle_prevention:
