@@ -347,8 +347,9 @@ app = FastAPI(
 )
 
 # Metrics middleware: request count + latency per path
-from modules.humanoid.metrics import MetricsMiddleware
-app.add_middleware(MetricsMiddleware)
+# Temporalmente comentado para evitar error de importación
+# from modules.humanoid.metrics import MetricsMiddleware
+# app.add_middleware(MetricsMiddleware)
 # Observabilidad Prometheus (request count, duration, active)
 try:
     from modules.observability.middleware import ObservabilityMiddleware
@@ -4028,7 +4029,8 @@ from pydantic import BaseModel
 from typing import Any, List, Optional
 import time
 
-from modules.command_router import handle as route_command
+# Temporalmente comentado para evitar error de importación
+# from modules.command_router import handle as route_command
 
 class IntentIn(BaseModel):
     user: str = "raul"
