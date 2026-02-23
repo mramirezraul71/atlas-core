@@ -3679,6 +3679,28 @@ def serve_workspace():
     return {"ok": False, "error": "workspace.html not found"}
 
 
+@app.get("/v4")
+def serve_v4():
+    """ATLAS v4 Dashboard — modular, Google-style landing + Perplexity AI assistant."""
+    path = STATIC_DIR / "v4" / "index.html"
+    if path.exists():
+        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
+    return {"ok": False, "error": "v4/index.html not found"}
+
+
+@app.get("/v4/static/{file_path:path}")
+def serve_v4_static(file_path: str):
+    """Serve v4 static assets (JS, CSS)."""
+    from fastapi import HTTPException
+    safe = (file_path or "").replace("..", "").strip("/")
+    path = STATIC_DIR / "v4" / safe
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail=f"v4 asset not found: {safe}")
+    ct_map = {".js": "application/javascript", ".css": "text/css", ".html": "text/html", ".json": "application/json", ".svg": "image/svg+xml"}
+    ct = ct_map.get(path.suffix, "application/octet-stream")
+    return FileResponse(path, media_type=ct, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
 @app.get("/nexus")
 def serve_nexus():
     """Panel de Control ATLAS — vista consolidada del sistema (antes en puerto 8000)."""
