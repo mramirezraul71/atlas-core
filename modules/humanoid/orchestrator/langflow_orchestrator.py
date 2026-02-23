@@ -11,11 +11,31 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
-    from langflow import Flow
-    from langflow.helpers import import_flow
+    # Intentar imports para diferentes versiones de LangFlow
+    try:
+        from langflow import Flow
+        from langflow.helpers.flow import import_flow
+        LANGFLOW_AVAILABLE = True
+        print("✅ LangFlow imports (new version)")
+    except ImportError:
+        try:
+            # Versión anterior
+            from langflow import Flow
+            from langflow.helpers import import_flow
+            LANGFLOW_AVAILABLE = True
+            print("✅ LangFlow imports (legacy version)")
+        except ImportError:
+            # Versión más reciente - API diferente
+            import langflow
+            LANGFLOW_AVAILABLE = True
+            Flow = None  # Se manejará dinámicamente
+            import_flow = None
+            print("✅ LangFlow disponible (API moderna)")
 except ImportError:
     print("⚠️ LangFlow no disponible, usando modo simulación")
+    LANGFLOW_AVAILABLE = False
     Flow = None
+    import_flow = None
 
 
 class LangFlowOrchestrator:
@@ -38,22 +58,37 @@ class LangFlowOrchestrator:
         
         self.loaded_flows: Dict[str, Any] = {}
         self.memory_enabled = True
+        self.langflow_available = LANGFLOW_AVAILABLE
         
-        print(f"✅ LangFlow Orchestrator iniciado en {self.flows_dir}")
+        if self.langflow_available:
+            print(f"✅ LangFlow Orchestrator iniciado en {self.flows_dir}")
+        else:
+            print(f"⚠️ LangFlow Orchestrator en modo simulación en {self.flows_dir}")
         
         # Cargar flows disponibles
         self._load_available_flows()
     
     def _load_available_flows(self):
         """Cargar todos los flows disponibles del directorio."""
-        if not Flow:
+        if not self.langflow_available:
+            print("  ⚠️ LangFlow no disponible, no se pueden cargar flows")
             return
         
+        # Para API moderna de LangFlow, cargar flows manualmente
         for flow_file in self.flows_dir.glob("*.json"):
             try:
                 flow_name = flow_file.stem
-                self.loaded_flows[flow_name] = str(flow_file)
-                print(f"  📁 Flow cargado: {flow_name}")
+                # Cargar flow desde JSON manualmente (manejar UTF-8 BOM)
+                with open(flow_file, 'r', encoding='utf-8-sig') as f:
+                    flow_data = json.load(f)
+                
+                self.loaded_flows[flow_name] = {
+                    "file_path": str(flow_file),
+                    "data": flow_data,
+                    "description": flow_data.get("description", ""),
+                    "name": flow_data.get("name", flow_name)
+                }
+                print(f"  📁 Flow cargado: {flow_name} ({flow_data.get('description', 'No description')})")
             except Exception as e:
                 print(f"  ❌ Error cargando flow {flow_file}: {e}")
     
@@ -341,7 +376,7 @@ class LangFlowOrchestrator:
             "status_distribution": status_counts,
             "flow_distribution": flow_counts,
             "memory_enabled": self.memory_enabled,
-            "langflow_available": Flow is not None
+            "langflow_available": self.langflow_available
         }
 
 
