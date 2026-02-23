@@ -1701,8 +1701,14 @@ function stopChatRequest() {
     currentRequestController.abort();
     currentRequestController = null;
     setChatProcessing(false);
-    emitLive('err', '<strong>Generación detenida por usuario</strong>');
-    addChatMessage('⏹️ Proceso detenido.', 'atlas');
+    emitLive('warn', '<strong>⏹️ Generación interrumpida por usuario</strong>');
+    addChatMessage('⏹️ Proceso interrumpido. Esperando nueva instrucción...', 'atlas');
+    
+    // Limpiar cualquier indicador de pensamiento activo
+    const activeThinking = document.querySelector('.thinking.active');
+    if (activeThinking) {
+      activeThinking.remove();
+    }
   }
 }
 
@@ -2614,7 +2620,15 @@ async function sendMessage() {
   _globalMute();
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
-  if (!text || isProcessing) return;
+  
+  // Si hay un proceso activo, detenerlo primero
+  if (isProcessing && currentRequestController) {
+    stopChatRequest();
+    // Pequeña pausa para que se complete la detención
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  
+  if (!text) return;
 
   const agentMode = document.getElementById('agent-mode').value;
 
@@ -2880,10 +2894,17 @@ async function sendViaAgentEngine(goalText, _chip) {
   let finalText = '';
 
   try {
+    const controller = new AbortController();
+    currentRequestController = controller;
+    const timeout = setTimeout(() => {
+      if (currentRequestController) currentRequestController.abort();
+    }, 120000);
+
     const response = await fetch(API + '/agent/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: goalText, model: selectedModel !== 'auto' ? selectedModel : null }),
+      signal: controller.signal
     });
 
     const reader = response.body.getReader();
@@ -2926,6 +2947,9 @@ async function sendViaAgentEngine(goalText, _chip) {
       }
     }
 
+    clearTimeout(timeout);
+    currentRequestController = null;
+
     if (finalText) {
       addChatMessage(finalText, 'atlas');
       const completionTokens = estimateTokens(finalText);
@@ -2946,8 +2970,15 @@ async function sendViaAgentEngine(goalText, _chip) {
     }
 
   } catch (err) {
+    clearTimeout(timeout);
+    currentRequestController = null;
     thoughtSetError(thinkingId);
-    addChatMessage('Error de conexión: ' + err.message, 'atlas');
+    
+    if (err.name === 'AbortError') {
+      addChatMessage('⏹️ Ejecución interrumpida por usuario', 'atlas');
+    } else {
+      addChatMessage('Error de conexión: ' + err.message, 'atlas');
+    }
   }
 
   removeThinking(thinkingId);
