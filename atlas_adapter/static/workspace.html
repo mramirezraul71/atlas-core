@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ATLAS Workspace — Agent IDE</title>
+  <title>CASCADE Workspace — Agent IDE</title>
   <style>
     /* ═══════════════════════════════════════════
        THEMES — Same system as Dashboard v3.8
@@ -170,11 +170,11 @@
       align-self: flex-end; border-bottom-right-radius: 2px;
       font-weight: 500;
     }
-    .msg.atlas {
+    .msg.cascade {
       background: var(--bg-elevated); border: 1px solid var(--border);
       align-self: flex-start; border-bottom-left-radius: 2px;
     }
-    .msg.atlas .msg-label {
+    .msg.cascade .msg-label {
       font-size: 10px; font-weight: 700; color: var(--accent-primary);
       margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;
     }
@@ -643,7 +643,7 @@
     .md-icon.mistral { background: #ff720022; color: #ff7200; }
     .md-icon.perplexity { background: #20b2aa22; color: #20b2aa; }
     .md-icon.ollama { background: #80808022; color: #aaa; }
-    .md-icon.atlas { background: var(--glow); color: var(--accent-primary); }
+    .md-icon.cascade { background: var(--glow); color: var(--accent-primary); }
     .model-dropdown .md-item .md-info { flex: 1; min-width: 0; }
     .model-dropdown .md-item .md-label {
       font-size: 12px; color: var(--text); font-weight: 500; white-space: nowrap;
@@ -1140,7 +1140,7 @@
   <header class="topbar">
     <div class="topbar-brand">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/><line x1="12" y1="22" x2="12" y2="15.5"/><polyline points="22 8.5 12 15.5 2 8.5"/></svg>
-      ATLAS WORKSPACE
+      CASCADE WORKSPACE
     </div>
     <nav class="topbar-nav">
       <button class="topbar-btn active" data-view="chat" title="Agent Chat">Agent</button>
@@ -1149,7 +1149,7 @@
     </nav>
     <div class="topbar-spacer"></div>
     <div class="topbar-services">
-      <a class="svc" href="javascript:void(0)" onclick="window.open('/nexus','_blank')" title="Panel de Control ATLAS" style="cursor:pointer;text-decoration:none;color:inherit;"><span class="svc-dot" id="svc-nexus"></span>PANEL</a>
+      <a class="svc" href="javascript:void(0)" onclick="window.open('/nexus','_blank')" title="Panel de Control CASCADE" style="cursor:pointer;text-decoration:none;color:inherit;"><span class="svc-dot" id="svc-nexus"></span>PANEL</a>
       <span class="svc"><span class="svc-dot" id="svc-push"></span>PUSH</span>
       <a class="svc" href="javascript:void(0)" onclick="window.open('http://'+location.hostname+':8002/dashboard','_blank')" title="Robot 3D (puerto 8002)" style="cursor:pointer;text-decoration:none;color:inherit;"><span class="svc-dot" id="svc-robot"></span>ROBOT</a>
     </div>
@@ -1174,14 +1174,14 @@
     <section class="panel-left" id="panel-left">
       <div class="chat-header">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-        ATLAS AGENT
+        CASCADE AGENT
         <span class="badge" id="session-badge">Session</span>
       </div>
 
       <div class="chat-messages" id="chat-messages">
-        <div class="msg atlas">
-          <div class="msg-label">ATLAS</div>
-          ATLAS Workspace listo. Escribe un objetivo, prompt, o comando para comenzar. Puedo crear apps, configurar sitios, generar scripts, y ejecutar tareas en tiempo real.
+        <div class="msg cascade">
+          <div class="msg-label">CASCADE</div>
+          CASCADE Workspace listo. Escribe un objetivo, prompt, o comando para comenzar. Puedo crear apps, configurar sitios, generar scripts, y ejecutar tareas en tiempo real.
         </div>
       </div>
 
@@ -1256,7 +1256,7 @@
         <div class="chat-hints">
           <span class="chat-hint" onclick="insertHint(this)">Crea una app web</span>
           <span class="chat-hint" onclick="insertHint(this)">Genera un script Python</span>
-          <span class="chat-hint" onclick="insertHint(this)">/atlas status</span>
+          <span class="chat-hint" onclick="insertHint(this)">/cascade status</span>
           <span class="chat-hint" onclick="insertHint(this)">Deploy a produccion</span>
           <span class="chat-hint" onclick="insertHint(this)">Revisa y corrige errores</span>
         </div>
@@ -1272,9 +1272,9 @@
       </div>
 
       <div class="chat-messages" id="supervisor-messages">
-        <div class="msg atlas">
+        <div class="msg cascade">
           <div class="msg-label">SUPERVISOR</div>
-          Hola Raúl, soy tu Supervisor LLM. Puedo analizar el estado de ATLAS, generar recomendaciones profesionales y proponer próximos pasos. Describe qué necesitas revisar o analizar.
+          Hola Raúl, soy tu Supervisor LLM. Puedo analizar el estado de CASCADE, generar recomendaciones profesionales y proponer próximos pasos. Describe qué necesitas revisar o analizar.
         </div>
       </div>
 
@@ -1421,7 +1421,7 @@
       </div>
 
       <div class="chat-messages" id="interp-messages">
-        <div class="msg atlas">
+        <div class="msg cascade">
           <div class="msg-label">INTERPRETER</div>
           Open Interpreter listo. Escribe una tarea en lenguaje natural y la ejecutare de forma autonoma: codigo, terminal, archivos, git, navegacion web.
         </div>
@@ -1456,7 +1456,7 @@
           <span class="chat-hint" onclick="setInterpHint(this)">Cuenta archivos .py en el proyecto</span>
           <span class="chat-hint" onclick="setInterpHint(this)">Muestra espacio libre en disco</span>
           <span class="chat-hint" onclick="setInterpHint(this)">Lista los ultimos 5 commits de git</span>
-          <span class="chat-hint" onclick="setInterpHint(this)">Crea un script hello_atlas.py y ejecutalo</span>
+          <span class="chat-hint" onclick="setInterpHint(this)">Crea un script hello_cascade.py y ejecutalo</span>
         </div>
       </div>
     </section>
@@ -1502,7 +1502,7 @@
         <div class="live-header">
           <div class="live-indicator" id="live-indicator">
             <span class="live-dot"></span>
-            LIVE
+            CASCADE
           </div>
           <div class="live-filter-tabs">
             <button class="live-filter active" data-filter="all" onclick="filterLive('all')">All</button>
@@ -1515,7 +1515,7 @@
         </div>
         <div class="live-feed" id="live-feed"></div>
         <div class="live-terminal-input">
-          <label>ATLAS &gt;</label>
+          <label>CASCADE &gt;</label>
           <input id="terminal-input" placeholder="Comando directo..." />
         </div>
       </div>
@@ -1527,7 +1527,7 @@
   <footer class="bottombar">
     <div class="bottombar-section">
       <span class="dot" style="background:var(--accent-primary)"></span>
-      ATLAS Agent v3.0
+      CASCADE Agent v3.0
     </div>
     <div class="bottombar-section" id="git-info">
       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 012 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>
@@ -1564,7 +1564,7 @@
 
 <script>
 // ═══════════════════════════════════════════════════════════════
-// ATLAS WORKSPACE — Engine
+// CASCADE WORKSPACE — Engine
 // ═══════════════════════════════════════════════════════════════
 
 const API = window.location.origin;
@@ -1702,7 +1702,7 @@ function stopChatRequest() {
     currentRequestController = null;
     setChatProcessing(false);
     emitLive('warn', '<strong>⏹️ Generación interrumpida por usuario</strong>');
-    addChatMessage('⏹️ Proceso interrumpido. Esperando nueva instrucción...', 'atlas');
+    addChatMessage('⏹️ Proceso interrumpido. Esperando nueva instrucción...', 'cascade');
     
     // Limpiar cualquier indicador de pensamiento activo
     const activeThinking = document.querySelector('.thinking.active');
@@ -1726,7 +1726,7 @@ document.addEventListener('DOMContentLoaded', () => {
   checkServices();
   setInterval(checkServices, 15000);
 
-  emitLive('info', '<strong>ATLAS Workspace iniciado</strong> — Esperando instrucciones');
+  emitLive('info', '<strong>CASCADE Workspace iniciado</strong> — Esperando instrucciones');
   document.getElementById('chat-input').focus();
 });
 
@@ -1984,7 +1984,7 @@ async function terminalExecute(cmd) {
 }
 
 function splitSupervisorText(text) {
-  const idx = text.lastIndexOf("ATLAS_RUN:");
+  const idx = text.lastIndexOf("CASCADE_RUN:");
   if (idx === -1) return { head: text.trim(), tail: "" };
   return { head: text.slice(0, idx).trim(), tail: text.slice(idx).trim() };
 }
@@ -2222,7 +2222,7 @@ function addSupervisorMessage(type, content) {
   const msgId = 'sup-msg-' + Date.now();
   const div = document.createElement('div');
   div.id = msgId;
-  div.className = 'msg ' + (type === 'user' ? 'user' : 'atlas');
+  div.className = 'msg ' + (type === 'user' ? 'user' : 'cascade');
   
   if (type === 'user') {
     div.innerHTML = '<div class="msg-label">RAÚL</div>' + escapeHtml(content);
@@ -2252,7 +2252,7 @@ function initClock() {
 
 // ─── THEME ───
 function initTheme() {
-  const saved = localStorage.getItem('atlas-ws-theme') || 'cyan';
+  const saved = localStorage.getItem('cascade-ws-theme') || 'cyan';
   applyTheme(saved);
   document.querySelectorAll('.tdot').forEach(btn => {
     btn.addEventListener('click', () => applyTheme(btn.dataset.theme));
@@ -2261,16 +2261,16 @@ function initTheme() {
 function applyTheme(t) {
   document.documentElement.setAttribute('data-theme', t);
   document.querySelectorAll('.tdot').forEach(b => b.classList.toggle('active', b.dataset.theme === t));
-  localStorage.setItem('atlas-ws-theme', t);
+  localStorage.setItem('cascade-ws-theme', t);
 }
 
 // ─── SYNC CONFIG ───
-let syncConfigActive = localStorage.getItem('atlas_sync_config') === 'true';
+let syncConfigActive = localStorage.getItem('cascade_sync_config') === 'true';
 let configIA = null;
 
 function toggleSyncConfig(on) {
   syncConfigActive = on;
-  localStorage.setItem('atlas_sync_config', on ? 'true' : 'false');
+  localStorage.setItem('cascade_sync_config', on ? 'true' : 'false');
   const label = document.getElementById('sync-label');
   const toggle = document.querySelector('.sync-toggle');
   if (on) {
@@ -2310,15 +2310,15 @@ function initSyncToggle() {
 let selectedModel = 'auto';
 let modelCatalog = [];
 let providerRuntime = {};
-let selectedPreset = localStorage.getItem('atlas-ws-preset') || '';
+let selectedPreset = localStorage.getItem('cascade-ws-preset') || '';
 
 const PROVIDER_ICONS = {
-  atlas: '⚡', openai: 'O', anthropic: 'A', gemini: 'G', google: 'G',
+  cascade: '⚡', openai: 'O', anthropic: 'A', gemini: 'G', google: 'G',
   xai: 'X', deepseek: 'D', groq: 'Q', mistral: 'M', perplexity: 'P', ollama: '🏠', bedrock: 'B'
 };
 
 async function initModelSelector() {
-  const saved = localStorage.getItem('atlas-ws-model');
+  const saved = localStorage.getItem('cascade-ws-model');
   if (saved) selectedModel = saved;
   try {
     const r = await fetch(API + '/agent/models');
@@ -2332,7 +2332,7 @@ async function initModelSelector() {
   // Si el modelo guardado ya no existe en catálogo, volver a auto.
   if (!modelCatalog.find(m => m.id === selectedModel)) {
     selectedModel = 'auto';
-    localStorage.setItem('atlas-ws-model', selectedModel);
+    localStorage.setItem('cascade-ws-model', selectedModel);
   }
 
   renderModelDropdown();
@@ -2432,7 +2432,7 @@ function filterModels(q) {
 
 function selectModel(id) {
   selectedModel = id;
-  localStorage.setItem('atlas-ws-model', id);
+  localStorage.setItem('cascade-ws-model', id);
   updateModelBtn();
   renderModelDropdown();
   const m = modelCatalog.find(x => x.id === id);
@@ -2485,7 +2485,7 @@ function applyPreset(kind) {
   }
 
   selectedPreset = kind;
-  localStorage.setItem('atlas-ws-preset', kind);
+  localStorage.setItem('cascade-ws-preset', kind);
 
   if (modeEl) modeEl.value = mode;
   if (depthEl) depthEl.value = depth;
@@ -2734,7 +2734,7 @@ async function sendMessage() {
         const sRender = thoughtAddStep(thinkingId, 'Renderizando respuesta directa', 'active');
         thoughtSetAction(thinkingId, 'Formateando salida...', '📝');
         emitLive('exec', '<strong>Respuesta directa</strong> del modelo');
-        addChatMessage(reply, 'atlas');
+        addChatMessage(reply, 'cascade');
         thoughtUpdateStep(thinkingId, sRender, 'done');
         const completionTokens = estimateTokens(reply);
         tokenUsage.completion += completionTokens;
@@ -2816,7 +2816,7 @@ async function sendMessage() {
         emitLive('info', '<strong>Fallback:</strong> ' + escapeHtml(data.message || 'Respuesta via fallback'));
       }
       thoughtUpdateStep(thinkingId, sPlan, 'done');
-      addChatMessage(reply || 'Objetivo procesado correctamente.', 'atlas');
+      addChatMessage(reply || 'Objetivo procesado correctamente.', 'cascade');
       const completionTokens = estimateTokens(reply);
       tokenUsage.completion += completionTokens;
       tokenUsage.total += completionTokens;
@@ -2847,7 +2847,7 @@ async function sendMessage() {
               thoughtUpdateStep(thinkingId, sFallback, 'done', 'Resuelto via ' + (modelUsed || 'auto'));
               thoughtSetTitle(thinkingId, 'Pensó (con fallback)');
               removeThinking(thinkingId);
-              addChatMessage(reply, 'atlas');
+              addChatMessage(reply, 'cascade');
               emitLive('info', '<strong>Fallback UI:</strong> respuesta obtenida con <code>auto</code>' + (modelUsed ? (' → ' + escapeHtml(modelUsed)) : ''));
               setChatProcessing(false);
               currentRequestController = null;
@@ -2862,7 +2862,7 @@ async function sendMessage() {
 
       thoughtSetError(thinkingId);
       thoughtSetTitle(thinkingId, 'Error al procesar');
-      addChatMessage('Error: ' + errMsg, 'atlas');
+      addChatMessage('Error: ' + errMsg, 'cascade');
       emitLive('err', '<strong>Error:</strong> ' + escapeHtml(errMsg));
     }
   } catch (err) {
@@ -2870,7 +2870,7 @@ async function sendMessage() {
     thoughtSetTitle(thinkingId, 'Conexión fallida');
     thoughtAddStep(thinkingId, err.name === 'AbortError' ? 'Solicitud abortada por el usuario' : 'Error: ' + err.message, 'error');
     const msg = String(err && err.name === 'AbortError' ? 'Solicitud abortada' : ('Error de conexion: ' + (err.message || err)));
-    addChatMessage(msg, 'atlas');
+    addChatMessage(msg, 'cascade');
     emitLive('err', '<strong>Conexion fallida:</strong> ' + escapeHtml(msg));
   }
 
@@ -2965,7 +2965,7 @@ async function sendViaAgentEngine(goalText, _chip) {
       toolsUsed.forEach(t => { grouped[t.name] = (grouped[t.name] || 0) + 1; });
       toolSummary += Object.entries(grouped).map(([n, c]) => n + (c > 1 ? ' x' + c : '')).join(', ');
       toolSummary += ' | ' + iterations + ' iteraciones</div>';
-      const lastMsg = document.querySelector('#chat-messages .msg.atlas:last-child');
+      const lastMsg = document.querySelector('#chat-messages .msg.cascade:last-child');
       if (lastMsg) lastMsg.innerHTML += toolSummary;
     }
 
@@ -2975,9 +2975,9 @@ async function sendViaAgentEngine(goalText, _chip) {
     thoughtSetError(thinkingId);
     
     if (err.name === 'AbortError') {
-      addChatMessage('⏹️ Ejecución interrumpida por usuario', 'atlas');
+      addChatMessage('⏹️ Ejecución interrumpida por usuario', 'cascade');
     } else {
-      addChatMessage('Error de conexión: ' + err.message, 'atlas');
+      addChatMessage('Error de conexión: ' + err.message, 'cascade');
     }
   }
 
