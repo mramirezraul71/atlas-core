@@ -273,10 +273,10 @@ class ChatMemoryEngine:
                 
                 conversations.append({
                     "message": result["content"],
-                    "role": metadata["role"],
-                    "session_id": metadata["session_id"],
+                    "role": metadata.get("role", "unknown"),
+                    "session_id": metadata.get("session_id", "unknown"),
                     "timestamp": metadata.get("timestamp"),
-                    "message_number": metadata.get("message_number"),
+                    "message_number": metadata.get("message_number", 0),
                     "relevance_score": result["score"],
                     "memory_id": result["id"]
                 })

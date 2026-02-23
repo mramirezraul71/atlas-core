@@ -3284,7 +3284,15 @@ def autonomy_tasks():
                 iid = f"reactor_{hash(str(issue)) % 100000}"
                 c.execute("""INSERT OR IGNORE INTO autonomy_tasks(id,title,status,priority,source,detail)
                     VALUES(?,?,?,?,?,?)""",
-                    (iid, f"Reactor: {str(issue)[:60]}", "in_progress", "medium", "reactor", str(issue)[:300]))
+                    (iid, f"Reactor: {str(issue)[:60]}", "pending", "medium", "reactor", str(issue)[:300]))
+        except: pass
+        # Reaper: limpiar tareas 'in_progress' atascadas por más de 1h
+        try:
+            c.execute("""
+                UPDATE autonomy_tasks
+                SET status='failed', action_taken='reaper_timeout'
+                WHERE status='in_progress' AND updated_at <= datetime('now', '-1 hour')
+            """)
         except: pass
         c.commit()
         rows = c.execute("SELECT * FROM autonomy_tasks ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC LIMIT 50").fetchall()

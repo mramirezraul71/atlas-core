@@ -293,6 +293,7 @@ class AutonomousEngine:
         self.executor = Executor(router, tool_registry)
         
         self.active_plans: Dict[str, ExecutionPlan] = {}
+        self.recovery_attempts: Dict[str, int] = {}
         
         logger.info("Autonomous Engine initialized")
     
@@ -312,10 +313,16 @@ class AutonomousEngine:
         # Check if we need recovery
         if executed_plan.status == PlanStatus.FAILED:
             if self.config.autonomy.auto_recovery:
-                logger.info("🔄 Attempting auto-recovery")
-                recovered_plan = await self.attempt_recovery(executed_plan)
-                return recovered_plan
-        
+                # Limit recovery attempts
+                plan_recovery_count = self.recovery_attempts.get(plan.id, 0)
+                if plan_recovery_count < self.config.autonomy.max_recovery_attempts:
+                    self.recovery_attempts[plan.id] = plan_recovery_count + 1
+                    logger.info(f"🔄 Attempting auto-recovery ({plan_recovery_count + 1}/{self.config.autonomy.max_recovery_attempts})")
+                    recovered_plan = await self.attempt_recovery(executed_plan)
+                    return recovered_plan
+                else:
+                    logger.error(f"🚫 Max recovery attempts reached for plan {plan.id}")
+
         return executed_plan
     
     async def attempt_recovery(self, failed_plan: ExecutionPlan) -> ExecutionPlan:
