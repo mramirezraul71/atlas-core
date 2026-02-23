@@ -903,6 +903,15 @@
     }
     .progress-pct { font-weight: 700; color: var(--accent-primary); font-size: 13px; }
     .progress-model { color: var(--accent-cyan); }
+    .progress-eta {
+      color: var(--accent-purple);
+      font-weight: 600;
+      font-size: 10px;
+      padding: 2px 6px;
+      background: rgba(163,113,247,0.1);
+      border-radius: 4px;
+      margin-left: 8px;
+    }
 
     .activity-entries { max-height: calc(100vh - 200px); overflow-y: auto; }
     .activity-entry {
@@ -3271,10 +3280,27 @@ function insertHint(el) {
 }
 
 // ─── ACTIVITY FEED (right panel real-time ops) ───
-let _activityState = { entries: [], totalTools: 0, completedTools: 0, startTime: 0, model: '', complexity: '', files: [] };
+let _activityState = {
+  startTime: Date.now(),
+  entries: [],
+  completedTools: 0,
+  totalTools: 0,
+  lastProgressTime: 0,
+  progressHistory: []
+};
 
 function initActivityFeed(complexity, model) {
-  _activityState = { entries: [], totalTools: 0, completedTools: 0, startTime: Date.now(), model: model || '', complexity: complexity || '', files: [] };
+  _activityState = {
+    entries: [],
+    totalTools: 0,
+    completedTools: 0,
+    startTime: Date.now(),
+    model: model || '',
+    complexity: complexity || '',
+    files: [],
+    lastProgressTime: 0,
+    progressHistory: []
+  };
   const viewer = document.getElementById('code-viewer');
   viewer.innerHTML =
     '<div class="activity-feed" id="activity-feed">' +
@@ -3288,6 +3314,7 @@ function initActivityFeed(complexity, model) {
           '<span class="progress-pct" id="progress-pct">0%</span>' +
           '<span id="progress-step">Iniciando...</span>' +
           '<span class="progress-model" id="progress-model">' + escapeHtml(model || '') + '</span>' +
+          '<span class="progress-eta" id="progress-eta">ETA: --</span>' +
         '</div>' +
       '</div>' +
       '<div class="activity-entries" id="activity-entries"></div>' +
@@ -3317,9 +3344,64 @@ function activityUpdateProgress(pct, stepLabel) {
   const fill = document.getElementById('progress-fill');
   const pctEl = document.getElementById('progress-pct');
   const stepEl = document.getElementById('progress-step');
+  const etaEl = document.getElementById('progress-eta');
+  
   if (fill) fill.style.width = Math.min(pct, 100) + '%';
   if (pctEl) pctEl.textContent = Math.round(pct) + '%';
   if (stepEl) stepEl.textContent = stepLabel || '';
+  
+  // Calcular ETA
+  if (etaEl && pct > 0) {
+    const now = Date.now();
+    const elapsed = (now - _activityState.startTime) / 1000;
+    
+    // Guardar historial de progreso
+    _activityState.progressHistory.push({
+      time: now,
+      progress: pct,
+      elapsed: elapsed
+    });
+    
+    // Mantener solo últimos 10 puntos
+    if (_activityState.progressHistory.length > 10) {
+      _activityState.progressHistory.shift();
+    }
+    
+    // Calcular velocidad promedio reciente
+    if (_activityState.progressHistory.length >= 2) {
+      const recent = _activityState.progressHistory.slice(-5);
+      let totalSpeed = 0;
+      let count = 0;
+      
+      for (let i = 1; i < recent.length; i++) {
+        const timeDiff = (recent[i].time - recent[i-1].time) / 1000;
+        const progressDiff = recent[i].progress - recent[i-1].progress;
+        
+        if (timeDiff > 0 && progressDiff > 0) {
+          totalSpeed += progressDiff / timeDiff;
+          count++;
+        }
+      }
+      
+      if (count > 0) {
+        const avgSpeed = totalSpeed / count;
+        const remainingProgress = 100 - pct;
+        const etaSeconds = remainingProgress / avgSpeed;
+        
+        // Formatear ETA
+        let etaText = 'ETA: ';
+        if (etaSeconds < 60) {
+          etaText += Math.round(etaSeconds) + 's';
+        } else if (etaSeconds < 3600) {
+          etaText += Math.round(etaSeconds / 60) + 'm';
+        } else {
+          etaText += (etaSeconds / 3600).toFixed(1) + 'h';
+        }
+        
+        etaEl.textContent = etaText;
+      }
+    }
+  }
 }
 
 function activityOnToolCall(name, input, serverPct) {
