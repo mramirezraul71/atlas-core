@@ -21,9 +21,17 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 _log = logging.getLogger("atlas.agent_engine")
 
 ATLAS_ROOT = Path(os.getenv("ATLAS_ROOT", r"C:\ATLAS_PUSH"))
-SAFETY_MAX_ITERATIONS = 100
+SAFETY_MAX_ITERATIONS = 50  # Reducido de 100 para prevención de ciclos
 MAX_TOOL_OUTPUT = 8000
 COMMAND_TIMEOUT = 60
+
+# Importar sistema de prevención de ciclos
+try:
+    from .agent_cycle_prevention import get_cycle_prevention
+    CYCLE_PREVENTION_AVAILABLE = True
+except ImportError:
+    CYCLE_PREVENTION_AVAILABLE = False
+    _log.warning("Cycle prevention not available")
 
 # ──────────────────────────────────────────────
 #  Multi-provider model catalog
@@ -827,6 +835,13 @@ def run_agent(
     total_t0 = time.perf_counter()
     consecutive_errors = 0
 
+    # Inicializar prevención de ciclos
+    cycle_prevention = None
+    if CYCLE_PREVENTION_AVAILABLE:
+        cycle_prevention = get_cycle_prevention()
+        cycle_prevention.reset()
+        _log.info("Cycle prevention enabled")
+
     tier_labels = {"fast": "Rapido", "balanced": "Balanceado", "complex": "Complejo"}
     tier_label = tier_labels.get(complexity, complexity)
     providers_str = " → ".join(active_chain)
@@ -843,6 +858,41 @@ def run_agent(
     while iteration < SAFETY_MAX_ITERATIONS:
         iteration += 1
         progress_pct = min(int((iteration / max(iteration + 3, 5)) * 80), 90)
+
+        # Verificar prevención de ciclos
+        if cycle_prevention:
+            cycle_check = cycle_prevention.check_iteration_limits()
+            if cycle_check["should_escape"]:
+                _log.warning(f"Cycle detected: {cycle_check['escape_reason']}")
+                
+                # Generar mensaje de escape
+                escape_message = cycle_prevention.generate_escape_message(
+                    cycle_check["escape_reason"],
+                    cycle_check["escape_strategy"]
+                )
+                
+                yield {"event": "cycle_detected", "data": {
+                    "reason": cycle_check["escape_reason"],
+                    "strategy": cycle_check["escape_strategy"],
+                    "iteration": iteration,
+                    "warnings": cycle_check["warnings"]
+                }}
+                
+                yield {"event": "text", "data": {"content": escape_message, "llm_ms": 0}}
+                
+                total_ms = int((time.perf_counter() - total_t0) * 1000)
+                yield {"event": "done", "data": {
+                    "iterations": iteration,
+                    "tools_used": tools_used,
+                    "ms": total_ms,
+                    "model": selected_model,
+                    "provider": current_provider,
+                    "complexity": complexity,
+                    "progress_pct": progress_pct,
+                    "cycle_escaped": True,
+                    "escape_reason": cycle_check["escape_reason"]
+                }}
+                return
 
         try:
             t0 = time.perf_counter()
@@ -922,6 +972,10 @@ def run_agent(
                 "progress_pct": progress_pct,
             }}
 
+            # Registrar para prevención de ciclos
+            if cycle_prevention:
+                cycle_prevention.record_tool_call(tool_name, tool_input)
+
             t0 = time.perf_counter()
 
             if tool_name in ("execute_command", "interpreter"):
@@ -964,6 +1018,10 @@ def run_agent(
                 "ok": not result_text.startswith("Error"),
                 "progress_pct": progress_pct,
             }}
+
+            # Registrar progreso para prevención de ciclos
+            if cycle_prevention:
+                cycle_prevention.record_progress(progress_pct)
 
             tool_results.append({"type": "tool_result", "tool_use_id": tool_block.id, "content": result_text})
 
