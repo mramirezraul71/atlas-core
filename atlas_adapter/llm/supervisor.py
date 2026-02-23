@@ -17,6 +17,13 @@ from typing import Any, Dict, Generator, List, Optional
 
 from .audit import AuditLogger
 
+# Import memory integration
+try:
+    from nexus.atlas_nexus.brain.supervisor_memory_integration import get_supervisor_memory
+    MEMORY_AVAILABLE = True
+except ImportError:
+    MEMORY_AVAILABLE = False
+
 _ATLAS_BASE = "http://127.0.0.1:8791"
 _TIMEOUT = 5
 
@@ -68,6 +75,17 @@ class Supervisor:
 
     def __init__(self):
         self.audit = AuditLogger()
+        
+        # Initialize memory integration
+        self.memory = None
+        if MEMORY_AVAILABLE:
+            try:
+                self.memory = get_supervisor_memory()
+                print("✅ Supervisor Memory Integration loaded")
+            except Exception as e:
+                print(f"⚠️ Supervisor Memory Integration failed: {e}")
+        else:
+            print("⚠️ Supervisor Memory Integration not available")
 
     def advise(self, objective: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Quick advisory: gather data + LLM analysis without tool calling."""
@@ -81,7 +99,13 @@ class Supervisor:
         gather_ms = int((time.perf_counter() - t0) * 1000)
 
         diagnosis = self._diagnose(snapshot)
-        prompt = self._build_analysis_prompt(objective, context, snapshot, diagnosis)
+        
+        # Enhance with memory context
+        memory_context = ""
+        if self.memory:
+            memory_context = self.memory.enhance_supervisor_analysis(objective, snapshot)
+        
+        prompt = self._build_analysis_prompt(objective, context, snapshot, diagnosis, memory_context)
 
         try:
             from atlas_adapter.atlas_http_api import _direct_model_call
@@ -120,6 +144,11 @@ class Supervisor:
         snapshot = self._gather_system_snapshot()
         diagnosis = self._diagnose(snapshot)
 
+        # Enhance with memory context
+        memory_context = ""
+        if self.memory:
+            memory_context = self.memory.enhance_supervisor_analysis(objective, snapshot)
+
         enriched_msg = (
             f"OBJETIVO DEL OWNER: {objective}\n\n"
             f"DIAGNÓSTICO AUTOMÁTICO (severidad: {diagnosis['severity']}):\n"
@@ -135,6 +164,11 @@ class Supervisor:
         if len(snap_json) > 2000:
             snap_json = snap_json[:2000] + "..."
         enriched_msg += f"\nDATOS DEL SISTEMA:\n{snap_json}\n\n"
+        
+        # Add memory context if available
+        if memory_context:
+            enriched_msg += memory_context + "\n\n"
+        
         enriched_msg += "Investiga a fondo usando las herramientas disponibles. Lee archivos, consulta endpoints, ejecuta comandos según necesites."
 
         from atlas_adapter.agent_engine import run_agent
@@ -251,7 +285,8 @@ class Supervisor:
         }
 
     def _build_analysis_prompt(self, objective: str, context: Dict[str, Any],
-                                snapshot: Dict[str, Any], diagnosis: Dict[str, Any]) -> str:
+                                snapshot: Dict[str, Any], diagnosis: Dict[str, Any], 
+                                memory_context: str = "") -> str:
         issues_ctx = context.get("issues", [])
         modules_ctx = context.get("modules", [])
 
@@ -278,6 +313,8 @@ DIAGNÓSTICO AUTOMÁTICO (Severidad: {diagnosis['severity'].upper()}):
 
 DATOS REALES DEL SISTEMA:
 {snap_json}
+
+{memory_context}
 
 INSTRUCCIONES:
 1. DIAGNÓSTICO (máx 5 líneas): qué está pasando, citando datos del snapshot.
