@@ -7382,7 +7382,7 @@ def _try_single_call(provider_id: str, model_name: str, goal: str, use_config: b
     if provider_id == "ollama":
         try:
             from modules.humanoid.ai.router import _call_ollama
-            ok, output, ms = _call_ollama(model_name, goal, sys_prompt, 90)
+            ok, output, ms = _call_ollama(model_name, goal, sys_prompt, 20)
             if ok and output and output.strip():
                 return {"ok": True, "output": output, "ms": ms, "model_used": spec}
             return {"ok": False, "error": "Ollama %s: respuesta vacia" % model_name, "ms": ms, "model_used": spec}
@@ -7394,7 +7394,7 @@ def _try_single_call(provider_id: str, model_name: str, goal: str, use_config: b
         try:
             from anthropic import AnthropicBedrock
 
-            client = AnthropicBedrock(aws_region=region)
+            client = AnthropicBedrock(aws_region=region, timeout=25.0)
             req = {
                 "model": model_name,
                 "max_tokens": 1024,
@@ -7427,7 +7427,7 @@ def _try_single_call(provider_id: str, model_name: str, goal: str, use_config: b
         return {"ok": False, "error": "Sin API key para %s" % provider_id, "ms": 0, "model_used": spec, "_skip": True}
     from modules.humanoid.ai.external_llm import call_external
     try:
-        ok, output, ms = call_external(provider_id, model_name, goal, sys_prompt, api_key, timeout_s=120)
+        ok, output, ms = call_external(provider_id, model_name, goal, sys_prompt, api_key, timeout_s=25)
         if ok and output and output.strip():
             _set_provider_runtime_status(provider_id, None)
             return {"ok": True, "output": output, "ms": ms, "model_used": spec}
@@ -7599,7 +7599,7 @@ def agent_goal(body: AgentGoalBody):
         full_err = err_detail if not fb_detail else f"{err_detail} | fallback: {fb_detail}"
         return _professional_resp(False, {"error_detail": full_err, "model_used": result.get("model_used")}, ms, full_err, resumen=full_err)
     depth = max(1, min(5, body.depth or 1))
-    ORCH_TIMEOUT_SEC = 30  # max seconds for orchestrator before falling back to direct LLM
+    ORCH_TIMEOUT_SEC = 20  # max seconds for orchestrator before falling back to direct LLM
     try:
         import concurrent.futures
         def _run_orchestrator():
