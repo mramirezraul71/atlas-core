@@ -312,7 +312,7 @@ def obtener_informe(informe_id: str):
 @router.get("/informes/{informe_id}/reporte", summary="Generar reporte de informe")
 def generar_reporte_informe(
     informe_id: str,
-    formato: str = Query("html", regex="^(html|markdown|json|txt)$")
+    formato: str = Query("html", pattern="^(html|markdown|json|txt)$")
 ):
     """Genera un reporte del informe en el formato especificado"""
     manager = get_manager()

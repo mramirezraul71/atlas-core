@@ -55,6 +55,16 @@ logs/repo_monitor.log*
 # Task/orchestrator local state
 atlas_task_memory.sqlite
 
+# Emergency dashboards/servers (local recovery tools)
+dashboard_emergency.py
+emergency_server.py
+
+# Local chat threads DB (never commit)
+data/chat_threads.db
+
+# Runtime DBs (local)
+data/autonomy_tasks.db
+
 # Reportes ANS/GA/Metalearn/Brain/Hands-Eyes generados
 snapshots/ga/
 snapshots/metalearn/

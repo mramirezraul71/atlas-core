@@ -1368,6 +1368,7 @@
           <span class="chat-hint" onclick="insertHint(this)">/cascade status</span>
           <span class="chat-hint" onclick="insertHint(this)">Deploy a produccion</span>
           <span class="chat-hint" onclick="insertHint(this)">Revisa y corrige errores</span>
+          <span class="chat-hint" onclick="insertHint(this)">🗣️ Queja sobre CASCADE</span>
         </div>
       </div>
     </section>
@@ -1383,7 +1384,7 @@
       <div class="chat-messages" id="supervisor-messages">
         <div class="msg cascade">
           <div class="msg-label">SUPERVISOR</div>
-          Hola Raúl, soy tu Supervisor LLM. Puedo analizar el estado de CASCADE, generar recomendaciones profesionales y proponer próximos pasos. Describe qué necesitas revisar o analizar.
+          Hola Raúl, soy tu Supervisor LLM. Puedo analizar el estado de CASCADE, generar recomendaciones profesionales y proponer próximos pasos. Describe qué necesitas revisar o analizar, incluyendo quejas específicas sobre el sistema CASCADE.
         </div>
       </div>
 
@@ -1410,7 +1411,7 @@
           
           <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">CONTEXTO (opcional)</label>
           <div style="display:flex;gap:6px;margin-bottom:6px;">
-            <input type="text" id="supervisor-issues" placeholder="Issues: intermitencia, errores..." style="flex:1;padding:6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;">
+            <input type="text" id="supervisor-issues" placeholder="Issues CASCADE: dashboard, monitor, atascado, errores..." style="flex:1;padding:6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;">
             <input type="text" id="supervisor-modules" placeholder="Módulos: telegram, quality..." style="flex:1;padding:6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;">
           </div>
         </div>

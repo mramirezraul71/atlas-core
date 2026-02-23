@@ -272,3 +272,10 @@ def handle(text: str) -> str:
 
     # fallback to inbox
     return inbox(t)
+
+
+# -------------------------------------------------------------------
+# Backwards-compat: older modules import route_command()
+# -------------------------------------------------------------------
+def route_command(text: str) -> str:
+    return handle(text)

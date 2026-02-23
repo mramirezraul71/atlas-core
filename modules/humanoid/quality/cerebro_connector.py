@@ -398,6 +398,10 @@ class ChannelConnector:
         import asyncio
         try:
             loop = asyncio.get_event_loop()
+            # If a loop is already running (common in FastAPI), avoid blocking/RuntimeWarning.
+            if loop.is_running():
+                asyncio.create_task(self.send_telegram(message))
+                return True
             return loop.run_until_complete(self.send_telegram(message))
         except RuntimeError:
             # No hay event loop

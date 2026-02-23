@@ -1905,6 +1905,24 @@ window.__autorunMode = 'guarded'; // 'guarded' or 'full'
 window.__pendingHighSteps = [];
 window.__currentPlan = null;
 
+// ─── PERSISTENT THREADS (Agent / Supervisor) ───
+const __THREAD_KEYS = {
+  agent: 'atlas_thread_agent',
+  supervisor: 'atlas_thread_supervisor',
+};
+
+function _getThreadId(kind) {
+  try { return (localStorage.getItem(__THREAD_KEYS[kind]) || '').trim(); } catch (_) { return ''; }
+}
+
+function _setThreadId(kind, tid) {
+  const v = String(tid || '').trim();
+  if (!v) return;
+  try { localStorage.setItem(__THREAD_KEYS[kind], v); } catch (_) {}
+  const badge = document.getElementById('session-badge');
+  if (badge && kind === 'agent') badge.textContent = 'Thread ' + v.substring(0, 8);
+}
+
 async function askSupervisor() {
   const objective = document.getElementById('supervisor-objective').value.trim();
   const issuesInput = document.getElementById('supervisor-issues').value.trim();
@@ -1926,7 +1944,7 @@ async function askSupervisor() {
     const response = await fetch(API + '/supervisor/advise', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ objective, context })
+      body: JSON.stringify({ objective, context, thread_id: _getThreadId('supervisor'), user_id: 'owner' })
     });
     const data = await response.json();
     const elapsed = Math.round(performance.now() - t0);
@@ -1937,6 +1955,8 @@ async function askSupervisor() {
       addSupervisorMessage('supervisor', '<strong style="color:var(--accent-red);">Error:</strong> ' + escapeHtml(data.error || data.result?.error || 'Unknown'));
       return;
     }
+
+    if (data.thread_id) _setThreadId('supervisor', data.thread_id);
 
     const result = data.result || {};
     const diagnosis = result.diagnosis || {};
@@ -2043,7 +2063,7 @@ async function supervisorInvestigate() {
     const response = await fetch(API + '/supervisor/investigate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ objective, context: { issues, modules } }),
+      body: JSON.stringify({ objective, context: { issues, modules }, thread_id: _getThreadId('supervisor'), user_id: 'owner' }),
     });
 
     const reader = response.body.getReader();
@@ -2066,6 +2086,9 @@ async function supervisorInvestigate() {
         } else if (line.startsWith('data: ') && eventType) {
           try {
             const data = JSON.parse(line.substring(6));
+            if (eventType === 'thread' && data.thread_id) {
+              _setThreadId('supervisor', data.thread_id);
+            }
             if (eventType === 'thinking') {
               thoughtSetAction(thinkId, data.message || '', '🧠');
             } else if (eventType === 'tool_call') {
@@ -2079,6 +2102,7 @@ async function supervisorInvestigate() {
             } else if (eventType === 'done') {
               thoughtSetTitle(thinkId, 'Investigación completada (' + Math.round((data.ms||0)/1000) + 's)');
               if (data.model) thoughtAddStep(thinkId, 'Modelo: ' + data.model, 'done');
+              if (data.thread_id) _setThreadId('supervisor', data.thread_id);
             } else if (eventType === 'error') {
               thoughtSetError(thinkId);
               addSupervisorMessage('supervisor', '<strong style="color:var(--accent-red);">Error:</strong> ' + escapeHtml(data.message || ''));
@@ -2814,7 +2838,7 @@ async function sendMessage() {
     }, 120000);
     const rawMode = document.getElementById('agent-mode').value;
     const backendMode = rawMode === 'auto' ? 'plan_only' : rawMode;
-    const requestBody = { goal: goalText, mode: backendMode, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel, sync_config: syncConfigActive };
+    const requestBody = { goal: goalText, mode: backendMode, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel, sync_config: syncConfigActive, thread_id: _getThreadId('agent'), user_id: 'owner' };
 
     thoughtUpdateStep(thinkingId, sRoute, 'done');
     const sModel = thoughtAddStep(thinkingId, 'Enviando al modelo (' + (selectedModel || 'auto') + ')', 'active');
@@ -2830,6 +2854,7 @@ async function sendMessage() {
     clearTimeout(timeout);
     const elapsed = Math.round(performance.now() - t0);
     const data = await response.json();
+    if (data && data.thread_id) _setThreadId('agent', data.thread_id);
 
     thoughtUpdateStep(thinkingId, sModel, 'done', 'Respuesta en ' + elapsed + 'ms');
     emitLive('info', 'Respuesta recibida en <code>' + elapsed + 'ms</code>');
@@ -2973,6 +2998,7 @@ async function sendMessage() {
               body: JSON.stringify({ ...requestBody, model: 'auto' })
             });
             const fbData = await fbRes.json();
+            if (fbData && fbData.thread_id) _setThreadId('agent', fbData.thread_id);
             if (fbData && fbData.ok) {
               const modelUsed = fbData.data && fbData.data.model_used;
               const reply = (fbData.data && fbData.data.output) || fbData.resumen || 'Objetivo procesado con fallback.';
@@ -3035,7 +3061,7 @@ async function sendViaAgentEngine(goalText, _chip) {
     const response = await fetch(API + '/agent/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: goalText, model: selectedModel !== 'auto' ? selectedModel : null }),
+      body: JSON.stringify({ message: goalText, model: selectedModel !== 'auto' ? selectedModel : null, thread_id: _getThreadId('agent'), user_id: 'owner' }),
       signal: controller.signal
     });
 
@@ -3063,10 +3089,12 @@ async function sendViaAgentEngine(goalText, _chip) {
             try {
               const data = JSON.parse(eventData);
               _handleAgentEvent(thinkingId, eventType, data, _chip);
+              if (eventType === 'thread' && data.thread_id) _setThreadId('agent', data.thread_id);
               if (eventType === 'text') finalText = data.content || '';
               if (eventType === 'done') {
                 toolsUsed = data.tools_used || [];
                 iterations = data.iterations || 0;
+                if (data.thread_id) _setThreadId('agent', data.thread_id);
               }
               if (eventType === 'error') {
                 finalText = 'Error: ' + (data.message || 'desconocido');

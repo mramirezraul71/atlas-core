@@ -10,6 +10,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import logging
+
 
 def _ts_to_epoch(ts_str: str) -> float:
     """Convert ISO timestamp string to epoch seconds."""
@@ -25,10 +27,11 @@ def _ts_to_epoch(ts_str: str) -> float:
 BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_PATH = BASE_DIR / "config" / "atlas.env"
 if ENV_PATH.exists():
+    # Reduce noisy dotenv parse warnings (e.g. malformed lines in vault/env).
+    logging.getLogger("dotenv").setLevel(logging.ERROR)
     from dotenv import load_dotenv
     load_dotenv(ENV_PATH, override=True)
 else:
-    import logging
     logging.warning("atlas.env not found at %s", ENV_PATH)
 
 _logs = str(BASE_DIR / "logs")
@@ -114,6 +117,7 @@ async def _lifespan(app):
     humanoid = os.getenv("HUMANOID_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
     sched = os.getenv("SCHED_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
     worker_only = os.getenv("WORKER_ONLY", "false").strip().lower() in ("1", "true", "yes")
+    safe_startup = os.getenv("ATLAS_SAFE_STARTUP", "false").strip().lower() in ("1", "true", "yes", "y", "on")
     if humanoid and sched:
         from modules.humanoid.scheduler import start_scheduler
         from modules.humanoid.watchdog import start_watchdog
@@ -150,7 +154,7 @@ async def _lifespan(app):
                 from modules.humanoid.ans.scheduler_jobs import ensure_ans_jobs
                 ensure_ans_jobs()
                 # Ejecutar triada ANS al arranque (una vez) para que la bitácora tenga acción desde el inicio
-                if os.getenv("ANS_ENABLED", "true").strip().lower() in ("1", "true", "yes") and os.getenv("ANS_RUN_AT_STARTUP", "true").strip().lower() in ("1", "true", "yes"):
+                if (not safe_startup) and os.getenv("ANS_ENABLED", "true").strip().lower() in ("1", "true", "yes") and os.getenv("ANS_RUN_AT_STARTUP", "true").strip().lower() in ("1", "true", "yes"):
                     def _run_triada_at_startup():
                         try:
                             from modules.humanoid.ans.engine import run_ans_cycle
@@ -178,13 +182,14 @@ async def _lifespan(app):
             # Bootstrap centralizado de todos los servicios de comunicación
             # (reemplaza las inicializaciones individuales de makeplay y telegram_poller)
             try:
-                from modules.humanoid.comms.bootstrap import bootstrap_comms
-                comms_result = bootstrap_comms(skip_tests=True)
-                if not comms_result.get("ok"):
-                    import logging
-                    _comms_logger = logging.getLogger("atlas.comms.startup")
-                    for warning in comms_result.get("warnings", []):
-                        _comms_logger.warning(f"Comms bootstrap: {warning}")
+                if not safe_startup:
+                    from modules.humanoid.comms.bootstrap import bootstrap_comms
+                    comms_result = bootstrap_comms(skip_tests=True)
+                    if not comms_result.get("ok"):
+                        import logging
+                        _comms_logger = logging.getLogger("atlas.comms.startup")
+                        for warning in comms_result.get("warnings", []):
+                            _comms_logger.warning(f"Comms bootstrap: {warning}")
             except Exception as _comms_err:
                 import logging
                 logging.getLogger("atlas.comms.startup").error(f"Comms bootstrap failed: {_comms_err}")
@@ -193,7 +198,7 @@ async def _lifespan(app):
             # Activa dispatcher+triggers para ejecución autónoma de POTs.
             # Control: QUALITY_AUTONOMY_ENABLED=true|false (default true)
             try:
-                if os.getenv("QUALITY_AUTONOMY_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on"):
+                if (not safe_startup) and os.getenv("QUALITY_AUTONOMY_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on"):
                     from modules.humanoid.quality import start_autonomous_system
                     q = start_autonomous_system()
                     try:
@@ -858,12 +863,40 @@ def supervisor_advise(payload: dict):
         supervisor = Supervisor()
         objective = payload.get("objective", "Revisar estado del sistema")
         context = payload.get("context", {})
+        user_id = (payload.get("user_id") or "owner").strip() or "owner"
+        thread_id = _ensure_thread_id(payload.get("thread_id"), title="Supervisor", user_id=user_id)
+
+        # Persist user objective in thread
+        mgr = _get_chat_manager()
+        if mgr and thread_id:
+            try:
+                mgr.add_message(thread_id, sender=user_id, role="user", content=str(objective), metadata={"panel": "supervisor", "kind": "advise"})
+            except Exception:
+                pass
+            # Enrich context with thread memory (resumen + últimos mensajes)
+            try:
+                context = dict(context or {})
+                context["_thread_id"] = thread_id
+                context["_thread_memory"] = _llm_history_for_thread(thread_id, max_messages=18)
+            except Exception:
+                pass
         
         result = supervisor.advise(objective, context)
+
+        # Persist assistant output + update rolling summary
+        if mgr and thread_id:
+            try:
+                analysis_txt = (result.get("analysis") or "") if isinstance(result, dict) else ""
+                if analysis_txt:
+                    mgr.add_message(thread_id, sender="supervisor", role="assistant", content=str(analysis_txt), metadata={"panel": "supervisor", "kind": "advise"})
+                    _update_thread_summary(thread_id, str(objective), str(analysis_txt))
+            except Exception:
+                pass
         
         return {
             "ok": result.get("ok", True),
-            "result": result
+            "result": result,
+            "thread_id": thread_id,
         }
     except Exception as e:
         return {
@@ -873,7 +906,8 @@ def supervisor_advise(payload: dict):
                 "recommendations": [],
                 "prompts": [],
                 "analysis": f"Error: {str(e)}"
-            }
+            },
+            "thread_id": payload.get("thread_id"),
         }
 
 
@@ -888,17 +922,57 @@ def supervisor_investigate(payload: dict):
 
     objective = payload.get("objective", "Revisar estado del sistema")
     context = payload.get("context", {})
+    user_id = (payload.get("user_id") or "owner").strip() or "owner"
+    thread_id = _ensure_thread_id(payload.get("thread_id"), title="Supervisor", user_id=user_id)
+
+    # Add thread memory to context (best-effort)
+    try:
+        context = dict(context or {})
+        if thread_id:
+            context["_thread_id"] = thread_id
+            context["_thread_memory"] = _llm_history_for_thread(thread_id, max_messages=18)
+    except Exception:
+        pass
 
     supervisor = Supervisor()
 
     def _sse_gen():
+        mgr = _get_chat_manager()
+        if mgr and thread_id:
+            try:
+                mgr.add_message(thread_id, sender=user_id, role="user", content=str(objective), metadata={"panel": "supervisor", "kind": "investigate"})
+            except Exception:
+                pass
+        # Emit thread id early so UI can persist it
+        if thread_id:
+            yield f"event: thread\ndata: {json.dumps({'thread_id': thread_id}, ensure_ascii=False)}\n\n"
+        final_text = ""
         try:
             for event in supervisor.investigate(objective, context):
                 evt_type = event.get("event", "info")
-                data = json.dumps(event.get("data", {}), ensure_ascii=False, default=str)
+                data_obj = event.get("data", {}) or {}
+                if thread_id and evt_type in ("thinking", "done"):
+                    try:
+                        data_obj = dict(data_obj)
+                        data_obj["thread_id"] = thread_id
+                    except Exception:
+                        pass
+                if evt_type == "text":
+                    try:
+                        final_text = str((data_obj or {}).get("content") or "")
+                    except Exception:
+                        final_text = ""
+                data = json.dumps(data_obj, ensure_ascii=False, default=str)
                 yield f"event: {evt_type}\ndata: {data}\n\n"
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+        # Persist final assistant output + update summary
+        try:
+            if mgr and thread_id and final_text:
+                mgr.add_message(thread_id, sender="supervisor", role="assistant", content=final_text, metadata={"panel": "supervisor", "kind": "investigate"})
+                _update_thread_summary(thread_id, str(objective), final_text)
+        except Exception:
+            pass
         yield "event: close\ndata: {}\n\n"
 
     return StreamingResponse(_sse_gen(), media_type="text/event-stream")
@@ -6278,6 +6352,116 @@ def _std_resp(ok: bool, data: Any = None, ms: int = 0, error: Optional[str] = No
     return out
 
 
+# --- Conversaciones persistentes (Agent / Supervisor) ---
+_chat_manager_singleton = None
+
+
+def _get_chat_manager():
+    """Lazy singleton for ChatThreadManager (SQLite) stored under data/chat_threads.db."""
+    global _chat_manager_singleton
+    if _chat_manager_singleton is not None:
+        return _chat_manager_singleton
+    try:
+        import sys as _sys
+        from pathlib import Path as _Path
+        _root = _Path(__file__).resolve().parent.parent
+        if str(_root) not in _sys.path:
+            _sys.path.insert(0, str(_root))
+        from chat_thread_manager import ChatThreadManager  # type: ignore
+        _chat_manager_singleton = ChatThreadManager()
+    except Exception:
+        _chat_manager_singleton = None
+    return _chat_manager_singleton
+
+
+def _ensure_thread_id(thread_id: Optional[str], title: str, user_id: str) -> Optional[str]:
+    mgr = _get_chat_manager()
+    if not mgr:
+        return None
+    tid = (thread_id or "").strip()
+    if tid and mgr.thread_exists(tid):
+        return tid
+    try:
+        return mgr.create_thread(title=title, user_id=user_id, description="", context={"kind": title})
+    except Exception:
+        return None
+
+
+def _extract_memory_lines(text: str, limit: int = 12) -> List[str]:
+    """Heurística extractiva: conserva líneas accionables para 'resumen'."""
+    if not text:
+        return []
+    lines = []
+    for raw in str(text).splitlines():
+        s = raw.strip()
+        if not s:
+            continue
+        up = s.upper()
+        if s.startswith(("##", "###", "- ", "* ", "ACTION:", "RISK:", "EXECUTE:", "✅", "⚠", "⛔", "OK:", "PROBLEMA:", "ADVERTENCIA:")):
+            lines.append(s)
+        elif "http://" in s or "https://" in s or s.startswith((".\\", "C:\\", "GET ", "POST ")):
+            lines.append(s)
+        elif up.startswith("PLAN") or up.startswith("PASOS") or up.startswith("RESUMEN"):
+            lines.append(s)
+        if len(lines) >= limit:
+            break
+    return lines[:limit]
+
+
+def _update_thread_summary(thread_id: str, user_text: Optional[str], assistant_text: Optional[str]) -> None:
+    mgr = _get_chat_manager()
+    if not mgr or not thread_id:
+        return
+    try:
+        old = mgr.get_context(thread_id, "summary") or ""
+        if not isinstance(old, str):
+            old = str(old)
+        chunks: List[str] = []
+        if user_text:
+            chunks.append(f"USER: {str(user_text).strip()[:240]}")
+        if assistant_text:
+            mem_lines = _extract_memory_lines(assistant_text)
+            if mem_lines:
+                chunks.append("ASSISTANT_NOTES:\n" + "\n".join(mem_lines))
+        if not chunks:
+            return
+        new = (old + ("\n\n" if old else "") + "\n\n".join(chunks)).strip()
+        # cap memory size
+        if len(new) > 2600:
+            new = new[-2600:]
+            # trim to first newline boundary when possible
+            cut = new.find("\n")
+            if 0 <= cut <= 120:
+                new = new[cut + 1 :]
+        mgr.set_context(thread_id, "summary", new)
+        mgr.set_context(thread_id, "updated_at", datetime.utcnow().isoformat())
+    except Exception:
+        pass
+
+
+def _llm_history_for_thread(thread_id: str, max_messages: int = 24) -> List[Dict[str, str]]:
+    mgr = _get_chat_manager()
+    if not mgr or not thread_id:
+        return []
+    try:
+        summary = mgr.get_context(thread_id, "summary")
+        msgs = mgr.get_recent_messages(thread_id, limit=max_messages)
+        out: List[Dict[str, str]] = []
+        if summary and isinstance(summary, str) and summary.strip():
+            out.append({"role": "system", "content": "MEMORIA DEL HILO (resumen):\n" + summary.strip()})
+        for m in msgs:
+            role = (m.get("role") or "user").strip()
+            content = (m.get("content") or "").strip()
+            if not content:
+                continue
+            if role not in ("user", "assistant", "system"):
+                role = "user"
+            out.append({"role": role, "content": content})
+        return out
+    except Exception:
+        return []
+
+
 @app.get("/scheduler/jobs")
 def scheduler_jobs(status: Optional[str] = None):
     """List jobs, optional filter by status. Response: {ok, data, ms, error}."""
@@ -7108,6 +7292,8 @@ class AgentGoalBody(BaseModel):
     depth: Optional[int] = 1  # 1-5: multi-agent depth (1=single planner, 2+=Executive pipeline)
     model: Optional[str] = None  # auto | provider:model (e.g. "openai:gpt-4.1", "xai:grok-3")
     sync_config: Optional[bool] = False  # True = usar system prompt/temp de Config IA
+    thread_id: Optional[str] = None  # Para persistir hilo conversacional (Agent UI)
+    user_id: Optional[str] = None  # Opcional: identificador de usuario/owner
 
 
 def _agent_goal_mode(mode: str) -> str:
@@ -7533,6 +7719,32 @@ def brain_process_endpoint(payload: dict):
 def agent_goal(body: AgentGoalBody):
     """Run goal: plan_only | controlled | auto. depth 1-5: multi-agent pipeline. Respuesta: resumen, data, pipeline, siguientes_pasos."""
     t0 = time.perf_counter()
+    user_id = (body.user_id or "owner").strip() or "owner"
+    thread_id = _ensure_thread_id(body.thread_id, title="Agent", user_id=user_id)
+    mgr = _get_chat_manager()
+    if mgr and thread_id:
+        try:
+            mgr.add_message(thread_id, sender=user_id, role="user", content=str(body.goal), metadata={"panel": "agent", "kind": "goal"})
+        except Exception:
+            pass
+
+    # Inject rolling thread summary into goal so plan_only/goal mode keeps context.
+    goal_text = body.goal
+    if mgr and thread_id:
+        try:
+            summary = mgr.get_context(thread_id, "summary")
+            if isinstance(summary, str) and summary.strip():
+                goal_text = f"MEMORIA DEL HILO (resumen):\n{summary.strip()}\n\nOBJETIVO ACTUAL:\n{body.goal}"
+        except Exception:
+            goal_text = body.goal
+
+    def _attach_thread(resp: Any) -> Any:
+        try:
+            if thread_id and isinstance(resp, dict):
+                resp["thread_id"] = thread_id
+        except Exception:
+            pass
+        return resp
     explicit_model = (body.model or "").strip()
     model_spec = explicit_model or "auto"
     mode = _agent_goal_mode(body.mode or "plan_only")
@@ -7540,7 +7752,7 @@ def agent_goal(body: AgentGoalBody):
     # Respuesta directa de LLM solo en plan_only con provider:model explícito.
     # En modos auto/controlled SIEMPRE usamos orquestador para decidir y ejecutar.
     if mode == "plan_only" and explicit_model and explicit_model.lower() not in ("auto", "cascade", "ide-agent", "cascade:ide-agent"):
-        result = _direct_model_call(model_spec, body.goal, use_config=bool(body.sync_config), prefer_fast=prefer_fast)
+        result = _direct_model_call(model_spec, goal_text, use_config=bool(body.sync_config), prefer_fast=prefer_fast)
         ms = int((time.perf_counter() - t0) * 1000)
         if result.get("ok"):
             tier_label = {"local": "LOCAL (gratis)", "free_api": "API gratuita", "paid_api": "API paga"}.get(result.get("tier", ""), "")
@@ -7548,7 +7760,7 @@ def agent_goal(body: AgentGoalBody):
             if result.get("cascade_errors", 0) > 0:
                 cascade_note = " (fallback: %d intentos previos)" % result["cascade_errors"]
             info_line = "Modelo: %s | %s%s | %dms" % (result.get("model_used", model_spec), tier_label, cascade_note, ms)
-            return _professional_resp(True, {
+            resp = _professional_resp(True, {
                                       "output": result["output"],
                                       "model_used": result.get("model_used"),
                                       "tier": result.get("tier"),
@@ -7559,22 +7771,31 @@ def agent_goal(body: AgentGoalBody):
                                       }, ms, None,
                                       resumen=result["output"][:500] if result.get("output") else "Procesado",
                                       siguientes_pasos=[info_line])
+            if mgr and thread_id:
+                try:
+                    out_txt = str(result.get("output") or "")
+                    if out_txt.strip():
+                        mgr.add_message(thread_id, sender="agent", role="assistant", content=out_txt[:8000], metadata={"panel": "agent", "kind": "goal"})
+                        _update_thread_summary(thread_id, str(body.goal), out_txt)
+                except Exception:
+                    pass
+            return _attach_thread(resp)
         err_detail = result.get("error") or result.get("output") or "Error desconocido"
         err_l = str(err_detail).lower()
         # No ocultar credenciales inválidas detrás de fallback automático.
         # Si el modelo explícito falla por auth/API key, devolvemos error directo y accionable.
         auth_tokens = ("authentication", "unauthorized", "invalid api key", "incorrect api key", "invalid x-api-key", "401")
         if any(tok in err_l for tok in auth_tokens):
-            return _professional_resp(
+            return _attach_thread(_professional_resp(
                 False,
                 {"error_detail": err_detail, "model_used": result.get("model_used"), "auth_error": True},
                 ms,
                 err_detail,
                 resumen=err_detail,
                 siguientes_pasos=["Credencial inválida o no autorizada para el proveedor seleccionado. Actualiza /api/brain/credentials y reintenta."],
-            )
+            ))
         # Fallback resiliente: si modelo explícito falla, intentar cascada auto.
-        fallback = _direct_model_call("auto", body.goal, use_config=bool(body.sync_config), prefer_fast=prefer_fast)
+        fallback = _direct_model_call("auto", goal_text, use_config=bool(body.sync_config), prefer_fast=prefer_fast)
         if fallback.get("ok"):
             ms2 = int((time.perf_counter() - t0) * 1000)
             note = "Fallback automático activado: modelo seleccionado falló, se usó cascada."
@@ -7596,14 +7817,22 @@ def agent_goal(body: AgentGoalBody):
                     "source_model": model_spec,
                 },
             }
-            return _professional_resp(
+            if mgr and thread_id:
+                try:
+                    out_txt = str(fallback.get("output") or "")
+                    if out_txt.strip():
+                        mgr.add_message(thread_id, sender="agent", role="assistant", content=out_txt[:8000], metadata={"panel": "agent", "kind": "goal_fallback"})
+                        _update_thread_summary(thread_id, str(body.goal), out_txt)
+                except Exception:
+                    pass
+            return _attach_thread(_professional_resp(
                 True,
                 data,
                 ms2,
                 None,
                 resumen=(fallback.get("output") or "Procesado")[:500],
                 siguientes_pasos=[note, f"Causa detectada: {short_err}"],
-            )
+            ))
 
         fb_detail = fallback.get("error") if isinstance(fallback, dict) else None
         full_err = err_detail if not fb_detail else f"{err_detail} | fallback: {fb_detail}"
@@ -7616,7 +7845,7 @@ def agent_goal(body: AgentGoalBody):
             if depth >= 2:
                 from modules.humanoid.agents import run_multi_agent_goal
                 from modules.humanoid.orchestrator import run_goal_with_plan
-                ma = run_multi_agent_goal(body.goal, depth=depth, mode=mode)
+                ma = run_multi_agent_goal(goal_text, depth=depth, mode=mode)
                 if not ma.get("ok"):
                     return ma
                 if ma.get("decision") == "replan":
@@ -7624,11 +7853,11 @@ def agent_goal(body: AgentGoalBody):
                 steps_raw = ma.get("steps") or []
                 steps_list = [s.get("description", s) if isinstance(s, dict) else str(s) for s in steps_raw]
                 if mode != "plan_only" and steps_list and ma.get("decision") == "approve":
-                    return run_goal_with_plan(body.goal, steps_list, mode=mode)
+                    return run_goal_with_plan(goal_text, steps_list, mode=mode)
                 return {"ok": True, "plan": ma.get("plan"), "steps": steps_raw, "task_id": ma.get("task_id"), "execution_log": [], "artifacts": [], "pipeline": ma.get("pipeline", [])}
             else:
                 from modules.humanoid.orchestrator import run_goal
-                return run_goal(body.goal, mode=mode, fast=body.fast if body.fast is not None else True)
+                return run_goal(goal_text, mode=mode, fast=body.fast if body.fast is not None else True)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(_run_orchestrator)
@@ -7648,7 +7877,7 @@ def agent_goal(body: AgentGoalBody):
         # Resilient fallback: if orchestrator failed, try direct LLM so user always gets a response
         if not ok and not result.get("steps"):
             orch_err = result.get("error") or result.get("message") or "orchestrator_failed"
-            fb = _direct_model_call("auto", body.goal, use_config=bool(body.sync_config), prefer_fast=prefer_fast, enrich=False)
+            fb = _direct_model_call("auto", goal_text, use_config=bool(body.sync_config), prefer_fast=prefer_fast, enrich=False)
             if fb.get("ok"):
                 ms2 = int((time.perf_counter() - t0) * 1000)
                 return _professional_resp(True, {
@@ -7692,24 +7921,46 @@ def agent_goal(body: AgentGoalBody):
         if result.get("fallback"):
             out["fallback"] = True
             out["message"] = result.get("message")
-        return out
+        # Persist assistant output (best-effort)
+        if mgr and thread_id:
+            try:
+                assistant_txt = ""
+                if isinstance(out.get("data"), dict) and isinstance(out["data"].get("output"), str):
+                    assistant_txt = out["data"]["output"]
+                elif isinstance(out.get("resumen"), str):
+                    assistant_txt = out.get("resumen") or ""
+                if assistant_txt.strip():
+                    mgr.add_message(thread_id, sender="agent", role="assistant", content=assistant_txt[:8000], metadata={"panel": "agent", "kind": "goal_orchestrator"})
+                    _update_thread_summary(thread_id, str(body.goal), assistant_txt)
+            except Exception:
+                pass
+        return _attach_thread(out)
     except Exception as e:
         # Last resort: try direct LLM even on exception
         try:
             fb = _direct_model_call("auto", body.goal, use_config=bool(body.sync_config), prefer_fast=prefer_fast, enrich=False)
             if fb.get("ok"):
                 ms2 = int((time.perf_counter() - t0) * 1000)
-                return _professional_resp(True, {
+                resp = _professional_resp(True, {
                     "output": fb["output"],
                     "model_used": fb.get("model_used"),
                     "fallback_from": "exception",
                     "fallback": True,
                 }, ms2, None, resumen=(fb["output"] or "")[:500],
                 siguientes_pasos=[f"Fallback LLM (error: {str(e)[:100]})"])
+                if mgr and thread_id:
+                    try:
+                        out_txt = str(fb.get("output") or "")
+                        if out_txt.strip():
+                            mgr.add_message(thread_id, sender="agent", role="assistant", content=out_txt[:8000], metadata={"panel": "agent", "kind": "goal_exception_fallback"})
+                            _update_thread_summary(thread_id, str(body.goal), out_txt)
+                    except Exception:
+                        pass
+                return _attach_thread(resp)
         except Exception:
             pass
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(False, None, ms, str(e))
+        return _attach_thread(_std_resp(False, None, ms, str(e)))
 
 
 class AgentStepBody(BaseModel):
@@ -7745,20 +7996,118 @@ def agent_chat(payload: dict):
     user_msg = payload.get("message", "").strip()
     if not user_msg:
         return {"ok": False, "error": "Empty message"}
-    history = payload.get("history") or []
+    user_id = (payload.get("user_id") or "owner").strip() or "owner"
+    thread_id = _ensure_thread_id(payload.get("thread_id"), title="Agent", user_id=user_id)
+    # Use server-side history when thread_id is present (survives reloads)
+    history = _llm_history_for_thread(thread_id, max_messages=24) if thread_id else (payload.get("history") or [])
     model = payload.get("model") or None
 
     def _sse_generator():
+        mgr = _get_chat_manager()
+        # Persist user message (best-effort)
+        if mgr and thread_id:
+            try:
+                mgr.add_message(thread_id, sender=user_id, role="user", content=user_msg, metadata={"panel": "agent", "kind": "chat"})
+            except Exception:
+                pass
+        # Emit thread id early so UI can persist it
+        if thread_id:
+            yield f"event: thread\ndata: {json.dumps({'thread_id': thread_id}, ensure_ascii=False)}\n\n"
+        final_text = ""
         try:
             for event in run_agent(user_msg, conversation_history=history, model=model):
                 evt_type = event.get("event", "info")
-                data = json.dumps(event.get("data", {}), ensure_ascii=False, default=str)
+                data_obj = event.get("data", {}) or {}
+                if thread_id and evt_type in ("thinking", "done"):
+                    try:
+                        data_obj = dict(data_obj)
+                        data_obj["thread_id"] = thread_id
+                    except Exception:
+                        pass
+                if evt_type == "text":
+                    try:
+                        final_text = str((data_obj or {}).get("content") or "")
+                    except Exception:
+                        final_text = ""
+                data = json.dumps(data_obj, ensure_ascii=False, default=str)
                 yield f"event: {evt_type}\ndata: {data}\n\n"
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+        # Persist final assistant output + update summary
+        try:
+            if mgr and thread_id and final_text:
+                mgr.add_message(thread_id, sender="agent", role="assistant", content=final_text, metadata={"panel": "agent", "kind": "chat"})
+                _update_thread_summary(thread_id, user_msg, final_text)
+        except Exception:
+            pass
         yield "event: close\ndata: {}\n\n"
 
     return StreamingResponse(_sse_generator(), media_type="text/event-stream")
+
+
+# --- Conversation thread utilities (debug/ops) ---
+@app.post("/conversation/thread/new", tags=["Conversation"])
+def conversation_thread_new(payload: dict):
+    """Create a new persistent thread for Agent/Supervisor UI."""
+    t0 = time.perf_counter()
+    try:
+        kind = (payload.get("kind") or "Agent").strip() or "Agent"
+        user_id = (payload.get("user_id") or "owner").strip() or "owner"
+        title = "Supervisor" if kind.lower().startswith("sup") else "Agent"
+        tid = _ensure_thread_id(None, title=title, user_id=user_id)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"thread_id": tid, "title": title, "user_id": user_id}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.post("/conversation/thread/reset", tags=["Conversation"])
+def conversation_thread_reset(payload: dict):
+    """Reset by creating a fresh thread (does not delete existing history)."""
+    t0 = time.perf_counter()
+    try:
+        kind = (payload.get("kind") or "Agent").strip() or "Agent"
+        user_id = (payload.get("user_id") or "owner").strip() or "owner"
+        title = "Supervisor" if kind.lower().startswith("sup") else "Agent"
+        tid = _ensure_thread_id(None, title=title, user_id=user_id)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"thread_id": tid, "title": title, "user_id": user_id, "reset": True}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/conversation/thread/{thread_id}/history", tags=["Conversation"])
+def conversation_thread_history(thread_id: str, limit: int = 80):
+    """Fetch recent messages for a thread."""
+    t0 = time.perf_counter()
+    mgr = _get_chat_manager()
+    if not mgr:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "chat_manager_unavailable")
+    try:
+        msgs = mgr.get_recent_messages(thread_id, limit=limit)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"thread_id": thread_id, "messages": msgs, "count": len(msgs)}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/conversation/thread/{thread_id}/summary", tags=["Conversation"])
+def conversation_thread_summary(thread_id: str):
+    """Fetch rolling summary for a thread."""
+    t0 = time.perf_counter()
+    mgr = _get_chat_manager()
+    if not mgr:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "chat_manager_unavailable")
+    try:
+        summary = mgr.get_context(thread_id, "summary") or ""
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"thread_id": thread_id, "summary": summary}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
 
 
 @app.post("/agent/benchmark")

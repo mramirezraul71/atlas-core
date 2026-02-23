@@ -46,7 +46,8 @@ class ChromaMemoryEngine:
         self.collection_name = collection_name
         self.collection = self._get_or_create_collection()
         
-        print(f"✅ ChromaDB Memory Engine iniciado en {self.persist_directory}")
+        # Avoid unicode/emoji prints on Windows console encodings
+        print(f"ChromaDB Memory Engine iniciado en {self.persist_directory}")
     
     def _get_or_create_collection(self):
         """Obtener o crear colección con configuración."""

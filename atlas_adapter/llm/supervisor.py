@@ -81,11 +81,12 @@ class Supervisor:
         if MEMORY_AVAILABLE:
             try:
                 self.memory = get_supervisor_memory()
-                print("✅ Supervisor Memory Integration loaded")
+                # Avoid unicode/emoji prints on Windows console encodings
+                print("Supervisor Memory Integration loaded")
             except Exception as e:
-                print(f"⚠️ Supervisor Memory Integration failed: {e}")
+                print(f"Supervisor Memory Integration failed: {e}")
         else:
-            print("⚠️ Supervisor Memory Integration not available")
+            print("Supervisor Memory Integration not available")
 
     def advise(self, objective: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Quick advisory: gather data + LLM analysis without tool calling."""
@@ -104,8 +105,27 @@ class Supervisor:
         memory_context = ""
         if self.memory:
             memory_context = self.memory.enhance_supervisor_analysis(objective, snapshot)
-        
-        prompt = self._build_analysis_prompt(objective, context, snapshot, diagnosis, memory_context)
+
+        # Add persistent thread memory if provided by API layer
+        thread_memory_text = ""
+        try:
+            tm = context.get("_thread_memory")
+            if isinstance(tm, list) and tm:
+                lines = []
+                for m in tm[-12:]:
+                    role = (m.get("role") or "").strip().lower()
+                    content = (m.get("content") or "").strip()
+                    if not content:
+                        continue
+                    if role not in ("user", "assistant", "system"):
+                        role = "user"
+                    lines.append(f"[{role}] {content[:260]}")
+                if lines:
+                    thread_memory_text = "\n".join(lines)
+        except Exception:
+            thread_memory_text = ""
+
+        prompt = self._build_analysis_prompt(objective, context, snapshot, diagnosis, memory_context, thread_memory_text)
 
         try:
             from atlas_adapter.atlas_http_api import _direct_model_call
@@ -168,6 +188,24 @@ class Supervisor:
         # Add memory context if available
         if memory_context:
             enriched_msg += memory_context + "\n\n"
+
+        # Add persistent thread memory (summary + last messages) if present
+        try:
+            tm = context.get("_thread_memory")
+            if isinstance(tm, list) and tm:
+                lines = []
+                for m in tm[-12:]:
+                    role = (m.get("role") or "").strip().lower()
+                    content = (m.get("content") or "").strip()
+                    if not content:
+                        continue
+                    if role not in ("user", "assistant", "system"):
+                        role = "user"
+                    lines.append(f"[{role}] {content[:260]}")
+                if lines:
+                    enriched_msg += "HILO CONVERSACIONAL (resumen+últimos mensajes):\n" + "\n".join(lines) + "\n\n"
+        except Exception:
+            pass
         
         enriched_msg += "Investiga a fondo usando las herramientas disponibles. Lee archivos, consulta endpoints, ejecuta comandos según necesites."
 
@@ -285,8 +323,8 @@ class Supervisor:
         }
 
     def _build_analysis_prompt(self, objective: str, context: Dict[str, Any],
-                                snapshot: Dict[str, Any], diagnosis: Dict[str, Any], 
-                                memory_context: str = "") -> str:
+                                snapshot: Dict[str, Any], diagnosis: Dict[str, Any],
+                                memory_context: str = "", thread_memory: str = "") -> str:
         issues_ctx = context.get("issues", [])
         modules_ctx = context.get("modules", [])
 
@@ -302,11 +340,17 @@ class Supervisor:
         for o in diagnosis.get("ok_items", []):
             diag_lines.append(f"OK: {o}")
 
+        thread_section = ""
+        if thread_memory:
+            thread_section = "HILO CONVERSACIONAL (resumen+últimos mensajes):\n" + thread_memory + "\n"
+
         return f"""Eres el Supervisor técnico de ATLAS, subordinado al Owner (Raúl).
 
 OBJETIVO DEL OWNER: {objective}
 {f"Issues reportados: {', '.join(issues_ctx)}" if issues_ctx else ""}
 {f"Módulos de interés: {', '.join(modules_ctx)}" if modules_ctx else ""}
+
+{thread_section}
 
 DIAGNÓSTICO AUTOMÁTICO (Severidad: {diagnosis['severity'].upper()}):
 {chr(10).join(diag_lines) if diag_lines else "Sin problemas detectados"}

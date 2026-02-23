@@ -161,6 +161,48 @@ class ChatThreadManager:
         
         conn.close()
         return messages
+
+    def thread_exists(self, thread_id: str) -> bool:
+        """Verifica si existe un hilo."""
+        if not thread_id:
+            return False
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM chat_threads WHERE thread_id = ? LIMIT 1", (thread_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return bool(row)
+
+    def get_recent_messages(self, thread_id: str, limit: int = 30) -> List[Dict]:
+        """Obtener últimos mensajes de un hilo (orden cronológico ascendente)."""
+        limit = max(1, min(int(limit or 30), 500))
+        conn = sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT message_id, sender, role, content, timestamp, metadata
+            FROM chat_messages
+            WHERE thread_id = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+            """,
+            (thread_id, limit),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+
+        messages: List[Dict] = []
+        for row in reversed(rows):
+            messages.append({
+                "message_id": row[0],
+                "sender": row[1],
+                "role": row[2],
+                "content": row[3],
+                "timestamp": row[4],
+                "metadata": json.loads(row[5] or "{}")
+            })
+        return messages
     
     def get_all_threads(self, user_id: str = None) -> List[Dict]:
         """Obtener todos los hilos (opcionalmente filtrados por usuario)"""
