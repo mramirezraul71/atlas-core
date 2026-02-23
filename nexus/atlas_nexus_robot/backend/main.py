@@ -36,6 +36,13 @@ from api.vision_routes import router as vision_router
 # Import camera service routes
 from api.camera_service_routes import router as camera_router
 
+# Import memory connector routes
+try:
+    from brain.memory_connector import memory_router
+except Exception as e:
+    logger.warning("Memory connector disabled: %s", e)
+    memory_router = None
+
 # Configurar logging
 logging.basicConfig(
     level=logging.INFO,
@@ -73,6 +80,10 @@ except Exception as e:
 
 # Include camera service routes
 app.include_router(camera_router)
+
+# Include memory connector routes
+if memory_router:
+    app.include_router(memory_router)
 
 # Pydantic models for YOLO detection
 class DetectionRequest(BaseModel):

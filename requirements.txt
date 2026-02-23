@@ -36,6 +36,17 @@ pyzmq>=25.0.0
 # Cognitive Architecture - NLU/LLM
 ollama>=0.1.0
 
+# Memory Stack - ChromaDB + LangChain + LangFlow
+chromadb>=0.5.0
+langchain>=0.3.0
+langchain-community>=0.3.0
+langchain-core>=0.3.0
+langchain-chroma>=0.2.0
+langflow>=1.7.0
+
+# Compatibility fixes
+pydantic-core>=2.41.5
+
 # Cognitive Architecture - Graphs and Planning
 networkx>=3.0
 

@@ -8,11 +8,12 @@ Provee una API unificada de consulta que busca en TODOS los subsistemas:
 2. Memoria Episodica (brain/learning)
 3. Memoria Semantica (hippo - grafo de conceptos)
 4. Memoria Semantica (memory_engine - embeddings)
-5. Memory Engine (threads, tasks, runs, FTS)
-6. Lifelog (registro continuo)
-7. Autobiographical Memory (narrativa, identidad)
-8. World Model (estado del entorno)
-9. Cortex Temporal (episodic recall con scoring)
+5. Memoria Vectorial ChromaDB (embeddings + búsqueda semántica)
+6. Memory Engine (threads, tasks, runs, FTS)
+7. Lifelog (registro continuo)
+8. Autobiographical Memory (narrativa, identidad)
+9. World Model (estado del entorno)
+10. Cortex Temporal (episodic recall con scoring)
 
 Resultado: una consulta unificada que devuelve resultados rankeados
 de todos los sistemas con su fuente, relevancia y tipo.
@@ -63,6 +64,7 @@ class UnifiedMemoryCortex:
         if "semantic" in types:
             results.extend(self._search_semantic_hippo(query, limit))
             results.extend(self._search_semantic_engine(query, limit))
+            results.extend(self._search_chromadb(query, limit))
 
         if "knowledge_base" in types or "procedural" in types:
             results.extend(self._search_memory_engine(query, limit))
@@ -120,6 +122,7 @@ class UnifiedMemoryCortex:
             ("episodic_hippo", self._stats_episodic_hippo),
             ("semantic_hippo", self._stats_semantic_hippo),
             ("semantic_engine", self._stats_semantic_engine),
+            ("chromadb", self._stats_chromadb),
             ("memory_engine", self._stats_memory_engine),
             ("lifelog", self._stats_lifelog),
             ("autobiographical", self._stats_autobiographical),
@@ -284,6 +287,25 @@ class UnifiedMemoryCortex:
             pass
         return results
 
+    def _search_chromadb(self, query: str, limit: int) -> List[MemoryResult]:
+        """Buscar en ChromaDB vector database."""
+        results = []
+        try:
+            from modules.humanoid.memory_engine.chroma_memory import _search_chromadb
+            chroma_results = _search_chromadb(query, limit)
+            for cr in chroma_results:
+                results.append(MemoryResult(
+                    source="chromadb",
+                    memory_type=cr["metadata"].get("memory_type", "semantic"),
+                    content=cr["content"],
+                    relevance=cr["score"],
+                    timestamp=cr["metadata"].get("timestamp", 0),
+                    metadata=cr["metadata"],
+                ))
+        except Exception:
+            pass
+        return results
+
     def _search_world_model(self, query: str) -> List[MemoryResult]:
         results = []
         try:
@@ -320,6 +342,10 @@ class UnifiedMemoryCortex:
     def _stats_semantic_engine(self) -> Dict:
         from modules.humanoid.memory_engine.semantic_memory import SemanticMemory
         return SemanticMemory.get_instance().get_statistics()
+
+    def _stats_chromadb(self) -> Dict:
+        from modules.humanoid.memory_engine.chroma_memory import _stats_chromadb
+        return _stats_chromadb()
 
     def _stats_memory_engine(self) -> Dict:
         from modules.humanoid.memory_engine import recall
