@@ -1084,6 +1084,106 @@
 
     .monitor-card.full-width { grid-column: 1 / -1; }
 
+    /* ─── MENTAL STATE STYLES ─── */
+    .mental-state-container {
+      position: relative;
+    }
+    .mental-state-rectangle {
+      background: var(--bg-elevated);
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s ease;
+    }
+    .mental-state-rectangle.thinking {
+      border-color: var(--accent-purple);
+      background: rgba(163,113,247,0.05);
+    }
+    .mental-state-rectangle.planning {
+      border-color: var(--accent-cyan);
+      background: rgba(0,180,216,0.05);
+    }
+    .mental-state-rectangle.executing {
+      border-color: var(--accent-green);
+      background: rgba(63,185,80,0.05);
+    }
+    .mental-state-rectangle.stuck {
+      border-color: var(--accent-red);
+      background: rgba(248,81,73,0.05);
+      animation: mental-pulse 2s ease-in-out infinite;
+    }
+    @keyframes mental-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    .mental-state-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .mental-state-icon {
+      font-size: 16px;
+      animation: mental-icon-bounce 2s ease-in-out infinite;
+    }
+    @keyframes mental-icon-bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-2px); }
+    }
+    .mental-state-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      flex: 1;
+    }
+    .mental-state-timer {
+      font-size: 10px;
+      color: var(--text-dim);
+      font-family: monospace;
+    }
+    .mental-state-description {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+    .mental-state-progress {
+      height: 4px;
+      background: var(--bg);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .mental-state-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent-purple), var(--accent-cyan));
+      border-radius: 2px;
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+    .mental-state-indicator.thinking {
+      background: rgba(163,113,247,0.2) !important;
+      color: var(--accent-purple) !important;
+    }
+    .mental-state-indicator.planning {
+      background: rgba(0,180,216,0.2) !important;
+      color: var(--accent-cyan) !important;
+    }
+    .mental-state-indicator.executing {
+      background: rgba(63,185,80,0.2) !important;
+      color: var(--accent-green) !important;
+    }
+    .mental-state-indicator.stuck {
+      background: rgba(248,81,73,0.2) !important;
+      color: var(--accent-red) !important;
+      animation: mental-indicator-pulse 1s ease-in-out infinite;
+    }
+    @keyframes mental-indicator-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
     .monitor-bar {
       height: 6px; border-radius: 3px; background: var(--bg-elevated);
       overflow: hidden; margin: 4px 0;
@@ -1355,6 +1455,29 @@
       </div>
 
       <div class="monitor-grid" id="monitor-grid">
+
+        <!-- AGENT MENTAL STATE -->
+        <div class="monitor-card" id="mc-mental-state">
+          <div class="monitor-card-title"><span class="mc-dot purple"></span>ESTADO MENTAL DEL AGENTE
+            <span style="flex:1"></span>
+            <span class="mental-state-indicator" id="mental-state-indicator" style="padding:2px 8px;background:var(--bg-elevated);border-radius:4px;font-size:10px;color:var(--text-muted);">INICIANDO</span>
+          </div>
+          <div class="mental-state-container">
+            <div class="mental-state-rectangle" id="mental-state-rectangle">
+              <div class="mental-state-header">
+                <span class="mental-state-icon" id="mental-state-icon">🧠</span>
+                <span class="mental-state-title" id="mental-state-title">Pensando...</span>
+                <span class="mental-state-timer" id="mental-state-timer">0s</span>
+              </div>
+              <div class="mental-state-description" id="mental-state-description">
+                Inicializando sistemas cognitivos...
+              </div>
+              <div class="mental-state-progress">
+                <div class="mental-state-bar" id="mental-state-bar"></div>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- SYSTEM HEALTH -->
         <div class="monitor-card" id="mc-health">
@@ -3411,6 +3534,9 @@ function activityOnToolCall(name, input, serverPct) {
   activityAddEntry('tool-call', icon, '<strong>' + escapeHtml(name) + '</strong> ' + escapeHtml(label));
   const pct = serverPct || Math.min((_activityState.completedTools / Math.max(_activityState.totalTools + 2, 5)) * 85, 85);
   activityUpdateProgress(pct, 'Ejecutando ' + name + '...');
+  
+  // Actualizar estado mental
+  updateMentalState('executing', `Ejecutando herramienta: ${name}`);
 }
 
 function activityOnToolResult(name, output, ok, ms, serverPct) {
@@ -3444,6 +3570,15 @@ function activityOnProgress(name, line, elapsed_s) {
 function activityOnThinking(msg) {
   if (msg.length > 10) {
     activityAddEntry('thinking', '🧠', escapeHtml(msg.substring(0, 150)));
+    
+    // Actualizar estado mental basado en contenido
+    if (msg.toLowerCase().includes('plan') || msg.toLowerCase().includes('estrategia') || msg.toLowerCase().includes('secuencia')) {
+      updateMentalState('planning', msg.substring(0, 100));
+    } else if (msg.toLowerCase().includes('idea') || msg.toLowerCase().includes('desarrollar') || msg.toLowerCase().includes('crear')) {
+      updateMentalState('elaborating', msg.substring(0, 100));
+    } else {
+      updateMentalState('thinking', msg.substring(0, 100));
+    }
   }
 }
 
@@ -3457,6 +3592,9 @@ function activityOnDone(data) {
     '<strong>Tarea completada</strong> — ' + iters + ' iteraciones, ' + tools + ' herramientas, ' + elapsed + 's');
   const fill = document.getElementById('progress-fill');
   if (fill) fill.style.background = 'linear-gradient(90deg, var(--accent-green), var(--accent-cyan))';
+  
+  // Actualizar estado mental a completado
+  updateMentalState('idle', `Tarea completada en ${elapsed}s con ${iters} iteraciones`);
 }
 
 function activityOnError(msg) {
@@ -3464,6 +3602,9 @@ function activityOnError(msg) {
   activityUpdateProgress(0, 'Error');
   const fill = document.getElementById('progress-fill');
   if (fill) { fill.style.width = '100%'; fill.style.background = 'var(--accent-red)'; }
+  
+  // Actualizar estado mental a error
+  updateMentalState('error', msg.substring(0, 100));
 }
 
 // ─── CODE VIEWER ───
@@ -4390,10 +4531,156 @@ let monitorStartTime = null;
 let monitorUptimeTimer = null;
 let monitorAuditEntries = [];
 
+// ─── MENTAL STATE SYSTEM ───
+let mentalStateTimer = null;
+let mentalStateStartTime = null;
+let currentMentalState = 'idle';
+let mentalStateHistory = [];
+
+const MENTAL_STATES = {
+  idle: { icon: '🧠', title: 'Inactivo', color: 'purple', description: 'Esperando instrucciones...' },
+  thinking: { icon: '🤔', title: 'Pensando', color: 'purple', description: 'Analizando el problema y posibles soluciones...' },
+  planning: { icon: '📋', title: 'Planificando', color: 'cyan', description: 'Creando plan de acción y secuencia de pasos...' },
+  executing: { icon: '⚡', title: 'Ejecutando', color: 'green', description: 'Realizando tareas y ejecutando comandos...' },
+  elaborating: { icon: '💡', title: 'Elaborando', color: 'orange', description: 'Desarrollando ideas y generando contenido...' },
+  stuck: { icon: '⚠️', title: 'Atascado', color: 'red', description: 'Detectado posible ciclo o bloqueo, buscando solución...' },
+  waiting: { icon: '⏳', title: 'Esperando', color: 'orange', description: 'Esperando respuesta del sistema o usuario...' },
+  error: { icon: '❌', title: 'Error', color: 'red', description: 'Error detectado, recuperando...' }
+};
+
+function updateMentalState(state, details = '') {
+  const stateInfo = MENTAL_STATES[state] || MENTAL_STATES.idle;
+  currentMentalState = state;
+  
+  // Actualizar elementos UI
+  const rectangle = document.getElementById('mental-state-rectangle');
+  const icon = document.getElementById('mental-state-icon');
+  const title = document.getElementById('mental-state-title');
+  const description = document.getElementById('mental-state-description');
+  const indicator = document.getElementById('mental-state-indicator');
+  const bar = document.getElementById('mental-state-bar');
+  
+  if (rectangle) {
+    rectangle.className = 'mental-state-rectangle ' + state;
+  }
+  
+  if (icon) icon.textContent = stateInfo.icon;
+  if (title) title.textContent = stateInfo.title;
+  if (description) description.textContent = details || stateInfo.description;
+  if (indicator) {
+    indicator.textContent = stateInfo.title.toUpperCase();
+    indicator.className = 'mental-state-indicator ' + state;
+  }
+  
+  // Reiniciar timer si cambia el estado
+  if (state !== 'idle' && state !== 'waiting') {
+    startMentalStateTimer();
+  } else {
+    stopMentalStateTimer();
+  }
+  
+  // Animación de progreso
+  if (bar) {
+    if (state === 'thinking' || state === 'planning' || state === 'elaborating') {
+      animateMentalProgress(bar);
+    } else if (state === 'executing') {
+      bar.style.width = '100%';
+    } else {
+      bar.style.width = '0%';
+    }
+  }
+  
+  // Guardar en historial
+  mentalStateHistory.push({
+    state: state,
+    timestamp: Date.now(),
+    details: details
+  });
+  
+  // Mantener solo últimos 20 estados
+  if (mentalStateHistory.length > 20) {
+    mentalStateHistory.shift();
+  }
+  
+  // Detectar si está atascado
+  detectStuckState();
+}
+
+function startMentalStateTimer() {
+  stopMentalStateTimer();
+  mentalStateStartTime = Date.now();
+  
+  mentalStateTimer = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - mentalStateStartTime) / 1000);
+    const timerEl = document.getElementById('mental-state-timer');
+    if (timerEl) {
+      timerEl.textContent = elapsed + 's';
+    }
+  }, 1000);
+}
+
+function stopMentalStateTimer() {
+  if (mentalStateTimer) {
+    clearInterval(mentalStateTimer);
+    mentalStateTimer = null;
+  }
+  mentalStateStartTime = null;
+  
+  const timerEl = document.getElementById('mental-state-timer');
+  if (timerEl) {
+    timerEl.textContent = '0s';
+  }
+}
+
+function animateMentalProgress(bar) {
+  let progress = 0;
+  let direction = 1;
+  
+  const animate = () => {
+    progress += direction * 2;
+    if (progress >= 100) {
+      progress = 100;
+      direction = -1;
+    } else if (progress <= 0) {
+      progress = 0;
+      direction = 1;
+    }
+    
+    bar.style.width = progress + '%';
+    
+    if (currentMentalState === 'thinking' || currentMentalState === 'planning' || currentMentalState === 'elaborating') {
+      requestAnimationFrame(animate);
+    }
+  };
+  
+  animate();
+}
+
+function detectStuckState() {
+  if (mentalStateHistory.length < 5) return;
+  
+  const recent = mentalStateHistory.slice(-5);
+  const sameStateCount = recent.filter(h => h.state === currentMentalState).length;
+  const elapsed = mentalStateStartTime ? (Date.now() - mentalStateStartTime) / 1000 : 0;
+  
+  // Si está en el mismo estado por más de 30 segundos y no es idle/waiting
+  if (sameStateCount >= 5 && elapsed > 30 && currentMentalState !== 'idle' && currentMentalState !== 'waiting') {
+    updateMentalState('stuck', `Atascado en estado "${currentMentalState}" por ${Math.floor(elapsed)}s`);
+  }
+}
+
+function initMentalState() {
+  updateMentalState('idle');
+}
+
 function initMonitor() {
   if (monitorInitialized) return;
   monitorInitialized = true;
   monitorStartTime = Date.now();
+  
+  // Inicializar sistema de estado mental
+  initMentalState();
+  
   loadMonitorSnapshot();
   connectMonitorSSE();
   monitorUptimeTimer = setInterval(updateMonitorUptime, 1000);
