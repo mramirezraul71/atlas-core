@@ -32,7 +32,8 @@ export default {
 
     _fetchAndRender(container);
 
-    poll(POLL_ID, '/api/bitacora?limit=50', 5000, (data, err) => {
+    // Backend exposes bitácora under /ans/bitacora
+    poll(POLL_ID, '/ans/bitacora?limit=50', 5000, (data, err) => {
       if (data) _renderEntries(container, data);
     });
   },
@@ -46,7 +47,7 @@ export default {
 
 async function _fetchAndRender(container) {
   try {
-    const res = await fetch('/api/bitacora?limit=50');
+    const res = await fetch('/ans/bitacora?limit=50');
     const data = await res.json();
     _renderEntries(container, data);
   } catch (e) {

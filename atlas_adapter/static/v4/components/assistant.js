@@ -21,6 +21,10 @@ let _currentAbort = null;
 let _currentMsgEl = null;
 let _history = [];
 
+const _THREAD_KEY = 'atlas-v4-thread-agent';
+function _getThreadId() { return localStorage.getItem(_THREAD_KEY) || ''; }
+function _setThreadId(tid) { if (tid) localStorage.setItem(_THREAD_KEY, String(tid)); }
+
 export function render(container, params = {}) {
   _container = container;
   container.innerHTML = `
@@ -94,15 +98,24 @@ async function _streamAgent(message) {
   _thread.push(assistantMsg);
   _renderThread();
 
+  const thread_id = _getThreadId();
   const { stream, abort } = sse('/agent/chat', {
     message,
     history: _history.slice(-20),
+    thread_id: thread_id || null,
+    user_id: 'owner',
   });
   _currentAbort = abort;
 
   try {
     for await (const evt of stream) {
+      // Persist thread id whenever it appears (thread event or injected into done/thinking).
+      if (evt && evt.thread_id) _setThreadId(evt.thread_id);
       switch (evt.type) {
+        case 'thread':
+          // Pure thread-id event; UI already persisted above.
+          break;
+
         case 'thinking':
           assistantMsg.thinking.push(evt.text || evt.content || '');
           window.AtlasCompanion?.onAgentThink();
@@ -152,6 +165,10 @@ async function _streamAgent(message) {
 
         case 'error':
           assistantMsg.content += `\n\n**Error:** ${evt.error || evt.message || 'Unknown error'}`;
+          break;
+
+        case 'close':
+          // Server signals stream end.
           break;
       }
       _updateCurrentMsg(assistantMsg);

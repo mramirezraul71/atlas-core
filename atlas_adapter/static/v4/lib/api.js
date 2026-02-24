@@ -56,6 +56,10 @@ export function sse(path, body) {
 
   async function* iterate() {
     const res = await fetchPromise;
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+    }
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -65,15 +69,43 @@ export function sse(path, body) {
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
 
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+      // Parse SSE events: blocks separated by blank line.
+      // Each block may contain: "event: <type>" and one or more "data: <payload>" lines.
+      while (true) {
+        const sep = buffer.indexOf('\n\n');
+        if (sep < 0) break;
+        const block = buffer.slice(0, sep);
+        buffer = buffer.slice(sep + 2);
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data: ')) continue;
-        const json = trimmed.slice(6);
-        if (json === '[DONE]') return;
-        try { yield JSON.parse(json); } catch {}
+        const lines = block.split('\n').map(l => l.replace(/\r$/, ''));
+        let eventType = 'message';
+        const dataLines = [];
+
+        for (const raw of lines) {
+          const line = raw.trimEnd();
+          if (!line) continue;
+          if (line.startsWith('event:')) {
+            eventType = line.slice(6).trim() || 'message';
+            continue;
+          }
+          if (line.startsWith('data:')) {
+            dataLines.push(line.slice(5).trimStart());
+          }
+        }
+
+        if (dataLines.length === 0) continue;
+        const dataText = dataLines.join('\n');
+        if (dataText === '[DONE]') return;
+
+        let payload = dataText;
+        try { payload = JSON.parse(dataText); } catch {}
+
+        if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+          // Spread payload into the event object so callers can access fields directly.
+          yield { type: eventType, ...payload };
+        } else {
+          yield { type: eventType, data: payload };
+        }
       }
     }
   }
