@@ -647,6 +647,31 @@ button { cursor: pointer; font-family: inherit; }
   color: var(--accent);
 }
 
+/* Generic code box */
+.codebox {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* Generic small chip button */
+.chip-btn {
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 12px;
+  transition: all var(--transition);
+}
+.chip-btn:hover { border-color: var(--accent); transform: translateY(-1px); }
+
 /* ═══════════════════════════════════════════
    ANIMATIONS
    ═══════════════════════════════════════════ */

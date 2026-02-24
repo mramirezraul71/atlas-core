@@ -55,6 +55,7 @@ export function render(container) {
         <div class="quick-chip" data-action="workspace">${SVG.workspace} Workspace</div>
         <div class="quick-chip" data-action="bitacora">${SVG.bitacora} Bitacora</div>
         <div class="quick-chip" data-action="config">${SVG.config} AI Config</div>
+        <div class="quick-chip" data-action="autonomy">${SVG.governance} Autonomy</div>
       </div>
 
       <div class="apps-grid">
@@ -69,6 +70,10 @@ export function render(container) {
         <div class="app-tile" data-app="governance">
           <div class="app-tile-icon">${SVG.governance}</div>
           <div class="app-tile-label">Governance</div>
+        </div>
+        <div class="app-tile" data-app="approvals">
+          <div class="app-tile-icon">${SVG.governance}</div>
+          <div class="app-tile-label">Approvals</div>
         </div>
         <div class="app-tile" data-app="monitor">
           <div class="app-tile-icon">${SVG.monitor}</div>
@@ -124,6 +129,7 @@ export function render(container) {
       else if (app === 'workspace-ext') window.open('/workspace', '_blank');
       else if (app === 'trading') { window.AtlasToast?.show('Trading module — coming soon', 'info'); }
       else if (app === 'config-tile') navigate('/module/config');
+      else if (app === 'approvals') navigate('/module/approvals');
       else navigate(`/module/${app}`);
     });
   });

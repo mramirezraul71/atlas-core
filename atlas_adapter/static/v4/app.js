@@ -107,14 +107,32 @@ function _handleRoute() {
 
 async function _loadModules() {
   try {
-    const [h, b, c] = await Promise.all([
+    const [h, b, c, a, p, au, ev, he, me, co, vo, api] = await Promise.all([
       import('./modules/health.js'),
       import('./modules/bitacora.js'),
       import('./modules/config.js'),
+      import('./modules/autonomy.js'),
+      import('./modules/approvals.js'),
+      import('./modules/audit.js'),
+      import('./modules/events.js'),
+      import('./modules/healing.js'),
+      import('./modules/memory.js'),
+      import('./modules/comms.js'),
+      import('./modules/voice.js'),
+      import('./modules/api_explorer.js'),
     ]);
     if (h.default) MODULE_REGISTRY[h.default.id] = h.default;
     if (b.default) MODULE_REGISTRY[b.default.id] = b.default;
     if (c.default) MODULE_REGISTRY[c.default.id] = c.default;
+    if (a.default) MODULE_REGISTRY[a.default.id] = a.default;
+    if (p.default) MODULE_REGISTRY[p.default.id] = p.default;
+    if (au.default) MODULE_REGISTRY[au.default.id] = au.default;
+    if (ev.default) MODULE_REGISTRY[ev.default.id] = ev.default;
+    if (he.default) MODULE_REGISTRY[he.default.id] = he.default;
+    if (me.default) MODULE_REGISTRY[me.default.id] = me.default;
+    if (co.default) MODULE_REGISTRY[co.default.id] = co.default;
+    if (vo.default) MODULE_REGISTRY[vo.default.id] = vo.default;
+    if (api.default) MODULE_REGISTRY[api.default.id] = api.default;
   } catch (e) {
     console.warn('Module load warning:', e);
   }

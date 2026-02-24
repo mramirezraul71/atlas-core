@@ -3747,10 +3747,39 @@ def root_redirect():
 @app.get("/ui")
 def serve_ui():
     """Dashboard: estado, versión, salud, métricas, programador, actualización, despliegue, aprobaciones e interacción con el robot."""
+    # v4 is the canonical dashboard served at /ui
+    path = STATIC_DIR / "v4" / "index.html"
+    if path.exists():
+        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
+    return {"ok": False, "error": "v4/index.html not found"}
+
+
+@app.get("/ui-legacy")
+def serve_ui_legacy():
+    """Emergency rollback: legacy dashboard (hidden behind ATLAS_UI_LEGACY=true)."""
+    from fastapi import HTTPException
+
+    enabled = os.getenv("ATLAS_UI_LEGACY", "false").strip().lower() in ("1", "true", "yes", "y", "on")
+    if not enabled:
+        raise HTTPException(status_code=404, detail="not_found")
     path = STATIC_DIR / "dashboard.html"
     if path.exists():
         return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
     return {"ok": False, "error": "dashboard.html not found"}
+
+
+@app.get("/ui/static/{file_path:path}")
+def serve_ui_static(file_path: str):
+    """Serve v4 static assets under /ui/static/*."""
+    from fastapi import HTTPException
+
+    safe = (file_path or "").replace("..", "").strip("/")
+    path = STATIC_DIR / "v4" / safe
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail=f"ui asset not found: {safe}")
+    ct_map = {".js": "application/javascript", ".css": "text/css", ".html": "text/html", ".json": "application/json", ".svg": "image/svg+xml"}
+    ct = ct_map.get(path.suffix, "application/octet-stream")
+    return FileResponse(path, media_type=ct, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 @app.get("/workspace")
@@ -3764,24 +3793,19 @@ def serve_workspace():
 
 @app.get("/v4")
 def serve_v4():
-    """ATLAS v4 Dashboard — modular, Google-style landing + Perplexity AI assistant."""
-    path = STATIC_DIR / "v4" / "index.html"
-    if path.exists():
-        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
-    return {"ok": False, "error": "v4/index.html not found"}
+    """Back-compat: redirect v4 to canonical /ui."""
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse(url="/ui", status_code=302)
 
 
 @app.get("/v4/static/{file_path:path}")
 def serve_v4_static(file_path: str):
-    """Serve v4 static assets (JS, CSS)."""
-    from fastapi import HTTPException
+    """Back-compat: redirect v4 assets to canonical /ui/static/*."""
+    from fastapi.responses import RedirectResponse
+
     safe = (file_path or "").replace("..", "").strip("/")
-    path = STATIC_DIR / "v4" / safe
-    if not path.exists() or not path.is_file():
-        raise HTTPException(status_code=404, detail=f"v4 asset not found: {safe}")
-    ct_map = {".js": "application/javascript", ".css": "text/css", ".html": "text/html", ".json": "application/json", ".svg": "image/svg+xml"}
-    ct = ct_map.get(path.suffix, "application/octet-stream")
-    return FileResponse(path, media_type=ct, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    return RedirectResponse(url=f"/ui/static/{safe}", status_code=302)
 
 
 @app.get("/nexus")

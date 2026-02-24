@@ -27,13 +27,18 @@ const MENU_ITEMS = [
       { id: 'bitacora', label: 'Bitacora', desc: 'Activity log', icon: 'file-text', route: '/module/bitacora' },
       { id: 'monitor', label: 'Monitor', desc: 'Real-time operations', icon: 'monitor', route: '/module/monitor' },
       { id: 'nervous', label: 'Nervous System', desc: 'Neural state tracking', icon: 'zap', route: '/module/nervous' },
+      { id: 'audit', label: 'Audit Tail', desc: 'Recent audit lines', icon: 'file-text', route: '/module/audit' },
+      { id: 'events', label: 'Event Bus', desc: 'Kernel event history', icon: 'zap', route: '/module/events' },
+      { id: 'healing', label: 'Healing', desc: 'Recent healing actions', icon: 'activity', route: '/module/healing' },
+      { id: 'memory', label: 'Cognitive Memory', desc: 'Memory subsystems status', icon: 'brain', route: '/module/memory' },
     ]
   },
   {
     category: 'Control',
     items: [
-      { id: 'governance', label: 'Governance', desc: 'Policy & autonomy', icon: 'shield', route: '/module/governance' },
-      { id: 'autonomy', label: 'Autonomy', desc: 'Task automation', icon: 'cpu', route: '/module/autonomy' },
+      { id: 'governance', label: 'Governance', desc: 'Policy & autonomy', icon: 'shield', route: '/module/autonomy' },
+      { id: 'autonomy', label: 'Autonomy', desc: 'Daemon, tasks, governance status', icon: 'cpu', route: '/module/autonomy' },
+      { id: 'approvals', label: 'Approvals', desc: 'Pending approvals', icon: 'shield', route: '/module/approvals' },
     ]
   },
   {
@@ -41,6 +46,13 @@ const MENU_ITEMS = [
     items: [
       { id: 'config', label: 'AI Models', desc: 'Provider & model config', icon: 'sliders', route: '/module/config' },
       { id: 'comms', label: 'Communications', desc: 'WhatsApp, Telegram', icon: 'message-circle', route: '/module/comms' },
+      { id: 'voice', label: 'Voice', desc: 'Voice assistant / TTS', icon: 'message-circle', route: '/module/voice' },
+    ]
+  },
+  {
+    category: 'Tools',
+    items: [
+      { id: 'api', label: 'API Explorer', desc: 'Browse/call OpenAPI endpoints', icon: 'code', route: '/module/api' },
     ]
   },
   {
