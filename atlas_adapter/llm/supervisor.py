@@ -67,6 +67,18 @@ FORMATO DE REPORTE:
 [Lo que Raúl necesita saber o decidir]"""
 
 
+def _load_resident_policy_text() -> str:
+    try:
+        from atlas_adapter.supervisor_policy import get_supervisor_policy
+
+        j = get_supervisor_policy()
+        if isinstance(j, dict) and j.get("ok") and (j.get("policy") or "").strip():
+            return str(j.get("policy") or "").strip()
+    except Exception:
+        pass
+    return ""
+
+
 class Supervisor:
     """
     Meta-agent that audits Atlas, investigates with tools, and reports to Owner.
@@ -125,7 +137,16 @@ class Supervisor:
         except Exception:
             thread_memory_text = ""
 
-        prompt = self._build_analysis_prompt(objective, context, snapshot, diagnosis, memory_context, thread_memory_text)
+        resident_policy = _load_resident_policy_text()
+        prompt = self._build_analysis_prompt(
+            objective,
+            context,
+            snapshot,
+            diagnosis,
+            memory_context,
+            thread_memory_text,
+            resident_policy=resident_policy,
+        )
 
         try:
             from atlas_adapter.atlas_http_api import _direct_model_call
@@ -210,9 +231,13 @@ class Supervisor:
         enriched_msg += "Investiga a fondo usando las herramientas disponibles. Lee archivos, consulta endpoints, ejecuta comandos según necesites."
 
         from atlas_adapter.agent_engine import run_agent
+        resident_policy = _load_resident_policy_text()
+        system_prompt = SUPERVISOR_SYSTEM_PROMPT
+        if resident_policy:
+            system_prompt = system_prompt + "\n\n" + "POLÍTICA RESIDENTE DEL SUPERVISOR (obligatoria):\n" + resident_policy
         yield from run_agent(
             enriched_msg,
-            system_prompt=SUPERVISOR_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
         )
 
     def _gather_system_snapshot(self) -> Dict[str, Any]:
@@ -322,9 +347,16 @@ class Supervisor:
             "severity": "critical" if len(issues) > 3 else "warning" if issues else "healthy",
         }
 
-    def _build_analysis_prompt(self, objective: str, context: Dict[str, Any],
-                                snapshot: Dict[str, Any], diagnosis: Dict[str, Any],
-                                memory_context: str = "", thread_memory: str = "") -> str:
+    def _build_analysis_prompt(
+        self,
+        objective: str,
+        context: Dict[str, Any],
+        snapshot: Dict[str, Any],
+        diagnosis: Dict[str, Any],
+        memory_context: str = "",
+        thread_memory: str = "",
+        resident_policy: str = "",
+    ) -> str:
         issues_ctx = context.get("issues", [])
         modules_ctx = context.get("modules", [])
 
@@ -344,6 +376,10 @@ class Supervisor:
         if thread_memory:
             thread_section = "HILO CONVERSACIONAL (resumen+últimos mensajes):\n" + thread_memory + "\n"
 
+        policy_section = ""
+        if resident_policy:
+            policy_section = "\nPOLÍTICA RESIDENTE (obligatoria):\n" + resident_policy + "\n"
+
         return f"""Eres el Supervisor técnico de ATLAS, subordinado al Owner (Raúl).
 
 OBJETIVO DEL OWNER: {objective}
@@ -351,6 +387,7 @@ OBJETIVO DEL OWNER: {objective}
 {f"Módulos de interés: {', '.join(modules_ctx)}" if modules_ctx else ""}
 
 {thread_section}
+{policy_section}
 
 DIAGNÓSTICO AUTOMÁTICO (Severidad: {diagnosis['severity'].upper()}):
 {chr(10).join(diag_lines) if diag_lines else "Sin problemas detectados"}

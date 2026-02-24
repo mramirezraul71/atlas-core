@@ -103,7 +103,8 @@ export function render(container) {
   function submitSearch() {
     const q = searchInput.value.trim();
     if (!q) return;
-    navigate(`/ask?q=${encodeURIComponent(q)}`);
+    // v4 is presentation-only. Send users to the operational dashboard (v3).
+    window.location.href = `/v3`;
   }
 
   searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitSearch(); });
@@ -116,7 +117,7 @@ export function render(container) {
       if (action === 'workspace') {
         window.open('/workspace', '_blank');
       } else {
-        navigate(`/module/${action}`);
+        window.location.href = '/v3';
       }
     });
   });
@@ -125,12 +126,9 @@ export function render(container) {
     tile.addEventListener('click', () => {
       window.AtlasSounds?.click();
       const app = tile.dataset.app;
-      if (app === 'assistant') navigate('/ask');
+      if (app === 'assistant') window.location.href = '/v3';
       else if (app === 'workspace-ext') window.open('/workspace', '_blank');
-      else if (app === 'trading') { window.AtlasToast?.show('Trading module — coming soon', 'info'); }
-      else if (app === 'config-tile') navigate('/module/config');
-      else if (app === 'approvals') navigate('/module/approvals');
-      else navigate(`/module/${app}`);
+      else window.location.href = '/v3';
     });
   });
 

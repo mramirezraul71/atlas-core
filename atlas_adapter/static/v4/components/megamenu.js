@@ -9,56 +9,56 @@ const MENU_ITEMS = [
   {
     category: 'AI & Tools',
     items: [
-      { id: 'assistant', label: 'AI Assistant', desc: 'Chat with Atlas agent', icon: 'brain', route: '/ask' },
+      { id: 'assistant', label: 'AI Assistant', desc: 'Open operational dashboard', icon: 'brain', href: '/ui' },
       { id: 'workspace', label: 'Workspace', desc: 'Agent IDE interface', icon: 'terminal', href: '/workspace' },
-      { id: 'interpreter', label: 'Interpreter', desc: 'Code execution engine', icon: 'code', route: '/module/interpreter' },
+      { id: 'interpreter', label: 'Interpreter', desc: 'Open operational dashboard', icon: 'code', href: '/ui' },
     ]
   },
   {
     category: 'Legacy',
     items: [
-      { id: 'ui-v3', label: 'UI v3 (legacy)', desc: 'Previous dashboard (/ui)', icon: 'layout', href: '/ui' },
+      { id: 'ui-v3', label: 'Dashboard', desc: 'Operational UI (/ui)', icon: 'layout', href: '/ui' },
     ]
   },
   {
     category: 'Monitoring',
     items: [
-      { id: 'health', label: 'System Health', desc: 'CPU, memory, services', icon: 'activity', route: '/module/health' },
-      { id: 'bitacora', label: 'Bitacora', desc: 'Activity log', icon: 'file-text', route: '/module/bitacora' },
-      { id: 'monitor', label: 'Monitor', desc: 'Real-time operations', icon: 'monitor', route: '/module/monitor' },
-      { id: 'nervous', label: 'Nervous System', desc: 'Neural state tracking', icon: 'zap', route: '/module/nervous' },
-      { id: 'audit', label: 'Audit Tail', desc: 'Recent audit lines', icon: 'file-text', route: '/module/audit' },
-      { id: 'events', label: 'Event Bus', desc: 'Kernel event history', icon: 'zap', route: '/module/events' },
-      { id: 'healing', label: 'Healing', desc: 'Recent healing actions', icon: 'activity', route: '/module/healing' },
-      { id: 'memory', label: 'Cognitive Memory', desc: 'Memory subsystems status', icon: 'brain', route: '/module/memory' },
+      { id: 'health', label: 'System Health', desc: 'Open operational dashboard', icon: 'activity', href: '/ui' },
+      { id: 'bitacora', label: 'Bitacora', desc: 'Open operational dashboard', icon: 'file-text', href: '/ui' },
+      { id: 'monitor', label: 'Monitor', desc: 'Open operational dashboard', icon: 'monitor', href: '/ui' },
+      { id: 'nervous', label: 'Nervous System', desc: 'Open operational dashboard', icon: 'zap', href: '/ui' },
+      { id: 'audit', label: 'Audit Tail', desc: 'Open operational dashboard', icon: 'file-text', href: '/ui' },
+      { id: 'events', label: 'Event Bus', desc: 'Open operational dashboard', icon: 'zap', href: '/ui' },
+      { id: 'healing', label: 'Healing', desc: 'Open operational dashboard', icon: 'activity', href: '/ui' },
+      { id: 'memory', label: 'Cognitive Memory', desc: 'Open operational dashboard', icon: 'brain', href: '/ui' },
     ]
   },
   {
     category: 'Control',
     items: [
-      { id: 'governance', label: 'Governance', desc: 'Policy & autonomy', icon: 'shield', route: '/module/autonomy' },
-      { id: 'autonomy', label: 'Autonomy', desc: 'Daemon, tasks, governance status', icon: 'cpu', route: '/module/autonomy' },
-      { id: 'approvals', label: 'Approvals', desc: 'Pending approvals', icon: 'shield', route: '/module/approvals' },
+      { id: 'governance', label: 'Governance', desc: 'Open operational dashboard', icon: 'shield', href: '/ui' },
+      { id: 'autonomy', label: 'Autonomy', desc: 'Open operational dashboard', icon: 'cpu', href: '/ui' },
+      { id: 'approvals', label: 'Approvals', desc: 'Open operational dashboard', icon: 'shield', href: '/ui' },
     ]
   },
   {
     category: 'Configuration',
     items: [
-      { id: 'config', label: 'AI Models', desc: 'Provider & model config', icon: 'sliders', route: '/module/config' },
-      { id: 'comms', label: 'Communications', desc: 'WhatsApp, Telegram', icon: 'message-circle', route: '/module/comms' },
-      { id: 'voice', label: 'Voice', desc: 'Voice assistant / TTS', icon: 'message-circle', route: '/module/voice' },
+      { id: 'config', label: 'AI Models', desc: 'Open operational dashboard', icon: 'sliders', href: '/ui' },
+      { id: 'comms', label: 'Communications', desc: 'Open operational dashboard', icon: 'message-circle', href: '/ui' },
+      { id: 'voice', label: 'Voice', desc: 'Open operational dashboard', icon: 'message-circle', href: '/ui' },
     ]
   },
   {
     category: 'Tools',
     items: [
-      { id: 'api', label: 'API Explorer', desc: 'Browse/call OpenAPI endpoints', icon: 'code', route: '/module/api' },
+      { id: 'api', label: 'API Explorer', desc: 'Open operational dashboard', icon: 'code', href: '/ui' },
     ]
   },
   {
     category: 'Apps',
     items: [
-      { id: 'trading', label: 'Trading', desc: 'Market analysis (coming soon)', icon: 'trending-up', route: '/module/trading', badge: 'Soon' },
+      { id: 'trading', label: 'Trading', desc: 'Open operational dashboard', icon: 'trending-up', href: '/ui', badge: 'Soon' },
     ]
   },
 ];

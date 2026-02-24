@@ -1379,6 +1379,7 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
         SUPERVISOR LLM
         <span class="badge" style="background:var(--accent-purple)">AI Advisor</span>
+        <span class="badge" id="supervisor-daemon-status" style="margin-left:auto;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-muted)">daemon: --</span>
       </div>
 
       <div class="chat-messages" id="supervisor-messages">
@@ -1408,6 +1409,15 @@
         <div style="padding:8px 12px;background:var(--bg-elevated);border-radius:6px;margin-bottom:8px;">
           <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">OBJETIVO</label>
           <textarea class="chat-textarea" id="supervisor-objective" placeholder="Ej: Revisar módulos activos y proponer próximos pasos" rows="2" style="margin-bottom:8px;"></textarea>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 10px 0;">
+            <button class="chat-send" onclick="saveSupervisorPolicyFromObjective()" style="padding:6px 10px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text);font-size:12px;">
+              Guardar política
+            </button>
+            <button class="chat-send" onclick="loadSupervisorPolicyIntoObjective()" style="padding:6px 10px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text);font-size:12px;">
+              Cargar política
+            </button>
+            <span id="supervisor-policy-status" style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;"></span>
+          </div>
           
           <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">CONTEXTO (opcional)</label>
           <div style="display:flex;gap:6px;margin-bottom:6px;">
@@ -1858,6 +1868,11 @@ document.addEventListener('DOMContentLoaded', () => {
   initViewSwitcher();
   checkServices();
   setInterval(checkServices, 15000);
+  // Supervisor resident daemon heartbeat
+  refreshSupervisorDaemonStatus();
+  setInterval(refreshSupervisorDaemonStatus, 15000);
+  // Supervisor resident policy (best-effort)
+  loadSupervisorPolicy();
 
   emitLive('info', '<strong>CASCADE Workspace iniciado</strong> — Esperando instrucciones');
   document.getElementById('chat-input').focus();
@@ -1891,6 +1906,8 @@ function switchView(view) {
     panelAgent.style.display = 'flex';
   } else if (view === 'supervisor') {
     panelSupervisor.style.display = 'flex';
+    // Pull resident daemon status immediately when opening Supervisor view
+    refreshSupervisorDaemonStatus();
   } else if (view === 'interpreter') {
     if (panelInterpreter) panelInterpreter.style.display = 'flex';
     loadInterpModels();
@@ -1905,6 +1922,151 @@ function switchView(view) {
 window.__autorunMode = 'guarded'; // 'guarded' or 'full'
 window.__pendingHighSteps = [];
 window.__currentPlan = null;
+window.__lastSupervisorHandoffPrompt = '';
+window.__residentSupervisorPolicy = '';
+
+function looksLikeSupervisorPolicy(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  const head = t.slice(0, 900).toLowerCase();
+  const hasSignature =
+    head.includes('supervisor residente') ||
+    head.includes('no eres un chatbot pasivo') ||
+    head.includes('tu misión es') ||
+    head.includes('cero errores');
+  const hasSections = head.includes('objetivo principal') && head.includes('monitoreo continuo');
+  return (hasSignature && hasSections) || (hasSignature && t.length > 800);
+}
+
+function _setPolicyStatus(msg, ok) {
+  const el = document.getElementById('supervisor-policy-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.color = ok ? 'var(--accent-green)' : 'var(--accent-orange)';
+}
+
+async function loadSupervisorPolicy() {
+  try {
+    const r = await fetch(API + '/supervisor/policy', { cache: 'no-store' });
+    const j = await r.json();
+    if (j && j.ok) {
+      window.__residentSupervisorPolicy = String(j.policy || '').trim();
+      if (window.__residentSupervisorPolicy) {
+        const dt = j.updated_at ? new Date(j.updated_at * 1000) : null;
+        _setPolicyStatus('Política activa' + (dt ? (' · ' + dt.toLocaleString('es-ES')) : ''), true);
+      } else {
+        _setPolicyStatus('Sin política guardada', false);
+      }
+      return window.__residentSupervisorPolicy;
+    }
+  } catch (_) {}
+  _setPolicyStatus('No se pudo cargar política', false);
+  return '';
+}
+
+async function saveSupervisorPolicy(policyText) {
+  const txt = String(policyText || '').trim();
+  if (!txt) { _setPolicyStatus('Política vacía', false); return { ok: false }; }
+  try {
+    const r = await fetch(API + '/supervisor/policy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ policy: txt })
+    });
+    const j = await r.json();
+    if (j && j.ok) {
+      window.__residentSupervisorPolicy = String(j.policy || '').trim();
+      _setPolicyStatus('Política guardada', true);
+      addSupervisorMessage('supervisor', '<div style="color:var(--accent-green);font-size:12px;"><strong>OK:</strong> Política residente guardada. Se aplicará automáticamente al Supervisor y al Daemon.</div>');
+      return j;
+    }
+  } catch (e) {}
+  _setPolicyStatus('Error guardando política', false);
+  addSupervisorMessage('supervisor', '<div style="color:var(--accent-red);font-size:12px;"><strong>Error:</strong> no se pudo guardar la política.</div>');
+  return { ok: false };
+}
+
+async function saveSupervisorPolicyFromObjective() {
+  const objective = document.getElementById('supervisor-objective').value.trim();
+  await saveSupervisorPolicy(objective);
+}
+
+async function loadSupervisorPolicyIntoObjective() {
+  const txt = await loadSupervisorPolicy();
+  if (txt) {
+    document.getElementById('supervisor-objective').value = txt;
+    document.getElementById('supervisor-objective').focus();
+  }
+}
+
+function buildAgentHandoffPrompt(objective, context, diagnosis, analysis, actions) {
+  const issues = (diagnosis && diagnosis.issues) ? diagnosis.issues : [];
+  const warns = (diagnosis && diagnosis.warnings) ? diagnosis.warnings : [];
+  const sev = String((diagnosis && diagnosis.severity) || 'unknown').toUpperCase();
+
+  let txt = '';
+  txt += 'ROL: Eres ATLAS (AGENTE). Ejecuta con evidencia.\n';
+  txt += 'REGLAS:\n';
+  txt += '- No hagas commit/push sin autorización explícita.\n';
+  txt += '- Si algo falla, no repitas en bucle: cambia de enfoque y reporta.\n';
+  txt += '- Prioriza estabilidad del sistema y cambios mínimos.\n\n';
+  txt += 'OBJETIVO (Owner en lenguaje natural):\n' + String(objective || '').trim() + '\n\n';
+  if (context && (context.issues?.length || context.modules?.length)) {
+    txt += 'CONTEXTO:\n';
+    if (context.issues?.length) txt += '- issues: ' + context.issues.join(', ') + '\n';
+    if (context.modules?.length) txt += '- modules: ' + context.modules.join(', ') + '\n';
+    txt += '\n';
+  }
+  txt += 'DIAGNÓSTICO SUPERVISOR (severidad: ' + sev + '):\n';
+  if (Array.isArray(issues) && issues.length) issues.slice(0, 8).forEach(i => { txt += '- ISSUE: ' + i + '\n'; });
+  if (Array.isArray(warns) && warns.length) warns.slice(0, 8).forEach(w => { txt += '- WARN: ' + w + '\n'; });
+  txt += '\n';
+
+  if (analysis) {
+    txt += 'ANÁLISIS (resumen Supervisor):\n' + String(analysis).trim().slice(0, 1600) + '\n\n';
+  }
+
+  const execActions = Array.isArray(actions) ? actions.filter(a => a && a.execute) : [];
+  if (execActions.length) {
+    txt += 'ACCIONES PROPUESTAS (si aplican):\n';
+    execActions.slice(0, 8).forEach((a, idx) => {
+      const risk = String(a.risk || 'low').toLowerCase();
+      const desc = String(a.description || '').trim();
+      const exe = String(a.execute || '').trim();
+      txt += (idx + 1) + '. [' + risk + '] ' + desc + '\n';
+      txt += '   EXECUTE: ' + exe + '\n';
+    });
+    txt += '\n';
+  }
+
+  txt += 'ENTREGABLE:\n';
+  txt += '- PASO A PASO con qué cambiaste y cómo verificar.\n';
+  txt += '- Evidencia: endpoints/logs/archivos tocados.\n';
+  return txt;
+}
+
+async function handoffSupervisorToAgent() {
+  const prompt = String(window.__lastSupervisorHandoffPrompt || '').trim();
+  if (!prompt) { alert('No hay handoff prompt aún. Primero consulta al Supervisor.'); return; }
+
+  // Cambiar a vista del Agente
+  switchView('chat');
+  document.querySelectorAll('.topbar-btn[data-view]').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector('.topbar-btn[data-view="chat"]');
+  if (btn) btn.classList.add('active');
+
+  // Forzar modo "auto" para ver al Agente trabajar (stream)
+  const modeSel = document.getElementById('agent-mode');
+  if (modeSel) modeSel.value = 'auto';
+
+  const input = document.getElementById('chat-input');
+  input.value = prompt;
+  input.dispatchEvent(new Event('input'));
+  input.focus();
+
+  // Ejecutar inmediatamente (usa el mismo pipeline del agente)
+  await sendMessage();
+}
 
 async function askSupervisor() {
   const objective = document.getElementById('supervisor-objective').value.trim();
@@ -1912,6 +2074,13 @@ async function askSupervisor() {
   const modulesInput = document.getElementById('supervisor-modules').value.trim();
 
   if (!objective) { alert('Ingresa un objetivo para el Supervisor'); return; }
+  // Si el Owner pegó la política aquí, GUÁRDALA en vez de consultarla como objetivo.
+  if (looksLikeSupervisorPolicy(objective)) {
+    addSupervisorMessage('user', '[Guardar política residente]');
+    await saveSupervisorPolicy(objective);
+    document.getElementById('supervisor-objective').value = '';
+    return;
+  }
 
   const issues = issuesInput ? issuesInput.split(',').map(s => s.trim()).filter(Boolean) : [];
   const modules = modulesInput ? modulesInput.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -2003,14 +2172,25 @@ async function askSupervisor() {
       addSupervisorMessage('supervisor', actionsHtml);
 
       const execActions = actions.filter(a => a.execute);
-      if (execActions.length > 0) {
-        const plan = { steps: execActions.map((a, i) => ({
-          id: 's' + (i + 1), risk: a.risk || 'low', type: 'terminal',
-          cmd: a.execute
-        })) };
-        renderSupervisorPlan(plan);
-        await executePlan(plan);
-      }
+      // NO auto-ejecutar comandos desde Supervisor.
+      // Handoff: Supervisor → Agente (para que el Owner vea al Agente trabajar en vivo).
+      window.__lastSupervisorHandoffPrompt = buildAgentHandoffPrompt(objective, context, diagnosis, analysis, actions);
+      const handoffHtml = `
+        <div style="margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:8px;background:rgba(57,211,196,0.06);">
+          <div style="font-size:12px;font-weight:700;color:var(--accent-cyan);margin-bottom:6px;">SUPERVISOR → AGENTE</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
+            Te traduzco tu pedido a un prompt técnico y se lo envío al Agente para ejecución en vivo.
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="chat-send" onclick="handoffSupervisorToAgent()" style="padding:8px 12px;gap:6px;justify-content:center;min-width:240px;">
+              ▶ Enviar al Agente y ejecutar
+            </button>
+            <button class="chat-send" onclick="navigator.clipboard.writeText(window.__lastSupervisorHandoffPrompt||'');" style="padding:8px 12px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text);">
+              Copiar prompt
+            </button>
+          </div>
+        </div>`;
+      addSupervisorMessage('supervisor', handoffHtml);
     }
 
     if (ttsEnabled && analysis) speakSupervisor(analysis.substring(0, 300));
@@ -2023,6 +2203,30 @@ async function askSupervisor() {
     thoughtSetError(thinkId);
     thoughtSetTitle(thinkId, 'Error de conexión');
     addSupervisorMessage('supervisor', '<strong style="color:var(--accent-red);">Error de conexión:</strong> ' + escapeHtml(error.message));
+  }
+}
+
+// ─── Supervisor resident daemon status (auto) ───
+async function refreshSupervisorDaemonStatus() {
+  try {
+    const r = await fetch(API + '/supervisor/daemon/status', { cache: 'no-store' });
+    const j = await r.json();
+    const el = document.getElementById('supervisor-daemon-status');
+    if (!el) return;
+    if (!j || j.ok === false) {
+      el.textContent = 'daemon: OFFLINE';
+      el.style.color = 'var(--accent-red)';
+      return;
+    }
+    const d = (j.data || {});
+    const running = !!d.running;
+    const enabled = !!d.enabled;
+    const sev = String(d.last_severity || 'unknown').toUpperCase();
+    el.textContent = `daemon: ${running ? 'RUNNING' : 'STOPPED'} · enabled:${enabled ? 'yes' : 'no'} · last:${sev}`;
+    el.style.color = running ? 'var(--accent-green)' : 'var(--text-muted)';
+  } catch (e) {
+    const el = document.getElementById('supervisor-daemon-status');
+    if (el) { el.textContent = 'daemon: OFFLINE'; el.style.color = 'var(--accent-red)'; }
   }
 }
 

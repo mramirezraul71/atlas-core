@@ -2881,6 +2881,40 @@
     let sessionStartTime = Date.now();
     let unreadCount = 0;
 
+    // Persistencia local (evita "reinicios" aparentes al salir/volver)
+    const _BITACORA_STATE_KEY = 'atlas-v3-bitacora-state';
+    let _bitacoraSaveTimer = null;
+    function _loadBitacoraState() {
+      try {
+        const raw = localStorage.getItem(_BITACORA_STATE_KEY);
+        if (!raw) return;
+        const st = JSON.parse(raw);
+        if (!st || typeof st !== 'object') return;
+        if (typeof st.sessionStartTime === 'number' && st.sessionStartTime > 0) {
+          sessionStartTime = st.sessionStartTime;
+        }
+        if (typeof st.bitacoraFilter === 'string' && st.bitacoraFilter) {
+          bitacoraFilter = st.bitacoraFilter;
+        }
+        if (Array.isArray(st.bitacoraLog)) {
+          // Limitar tamaño por seguridad
+          bitacoraLog = st.bitacoraLog.slice(0, 200);
+        }
+      } catch (e) {}
+    }
+    function _scheduleSaveBitacoraState() {
+      try { if (_bitacoraSaveTimer) clearTimeout(_bitacoraSaveTimer); } catch (e) {}
+      _bitacoraSaveTimer = setTimeout(() => {
+        try {
+          localStorage.setItem(_BITACORA_STATE_KEY, JSON.stringify({
+            sessionStartTime,
+            bitacoraFilter,
+            bitacoraLog: Array.isArray(bitacoraLog) ? bitacoraLog.slice(0, 200) : [],
+          }));
+        } catch (e) {}
+      }, 500);
+    }
+
     let _prevRobotOnline = null;
     let _prevRobotMods = {};
     async function updateMiniRobot() {
@@ -3765,6 +3799,7 @@
 
       renderBitacora();
       updateBitacoraStats();
+      _scheduleSaveBitacoraState();
 
       if (SPEAK_TYPES.includes(type) || SPEAK_SOURCES.includes(source) || needsApproval) {
         atlasSpeak(message);
@@ -3908,10 +3943,32 @@
         renderBitacora();
         updateBitacoraStats();
         addToBitacora('Bitácora limpiada', 'info', 'system');
+        _scheduleSaveBitacoraState();
       }
     }
     
     function initBitacora() {
+      // Evitar reinicializaciones (intervalos duplicados / "reinicios" aparentes)
+      if (window.__atlasV3BitacoraInitialized) return;
+      window.__atlasV3BitacoraInitialized = true;
+
+      // Restaurar estado persistido (sesión, filtro, log)
+      _loadBitacoraState();
+      renderBitacora();
+      updateBitacoraStats();
+      document.querySelectorAll('.bitacora-filter').forEach(b => {
+        const f = b.getAttribute('data-filter') || '';
+        b.classList.toggle('active', f === bitacoraFilter);
+      });
+
+      // Track intervals (para no duplicar en re-entradas)
+      const _intervals = (window.__atlasV3Intervals ||= []);
+      const every = (fn, ms) => {
+        const id = setInterval(fn, ms);
+        _intervals.push(id);
+        return id;
+      };
+
       // Event listeners para filtros
       document.querySelectorAll('.bitacora-filter').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -3919,11 +3976,12 @@
           btn.classList.add('active');
           bitacoraFilter = btn.getAttribute('data-filter');
           renderBitacora();
+          _scheduleSaveBitacoraState();
         });
       });
       
       // Actualizar tiempo de sesión cada segundo
-      setInterval(updateBitacoraStats, 1000);
+      every(updateBitacoraStats, 1000);
       
       // Cargar bitácora del servidor
       loadBitacoraFromServer();
@@ -3932,48 +3990,50 @@
       pollPendingApprovals();
       
       // Polling para nuevas entradas cada 15 segundos
-      setInterval(pollBitacora, 5000);
+      every(pollBitacora, 5000);
 
       // Polling de aprobaciones pendientes cada 10 segundos
-      setInterval(pollPendingApprovals, 3000);
+      every(pollPendingApprovals, 3000);
 
       // Polling Telegram/WhatsApp cada 20 segundos
       pollComms();
-      setInterval(pollComms, 8000);
+      every(pollComms, 8000);
 
       // Polling centralizado: todos los sistemas vitales
       setTimeout(pollAllSystems, 3000);
-      setInterval(pollAllSystems, 10000);
+      every(pollAllSystems, 10000);
 
       // Kernel Event Bus: eventos internos
       pollEventBus();
-      setInterval(pollEventBus, 8000);
+      every(pollEventBus, 8000);
 
       // Audit trail
       pollAudit();
-      setInterval(pollAudit, 15000);
+      every(pollAudit, 15000);
 
       // Healing / anomalias
       pollHealing();
-      setInterval(pollHealing, 20000);
+      every(pollHealing, 20000);
 
       // Cognitive Memory systems status
       pollCognitiveMemory();
-      setInterval(pollCognitiveMemory, 30000);
+      every(pollCognitiveMemory, 30000);
 
-      // Reactor autonomo
-      pollReactor();
-      setInterval(pollReactor, 20000);
+      // Reactor: NO ejecutar automáticamente en bucle (evita side-effects).
+      // Se dispara desde pollCognitiveMemory() cuando detecta fallos.
 
       // Autonomia (cada 10s)
       loadAutonomia();
-      setInterval(loadAutonomia, 5000);
+      every(loadAutonomia, 5000);
       loadAggressiveConfig();
-      setInterval(loadAggressiveConfig, 8000);
+      every(loadAggressiveConfig, 8000);
 
       // Entrada inicial
-      addToBitacora('Sistema ATLAS iniciado', 'success', 'system');
-      addToBitacora(`Dashboard v${ATLAS_VERSION} cargado`, 'info', 'system');
+      if (!Array.isArray(bitacoraLog) || bitacoraLog.length === 0) {
+        addToBitacora('Sistema ATLAS iniciado', 'success', 'system');
+        addToBitacora(`Dashboard v${ATLAS_VERSION} cargado`, 'info', 'system');
+      }
+      _scheduleSaveBitacoraState();
 
       // Saludo de voz al cargar
       setTimeout(() => atlasSpeak('Atlas en linea. Dashboard cargado.'), 1500);

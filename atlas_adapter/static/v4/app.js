@@ -42,12 +42,14 @@ function _buildTopbar(app) {
       <span class="topbar-version" id="topbar-version">v4.0</span>
       <button class="topbar-btn" id="btn-theme" title="Change theme">${SVG.theme}</button>
       <button class="topbar-btn" id="btn-home" title="Home">${SVG.home}</button>
-      <button class="topbar-btn" id="btn-menu" title="Menu">${SVG.menu}</button>
+      <button class="topbar-btn" id="btn-dashboard" title="Open Dashboard" style="font-weight:600;padding:8px 10px">Dashboard</button>
+      <button class="topbar-btn" id="btn-workspace" title="Open Workspace" style="font-weight:600;padding:8px 10px">Workspace</button>
     </div>
   `;
   app.appendChild(bar);
 
-  bar.querySelector('#btn-menu').addEventListener('click', () => window.AtlasMegaMenu?.toggle());
+  bar.querySelector('#btn-dashboard')?.addEventListener('click', () => { window.location.href = '/v3'; });
+  bar.querySelector('#btn-workspace')?.addEventListener('click', () => { window.location.href = '/workspace'; });
   bar.querySelector('#btn-home').addEventListener('click', () => { location.hash = '/'; });
   bar.querySelector('#btn-theme').addEventListener('click', _cycleTheme);
   bar.querySelector('#topbar-logo').addEventListener('click', () => { location.hash = '/'; });
@@ -65,103 +67,30 @@ function _clearView() {
 }
 
 function _handleRoute() {
-  window.AtlasMegaMenu?.close();
   const hash = (location.hash.slice(1) || '/').split('?')[0];
-  window.AtlasCompanion?.onNavigate(hash);
+  window.AtlasCompanion?.onNavigate?.(hash);
+
+  // Landing-only: any deep link should go to the operational dashboard (v3).
+  if (hash && hash !== '/' && hash !== '') {
+    window.location.href = '/v3';
+    return;
+  }
   const v = _clearView();
   if (!v) return;
 
-  if (hash === '/' || hash === '') {
-    const cleanup = window.AtlasLanding?.render(v);
-    if (typeof cleanup === 'function') _currentCleanup = cleanup;
-    return;
-  }
-
-  if (hash === '/ask') {
-    const q = new URLSearchParams(location.hash.split('?')[1] || '').get('q');
-    const cleanup = window.AtlasAssistant?.render(v, { q: q || '' });
-    if (typeof cleanup === 'function') _currentCleanup = cleanup;
-    return;
-  }
-
-  const moduleMatch = hash.match(/^\/module\/(.+)$/);
-  if (moduleMatch) {
-    const modId = moduleMatch[1];
-    const mod = MODULE_REGISTRY[modId];
-    if (mod) {
-      mod.render(v);
-      _currentCleanup = () => { if (mod.destroy) mod.destroy(); };
-    } else {
-      v.innerHTML = `<div class="module-view"><div class="module-header">
-        <button class="back-btn" onclick="location.hash='/'"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Home</button>
-        <h2>${_esc(modId)}</h2></div>
-        <div class="module-body"><p style="color:var(--text-muted)">Module "${_esc(modId)}" will be available in a future update.</p></div></div>`;
-    }
-    return;
-  }
-
-  v.innerHTML = `<div class="module-view" style="display:flex;align-items:center;justify-content:center;height:80vh">
-    <div style="text-align:center;color:var(--text-muted)"><p style="font-size:48px;margin-bottom:16px">404</p><p>Page not found</p>
-    <button class="back-btn" onclick="location.hash=''" style="margin-top:16px;display:inline-flex">Go Home</button></div></div>`;
+  const cleanup = window.AtlasLanding?.render(v);
+  if (typeof cleanup === 'function') _currentCleanup = cleanup;
 }
 
 async function _loadModules() {
-  try {
-    const [h, b, c, a, p, au, ev, he, me, co, vo, api] = await Promise.all([
-      import('./modules/health.js'),
-      import('./modules/bitacora.js'),
-      import('./modules/config.js'),
-      import('./modules/autonomy.js'),
-      import('./modules/approvals.js'),
-      import('./modules/audit.js'),
-      import('./modules/events.js'),
-      import('./modules/healing.js'),
-      import('./modules/memory.js'),
-      import('./modules/comms.js'),
-      import('./modules/voice.js'),
-      import('./modules/api_explorer.js'),
-    ]);
-    if (h.default) MODULE_REGISTRY[h.default.id] = h.default;
-    if (b.default) MODULE_REGISTRY[b.default.id] = b.default;
-    if (c.default) MODULE_REGISTRY[c.default.id] = c.default;
-    if (a.default) MODULE_REGISTRY[a.default.id] = a.default;
-    if (p.default) MODULE_REGISTRY[p.default.id] = p.default;
-    if (au.default) MODULE_REGISTRY[au.default.id] = au.default;
-    if (ev.default) MODULE_REGISTRY[ev.default.id] = ev.default;
-    if (he.default) MODULE_REGISTRY[he.default.id] = he.default;
-    if (me.default) MODULE_REGISTRY[me.default.id] = me.default;
-    if (co.default) MODULE_REGISTRY[co.default.id] = co.default;
-    if (vo.default) MODULE_REGISTRY[vo.default.id] = vo.default;
-    if (api.default) MODULE_REGISTRY[api.default.id] = api.default;
-  } catch (e) {
-    console.warn('Module load warning:', e);
-  }
+  // Landing-only.
+  return;
 }
 
 function _startHealthPolling() {
-  setInterval(async () => {
-    try {
-      const res = await fetch('/health');
-      const data = await res.json();
-      const dot = document.getElementById('topbar-dot');
-      if (dot) dot.className = 'topbar-health-dot' + (data.ok ? '' : ' warn');
-      window.AtlasState?.set('health', data);
-      if (data.version) {
-        const el = document.getElementById('topbar-version');
-        if (el) el.textContent = data.version;
-      }
-    } catch {}
-  }, 10000);
-
-  fetch('/health').then(r => r.json()).then(data => {
-    window.AtlasState?.set('health', data);
-    const dot = document.getElementById('topbar-dot');
-    if (dot) dot.className = 'topbar-health-dot' + (data.ok ? '' : ' warn');
-    if (data.version) {
-      const el = document.getElementById('topbar-version');
-      if (el) el.textContent = data.version;
-    }
-  }).catch(() => {});
+  // Landing-only: keep dot green without polling.
+  const dot = document.getElementById('topbar-dot');
+  if (dot) dot.className = 'topbar-health-dot';
 }
 
 async function main() {
@@ -176,13 +105,13 @@ async function main() {
   app.innerHTML = '';
 
   _buildTopbar(app);
-  window.AtlasMegaMenu?.mount(app);
+  // No mega menu on landing-only.
 
   const viewContainer = document.createElement('main');
   viewContainer.id = 'app-view';
   app.appendChild(viewContainer);
 
-  window.AtlasCompanion?.mount(app);
+  window.AtlasCompanion?.mount?.(app);
 
   window.addEventListener('hashchange', _handleRoute);
   _handleRoute();

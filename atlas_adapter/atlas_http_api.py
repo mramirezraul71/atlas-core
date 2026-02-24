@@ -332,7 +332,20 @@ async def _lifespan(app):
         asyncio.create_task(_metrics_loop())
     except Exception:
         pass
+    # Supervisor residente: monitoreo continuo + directivas internas + notificación a Owner
+    try:
+        if not safe_startup:
+            from atlas_adapter.supervisor_daemon import start_supervisor_daemon
+            await start_supervisor_daemon()
+    except Exception:
+        pass
     yield
+    # Shutdown: detener supervisor residente (best-effort)
+    try:
+        from atlas_adapter.supervisor_daemon import stop_supervisor_daemon
+        await stop_supervisor_daemon()
+    except Exception:
+        pass
 
 
 app = FastAPI(
@@ -911,6 +924,29 @@ def supervisor_advise(payload: dict):
         }
 
 
+@app.get("/supervisor/policy", tags=["LLM Supervisor"])
+def supervisor_policy_get():
+    """Política residente del Supervisor (persistida localmente en logs/)."""
+    try:
+        from atlas_adapter.supervisor_policy import get_supervisor_policy
+
+        return get_supervisor_policy()
+    except Exception as e:
+        return {"ok": False, "policy": "", "updated_at": 0.0, "error": str(e)[:200]}
+
+
+@app.post("/supervisor/policy", tags=["LLM Supervisor"])
+def supervisor_policy_post(payload: dict):
+    """Guarda política residente del Supervisor (persistida localmente en logs/)."""
+    try:
+        from atlas_adapter.supervisor_policy import set_supervisor_policy
+
+        policy = payload.get("policy", "")
+        return set_supervisor_policy(str(policy))
+    except Exception as e:
+        return {"ok": False, "policy": "", "updated_at": 0.0, "error": str(e)[:200]}
+
+
 @app.post("/supervisor/investigate", tags=["LLM Supervisor"])
 def supervisor_investigate(payload: dict):
     """
@@ -976,6 +1012,26 @@ def supervisor_investigate(payload: dict):
         yield "event: close\ndata: {}\n\n"
 
     return StreamingResponse(_sse_gen(), media_type="text/event-stream")
+
+
+@app.get("/supervisor/daemon/status", tags=["LLM Supervisor"])
+def supervisor_daemon_status():
+    """Estado del Supervisor residente (daemon)."""
+    try:
+        from atlas_adapter.supervisor_daemon import get_supervisor_daemon
+        return get_supervisor_daemon().status()
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200], "data": {}}
+
+
+@app.get("/supervisor/directives", tags=["LLM Supervisor"])
+def supervisor_directives(status: str = "", limit: int = 50):
+    """Cola de directivas internas del Supervisor (persistidas en autonomy_tasks.db)."""
+    try:
+        from atlas_adapter.supervisor_daemon import list_supervisor_directives
+        return {"ok": True, "data": list_supervisor_directives(status=status or None, limit=limit)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200], "data": []}
 
 
 @app.get("/api/brain/credentials/status", tags=["Cerebro"])
@@ -3741,22 +3797,32 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 def root_redirect():
     """Redirige a /ui para que el dashboard cargue desde el mismo servidor que expone /api."""
     from fastapi.responses import RedirectResponse
+    # Default entrypoint: /ui is the v4 landing (presentation).
     return RedirectResponse(url="/ui", status_code=302)
 
 
 @app.get("/ui")
 def serve_ui():
     """Dashboard: estado, versión, salud, métricas, programador, actualización, despliegue, aprobaciones e interacción con el robot."""
-    # v4 is the canonical dashboard served at /ui
+    # v4 landing is canonical at /ui (presentation)
     path = STATIC_DIR / "v4" / "index.html"
     if path.exists():
         return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
     return {"ok": False, "error": "v4/index.html not found"}
 
 
+@app.get("/v3")
+def serve_v3():
+    """Legacy dashboard v3.8.0 (operational UI)."""
+    path = STATIC_DIR / "dashboard.html"
+    if path.exists():
+        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
+    return {"ok": False, "error": "dashboard.html not found"}
+
+
 @app.get("/ui-legacy")
 def serve_ui_legacy():
-    """Emergency rollback: legacy dashboard (hidden behind ATLAS_UI_LEGACY=true)."""
+    """Emergency alias for legacy dashboard (kept behind ATLAS_UI_LEGACY=true)."""
     from fastapi import HTTPException
 
     enabled = os.getenv("ATLAS_UI_LEGACY", "false").strip().lower() in ("1", "true", "yes", "y", "on")
@@ -3770,7 +3836,7 @@ def serve_ui_legacy():
 
 @app.get("/ui/static/{file_path:path}")
 def serve_ui_static(file_path: str):
-    """Serve v4 static assets under /ui/static/*."""
+    """Serve v4 static assets under /ui/static/* (kept for compatibility)."""
     from fastapi import HTTPException
 
     safe = (file_path or "").replace("..", "").strip("/")
@@ -3793,19 +3859,23 @@ def serve_workspace():
 
 @app.get("/v4")
 def serve_v4():
-    """Back-compat: redirect v4 to canonical /ui."""
+    """Back-compat alias for the v4 landing."""
     from fastapi.responses import RedirectResponse
-
     return RedirectResponse(url="/ui", status_code=302)
 
 
 @app.get("/v4/static/{file_path:path}")
 def serve_v4_static(file_path: str):
-    """Back-compat: redirect v4 assets to canonical /ui/static/*."""
-    from fastapi.responses import RedirectResponse
+    """Serve v4 static assets (JS, CSS) for the landing."""
+    from fastapi import HTTPException
 
     safe = (file_path or "").replace("..", "").strip("/")
-    return RedirectResponse(url=f"/ui/static/{safe}", status_code=302)
+    path = STATIC_DIR / "v4" / safe
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail=f"v4 asset not found: {safe}")
+    ct_map = {".js": "application/javascript", ".css": "text/css", ".html": "text/html", ".json": "application/json", ".svg": "image/svg+xml"}
+    ct = ct_map.get(path.suffix, "application/octet-stream")
+    return FileResponse(path, media_type=ct, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 @app.get("/nexus")
