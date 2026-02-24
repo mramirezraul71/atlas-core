@@ -149,8 +149,12 @@ def get_healing_strategies():
 def get_healing_stats():
     ho = _get_healing()
     if not ho:
-        return {}
-    return ho.get_healing_stats()
+        return {"ok": False, "data": {}, "error": "Healing orchestrator not available"}
+    try:
+        stats = ho.get_healing_stats() or {}
+        return {"ok": True, "data": stats}
+    except Exception as e:
+        return {"ok": False, "data": {}, "error": str(e)}
 
 
 # --- Evolution ---

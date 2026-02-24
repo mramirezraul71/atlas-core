@@ -406,6 +406,17 @@ INSTRUCCIONES:
 3. DIRECTIVAS PARA ATLAS: Qué debe hacer Atlas automáticamente.
 4. REPORTE AL OWNER: Qué necesita saber Raúl.
 
+REGLAS DE EJECUCIÓN PARA ACCIONES:
+- Usa SOLO endpoints reales del servidor ATLAS en 127.0.0.1:8791.
+- Evita comandos con jq/curl como requisito; prefiere formato PowerShell o endpoint directo.
+- No inventes endpoints. Para autonomía/healing usa preferentemente:
+  * POST /api/autonomy/daemon/start
+  * POST /api/autonomy/daemon/stop
+  * GET  /api/autonomy/status
+  * GET  /healing/status
+  * POST /api/healing/trigger
+- NO usar: /api/autonomy/subsystem/activate (endpoint inválido).
+
 Solo usa endpoints reales de ATLAS."""
 
     def _extract_actions(self, text: str) -> List[Dict[str, Any]]:

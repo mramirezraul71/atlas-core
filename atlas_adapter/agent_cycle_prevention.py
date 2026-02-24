@@ -117,15 +117,25 @@ class AgentCyclePrevention:
     
     def record_tool_call(self, tool_name: str, tool_input: Dict) -> None:
         """Registra una llamada a tool para análisis de ciclo."""
+        # Use a more specific key for certain tools to avoid false-positive "repetition"
+        # when the tool is used normally against different targets (e.g., atlas_api to different endpoints).
+        tool_key = tool_name
+        if tool_name == "atlas_api":
+            try:
+                method = str((tool_input or {}).get("method") or "").upper() or "GET"
+                endpoint = str((tool_input or {}).get("endpoint") or "").strip() or "?"
+                tool_key = f"atlas_api:{method}:{endpoint}"
+            except Exception:
+                tool_key = tool_name
         tool_record = {
-            "name": tool_name,
+            "name": tool_key,
             "input": tool_input,
             "timestamp": time.time(),
             "iteration": self.iteration_count
         }
         
         self.tool_history.append(tool_record)
-        self.tool_repetition_counter[tool_name] += 1
+        self.tool_repetition_counter[tool_key] += 1
         
         # Extraer archivos y comandos del input
         self._extract_files_and_commands(tool_name, tool_input)

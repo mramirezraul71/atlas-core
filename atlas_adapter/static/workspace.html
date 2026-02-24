@@ -2042,6 +2042,17 @@ function buildAgentHandoffPrompt(objective, context, diagnosis, analysis, action
   txt += 'ENTREGABLE:\n';
   txt += '- PASO A PASO con qué cambiaste y cómo verificar.\n';
   txt += '- Evidencia: endpoints/logs/archivos tocados.\n';
+
+  // Extra: give Windows-friendly ready-to-run checks for common autonomy/healing statuses.
+  txt += '\nCHECKS RÁPIDOS (PowerShell):\n';
+  txt += '1) Autonomy status:\n';
+  txt += '   powershell -Command \"(Invoke-RestMethod http://127.0.0.1:8791/api/autonomy/status).subsystems | ConvertTo-Json -Depth 6\"\n';
+  txt += '2) Start autonomy daemon (si está inactive):\n';
+  txt += '   powershell -Command \"Invoke-RestMethod -Method Post http://127.0.0.1:8791/api/autonomy/daemon/start\"\n';
+  txt += '3) Healing status:\n';
+  txt += '   powershell -Command \"Invoke-RestMethod http://127.0.0.1:8791/healing/status\"\n';
+  txt += '4) Trigger healing (si aplica):\n';
+  txt += '   powershell -Command \"Invoke-RestMethod -Method Post http://127.0.0.1:8791/api/healing/trigger -ContentType application/json -Body (\\\"{}\\\")\"\n';
   return txt;
 }
 

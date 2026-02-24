@@ -201,6 +201,15 @@ async def _lifespan(app):
                 if (not safe_startup) and os.getenv("QUALITY_AUTONOMY_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on"):
                     from modules.humanoid.quality import start_autonomous_system
                     q = start_autonomous_system()
+                    # Autostart del Autonomy Daemon (evita estado CRITICAL post-restart)
+                    # Control: AUTONOMY_DAEMON_AUTOSTART=true|false (default true)
+                    try:
+                        if os.getenv("AUTONOMY_DAEMON_AUTOSTART", "true").strip().lower() in ("1", "true", "yes", "y", "on"):
+                            from modules.humanoid.quality.autonomy_daemon import is_autonomy_running, start_autonomy
+                            if not is_autonomy_running():
+                                start_autonomy()
+                    except Exception:
+                        pass
                     try:
                         from modules.humanoid.ans.evolution_bitacora import append_evolution_log
                         append_evolution_log(
@@ -330,6 +339,26 @@ async def _lifespan(app):
                 except Exception:
                     pass
         asyncio.create_task(_metrics_loop())
+    except Exception:
+        pass
+    # Failsafe: asegurar Autonomy Daemon activo al finalizar startup.
+    # Esto cubre escenarios donde QUALITY_AUTONOMY_ENABLED no inició el daemon.
+    try:
+        if os.getenv("AUTONOMY_DAEMON_AUTOSTART", "true").strip().lower() in ("1", "true", "yes", "y", "on"):
+            from modules.humanoid.quality.autonomy_daemon import is_autonomy_running
+            if not is_autonomy_running():
+                try:
+                    # Reuse same startup logic used by POST /api/autonomy/daemon/start.
+                    autonomy_daemon_start()
+                except Exception:
+                    pass
+            # Second chance after a brief pause if still down.
+            if not is_autonomy_running():
+                await asyncio.sleep(0.5)
+                try:
+                    autonomy_daemon_start()
+                except Exception:
+                    pass
     except Exception:
         pass
     # Supervisor residente: monitoreo continuo + directivas internas + notificación a Owner
@@ -872,12 +901,41 @@ def supervisor_advise(payload: dict):
     """
     try:
         from atlas_adapter.llm.supervisor import Supervisor
+        from atlas_adapter.supervisor_policy import set_supervisor_policy
         
         supervisor = Supervisor()
         objective = payload.get("objective", "Revisar estado del sistema")
         context = payload.get("context", {})
         user_id = (payload.get("user_id") or "owner").strip() or "owner"
         thread_id = _ensure_thread_id(payload.get("thread_id"), title="Supervisor", user_id=user_id)
+
+        # If user pasted a supervisor policy into objective, store it and skip normal advise.
+        # This prevents polluting the thread memory with long policy text that later gets "repeated".
+        try:
+            obj_txt = str(objective or "").strip()
+            head = obj_txt[:900].lower()
+            looks_like_policy = (
+                ("supervisor residente" in head or "no eres un chatbot pasivo" in head or "cero errores" in head)
+                and ("objetivo principal" in head or "monitoreo continuo" in head)
+                and len(obj_txt) > 200
+            )
+            if looks_like_policy:
+                saved = set_supervisor_policy(obj_txt)
+                return {
+                    "ok": bool(saved.get("ok", True)),
+                    "result": {
+                        "ok": bool(saved.get("ok", True)),
+                        "analysis": "OK: Política residente del Supervisor guardada. A partir de ahora se aplica automáticamente.",
+                        "snapshot": {},
+                        "diagnosis": {"severity": "healthy", "issues": [], "warnings": [], "ok_items": ["policy_saved"]},
+                        "actions": [],
+                        "recommendations": [],
+                    },
+                    "thread_id": thread_id,
+                    "policy_saved": True,
+                }
+        except Exception:
+            pass
 
         # Persist user objective in thread
         mgr = _get_chat_manager()
@@ -960,6 +1018,32 @@ def supervisor_investigate(payload: dict):
     context = payload.get("context", {})
     user_id = (payload.get("user_id") or "owner").strip() or "owner"
     thread_id = _ensure_thread_id(payload.get("thread_id"), title="Supervisor", user_id=user_id)
+
+    # If user pasted a supervisor policy into objective, store it and short-circuit investigation stream.
+    try:
+        from atlas_adapter.supervisor_policy import set_supervisor_policy
+
+        obj_txt = str(objective or "").strip()
+        head = obj_txt[:900].lower()
+        looks_like_policy = (
+            ("supervisor residente" in head or "no eres un chatbot pasivo" in head or "cero errores" in head)
+            and ("objetivo principal" in head or "monitoreo continuo" in head)
+            and len(obj_txt) > 200
+        )
+        if looks_like_policy:
+            saved = set_supervisor_policy(obj_txt)
+            from fastapi.responses import StreamingResponse
+
+            def _policy_stream():
+                if thread_id:
+                    yield f"event: thread\ndata: {json.dumps({'thread_id': thread_id}, ensure_ascii=False)}\n\n"
+                yield "event: text\ndata: " + json.dumps({"content": "OK: Política residente del Supervisor guardada. Se aplicará automáticamente."}, ensure_ascii=False) + "\n\n"
+                yield "event: done\ndata: " + json.dumps({"iterations": 0, "tools_used": [], "ms": 0, "policy_saved": bool(saved.get("ok", True))}, ensure_ascii=False) + "\n\n"
+                yield "event: close\ndata: {}\n\n"
+
+            return StreamingResponse(_policy_stream(), media_type="text/event-stream")
+    except Exception:
+        pass
 
     # Add thread memory to context (best-effort)
     try:
@@ -6502,6 +6586,35 @@ def _extract_memory_lines(text: str, limit: int = 12) -> List[str]:
     return lines[:limit]
 
 
+def _looks_like_supervisor_policy(text: Optional[str]) -> bool:
+    try:
+        t = (text or "").strip()
+        if not t:
+            return False
+        head = t[:900].lower()
+        sig = ("supervisor residente" in head) or ("no eres un chatbot pasivo" in head) or ("cero errores" in head)
+        sec = ("objetivo principal" in head) and ("monitoreo continuo" in head)
+        return bool(sig and (sec or len(t) > 800))
+    except Exception:
+        return False
+
+
+def _strip_policy_like_blocks(text: Optional[str]) -> str:
+    """Best-effort: remove policy-like content from persisted thread memory to avoid 'recitals'."""
+    try:
+        t = (text or "").strip()
+        if not t:
+            return ""
+        if _looks_like_supervisor_policy(t):
+            return ""
+        # Also remove long blocks that contain the signature, even if partial.
+        low = t.lower()
+        if ("supervisor residente" in low or "cero errores" in low) and len(t) > 400:
+            return ""
+        return t
+    except Exception:
+        return (text or "") if isinstance(text, str) else ""
+
 def _update_thread_summary(thread_id: str, user_text: Optional[str], assistant_text: Optional[str]) -> None:
     mgr = _get_chat_manager()
     if not mgr or not thread_id:
@@ -6512,7 +6625,9 @@ def _update_thread_summary(thread_id: str, user_text: Optional[str], assistant_t
             old = str(old)
         chunks: List[str] = []
         if user_text:
-            chunks.append(f"USER: {str(user_text).strip()[:240]}")
+            ut = str(user_text).strip()
+            if ut and not _looks_like_supervisor_policy(ut):
+                chunks.append(f"USER: {ut[:240]}")
         if assistant_text:
             mem_lines = _extract_memory_lines(assistant_text)
             if mem_lines:
@@ -6539,6 +6654,7 @@ def _llm_history_for_thread(thread_id: str, max_messages: int = 24) -> List[Dict
         return []
     try:
         summary = mgr.get_context(thread_id, "summary")
+        summary = _strip_policy_like_blocks(summary if isinstance(summary, str) else (str(summary) if summary else ""))
         msgs = mgr.get_recent_messages(thread_id, limit=max_messages)
         out: List[Dict[str, str]] = []
         if summary and isinstance(summary, str) and summary.strip():
@@ -6547,6 +6663,8 @@ def _llm_history_for_thread(thread_id: str, max_messages: int = 24) -> List[Dict
             role = (m.get("role") or "user").strip()
             content = (m.get("content") or "").strip()
             if not content:
+                continue
+            if _looks_like_supervisor_policy(content):
                 continue
             if role not in ("user", "assistant", "system"):
                 role = "user"
