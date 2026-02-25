@@ -1,4 +1,4 @@
-import json, base64, os
+import json, base64, os, sys
 from pathlib import Path
 from datetime import datetime
 from typing import Any
@@ -78,6 +78,12 @@ class MultimodalPipeline:
         }
 
 if __name__ == "__main__":
+    # Windows consoles often default to cp1252; force UTF-8 output for emoji-safe prints.
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     p = MultimodalPipeline()
     print(json.dumps(p.status(), indent=2, ensure_ascii=False))
     test = p.process("Hola ATLAS, pipeline activo", task="self_test")
