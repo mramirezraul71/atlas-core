@@ -36,7 +36,8 @@ pyzmq>=25.0.0
 # Cognitive Architecture - NLU/LLM
 ollama>=0.1.0
 
-# Memory Stack - ChromaDB + LangChain + LangFlow
+# Memory Stack - ChromaDB + LangChain + LangFlow + Mem0 (from repo)
+-e ./mem0_repo
 chromadb>=0.5.0
 langchain>=0.3.0
 langchain-community>=0.3.0
