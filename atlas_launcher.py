@@ -15,11 +15,11 @@ USO:
 import argparse
 import logging
 import os
-import sys
-import time
-import threading
-import webbrowser
 import signal
+import sys
+import threading
+import time
+import webbrowser
 
 # Asegurar path
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -72,10 +72,10 @@ def init_cognitive_system() -> dict:
     print("\n[1/4] Inicializando Sistema Cognitivo...")
     try:
         from modules.humanoid import get_cognitive_system
+
         system = get_cognitive_system()
         modules_count = sum(
-            len(v) if isinstance(v, dict) else 1
-            for v in system.values()
+            len(v) if isinstance(v, dict) else 1 for v in system.values()
         )
         print(f"      [OK] {modules_count} modulos cognitivos cargados")
         return system
@@ -87,11 +87,15 @@ def init_cognitive_system() -> dict:
 def init_autonomy() -> bool:
     """Inicializa el sistema de autonomía en background (no bloquea el arranque)."""
     print("\n[2/4] Iniciando Autonomia (background)...")
+
     def _start_bg():
         try:
             import time as _t
+
             _t.sleep(8)
-            from modules.humanoid.quality.autonomy_daemon import start_autonomy, AutonomyConfig
+            from modules.humanoid.quality.autonomy_daemon import (
+                AutonomyConfig, start_autonomy)
+
             config = AutonomyConfig(
                 enable_auto_commit=True,
                 enable_auto_repair=True,
@@ -102,11 +106,14 @@ def init_autonomy() -> bool:
                 telegram_on_errors=True,
             )
             result = start_autonomy(config)
-            ok_count = sum(1 for v in result.values() if isinstance(v, dict) and v.get("ok"))
+            ok_count = sum(
+                1 for v in result.values() if isinstance(v, dict) and v.get("ok")
+            )
             total = len([v for v in result.values() if isinstance(v, dict)])
             print(f"      [Autonomy] {ok_count}/{total} componentes activos")
         except Exception as e:
             print(f"      [Autonomy] parcial: {e}")
+
     threading.Thread(target=_start_bg, daemon=True).start()
     print("      [OK] Autonomia programada (arranca tras HTTP)")
     return True
@@ -131,27 +138,32 @@ def init_voice() -> bool:
 def start_http_server(open_browser: bool = False) -> None:
     """Inicia el servidor HTTP con dashboard."""
     print(f"\n[4/4] Iniciando Servidor HTTP en puerto {HTTP_PORT}...")
-    
+
     try:
         import uvicorn
+
         from atlas_adapter.atlas_http_api import app
-        
+
         print(f"      [OK] Dashboard: {DASHBOARD_URL}")
         print(f"      [OK] API: http://127.0.0.1:{HTTP_PORT}/docs")
-        print(f"      [OK] Cognitive API: http://127.0.0.1:{HTTP_PORT}/cognitive/status")
-        
+        print(
+            f"      [OK] Cognitive API: http://127.0.0.1:{HTTP_PORT}/cognitive/status"
+        )
+
         if open_browser:
+
             def open_browser_delayed():
                 time.sleep(2)
                 webbrowser.open(DASHBOARD_URL)
+
             threading.Thread(target=open_browser_delayed, daemon=True).start()
-        
+
         print("\n" + "=" * 65)
         print("  [ONLINE] ATLAS SISTEMA COMPLETO ACTIVO")
         print("=" * 65)
         print(f"\n  Dashboard: {DASHBOARD_URL}")
         print("  Presiona Ctrl+C para detener.\n")
-        
+
         # Ejecutar servidor
         uvicorn.run(
             app,
@@ -160,7 +172,7 @@ def start_http_server(open_browser: bool = False) -> None:
             log_level="warning",
             access_log=False,
         )
-        
+
     except ImportError:
         print("      [ERROR] uvicorn no instalado. Ejecuta: pip install uvicorn")
         sys.exit(1)
@@ -173,14 +185,15 @@ def signal_handler(signum, frame):
     """Maneja señales de terminación."""
     print("\n\n[ATLAS] Recibida señal de terminación...")
     _shutdown_event.set()
-    
+
     # Detener autonomía
     try:
         from modules.humanoid.quality.autonomy_daemon import stop_autonomy
+
         stop_autonomy()
     except:
         pass
-    
+
     print("[ATLAS] Sistema detenido.\n")
     sys.exit(0)
 
@@ -188,35 +201,37 @@ def signal_handler(signum, frame):
 def main():
     """Función principal."""
     global HTTP_PORT, DASHBOARD_URL
-    
+
     parser = argparse.ArgumentParser(description="ATLAS Unified Launcher")
-    parser.add_argument("--ui", action="store_true", help="Abrir navegador automáticamente")
+    parser.add_argument(
+        "--ui", action="store_true", help="Abrir navegador automáticamente"
+    )
     parser.add_argument("--port", type=int, default=HTTP_PORT, help="Puerto HTTP")
     args = parser.parse_args()
-    
+
     HTTP_PORT = args.port
     DASHBOARD_URL = f"http://127.0.0.1:{HTTP_PORT}/ui"
-    
+
     # Configurar señales
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
+
     setup_logging()
     print_banner()
-    
+
     print("\n" + "=" * 65)
     print("  INICIANDO ATLAS - Sistema Unificado")
     print("=" * 65)
-    
+
     # 1. Sistema cognitivo
     init_cognitive_system()
-    
+
     # 2. Autonomía
     init_autonomy()
-    
+
     # 3. Voice
     init_voice()
-    
+
     # 4. Servidor HTTP (bloqueante)
     start_http_server(open_browser=args.ui)
 

@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from modules.humanoid.kernel import BaseModule, HealthCheckMixin
 from modules.humanoid.brain.coherence import CoherenceValidator
 from modules.humanoid.brain.logic import LogicValidator
+from modules.humanoid.kernel import BaseModule, HealthCheckMixin
 
 
 class BrainOrchestrator(BaseModule, HealthCheckMixin):
@@ -23,15 +23,23 @@ class BrainOrchestrator(BaseModule, HealthCheckMixin):
         try:
             from modules.llm.schemas import LLMRequest
             from modules.llm.service import LLMService
+
             self._LLMRequest = LLMRequest
             self._llm = LLMService()
         except Exception:
             self._llm = None
             self._LLMRequest = None
 
-    def run_llm(self, prompt: str, route: str | None = None, **kwargs: Any) -> Dict[str, Any]:
+    def run_llm(
+        self, prompt: str, route: str | None = None, **kwargs: Any
+    ) -> Dict[str, Any]:
         if self._llm is None or self._LLMRequest is None:
-            return {"ok": False, "output": "", "error": "LLMService not available", "route": route}
+            return {
+                "ok": False,
+                "output": "",
+                "error": "LLMService not available",
+                "route": route,
+            }
         req = self._LLMRequest(prompt=prompt, route=route, **kwargs)
         resp = self._llm.run(req)
         return resp.model_dump()
@@ -39,7 +47,11 @@ class BrainOrchestrator(BaseModule, HealthCheckMixin):
     def health_check(self) -> Dict[str, Any]:
         if self._llm is None:
             return {"ok": False, "message": "LLM not loaded", "details": {}}
-        return {"ok": True, "message": "ok", "details": {"validators": ["coherence", "logic"]}}
+        return {
+            "ok": True,
+            "message": "ok",
+            "details": {"validators": ["coherence", "logic"]},
+        }
 
     def info(self) -> Dict[str, Any]:
         return {"module": self.name, "llm_ready": self._llm is not None}

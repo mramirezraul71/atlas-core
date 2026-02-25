@@ -96,9 +96,7 @@ class CausalGraph:
                     queue.append(effect)
                     if current in self.observations:
                         edge_data = self.graph.get_edge_data(current, effect)
-                        strength = (
-                            edge_data.get("strength", 1.0) if edge_data else 1.0
-                        )
+                        strength = edge_data.get("strength", 1.0) if edge_data else 1.0
                         self.observations[effect] = (
                             self.observations[current] * strength
                         )
@@ -184,9 +182,7 @@ class CausalReasoner:
             }
         return {"error": "Invalid action format (use set_X_to_Y)"}
 
-    def explain_why(
-        self, domain: str, effect: str, potential_causes: List[str]
-    ) -> str:
+    def explain_why(self, domain: str, effect: str, potential_causes: List[str]) -> str:
         if domain not in self.graphs:
             return f"Unknown domain: {domain}"
         graph = self.graphs[domain]

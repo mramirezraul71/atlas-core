@@ -7,7 +7,11 @@ from typing import Any, Dict
 
 
 def _repo_root() -> Path:
-    p = os.getenv("ATLAS_REPO_PATH") or os.getenv("POLICY_ALLOWED_PATHS") or "C:\\ATLAS_PUSH"
+    p = (
+        os.getenv("ATLAS_REPO_PATH")
+        or os.getenv("POLICY_ALLOWED_PATHS")
+        or "C:\\ATLAS_PUSH"
+    )
     return Path(p).resolve()
 
 
@@ -21,6 +25,7 @@ def _read_version() -> str:
 def _git_sha() -> str:
     try:
         import subprocess
+
         r = subprocess.run(
             ["git", "rev-parse", "--short=8", "HEAD"],
             cwd=str(_repo_root()),
@@ -42,10 +47,15 @@ def _channel() -> str:
 
 def _version_from_tag() -> str:
     """If PRODUCT_VERSION_FROM_TAG=true, try git describe --tags."""
-    if os.getenv("PRODUCT_VERSION_FROM_TAG", "true").strip().lower() not in ("1", "true", "yes"):
+    if os.getenv("PRODUCT_VERSION_FROM_TAG", "true").strip().lower() not in (
+        "1",
+        "true",
+        "yes",
+    ):
         return ""
     try:
         import subprocess
+
         r = subprocess.run(
             ["git", "describe", "--tags", "--always", "--dirty"],
             cwd=str(_repo_root()),
@@ -74,5 +84,6 @@ def get_version_info() -> Dict[str, Any]:
         "git_sha": _git_sha(),
         "channel": _channel(),
         "edition": _product_edition(),
-        "product_mode": os.getenv("PRODUCT_MODE", "false").strip().lower() in ("1", "true", "yes"),
+        "product_mode": os.getenv("PRODUCT_MODE", "false").strip().lower()
+        in ("1", "true", "yes"),
     }

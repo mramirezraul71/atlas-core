@@ -17,11 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -46,15 +49,22 @@ class FailureMemory:
     def __init__(self, config: dict | None = None):
         self._config = config or _load_config().get("self_healing", {})
         base = Path(__file__).resolve().parent.parent.parent
-        db_path = self._config.get("failure_memory_db", "logs/autonomous_failure_memory.sqlite")
-        self._db_path = base / db_path if isinstance(db_path, str) else base / "logs" / "autonomous_failure_memory.sqlite"
+        db_path = self._config.get(
+            "failure_memory_db", "logs/autonomous_failure_memory.sqlite"
+        )
+        self._db_path = (
+            base / db_path
+            if isinstance(db_path, str)
+            else base / "logs" / "autonomous_failure_memory.sqlite"
+        )
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     def _init_db(self) -> None:
         try:
             with sqlite3.connect(str(self._db_path)) as conn:
-                conn.execute("""
+                conn.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS failures (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         error_signature TEXT NOT NULL,
@@ -64,8 +74,11 @@ class FailureMemory:
                         success INTEGER NOT NULL,
                         notes TEXT
                     )
-                """)
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_fail_sig ON failures(error_signature)")
+                """
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_fail_sig ON failures(error_signature)"
+                )
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_fail_ts ON failures(ts)")
         except Exception as e:
             logger.warning("FailureMemory init: %s", e)
@@ -89,12 +102,21 @@ class FailureMemory:
             with sqlite3.connect(str(self._db_path)) as conn:
                 conn.execute(
                     "INSERT INTO failures (error_signature, ts, context, recovery_used, success, notes) VALUES (?,?,?,?,?,?)",
-                    (sig, time.time(), ctx_str, recovery, 1 if success else 0, notes[:500]),
+                    (
+                        sig,
+                        time.time(),
+                        ctx_str,
+                        recovery,
+                        1 if success else 0,
+                        notes[:500],
+                    ),
                 )
         except Exception as e:
             logger.debug("record_failure: %s", e)
 
-    def get_similar_failures(self, error: BaseException, limit: int = 10) -> list[FailureRecord]:
+    def get_similar_failures(
+        self, error: BaseException, limit: int = 10
+    ) -> list[FailureRecord]:
         """Busca fallos con la misma firma o mensaje similar."""
         sig = self._signature(error)
         msg = str(error)[:100]
@@ -124,10 +146,13 @@ class FailureMemory:
     def suggest_recovery(self, error: BaseException) -> str | None:
         """Sugiere la estrategia que más veces funcionó para este tipo de error."""
         similar = self.get_similar_failures(error, limit=20)
-        success_recoveries = [r.recovery_used for r in similar if r.success and r.recovery_used]
+        success_recoveries = [
+            r.recovery_used for r in similar if r.success and r.recovery_used
+        ]
         if not success_recoveries:
             return None
         from collections import Counter
+
         return Counter(success_recoveries).most_common(1)[0][0]
 
     def get_recurring_errors(self, days: int = 7) -> list[tuple[str, int]]:
@@ -149,5 +174,7 @@ class FailureMemory:
         recurring = self.get_recurring_errors(7)
         actions = []
         for sig, count in recurring[:5]:
-            actions.append(f"Error recurrente (x{count}): revisar causa raíz para firma {sig[:8]}...")
+            actions.append(
+                f"Error recurrente (x{count}): revisar causa raíz para firma {sig[:8]}..."
+            )
         return actions

@@ -9,7 +9,8 @@ Triggers:
 
 Severidad: HIGH (es respuesta a una situación activa)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -24,10 +25,8 @@ Sigue el ciclo: Detectar → Contener → Investigar → Reparar → Verificar �
         severity=POTSeverity.HIGH,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["incident_active", "alert_*"],
         trigger_keywords=["incident", "alert", "emergency", "response", "outage"],
-        
         prerequisites=[
             "Incidente identificado y clasificado",
             "Acceso a logs del sistema",
@@ -35,7 +34,6 @@ Sigue el ciclo: Detectar → Contener → Investigar → Reparar → Verificar �
         ],
         required_services=[],  # Puede que los servicios estén caídos
         required_permissions=["service_restart", "log_access", "notify"],
-        
         objectives=[
             "Contener el impacto del incidente",
             "Identificar causa raíz",
@@ -45,7 +43,6 @@ Sigue el ciclo: Detectar → Contener → Investigar → Reparar → Verificar �
         ],
         success_criteria="Sistema restaurado a operación normal, incidente cerrado",
         estimated_duration_minutes=15,
-        
         tutorial_overview="""
 ## Guía de Respuesta a Incidentes
 
@@ -77,7 +74,6 @@ Sigue el ciclo: Detectar → Contener → Investigar → Reparar → Verificar �
 - **Contención**: Detener la hemorragia (reinicio rápido, disable feature)
 - **Reparación**: Arreglar la causa raíz (fix de código, config)
         """.strip(),
-        
         best_practices=[
             "Contener primero, investigar después",
             "Comunicar estado cada 15 minutos durante incidente",
@@ -85,17 +81,14 @@ Sigue el ciclo: Detectar → Contener → Investigar → Reparar → Verificar �
             "Documentar TODOS los cambios realizados",
             "Crear ticket de seguimiento si la causa raíz no es obvia",
         ],
-        
         warnings=[
             "No apagar servicios sin plan de recuperación",
             "Preservar logs antes de reiniciar (pueden perderse)",
             "Coordinar con otros operadores si hay múltiples personas",
         ],
-        
         related_pots=["incident_triage", "incident_postmortem", "services_repair"],
         tags=["incident", "response", "emergency", "sla"],
         has_rollback=True,
-        
         steps=[
             # Fase 1: Detección (ya hecha por ANS, pero confirmamos)
             POTStep(
@@ -109,7 +102,6 @@ Sigue el ciclo: Detectar → Contener → Investigar → Reparar → Verificar �
                 continue_on_failure=True,
                 tutorial_notes="Confirmamos que hay un incidente activo que atender.",
             ),
-            
             # Fase 2: Contención
             POTStep(
                 id="notify_incident_start",
@@ -120,7 +112,6 @@ Sigue el ciclo: Detectar → Contener → Investigar → Reparar → Verificar �
                 notify_message="🚨 Incidente detectado. Iniciando respuesta automática...",
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="capture_initial_state",
                 name="Capturar estado inicial",
@@ -135,7 +126,6 @@ Esto es crucial para:
 3. Evidencia de auditoría
                 """,
             ),
-            
             POTStep(
                 id="quick_health_check",
                 name="Diagnóstico rápido de servicios",
@@ -145,7 +135,6 @@ Esto es crucial para:
                 timeout_seconds=30,
                 capture_output=True,
             ),
-            
             # Fase 3: Investigación rápida
             POTStep(
                 id="check_recent_logs",
@@ -158,7 +147,6 @@ Esto es crucial para:
                 continue_on_failure=True,
                 tutorial_notes="Buscamos patrones de error para identificar causa raíz.",
             ),
-            
             # Fase 4: Reparación
             POTStep(
                 id="apply_standard_fix",
@@ -173,7 +161,6 @@ Aquí el motor de POTs selecciona el POT de reparación apropiado:
 El POT específico se ejecuta como sub-procedimiento.
                 """,
             ),
-            
             POTStep(
                 id="restart_affected_service",
                 name="Reiniciar servicio afectado",
@@ -183,7 +170,6 @@ El POT específico se ejecuta como sub-procedimiento.
                 timeout_seconds=90,
                 tutorial_notes="Por defecto reiniciamos Robot. Ajustar según diagnóstico.",
             ),
-            
             POTStep(
                 id="wait_stabilization",
                 name="Esperar estabilización",
@@ -191,7 +177,6 @@ El POT específico se ejecuta como sub-procedimiento.
                 step_type=StepType.WAIT,
                 wait_seconds=15,
             ),
-            
             # Fase 5: Verificación
             POTStep(
                 id="verify_resolution",
@@ -205,7 +190,6 @@ El POT específico se ejecuta como sub-procedimiento.
                 retries=3,
                 retry_delay_seconds=5,
             ),
-            
             POTStep(
                 id="run_ans_verify",
                 name="Ejecutar verificación ANS",
@@ -216,7 +200,6 @@ El POT específico se ejecuta como sub-procedimiento.
                 http_body={"mode": "auto"},
                 timeout_seconds=60,
             ),
-            
             # Fase 6: Documentación
             POTStep(
                 id="resolve_incident_record",
@@ -228,7 +211,6 @@ El POT específico se ejecuta como sub-procedimiento.
                 timeout_seconds=10,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="log_resolution",
                 name="Registrar resolución",
@@ -239,10 +221,9 @@ El POT específico se ejecuta como sub-procedimiento.
                 http_body={
                     "message": "[INCIDENTE] Incidente resuelto por POT incident_response",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
             ),
-            
             POTStep(
                 id="notify_resolution",
                 name="Notificar resolución",
@@ -252,7 +233,6 @@ El POT específico se ejecuta como sub-procedimiento.
                 notify_message="✅ Incidente resuelto. Sistema operando normalmente.",
             ),
         ],
-        
         rollback_steps=[
             POTStep(
                 id="rollback_revert_changes",
@@ -261,7 +241,6 @@ El POT específico se ejecuta como sub-procedimiento.
                 step_type=StepType.LOG,
                 tutorial_notes="En caso de rollback, restaurar último estado conocido bueno.",
             ),
-            
             POTStep(
                 id="rollback_notify",
                 name="Notificar rollback",

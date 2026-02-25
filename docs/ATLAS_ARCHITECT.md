@@ -50,4 +50,3 @@ Endpoints nuevos en `atlas_adapter/atlas_http_api.py`:
 - **GROWTH**:
   - aplica cambios (con diffs en `logs/ans_architect_diffs/`)
   - ejecuta tests y, si falla, activa `SelfHealingLoop`
-

@@ -23,7 +23,9 @@ class RetryPolicy:
     fixed_steps: Optional[tuple[float, ...]] = None
 
     @staticmethod
-    def fixed(steps: Iterable[float], *, max_attempts: int | None = None, jitter: float = 0.0) -> "RetryPolicy":
+    def fixed(
+        steps: Iterable[float], *, max_attempts: int | None = None, jitter: float = 0.0
+    ) -> "RetryPolicy":
         xs = tuple(float(x) for x in steps if float(x) >= 0.0)
         return RetryPolicy(
             max_attempts=int(max_attempts or max(1, len(xs) or 1)),
@@ -42,4 +44,3 @@ class RetryPolicy:
         if j > 0:
             base = base + (base * j * random.random())
         return max(0.0, float(base))
-

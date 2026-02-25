@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import logging
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -16,11 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -30,6 +33,7 @@ def _load_config() -> dict:
 @dataclass
 class ServiceStatus:
     """Estado de un servicio."""
+
     name: str
     url: str
     online: bool
@@ -56,10 +60,14 @@ class ServiceHealth:
                 "robot": "http://127.0.0.1:8002/",
             }
         self._timeout = 5
-        self._error_counts: dict[str, list[float]] = {}  # service -> timestamps de errores
+        self._error_counts: dict[
+            str, list[float]
+        ] = {}  # service -> timestamps de errores
         self._request_timestamps: dict[str, list[float]] = {}
 
-    def check_service(self, url: str, timeout: int | None = None, name: str = "") -> ServiceStatus:
+    def check_service(
+        self, url: str, timeout: int | None = None, name: str = ""
+    ) -> ServiceStatus:
         """Comprueba un endpoint; devuelve ServiceStatus."""
         timeout = timeout or self._timeout
         name = name or url
@@ -67,7 +75,9 @@ class ServiceHealth:
         status_code = None
         err_msg = ""
         try:
-            req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
+            req = urllib.request.Request(
+                url, method="GET", headers={"Accept": "application/json"}
+            )
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 status_code = r.status
         except urllib.error.HTTPError as e:
@@ -105,14 +115,18 @@ class ServiceHealth:
             self._error_counts[name] = []
         self._error_counts[name].append(ts)
         now = time.time()
-        self._error_counts[name] = [t for t in self._error_counts[name] if now - t < 600]
+        self._error_counts[name] = [
+            t for t in self._error_counts[name] if now - t < 600
+        ]
 
     def _record_request(self, name: str) -> None:
         if name not in self._request_timestamps:
             self._request_timestamps[name] = []
         self._request_timestamps[name].append(time.time())
         now = time.time()
-        self._request_timestamps[name] = [t for t in self._request_timestamps[name] if now - t < 120]
+        self._request_timestamps[name] = [
+            t for t in self._request_timestamps[name] if now - t < 120
+        ]
 
     def _get_errors_count(self, name: str, window_sec: float = 300) -> int:
         now = time.time()
@@ -154,7 +168,9 @@ class ServiceHealth:
             elif status.latency_ms > 2000:
                 bottlenecks.append(f"{name}: high latency ({status.latency_ms:.0f}ms)")
             elif status.errors_last_5min >= 3:
-                bottlenecks.append(f"{name}: errors in last 5min ({status.errors_last_5min})")
+                bottlenecks.append(
+                    f"{name}: errors in last 5min ({status.errors_last_5min})"
+                )
         return bottlenecks
 
     def get_dependency_health(self) -> dict[str, Any]:

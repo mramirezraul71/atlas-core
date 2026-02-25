@@ -1,9 +1,9 @@
 # INFORME MÉDICO COMPLETO - ORGANISMO ATLAS NEXUS
 
-**Repositorio:** C:\ATLAS_PUSH (atlas-core)  
-**Rama:** intent-input-rename  
-**Commit:** 6a1f882  
-**Fecha del análisis:** 14 de febrero de 2025  
+**Repositorio:** C:\ATLAS_PUSH (atlas-core)
+**Rama:** intent-input-rename
+**Commit:** 6a1f882
+**Fecha del análisis:** 14 de febrero de 2025
 
 ---
 
@@ -26,8 +26,8 @@
 
 ### 🧠 CEREBRO (Sistema Nervioso Central)
 
-**Estado:** 88% – Funcional, integrado end-to-end  
-**Calidad:** 7.5/10 – Código sólido, falta documentación OpenAPI completa y tests E2E  
+**Estado:** 88% – Funcional, integrado end-to-end
+**Calidad:** 7.5/10 – Código sólido, falta documentación OpenAPI completa y tests E2E
 
 #### Componentes actuales
 
@@ -47,9 +47,9 @@
 
 #### Funcionalidades faltantes
 
-1. **Tests E2E** del flujo PUSH → NEXUS → Robot – Prioridad Alta.  
-2. **OpenAPI tags/descriptions** completos en PUSH para todos los endpoints – Prioridad Media.  
-3. **Neural Router en NEXUS** documentado y estable (model selection por tipo de query) – Prioridad Media.  
+1. **Tests E2E** del flujo PUSH → NEXUS → Robot – Prioridad Alta.
+2. **OpenAPI tags/descriptions** completos en PUSH para todos los endpoints – Prioridad Media.
+3. **Neural Router en NEXUS** documentado y estable (model selection por tipo de query) – Prioridad Media.
 4. **Evolution orchestrator** con scan/update real (hoy stubs) – Prioridad Baja.
 
 #### Archivos clave
@@ -77,8 +77,8 @@
 
 ### 👁️ OJOS (Sistema de Visión)
 
-**Estado:** 70% – Cámaras y detección operativas; monitoreo interno bueno; escena/razonamiento limitado  
-**Calidad:** 7/10  
+**Estado:** 70% – Cámaras y detección operativas; monitoreo interno bueno; escena/razonamiento limitado
+**Calidad:** 7/10
 
 #### Componentes actuales
 
@@ -96,9 +96,9 @@
 
 #### Funcionalidades faltantes
 
-1. **Scene understanding** (descripción de escena en lenguaje natural, no solo bounding boxes) – Prioridad Alta.  
-2. **Múltiples cámaras simultáneas** en un solo dashboard (varias fuentes) – Prioridad Media.  
-3. **Reconocimiento facial/identidad** integrado en flujo de visión (existe `identity/face_recognition_system.py` pero no en vision_routes) – Prioridad Media.  
+1. **Scene understanding** (descripción de escena en lenguaje natural, no solo bounding boxes) – Prioridad Alta.
+2. **Múltiples cámaras simultáneas** en un solo dashboard (varias fuentes) – Prioridad Media.
+3. **Reconocimiento facial/identidad** integrado en flujo de visión (existe `identity/face_recognition_system.py` pero no en vision_routes) – Prioridad Media.
 4. **Calibración y persistencia de preferencias de cámara** – Prioridad Baja.
 
 #### Archivos clave
@@ -124,8 +124,8 @@
 
 ### 🖐️ MANOS (Sistema de Acción)
 
-**Estado:** 75% – Tools registry rico; self-healing y auto-updates presentes; feedback explícito parcial  
-**Calidad:** 7/10  
+**Estado:** 75% – Tools registry rico; self-healing y auto-updates presentes; feedback explícito parcial
+**Calidad:** 7/10
 
 #### Componentes actuales
 
@@ -144,8 +144,8 @@
 
 #### Funcionalidades faltantes
 
-1. **Tracking explícito success/failure por herramienta** en timeseries (para dashboards y optimización) – Prioridad Media.  
-2. **Aprobación humana en flujo de tools** (requires_approval en registry ya existe; falta UI y flujo en PUSH) – Prioridad Media.  
+1. **Tracking explícito success/failure por herramienta** en timeseries (para dashboards y optimización) – Prioridad Media.
+2. **Aprobación humana en flujo de tools** (requires_approval en registry ya existe; falta UI y flujo en PUSH) – Prioridad Media.
 3. **Rollback automático de heals** si empeoran métricas (ANS) – Prioridad Baja.
 
 #### Archivos clave
@@ -171,8 +171,8 @@
 
 ### 🩸 SANGRE (Sistema Circulatorio de Información)
 
-**Estado:** 78% – Multi-IA y datos presentes; transporte bien cubierto; “oxigenación” (contexto/memoria) parcial  
-**Calidad:** 7.5/10  
+**Estado:** 78% – Multi-IA y datos presentes; transporte bien cubierto; “oxigenación” (contexto/memoria) parcial
+**Calidad:** 7.5/10
 
 #### Componentes actuales
 
@@ -190,8 +190,8 @@
 
 #### Funcionalidades faltantes
 
-1. **Embeddings en memory_engine** (recall_by_similarity, almacenar embeddings; ver regla embeddings-pendiente) – Prioridad Alta.  
-2. **Message queue** para tareas asíncronas pesadas (evolución, backups grandes) – Prioridad Media.  
+1. **Embeddings en memory_engine** (recall_by_similarity, almacenar embeddings; ver regla embeddings-pendiente) – Prioridad Alta.
+2. **Message queue** para tareas asíncronas pesadas (evolución, backups grandes) – Prioridad Media.
 3. **Context injection** unificado (directivas + memory + per-request) documentado y estable – Prioridad Media.
 
 #### Archivos clave
@@ -218,8 +218,8 @@
 
 ### ⚡ VELOCIDAD (Performance)
 
-**Estado:** 60% – Sin benchmarks sistemáticos; latencia observada en health; throttling existe pero no aplicado en todas las rutas  
-**Calidad:** 6/10  
+**Estado:** 60% – Sin benchmarks sistemáticos; latencia observada en health; throttling existe pero no aplicado en todas las rutas
+**Calidad:** 6/10
 
 #### Componentes actuales
 
@@ -231,9 +231,9 @@
 
 #### Funcionalidades faltantes
 
-1. **Rate limiting global** en PUSH (middleware o dependencia en rutas críticas) – Prioridad Alta.  
-2. **Benchmarks** de latencia por endpoint (p50/p95/p99) y alertas – Prioridad Alta.  
-3. **Throughput** medido (requests/s) y objetivos SLA – Prioridad Media.  
+1. **Rate limiting global** en PUSH (middleware o dependencia en rutas críticas) – Prioridad Alta.
+2. **Benchmarks** de latencia por endpoint (p50/p95/p99) y alertas – Prioridad Alta.
+3. **Throughput** medido (requests/s) y objetivos SLA – Prioridad Media.
 4. **Cache** para respuestas costosas (health comprehensive, product/status) – Prioridad Baja.
 
 #### Archivos clave
@@ -259,8 +259,8 @@
 
 ### 🧮 LÓGICA (Razonamiento)
 
-**Estado:** 65% – LogicEngine en Robot; reasoning en NEXUS vía goal/think; decisión y problem solving parciales  
-**Calidad:** 6.5/10  
+**Estado:** 65% – LogicEngine en Robot; reasoning en NEXUS vía goal/think; decisión y problem solving parciales
+**Calidad:** 6.5/10
 
 #### Componentes actuales
 
@@ -277,9 +277,9 @@
 
 #### Funcionalidades faltantes
 
-1. **Reasoning explícito paso a paso** (chain-of-thought) en respuestas críticas – Prioridad Alta.  
-2. **Problem solving con backtracking** (replan si un paso falla) – Prioridad Media.  
-3. **LogicEngine sin depender de OpenAI** (Ollama/local como primera opción) – Prioridad Alta para autonomía.  
+1. **Reasoning explícito paso a paso** (chain-of-thought) en respuestas críticas – Prioridad Alta.
+2. **Problem solving con backtracking** (replan si un paso falla) – Prioridad Media.
+3. **LogicEngine sin depender de OpenAI** (Ollama/local como primera opción) – Prioridad Alta para autonomía.
 4. **Evaluación de calidad de respuestas** (scores, feedback loop) – Prioridad Baja.
 
 #### Archivos clave
@@ -305,8 +305,8 @@
 
 ### 🔧 MOTOR (Sistema de Movimiento)
 
-**Estado:** 85% – Muy completo; scheduler, jobs, eventos, transiciones de estado  
-**Calidad:** 8/10  
+**Estado:** 85% – Muy completo; scheduler, jobs, eventos, transiciones de estado
+**Calidad:** 8/10
 
 #### Componentes actuales
 
@@ -325,8 +325,8 @@
 
 #### Funcionalidades faltantes
 
-1. **Dead letter queue** para jobs que fallan tras retries – Prioridad Media.  
-2. **Prioridad dinámica** de jobs según carga (integrado con ResourceThrottler) – Prioridad Baja.  
+1. **Dead letter queue** para jobs que fallan tras retries – Prioridad Media.
+2. **Prioridad dinámica** de jobs según carga (integrado con ResourceThrottler) – Prioridad Baja.
 3. **Event bus** interno (pub/sub) para desacoplar módulos – Prioridad Baja.
 
 #### Archivos clave
@@ -351,8 +351,8 @@
 
 ### 🫀 CORAZÓN (Heartbeat & Health)
 
-**Estado:** 88% – Muy sólido; heartbeat, health checks, signos vitales, ritmo  
-**Calidad:** 8/10  
+**Estado:** 88% – Muy sólido; heartbeat, health checks, signos vitales, ritmo
+**Calidad:** 8/10
 
 #### Componentes actuales
 
@@ -371,8 +371,8 @@
 
 #### Funcionalidades faltantes
 
-1. **Health dashboard en tiempo real** (WebSocket o polling 1s) para operaciones – Prioridad Media.  
-2. **Predicción de fallo** (tendencias que anticipen caída de servicio) – Prioridad Baja.  
+1. **Health dashboard en tiempo real** (WebSocket o polling 1s) para operaciones – Prioridad Media.
+2. **Predicción de fallo** (tendencias que anticipen caída de servicio) – Prioridad Baja.
 3. **SLA formales** (objetivos por endpoint) y alertas cuando se incumplen – Prioridad Media.
 
 #### Archivos clave
@@ -397,8 +397,8 @@
 
 ### 🫁 PULMONES (Respiración de Datos)
 
-**Estado:** 65% – I/O y generación de respuestas bien cubiertos; rate limiting parcial; ingestion estructurada limitada  
-**Calidad:** 6.5/10  
+**Estado:** 65% – I/O y generación de respuestas bien cubiertos; rate limiting parcial; ingestion estructurada limitada
+**Calidad:** 6.5/10
 
 #### Componentes actuales
 
@@ -416,9 +416,9 @@
 
 #### Funcionalidades faltantes
 
-1. **Rate limiting global** en PUSH (por IP y por endpoint) – Prioridad Alta.  
-2. **Data ingestion pipeline** para logs/traces (ej. ingest a timeseries desde todos los servicios) – Prioridad Media.  
-3. **Límites de tamaño** de body (max body size) documentados y aplicados – Prioridad Baja.  
+1. **Rate limiting global** en PUSH (por IP y por endpoint) – Prioridad Alta.
+2. **Data ingestion pipeline** para logs/traces (ej. ingest a timeseries desde todos los servicios) – Prioridad Media.
+3. **Límites de tamaño** de body (max body size) documentados y aplicados – Prioridad Baja.
 4. **Compresión** (gzip) en respuestas grandes – Prioridad Baja.
 
 #### Archivos clave
@@ -442,8 +442,8 @@
 
 ### 🦴 ESQUELETO (Estructura & Arquitectura)
 
-**Estado:** 82% – Módulos claros, APIs abundantes, varias DBs, configuración por env  
-**Calidad:** 7.5/10  
+**Estado:** 82% – Módulos claros, APIs abundantes, varias DBs, configuración por env
+**Calidad:** 7.5/10
 
 #### Componentes actuales
 
@@ -461,9 +461,9 @@
 
 #### Funcionalidades faltantes
 
-1. **Documentación de arquitectura** actualizada (diagrama de componentes y flujos) – Prioridad Alta.  
-2. **Migraciones de esquema** versionadas para todas las DBs – Prioridad Media.  
-3. **API versionado** (v1/, v2/) para evolución sin romper clientes – Prioridad Baja.  
+1. **Documentación de arquitectura** actualizada (diagrama de componentes y flujos) – Prioridad Alta.
+2. **Migraciones de esquema** versionadas para todas las DBs – Prioridad Media.
+3. **API versionado** (v1/, v2/) para evolución sin romper clientes – Prioridad Baja.
 4. **Configuración validada** al arranque (schema para atlas.env y autonomous.yaml) – Prioridad Media.
 
 #### Archivos clave
@@ -489,8 +489,8 @@
 
 ### 🛡️ SISTEMA INMUNE (Seguridad & Resiliencia)
 
-**Estado:** 76% – Circuit breakers, recuperación, disaster recovery y políticas presentes; seguridad explícita limitada  
-**Calidad:** 7/10  
+**Estado:** 76% – Circuit breakers, recuperación, disaster recovery y políticas presentes; seguridad explícita limitada
+**Calidad:** 7/10
 
 #### Componentes actuales
 
@@ -508,9 +508,9 @@
 
 #### Funcionalidades faltantes
 
-1. **Autenticación y autorización** en APIs (JWT o API keys para /api/* sensibles) – Prioridad Alta.  
-2. **Secrets** fuera del repo (no solo .env; vault o variables de entorno estrictas) – Prioridad Alta.  
-3. **Límite de intentos** de login/approval (evitar brute force) – Prioridad Media.  
+1. **Autenticación y autorización** en APIs (JWT o API keys para /api/* sensibles) – Prioridad Alta.
+2. **Secrets** fuera del repo (no solo .env; vault o variables de entorno estrictas) – Prioridad Alta.
+3. **Límite de intentos** de login/approval (evitar brute force) – Prioridad Media.
 4. **Cifrado** de datos sensibles en DB (audit, memoria) – Prioridad Baja.
 
 #### Archivos clave
@@ -554,66 +554,66 @@
 
 ## ROADMAP RECOMENDADO
 
-**FASE 1 – Crítico (Semanas 1–2)**  
-1. **Sangre:** Embeddings y recall_by_similarity en memory_engine (valor alto para búsqueda y contexto).  
-2. **Inmune:** Auth en rutas sensibles y secrets fuera del repo.  
-3. **Velocidad/Pulmones:** Rate limiting global en PUSH.  
+**FASE 1 – Crítico (Semanas 1–2)**
+1. **Sangre:** Embeddings y recall_by_similarity en memory_engine (valor alto para búsqueda y contexto).
+2. **Inmune:** Auth en rutas sensibles y secrets fuera del repo.
+3. **Velocidad/Pulmones:** Rate limiting global en PUSH.
 4. **Lógica:** LogicEngine con Ollama por defecto (autonomía).
 
-**FASE 2 – Importante (Semanas 3–4)**  
-1. **Ojos:** Scene understanding y multi-cámara.  
-2. **Lógica:** Chain-of-thought y replan en cursor.  
-3. **Esqueleto:** Documentación de arquitectura y migraciones versionadas.  
+**FASE 2 – Importante (Semanas 3–4)**
+1. **Ojos:** Scene understanding y multi-cámara.
+2. **Lógica:** Chain-of-thought y replan en cursor.
+3. **Esqueleto:** Documentación de arquitectura y migraciones versionadas.
 4. **Corazón:** Dashboard health en tiempo real y SLAs.
 
-**FASE 3 – Mejoras (Semanas 5–6)**  
-1. **Cerebro:** Tests E2E y OpenAPI completo.  
-2. **Manos:** Métricas por tool y UI de aprobación.  
-3. **Motor:** Dead letter queue y prioridad dinámica.  
+**FASE 3 – Mejoras (Semanas 5–6)**
+1. **Cerebro:** Tests E2E y OpenAPI completo.
+2. **Manos:** Métricas por tool y UI de aprobación.
+3. **Motor:** Dead letter queue y prioridad dinámica.
 4. **Sangre:** Cola asíncrona para jobs pesados.
 
-**FASE 4 – Enterprise (Semanas 7–8+)**  
-1. Tests unitarios e integración por módulo.  
-2. CI/CD (build, test, deploy).  
-3. Observabilidad (tracing, métricas exportadas, dashboards).  
+**FASE 4 – Enterprise (Semanas 7–8+)**
+1. Tests unitarios e integración por módulo.
+2. CI/CD (build, test, deploy).
+3. Observabilidad (tracing, métricas exportadas, dashboards).
 4. Hardening de seguridad (cifrado, límites de intentos).
 
 ---
 
 ## ANÁLISIS DE INTEGRACIÓN
 
-**Puntos de fricción detectados**  
-1. **PUSH ↔ NEXUS:** Dependencia de 8000; si NEXUS cae, proxy /actions/log y /ws devuelven error o cierran; heartbeat y healing ya mitigan.  
-2. **PUSH ↔ Robot:** Proxy /cuerpo; 503 cuando Robot no responde (aceptable); dashboard depende de /api/robot/status.  
-3. **LogicEngine (Robot) ↔ OpenAI:** Dependencia de OPENAI_API_KEY; sin key usa fallback; falta integración con Ollama como primera opción.  
+**Puntos de fricción detectados**
+1. **PUSH ↔ NEXUS:** Dependencia de 8000; si NEXUS cae, proxy /actions/log y /ws devuelven error o cierran; heartbeat y healing ya mitigan.
+2. **PUSH ↔ Robot:** Proxy /cuerpo; 503 cuando Robot no responde (aceptable); dashboard depende de /api/robot/status.
+3. **LogicEngine (Robot) ↔ OpenAI:** Dependencia de OPENAI_API_KEY; sin key usa fallback; falta integración con Ollama como primera opción.
 4. **ResourceThrottler ↔ FastAPI:** Throttler existe pero no hay middleware que llame acquire/release en cada request; uso manual o parcial.
 
-**Redundancias**  
-1. Health: PUSH `/health` (deploy/healthcheck) y autonomous `/api/health/comprehensive`; ambos útiles (uno rápido, otro detallado).  
-2. Status: NEXUS `/status`, Robot `/status`, PUSH `/api/nexus/connection` y `/api/robot/status`; cada uno para su contexto, no redundancia problemática.  
+**Redundancias**
+1. Health: PUSH `/health` (deploy/healthcheck) y autonomous `/api/health/comprehensive`; ambos útiles (uno rápido, otro detallado).
+2. Status: NEXUS `/status`, Robot `/status`, PUSH `/api/nexus/connection` y `/api/robot/status`; cada uno para su contexto, no redundancia problemática.
 3. Dos “healing” conceptuales: ANS heals y autonomous HealingOrchestrator; ANS más operativo (checks concretos), autonomous más genérico (handle_error); complementarios.
 
-**Oportunidades de sinergia**  
-1. **HealthAggregator + ANS:** Usar score/componentes de HealthAggregator como input a checks ANS (evitar duplicar lógica de “¿está mal el scheduler?”).  
-2. **RouteOptimizer + Neural Router:** Alimentar NEXUS con sugerencias de modelo por query_type desde RouteOptimizer.  
+**Oportunidades de sinergia**
+1. **HealthAggregator + ANS:** Usar score/componentes de HealthAggregator como input a checks ANS (evitar duplicar lógica de “¿está mal el scheduler?”).
+2. **RouteOptimizer + Neural Router:** Alimentar NEXUS con sugerencias de modelo por query_type desde RouteOptimizer.
 3. **Memory embeddings + LearningOrchestrator:** Patrones aprendidos basados en recall_by_similarity para mejorar sugerencias.
 
 ---
 
 ## ESTIMACIONES FINALES
 
-**Desarrollo para completitud 100% (todos los órganos al nivel descrito)**  
-- **Tiempo:** 8–12 semanas (1 dev full-time).  
-- **Archivos nuevos:** ~40–60.  
-- **Archivos modificados:** ~80–120.  
-- **Líneas de código (aprox.):** +8.000 – +15.000.  
+**Desarrollo para completitud 100% (todos los órganos al nivel descrito)**
+- **Tiempo:** 8–12 semanas (1 dev full-time).
+- **Archivos nuevos:** ~40–60.
+- **Archivos modificados:** ~80–120.
+- **Líneas de código (aprox.):** +8.000 – +15.000.
 - **Valor agregado (estimado):** $200K – $250K (sistema listo para producción y venta como plataforma).
 
-**Desarrollo para nivel 10/10 Enterprise**  
-- **Tiempo adicional:** 6–8 semanas (tests, documentación, CI/CD, observabilidad, seguridad).  
-- **Tests:** unit + integración + E2E (cobertura >70%).  
-- **Documentación:** arquitectura, runbooks, API versionada.  
-- **CI/CD:** pipeline con test, lint, deploy.  
+**Desarrollo para nivel 10/10 Enterprise**
+- **Tiempo adicional:** 6–8 semanas (tests, documentación, CI/CD, observabilidad, seguridad).
+- **Tests:** unit + integración + E2E (cobertura >70%).
+- **Documentación:** arquitectura, runbooks, API versionada.
+- **CI/CD:** pipeline con test, lint, deploy.
 - **Valor total estimado:** $350K – $500K+ (producto enterprise vendible).
 
 ---

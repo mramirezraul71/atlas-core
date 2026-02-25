@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 def _ollama_available() -> bool:
     try:
         from modules.humanoid.deploy.healthcheck import _check_llm_reachable
+
         return _check_llm_reachable().get("ok", False)
     except Exception:
         return False
@@ -14,10 +15,8 @@ def _ollama_available() -> bool:
 
 def get_ai_status() -> Dict[str, Any]:
     """Proveedores, modelo por ruta, presupuesto, políticas."""
-    from . import policies
-    from . import budgets
-    from . import telemetry
-    from .registry import list_providers, get_model_specs
+    from . import budgets, policies, telemetry
+    from .registry import get_model_specs, list_providers
 
     ollama_ok = _ollama_available()
     providers = list_providers(ollama_ok)
@@ -26,6 +25,7 @@ def get_ai_status() -> Dict[str, Any]:
 
     try:
         from modules.humanoid.mode import get_mode_capabilities
+
         capabilities = get_mode_capabilities()
     except Exception:
         capabilities = {}

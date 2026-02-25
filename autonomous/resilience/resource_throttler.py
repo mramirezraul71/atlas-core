@@ -14,17 +14,21 @@ logger = logging.getLogger(__name__)
 
 try:
     import psutil
+
     _PSUTIL = True
 except ImportError:
     _PSUTIL = False
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -35,7 +39,9 @@ class ResourceThrottler:
     def __init__(self, config: dict | None = None):
         self._config = config or _load_config().get("resilience", {})
         self._throttle_cfg = self._config.get("throttling", {})
-        self._max_concurrent = int(self._throttle_cfg.get("max_concurrent_requests", 100))
+        self._max_concurrent = int(
+            self._throttle_cfg.get("max_concurrent_requests", 100)
+        )
         self._rate_per_sec = float(self._throttle_cfg.get("rate_limit_per_second", 10))
         self._cpu_limit = 80.0
         self._ram_limit = 85.0
@@ -51,7 +57,9 @@ class ResourceThrottler:
         if resource_type == "rate":
             now = time.time()
             with self._lock:
-                self._request_timestamps = [t for t in self._request_timestamps if now - t < 1.0]
+                self._request_timestamps = [
+                    t for t in self._request_timestamps if now - t < 1.0
+                ]
                 return len(self._request_timestamps) >= self._rate_per_sec
         if resource_type == "cpu" and _PSUTIL:
             return psutil.cpu_percent() >= self._cpu_limit
@@ -63,7 +71,11 @@ class ResourceThrottler:
         """Bloquea hasta que haya capacidad o timeout. Retorna True si hay capacidad."""
         deadline = time.time() + timeout_sec
         while time.time() < deadline:
-            if not self.should_throttle("concurrent_requests") and not self.should_throttle("cpu") and not self.should_throttle("ram"):
+            if (
+                not self.should_throttle("concurrent_requests")
+                and not self.should_throttle("cpu")
+                and not self.should_throttle("ram")
+            ):
                 return True
             time.sleep(0.5)
         return False

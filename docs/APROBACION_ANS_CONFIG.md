@@ -1,6 +1,6 @@
 # Aprobación: Configuración ANS para ejecutar heals
 
-**Fecha:** 2025-02-13  
+**Fecha:** 2025-02-13
 **Estado:** Pendiente de aprobación
 
 ---

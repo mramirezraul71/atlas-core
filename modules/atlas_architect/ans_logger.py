@@ -45,7 +45,14 @@ class ANSBitacoraLogger:
     def log_debug(self, message: str, ok: bool = True) -> None:
         self._append(f"[DEBUG] {message}", ok=ok)
 
-    def log_change(self, file_path: Path, before: str, after: str, justification: str, ok: bool = True) -> ChangeRecord:
+    def log_change(
+        self,
+        file_path: Path,
+        before: str,
+        after: str,
+        justification: str,
+        ok: bool = True,
+    ) -> ChangeRecord:
         rel = str(file_path).replace("\\", "/")
         diff = _diff_text(before, after, rel)
         name = f"{_now_stamp()}_{Path(rel).name}.diff"
@@ -64,14 +71,16 @@ class ANSBitacoraLogger:
             f"Diff: {diff_path}"
         )
         self._append(msg, ok=ok)
-        return ChangeRecord(file_path=rel, justification=justification, diff_path=str(diff_path), ok=ok)
+        return ChangeRecord(
+            file_path=rel, justification=justification, diff_path=str(diff_path), ok=ok
+        )
 
     def _append(self, message: str, ok: bool) -> None:
         try:
-            from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+            from modules.humanoid.ans.evolution_bitacora import \
+                append_evolution_log
 
             append_evolution_log(message=message, ok=ok, source="atlas_architect")
         except Exception:
             # Best-effort fallback: ignore logging failure
             pass
-

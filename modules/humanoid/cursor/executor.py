@@ -121,15 +121,21 @@ class CursorExecutor:
                     "$ErrorActionPreference = 'Stop'\n\n"
                 )
                 artifacts.script_path.write_text(header, encoding="utf-8")
-            with artifacts.script_path.open("a", encoding="utf-8", errors="ignore") as f:
+            with artifacts.script_path.open(
+                "a", encoding="utf-8", errors="ignore"
+            ) as f:
                 f.write("\n# --- step command ---\n")
                 f.write(cmd.rstrip() + "\n")
         except Exception:
             pass
 
-    def _run_shell(self, artifacts: RunArtifacts, cmd: str, timeout_s: int = 60) -> Dict[str, Any]:
+    def _run_shell(
+        self, artifacts: RunArtifacts, cmd: str, timeout_s: int = 60
+    ) -> Dict[str, Any]:
         self._append_log(artifacts, f"$ {cmd}")
-        res = self.shell.run(cmd, cwd=str(self.repo_root), timeout_sec=int(timeout_s or 60))
+        res = self.shell.run(
+            cmd, cwd=str(self.repo_root), timeout_sec=int(timeout_s or 60)
+        )
         out = (res.get("stdout") or "").strip()
         err = (res.get("stderr") or "").strip()
         if out:
@@ -142,6 +148,7 @@ class CursorExecutor:
     def _run_status(self) -> Dict[str, Any]:
         try:
             from modules.command_router import handle
+
             return {"ok": True, "output": handle("/status")}
         except Exception as e:
             return {"ok": False, "output": "", "error": str(e)}
@@ -149,6 +156,7 @@ class CursorExecutor:
     def _run_health(self) -> Dict[str, Any]:
         try:
             from modules.humanoid.deploy.healthcheck import run_health_verbose
+
             return run_health_verbose(base_url=None)
         except Exception as e:
             return {"ok": False, "score": 0, "checks": {}, "error": str(e)}
@@ -156,11 +164,19 @@ class CursorExecutor:
     def _run_camera_health(self) -> Dict[str, Any]:
         try:
             from modules.humanoid.ans.checks.robot_camera_health import run
+
             return run()
         except Exception as e:
-            return {"ok": False, "check_id": "robot_camera_health", "message": str(e), "severity": "med"}
+            return {
+                "ok": False,
+                "check_id": "robot_camera_health",
+                "message": str(e),
+                "severity": "med",
+            }
 
-    def execute_step(self, artifacts: RunArtifacts, step: Dict[str, Any]) -> Dict[str, Any]:
+    def execute_step(
+        self, artifacts: RunArtifacts, step: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Ejecuta 1 step. Devuelve estructura rica para UI."""
         desc = (step.get("description") or "").strip()
         low = desc.lower()
@@ -174,7 +190,11 @@ class CursorExecutor:
         }
 
         # 1) Diagnóstico (status/health)
-        if "/status" in low or ("verificar estado" in low and "sistema" in low) or low.startswith("status"):
+        if (
+            "/status" in low
+            or ("verificar estado" in low and "sistema" in low)
+            or low.startswith("status")
+        ):
             out = self._run_status()
             result["action"] = "status"
             result["details"] = out
@@ -187,20 +207,31 @@ class CursorExecutor:
             result["action"] = "health"
             result["details"] = out
             result["ok"] = bool(out.get("ok"))
-            self._append_log(artifacts, "HEALTH:\n" + json.dumps(out, ensure_ascii=False)[:4000])
+            self._append_log(
+                artifacts, "HEALTH:\n" + json.dumps(out, ensure_ascii=False)[:4000]
+            )
             return result
 
         # 2) Evidencia rápida (screenshot)
-        if "captura" in low or "screenshot" in low or "ver pantalla" in low or "ver la pantalla" in low:
+        if (
+            "captura" in low
+            or "screenshot" in low
+            or "ver pantalla" in low
+            or "ver la pantalla" in low
+        ):
             try:
                 from modules.humanoid.nerve import eyes_capture
+
                 cap = eyes_capture(use_nexus_if_available=True, source="screen")
                 result["action"] = "eyes_capture"
                 result["details"] = cap
                 result["ok"] = bool(cap.get("ok"))
                 if cap.get("evidence_path"):
                     result["evidence_path"] = cap["evidence_path"]
-                self._append_log(artifacts, f"EYES_CAPTURE ok={cap.get('ok')} path={cap.get('evidence_path')}")
+                self._append_log(
+                    artifacts,
+                    f"EYES_CAPTURE ok={cap.get('ok')} path={cap.get('evidence_path')}",
+                )
                 return result
             except Exception as e:
                 result["action"] = "eyes_capture"
@@ -215,7 +246,10 @@ class CursorExecutor:
             result["action"] = "robot_camera_health"
             result["details"] = out
             result["ok"] = bool(out.get("ok"))
-            self._append_log(artifacts, "CAMERA_HEALTH:\n" + json.dumps(out, ensure_ascii=False)[:4000])
+            self._append_log(
+                artifacts,
+                "CAMERA_HEALTH:\n" + json.dumps(out, ensure_ascii=False)[:4000],
+            )
             return result
 
         # 4) Ejecutar tests / diagnósticos por shell (real)
@@ -228,19 +262,31 @@ class CursorExecutor:
             return result
 
         # 4b) ATLAS_ARCHITECT: crear app / scaffolding autónomo
-        if ("diseña una app" in low) or ("disena una app" in low) or ("app de inventario" in low) or ("inventario" in low and "app" in low):
+        if (
+            ("diseña una app" in low)
+            or ("disena una app" in low)
+            or ("app de inventario" in low)
+            or ("inventario" in low and "app" in low)
+        ):
             try:
-                from modules.humanoid.mode.config import get_system_mode
                 from modules.atlas_architect import AtlasArchitect
+                from modules.humanoid.mode.config import get_system_mode
 
                 sys_mode = get_system_mode()
-                gov_mode = "growth" if sys_mode in ("aggressive", "ultra") else "governed"
+                gov_mode = (
+                    "growth" if sys_mode in ("aggressive", "ultra") else "governed"
+                )
                 arch = AtlasArchitect(repo_root=self.repo_root)
-                out = arch.execute_order(desc, mode=gov_mode, prefer_free=True, max_heal_attempts=3)
+                out = arch.execute_order(
+                    desc, mode=gov_mode, prefer_free=True, max_heal_attempts=3
+                )
                 result["action"] = "architect:order"
                 result["details"] = out
                 result["ok"] = bool(out.get("ok"))
-                self._append_log(artifacts, "ARCHITECT:\n" + json.dumps(out, ensure_ascii=False)[:6000])
+                self._append_log(
+                    artifacts,
+                    "ARCHITECT:\n" + json.dumps(out, ensure_ascii=False)[:6000],
+                )
                 return result
             except Exception as e:
                 result["action"] = "architect:order"
@@ -283,7 +329,9 @@ class CursorExecutor:
             else:
                 s["status"] = "failed"
 
-        ok_all = all(x.get("ok") for x in executed if x.get("action") != "needs_human") and any(x.get("ok") for x in executed)
+        ok_all = all(
+            x.get("ok") for x in executed if x.get("action") != "needs_human"
+        ) and any(x.get("ok") for x in executed)
         # Guardar JSON de run (para inspección humana)
         payload = {
             "run_id": artifacts.run_id,
@@ -296,7 +344,9 @@ class CursorExecutor:
             "ts_utc": datetime.now(timezone.utc).isoformat(),
         }
         try:
-            _atomic_write(artifacts.json_path, json.dumps(payload, ensure_ascii=False, indent=2))
+            _atomic_write(
+                artifacts.json_path, json.dumps(payload, ensure_ascii=False, indent=2)
+            )
         except Exception:
             pass
 
@@ -304,7 +354,9 @@ class CursorExecutor:
         preview = ""
         try:
             if artifacts.log_path.exists():
-                preview = artifacts.log_path.read_text(encoding="utf-8", errors="ignore")[-6000:]
+                preview = artifacts.log_path.read_text(
+                    encoding="utf-8", errors="ignore"
+                )[-6000:]
         except Exception:
             preview = ""
 
@@ -327,4 +379,3 @@ class CursorExecutor:
             },
             "terminal_preview": preview or "—",
         }
-

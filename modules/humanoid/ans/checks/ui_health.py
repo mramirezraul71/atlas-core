@@ -12,6 +12,19 @@ def run() -> dict:
         req = urllib.request.Request(url, method="GET")
         with urllib.request.urlopen(req, timeout=5) as resp:
             ok = resp.status == 200
-        return {"ok": ok, "check_id": "ui_health", "message": "ok" if ok else "fail", "details": {}, "severity": "low"}
+        return {
+            "ok": ok,
+            "check_id": "ui_health",
+            "message": "ok" if ok else "fail",
+            "details": {},
+            "severity": "low",
+        }
     except Exception as e:
-        return {"ok": False, "check_id": "ui_health", "message": str(e), "details": {"error": str(e)}, "severity": "low", "suggested_heals": ["clear_stale_locks"]}
+        return {
+            "ok": False,
+            "check_id": "ui_health",
+            "message": str(e),
+            "details": {"error": str(e)},
+            "severity": "low",
+            "suggested_heals": ["clear_stale_locks"],
+        }

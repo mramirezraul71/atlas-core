@@ -10,7 +10,8 @@ Triggers:
 
 Severidad: LOW (solo lectura, no modifica nada)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -26,15 +27,12 @@ Ideal para evaluar estado general o preparar actualizaciones.
         severity=POTSeverity.LOW,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["diagnostic_*", "health_check_full"],
         trigger_keywords=["diagnostic", "diagnóstico", "full", "complete", "status"],
-        
         prerequisites=[
             "Sistema accesible (al menos Push dashboard)",
         ],
         required_services=["push"],
-        
         objectives=[
             "Verificar estado de todos los servicios",
             "Medir tiempos de respuesta",
@@ -44,7 +42,6 @@ Ideal para evaluar estado general o preparar actualizaciones.
         ],
         success_criteria="Reporte generado con todos los componentes evaluados",
         estimated_duration_minutes=3,
-        
         tutorial_overview="""
 ## Guía de Diagnóstico Completo
 
@@ -72,17 +69,14 @@ Ideal para evaluar estado general o preparar actualizaciones.
 - Incidentes abiertos
 - Jobs pendientes del scheduler
         """.strip(),
-        
         best_practices=[
             "Ejecutar diagnóstico completo periódicamente (diario)",
             "Comparar con diagnósticos anteriores para detectar degradación",
             "Guardar resultados para análisis de tendencias",
             "No ejecutar durante operaciones de carga pesada",
         ],
-        
         related_pots=["maintenance_daily", "incident_triage"],
         tags=["diagnostic", "health", "status", "report", "readonly"],
-        
         steps=[
             POTStep(
                 id="start_diagnostic",
@@ -91,7 +85,6 @@ Ideal para evaluar estado general o preparar actualizaciones.
                 step_type=StepType.LOG,
                 tutorial_notes="Marca el inicio del diagnóstico para medir duración total.",
             ),
-            
             # Servicios Core
             POTStep(
                 id="check_push",
@@ -104,7 +97,6 @@ Ideal para evaluar estado general o preparar actualizaciones.
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_robot",
                 name="Verificar Robot Backend",
@@ -116,7 +108,6 @@ Ideal para evaluar estado general o preparar actualizaciones.
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_nexus",
                 name="Verificar NEXUS",
@@ -128,7 +119,6 @@ Ideal para evaluar estado general o preparar actualizaciones.
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             # Subsistemas
             POTStep(
                 id="check_cameras",
@@ -141,7 +131,6 @@ Ideal para evaluar estado general o preparar actualizaciones.
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_ans",
                 name="Verificar ANS",
@@ -153,7 +142,6 @@ Ideal para evaluar estado general o preparar actualizaciones.
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_scheduler",
                 name="Verificar Scheduler",
@@ -165,7 +153,6 @@ Ideal para evaluar estado general o preparar actualizaciones.
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_incidents",
                 name="Verificar incidentes",
@@ -177,7 +164,6 @@ Ideal para evaluar estado general o preparar actualizaciones.
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_approvals",
                 name="Verificar aprobaciones pendientes",
@@ -189,7 +175,6 @@ Ideal para evaluar estado general o preparar actualizaciones.
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             # Recursos del sistema
             POTStep(
                 id="check_disk",
@@ -201,7 +186,6 @@ Ideal para evaluar estado general o preparar actualizaciones.
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_memory",
                 name="Verificar memoria",
@@ -212,7 +196,6 @@ Ideal para evaluar estado general o preparar actualizaciones.
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_python_processes",
                 name="Contar procesos Python",
@@ -223,7 +206,6 @@ Ideal para evaluar estado general o preparar actualizaciones.
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             # Workshop
             POTStep(
                 id="check_workshop",
@@ -236,7 +218,6 @@ Ideal para evaluar estado general o preparar actualizaciones.
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             # Generar reporte
             POTStep(
                 id="generate_report",
@@ -256,7 +237,6 @@ El motor de POTs consolida todos los outputs capturados en un reporte JSON:
 }
                 """,
             ),
-            
             POTStep(
                 id="log_diagnostic",
                 name="Registrar diagnóstico",
@@ -267,7 +247,7 @@ El motor de POTs consolida todos los outputs capturados en un reporte JSON:
                 http_body={
                     "message": "[DIAGNÓSTICO] Diagnóstico completo ejecutado por POT",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
                 continue_on_failure=True,
             ),

@@ -4,12 +4,13 @@ Vision, Object Detection (YOLO bridge), SLAM placeholder.
 """
 import json
 import os
-import time
 import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import atlas_ros2_lite as rclpy
-from atlas_ros2_lite import Node, make_string, make_bool, make_pose_stamped, make_header
+from atlas_ros2_lite import (Node, make_bool, make_header, make_pose_stamped,
+                             make_string)
 
 
 class VisionNode(Node):
@@ -22,11 +23,17 @@ class VisionNode(Node):
 
     def _tick(self):
         self._frame_count += 1
-        self.status_pub.publish(make_string(json.dumps({
-            "frame": self._frame_count,
-            "cameras": ["head_rgb", "chest_depth"],
-            "mode": "simulation",
-        })))
+        self.status_pub.publish(
+            make_string(
+                json.dumps(
+                    {
+                        "frame": self._frame_count,
+                        "cameras": ["head_rgb", "chest_depth"],
+                        "mode": "simulation",
+                    }
+                )
+            )
+        )
 
 
 class ObjectDetector(Node):
@@ -38,6 +45,7 @@ class ObjectDetector(Node):
         # Try loading YOLO from existing Atlas
         try:
             from ultralytics import YOLO
+
             model_path = os.path.join("C:", os.sep, "ATLAS_PUSH", "yolov8n.pt")
             if os.path.exists(model_path):
                 self._model = YOLO(model_path)
@@ -52,12 +60,18 @@ class ObjectDetector(Node):
 
     def _tick(self):
         self._frame_count += 1
-        self.det_pub.publish(make_string(json.dumps({
-            "frame": self._frame_count,
-            "count": 0,
-            "detections": [],
-            "model_loaded": self._model is not None,
-        })))
+        self.det_pub.publish(
+            make_string(
+                json.dumps(
+                    {
+                        "frame": self._frame_count,
+                        "count": 0,
+                        "detections": [],
+                        "model_loaded": self._model is not None,
+                    }
+                )
+            )
+        )
 
 
 class SlamNode(Node):
@@ -66,11 +80,15 @@ class SlamNode(Node):
         self.pose_pub = self.create_publisher(None, "/atlas/slam/pose", 10)
         self.status_pub = self.create_publisher(None, "/atlas/slam/active", 10)
         self.create_timer(0.5, self._tick)
-        self.get_logger().info("SLAM node started (placeholder, publishing origin pose)")
+        self.get_logger().info(
+            "SLAM node started (placeholder, publishing origin pose)"
+        )
 
     def _tick(self):
         self.status_pub.publish(make_bool(False))
-        self.pose_pub.publish(make_pose_stamped(
-            header=make_header("map"),
-            position={"x": 0.0, "y": 0.0, "z": 0.0},
-        ))
+        self.pose_pub.publish(
+            make_pose_stamped(
+                header=make_header("map"),
+                position={"x": 0.0, "y": 0.0, "z": 0.0},
+            )
+        )

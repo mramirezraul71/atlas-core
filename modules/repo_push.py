@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+
 # Raíz por defecto (ATLAS_PUSH)
 def _default_root() -> Path:
     root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT")
@@ -17,12 +18,15 @@ def _default_root() -> Path:
 
 def get_config() -> Dict[str, Any]:
     """Carga config/repo_monitor.yaml (known_apps, git.exclude_paths)."""
-    config_path = os.getenv("REPO_MONITOR_CONFIG") or str(_default_root() / "config" / "repo_monitor.yaml")
+    config_path = os.getenv("REPO_MONITOR_CONFIG") or str(
+        _default_root() / "config" / "repo_monitor.yaml"
+    )
     path = Path(config_path)
     if not path.is_file():
         return {"known_apps": {}, "git": {"exclude_paths": []}}
     try:
         import yaml
+
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         return data
@@ -89,7 +93,14 @@ def _should_exclude(path: str, exclude_paths: List[str]) -> bool:
 
 
 def _filter_status_lines(lines: List[str], exclude_paths: List[str]) -> List[str]:
-    return [ln for ln in lines if not _should_exclude(ln.split(maxsplit=1)[-1].strip() if len(ln.split(maxsplit=1)) >= 2 else ln, exclude_paths)]
+    return [
+        ln
+        for ln in lines
+        if not _should_exclude(
+            ln.split(maxsplit=1)[-1].strip() if len(ln.split(maxsplit=1)) >= 2 else ln,
+            exclude_paths,
+        )
+    ]
 
 
 def push_repo(
@@ -104,40 +115,91 @@ def push_repo(
     repo_path | app_id | repo_path_str: cuál usar (prioridad repo_path > app_id > repo_path_str > raíz).
     Retorna {ok, message, stdout, stderr, error, branch}.
     """
-    repo = repo_path if repo_path is not None else resolve_path(app_id=app_id, repo_path=repo_path_str)
+    repo = (
+        repo_path
+        if repo_path is not None
+        else resolve_path(app_id=app_id, repo_path=repo_path_str)
+    )
     cfg = config or get_config()
     exclude = (cfg.get("git") or {}).get("exclude_paths") or []
     remote = (cfg.get("repo") or {}).get("remote", "origin")
 
     if not (repo / ".git").exists():
-        return {"ok": False, "message": "No es un repositorio git: %s" % repo, "error": "not_a_repo", "branch": None}
+        return {
+            "ok": False,
+            "message": "No es un repositorio git: %s" % repo,
+            "error": "not_a_repo",
+            "branch": None,
+        }
 
     # Branch actual
     r_branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD", timeout_sec=5)
-    branch = (r_branch.get("stdout") or "main").strip() if r_branch.get("ok") else "main"
+    branch = (
+        (r_branch.get("stdout") or "main").strip() if r_branch.get("ok") else "main"
+    )
 
     # Status filtrado
     status_r = _git(repo, "status", "--short", timeout_sec=10)
     if not status_r.get("ok"):
-        return {"ok": False, "message": "git status falló", "stderr": status_r.get("stderr"), "error": "status_fail", "branch": branch}
+        return {
+            "ok": False,
+            "message": "git status falló",
+            "stderr": status_r.get("stderr"),
+            "error": "status_fail",
+            "branch": branch,
+        }
     lines = [ln for ln in (status_r.get("stdout") or "").splitlines() if ln.strip()]
     filtered = _filter_status_lines(lines, exclude)
     if not filtered:
-        return {"ok": True, "message": "Sin cambios para commit en %s" % repo.name, "branch": branch, "pushed": False}
+        return {
+            "ok": True,
+            "message": "Sin cambios para commit en %s" % repo.name,
+            "branch": branch,
+            "pushed": False,
+        }
 
-    paths = [ln.split(maxsplit=1)[1].strip() for ln in filtered if len(ln.split(maxsplit=1)) >= 2]
+    paths = [
+        ln.split(maxsplit=1)[1].strip()
+        for ln in filtered
+        if len(ln.split(maxsplit=1)) >= 2
+    ]
     for p in paths:
         _git(repo, "add", p, timeout_sec=5)
     commit_r = _git(repo, "commit", "-m", message, timeout_sec=10)
     if not commit_r.get("ok"):
-        if "nothing to commit" in (commit_r.get("stdout") or "") + (commit_r.get("stderr") or ""):
-            return {"ok": True, "message": "Nada que commitear (working tree clean)", "branch": branch, "pushed": False}
-        return {"ok": False, "message": "Commit falló", "stdout": commit_r.get("stdout"), "stderr": commit_r.get("stderr"), "error": "commit_fail", "branch": branch}
+        if "nothing to commit" in (commit_r.get("stdout") or "") + (
+            commit_r.get("stderr") or ""
+        ):
+            return {
+                "ok": True,
+                "message": "Nada que commitear (working tree clean)",
+                "branch": branch,
+                "pushed": False,
+            }
+        return {
+            "ok": False,
+            "message": "Commit falló",
+            "stdout": commit_r.get("stdout"),
+            "stderr": commit_r.get("stderr"),
+            "error": "commit_fail",
+            "branch": branch,
+        }
 
     push_r = _git(repo, "push", remote, branch, timeout_sec=60)
     if not push_r.get("ok"):
-        return {"ok": False, "message": "Push falló: %s" % (push_r.get("stderr") or "")[:200], "stderr": push_r.get("stderr"), "error": "push_fail", "branch": branch}
-    return {"ok": True, "message": "Push OK: %s/%s (%s)" % (remote, branch, repo.name), "branch": branch, "pushed": True}
+        return {
+            "ok": False,
+            "message": "Push falló: %s" % (push_r.get("stderr") or "")[:200],
+            "stderr": push_r.get("stderr"),
+            "error": "push_fail",
+            "branch": branch,
+        }
+    return {
+        "ok": True,
+        "message": "Push OK: %s/%s (%s)" % (remote, branch, repo.name),
+        "branch": branch,
+        "pushed": True,
+    }
 
 
 def list_known_apps() -> Dict[str, str]:

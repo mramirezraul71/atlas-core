@@ -37,14 +37,20 @@ def get_pot() -> POT:
 
         if not _dir_exists(humanoid):
             lines.append("")
-            lines.append("Hallazgo: este repo no contiene el cerebro humanoid completo en disco.")
-            lines.append("Acción: definir repositorio fuente (atlas-core) o restaurar el árbol modules/humanoid.")
+            lines.append(
+                "Hallazgo: este repo no contiene el cerebro humanoid completo en disco."
+            )
+            lines.append(
+                "Acción: definir repositorio fuente (atlas-core) o restaurar el árbol modules/humanoid."
+            )
             return "\n".join(lines)
 
         missing = [n for n in expected if not _dir_exists(humanoid / n)]
         present = [n for n in expected if _dir_exists(humanoid / n)]
 
-        lines.append(f"- expected_subsystems={len(expected)} present={len(present)} missing={len(missing)}")
+        lines.append(
+            f"- expected_subsystems={len(expected)} present={len(present)} missing={len(missing)}"
+        )
         if present:
             lines.append("- present:")
             for n in present:
@@ -57,7 +63,9 @@ def get_pot() -> POT:
         lines.append("")
         lines.append("Guía de especialista:")
         lines.append("- Si falta un subsistema, NO ejecutar POTs que lo dependan.")
-        lines.append("- Mantener POTs check-only hasta restaurar el árbol humanoid completo.")
+        lines.append(
+            "- Mantener POTs check-only hasta restaurar el árbol humanoid completo."
+        )
         return "\n".join(lines)
 
     return POT(
@@ -70,6 +78,9 @@ def get_pot() -> POT:
             "Si faltan subsistemas, se considera estado 'parcial' y se opera en modo seguro.",
         ],
         tags=["humanoid", "architecture", "audit"],
-        steps=[POTStep(id="audit_humanoid", name="Auditar árbol humanoid", run=_run, fatal=True)],
+        steps=[
+            POTStep(
+                id="audit_humanoid", name="Auditar árbol humanoid", run=_run, fatal=True
+            )
+        ],
     )
-

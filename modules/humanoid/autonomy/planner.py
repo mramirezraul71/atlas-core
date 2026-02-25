@@ -10,10 +10,17 @@ PLAN_TEMPERATURE = 0.2
 PLAN_TIMEOUT_SEC = 15
 
 _REJECT_PATTERNS = (
-    "herramienta de recopilacion", "configurar base de datos para",
-    "desarrollar algoritmo", "implementar plataforma", "establecer acuerdos",
-    "crear herramienta", "sistema de notificaciones", "informe diario",
-    "proceso de seguimiento", "revision periodica", "analisis de patrones",
+    "herramienta de recopilacion",
+    "configurar base de datos para",
+    "desarrollar algoritmo",
+    "implementar plataforma",
+    "establecer acuerdos",
+    "crear herramienta",
+    "sistema de notificaciones",
+    "informe diario",
+    "proceso de seguimiento",
+    "revision periodica",
+    "analisis de patrones",
     "plataforma de gestion",
 )
 
@@ -27,7 +34,9 @@ class TaskPlanner:
     def set_brain(self, brain: Any) -> None:
         self._brain = brain
 
-    def plan(self, goal: str, context: Optional[Dict[str, Any]] = None, fast: bool = True) -> Dict[str, Any]:
+    def plan(
+        self, goal: str, context: Optional[Dict[str, Any]] = None, fast: bool = True
+    ) -> Dict[str, Any]:
         if not self._brain or not hasattr(self._brain, "run_llm"):
             return {"ok": False, "steps": [], "error": "Brain/LLM not available"}
         route = PLAN_ROUTE_FAST if fast else "REASON"

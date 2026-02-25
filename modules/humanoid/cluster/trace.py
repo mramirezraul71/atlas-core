@@ -5,7 +5,9 @@ import contextvars
 import uuid
 from typing import Optional
 
-_correlation_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("cluster_correlation_id", default=None)
+_correlation_id: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "cluster_correlation_id", default=None
+)
 
 
 def get_correlation_id() -> Optional[str]:

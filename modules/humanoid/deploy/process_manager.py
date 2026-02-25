@@ -30,10 +30,13 @@ def start_instance(port: int, tag: str = "staging") -> Dict[str, Any]:
         proc = subprocess.Popen(
             [
                 str(venv_python),
-                "-m", "uvicorn",
+                "-m",
+                "uvicorn",
                 "atlas_adapter.atlas_http_api:app",
-                "--host", "127.0.0.1",
-                "--port", str(port),
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
             ],
             cwd=str(repo),
             stdout=subprocess.DEVNULL,
@@ -52,9 +55,14 @@ def stop_by_pid(pid: Optional[int]) -> Dict[str, Any]:
         return {"ok": True, "error": None}
     try:
         if os.name == "nt":
-            subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, timeout=TIMEOUT_STOP_SEC)
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/F"],
+                capture_output=True,
+                timeout=TIMEOUT_STOP_SEC,
+            )
         else:
             import signal
+
             os.kill(pid, signal.SIGTERM)
             time.sleep(1)
     except subprocess.TimeoutExpired:
@@ -69,6 +77,7 @@ def stop_by_pid(pid: Optional[int]) -> Dict[str, Any]:
 def wait_until_healthy(base_url: str, timeout_sec: int = TIMEOUT_START_SEC) -> bool:
     """Poll GET /health until ok or timeout."""
     import urllib.request
+
     url = f"{base_url.rstrip('/')}/health"
     deadline = time.monotonic() + timeout_sec
     while time.monotonic() < deadline:
@@ -76,6 +85,7 @@ def wait_until_healthy(base_url: str, timeout_sec: int = TIMEOUT_START_SEC) -> b
             req = urllib.request.Request(url, method="GET")
             with urllib.request.urlopen(req, timeout=5) as r:
                 import json
+
                 data = json.loads(r.read().decode())
                 if data.get("ok") or data.get("score", 0) >= 60:
                     return True

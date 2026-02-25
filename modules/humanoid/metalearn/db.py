@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-import sqlite3
 
 SCHEMA_EVENTS = """
 CREATE TABLE IF NOT EXISTS feedback_events (
@@ -109,6 +108,7 @@ def insert_event(
 ) -> int:
     """Insert feedback event. Returns row id. event_hash for audit (no PII)."""
     import hashlib
+
     payload = f"{ts}|{action_type}|{risk_level}|{decision}|{outcome}|{source}"
     event_hash = hashlib.sha256(payload.encode()).hexdigest()[:16]
     conn = _ensure()
@@ -145,43 +145,77 @@ def get_events_since(ts: str, limit: int = 5000) -> List[Dict[str, Any]]:
     ).fetchall()
     out = []
     for r in rows:
-        out.append({
-            "ts": r[0],
-            "action_type": r[1],
-            "risk_level": r[2],
-            "decision": r[3],
-            "outcome": r[4],
-            "latency_ms": r[5],
-            "node_id": r[6],
-            "model_used": r[7],
-            "features_json": json.loads(r[8]) if r[8] else None,
-            "source": r[9],
-        })
+        out.append(
+            {
+                "ts": r[0],
+                "action_type": r[1],
+                "risk_level": r[2],
+                "decision": r[3],
+                "outcome": r[4],
+                "latency_ms": r[5],
+                "node_id": r[6],
+                "model_used": r[7],
+                "features_json": json.loads(r[8]) if r[8] else None,
+                "source": r[9],
+            }
+        )
     return out
 
 
-def upsert_stat(bucket_key: str, approve_delta: float, reject_delta: float, success_delta: float, fail_delta: float, latency_delta: float, updated_ts: str, sample_delta: int = 1) -> None:
+def upsert_stat(
+    bucket_key: str,
+    approve_delta: float,
+    reject_delta: float,
+    success_delta: float,
+    fail_delta: float,
+    latency_delta: float,
+    updated_ts: str,
+    sample_delta: int = 1,
+) -> None:
     """Update decayed stats for a bucket."""
     conn = _ensure()
-    row = conn.execute("SELECT approve_count, reject_count, success_count, fail_count, total_latency_ms, sample_count FROM learn_stats WHERE bucket_key = ?", (bucket_key,)).fetchone()
+    row = conn.execute(
+        "SELECT approve_count, reject_count, success_count, fail_count, total_latency_ms, sample_count FROM learn_stats WHERE bucket_key = ?",
+        (bucket_key,),
+    ).fetchone()
     if row:
         conn.execute(
             """UPDATE learn_stats SET approve_count = approve_count + ?, reject_count = reject_count + ?, success_count = success_count + ?, fail_count = fail_count + ?,
                total_latency_ms = total_latency_ms + ?, sample_count = sample_count + ?, updated_ts = ? WHERE bucket_key = ?""",
-            (approve_delta, reject_delta, success_delta, fail_delta, latency_delta, sample_delta, updated_ts, bucket_key),
+            (
+                approve_delta,
+                reject_delta,
+                success_delta,
+                fail_delta,
+                latency_delta,
+                sample_delta,
+                updated_ts,
+                bucket_key,
+            ),
         )
     else:
         conn.execute(
             """INSERT INTO learn_stats (bucket_key, approve_count, reject_count, success_count, fail_count, total_latency_ms, sample_count, updated_ts)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (bucket_key, approve_delta, reject_delta, success_delta, fail_delta, latency_delta, sample_delta, updated_ts),
+            (
+                bucket_key,
+                approve_delta,
+                reject_delta,
+                success_delta,
+                fail_delta,
+                latency_delta,
+                sample_delta,
+                updated_ts,
+            ),
         )
     conn.commit()
 
 
 def get_all_stats() -> List[Dict[str, Any]]:
     conn = _ensure()
-    rows = conn.execute("SELECT bucket_key, approve_count, reject_count, success_count, fail_count, total_latency_ms, sample_count, updated_ts FROM learn_stats").fetchall()
+    rows = conn.execute(
+        "SELECT bucket_key, approve_count, reject_count, success_count, fail_count, total_latency_ms, sample_count, updated_ts FROM learn_stats"
+    ).fetchall()
     return [
         {
             "bucket_key": r[0],
@@ -243,15 +277,26 @@ def get_rules(limit: int = 100) -> List[Dict[str, Any]]:
     ]
 
 
-def save_snapshot(snapshot_id: str, params: Dict[str, Any], created_ts: str, comment: Optional[str] = None) -> None:
+def save_snapshot(
+    snapshot_id: str,
+    params: Dict[str, Any],
+    created_ts: str,
+    comment: Optional[str] = None,
+) -> None:
     conn = _ensure()
-    conn.execute("INSERT INTO tune_snapshots (id, params_json, created_ts, comment) VALUES (?, ?, ?, ?)", (snapshot_id, json.dumps(params), created_ts, comment or ""))
+    conn.execute(
+        "INSERT INTO tune_snapshots (id, params_json, created_ts, comment) VALUES (?, ?, ?, ?)",
+        (snapshot_id, json.dumps(params), created_ts, comment or ""),
+    )
     conn.commit()
 
 
 def get_snapshot(snapshot_id: str) -> Optional[Dict[str, Any]]:
     conn = _ensure()
-    row = conn.execute("SELECT params_json, created_ts, comment FROM tune_snapshots WHERE id = ?", (snapshot_id,)).fetchone()
+    row = conn.execute(
+        "SELECT params_json, created_ts, comment FROM tune_snapshots WHERE id = ?",
+        (snapshot_id,),
+    ).fetchone()
     if not row:
         return None
     return {"params": json.loads(row[0]), "created_ts": row[1], "comment": row[2]}
@@ -259,7 +304,10 @@ def get_snapshot(snapshot_id: str) -> Optional[Dict[str, Any]]:
 
 def list_snapshots(limit: int = 20) -> List[Dict[str, Any]]:
     conn = _ensure()
-    rows = conn.execute("SELECT id, created_ts, comment FROM tune_snapshots ORDER BY created_ts DESC LIMIT ?", (limit,)).fetchall()
+    rows = conn.execute(
+        "SELECT id, created_ts, comment FROM tune_snapshots ORDER BY created_ts DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
     return [{"id": r[0], "created_ts": r[1], "comment": r[2]} for r in rows]
 
 

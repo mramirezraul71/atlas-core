@@ -8,17 +8,21 @@ from typing import Any, Dict, List, Optional
 
 
 def _db_path() -> Path:
-    base = os.getenv("ATLAS_REPO_PATH") or os.getenv("POLICY_ALLOWED_PATHS", "C:\\ATLAS_PUSH")
+    base = os.getenv("ATLAS_REPO_PATH") or os.getenv(
+        "POLICY_ALLOWED_PATHS", "C:\\ATLAS_PUSH"
+    )
     base = base.strip().split(",")[0].strip()
     return Path(base) / "logs" / "atlas_macros.sqlite"
 
 
 def _ensure_db() -> Any:
     import sqlite3
+
     p = _db_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(p))
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS macros (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -26,7 +30,8 @@ def _ensure_db() -> Any:
             created_at TEXT NOT NULL,
             version INTEGER DEFAULT 1
         )
-    """)
+    """
+    )
     conn.commit()
     return conn
 
@@ -38,7 +43,10 @@ def list_macros(limit: int = 50) -> List[Dict[str, Any]]:
             "SELECT id, name, created_at, version FROM macros ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
-        return [{"id": r[0], "name": r[1], "created_at": r[2], "version": r[3]} for r in rows]
+        return [
+            {"id": r[0], "name": r[1], "created_at": r[2], "version": r[3]}
+            for r in rows
+        ]
     finally:
         conn.close()
 
@@ -53,14 +61,23 @@ def get_macro(macro_id: str) -> Optional[Dict[str, Any]]:
         if not row:
             return None
         actions = json.loads(row[2]) if isinstance(row[2], str) else row[2]
-        return {"id": row[0], "name": row[1], "actions": actions, "created_at": row[3], "version": row[4]}
+        return {
+            "id": row[0],
+            "name": row[1],
+            "actions": actions,
+            "created_at": row[3],
+            "version": row[4],
+        }
     finally:
         conn.close()
 
 
-def save_macro(macro_id: str, name: str, actions: List[Dict[str, Any]]) -> Dict[str, Any]:
+def save_macro(
+    macro_id: str, name: str, actions: List[Dict[str, Any]]
+) -> Dict[str, Any]:
     import sqlite3
     from datetime import datetime, timezone
+
     conn = _ensure_db()
     try:
         now = datetime.now(timezone.utc).isoformat()

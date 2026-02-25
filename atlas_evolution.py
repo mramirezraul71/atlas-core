@@ -24,6 +24,7 @@ _env_file = BASE / "config" / "atlas.env"
 if _env_file.exists():
     try:
         from dotenv import load_dotenv
+
         load_dotenv(_env_file, override=True)
     except ImportError:
         pass
@@ -37,8 +38,13 @@ logger = logging.getLogger("atlas.evolution")
 
 # Módulo de Visión: pytesseract + prueba snapshot/OCR
 try:
-    from modules.evolution.vision import configure_tesseract, test_vision_snapshot
-    configure_tesseract(os.environ.get("TESSERACT_CMD") or r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+    from modules.evolution.vision import (configure_tesseract,
+                                          test_vision_snapshot)
+
+    configure_tesseract(
+        os.environ.get("TESSERACT_CMD")
+        or r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    )
     _vision_ok, _vision_msg = test_vision_snapshot()
     logger.info("Visión: %s", _vision_msg)
 except Exception as e:
@@ -57,11 +63,17 @@ SCAN_INTERVAL_12H = 43200
 def _validate_pypi(creds: dict) -> tuple[bool, str]:
     """Valida conexión con la API de PyPI (público o con token)."""
     try:
-        import urllib.request
         import base64
-        from modules.evolution.credentials import get_pypi_auth, ensure_pypi_password
+        import urllib.request
+
+        from modules.evolution.credentials import (ensure_pypi_password,
+                                                   get_pypi_auth)
+
         pypi_user, pypi_pass = get_pypi_auth(creds)
-        req = urllib.request.Request("https://pypi.org/pypi/requests/json", headers={"Accept": "application/json"})
+        req = urllib.request.Request(
+            "https://pypi.org/pypi/requests/json",
+            headers={"Accept": "application/json"},
+        )
         if pypi_user and pypi_pass:
             auth = base64.b64encode(f"{pypi_user}:{pypi_pass}".encode()).decode()
             req.add_header("Authorization", f"Basic {auth}")
@@ -79,11 +91,15 @@ def _validate_github(creds: dict) -> tuple[bool, str]:
     if not token:
         return False, "GitHub: falta github_token en credenciales"
     try:
-        import urllib.request
         import urllib.error
+        import urllib.request
+
         req = urllib.request.Request(
             "https://api.github.com/user",
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github.v3+json",
+            },
         )
         with urllib.request.urlopen(req, timeout=10) as r:
             data = __import__("json").loads(r.read().decode("utf-8"))
@@ -102,6 +118,7 @@ def _validate_huggingface(creds: dict) -> tuple[bool, str]:
         return False, "Hugging Face: falta hf_token en credenciales"
     try:
         import urllib.request
+
         req = urllib.request.Request(
             "https://huggingface.co/api/models?limit=1",
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
@@ -115,7 +132,8 @@ def _validate_huggingface(creds: dict) -> tuple[bool, str]:
 
 def fase_inicio() -> dict:
     """Fase de Inicio: lee credenciales y valida conexión con las 3 APIs. Devuelve creds y estado por API."""
-    from modules.evolution.credentials import load_credentials, CREDENTIALS_PATH
+    from modules.evolution.credentials import (CREDENTIALS_PATH,
+                                               load_credentials)
 
     creds = load_credentials()
     logger.info("Credenciales cargadas desde %s", CREDENTIALS_PATH)
@@ -139,9 +157,16 @@ def fase_inicio() -> dict:
 def main() -> None:
     """Punto de entrada: Cerebro (Carga de Energía + Visión Activa) + daemon perpetuo cada 12h."""
     from modules.evolution.credentials import CREDENTIALS_PATH
+
     if not CREDENTIALS_PATH.exists():
-        logger.warning("Fuente de Poder no encontrada: %s — Tokens PyPI/GitHub/HF obligatorios para producción.", CREDENTIALS_PATH)
-    logger.info("ATLAS_EVOLUTION Daemon — Cerebro: Carga de Energía + Visión Activa | Sandbox: %s", TEMP_GROWTH)
+        logger.warning(
+            "Fuente de Poder no encontrada: %s — Tokens PyPI/GitHub/HF obligatorios para producción.",
+            CREDENTIALS_PATH,
+        )
+    logger.info(
+        "ATLAS_EVOLUTION Daemon — Cerebro: Carga de Energía + Visión Activa | Sandbox: %s",
+        TEMP_GROWTH,
+    )
 
     # Carga de Energía: API Keys obligatorias desde C:\\dev\\credenciales.txt y validación 3 APIs
     estado = fase_inicio()
@@ -156,14 +181,20 @@ def main() -> None:
 
     # Inyectar rutas sandbox y intervalo 12h en el daemon
     import evolution_daemon as ed
+
     ed.TEMP_VENV = TEMP_GROWTH_VENV
     ed.TEMP_WORKSPACE = TEMP_GROWTH_WORKSPACE
     ed.TEMP_MODELS_CACHE = TEMP_GROWTH_MODELS
-    ed.SCAN_INTERVAL_SEC = int(os.environ.get("ATLAS_EVOLUTION_INTERVAL_SEC", str(SCAN_INTERVAL_12H)))
+    ed.SCAN_INTERVAL_SEC = int(
+        os.environ.get("ATLAS_EVOLUTION_INTERVAL_SEC", str(SCAN_INTERVAL_12H))
+    )
     ed.BASE = BASE
 
     daemon = ed.AtlasEvolutionDaemon()
-    logger.info("Ciclo de Crecimiento cada %s s (12 h). Workers: PyPI | GitHub | Hugging Face", ed.SCAN_INTERVAL_SEC)
+    logger.info(
+        "Ciclo de Crecimiento cada %s s (12 h). Workers: PyPI | GitHub | Hugging Face",
+        ed.SCAN_INTERVAL_SEC,
+    )
     try:
         asyncio.run(daemon.run_forever())
     except KeyboardInterrupt:

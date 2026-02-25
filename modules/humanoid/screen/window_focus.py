@@ -56,7 +56,12 @@ def get_active_window_process_path() -> str:
 
         # QueryFullProcessImageNameW está en kernel32
         QueryFullProcessImageNameW = kernel32.QueryFullProcessImageNameW
-        QueryFullProcessImageNameW.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_uint32)]
+        QueryFullProcessImageNameW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.c_wchar_p,
+            ctypes.POINTER(ctypes.c_uint32),
+        ]
         QueryFullProcessImageNameW.restype = ctypes.c_int
 
         hwnd = GetForegroundWindow()
@@ -100,4 +105,3 @@ def active_window_matches(expected_substring: str) -> bool:
         return True
     title = get_active_window_title().lower()
     return exp in title if title else False
-

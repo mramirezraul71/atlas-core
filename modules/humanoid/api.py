@@ -18,7 +18,9 @@ def _humanoid_enabled() -> bool:
     return v in ("1", "true", "yes", "y", "on")
 
 
-def _resp(ok: bool, data: Any = None, ms: int = 0, error: Optional[str] = None, **extra: Any) -> dict:
+def _resp(
+    ok: bool, data: Any = None, ms: int = 0, error: Optional[str] = None, **extra: Any
+) -> dict:
     out: dict = {"ok": ok, "data": data, "ms": ms, "error": error}
     out.update(extra)
     return out
@@ -30,10 +32,16 @@ def humanoid_makeplay_scan() -> dict:
     t0 = time.perf_counter()
     try:
         from modules.humanoid.comms.makeplay_scanner import run_scan
+
         r = run_scan()
         ms = int((time.perf_counter() - t0) * 1000)
         snap = r.get("snapshot", {})
-        return _resp(ok=r.get("ok", True), data=snap, ms=ms, webhook_pushed=snap.get("webhook_pushed", False))
+        return _resp(
+            ok=r.get("ok", True),
+            data=snap,
+            ms=ms,
+            webhook_pushed=snap.get("webhook_pushed", False),
+        )
     except Exception as e:
         return _resp(ok=False, error=str(e), ms=int((time.perf_counter() - t0) * 1000))
 
@@ -43,6 +51,7 @@ def humanoid_self_model() -> dict:
     """Autoconocimiento: anatomía del sistema, cerebro, nervios, órganos, dependencias."""
     try:
         from modules.humanoid.self_model import get_manifest
+
         return _resp(ok=True, data=get_manifest())
     except Exception as e:
         return _resp(ok=False, error=str(e))
@@ -62,7 +71,9 @@ def humanoid_status() -> dict:
         data={
             "modules": raw.get("modules", []),
             "health": raw.get("health", {}),
-            "module_states": raw.get("module_states", raw.get("health", {}).get("modules", {})),
+            "module_states": raw.get(
+                "module_states", raw.get("health", {}).get("modules", {})
+            ),
             "latencies_ms": raw.get("latencies_ms", {}),
         },
         ms=ms,
@@ -73,7 +84,9 @@ def humanoid_status() -> dict:
 
 class PlanBody(BaseModel):
     goal: str = Field(..., min_length=1)
-    fast: bool = Field(default=True, description="If true, force FAST model to avoid timeout")
+    fast: bool = Field(
+        default=True, description="If true, force FAST model to avoid timeout"
+    )
 
 
 @router.post("/plan")
@@ -86,7 +99,12 @@ def humanoid_plan(body: PlanBody) -> dict:
         k = get_humanoid_kernel()
         autonomy = k.registry.get("autonomy")
         if not autonomy or not hasattr(autonomy, "planner"):
-            return _resp(False, data={"steps": []}, ms=int((time.perf_counter() - t0) * 1000), error="autonomy module not available")
+            return _resp(
+                False,
+                data={"steps": []},
+                ms=int((time.perf_counter() - t0) * 1000),
+                error="autonomy module not available",
+            )
         result = autonomy.planner.plan(body.goal, fast=body.fast)
         if result.get("ok"):
             autonomy.tracker.set_goal(body.goal, result.get("steps"))
@@ -108,7 +126,9 @@ def humanoid_plan(body: PlanBody) -> dict:
 
 
 class UpdateCheckBody(BaseModel):
-    required_packages: Optional[List[str]] = Field(default=None, description="List of pip package names to check")
+    required_packages: Optional[List[str]] = Field(
+        default=None, description="List of pip package names to check"
+    )
 
 
 @router.post("/update-check")
@@ -120,7 +140,12 @@ def humanoid_update_check(body: UpdateCheckBody) -> dict:
     k = get_humanoid_kernel()
     update_mod = k.registry.get("update")
     if not update_mod or not hasattr(update_mod, "updater"):
-        return _resp(False, data=None, ms=int((time.perf_counter() - t0) * 1000), error="update module not available")
+        return _resp(
+            False,
+            data=None,
+            ms=int((time.perf_counter() - t0) * 1000),
+            error="update module not available",
+        )
     required = body.required_packages or ["fastapi", "uvicorn", "httpx", "pydantic"]
     plan_result = update_mod.updater.plan(required)
     ms = int((time.perf_counter() - t0) * 1000)
@@ -130,13 +155,19 @@ def humanoid_update_check(body: UpdateCheckBody) -> dict:
         ms=ms,
         error=plan_result.get("error"),
         deps_missing=plan_result.get("missing", []),
-        plan_commands=plan_result.get("plan_commands", plan_result.get("install_plan", [])),
+        plan_commands=plan_result.get(
+            "plan_commands", plan_result.get("install_plan", [])
+        ),
     )
 
 
 class UpdateApplyBody(BaseModel):
-    required_packages: Optional[List[str]] = Field(default=None, description="Packages to ensure installed")
-    force: bool = Field(default=False, description="If true, run installs even when UPDATE_APPLY=false")
+    required_packages: Optional[List[str]] = Field(
+        default=None, description="Packages to ensure installed"
+    )
+    force: bool = Field(
+        default=False, description="If true, run installs even when UPDATE_APPLY=false"
+    )
 
 
 @router.post("/update-apply")
@@ -152,7 +183,10 @@ def humanoid_update_apply(body: UpdateApplyBody) -> dict:
     result = update_mod.updater.apply(required, force=body.force)
     return _resp(
         ok=result.get("ok", False),
-        data={"snapshot": result.get("snapshot"), "applied_commands": result.get("applied_commands", [])},
+        data={
+            "snapshot": result.get("snapshot"),
+            "applied_commands": result.get("applied_commands", []),
+        },
         ms=result.get("ms", 0),
         error=result.get("error"),
         applied_commands=result.get("applied_commands", []),

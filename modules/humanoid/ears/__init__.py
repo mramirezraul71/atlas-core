@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from modules.humanoid.kernel import BaseModule, HealthCheckMixin
+
 from .stt_service import STTService
 from .tts_service import TTSService
 

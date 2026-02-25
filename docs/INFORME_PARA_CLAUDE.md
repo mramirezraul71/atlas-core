@@ -1,7 +1,7 @@
 # Informe para Claude – Estado ATLAS PUSH (post Fase 5)
 
-**Fecha:** 2025-02-14  
-**Branch:** intent-input-rename  
+**Fecha:** 2025-02-14
+**Branch:** intent-input-rename
 **Objetivo:** Contexto actualizado para que Claude siga trabajando en el repo con coherencia.
 
 ---

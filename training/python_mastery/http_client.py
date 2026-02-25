@@ -68,4 +68,3 @@ def get_json_with_retries(
             sleep_s += random.random() * float(jitter_s)
             time.sleep(sleep_s)
     raise RuntimeError(f"request_failed: {last_err}")
-

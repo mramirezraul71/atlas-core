@@ -1,35 +1,74 @@
 from __future__ import annotations
+
 import re
 from dataclasses import dataclass
-from typing import Optional, Literal
+from typing import Literal, Optional
 
 RouteName = Literal["FAST", "CHAT", "CODE", "REASON", "TOOLS"]
 
 CODE_HINTS = (
-    "python", "fastapi", "uvicorn", "httpx", "pydantic",
-    "typescript", "javascript", "node", "pnpm", "vite",
-    "docker", "powershell", "ps1", "bash",
-    "traceback", "stack trace", "error:", "exception",
-    "import ", "def ", "class ", "SELECT ", "CREATE TABLE"
+    "python",
+    "fastapi",
+    "uvicorn",
+    "httpx",
+    "pydantic",
+    "typescript",
+    "javascript",
+    "node",
+    "pnpm",
+    "vite",
+    "docker",
+    "powershell",
+    "ps1",
+    "bash",
+    "traceback",
+    "stack trace",
+    "error:",
+    "exception",
+    "import ",
+    "def ",
+    "class ",
+    "SELECT ",
+    "CREATE TABLE",
 )
 
 TOOLS_HINTS = (
-    "tool", "tools", "function calling", "schema", "json schema",
-    "invoke", "execute", "endpoint", "/execute", "router", "intent"
+    "tool",
+    "tools",
+    "function calling",
+    "schema",
+    "json schema",
+    "invoke",
+    "execute",
+    "endpoint",
+    "/execute",
+    "router",
+    "intent",
 )
 
 REASON_HINTS = (
-    "razona", "reason", "demuestra", "prueba", "teorema", "análisis profundo",
-    "paso a paso", "evalúa opciones", "decide la mejor estrategia"
+    "razona",
+    "reason",
+    "demuestra",
+    "prueba",
+    "teorema",
+    "análisis profundo",
+    "paso a paso",
+    "evalúa opciones",
+    "decide la mejor estrategia",
 )
+
 
 @dataclass
 class RouteDecision:
     route: RouteName
     reason: str
 
+
 class HybridRouter:
-    def __init__(self, fast_max_chars: int, chat_max_chars: int, reason_min_chars: int) -> None:
+    def __init__(
+        self, fast_max_chars: int, chat_max_chars: int, reason_min_chars: int
+    ) -> None:
         self.fast_max_chars = fast_max_chars
         self.chat_max_chars = chat_max_chars
         self.reason_min_chars = reason_min_chars

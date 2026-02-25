@@ -38,7 +38,11 @@ def _headers(auth_token):
 @pytest.mark.skipif(not _server_available(), reason="PUSH server not available at 8791")
 class TestMetaLearning:
     def test_meta_learning_stats(self, auth_token):
-        r = requests.get(f"{BASE_URL}/api/meta-learning/stats", headers=_headers(auth_token), timeout=5)
+        r = requests.get(
+            f"{BASE_URL}/api/meta-learning/stats",
+            headers=_headers(auth_token),
+            timeout=5,
+        )
         if r.status_code == 404:
             pytest.skip("Endpoint /api/meta-learning/stats no disponible (404)")
         assert r.status_code == 200
@@ -54,7 +58,10 @@ class TestMetaLearning:
         )
         if r.status_code != 200:
             pytest.skip("Meta-learning no disponible (torch/deps)")
-        assert r.json().get("status") in ("tasks_generated", "error") or "num_tasks" in r.json()
+        assert (
+            r.json().get("status") in ("tasks_generated", "error")
+            or "num_tasks" in r.json()
+        )
 
 
 @pytest.mark.skipif(not _server_available(), reason="PUSH server not available at 8791")
@@ -65,7 +72,10 @@ class TestCausalReasoning:
             params={"domain_name": "weather_test"},
             json={
                 "variables": ["rain", "wet_ground", "slippery"],
-                "edges": [["rain", "wet_ground", 0.9], ["wet_ground", "slippery", 0.95]],
+                "edges": [
+                    ["rain", "wet_ground", 0.9],
+                    ["wet_ground", "slippery", 0.95],
+                ],
             },
             headers=_headers(auth_token),
             timeout=5,

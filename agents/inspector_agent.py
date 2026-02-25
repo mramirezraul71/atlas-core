@@ -11,7 +11,15 @@ logger = logging.getLogger("atlas.inspector")
 BASE = Path(__file__).resolve().parent.parent
 LOGS_DIR = Path(os.environ.get("ATLAS_LOGS_DIR", str(BASE / "logs")))
 MAX_TAIL = 50
-ERROR_KEYWORDS = ("error", "exception", "traceback", "failed", "failure", "critical", "fatal")
+ERROR_KEYWORDS = (
+    "error",
+    "exception",
+    "traceback",
+    "failed",
+    "failure",
+    "critical",
+    "fatal",
+)
 
 
 def _read_log_tail(log_path: Path, lines: int = 100) -> List[str]:
@@ -37,7 +45,9 @@ def _detect_failures(lines: List[str]) -> List[Dict[str, Any]]:
 def _formulate_diagnosis(findings: List[Dict[str, Any]], log_name: str) -> str:
     if not findings:
         return ""
-    parts = [f"En {log_name} se detectaron {len(findings)} líneas con indicios de fallo:"]
+    parts = [
+        f"En {log_name} se detectaron {len(findings)} líneas con indicios de fallo:"
+    ]
     for f in findings[:5]:
         parts.append(f"  L{f.get('line_no')}: {f.get('content', '')[:120]}")
     return "\n".join(parts)

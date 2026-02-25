@@ -15,11 +15,14 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -54,12 +57,16 @@ class StagedRollout:
     def __init__(self, config: dict | None = None):
         self._config = config or _load_config().get("evolution", {})
         self._rollout_cfg = self._config.get("staged_rollout", {})
-        self._phase_duration_min = float(self._rollout_cfg.get("phase_duration_minutes", 10))
+        self._phase_duration_min = float(
+            self._rollout_cfg.get("phase_duration_minutes", 10)
+        )
         self._current_phase: RolloutPhase | None = None
         self._phase_started_at: float = 0
         self._metrics_check_callback: Callable[[], bool] | None = None
 
-    def start_rollout(self, update_package: dict[str, Any] | None = None) -> RolloutStatus:
+    def start_rollout(
+        self, update_package: dict[str, Any] | None = None
+    ) -> RolloutStatus:
         """Inicia rollout en fase CANARY."""
         self._current_phase = RolloutPhase.CANARY
         self._phase_started_at = time.time()
@@ -72,7 +79,12 @@ class StagedRollout:
             return False
         if self._metrics_check_callback and not self._metrics_check_callback():
             return False
-        order = [RolloutPhase.CANARY, RolloutPhase.BETA, RolloutPhase.STABLE, RolloutPhase.FULL]
+        order = [
+            RolloutPhase.CANARY,
+            RolloutPhase.BETA,
+            RolloutPhase.STABLE,
+            RolloutPhase.FULL,
+        ]
         idx = order.index(self._current_phase)
         if idx >= len(order) - 1:
             self._current_phase = None
@@ -87,7 +99,12 @@ class StagedRollout:
         """Vuelve a la fase anterior (o cancela si estaba en CANARY)."""
         if self._current_phase is None:
             return True
-        order = [RolloutPhase.CANARY, RolloutPhase.BETA, RolloutPhase.STABLE, RolloutPhase.FULL]
+        order = [
+            RolloutPhase.CANARY,
+            RolloutPhase.BETA,
+            RolloutPhase.STABLE,
+            RolloutPhase.FULL,
+        ]
         idx = order.index(self._current_phase)
         if idx <= 0:
             self._current_phase = None

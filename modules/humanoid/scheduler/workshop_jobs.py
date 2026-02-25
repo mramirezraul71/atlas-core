@@ -34,7 +34,9 @@ def _require_approval_heavy() -> bool:
 def _approval_cooldown_seconds() -> int:
     """Cooldown entre solicitudes de aprobación (env: WORKSHOP_APPROVAL_COOLDOWN_SECONDS, default 900s)."""
     try:
-        return max(60, int(os.getenv("WORKSHOP_APPROVAL_COOLDOWN_SECONDS", "900") or 900))
+        return max(
+            60, int(os.getenv("WORKSHOP_APPROVAL_COOLDOWN_SECONDS", "900") or 900)
+        )
     except Exception:
         return 900
 
@@ -55,7 +57,7 @@ def ensure_workshop_jobs() -> Dict[str, Any]:
         return {"ok": True, "enabled": False, "reason": "WORKSHOP_ENABLED is false"}
 
     try:
-        from modules.humanoid.scheduler.api import upsert_job, get_job
+        from modules.humanoid.scheduler.api import get_job, upsert_job
     except ImportError as e:
         _log.warning("Scheduler API not available: %s", e)
         return {"ok": False, "error": f"scheduler_api_unavailable: {e}"}
@@ -94,7 +96,12 @@ def ensure_workshop_jobs() -> Dict[str, Any]:
             )
             if not needs_update:
                 _log.debug("Workshop job already exists and is current: %s", job_id)
-                return {"ok": True, "job_id": job_id, "action": "already_current", "job": existing}
+                return {
+                    "ok": True,
+                    "job_id": job_id,
+                    "action": "already_current",
+                    "job": existing,
+                }
     except Exception:
         pass
 
@@ -110,7 +117,7 @@ def ensure_workshop_jobs() -> Dict[str, Any]:
 def disable_workshop_jobs() -> Dict[str, Any]:
     """Deshabilita el job del workshop (útil para mantenimiento manual)."""
     try:
-        from modules.humanoid.scheduler.api import upsert_job, get_job
+        from modules.humanoid.scheduler.api import get_job, upsert_job
 
         job_id = "workshop_cycle"
         existing = get_job(job_id)

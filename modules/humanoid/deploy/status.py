@@ -16,12 +16,23 @@ def build_deploy_status() -> Dict[str, Any]:
     staging_port = state.get("staging_port") or 8792
     last_deploy = state.get("last_deploy")
     if not last_deploy and state.get("last_deploy_ts"):
-        last_deploy = {"ts": state["last_deploy_ts"], "ref": state.get("last_deploy_ref"), "result": state.get("last_deploy_result"), "error": state.get("last_deploy_error")}
+        last_deploy = {
+            "ts": state["last_deploy_ts"],
+            "ref": state.get("last_deploy_ref"),
+            "result": state.get("last_deploy_result"),
+            "error": state.get("last_deploy_error"),
+        }
     last_health = state.get("last_health")
 
-    canary_payload: Dict[str, Any] = {"enabled": False, "percentage": 0.0, "features": [], "stats": {}}
+    canary_payload: Dict[str, Any] = {
+        "enabled": False,
+        "percentage": 0.0,
+        "features": [],
+        "stats": {},
+    }
     try:
         from .canary import get_canary_stats
+
         st = get_canary_stats()
         canary_payload = {
             "enabled": st.get("enabled", False),

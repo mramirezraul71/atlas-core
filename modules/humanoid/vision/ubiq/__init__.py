@@ -9,23 +9,12 @@ Capacidades:
 
 from __future__ import annotations
 
-from .registry import (
-    ensure_db,
-    list_cameras,
-    get_camera,
-    upsert_camera,
-    get_setting,
-    set_setting,
-)
 from .discovery import discover_local_cameras
-from .streaming import (
-    start_stream,
-    stop_stream,
-    stream_status,
-    take_snapshot,
-    get_stream_paths,
-)
 from .motion import start_motion_watchdog, stop_motion_watchdog
+from .registry import (ensure_db, get_camera, get_setting, list_cameras,
+                       set_setting, upsert_camera)
+from .streaming import (get_stream_paths, start_stream, stop_stream,
+                        stream_status, take_snapshot)
 
 __all__ = [
     "ensure_db",
@@ -43,4 +32,3 @@ __all__ = [
     "start_motion_watchdog",
     "stop_motion_watchdog",
 ]
-

@@ -87,24 +87,43 @@ class ChangePlan:
     changes: List[PlannedChange]
 
     def to_payload(self) -> Dict[str, Any]:
-        return {"goal": self.goal, "mode": self.mode, "changes": [c.to_dict() for c in self.changes]}
+        return {
+            "goal": self.goal,
+            "mode": self.mode,
+            "changes": [c.to_dict() for c in self.changes],
+        }
 
     def to_json(self) -> str:
         return json.dumps(self.to_payload(), ensure_ascii=False, indent=2)
 
 
-def apply_change_plan(plan: ChangePlan, fs: "FilesystemTools") -> List[Dict[str, Any]]:  # noqa: F821
+def apply_change_plan(
+    plan: ChangePlan, fs: "FilesystemTools"
+) -> List[Dict[str, Any]]:  # noqa: F821
     """Aplica cambios; devuelve records (file_path, diff_path, justification)."""
     out: List[Dict[str, Any]] = []
     for ch in plan.changes:
         if ch.kind == "write_file":
-            rec = fs.write_file(ch.path, ch.content or "", justification=ch.justification)
-            out.append({"kind": ch.kind, "file_path": rec.file_path, "diff_path": rec.diff_path})
+            rec = fs.write_file(
+                ch.path, ch.content or "", justification=ch.justification
+            )
+            out.append(
+                {
+                    "kind": ch.kind,
+                    "file_path": rec.file_path,
+                    "diff_path": rec.diff_path,
+                }
+            )
         elif ch.kind == "atomic_patch":
             ops = deserialize_patch_ops(ch.ops or [])
             rec = fs.atomic_patch(ch.path, ops, justification=ch.justification)
-            out.append({"kind": ch.kind, "file_path": rec.file_path, "diff_path": rec.diff_path})
+            out.append(
+                {
+                    "kind": ch.kind,
+                    "file_path": rec.file_path,
+                    "diff_path": rec.diff_path,
+                }
+            )
         else:
             out.append({"kind": ch.kind, "file_path": ch.path, "error": "unknown_kind"})
     return out
-

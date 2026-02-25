@@ -55,4 +55,3 @@ exit 0
         return {"ok": True, "installed": True, "path": str(target)}
     except Exception as e:
         return {"ok": False, "error": str(e), "path": str(target)}
-

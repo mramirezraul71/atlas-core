@@ -11,7 +11,9 @@ MAX_LINES_PER_FUNCTION = int(os.getenv("AUTO_REFACTOR_MAX_LINES", "80"))
 
 def _mode_allows() -> bool:
     try:
-        from modules.humanoid.mode.config import is_auto_refactor_enabled, is_observe_only
+        from modules.humanoid.mode.config import (is_auto_refactor_enabled,
+                                                  is_observe_only)
+
         return is_auto_refactor_enabled() and not is_observe_only()
     except Exception:
         return False
@@ -19,7 +21,10 @@ def _mode_allows() -> bool:
 
 def scan_targets(base_path: Optional[str] = None) -> Dict[str, Any]:
     """Detecta: funciones > X líneas, código duplicado, módulos densos, deps sin usar."""
-    base = base_path or os.getenv("POLICY_ALLOWED_PATHS", "C:\\ATLAS_PUSH").split(",")[0].strip()
+    base = (
+        base_path
+        or os.getenv("POLICY_ALLOWED_PATHS", "C:\\ATLAS_PUSH").split(",")[0].strip()
+    )
     root = Path(base)
     long_functions: List[Dict[str, Any]] = []
     dense_modules: List[Dict[str, Any]] = []
@@ -36,11 +41,13 @@ def scan_targets(base_path: Optional[str] = None) -> Dict[str, Any]:
                     start = node.lineno or 0
                     lines = end - start + 1
                     if lines > MAX_LINES_PER_FUNCTION:
-                        long_functions.append({
-                            "path": str(py),
-                            "name": node.name,
-                            "lines": lines,
-                        })
+                        long_functions.append(
+                            {
+                                "path": str(py),
+                                "name": node.name,
+                                "lines": lines,
+                            }
+                        )
             total_lines = len(src.splitlines())
             if total_lines > 500:
                 dense_modules.append({"path": str(py), "lines": total_lines})
@@ -55,13 +62,22 @@ def scan_targets(base_path: Optional[str] = None) -> Dict[str, Any]:
     }
 
 
-def refactor_target(target_path: str, function_name: str, strategy: str = "extract") -> Dict[str, Any]:
+def refactor_target(
+    target_path: str, function_name: str, strategy: str = "extract"
+) -> Dict[str, Any]:
     """Refactoriza target. Stub: no modifica, solo registra. Smoke + rollback si aplica."""
     if not _mode_allows():
         return {"ok": False, "error": "auto_refactor disabled or observe_only"}
     try:
         from modules.humanoid.evolution_memory import record_refactor
+
         record_refactor(target_path, strategy, ok=True, rollback=False)
     except ImportError:
         pass
-    return {"ok": True, "path": target_path, "function": function_name, "strategy": strategy, "error": None}
+    return {
+        "ok": True,
+        "path": target_path,
+        "function": function_name,
+        "strategy": strategy,
+        "error": None,
+    }

@@ -6,9 +6,10 @@ Análogo biológico: Corteza visual primaria (V1) y áreas visuales superiores
 - DepthEstimation: Estimación de profundidad monocular
 - ObjectRecognition: Reconocimiento de objetos específicos
 """
-from .vision_pipeline import VisionPipeline
 from .depth_estimation import DepthEstimation, DepthOutput
-from .object_recognition import ObjectRecognition, ObjectIdentity, RecognitionOutput
+from .object_recognition import (ObjectIdentity, ObjectRecognition,
+                                 RecognitionOutput)
+from .vision_pipeline import VisionPipeline
 
 __all__ = [
     "VisionPipeline",

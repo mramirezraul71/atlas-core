@@ -11,7 +11,8 @@ NOTA DE SEGURIDAD:
 - Por defecto NO aborta rebase/merge automáticamente. Puede habilitarse por env vars.
 """
 
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -30,8 +31,22 @@ Este POT existe para evitar bucles de rebase/conflicto durante arranque o autosy
         severity=POTSeverity.HIGH,
         version="1.0.0",
         author="ATLAS QA Senior",
-        trigger_check_ids=["git_unsafe", "git_lock", "rebase_in_progress", "merge_in_progress", "detached_head"],
-        trigger_keywords=["git unsafe", "index.lock", "rebase", "merge", "detached", "safe sync", "ff-only"],
+        trigger_check_ids=[
+            "git_unsafe",
+            "git_lock",
+            "rebase_in_progress",
+            "merge_in_progress",
+            "detached_head",
+        ],
+        trigger_keywords=[
+            "git unsafe",
+            "index.lock",
+            "rebase",
+            "merge",
+            "detached",
+            "safe sync",
+            "ff-only",
+        ],
         prerequisites=[
             "Git instalado",
             "Repositorio con remote origin configurado",
@@ -88,4 +103,3 @@ Este POT existe para evitar bucles de rebase/conflicto durante arranque o autosy
             ),
         ],
     )
-

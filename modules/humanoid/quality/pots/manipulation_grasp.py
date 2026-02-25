@@ -11,7 +11,8 @@ Triggers:
 
 Severidad: HIGH (manipulación física)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -30,10 +31,16 @@ Procedimiento para operaciones de manipulación:
         severity=POTSeverity.HIGH,
         version="1.0.0",
         author="ATLAS Robotics Architect",
-        
         trigger_check_ids=["grasp_*", "arm_*", "hand_*", "manipulation_*"],
-        trigger_keywords=["agarrar", "soltar", "mano", "brazo", "objeto", "pick", "place"],
-        
+        trigger_keywords=[
+            "agarrar",
+            "soltar",
+            "mano",
+            "brazo",
+            "objeto",
+            "pick",
+            "place",
+        ],
         prerequisites=[
             "Brazos y manos calibrados",
             "Cámara de profundidad activa",
@@ -41,7 +48,6 @@ Procedimiento para operaciones de manipulación:
         ],
         required_services=["manipulation", "vision"],
         required_permissions=["movement", "manipulation"],
-        
         objectives=[
             "Detectar y localizar objeto",
             "Generar candidatos de agarre",
@@ -51,7 +57,6 @@ Procedimiento para operaciones de manipulación:
         ],
         success_criteria="Objeto agarrado con fuerza estable",
         estimated_duration_minutes=5,
-        
         tutorial_overview="""
 ## Guía de Manipulación ATLAS
 
@@ -148,7 +153,6 @@ if arm.is_reachable(target):
 - Monitorear fuerza durante transporte
 - Soltar suavemente si se detecta pérdida
         """,
-        
         steps=[
             POTStep(
                 id="detect_object",
@@ -228,7 +232,6 @@ Verificar:
                 notify_message="Operación de manipulación completada",
             ),
         ],
-        
         rollback_steps=[
             POTStep(
                 id="rollback_release",
@@ -237,7 +240,6 @@ Verificar:
                 step_type=StepType.LOG,
             ),
         ],
-        
         has_rollback=True,
         tags=["manipulation", "grasp", "arm", "hand", "kinematics"],
     )

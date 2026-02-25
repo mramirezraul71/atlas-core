@@ -9,7 +9,9 @@ from typing import Any, Dict, List
 EXPORT_DIR = Path(os.getenv("CI_EXPORT_DIR", "C:\\ATLAS_PUSH\\snapshots\\ci"))
 
 
-def build_report(plan: Dict[str, Any], executed: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+def build_report(
+    plan: Dict[str, Any], executed: List[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """Top 5 findings, 1-3 actions, auto executed, approvals required, evidence."""
     findings = (plan.get("findings") or [])[:5]
     steps = plan.get("steps") or []
@@ -26,12 +28,20 @@ def build_report(plan: Dict[str, Any], executed: List[Dict[str, Any]] = None) ->
         "top_findings": findings,
         "recommended_actions": actions[:3],
         "auto_executed": auto,
-        "approvals_required": [{"item_id": r.get("item_id"), "path": (r.get("finding") or {}).get("path")} for r in required[:10]],
-        "evidence": {"paths": [f.get("path") for f in findings], "plan_id": plan.get("plan_id")},
+        "approvals_required": [
+            {"item_id": r.get("item_id"), "path": (r.get("finding") or {}).get("path")}
+            for r in required[:10]
+        ],
+        "evidence": {
+            "paths": [f.get("path") for f in findings],
+            "plan_id": plan.get("plan_id"),
+        },
     }
 
 
-def export_markdown(plan: Dict[str, Any], report: Dict[str, Any], path: str = "") -> str:
+def export_markdown(
+    plan: Dict[str, Any], report: Dict[str, Any], path: str = ""
+) -> str:
     """Write CI_REPORT_<timestamp>.md to CI_EXPORT_DIR. Returns file path."""
     EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -44,7 +54,9 @@ def export_markdown(plan: Dict[str, Any], report: Dict[str, Any], path: str = ""
         "## Top findings",
     ]
     for f in report.get("top_findings") or []:
-        lines.append(f"- `{f.get('path', '')}`: {f.get('detail', '')} (score: {f.get('score', 0)})")
+        lines.append(
+            f"- `{f.get('path', '')}`: {f.get('detail', '')} (score: {f.get('score', 0)})"
+        )
     lines.extend(["", "## Recommended actions"])
     for a in report.get("recommended_actions") or []:
         lines.append(f"- {a}")

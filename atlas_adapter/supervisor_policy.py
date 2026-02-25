@@ -20,12 +20,28 @@ def get_supervisor_policy() -> Dict[str, object]:
     """
     try:
         if not _POLICY_PATH.exists():
-            return {"ok": True, "policy": "", "updated_at": 0.0, "path": str(_POLICY_PATH)}
+            return {
+                "ok": True,
+                "policy": "",
+                "updated_at": 0.0,
+                "path": str(_POLICY_PATH),
+            }
         st = _POLICY_PATH.stat()
         txt = _POLICY_PATH.read_text(encoding="utf-8", errors="ignore")
-        return {"ok": True, "policy": txt, "updated_at": float(st.st_mtime), "path": str(_POLICY_PATH)}
+        return {
+            "ok": True,
+            "policy": txt,
+            "updated_at": float(st.st_mtime),
+            "path": str(_POLICY_PATH),
+        }
     except Exception as e:
-        return {"ok": False, "policy": "", "updated_at": 0.0, "path": str(_POLICY_PATH), "error": str(e)[:200]}
+        return {
+            "ok": False,
+            "policy": "",
+            "updated_at": 0.0,
+            "path": str(_POLICY_PATH),
+            "error": str(e)[:200],
+        }
 
 
 def set_supervisor_policy(policy_text: str) -> Dict[str, object]:
@@ -45,5 +61,10 @@ def set_supervisor_policy(policy_text: str) -> Dict[str, object]:
             pass
         return {"ok": True, "policy": txt, "updated_at": now, "path": str(_POLICY_PATH)}
     except Exception as e:
-        return {"ok": False, "policy": "", "updated_at": 0.0, "path": str(_POLICY_PATH), "error": str(e)[:200]}
-
+        return {
+            "ok": False,
+            "policy": "",
+            "updated_at": 0.0,
+            "path": str(_POLICY_PATH),
+            "error": str(e)[:200],
+        }

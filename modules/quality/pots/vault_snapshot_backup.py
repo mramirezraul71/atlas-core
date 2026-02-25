@@ -25,4 +25,3 @@ def get_pot() -> POT:
         tags=["backup", "snapshot", "vault"],
         steps=[POTStep(id="snapshot", name="Crear snapshot", run=_run, fatal=True)],
     )
-

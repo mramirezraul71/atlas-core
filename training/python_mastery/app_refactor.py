@@ -19,14 +19,17 @@ def parse_args(argv: list[str]) -> Config:
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--min-size-kb", type=int, default=0)
     ns = p.parse_args(argv)
-    return Config(root=Path(ns.root), dry_run=bool(ns.dry_run), min_size_kb=int(ns.min_size_kb))
+    return Config(
+        root=Path(ns.root), dry_run=bool(ns.dry_run), min_size_kb=int(ns.min_size_kb)
+    )
 
 
-def build_inventory_payload(total_files: int, total_size_bytes: int, top_extensions: list[tuple[str, int]]) -> dict:
+def build_inventory_payload(
+    total_files: int, total_size_bytes: int, top_extensions: list[tuple[str, int]]
+) -> dict:
     """PY007: lógica pura, fácil de testear."""
     return {
         "total_files": int(total_files),
         "total_size_bytes": int(total_size_bytes),
         "top_extensions": [(str(ext), int(count)) for ext, count in top_extensions],
     }
-

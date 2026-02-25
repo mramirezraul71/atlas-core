@@ -1,12 +1,12 @@
 """Job runner: update_check, shell_command, llm_plan, custom. Timeout 20s, Policy + Audit."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import sys
 import time
-import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -85,7 +85,9 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
         _log.exception("Job %s run failed: %s", jid, e)
         ms = int((time.perf_counter() - t0) * 1000)
         try:
-            from modules.humanoid.metalearn.collector import record_scheduler_job
+            from modules.humanoid.metalearn.collector import \
+                record_scheduler_job
+
             record_scheduler_job(jid, kind, "fail", ms, str(e))
         except Exception:
             pass
@@ -95,10 +97,15 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
     ok = out.get("ok", False)
     try:
         from modules.humanoid.metalearn.collector import record_scheduler_job
+
         record_scheduler_job(jid, kind, "ok" if ok else "fail", ms, out.get("error"))
     except Exception:
         pass
-    result_json = json.dumps(out) if isinstance(out, dict) else json.dumps({"ok": ok, "raw": str(out)})
+    result_json = (
+        json.dumps(out)
+        if isinstance(out, dict)
+        else json.dumps({"ok": ok, "raw": str(out)})
+    )
     return {"ok": ok, "result_json": result_json, "error": out.get("error"), "ms": ms}
 
 
@@ -106,8 +113,8 @@ def _run_approvals_digest(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Send a periodic digest of pending approvals to Telegram (owner away)."""
     try:
         from modules.humanoid.approvals import list_pending
-        from modules.humanoid.comms.ops_bus import emit as ops_emit
         from modules.humanoid.approvals.store import expire_pending
+        from modules.humanoid.comms.ops_bus import emit as ops_emit
 
         # Limpieza preventiva de vencidas (no bloqueante si falla).
         try:
@@ -124,11 +131,18 @@ def _run_approvals_digest(payload: Dict[str, Any]) -> Dict[str, Any]:
             return {"ok": True, "sent": False, "pending": 0}
 
         ids = sorted([str(p.get("id") or "") for p in pending if (p.get("id") or "")])
-        digest_key = hashlib.sha1("|".join(ids).encode("utf-8", errors="ignore")).hexdigest()[:16]
+        digest_key = hashlib.sha1(
+            "|".join(ids).encode("utf-8", errors="ignore")
+        ).hexdigest()[:16]
 
         # Notificar solo cuando cambie el set de pendientes.
         if _APPROVAL_DIGEST_LAST_KEY == digest_key:
-            return {"ok": True, "sent": False, "pending": len(pending), "reason": "no_changes"}
+            return {
+                "ok": True,
+                "sent": False,
+                "pending": len(pending),
+                "reason": "no_changes",
+            }
         _APPROVAL_DIGEST_LAST_KEY = digest_key
 
         # Mensaje compacto
@@ -136,13 +150,31 @@ def _run_approvals_digest(payload: Dict[str, Any]) -> Dict[str, Any]:
         for a in pending[:limit]:
             aid = a.get("id")
             risk = (a.get("risk") or "med").upper()
-            action = (a.get("action") or "approval")
+            action = a.get("action") or "approval"
             exp = a.get("expires_at") or ""
             exp_s = exp[:19].replace("T", " ") if exp else ""
-            lines.append(f"- {aid} [{risk}] {action}" + (f" (exp {exp_s})" if exp_s else ""))
+            lines.append(
+                f"- {aid} [{risk}] {action}" + (f" (exp {exp_s})" if exp_s else "")
+            )
         text = "Aprobaciones pendientes:\n" + "\n".join(lines)
-        level = "high" if any((str(p.get("risk") or "").lower() in ("high", "critical")) for p in pending) else "med"
-        ops_emit("approval", text, level=level, data={"pending": len(pending), "ids": [p.get("id") for p in pending[:limit]], "digest_key": digest_key})
+        level = (
+            "high"
+            if any(
+                (str(p.get("risk") or "").lower() in ("high", "critical"))
+                for p in pending
+            )
+            else "med"
+        )
+        ops_emit(
+            "approval",
+            text,
+            level=level,
+            data={
+                "pending": len(pending),
+                "ids": [p.get("id") for p in pending[:limit]],
+                "digest_key": digest_key,
+            },
+        )
         return {"ok": True, "sent": True, "pending": len(pending), "shown": len(lines)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -162,7 +194,10 @@ def _run_approvals_expiry_reaper(payload: Dict[str, Any]) -> Dict[str, Any]:
                 "approval",
                 f"Limpieza automática de aprobaciones: {expired_count} vencidas marcadas como expiradas.",
                 level="med",
-                data={"expired_count": expired_count, "source": "approvals_expiry_reaper"},
+                data={
+                    "expired_count": expired_count,
+                    "source": "approvals_expiry_reaper",
+                },
             )
         return {"ok": True, **out}
     except Exception as e:
@@ -171,9 +206,15 @@ def _run_approvals_expiry_reaper(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 def _run_update_check(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Update-check only (no apply). Uses humanoid update module plan()."""
-    required = payload.get("required_packages") or ["fastapi", "uvicorn", "httpx", "pydantic"]
+    required = payload.get("required_packages") or [
+        "fastapi",
+        "uvicorn",
+        "httpx",
+        "pydantic",
+    ]
     try:
         from modules.humanoid import get_humanoid_kernel
+
         k = get_humanoid_kernel()
         update_mod = k.registry.get("update")
         if not update_mod or not hasattr(update_mod, "updater"):
@@ -191,9 +232,16 @@ def _run_world_state_tick(payload: Dict[str, Any]) -> Dict[str, Any]:
 
         include_items = bool((payload or {}).get("include_ocr_items", False))
         use_llm = bool((payload or {}).get("use_llm_vision", False))
-        ws = capture_world_state(include_ocr_items=include_items, use_llm_vision=use_llm)
+        ws = capture_world_state(
+            include_ocr_items=include_items, use_llm_vision=use_llm
+        )
         # Solo log interno, sin notificaciones externas
-        return {"ok": True, "world_state_ok": bool(ws.get("ok")), "source": ws.get("source"), "error": ws.get("error")}
+        return {
+            "ok": True,
+            "world_state_ok": bool(ws.get("ok")),
+            "source": ws.get("source"),
+            "error": ws.get("error"),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -205,8 +253,18 @@ def _run_remote_hands(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": False, "error": "missing command in payload"}
     try:
         from modules.humanoid.dispatch.dispatcher import run_hands
-        result = run_hands(command, timeout_sec=payload.get("timeout_sec", 30), prefer_remote=payload.get("prefer_remote", True))
-        return {"ok": result.get("ok", False), "data": result.get("data"), "error": result.get("error"), "correlation_id": result.get("correlation_id")}
+
+        result = run_hands(
+            command,
+            timeout_sec=payload.get("timeout_sec", 30),
+            prefer_remote=payload.get("prefer_remote", True),
+        )
+        return {
+            "ok": result.get("ok", False),
+            "data": result.get("data"),
+            "error": result.get("error"),
+            "correlation_id": result.get("correlation_id"),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -220,15 +278,22 @@ def _run_shell_command(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         from modules.humanoid import get_humanoid_kernel
         from modules.humanoid.policy import ActorContext, get_policy_engine
-        actor = ActorContext(actor=_scheduler_actor, role=os.getenv("POLICY_DEFAULT_ROLE", "owner"))
-        decision = get_policy_engine().can(actor, "hands", "exec_command", target=command)
+
+        actor = ActorContext(
+            actor=_scheduler_actor, role=os.getenv("POLICY_DEFAULT_ROLE", "owner")
+        )
+        decision = get_policy_engine().can(
+            actor, "hands", "exec_command", target=command
+        )
         if not decision.allow:
             return {"ok": False, "error": decision.reason or "policy denied"}
         k = get_humanoid_kernel()
         hands = k.registry.get("hands")
         if not hands or not hasattr(hands, "shell"):
             return {"ok": False, "error": "hands module not available"}
-        result = hands.shell.run(command, cwd=cwd, timeout_sec=min(RUNNER_TIMEOUT_SEC, 60), actor=actor)
+        result = hands.shell.run(
+            command, cwd=cwd, timeout_sec=min(RUNNER_TIMEOUT_SEC, 60), actor=actor
+        )
         return result
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -241,6 +306,7 @@ def _run_llm_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": False, "steps": [], "error": "missing goal in payload"}
     try:
         from modules.humanoid import get_humanoid_kernel
+
         k = get_humanoid_kernel()
         autonomy = k.registry.get("autonomy")
         if not autonomy or not hasattr(autonomy, "planner"):
@@ -255,14 +321,21 @@ def _run_system_update(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Run git-based update engine: check only (no apply) or full apply if policy allows. payload: {action: 'check'|'apply'}."""
     action = (payload.get("action") or "check").strip().lower()
     try:
-        from modules.humanoid.update.update_engine import apply as update_apply, check as update_check, update_enabled
+        from modules.humanoid.update.update_engine import apply as update_apply
+        from modules.humanoid.update.update_engine import check as update_check
+        from modules.humanoid.update.update_engine import update_enabled
+
         if not update_enabled():
             return {"ok": False, "error": "UPDATE_ENABLED=false"}
         if action == "apply":
             result = update_apply()
         else:
             result = update_check()
-        return result.get("data") or result if isinstance(result.get("data"), dict) else {"ok": result.get("ok"), "data": result, "error": result.get("error")}
+        return (
+            result.get("data") or result
+            if isinstance(result.get("data"), dict)
+            else {"ok": result.get("ok"), "data": result, "error": result.get("error")}
+        )
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -275,6 +348,7 @@ def _run_ci_improve(payload: Dict[str, Any]) -> Dict[str, Any]:
     max_items = payload.get("max_items") or 10
     try:
         from modules.humanoid.ci import run_improve
+
         result = run_improve(scope=scope, mode=mode, depth=depth, max_items=max_items)
         return result.get("data") or result
     except Exception as e:
@@ -288,6 +362,7 @@ def _run_ga_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
     max_findings = payload.get("max_findings")
     try:
         from modules.humanoid.ga.cycle import run_cycle
+
         result = run_cycle(scope=scope, mode=mode, max_findings=max_findings)
         return result.get("data") or result
     except Exception as e:
@@ -298,6 +373,7 @@ def _run_metalearn_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Run meta-learning cycle: train + tune + report."""
     try:
         from modules.humanoid.metalearn.cycle import run_cycle
+
         result = run_cycle()
         return result
     except Exception as e:
@@ -308,8 +384,13 @@ def _run_ans_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Run ANS (Autonomic Nervous System) cycle: checks -> heals -> report."""
     try:
         from modules.humanoid.ans.engine import run_ans_cycle
+
         mode = payload.get("mode") or os.getenv("ANS_MODE", "auto")
-        timeout = int(payload.get("timeout_sec") or os.getenv("ANS_INTERVAL_SECONDS", "30") or "30")
+        timeout = int(
+            payload.get("timeout_sec")
+            or os.getenv("ANS_INTERVAL_SECONDS", "30")
+            or "30"
+        )
         return run_ans_cycle(mode=mode, timeout_sec=min(timeout, 60))
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -319,7 +400,10 @@ def _run_nervous_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Run Sistema Nervioso: sensores -> score -> persistencia + bitácora/incidentes."""
     try:
         from modules.humanoid.nervous.engine import run_nervous_cycle
-        mode = (payload.get("mode") or os.getenv("NERVOUS_MODE", "auto")).strip() or "auto"
+
+        mode = (
+            payload.get("mode") or os.getenv("NERVOUS_MODE", "auto")
+        ).strip() or "auto"
         return run_nervous_cycle(mode=mode)
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -329,6 +413,7 @@ def _run_makeplay_scanner(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Scanner permanente: estado ATLAS -> webhook MakePlay."""
     try:
         from modules.humanoid.comms.makeplay_scanner import run_scan
+
         return run_scan()
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -337,6 +422,7 @@ def _run_makeplay_scanner(payload: Dict[str, Any]) -> Dict[str, Any]:
 def _run_repo_monitor_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Ejecutar un ciclo del monitor de repo (fetch + status + bitácora). Usa scripts/repo_monitor.py --cycle."""
     import subprocess
+
     root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT")
     if not root:
         root = str(Path(__file__).resolve().parent.parent.parent.parent)
@@ -373,6 +459,7 @@ def _run_repo_monitor_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
 def _run_repo_monitor_after_fix(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Ejecutar commit + push del monitor de repo (actualizacion automatica al remoto)."""
     import subprocess
+
     root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT")
     if not root:
         root = str(Path(__file__).resolve().parent.parent.parent.parent)
@@ -422,7 +509,9 @@ def _run_workshop_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
     mode = (payload.get("mode") or "incidents").strip().lower()
     limit = max(1, min(500, int(payload.get("limit") or 50)))
     require_approval_heavy = bool(payload.get("require_approval_heavy", True))
-    approval_cooldown_seconds = max(60, int(payload.get("approval_cooldown_seconds") or 900))
+    approval_cooldown_seconds = max(
+        60, int(payload.get("approval_cooldown_seconds") or 900)
+    )
 
     approval_state_path = root / "logs" / "workshop" / "approval_state_runner.json"
 
@@ -437,16 +526,23 @@ def _run_workshop_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
     def _save_runner_state(state: Dict[str, Any]) -> None:
         try:
             approval_state_path.parent.mkdir(parents=True, exist_ok=True)
-            approval_state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+            approval_state_path.write_text(
+                json.dumps(state, indent=2), encoding="utf-8"
+            )
         except Exception:
             pass
 
     def _check_heavy_gate() -> Dict[str, Any]:
         """Gate for heavy modes. Returns {granted, reason, approval_id?, pending?}."""
         try:
-            from modules.humanoid.approvals import list_pending, list_all, create
+            from modules.humanoid.approvals import (create, list_all,
+                                                    list_pending)
         except Exception as e:
-            return {"granted": False, "reason": f"approval_module_unavailable: {e}", "pending": False}
+            return {
+                "granted": False,
+                "reason": f"approval_module_unavailable: {e}",
+                "pending": False,
+            }
 
         state = _load_runner_state()
         consumed = set(state.get("consumed") or [])
@@ -466,12 +562,21 @@ def _run_workshop_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
         for item in pending:
             pl = item.get("payload") or {}
             if pl.get("domain") == "workshop" and pl.get("operation") == "maintenance":
-                return {"granted": False, "reason": "pending", "pending": True, "approval_id": item.get("id")}
+                return {
+                    "granted": False,
+                    "reason": "pending",
+                    "pending": True,
+                    "approval_id": item.get("id"),
+                }
 
         now = time.time()
         try:
             last_ts = state.get("last_request_ts") or ""
-            last_epoch = datetime.fromisoformat(last_ts.replace("Z", "+00:00")).timestamp() if last_ts else 0.0
+            last_epoch = (
+                datetime.fromisoformat(last_ts.replace("Z", "+00:00")).timestamp()
+                if last_ts
+                else 0.0
+            )
         except Exception:
             last_epoch = 0.0
         if now - last_epoch < approval_cooldown_seconds:
@@ -496,8 +601,17 @@ def _run_workshop_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
             state["last_request_ts"] = datetime.now(timezone.utc).isoformat()
             state["last_request_id"] = out.get("approval_id")
             _save_runner_state(state)
-            return {"granted": False, "reason": "created_pending", "pending": True, "approval_id": out.get("approval_id")}
-        return {"granted": False, "reason": out.get("error") or "approval_create_failed", "pending": False}
+            return {
+                "granted": False,
+                "reason": "created_pending",
+                "pending": True,
+                "approval_id": out.get("approval_id"),
+            }
+        return {
+            "granted": False,
+            "reason": out.get("error") or "approval_create_failed",
+            "pending": False,
+        }
 
     if mode == "incidents":
         pass
@@ -520,7 +634,11 @@ def _run_workshop_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=300,
-            env={**os.environ, "ATLAS_REPO_PATH": str(root), "ATLAS_PUSH_ROOT": str(root)},
+            env={
+                **os.environ,
+                "ATLAS_REPO_PATH": str(root),
+                "ATLAS_PUSH_ROOT": str(root),
+            },
         )
         stdout = (r.stdout or "").strip()
         stderr = (r.stderr or "").strip()
@@ -547,30 +665,40 @@ def _run_workshop_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
 # POT INTEGRATION - EJECUCIÓN AUTOMÁTICA DE POTS
 # ============================================================================
 
+
 def _run_pot_execute(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Ejecuta un POT directamente. Payload: pot_id, context, dry_run.
-    
+
     Esta es la integración directa scheduler → quality module.
     """
     pot_id = payload.get("pot_id")
     if not pot_id:
         return {"ok": False, "error": "pot_id required in payload"}
-    
+
     context = payload.get("context") or {}
     dry_run = bool(payload.get("dry_run", False))
-    
+
     try:
-        from modules.humanoid.quality.registry import get_pot
+        from modules.humanoid.approvals import create as create_approval
+        from modules.humanoid.approvals import wait_for_resolution
         from modules.humanoid.quality.executor import execute_pot
-        from modules.humanoid.approvals import create as create_approval, wait_for_resolution
-        
+        from modules.humanoid.quality.registry import get_pot
+
         pot = get_pot(pot_id)
         if not pot:
             return {"ok": False, "error": f"POT not found: {pot_id}"}
 
-        severity = str(pot.severity.value if hasattr(pot.severity, "value") else pot.severity).strip().lower()
-        require_approval = bool(payload.get("require_approval", True)) and not dry_run and severity in ("high", "critical")
+        severity = (
+            str(pot.severity.value if hasattr(pot.severity, "value") else pot.severity)
+            .strip()
+            .lower()
+        )
+        require_approval = (
+            bool(payload.get("require_approval", True))
+            and not dry_run
+            and severity in ("high", "critical")
+        )
 
         if require_approval:
             approval_result = create_approval(
@@ -583,13 +711,20 @@ def _run_pot_execute(payload: Dict[str, Any]) -> Dict[str, Any]:
                 job_id="pot_execute",
             )
             if not approval_result.get("ok"):
-                return {"ok": False, "error": approval_result.get("error") or "approval_create_failed", "pot_id": pot_id}
+                return {
+                    "ok": False,
+                    "error": approval_result.get("error") or "approval_create_failed",
+                    "pot_id": pot_id,
+                }
 
             approval_id = approval_result.get("approval_id")
             if not approval_id:
                 return {"ok": False, "error": "approval_id_missing", "pot_id": pot_id}
 
-            resolution = wait_for_resolution(approval_id, timeout_seconds=int(payload.get("approval_timeout_seconds") or 300))
+            resolution = wait_for_resolution(
+                approval_id,
+                timeout_seconds=int(payload.get("approval_timeout_seconds") or 300),
+            )
             if resolution.get("status") != "approved":
                 return {
                     "ok": False,
@@ -597,7 +732,7 @@ def _run_pot_execute(payload: Dict[str, Any]) -> Dict[str, Any]:
                     "error": f"approval_{resolution.get('status') or 'denied'}",
                     "approval_id": approval_id,
                 }
-        
+
         result = execute_pot(
             pot=pot,
             context=context,
@@ -606,7 +741,7 @@ def _run_pot_execute(payload: Dict[str, Any]) -> Dict[str, Any]:
             sync_to_cerebro=True,
             notify_on_complete=True,
         )
-        
+
         return {
             "ok": result.ok,
             "pot_id": pot_id,
@@ -630,17 +765,18 @@ def _run_pot_dispatch(payload: Dict[str, Any]) -> Dict[str, Any]:
     pot_id = payload.get("pot_id")
     context = payload.get("context") or {}
     priority = int(payload.get("priority", 5))
-    
+
     try:
-        from modules.humanoid.quality.dispatcher import dispatch_pot, get_dispatcher
-        
+        from modules.humanoid.quality.dispatcher import (dispatch_pot,
+                                                         get_dispatcher)
+
         # Asegurar que el dispatcher está corriendo
         dispatcher = get_dispatcher()
         if not dispatcher.is_running():
             dispatcher.start()
-        
+
         request_id = dispatch_pot(pot_id, context=context, priority=priority)
-        
+
         return {
             "ok": True,
             "request_id": request_id,
@@ -656,11 +792,13 @@ def _run_autonomy_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
     Ejecuta el ciclo de autonomía completo via POT.
     Shortcut para pot_execute con pot_id=autonomy_full_cycle.
     """
-    return _run_pot_execute({
-        "pot_id": "autonomy_full_cycle",
-        "context": payload.get("context") or {},
-        "dry_run": payload.get("dry_run", False),
-    })
+    return _run_pot_execute(
+        {
+            "pot_id": "autonomy_full_cycle",
+            "context": payload.get("context") or {},
+            "dry_run": payload.get("dry_run", False),
+        }
+    )
 
 
 def _run_auto_update_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -668,33 +806,39 @@ def _run_auto_update_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
     Ejecuta el ciclo de actualización automática via POT.
     Shortcut para pot_execute con pot_id=auto_update_full.
     """
-    return _run_pot_execute({
-        "pot_id": "auto_update_full",
-        "context": payload.get("context") or {},
-        "dry_run": payload.get("dry_run", False),
-    })
+    return _run_pot_execute(
+        {
+            "pot_id": "auto_update_full",
+            "context": payload.get("context") or {},
+            "dry_run": payload.get("dry_run", False),
+        }
+    )
 
 
 def _run_daily_maintenance(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Ejecuta mantenimiento diario via POT.
     """
-    return _run_pot_execute({
-        "pot_id": "maintenance_daily",
-        "context": payload.get("context") or {},
-        "dry_run": payload.get("dry_run", False),
-    })
+    return _run_pot_execute(
+        {
+            "pot_id": "maintenance_daily",
+            "context": payload.get("context") or {},
+            "dry_run": payload.get("dry_run", False),
+        }
+    )
 
 
 def _run_weekly_maintenance(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Ejecuta mantenimiento semanal via POT.
     """
-    return _run_pot_execute({
-        "pot_id": "maintenance_weekly",
-        "context": payload.get("context") or {},
-        "dry_run": payload.get("dry_run", False),
-    })
+    return _run_pot_execute(
+        {
+            "pot_id": "maintenance_weekly",
+            "context": payload.get("context") or {},
+            "dry_run": payload.get("dry_run", False),
+        }
+    )
 
 
 def _run_git_sync(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -702,13 +846,14 @@ def _run_git_sync(payload: Dict[str, Any]) -> Dict[str, Any]:
     Ejecuta sincronización Git (commit + push) via POT.
     """
     message = payload.get("message", "chore: scheduled sync by ATLAS")
-    
+
     # Primero verificar si hay cambios
     import subprocess
+
     root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT")
     if not root:
         root = str(Path(__file__).resolve().parent.parent.parent.parent)
-    
+
     try:
         status = subprocess.run(
             ["git", "status", "--porcelain"],
@@ -721,22 +866,26 @@ def _run_git_sync(payload: Dict[str, Any]) -> Dict[str, Any]:
             return {"ok": True, "result": "no_changes", "skipped": True}
     except Exception as e:
         return {"ok": False, "error": f"git_status_check: {e}"}
-    
+
     # Ejecutar POT de commit
-    commit_result = _run_pot_execute({
-        "pot_id": "git_commit",
-        "context": {"commit_message": message},
-    })
-    
+    commit_result = _run_pot_execute(
+        {
+            "pot_id": "git_commit",
+            "context": {"commit_message": message},
+        }
+    )
+
     if not commit_result.get("ok"):
         return commit_result
-    
+
     # Ejecutar POT de push
-    push_result = _run_pot_execute({
-        "pot_id": "git_push",
-        "context": {},
-    })
-    
+    push_result = _run_pot_execute(
+        {
+            "pot_id": "git_push",
+            "context": {},
+        }
+    )
+
     return {
         "ok": push_result.get("ok", False),
         "commit_result": commit_result,
@@ -748,7 +897,11 @@ def _run_repo_hygiene_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Repo hygiene periódico: scan o auto (según env). Usa scripts/repo_hygiene.py."""
     import subprocess
 
-    root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or payload.get("repo_root")
+    root = (
+        os.getenv("ATLAS_REPO_PATH")
+        or os.getenv("ATLAS_PUSH_ROOT")
+        or payload.get("repo_root")
+    )
     if not root:
         root = str(Path(__file__).resolve().parent.parent.parent.parent)
     root = Path(root).resolve()
@@ -756,7 +909,11 @@ def _run_repo_hygiene_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not script.is_file():
         return {"ok": False, "error": "scripts/repo_hygiene.py not found"}
 
-    auto = os.getenv("REPO_HYGIENE_AUTO", "false").strip().lower() in ("1", "true", "yes")
+    auto = os.getenv("REPO_HYGIENE_AUTO", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     argv = [sys.executable, str(script), "--auto" if auto else "--scan"]
     try:
         r = subprocess.run(
@@ -765,7 +922,11 @@ def _run_repo_hygiene_cycle(payload: Dict[str, Any]) -> Dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=180,
-            env={**os.environ, "ATLAS_REPO_PATH": str(root), "ATLAS_PUSH_ROOT": str(root)},
+            env={
+                **os.environ,
+                "ATLAS_REPO_PATH": str(root),
+                "ATLAS_PUSH_ROOT": str(root),
+            },
         )
         return {
             "ok": r.returncode == 0,
@@ -784,6 +945,7 @@ def _run_cge_tick(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Tick del Concurrent Goal Engine — ejecuta un ciclo del motor de metas concurrente."""
     try:
         from modules.humanoid.cortex.frontal.concurrent_engine import cge_tick
+
         return cge_tick()
     except Exception as e:
         return {"ok": False, "error": str(e)}

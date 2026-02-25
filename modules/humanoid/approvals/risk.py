@@ -8,7 +8,9 @@ from typing import Any, Dict, Optional
 def risk_level(action: str, payload: Optional[Dict[str, Any]] = None) -> str:
     """Return risk: critical | high | medium | low."""
     action_lower = (action or "").strip().lower()
-    if "deploy_apply" in action_lower or ("apply" in action_lower and "update" in action_lower):
+    if "deploy_apply" in action_lower or (
+        "apply" in action_lower and "update" in action_lower
+    ):
         return "critical"
     if "delete" in action_lower or "rollback" in action_lower:
         return "critical"
@@ -20,7 +22,9 @@ def risk_level(action: str, payload: Optional[Dict[str, Any]] = None) -> str:
 
 
 def _2fa_for() -> str:
-    return (os.getenv("OWNER_2FA_REQUIRED_FOR", "critical") or "critical").strip().lower()
+    return (
+        (os.getenv("OWNER_2FA_REQUIRED_FOR", "critical") or "critical").strip().lower()
+    )
 
 
 def requires_2fa_for_risk(risk: str) -> bool:

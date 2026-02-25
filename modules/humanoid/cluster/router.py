@@ -4,8 +4,8 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
-from . import registry
 from . import db as cluster_db
+from . import registry
 
 
 def default_route() -> str:
@@ -27,12 +27,16 @@ def route_decision(
     if not nodes:
         return {"route": "local", "reason": "no_online_nodes"}
     if require_capability:
-        nodes = [n for n in nodes if (n.get("capabilities") or {}).get(require_capability)]
+        nodes = [
+            n for n in nodes if (n.get("capabilities") or {}).get(require_capability)
+        ]
         if not nodes:
             return {"route": "local", "reason": f"no_node_with_{require_capability}"}
     if not prefer_remote and default_route() != "remote_preferred":
         return {"route": "local", "reason": "default_local"}
-    best = max(nodes, key=lambda n: (n.get("health_score") or 0, -len(n.get("tags") or {})))
+    best = max(
+        nodes, key=lambda n: (n.get("health_score") or 0, -len(n.get("tags") or {}))
+    )
     return {
         "route": "remote",
         "node_id": best["node_id"],

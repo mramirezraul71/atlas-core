@@ -22,7 +22,11 @@ def _build_manifest() -> Dict[str, Any]:
             "brain": {
                 "id": "brain",
                 "role": "Cerebro: orquestación, LLM, coherencia, lógica",
-                "components": ["BrainOrchestrator", "CoherenceValidator", "LogicValidator"],
+                "components": [
+                    "BrainOrchestrator",
+                    "CoherenceValidator",
+                    "LogicValidator",
+                ],
                 "dependencies": ["llm_router", "memory", "audit"],
                 "failure_modes": ["llm_unreachable", "memory_lock", "coherence_fail"],
             },
@@ -32,7 +36,11 @@ def _build_manifest() -> Dict[str, Any]:
                 "checks": checks,
                 "heals": heals,
                 "dependencies": ["scheduler", "governance", "policy", "incident_store"],
-                "failure_modes": ["check_not_registered", "heal_not_registered", "governance_blocked"],
+                "failure_modes": [
+                    "check_not_registered",
+                    "heal_not_registered",
+                    "governance_blocked",
+                ],
             },
             "kernel": {
                 "id": "kernel",
@@ -41,14 +49,54 @@ def _build_manifest() -> Dict[str, Any]:
                 "dependencies": [],
             },
             "organs": {
-                "memory": {"id": "memory", "role": "Memoria persistente SQLite", "check": "memory_health", "heals": ["clear_stale_locks"]},
-                "audit": {"id": "audit", "role": "Auditoría", "check": "audit_health", "heals": ["clear_stale_locks"]},
-                "scheduler": {"id": "scheduler", "role": "Planificador de jobs", "check": "scheduler_health", "heals": ["restart_scheduler"]},
-                "llm": {"id": "llm", "role": "LLM/Ollama", "check": "llm_health", "heals": ["fallback_models"]},
-                "api": {"id": "api", "role": "API HTTP", "check": "api_health", "heals": []},
-                "deps": {"id": "deps", "role": "Dependencias opcionales", "check": "deps_health", "heals": ["install_optional_deps"]},
-                "disk": {"id": "disk", "role": "Disco", "check": "disk_health", "heals": ["rotate_logs"]},
-                "logs": {"id": "logs", "role": "Logs", "check": "logs_health", "heals": ["rotate_logs"]},
+                "memory": {
+                    "id": "memory",
+                    "role": "Memoria persistente SQLite",
+                    "check": "memory_health",
+                    "heals": ["clear_stale_locks"],
+                },
+                "audit": {
+                    "id": "audit",
+                    "role": "Auditoría",
+                    "check": "audit_health",
+                    "heals": ["clear_stale_locks"],
+                },
+                "scheduler": {
+                    "id": "scheduler",
+                    "role": "Planificador de jobs",
+                    "check": "scheduler_health",
+                    "heals": ["restart_scheduler"],
+                },
+                "llm": {
+                    "id": "llm",
+                    "role": "LLM/Ollama",
+                    "check": "llm_health",
+                    "heals": ["fallback_models"],
+                },
+                "api": {
+                    "id": "api",
+                    "role": "API HTTP",
+                    "check": "api_health",
+                    "heals": [],
+                },
+                "deps": {
+                    "id": "deps",
+                    "role": "Dependencias opcionales",
+                    "check": "deps_health",
+                    "heals": ["install_optional_deps"],
+                },
+                "disk": {
+                    "id": "disk",
+                    "role": "Disco",
+                    "check": "disk_health",
+                    "heals": ["rotate_logs"],
+                },
+                "logs": {
+                    "id": "logs",
+                    "role": "Logs",
+                    "check": "logs_health",
+                    "heals": ["rotate_logs"],
+                },
             },
         },
         "dependency_graph": deps,
@@ -60,10 +108,18 @@ def _discover_checks() -> List[Dict]:
     out = []
     try:
         from modules.humanoid.ans.checks import _register_all
+
         _register_all()
         from modules.humanoid.ans.registry import get_checks
+
         for cid, fn in get_checks().items():
-            out.append({"id": cid, "module": getattr(fn, "__module__", "?"), "callable": getattr(fn, "__name__", "?")})
+            out.append(
+                {
+                    "id": cid,
+                    "module": getattr(fn, "__module__", "?"),
+                    "callable": getattr(fn, "__name__", "?"),
+                }
+            )
     except Exception:
         pass
     return out
@@ -74,14 +130,17 @@ def _discover_heals() -> List[Dict]:
     out = []
     try:
         import modules.humanoid.ans.heals  # noqa: F401
-        from modules.humanoid.ans.registry import get_heals
         from modules.humanoid.ans.engine import SAFE_HEALS
+        from modules.humanoid.ans.registry import get_heals
+
         for hid, fn in get_heals().items():
-            out.append({
-                "id": hid,
-                "safe": hid in SAFE_HEALS,
-                "module": getattr(fn, "__module__", "?"),
-            })
+            out.append(
+                {
+                    "id": hid,
+                    "safe": hid in SAFE_HEALS,
+                    "module": getattr(fn, "__module__", "?"),
+                }
+            )
     except Exception:
         pass
     return out
@@ -91,6 +150,7 @@ def _discover_modules() -> List[str]:
     """Módulos del kernel."""
     try:
         from modules.humanoid import get_humanoid_kernel
+
         k = get_humanoid_kernel()
         return list(k.registry.all_names())
     except Exception:

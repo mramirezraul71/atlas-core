@@ -10,7 +10,11 @@ from typing import Dict, Optional
 logger = logging.getLogger("atlas.evolution.credentials")
 
 # Bóveda: ATLAS_CREDENTIALS_PATH o CREDENTIALS_PATH en env; si no, rutas por defecto
-_def = os.environ.get("ATLAS_CREDENTIALS_PATH") or os.environ.get("CREDENTIALS_PATH") or r"C:\dev\credenciales.txt"
+_def = (
+    os.environ.get("ATLAS_CREDENTIALS_PATH")
+    or os.environ.get("CREDENTIALS_PATH")
+    or r"C:\dev\credenciales.txt"
+)
 CREDENTIALS_PATH = Path(_def) if _def else Path(r"C:\dev\credenciales.txt")
 KEY_ALIASES = {
     "github_token": ["GITHUB_TOKEN", "GITHUB_ACCESS_TOKEN", "GH_TOKEN"],

@@ -5,7 +5,6 @@ import time
 import uuid
 from typing import Dict, List, Optional
 
-
 _MCAST_ADDR = ("239.255.255.250", 3702)
 
 
@@ -27,7 +26,9 @@ def _probe_message(message_id: str) -> bytes:
     </d:Probe>
   </e:Body>
 </e:Envelope>
-""".encode("utf-8")
+""".encode(
+        "utf-8"
+    )
 
 
 def _extract_between(text: str, a: str, b: str) -> Optional[str]:
@@ -44,7 +45,9 @@ def _extract_between(text: str, a: str, b: str) -> Optional[str]:
         return None
 
 
-def discover_onvif_devices(timeout_s: float = 2.0, max_results: int = 50) -> List[Dict[str, str]]:
+def discover_onvif_devices(
+    timeout_s: float = 2.0, max_results: int = 50
+) -> List[Dict[str, str]]:
     """
     Descubre dispositivos ONVIF en la LAN usando WS-Discovery (UDP multicast).
     Retorna lista de dicts: {ip, xaddr, endpoint, raw?}
@@ -72,8 +75,12 @@ def discover_onvif_devices(timeout_s: float = 2.0, max_results: int = 50) -> Lis
                 break
             ip = str(addr[0])
             raw = data.decode("utf-8", errors="ignore")
-            xaddrs = _extract_between(raw, "<d:XAddrs>", "</d:XAddrs>") or _extract_between(raw, "<XAddrs>", "</XAddrs>")
-            endpoint = _extract_between(raw, "<w:Address>", "</w:Address>") or _extract_between(raw, "<Address>", "</Address>")
+            xaddrs = _extract_between(
+                raw, "<d:XAddrs>", "</d:XAddrs>"
+            ) or _extract_between(raw, "<XAddrs>", "</XAddrs>")
+            endpoint = _extract_between(
+                raw, "<w:Address>", "</w:Address>"
+            ) or _extract_between(raw, "<Address>", "</Address>")
             xaddr = ""
             if xaddrs:
                 # puede venir como lista separada por espacios
@@ -96,4 +103,3 @@ def discover_onvif_devices(timeout_s: float = 2.0, max_results: int = 50) -> Lis
         except Exception:
             pass
     return out
-

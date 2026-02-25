@@ -11,14 +11,15 @@ Responsibilities:
 
 Bridges to: atlas_adapter (PUSH), nexus (ROBOT), modules/humanoid/governance/
 """
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import String, Bool
-from sensor_msgs.msg import JointState
 import json
 import time
-import urllib.request
 import urllib.error
+import urllib.request
+
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
+from std_msgs.msg import Bool, String
 
 
 class SupervisorNode(Node):
@@ -26,15 +27,21 @@ class SupervisorNode(Node):
         super().__init__("atlas_supervisor")
 
         self.declare_parameter("atlas.supervisor.push_api_url", "http://127.0.0.1:8791")
-        self.declare_parameter("atlas.supervisor.robot_api_url", "http://127.0.0.1:8002")
+        self.declare_parameter(
+            "atlas.supervisor.robot_api_url", "http://127.0.0.1:8002"
+        )
         self.declare_parameter("atlas.supervisor.heartbeat_interval_sec", 5)
         self.declare_parameter("atlas.supervisor.governance_mode", "governed")
         self.declare_parameter("atlas.supervisor.ai_backend", "bedrock")
 
         self.push_url = self.get_parameter("atlas.supervisor.push_api_url").value
         self.robot_url = self.get_parameter("atlas.supervisor.robot_api_url").value
-        self.hb_interval = self.get_parameter("atlas.supervisor.heartbeat_interval_sec").value
-        self.governance_mode = self.get_parameter("atlas.supervisor.governance_mode").value
+        self.hb_interval = self.get_parameter(
+            "atlas.supervisor.heartbeat_interval_sec"
+        ).value
+        self.governance_mode = self.get_parameter(
+            "atlas.supervisor.governance_mode"
+        ).value
         self.ai_backend = self.get_parameter("atlas.supervisor.ai_backend").value
 
         # State tracking
@@ -46,13 +53,19 @@ class SupervisorNode(Node):
 
         # Subscribers (listen to all subsystems)
         self.create_subscription(String, "/atlas/task/status", self._task_status_cb, 10)
-        self.create_subscription(String, "/atlas/perception/detections", self._perception_cb, 10)
+        self.create_subscription(
+            String, "/atlas/perception/detections", self._perception_cb, 10
+        )
         self.create_subscription(String, "/atlas/gait/phase", self._gait_phase_cb, 10)
         self.create_subscription(Bool, "/atlas/slam/active", self._slam_status_cb, 10)
 
         # Publishers
-        self.heartbeat_pub = self.create_publisher(String, "/atlas/supervisor/heartbeat", 10)
-        self.governance_pub = self.create_publisher(String, "/atlas/supervisor/governance", 10)
+        self.heartbeat_pub = self.create_publisher(
+            String, "/atlas/supervisor/heartbeat", 10
+        )
+        self.governance_pub = self.create_publisher(
+            String, "/atlas/supervisor/governance", 10
+        )
         self.alert_pub = self.create_publisher(String, "/atlas/supervisor/alert", 10)
         self.state_pub = self.create_publisher(String, "/atlas/supervisor/state", 10)
 
@@ -83,7 +96,9 @@ class SupervisorNode(Node):
             count = data.get("count", 0)
             if count > 0:
                 self._subsystem_status["perception"] = {
-                    "active": True, "detections": count, "ts": time.time()
+                    "active": True,
+                    "detections": count,
+                    "ts": time.time(),
                 }
         except Exception:
             pass
@@ -156,14 +171,16 @@ class SupervisorNode(Node):
             pass
 
         state_msg = String()
-        state_msg.data = json.dumps({
-            "health_score": round(self._health_score, 1),
-            "push": self._push_reachable,
-            "robot": self._robot_reachable,
-            "governance": self.governance_mode,
-            "subsystems": self._subsystem_status,
-            "ts": time.time(),
-        })
+        state_msg.data = json.dumps(
+            {
+                "health_score": round(self._health_score, 1),
+                "push": self._push_reachable,
+                "robot": self._robot_reachable,
+                "governance": self.governance_mode,
+                "subsystems": self._subsystem_status,
+                "ts": time.time(),
+            }
+        )
         self.state_pub.publish(state_msg)
 
     # ── Governance ──
@@ -180,11 +197,13 @@ class SupervisorNode(Node):
                 if new_mode and new_mode != self.governance_mode:
                     old = self.governance_mode
                     self.governance_mode = new_mode
-                    self.get_logger().info(f"Governance mode changed: {old} -> {new_mode}")
+                    self.get_logger().info(
+                        f"Governance mode changed: {old} -> {new_mode}"
+                    )
                     gov_msg = String()
-                    gov_msg.data = json.dumps({
-                        "mode": new_mode, "previous": old, "ts": time.time()
-                    })
+                    gov_msg.data = json.dumps(
+                        {"mode": new_mode, "previous": old, "ts": time.time()}
+                    )
                     self.governance_pub.publish(gov_msg)
         except Exception:
             pass
@@ -193,9 +212,9 @@ class SupervisorNode(Node):
 
     def _publish_alert(self, level: str, message: str, detail: str = ""):
         msg = String()
-        msg.data = json.dumps({
-            "level": level, "message": message, "detail": detail, "ts": time.time()
-        })
+        msg.data = json.dumps(
+            {"level": level, "message": message, "detail": detail, "ts": time.time()}
+        )
         self.alert_pub.publish(msg)
 
 

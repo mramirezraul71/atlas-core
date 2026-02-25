@@ -18,6 +18,7 @@ def verify_windows_user(username: str, password: str) -> Tuple[bool, str]:
     try:
         import ctypes
         import ctypes.wintypes
+
         token = ctypes.wintypes.HANDLE()
         domain = "."  # cuenta local
         LOGON32_LOGON_NETWORK = 3
@@ -28,7 +29,7 @@ def verify_windows_user(username: str, password: str) -> Tuple[bool, str]:
             password,
             LOGON32_LOGON_NETWORK,
             LOGON32_PROVIDER_DEFAULT,
-            ctypes.byref(token)
+            ctypes.byref(token),
         )
         if ok:
             ctypes.windll.kernel32.CloseHandle(token)

@@ -9,15 +9,18 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-import time
 import threading
+import time
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 _DB_PATH = os.path.join(
-    os.environ.get("ATLAS_DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "..", "logs")),
+    os.environ.get(
+        "ATLAS_DATA_DIR",
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "logs"),
+    ),
     "world_model.sqlite",
 )
 _lock = threading.Lock()
@@ -34,7 +37,8 @@ def _con() -> sqlite3.Connection:
 
 def _ensure():
     with _con() as c:
-        c.executescript("""
+        c.executescript(
+            """
         CREATE TABLE IF NOT EXISTS entities (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -83,7 +87,8 @@ def _ensure():
             trigger TEXT DEFAULT 'periodic'
         );
         CREATE INDEX IF NOT EXISTS idx_snapshots_ts ON world_snapshots(timestamp_ts);
-        """)
+        """
+        )
 
 
 _ensure()
@@ -110,10 +115,14 @@ class WorldModel:
     def _load_cache(self):
         try:
             with _con() as c:
-                rows = c.execute("SELECT * FROM entities ORDER BY updated_ts DESC LIMIT 500").fetchall()
+                rows = c.execute(
+                    "SELECT * FROM entities ORDER BY updated_ts DESC LIMIT 500"
+                ).fetchall()
                 for r in rows:
                     self._cache[r["id"]] = Entity(
-                        id=r["id"], name=r["name"], entity_type=r["entity_type"],
+                        id=r["id"],
+                        name=r["name"],
+                        entity_type=r["entity_type"],
                         state=json.loads(r["state"] or "{}"),
                         properties=json.loads(r["properties"] or "{}"),
                         confidence=r["confidence"] or 1.0,
@@ -124,10 +133,14 @@ class WorldModel:
 
     # ── Entidades ──────────────────────────────────────────
 
-    def upsert_entity(self, name: str, entity_type: str,
-                      state: Dict[str, Any] = None,
-                      properties: Dict[str, Any] = None,
-                      confidence: float = 1.0) -> Entity:
+    def upsert_entity(
+        self,
+        name: str,
+        entity_type: str,
+        state: Dict[str, Any] = None,
+        properties: Dict[str, Any] = None,
+        confidence: float = 1.0,
+    ) -> Entity:
         now = time.time()
         eid = f"e_{entity_type}_{name}".replace(" ", "_").lower()
 
@@ -135,24 +148,37 @@ class WorldModel:
         prev_state = prev.state.copy() if prev else {}
 
         ent = Entity(
-            id=eid, name=name, entity_type=entity_type,
+            id=eid,
+            name=name,
+            entity_type=entity_type,
             state=state or (prev.state if prev else {}),
             properties={**(prev.properties if prev else {}), **(properties or {})},
-            confidence=confidence, last_seen_ts=now,
+            confidence=confidence,
+            last_seen_ts=now,
         )
         self._cache[eid] = ent
 
         with _lock:
             with _con() as c:
-                c.execute("""
+                c.execute(
+                    """
                     INSERT INTO entities (id, name, entity_type, state, properties, last_seen_ts, confidence, updated_ts)
                     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
                     ON CONFLICT(id) DO UPDATE SET
                         state=excluded.state, properties=excluded.properties,
                         last_seen_ts=excluded.last_seen_ts, confidence=excluded.confidence,
                         updated_ts=datetime('now')
-                """, (eid, name, entity_type, json.dumps(state or {}),
-                      json.dumps(ent.properties), now, confidence))
+                """,
+                    (
+                        eid,
+                        name,
+                        entity_type,
+                        json.dumps(state or {}),
+                        json.dumps(ent.properties),
+                        now,
+                        confidence,
+                    ),
+                )
 
         if prev and prev_state != (state or {}):
             self._record_transition(eid, prev_state, state or {}, "update", "system")
@@ -162,62 +188,102 @@ class WorldModel:
     def get_entity(self, entity_id: str) -> Optional[Entity]:
         return self._cache.get(entity_id)
 
-    def query_entities(self, entity_type: str = None, state_filter: Dict[str, Any] = None) -> List[Entity]:
+    def query_entities(
+        self, entity_type: str = None, state_filter: Dict[str, Any] = None
+    ) -> List[Entity]:
         results = list(self._cache.values())
         if entity_type:
             results = [e for e in results if e.entity_type == entity_type]
         if state_filter:
-            results = [e for e in results if all(
-                e.state.get(k) == v for k, v in state_filter.items()
-            )]
+            results = [
+                e
+                for e in results
+                if all(e.state.get(k) == v for k, v in state_filter.items())
+            ]
         return results
 
     # ── Transiciones ───────────────────────────────────────
 
-    def _record_transition(self, entity_id: str, from_state: Dict, to_state: Dict,
-                           action: str, source: str):
+    def _record_transition(
+        self, entity_id: str, from_state: Dict, to_state: Dict, action: str, source: str
+    ):
         tid = f"tr_{uuid.uuid4().hex[:10]}"
         with _lock:
             with _con() as c:
-                c.execute("""
+                c.execute(
+                    """
                     INSERT INTO state_transitions (id, entity_id, from_state, to_state,
                         trigger_action, trigger_source, timestamp_ts, metadata)
                     VALUES (?, ?, ?, ?, ?, ?, ?, '{}')
-                """, (tid, entity_id, json.dumps(from_state), json.dumps(to_state),
-                      action, source, time.time()))
+                """,
+                    (
+                        tid,
+                        entity_id,
+                        json.dumps(from_state),
+                        json.dumps(to_state),
+                        action,
+                        source,
+                        time.time(),
+                    ),
+                )
 
     def get_transitions(self, entity_id: str, limit: int = 20) -> List[Dict]:
         with _con() as c:
-            rows = c.execute("""
+            rows = c.execute(
+                """
                 SELECT * FROM state_transitions WHERE entity_id = ?
                 ORDER BY timestamp_ts DESC LIMIT ?
-            """, (entity_id, limit)).fetchall()
+            """,
+                (entity_id, limit),
+            ).fetchall()
             return [dict(r) for r in rows]
 
     # ── Outcomes (para prediccion) ─────────────────────────
 
-    def record_outcome(self, action_type: str, context: Dict[str, Any],
-                       predicted: str, actual: str, success: bool,
-                       reward: float = 0.0, duration_ms: float = 0.0):
+    def record_outcome(
+        self,
+        action_type: str,
+        context: Dict[str, Any],
+        predicted: str,
+        actual: str,
+        success: bool,
+        reward: float = 0.0,
+        duration_ms: float = 0.0,
+    ):
         oid = f"ao_{uuid.uuid4().hex[:10]}"
         with _lock:
             with _con() as c:
-                c.execute("""
+                c.execute(
+                    """
                     INSERT INTO action_outcomes (id, action_type, context, predicted_outcome,
                         actual_outcome, success, reward, timestamp_ts, duration_ms)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (oid, action_type, json.dumps(context), predicted, actual,
-                      int(success), reward, time.time(), duration_ms))
+                """,
+                    (
+                        oid,
+                        action_type,
+                        json.dumps(context),
+                        predicted,
+                        actual,
+                        int(success),
+                        reward,
+                        time.time(),
+                        duration_ms,
+                    ),
+                )
 
     def get_action_stats(self, action_type: str) -> Dict[str, Any]:
         with _con() as c:
-            row = c.execute("""
+            row = c.execute(
+                """
                 SELECT COUNT(*) as total,
                        SUM(success) as successes,
                        AVG(reward) as avg_reward,
                        AVG(duration_ms) as avg_duration
                 FROM action_outcomes WHERE action_type = ?
-            """, (action_type,)).fetchone()
+            """,
+                (action_type,),
+            ).fetchone()
             total = row["total"] or 0
             return {
                 "action_type": action_type,
@@ -239,20 +305,29 @@ class WorldModel:
         sid = f"snap_{uuid.uuid4().hex[:10]}"
         with _lock:
             with _con() as c:
-                c.execute("""
+                c.execute(
+                    """
                     INSERT INTO world_snapshots (id, snapshot, timestamp_ts, trigger)
                     VALUES (?, ?, ?, ?)
-                """, (sid, json.dumps(snap), time.time(), trigger))
+                """,
+                    (sid, json.dumps(snap), time.time(), trigger),
+                )
         return sid
 
     def get_latest_snapshot(self) -> Optional[Dict]:
         with _con() as c:
-            row = c.execute("""
+            row = c.execute(
+                """
                 SELECT * FROM world_snapshots ORDER BY timestamp_ts DESC LIMIT 1
-            """).fetchone()
+            """
+            ).fetchone()
             if row:
-                return {"id": row["id"], "snapshot": json.loads(row["snapshot"]),
-                        "timestamp": row["timestamp_ts"], "trigger": row["trigger"]}
+                return {
+                    "id": row["id"],
+                    "snapshot": json.loads(row["snapshot"]),
+                    "timestamp": row["timestamp_ts"],
+                    "trigger": row["trigger"],
+                }
         return None
 
     # ── Resumen global ─────────────────────────────────────
@@ -263,7 +338,9 @@ class WorldModel:
             by_type[e.entity_type] = by_type.get(e.entity_type, 0) + 1
 
         with _con() as c:
-            transitions = c.execute("SELECT COUNT(*) FROM state_transitions").fetchone()[0]
+            transitions = c.execute(
+                "SELECT COUNT(*) FROM state_transitions"
+            ).fetchone()[0]
             outcomes = c.execute("SELECT COUNT(*) FROM action_outcomes").fetchone()[0]
             snaps = c.execute("SELECT COUNT(*) FROM world_snapshots").fetchone()[0]
 

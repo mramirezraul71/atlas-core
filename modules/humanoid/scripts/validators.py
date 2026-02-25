@@ -8,7 +8,9 @@ from typing import List, Tuple
 def has_ps_header(content: str) -> bool:
     """PowerShell: param block or comment header."""
     stripped = content.strip()
-    if stripped.startswith("#") and ("param" in content.lower() or "Requires" in content.lower()):
+    if stripped.startswith("#") and (
+        "param" in content.lower() or "Requires" in content.lower()
+    ):
         return True
     if re.search(r"^\s*param\s*\(", content, re.MULTILINE | re.IGNORECASE):
         return True
@@ -27,7 +29,9 @@ def has_python_header(content: str) -> bool:
 
 def has_error_handling_ps(content: str) -> bool:
     """PS: try/catch or $ErrorActionPreference."""
-    return "try" in content and "catch" in content or "$ErrorActionPreference" in content
+    return (
+        "try" in content and "catch" in content or "$ErrorActionPreference" in content
+    )
 
 
 def has_error_handling_python(content: str) -> bool:

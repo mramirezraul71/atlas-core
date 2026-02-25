@@ -5,12 +5,23 @@ import os
 from typing import Optional, Tuple
 
 from .models import ActionKind, Decision
-from .state import get_mode, get_emergency_stop
+from .state import get_emergency_stop, get_mode
 
-_EMERGENCY_BLOCKED = frozenset({
-    "deploy_apply", "code_change", "deps_change", "remote_execute", "shell_exec",
-    "update_apply", "refactor", "ans_heal", "ga_autorun", "selfprog_apply", "cursor_tool_exec",
-})
+_EMERGENCY_BLOCKED = frozenset(
+    {
+        "deploy_apply",
+        "code_change",
+        "deps_change",
+        "remote_execute",
+        "shell_exec",
+        "update_apply",
+        "refactor",
+        "ans_heal",
+        "ga_autorun",
+        "selfprog_apply",
+        "cursor_tool_exec",
+    }
+)
 
 
 def get_emergency_blocked_actions() -> list:

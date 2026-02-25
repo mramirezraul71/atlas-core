@@ -13,11 +13,23 @@ from pathlib import Path
 
 
 def _sched_enabled() -> bool:
-    return os.getenv("SCHED_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
+    return os.getenv("SCHED_ENABLED", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    )
 
 
 def _repo_hygiene_enabled() -> bool:
-    return os.getenv("REPO_HYGIENE_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
+    return os.getenv("REPO_HYGIENE_ENABLED", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    )
 
 
 def _interval_seconds() -> int:
@@ -66,4 +78,3 @@ def ensure_repo_hygiene_jobs() -> None:
             )
     except Exception:
         pass
-

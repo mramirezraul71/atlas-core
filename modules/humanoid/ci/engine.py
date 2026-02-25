@@ -5,12 +5,12 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-from .scanner import scan_repo
-from .runtime_scan import scan_runtime
-from .planner import build_plan
 from .executor import execute_plan
+from .planner import build_plan
+from .policy_gate import _ci_autofix_limit, _ci_enabled
 from .reporter import build_report, export_markdown
-from .policy_gate import _ci_enabled, _ci_autofix_limit
+from .runtime_scan import scan_runtime
+from .scanner import scan_repo
 
 
 def run_improve(
@@ -41,17 +41,36 @@ def run_improve(
         ex = execute_plan(plan, max_auto=_ci_autofix_limit())
         auto_executed = ex.get("executed") or []
         if ex.get("errors"):
-            plan["auto_executed"] = [e for e in plan.get("auto_executed") or [] if not ex.get("errors")]
+            plan["auto_executed"] = [
+                e for e in plan.get("auto_executed") or [] if not ex.get("errors")
+            ]
     report = build_report(plan, executed=auto_executed)
     export_path = export_markdown(plan, report)
     if export_path:
         artifacts.append(export_path)
     try:
-        from modules.humanoid.memory_engine import ensure_thread, memory_write
         from modules.humanoid.audit import get_audit_logger
+        from modules.humanoid.memory_engine import ensure_thread, memory_write
+
         tid = ensure_thread(None, "CI")
-        memory_write(tid, "summary", {"content": f"CI cycle scope={scope} findings={len(findings)} plan_id={plan.get('plan_id')}"})
-        get_audit_logger().log_event("ci", "system", "engine", "run_improve", True, int((time.perf_counter() - t0) * 1000), None, {"scope": scope, "plan_id": plan.get("plan_id")}, None)
+        memory_write(
+            tid,
+            "summary",
+            {
+                "content": f"CI cycle scope={scope} findings={len(findings)} plan_id={plan.get('plan_id')}"
+            },
+        )
+        get_audit_logger().log_event(
+            "ci",
+            "system",
+            "engine",
+            "run_improve",
+            True,
+            int((time.perf_counter() - t0) * 1000),
+            None,
+            {"scope": scope, "plan_id": plan.get("plan_id")},
+            None,
+        )
     except Exception:
         pass
     set_improve_status({**plan, "auto_executed": auto_executed})
@@ -79,17 +98,35 @@ def ensure_ci_jobs() -> None:
     if not _ci_enabled():
         return
     try:
+        from datetime import datetime, timezone
+
         from modules.humanoid.scheduler import get_scheduler_db
         from modules.humanoid.scheduler.models import JobSpec
-        from datetime import datetime, timezone
+
         db = get_scheduler_db()
         jobs = db.list_jobs()
         names = {j.get("name") for j in (jobs or [])}
         now = datetime.now(timezone.utc).isoformat()
         if "nightly_repo_scan" not in names:
-            db.create_job(JobSpec(name="nightly_repo_scan", kind="ci_improve", payload={"scope": "repo", "mode": "plan_only", "depth": 3}, run_at=now, interval_seconds=86400))
+            db.create_job(
+                JobSpec(
+                    name="nightly_repo_scan",
+                    kind="ci_improve",
+                    payload={"scope": "repo", "mode": "plan_only", "depth": 3},
+                    run_at=now,
+                    interval_seconds=86400,
+                )
+            )
         if "hourly_runtime_check" not in names:
-            db.create_job(JobSpec(name="hourly_runtime_check", kind="ci_improve", payload={"scope": "runtime", "mode": "plan_only", "depth": 2}, run_at=now, interval_seconds=3600))
+            db.create_job(
+                JobSpec(
+                    name="hourly_runtime_check",
+                    kind="ci_improve",
+                    payload={"scope": "runtime", "mode": "plan_only", "depth": 2},
+                    run_at=now,
+                    interval_seconds=3600,
+                )
+            )
     except Exception:
         pass
 

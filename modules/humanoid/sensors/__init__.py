@@ -13,18 +13,18 @@ Componentes:
 
 Uso:
     from modules.humanoid.sensors import SensorFusion
-    
+
     fusion = SensorFusion()
     fusion.add_sensor("imu", IMUSensor())
     fusion.add_sensor("depth", DepthCamera())
     state = fusion.update()
 """
-from .sensor_fusion import SensorFusion, FusionConfig, FusedState
-from .kalman_filter import KalmanFilter, ExtendedKalmanFilter
-from .imu_sensor import IMUSensor, IMUData
 from .depth_camera import DepthCamera, DepthFrame
-from .encoders import MotorEncoder, EncoderData
+from .encoders import EncoderData, MotorEncoder
 from .force_torque import ForceTorqueSensor, WrenchData
+from .imu_sensor import IMUData, IMUSensor
+from .kalman_filter import ExtendedKalmanFilter, KalmanFilter
+from .sensor_fusion import FusedState, FusionConfig, SensorFusion
 
 __all__ = [
     "SensorFusion",

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import os
 import json
-from dataclasses import dataclass, asdict
+import os
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -64,7 +64,9 @@ class ArchitectureIndexer:
         if not path.exists():
             return {}
         try:
-            return yaml.safe_load(path.read_text(encoding="utf-8", errors="ignore")) or {}
+            return (
+                yaml.safe_load(path.read_text(encoding="utf-8", errors="ignore")) or {}
+            )
         except Exception:
             return {}
 
@@ -77,7 +79,9 @@ class ArchitectureIndexer:
         # Ports/URLs defaults (local dev)
         push_url = os.getenv("PUSH_BASE_URL", "http://127.0.0.1:8791")
         nexus_url = os.getenv("NEXUS_BASE_URL", "http://127.0.0.1:8000")
-        robot_url = os.getenv("NEXUS_ROBOT_API_URL", os.getenv("ROBOT_BASE_URL", "http://127.0.0.1:8002"))
+        robot_url = os.getenv(
+            "NEXUS_ROBOT_API_URL", os.getenv("ROBOT_BASE_URL", "http://127.0.0.1:8002")
+        )
 
         env["PUSH_BASE_URL"] = push_url
         env["NEXUS_BASE_URL"] = nexus_url
@@ -89,6 +93,7 @@ class ArchitectureIndexer:
             push = svc.get("push") or {}
             nexus = svc.get("nexus") or {}
             robot = svc.get("robot") or {}
+
             # docker-compose ports are strings "host:container"
             def _first_port(svc_def: Dict[str, Any], default: int) -> int:
                 ports = svc_def.get("ports") or []
@@ -104,14 +109,29 @@ class ArchitectureIndexer:
 
             services.extend(
                 [
-                    ServiceEndpoint(name="atlas_push", port=push_port, base_url=f"http://127.0.0.1:{push_port}", role="push"),
-                    ServiceEndpoint(name="atlas_nexus", port=nexus_port, base_url=f"http://127.0.0.1:{nexus_port}", role="nexus"),
-                    ServiceEndpoint(name="atlas_robot", port=robot_port, base_url=f"http://127.0.0.1:{robot_port}", role="robot"),
+                    ServiceEndpoint(
+                        name="atlas_push",
+                        port=push_port,
+                        base_url=f"http://127.0.0.1:{push_port}",
+                        role="push",
+                    ),
+                    ServiceEndpoint(
+                        name="atlas_nexus",
+                        port=nexus_port,
+                        base_url=f"http://127.0.0.1:{nexus_port}",
+                        role="nexus",
+                    ),
+                    ServiceEndpoint(
+                        name="atlas_robot",
+                        port=robot_port,
+                        base_url=f"http://127.0.0.1:{robot_port}",
+                        role="robot",
+                    ),
                 ]
             )
 
             # environment variables in compose push service
-            for it in (push.get("environment") or []):
+            for it in push.get("environment") or []:
                 try:
                     if isinstance(it, str) and "=" in it:
                         k, v = it.split("=", 1)
@@ -121,21 +141,44 @@ class ArchitectureIndexer:
         except Exception:
             services.extend(
                 [
-                    ServiceEndpoint(name="atlas_push", port=8791, base_url=push_url, role="push"),
-                    ServiceEndpoint(name="atlas_nexus", port=8000, base_url=nexus_url, role="nexus"),
-                    ServiceEndpoint(name="atlas_robot", port=8002, base_url=robot_url, role="robot"),
+                    ServiceEndpoint(
+                        name="atlas_push", port=8791, base_url=push_url, role="push"
+                    ),
+                    ServiceEndpoint(
+                        name="atlas_nexus", port=8000, base_url=nexus_url, role="nexus"
+                    ),
+                    ServiceEndpoint(
+                        name="atlas_robot", port=8002, base_url=robot_url, role="robot"
+                    ),
                 ]
             )
 
         # Dependencies graph (mínimo útil)
         deps = [
-            {"from": "atlas_push", "to": "atlas_nexus", "why": "proxy/ws/actions/log y servicios", "port": 8000},
-            {"from": "atlas_push", "to": "atlas_robot", "why": "servicio de cámaras / visión", "port": 8002},
-            {"from": "UI/dashboard", "to": "atlas_push", "why": "control/estado y orquestación Cursor", "port": 8791},
+            {
+                "from": "atlas_push",
+                "to": "atlas_nexus",
+                "why": "proxy/ws/actions/log y servicios",
+                "port": 8000,
+            },
+            {
+                "from": "atlas_push",
+                "to": "atlas_robot",
+                "why": "servicio de cámaras / visión",
+                "port": 8002,
+            },
+            {
+                "from": "UI/dashboard",
+                "to": "atlas_push",
+                "why": "control/estado y orquestación Cursor",
+                "port": 8791,
+            },
         ]
 
         notes.append("Puertos clave: PUSH=8791, NEXUS=8000, ROBOT=8002.")
-        notes.append("Si NEXUS está en docker, PUSH usa NEXUS_BASE_URL=http://nexus:8000 y ROBOT_BASE_URL=http://robot:8002.")
+        notes.append(
+            "Si NEXUS está en docker, PUSH usa NEXUS_BASE_URL=http://nexus:8000 y ROBOT_BASE_URL=http://robot:8002."
+        )
 
         return ArchitectureIndex(
             repo_root=str(self.repo_root),
@@ -148,6 +191,7 @@ class ArchitectureIndexer:
 
     def persist(self, index: ArchitectureIndex) -> str:
         p = _snap_dir(self.repo_root) / "arch_index.json"
-        p.write_text(json.dumps(index.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        p.write_text(
+            json.dumps(index.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         return str(p)
-

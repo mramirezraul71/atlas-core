@@ -11,7 +11,8 @@ Triggers:
 
 Severidad: HIGH (datos críticos para control)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -30,17 +31,14 @@ Procedimiento para operaciones de fusión sensorial:
         severity=POTSeverity.HIGH,
         version="1.0.0",
         author="ATLAS Robotics Architect",
-        
         trigger_check_ids=["sensor_*", "imu_*", "depth_*", "encoder_*"],
         trigger_keywords=["sensores", "fusión", "IMU", "depth", "calibrar", "kalman"],
-        
         prerequisites=[
             "Hardware sensorial conectado",
             "Drivers de sensores instalados",
         ],
         required_services=["sensor_fusion"],
         required_permissions=["sensors"],
-        
         objectives=[
             "Verificar conectividad de sensores",
             "Ejecutar calibración de IMU",
@@ -50,7 +48,6 @@ Procedimiento para operaciones de fusión sensorial:
         ],
         success_criteria="Fusión funcionando con confianza > 80%",
         estimated_duration_minutes=10,
-        
         tutorial_overview="""
 ## Guía de Fusión Sensorial ATLAS
 
@@ -129,7 +126,6 @@ print(f"Confidence: {stats['confidence']:.1%}")
 print(f"Outliers rejected: {stats['outliers_rejected']}")
 ```
         """,
-        
         steps=[
             POTStep(
                 id="check_sensors",
@@ -167,7 +163,7 @@ result = imu.calibrate(samples)
                 name="Configurar Kalman",
                 description="Inicializar filtro EKF",
                 step_type=StepType.COMMAND,
-                command='python -c "from modules.humanoid.sensors import ExtendedKalmanFilter; ekf=ExtendedKalmanFilter(15,6); print(\'EKF initialized:\', ekf.n, \'states\')"',
+                command="python -c \"from modules.humanoid.sensors import ExtendedKalmanFilter; ekf=ExtendedKalmanFilter(15,6); print('EKF initialized:', ekf.n, 'states')\"",
                 timeout_seconds=10,
                 capture_output=True,
             ),
@@ -205,7 +201,6 @@ Verificar:
                 notify_message="Fusión sensorial operativa",
             ),
         ],
-        
         has_rollback=False,
         tags=["sensors", "fusion", "imu", "kalman", "calibration"],
     )

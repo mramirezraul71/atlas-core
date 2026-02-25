@@ -8,7 +8,11 @@ from . import db
 
 
 def _allow_autotune() -> bool:
-    return os.getenv("METALEARN_ALLOW_AUTOTUNE", "true").strip().lower() in ("1", "true", "yes")
+    return os.getenv("METALEARN_ALLOW_AUTOTUNE", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def _risk_shift_max() -> float:
@@ -68,14 +72,21 @@ def get_router_hints() -> Dict[str, str]:
     return dict(p.get("router_hints") or {})
 
 
-def apply_tuning(rules: List[Dict[str, Any]], snapshot_before: bool = True) -> Dict[str, Any]:
+def apply_tuning(
+    rules: List[Dict[str, Any]], snapshot_before: bool = True
+) -> Dict[str, Any]:
     """
     Apply bounded tuning from learned rules. Saves snapshot before if requested.
     Returns {ok, applied: {risk_overrides, router_hints, canary_pct, autorun_limit}, snapshot_id, error}.
     """
     try:
         if not _allow_autotune():
-            return {"ok": False, "applied": {}, "snapshot_id": None, "error": "METALEARN_ALLOW_AUTOTUNE=false"}
+            return {
+                "ok": False,
+                "applied": {},
+                "snapshot_id": None,
+                "error": "METALEARN_ALLOW_AUTOTUNE=false",
+            }
         min_samp = _min_samples()
         risk_max = _risk_shift_max()
         canary_max = _canary_max()
@@ -108,7 +119,9 @@ def apply_tuning(rules: List[Dict[str, Any]], snapshot_before: bool = True) -> D
                 canary_pct = min(canary_max, max(0, float(r["canary_hint"])))
             if autorun_limit is None and action_type:
                 # Optional: suggest autorun_limit from safe action success rate
-                if (r.get("success_rate") or 0) >= 0.9 and (r.get("approve_rate") or 0) >= 0.9:
+                if (r.get("success_rate") or 0) >= 0.9 and (
+                    r.get("approve_rate") or 0
+                ) >= 0.9:
                     autorun_limit = min(autorun_max, 3)
 
         params = {
@@ -120,9 +133,15 @@ def apply_tuning(rules: List[Dict[str, Any]], snapshot_before: bool = True) -> D
         snapshot_id = None
         if snapshot_before:
             from .rollback import save_snapshot
+
             snapshot_id = save_snapshot(params, comment="pre_tune")
         set_current_params(params)
-        return {"ok": True, "applied": params, "snapshot_id": snapshot_id, "error": None}
+        return {
+            "ok": True,
+            "applied": params,
+            "snapshot_id": snapshot_id,
+            "error": None,
+        }
     except Exception as e:
         return {"ok": False, "applied": {}, "snapshot_id": None, "error": str(e)}
 

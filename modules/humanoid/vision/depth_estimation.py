@@ -21,6 +21,7 @@ def _get_model():
         return _model
     try:
         import torch
+
         # MiDaS small para CPU; DPT-Hybrid más preciso pero más pesado
         model = torch.hub.load("intel-isl/MiDaS", "MiDaS_small", trust_repo=True)
         model.eval()
@@ -42,8 +43,8 @@ def estimate_depth(frame: np.ndarray) -> np.ndarray:
         return np.zeros((h, w), dtype=np.float32)
 
     try:
-        import torch
         import cv2
+        import torch
         from torchvision import transforms
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) if len(frame.shape) == 3 else frame
@@ -51,13 +52,18 @@ def estimate_depth(frame: np.ndarray) -> np.ndarray:
         size = 384
         rgb_small = cv2.resize(rgb, (size, size))
         tensor = transforms.ToTensor()(rgb_small).unsqueeze(0)
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        normalize = transforms.Normalize(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        )
         tensor = normalize(tensor)
 
         with torch.no_grad():
             pred = model(tensor)
             pred = torch.nn.functional.interpolate(
-                pred.unsqueeze(1), size=(h_orig, w_orig), mode="bicubic", align_corners=False
+                pred.unsqueeze(1),
+                size=(h_orig, w_orig),
+                mode="bicubic",
+                align_corners=False,
             )
             depth = pred.squeeze().cpu().numpy()
 
@@ -80,9 +86,7 @@ def get_distance_at_point(depth_map: np.ndarray, x: int, y: int) -> float:
     return float(depth_map[y, x])
 
 
-def get_distance_in_bbox(
-    depth_map: np.ndarray, bbox: List[int]
-) -> Dict[str, float]:
+def get_distance_in_bbox(depth_map: np.ndarray, bbox: List[int]) -> Dict[str, float]:
     """bbox = [x1, y1, x2, y2]. Devuelve min, max, mean, median en la región."""
     x1, y1, x2, y2 = bbox[:4]
     h, w = depth_map.shape[:2]
@@ -102,6 +106,7 @@ def get_distance_in_bbox(
 def depth_map_to_colored(depth_map: np.ndarray) -> np.ndarray:
     """Convierte depth float [0,1] a imagen BGR para visualización (cerca=rojo, lejos=azul)."""
     import cv2
+
     d = np.clip(depth_map * 255, 0, 255).astype(np.uint8)
     colored = cv2.applyColorMap(d, cv2.COLORMAP_INFERNO)
     return colored

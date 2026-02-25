@@ -48,14 +48,27 @@ class MemoryResult:
 class UnifiedMemoryCortex:
     """Busca en todos los sistemas de memoria y devuelve resultados unificados."""
 
-    def recall(self, query: str, memory_types: List[str] = None,
-               limit: int = 20, min_relevance: float = 0.0) -> List[MemoryResult]:
+    def recall(
+        self,
+        query: str,
+        memory_types: List[str] = None,
+        limit: int = 20,
+        min_relevance: float = 0.0,
+    ) -> List[MemoryResult]:
         """Busqueda unificada en todos los sistemas de memoria."""
         results: List[MemoryResult] = []
-        types = set(memory_types or [
-            "episodic", "semantic", "procedural", "lifelog",
-            "autobiographical", "world_model", "knowledge_base"
-        ])
+        types = set(
+            memory_types
+            or [
+                "episodic",
+                "semantic",
+                "procedural",
+                "lifelog",
+                "autobiographical",
+                "world_model",
+                "knowledge_base",
+            ]
+        )
 
         if "episodic" in types:
             results.extend(self._search_episodic_hippo(query, limit))
@@ -84,8 +97,9 @@ class UnifiedMemoryCortex:
         results.sort(key=lambda r: r.relevance, reverse=True)
         return results[:limit]
 
-    def get_context_for_action(self, action: str, goal: str = "",
-                                limit: int = 10) -> Dict[str, Any]:
+    def get_context_for_action(
+        self, action: str, goal: str = "", limit: int = 10
+    ) -> Dict[str, Any]:
         """Recopila todo el contexto relevante para una accion."""
         query = f"{action} {goal}".strip()
         memories = self.recall(query, limit=limit)
@@ -100,13 +114,16 @@ class UnifiedMemoryCortex:
         try:
             from modules.humanoid.world_model import WorldModel
             from modules.humanoid.world_model.engine import get_world_model
+
             wm = get_world_model()
             context["world_state"] = wm.get_state_summary()
         except Exception:
             pass
 
         try:
-            from modules.humanoid.memory_engine.autobiographical import get_autobiographical_memory
+            from modules.humanoid.memory_engine.autobiographical import \
+                get_autobiographical_memory
+
             am = get_autobiographical_memory()
             context["identity"] = am.get_identity()
         except Exception:
@@ -141,18 +158,23 @@ class UnifiedMemoryCortex:
         results = []
         try:
             from modules.humanoid.hippo import EpisodicMemory
+
             em = EpisodicMemory()
             episodes = em.recall_by_goal(query, limit=limit)
             for ep in episodes:
                 d = ep.to_dict() if hasattr(ep, "to_dict") else ep
-                results.append(MemoryResult(
-                    source="hippo_episodic",
-                    memory_type="episodic",
-                    content=f"[{d.get('outcome', '?')}] {d.get('goal', '')}",
-                    relevance=0.7,
-                    timestamp=d.get("timestamp_ns", 0) / 1e9 if d.get("timestamp_ns") else 0,
-                    metadata=d,
-                ))
+                results.append(
+                    MemoryResult(
+                        source="hippo_episodic",
+                        memory_type="episodic",
+                        content=f"[{d.get('outcome', '?')}] {d.get('goal', '')}",
+                        relevance=0.7,
+                        timestamp=d.get("timestamp_ns", 0) / 1e9
+                        if d.get("timestamp_ns")
+                        else 0,
+                        metadata=d,
+                    )
+                )
         except Exception:
             pass
         return results
@@ -160,20 +182,27 @@ class UnifiedMemoryCortex:
     def _search_episodic_brain(self, query: str, limit: int) -> List[MemoryResult]:
         results = []
         try:
-            from modules.humanoid.brain.learning.episodic_memory import EpisodicMemory
+            from modules.humanoid.brain.learning.episodic_memory import \
+                EpisodicMemory
+
             em = EpisodicMemory()
             episodes = em.get_recent_episodes(limit=limit)
             for ep in episodes:
                 sit = ep.get("situation", "")
-                if query.lower() in sit.lower() or query.lower() in (ep.get("action_taken") or "").lower():
-                    results.append(MemoryResult(
-                        source="brain_episodic",
-                        memory_type="episodic",
-                        content=f"[{'OK' if ep.get('success') else 'FAIL'}] {sit}",
-                        relevance=0.6,
-                        timestamp=ep.get("timestamp", 0),
-                        metadata=ep,
-                    ))
+                if (
+                    query.lower() in sit.lower()
+                    or query.lower() in (ep.get("action_taken") or "").lower()
+                ):
+                    results.append(
+                        MemoryResult(
+                            source="brain_episodic",
+                            memory_type="episodic",
+                            content=f"[{'OK' if ep.get('success') else 'FAIL'}] {sit}",
+                            relevance=0.6,
+                            timestamp=ep.get("timestamp", 0),
+                            metadata=ep,
+                        )
+                    )
         except Exception:
             pass
         return results
@@ -182,17 +211,20 @@ class UnifiedMemoryCortex:
         results = []
         try:
             from modules.humanoid.hippo import SemanticMemory
+
             sm = SemanticMemory()
             concepts = sm.search(query, limit=limit)
             for c in concepts:
                 d = c.to_dict() if hasattr(c, "to_dict") else c
-                results.append(MemoryResult(
-                    source="hippo_semantic",
-                    memory_type="semantic",
-                    content=f"{d.get('name', '')} ({d.get('concept_type', '')})",
-                    relevance=d.get("confidence", 0.5),
-                    metadata=d,
-                ))
+                results.append(
+                    MemoryResult(
+                        source="hippo_semantic",
+                        memory_type="semantic",
+                        content=f"{d.get('name', '')} ({d.get('concept_type', '')})",
+                        relevance=d.get("confidence", 0.5),
+                        metadata=d,
+                    )
+                )
         except Exception:
             pass
         return results
@@ -200,18 +232,22 @@ class UnifiedMemoryCortex:
     def _search_semantic_engine(self, query: str, limit: int) -> List[MemoryResult]:
         results = []
         try:
-            from modules.humanoid.memory_engine.semantic_memory import SemanticMemory
+            from modules.humanoid.memory_engine.semantic_memory import \
+                SemanticMemory
+
             sm = SemanticMemory.get_instance()
             experiences = sm.recall_similar(query, top_k=limit)
             for exp in experiences:
-                results.append(MemoryResult(
-                    source="engine_semantic",
-                    memory_type="semantic",
-                    content=exp.get("description", ""),
-                    relevance=exp.get("similarity", 0.5),
-                    timestamp=exp.get("timestamp", 0),
-                    metadata=exp,
-                ))
+                results.append(
+                    MemoryResult(
+                        source="engine_semantic",
+                        memory_type="semantic",
+                        content=exp.get("description", ""),
+                        relevance=exp.get("similarity", 0.5),
+                        timestamp=exp.get("timestamp", 0),
+                        metadata=exp,
+                    )
+                )
         except Exception:
             pass
         return results
@@ -220,18 +256,25 @@ class UnifiedMemoryCortex:
         results = []
         try:
             from modules.humanoid.memory_engine.recall import recall_by_query
+
             items = recall_by_query(query, limit=limit)
             for item in items:
                 kind = item.get("kind", "unknown")
-                content = item.get("content_preview", item.get("goal", item.get("result_json", "")))
-                results.append(MemoryResult(
-                    source="memory_engine",
-                    memory_type="procedural" if kind in ("run", "task") else "knowledge_base",
-                    content=str(content)[:200],
-                    relevance=0.5,
-                    timestamp=0,
-                    metadata=item,
-                ))
+                content = item.get(
+                    "content_preview", item.get("goal", item.get("result_json", ""))
+                )
+                results.append(
+                    MemoryResult(
+                        source="memory_engine",
+                        memory_type="procedural"
+                        if kind in ("run", "task")
+                        else "knowledge_base",
+                        content=str(content)[:200],
+                        relevance=0.5,
+                        timestamp=0,
+                        metadata=item,
+                    )
+                )
         except Exception:
             pass
         return results
@@ -240,20 +283,23 @@ class UnifiedMemoryCortex:
         results = []
         try:
             from modules.humanoid.memory_engine.lifelog import get_lifelog
+
             ll = get_lifelog()
             entries = ll.search(query, limit=limit)
             for e in entries:
                 content = f"[{e.get('event_type','')}] {e.get('perception', e.get('action', ''))}"
                 if e.get("outcome"):
                     content += f" -> {e['outcome']}"
-                results.append(MemoryResult(
-                    source="lifelog",
-                    memory_type="lifelog",
-                    content=content[:200],
-                    relevance=e.get("importance", 0.5),
-                    timestamp=e.get("timestamp_ts", 0),
-                    metadata=e,
-                ))
+                results.append(
+                    MemoryResult(
+                        source="lifelog",
+                        memory_type="lifelog",
+                        content=content[:200],
+                        relevance=e.get("importance", 0.5),
+                        timestamp=e.get("timestamp_ts", 0),
+                        metadata=e,
+                    )
+                )
         except Exception:
             pass
         return results
@@ -261,28 +307,37 @@ class UnifiedMemoryCortex:
     def _search_autobiographical(self, query: str) -> List[MemoryResult]:
         results = []
         try:
-            from modules.humanoid.memory_engine.autobiographical import get_autobiographical_memory
+            from modules.humanoid.memory_engine.autobiographical import \
+                get_autobiographical_memory
+
             am = get_autobiographical_memory()
             milestones = am.get_milestones(limit=20)
             for m in milestones:
-                if query.lower() in (m.get("title", "") + m.get("description", "")).lower():
-                    results.append(MemoryResult(
-                        source="autobiographical",
-                        memory_type="autobiographical",
-                        content=f"[{m.get('category','')}] {m.get('title', '')}",
-                        relevance=m.get("importance", 0.7),
-                        timestamp=m.get("timestamp_ts", 0),
-                        metadata=m,
-                    ))
+                if (
+                    query.lower()
+                    in (m.get("title", "") + m.get("description", "")).lower()
+                ):
+                    results.append(
+                        MemoryResult(
+                            source="autobiographical",
+                            memory_type="autobiographical",
+                            content=f"[{m.get('category','')}] {m.get('title', '')}",
+                            relevance=m.get("importance", 0.7),
+                            timestamp=m.get("timestamp_ts", 0),
+                            metadata=m,
+                        )
+                    )
 
             narrative = am.get_latest_narrative()
             if narrative and query.lower() in narrative.lower():
-                results.append(MemoryResult(
-                    source="autobiographical",
-                    memory_type="autobiographical",
-                    content=narrative[:200],
-                    relevance=0.8,
-                ))
+                results.append(
+                    MemoryResult(
+                        source="autobiographical",
+                        memory_type="autobiographical",
+                        content=narrative[:200],
+                        relevance=0.8,
+                    )
+                )
         except Exception:
             pass
         return results
@@ -291,17 +346,21 @@ class UnifiedMemoryCortex:
         """Buscar en ChromaDB vector database."""
         results = []
         try:
-            from modules.humanoid.memory_engine.chroma_memory import _search_chromadb
+            from modules.humanoid.memory_engine.chroma_memory import \
+                _search_chromadb
+
             chroma_results = _search_chromadb(query, limit)
             for cr in chroma_results:
-                results.append(MemoryResult(
-                    source="chromadb",
-                    memory_type=cr["metadata"].get("memory_type", "semantic"),
-                    content=cr["content"],
-                    relevance=cr["score"],
-                    timestamp=cr["metadata"].get("timestamp", 0),
-                    metadata=cr["metadata"],
-                ))
+                results.append(
+                    MemoryResult(
+                        source="chromadb",
+                        memory_type=cr["metadata"].get("memory_type", "semantic"),
+                        content=cr["content"],
+                        relevance=cr["score"],
+                        timestamp=cr["metadata"].get("timestamp", 0),
+                        metadata=cr["metadata"],
+                    )
+                )
         except Exception:
             pass
         return results
@@ -310,6 +369,7 @@ class UnifiedMemoryCortex:
         results = []
         try:
             from modules.humanoid.world_model.engine import get_world_model
+
             wm = get_world_model()
             entities = wm.query_entities()
             for e in entities:
@@ -317,14 +377,20 @@ class UnifiedMemoryCortex:
                     state_str = json.dumps(e.state, default=str)
                     if len(state_str) > 100:
                         state_str = state_str[:100] + "..."
-                    results.append(MemoryResult(
-                        source="world_model",
-                        memory_type="world_model",
-                        content=f"{e.name} ({e.entity_type}): {state_str}",
-                        relevance=e.confidence,
-                        timestamp=e.last_seen_ts,
-                        metadata={"id": e.id, "state": e.state, "properties": e.properties},
-                    ))
+                    results.append(
+                        MemoryResult(
+                            source="world_model",
+                            memory_type="world_model",
+                            content=f"{e.name} ({e.entity_type}): {state_str}",
+                            relevance=e.confidence,
+                            timestamp=e.last_seen_ts,
+                            metadata={
+                                "id": e.id,
+                                "state": e.state,
+                                "properties": e.properties,
+                            },
+                        )
+                    )
         except Exception:
             pass
         return results
@@ -333,34 +399,45 @@ class UnifiedMemoryCortex:
 
     def _stats_episodic_hippo(self) -> Dict:
         from modules.humanoid.hippo import EpisodicMemory
+
         return EpisodicMemory().get_stats()
 
     def _stats_semantic_hippo(self) -> Dict:
         from modules.humanoid.hippo import SemanticMemory
+
         return SemanticMemory().get_stats()
 
     def _stats_semantic_engine(self) -> Dict:
-        from modules.humanoid.memory_engine.semantic_memory import SemanticMemory
+        from modules.humanoid.memory_engine.semantic_memory import \
+            SemanticMemory
+
         return SemanticMemory.get_instance().get_statistics()
 
     def _stats_chromadb(self) -> Dict:
-        from modules.humanoid.memory_engine.chroma_memory import _stats_chromadb
+        from modules.humanoid.memory_engine.chroma_memory import \
+            _stats_chromadb
+
         return _stats_chromadb()
 
     def _stats_memory_engine(self) -> Dict:
         from modules.humanoid.memory_engine import recall
+
         return {"available": True}
 
     def _stats_lifelog(self) -> Dict:
         from modules.humanoid.memory_engine.lifelog import get_lifelog
+
         return get_lifelog().get_stats()
 
     def _stats_autobiographical(self) -> Dict:
-        from modules.humanoid.memory_engine.autobiographical import get_autobiographical_memory
+        from modules.humanoid.memory_engine.autobiographical import \
+            get_autobiographical_memory
+
         return get_autobiographical_memory().get_stats()
 
     def _stats_world_model(self) -> Dict:
         from modules.humanoid.world_model.engine import get_world_model
+
         return get_world_model().get_state_summary()
 
 

@@ -29,7 +29,14 @@ class LiveEvent:
         return d
 
 
-def emit(phase: str, check_id: str = "", heal_id: str = "", ok: Optional[bool] = None, message: str = "", details: Optional[Dict] = None) -> None:
+def emit(
+    phase: str,
+    check_id: str = "",
+    heal_id: str = "",
+    ok: Optional[bool] = None,
+    message: str = "",
+    details: Optional[Dict] = None,
+) -> None:
     """Emite un evento al stream. Llamado desde el engine."""
     ev = LiveEvent(
         ts=datetime.now(timezone.utc).isoformat(),
@@ -49,6 +56,7 @@ def emit(phase: str, check_id: str = "", heal_id: str = "", ok: Optional[bool] =
             _subscribers.remove(q)
     try:
         from modules.humanoid.comms.webhook_bridge import push_event
+
         push_event(d)
     except Exception:
         pass
@@ -80,6 +88,10 @@ async def stream_events() -> AsyncIterator[Dict]:
                 ev = await asyncio.wait_for(q.get(), timeout=12.0)
                 yield ev
             except asyncio.TimeoutError:
-                yield {"_type": "ans_live", "phase": "heartbeat", "ts": datetime.now(timezone.utc).isoformat()}
+                yield {
+                    "_type": "ans_live",
+                    "phase": "heartbeat",
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                }
     finally:
         unsubscribe(q)

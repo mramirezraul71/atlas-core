@@ -15,11 +15,14 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -56,25 +59,55 @@ class ClassificationResult:
 
 # Patrones para clasificación por mensaje/excepción
 TRANSIENT_PATTERNS = [
-    r"timeout", r"timed out", r"connection refused", r"Connection reset",
-    r"Temporary failure", r"503", r"502", r"network.*unreachable",
-    r"BrokenPipe", r"ConnectionError", r"urllib\.error\.URLError",
+    r"timeout",
+    r"timed out",
+    r"connection refused",
+    r"Connection reset",
+    r"Temporary failure",
+    r"503",
+    r"502",
+    r"network.*unreachable",
+    r"BrokenPipe",
+    r"ConnectionError",
+    r"urllib\.error\.URLError",
 ]
 CONFIGURATION_PATTERNS = [
-    r"port.*in use", r"Address already in use", r"10048",
-    r"API key", r"invalid.*config", r"missing.*env", r"FileNotFoundError.*config",
+    r"port.*in use",
+    r"Address already in use",
+    r"10048",
+    r"API key",
+    r"invalid.*config",
+    r"missing.*env",
+    r"FileNotFoundError.*config",
 ]
 RESOURCE_PATTERNS = [
-    r"MemoryError", r"out of memory", r"disk full", r"No space left",
-    r"too many open files", r"resource.*exhausted", r"CPU.*100",
+    r"MemoryError",
+    r"out of memory",
+    r"disk full",
+    r"No space left",
+    r"too many open files",
+    r"resource.*exhausted",
+    r"CPU.*100",
 ]
 DEPENDENCY_PATTERNS = [
-    r"503", r"502", r"service unavailable", r"upstream", r"dependency",
-    r"health.*fail", r"nexus.*disconnected", r"ollama.*refused",
+    r"503",
+    r"502",
+    r"service unavailable",
+    r"upstream",
+    r"dependency",
+    r"health.*fail",
+    r"nexus.*disconnected",
+    r"ollama.*refused",
 ]
 FATAL_PATTERNS = [
-    r"corrupted", r"corrupt", r"integrity", r"critical file", r"SyntaxError",
-    r"ImportError", r"ModuleNotFoundError", r"database.*locked.*permanently",
+    r"corrupted",
+    r"corrupt",
+    r"integrity",
+    r"critical file",
+    r"SyntaxError",
+    r"ImportError",
+    r"ModuleNotFoundError",
+    r"database.*locked.*permanently",
 ]
 
 
@@ -88,7 +121,9 @@ class ErrorClassifier:
         self._config = config or _load_config().get("self_healing", {})
         self._learned: list[dict] = []  # [{error_sig, resolution, success}]
 
-    def classify_error(self, exception: BaseException, context: dict[str, Any] | None = None) -> ClassificationResult:
+    def classify_error(
+        self, exception: BaseException, context: dict[str, Any] | None = None
+    ) -> ClassificationResult:
         """Clasifica el error y devuelve tipo, severidad, recuperable y estrategia sugerida."""
         context = context or {}
         msg = (getattr(exception, "message", None) or str(exception)).lower()
@@ -158,9 +193,13 @@ class ErrorClassifier:
         }
         return mapping.get(error_type, RecoveryStrategy.RETRY)
 
-    def learn_from_error(self, error: BaseException, resolution: str, success: bool) -> None:
+    def learn_from_error(
+        self, error: BaseException, resolution: str, success: bool
+    ) -> None:
         """Registra resolución para mejorar sugerencias futuras (memoria en proceso)."""
         sig = f"{type(error).__name__}:{str(error)[:100]}"
-        self._learned.append({"error_signature": sig, "resolution": resolution, "success": success})
+        self._learned.append(
+            {"error_signature": sig, "resolution": resolution, "success": success}
+        )
         if len(self._learned) > 500:
             self._learned.pop(0)

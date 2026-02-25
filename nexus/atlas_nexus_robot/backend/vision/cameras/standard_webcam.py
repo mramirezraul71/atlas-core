@@ -2,12 +2,13 @@
 Driver para webcam estándar UVC (cv2.VideoCapture).
 """
 
+from typing import Any, Dict, Optional, Tuple
+
 import cv2
 import numpy as np
-from typing import Optional, Tuple, Dict, Any
 
-from .base import CameraBase
 from .backend import preferred_backends
+from .base import CameraBase
 
 
 class StandardWebcam(CameraBase):
@@ -34,7 +35,9 @@ class StandardWebcam(CameraBase):
             return self._cap.isOpened()
         # Intento robusto: prueba backend preferido y fallback.
         tried = []
-        for b in ([self.backend] + [x for x in preferred_backends() if x != self.backend]):
+        for b in [self.backend] + [
+            x for x in preferred_backends() if x != self.backend
+        ]:
             tried.append(int(b))
             cap = cv2.VideoCapture(self.index, b)
             if cap.isOpened():

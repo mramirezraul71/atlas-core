@@ -8,13 +8,14 @@ Análogo biológico: Corteza prefrontal + área premotora
 - ConcurrentGoalEngine: Motor de metas concurrente (CGE)
 - ResourceArbiter: Arbitraje de recursos entre goals
 """
-from .task_planner import TaskPlanner, CortexTaskPlanner
+from .concurrent_engine import ConcurrentGoalEngine, cge_tick, get_engine
 from .decision_maker import DecisionMaker
+from .goal_context import (CGEGoalPriority, CGEGoalStatus, GoalContext,
+                           GoalContextDB)
 from .inhibitory_control import InhibitoryControl
-from .concurrent_engine import ConcurrentGoalEngine, get_engine, cge_tick
-from .resource_arbiter import ResourceArbiter
-from .goal_context import GoalContext, GoalContextDB, CGEGoalStatus, CGEGoalPriority
 from .parallel_executor import ParallelExecutor, StepResult
+from .resource_arbiter import ResourceArbiter
+from .task_planner import CortexTaskPlanner, TaskPlanner
 
 __all__ = [
     "TaskPlanner",

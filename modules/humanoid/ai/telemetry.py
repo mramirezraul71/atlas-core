@@ -6,6 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List
 
+
 @dataclass
 class RequestMetric:
     provider_id: str
@@ -20,7 +21,14 @@ _metrics: List[RequestMetric] = []
 _max_metrics = 500
 
 
-def record(provider_id: str, model_key: str, latency_ms: float, success: bool, cost_estimate_usd: float = 0.0, quality_flag: str = "") -> None:
+def record(
+    provider_id: str,
+    model_key: str,
+    latency_ms: float,
+    success: bool,
+    cost_estimate_usd: float = 0.0,
+    quality_flag: str = "",
+) -> None:
     global _metrics
     _metrics.append(
         RequestMetric(
@@ -37,7 +45,15 @@ def record(provider_id: str, model_key: str, latency_ms: float, success: bool, c
 
 
 def aggregate_by_provider() -> Dict[str, dict]:
-    by_provider: Dict[str, dict] = defaultdict(lambda: {"count": 0, "success": 0, "errors": 0, "latency_sum_ms": 0.0, "cost_sum_usd": 0.0})
+    by_provider: Dict[str, dict] = defaultdict(
+        lambda: {
+            "count": 0,
+            "success": 0,
+            "errors": 0,
+            "latency_sum_ms": 0.0,
+            "cost_sum_usd": 0.0,
+        }
+    )
     for m in _metrics:
         k = f"{m.provider_id}:{m.model_key}"
         by_provider[k]["count"] += 1
@@ -61,7 +77,11 @@ def aggregate_by_provider() -> Dict[str, dict]:
 
 
 def quality_insufficient_count(provider_id: str, model_key: str) -> int:
-    return sum(1 for m in _metrics if m.provider_id == provider_id and m.model_key == model_key and m.quality_flag)
+    return sum(
+        1
+        for m in _metrics
+        if m.provider_id == provider_id and m.model_key == model_key and m.quality_flag
+    )
 
 
 def get_recent(n: int = 50) -> List[dict]:

@@ -17,7 +17,8 @@ def test_estimate_depth_returns_array():
 
 def test_get_distance_in_bbox():
     try:
-        from modules.humanoid.vision.depth_estimation import get_distance_in_bbox
+        from modules.humanoid.vision.depth_estimation import \
+            get_distance_in_bbox
     except ImportError as e:
         pytest.skip(f"depth deps: {e}")
     depth_map = np.linspace(0, 1, 100).reshape(10, 10).astype(np.float32)
@@ -28,7 +29,8 @@ def test_get_distance_in_bbox():
 
 def test_depth_map_to_colored():
     try:
-        from modules.humanoid.vision.depth_estimation import estimate_depth, depth_map_to_colored
+        from modules.humanoid.vision.depth_estimation import (
+            depth_map_to_colored, estimate_depth)
     except ImportError as e:
         pytest.skip(f"depth deps: {e}")
     frame = np.zeros((64, 64, 3), dtype=np.uint8)

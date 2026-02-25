@@ -1,10 +1,10 @@
 """Memoria semántica con embeddings (Sentence-BERT) y búsqueda por similaridad (FAISS)."""
 from __future__ import annotations
 
+import ast
 import json
 import os
 import sqlite3
-import ast
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -18,12 +18,14 @@ def _get_encoder():
     global _encoder
     if _encoder is None:
         from sentence_transformers import SentenceTransformer
+
         _encoder = SentenceTransformer("all-MiniLM-L6-v2")
     return _encoder
 
 
 def _get_faiss():
     import faiss
+
     return faiss
 
 
@@ -36,12 +38,20 @@ class SemanticMemory:
             if base:
                 db_path = str(Path(base).parent / "semantic_memory.sqlite")
             else:
-                root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or ""
+                root = (
+                    os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or ""
+                )
                 if root:
-                    db_path = str(Path(root).resolve() / "logs" / "semantic_memory.sqlite")
+                    db_path = str(
+                        Path(root).resolve() / "logs" / "semantic_memory.sqlite"
+                    )
                 else:
                     # repo_root/modules/humanoid/memory_engine/semantic_memory.py -> repo_root/logs/semantic_memory.sqlite
-                    db_path = str(Path(__file__).resolve().parents[3] / "logs" / "semantic_memory.sqlite")
+                    db_path = str(
+                        Path(__file__).resolve().parents[3]
+                        / "logs"
+                        / "semantic_memory.sqlite"
+                    )
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -54,7 +64,8 @@ class SemanticMemory:
 
     def _init_db(self) -> None:
         conn = sqlite3.connect(self.db_path)
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS experiences (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 description TEXT NOT NULL,
@@ -65,7 +76,8 @@ class SemanticMemory:
                 timestamp REAL,
                 embedding_index INTEGER
             )
-        """)
+        """
+        )
         conn.commit()
         conn.close()
 
@@ -140,9 +152,7 @@ class SemanticMemory:
         faiss.normalize_L2(query_embedding.reshape(1, -1))
 
         k = min(top_k * 2, max(1, self.index.ntotal))
-        similarities, indices = self.index.search(
-            query_embedding.reshape(1, -1), k
-        )
+        similarities, indices = self.index.search(query_embedding.reshape(1, -1), k)
 
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -184,16 +194,18 @@ class SemanticMemory:
             except Exception:
                 meta_dict = {}
 
-            results.append({
-                "id": exp_id,
-                "description": desc,
-                "context": ctx,
-                "outcome": out,
-                "metadata": meta_dict,
-                "tags": exp_tags,
-                "timestamp": ts,
-                "similarity": float(similarity),
-            })
+            results.append(
+                {
+                    "id": exp_id,
+                    "description": desc,
+                    "context": ctx,
+                    "outcome": out,
+                    "metadata": meta_dict,
+                    "tags": exp_tags,
+                    "timestamp": ts,
+                    "similarity": float(similarity),
+                }
+            )
             if len(results) >= top_k:
                 break
 

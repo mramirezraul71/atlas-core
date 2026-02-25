@@ -6,8 +6,8 @@ import logging
 import os
 import threading
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from queue import Empty, Queue
 from typing import Any, Callable, Dict, Optional
 
@@ -24,7 +24,11 @@ RX_READ_TIMEOUT = float(os.getenv("ATLAS_BRIDGE_RX_TIMEOUT", "0.1"))
 
 def _normalize_command(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Asegura formato JSON estándar: actuador, estado, velocidad."""
-    out = {"actuador": str(payload.get("actuador", "unknown")), "estado": int(payload.get("estado", 1)), "velocidad": int(payload.get("velocidad", 255))}
+    out = {
+        "actuador": str(payload.get("actuador", "unknown")),
+        "estado": int(payload.get("estado", 1)),
+        "velocidad": int(payload.get("velocidad", 255)),
+    }
     for k, v in payload.items():
         if k not in out:
             out[k] = v
@@ -48,15 +52,23 @@ class HardwareBridge:
 
     def send(self, payload: Dict[str, Any]) -> bool:
         try:
-            normalized = _normalize_command(payload) if isinstance(payload, dict) else {"actuador": str(payload), "estado": 1, "velocidad": 255}
+            normalized = (
+                _normalize_command(payload)
+                if isinstance(payload, dict)
+                else {"actuador": str(payload), "estado": 1, "velocidad": 255}
+            )
             self._tx_queue.put(normalized)
             return True
         except Exception as e:
             logger.error("Bridge send error: %s", e)
             return False
 
-    def send_action(self, actuador: str, estado: int = 1, velocidad: int = 255, **kwargs) -> bool:
-        return self.send({"actuador": actuador, "estado": estado, "velocidad": velocidad, **kwargs})
+    def send_action(
+        self, actuador: str, estado: int = 1, velocidad: int = 255, **kwargs
+    ) -> bool:
+        return self.send(
+            {"actuador": actuador, "estado": estado, "velocidad": velocidad, **kwargs}
+        )
 
     def _set_connected(self, value: bool) -> None:
         with self._lock:
@@ -65,6 +77,7 @@ class HardwareBridge:
     def _connect_serial(self) -> bool:
         try:
             import serial
+
             ser = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=RX_READ_TIMEOUT)
             with self._lock:
                 self._serial = ser
@@ -81,6 +94,7 @@ class HardwareBridge:
     def _connect_ws(self) -> bool:
         try:
             import websocket
+
             ws = websocket.create_connection(WS_URL, timeout=5)
             with self._lock:
                 self._ws = ws
@@ -88,7 +102,9 @@ class HardwareBridge:
             logger.info("Bridge WebSocket OK: %s", WS_URL)
             return True
         except ImportError:
-            logger.warning("websocket-client no instalado: pip install websocket-client")
+            logger.warning(
+                "websocket-client no instalado: pip install websocket-client"
+            )
             return False
         except Exception as e:
             logger.debug("WS fail: %s", e)
@@ -177,8 +193,12 @@ class HardwareBridge:
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 try:
-                    req2 = urllib.request.Request(ROBOT_API + "/command", data=body, method="POST",
-                        headers={"Content-Type": "application/json"})
+                    req2 = urllib.request.Request(
+                        ROBOT_API + "/command",
+                        data=body,
+                        method="POST",
+                        headers={"Content-Type": "application/json"},
+                    )
                     with urllib.request.urlopen(req2, timeout=5):
                         return True
                 except Exception:

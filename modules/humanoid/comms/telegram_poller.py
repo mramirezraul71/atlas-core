@@ -19,8 +19,7 @@ import time
 import urllib.request
 from typing import Any, Dict, Optional
 
-from .telegram_bridge import TelegramBridge, TELEGRAM_API
-
+from .telegram_bridge import TELEGRAM_API, TelegramBridge
 
 _thread: Optional[threading.Thread] = None
 _stop = threading.Event()
@@ -33,7 +32,9 @@ def _token() -> Optional[str]:
         load_vault_env(override=False)
     except Exception:
         pass
-    return (os.getenv("TELEGRAM_BOT_TOKEN", "") or os.getenv("TELEGRAM_TOKEN", "") or "").strip() or None
+    return (
+        os.getenv("TELEGRAM_BOT_TOKEN", "") or os.getenv("TELEGRAM_TOKEN", "") or ""
+    ).strip() or None
 
 
 def start_polling() -> bool:
@@ -41,7 +42,11 @@ def start_polling() -> bool:
     if _thread and _thread.is_alive():
         return True
     # Default ON si hay token; se puede desactivar explícitamente con TELEGRAM_POLLING_ENABLED=false
-    if (os.getenv("TELEGRAM_POLLING_ENABLED", "true") or "").strip().lower() not in ("1", "true", "yes"):
+    if (os.getenv("TELEGRAM_POLLING_ENABLED", "true") or "").strip().lower() not in (
+        "1",
+        "true",
+        "yes",
+    ):
         return False
     if not _token():
         return False
@@ -70,15 +75,21 @@ def _api_answer_callback(callback_query_id: str, text: str = "") -> None:
     if not token or not callback_query_id:
         return
     url = f"{TELEGRAM_API}{token}/answerCallbackQuery"
-    body = json.dumps({"callback_query_id": callback_query_id, "text": (text or "")[:180]}).encode("utf-8")
-    req = urllib.request.Request(url, data=body, method="POST", headers={"Content-Type": "application/json"})
+    body = json.dumps(
+        {"callback_query_id": callback_query_id, "text": (text or "")[:180]}
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body, method="POST", headers={"Content-Type": "application/json"}
+    )
     try:
         urllib.request.urlopen(req, timeout=10).read()
     except Exception:
         pass
 
 
-def _api_edit_message_text(chat_id: str, message_id: int, text: str, *, remove_keyboard: bool = True) -> None:
+def _api_edit_message_text(
+    chat_id: str, message_id: int, text: str, *, remove_keyboard: bool = True
+) -> None:
     """Edit the original inline-approval message to reflect final status and optionally remove buttons."""
     token = _token()
     if not token or not chat_id or not message_id:
@@ -94,7 +105,9 @@ def _api_edit_message_text(chat_id: str, message_id: int, text: str, *, remove_k
     if remove_keyboard:
         body["reply_markup"] = {"inline_keyboard": []}
     data = json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(
+        url, data=data, method="POST", headers={"Content-Type": "application/json"}
+    )
     try:
         urllib.request.urlopen(req, timeout=10).read()
     except Exception:
@@ -103,17 +116,34 @@ def _api_edit_message_text(chat_id: str, message_id: int, text: str, *, remove_k
 
 def _should_remove_keyboard(status: str) -> bool:
     st = (status or "").strip().lower()
-    return st in ("approved", "rejected", "already_approved", "already_rejected", "expired", "not_found")
+    return st in (
+        "approved",
+        "rejected",
+        "already_approved",
+        "already_rejected",
+        "expired",
+        "not_found",
+    )
 
 
-def _format_status_message(action: str, aid: str, status: str, err: str = "", execution: Optional[Dict[str, Any]] = None) -> str:
+def _format_status_message(
+    action: str,
+    aid: str,
+    status: str,
+    err: str = "",
+    execution: Optional[Dict[str, Any]] = None,
+) -> str:
     a = (action or "").strip().lower()
     st = (status or "").strip().lower()
     eid = (aid or "").strip()
     err_s = (err or "").strip()
 
     if st in ("approved", "already_approved"):
-        lines = [f"<b>ATLAS</b>", "Aprobación: <b>APROBADA</b>", f"ID: <code>{eid}</code>"]
+        lines = [
+            f"<b>ATLAS</b>",
+            "Aprobación: <b>APROBADA</b>",
+            f"ID: <code>{eid}</code>",
+        ]
         ex = execution or {}
         if ex:
             ex_ok = ex.get("ok")
@@ -182,9 +212,18 @@ def _loop() -> None:
                     message_id = int(msg_obj.get("message_id") or 0)
                     cqid = (cq.get("id") or "").strip()
                     if data and chat_id:
-                        r = bridge.handle_callback_data(data, chat_id, resolved_by="telegram")
+                        r = bridge.handle_callback_data(
+                            data, chat_id, resolved_by="telegram"
+                        )
                         # Respuesta instantánea (toast)
-                        _api_answer_callback(cqid, text=("OK" if r.get("ok") else (r.get("status") or r.get("error") or "error")))
+                        _api_answer_callback(
+                            cqid,
+                            text=(
+                                "OK"
+                                if r.get("ok")
+                                else (r.get("status") or r.get("error") or "error")
+                            ),
+                        )
                         # Editar el mensaje original: actualizar estado y remover botones si ya se resolvió.
                         try:
                             st = str(r.get("status") or "")
@@ -195,7 +234,12 @@ def _loop() -> None:
                                 str(r.get("error") or ""),
                                 r.get("execution"),
                             )
-                            _api_edit_message_text(chat_id, message_id, txt, remove_keyboard=_should_remove_keyboard(st))
+                            _api_edit_message_text(
+                                chat_id,
+                                message_id,
+                                txt,
+                                remove_keyboard=_should_remove_keyboard(st),
+                            )
                         except Exception:
                             pass
                     continue
@@ -206,13 +250,41 @@ def _loop() -> None:
                 if text and chat_id:
                     lower = text.lower()
                     if lower.startswith("/approve ") or lower.startswith("aprobar "):
-                        aid = text.split(maxsplit=1)[1].strip() if len(text.split(maxsplit=1)) > 1 else ""
-                        r = bridge.handle_callback_data(f"approve:{aid}", chat_id, resolved_by="telegram")
-                        bridge.send(chat_id, _format_status_message("approve", aid, str(r.get("status") or ""), str(r.get("error") or ""), r.get("execution")))
+                        aid = (
+                            text.split(maxsplit=1)[1].strip()
+                            if len(text.split(maxsplit=1)) > 1
+                            else ""
+                        )
+                        r = bridge.handle_callback_data(
+                            f"approve:{aid}", chat_id, resolved_by="telegram"
+                        )
+                        bridge.send(
+                            chat_id,
+                            _format_status_message(
+                                "approve",
+                                aid,
+                                str(r.get("status") or ""),
+                                str(r.get("error") or ""),
+                                r.get("execution"),
+                            ),
+                        )
                     elif lower.startswith("/reject ") or lower.startswith("rechazar "):
-                        aid = text.split(maxsplit=1)[1].strip() if len(text.split(maxsplit=1)) > 1 else ""
-                        r = bridge.handle_callback_data(f"reject:{aid}", chat_id, resolved_by="telegram")
-                        bridge.send(chat_id, _format_status_message("reject", aid, str(r.get("status") or ""), str(r.get("error") or "")))
+                        aid = (
+                            text.split(maxsplit=1)[1].strip()
+                            if len(text.split(maxsplit=1)) > 1
+                            else ""
+                        )
+                        r = bridge.handle_callback_data(
+                            f"reject:{aid}", chat_id, resolved_by="telegram"
+                        )
+                        bridge.send(
+                            chat_id,
+                            _format_status_message(
+                                "reject",
+                                aid,
+                                str(r.get("status") or ""),
+                                str(r.get("error") or ""),
+                            ),
+                        )
         except Exception:
             time.sleep(2)
-

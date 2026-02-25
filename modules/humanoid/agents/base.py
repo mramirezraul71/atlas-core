@@ -12,10 +12,20 @@ from typing import Any, Dict, Optional
 DEFAULT_AGENT_TIMEOUT_SEC = 30
 
 
-def _audit(agent: str, action: str, ok: bool, payload: Optional[Dict] = None, error: Optional[str] = None, ms: int = 0) -> None:
+def _audit(
+    agent: str,
+    action: str,
+    ok: bool,
+    payload: Optional[Dict] = None,
+    error: Optional[str] = None,
+    ms: int = 0,
+) -> None:
     try:
         from modules.humanoid.audit import get_audit_logger
-        get_audit_logger().log_event("agents", "system", agent, action, ok, ms, error, payload, None)
+
+        get_audit_logger().log_event(
+            "agents", "system", agent, action, ok, ms, error, payload, None
+        )
     except Exception:
         pass
 
@@ -38,8 +48,19 @@ class BaseAgent(ABC):
             out = self.process(context)
             ms = int((time.perf_counter() - t0) * 1000)
             out["ms"] = out.get("ms", ms)
-            out_keys = list((out.get("output") or out).keys()) if isinstance(out.get("output"), dict) else []
-            _audit(self.name, "process", out.get("ok", False), {"output_keys": out_keys}, out.get("error"), ms)
+            out_keys = (
+                list((out.get("output") or out).keys())
+                if isinstance(out.get("output"), dict)
+                else []
+            )
+            _audit(
+                self.name,
+                "process",
+                out.get("ok", False),
+                {"output_keys": out_keys},
+                out.get("error"),
+                ms,
+            )
             return out
         except Exception as e:
             ms = int((time.perf_counter() - t0) * 1000)

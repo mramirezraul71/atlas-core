@@ -14,8 +14,10 @@ def _db_path() -> Path:
     p = (os.getenv("NERVOUS_DB_PATH") or "").strip()
     if p:
         return Path(p).resolve()
-    root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or "C:\\ATLAS_PUSH"
-    return (Path(root).resolve() / "logs" / "atlas_nervous.sqlite")
+    root = (
+        os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or "C:\\ATLAS_PUSH"
+    )
+    return Path(root).resolve() / "logs" / "atlas_nervous.sqlite"
 
 
 SCHEMA = """
@@ -100,7 +102,9 @@ def insert_signal(
     return int(row[0] if row else 0)
 
 
-def list_signals(status: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+def list_signals(
+    status: Optional[str] = None, limit: int = 100
+) -> List[Dict[str, Any]]:
     conn = _ensure()
     if status:
         rows = conn.execute(
@@ -164,6 +168,7 @@ def open_points(window_seconds: int = 300) -> Dict[str, Any]:
     count = 0
     # filter by window in Python (robusto para ISO con zona horaria)
     from datetime import datetime, timezone
+
     now = datetime.now(timezone.utc)
     for ts, sev, pts in rows:
         try:
@@ -179,5 +184,9 @@ def open_points(window_seconds: int = 300) -> Dict[str, Any]:
         by[sev] += int(pts or 0)
         total += int(pts or 0)
         count += 1
-    return {"points_total": total, "by_severity": by, "count_open": count, "window_seconds": int(window_seconds)}
-
+    return {
+        "points_total": total,
+        "by_severity": by,
+        "count_open": count,
+        "window_seconds": int(window_seconds),
+    }

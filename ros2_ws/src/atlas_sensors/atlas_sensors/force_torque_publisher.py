@@ -4,11 +4,12 @@ Force-Torque Publisher Node
 Publishes force-torque sensor data from feet (ground reaction forces).
 Essential for balance control (IHMC-style impulse control).
 """
-import rclpy
-from rclpy.node import Node
-from geometry_msgs.msg import WrenchStamped
 import math
 import time
+
+import rclpy
+from geometry_msgs.msg import WrenchStamped
+from rclpy.node import Node
 
 
 class ForceTorquePublisher(Node):
@@ -20,9 +21,7 @@ class ForceTorquePublisher(Node):
         rate = self.get_parameter("atlas.hardware.sensor_rate_hz").value
         self.hw_enabled = self.get_parameter("atlas.hardware.enable_hardware").value
 
-        self.pub_left = self.create_publisher(
-            WrenchStamped, "/atlas/ft/left_foot", 10
-        )
+        self.pub_left = self.create_publisher(WrenchStamped, "/atlas/ft/left_foot", 10)
         self.pub_right = self.create_publisher(
             WrenchStamped, "/atlas/ft/right_foot", 10
         )

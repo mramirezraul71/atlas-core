@@ -16,11 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -50,7 +53,9 @@ class PriorityQueue:
 
     def __init__(self, config: dict | None = None):
         self._config = config or _load_config().get("resilience", {})
-        self._max_size = int(self._config.get("priority_queue", {}).get("max_queue_size", 1000))
+        self._max_size = int(
+            self._config.get("priority_queue", {}).get("max_queue_size", 1000)
+        )
         self._lock = threading.Lock()
         self._queues: dict[Priority, list[QueuedTask]] = {
             Priority.CRITICAL: [],
@@ -59,7 +64,12 @@ class PriorityQueue:
             Priority.LOW: [],
         }
 
-    def enqueue(self, task: Any, priority: Priority | str = Priority.MEDIUM, metadata: dict | None = None) -> bool:
+    def enqueue(
+        self,
+        task: Any,
+        priority: Priority | str = Priority.MEDIUM,
+        metadata: dict | None = None,
+    ) -> bool:
         """Añade tarea a la cola. False si cola llena."""
         if isinstance(priority, str):
             priority = getattr(Priority, priority.upper(), Priority.MEDIUM)
@@ -67,7 +77,9 @@ class PriorityQueue:
             total = sum(len(q) for q in self._queues.values())
             if total >= self._max_size:
                 return False
-            self._queues[priority].append(QueuedTask(priority=priority, payload=task, metadata=metadata or {}))
+            self._queues[priority].append(
+                QueuedTask(priority=priority, payload=task, metadata=metadata or {})
+            )
             return True
 
     def dequeue(self) -> QueuedTask | None:

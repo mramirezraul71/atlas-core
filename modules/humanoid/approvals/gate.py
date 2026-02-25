@@ -3,13 +3,24 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from .risk import risk_level as _risk_level, requires_2fa_for_risk as _requires_2fa
+from .risk import requires_2fa_for_risk as _requires_2fa
+from .risk import risk_level as _risk_level
 
 # Actions that do NOT require approval (safe or read-only)
-SAFE_OR_READ_ACTIONS = frozenset({
-    "read", "status", "recall", "export", "list", "check", "plan_only",
-    "memory_read", "memory_export", "ci_autofix",
-})
+SAFE_OR_READ_ACTIONS = frozenset(
+    {
+        "read",
+        "status",
+        "recall",
+        "export",
+        "list",
+        "check",
+        "plan_only",
+        "memory_read",
+        "memory_export",
+        "ci_autofix",
+    }
+)
 
 
 def requires_approval(action: str, payload: Optional[Dict[str, Any]] = None) -> bool:
@@ -28,7 +39,14 @@ def requires_approval(action: str, payload: Optional[Dict[str, Any]] = None) -> 
             return True
         # Por defecto, requerir aprobación (mejor seguro que roto)
         return True
-    if action_lower in ("execute", "apply", "run", "update_apply", "promote", "run_now"):
+    if action_lower in (
+        "execute",
+        "apply",
+        "run",
+        "update_apply",
+        "promote",
+        "run_now",
+    ):
         return True
     if "apply" in action_lower or "execute" in action_lower or "delete" in action_lower:
         return True

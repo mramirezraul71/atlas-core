@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 @dataclass
 class JobSpec:
     """Spec for creating a job."""
+
     name: str
     kind: str  # update_check | llm_plan | shell_command | custom
     payload: Dict[str, Any]
@@ -20,6 +21,7 @@ class JobSpec:
 @dataclass
 class Job:
     """Job row (from DB)."""
+
     id: str
     name: str
     kind: str
@@ -40,4 +42,5 @@ class Job:
 
     def payload(self) -> Dict[str, Any]:
         import json
+
         return json.loads(self.payload_json) if self.payload_json else {}

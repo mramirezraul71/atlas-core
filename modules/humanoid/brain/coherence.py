@@ -7,6 +7,8 @@ from typing import Any, Dict, Optional
 class CoherenceValidator:
     """Validates output consistency (e.g. LLM response vs expected structure)."""
 
-    def validate(self, output: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def validate(
+        self, output: str, context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Return {ok, message, details}. Stub: always ok."""
         return {"ok": True, "message": "consistent", "details": {"length": len(output)}}

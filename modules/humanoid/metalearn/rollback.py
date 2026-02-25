@@ -31,10 +31,26 @@ def rollback(snapshot_id: str) -> Dict[str, Any]:
     try:
         snap = db.get_snapshot(snapshot_id)
         if not snap:
-            return {"ok": False, "snapshot_id": snapshot_id, "restored": None, "error": "snapshot not found"}
+            return {
+                "ok": False,
+                "snapshot_id": snapshot_id,
+                "restored": None,
+                "error": "snapshot not found",
+            }
         params = snap.get("params") or {}
         from .tuner import restore_params
+
         restore_params(params)
-        return {"ok": True, "snapshot_id": snapshot_id, "restored": params, "error": None}
+        return {
+            "ok": True,
+            "snapshot_id": snapshot_id,
+            "restored": params,
+            "error": None,
+        }
     except Exception as e:
-        return {"ok": False, "snapshot_id": snapshot_id, "restored": None, "error": str(e)}
+        return {
+            "ok": False,
+            "snapshot_id": snapshot_id,
+            "restored": None,
+            "error": str(e),
+        }

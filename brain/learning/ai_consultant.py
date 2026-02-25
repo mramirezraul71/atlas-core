@@ -38,7 +38,9 @@ class AIConsultant:
         )
         self.model = model or self.bedrock_tutor_model
         self.fallback_model = fallback_model or self.bedrock_fast_model
-        self.ai_mode = (os.getenv("ATLAS_AI_MODE", "bedrock") or "bedrock").strip().lower()
+        self.ai_mode = (
+            (os.getenv("ATLAS_AI_MODE", "bedrock") or "bedrock").strip().lower()
+        )
         self.aws_region = (os.getenv("AWS_REGION", "us-east-1") or "us-east-1").strip()
         self.stats: Dict[str, Any] = {
             "total_consultations": 0,
@@ -64,7 +66,11 @@ class AIConsultant:
         self.stats["total_consultations"] += 1
 
         prompt = self._build_consultation_prompt(
-            situation, context, uncertainty_reason, previous_attempts or [], consultation_type
+            situation,
+            context,
+            uncertainty_reason,
+            previous_attempts or [],
+            consultation_type,
         )
         response = self._call_llm(prompt, model=self.model)
         if not response or "Error" in response:
@@ -188,7 +194,7 @@ Describe exactamente qué hacer, con parámetros si es necesario
 <knowledge>
 [Conocimiento general para aprender]
 Formato: concepto: explicación detallada
-Ejemplo: 
+Ejemplo:
 fragile_handling: Los objetos frágiles requieren agarre suave y movimiento lento
 object_identification: Objetos cilíndricos rojos en cocinas suelen ser extintores
 
@@ -272,7 +278,9 @@ Sé específico, práctico y educativo. Este conocimiento se guardará en mi mem
     def _call_llm(self, prompt: str, model: str) -> str:
         """Llamar LLM con soporte dual Bedrock/Direct Anthropic y fallback automático."""
         mode = self.ai_mode
-        backend_order = ["bedrock", "direct"] if mode == "bedrock" else ["direct", "bedrock"]
+        backend_order = (
+            ["bedrock", "direct"] if mode == "bedrock" else ["direct", "bedrock"]
+        )
         if mode not in ("bedrock", "direct"):
             backend_order = ["bedrock", "direct"]
 
@@ -281,9 +289,13 @@ Sé específico, práctico y educativo. Este conocimiento se guardará en mi mem
             try:
                 backend_model = self._normalize_model_for_backend(model, backend)
                 if backend == "bedrock":
-                    out = self._run_async(self._call_bedrock_async(prompt, backend_model))
+                    out = self._run_async(
+                        self._call_bedrock_async(prompt, backend_model)
+                    )
                 else:
-                    out = self._run_async(self._call_direct_async(prompt, backend_model))
+                    out = self._run_async(
+                        self._call_direct_async(prompt, backend_model)
+                    )
                 if out and out.strip():
                     return out.strip()
                 errors.append(f"{backend}:{backend_model} respuesta vacia")
@@ -308,7 +320,9 @@ Sé específico, práctico y educativo. Este conocimiento se guardará en mi mem
 
     def _extract_reasoning(self, response: str) -> str:
         """Extraer razonamiento de respuesta."""
-        match = re.search(r"<reasoning>(.*?)</reasoning>", response, re.DOTALL | re.IGNORECASE)
+        match = re.search(
+            r"<reasoning>(.*?)</reasoning>", response, re.DOTALL | re.IGNORECASE
+        )
         if match:
             return match.group(1).strip()
         paragraphs = response.split("\n\n")
@@ -316,18 +330,24 @@ Sé específico, práctico y educativo. Este conocimiento se guardará en mi mem
 
     def _extract_action(self, response: str) -> str:
         """Extraer acción sugerida."""
-        match = re.search(r"<action>(.*?)</action>", response, re.DOTALL | re.IGNORECASE)
+        match = re.search(
+            r"<action>(.*?)</action>", response, re.DOTALL | re.IGNORECASE
+        )
         if match:
             return match.group(1).strip()
         for line in response.split("\n"):
-            if any(w in line.lower() for w in ("should", "recommend", "suggest", "action")):
+            if any(
+                w in line.lower() for w in ("should", "recommend", "suggest", "action")
+            ):
                 return line.strip()
         return "No clear action suggested"
 
     def _extract_knowledge(self, response: str) -> List[Dict[str, Any]]:
         """Extraer conocimiento estructurado (concept, rule, skill)."""
         items: List[Dict[str, Any]] = []
-        match = re.search(r"<knowledge>(.*?)</knowledge>", response, re.DOTALL | re.IGNORECASE)
+        match = re.search(
+            r"<knowledge>(.*?)</knowledge>", response, re.DOTALL | re.IGNORECASE
+        )
         if match:
             knowledge_text = match.group(1).strip()
         else:
@@ -353,19 +373,23 @@ Sé específico, práctico y educativo. Este conocimiento se guardará en mi mem
                     knowledge_type = "rule"
                 elif any(w in name.lower() for w in ("skill", "how to")):
                     knowledge_type = "skill"
-                items.append({
-                    "type": knowledge_type,
-                    "name": name,
-                    "definition": definition,
-                    "source": "llm_consultation",
-                    "confidence": 0.8,
-                    "learned_at": datetime.now().isoformat(),
-                })
+                items.append(
+                    {
+                        "type": knowledge_type,
+                        "name": name,
+                        "definition": definition,
+                        "source": "llm_consultation",
+                        "confidence": 0.8,
+                        "learned_at": datetime.now().isoformat(),
+                    }
+                )
         return items
 
     def _extract_confidence(self, response: str) -> float:
         """Extraer nivel de confianza (0-100 -> 0.0-1.0)."""
-        match = re.search(r"<confidence>\s*(\d+)\s*</confidence>", response, re.IGNORECASE)
+        match = re.search(
+            r"<confidence>\s*(\d+)\s*</confidence>", response, re.IGNORECASE
+        )
         if match:
             return min(int(match.group(1)) / 100.0, 1.0)
         for line in response.split("\n"):
@@ -388,7 +412,9 @@ Sé específico, práctico y educativo. Este conocimiento se guardará en mi mem
             "success_rate": successful / total if total > 0 else 0,
             "total_knowledge_extracted": self.stats["total_knowledge_extracted"],
             "avg_knowledge_per_consultation": (
-                self.stats["total_knowledge_extracted"] / successful if successful > 0 else 0
+                self.stats["total_knowledge_extracted"] / successful
+                if successful > 0
+                else 0
             ),
             "avg_consultation_time_seconds": round(avg_time, 2),
         }

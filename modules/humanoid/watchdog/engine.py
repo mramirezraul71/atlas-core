@@ -9,7 +9,8 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-from .rules import check_error_rate, check_latency, check_scheduler_alive, max_error_rate, max_latency_ms
+from .rules import (check_error_rate, check_latency, check_scheduler_alive,
+                    max_error_rate, max_latency_ms)
 
 _log = logging.getLogger("humanoid.watchdog")
 
@@ -29,10 +30,19 @@ def _tick_seconds() -> float:
         return 5.0
 
 
-def _audit(module: str, action: str, ok: bool, payload: Optional[Dict] = None, error: Optional[str] = None) -> None:
+def _audit(
+    module: str,
+    action: str,
+    ok: bool,
+    payload: Optional[Dict] = None,
+    error: Optional[str] = None,
+) -> None:
     try:
         from modules.humanoid.audit import get_audit_logger
-        get_audit_logger().log_event("watchdog", "system", module, action, ok, 0, error, payload, None)
+
+        get_audit_logger().log_event(
+            "watchdog", "system", module, action, ok, 0, error, payload, None
+        )
     except Exception:
         pass
 
@@ -40,6 +50,7 @@ def _audit(module: str, action: str, ok: bool, payload: Optional[Dict] = None, e
 def _publish(topic: str, payload: Dict[str, Any]) -> None:
     try:
         from modules.humanoid import get_humanoid_kernel
+
         k = get_humanoid_kernel()
         k.dispatch(topic, payload)
     except Exception:
@@ -53,6 +64,7 @@ async def _tick() -> None:
         store = None
         try:
             from modules.humanoid.metrics import get_metrics_store
+
             store = get_metrics_store()
         except Exception:
             pass
@@ -66,6 +78,7 @@ async def _tick() -> None:
         scheduler_running = False
         try:
             from modules.humanoid.scheduler.engine import is_scheduler_running
+
             scheduler_running = is_scheduler_running()
         except Exception:
             pass
@@ -73,7 +86,13 @@ async def _tick() -> None:
 
         if alerts:
             _last_alerts = alerts
-            _audit("watchdog", "alerts", False, {"alerts": alerts}, f"{len(alerts)} alert(s)")
+            _audit(
+                "watchdog",
+                "alerts",
+                False,
+                {"alerts": alerts},
+                f"{len(alerts)} alert(s)",
+            )
             _publish("watchdog.alerts", {"alerts": alerts})
             _log.warning("Watchdog alerts: %s", alerts)
             # Self-healing: if scheduler stopped, try to restart (respects healing limit)
@@ -81,10 +100,14 @@ async def _tick() -> None:
                 if a.get("rule") == "scheduler_stopped":
                     try:
                         from modules.humanoid.healing import restart_scheduler
+
                         r = restart_scheduler()
                         if r.get("ok"):
                             _audit("watchdog", "healing_restart_scheduler", True, r)
-                            _log.info("Watchdog triggered scheduler restart: %s", r.get("message"))
+                            _log.info(
+                                "Watchdog triggered scheduler restart: %s",
+                                r.get("message"),
+                            )
                     except Exception:
                         pass
                     break

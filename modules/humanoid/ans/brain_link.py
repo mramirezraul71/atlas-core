@@ -14,7 +14,11 @@ def _env_int(name: str, default: int) -> int:
 
 def generate_summary(incidents: List[Dict], actions: List[Dict]) -> str:
     max_bullets = _env_int("ANS_BRAIN_SUMMARY_MAX", 12)
-    if not os.getenv("ANS_BRAIN_FEEDBACK", "true").strip().lower() in ("1", "true", "yes"):
+    if not os.getenv("ANS_BRAIN_FEEDBACK", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
         return ""
     bullets = []
     if incidents:
@@ -33,6 +37,7 @@ def brain_explain(incidents: List[Dict], actions: List[Dict], summary: str) -> s
         return summary
     try:
         from modules.humanoid.ai.router import route_and_run
+
         prompt = f"Resumen ANS: {summary[:500]}. Explica en 2-3 bullets: qué pasó, qué hice, resultado."
         out, _, _ = route_and_run(prompt, intent_hint="reason", prefer_free=True)
         return out or summary

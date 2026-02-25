@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from modules.humanoid.kernel import BaseModule, HealthCheckMixin
+
 from .goal_tracker import GoalTracker
 from .planner import TaskPlanner
 

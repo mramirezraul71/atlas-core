@@ -3,14 +3,15 @@ ATLAS Autodiagnostic Scanner
 Escaneo periódico de todos los sistemas con acción correctiva automática.
 Generado para ATLAS Cognitive Brain Architecture.
 """
-import requests
-import time
 import json
 import logging
 import sys
-from logging.handlers import RotatingFileHandler
+import time
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
+import requests
 
 BASE_PUSH = "http://127.0.0.1:8791"
 BASE_ROBOT = "http://127.0.0.1:8002"
@@ -19,7 +20,12 @@ TIMEOUT = 5
 LOG_DIR = Path(__file__).parent.parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
-handler = RotatingFileHandler(LOG_DIR / "autodiagnostic.log", maxBytes=5*1024*1024, backupCount=3, encoding="utf-8")
+handler = RotatingFileHandler(
+    LOG_DIR / "autodiagnostic.log",
+    maxBytes=5 * 1024 * 1024,
+    backupCount=3,
+    encoding="utf-8",
+)
 handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)-8s | %(message)s"))
 logger = logging.getLogger("atlas.autodiag")
 logger.setLevel(logging.INFO)
@@ -40,13 +46,19 @@ def _safe_print(text: str = "") -> None:
     except OSError as e:
         if getattr(e, "errno", None) == 22:
             _CONSOLE_OK = False
-            logger.warning("Consola no disponible (Errno 22). Se desactiva salida por print.")
+            logger.warning(
+                "Consola no disponible (Errno 22). Se desactiva salida por print."
+            )
             return
         raise
     except UnicodeEncodeError:
         # Fallback para consolas legacy sin UTF-8
         try:
-            print(text.encode("utf-8", errors="replace").decode(sys.stdout.encoding or "utf-8", errors="replace"))
+            print(
+                text.encode("utf-8", errors="replace").decode(
+                    sys.stdout.encoding or "utf-8", errors="replace"
+                )
+            )
         except Exception:
             _CONSOLE_OK = False
 
@@ -90,7 +102,11 @@ def check_robot():
     total = len(mods) or 1
     if active < total:
         return WARN, f"Robot parcial: {active}/{total} módulos", None
-    return OK, f"Robot OK: {active}/{total} módulos, uptime {d.get('uptime',0):.0f}s", None
+    return (
+        OK,
+        f"Robot OK: {active}/{total} módulos, uptime {d.get('uptime',0):.0f}s",
+        None,
+    )
 
 
 def check_modules():
@@ -111,7 +127,11 @@ def check_modules():
                 actions.append(f"{mod_id} reconectado")
             else:
                 actions.append(f"{mod_id} fallo reconexión")
-        return WARN, f"{connected}/{total} conectados, desconectados: {disconnected}", "; ".join(actions)
+        return (
+            WARN,
+            f"{connected}/{total} conectados, desconectados: {disconnected}",
+            "; ".join(actions),
+        )
     return OK, f"{connected}/{total} módulos conectados", None
 
 
@@ -124,7 +144,14 @@ def check_memory():
     fail = d.get("failure_count", 0)
     rate = d.get("success_rate", 0)
     if total == 0:
-        _post(f"{BASE_PUSH}/ans/bitacora", {"message": "ALERTA: Lifelog con 0 entradas", "level": "warning", "source": "autodiagnostic"})
+        _post(
+            f"{BASE_PUSH}/ans/bitacora",
+            {
+                "message": "ALERTA: Lifelog con 0 entradas",
+                "level": "warning",
+                "source": "autodiagnostic",
+            },
+        )
         return CRIT, "Lifelog vacío (0 entradas)", "Alerta registrada en bitácora"
     if rate < 0.5:
         return WARN, f"Tasa de éxito baja: {rate*100:.0f}% ({success}/{total})", None
@@ -153,7 +180,11 @@ def check_ai_models():
     if not available:
         return CRIT, "0 modelos IA disponibles", "Sistema sin capacidad de razonamiento"
     providers_ok = set(m.get("provider") for m in available)
-    return OK, f"{len(available)}/{total} modelos disponibles ({', '.join(sorted(providers_ok))})", None
+    return (
+        OK,
+        f"{len(available)}/{total} modelos disponibles ({', '.join(sorted(providers_ok))})",
+        None,
+    )
 
 
 def check_brain():
@@ -171,8 +202,12 @@ def check_resources():
     if "_error" in d:
         return WARN, f"System info no disponible: {d['_error']}", None
     cpu = d.get("cpu_percent", 0)
-    ram_pct = d.get("ram", {}).get("percent", 0) if isinstance(d.get("ram"), dict) else 0
-    disk_pct = d.get("disk", {}).get("percent", 0) if isinstance(d.get("disk"), dict) else 0
+    ram_pct = (
+        d.get("ram", {}).get("percent", 0) if isinstance(d.get("ram"), dict) else 0
+    )
+    disk_pct = (
+        d.get("disk", {}).get("percent", 0) if isinstance(d.get("disk"), dict) else 0
+    )
     alerts = []
     if cpu > 90:
         alerts.append(f"CPU {cpu}%")
@@ -182,7 +217,14 @@ def check_resources():
         alerts.append(f"Disco {disk_pct}%")
     if alerts:
         detail = ", ".join(alerts)
-        _post(f"{BASE_PUSH}/ans/bitacora", {"message": f"ALERTA RECURSOS: {detail}", "level": "warning", "source": "autodiagnostic"})
+        _post(
+            f"{BASE_PUSH}/ans/bitacora",
+            {
+                "message": f"ALERTA RECURSOS: {detail}",
+                "level": "warning",
+                "source": "autodiagnostic",
+            },
+        )
         return WARN, f"Recursos críticos: {detail}", "Alerta registrada"
     return OK, f"CPU {cpu}%, RAM {ram_pct}%, Disco {disk_pct}%", None
 
@@ -212,8 +254,10 @@ def run_scan():
     crit_count = sum(1 for _, s, _, _ in results if s == CRIT)
     total = len(results)
 
-    sep = "+" + "-"*22 + "+" + "-"*12 + "+" + "-"*52 + "+" + "-"*30 + "+"
-    header = f"| {'Componente':<20} | {'Estado':<10} | {'Detalle':<50} | {'Acción':<28} |"
+    sep = "+" + "-" * 22 + "+" + "-" * 12 + "+" + "-" * 52 + "+" + "-" * 30 + "+"
+    header = (
+        f"| {'Componente':<20} | {'Estado':<10} | {'Detalle':<50} | {'Acción':<28} |"
+    )
 
     _safe_print(f"\n{'='*70}")
     _safe_print(f"  ATLAS AUTODIAGNÓSTICO — {now}")
@@ -224,23 +268,32 @@ def run_scan():
     for name, status, detail, action in results:
         icon = {"OK": "✅", "WARNING": "⚠️ ", "CRITICAL": "❌"}[status]
         act = (action or "—")[:28]
-        _safe_print(f"| {name:<20} | {icon} {status:<7} | {detail[:50]:<50} | {act:<28} |")
+        _safe_print(
+            f"| {name:<20} | {icon} {status:<7} | {detail[:50]:<50} | {act:<28} |"
+        )
     _safe_print(sep)
-    _safe_print(f"\n  Resumen: {ok_count}/{total} OK | {warn_count} warnings | {crit_count} críticos")
+    _safe_print(
+        f"\n  Resumen: {ok_count}/{total} OK | {warn_count} warnings | {crit_count} críticos"
+    )
     _safe_print(f"{'='*70}\n")
 
     logger.info(f"Scan: {ok_count}/{total} OK, {warn_count} WARN, {crit_count} CRIT")
     for name, status, detail, action in results:
         if status != OK:
-            logger.warning(f"  {status} {name}: {detail}" + (f" -> {action}" if action else ""))
+            logger.warning(
+                f"  {status} {name}: {detail}" + (f" -> {action}" if action else "")
+            )
 
     if crit_count > 0 or warn_count > 2:
         try:
-            _post(f"{BASE_PUSH}/ans/bitacora", {
-                "message": f"Autodiagnóstico: {ok_count}/{total} OK, {warn_count} WARN, {crit_count} CRIT",
-                "level": "warning" if crit_count == 0 else "error",
-                "source": "autodiagnostic"
-            })
+            _post(
+                f"{BASE_PUSH}/ans/bitacora",
+                {
+                    "message": f"Autodiagnóstico: {ok_count}/{total} OK, {warn_count} WARN, {crit_count} CRIT",
+                    "level": "warning" if crit_count == 0 else "error",
+                    "source": "autodiagnostic",
+                },
+            )
         except:
             pass
 
@@ -250,7 +303,9 @@ def run_scan():
 def main():
     _safe_print(f"\n{'#'*70}")
     _safe_print(f"  ATLAS AUTODIAGNOSTIC SCANNER")
-    _safe_print(f"  Intervalo: {SCAN_INTERVAL}s | Log: {LOG_DIR / 'autodiagnostic.log'}")
+    _safe_print(
+        f"  Intervalo: {SCAN_INTERVAL}s | Log: {LOG_DIR / 'autodiagnostic.log'}"
+    )
     _safe_print(f"{'#'*70}")
     logger.info("Autodiagnostic scanner iniciado")
 

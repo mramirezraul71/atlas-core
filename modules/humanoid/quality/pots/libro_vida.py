@@ -12,7 +12,8 @@ Triggers:
 
 Severidad: MEDIUM
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -32,18 +33,21 @@ Procedimiento de verificación integral del Libro de Vida de ATLAS:
         severity=POTSeverity.MEDIUM,
         version="1.0.0",
         author="ATLAS Cognitive Engine",
-
         trigger_check_ids=["libro_vida_*", "cognitive_check"],
-        trigger_keywords=["libro de vida", "book of life", "experiencias", "memoria cognitiva",
-                          "planificacion", "episodios"],
-
+        trigger_keywords=[
+            "libro de vida",
+            "book of life",
+            "experiencias",
+            "memoria cognitiva",
+            "planificacion",
+            "episodios",
+        ],
         prerequisites=[
             "Servicio PUSH (8791) operativo",
             "Libro de Vida inicializado",
         ],
         required_services=["push_api"],
         required_permissions=["memory_read", "memory_write"],
-
         objectives=[
             "Verificar integridad de la DB del Libro de Vida",
             "Validar búsqueda de episodios por texto y tipo",
@@ -53,7 +57,6 @@ Procedimiento de verificación integral del Libro de Vida de ATLAS:
         ],
         success_criteria="Libro de Vida operativo con capacidad de registro, búsqueda y planificación",
         estimated_duration_minutes=2,
-
         tutorial_overview="""
 ## Guía del Libro de Vida
 
@@ -86,17 +89,14 @@ Procedimiento de verificación integral del Libro de Vida de ATLAS:
 - `POST /api/libro-vida/buscar` — Buscar episodios similares
 - `GET  /api/libro-vida/status` — Estadísticas del Libro
         """.strip(),
-
         best_practices=[
             "Registrar siempre el resultado después de cada tarea compleja",
             "Incluir feedback humano para mejorar futuras planificaciones",
             "Revisar reglas aprendidas periódicamente",
             "Marcar episodios sin precedentes como 'alto valor de aprendizaje'",
         ],
-
         related_pots=["diagnostic_full", "session_startup", "autonomy_full_cycle"],
         tags=["cognitive", "memory", "planning", "experience", "learning"],
-
         steps=[
             POTStep(
                 id="check_libro_vida_status",
@@ -108,7 +108,6 @@ Procedimiento de verificación integral del Libro de Vida de ATLAS:
                 timeout_seconds=10,
                 capture_output=True,
             ),
-
             POTStep(
                 id="check_episodios_list",
                 name="Listar episodios recientes",
@@ -120,7 +119,6 @@ Procedimiento de verificación integral del Libro de Vida de ATLAS:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-
             POTStep(
                 id="test_busqueda",
                 name="Buscar experiencias por texto",
@@ -133,7 +131,6 @@ Procedimiento de verificación integral del Libro de Vida de ATLAS:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-
             POTStep(
                 id="test_registrar_episodio",
                 name="Registrar episodio de diagnóstico",
@@ -158,7 +155,6 @@ Procedimiento de verificación integral del Libro de Vida de ATLAS:
                 timeout_seconds=15,
                 capture_output=True,
             ),
-
             POTStep(
                 id="check_reglas",
                 name="Verificar reglas aprendidas",
@@ -170,7 +166,6 @@ Procedimiento de verificación integral del Libro de Vida de ATLAS:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-
             POTStep(
                 id="check_principios",
                 name="Verificar principios generales",
@@ -182,7 +177,6 @@ Procedimiento de verificación integral del Libro de Vida de ATLAS:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-
             POTStep(
                 id="check_subsystems_sync",
                 name="Verificar sincronización con subsistemas",
@@ -194,7 +188,6 @@ Procedimiento de verificación integral del Libro de Vida de ATLAS:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-
             POTStep(
                 id="log_verification",
                 name="Registrar verificación completada",
@@ -205,7 +198,7 @@ Procedimiento de verificación integral del Libro de Vida de ATLAS:
                 http_body={
                     "message": "[LIBRO DE VIDA] Verificación cognitiva completada — sistema operativo",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
             ),
         ],

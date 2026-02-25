@@ -15,15 +15,17 @@ Endpoints:
 """
 from __future__ import annotations
 
+import time
+from typing import Any, Dict, List, Optional
+
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Optional
-import time
 
 router = APIRouter(prefix="/api/libro-vida", tags=["Libro de Vida"])
 
 
 # ── Modelos Pydantic ─────────────────────────────────────────────────
+
 
 class RegistrarEpisodioBody(BaseModel):
     tipo_tarea: str
@@ -78,17 +80,23 @@ class PrincipioBody(BaseModel):
 
 # ── Endpoints ────────────────────────────────────────────────────────
 
+
 @router.get("/status")
 def libro_vida_status():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.memory_engine.libro_vida import get_libro_vida
+
         lv = get_libro_vida()
         stats = lv.get_stats()
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": True, **stats, "ms": ms}
     except Exception as e:
-        return {"ok": False, "error": str(e), "ms": int((time.perf_counter() - t0) * 1000)}
+        return {
+            "ok": False,
+            "error": str(e),
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
 
 
 @router.get("/episodios")
@@ -96,9 +104,15 @@ def libro_vida_listar(limit: int = 20):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.memory_engine.libro_vida import get_libro_vida
+
         lv = get_libro_vida()
         items = lv.listar_recientes(limit=limit)
-        return {"ok": True, "data": items, "count": len(items), "ms": int((time.perf_counter() - t0) * 1000)}
+        return {
+            "ok": True,
+            "data": items,
+            "count": len(items),
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
     except Exception as e:
         return {"ok": False, "data": [], "error": str(e)}
 
@@ -108,11 +122,16 @@ def libro_vida_detalle(ep_id: str):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.memory_engine.libro_vida import get_libro_vida
+
         lv = get_libro_vida()
         ep = lv.obtener_episodio(ep_id)
         if not ep:
             return {"ok": False, "error": "Episodio no encontrado"}
-        return {"ok": True, "data": ep.to_dict(), "ms": int((time.perf_counter() - t0) * 1000)}
+        return {
+            "ok": True,
+            "data": ep.to_dict(),
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -121,10 +140,13 @@ def libro_vida_detalle(ep_id: str):
 def libro_vida_registrar(body: RegistrarEpisodioBody):
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.memory_engine.libro_vida import (
-            EpisodioVida, Percepcion, AccionEjecutada, Resultado,
-            Feedback, Leccion, get_libro_vida,
-        )
+        from modules.humanoid.memory_engine.libro_vida import (AccionEjecutada,
+                                                               EpisodioVida,
+                                                               Feedback,
+                                                               Leccion,
+                                                               Percepcion,
+                                                               Resultado,
+                                                               get_libro_vida)
 
         percepciones = Percepcion(
             sensores=body.percepciones.get("sensores", {}),
@@ -164,6 +186,7 @@ def libro_vida_buscar(body: BuscarBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.memory_engine.libro_vida import get_libro_vida
+
         lv = get_libro_vida()
 
         if body.query and not body.tipo_tarea:
@@ -190,7 +213,12 @@ def libro_vida_buscar(body: BuscarBody):
             }
             for ep in eps
         ]
-        return {"ok": True, "data": data, "count": len(data), "ms": int((time.perf_counter() - t0) * 1000)}
+        return {
+            "ok": True,
+            "data": data,
+            "count": len(data),
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
     except Exception as e:
         return {"ok": False, "data": [], "error": str(e)}
 
@@ -199,6 +227,7 @@ def libro_vida_buscar(body: BuscarBody):
 def libro_vida_reglas(tipo_tarea: Optional[str] = None, limit: int = 20):
     try:
         from modules.humanoid.memory_engine.libro_vida import get_libro_vida
+
         lv = get_libro_vida()
         reglas = lv.obtener_reglas(tipo_tarea=tipo_tarea, limit=limit)
         return {"ok": True, "data": reglas, "count": len(reglas)}
@@ -210,6 +239,7 @@ def libro_vida_reglas(tipo_tarea: Optional[str] = None, limit: int = 20):
 def libro_vida_principios(categoria: Optional[str] = None):
     try:
         from modules.humanoid.memory_engine.libro_vida import get_libro_vida
+
         lv = get_libro_vida()
         principios = lv.obtener_principios(categoria=categoria)
         return {"ok": True, "data": principios, "count": len(principios)}
@@ -221,6 +251,7 @@ def libro_vida_principios(categoria: Optional[str] = None):
 def libro_vida_registrar_principio(body: PrincipioBody):
     try:
         from modules.humanoid.memory_engine.libro_vida import get_libro_vida
+
         lv = get_libro_vida()
         pid = lv.registrar_principio(
             categoria=body.categoria,
@@ -238,7 +269,9 @@ def libro_vida_planificar(body: PlanificarBody):
     """Planifica una tarea usando el Libro de Vida + LLM."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.brain.libro_vida_planner import get_libro_vida_planner
+        from modules.humanoid.brain.libro_vida_planner import \
+            get_libro_vida_planner
+
         planner = get_libro_vida_planner()
         plan = planner.planificar(body.tarea, body.contexto or None)
         return {
@@ -253,7 +286,11 @@ def libro_vida_planificar(body: PlanificarBody):
             "ms": plan.ms,
         }
     except Exception as e:
-        return {"ok": False, "error": str(e), "ms": int((time.perf_counter() - t0) * 1000)}
+        return {
+            "ok": False,
+            "error": str(e),
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
 
 
 @router.post("/registrar-resultado")
@@ -261,7 +298,9 @@ def libro_vida_registrar_resultado(body: RegistrarResultadoBody):
     """Registra el resultado de una tarea ejecutada en el Libro de Vida."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.brain.libro_vida_planner import get_libro_vida_planner
+        from modules.humanoid.brain.libro_vida_planner import \
+            get_libro_vida_planner
+
         planner = get_libro_vida_planner()
         ep_id = planner.registrar_resultado(
             tarea=body.tarea,
@@ -276,6 +315,10 @@ def libro_vida_registrar_resultado(body: RegistrarResultadoBody):
             metricas=body.metricas,
             reglas_numericas=body.reglas_numericas,
         )
-        return {"ok": True, "episodio_id": ep_id, "ms": int((time.perf_counter() - t0) * 1000)}
+        return {
+            "ok": True,
+            "episodio_id": ep_id,
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}

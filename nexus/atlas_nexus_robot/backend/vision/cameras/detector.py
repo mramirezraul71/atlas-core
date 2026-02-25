@@ -4,18 +4,23 @@ Prioridad: Windows detecta al conectar USB → enumeramos y matcheamos con regis
 """
 
 import json
+import logging
 import os
 import subprocess
 import sys
-import cv2
-import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
+import cv2
 
 logger = logging.getLogger(__name__)
 
-REGISTRY_PATH = Path(__file__).resolve().parent.parent / "registry" / "camera_registry.json"
-CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "active_camera.json"
+REGISTRY_PATH = (
+    Path(__file__).resolve().parent.parent / "registry" / "camera_registry.json"
+)
+CONFIG_PATH = (
+    Path(__file__).resolve().parent.parent.parent / "config" / "active_camera.json"
+)
 
 
 def _load_registry() -> Dict[str, Any]:
@@ -62,11 +67,13 @@ def _detect_windows_pnp() -> List[Dict[str, str]]:
                             if "VID_" in p:
                                 vid_pid = p
                                 break
-                    devices.append({
-                        "name": name,
-                        "instance_id": instance,
-                        "vid_pid": vid_pid,
-                    })
+                    devices.append(
+                        {
+                            "name": name,
+                            "instance_id": instance,
+                            "vid_pid": vid_pid,
+                        }
+                    )
     except Exception as e:
         logger.debug("Windows PnP detection failed: %s", e)
     return devices
@@ -227,21 +234,8 @@ def detect_cameras() -> List[Dict[str, Any]]:
             if idx in seen_indices:
                 continue
             seen_indices.add(idx)
-            result.append({
-                "index": idx,
-                "model": matched.get("name", name) if matched else name,
-                "driver": driver,
-                "capabilities": caps,
-                "resolution": res,
-                "source": "pnp",
-                "vid_pid": vid_pid,
-            })
-            break
-        else:
-            if cv_indices and 0 not in seen_indices:
-                idx = cv_indices[0]["index"]
-                seen_indices.add(idx)
-                result.append({
+            result.append(
+                {
                     "index": idx,
                     "model": matched.get("name", name) if matched else name,
                     "driver": driver,
@@ -249,21 +243,40 @@ def detect_cameras() -> List[Dict[str, Any]]:
                     "resolution": res,
                     "source": "pnp",
                     "vid_pid": vid_pid,
-                })
+                }
+            )
+            break
+        else:
+            if cv_indices and 0 not in seen_indices:
+                idx = cv_indices[0]["index"]
+                seen_indices.add(idx)
+                result.append(
+                    {
+                        "index": idx,
+                        "model": matched.get("name", name) if matched else name,
+                        "driver": driver,
+                        "capabilities": caps,
+                        "resolution": res,
+                        "source": "pnp",
+                        "vid_pid": vid_pid,
+                    }
+                )
 
     for cv_info in cv_indices:
         idx = cv_info.get("index")
         if idx in seen_indices:
             continue
         seen_indices.add(idx)
-        result.append({
-            "index": idx,
-            "model": "Webcam estándar",
-            "driver": "uvc_standard",
-            "capabilities": ["video"],
-            "resolution": cv_info.get("resolution", [640, 480]),
-            "source": "opencv",
-        })
+        result.append(
+            {
+                "index": idx,
+                "model": "Webcam estándar",
+                "driver": "uvc_standard",
+                "capabilities": ["video"],
+                "resolution": cv_info.get("resolution", [640, 480]),
+                "source": "opencv",
+            }
+        )
 
     return result
 

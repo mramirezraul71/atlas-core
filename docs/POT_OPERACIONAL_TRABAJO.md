@@ -53,4 +53,3 @@ Objetivo: que ATLAS trabaje como un operario senior **sin acumular cambios**, co
 
 - **Hook post-commit**: al crear un commit, ATLAS lo anuncia por Audio/Telegram.
 - **Repo monitor after-fix**: si hay demasiados archivos, separa el commit por grupos y notifica.
-

@@ -57,7 +57,14 @@ def main() -> int:
             out["state"]["index_lock_size"] = size
             if delete_lock and age >= stale_sec and size <= 16:
                 lock_path.unlink(missing_ok=True)
-                out["actions"].append({"action": "delete_index_lock", "ok": True, "age_sec": age, "size": size})
+                out["actions"].append(
+                    {
+                        "action": "delete_index_lock",
+                        "ok": True,
+                        "age_sec": age,
+                        "size": size,
+                    }
+                )
             else:
                 out["actions"].append(
                     {
@@ -71,7 +78,9 @@ def main() -> int:
                 print(json.dumps(out, ensure_ascii=False))
                 return 2
         except Exception as e:
-            out["actions"].append({"action": "delete_index_lock", "ok": False, "error": str(e)})
+            out["actions"].append(
+                {"action": "delete_index_lock", "ok": False, "error": str(e)}
+            )
             print(json.dumps(out, ensure_ascii=False))
             return 2
 
@@ -92,7 +101,13 @@ def main() -> int:
                 print(json.dumps(out, ensure_ascii=False))
                 return 3
         else:
-            out["actions"].append({"action": "rebase_in_progress", "ok": False, "reason": "abort_disabled"})
+            out["actions"].append(
+                {
+                    "action": "rebase_in_progress",
+                    "ok": False,
+                    "reason": "abort_disabled",
+                }
+            )
             print(json.dumps(out, ensure_ascii=False))
             return 3
 
@@ -104,7 +119,9 @@ def main() -> int:
                 print(json.dumps(out, ensure_ascii=False))
                 return 3
         else:
-            out["actions"].append({"action": "merge_in_progress", "ok": False, "reason": "abort_disabled"})
+            out["actions"].append(
+                {"action": "merge_in_progress", "ok": False, "reason": "abort_disabled"}
+            )
             print(json.dumps(out, ensure_ascii=False))
             return 3
 
@@ -112,7 +129,13 @@ def main() -> int:
     st2 = _run(["git", "status", "-sb"], cwd=repo)
     low = ((st2.get("stdout") or "") + "\n" + (st2.get("stderr") or "")).lower()
     if "head (no branch)" in low or "detached" in low:
-        out["actions"].append({"action": "detached_head", "ok": False, "reason": "manual_intervention_required"})
+        out["actions"].append(
+            {
+                "action": "detached_head",
+                "ok": False,
+                "reason": "manual_intervention_required",
+            }
+        )
         out["state"]["status_sb_after"] = (st2.get("stdout") or "")[:800]
         print(json.dumps(out, ensure_ascii=False))
         return 4
@@ -142,4 +165,3 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except KeyboardInterrupt:
         raise SystemExit(130)
-

@@ -20,12 +20,16 @@ from typing import Any, Deque, Dict, Optional
 _RECENT: Deque[Dict[str, Any]] = deque(maxlen=200)
 _LOG_PATH = Path(os.getenv("OPS_LOG_PATH", r"C:\ATLAS_PUSH\logs\ops_bus.log"))
 _TG_CHAT_CACHE: Optional[str] = None
-_TG_CHAT_CACHE_PATH = Path(os.getenv("TELEGRAM_CHAT_ID_CACHE_PATH", r"C:\ATLAS_PUSH\logs\telegram_chat_id.txt"))
+_TG_CHAT_CACHE_PATH = Path(
+    os.getenv("TELEGRAM_CHAT_ID_CACHE_PATH", r"C:\ATLAS_PUSH\logs\telegram_chat_id.txt")
+)
 _AUDIO_LAST: Dict[str, float] = {}  # message_key -> ts (dedupe)
 _DEDUP_LAST: Dict[str, float] = {}  # key -> last_ts
 _RATE_1M: Dict[str, Deque[float]] = {}  # subsystem -> timestamps (sec)
 
-_RE_SESSION_STARTED = re.compile(r"(listo para trabajar).*(sesión iniciada)", re.IGNORECASE)
+_RE_SESSION_STARTED = re.compile(
+    r"(listo para trabajar).*(sesión iniciada)", re.IGNORECASE
+)
 
 
 def _ts() -> str:
@@ -46,7 +50,11 @@ def _telegram_chat_id() -> str:
         load_vault_env(override=False)
     except Exception:
         pass
-    raw = (os.getenv("TELEGRAM_ALLOWED_CHAT_IDS") or os.getenv("TELEGRAM_CHAT_ID", "") or "").strip()
+    raw = (
+        os.getenv("TELEGRAM_ALLOWED_CHAT_IDS")
+        or os.getenv("TELEGRAM_CHAT_ID", "")
+        or ""
+    ).strip()
     chat_ids = [x.strip() for x in raw.replace(",", " ").split() if x.strip()]
     if chat_ids:
         return chat_ids[0]
@@ -66,7 +74,9 @@ def _telegram_chat_id() -> str:
     # Intentar leer cache en disco
     try:
         if _TG_CHAT_CACHE_PATH.is_file():
-            v = (_TG_CHAT_CACHE_PATH.read_text(encoding="utf-8", errors="ignore") or "").strip()
+            v = (
+                _TG_CHAT_CACHE_PATH.read_text(encoding="utf-8", errors="ignore") or ""
+            ).strip()
             if v:
                 _TG_CHAT_CACHE = v
                 return v
@@ -145,7 +155,9 @@ def _humanize_text(text: str) -> str:
     return t
 
 
-def _human_message(subsystem: str, msg: str, level: str, data: Optional[Dict[str, Any]] = None) -> str:
+def _human_message(
+    subsystem: str, msg: str, level: str, data: Optional[Dict[str, Any]] = None
+) -> str:
     low = (msg or "").strip().lower()
     sub = (subsystem or "").strip().lower()
     if "aprobación pendiente" in low:
@@ -158,10 +170,20 @@ def _human_message(subsystem: str, msg: str, level: str, data: Optional[Dict[str
         return "El panel perdio conexion. Estoy reintentando automaticamente."
     # Humanización agresiva para eventos de sistema: no leer códigos, ids, rutas.
     if sub in ("ops", "dashboard", "nexus", "architect", "approval"):
-        if "error" in low or "exception" in low or "traceback" in low or "failed" in low or "fall" in low:
+        if (
+            "error" in low
+            or "exception" in low
+            or "traceback" in low
+            or "failed" in low
+            or "fall" in low
+        ):
             # Si el mensaje incluye "Accion:", extraer y describirlo de forma humana.
             try:
-                key = "acción:" if "acción:" in low else ("accion:" if "accion:" in low else "")
+                key = (
+                    "acción:"
+                    if "acción:" in low
+                    else ("accion:" if "accion:" in low else "")
+                )
                 i = low.find(key) if key else -1
                 if i >= 0 and key:
                     action = msg[i + len(key) :].strip()
@@ -302,6 +324,7 @@ def emit(
                 speak_text = speak_text[:240] + "..."
             # Dedupe: evita repetir 2-3 veces el mismo evento en pocos segundos
             import time as _time
+
             key = (speak_text or "").strip().lower()[:200]
             now = _time.time()
             last = float(_AUDIO_LAST.get(key) or 0.0)
@@ -317,12 +340,15 @@ def emit(
         chat_id = _telegram_chat_id()
         if chat_id:
             try:
-                from modules.humanoid.comms.telegram_bridge import TelegramBridge
+                from modules.humanoid.comms.telegram_bridge import \
+                    TelegramBridge
 
                 bridge = TelegramBridge()
                 header = f"<b>ATLAS</b> — {_subsystem_human(ev['subsystem'])}\n"
                 text = header + (ev.get("message_human") or ev["message"])
-                if evidence_path and str(evidence_path).lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                if evidence_path and str(evidence_path).lower().endswith(
+                    (".png", ".jpg", ".jpeg", ".webp")
+                ):
                     bridge.send_photo(chat_id, str(evidence_path), caption=text[:900])
                 else:
                     bridge.send(chat_id, text)
@@ -340,4 +366,3 @@ def emit(
             pass
 
     return {"ok": True}
-

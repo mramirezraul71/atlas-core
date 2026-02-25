@@ -6,7 +6,6 @@ con un estado de salud cuantificado por puntos.
 
 from __future__ import annotations
 
-from .engine import run_nervous_cycle, get_nervous_status
+from .engine import get_nervous_status, run_nervous_cycle
 
 __all__ = ["run_nervous_cycle", "get_nervous_status"]
-

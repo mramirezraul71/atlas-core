@@ -27,7 +27,9 @@ def max_error_rate() -> float:
     return _float_env("WATCHDOG_MAX_ERROR_RATE", 0.3)
 
 
-def check_latency(latencies_snapshot: Dict[str, Any], max_ms: float) -> List[Dict[str, Any]]:
+def check_latency(
+    latencies_snapshot: Dict[str, Any], max_ms: float
+) -> List[Dict[str, Any]]:
     """Return list of alerts for endpoints exceeding max_ms (avg or p95)."""
     alerts = []
     latencies = (latencies_snapshot or {}).get("latencies") or latencies_snapshot
@@ -41,17 +43,37 @@ def check_latency(latencies_snapshot: Dict[str, Any], max_ms: float) -> List[Dic
         avg = stats.get("avg_ms") or 0
         p95 = stats.get("p95_ms") or 0
         if avg > max_ms or p95 > max_ms:
-            alerts.append({"rule": "latency", "key": key, "avg_ms": avg, "p95_ms": p95, "threshold_ms": max_ms})
+            alerts.append(
+                {
+                    "rule": "latency",
+                    "key": key,
+                    "avg_ms": avg,
+                    "p95_ms": p95,
+                    "threshold_ms": max_ms,
+                }
+            )
     return alerts
 
 
 def check_error_rate(counters: Dict[str, int], max_rate: float) -> List[Dict[str, Any]]:
     """Return alerts if error rate > max_rate. Expects counters like request:/path and request_error:/path."""
     alerts = []
-    total = sum(v for k, v in counters.items() if k.startswith("request:") and not k.startswith("request_error:"))
+    total = sum(
+        v
+        for k, v in counters.items()
+        if k.startswith("request:") and not k.startswith("request_error:")
+    )
     errors = sum(v for k, v in counters.items() if k.startswith("request_error:"))
     if total > 0 and (errors / total) > max_rate:
-        alerts.append({"rule": "error_rate", "errors": errors, "total": total, "rate": errors / total, "threshold": max_rate})
+        alerts.append(
+            {
+                "rule": "error_rate",
+                "errors": errors,
+                "total": total,
+                "rate": errors / total,
+                "threshold": max_rate,
+            }
+        )
     return alerts
 
 
@@ -61,10 +83,28 @@ def check_scheduler_alive(scheduler_running: bool) -> List[Dict[str, Any]]:
     if not scheduler_running:
         try:
             import os
-            sched = os.getenv("SCHED_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
-            humanoid = os.getenv("HUMANOID_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
+
+            sched = os.getenv("SCHED_ENABLED", "true").strip().lower() in (
+                "1",
+                "true",
+                "yes",
+                "y",
+                "on",
+            )
+            humanoid = os.getenv("HUMANOID_ENABLED", "true").strip().lower() in (
+                "1",
+                "true",
+                "yes",
+                "y",
+                "on",
+            )
             if sched and humanoid:
-                alerts.append({"rule": "scheduler_stopped", "message": "scheduler loop is not running"})
+                alerts.append(
+                    {
+                        "rule": "scheduler_stopped",
+                        "message": "scheduler loop is not running",
+                    }
+                )
         except Exception:
             pass
     return alerts

@@ -18,4 +18,3 @@ Esta carpeta es la **fuente de verdad** para evidencias de tutorías/visitas té
   - Recomendaciones futuras
   - Evidencia (links a logs/transcripts si aplica)
 - **R4 — Persistencia**: si una tutoría fue generada en conversación, debe copiarse aquí para que quede registrada.
-

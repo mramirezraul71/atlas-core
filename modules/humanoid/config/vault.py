@@ -44,8 +44,8 @@ def load_vault_env(*, override: bool = False) -> Optional[str]:
             if not path.is_file():
                 continue
             # Silenciar warnings/errores de parseo de python-dotenv (no ensuciar consola).
-            import io
             import contextlib
+            import io
 
             sink = io.StringIO()
             with contextlib.redirect_stderr(sink), contextlib.redirect_stdout(sink):
@@ -55,4 +55,3 @@ def load_vault_env(*, override: bool = False) -> Optional[str]:
         except Exception:
             continue
     return None
-

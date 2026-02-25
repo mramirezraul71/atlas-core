@@ -2,9 +2,10 @@
 Base abstracta para drivers de cámara.
 """
 
-import numpy as np
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple, Dict, Any
+from typing import Any, Dict, Optional, Tuple
+
+import numpy as np
 
 
 class CameraBase(ABC):

@@ -9,12 +9,15 @@ Solución:
 - Enrutado por prefijo: UI para HTML/assets; API para `/api/*`, `/docs`, `/openapi.json`, `/health`, `/status`, `/ws`, etc.
 """
 import os
+
 import httpx
 from fastapi import Request
 from fastapi.responses import Response
 
 ROBOT_UI_BASE = (os.getenv("NEXUS_ROBOT_URL") or "http://127.0.0.1:5174").rstrip("/")
-ROBOT_API_BASE = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
+ROBOT_API_BASE = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip(
+    "/"
+)
 TIMEOUT = float(os.getenv("NEXUS_TIMEOUT", "30"))
 CAMERA_CONTROL_TIMEOUT = float(os.getenv("NEXUS_CAMERA_PROXY_TIMEOUT", "45"))
 
@@ -42,7 +45,11 @@ async def proxy_to_cuerpo(request: Request, path: str) -> Response:
     """Reenvía a Robot frontend (cámaras, visión, dashboard)."""
     base = _pick_base(path)
     url = f"{base}/{path}" if path else base + "/"
-    headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "connection")}
+    headers = {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() not in ("host", "connection")
+    }
     p = (path or "").lstrip("/")
     timeout = TIMEOUT
     if p.startswith("api/camera/"):
@@ -57,10 +64,16 @@ async def proxy_to_cuerpo(request: Request, path: str) -> Response:
             else:
                 r = await client.get(url, headers=headers)
             exclude = {"transfer-encoding", "connection", "content-encoding"}
-            out_headers = {k: v for k, v in r.headers.items() if k.lower() not in exclude}
+            out_headers = {
+                k: v for k, v in r.headers.items() if k.lower() not in exclude
+            }
             content = r.content
             ct = (r.headers.get("content-type") or "").lower()
-            if "text/html" in ct and r.status_code == 200 and b"<head" in content[:2048]:
+            if (
+                "text/html" in ct
+                and r.status_code == 200
+                and b"<head" in content[:2048]
+            ):
                 try:
                     body = content.decode("utf-8", errors="replace")
                     base_tag = '<base href="/cuerpo/">'
@@ -70,7 +83,9 @@ async def proxy_to_cuerpo(request: Request, path: str) -> Response:
                     content = body.encode("utf-8")
                 except Exception:
                     pass
-            return Response(content=content, status_code=r.status_code, headers=out_headers)
+            return Response(
+                content=content, status_code=r.status_code, headers=out_headers
+            )
     except httpx.RequestError as e:
         # 503 cuando Robot/cámara no está disponible (más claro que 502 para el cliente)
         err_msg = str(e).replace('"', "'")
@@ -85,7 +100,7 @@ async def proxy_to_cuerpo(request: Request, path: str) -> Response:
             html = (
                 '<html><body style="margin:0;background:#1a1a2e;color:#94a3b8;font-family:sans-serif;'
                 'display:flex;align-items:center;justify-content:center;min-height:100vh;">'
-                f'<p>Cámara no disponible (Robot no responde: {err_msg[:80]})</p></body></html>'
+                f"<p>Cámara no disponible (Robot no responde: {err_msg[:80]})</p></body></html>"
             )
             return Response(
                 content=html.encode("utf-8"),

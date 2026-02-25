@@ -30,7 +30,10 @@ def get_deploy_state() -> Dict[str, Any]:
         "staging_port": _env_int("STAGING_PORT", 8792),
         "last_deploy_ts": None,
         "last_switch_ts": None,
-        "auto_switch_on_health": os.getenv("AUTO_SWITCH_ON_HEALTH", "true").strip().lower() in ("1", "true", "yes"),
+        "auto_switch_on_health": os.getenv("AUTO_SWITCH_ON_HEALTH", "true")
+        .strip()
+        .lower()
+        in ("1", "true", "yes"),
     }
     if not path.exists():
         return default
@@ -49,7 +52,9 @@ def persist_state(state: Dict[str, Any]) -> None:
     path.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
-def switch_active_port(new_active_port: int, service_name: Optional[str] = None) -> Dict[str, Any]:
+def switch_active_port(
+    new_active_port: int, service_name: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Update deploy state so active_port = new_active_port, then restart Windows service.
     Returns {ok, message, error}. Audit logged.
@@ -57,6 +62,7 @@ def switch_active_port(new_active_port: int, service_name: Optional[str] = None)
     t0 = time.perf_counter()
     try:
         from modules.humanoid.audit import get_audit_logger
+
         audit = get_audit_logger()
     except Exception:
         audit = None
@@ -80,20 +86,40 @@ def switch_active_port(new_active_port: int, service_name: Optional[str] = None)
             ms = int((time.perf_counter() - t0) * 1000)
             try:
                 from modules.humanoid.metrics import get_metrics_store
+
                 get_metrics_store().inc("deploy_switch_fail")
                 get_metrics_store().inc("deploy_switch_total")
             except Exception:
                 pass
             if audit:
-                audit.log_event("deploy", "switcher", "switch", False, ms, str(e), {"old": old_port, "new": new_active_port}, None)
+                audit.log_event(
+                    "deploy",
+                    "switcher",
+                    "switch",
+                    False,
+                    ms,
+                    str(e),
+                    {"old": old_port, "new": new_active_port},
+                    None,
+                )
             return {"ok": False, "message": "service restart failed", "error": str(e)}
     ms = int((time.perf_counter() - t0) * 1000)
     try:
         from modules.humanoid.metrics import get_metrics_store
+
         get_metrics_store().inc("deploy_switch_success")
         get_metrics_store().inc("deploy_switch_total")
     except Exception:
         pass
     if audit:
-        audit.log_event("deploy", "switcher", "switch", True, ms, None, {"old": old_port, "new": new_active_port}, None)
+        audit.log_event(
+            "deploy",
+            "switcher",
+            "switch",
+            True,
+            ms,
+            None,
+            {"old": old_port, "new": new_active_port},
+            None,
+        )
     return {"ok": True, "message": f"active_port={new_active_port}", "error": None}

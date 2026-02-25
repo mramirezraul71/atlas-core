@@ -13,13 +13,23 @@ class LastDeploy:
     error: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"ts": self.ts, "ref": self.ref, "result": self.result, "error": self.error}
+        return {
+            "ts": self.ts,
+            "ref": self.ref,
+            "result": self.result,
+            "error": self.error,
+        }
 
     @classmethod
     def from_dict(cls, d: Optional[Dict[str, Any]]) -> "LastDeploy":
         if not d:
             return cls()
-        return cls(ts=d.get("ts"), ref=d.get("ref"), result=d.get("result"), error=d.get("error"))
+        return cls(
+            ts=d.get("ts"),
+            ref=d.get("ref"),
+            result=d.get("result"),
+            error=d.get("error"),
+        )
 
 
 @dataclass

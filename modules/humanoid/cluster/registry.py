@@ -61,7 +61,9 @@ def list_nodes(status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
     return cluster_db.list_nodes(status_filter=status_filter)
 
 
-def update_node_seen(node_id_arg: str, health_score: int = 0, status: str = "online") -> None:
+def update_node_seen(
+    node_id_arg: str, health_score: int = 0, status: str = "online"
+) -> None:
     node = cluster_db.get_node(node_id_arg)
     if not node:
         return
@@ -88,6 +90,7 @@ def mark_offline_stale() -> None:
             continue
         try:
             from datetime import datetime
+
             dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
             ts = dt.timestamp()
         except Exception:

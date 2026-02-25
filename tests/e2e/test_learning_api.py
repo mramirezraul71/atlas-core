@@ -51,7 +51,11 @@ class TestLearningConsolidatorStats:
             assert "data" in data
             # Con componentes cargados, data puede tener claves del consolidador
             if data["data"]:
-                for key in ("total_consolidations", "last_consolidation", "hours_since_last"):
+                for key in (
+                    "total_consolidations",
+                    "last_consolidation",
+                    "hours_since_last",
+                ):
                     assert key in data["data"], f"expected key {key} in data"
 
 

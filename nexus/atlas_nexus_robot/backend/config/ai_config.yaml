@@ -69,17 +69,17 @@ routing_rules:
     keywords: ["código", "función", "script", "debug", "programar", "python", "javascript", "java", "c++", "html", "css", "react", "node", "api", "algoritmo", "clase", "método", "variable", "bucle", "if", "else", "for", "while"]
     preferred_model: "deepseek-coder"
     fallback_provider: "deepseek"
-    
+
   reasoning:
     keywords: ["calcula", "matemática", "ecuación", "resuelve", "problema", "lógica", "razonamiento", "cuánto es", "suma", "resta", "multiplica", "divide", "porcentaje", "derivada", "integral"]
     preferred_model: "deepseek-r1"
     fallback_provider: "deepseek"
-    
+
   analysis:
     keywords: ["resume", "analiza texto", "traduce", "interpreta", "explica", "compara", "evalúa", "sintetiza", "parafrasea", "extrae", "identifica"]
     preferred_model: "mistral"
     fallback_provider: "deepseek"
-    
+
   general:
     keywords: ["hola", "adiós", "gracias", "cómo estás", "qué tal", "ayuda", "información", "dime", "explícame", "cuéntame"]
     preferred_model: "llama3.2"

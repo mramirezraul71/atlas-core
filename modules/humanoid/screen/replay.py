@@ -7,7 +7,9 @@ from typing import Any, Dict, List
 from .actions import execute_action
 
 
-def replay_actions(actions: List[Dict[str, Any]], delay_ms: int = 100) -> Dict[str, Any]:
+def replay_actions(
+    actions: List[Dict[str, Any]], delay_ms: int = 100
+) -> Dict[str, Any]:
     """Replay a list of actions. Returns {ok, results, errors}."""
     results: List[Dict[str, Any]] = []
     errors: List[str] = []

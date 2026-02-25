@@ -10,20 +10,20 @@ Este módulo proporciona:
 
 Uso básico:
     from modules.humanoid.comms import emit, broadcast, get_hub
-    
+
     # Emitir mensaje (usa hub central)
     emit("subsystem", "Mensaje importante", level="high")
-    
+
     # Broadcast a todos los canales apropiados
     hub = get_hub()
     hub.broadcast("Mensaje crítico", level="critical", subsystem="approval")
 
 Uso avanzado:
     from modules.humanoid.comms import bootstrap_comms, health_check
-    
+
     # Inicializar todos los servicios
     result = bootstrap_comms()
-    
+
     # Verificar salud del sistema
     health = health_check()
 """
@@ -33,36 +33,27 @@ from typing import Any, Dict, List, Optional
 
 from modules.humanoid.kernel import BaseModule, HealthCheckMixin
 
+from .bootstrap import bootstrap_comms, get_service_status
+from .bootstrap import get_status as get_bootstrap_status
+from .bootstrap import health_check as bootstrap_health_check
+from .bootstrap import is_service_healthy, restart_service
+# Nuevo sistema unificado
+from .hub import (ChannelState, CircuitBreaker, CommsHub, MessageLevel,
+                  RetryPolicy)
+from .hub import emit as hub_emit
+from .hub import get_hub
+from .hub import recent as hub_recent
+from .hub import status as hub_status
+from .ops_bus import emit as ops_emit
+from .ops_bus import recent as ops_recent
+from .ops_bus import status as ops_status
 # Importaciones principales del sistema de comunicación
 from .telegram_bridge import TelegramBridge
-from .ops_bus import emit as ops_emit, status as ops_status, recent as ops_recent
-
-# Nuevo sistema unificado
-from .hub import (
-    CommsHub,
-    get_hub,
-    emit as hub_emit,
-    status as hub_status,
-    recent as hub_recent,
-    CircuitBreaker,
-    RetryPolicy,
-    MessageLevel,
-    ChannelState,
-)
-
-from .bootstrap import (
-    bootstrap_comms,
-    get_status as get_bootstrap_status,
-    get_service_status,
-    is_service_healthy,
-    restart_service,
-    health_check as bootstrap_health_check,
-)
 
 
 class CommsModule(BaseModule, HealthCheckMixin):
     """Módulo de comunicaciones de ATLAS.
-    
+
     Integra:
     - Hub central de comunicaciones con retry y circuit breaker
     - Telegram Bridge para mensajes y aprobaciones
@@ -70,7 +61,7 @@ class CommsModule(BaseModule, HealthCheckMixin):
     - Webhooks para integraciones externas
     - Sistema de health monitoring
     """
-    
+
     name = "comms"
 
     def __init__(self) -> None:
@@ -82,23 +73,25 @@ class CommsModule(BaseModule, HealthCheckMixin):
         """Inicializa el módulo de comunicaciones."""
         if self._initialized:
             return
-        
+
         try:
             # Inicializar hub
             self._hub = get_hub()
-            
+
             # Bootstrap de servicios (sin tests para no bloquear)
             result = bootstrap_comms(skip_tests=True)
-            
+
             if not result.get("ok"):
                 import logging
+
                 logger = logging.getLogger("atlas.comms")
                 for warning in result.get("warnings", []):
                     logger.warning(f"Comms bootstrap warning: {warning}")
-            
+
             self._initialized = True
         except Exception as e:
             import logging
+
             logging.getLogger("atlas.comms").error(f"Error inicializando comms: {e}")
 
     @property
@@ -113,10 +106,10 @@ class CommsModule(BaseModule, HealthCheckMixin):
         try:
             hub_health = self.hub.get_health()
             telegram_health = self.telegram.health_check()
-            
+
             # Estado general
             ok = hub_health.get("ok", False) and telegram_health.get("ok", False)
-            
+
             return {
                 "ok": ok,
                 "module": self.name,
@@ -158,7 +151,7 @@ class CommsModule(BaseModule, HealthCheckMixin):
         evidence_path: str = "",
     ) -> Dict[str, Any]:
         """Emite un mensaje a través del hub central.
-        
+
         Compatible con la interfaz de ops_bus.emit()
         """
         return self.hub.send(
@@ -208,20 +201,20 @@ def emit(
     evidence_path: str = "",
 ) -> Dict[str, Any]:
     """Emite un mensaje a través del hub central de comunicaciones.
-    
+
     Esta función es el punto de entrada recomendado para enviar mensajes
     desde cualquier parte del sistema ATLAS.
-    
+
     Args:
         subsystem: Nombre del subsistema que emite (ej: "approval", "vision")
         message: Contenido del mensaje
         level: Nivel de importancia (debug, info, low, medium, high, critical)
         data: Datos adicionales estructurados
         evidence_path: Ruta a archivo de evidencia (screenshot, etc.)
-    
+
     Returns:
         Dict con información del envío
-    
+
     Ejemplo:
         emit("approval", "Nueva aprobación pendiente", level="high", data={"id": "abc123"})
     """
@@ -249,7 +242,7 @@ def broadcast(
     evidence_path: str = "",
 ) -> Dict[str, Any]:
     """Broadcast a todos los canales apropiados según el nivel.
-    
+
     Alias conveniente para emit() con parámetros en orden diferente.
     """
     return emit(
@@ -280,7 +273,6 @@ def health_check() -> Dict[str, Any]:
 __all__ = [
     # Módulo principal
     "CommsModule",
-    
     # Hub y componentes
     "CommsHub",
     "get_hub",
@@ -288,24 +280,20 @@ __all__ = [
     "RetryPolicy",
     "MessageLevel",
     "ChannelState",
-    
     # Bridges
     "TelegramBridge",
-    
     # Funciones de conveniencia
     "emit",
     "broadcast",
     "status",
     "recent",
     "health_check",
-    
     # Bootstrap
     "bootstrap_comms",
     "get_bootstrap_status",
     "get_service_status",
     "is_service_healthy",
     "restart_service",
-    
     # Legacy (compatibilidad con código existente)
     "ops_emit",
     "ops_status",

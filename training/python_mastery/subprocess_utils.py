@@ -20,7 +20,11 @@ def run_cmd(cmd: List[str], timeout_s: float = 10.0, check: bool = True) -> CmdR
     - timeout_s: timeout
     - check: si True, falla cuando returncode != 0
     """
-    if not isinstance(cmd, list) or not cmd or not all(isinstance(x, str) and x for x in cmd):
+    if (
+        not isinstance(cmd, list)
+        or not cmd
+        or not all(isinstance(x, str) and x for x in cmd)
+    ):
         raise ValueError("cmd debe ser list[str] no vacía")
     p = subprocess.run(
         cmd,
@@ -29,8 +33,14 @@ def run_cmd(cmd: List[str], timeout_s: float = 10.0, check: bool = True) -> CmdR
         timeout=timeout_s,
         shell=False,
     )
-    res = CmdResult(cmd=cmd, returncode=int(p.returncode), stdout=p.stdout or "", stderr=p.stderr or "")
+    res = CmdResult(
+        cmd=cmd,
+        returncode=int(p.returncode),
+        stdout=p.stdout or "",
+        stderr=p.stderr or "",
+    )
     if check and res.returncode != 0:
-        raise subprocess.CalledProcessError(res.returncode, cmd, output=res.stdout, stderr=res.stderr)
+        raise subprocess.CalledProcessError(
+            res.returncode, cmd, output=res.stdout, stderr=res.stderr
+        )
     return res
-

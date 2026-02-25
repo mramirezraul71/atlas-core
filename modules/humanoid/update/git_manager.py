@@ -18,17 +18,40 @@ def _shell(cmd: str, timeout_sec: int = 60) -> Dict[str, Any]:
     try:
         from modules.humanoid import get_humanoid_kernel
         from modules.humanoid.policy import ActorContext, get_policy_engine
-        actor = ActorContext(actor=_UPDATE_ACTOR, role=os.getenv("POLICY_DEFAULT_ROLE", "owner"))
+
+        actor = ActorContext(
+            actor=_UPDATE_ACTOR, role=os.getenv("POLICY_DEFAULT_ROLE", "owner")
+        )
         decision = get_policy_engine().can(actor, "hands", "exec_command", target=cmd)
         if not decision.allow:
-            return {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": decision.reason or "policy denied"}
+            return {
+                "ok": False,
+                "stdout": "",
+                "stderr": "",
+                "returncode": -1,
+                "error": decision.reason or "policy denied",
+            }
         k = get_humanoid_kernel()
         hands = k.registry.get("hands")
         if not hands or not hasattr(hands, "shell"):
-            return {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": "hands module not available"}
-        return hands.shell.run(cmd, cwd=str(_repo_path()), timeout_sec=timeout_sec, actor=actor)
+            return {
+                "ok": False,
+                "stdout": "",
+                "stderr": "",
+                "returncode": -1,
+                "error": "hands module not available",
+            }
+        return hands.shell.run(
+            cmd, cwd=str(_repo_path()), timeout_sec=timeout_sec, actor=actor
+        )
     except Exception as e:
-        return {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": str(e)}
+        return {
+            "ok": False,
+            "stdout": "",
+            "stderr": "",
+            "returncode": -1,
+            "error": str(e),
+        }
 
 
 def fetch(remote: str = "origin") -> Dict[str, Any]:
@@ -64,7 +87,9 @@ def get_diff() -> Dict[str, Any]:
     return r
 
 
-def create_staging_branch(remote: str = "origin", branch: str = "main", staging_name: str = "staging") -> Dict[str, Any]:
+def create_staging_branch(
+    remote: str = "origin", branch: str = "main", staging_name: str = "staging"
+) -> Dict[str, Any]:
     """git checkout -B staging origin/main"""
     r = _shell(f"git checkout -B {staging_name} {remote}/{branch}", timeout_sec=15)
     return r

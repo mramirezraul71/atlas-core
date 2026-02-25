@@ -3,26 +3,24 @@ Módulo de Cámara: servicio, detección, configuración.
 API externa para ATLAS PUSH como "ojos externos".
 """
 
-import os
 import json
+import os
 import subprocess
 import sys
+from pathlib import Path
 from typing import Optional
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-import sys
-from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from vision.cameras.factory import get_camera_info, detect_cameras_list, release_camera
-from vision.cameras.detector import save_active_config, load_active_config
-from vision.cameras.network import (
-    discover_network_cameras,
-    get_network_cameras,
-    add_network_camera,
-    remove_network_camera,
-)
+from vision.cameras.detector import load_active_config, save_active_config
+from vision.cameras.factory import (detect_cameras_list, get_camera_info,
+                                    release_camera)
+from vision.cameras.network import (add_network_camera,
+                                    discover_network_cameras,
+                                    get_network_cameras, remove_network_camera)
 
 router = APIRouter(prefix="/api/camera", tags=["camera"])
 
@@ -45,13 +43,18 @@ class DisconnectCameraBody(BaseModel):
 
 class AddRemoteCameraBody(BaseModel):
     """Cámara remota: fuera de la red local (dashcam en auto, etc.)."""
+
     url: str  # rtsp://host:port/path o http://host:port/path
     label: Optional[str] = None  # Nombre amigable (ej. "Dashcam frontal")
-    connection_method: Optional[str] = "manual"  # manual, tailscale, zerotier, port_forward, other
+    connection_method: Optional[
+        str
+    ] = "manual"  # manual, tailscale, zerotier, port_forward, other
     camera_type: Optional[str] = "auto"  # auto (dashcam), network
 
 
-def _probe_camera_subprocess(index: int, width: int = 640, height: int = 480, timeout_s: int = 12) -> dict:
+def _probe_camera_subprocess(
+    index: int, width: int = 640, height: int = 480, timeout_s: int = 12
+) -> dict:
     """
     Prueba apertura y lectura de frame en subproceso aislado.
     Evita que fallos nativos de OpenCV derriben el proceso API.
@@ -92,13 +95,27 @@ print(json.dumps(result))
 """.strip()
     try:
         p = subprocess.run(
-            [sys.executable, "-X", "utf8", "-c", code, str(index), str(width), str(height)],
+            [
+                sys.executable,
+                "-X",
+                "utf8",
+                "-c",
+                code,
+                str(index),
+                str(width),
+                str(height),
+            ],
             capture_output=True,
             text=True,
             timeout=timeout_s,
         )
         if p.returncode != 0:
-            return {"opened": False, "frame_ok": False, "resolution": [width, height], "error": (p.stderr or "").strip()[:300]}
+            return {
+                "opened": False,
+                "frame_ok": False,
+                "resolution": [width, height],
+                "error": (p.stderr or "").strip()[:300],
+            }
         out = (p.stdout or "").strip()
         data = {}
         if out:
@@ -140,12 +157,28 @@ print(json.dumps(result))
             "error": data.get("error", ""),
         }
     except subprocess.TimeoutExpired:
-        return {"opened": False, "frame_ok": False, "resolution": [width, height], "error": "probe_timeout"}
+        return {
+            "opened": False,
+            "frame_ok": False,
+            "resolution": [width, height],
+            "error": "probe_timeout",
+        }
     except Exception as e:
-        return {"opened": False, "frame_ok": False, "resolution": [width, height], "error": str(e)}
+        return {
+            "opened": False,
+            "frame_ok": False,
+            "resolution": [width, height],
+            "error": str(e),
+        }
 
 
-def _connect_camera_index(index: int, model: str, resolution: list, capabilities: list, detected_count: int = 0) -> dict:
+def _connect_camera_index(
+    index: int,
+    model: str,
+    resolution: list,
+    capabilities: list,
+    detected_count: int = 0,
+) -> dict:
     width, height = 640, 480
     if isinstance(resolution, list) and len(resolution) >= 2:
         width, height = int(resolution[0]), int(resolution[1])
@@ -205,7 +238,9 @@ def camera_service_status(fast: bool = True):
         "screen_stream_url": f"{base_url}/api/vision/screen/stream",
         "external_eyes_url": f"{base_url}{info.get('external_eyes_url', '/api/vision/external/eyes')}",
         "fast": fast,
-        "detected_hint": None if not fast else "Usa /api/camera/detect para escanear cámaras (puede tardar).",
+        "detected_hint": None
+        if not fast
+        else "Usa /api/camera/detect para escanear cámaras (puede tardar).",
     }
 
 
@@ -375,11 +410,16 @@ def test_camera_url(url: str = ""):
     Para que el usuario conecte una vez y verifique antes de guardar.
     """
     raw = (url or "").strip()
-    if not raw or not (raw.startswith("rtsp://") or raw.startswith("http://") or raw.startswith("https://")):
+    if not raw or not (
+        raw.startswith("rtsp://")
+        or raw.startswith("http://")
+        or raw.startswith("https://")
+    ):
         return {"ok": False, "error": "URL inválida. Usa rtsp:// o http://"}
 
     try:
         import cv2
+
         cap = cv2.VideoCapture(raw)
         if not cap.isOpened():
             return {"ok": False, "error": "No se pudo abrir el stream"}
@@ -404,7 +444,11 @@ def add_remote_camera(body: AddRemoteCameraBody):
     from urllib.parse import urlparse
 
     raw = (body.url or "").strip()
-    if not raw or not (raw.startswith("rtsp://") or raw.startswith("http://") or raw.startswith("https://")):
+    if not raw or not (
+        raw.startswith("rtsp://")
+        or raw.startswith("http://")
+        or raw.startswith("https://")
+    ):
         raise HTTPException(
             400,
             "URL inválida. Usa rtsp://host:puerto/ruta o http://host:puerto/ruta",
@@ -423,7 +467,9 @@ def add_remote_camera(body: AddRemoteCameraBody):
         "model": label,
         "source": "remote",
         "type": body.camera_type or "auto",
-        "connection_method": (body.connection_method or "manual").replace("not_sure", "registered"),
+        "connection_method": (body.connection_method or "manual").replace(
+            "not_sure", "registered"
+        ),
     }
     if add_network_camera(cam):
         return {"ok": True, "message": "Cámara remota añadida", "camera": cam}

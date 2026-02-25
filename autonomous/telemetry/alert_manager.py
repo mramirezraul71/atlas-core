@@ -17,11 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -92,9 +95,18 @@ class AlertManager:
         triggered = []
         try:
             from autonomous.health_monitor import HealthAggregator
+
             agg = HealthAggregator()
             report = agg.get_global_health()
-            metrics = {"health_score": report.score, "cpu_percent": report.components.get("system", {}).get("cpu_percent", 0), "ram_percent": report.components.get("system", {}).get("ram_percent", 0)}
+            metrics = {
+                "health_score": report.score,
+                "cpu_percent": report.components.get("system", {}).get(
+                    "cpu_percent", 0
+                ),
+                "ram_percent": report.components.get("system", {}).get(
+                    "ram_percent", 0
+                ),
+            }
             for rule in self._rules:
                 if not rule.enabled:
                     continue
@@ -107,7 +119,12 @@ class AlertManager:
                         aid = f"alert_{self._alert_id}"
                         msg = f"{rule.name}: {rule.metric}={value} >= {rule.threshold}"
                         self.trigger_alert(rule, {"value": value, "message": msg})
-                        self._active[aid] = ActiveAlert(id=aid, rule_name=rule.name, message=msg, triggered_at=time.time())
+                        self._active[aid] = ActiveAlert(
+                            id=aid,
+                            rule_name=rule.name,
+                            message=msg,
+                            triggered_at=time.time(),
+                        )
                         triggered.append(self._active[aid])
         except Exception as e:
             logger.debug("evaluate_rules: %s", e)
@@ -123,8 +140,15 @@ class AlertManager:
                 pass
         if "webhook" in rule.actions and self._webhook_enabled and self._webhook_url:
             try:
-                data = json.dumps({"rule": rule.name, "message": msg, "context": context}).encode()
-                req = urllib.request.Request(self._webhook_url, data=data, method="POST", headers={"Content-Type": "application/json"})
+                data = json.dumps(
+                    {"rule": rule.name, "message": msg, "context": context}
+                ).encode()
+                req = urllib.request.Request(
+                    self._webhook_url,
+                    data=data,
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
                 urllib.request.urlopen(req, timeout=5)
             except Exception as e:
                 logger.warning("Alert webhook failed: %s", e)

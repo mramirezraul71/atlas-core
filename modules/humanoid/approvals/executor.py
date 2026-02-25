@@ -9,7 +9,9 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-def execute_approved(item: Dict[str, Any], *, approval_id: str, resolved_by: str = "api") -> Dict[str, Any]:
+def execute_approved(
+    item: Dict[str, Any], *, approval_id: str, resolved_by: str = "api"
+) -> Dict[str, Any]:
     """
     Ejecuta la acción asociada a una aprobación ya aprobada.
     Best-effort, devuelve detalles para auditoría/OPS.
@@ -42,15 +44,38 @@ def execute_approved(item: Dict[str, Any], *, approval_id: str, resolved_by: str
                 from modules.humanoid.comms.ops_bus import emit
 
                 if before:
-                    emit("hands", "Evidencia BEFORE (acción aprobada).", level="info", evidence_path=str(before))
+                    emit(
+                        "hands",
+                        "Evidencia BEFORE (acción aprobada).",
+                        level="info",
+                        evidence_path=str(before),
+                    )
                 if after:
-                    emit("hands", "Evidencia AFTER (acción aprobada).", level="info", evidence_path=str(after))
+                    emit(
+                        "hands",
+                        "Evidencia AFTER (acción aprobada).",
+                        level="info",
+                        evidence_path=str(after),
+                    )
             except Exception:
                 pass
-            return {"ok": bool(r.get("ok")), "action": action, "ms": ms, "result": r, "error": r.get("error"), "approval_id": approval_id}
+            return {
+                "ok": bool(r.get("ok")),
+                "action": action,
+                "ms": ms,
+                "result": r,
+                "error": r.get("error"),
+                "approval_id": approval_id,
+            }
         except Exception as e:
             ms = int((time.perf_counter() - t0) * 1000)
-            return {"ok": False, "action": action, "ms": ms, "error": str(e)[:200], "approval_id": approval_id}
+            return {
+                "ok": False,
+                "action": action,
+                "ms": ms,
+                "error": str(e)[:200],
+                "approval_id": approval_id,
+            }
 
     if action == "shell_exec":
         cmd = str(payload.get("command") or "")
@@ -59,12 +84,31 @@ def execute_approved(item: Dict[str, Any], *, approval_id: str, resolved_by: str
         try:
             from modules.humanoid.hands.safe_shell import SafeShellExecutor
 
-            r = SafeShellExecutor().run(cmd, cwd=cwd, timeout_sec=90, approval_granted=True)
+            r = SafeShellExecutor().run(
+                cmd, cwd=cwd, timeout_sec=90, approval_granted=True
+            )
             ms = int((time.perf_counter() - t0) * 1000)
-            return {"ok": bool(r.get("ok")), "action": action, "ms": ms, "result": r, "error": r.get("error"), "approval_id": approval_id}
+            return {
+                "ok": bool(r.get("ok")),
+                "action": action,
+                "ms": ms,
+                "result": r,
+                "error": r.get("error"),
+                "approval_id": approval_id,
+            }
         except Exception as e:
             ms = int((time.perf_counter() - t0) * 1000)
-            return {"ok": False, "action": action, "ms": ms, "error": str(e)[:200], "approval_id": approval_id}
+            return {
+                "ok": False,
+                "action": action,
+                "ms": ms,
+                "error": str(e)[:200],
+                "approval_id": approval_id,
+            }
 
-    return {"ok": False, "action": action, "error": "no_executor_for_action", "approval_id": approval_id}
-
+    return {
+        "ok": False,
+        "action": action,
+        "error": "no_executor_for_action",
+        "approval_id": approval_id,
+    }

@@ -10,7 +10,8 @@ Triggers:
 
 Severidad: MEDIUM
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -29,10 +30,8 @@ Procedimiento integral para actualizar el repositorio, incluyendo:
         severity=POTSeverity.MEDIUM,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["repo_outdated", "update_available", "deps_*"],
         trigger_keywords=["update", "upgrade", "actualizar", "dependencies", "deps"],
-        
         prerequisites=[
             "Repositorio Git configurado",
             "Acceso de red",
@@ -40,7 +39,6 @@ Procedimiento integral para actualizar el repositorio, incluyendo:
         ],
         required_services=["push"],
         required_permissions=["git_write", "pip_install", "service_restart"],
-        
         objectives=[
             "Sincronizar con repositorio remoto",
             "Actualizar submodules si existen",
@@ -50,7 +48,6 @@ Procedimiento integral para actualizar el repositorio, incluyendo:
         ],
         success_criteria="Repositorio actualizado, dependencias instaladas, servicios funcionando",
         estimated_duration_minutes=10,
-        
         tutorial_overview="""
 ## Guía de Actualización del Repositorio
 
@@ -78,24 +75,20 @@ pip install -r requirements.txt --upgrade
 2. Verificar servicios responden
 3. Ejecutar health check
         """.strip(),
-        
         best_practices=[
             "Hacer backup antes de actualización mayor",
             "Verificar changelog antes de actualizar",
             "Ejecutar tests después de actualizar",
             "Reiniciar servicios solo si necesario",
         ],
-        
         warnings=[
             "Actualizaciones pueden romper compatibilidad",
             "Verificar requirements.txt antes de pip install",
             "Tener plan de rollback si algo falla",
         ],
-        
         related_pots=["git_pull", "git_push", "dependency_update", "services_repair"],
         tags=["update", "upgrade", "repo", "dependencies", "deployment"],
         has_rollback=True,
-        
         steps=[
             POTStep(
                 id="execute_pull",
@@ -107,7 +100,6 @@ pip install -r requirements.txt --upgrade
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="update_submodules",
                 name="Actualizar submodules",
@@ -118,7 +110,6 @@ pip install -r requirements.txt --upgrade
                 continue_on_failure=True,
                 tutorial_notes="Solo aplica si hay submodules (nexus/, etc)",
             ),
-            
             POTStep(
                 id="install_deps",
                 name="Instalar dependencias",
@@ -128,7 +119,6 @@ pip install -r requirements.txt --upgrade
                 timeout_seconds=300,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="compile_check",
                 name="Verificar sintaxis Python",
@@ -138,7 +128,6 @@ pip install -r requirements.txt --upgrade
                 timeout_seconds=60,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="restart_services",
                 name="Reiniciar servicios",
@@ -148,7 +137,6 @@ pip install -r requirements.txt --upgrade
                 timeout_seconds=90,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="wait_stabilize",
                 name="Esperar estabilización",
@@ -156,7 +144,6 @@ pip install -r requirements.txt --upgrade
                 step_type=StepType.WAIT,
                 wait_seconds=10,
             ),
-            
             POTStep(
                 id="health_check",
                 name="Verificar salud del sistema",
@@ -167,7 +154,6 @@ pip install -r requirements.txt --upgrade
                 timeout_seconds=20,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="log_to_bitacora",
                 name="Registrar en bitácora",
@@ -178,10 +164,9 @@ pip install -r requirements.txt --upgrade
                 http_body={
                     "message": "[UPDATE] Repositorio actualizado por POT repo_update",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
             ),
-            
             POTStep(
                 id="notify_update",
                 name="Notificar actualización",
@@ -192,7 +177,6 @@ pip install -r requirements.txt --upgrade
                 continue_on_failure=True,
             ),
         ],
-        
         rollback_steps=[
             POTStep(
                 id="rollback_reset",
@@ -202,7 +186,6 @@ pip install -r requirements.txt --upgrade
                 command="git reset --hard HEAD~1",
                 timeout_seconds=30,
             ),
-            
             POTStep(
                 id="rollback_restart",
                 name="Reiniciar servicios",
@@ -211,7 +194,6 @@ pip install -r requirements.txt --upgrade
                 command="powershell -ExecutionPolicy Bypass -File scripts/restart_service_clean.ps1 -Service robot",
                 timeout_seconds=90,
             ),
-            
             POTStep(
                 id="rollback_notify",
                 name="Notificar rollback",

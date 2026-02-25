@@ -10,7 +10,8 @@ Triggers:
 
 Severidad: LOW (solo envía información)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -28,17 +29,14 @@ Procedimiento para enviar notificaciones a todos los canales de comunicación:
         severity=POTSeverity.LOW,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["notify_*", "broadcast_*", "alert_*"],
         trigger_keywords=["notify", "notification", "broadcast", "alert", "message"],
-        
         prerequisites=[
             "Canales de comunicación configurados",
             "Mensaje a enviar definido",
         ],
         required_services=["push"],
         required_permissions=["notify"],
-        
         objectives=[
             "Enviar mensaje a Telegram",
             "Registrar en OPS Bus",
@@ -47,7 +45,6 @@ Procedimiento para enviar notificaciones a todos los canales de comunicación:
         ],
         success_criteria="Mensaje entregado a al menos un canal",
         estimated_duration_minutes=1,
-        
         tutorial_overview="""
 ## Guía de Difusión de Notificaciones
 
@@ -82,17 +79,14 @@ Procedimiento para enviar notificaciones a todos los canales de comunicación:
 - **high**: Alta prioridad (naranja)
 - **critical**: Crítico (rojo)
         """.strip(),
-        
         best_practices=[
             "Usar nivel apropiado para el mensaje",
             "Incluir contexto suficiente",
             "No saturar canales con mensajes triviales",
             "Usar emojis para contexto visual rápido",
         ],
-        
         related_pots=["incident_response", "deployment_full"],
         tags=["notification", "telegram", "ops", "broadcast", "communication"],
-        
         steps=[
             POTStep(
                 id="prepare_message",
@@ -105,7 +99,6 @@ context['notification_message'] = "Mi mensaje"
 context['notification_level'] = "info"
                 """,
             ),
-            
             POTStep(
                 id="send_telegram",
                 name="Enviar a Telegram",
@@ -115,7 +108,6 @@ context['notification_level'] = "info"
                 notify_message="📢 Notificación del sistema ATLAS",
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="send_ops",
                 name="Enviar a OPS Bus",
@@ -125,7 +117,6 @@ context['notification_level'] = "info"
                 notify_message="Sistema: Notificación broadcast",
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="log_bitacora",
                 name="Registrar en Bitácora",
@@ -136,10 +127,9 @@ context['notification_level'] = "info"
                 http_body={
                     "message": "[BROADCAST] Notificación enviada a todos los canales",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
             ),
-            
             POTStep(
                 id="refresh_dashboard",
                 name="Refrescar Dashboard",

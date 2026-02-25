@@ -50,4 +50,3 @@ def preferred_backends() -> List[int]:
         return out
 
     return [cv2.CAP_ANY]
-

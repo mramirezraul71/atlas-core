@@ -1,7 +1,7 @@
 # Informe Fase 5 – Tests E2E, CI/CD, Observabilidad
 
-**Fecha:** 2025-02-14  
-**Branch:** intent-input-rename  
+**Fecha:** 2025-02-14
+**Branch:** intent-input-rename
 **Estado:** Completado
 
 ---
@@ -89,11 +89,11 @@ En `requirements.txt` (ya presentes en el estado actual):
 
 ## 8. Verificación rápida
 
-- Import de observabilidad:  
-  `python -c "from modules.observability.metrics import MetricsCollector; print(MetricsCollector.get_metrics_summary())"`  
+- Import de observabilidad:
+  `python -c "from modules.observability.metrics import MetricsCollector; print(MetricsCollector.get_metrics_summary())"`
   → Devuelve dict con total_requests, memory_mb, etc.
-- Con PUSH en 8791:  
-  `curl -s http://127.0.0.1:8791/metrics/prometheus`  
+- Con PUSH en 8791:
+  `curl -s http://127.0.0.1:8791/metrics/prometheus`
   `curl -s http://127.0.0.1:8791/api/observability/metrics`
 
 ---

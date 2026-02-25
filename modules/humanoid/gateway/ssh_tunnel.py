@@ -32,7 +32,12 @@ def status() -> Dict[str, Any]:
     user = os.getenv("SSH_USER", "").strip()
     host = os.getenv("SSH_HOST", "").strip()
     if not user or not host:
-        return {"ok": False, "available": True, "error": "config_missing", "message": "set SSH_USER and SSH_HOST"}
+        return {
+            "ok": False,
+            "available": True,
+            "error": "config_missing",
+            "message": "set SSH_USER and SSH_HOST",
+        }
     return {"ok": True, "available": True, "user": user, "host": host}
 
 
@@ -58,7 +63,13 @@ def start() -> Dict[str, Any]:
         return {"ok": False, "error": "config_missing"}
     try:
         proc = subprocess.Popen(
-            [str(path), "-N", "-R", f"{remote_port}:127.0.0.1:{local_port}", f"{user}@{host}"],
+            [
+                str(path),
+                "-N",
+                "-R",
+                f"{remote_port}:127.0.0.1:{local_port}",
+                f"{user}@{host}",
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )

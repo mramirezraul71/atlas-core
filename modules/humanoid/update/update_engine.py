@@ -7,18 +7,10 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from .git_manager import (
-    checkout_branch,
-    create_staging_branch,
-    delete_branch,
-    fetch,
-    get_current_branch,
-    get_diff,
-    get_head_commit,
-    get_remote_commit,
-    get_status,
-    merge_staging,
-)
+from .git_manager import (checkout_branch, create_staging_branch,
+                          delete_branch, fetch, get_current_branch, get_diff,
+                          get_head_commit, get_remote_commit, get_status,
+                          merge_staging)
 from .rollback import rollback as do_rollback
 from .smoke_runner import run_smoke
 
@@ -34,10 +26,20 @@ def _env_str(name: str, default: str) -> str:
     return (os.getenv(name) or default).strip()
 
 
-def _audit(module: str, action: str, ok: bool, payload: Optional[Dict] = None, error: Optional[str] = None, ms: int = 0) -> None:
+def _audit(
+    module: str,
+    action: str,
+    ok: bool,
+    payload: Optional[Dict] = None,
+    error: Optional[str] = None,
+    ms: int = 0,
+) -> None:
     try:
         from modules.humanoid.audit import get_audit_logger
-        get_audit_logger().log_event("update_engine", "system", module, action, ok, ms, error, payload, None)
+
+        get_audit_logger().log_event(
+            "update_engine", "system", module, action, ok, ms, error, payload, None
+        )
     except Exception:
         pass
 
@@ -108,7 +110,14 @@ def status() -> Dict[str, Any]:
     if head.get("commit") and rem.get("commit"):
         out["has_update"] = head["commit"] != rem["commit"]
     out["ms"] = int((time.perf_counter() - t0) * 1000)
-    _audit("update", "status", out["ok"], {"has_update": out["has_update"]}, out.get("error"), out["ms"])
+    _audit(
+        "update",
+        "status",
+        out["ok"],
+        {"has_update": out["has_update"]},
+        out.get("error"),
+        out["ms"],
+    )
     return out
 
 
@@ -116,10 +125,20 @@ def check(actor: Any = None) -> Dict[str, Any]:
     """Update check: fetch, snapshot (status+diff), return status + plan. No apply."""
     t0 = time.perf_counter()
     if not update_enabled():
-        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": "UPDATE_ENABLED=false"}
+        return {
+            "ok": False,
+            "data": None,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": "UPDATE_ENABLED=false",
+        }
     st = status()
     if not st.get("ok"):
-        return {"ok": False, "data": st, "ms": st.get("ms", 0), "error": st.get("error")}
+        return {
+            "ok": False,
+            "data": st,
+            "ms": st.get("ms", 0),
+            "error": st.get("error"),
+        }
     snapshot = {}
     r_status = get_status()
     r_diff = get_diff()
@@ -145,73 +164,204 @@ def apply(
     """
     t0 = time.perf_counter()
     if not update_enabled():
-        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": "UPDATE_ENABLED=false"}
-    policy_allow = os.getenv("POLICY_ALLOW_UPDATE_APPLY", "false").strip().lower() in ("1", "true", "yes")
+        return {
+            "ok": False,
+            "data": None,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": "UPDATE_ENABLED=false",
+        }
+    policy_allow = os.getenv("POLICY_ALLOW_UPDATE_APPLY", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     if not policy_allow:
-        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": "POLICY_ALLOW_UPDATE_APPLY=false"}
+        return {
+            "ok": False,
+            "data": None,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": "POLICY_ALLOW_UPDATE_APPLY=false",
+        }
     update_window_required = _env_bool("UPDATE_REQUIRE_WINDOW", False)
     if update_window_required and not _in_update_window():
-        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": "outside update window"}
+        return {
+            "ok": False,
+            "data": None,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": "outside update window",
+        }
     try:
         from modules.humanoid.governance.gates import decide
+
         d = decide("update_apply")
         if d.blocked_by_emergency:
-            _audit("update", "apply", False, {"blocked": "emergency_stop"}, "emergency_stop_block", 0)
+            _audit(
+                "update",
+                "apply",
+                False,
+                {"blocked": "emergency_stop"},
+                "emergency_stop_block",
+                0,
+            )
             return {"ok": False, "data": None, "ms": 0, "error": "emergency_stop_block"}
         if d.needs_approval and not d.allow:
-            return {"ok": False, "data": None, "ms": 0, "error": "governed_requires_approval"}
+            return {
+                "ok": False,
+                "data": None,
+                "ms": 0,
+                "error": "governed_requires_approval",
+            }
     except Exception:
         pass
     remote = _env_str("UPDATE_REMOTE", "origin")
     branch = _env_str("UPDATE_BRANCH", "main")
     staging_name = _env_str("UPDATE_STAGING_BRANCH", "staging")
-    require_smoke = require_smoke if require_smoke is not None else _env_bool("UPDATE_REQUIRE_SMOKE", True)
+    require_smoke = (
+        require_smoke
+        if require_smoke is not None
+        else _env_bool("UPDATE_REQUIRE_SMOKE", True)
+    )
     allow_rollback = _env_bool("UPDATE_ALLOW_ROLLBACK", True)
 
     steps = []
     # 1) Fetch
     r_fetch = fetch(remote)
-    steps.append({"step": "fetch", "ok": r_fetch.get("ok"), "error": r_fetch.get("error")})
+    steps.append(
+        {"step": "fetch", "ok": r_fetch.get("ok"), "error": r_fetch.get("error")}
+    )
     if not r_fetch.get("ok"):
         _audit("update", "apply", False, {"steps": steps}, r_fetch.get("error"))
-        return {"ok": False, "data": {"steps": steps}, "ms": int((time.perf_counter() - t0) * 1000), "error": r_fetch.get("error")}
+        return {
+            "ok": False,
+            "data": {"steps": steps},
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": r_fetch.get("error"),
+        }
 
     # 2) Create staging from origin/main
-    r_staging = create_staging_branch(remote=remote, branch=branch, staging_name=staging_name)
-    steps.append({"step": "create_staging", "ok": r_staging.get("ok"), "error": r_staging.get("error")})
+    r_staging = create_staging_branch(
+        remote=remote, branch=branch, staging_name=staging_name
+    )
+    steps.append(
+        {
+            "step": "create_staging",
+            "ok": r_staging.get("ok"),
+            "error": r_staging.get("error"),
+        }
+    )
     if not r_staging.get("ok"):
         _audit("update", "apply", False, {"steps": steps}, r_staging.get("error"))
-        return {"ok": False, "data": {"steps": steps}, "ms": int((time.perf_counter() - t0) * 1000), "error": r_staging.get("error")}
+        return {
+            "ok": False,
+            "data": {"steps": steps},
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": r_staging.get("error"),
+        }
 
     # 3) Smoke
     smoke_ok = True
     if require_smoke:
         smoke_result = run_smoke(timeout_sec=120)
         smoke_ok = smoke_result.get("ok", False)
-        steps.append({"step": "smoke", "ok": smoke_ok, "returncode": smoke_result.get("returncode"), "error": smoke_result.get("error")})
-        _audit("update", "smoke_run", smoke_ok, {"returncode": smoke_result.get("returncode")}, smoke_result.get("error"), smoke_result.get("ms", 0))
+        steps.append(
+            {
+                "step": "smoke",
+                "ok": smoke_ok,
+                "returncode": smoke_result.get("returncode"),
+                "error": smoke_result.get("error"),
+            }
+        )
+        _audit(
+            "update",
+            "smoke_run",
+            smoke_ok,
+            {"returncode": smoke_result.get("returncode")},
+            smoke_result.get("error"),
+            smoke_result.get("ms", 0),
+        )
 
     if smoke_ok:
         # 4a) Promote: checkout main, merge staging
         r_main = checkout_branch(branch)
-        steps.append({"step": "checkout_main", "ok": r_main.get("ok"), "error": r_main.get("error")})
+        steps.append(
+            {
+                "step": "checkout_main",
+                "ok": r_main.get("ok"),
+                "error": r_main.get("error"),
+            }
+        )
         if not r_main.get("ok"):
             _audit("update", "apply", False, {"steps": steps}, r_main.get("error"))
-            return {"ok": False, "data": {"steps": steps}, "ms": int((time.perf_counter() - t0) * 1000), "error": r_main.get("error")}
+            return {
+                "ok": False,
+                "data": {"steps": steps},
+                "ms": int((time.perf_counter() - t0) * 1000),
+                "error": r_main.get("error"),
+            }
         r_merge = merge_staging(staging_name=staging_name)
-        steps.append({"step": "merge_staging", "ok": r_merge.get("ok"), "error": r_merge.get("error")})
+        steps.append(
+            {
+                "step": "merge_staging",
+                "ok": r_merge.get("ok"),
+                "error": r_merge.get("error"),
+            }
+        )
         if not r_merge.get("ok"):
             _audit("update", "apply", False, {"steps": steps}, r_merge.get("error"))
-            return {"ok": False, "data": {"steps": steps}, "ms": int((time.perf_counter() - t0) * 1000), "error": r_merge.get("error")}
+            return {
+                "ok": False,
+                "data": {"steps": steps},
+                "ms": int((time.perf_counter() - t0) * 1000),
+                "error": r_merge.get("error"),
+            }
         delete_branch(staging_name, force=True)
-        _audit("update", "apply", True, {"steps": steps}, None, int((time.perf_counter() - t0) * 1000))
-        return {"ok": True, "data": {"steps": steps, "promoted": True}, "ms": int((time.perf_counter() - t0) * 1000), "error": None}
+        _audit(
+            "update",
+            "apply",
+            True,
+            {"steps": steps},
+            None,
+            int((time.perf_counter() - t0) * 1000),
+        )
+        return {
+            "ok": True,
+            "data": {"steps": steps, "promoted": True},
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": None,
+        }
     else:
         # 4b) Rollback
         if allow_rollback:
-            r_rollback = do_rollback(main_branch=branch, staging_branch=staging_name, remote=remote, reset_to_remote=True)
-            steps.append({"step": "rollback", "ok": r_rollback.get("ok"), "message": r_rollback.get("message")})
-            _audit("update", "apply", False, {"steps": steps, "rollback": True}, r_rollback.get("message"))
-            return {"ok": False, "data": {"steps": steps, "rollback": True}, "ms": int((time.perf_counter() - t0) * 1000), "error": "smoke failed; rollback executed"}
+            r_rollback = do_rollback(
+                main_branch=branch,
+                staging_branch=staging_name,
+                remote=remote,
+                reset_to_remote=True,
+            )
+            steps.append(
+                {
+                    "step": "rollback",
+                    "ok": r_rollback.get("ok"),
+                    "message": r_rollback.get("message"),
+                }
+            )
+            _audit(
+                "update",
+                "apply",
+                False,
+                {"steps": steps, "rollback": True},
+                r_rollback.get("message"),
+            )
+            return {
+                "ok": False,
+                "data": {"steps": steps, "rollback": True},
+                "ms": int((time.perf_counter() - t0) * 1000),
+                "error": "smoke failed; rollback executed",
+            }
         _audit("update", "apply", False, {"steps": steps}, "smoke failed")
-        return {"ok": False, "data": {"steps": steps}, "ms": int((time.perf_counter() - t0) * 1000), "error": "smoke failed"}
+        return {
+            "ok": False,
+            "data": {"steps": steps},
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": "smoke failed",
+        }

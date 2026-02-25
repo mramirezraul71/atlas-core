@@ -10,7 +10,9 @@ from typing import Optional, Tuple
 from .status import _screen_deps_ok
 
 
-def capture_screen(region: Optional[Tuple[int, int, int, int]] = None, format: str = "png") -> Tuple[Optional[bytes], str]:
+def capture_screen(
+    region: Optional[Tuple[int, int, int, int]] = None, format: str = "png"
+) -> Tuple[Optional[bytes], str]:
     """
     Capture screen. region = (x, y, w, h) or None for full screen.
     Returns (png_bytes, error_message). error_message empty on success.
@@ -29,10 +31,12 @@ def capture_screen(region: Optional[Tuple[int, int, int, int]] = None, format: s
 def _capture_full(format: str) -> Tuple[Optional[bytes], str]:
     try:
         import mss
+
         with mss.mss() as sct:
             mon = sct.monitors[0]
             shot = sct.grab(mon)
             from PIL import Image
+
             img = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
             buf = io.BytesIO()
             img.save(buf, format=format.upper())
@@ -41,6 +45,7 @@ def _capture_full(format: str) -> Tuple[Optional[bytes], str]:
         pass
     try:
         import pyautogui
+
         pil = pyautogui.screenshot()
         buf = io.BytesIO()
         pil.save(buf, format=format.upper())
@@ -49,14 +54,18 @@ def _capture_full(format: str) -> Tuple[Optional[bytes], str]:
         return None, str(e)
 
 
-def _capture_region(region: Tuple[int, int, int, int], format: str) -> Tuple[Optional[bytes], str]:
+def _capture_region(
+    region: Tuple[int, int, int, int], format: str
+) -> Tuple[Optional[bytes], str]:
     x, y, w, h = region
     try:
         import mss
+
         with mss.mss() as sct:
             mon = {"left": x, "top": y, "width": w, "height": h}
             shot = sct.grab(mon)
             from PIL import Image
+
             img = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
             buf = io.BytesIO()
             img.save(buf, format=format.upper())
@@ -65,6 +74,7 @@ def _capture_region(region: Tuple[int, int, int, int], format: str) -> Tuple[Opt
         pass
     try:
         import pyautogui
+
         pil = pyautogui.screenshot(region=(x, y, w, h))
         buf = io.BytesIO()
         pil.save(buf, format=format.upper())
@@ -73,9 +83,12 @@ def _capture_region(region: Tuple[int, int, int, int], format: str) -> Tuple[Opt
         return None, str(e)
 
 
-def save_capture_to_file(png_bytes: bytes, dir_path: str, prefix: str = "screen") -> str:
+def save_capture_to_file(
+    png_bytes: bytes, dir_path: str, prefix: str = "screen"
+) -> str:
     """Save capture to dir_path/prefix_<timestamp>.png. Returns path."""
     from datetime import datetime, timezone
+
     Path(dir_path).mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     path = Path(dir_path) / f"{prefix}_{ts}.png"
@@ -83,7 +96,9 @@ def save_capture_to_file(png_bytes: bytes, dir_path: str, prefix: str = "screen"
     return str(path)
 
 
-def capture_to_base64(region: Optional[Tuple[int, int, int, int]] = None) -> Tuple[Optional[str], str]:
+def capture_to_base64(
+    region: Optional[Tuple[int, int, int, int]] = None
+) -> Tuple[Optional[str], str]:
     """Capture and return base64 string for API/vision. Returns (b64, error)."""
     data, err = capture_screen(region=region)
     if err or not data:

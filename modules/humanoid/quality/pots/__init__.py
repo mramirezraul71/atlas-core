@@ -6,60 +6,32 @@ Catálogo completo de Procedimientos Operacionales de Trabajo (POT).
 Cada POT define cómo ATLAS debe ejecutar una tarea específica,
 sirviendo como guía tutorial para operaciones internas.
 """
-from typing import Dict, List, Callable
+from typing import Callable, Dict, List
+
+# === QUALITY / TUTORIAS ===
+# === ROBOTICS ===
+# === AUTO-UPDATE ===
+# === AUTONOMY ===
+# === SESSION MANAGEMENT ===
+# === NOTIFICATIONS / COMMUNICATION ===
+# === DIAGNOSTICS ===
+# === INCIDENTS ===
+# === MAINTENANCE ===
+# === REPAIRS ===
+# === DEPLOYMENT / GIT ===
+from . import (api_repair, auto_update_full, autonomy_full_cycle,
+               camera_repair, comms_management, deployment_full,
+               diagnostic_full, git_commit, git_pull, git_push, git_safe_sync,
+               hri_interaction, incident_response, incident_triage,
+               maintenance_daily, maintenance_weekly, manipulation_grasp,
+               navigation_slam, notification_broadcast, repo_update,
+               sensor_fusion, services_repair, session_shutdown,
+               session_startup, simulation_training, specialist_visit,
+               vision_pipeline)
 
 # ============================================================================
 # IMPORTS DE POTs POR CATEGORÍA
 # ============================================================================
-
-# === DEPLOYMENT / GIT ===
-from . import git_commit
-from . import git_push
-from . import git_pull
-from . import git_safe_sync
-from . import repo_update
-from . import deployment_full
-
-# === REPAIRS ===
-from . import camera_repair
-from . import services_repair
-from . import api_repair
-
-# === MAINTENANCE ===
-from . import maintenance_daily
-from . import maintenance_weekly
-
-# === INCIDENTS ===
-from . import incident_triage
-from . import incident_response
-
-# === DIAGNOSTICS ===
-from . import diagnostic_full
-
-# === NOTIFICATIONS / COMMUNICATION ===
-from . import notification_broadcast
-from . import comms_management
-
-# === SESSION MANAGEMENT ===
-from . import session_startup
-from . import session_shutdown
-
-# === AUTONOMY ===
-from . import autonomy_full_cycle
-
-# === AUTO-UPDATE ===
-from . import auto_update_full
-
-# === ROBOTICS ===
-from . import navigation_slam
-from . import simulation_training
-from . import sensor_fusion
-from . import manipulation_grasp
-from . import hri_interaction
-from . import vision_pipeline
-
-# === QUALITY / TUTORIAS ===
-from . import specialist_visit
 
 
 # ============================================================================
@@ -74,37 +46,28 @@ _POT_MODULES: Dict[str, Callable] = {
     "git_safe_sync": git_safe_sync.get_pot,
     "repo_update": repo_update.get_pot,
     "deployment_full": deployment_full.get_pot,
-    
     # Repairs
     "camera_repair": camera_repair.get_pot,
     "services_repair": services_repair.get_pot,
     "api_repair": api_repair.get_pot,
-    
     # Maintenance
     "maintenance_daily": maintenance_daily.get_pot,
     "maintenance_weekly": maintenance_weekly.get_pot,
-    
     # Incidents
     "incident_triage": incident_triage.get_pot,
     "incident_response": incident_response.get_pot,
-    
     # Diagnostics
     "diagnostic_full": diagnostic_full.get_pot,
-    
     # Notifications / Communications
     "notification_broadcast": notification_broadcast.get_pot,
     "comms_management": comms_management.get_pot,
-    
     # Session
     "session_startup": session_startup.get_pot,
     "session_shutdown": session_shutdown.get_pot,
-    
     # Autonomy
     "autonomy_full_cycle": autonomy_full_cycle.get_pot,
-    
     # Auto-Update
     "auto_update_full": auto_update_full.get_pot,
-    
     # Robotics
     "navigation_slam": navigation_slam.get_pot,
     "simulation_training": simulation_training.get_pot,
@@ -112,7 +75,6 @@ _POT_MODULES: Dict[str, Callable] = {
     "manipulation_grasp": manipulation_grasp.get_pot,
     "hri_interaction": hri_interaction.get_pot,
     "vision_pipeline": vision_pipeline.get_pot,
-    
     # Quality / Tutorias
     "specialist_visit": specialist_visit.get_pot,
 }

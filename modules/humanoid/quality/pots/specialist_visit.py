@@ -13,7 +13,8 @@ Severidad: MEDIUM
 IMPORTANTE: Todo especialista que instruya a ATLAS debe registrarse
 y dejar constancia de sus recomendaciones mediante este sistema.
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -48,14 +49,20 @@ ALMACENAMIENTO:
         severity=POTSeverity.MEDIUM,
         version="1.0.0",
         author="ATLAS Quality System",
-        
         trigger_check_ids=["specialist_*", "visit_*", "tutoria_*"],
         trigger_keywords=[
-            "visita", "especialista", "tutoria", "auditoria",
-            "visit", "specialist", "training", "audit",
-            "nuevo especialista", "nueva visita", "registrar visita"
+            "visita",
+            "especialista",
+            "tutoria",
+            "auditoria",
+            "visit",
+            "specialist",
+            "training",
+            "audit",
+            "nuevo especialista",
+            "nueva visita",
+            "registrar visita",
         ],
-        
         prerequisites=[
             "Sistema ATLAS operativo",
             "API en http://127.0.0.1:8791",
@@ -63,7 +70,6 @@ ALMACENAMIENTO:
         ],
         required_services=["atlas_api"],
         required_permissions=["tutorias_write", "tutorias_read"],
-        
         objectives=[
             "Registrar especialista si es nuevo",
             "Iniciar visita con tipo y motivo",
@@ -75,7 +81,6 @@ ALMACENAMIENTO:
         ],
         success_criteria="Visita completada con informe firmado y recomendaciones registradas",
         estimated_duration_minutes=30,
-        
         tutorial_overview="""
 ## 📋 Sistema de Tutorías y Visitas de Especialistas
 
@@ -191,7 +196,6 @@ curl -X POST http://127.0.0.1:8791/tutorias/especialistas \\
 curl http://127.0.0.1:8791/tutorias/recomendaciones?estado=PENDIENTE
 ```
         """.strip(),
-        
         best_practices=[
             "SIEMPRE registrarse antes de hacer cambios",
             "Documentar TODO lo que se modifica",
@@ -200,15 +204,21 @@ curl http://127.0.0.1:8791/tutorias/recomendaciones?estado=PENDIENTE
             "Firmar el informe antes de retirarse",
             "Revisar recomendaciones de visitas anteriores",
         ],
-        
         related_pots=[
             "diagnostic_full",
             "maintenance_daily",
             "incident_response",
             "session_startup",
         ],
-        tags=["tutoria", "especialista", "visita", "calidad", "informe", "firma", "evaluacion"],
-        
+        tags=[
+            "tutoria",
+            "especialista",
+            "visita",
+            "calidad",
+            "informe",
+            "firma",
+            "evaluacion",
+        ],
         steps=[
             # Paso 1: Verificar sistema
             POTStep(
@@ -222,7 +232,6 @@ curl http://127.0.0.1:8791/tutorias/recomendaciones?estado=PENDIENTE
                 capture_output=True,
                 expected_http_status=200,
             ),
-            
             # Paso 2: Mostrar especialistas registrados
             POTStep(
                 id="list_specialists",
@@ -234,7 +243,6 @@ curl http://127.0.0.1:8791/tutorias/recomendaciones?estado=PENDIENTE
                 timeout_seconds=10,
                 capture_output=True,
             ),
-            
             # Paso 3: Instrucción para registro
             POTStep(
                 id="register_instruction",
@@ -258,7 +266,6 @@ Se generará automáticamente una FIRMA DIGITAL única.
                 """,
                 continue_on_failure=True,
             ),
-            
             # Paso 4: Instrucción para iniciar visita
             POTStep(
                 id="start_visit_instruction",
@@ -285,7 +292,6 @@ Se iniciará un cronómetro de duración.
                 """,
                 continue_on_failure=True,
             ),
-            
             # Paso 5: Durante la visita
             POTStep(
                 id="during_visit",
@@ -309,7 +315,6 @@ El sistema registra automáticamente:
                 """,
                 continue_on_failure=True,
             ),
-            
             # Paso 6: Crear informe
             POTStep(
                 id="create_report",
@@ -326,7 +331,7 @@ Al finalizar el trabajo:
    - Título del informe
    - Resumen ejecutivo
    - Contenido detallado
-   
+
 3. Agregar EVALUACIONES:
    - Aspecto evaluado (ej: "Precisión Vision")
    - Nivel (Excelente/Bueno/Aceptable/Mejorable/Crítico)
@@ -343,7 +348,6 @@ Al finalizar el trabajo:
 ⚠️ El informe quedará FIRMADO digitalmente con su firma única.
                 """,
             ),
-            
             # Paso 7: Verificar firma
             POTStep(
                 id="verify_signature",
@@ -355,7 +359,6 @@ Al finalizar el trabajo:
                 timeout_seconds=10,
                 capture_output=True,
             ),
-            
             # Paso 8: Registrar en bitácora
             POTStep(
                 id="log_visit",
@@ -367,11 +370,10 @@ Al finalizar el trabajo:
                 http_body={
                     "message": "[TUTORIA] Visita de especialista completada y documentada",
                     "level": "success",
-                    "source": "tutorias"
+                    "source": "tutorias",
                 },
                 continue_on_failure=True,
             ),
-            
             # Paso 9: Notificar
             POTStep(
                 id="notify_completion",

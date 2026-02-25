@@ -3,15 +3,14 @@ Control nodes for Atlas spine runtime (lite mode).
 Balance controller, Gait generator, Joint commander.
 """
 import math
-import time
-import sys
 import os
+import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import atlas_ros2_lite as rclpy
-from atlas_ros2_lite import (
-    Node, make_joint_state, make_vector3_stamped, make_string, make_header,
-)
+from atlas_ros2_lite import (Node, make_header, make_joint_state, make_string,
+                             make_vector3_stamped)
 
 
 class BalanceController(Node):
@@ -32,17 +31,26 @@ class BalanceController(Node):
         self.cop_pub = self.create_publisher(None, "/atlas/balance/cop", 10)
 
         self.create_timer(1.0 / rate_hz, self._loop)
-        self.get_logger().info(f"Balance controller started: PID=({self.kp},{self.ki},{self.kd}) {rate_hz}Hz")
+        self.get_logger().info(
+            f"Balance controller started: PID=({self.kp},{self.ki},{self.kd}) {rate_hz}Hz"
+        )
 
-    def _imu_cb(self, msg): self._imu = msg
-    def _ft_left_cb(self, msg): self._ft_left = msg
-    def _ft_right_cb(self, msg): self._ft_right = msg
+    def _imu_cb(self, msg):
+        self._imu = msg
+
+    def _ft_left_cb(self, msg):
+        self._ft_left = msg
+
+    def _ft_right_cb(self, msg):
+        self._ft_right = msg
 
     def _loop(self):
         if not self._imu:
             return
         q = self._imu.get("orientation", {})
-        pitch = 2.0 * (q.get("w", 1.0) * q.get("y", 0.0) - q.get("z", 0.0) * q.get("x", 0.0))
+        pitch = 2.0 * (
+            q.get("w", 1.0) * q.get("y", 0.0) - q.get("z", 0.0) * q.get("x", 0.0)
+        )
 
         # CoP
         cop_x = 0.0
@@ -52,10 +60,12 @@ class BalanceController(Node):
             total = fz_l + fz_r
             if total > 1.0:
                 cop_x = (-0.1 * fz_l + 0.1 * fz_r) / total
-        self.cop_pub.publish(make_vector3_stamped(
-            header=make_header("base_link"),
-            vector={"x": cop_x, "y": 0.0, "z": 0.0},
-        ))
+        self.cop_pub.publish(
+            make_vector3_stamped(
+                header=make_header("base_link"),
+                vector={"x": cop_x, "y": 0.0, "z": 0.0},
+            )
+        )
 
         # PID
         dt = 0.01
@@ -63,13 +73,17 @@ class BalanceController(Node):
         self._pitch_integral = max(-1.0, min(1.0, self._pitch_integral + error * dt))
         d_error = (error - self._prev_pitch_error) / dt
         self._prev_pitch_error = error
-        correction = self.kp * error + self.ki * self._pitch_integral + self.kd * d_error
+        correction = (
+            self.kp * error + self.ki * self._pitch_integral + self.kd * d_error
+        )
 
-        self.cmd_pub.publish(make_joint_state(
-            header=make_header("base_link"),
-            name=["l_ankle_pitch", "r_ankle_pitch"],
-            effort=[correction, correction],
-        ))
+        self.cmd_pub.publish(
+            make_joint_state(
+                header=make_header("base_link"),
+                name=["l_ankle_pitch", "r_ankle_pitch"],
+                effort=[correction, correction],
+            )
+        )
 
 
 class GaitGenerator(Node):
@@ -90,7 +104,9 @@ class GaitGenerator(Node):
         self.get_logger().info(f"Gait generator started: type={self.gait_type}")
 
     def _cmd_cb(self, msg):
-        cmd = (msg.get("data", "") if isinstance(msg, dict) else str(msg)).strip().lower()
+        cmd = (
+            (msg.get("data", "") if isinstance(msg, dict) else str(msg)).strip().lower()
+        )
         if cmd in ("stand", "walk", "trot", "stop"):
             self.gait_type = cmd if cmd != "stop" else "stand"
             self._phase = "stand"
@@ -105,10 +121,19 @@ class GaitGenerator(Node):
             self._gen_walk()
 
     def _gen_stand(self):
-        self.traj_pub.publish(make_joint_state(
-            name=["l_hip_pitch", "l_knee", "l_ankle_pitch", "r_hip_pitch", "r_knee", "r_ankle_pitch"],
-            position=[-0.1, 0.2, -0.1, -0.1, 0.2, -0.1],
-        ))
+        self.traj_pub.publish(
+            make_joint_state(
+                name=[
+                    "l_hip_pitch",
+                    "l_knee",
+                    "l_ankle_pitch",
+                    "r_hip_pitch",
+                    "r_knee",
+                    "r_ankle_pitch",
+                ],
+                position=[-0.1, 0.2, -0.1, -0.1, 0.2, -0.1],
+            )
+        )
 
     def _gen_walk(self):
         dt = 0.01
@@ -132,10 +157,19 @@ class GaitGenerator(Node):
         else:
             pos = [-0.1, 0.2, -0.1, -0.1, 0.2, -0.1]
 
-        self.traj_pub.publish(make_joint_state(
-            name=["l_hip_pitch", "l_knee", "l_ankle_pitch", "r_hip_pitch", "r_knee", "r_ankle_pitch"],
-            position=pos,
-        ))
+        self.traj_pub.publish(
+            make_joint_state(
+                name=[
+                    "l_hip_pitch",
+                    "l_knee",
+                    "l_ankle_pitch",
+                    "r_hip_pitch",
+                    "r_knee",
+                    "r_ankle_pitch",
+                ],
+                position=pos,
+            )
+        )
 
 
 class JointCommander(Node):
@@ -177,9 +211,11 @@ class JointCommander(Node):
         if not positions and not efforts:
             return
         joints = sorted(set(list(positions.keys()) + list(efforts.keys())))
-        self.hw_pub.publish(make_joint_state(
-            name=joints,
-            position=[positions.get(j, 0.0) for j in joints],
-            effort=[efforts.get(j, 0.0) for j in joints],
-            velocity=[0.0] * len(joints),
-        ))
+        self.hw_pub.publish(
+            make_joint_state(
+                name=joints,
+                position=[positions.get(j, 0.0) for j in joints],
+                effort=[efforts.get(j, 0.0) for j in joints],
+                velocity=[0.0] * len(joints),
+            )
+        )

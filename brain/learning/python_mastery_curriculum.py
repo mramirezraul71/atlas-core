@@ -42,7 +42,11 @@ def generate_python_mastery_curriculum(
                     "success_criteria": "pytest pasa: tests/python_mastery/test_py001_utils.py (RUN_PYTHON_MASTERY=1)",
                 }
             ],
-            "evaluation_criteria": {"excellent": ">= 90", "good": ">= 75", "acceptable": ">= 60"},
+            "evaluation_criteria": {
+                "excellent": ">= 90",
+                "good": ">= 75",
+                "acceptable": ">= 60",
+            },
             "next_lessons": ["PY002"],
         },
         {
@@ -64,7 +68,11 @@ def generate_python_mastery_curriculum(
                     "success_criteria": "imports limpios; sin sys.path hacks; tests pasan",
                 }
             ],
-            "evaluation_criteria": {"excellent": ">= 90", "good": ">= 75", "acceptable": ">= 60"},
+            "evaluation_criteria": {
+                "excellent": ">= 90",
+                "good": ">= 75",
+                "acceptable": ">= 60",
+            },
             "next_lessons": ["PY003"],
         },
         {
@@ -86,7 +94,11 @@ def generate_python_mastery_curriculum(
                     "success_criteria": "pytest pasa: tests/python_mastery/test_py003_inventory.py (RUN_PYTHON_MASTERY=1)",
                 }
             ],
-            "evaluation_criteria": {"excellent": ">= 90", "good": ">= 75", "acceptable": ">= 60"},
+            "evaluation_criteria": {
+                "excellent": ">= 90",
+                "good": ">= 75",
+                "acceptable": ">= 60",
+            },
             "next_lessons": ["PY004"],
         },
         {
@@ -108,7 +120,11 @@ def generate_python_mastery_curriculum(
                     "success_criteria": "pytest pasa: tests/python_mastery/test_py004_locks.py (RUN_PYTHON_MASTERY=1)",
                 }
             ],
-            "evaluation_criteria": {"excellent": ">= 90", "good": ">= 75", "acceptable": ">= 60"},
+            "evaluation_criteria": {
+                "excellent": ">= 90",
+                "good": ">= 75",
+                "acceptable": ">= 60",
+            },
             "next_lessons": ["PY005"],
         },
         {
@@ -130,7 +146,11 @@ def generate_python_mastery_curriculum(
                     "success_criteria": "pytest pasa: tests/python_mastery/test_py005_atomic_write.py (RUN_PYTHON_MASTERY=1)",
                 }
             ],
-            "evaluation_criteria": {"excellent": ">= 90", "good": ">= 75", "acceptable": ">= 60"},
+            "evaluation_criteria": {
+                "excellent": ">= 90",
+                "good": ">= 75",
+                "acceptable": ">= 60",
+            },
             "next_lessons": ["PY006"],
         },
         {
@@ -152,7 +172,11 @@ def generate_python_mastery_curriculum(
                     "success_criteria": "pytest pasa: tests/python_mastery/test_py006_cli_inventory_json.py (RUN_PYTHON_MASTERY=1)",
                 }
             ],
-            "evaluation_criteria": {"excellent": ">= 90", "good": ">= 75", "acceptable": ">= 60"},
+            "evaluation_criteria": {
+                "excellent": ">= 90",
+                "good": ">= 75",
+                "acceptable": ">= 60",
+            },
             "next_lessons": ["PY007"],
         },
         {
@@ -174,7 +198,11 @@ def generate_python_mastery_curriculum(
                     "success_criteria": "pytest pasa: tests/python_mastery/test_py007_refactor.py (RUN_PYTHON_MASTERY=1)",
                 }
             ],
-            "evaluation_criteria": {"excellent": ">= 90", "good": ">= 75", "acceptable": ">= 60"},
+            "evaluation_criteria": {
+                "excellent": ">= 90",
+                "good": ">= 75",
+                "acceptable": ">= 60",
+            },
             "next_lessons": ["PY008"],
         },
         {
@@ -196,7 +224,11 @@ def generate_python_mastery_curriculum(
                     "success_criteria": "pytest pasa: tests/python_mastery/test_py008_subprocess.py (RUN_PYTHON_MASTERY=1)",
                 }
             ],
-            "evaluation_criteria": {"excellent": ">= 90", "good": ">= 75", "acceptable": ">= 60"},
+            "evaluation_criteria": {
+                "excellent": ">= 90",
+                "good": ">= 75",
+                "acceptable": ">= 60",
+            },
             "next_lessons": ["PY009"],
         },
         {
@@ -218,7 +250,11 @@ def generate_python_mastery_curriculum(
                     "success_criteria": "pytest pasa: tests/python_mastery/test_py009_http_retries.py (RUN_PYTHON_MASTERY=1)",
                 }
             ],
-            "evaluation_criteria": {"excellent": ">= 90", "good": ">= 75", "acceptable": ">= 60"},
+            "evaluation_criteria": {
+                "excellent": ">= 90",
+                "good": ">= 75",
+                "acceptable": ">= 60",
+            },
             "next_lessons": ["PY010"],
         },
         {
@@ -240,7 +276,11 @@ def generate_python_mastery_curriculum(
                     "success_criteria": "pytest pasa: tests/python_mastery/test_py010_sqlite_repo.py (RUN_PYTHON_MASTERY=1)",
                 }
             ],
-            "evaluation_criteria": {"excellent": ">= 90", "good": ">= 75", "acceptable": ">= 60"},
+            "evaluation_criteria": {
+                "excellent": ">= 90",
+                "good": ">= 75",
+                "acceptable": ">= 60",
+            },
             "next_lessons": ["PY011"],
         },
         {
@@ -262,7 +302,11 @@ def generate_python_mastery_curriculum(
                     "success_criteria": "pytest pasa: tests/python_mastery/test_py011_asyncio.py (RUN_PYTHON_MASTERY=1)",
                 }
             ],
-            "evaluation_criteria": {"excellent": ">= 90", "good": ">= 75", "acceptable": ">= 60"},
+            "evaluation_criteria": {
+                "excellent": ">= 90",
+                "good": ">= 75",
+                "acceptable": ">= 60",
+            },
             "next_lessons": ["PY012"],
         },
         {
@@ -284,7 +328,11 @@ def generate_python_mastery_curriculum(
                     "success_criteria": "pytest pasa: tests/python_mastery/test_py012_packaging.py (RUN_PYTHON_MASTERY=1)",
                 }
             ],
-            "evaluation_criteria": {"excellent": ">= 90", "good": ">= 75", "acceptable": ">= 60"},
+            "evaluation_criteria": {
+                "excellent": ">= 90",
+                "good": ">= 75",
+                "acceptable": ">= 60",
+            },
             "next_lessons": [],
         },
     ]
@@ -309,4 +357,3 @@ def generate_python_mastery_curriculum(
         return [l for l in lessons if (l.get("difficulty") or "").lower() in allowed]
 
     return lessons
-

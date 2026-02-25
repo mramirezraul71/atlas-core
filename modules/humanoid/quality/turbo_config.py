@@ -8,116 +8,116 @@ Este módulo define los parámetros de rendimiento del sistema.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Any
+from typing import Any, Dict
 
 
 @dataclass(frozen=True)
 class TurboConfig:
     """
     Configuración de alto rendimiento para ATLAS.
-    
+
     Todos los valores están optimizados para:
     - Mínima latencia de respuesta
     - Máximo throughput de operaciones
     - Coherencia técnica (valores consistentes)
     """
-    
+
     # =========================================================================
     # INTERVALOS DE POLLING (segundos)
     # =========================================================================
-    
+
     # Health checks - cada cuánto verificar salud
     HEALTH_CHECK_INTERVAL: float = 5.0  # Era 30s, ahora 5s
-    
+
     # Trigger engine - cada cuánto evaluar condiciones
     TRIGGER_EVAL_INTERVAL: float = 2.0  # Era 60s, ahora 2s
-    
+
     # Watchdog - cada cuánto verificar componentes
     WATCHDOG_INTERVAL: float = 3.0  # Era 10s, ahora 3s
-    
+
     # Dispatcher queue - polling del queue
     DISPATCHER_POLL_INTERVAL: float = 0.1  # 100ms para respuesta inmediata
-    
+
     # =========================================================================
     # TIMEOUTS (segundos) - COHERENCIA
     # =========================================================================
-    
+
     # HTTP requests
-    HTTP_TIMEOUT_FAST: int = 5      # Para health checks
-    HTTP_TIMEOUT_NORMAL: int = 15   # Para operaciones normales
-    HTTP_TIMEOUT_SLOW: int = 60     # Para operaciones largas
-    
+    HTTP_TIMEOUT_FAST: int = 5  # Para health checks
+    HTTP_TIMEOUT_NORMAL: int = 15  # Para operaciones normales
+    HTTP_TIMEOUT_SLOW: int = 60  # Para operaciones largas
+
     # Shell commands
-    SHELL_TIMEOUT_FAST: int = 10    # Comandos simples
+    SHELL_TIMEOUT_FAST: int = 10  # Comandos simples
     SHELL_TIMEOUT_NORMAL: int = 30  # Comandos normales
-    SHELL_TIMEOUT_SLOW: int = 120   # Comandos largos (git pull, etc)
-    
+    SHELL_TIMEOUT_SLOW: int = 120  # Comandos largos (git pull, etc)
+
     # POT execution
-    POT_STEP_TIMEOUT: int = 60      # Timeout por paso
-    POT_TOTAL_TIMEOUT: int = 300    # Timeout total del POT
-    
+    POT_STEP_TIMEOUT: int = 60  # Timeout por paso
+    POT_TOTAL_TIMEOUT: int = 300  # Timeout total del POT
+
     # =========================================================================
     # RETRIES - COHERENCIA
     # =========================================================================
-    
+
     # Número de reintentos por defecto
     DEFAULT_RETRIES: int = 3
-    
+
     # Backoff entre reintentos (segundos)
     RETRY_BACKOFF_BASE: float = 1.0
     RETRY_BACKOFF_MAX: float = 30.0
     RETRY_BACKOFF_MULTIPLIER: float = 2.0
-    
+
     # =========================================================================
     # CONCURRENCIA
     # =========================================================================
-    
+
     # Thread pool para executor
     EXECUTOR_POOL_SIZE: int = 4
-    
+
     # Máximo de POTs ejecutándose simultáneamente
     MAX_CONCURRENT_POTS: int = 3
-    
+
     # Máximo de health checks en paralelo
     MAX_CONCURRENT_HEALTH_CHECKS: int = 8
-    
+
     # =========================================================================
     # QUEUE SIZES
     # =========================================================================
-    
+
     # Tamaño máximo del queue de dispatch
     DISPATCH_QUEUE_SIZE: int = 100
-    
+
     # Historial máximo de ejecuciones
     EXECUTION_HISTORY_SIZE: int = 500
-    
+
     # =========================================================================
     # COOLDOWNS (segundos)
     # =========================================================================
-    
+
     # Mínimo entre triggers del mismo tipo
     TRIGGER_COOLDOWN_MIN: int = 10
-    
+
     # Cooldown para auto-commit
     AUTO_COMMIT_COOLDOWN: int = 60  # Era 600s, ahora 60s
-    
+
     # Cooldown para auto-repair
     AUTO_REPAIR_COOLDOWN: int = 30  # Era 120s, ahora 30s
-    
+
     # =========================================================================
     # LOGGING
     # =========================================================================
-    
+
     # Nivel de logging (DEBUG=10, INFO=20, WARNING=30)
     LOG_LEVEL: int = 20  # INFO por defecto
-    
+
     # Log cada N operaciones (reduce I/O)
     LOG_BATCH_SIZE: int = 10
-    
+
     # =========================================================================
     # MÉTODOS
     # =========================================================================
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convierte la config a diccionario."""
         return {
@@ -189,7 +189,7 @@ ECO = TurboConfig(
 def get_config(mode: str = "turbo") -> TurboConfig:
     """
     Obtiene configuración según el modo.
-    
+
     Args:
         mode: "turbo", "balanced", "eco"
     """

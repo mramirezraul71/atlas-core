@@ -8,7 +8,9 @@ SUPPORTED_LOCALES = ("es", "en")
 _DEFAULT_LOCALE = "es"
 
 # Locale por defecto (env UI_LOCALE o es)
-_current: str = os.getenv("UI_LOCALE", _DEFAULT_LOCALE).strip().lower() or _DEFAULT_LOCALE
+_current: str = (
+    os.getenv("UI_LOCALE", _DEFAULT_LOCALE).strip().lower() or _DEFAULT_LOCALE
+)
 if _current not in SUPPORTED_LOCALES:
     _current = _DEFAULT_LOCALE
 

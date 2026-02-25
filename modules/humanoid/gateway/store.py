@@ -14,7 +14,12 @@ def _state_path() -> Path:
 
 def load_state() -> Dict[str, Any]:
     path = _state_path()
-    default = {"mode": os.getenv("GATEWAY_MODE", "auto"), "last_success_ts": None, "last_success_mode": None, "last_success_target": None}
+    default = {
+        "mode": os.getenv("GATEWAY_MODE", "auto"),
+        "last_success_ts": None,
+        "last_success_mode": None,
+        "last_success_target": None,
+    }
     if not path.exists():
         return default
     try:
@@ -33,6 +38,7 @@ def save_state(state: Dict[str, Any]) -> None:
 
 def set_last_success(mode: str, target: str) -> None:
     import time
+
     state = load_state()
     state["last_success_ts"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     state["last_success_mode"] = mode
@@ -41,7 +47,9 @@ def set_last_success(mode: str, target: str) -> None:
 
 
 def get_mode() -> str:
-    return (load_state().get("mode") or os.getenv("GATEWAY_MODE", "auto")).strip().lower()
+    return (
+        (load_state().get("mode") or os.getenv("GATEWAY_MODE", "auto")).strip().lower()
+    )
 
 
 def set_mode(mode: str) -> None:
@@ -56,7 +64,9 @@ def set_mode(mode: str) -> None:
 def build_gateway_status() -> Dict[str, Any]:
     """Full status for GET /gateway/status."""
     import os
+
     from . import detector
+
     enabled = os.getenv("GATEWAY_ENABLED", "").strip().lower() in ("1", "true", "yes")
     state = load_state()
     tools_raw = detector.detect_all()

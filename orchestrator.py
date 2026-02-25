@@ -15,6 +15,7 @@ sys.path.insert(0, str(BASE))
 ENV = BASE / "config" / "atlas.env"
 if ENV.exists():
     from dotenv import load_dotenv
+
     load_dotenv(ENV, override=True)
 
 logging.basicConfig(
@@ -37,6 +38,7 @@ def _fetch_tradier_options_chain(ticker: str) -> dict:
     """Obtiene cadena de opciones (Tradier). Sin API key usa mock con Call/Put de SPY."""
     if not TRADIER_API_KEY:
         import random
+
         bid_call = round(random.uniform(0.9, 2.8), 2)
         bid_put = round(random.uniform(0.7, 2.2), 2)
         return {
@@ -46,14 +48,26 @@ def _fetch_tradier_options_chain(ticker: str) -> dict:
         }
     try:
         import urllib.request
+
         url = f"https://api.tradier.com/v1/markets/options/chains?symbol={ticker}&expiration=2025-01-17"
-        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {TRADIER_API_KEY}", "Accept": "application/json"})
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": f"Bearer {TRADIER_API_KEY}",
+                "Accept": "application/json",
+            },
+        )
         with urllib.request.urlopen(req, timeout=10) as r:
             import json
+
             return json.loads(r.read().decode("utf-8"))
     except Exception as e:
         logger.debug("Tradier API: %s", e)
-        return {"ticker": ticker, "calls": [{"strike": 600, "bid": 1.5}], "puts": [{"strike": 598, "bid": 1.2}]}
+        return {
+            "ticker": ticker,
+            "calls": [{"strike": 600, "bid": 1.5}],
+            "puts": [{"strike": 598, "bid": 1.2}],
+        }
 
 
 def _append_traceback(exc: Exception) -> None:
@@ -70,9 +84,10 @@ class AtlasOrchestrator:
     """Cerebro central: Snapshot -> Evaluación -> Delegación (Navegador | Codificador | Dashboard). Bucle de supervivencia extrema."""
 
     def __init__(self) -> None:
-        from modules.brain.dashboard_client import AtlasDashboardClient
-        from agents.navigator_agent import AtlasNavigator
         from agents.coder_agent import AtlasCoder
+        from agents.navigator_agent import AtlasNavigator
+        from modules.brain.dashboard_client import AtlasDashboardClient
+
         self._dashboard = AtlasDashboardClient()
         self._navigator = AtlasNavigator()
         self._coder = AtlasCoder()
@@ -101,16 +116,28 @@ class AtlasOrchestrator:
             for c in calls:
                 bid = c.get("bid") if isinstance(c.get("bid"), (int, float)) else None
                 if bid is not None and bid < TRADIER_PRICE_THRESHOLD:
-                    snap["_oportunidad"] = {"tipo": "SPY_CALL", "bid": bid, "strike": c.get("strike")}
+                    snap["_oportunidad"] = {
+                        "tipo": "SPY_CALL",
+                        "bid": bid,
+                        "strike": c.get("strike"),
+                    }
                     return "oportunidad_trade"
             for p in puts:
                 bid = p.get("bid") if isinstance(p.get("bid"), (int, float)) else None
                 if bid is not None and bid < TRADIER_PRICE_THRESHOLD:
-                    snap["_oportunidad"] = {"tipo": "SPY_PUT", "bid": bid, "strike": p.get("strike")}
+                    snap["_oportunidad"] = {
+                        "tipo": "SPY_PUT",
+                        "bid": bid,
+                        "strike": p.get("strike"),
+                    }
                     return "oportunidad_trade"
         except Exception as e:
             logger.debug("evaluate tradier: %s", e)
-        state = (snap.get("dashboard_state") or {}) if isinstance(snap.get("dashboard_state"), dict) else {}
+        state = (
+            (snap.get("dashboard_state") or {})
+            if isinstance(snap.get("dashboard_state"), dict)
+            else {}
+        )
         cmd = state.get("state")
         if cmd and isinstance(cmd, dict) and cmd.get("target"):
             return "dashboard"
@@ -129,7 +156,11 @@ class AtlasOrchestrator:
             out = await nav.fetch_page_content("https://example.com")
             await nav.close_browser()
             if out.get("status") == "ok":
-                logger.info("[Delegación] Navegador: title=%s, text_len=%s", out.get("title", ""), len(out.get("text", "")))
+                logger.info(
+                    "[Delegación] Navegador: title=%s, text_len=%s",
+                    out.get("title", ""),
+                    len(out.get("text", "")),
+                )
             else:
                 logger.warning("[Delegación] Navegador: %s", out.get("message", ""))
         except Exception as e:
@@ -148,9 +179,13 @@ class AtlasOrchestrator:
             filename="lifecycle_script.py",
         )
         if result.get("ok"):
-            logger.info("[Delegación] Codificador: %s", (result.get("stdout") or "")[:200])
+            logger.info(
+                "[Delegación] Codificador: %s", (result.get("stdout") or "")[:200]
+            )
         else:
-            logger.warning("[Delegación] Codificador: %s", result.get("stderr", "")[:200])
+            logger.warning(
+                "[Delegación] Codificador: %s", result.get("stderr", "")[:200]
+            )
 
     async def _delegate_dashboard(self) -> None:
         ok = await self._dashboard.send_command("NEXUS_ARM", "update_state", 1)
@@ -168,33 +203,47 @@ class AtlasOrchestrator:
         ts = datetime.utcnow().isoformat() + "Z"
         ok = await self._dashboard.send_command("NEXUS_ARM", "ALERT_TRADE", tipo)
         if ok:
-            logger.info("[Delegación] Oportunidad: ALERT_TRADE enviado target=NEXUS_ARM value=%s", tipo)
+            logger.info(
+                "[Delegación] Oportunidad: ALERT_TRADE enviado target=NEXUS_ARM value=%s",
+                tipo,
+            )
         else:
             logger.warning("[Delegación] Oportunidad: fallo al enviar ALERT_TRADE")
         log_line = f"[{ts}] Oportunidad detectada: {tipo} bid={bid} strike={strike}\n"
-        script = f'''with open("trade_log.txt", "a", encoding="utf-8") as f:\n    f.write({repr(log_line)})\n'''
+        script = f"""with open("trade_log.txt", "a", encoding="utf-8") as f:\n    f.write({repr(log_line)})\n"""
         try:
             self._coder.write_script("_write_trade_log.py", script)
             r = self._coder.execute_script("_write_trade_log.py")
             if r.get("ok"):
-                logger.info("[Delegación] Oportunidad: trade_log.txt actualizado en atlas_workspace/")
+                logger.info(
+                    "[Delegación] Oportunidad: trade_log.txt actualizado en atlas_workspace/"
+                )
             else:
-                logger.warning("[Delegación] Oportunidad: fallo escribir trade_log %s", r.get("stderr", "")[:80])
+                logger.warning(
+                    "[Delegación] Oportunidad: fallo escribir trade_log %s",
+                    r.get("stderr", "")[:80],
+                )
         except Exception as e:
             logger.warning("[Delegación] Oportunidad: coder trade_log %s", e)
             try:
-                with (ATLAS_WORKSPACE / "trade_log.txt").open("a", encoding="utf-8") as f:
+                with (ATLAS_WORKSPACE / "trade_log.txt").open(
+                    "a", encoding="utf-8"
+                ) as f:
                     f.write(log_line)
             except Exception:
                 pass
 
     async def run_lifecycle(self) -> None:
         """Bucle de consciencia continua. Nunca se detiene."""
-        logger.info("ATLAS Orquestador despierta — bucle de vida iniciado (ciclo cada %ss)", CYCLE_SLEEP)
+        logger.info(
+            "ATLAS Orquestador despierta — bucle de vida iniciado (ciclo cada %ss)",
+            CYCLE_SLEEP,
+        )
         while True:
             try:
                 snap = await self._snapshot()
-                logger.info("[Snapshot] ciclo=%s dashboard_ok=%s alertas=%s",
+                logger.info(
+                    "[Snapshot] ciclo=%s dashboard_ok=%s alertas=%s",
                     snap.get("cycle"),
                     bool((snap.get("dashboard_state") or {}).get("ok")),
                     len(snap.get("alerts", [])),
@@ -223,9 +272,9 @@ class AtlasOrchestrator:
 
 def main() -> None:
     try:
-        from modules.brain.dashboard_client import AtlasDashboardClient
-        from agents.navigator_agent import AtlasNavigator
         from agents.coder_agent import AtlasCoder
+        from agents.navigator_agent import AtlasNavigator
+        from modules.brain.dashboard_client import AtlasDashboardClient
     except ImportError as e:
         logger.error("Import fallido: %s", e)
         sys.exit(1)

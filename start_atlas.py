@@ -62,11 +62,12 @@ def print_banner() -> None:
 
 def start_daemon(foreground: bool = False) -> None:
     """Inicia el daemon de autonomía."""
-    from modules.humanoid.quality.autonomy_daemon import start_autonomy, AutonomyConfig
-    
+    from modules.humanoid.quality.autonomy_daemon import (AutonomyConfig,
+                                                          start_autonomy)
+
     print_banner()
     print("\n[ATLAS] Iniciando sistema de autonomía completa...\n")
-    
+
     # Configuración
     config = AutonomyConfig(
         enable_auto_commit=True,
@@ -77,15 +78,15 @@ def start_daemon(foreground: bool = False) -> None:
         notify_on_critical=True,
         telegram_on_errors=True,
     )
-    
+
     # Iniciar
     result = start_autonomy(config)
-    
+
     # Mostrar resultados
     print("\n" + "=" * 60)
     print("RESULTADO DEL ARRANQUE")
     print("=" * 60)
-    
+
     for component, status in result.items():
         if component == "all_ok":
             continue
@@ -95,14 +96,14 @@ def start_daemon(foreground: bool = False) -> None:
             print(f"  {symbol} {component}: {'OK' if ok else 'FAILED'}")
             if not ok and "error" in status:
                 print(f"      Error: {status['error']}")
-    
+
     print("=" * 60)
-    
+
     if result.get("all_ok"):
         print("\n🟢 ATLAS AUTONOMÍA ACTIVA - Sistema 100% operacional\n")
     else:
         print("\n🟡 ATLAS AUTONOMÍA PARCIAL - Algunos componentes fallaron\n")
-    
+
     if foreground:
         print("[ATLAS] Ejecutando en primer plano. Presiona Ctrl+C para detener.\n")
         try:
@@ -111,6 +112,7 @@ def start_daemon(foreground: bool = False) -> None:
         except KeyboardInterrupt:
             print("\n[ATLAS] Deteniendo...")
             from modules.humanoid.quality.autonomy_daemon import stop_autonomy
+
             stop_autonomy()
             print("[ATLAS] Detenido.\n")
 
@@ -118,35 +120,36 @@ def start_daemon(foreground: bool = False) -> None:
 def show_status() -> None:
     """Muestra el estado del sistema."""
     try:
-        from modules.humanoid.quality.autonomy_daemon import get_autonomy_status, is_autonomy_running
-        
+        from modules.humanoid.quality.autonomy_daemon import (
+            get_autonomy_status, is_autonomy_running)
+
         print_banner()
-        
+
         if not is_autonomy_running():
             print("\n🔴 ATLAS Autonomía: NO ACTIVA\n")
             return
-        
+
         status = get_autonomy_status()
-        
+
         print("\n" + "=" * 60)
         print("ESTADO DE ATLAS AUTONOMÍA")
         print("=" * 60)
-        
+
         print(f"\n  Estado: {'🟢 ACTIVO' if status['running'] else '🔴 INACTIVO'}")
         print(f"  Inicio: {status['started_at']}")
         print(f"  Uptime: {status['uptime_seconds']} segundos")
-        
+
         print("\n  Configuración:")
         for key, value in status.get("config", {}).items():
             print(f"    - {key}: {value}")
-        
+
         print("\n  Health Checks:")
         for name, health in status.get("health", {}).items():
             symbol = "✅" if health.get("healthy") else "❌"
             print(f"    {symbol} {name}")
-        
+
         print("\n" + "=" * 60 + "\n")
-        
+
     except Exception as e:
         print(f"\n❌ Error obteniendo estado: {e}\n")
 
@@ -154,22 +157,23 @@ def show_status() -> None:
 def stop_daemon() -> None:
     """Detiene el daemon."""
     try:
-        from modules.humanoid.quality.autonomy_daemon import stop_autonomy, is_autonomy_running
-        
+        from modules.humanoid.quality.autonomy_daemon import (
+            is_autonomy_running, stop_autonomy)
+
         if not is_autonomy_running():
             print("\n[ATLAS] El sistema no está corriendo.\n")
             return
-        
+
         print("\n[ATLAS] Deteniendo sistema de autonomía...")
         result = stop_autonomy()
-        
+
         all_ok = all(r.get("ok", False) for r in result.values() if isinstance(r, dict))
-        
+
         if all_ok:
             print("[ATLAS] Sistema detenido correctamente.\n")
         else:
             print("[ATLAS] Sistema detenido con algunos errores.\n")
-            
+
     except Exception as e:
         print(f"\n❌ Error deteniendo: {e}\n")
 
@@ -180,14 +184,16 @@ def main() -> None:
         description="ATLAS Autonomous System Startup",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    
+
     parser.add_argument(
-        "--foreground", "-f",
+        "--foreground",
+        "-f",
         action="store_true",
         help="Ejecutar en primer plano (no daemon)",
     )
     parser.add_argument(
-        "--status", "-s",
+        "--status",
+        "-s",
         action="store_true",
         help="Mostrar estado del sistema",
     )
@@ -197,15 +203,16 @@ def main() -> None:
         help="Detener el daemon",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Modo verbose (más logging)",
     )
-    
+
     args = parser.parse_args()
-    
+
     setup_logging(args.verbose)
-    
+
     if args.status:
         show_status()
     elif args.stop:

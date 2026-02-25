@@ -30,25 +30,27 @@ def _env_bool(name: str, default: bool) -> bool:
 
 class TriggerCondition(str, Enum):
     """Tipos de condiciones que pueden disparar POTs."""
-    GIT_CHANGES = "git_changes"          # Cambios pendientes en Git
-    GIT_BEHIND = "git_behind"            # Branch detrás del remoto
-    GIT_UNSAFE = "git_unsafe"            # Estado Git peligroso (lock/rebase/detached/conflicts)
-    SERVICE_DOWN = "service_down"        # Servicio caído
-    API_ERROR = "api_error"              # Error en API
-    DISK_FULL = "disk_full"              # Disco lleno (>90%)
-    MEMORY_HIGH = "memory_high"          # Memoria alta (>85%)
-    INCIDENT_NEW = "incident_new"        # Nuevo incidente en ANS
+
+    GIT_CHANGES = "git_changes"  # Cambios pendientes en Git
+    GIT_BEHIND = "git_behind"  # Branch detrás del remoto
+    GIT_UNSAFE = "git_unsafe"  # Estado Git peligroso (lock/rebase/detached/conflicts)
+    SERVICE_DOWN = "service_down"  # Servicio caído
+    API_ERROR = "api_error"  # Error en API
+    DISK_FULL = "disk_full"  # Disco lleno (>90%)
+    MEMORY_HIGH = "memory_high"  # Memoria alta (>85%)
+    INCIDENT_NEW = "incident_new"  # Nuevo incidente en ANS
     APPROVAL_PENDING = "approval_pending"  # Aprobación pendiente
-    SCHEDULE_TIME = "schedule_time"      # Hora programada
-    FILE_CHANGED = "file_changed"        # Archivo modificado
-    WEBHOOK = "webhook"                  # Webhook externo
-    STARTUP = "startup"                  # Inicio del sistema
-    SHUTDOWN = "shutdown"                # Cierre del sistema
+    SCHEDULE_TIME = "schedule_time"  # Hora programada
+    FILE_CHANGED = "file_changed"  # Archivo modificado
+    WEBHOOK = "webhook"  # Webhook externo
+    STARTUP = "startup"  # Inicio del sistema
+    SHUTDOWN = "shutdown"  # Cierre del sistema
 
 
 @dataclass
 class TriggerRule:
     """Regla de trigger que mapea una condición a un POT."""
+
     id: str
     name: str
     condition: TriggerCondition
@@ -60,7 +62,7 @@ class TriggerRule:
     context_builder: Optional[Callable[[], Dict[str, Any]]] = None
     check_interval_seconds: int = 60
     last_triggered: Optional[str] = None
-    
+
     # Parámetros específicos por tipo de condición
     params: Dict[str, Any] = field(default_factory=dict)
 
@@ -83,7 +85,7 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         # Seguridad: no auto-commitear por defecto (evita estados Git peligrosos).
         enabled=_env_bool("QUALITY_GIT_TRIGGERS_ENABLED", False),
         priority=6,
-        cooldown_seconds=60,   # TURBO: Era 600s, ahora 60s
+        cooldown_seconds=60,  # TURBO: Era 600s, ahora 60s
         check_interval_seconds=15,  # TURBO: Era 120s, ahora 15s
         params={"min_changes": 1},
     ),
@@ -94,7 +96,7 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         pot_id="git_pull",
         enabled=_env_bool("QUALITY_GIT_TRIGGERS_ENABLED", False),
         priority=4,
-        cooldown_seconds=60,   # TURBO: Era 300s, ahora 60s
+        cooldown_seconds=60,  # TURBO: Era 300s, ahora 60s
         check_interval_seconds=30,  # TURBO: Era 300s, ahora 30s
     ),
     TriggerRule(
@@ -111,7 +113,6 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         # Por defecto exige aprobación: toca el repositorio.
         require_approval=_env_bool("QUALITY_GIT_UNSAFE_REQUIRE_APPROVAL", True),
     ),
-    
     # Service Health Triggers - TURBO
     TriggerRule(
         id="service_down_repair",
@@ -120,7 +121,7 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         pot_id="services_repair",
         enabled=True,
         priority=1,  # TURBO: Máxima prioridad
-        cooldown_seconds=30,   # TURBO: Era 120s, ahora 30s
+        cooldown_seconds=30,  # TURBO: Era 120s, ahora 30s
         check_interval_seconds=5,  # TURBO: Check cada 5s
         require_approval=False,
         params={"services": ["atlas_api", "scheduler", "ans"]},
@@ -132,10 +133,9 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         pot_id="api_repair",
         enabled=True,
         priority=2,
-        cooldown_seconds=30,   # TURBO: Era 180s, ahora 30s
+        cooldown_seconds=30,  # TURBO: Era 180s, ahora 30s
         check_interval_seconds=5,
     ),
-    
     # System Health Triggers - TURBO
     TriggerRule(
         id="disk_full_cleanup",
@@ -148,7 +148,6 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         check_interval_seconds=60,
         params={"threshold_percent": 85},  # TURBO: threshold más bajo
     ),
-    
     # Incident Triggers - TURBO
     TriggerRule(
         id="incident_auto_triage",
@@ -157,10 +156,9 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         pot_id="incident_triage",
         enabled=True,
         priority=2,
-        cooldown_seconds=15,   # TURBO: Era 60s, ahora 15s
+        cooldown_seconds=15,  # TURBO: Era 60s, ahora 15s
         check_interval_seconds=5,
     ),
-    
     # Startup/Shutdown Triggers
     TriggerRule(
         id="session_startup",
@@ -185,43 +183,45 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
 
 class TriggerRegistry:
     """Registro de reglas de trigger."""
-    
+
     def __init__(self):
         self._rules: Dict[str, TriggerRule] = {}
         self._load_defaults()
-    
+
     def _load_defaults(self) -> None:
         """Carga las reglas por defecto."""
         for rule in DEFAULT_TRIGGER_RULES:
             self._rules[rule.id] = rule
-    
+
     def register(self, rule: TriggerRule) -> None:
         """Registra una nueva regla."""
         self._rules[rule.id] = rule
         _log.info("Registered trigger rule: %s", rule.id)
-    
+
     def get(self, rule_id: str) -> Optional[TriggerRule]:
         """Obtiene una regla por ID."""
         return self._rules.get(rule_id)
-    
+
     def list_all(self, enabled_only: bool = False) -> List[TriggerRule]:
         """Lista todas las reglas."""
         rules = list(self._rules.values())
         if enabled_only:
             rules = [r for r in rules if r.enabled]
         return rules
-    
+
     def get_by_condition(self, condition: TriggerCondition) -> List[TriggerRule]:
         """Obtiene reglas por tipo de condición."""
-        return [r for r in self._rules.values() if r.condition == condition and r.enabled]
-    
+        return [
+            r for r in self._rules.values() if r.condition == condition and r.enabled
+        ]
+
     def enable(self, rule_id: str) -> bool:
         """Habilita una regla."""
         if rule_id in self._rules:
             self._rules[rule_id].enabled = True
             return True
         return False
-    
+
     def disable(self, rule_id: str) -> bool:
         """Deshabilita una regla."""
         if rule_id in self._rules:
@@ -233,6 +233,7 @@ class TriggerRegistry:
 # ============================================================================
 # CONDITION CHECKERS
 # ============================================================================
+
 
 def check_git_changes(min_changes: int = 1) -> Dict[str, Any]:
     """Verifica si hay cambios pendientes en Git."""
@@ -264,7 +265,7 @@ def check_git_behind() -> Dict[str, Any]:
             capture_output=True,
             timeout=60,
         )
-        
+
         # Ver estado
         result = subprocess.run(
             ["git", "status", "-sb"],
@@ -275,7 +276,7 @@ def check_git_behind() -> Dict[str, Any]:
         )
         output = result.stdout or ""
         behind = "behind" in output.lower()
-        
+
         return {
             "triggered": behind,
             "status": output.strip().split("\n")[0] if output else "",
@@ -322,8 +323,17 @@ def check_git_unsafe() -> Dict[str, Any]:
             "merge_in_progress": merge_head.exists(),
         }
 
-        if lock_is_stale or details["rebase_apply"] or details["rebase_merge"] or details["merge_in_progress"]:
-            return {"triggered": True, "reason": "git_state_markers", "details": details}
+        if (
+            lock_is_stale
+            or details["rebase_apply"]
+            or details["rebase_merge"]
+            or details["merge_in_progress"]
+        ):
+            return {
+                "triggered": True,
+                "reason": "git_state_markers",
+                "details": details,
+            }
 
         st = subprocess.run(
             ["git", "status", "-sb"],
@@ -339,7 +349,11 @@ def check_git_unsafe() -> Dict[str, Any]:
         if "head (no branch)" in low or "detached" in low:
             return {"triggered": True, "reason": "detached_head", "details": details}
         if "rebase in progress" in low or "rebasing" in low:
-            return {"triggered": True, "reason": "rebase_in_progress", "details": details}
+            return {
+                "triggered": True,
+                "reason": "rebase_in_progress",
+                "details": details,
+            }
         if "unmerged" in low:
             return {"triggered": True, "reason": "unmerged_paths", "details": details}
 
@@ -352,7 +366,10 @@ def check_git_unsafe() -> Dict[str, Any]:
         )
         lines = [ln for ln in (ps.stdout or "").splitlines() if ln.strip()]
         details["porcelain_count"] = len(lines)
-        if any((ln[:2] if len(ln) >= 2 else "") in ("UU", "AA", "DD", "UD", "DU") for ln in lines):
+        if any(
+            (ln[:2] if len(ln) >= 2 else "") in ("UU", "AA", "DD", "UD", "DU")
+            for ln in lines
+        ):
             return {"triggered": True, "reason": "conflict_markers", "details": details}
 
         return {"triggered": False, "details": details}
@@ -364,17 +381,17 @@ def check_service_down(services: Optional[List[str]] = None) -> Dict[str, Any]:
     """Verifica si algún servicio está caído."""
     services = services or ["atlas_api", "scheduler"]
     down_services = []
-    
+
     # Endpoints a verificar
     endpoints = {
         "atlas_api": "http://127.0.0.1:8787/health",
         "scheduler": "http://127.0.0.1:8791/scheduler/jobs",
         "ans": "http://127.0.0.1:8787/ans/status",
     }
-    
-    import urllib.request
+
     import urllib.error
-    
+    import urllib.request
+
     for svc in services:
         url = endpoints.get(svc)
         if not url:
@@ -386,7 +403,7 @@ def check_service_down(services: Optional[List[str]] = None) -> Dict[str, Any]:
                     down_services.append(svc)
         except Exception:
             down_services.append(svc)
-    
+
     return {
         "triggered": len(down_services) > 0,
         "down_services": down_services,
@@ -398,9 +415,10 @@ def check_disk_full(threshold_percent: int = 90) -> Dict[str, Any]:
     """Verifica si el disco está lleno."""
     try:
         import shutil
+
         total, used, free = shutil.disk_usage(str(REPO_ROOT))
         usage_percent = (used / total) * 100
-        
+
         return {
             "triggered": usage_percent >= threshold_percent,
             "usage_percent": round(usage_percent, 1),
@@ -415,13 +433,16 @@ def check_incident_new() -> Dict[str, Any]:
     """Verifica si hay incidentes nuevos sin procesar."""
     try:
         from modules.humanoid.ans.core import get_open_incidents
+
         incidents = get_open_incidents(limit=10)
         unprocessed = [i for i in incidents if not i.get("pot_assigned")]
-        
+
         return {
             "triggered": len(unprocessed) > 0,
             "incidents_count": len(unprocessed),
-            "incidents": [{"id": i.get("id"), "check": i.get("check_id")} for i in unprocessed[:5]],
+            "incidents": [
+                {"id": i.get("id"), "check": i.get("check_id")} for i in unprocessed[:5]
+            ],
         }
     except Exception as e:
         return {"triggered": False, "error": str(e)}
@@ -442,14 +463,15 @@ CONDITION_CHECKERS: Dict[TriggerCondition, Callable] = {
 # TRIGGER ENGINE
 # ============================================================================
 
+
 class TriggerEngine:
     """
     Motor que evalúa triggers y dispara POTs automáticamente.
-    
+
     Este es el componente que hace que ATLAS reaccione a eventos
     y ejecute POTs de forma autónoma.
     """
-    
+
     def __init__(self):
         self._registry = TriggerRegistry()
         self._running = False
@@ -462,16 +484,16 @@ class TriggerEngine:
             "triggers_fired": 0,
             "by_condition": {},
         }
-    
+
     @property
     def registry(self) -> TriggerRegistry:
         return self._registry
-    
+
     def start(self) -> None:
         """Inicia el engine de triggers."""
         if self._running:
             return
-        
+
         self._running = True
         self._worker_thread = threading.Thread(
             target=self._worker_loop,
@@ -480,26 +502,26 @@ class TriggerEngine:
         )
         self._worker_thread.start()
         _log.info("Trigger Engine started")
-        
+
         # Disparar trigger de startup
         self._fire_trigger(self._registry.get("session_startup"))
-    
+
     def stop(self) -> None:
         """Detiene el engine."""
         if not self._running:
             return
-        
+
         # Disparar trigger de shutdown
         self._fire_trigger(self._registry.get("session_shutdown"))
-        
+
         self._running = False
         if self._worker_thread:
             self._worker_thread.join(timeout=5)
         _log.info("Trigger Engine stopped")
-    
+
     def is_running(self) -> bool:
         return self._running
-    
+
     def _worker_loop(self) -> None:
         """Loop principal que evalúa triggers."""
         while self._running:
@@ -507,34 +529,37 @@ class TriggerEngine:
                 self._evaluate_all_triggers()
             except Exception as e:
                 _log.exception("Error evaluating triggers: %s", e)
-            
+
             # Dormir 10 segundos entre ciclos de evaluación
             time.sleep(10)
-    
+
     def _evaluate_all_triggers(self) -> None:
         """Evalúa todos los triggers activos."""
         now = time.time()
-        
+
         for rule in self._registry.list_all(enabled_only=True):
             rule_id = rule.id
-            
+
             # Verificar intervalo de check
             last_check = self._last_check.get(rule_id, 0)
             if now - last_check < rule.check_interval_seconds:
                 continue
-            
+
             self._last_check[rule_id] = now
-            
+
             # Verificar cooldown
             last_triggered = self._last_triggered.get(rule_id, 0)
-            if rule.cooldown_seconds > 0 and now - last_triggered < rule.cooldown_seconds:
+            if (
+                rule.cooldown_seconds > 0
+                and now - last_triggered < rule.cooldown_seconds
+            ):
                 continue
-            
+
             # Evaluar condición
             checker = CONDITION_CHECKERS.get(rule.condition)
             if not checker:
                 continue
-            
+
             try:
                 # Pasar parámetros si la función los acepta
                 params = rule.params or {}
@@ -542,30 +567,33 @@ class TriggerEngine:
                     result = checker(**params)
                 else:
                     result = checker()
-                
+
                 with self._lock:
                     self._stats["checks_total"] += 1
-                
+
                 if result.get("triggered"):
                     _log.info("Trigger %s fired: %s", rule_id, result)
                     self._fire_trigger(rule, context=result)
                     self._last_triggered[rule_id] = now
-                    
+
             except Exception as e:
                 _log.warning("Trigger check %s failed: %s", rule_id, e)
-    
-    def _fire_trigger(self, rule: Optional[TriggerRule], context: Dict[str, Any] = None) -> None:
+
+    def _fire_trigger(
+        self, rule: Optional[TriggerRule], context: Dict[str, Any] = None
+    ) -> None:
         """Dispara un trigger enviando al dispatcher."""
         if not rule:
             return
-        
+
         try:
-            from .dispatcher import get_dispatcher, DispatchRequest, TriggerType
-            
+            from .dispatcher import (DispatchRequest, TriggerType,
+                                     get_dispatcher)
+
             dispatcher = get_dispatcher()
             if not dispatcher.is_running():
                 dispatcher.start()
-            
+
             # Construir contexto
             ctx = context or {}
             if rule.context_builder:
@@ -573,7 +601,7 @@ class TriggerEngine:
                     ctx.update(rule.context_builder())
                 except Exception:
                     pass
-            
+
             # Determinar tipo de trigger
             trigger_type_map = {
                 TriggerCondition.STARTUP: TriggerType.STARTUP,
@@ -583,27 +611,31 @@ class TriggerEngine:
                 TriggerCondition.WEBHOOK: TriggerType.WEBHOOK,
             }
             trigger_type = trigger_type_map.get(rule.condition, TriggerType.CONDITION)
-            
-            dispatcher.dispatch(DispatchRequest(
-                trigger_type=trigger_type,
-                trigger_id=rule.id,
-                pot_id=rule.pot_id,
-                context=ctx,
-                priority=rule.priority,
-                source="trigger_engine",
-                require_approval=rule.require_approval,
-            ))
-            
+
+            dispatcher.dispatch(
+                DispatchRequest(
+                    trigger_type=trigger_type,
+                    trigger_id=rule.id,
+                    pot_id=rule.pot_id,
+                    context=ctx,
+                    priority=rule.priority,
+                    source="trigger_engine",
+                    require_approval=rule.require_approval,
+                )
+            )
+
             with self._lock:
                 self._stats["triggers_fired"] += 1
                 self._stats["by_condition"].setdefault(rule.condition.value, 0)
                 self._stats["by_condition"][rule.condition.value] += 1
-            
+
             _log.info("Fired trigger %s -> POT %s", rule.id, rule.pot_id)
-            
+
         except Exception as e:
-            _log.exception("Failed to fire trigger %s: %s", rule.id if rule else "unknown", e)
-    
+            _log.exception(
+                "Failed to fire trigger %s: %s", rule.id if rule else "unknown", e
+            )
+
     def get_stats(self) -> Dict[str, Any]:
         """Obtiene estadísticas del engine."""
         with self._lock:
@@ -613,24 +645,24 @@ class TriggerEngine:
                 "rules_total": len(self._registry.list_all()),
                 "rules_enabled": len(self._registry.list_all(enabled_only=True)),
             }
-    
+
     def force_check(self, rule_id: str) -> Dict[str, Any]:
         """Fuerza la evaluación de un trigger específico."""
         rule = self._registry.get(rule_id)
         if not rule:
             return {"ok": False, "error": f"Rule not found: {rule_id}"}
-        
+
         checker = CONDITION_CHECKERS.get(rule.condition)
         if not checker:
             return {"ok": False, "error": f"No checker for condition: {rule.condition}"}
-        
+
         try:
             params = rule.params or {}
             result = checker(**params) if params else checker()
-            
+
             if result.get("triggered"):
                 self._fire_trigger(rule, context=result)
-            
+
             return {
                 "ok": True,
                 "rule_id": rule_id,

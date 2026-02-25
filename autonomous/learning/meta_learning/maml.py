@@ -13,6 +13,7 @@ try:
     import torch
     import torch.nn as nn
     from torch import optim
+
     _TORCH_AVAILABLE = True
 except ImportError:
     torch = None
@@ -56,7 +57,7 @@ if _TORCH_AVAILABLE:
         """
 
         def __init__(
-        self,
+            self,
             state_dim: int = 128,
             action_dim: int = 64,
             meta_lr: float = 1e-3,
@@ -108,15 +109,25 @@ if _TORCH_AVAILABLE:
                     loss, adapted_params.values(), create_graph=True, allow_unused=True
                 )
                 adapted_params = OrderedDict(
-                    (name, param - self.inner_lr * (grad if grad is not None else torch.zeros_like(param)))
+                    (
+                        name,
+                        param
+                        - self.inner_lr
+                        * (grad if grad is not None else torch.zeros_like(param)),
+                    )
                     for ((name, param), grad) in zip(adapted_params.items(), grads)
                 )
             return adapted_params, loss.item()
 
         def meta_train_step(self, num_tasks: int = 8) -> Dict[str, Any]:
             if len(self.task_buffer) < num_tasks:
-                return {"error": "Not enough tasks for meta-training", "meta_loss": None}
-            sampled = list(np.random.choice(len(self.task_buffer), num_tasks, replace=False))
+                return {
+                    "error": "Not enough tasks for meta-training",
+                    "meta_loss": None,
+                }
+            sampled = list(
+                np.random.choice(len(self.task_buffer), num_tasks, replace=False)
+            )
             sampled_tasks = [self.task_buffer[i] for i in sampled]
             meta_loss = 0.0
             task_losses = []
@@ -141,8 +152,13 @@ if _TORCH_AVAILABLE:
                 "num_tasks_trained": num_tasks,
             }
 
-        def adapt_to_new_task(self, demonstrations: List[Tuple], num_adaptation_steps: int = 5):
-            task_data = {"demonstrations": demonstrations, "validation_data": demonstrations}
+        def adapt_to_new_task(
+            self, demonstrations: List[Tuple], num_adaptation_steps: int = 5
+        ):
+            task_data = {
+                "demonstrations": demonstrations,
+                "validation_data": demonstrations,
+            }
             adapted_params, _ = self.inner_loop(task_data)
             vals = list(adapted_params.values())
             state_dim = int(vals[0].shape[1])

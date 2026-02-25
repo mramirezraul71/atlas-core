@@ -78,7 +78,12 @@ class WorldState:
     error: str = ""
 
 
-def capture_world_state(*, eye: Optional[str] = None, include_ocr_items: bool = False, use_llm_vision: bool = False) -> Dict[str, Any]:
+def capture_world_state(
+    *,
+    eye: Optional[str] = None,
+    include_ocr_items: bool = False,
+    use_llm_vision: bool = False,
+) -> Dict[str, Any]:
     """
     Captura un "estado del mundo" minimalista y persistible.
     - Captura imagen (ubiq/nexus/local)
@@ -88,9 +93,16 @@ def capture_world_state(*, eye: Optional[str] = None, include_ocr_items: bool = 
     """
     from modules.humanoid.nerve.eyes import eyes_capture
 
-    snap = eyes_capture(use_nexus_if_available=True, source="camera", enhance="auto", eye=eye)
+    snap = eyes_capture(
+        use_nexus_if_available=True, source="camera", enhance="auto", eye=eye
+    )
     if not snap.get("ok") or not snap.get("image_base64"):
-        ws = WorldState(ts=time.time(), source=str(snap.get("source") or "unknown"), ok=False, error=str(snap.get("error") or "capture_failed"))
+        ws = WorldState(
+            ts=time.time(),
+            source=str(snap.get("source") or "unknown"),
+            ok=False,
+            error=str(snap.get("error") or "capture_failed"),
+        )
         out = asdict(ws)
         try:
             _safe_write_json(_logs_path(), out)
@@ -135,11 +147,14 @@ def capture_world_state(*, eye: Optional[str] = None, include_ocr_items: bool = 
         try:
             from modules.humanoid.vision.analyzer import analyze_with_llm
 
-            r = analyze_with_llm(str(img_path), prompt="Describe la escena en una frase. Si hay texto, resume lo esencial.")
+            r = analyze_with_llm(
+                str(img_path),
+                prompt="Describe la escena en una frase. Si hay texto, resume lo esencial.",
+            )
             if r.get("ok"):
                 interp = (r.get("interpretation") or "").strip()
             else:
-                v_err = (r.get("error") or "llm_vision_failed")
+                v_err = r.get("error") or "llm_vision_failed"
         except Exception as e:
             v_err = str(e)
 
@@ -175,4 +190,3 @@ def load_latest_world_state() -> Dict[str, Any]:
         return json.loads(p.read_text(encoding="utf-8", errors="replace"))
     except Exception as e:
         return {"ok": False, "error": str(e)}
-

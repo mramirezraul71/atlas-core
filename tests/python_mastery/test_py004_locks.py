@@ -9,10 +9,18 @@ import pytest
 
 
 def _enabled() -> bool:
-    return os.getenv("RUN_PYTHON_MASTERY", "").strip().lower() in ("1", "true", "yes", "on")
+    return os.getenv("RUN_PYTHON_MASTERY", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
-pytestmark = pytest.mark.skipif(not _enabled(), reason="Python Mastery tests deshabilitados (set RUN_PYTHON_MASTERY=1).")
+pytestmark = pytest.mark.skipif(
+    not _enabled(),
+    reason="Python Mastery tests deshabilitados (set RUN_PYTHON_MASTERY=1).",
+)
 
 
 def test_file_lock_exclusive_timeout(tmp_path: Path):
@@ -42,4 +50,3 @@ def test_file_lock_exclusive_timeout(tmp_path: Path):
         assert done.wait(2.0)
         assert results.get("acquired") is not True
         assert results.get("error") in ("TimeoutError",)
-

@@ -23,6 +23,7 @@ def _try_import_playwright() -> bool:
         return len(_missing_deps) == 0
     try:
         from playwright.sync_api import sync_playwright
+
         _playwright = sync_playwright
         _missing_deps = []
         return True
@@ -40,10 +41,15 @@ def get_missing_deps() -> List[str]:
     return list(_missing_deps)
 
 
-def _audit(action: str, ok: bool, payload: Optional[Dict] = None, error: Optional[str] = None) -> None:
+def _audit(
+    action: str, ok: bool, payload: Optional[Dict] = None, error: Optional[str] = None
+) -> None:
     try:
         from modules.humanoid.audit import get_audit_logger
-        get_audit_logger().log_event("web", "system", "navigator", action, ok, 0, error, payload, None)
+
+        get_audit_logger().log_event(
+            "web", "system", "navigator", action, ok, 0, error, payload, None
+        )
     except Exception:
         pass
 
@@ -52,7 +58,10 @@ def _memory_web(kind: str, path_or_uri: str, content_preview: str = "") -> None:
     """Integrar acción web en memoria persistente."""
     try:
         from modules.humanoid.memory_engine import store_artifact
-        store_artifact(None, None, f"web_{kind}", path_or_uri[:2048], content_preview[:1024])
+
+        store_artifact(
+            None, None, f"web_{kind}", path_or_uri[:2048], content_preview[:1024]
+        )
     except Exception:
         pass
 
@@ -60,7 +69,11 @@ def _memory_web(kind: str, path_or_uri: str, content_preview: str = "") -> None:
 def _ensure_session(headless: bool = True) -> Dict[str, Any]:
     """Asegura que exista una sesión Playwright activa (browser+page)."""
     if not is_available():
-        return {"ok": False, "error": "playwright not installed", "missing_deps": _missing_deps}
+        return {
+            "ok": False,
+            "error": "playwright not installed",
+            "missing_deps": _missing_deps,
+        }
     global _pw, _browser, _page
     if _page is not None:
         return {"ok": True}
@@ -78,10 +91,16 @@ def _ensure_session(headless: bool = True) -> Dict[str, Any]:
         return {"ok": False, "error": str(e)}
 
 
-def open_url(url: str, timeout_ms: int = 30000, show_browser: Optional[bool] = None) -> Dict[str, Any]:
+def open_url(
+    url: str, timeout_ms: int = 30000, show_browser: Optional[bool] = None
+) -> Dict[str, Any]:
     """Open URL. Returns {ok, error}. Policy + rate limit applied."""
     if not is_available():
-        return {"ok": False, "error": "playwright not installed", "missing_deps": _missing_deps}
+        return {
+            "ok": False,
+            "error": "playwright not installed",
+            "missing_deps": _missing_deps,
+        }
     allowed, reason = can_navigate(url)
     if not allowed:
         _audit("open_url", False, {"url": url}, reason)
@@ -89,19 +108,29 @@ def open_url(url: str, timeout_ms: int = 30000, show_browser: Optional[bool] = N
     t0 = time.perf_counter()
     try:
         if show_browser is None:
-            show = (os.getenv("DIGITAL_FEET_SHOW_BROWSER", "false") or "").strip().lower() in ("1", "true", "yes")
+            show = (
+                os.getenv("DIGITAL_FEET_SHOW_BROWSER", "false") or ""
+            ).strip().lower() in ("1", "true", "yes")
         else:
             show = bool(show_browser)
         s = _ensure_session(headless=(not show))
         if not s.get("ok"):
-            return {"ok": False, "error": s.get("error") or "no session", "missing_deps": s.get("missing_deps")}
+            return {
+                "ok": False,
+                "error": s.get("error") or "no session",
+                "missing_deps": s.get("missing_deps"),
+            }
         _page.goto(url, timeout=timeout_ms)
         _audit("open_url", True, {"url": url})
         _memory_web("navigate", url)
         return {"ok": True, "ms": int((time.perf_counter() - t0) * 1000)}
     except Exception as e:
         _audit("open_url", False, {"url": url}, str(e))
-        return {"ok": False, "error": str(e), "ms": int((time.perf_counter() - t0) * 1000)}
+        return {
+            "ok": False,
+            "error": str(e),
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
 
 
 def click(selector: str, timeout_ms: int = 5000) -> Dict[str, Any]:
@@ -133,6 +162,7 @@ def extract_text() -> Dict[str, Any]:
         return {"ok": False, "text": "", "error": "no session"}
     try:
         from .extractors import extract_text_from_html
+
         html = _page.content()
         text = extract_text_from_html(html)
         _memory_web("extract", "page_content", text[:1000])
@@ -155,7 +185,9 @@ def screenshot(path: Optional[str] = None) -> Dict[str, Any]:
         return {"ok": False, "path": "", "error": str(e)}
 
 
-def configure_page(viewport: Optional[Dict[str, int]] = None, user_agent: Optional[str] = None) -> Dict[str, Any]:
+def configure_page(
+    viewport: Optional[Dict[str, int]] = None, user_agent: Optional[str] = None
+) -> Dict[str, Any]:
     """Configure current page: viewport size and/or user agent. Spec: configure page."""
     if not is_available() or _page is None:
         return {"ok": False, "error": "no session"}
@@ -164,7 +196,11 @@ def configure_page(viewport: Optional[Dict[str, int]] = None, user_agent: Option
             _page.set_viewport_size(viewport)
         if user_agent:
             _page.set_extra_http_headers({"User-Agent": user_agent})
-        _audit("configure_page", True, {"viewport": viewport, "user_agent": bool(user_agent)})
+        _audit(
+            "configure_page",
+            True,
+            {"viewport": viewport, "user_agent": bool(user_agent)},
+        )
         return {"ok": True}
     except Exception as e:
         _audit("configure_page", False, {}, str(e))
@@ -188,14 +224,22 @@ def close() -> None:
     _pw = None
 
 
-def run_steps(steps: List[Dict[str, Any]], timeout_ms: int = 30000, show_browser: Optional[bool] = None) -> Dict[str, Any]:
+def run_steps(
+    steps: List[Dict[str, Any]],
+    timeout_ms: int = 30000,
+    show_browser: Optional[bool] = None,
+) -> Dict[str, Any]:
     """
     Ejecuta un workflow de navegación. Cada step es un dict con:
       - kind: goto|click|fill|wait|press|screenshot|extract_text|close
     Retorna {ok, steps, last_url?, screenshot_path?, text?}
     """
     if not is_available():
-        return {"ok": False, "error": "playwright not installed", "missing_deps": _missing_deps}
+        return {
+            "ok": False,
+            "error": "playwright not installed",
+            "missing_deps": _missing_deps,
+        }
     results: List[Dict[str, Any]] = []
     last_text = ""
     last_shot = ""
@@ -203,12 +247,18 @@ def run_steps(steps: List[Dict[str, Any]], timeout_ms: int = 30000, show_browser
     t0 = time.perf_counter()
     try:
         if show_browser is None:
-            show = (os.getenv("DIGITAL_FEET_SHOW_BROWSER", "false") or "").strip().lower() in ("1", "true", "yes")
+            show = (
+                os.getenv("DIGITAL_FEET_SHOW_BROWSER", "false") or ""
+            ).strip().lower() in ("1", "true", "yes")
         else:
             show = bool(show_browser)
         s = _ensure_session(headless=(not show))
         if not s.get("ok"):
-            return {"ok": False, "error": s.get("error") or "no session", "missing_deps": s.get("missing_deps")}
+            return {
+                "ok": False,
+                "error": s.get("error") or "no session",
+                "missing_deps": s.get("missing_deps"),
+            }
         for i, st in enumerate(steps or []):
             kind = (st.get("kind") or "").strip().lower()
             try:
@@ -231,7 +281,9 @@ def run_steps(steps: List[Dict[str, Any]], timeout_ms: int = 30000, show_browser
                         last_url = _page.url if _page is not None else last_url
                     except Exception:
                         pass
-                    results.append({"i": i, "kind": "click", "ok": True, "selector": sel})
+                    results.append(
+                        {"i": i, "kind": "click", "ok": True, "selector": sel}
+                    )
                 elif kind == "fill":
                     sel = str(st.get("selector") or "")
                     val = str(st.get("value") or "")
@@ -240,15 +292,21 @@ def run_steps(steps: List[Dict[str, Any]], timeout_ms: int = 30000, show_browser
                         last_url = _page.url if _page is not None else last_url
                     except Exception:
                         pass
-                    results.append({"i": i, "kind": "fill", "ok": True, "selector": sel})
+                    results.append(
+                        {"i": i, "kind": "fill", "ok": True, "selector": sel}
+                    )
                 elif kind == "wait":
                     sel = str(st.get("selector") or "")
-                    _page.wait_for_selector(sel, timeout=int(st.get("timeout_ms") or 5000))
+                    _page.wait_for_selector(
+                        sel, timeout=int(st.get("timeout_ms") or 5000)
+                    )
                     try:
                         last_url = _page.url if _page is not None else last_url
                     except Exception:
                         pass
-                    results.append({"i": i, "kind": "wait", "ok": True, "selector": sel})
+                    results.append(
+                        {"i": i, "kind": "wait", "ok": True, "selector": sel}
+                    )
                 elif kind == "press":
                     keys = str(st.get("keys") or "")
                     _page.keyboard.press(keys)
@@ -258,7 +316,11 @@ def run_steps(steps: List[Dict[str, Any]], timeout_ms: int = 30000, show_browser
                         pass
                     results.append({"i": i, "kind": "press", "ok": True, "keys": keys})
                 elif kind == "screenshot":
-                    out_dir = Path(os.getenv("DIGITAL_FEET_DIR", r"C:\ATLAS_PUSH\snapshots\digital_feet"))
+                    out_dir = Path(
+                        os.getenv(
+                            "DIGITAL_FEET_DIR", r"C:\ATLAS_PUSH\snapshots\digital_feet"
+                        )
+                    )
                     out_dir.mkdir(parents=True, exist_ok=True)
                     name = st.get("name") or f"shot_{int(time.time())}.png"
                     path = str(out_dir / str(name))
@@ -268,17 +330,27 @@ def run_steps(steps: List[Dict[str, Any]], timeout_ms: int = 30000, show_browser
                         last_url = _page.url if _page is not None else last_url
                     except Exception:
                         pass
-                    results.append({"i": i, "kind": "screenshot", "ok": True, "path": path})
+                    results.append(
+                        {"i": i, "kind": "screenshot", "ok": True, "path": path}
+                    )
                     _memory_web("screenshot", path)
                 elif kind == "extract_text":
                     html = _page.content()
                     from .extractors import extract_text_from_html
+
                     last_text = extract_text_from_html(html)[:5000]
                     try:
                         last_url = _page.url if _page is not None else last_url
                     except Exception:
                         pass
-                    results.append({"i": i, "kind": "extract_text", "ok": True, "chars": len(last_text)})
+                    results.append(
+                        {
+                            "i": i,
+                            "kind": "extract_text",
+                            "ok": True,
+                            "chars": len(last_text),
+                        }
+                    )
                     _memory_web("extract", "page_content", last_text[:1000])
                 elif kind == "close":
                     close()
@@ -310,7 +382,9 @@ def run_steps(steps: List[Dict[str, Any]], timeout_ms: int = 30000, show_browser
                 except Exception:
                     pass
             except Exception as e:
-                results.append({"i": i, "kind": kind or "?", "ok": False, "error": str(e)})
+                results.append(
+                    {"i": i, "kind": kind or "?", "ok": False, "error": str(e)}
+                )
                 _audit("run_steps", False, {"step": st, "i": i}, str(e))
                 return {
                     "ok": False,
@@ -331,7 +405,12 @@ def run_steps(steps: List[Dict[str, Any]], timeout_ms: int = 30000, show_browser
         }
     except Exception as e:
         _audit("run_steps", False, {"steps": len(steps or [])}, str(e))
-        return {"ok": False, "error": str(e), "steps": results, "ms": int((time.perf_counter() - t0) * 1000)}
+        return {
+            "ok": False,
+            "error": str(e),
+            "steps": results,
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
 
 
 def status() -> Dict[str, Any]:

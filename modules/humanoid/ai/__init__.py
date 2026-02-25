@@ -13,24 +13,13 @@ Sistema de IA automático con especialistas:
 """
 from __future__ import annotations
 
+from .auto_router import (AutoRouter, ModelConfig, RouteResult, TaskType,
+                          auto_route, get_auto_router)
+from .brain_state import (get_brain_state, get_parameters,
+                          get_specialist_model, is_auto_route_enabled,
+                          set_brain_state, set_full_auto_mode)
 from .models import RouteDecision, TaskProfile
 from .router import route_and_run
-from .auto_router import (
-    AutoRouter,
-    TaskType,
-    ModelConfig,
-    RouteResult,
-    get_auto_router,
-    auto_route,
-)
-from .brain_state import (
-    get_brain_state,
-    set_brain_state,
-    set_full_auto_mode,
-    get_specialist_model,
-    get_parameters,
-    is_auto_route_enabled,
-)
 
 __all__ = [
     # Legacy

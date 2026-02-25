@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import os
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from typing import Any, Dict, Optional
 
 HEALTH_TIMEOUT_SEC = 10
@@ -28,6 +28,7 @@ def _check_llm_latency_avg() -> Dict[str, Any]:
     """LLM latency average from metrics store."""
     try:
         from modules.humanoid.metrics import get_metrics_store
+
         snap = get_metrics_store().snapshot()
         lat = snap.get("latencies") or {}
         llm = lat.get("llm") or lat.get("llm_request") or {}
@@ -42,9 +43,14 @@ def _check_llm_latency_avg() -> Dict[str, Any]:
 def _check_scheduler_running() -> Dict[str, Any]:
     """Scheduler enabled and DB reachable."""
     try:
-        if os.getenv("SCHED_ENABLED", "true").strip().lower() not in ("1", "true", "yes"):
+        if os.getenv("SCHED_ENABLED", "true").strip().lower() not in (
+            "1",
+            "true",
+            "yes",
+        ):
             return {"ok": True, "running": False, "message": "scheduler disabled"}
         from modules.humanoid.scheduler import get_scheduler_db
+
         db = get_scheduler_db()
         _ = db.list_jobs(limit=1)
         return {"ok": True, "running": True, "message": "ok"}
@@ -55,9 +61,14 @@ def _check_scheduler_running() -> Dict[str, Any]:
 def _check_memory_writable() -> Dict[str, Any]:
     """Memory DB writable (quick connect + SELECT)."""
     try:
-        if os.getenv("MEMORY_ENABLED", "true").strip().lower() not in ("1", "true", "yes"):
+        if os.getenv("MEMORY_ENABLED", "true").strip().lower() not in (
+            "1",
+            "true",
+            "yes",
+        ):
             return {"ok": True, "writable": False, "message": "memory disabled"}
         from modules.humanoid.memory_engine import db as mem_db
+
         conn = mem_db._ensure()
         conn.execute("SELECT 1")
         conn.commit()
@@ -70,6 +81,7 @@ def _check_audit_writable() -> Dict[str, Any]:
     """Audit DB writable (connect + SELECT)."""
     try:
         from modules.humanoid.audit import get_audit_logger
+
         logger = get_audit_logger()
         if getattr(logger, "_db", None) is None:
             return {"ok": False, "writable": False, "message": "AUDIT_DB_PATH not set"}
@@ -93,15 +105,23 @@ def _check_llm_reachable() -> Dict[str, Any]:
                 return {"ok": True, "message": "ok"}
             return {"ok": False, "message": f"status {r.status}"}
     except Exception as e:
-        return {"ok": False, "message": str(e.reason) if getattr(e, "reason", None) else str(e)}
+        return {
+            "ok": False,
+            "message": str(e.reason) if getattr(e, "reason", None) else str(e),
+        }
 
 
 def _check_db_integrity() -> Dict[str, Any]:
     """SQLite PRAGMA quick_check on scheduler DB. Skipped if scheduler disabled."""
     try:
-        if os.getenv("SCHED_ENABLED", "true").strip().lower() not in ("1", "true", "yes"):
+        if os.getenv("SCHED_ENABLED", "true").strip().lower() not in (
+            "1",
+            "true",
+            "yes",
+        ):
             return {"ok": True, "skipped": True, "message": "scheduler disabled"}
         from modules.humanoid.scheduler import get_scheduler_db
+
         db = get_scheduler_db()
         conn = db._ensure()
         row = conn.execute("PRAGMA quick_check").fetchone()
@@ -121,7 +141,10 @@ def _check_port_active(base_url: str) -> Dict[str, Any]:
                 return {"ok": True, "message": "ok"}
             return {"ok": False, "message": f"status {r.status}"}
     except urllib.error.URLError as e:
-        return {"ok": False, "message": str(e.reason) if getattr(e, "reason", None) else str(e)}
+        return {
+            "ok": False,
+            "message": str(e.reason) if getattr(e, "reason", None) else str(e),
+        }
     except Exception as e:
         return {"ok": False, "message": str(e)}
 
@@ -137,6 +160,7 @@ def run_health(base_url: Optional[str] = None) -> Dict[str, Any]:
             req = urllib.request.Request(url, method="GET")
             with urllib.request.urlopen(req, timeout=HEALTH_TIMEOUT_SEC) as r:
                 import json
+
                 return json.loads(r.read().decode())
         except Exception as e:
             return {"ok": False, "score": 0, "error": str(e), "checks": {}}
@@ -188,7 +212,9 @@ def health_score(checks: Dict[str, Any]) -> int:
     return min(100, int(round(100.0 * ok_count / n)))
 
 
-def run_health_verbose(base_url: Optional[str] = None, active_port: Optional[int] = None) -> Dict[str, Any]:
+def run_health_verbose(
+    base_url: Optional[str] = None, active_port: Optional[int] = None
+) -> Dict[str, Any]:
     """
     Run health and return API shape: ok, score 0-100, checks (api_up, memory_writable, audit_writable,
     scheduler_alive, llm_reachable, avg_latency_ms, error_rate, active_port, version, channel), ms, error.
@@ -201,11 +227,18 @@ def run_health_verbose(base_url: Optional[str] = None, active_port: Optional[int
             req = urllib.request.Request(url, method="GET")
             with urllib.request.urlopen(req, timeout=HEALTH_TIMEOUT_SEC) as r:
                 import json
+
                 data = json.loads(r.read().decode())
                 data["ms"] = int((time.perf_counter() - t0) * 1000)
                 return data
         except Exception as e:
-            return {"ok": False, "score": 0, "checks": {}, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+            return {
+                "ok": False,
+                "score": 0,
+                "checks": {},
+                "ms": int((time.perf_counter() - t0) * 1000),
+                "error": str(e),
+            }
 
     api_up = True
     _mem = _check_memory_writable()
@@ -220,6 +253,7 @@ def run_health_verbose(base_url: Optional[str] = None, active_port: Optional[int
         avg_latency_ms = 0.0
     try:
         from modules.humanoid.metrics import get_metrics_store
+
         snap = get_metrics_store().snapshot()
         counters = snap.get("counters") or {}
         total = max(1, counters.get("requests", 1) + counters.get("errors", 0))
@@ -228,13 +262,18 @@ def run_health_verbose(base_url: Optional[str] = None, active_port: Optional[int
         error_rate = 0.0
     try:
         from modules.humanoid.release import get_version_info
+
         version_info = get_version_info()
         version = version_info.get("version", "0.0.0")
         channel = version_info.get("channel", "canary")
     except Exception:
         version = "0.0.0"
         channel = "canary"
-    port = active_port if active_port is not None else int(os.getenv("ACTIVE_PORT", "8791") or 8791)
+    port = (
+        active_port
+        if active_port is not None
+        else int(os.getenv("ACTIVE_PORT", "8791") or 8791)
+    )
 
     score = 0
     if api_up:
@@ -256,6 +295,7 @@ def run_health_verbose(base_url: Optional[str] = None, active_port: Optional[int
     ans_open_incidents = 0
     try:
         from modules.humanoid.ans.incident import get_incidents
+
         ans_open_incidents = len(get_incidents(status="open", limit=20))
         # Penalización acotada para no dejar el sistema en crítico por incidentes acumulados (ej. Tesseract ya resuelto)
         penalty = min(10, ans_open_incidents * 1)
@@ -268,9 +308,14 @@ def run_health_verbose(base_url: Optional[str] = None, active_port: Optional[int
     nervous_score = None
     try:
         from modules.humanoid.nervous import db as nervous_db
-        from modules.humanoid.nervous.scoring import compute_score as compute_nervous_score
+        from modules.humanoid.nervous.scoring import \
+            compute_score as compute_nervous_score
+
         nervous_points = nervous_db.open_points()
-        nervous_score = compute_nervous_score(base_health_score=int(score), open_points_total=int(nervous_points.get("points_total", 0) or 0))
+        nervous_score = compute_nervous_score(
+            base_health_score=int(score),
+            open_points_total=int(nervous_points.get("points_total", 0) or 0),
+        )
     except Exception:
         nervous_score = None
 
@@ -280,7 +325,9 @@ def run_health_verbose(base_url: Optional[str] = None, active_port: Optional[int
         "audit_writable": audit_writable,
         "scheduler_alive": scheduler_alive,
         "llm_reachable": llm_reachable,
-        "avg_latency_ms": round(avg_latency_ms, 1) if isinstance(avg_latency_ms, (int, float)) else None,
+        "avg_latency_ms": round(avg_latency_ms, 1)
+        if isinstance(avg_latency_ms, (int, float))
+        else None,
         "error_rate": round(error_rate, 4),
         "ans_open_incidents": ans_open_incidents,
         "nervous_score": nervous_score,
@@ -294,4 +341,10 @@ def run_health_verbose(base_url: Optional[str] = None, active_port: Optional[int
     ms = int((time.perf_counter() - t0) * 1000)
     # 50–59: degradado (ok=True para no bloquear); >= 60: sano
     ok = score >= 50
-    return {"ok": ok, "score": min(100, score), "checks": checks, "ms": ms, "error": None if ok else "health score < 50"}
+    return {
+        "ok": ok,
+        "score": min(100, score),
+        "checks": checks,
+        "ms": ms,
+        "error": None if ok else "health score < 50",
+    }

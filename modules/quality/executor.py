@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .models import POT, POTResult
-from .policy import GitPolicy, filter_paths_for_commit, get_git_policy, repo_root
+from .policy import (GitPolicy, filter_paths_for_commit, get_git_policy,
+                     repo_root)
 
 
 def _now() -> str:
@@ -15,7 +16,9 @@ def _now() -> str:
 
 
 def _run(cmd: List[str], cwd: Path, timeout: int = 45) -> Tuple[bool, str]:
-    p = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, timeout=timeout)
+    p = subprocess.run(
+        cmd, cwd=str(cwd), capture_output=True, text=True, timeout=timeout
+    )
     out = ((p.stdout or "") + "\n" + (p.stderr or "")).strip()
     return p.returncode == 0, out
 
@@ -52,12 +55,20 @@ def _git_ahead_behind(cwd: Path) -> Tuple[int, int, str]:
     behind = 0
     if "ahead" in first:
         try:
-            ahead = int(first.split("ahead", 1)[1].split(",", 1)[0].strip().split()[0].strip("]"))
+            ahead = int(
+                first.split("ahead", 1)[1]
+                .split(",", 1)[0]
+                .strip()
+                .split()[0]
+                .strip("]")
+            )
         except Exception:
             ahead = 0
     if "behind" in first:
         try:
-            behind = int(first.split("behind", 1)[1].split("]", 1)[0].strip().split()[0])
+            behind = int(
+                first.split("behind", 1)[1].split("]", 1)[0].strip().split()[0]
+            )
         except Exception:
             behind = 0
     return ahead, behind, first.strip()
@@ -72,17 +83,27 @@ def run_pot(pot: POT, context: Optional[Dict] = None) -> POTResult:
     for step in pot.steps:
         try:
             out = step.run(ctx)
-            step_outputs.append({"id": step.id, "name": step.name, "ok": True, "output": out})
+            step_outputs.append(
+                {"id": step.id, "name": step.name, "ok": True, "output": out}
+            )
             buf.append(f"[OK] {step.name}\n{out}".rstrip())
         except Exception as e:
             ok_all = False
-            step_outputs.append({"id": step.id, "name": step.name, "ok": False, "error": str(e)})
+            step_outputs.append(
+                {"id": step.id, "name": step.name, "ok": False, "error": str(e)}
+            )
             buf.append(f"[FAIL] {step.name}\n{e}".rstrip())
             if step.fatal:
                 break
 
     report_path = _write_report(pot, ok_all, step_outputs)
-    return POTResult(pot_id=pot.id, ok=ok_all, output="\n\n".join(buf).strip(), step_outputs=step_outputs, report_path=report_path)
+    return POTResult(
+        pot_id=pot.id,
+        ok=ok_all,
+        output="\n\n".join(buf).strip(),
+        step_outputs=step_outputs,
+        report_path=report_path,
+    )
 
 
 def _write_report(pot: POT, ok: bool, step_outputs: List[Dict]) -> str:
@@ -121,7 +142,9 @@ def git_safe_sync(mode: str = "check") -> str:
     # (check-only siempre permitido para evidencia)
     if mode == "sync":
         try:
-            okb, outb = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=root, timeout=10)
+            okb, outb = _run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=root, timeout=10
+            )
             branch = (outb or "").strip().splitlines()[-1] if outb else ""
             if not okb or branch == "HEAD":
                 raise RuntimeError("SYNC BLOQUEADO: repo en detached HEAD (no branch).")
@@ -130,7 +153,9 @@ def git_safe_sync(mode: str = "check") -> str:
         except Exception:
             raise RuntimeError("SYNC BLOQUEADO: no se pudo determinar branch actual.")
         try:
-            if (root / ".git" / "rebase-merge").exists() or (root / ".git" / "rebase-apply").exists():
+            if (root / ".git" / "rebase-merge").exists() or (
+                root / ".git" / "rebase-apply"
+            ).exists():
                 raise RuntimeError("SYNC BLOQUEADO: rebase en progreso detectado.")
         except RuntimeError:
             raise
@@ -217,4 +242,3 @@ def git_safe_sync(mode: str = "check") -> str:
 
     lines.append(f"- status_final={header2}")
     return "\n".join(lines)
-

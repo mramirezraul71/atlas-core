@@ -49,7 +49,11 @@ def _state_path() -> Path:
     root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or ""
     if root:
         return Path(root).resolve() / "config" / "brain_state.json"
-    return Path(__file__).resolve().parent.parent.parent.parent / "config" / "brain_state.json"
+    return (
+        Path(__file__).resolve().parent.parent.parent.parent
+        / "config"
+        / "brain_state.json"
+    )
 
 
 def _load() -> Dict[str, Any]:
@@ -83,7 +87,10 @@ def _save(state: Dict[str, Any]) -> None:
     except (OSError, IOError, PermissionError) as e:
         # Si no se puede escribir (permisos, disco, etc.), el estado queda solo en memoria
         import logging
-        logging.getLogger(__name__).warning("brain_state: no se pudo guardar en %s: %s", _state_path(), e)
+
+        logging.getLogger(__name__).warning(
+            "brain_state: no se pudo guardar en %s: %s", _state_path(), e
+        )
 
 
 def get_brain_state() -> Dict[str, Any]:
@@ -101,7 +108,7 @@ def set_brain_state(
 ) -> Dict[str, Any]:
     """
     Actualiza configuración del cerebro.
-    
+
     Args:
         mode: 'auto' | 'manual'
         override_model: full_key (ej. ollama:llama3.1:latest) o null
@@ -111,41 +118,41 @@ def set_brain_state(
         features: dict de características habilitadas
     """
     state = _load()
-    
+
     # Mode
     if mode is not None and isinstance(mode, str):
         state["mode"] = "manual" if mode.strip().lower() == "manual" else "auto"
-    
+
     # Override model
     if override_model is not None and isinstance(override_model, str):
         state["override_model"] = override_model.strip() or None
-    
+
     # En modo auto, no hay override
     if state.get("mode") == "auto":
         state["override_model"] = None
-    
+
     # Auto route
     if auto_route is not None:
         state["auto_route"] = bool(auto_route)
-    
+
     # Specialists
     if specialists is not None and isinstance(specialists, dict):
         if "specialists" not in state:
             state["specialists"] = {}
         state["specialists"].update(specialists)
-    
+
     # Parameters
     if parameters is not None and isinstance(parameters, dict):
         if "parameters" not in state:
             state["parameters"] = {}
         state["parameters"].update(parameters)
-    
+
     # Features
     if features is not None and isinstance(features, dict):
         if "features" not in state:
             state["features"] = {}
         state["features"].update(features)
-    
+
     _save(state)
     global _BRAIN_STATE
     _BRAIN_STATE = state

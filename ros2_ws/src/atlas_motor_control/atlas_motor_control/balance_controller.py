@@ -9,11 +9,12 @@ Architecture reference: IHMC Open Robotics Software
 - Center of Pressure (CoP) tracking
 - Zero Moment Point (ZMP) regulation
 """
+import math
+
 import rclpy
+from geometry_msgs.msg import Vector3Stamped, WrenchStamped
 from rclpy.node import Node
 from sensor_msgs.msg import Imu, JointState
-from geometry_msgs.msg import WrenchStamped, Vector3Stamped
-import math
 
 
 class BalanceController(Node):
@@ -41,8 +42,12 @@ class BalanceController(Node):
 
         # Subscribers
         self.create_subscription(Imu, "/atlas/imu/data", self._imu_cb, 10)
-        self.create_subscription(WrenchStamped, "/atlas/ft/left_foot", self._ft_left_cb, 10)
-        self.create_subscription(WrenchStamped, "/atlas/ft/right_foot", self._ft_right_cb, 10)
+        self.create_subscription(
+            WrenchStamped, "/atlas/ft/left_foot", self._ft_left_cb, 10
+        )
+        self.create_subscription(
+            WrenchStamped, "/atlas/ft/right_foot", self._ft_right_cb, 10
+        )
         self.create_subscription(JointState, "/atlas/joint_states", self._joint_cb, 10)
 
         # Publishers
@@ -123,7 +128,9 @@ class BalanceController(Node):
         d_error = (error - self._prev_pitch_error) / dt
         self._prev_pitch_error = error
 
-        correction = self.kp * error + self.ki * self._pitch_error_integral + self.kd * d_error
+        correction = (
+            self.kp * error + self.ki * self._pitch_error_integral + self.kd * d_error
+        )
 
         cmd = JointState()
         cmd.header.stamp = self.get_clock().now().to_msg()

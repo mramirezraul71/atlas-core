@@ -49,16 +49,32 @@ class AuditLogger:
         if not self._enabled:
             return
         if self._log_to_std:
-            _log.info("[audit] %s %s %s %s ok=%s ms=%s", actor, role, module, action, ok, ms)
+            _log.info(
+                "[audit] %s %s %s %s ok=%s ms=%s", actor, role, module, action, ok, ms
+            )
         if self._db is not None:
             try:
-                self._db.log_event(actor, role, module, action, ok, ms, error, payload, result)
+                self._db.log_event(
+                    actor, role, module, action, ok, ms, error, payload, result
+                )
             except Exception as e:
                 _log.warning("AuditDB log_event failed: %s", e)
 
-    def log(self, scope: str, action: str, payload: Dict[str, Any], result: str = "ok") -> None:
+    def log(
+        self, scope: str, action: str, payload: Dict[str, Any], result: str = "ok"
+    ) -> None:
         """Legacy: log(scope, action, payload, result). Maps to log_event with actor=api, role=owner."""
-        self.log_event("api", "owner", scope, action, result == "ok", 0, None, payload, {"result": result})
+        self.log_event(
+            "api",
+            "owner",
+            scope,
+            action,
+            result == "ok",
+            0,
+            None,
+            payload,
+            {"result": result},
+        )
 
     def tail(self, n: int = 50, module: Optional[str] = None) -> List[Dict[str, Any]]:
         """Last n audit entries (delegates to DB if present)."""

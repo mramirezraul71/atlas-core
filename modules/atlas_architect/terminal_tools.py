@@ -38,8 +38,14 @@ class TerminalTools:
         self.repo_root = Path(repo_root).resolve()
         self.shell = SafeShellExecutor()
 
-    def run(self, cmd: str, timeout_s: int = 180, cwd: Optional[Path] = None) -> CommandResult:
-        res = self.shell.run(cmd, cwd=str((cwd or self.repo_root).resolve()), timeout_sec=int(timeout_s or 180))
+    def run(
+        self, cmd: str, timeout_s: int = 180, cwd: Optional[Path] = None
+    ) -> CommandResult:
+        res = self.shell.run(
+            cmd,
+            cwd=str((cwd or self.repo_root).resolve()),
+            timeout_sec=int(timeout_s or 180),
+        )
         return CommandResult(
             ok=bool(res.get("ok")),
             cmd=cmd,
@@ -49,7 +55,12 @@ class TerminalTools:
             error=res.get("error"),
         )
 
-    def run_pytest(self, nodeid: Optional[str] = None, timeout_s: int = 300, cwd: Optional[Path] = None) -> Dict[str, Any]:
+    def run_pytest(
+        self,
+        nodeid: Optional[str] = None,
+        timeout_s: int = 300,
+        cwd: Optional[Path] = None,
+    ) -> Dict[str, Any]:
         cmd = "python -m pytest -q"
         if nodeid:
             cmd += " " + nodeid
@@ -67,7 +78,9 @@ class TerminalTools:
         }
 
     # Alias explícito para el agente (API consistente)
-    def run_command(self, cmd: str, timeout_s: int = 180, cwd: Optional[Path] = None) -> Dict[str, Any]:
+    def run_command(
+        self, cmd: str, timeout_s: int = 180, cwd: Optional[Path] = None
+    ) -> Dict[str, Any]:
         r = self.run(cmd, timeout_s=timeout_s, cwd=cwd)
         return {
             "ok": r.ok,
@@ -76,6 +89,7 @@ class TerminalTools:
             "stdout": r.stdout[-20000:],
             "stderr": r.stderr[-20000:],
             "error": r.error,
-            "issues": _parse_pytest_failures((r.stdout or "") + "\n" + (r.stderr or "")),
+            "issues": _parse_pytest_failures(
+                (r.stdout or "") + "\n" + (r.stderr or "")
+            ),
         }
-

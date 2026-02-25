@@ -106,26 +106,26 @@ POT(
     description="...",
     category=POTCategory.REPAIR,
     severity=POTSeverity.MEDIUM,
-    
+
     # Triggers (cuándo activar este POT)
     trigger_check_ids=["camera_*", "vision_*"],
     trigger_keywords=["camera", "webcam", "opencv"],
-    
+
     # Requisitos
     prerequisites=["Robot backend corriendo", ...],
     required_services=["robot", "push"],
     required_permissions=["camera_control"],
-    
+
     # Objetivos
     objectives=["Identificar cámaras", "Diagnosticar fallas", ...],
     success_criteria="Al menos una cámara captura frames",
     estimated_duration_minutes=5,
-    
+
     # Tutorial
     tutorial_overview="...",
     best_practices=["Usar subprocess aislado", ...],
     warnings=["NO abrir múltiples cámaras", ...],
-    
+
     # Pasos
     steps=[
         POTStep(
@@ -138,7 +138,7 @@ POT(
         ),
         ...
     ],
-    
+
     # Rollback (opcional)
     has_rollback=True,
     rollback_steps=[...],

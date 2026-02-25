@@ -63,6 +63,7 @@ class FileLock:
 def file_lock(target: Path, timeout_s: float = 5.0) -> FileLock:
     """PY004: obtener un lock para un target (crea `<target>.lock`)."""
     p = Path(target)
-    lock_path = p.with_suffix(p.suffix + ".lock") if p.suffix else Path(str(p) + ".lock")
+    lock_path = (
+        p.with_suffix(p.suffix + ".lock") if p.suffix else Path(str(p) + ".lock")
+    )
     return FileLock(lock_path=lock_path, timeout_s=timeout_s)
-

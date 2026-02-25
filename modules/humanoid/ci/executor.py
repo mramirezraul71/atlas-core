@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
-from .policy_gate import can_autofix, _ci_autofix_limit
+from .policy_gate import _ci_autofix_limit, can_autofix
 
 REPO_ROOT = Path(os.getenv("POLICY_ALLOWED_PATHS", "C:\\ATLAS_PUSH")).resolve()
 
@@ -24,7 +24,7 @@ def apply_autofix(item: Dict[str, Any]) -> Dict[str, Any]:
             text = full.read_text(encoding="utf-8", errors="replace")
             if "param(" in text or "Param(" in text:
                 return {"ok": True, "path": path, "error": None}
-            insert = "param(\n    [Parameter(Mandatory=$false)][string]$ParamName = \"default\"\n)\n"
+            insert = 'param(\n    [Parameter(Mandatory=$false)][string]$ParamName = "default"\n)\n'
             if text.lstrip().startswith("#"):
                 idx = text.find("\n") + 1
                 new_text = text[:idx] + insert + text[idx:]

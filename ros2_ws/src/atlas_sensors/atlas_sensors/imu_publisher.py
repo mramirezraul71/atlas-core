@@ -5,12 +5,13 @@ Publishes IMU data (orientation, angular velocity, linear acceleration).
 In simulation mode, generates synthetic data.
 In hardware mode, reads from real IMU over serial/CAN.
 """
+import math
+import time
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
 from std_msgs.msg import Header
-import math
-import time
 
 
 class ImuPublisher(Node):

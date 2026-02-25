@@ -13,16 +13,27 @@ def _policy_allows_ga_autorun() -> bool:
     try:
         from modules.humanoid.policy import get_policy_engine
         from modules.humanoid.policy.models import ActorContext
+
         ctx = ActorContext(actor="ga_system", role="system")
         return get_policy_engine().can(ctx, "ga", "ga_autorun", None).allow
     except Exception:
         return False
 
 
-def _audit(module: str, action: str, ok: bool, payload: Optional[Dict] = None, error: Optional[str] = None, ms: int = 0) -> None:
+def _audit(
+    module: str,
+    action: str,
+    ok: bool,
+    payload: Optional[Dict] = None,
+    error: Optional[str] = None,
+    ms: int = 0,
+) -> None:
     try:
         from modules.humanoid.audit import get_audit_logger
-        get_audit_logger().log_event("ga", "system", module, action, ok, ms, error, payload, None)
+
+        get_audit_logger().log_event(
+            "ga", "system", module, action, ok, ms, error, payload, None
+        )
     except Exception:
         pass
 
@@ -30,6 +41,7 @@ def _audit(module: str, action: str, ok: bool, payload: Optional[Dict] = None, e
 def _write_memory(summary: str, payload: Dict[str, Any]) -> None:
     try:
         from modules.humanoid.memory_engine import ensure_thread, memory_write
+
         tid = ensure_thread(None, "GA")
         memory_write(tid, "summary", {"content": summary, **payload})
     except Exception:
@@ -42,7 +54,12 @@ def _dispatch_add_timeout(cand: ActionCandidate) -> ExecutionResult:
     meta = cand.finding.meta
     path = meta.get("path", cand.payload.get("path", ""))
     if not path:
-        return ExecutionResult(action_type="add_timeout", ok=False, error="no path", ms=int((time.perf_counter() - t0) * 1000))
+        return ExecutionResult(
+            action_type="add_timeout",
+            ok=False,
+            error="no path",
+            ms=int((time.perf_counter() - t0) * 1000),
+        )
     # Deterministic: create placeholder evidence (real impl would patch file)
     return ExecutionResult(
         action_type="add_timeout",
@@ -83,7 +100,12 @@ def _dispatch_log_improvement(cand: ActionCandidate) -> ExecutionResult:
 def _dispatch_notify_owner(cand: ActionCandidate) -> ExecutionResult:
     """Notify owner - audit only (no external notify in safe mode)."""
     t0 = time.perf_counter()
-    _audit("ga", "notify_owner", True, {"finding": cand.finding.detail, "source": cand.finding.source})
+    _audit(
+        "ga",
+        "notify_owner",
+        True,
+        {"finding": cand.finding.detail, "source": cand.finding.source},
+    )
     return ExecutionResult(
         action_type="notify_owner",
         ok=True,
@@ -100,6 +122,7 @@ def _dispatch_autofix(cand: ActionCandidate) -> ExecutionResult:
     action = "add_param_defaults" if cand.finding.kind == "ps1_no_param" else "autofix"
     try:
         from modules.humanoid.ci.executor import apply_autofix
+
         item = {"action": action, "path": path}
         r = apply_autofix(item)
     except ImportError:
@@ -123,6 +146,7 @@ def _dispatch_update_check(cand: ActionCandidate) -> ExecutionResult:
     t0 = time.perf_counter()
     try:
         from modules.humanoid.update.update_engine import check
+
         r = check()
         ok = r.get("ok", False)
     except Exception as e:
@@ -145,6 +169,7 @@ def _dispatch_restart_internal_loop(cand: ActionCandidate) -> ExecutionResult:
     t0 = time.perf_counter()
     try:
         from modules.humanoid.healing import restart_scheduler
+
         r = restart_scheduler()
         ok = r.get("ok", False)
     except Exception as e:
@@ -182,15 +207,27 @@ def execute_safe(
         return []
     try:
         from modules.humanoid.governance.gates import decide
+
         d = decide("ga_autorun")
         if d.blocked_by_emergency:
-            _audit("ga", "safe_execute", False, {"blocked": "emergency_stop"}, "emergency_stop_block", 0)
+            _audit(
+                "ga",
+                "safe_execute",
+                False,
+                {"blocked": "emergency_stop"},
+                "emergency_stop_block",
+                0,
+            )
             return []
         if d.needs_approval and not d.allow:
             return []
     except Exception:
         pass
-    enabled = os.getenv("GA_SAFE_AUTORUN_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+    enabled = os.getenv("GA_SAFE_AUTORUN_ENABLED", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     if not enabled:
         return []
     results: List[ExecutionResult] = []
@@ -202,7 +239,12 @@ def execute_safe(
         try:
             res = fn(c)
         except Exception as e:
-            res = ExecutionResult(action_type=c.action_type, ok=False, error=str(e), ms=int((time.perf_counter() - t0) * 1000))
+            res = ExecutionResult(
+                action_type=c.action_type,
+                ok=False,
+                error=str(e),
+                ms=int((time.perf_counter() - t0) * 1000),
+            )
         if strict_evidence and res.ok:
             req = c.evidence_required
             if "exit_code" in req and res.exit_code is None:
@@ -213,11 +255,28 @@ def execute_safe(
                     ms=res.ms,
                 )
         if res.ok:
-            _audit("ga", "safe_execute", True, {"action": c.action_type, "finding": c.finding.detail}, None, res.ms)
-            _write_memory(f"GA safe: {c.action_type} - {c.finding.detail}", {"action": c.action_type, "evidence": res.evidence})
+            _audit(
+                "ga",
+                "safe_execute",
+                True,
+                {"action": c.action_type, "finding": c.finding.detail},
+                None,
+                res.ms,
+            )
+            _write_memory(
+                f"GA safe: {c.action_type} - {c.finding.detail}",
+                {"action": c.action_type, "evidence": res.evidence},
+            )
         try:
             from modules.humanoid.metalearn.collector import record_ga_action
-            record_ga_action(c.action_type, c.risk_level, "ok" if res.ok else "fail", res.ms, {"action_type": c.action_type, "evidence": res.evidence})
+
+            record_ga_action(
+                c.action_type,
+                c.risk_level,
+                "ok" if res.ok else "fail",
+                res.ms,
+                {"action_type": c.action_type, "evidence": res.evidence},
+            )
         except Exception:
             pass
         results.append(res)

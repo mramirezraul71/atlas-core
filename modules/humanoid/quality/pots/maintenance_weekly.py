@@ -9,7 +9,8 @@ Triggers:
 
 Severidad: MEDIUM (algunas operaciones pueden afectar rendimiento temporalmente)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -28,10 +29,8 @@ Procedimiento de mantenimiento semanal más exhaustivo que incluye:
         severity=POTSeverity.MEDIUM,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["weekly_maintenance", "scheduled_weekly"],
         trigger_keywords=["weekly", "semanal", "deep", "maintenance"],
-        
         prerequisites=[
             "Mantenimiento diario ejecutado",
             "Sistema en estado estable",
@@ -39,7 +38,6 @@ Procedimiento de mantenimiento semanal más exhaustivo que incluye:
         ],
         required_services=["push", "robot"],
         required_permissions=["db_optimize", "service_restart"],
-        
         objectives=[
             "Optimizar bases de datos SQLite (VACUUM)",
             "Verificar dependencias actualizables",
@@ -49,7 +47,6 @@ Procedimiento de mantenimiento semanal más exhaustivo que incluye:
         ],
         success_criteria="Todas las tareas completadas, ninguna alerta crítica",
         estimated_duration_minutes=20,
-        
         tutorial_overview="""
 ## Guía de Mantenimiento Semanal
 
@@ -73,23 +70,19 @@ ANALYZE; -- Actualiza estadísticas para queries
 - Snapshots sin referencia en reportes
 - Logs de procesos que ya no existen
         """.strip(),
-        
         best_practices=[
             "Ejecutar siempre en horario de baja actividad",
             "Hacer backup antes de VACUUM en DBs grandes",
             "Revisar changelog de dependencias antes de actualizar",
             "Documentar cualquier anomalía encontrada",
         ],
-        
         warnings=[
             "VACUUM puede tardar varios minutos en DBs grandes",
             "No interrumpir el proceso una vez iniciado",
             "Servicios pueden reiniciarse durante el proceso",
         ],
-        
         related_pots=["maintenance_daily", "diagnostic_full", "upgrade_dependencies"],
         tags=["maintenance", "weekly", "optimization", "vacuum", "preventive"],
-        
         steps=[
             POTStep(
                 id="run_daily_first",
@@ -98,7 +91,6 @@ ANALYZE; -- Actualiza estadísticas para queries
                 step_type=StepType.LOG,
                 tutorial_notes="El mantenimiento semanal asume que el diario ya se ejecutó.",
             ),
-            
             POTStep(
                 id="vacuum_scheduler_db",
                 name="Optimizar DB del scheduler",
@@ -109,7 +101,6 @@ ANALYZE; -- Actualiza estadísticas para queries
                 continue_on_failure=True,
                 tutorial_notes="VACUUM reconstruye la DB eliminando fragmentación.",
             ),
-            
             POTStep(
                 id="vacuum_ans_db",
                 name="Optimizar DB del ANS",
@@ -119,7 +110,6 @@ ANALYZE; -- Actualiza estadísticas para queries
                 timeout_seconds=120,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="vacuum_approvals_db",
                 name="Optimizar DB de aprobaciones",
@@ -129,7 +119,6 @@ ANALYZE; -- Actualiza estadísticas para queries
                 timeout_seconds=60,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_dependency_updates",
                 name="Verificar actualizaciones de dependencias",
@@ -141,7 +130,6 @@ ANALYZE; -- Actualiza estadísticas para queries
                 capture_output=True,
                 tutorial_notes="Solo lista, NO actualiza. Las actualizaciones requieren POT upgrade_dependencies.",
             ),
-            
             POTStep(
                 id="clean_workshop_stale",
                 name="Limpiar tickets huérfanos del Workshop",
@@ -152,7 +140,6 @@ ANALYZE; -- Actualiza estadísticas para queries
                 continue_on_failure=True,
                 tutorial_notes="Tickets en 'working' por más de 24h probablemente fallaron.",
             ),
-            
             POTStep(
                 id="camera_diagnostic",
                 name="Diagnóstico completo de cámaras",
@@ -163,7 +150,6 @@ ANALYZE; -- Actualiza estadísticas para queries
                 continue_on_failure=True,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="preventive_restart_robot",
                 name="Reinicio preventivo de Robot",
@@ -178,7 +164,6 @@ Reinicio preventivo semanal:
 - Limpia handles de archivos
                 """,
             ),
-            
             POTStep(
                 id="wait_stabilize",
                 name="Esperar estabilización",
@@ -186,7 +171,6 @@ Reinicio preventivo semanal:
                 step_type=StepType.WAIT,
                 wait_seconds=10,
             ),
-            
             POTStep(
                 id="full_health_check",
                 name="Verificación completa de salud",
@@ -196,7 +180,6 @@ Reinicio preventivo semanal:
                 timeout_seconds=60,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="generate_weekly_report",
                 name="Generar reporte semanal",
@@ -207,7 +190,6 @@ Reinicio preventivo semanal:
                 timeout_seconds=30,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="notify_completion",
                 name="Notificar completación",
@@ -217,7 +199,6 @@ Reinicio preventivo semanal:
                 notify_message="✅ Mantenimiento semanal completado. Sistema optimizado.",
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="log_maintenance",
                 name="Registrar en bitácora",
@@ -228,7 +209,7 @@ Reinicio preventivo semanal:
                 http_body={
                     "message": "[MANTENIMIENTO] Mantenimiento semanal completado por POT",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
                 continue_on_failure=True,
             ),

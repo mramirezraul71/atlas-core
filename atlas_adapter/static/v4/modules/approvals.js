@@ -81,4 +81,3 @@ function _render(container, data) {
 function _esc(s) { const d = document.createElement('span'); d.textContent = s || ''; return d.innerHTML; }
 
 window.AtlasModuleApprovals = { id: 'approvals' };
-

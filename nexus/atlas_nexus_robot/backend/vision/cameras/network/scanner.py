@@ -3,12 +3,12 @@ Escaneo de red local - obtiene rango IP y escanea puertos de cámara.
 Usa la red detectada por Windows (interfaces de red).
 """
 
+import logging
 import socket
 import subprocess
 import sys
-import logging
-from typing import List, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +25,16 @@ def get_local_network() -> List[Tuple[str, str]]:
     try:
         if sys.platform == "win32":
             ps = subprocess.run(
-                ["powershell", "-NoProfile", "-Command",
-                 "Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' } | "
-                 "Select-Object IPAddress, PrefixLength | ConvertTo-Json -Compress"],
-                capture_output=True, text=True, timeout=5
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    "Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' } | "
+                    "Select-Object IPAddress, PrefixLength | ConvertTo-Json -Compress",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if ps.returncode == 0 and ps.stdout:
                 data = __import__("json").loads(ps.stdout)
@@ -42,6 +48,7 @@ def get_local_network() -> List[Tuple[str, str]]:
                         results.append((base, prefix))
         else:
             import netifaces
+
             for iface in netifaces.interfaces():
                 addrs = netifaces.ifaddresses(iface)
                 if netifaces.AF_INET in addrs:

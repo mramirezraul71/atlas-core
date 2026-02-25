@@ -37,4 +37,3 @@ def atomic_write_json(path: Path, payload: Dict[str, Any]) -> None:
                 Path(tmp_name).unlink(missing_ok=True)
         except Exception:
             pass
-

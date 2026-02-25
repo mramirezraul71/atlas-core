@@ -7,10 +7,18 @@ import pytest
 
 
 def _enabled() -> bool:
-    return os.getenv("RUN_PYTHON_MASTERY", "").strip().lower() in ("1", "true", "yes", "on")
+    return os.getenv("RUN_PYTHON_MASTERY", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
-pytestmark = pytest.mark.skipif(not _enabled(), reason="Python Mastery tests deshabilitados (set RUN_PYTHON_MASTERY=1).")
+pytestmark = pytest.mark.skipif(
+    not _enabled(),
+    reason="Python Mastery tests deshabilitados (set RUN_PYTHON_MASTERY=1).",
+)
 
 
 @pytest.mark.asyncio
@@ -41,9 +49,10 @@ async def test_gather_with_limit_can_be_cancelled():
         await asyncio.sleep(1.0)
         return x
 
-    task = asyncio.create_task(gather_with_limit(list(range(50)), slow_worker, limit=5, timeout_s=None))
+    task = asyncio.create_task(
+        gather_with_limit(list(range(50)), slow_worker, limit=5, timeout_s=None)
+    )
     await asyncio.sleep(0.05)
     task.cancel()
     res = await task
     assert res.cancelled is True
-

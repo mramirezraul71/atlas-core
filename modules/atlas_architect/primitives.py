@@ -28,17 +28,27 @@ def create_environment(project_name: str) -> Dict[str, Any]:
 
         arch = AtlasArchitect(repo_root=root)
         v = arch.venv.ensure_venv(proj, venv_name=".venv")
-        return {"ok": bool(v.ok), "project_dir": str(proj), "venv_dir": v.venv_dir, "python_exe": v.python_exe, "error": v.error}
+        return {
+            "ok": bool(v.ok),
+            "project_dir": str(proj),
+            "venv_dir": v.venv_dir,
+            "python_exe": v.python_exe,
+            "error": v.error,
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)[:200], "project_dir": str(proj)}
 
 
-def patch_code(file: str, pattern: str, replacement: str, *, pattern_is_regex: bool = False) -> Dict[str, Any]:
+def patch_code(
+    file: str, pattern: str, replacement: str, *, pattern_is_regex: bool = False
+) -> Dict[str, Any]:
     """Edición atómica (regex o literal) con diff unificado."""
     p = Path(file).resolve()
     try:
-        from modules.atlas_architect.atomic_patcher import AtomicPatcher, RegexReplace
         import re
+
+        from modules.atlas_architect.atomic_patcher import (AtomicPatcher,
+                                                            RegexReplace)
 
         rx = pattern if pattern_is_regex else re.escape(pattern)
         ops = [RegexReplace(pattern=rx, repl=replacement, count=1)]
@@ -52,7 +62,9 @@ def patch_code(file: str, pattern: str, replacement: str, *, pattern_is_regex: b
         return {"ok": False, "error": str(e)[:200], "file": str(p)}
 
 
-def run_debug(script_path: str, *, max_attempts: int = 3, cwd: str = "") -> Dict[str, Any]:
+def run_debug(
+    script_path: str, *, max_attempts: int = 3, cwd: str = ""
+) -> Dict[str, Any]:
     """
     Bucle de ejecución con captura de stderr para auto-reparación (SelfHealingLoop).
     Ejecuta: python <script_path>
@@ -62,10 +74,16 @@ def run_debug(script_path: str, *, max_attempts: int = 3, cwd: str = "") -> Dict
         return {"ok": False, "error": "script_not_found", "script_path": str(p)}
     try:
         from modules.atlas_architect.agent import AtlasArchitect
+
         root = _repo_root()
         arch = AtlasArchitect(repo_root=root)
         cmd = f'python "{str(p)}"'
-        out = arch.healer.heal_command(cmd, max_attempts=int(max_attempts or 3), governed=False, cwd=Path(cwd).resolve() if cwd else None)
+        out = arch.healer.heal_command(
+            cmd,
+            max_attempts=int(max_attempts or 3),
+            governed=False,
+            cwd=Path(cwd).resolve() if cwd else None,
+        )
         return {"ok": bool(out.get("ok")), "result": out}
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
@@ -93,6 +111,7 @@ def generate_docs(app_context: Dict[str, Any]) -> Dict[str, Any]:
         lines.append("### Arquitectura (si existe)")
         try:
             from modules.atlas_architect.agent import AtlasArchitect
+
             arch = AtlasArchitect(repo_root=root)
             idx = arch.index_architecture()
             lines.append(f"- Index: `{idx.get('path')}`")
@@ -103,4 +122,3 @@ def generate_docs(app_context: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": True, "path": str(p)}
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
-

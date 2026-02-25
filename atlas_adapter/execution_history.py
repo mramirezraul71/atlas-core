@@ -106,4 +106,3 @@ def _write_all_unlocked(records: List[Dict[str, Any]]) -> None:
     if payload:
         payload += "\n"
     HISTORY_PATH.write_text(payload, encoding="utf-8")
-

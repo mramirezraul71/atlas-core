@@ -24,7 +24,11 @@ CREATE TABLE IF NOT EXISTS task_memory (
 
 
 def _db_path() -> str:
-    p = os.getenv("AUDIT_DB_PATH") or os.getenv("SCHED_DB_PATH") or "C:\\ATLAS_PUSH\\logs"
+    p = (
+        os.getenv("AUDIT_DB_PATH")
+        or os.getenv("SCHED_DB_PATH")
+        or "C:\\ATLAS_PUSH\\logs"
+    )
     return str(Path(p).parent / "atlas_task_memory.sqlite")
 
 
@@ -45,16 +49,32 @@ def _ensure() -> sqlite3.Connection:
         return _conn
 
 
-def save_task(task_id: str, goal: str, plan: Dict[str, Any], execution_log: List[Dict], status: str) -> None:
+def save_task(
+    task_id: str,
+    goal: str,
+    plan: Dict[str, Any],
+    execution_log: List[Dict],
+    status: str,
+) -> None:
     now = datetime.now(timezone.utc).isoformat()
     conn = _ensure()
     with _LOCK:
-        row = conn.execute("SELECT created_ts FROM task_memory WHERE id = ?", (task_id,)).fetchone()
+        row = conn.execute(
+            "SELECT created_ts FROM task_memory WHERE id = ?", (task_id,)
+        ).fetchone()
         created = row[0] if row else now
         conn.execute(
             """INSERT OR REPLACE INTO task_memory (id, goal, plan_json, execution_log_json, status, created_ts, updated_ts)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (task_id, goal, json.dumps(plan), json.dumps(execution_log), status, created, now),
+            (
+                task_id,
+                goal,
+                json.dumps(plan),
+                json.dumps(execution_log),
+                status,
+                created,
+                now,
+            ),
         )
         conn.commit()
 
@@ -62,7 +82,10 @@ def save_task(task_id: str, goal: str, plan: Dict[str, Any], execution_log: List
 def load_task(task_id: str) -> Optional[Dict[str, Any]]:
     conn = _ensure()
     with _LOCK:
-        row = conn.execute("SELECT id, goal, plan_json, execution_log_json, status FROM task_memory WHERE id = ?", (task_id,)).fetchone()
+        row = conn.execute(
+            "SELECT id, goal, plan_json, execution_log_json, status FROM task_memory WHERE id = ?",
+            (task_id,),
+        ).fetchone()
     if not row:
         return None
     return {

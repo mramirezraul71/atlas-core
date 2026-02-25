@@ -9,7 +9,8 @@ Triggers:
 
 Severidad: MEDIUM (puede afectar visión pero no es crítico para el sistema)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -25,11 +26,17 @@ verificación de frames.
         severity=POTSeverity.MEDIUM,
         version="2.0.0",
         author="ATLAS QA Senior",
-        
         # Triggers
         trigger_check_ids=["camera_health", "vision_camera", "cam_check", "camera_*"],
-        trigger_keywords=["camera", "cámara", "webcam", "opencv", "video", "capture", "frame"],
-        
+        trigger_keywords=[
+            "camera",
+            "cámara",
+            "webcam",
+            "opencv",
+            "video",
+            "capture",
+            "frame",
+        ],
         # Requisitos
         prerequisites=[
             "Robot backend debe estar corriendo (port 8002)",
@@ -38,7 +45,6 @@ verificación de frames.
         ],
         required_services=["robot", "push"],
         required_permissions=["camera_control", "service_restart"],
-        
         # Objetivos
         objectives=[
             "Identificar cámaras disponibles en el sistema",
@@ -48,7 +54,6 @@ verificación de frames.
         ],
         success_criteria="Al menos una cámara devuelve frame_ok=true y snapshot válido",
         estimated_duration_minutes=5,
-        
         # Tutorial
         tutorial_overview="""
 ## Guía de Reparación de Cámaras
@@ -66,7 +71,6 @@ Las cámaras en Windows pueden fallar por:
 3. Seleccionamos la mejor cámara funcional
 4. Aplicamos configuración y verificamos
         """.strip(),
-        
         best_practices=[
             "Siempre usar subprocess aislado para probar cámaras",
             "Preferir CAP_DSHOW sobre CAP_MSMF en Windows",
@@ -74,17 +78,14 @@ Las cámaras en Windows pueden fallar por:
             "Dar tiempo de inicialización (2-3 segundos) a cámaras lentas",
             "Cerrar aplicaciones que puedan estar usando la cámara",
         ],
-        
         warnings=[
             "NO abrir múltiples cámaras simultáneamente",
             "Si el robot backend crashea, el subprocess lo protegerá",
             "Algunos drivers escriben logs a stdout (manejar JSON parsing)",
         ],
-        
         related_pots=["services_repair", "vision_calibration", "diagnostic_full"],
         tags=["camera", "vision", "opencv", "hardware", "repair"],
         has_rollback=True,
-        
         # === PASOS DEL PROCEDIMIENTO ===
         steps=[
             POTStep(
@@ -102,7 +103,6 @@ Si el Robot no responde, no tiene sentido continuar con cámaras.
                 common_errors=["Connection refused = Robot no está corriendo"],
                 troubleshooting="Ejecutar: powershell scripts/restart_service_clean.ps1 -Service robot",
             ),
-            
             POTStep(
                 id="close_active_streams",
                 name="Cerrar streams activos",
@@ -118,7 +118,6 @@ Es crucial liberar cualquier cámara abierta antes de escanear.
 Evita conflictos de "device busy" y permite probar cada índice limpiamente.
                 """,
             ),
-            
             POTStep(
                 id="wait_device_release",
                 name="Esperar liberación de dispositivos",
@@ -127,7 +126,6 @@ Evita conflictos de "device busy" y permite probar cada índice limpiamente.
                 wait_seconds=2,
                 tutorial_notes="Windows necesita ~1-2 segundos para liberar handles de cámara.",
             ),
-            
             POTStep(
                 id="scan_cameras",
                 name="Escanear índices de cámara",
@@ -150,7 +148,6 @@ El script de auto-reparación:
                     "timeout = Cámara muy lenta o driver colgado",
                 ],
             ),
-            
             POTStep(
                 id="verify_selected_camera",
                 name="Verificar cámara seleccionada",
@@ -165,7 +162,6 @@ Después del scan, verificamos que el sistema reporta una cámara activa.
 El campo active_index debe tener un número (0, 1 o 2 típicamente).
                 """,
             ),
-            
             POTStep(
                 id="capture_test_snapshot",
                 name="Capturar snapshot de prueba",
@@ -187,7 +183,6 @@ Si falla, la cámara conecta pero no produce frames válidos.
                     "Imagen pequeña (<5KB) = Frame corrupto o negro",
                 ],
             ),
-            
             POTStep(
                 id="log_success",
                 name="Registrar éxito en bitácora",
@@ -198,12 +193,11 @@ Si falla, la cámara conecta pero no produce frames válidos.
                 http_body={
                     "message": "[REPARACIÓN] Cámara reparada exitosamente por POT camera_repair",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
                 continue_on_failure=True,
                 tutorial_notes="Siempre registrar en bitácora para trazabilidad.",
             ),
-            
             POTStep(
                 id="notify_success",
                 name="Notificar éxito",
@@ -214,7 +208,6 @@ Si falla, la cámara conecta pero no produce frames válidos.
                 continue_on_failure=True,
             ),
         ],
-        
         # === PASOS DE ROLLBACK ===
         rollback_steps=[
             POTStep(
@@ -227,7 +220,6 @@ Si falla, la cámara conecta pero no produce frames válidos.
                 http_body={"index": 0, "resolution": [640, 480]},
                 timeout_seconds=30,
             ),
-            
             POTStep(
                 id="rollback_restart_robot",
                 name="Reiniciar Robot backend",
@@ -236,7 +228,6 @@ Si falla, la cámara conecta pero no produce frames válidos.
                 command="powershell -ExecutionPolicy Bypass -File scripts/restart_service_clean.ps1 -Service robot",
                 timeout_seconds=90,
             ),
-            
             POTStep(
                 id="rollback_notify",
                 name="Notificar rollback",

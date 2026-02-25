@@ -14,7 +14,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
 
-_env = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "atlas.env")
+_env = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "atlas.env"
+)
 if os.path.exists(_env):
     load_dotenv(_env, override=True)
 else:
@@ -24,17 +26,16 @@ else:
 def test_import():
     print("[1/5] Importando Open Interpreter...", end=" ")
     from interpreter import OpenInterpreter
+
     print(f"OK - {OpenInterpreter}")
 
 
 def test_bridge_import():
     print("[2/5] Importando interpreter_bridge...", end=" ")
     from modules.humanoid.hands.interpreter_bridge import (
-        resolve_model,
-        list_available_models,
-        interpreter_status,
-        get_session_manager,
-    )
+        get_session_manager, interpreter_status, list_available_models,
+        resolve_model)
+
     print("OK")
     return resolve_model, list_available_models, interpreter_status, get_session_manager
 
@@ -82,7 +83,12 @@ def main():
 
     test_import()
 
-    resolve_model, list_available_models, interpreter_status, get_session_manager = test_bridge_import()
+    (
+        resolve_model,
+        list_available_models,
+        interpreter_status,
+        get_session_manager,
+    ) = test_bridge_import()
     test_model_resolution(resolve_model, list_available_models)
     test_status(interpreter_status)
     test_session_lifecycle(get_session_manager)

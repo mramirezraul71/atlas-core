@@ -6,8 +6,16 @@ import os
 import urllib.request
 from typing import Any, Dict, Optional
 
-NEXUS_ROBOT_API_URL = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
-NEXUS_ENABLED = (os.getenv("NEXUS_ENABLED") or "").strip().lower() in ("1", "true", "yes", "y", "on")
+NEXUS_ROBOT_API_URL = (
+    os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002"
+).rstrip("/")
+NEXUS_ENABLED = (os.getenv("NEXUS_ENABLED") or "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+)
 NERVE_NEXUS_TIMEOUT = int(os.getenv("NERVE_NEXUS_TIMEOUT", "5"))
 
 
@@ -24,6 +32,7 @@ def _nexus_eyes_available() -> bool:
             if r.status != 200:
                 return False
             import json
+
             data = json.loads(r.read().decode("utf-8"))
             return bool(data.get("ok", False) and data.get("snapshot_url"))
     except Exception:
@@ -58,15 +67,17 @@ def _nexus_snapshot_advanced(
     try:
         from urllib.parse import urlencode
 
-        qs = urlencode({
-            "source": source,
-            "enhance": enhance,
-            "jpeg_quality": int(jpeg_quality),
-            "focus_x": float(focus_x),
-            "focus_y": float(focus_y),
-            "zoom": float(zoom),
-            "index": int(index),
-        })
+        qs = urlencode(
+            {
+                "source": source,
+                "enhance": enhance,
+                "jpeg_quality": int(jpeg_quality),
+                "focus_x": float(focus_x),
+                "focus_y": float(focus_y),
+                "zoom": float(zoom),
+                "index": int(index),
+            }
+        )
         url = f"{NEXUS_ROBOT_API_URL}/api/vision/snapshot?{qs}"
         req = urllib.request.Request(url, method="GET")
         with urllib.request.urlopen(req, timeout=NERVE_NEXUS_TIMEOUT) as r:
@@ -107,9 +118,12 @@ def eyes_capture(
             if raw_until:
                 try:
                     import time as _time
+
                     until = float(raw_until)
                     if _time.time() >= until:
-                        from modules.humanoid.vision.ubiq.registry import set_setting
+                        from modules.humanoid.vision.ubiq.registry import \
+                            set_setting
+
                         set_setting("vision.active_eye", "")
                         set_setting("vision.active_eye_until", "")
                         requested = ""
@@ -118,12 +132,15 @@ def eyes_capture(
         if requested.lower().startswith("ubiq:"):
             cam_id = requested.split(":", 1)[1].strip()
             if cam_id:
-                from modules.humanoid.vision.ubiq.streaming import take_snapshot
+                from modules.humanoid.vision.ubiq.streaming import \
+                    take_snapshot
 
                 snap = take_snapshot(cam_id, timeout_s=3.5)
                 if snap.get("ok") and snap.get("image_base64"):
                     try:
-                        from modules.humanoid.vision.ubiq.registry import set_setting
+                        from modules.humanoid.vision.ubiq.registry import \
+                            set_setting
+
                         set_setting("vision.active_eye_failures", "0")
                     except Exception:
                         pass
@@ -138,7 +155,9 @@ def eyes_capture(
                     }
                 # Falló snapshot: si se repite, desactivar active_eye para no bloquear la misión.
                 try:
-                    from modules.humanoid.vision.ubiq.registry import get_setting, set_setting
+                    from modules.humanoid.vision.ubiq.registry import (
+                        get_setting, set_setting)
+
                     cur = (get_setting("vision.active_eye_failures") or "0").strip()
                     n = int(cur) if cur.isdigit() else 0
                     n += 1
@@ -149,7 +168,13 @@ def eyes_capture(
                         set_setting("vision.active_eye_failures", "0")
                         try:
                             from modules.humanoid.comms.ops_bus import emit
-                            emit("vision", "El ojo activo no respondio. Cambio automatico al ojo principal.", level="low", data={"cam_id": cam_id})
+
+                            emit(
+                                "vision",
+                                "El ojo activo no respondio. Cambio automatico al ojo principal.",
+                                level="low",
+                                data={"cam_id": cam_id},
+                            )
                         except Exception:
                             pass
                 except Exception:
@@ -181,6 +206,7 @@ def eyes_capture(
             }
     try:
         from modules.humanoid.hands_eyes.engine import capture_full_scene
+
         out = capture_full_scene(region=region, save_evidence=True)
         if not out.get("ok"):
             return {
@@ -217,7 +243,17 @@ def nerve_eyes_status() -> Dict[str, Any]:
     nexus_ok = _nexus_eyes_available()
     return {
         "nexus_available": nexus_ok,
-        "nexus_snapshot_url": f"{NEXUS_ROBOT_API_URL}/api/vision/snapshot" if NEXUS_ENABLED else None,
-        "nexus_snapshot_supports": ["source", "enhance", "jpeg_quality", "focus_x", "focus_y", "zoom", "index"],
+        "nexus_snapshot_url": f"{NEXUS_ROBOT_API_URL}/api/vision/snapshot"
+        if NEXUS_ENABLED
+        else None,
+        "nexus_snapshot_supports": [
+            "source",
+            "enhance",
+            "jpeg_quality",
+            "focus_x",
+            "focus_y",
+            "zoom",
+            "index",
+        ],
         "local_fallback": True,
     }

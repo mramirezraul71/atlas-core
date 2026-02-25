@@ -8,12 +8,20 @@ from typing import Any, Dict
 
 
 def _repo_root() -> Path:
-    p = os.getenv("ATLAS_REPO_PATH") or os.getenv("POLICY_ALLOWED_PATHS") or "C:\\ATLAS_PUSH"
+    p = (
+        os.getenv("ATLAS_REPO_PATH")
+        or os.getenv("POLICY_ALLOWED_PATHS")
+        or "C:\\ATLAS_PUSH"
+    )
     return Path(p).resolve()
 
 
 def _license_required() -> bool:
-    return os.getenv("PRODUCT_LICENSE_REQUIRED", "false").strip().lower() in ("1", "true", "yes")
+    return os.getenv("PRODUCT_LICENSE_REQUIRED", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def _product_mode() -> bool:
@@ -21,7 +29,9 @@ def _product_mode() -> bool:
 
 
 def _secret() -> str:
-    return os.getenv("PRODUCT_LICENSE_SECRET", "atlas-local-secret-change-in-production").strip()
+    return os.getenv(
+        "PRODUCT_LICENSE_SECRET", "atlas-local-secret-change-in-production"
+    ).strip()
 
 
 def validate_license() -> Dict[str, Any]:
@@ -30,7 +40,11 @@ def validate_license() -> Dict[str, Any]:
     Else: read license.key, verify HMAC(edition|expiry, secret). Returns {valid, message, edition}.
     """
     if not _license_required():
-        return {"valid": True, "message": "license not required", "edition": os.getenv("PRODUCT_EDITION", "community")}
+        return {
+            "valid": True,
+            "message": "license not required",
+            "edition": os.getenv("PRODUCT_EDITION", "community"),
+        }
     if not _product_mode():
         return {"valid": True, "message": "dev mode", "edition": "community"}
     key_path = _repo_root() / "license.key"
@@ -49,10 +63,17 @@ def validate_license() -> Dict[str, Any]:
         # Optional: check expiry (YYYY-MM-DD)
         if expiry and expiry != "never":
             from datetime import datetime, timezone
+
             try:
-                exp_dt = datetime.strptime(expiry, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                exp_dt = datetime.strptime(expiry, "%Y-%m-%d").replace(
+                    tzinfo=timezone.utc
+                )
                 if datetime.now(timezone.utc) > exp_dt:
-                    return {"valid": False, "message": "license expired", "edition": edition}
+                    return {
+                        "valid": False,
+                        "message": "license expired",
+                        "edition": edition,
+                    }
             except ValueError:
                 pass
         return {"valid": True, "message": "ok", "edition": edition}

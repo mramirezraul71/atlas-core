@@ -68,9 +68,16 @@ class ProjectIndexer:
         )
 
     def persist(self, idx: ProjectIndex, name: str = "project_index") -> str:
-        safe = "".join([c if c.isalnum() or c in ("-", "_") else "_" for c in (name or "project_index")])[:48]
+        safe = "".join(
+            [
+                c if c.isalnum() or c in ("-", "_") else "_"
+                for c in (name or "project_index")
+            ]
+        )[:48]
         p = _snap_dir(self.repo_root) / f"{safe}.json"
-        p.write_text(json.dumps(idx.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        p.write_text(
+            json.dumps(idx.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         return str(p)
 
     def _sample_files(self, root: Path, *, max_files: int) -> List[str]:
@@ -82,7 +89,16 @@ class ProjectIndexer:
                 continue
             rel = str(fp.relative_to(root)).replace("\\", "/")
             # evitar ruido
-            if rel.startswith(("node_modules/", ".venv/", "venv/", "logs/", "snapshots/", "__pycache__/")):
+            if rel.startswith(
+                (
+                    "node_modules/",
+                    ".venv/",
+                    "venv/",
+                    "logs/",
+                    "snapshots/",
+                    "__pycache__/",
+                )
+            ):
                 continue
             out.append(rel)
             if len(out) >= max_files:
@@ -93,8 +109,10 @@ class ProjectIndexer:
         s = set(files)
         det: Dict[str, Any] = {
             "has_pyproject": "pyproject.toml" in s,
-            "has_requirements": "requirements.txt" in s or any(p.endswith("/requirements.txt") for p in s),
-            "has_package_json": "package.json" in s or any(p.endswith("/package.json") for p in s),
+            "has_requirements": "requirements.txt" in s
+            or any(p.endswith("/requirements.txt") for p in s),
+            "has_package_json": "package.json" in s
+            or any(p.endswith("/package.json") for p in s),
             "has_docker_compose": "docker-compose.yml" in s,
             "python_packages": [],
             "node_packages": [],
@@ -104,8 +122,17 @@ class ProjectIndexer:
         req = root / "requirements.txt"
         if req.exists():
             try:
-                lines = [ln.strip() for ln in req.read_text(encoding="utf-8", errors="ignore").splitlines()]
-                pkgs = [ln.split("==")[0].split(">=")[0].split("<=")[0].strip() for ln in lines if ln and not ln.startswith("#")]
+                lines = [
+                    ln.strip()
+                    for ln in req.read_text(
+                        encoding="utf-8", errors="ignore"
+                    ).splitlines()
+                ]
+                pkgs = [
+                    ln.split("==")[0].split(">=")[0].split("<=")[0].strip()
+                    for ln in lines
+                    if ln and not ln.startswith("#")
+                ]
                 det["python_packages"] = [p for p in pkgs if p]
             except Exception:
                 pass
@@ -155,6 +182,7 @@ class ProjectIndexer:
         if kind == "mixed":
             notes.append("Proyecto mixto detectado (Python + Node).")
         if det.get("has_docker_compose"):
-            notes.append("docker-compose.yml presente: hay arquitectura multi-servicio.")
+            notes.append(
+                "docker-compose.yml presente: hay arquitectura multi-servicio."
+            )
         return notes
-

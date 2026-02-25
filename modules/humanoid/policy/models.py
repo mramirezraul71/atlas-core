@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class ActorContext:
     """Who is performing the action: actor id and role."""
+
     actor: str = "api"
     role: str = "owner"
 
@@ -15,6 +16,7 @@ class ActorContext:
 @dataclass
 class PolicyDecision:
     """Result of policy check: allow + reason (deny-by-default in strict)."""
+
     allow: bool
     reason: str
     details: Optional[Dict[str, Any]] = None
@@ -23,6 +25,7 @@ class PolicyDecision:
 @dataclass
 class PolicyRule:
     """Single policy rule: id, scope, condition, action."""
+
     id: str
     scope: str
     condition: Dict[str, Any]
@@ -33,6 +36,7 @@ class PolicyRule:
 @dataclass
 class PolicyResult:
     """Legacy: alias for PolicyDecision-style result."""
+
     allowed: bool
     reason: str
     matched_rules: List[str] = field(default_factory=list)

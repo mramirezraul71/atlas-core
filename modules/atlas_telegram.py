@@ -1,15 +1,15 @@
-﻿import os
+﻿import json
+import os
 import re
-import json
 from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-
 # python-telegram-bot v20+
 from telegram import Update
 from telegram.constants import ParseMode
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import (Application, CommandHandler, ContextTypes,
+                          MessageHandler, filters)
 
 # Importa tu LLM (ya lo probaste con test_llm.py)
 from modules.atlas_llm import atlas
@@ -20,14 +20,17 @@ NOTES = VAULT / "NOTES"
 LOGS = BASE / "logs"
 SNAPS = BASE / "snapshots"
 
+
 def now_ts() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 
 def safe_filename(name: str) -> str:
     name = name.strip()
     name = re.sub(r'[<>:"/\\|?*]', "_", name)
     name = re.sub(r"\s+", " ", name)
     return name
+
 
 def write_note(title: str, body: str = "") -> Path:
     NOTES.mkdir(parents=True, exist_ok=True)
@@ -41,8 +44,10 @@ def write_note(title: str, body: str = "") -> Path:
             f.write(f"\n---\nActualizado: {now_ts()}\n\n{body}\n")
     return p
 
+
 def status_text() -> str:
     return f"ATLAS: OK | logs={LOGS}\\atlas.log | snapshots={SNAPS}"
+
 
 def doctor_text() -> str:
     # doctor simple sin depender de otros módulos
@@ -53,9 +58,10 @@ def doctor_text() -> str:
     checks.append(("SNAPS", SNAPS.exists()))
     ok = all(v for _, v in checks)
     lines = ["ATLAS DOCTOR: " + ("OK " if ok else "OBSERVACIONES ")]
-    for k,v in checks:
+    for k, v in checks:
         lines.append(f"- {k}: {'OK' if v else 'NO'}")
     return "\n".join(lines)
+
 
 def snapshot(label: str = "manual") -> Path:
     SNAPS.mkdir(parents=True, exist_ok=True)
@@ -63,8 +69,11 @@ def snapshot(label: str = "manual") -> Path:
     folder = SNAPS / f"{stamp}_{safe_filename(label)}"
     folder.mkdir(parents=True, exist_ok=True)
     # mínimo: guardamos un marker
-    (folder / "SNAPSHOT.txt").write_text(f"Snapshot: {stamp}\nLabel: {label}\n", encoding="utf-8")
+    (folder / "SNAPSHOT.txt").write_text(
+        f"Snapshot: {stamp}\nLabel: {label}\n", encoding="utf-8"
+    )
     return folder
+
 
 SYSTEM_NLP = """Eres ATLAS, un router de acciones para un asistente local.
 Convierte el texto del usuario en UNA acción JSON estricta, sin explicación.
@@ -76,6 +85,7 @@ Acciones permitidas:
 Si no corresponde a nada, usa {"action":"note","title":"Inbox","body":"<texto original>"} para no perderlo.
 Responde SOLO JSON."""
 
+
 def nlp_to_action(user_text: str) -> dict:
     # Llama al modelo y exige JSON
     raw = atlas.think(user_text, system=SYSTEM_NLP)
@@ -86,6 +96,7 @@ def nlp_to_action(user_text: str) -> dict:
         return obj
     except Exception:
         return {"action": "note", "title": "Inbox", "body": user_text}
+
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
@@ -99,11 +110,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(msg)
 
+
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(status_text())
 
+
 async def cmd_doctor(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(doctor_text())
+
 
 async def cmd_snapshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     label = "manual"
@@ -111,6 +125,7 @@ async def cmd_snapshot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         label = " ".join(context.args).strip()
     p = snapshot(label)
     await update.message.reply_text(f"Snapshot creado: {p}")
+
 
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or "").strip()
@@ -150,6 +165,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     p = write_note("Inbox", text)
     await update.message.reply_text(f"Guardado en Inbox \n{p}")
 
+
 def main():
     load_dotenv(str(BASE / "config" / ".env"))
 
@@ -168,6 +184,7 @@ def main():
 
     print("ATLAS_TELEGRAM: corriendo...")
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()

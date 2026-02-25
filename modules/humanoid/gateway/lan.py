@@ -13,4 +13,9 @@ def get_worker_url() -> Optional[str]:
 def status() -> dict:
     url = get_worker_url()
     enabled = os.getenv("LAN_ENABLED", "").strip().lower() in ("1", "true", "yes")
-    return {"ok": bool(url), "available": bool(url), "enabled": enabled, "url": url or ""}
+    return {
+        "ok": bool(url),
+        "available": bool(url),
+        "enabled": enabled,
+        "url": url or "",
+    }

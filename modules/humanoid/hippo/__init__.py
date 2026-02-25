@@ -7,11 +7,11 @@ Analogo biologico: Hipocampo + corteza entorrinal
 - Consolidator: Consolidacion de memorias
 - HippoAPI: API unificada de acceso
 """
-from .schemas import Episode, ActionRecord, Concept, Relation
-from .episodic_memory import EpisodicMemory
-from .semantic_memory import SemanticMemory
-from .consolidator import Consolidator
 from .api import HippoAPI
+from .consolidator import Consolidator
+from .episodic_memory import EpisodicMemory
+from .schemas import ActionRecord, Concept, Episode, Relation
+from .semantic_memory import SemanticMemory
 
 __all__ = [
     "Episode",

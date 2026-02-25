@@ -13,14 +13,15 @@ to request AI reasoning, memory queries, or system diagnostics.
 
 Bridges to: PUSH backend (8791) HTTP API
 """
+import json
+import threading
+import time
+import urllib.error
+import urllib.request
+
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-import json
-import time
-import urllib.request
-import urllib.error
-import threading
 
 
 class BrainBridgeNode(Node):
@@ -35,11 +36,15 @@ class BrainBridgeNode(Node):
 
         # Subscribers
         self.create_subscription(String, "/atlas/brain/query", self._query_cb, 10)
-        self.create_subscription(String, "/atlas/brain/memory_query", self._memory_cb, 10)
+        self.create_subscription(
+            String, "/atlas/brain/memory_query", self._memory_cb, 10
+        )
 
         # Publishers
         self.response_pub = self.create_publisher(String, "/atlas/brain/response", 10)
-        self.memory_pub = self.create_publisher(String, "/atlas/brain/memory_result", 10)
+        self.memory_pub = self.create_publisher(
+            String, "/atlas/brain/memory_result", 10
+        )
         self.status_pub = self.create_publisher(String, "/atlas/brain/status", 10)
 
         # Periodic brain status sync
@@ -60,7 +65,9 @@ class BrainBridgeNode(Node):
         model = data.get("model", "auto")
         query_id = data.get("query_id", f"ros2_{int(time.time()*1000)}")
 
-        self.get_logger().info(f"Brain query [{query_id}]: '{query[:60]}' model={model}")
+        self.get_logger().info(
+            f"Brain query [{query_id}]: '{query[:60]}' model={model}"
+        )
 
         # Run in thread to avoid blocking the ROS 2 executor
         thread = threading.Thread(
@@ -74,13 +81,15 @@ class BrainBridgeNode(Node):
         """Call PUSH backend /agent/goal for AI reasoning."""
         t0 = time.time()
         try:
-            body = json.dumps({
-                "goal": query,
-                "mode": "plan_only",
-                "depth": 1,
-                "fast": True,
-                "model": model if model != "auto" else None,
-            }).encode("utf-8")
+            body = json.dumps(
+                {
+                    "goal": query,
+                    "mode": "plan_only",
+                    "depth": 1,
+                    "fast": True,
+                    "model": model if model != "auto" else None,
+                }
+            ).encode("utf-8")
 
             req = urllib.request.Request(
                 f"{self.push_url}/agent/goal",
@@ -160,9 +169,7 @@ class BrainBridgeNode(Node):
                     method="POST",
                 )
             else:
-                req = urllib.request.Request(
-                    f"{self.push_url}{endpoint}", method="GET"
-                )
+                req = urllib.request.Request(f"{self.push_url}{endpoint}", method="GET")
 
             with urllib.request.urlopen(req, timeout=10) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
@@ -198,9 +205,7 @@ class BrainBridgeNode(Node):
 
         for name, endpoint in endpoints.items():
             try:
-                req = urllib.request.Request(
-                    f"{self.push_url}{endpoint}", method="GET"
-                )
+                req = urllib.request.Request(f"{self.push_url}{endpoint}", method="GET")
                 with urllib.request.urlopen(req, timeout=3) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     status["subsystems"][name] = {"ok": True, "data": data}

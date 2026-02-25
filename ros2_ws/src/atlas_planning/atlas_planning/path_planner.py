@@ -7,13 +7,14 @@ Compatible with Nav2 interface for future integration.
 
 Bridges to: modules/humanoid/navigation/
 """
-import rclpy
-from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped, PoseArray
-from nav_msgs.msg import OccupancyGrid, Path
-from std_msgs.msg import String
 import json
 import math
+
+import rclpy
+from geometry_msgs.msg import PoseArray, PoseStamped
+from nav_msgs.msg import OccupancyGrid, Path
+from rclpy.node import Node
+from std_msgs.msg import String
 
 
 class PathPlanner(Node):
@@ -26,7 +27,9 @@ class PathPlanner(Node):
 
         self.planner_type = self.get_parameter("atlas.planning.planner").value
         self.max_vel = self.get_parameter("atlas.planning.max_velocity").value
-        self.obstacle_margin = self.get_parameter("atlas.planning.obstacle_margin").value
+        self.obstacle_margin = self.get_parameter(
+            "atlas.planning.obstacle_margin"
+        ).value
 
         # State
         self._current_pose = None
@@ -39,7 +42,9 @@ class PathPlanner(Node):
 
         # Publishers
         self.path_pub = self.create_publisher(Path, "/atlas/nav/path", 10)
-        self.waypoints_pub = self.create_publisher(PoseArray, "/atlas/nav/waypoints", 10)
+        self.waypoints_pub = self.create_publisher(
+            PoseArray, "/atlas/nav/waypoints", 10
+        )
         self.status_pub = self.create_publisher(String, "/atlas/nav/status", 10)
 
         self.get_logger().info(

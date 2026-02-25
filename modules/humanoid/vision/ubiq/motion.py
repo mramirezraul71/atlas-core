@@ -6,9 +6,8 @@ import threading
 import time
 from typing import Any, Dict, Optional
 
-from .registry import list_cameras, get_setting, set_setting
+from .registry import get_setting, list_cameras, set_setting
 from .streaming import take_snapshot
-
 
 _THREAD: Optional[threading.Thread] = None
 _STOP = threading.Event()
@@ -99,7 +98,8 @@ def _run() -> None:
                     _LAST_MOTION[cid] = time.time()
                     _set_active_eye(cid, hold_s=hold_s)
                     try:
-                        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+                        from modules.humanoid.ans.evolution_bitacora import \
+                            append_evolution_log
 
                         append_evolution_log(
                             f"[VISION] Movimiento detectado en {cam.get('ip') or cid}. Ojo activo -> {cid}",
@@ -111,7 +111,12 @@ def _run() -> None:
                     try:
                         from modules.humanoid.comms.ops_bus import emit
 
-                        emit("vision", f"Movimiento detectado. Ojo activo -> {cid}", level="low", data={"cam_id": cid})
+                        emit(
+                            "vision",
+                            f"Movimiento detectado. Ojo activo -> {cid}",
+                            level="low",
+                            data={"cam_id": cid},
+                        )
                     except Exception:
                         pass
 
@@ -120,7 +125,13 @@ def _run() -> None:
 
 def start_motion_watchdog() -> Dict[str, Any]:
     global _THREAD
-    if os.getenv("VISION_UBIQ_MOTION_ENABLED", "true").strip().lower() not in ("1", "true", "yes", "y", "on"):
+    if os.getenv("VISION_UBIQ_MOTION_ENABLED", "true").strip().lower() not in (
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    ):
         return {"ok": True, "enabled": False}
     with _STATE_LOCK:
         if _THREAD and _THREAD.is_alive():
@@ -143,4 +154,3 @@ def stop_motion_watchdog() -> Dict[str, Any]:
         except Exception:
             pass
     return {"ok": True, "stopped": True}
-

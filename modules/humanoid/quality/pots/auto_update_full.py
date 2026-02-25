@@ -32,7 +32,8 @@ Triggers:
 
 Severidad: HIGH (modifica sistema)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -51,13 +52,19 @@ segura y controlada.
         severity=POTSeverity.HIGH,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["update_*", "evolution_*", "triada_*", "upgrade_*"],
         trigger_keywords=[
-            "update", "upgrade", "evolution", "triada", "pypi", "github", 
-            "huggingface", "hf", "actualizar", "evolucionar"
+            "update",
+            "upgrade",
+            "evolution",
+            "triada",
+            "pypi",
+            "github",
+            "huggingface",
+            "hf",
+            "actualizar",
+            "evolucionar",
         ],
-        
         prerequisites=[
             "Servicios básicos funcionando",
             "Credenciales configuradas (GITHUB_TOKEN, HF_TOKEN opcional)",
@@ -65,8 +72,12 @@ segura y controlada.
             "Modo no-emergency",
         ],
         required_services=["push"],
-        required_permissions=["update_apply", "git_write", "pip_install", "network_access"],
-        
+        required_permissions=[
+            "update_apply",
+            "git_write",
+            "pip_install",
+            "network_access",
+        ],
         objectives=[
             "Ejecutar scanners de estado",
             "Verificar actualizaciones PyPI disponibles",
@@ -79,7 +90,6 @@ segura y controlada.
         ],
         success_criteria="Actualización completada sin degradación de métricas",
         estimated_duration_minutes=15,
-        
         tutorial_overview="""
 ## Guía de Actualización Automática Completa
 
@@ -183,7 +193,6 @@ En `credenciales.txt` (Bóveda):
 - `HF_TOKEN`: Para buscar modelos (opcional)
 - `PYPI_TOKEN`: Para autenticación PyPI (opcional)
         """.strip(),
-        
         best_practices=[
             "Ejecutar en horario de bajo tráfico",
             "Verificar credenciales antes de iniciar",
@@ -191,14 +200,12 @@ En `credenciales.txt` (Bóveda):
             "No ejecutar durante deploys activos",
             "Revisar cuarentena periódicamente",
         ],
-        
         warnings=[
             "REQUIERE APROBACIÓN en modo GOVERNED",
             "Puede modificar requirements.txt",
             "Puede reiniciar servicios",
             "Auto-rollback si métricas degradan > 15%",
         ],
-        
         related_pots=[
             "repo_update",
             "deployment_full",
@@ -206,9 +213,17 @@ En `credenciales.txt` (Bóveda):
             "autonomy_full_cycle",
             "git_push",
         ],
-        tags=["update", "upgrade", "evolution", "triada", "pypi", "github", "huggingface", "auto"],
+        tags=[
+            "update",
+            "upgrade",
+            "evolution",
+            "triada",
+            "pypi",
+            "github",
+            "huggingface",
+            "auto",
+        ],
         has_rollback=True,
-        
         steps=[
             # ================================================================
             # FASE 0: PRE-CHECKS
@@ -225,7 +240,6 @@ En `credenciales.txt` (Bóveda):
                 continue_on_failure=True,
                 tutorial_notes="governed=true requiere aprobación en Dashboard",
             ),
-            
             POTStep(
                 id="check_health_pre",
                 name="Health check pre-actualización",
@@ -238,7 +252,6 @@ En `credenciales.txt` (Bóveda):
                 check_expression="response.get('score', 0) >= 60",
                 tutorial_notes="Solo proceder si health >= 60",
             ),
-            
             POTStep(
                 id="check_no_active_updates",
                 name="Verificar sin updates activos",
@@ -250,7 +263,6 @@ En `credenciales.txt` (Bóveda):
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="notify_update_start",
                 name="Notificar inicio de actualización",
@@ -259,7 +271,6 @@ En `credenciales.txt` (Bóveda):
                 notify_channel="ops",
                 notify_message="🔄 Iniciando ciclo de actualización automática...",
             ),
-            
             # ================================================================
             # FASE 1: SCANNERS
             # ================================================================
@@ -274,7 +285,6 @@ En `credenciales.txt` (Bóveda):
                 continue_on_failure=True,
                 tutorial_notes="Detecta archivos > 400KB, TODOs pendientes, etc",
             ),
-            
             POTStep(
                 id="run_makeplay_scanner",
                 name="Ejecutar MakePlay scanner",
@@ -287,7 +297,6 @@ En `credenciales.txt` (Bóveda):
                 continue_on_failure=True,
                 tutorial_notes="Envía snapshot a Make.com si configurado",
             ),
-            
             POTStep(
                 id="check_playwright_available",
                 name="Verificar Playwright disponible",
@@ -298,7 +307,6 @@ En `credenciales.txt` (Bóveda):
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             # ================================================================
             # FASE 2: TRÍADA DE CRECIMIENTO
             # ================================================================
@@ -312,10 +320,9 @@ En `credenciales.txt` (Bóveda):
                 http_body={
                     "message": "[EVOLUCIÓN] Iniciando Tríada de Crecimiento (PyPI/GitHub/HF)",
                     "ok": True,
-                    "source": "quality_pot.auto_update_full"
+                    "source": "quality_pot.auto_update_full",
                 },
             ),
-            
             # PyPI Worker
             POTStep(
                 id="pypi_scan_requirements",
@@ -327,7 +334,6 @@ En `credenciales.txt` (Bóveda):
                 capture_output=True,
                 tutorial_notes="Lista los primeros 10 paquetes de requirements.txt",
             ),
-            
             POTStep(
                 id="pypi_check_outdated",
                 name="PyPI: Verificar paquetes desactualizados",
@@ -338,7 +344,6 @@ En `credenciales.txt` (Bóveda):
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             # GitHub Worker
             POTStep(
                 id="github_fetch_repos",
@@ -350,7 +355,6 @@ En `credenciales.txt` (Bóveda):
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="github_check_behind",
                 name="GitHub: Verificar commits pendientes",
@@ -360,7 +364,6 @@ En `credenciales.txt` (Bóveda):
                 timeout_seconds=15,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="github_submodule_update",
                 name="GitHub: Actualizar submodules",
@@ -371,7 +374,6 @@ En `credenciales.txt` (Bóveda):
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             # HuggingFace Worker
             POTStep(
                 id="hf_check_token",
@@ -383,7 +385,6 @@ En `credenciales.txt` (Bóveda):
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="hf_scan_models",
                 name="HuggingFace: Buscar modelos",
@@ -396,7 +397,6 @@ En `credenciales.txt` (Bóveda):
                 continue_on_failure=True,
                 tutorial_notes="El daemon HF busca modelos de visión para Insta360",
             ),
-            
             # ================================================================
             # FASE 3: EVOLUTION PIPELINE
             # ================================================================
@@ -411,7 +411,6 @@ En `credenciales.txt` (Bóveda):
                 continue_on_failure=True,
                 tutorial_notes="Verifica que endpoints críticos responden",
             ),
-            
             POTStep(
                 id="evolution_create_backup",
                 name="Evolution: Crear backup",
@@ -422,7 +421,6 @@ En `credenciales.txt` (Bóveda):
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="evolution_tag_backup",
                 name="Evolution: Crear tag de backup",
@@ -432,7 +430,6 @@ En `credenciales.txt` (Bóveda):
                 timeout_seconds=10,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="evolution_trigger",
                 name="Evolution: Disparar ciclo",
@@ -445,7 +442,6 @@ En `credenciales.txt` (Bóveda):
                 continue_on_failure=True,
                 tutorial_notes="Dispara evolution_daemon.py en background",
             ),
-            
             POTStep(
                 id="evolution_wait",
                 name="Evolution: Esperar procesamiento",
@@ -453,7 +449,6 @@ En `credenciales.txt` (Bóveda):
                 step_type=StepType.WAIT,
                 wait_seconds=10,
             ),
-            
             POTStep(
                 id="evolution_check_status",
                 name="Evolution: Verificar estado",
@@ -464,7 +459,6 @@ En `credenciales.txt` (Bóveda):
                 timeout_seconds=15,
                 capture_output=True,
             ),
-            
             # ================================================================
             # FASE 4: CUARENTENA
             # ================================================================
@@ -478,7 +472,6 @@ En `credenciales.txt` (Bóveda):
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="quarantine_check_files",
                 name="Cuarentena: Verificar archivos",
@@ -489,7 +482,6 @@ En `credenciales.txt` (Bóveda):
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="quarantine_cleanup_old",
                 name="Cuarentena: Limpiar antiguos",
@@ -499,7 +491,6 @@ En `credenciales.txt` (Bóveda):
                 timeout_seconds=30,
                 continue_on_failure=True,
             ),
-            
             # ================================================================
             # FASE 5: POST-UPDATE VERIFICATION
             # ================================================================
@@ -515,7 +506,6 @@ En `credenciales.txt` (Bóveda):
                 retry_delay_seconds=5,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="compare_health_scores",
                 name="Comparar health scores",
@@ -525,17 +515,15 @@ En `credenciales.txt` (Bóveda):
                 capture_output=True,
                 tutorial_notes="Si post_health < pre_health - 15, hacer rollback",
             ),
-            
             POTStep(
                 id="check_evolution_result",
                 name="Verificar resultado de evolución",
                 description="Leer el archivo de resultado del ciclo",
                 step_type=StepType.COMMAND,
-                command="python -c \"import json; from pathlib import Path; f = Path('logs/evolution_last_cycle.json'); print(f.read_text() if f.exists() else '{\\\"ok\\\": false, \\\"message\\\": \\\"no cycle run\\\"}')\"",
+                command='python -c "import json; from pathlib import Path; f = Path(\'logs/evolution_last_cycle.json\'); print(f.read_text() if f.exists() else \'{\\"ok\\": false, \\"message\\": \\"no cycle run\\"}\')"',
                 timeout_seconds=10,
                 capture_output=True,
             ),
-            
             # ================================================================
             # FASE 6: SYNC & NOTIFY
             # ================================================================
@@ -548,7 +536,6 @@ En `credenciales.txt` (Bóveda):
                 timeout_seconds=15,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="log_to_bitacora",
                 name="Registrar en bitácora",
@@ -559,10 +546,9 @@ En `credenciales.txt` (Bóveda):
                 http_body={
                     "message": "[EVOLUCIÓN] Ciclo de actualización automática completado",
                     "ok": True,
-                    "source": "quality_pot.auto_update_full"
+                    "source": "quality_pot.auto_update_full",
                 },
             ),
-            
             POTStep(
                 id="notify_telegram",
                 name="Notificar a Telegram",
@@ -572,7 +558,6 @@ En `credenciales.txt` (Bóveda):
                 notify_message="📦 Ciclo de actualización automática completado. Revisar Dashboard para detalles.",
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="refresh_dashboard",
                 name="Refrescar Dashboard",
@@ -584,7 +569,6 @@ En `credenciales.txt` (Bóveda):
                 continue_on_failure=True,
             ),
         ],
-        
         rollback_steps=[
             POTStep(
                 id="rollback_notify_start",
@@ -594,7 +578,6 @@ En `credenciales.txt` (Bóveda):
                 notify_channel="telegram",
                 notify_message="⚠️ Actualización fallida. Ejecutando ROLLBACK...",
             ),
-            
             POTStep(
                 id="rollback_git_reset",
                 name="Revertir a tag de backup",
@@ -603,7 +586,6 @@ En `credenciales.txt` (Bóveda):
                 command="git reset --hard auto-update-backup",
                 timeout_seconds=30,
             ),
-            
             POTStep(
                 id="rollback_pop_stash",
                 name="Restaurar stash",
@@ -613,7 +595,6 @@ En `credenciales.txt` (Bóveda):
                 timeout_seconds=30,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="rollback_reinstall_deps",
                 name="Reinstalar dependencias",
@@ -623,7 +604,6 @@ En `credenciales.txt` (Bóveda):
                 timeout_seconds=300,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="rollback_restart_services",
                 name="Reiniciar servicios",
@@ -633,7 +613,6 @@ En `credenciales.txt` (Bóveda):
                 timeout_seconds=90,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="rollback_verify_health",
                 name="Verificar salud post-rollback",
@@ -643,7 +622,6 @@ En `credenciales.txt` (Bóveda):
                 http_url="http://127.0.0.1:8791/health",
                 timeout_seconds=30,
             ),
-            
             POTStep(
                 id="rollback_log",
                 name="Registrar rollback",
@@ -654,10 +632,9 @@ En `credenciales.txt` (Bóveda):
                 http_body={
                     "message": "[ROLLBACK] Actualización revertida por degradación",
                     "ok": False,
-                    "source": "quality_pot.auto_update_full"
+                    "source": "quality_pot.auto_update_full",
                 },
             ),
-            
             POTStep(
                 id="rollback_notify_complete",
                 name="Notificar rollback completado",

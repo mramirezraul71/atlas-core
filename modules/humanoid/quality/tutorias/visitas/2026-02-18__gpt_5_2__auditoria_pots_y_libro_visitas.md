@@ -1,9 +1,9 @@
 # INFORME DE VISITA — Auditoría POTs y Libro de Visitas
 
-**Fecha:** 18 de Febrero de 2026  
-**Tutor/Auditor:** GPT‑5.2 (Agente de Auditoría Técnica)  
-**Rol:** Auditor de arquitectura + Control de calidad operacional  
-**Sistema:** ATLAS (workspace `C:\ATLAS_PUSH`)  
+**Fecha:** 18 de Febrero de 2026
+**Tutor/Auditor:** GPT‑5.2 (Agente de Auditoría Técnica)
+**Rol:** Auditor de arquitectura + Control de calidad operacional
+**Sistema:** ATLAS (workspace `C:\ATLAS_PUSH`)
 
 ---
 
@@ -127,4 +127,3 @@ Sistema listo para que el Owner implemente otro sistema con:
 ## 6) Firma
 
 `GPT-5.2 / ATLAS_PUSH / 2026-02-18`
-

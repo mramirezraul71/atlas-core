@@ -243,34 +243,34 @@ OPERATION_POT_MAP = {
     "push": "git_push",
     "pull": "git_pull",
     "sync": "git_pull",
-    
+
     # Repo
     "update": "repo_update",
     "upgrade": "repo_update",
-    
+
     # Deploy
     "deploy": "deployment_full",
     "release": "deployment_full",
-    
+
     # Session
     "startup": "session_startup",
     "buenos_dias": "session_startup",
     "shutdown": "session_shutdown",
     "buenas_noches": "session_shutdown",
-    
+
     # Repairs
     "repair_camera": "camera_repair",
     "repair_services": "services_repair",
     "repair_api": "api_repair",
-    
+
     # Maintenance
     "maintenance": "maintenance_daily",
     "weekly_maintenance": "maintenance_weekly",
-    
+
     # Incidents
     "triage": "incident_triage",
     "respond": "incident_response",
-    
+
     # Diagnostics
     "diagnostic": "diagnostic_full",
     "health_check": "diagnostic_full",
@@ -423,7 +423,7 @@ def get_pot() -> POT:
         severity=POTSeverity.LOW,
         version="1.0.0",
         author="ATLAS",
-        
+
         steps=[
             POTStep(
                 id="paso_1",

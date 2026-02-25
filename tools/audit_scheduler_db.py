@@ -14,7 +14,16 @@ def main() -> None:
         )
         rows = cur.fetchall()
         print("jobs", len(rows))
-        for name, kind, enabled, status, interval_seconds, last_run_ts, next_run_ts, last_error in rows:
+        for (
+            name,
+            kind,
+            enabled,
+            status,
+            interval_seconds,
+            last_run_ts,
+            next_run_ts,
+            last_error,
+        ) in rows:
             name = name or ""
             kind = kind or ""
             last_run_ts = last_run_ts or ""
@@ -53,4 +62,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

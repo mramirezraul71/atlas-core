@@ -6,7 +6,11 @@ from datetime import datetime, timezone
 
 
 def _ga_enabled() -> bool:
-    return os.getenv("GOVERNED_AUTONOMY_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+    return os.getenv("GOVERNED_AUTONOMY_ENABLED", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def _sched_enabled() -> bool:
@@ -20,6 +24,7 @@ def ensure_ga_jobs() -> None:
     try:
         from modules.humanoid.scheduler import get_scheduler_db
         from modules.humanoid.scheduler.models import JobSpec
+
         db = get_scheduler_db()
         jobs = db.list_jobs()
         names = {j.get("name") for j in (jobs or [])}
@@ -30,12 +35,14 @@ def ensure_ga_jobs() -> None:
         max_findings = int(os.getenv("GA_MAX_FINDINGS", "10") or 10)
         mode = os.getenv("GA_MODE", "plan_only").strip()
         now = datetime.now(timezone.utc).isoformat()
-        db.create_job(JobSpec(
-            name="ga_cycle",
-            kind="ga_cycle",
-            payload={"scope": "all", "mode": mode, "max_findings": max_findings},
-            run_at=now,
-            interval_seconds=interval_sec,
-        ))
+        db.create_job(
+            JobSpec(
+                name="ga_cycle",
+                kind="ga_cycle",
+                payload={"scope": "all", "mode": mode, "max_findings": max_findings},
+                run_at=now,
+                interval_seconds=interval_sec,
+            )
+        )
     except Exception:
         pass

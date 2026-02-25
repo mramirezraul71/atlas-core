@@ -7,10 +7,13 @@ Interfaces para aprendizaje y mejora continua:
 - NaturalLanguageFeedback: Feedback en lenguaje natural
 - LearningAPI: API unificada para todas las interfaces
 """
-from .demonstration import DemonstrationLearning, Demonstration, BehavioralCloning
-from .reinforcement import ReinforcementLearning, Policy, Experience, ReplayBuffer
-from .natural_feedback import NaturalLanguageFeedback, FeedbackType, FeedbackIntent
 from .api import LearningAPI
+from .demonstration import (BehavioralCloning, Demonstration,
+                            DemonstrationLearning)
+from .natural_feedback import (FeedbackIntent, FeedbackType,
+                               NaturalLanguageFeedback)
+from .reinforcement import (Experience, Policy, ReinforcementLearning,
+                            ReplayBuffer)
 
 __all__ = [
     # Demonstration Learning

@@ -8,12 +8,13 @@ Architecture references:
 - IHMC Open Robotics Software (step planning, swing trajectory)
 - RoboParty / Roboto Origin full-stack bipedal locomotion
 """
+import math
+import time
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
-import math
-import time
 
 
 class GaitPhase:
@@ -37,8 +38,8 @@ class GaitGenerator(Node):
 
         self._phase = GaitPhase.STAND
         self._phase_time = 0.0
-        self._step_length = 0.15   # meters
-        self._step_height = 0.04   # meters
+        self._step_length = 0.15  # meters
+        self._step_height = 0.04  # meters
         self._step_duration = 0.6  # seconds per step
 
         self.create_subscription(String, "/atlas/gait/command", self._gait_cmd_cb, 10)
@@ -71,8 +72,12 @@ class GaitGenerator(Node):
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = [
-            "l_hip_pitch", "l_knee", "l_ankle_pitch",
-            "r_hip_pitch", "r_knee", "r_ankle_pitch",
+            "l_hip_pitch",
+            "l_knee",
+            "l_ankle_pitch",
+            "r_hip_pitch",
+            "r_knee",
+            "r_ankle_pitch",
         ]
         msg.position = [-0.1, 0.2, -0.1, -0.1, 0.2, -0.1]
         self.traj_pub.publish(msg)
@@ -103,19 +108,41 @@ class GaitGenerator(Node):
         msg = JointState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.name = [
-            "l_hip_pitch", "l_knee", "l_ankle_pitch",
-            "r_hip_pitch", "r_knee", "r_ankle_pitch",
+            "l_hip_pitch",
+            "l_knee",
+            "l_ankle_pitch",
+            "r_hip_pitch",
+            "r_knee",
+            "r_ankle_pitch",
         ]
 
         if self._phase == GaitPhase.LEFT_SWING:
-            msg.position = [hip_swing, knee_swing, ankle_swing,
-                            hip_stance, knee_stance, ankle_stance]
+            msg.position = [
+                hip_swing,
+                knee_swing,
+                ankle_swing,
+                hip_stance,
+                knee_stance,
+                ankle_stance,
+            ]
         elif self._phase == GaitPhase.RIGHT_SWING:
-            msg.position = [hip_stance, knee_stance, ankle_stance,
-                            hip_swing, knee_swing, ankle_swing]
+            msg.position = [
+                hip_stance,
+                knee_stance,
+                ankle_stance,
+                hip_swing,
+                knee_swing,
+                ankle_swing,
+            ]
         else:
-            msg.position = [hip_stance, knee_stance, ankle_stance,
-                            hip_stance, knee_stance, ankle_stance]
+            msg.position = [
+                hip_stance,
+                knee_stance,
+                ankle_stance,
+                hip_stance,
+                knee_stance,
+                ankle_stance,
+            ]
 
         self.traj_pub.publish(msg)
 

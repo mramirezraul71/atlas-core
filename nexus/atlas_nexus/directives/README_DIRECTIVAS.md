@@ -11,7 +11,7 @@
 ```
 C:\ATLAS_NEXUS\atlas_nexus\directives\
 ├── directives_manager.py      ✅ (14,662 bytes) - Core del sistema
-├── directives_api.py          ✅ (10,876 bytes) - API REST completa  
+├── directives_api.py          ✅ (10,876 bytes) - API REST completa
 ├── global.md                  ✅ (1,395 bytes) - Directivas globales
 ├── metadata.json              ✅ (467 bytes) - Metadatos del sistema
 └── projects/                  ✅ (2 proyectos)

@@ -2,15 +2,15 @@
 Vision API Routes
 """
 
+import logging
 import os
 import time
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse, Response
-from pydantic import BaseModel
-from typing import List, Dict
-import cv2
-import logging
+from typing import Dict, List
 
+import cv2
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel
 from vision.object_detection import get_detector
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,7 @@ def _enhance_frame(frame, profile: str = "none"):
         return frame
     try:
         import numpy as np
+
         if p == "auto":
             out = cv2.fastNlMeansDenoisingColored(frame, None, 3, 3, 7, 21)
         elif p in ("sharp", "ocr"):
@@ -49,7 +50,9 @@ def _enhance_frame(frame, profile: str = "none"):
         if p == "ocr":
             g = cv2.cvtColor(out, cv2.COLOR_BGR2GRAY)
             g = cv2.GaussianBlur(g, (3, 3), 0)
-            g = cv2.adaptiveThreshold(g, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 5)
+            g = cv2.adaptiveThreshold(
+                g, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 5
+            )
             return cv2.cvtColor(g, cv2.COLOR_GRAY2BGR)
 
         if p == "sharp":
@@ -71,6 +74,7 @@ def _get_capture():
     """Obtiene captura: factory si existe, sino cv2 por defecto."""
     try:
         from vision.cameras.factory import get_camera
+
         cam = get_camera()
         if cam and cam.is_opened:
             return cam
@@ -85,18 +89,18 @@ async def test_camera():
     """Test de cámara"""
     try:
         cap = cv2.VideoCapture(0)
-        
+
         if not cap.isOpened():
             raise HTTPException(500, "Cannot open camera")
-        
+
         ret, frame = cap.read()
         cap.release()
-        
+
         if not ret:
             raise HTTPException(500, "Cannot read frame")
-        
+
         h, w, c = frame.shape
-        
+
         return {
             "status": "ok",
             "resolution": f"{w}x{h}",
@@ -114,6 +118,7 @@ def _get_capture_by_index(index: int):
     """
     try:
         from vision.cameras.backend import preferred_backends
+
         backends = preferred_backends()
     except Exception:
         backends = []
@@ -171,7 +176,9 @@ def _clamp(v: float, lo: float, hi: float) -> float:
     return lo if x < lo else hi if x > hi else x
 
 
-def _apply_focus_zoom(frame, focus_x: float = 0.5, focus_y: float = 0.5, zoom: float = 1.0):
+def _apply_focus_zoom(
+    frame, focus_x: float = 0.5, focus_y: float = 0.5, zoom: float = 1.0
+):
     """
     Enfoque/zoom digital seguro (sin PTZ físico): recorta alrededor de (focus_x, focus_y) en [0..1] y reescala.
     Diseñado para ser controlado por el cerebro (ojos externos gobernados).
@@ -207,24 +214,28 @@ def generate_frames(
     cap = _get_capture_by_index(camera_index)
     if not cap:
         return
-    
+
     retry_count = 0
     max_retries = 3
     consecutive_failures = 0
     max_failures = 10
-    
+
     try:
         while True:
             try:
                 success, frame = cap.read()
-                
+
                 if not success or frame is None:
                     consecutive_failures += 1
-                    logger.warning(f"Camera {camera_index}: Frame read failed #{consecutive_failures}")
-                    
+                    logger.warning(
+                        f"Camera {camera_index}: Frame read failed #{consecutive_failures}"
+                    )
+
                     # Reintentar abrir la cámara si hay muchos fallos
                     if consecutive_failures >= max_failures:
-                        logger.warning(f"Camera {camera_index}: Too many failures, reopening...")
+                        logger.warning(
+                            f"Camera {camera_index}: Too many failures, reopening..."
+                        )
                         cap.release()
                         cap = _get_capture_by_index(camera_index)
                         if not cap:
@@ -236,41 +247,53 @@ def generate_frames(
                             logger.error(f"Camera {camera_index}: Max retries exceeded")
                             break
                         continue
-                    
+
                     # Enviar frame negro si falla la lectura
                     import numpy as np
+
                     frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                    cv2.putText(frame, f"Camera {camera_index} - Reconnecting...", (100, 240), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                
+                    cv2.putText(
+                        frame,
+                        f"Camera {camera_index} - Reconnecting...",
+                        (100, 240),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (255, 255, 255),
+                        2,
+                    )
+
                 # Resetear contador de fallos si el frame es exitoso
                 consecutive_failures = 0
                 retry_count = 0
 
-                frame = _apply_focus_zoom(frame, focus_x=focus_x, focus_y=focus_y, zoom=zoom)
+                frame = _apply_focus_zoom(
+                    frame, focus_x=focus_x, focus_y=focus_y, zoom=zoom
+                )
                 frame = _enhance_frame(frame, enhance)
-                
+
                 # Codificar y enviar frame
                 q = int(jpeg_quality) if jpeg_quality is not None else 85
                 if q < 30:
                     q = 30
                 if q > 95:
                     q = 95
-                ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, q])
+                ret, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, q])
                 if not ret:
                     continue
-                
+
                 frame_bytes = buffer.tobytes()
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-                       
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                )
+
             except Exception as e:
                 logger.error(f"Camera {camera_index}: Stream error: {e}")
                 consecutive_failures += 1
                 if consecutive_failures >= max_failures:
                     break
                 continue
-                
+
     except GeneratorExit:
         logger.info(f"Camera {camera_index}: Stream closed by client")
     except Exception as e:
@@ -291,8 +314,8 @@ def generate_screen_frames(
 ):
     """Stream de captura de pantalla para navegación en PC (cerebro)."""
     try:
-        from PIL import ImageGrab
         import numpy as np
+        from PIL import ImageGrab
     except ImportError:
         logger.warning("PIL/Pillow no disponible para screen capture")
         return
@@ -303,18 +326,22 @@ def generate_screen_frames(
             img = ImageGrab.grab()
             frame = np.array(img)
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            frame = _apply_focus_zoom(frame, focus_x=focus_x, focus_y=focus_y, zoom=zoom)
+            frame = _apply_focus_zoom(
+                frame, focus_x=focus_x, focus_y=focus_y, zoom=zoom
+            )
             frame = _enhance_frame(frame, enhance)
             q = int(jpeg_quality) if jpeg_quality is not None else 80
             if q < 30:
                 q = 30
             if q > 95:
                 q = 95
-            ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, q])
+            ret, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, q])
             if not ret:
                 break
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+            )
             # Throttle para no consumir CPU 100%
             try:
                 fps = int(max_fps) if max_fps is not None else 6
@@ -346,51 +373,69 @@ def generate_frames_with_detection(
     if not cap:
         return
     detector = get_detector()
-    
+
     if not detector.is_loaded:
         detector.load_model()
-    
+
     retry_count = 0
     max_retries = 3
     consecutive_failures = 0
     max_failures = 10
-    
+
     try:
         while True:
             try:
                 success, frame = cap.read()
-                
+
                 if not success or frame is None:
                     consecutive_failures += 1
-                    logger.warning(f"Camera {camera_index} (detection): Frame read failed #{consecutive_failures}")
-                    
+                    logger.warning(
+                        f"Camera {camera_index} (detection): Frame read failed #{consecutive_failures}"
+                    )
+
                     if consecutive_failures >= max_failures:
-                        logger.warning(f"Camera {camera_index} (detection): Too many failures, reopening...")
+                        logger.warning(
+                            f"Camera {camera_index} (detection): Too many failures, reopening..."
+                        )
                         cap.release()
                         cap = _get_capture_by_index(camera_index)
                         if not cap:
-                            logger.error(f"Camera {camera_index} (detection): Failed to reopen")
+                            logger.error(
+                                f"Camera {camera_index} (detection): Failed to reopen"
+                            )
                             break
                         consecutive_failures = 0
                         retry_count += 1
                         if retry_count >= max_retries:
-                            logger.error(f"Camera {camera_index} (detection): Max retries exceeded")
+                            logger.error(
+                                f"Camera {camera_index} (detection): Max retries exceeded"
+                            )
                             break
                         continue
-                    
+
                     # Frame negro con mensaje
                     import numpy as np
+
                     frame = np.zeros((480, 640, 3), dtype=np.uint8)
-                    cv2.putText(frame, f"Camera {camera_index} - Reconnecting...", (100, 240), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                
+                    cv2.putText(
+                        frame,
+                        f"Camera {camera_index} - Reconnecting...",
+                        (100, 240),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (255, 255, 255),
+                        2,
+                    )
+
                 # Resetear contadores
                 consecutive_failures = 0
                 retry_count = 0
 
-                frame = _apply_focus_zoom(frame, focus_x=focus_x, focus_y=focus_y, zoom=zoom)
+                frame = _apply_focus_zoom(
+                    frame, focus_x=focus_x, focus_y=focus_y, zoom=zoom
+                )
                 frame = _enhance_frame(frame, enhance)
-                
+
                 # Detectar objetos
                 try:
                     detections = detector.detect(frame, confidence=0.5)
@@ -398,28 +443,32 @@ def generate_frames_with_detection(
                 except Exception as e:
                     logger.debug(f"Detection error: {e}")
                     frame_with_detections = frame
-                
+
                 # Encodear
                 q = int(jpeg_quality) if jpeg_quality is not None else 85
                 if q < 30:
                     q = 30
                 if q > 95:
                     q = 95
-                ret, buffer = cv2.imencode('.jpg', frame_with_detections, [cv2.IMWRITE_JPEG_QUALITY, q])
+                ret, buffer = cv2.imencode(
+                    ".jpg", frame_with_detections, [cv2.IMWRITE_JPEG_QUALITY, q]
+                )
                 if not ret:
                     continue
-                
+
                 frame_bytes = buffer.tobytes()
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-                       
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                )
+
             except Exception as e:
                 logger.error(f"Camera {camera_index} (detection): Stream error: {e}")
                 consecutive_failures += 1
                 if consecutive_failures >= max_failures:
                     break
                 continue
-                
+
     except GeneratorExit:
         logger.info(f"Camera {camera_index} (detection): Stream closed by client")
     except Exception as e:
@@ -449,7 +498,7 @@ async def video_stream(
             focus_y=focus_y,
             zoom=zoom,
         ),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        media_type="multipart/x-mixed-replace; boundary=frame",
     )
 
 
@@ -472,7 +521,7 @@ async def video_stream_with_detection(
             focus_y=focus_y,
             zoom=zoom,
         ),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        media_type="multipart/x-mixed-replace; boundary=frame",
     )
 
 
@@ -480,6 +529,7 @@ def generate_network_camera_frames(cam_id: str):
     """Stream de cámara de red (RTSP o HTTP). OpenCV lee ambos."""
     try:
         from vision.cameras.network import get_network_cameras
+
         cameras = get_network_cameras()
         cam = next((c for c in cameras if c.get("id") == cam_id), None)
         if not cam:
@@ -495,11 +545,13 @@ def generate_network_camera_frames(cam_id: str):
                 ret, frame = cap.read()
                 if not ret or frame is None:
                     break
-                r, buf = cv2.imencode('.jpg', frame)
+                r, buf = cv2.imencode(".jpg", frame)
                 if not r:
                     break
-                yield (b'--frame\r\n'
-                       b'Content-Type: image/jpeg\r\n\r\n' + buf.tobytes() + b'\r\n')
+                yield (
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n\r\n" + buf.tobytes() + b"\r\n"
+                )
         finally:
             cap.release()
     except Exception as e:
@@ -513,7 +565,7 @@ async def network_camera_stream(id: str = ""):
         raise HTTPException(400, "Parámetro 'id' requerido")
     return StreamingResponse(
         generate_network_camera_frames(id),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        media_type="multipart/x-mixed-replace; boundary=frame",
     )
 
 
@@ -536,7 +588,7 @@ async def screen_stream(
             zoom=zoom,
             max_fps=max_fps,
         ),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        media_type="multipart/x-mixed-replace; boundary=frame",
     )
 
 
@@ -545,25 +597,22 @@ async def detect_current_frame():
     """Detecta objetos en el frame actual"""
     try:
         cap = cv2.VideoCapture(0)
-        
+
         if not cap.isOpened():
             raise HTTPException(500, "Camera not available")
-        
+
         ret, frame = cap.read()
         cap.release()
-        
+
         if not ret:
             raise HTTPException(500, "Cannot read frame")
-        
+
         detector = get_detector()
         detections = detector.detect(frame, confidence=0.5)
         summary = detector.get_summary(detections)
-        
-        return {
-            "detections": detections,
-            "summary": summary
-        }
-        
+
+        return {"detections": detections, "summary": summary}
+
     except Exception as e:
         logger.error(f"Detection error: {e}")
         raise HTTPException(500, str(e))
@@ -575,11 +624,11 @@ async def initialize_detector():
     try:
         detector = get_detector()
         success = detector.load_model()
-        
+
         return {
             "success": success,
             "model": detector.model_name,
-            "loaded": detector.is_loaded
+            "loaded": detector.is_loaded,
         }
     except Exception as e:
         logger.error(f"Init error: {e}")
@@ -589,6 +638,7 @@ async def initialize_detector():
 # =============================================================================
 # API EXTERNA: OJOS EXTERNOS para ATLAS PUSH
 # =============================================================================
+
 
 @router.get("/snapshot")
 async def vision_snapshot(
@@ -616,8 +666,8 @@ async def vision_snapshot(
                 raise HTTPException(503, "Cannot read frame")
         else:
             try:
-                from PIL import ImageGrab
                 import numpy as np
+                from PIL import ImageGrab
             except ImportError:
                 raise HTTPException(503, "PIL not available for screen capture")
             img = ImageGrab.grab()
@@ -655,6 +705,7 @@ def external_eyes():
     base_url = os.getenv("NEXUS_BASE_URL", "http://localhost:8002")
     try:
         from vision.cameras.factory import get_camera_info
+
         info = get_camera_info()
     except Exception:
         info = {"active": False, "properties": {}}

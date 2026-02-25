@@ -11,7 +11,9 @@ _SESSIONS: Dict[str, Dict[str, Any]] = {}
 
 
 def _timeout_sec() -> int:
-    v = os.getenv("OWNER_SESSION_TTL_SECONDS") or os.getenv("OWNER_SESSION_TIMEOUT", "900")
+    v = os.getenv("OWNER_SESSION_TTL_SECONDS") or os.getenv(
+        "OWNER_SESSION_TIMEOUT", "900"
+    )
     try:
         return int(v or 900)
     except (TypeError, ValueError):
@@ -23,7 +25,11 @@ def owner_id() -> str:
 
 
 def strict_mode() -> bool:
-    return os.getenv("OWNER_STRICT_MODE", "false").strip().lower() in ("1", "true", "yes")
+    return os.getenv("OWNER_STRICT_MODE", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def _expires_at_iso(created_at: float, ttl: int) -> str:
@@ -79,10 +85,16 @@ def list_active() -> list:
     """List active sessions (redacted tokens). Expire stale first."""
     ttl = _timeout_sec()
     now = time.time()
-    expired = [t for t, s in _SESSIONS.items() if now - s["created_at"] > (s.get("ttl") or ttl)]
+    expired = [
+        t for t, s in _SESSIONS.items() if now - s["created_at"] > (s.get("ttl") or ttl)
+    ]
     for t in expired:
         _SESSIONS.pop(t, None)
     return [
-        {"method": s.get("method"), "created_at": s.get("created_at"), "expires_at": s.get("expires_at")}
+        {
+            "method": s.get("method"),
+            "created_at": s.get("created_at"),
+            "expires_at": s.get("expires_at"),
+        }
         for s in _SESSIONS.values()
     ]

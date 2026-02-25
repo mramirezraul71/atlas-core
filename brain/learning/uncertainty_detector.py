@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 try:
     import numpy as np
+
     _HAS_NUMPY = True
 except ImportError:
     _HAS_NUMPY = False
@@ -19,7 +20,7 @@ def _std_dev(values: List[float]) -> float:
         return 0.0
     mean = sum(values) / len(values)
     variance = sum((x - mean) ** 2 for x in values) / len(values)
-    return variance ** 0.5
+    return variance**0.5
 
 
 class UncertaintyDetector:
@@ -78,7 +79,9 @@ class UncertaintyDetector:
             reasons.append("no_similar_experience")
             self.stats["uncertainty_reasons"]["no_experience"] += 1
         elif similar_experiences < self.min_similar_experiences:
-            contribution = 0.2 * (1 - similar_experiences / self.min_similar_experiences)
+            contribution = 0.2 * (
+                1 - similar_experiences / self.min_similar_experiences
+            )
             uncertainty_score += contribution
             reasons.append(f"few_experiences_{similar_experiences}")
             self.stats["uncertainty_reasons"]["few_experiences"] += 1
@@ -190,9 +193,13 @@ class UncertaintyDetector:
         return {
             "total_evaluations": total_eval,
             "times_uncertain": self.stats["times_uncertain"],
-            "uncertainty_rate": self.stats["times_uncertain"] / total_eval if total_eval > 0 else 0,
+            "uncertainty_rate": self.stats["times_uncertain"] / total_eval
+            if total_eval > 0
+            else 0,
             "times_asked_for_help": self.stats["times_asked_for_help"],
-            "help_rate": self.stats["times_asked_for_help"] / total_eval if total_eval > 0 else 0,
+            "help_rate": self.stats["times_asked_for_help"] / total_eval
+            if total_eval > 0
+            else 0,
             "top_uncertainty_reasons": dict(
                 sorted(reasons.items(), key=lambda x: x[1], reverse=True)[:5]
             ),

@@ -7,15 +7,15 @@ Análogo biológico: Corteza cerebral
 - Temporal: Procesamiento auditivo, lenguaje, memoria episódica
 - Occipital: Procesamiento visual, profundidad, reconocimiento
 """
-from .frontal import TaskPlanner, DecisionMaker, InhibitoryControl
-from .parietal import SensoryFusion, SpatialMap, BodySchema
-from .temporal import AudioProcessor, LanguageUnderstanding, EpisodicRecall
-from .occipital import VisionPipeline, DepthEstimation, ObjectRecognition
+from .frontal import DecisionMaker, InhibitoryControl, TaskPlanner
+from .occipital import DepthEstimation, ObjectRecognition, VisionPipeline
+from .parietal import BodySchema, SensoryFusion, SpatialMap
+from .temporal import AudioProcessor, EpisodicRecall, LanguageUnderstanding
 
 __all__ = [
     # Frontal
     "TaskPlanner",
-    "DecisionMaker", 
+    "DecisionMaker",
     "InhibitoryControl",
     # Parietal
     "SensoryFusion",

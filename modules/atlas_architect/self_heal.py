@@ -53,10 +53,17 @@ class SelfHealingLoop:
                         applied_changes=applied,
                     )
                 )
-                return {"ok": True, "attempts": [a.__dict__ for a in attempts], "final": r}
+                return {
+                    "ok": True,
+                    "attempts": [a.__dict__ for a in attempts],
+                    "final": r,
+                }
 
             # Diagnóstico + propuesta (si hay modelo)
-            self.arch.ans.log_debug("Error detectado en ejecución; iniciando proceso de auto-reparación...", ok=False)
+            self.arch.ans.log_debug(
+                "Error detectado en ejecución; iniciando proceso de auto-reparación...",
+                ok=False,
+            )
             ocr = {}
             try:
                 ocr = self.arch.capture_and_ocr_screen()
@@ -68,7 +75,9 @@ class SelfHealingLoop:
                 f"STDERR:\n{(r.get('stderr') or '')[-12000:]}\n\n"
                 f"OCR_SCREEN_TEXT:\n{(ocr.get('text') or '')[:4000]}\n"
             )
-            proposal = self.arch.propose_code_fix(problem, context={"issues": issues}, prefer_free=prefer_free)
+            proposal = self.arch.propose_code_fix(
+                problem, context={"issues": issues}, prefer_free=prefer_free
+            )
 
             # En modo governed: NO aplicar. Solo reportar y cortar.
             if governed:
@@ -97,7 +106,9 @@ class SelfHealingLoop:
             if proposal.get("proposal"):
                 # Pedir explícitamente tool_calls basados en el fallo.
                 goal = f"Auto-fix del fallo del comando. Aplica parches atómicos. Luego re-ejecuta: {cmd}"
-                out = self.arch.agentic_execute(goal, prefer_free=prefer_free, max_iters=2)
+                out = self.arch.agentic_execute(
+                    goal, prefer_free=prefer_free, max_iters=2
+                )
                 applied.append({"agentic": out})
 
             attempts.append(
@@ -113,5 +124,8 @@ class SelfHealingLoop:
                 )
             )
 
-        return {"ok": False, "attempts": [a.__dict__ for a in attempts], "error": "max_attempts_exceeded"}
-
+        return {
+            "ok": False,
+            "attempts": [a.__dict__ for a in attempts],
+            "error": "max_attempts_exceeded",
+        }

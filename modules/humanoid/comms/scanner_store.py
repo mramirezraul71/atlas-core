@@ -15,15 +15,23 @@ def record_scan(snapshot: Dict[str, Any]) -> None:
     _LAST_SCAN["ts"] = datetime.now(timezone.utc).isoformat()
 
 
-def record_download(packages: List[str], ok: bool, message: str = "", comment_es: str = "", comment_en: str = "") -> None:
-    _DOWNLOADS.append({
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "packages": list(packages),
-        "ok": ok,
-        "message": message[:200],
-        "comment_es": comment_es[:120],
-        "comment_en": comment_en[:120],
-    })
+def record_download(
+    packages: List[str],
+    ok: bool,
+    message: str = "",
+    comment_es: str = "",
+    comment_en: str = "",
+) -> None:
+    _DOWNLOADS.append(
+        {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "packages": list(packages),
+            "ok": ok,
+            "message": message[:200],
+            "comment_es": comment_es[:120],
+            "comment_en": comment_en[:120],
+        }
+    )
 
 
 def get_last_scan() -> Dict[str, Any]:

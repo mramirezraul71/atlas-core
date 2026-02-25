@@ -38,14 +38,22 @@ def run_train(since_ts: Optional[str] = None) -> Dict[str, Any]:
             since_ts = since_dt.isoformat()
         events = db.get_events_since(since_ts)
         if not events:
-            return {"ok": True, "sample_count": 0, "rules_created": 0, "changes_summary": "no events", "error": None}
+            return {
+                "ok": True,
+                "sample_count": 0,
+                "rules_created": 0,
+                "changes_summary": "no events",
+                "error": None,
+            }
 
         decay = _decay()
         risk_max = _risk_shift_max()
         min_samp = _min_samples()
 
         # Buckets: (action_type, risk_level) and (action_type, model_family) for router
-        approve_reject: Dict[str, List[float]] = defaultdict(lambda: [0.0, 0.0])  # approve, reject
+        approve_reject: Dict[str, List[float]] = defaultdict(
+            lambda: [0.0, 0.0]
+        )  # approve, reject
         success_fail: Dict[str, List[float]] = defaultdict(lambda: [0.0, 0.0])
         latency_sum: Dict[str, float] = defaultdict(float)
         sample_count: Dict[str, int] = defaultdict(int)
@@ -57,7 +65,9 @@ def run_train(since_ts: Optional[str] = None) -> Dict[str, Any]:
             decision = (ev.get("decision") or "").strip().lower()
             outcome = (ev.get("outcome") or "fail").strip().lower()
             lat = ev.get("latency_ms") or 0
-            model_family = (ev.get("features_json") or {}).get("model_family", "unknown")
+            model_family = (ev.get("features_json") or {}).get(
+                "model_family", "unknown"
+            )
             bucket_ar = f"ar:{action}:{risk}"
             bucket_sf = f"sf:{action}:{risk}"
             bucket_router = f"router:{action}:{model_family}"
@@ -100,7 +110,9 @@ def run_train(since_ts: Optional[str] = None) -> Dict[str, Any]:
             sf = success_fail.get(key, [0, 0])
             lat = latency_sum.get(key, 0)
             n = sample_count.get(key, 0)
-            db.upsert_stat(key, ar[0], ar[1], sf[0], sf[1], lat, now, sample_delta=max(1, n))
+            db.upsert_stat(
+                key, ar[0], ar[1], sf[0], sf[1], lat, now, sample_delta=max(1, n)
+            )
 
         # Mine rules: from ar: and sf: buckets
         rules: List[Dict[str, Any]] = []
@@ -129,23 +141,38 @@ def run_train(since_ts: Optional[str] = None) -> Dict[str, Any]:
                     risk_adjust = -min(risk_max, 0.1)
                 elif approve_rate <= 0.2:
                     risk_adjust = min(risk_max, 0.1)
-            rules.append({
-                "id": str(uuid.uuid4())[:8],
-                "conditions": {"action_type": action_type, "risk_level": risk_level},
-                "risk_adjust": risk_adjust,
-                "router_hint": None,
-                "canary_hint": None,
-                "approve_rate": approve_rate,
-                "success_rate": success_rate,
-                "sample_count": int(row["sample_count"]),
-                "created_ts": now,
-                "updated_ts": now,
-            })
+            rules.append(
+                {
+                    "id": str(uuid.uuid4())[:8],
+                    "conditions": {
+                        "action_type": action_type,
+                        "risk_level": risk_level,
+                    },
+                    "risk_adjust": risk_adjust,
+                    "router_hint": None,
+                    "canary_hint": None,
+                    "approve_rate": approve_rate,
+                    "success_rate": success_rate,
+                    "sample_count": int(row["sample_count"]),
+                    "created_ts": now,
+                    "updated_ts": now,
+                }
+            )
 
         db.save_rules(rules, now)
         changes = f"rules={len(rules)} samples={len(events)}"
-        return {"ok": True, "sample_count": len(events), "rules_created": len(rules), "changes_summary": changes, "error": None}
+        return {
+            "ok": True,
+            "sample_count": len(events),
+            "rules_created": len(rules),
+            "changes_summary": changes,
+            "error": None,
+        }
     except Exception as e:
-        return {"ok": False, "sample_count": 0, "rules_created": 0, "changes_summary": "", "error": str(e)}
-
-
+        return {
+            "ok": False,
+            "sample_count": 0,
+            "rules_created": 0,
+            "changes_summary": "",
+            "error": str(e),
+        }

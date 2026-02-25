@@ -11,6 +11,7 @@ from typing import Any, Dict, List
 
 try:
     import docker
+
     _DOCKER_AVAILABLE = True
 except ImportError:
     docker = None
@@ -87,9 +88,17 @@ except Exception as e:
                 )
                 try:
                     exit_code = container.wait(timeout=timeout)
-                    status_code = exit_code.get("StatusCode", -1) if isinstance(exit_code, dict) else exit_code
-                    stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
-                    stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")
+                    status_code = (
+                        exit_code.get("StatusCode", -1)
+                        if isinstance(exit_code, dict)
+                        else exit_code
+                    )
+                    stdout = container.logs(stdout=True, stderr=False).decode(
+                        "utf-8", errors="replace"
+                    )
+                    stderr = container.logs(stdout=False, stderr=True).decode(
+                        "utf-8", errors="replace"
+                    )
                 finally:
                     try:
                         container.remove(force=True)
@@ -116,8 +125,12 @@ except Exception as e:
                 return {
                     "success": False,
                     "error": str(e),
-                    "stdout": e.stdout.decode("utf-8", errors="replace") if getattr(e, "stdout", None) else "",
-                    "stderr": e.stderr.decode("utf-8", errors="replace") if getattr(e, "stderr", None) else "",
+                    "stdout": e.stdout.decode("utf-8", errors="replace")
+                    if getattr(e, "stdout", None)
+                    else "",
+                    "stderr": e.stderr.decode("utf-8", errors="replace")
+                    if getattr(e, "stderr", None)
+                    else "",
                 }
             except Exception as e:
                 return {"success": False, "error": f"Execution error: {e}"}
@@ -138,19 +151,31 @@ class SkillValidator:
         """Valida: sintaxis, seguridad, ejecución en sandbox, rendimiento."""
         validation_results: Dict[str, Any] = {"overall_valid": False, "checks": {}}
         from brain.self_programming.code_generator import CodeGenerator
+
         code_gen = CodeGenerator()
         syntax_result = code_gen.validate_code(code)
         validation_results["checks"]["syntax"] = syntax_result
         if not syntax_result.get("syntax_valid"):
             return validation_results
         if not syntax_result.get("safe", True):
-            validation_results["checks"]["security"] = {"passed": False, "issues": syntax_result.get("issues", [])}
+            validation_results["checks"]["security"] = {
+                "passed": False,
+                "issues": syntax_result.get("issues", []),
+            }
             return validation_results
         validation_results["checks"]["security"] = {"passed": True}
 
         if not test_cases:
-            validation_results["checks"]["functional"] = {"passed": True, "results": [], "pass_rate": 1.0}
-            validation_results["checks"]["performance"] = {"passed": True, "avg_execution_time": 0, "total_time": 0}
+            validation_results["checks"]["functional"] = {
+                "passed": True,
+                "results": [],
+                "pass_rate": 1.0,
+            }
+            validation_results["checks"]["performance"] = {
+                "passed": True,
+                "avg_execution_time": 0,
+                "total_time": 0,
+            }
             validation_results["overall_valid"] = True
             return validation_results
 
@@ -161,19 +186,23 @@ class SkillValidator:
             expected = test_case.get("expected_output")
             result = self.sandbox.execute_safely(code, function_name, inp, timeout=10)
             passed = result.get("success") and result.get("output") == expected
-            test_results.append({
-                "input": inp,
-                "expected": expected,
-                "actual": result.get("output"),
-                "passed": passed,
-                "execution_time": result.get("execution_time", 0),
-            })
+            test_results.append(
+                {
+                    "input": inp,
+                    "expected": expected,
+                    "actual": result.get("output"),
+                    "passed": passed,
+                    "execution_time": result.get("execution_time", 0),
+                }
+            )
             total_time += result.get("execution_time", 0)
 
         validation_results["checks"]["functional"] = {
             "passed": all(t["passed"] for t in test_results),
             "results": test_results,
-            "pass_rate": sum(1 for t in test_results if t["passed"]) / len(test_results) if test_results else 0,
+            "pass_rate": sum(1 for t in test_results if t["passed"]) / len(test_results)
+            if test_results
+            else 0,
         }
         avg_time = total_time / len(test_cases) if test_cases else 0
         validation_results["checks"]["performance"] = {
@@ -182,6 +211,8 @@ class SkillValidator:
             "total_time": total_time,
         }
         validation_results["overall_valid"] = all(
-            c.get("passed", False) for c in validation_results["checks"].values() if isinstance(c, dict)
+            c.get("passed", False)
+            for c in validation_results["checks"].values()
+            if isinstance(c, dict)
         )
         return validation_results

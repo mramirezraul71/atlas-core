@@ -30,7 +30,11 @@ def get_pot() -> POT:
         rules=rules,
         tags=["git", "repo", "sync", "safe"],
         steps=[
-            POTStep(id="git_safe_sync", name="Ejecutar ciclo Git seguro", run=_run, fatal=True),
+            POTStep(
+                id="git_safe_sync",
+                name="Ejecutar ciclo Git seguro",
+                run=_run,
+                fatal=True,
+            ),
         ],
     )
-

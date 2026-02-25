@@ -10,7 +10,8 @@ Triggers:
 
 Severidad: MEDIUM
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -25,17 +26,14 @@ Incluye stash de cambios locales si necesario, pull, y restauración.
         severity=POTSeverity.MEDIUM,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["git_behind", "pull_pending", "remote_*"],
         trigger_keywords=["pull", "update", "actualizar", "fetch", "sync"],
-        
         prerequisites=[
             "Repositorio Git configurado con remote",
             "Acceso de red al remoto",
         ],
         required_services=[],
         required_permissions=["git_read", "network_access"],
-        
         objectives=[
             "Guardar cambios locales pendientes (stash)",
             "Obtener cambios del remoto",
@@ -45,7 +43,6 @@ Incluye stash de cambios locales si necesario, pull, y restauración.
         ],
         success_criteria="Branch local actualizado con últimos cambios del remoto",
         estimated_duration_minutes=2,
-        
         tutorial_overview="""
 ## Guía de Pull desde Remoto
 
@@ -64,22 +61,18 @@ Si hay conflictos después del pull:
 3. Marcar resuelto: `git add <archivo>`
 4. Continuar: `git rebase --continue` o `git merge --continue`
         """.strip(),
-        
         best_practices=[
             "Pull al inicio de cada sesión de trabajo",
             "Stash cambios locales antes de pull",
             "Preferir --ff-only para evitar estados Git peligrosos",
             "Resolver conflictos inmediatamente",
         ],
-        
         warnings=[
             "Si hay conflictos, no hacer más cambios hasta resolver",
             "Verificar que los tests pasen después del pull",
         ],
-        
         related_pots=["git_commit", "git_push", "repo_update"],
         tags=["git", "pull", "sync", "update", "deployment"],
-        
         steps=[
             POTStep(
                 id="check_local_changes",
@@ -90,7 +83,6 @@ Si hay conflictos después del pull:
                 timeout_seconds=10,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="stash_if_needed",
                 name="Stash de cambios locales",
@@ -102,7 +94,6 @@ Si hay conflictos después del pull:
                 condition="context.get('check_local_changes_output', '').strip() != ''",
                 tutorial_notes="Solo hace stash si hay cambios pendientes",
             ),
-            
             POTStep(
                 id="fetch_remote",
                 name="Fetch del remoto",
@@ -111,7 +102,6 @@ Si hay conflictos después del pull:
                 command="git fetch origin",
                 timeout_seconds=60,
             ),
-            
             POTStep(
                 id="check_behind",
                 name="Verificar commits pendientes",
@@ -122,7 +112,6 @@ Si hay conflictos después del pull:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="execute_pull",
                 name="Ejecutar pull",
@@ -133,7 +122,6 @@ Si hay conflictos después del pull:
                 capture_output=True,
                 tutorial_notes="--ff-only evita rebase/merge automático; si no se puede fast-forward, falla sin modificar el repo",
             ),
-            
             POTStep(
                 id="pop_stash",
                 name="Restaurar stash",
@@ -144,7 +132,6 @@ Si hay conflictos después del pull:
                 continue_on_failure=True,
                 condition="'POT_git_pull_autostash' in context.get('stash_if_needed_output', '')",
             ),
-            
             POTStep(
                 id="verify_status",
                 name="Verificar estado final",
@@ -154,7 +141,6 @@ Si hay conflictos después del pull:
                 timeout_seconds=10,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="log_to_bitacora",
                 name="Registrar en bitácora",
@@ -165,7 +151,7 @@ Si hay conflictos después del pull:
                 http_body={
                     "message": "[GIT] Pull desde remoto completado por POT git_pull",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
                 continue_on_failure=True,
             ),

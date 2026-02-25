@@ -44,7 +44,10 @@ def _save_to_disk() -> None:
         p.parent.mkdir(parents=True, exist_ok=True)
         entries = list(_evolution_entries)
         p.write_text(
-            json.dumps({"entries": entries, "updated": datetime.now(timezone.utc).isoformat()}, ensure_ascii=False),
+            json.dumps(
+                {"entries": entries, "updated": datetime.now(timezone.utc).isoformat()},
+                ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
     except Exception:
@@ -55,7 +58,9 @@ def _save_to_disk() -> None:
 _load_from_disk()
 
 
-def append_evolution_log(message: str, ok: bool = True, source: str = "evolution") -> None:
+def append_evolution_log(
+    message: str, ok: bool = True, source: str = "evolution"
+) -> None:
     """Append one step to the bitácora. Called by POST /ans/evolution-log. source: evolution | repo_monitor | ..."""
     msg = (message or "").strip()
     src = (source or "evolution").strip() or "evolution"

@@ -1,6 +1,6 @@
 # Informe final: comprobaciones NEXUS / Robot / PUSH
 
-**Fecha:** 2025-02-14  
+**Fecha:** 2025-02-14
 **Repo:** ATLAS_PUSH (atlas-core), worktree `crs`
 
 ---
@@ -27,7 +27,7 @@
 python scripts/check_nexus_ports.py
 ```
 
-- **NEXUS (8000):** DESCONECTADO según script (GET /health → HTTP 404).  
+- **NEXUS (8000):** DESCONECTADO según script (GET /health → HTTP 404).
 - **Robot (8002):** DESCONECTADO (conexión rechazada, ningún proceso escuchando).
 
 ### 2.2 Puertos en escucha (netstat)
@@ -60,12 +60,12 @@ Sin `atlas.env`, PUSH puede estar usando valores por defecto de entorno; si NEXU
 
 ## 3. Cambios aplicados en este informe
 
-1. **modules/nexus_heartbeat.py**  
-   - `ping_nexus()` ahora intenta primero `GET {base}/health` y, si falla (p. ej. 404), `GET {base}/status`.  
+1. **modules/nexus_heartbeat.py**
+   - `ping_nexus()` ahora intenta primero `GET {base}/health` y, si falla (p. ej. 404), `GET {base}/status`.
    - Si alguno devuelve 200, se considera NEXUS conectado. Con esto el Dashboard puede mostrar Conectado cuando NEXUS solo expone `/status`.
 
-2. **scripts/check_nexus_ports.py**  
-   - Si `GET .../health` devuelve 404, se prueba `GET .../status` para NEXUS (8000).  
+2. **scripts/check_nexus_ports.py**
+   - Si `GET .../health` devuelve 404, se prueba `GET .../status` para NEXUS (8000).
    - El informe de diagnóstico ya no marca NEXUS como fallido solo por falta de `/health`.
 
 ---
@@ -83,9 +83,9 @@ Sin `atlas.env`, PUSH puede estar usando valores por defecto de entorno; si NEXU
 
 ## 5. Conclusión
 
-- **PUSH (8791):** Operativo.  
-- **NEXUS (8000):** Servicio en escucha; responde en `/status` pero no en `/health` en el entorno comprobado. Con el fallback a `/status` en heartbeat y en el script de diagnóstico, el Dashboard y las comprobaciones pueden considerar NEXUS conectado.  
-- **Robot (8002):** No arrancado; hay que iniciar el backend para cámaras y stream.  
+- **PUSH (8791):** Operativo.
+- **NEXUS (8000):** Servicio en escucha; responde en `/status` pero no en `/health` en el entorno comprobado. Con el fallback a `/status` en heartbeat y en el script de diagnóstico, el Dashboard y las comprobaciones pueden considerar NEXUS conectado.
+- **Robot (8002):** No arrancado; hay que iniciar el backend para cámaras y stream.
 - **Config:** Crear `atlas.env` desde el example para fijar NEXUS_* y rutas del monorepo.
 
 Documento de diagnóstico detallado: `docs/PROMPT_NEXUS_CLAUDE_MAPEO.md` (sección 7: Revisar por qué no se conecta).

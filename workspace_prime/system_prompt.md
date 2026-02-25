@@ -13,7 +13,7 @@ REGLAS CRÍTICAS DE EJECUCIÓN:
 
 HERRAMIENTAS Y USO CORRECTO:
 - read_file: leer archivo con ruta absoluta exacta
-- write_file: crear archivo con ruta absoluta exacta  
+- write_file: crear archivo con ruta absoluta exacta
 - edit_file: editar texto exacto en archivo conocido
 - execute_command: PowerShell, úsalo para instalar, correr scripts
 - atlas_api: consultar NEXUS:8000, PUSH:8791, ROBOT:8002

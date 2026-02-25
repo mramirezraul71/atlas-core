@@ -6,7 +6,11 @@ from datetime import datetime, timezone
 
 
 def _metalearn_enabled() -> bool:
-    return os.getenv("METALEARN_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+    return os.getenv("METALEARN_ENABLED", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def _sched_enabled() -> bool:
@@ -20,6 +24,7 @@ def ensure_metalearn_jobs() -> None:
     try:
         from modules.humanoid.scheduler import get_scheduler_db
         from modules.humanoid.scheduler.models import JobSpec
+
         db = get_scheduler_db()
         jobs = db.list_jobs()
         names = {j.get("name") for j in (jobs or [])}
@@ -28,12 +33,14 @@ def ensure_metalearn_jobs() -> None:
         interval_min = int(os.getenv("METALEARN_UPDATE_INTERVAL_MINUTES", "60") or 60)
         interval_sec = max(60, interval_min * 60)
         now = datetime.now(timezone.utc).isoformat()
-        db.create_job(JobSpec(
-            name="metalearn_cycle",
-            kind="metalearn_cycle",
-            payload={},
-            run_at=now,
-            interval_seconds=interval_sec,
-        ))
+        db.create_job(
+            JobSpec(
+                name="metalearn_cycle",
+                kind="metalearn_cycle",
+                payload={},
+                run_at=now,
+                interval_seconds=interval_sec,
+            )
+        )
     except Exception:
         pass

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 def run() -> dict:
     try:
-        from modules.humanoid.cortex.frontal.concurrent_engine import get_engine
+        from modules.humanoid.cortex.frontal.concurrent_engine import \
+            get_engine
+
         engine = get_engine()
         status = engine.get_status()
         active = status.get("active_goals", 0)
@@ -17,8 +19,11 @@ def run() -> dict:
             issues.append(f"active_goals ({active}) exceeds max_concurrent ({max_c})")
 
         resources = status.get("resources", {}).get("resources", {})
-        stuck = [r for r, info in resources.items()
-                 if info.get("available", 1) == 0 and info.get("exclusive", False)]
+        stuck = [
+            r
+            for r, info in resources.items()
+            if info.get("available", 1) == 0 and info.get("exclusive", False)
+        ]
         if stuck:
             issues.append(f"exclusive resources fully locked: {stuck}")
 

@@ -37,11 +37,13 @@ def _default_db_path() -> str:
 
 # ── Dataclasses ──────────────────────────────────────────────────────────
 
+
 @dataclass
 class Percepcion:
     sensores: Dict[str, Any] = field(default_factory=dict)
     eventos: List[str] = field(default_factory=list)
     anomalias: List[str] = field(default_factory=list)
+
 
 @dataclass
 class AccionEjecutada:
@@ -52,6 +54,7 @@ class AccionEjecutada:
     duracion_ms: float = 0.0
     exitoso: bool = True
 
+
 @dataclass
 class Resultado:
     exito: bool = True
@@ -59,6 +62,7 @@ class Resultado:
     eventos_riesgo: List[str] = field(default_factory=list)
     colisiones_evitadas: int = 0
     colisiones_producidas: int = 0
+
 
 @dataclass
 class Feedback:
@@ -68,11 +72,13 @@ class Feedback:
     comentarios: List[str] = field(default_factory=list)
     sentiment: float = 0.0
 
+
 @dataclass
 class Leccion:
     texto: str = ""
     reglas_numericas: Dict[str, float] = field(default_factory=dict)
     recomendaciones: List[str] = field(default_factory=list)
+
 
 @dataclass
 class EpisodioVida:
@@ -103,7 +109,9 @@ class EpisodioVida:
             if k == "percepciones" and isinstance(v, dict):
                 ep.percepciones = Percepcion(**v)
             elif k == "acciones" and isinstance(v, list):
-                ep.acciones = [AccionEjecutada(**a) if isinstance(a, dict) else a for a in v]
+                ep.acciones = [
+                    AccionEjecutada(**a) if isinstance(a, dict) else a for a in v
+                ]
             elif k == "resultado" and isinstance(v, dict):
                 ep.resultado = Resultado(**v)
             elif k == "feedback" and isinstance(v, dict):
@@ -118,10 +126,22 @@ class EpisodioVida:
 # ── Motor principal ──────────────────────────────────────────────────────
 
 TASK_TYPES = [
-    "transporte_objeto", "navegacion", "escaleras", "manipulacion",
-    "interaccion_humana", "inspeccion", "limpieza", "apertura_puerta",
-    "carga_pesada", "objeto_fragil", "patrulla", "emergencia",
-    "mantenimiento", "comunicacion", "diagnostico", "otro",
+    "transporte_objeto",
+    "navegacion",
+    "escaleras",
+    "manipulacion",
+    "interaccion_humana",
+    "inspeccion",
+    "limpieza",
+    "apertura_puerta",
+    "carga_pesada",
+    "objeto_fragil",
+    "patrulla",
+    "emergencia",
+    "mantenimiento",
+    "comunicacion",
+    "diagnostico",
+    "otro",
 ]
 
 
@@ -137,7 +157,8 @@ class LibroDeVida:
         conn = sqlite3.connect(self._db_path, check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
-        conn.executescript("""
+        conn.executescript(
+            """
             CREATE TABLE IF NOT EXISTS episodios (
                 id              TEXT PRIMARY KEY,
                 timestamp_ts    REAL NOT NULL,
@@ -191,7 +212,8 @@ class LibroDeVida:
                 aplicaciones INTEGER DEFAULT 1,
                 updated_at  TEXT DEFAULT (datetime('now'))
             );
-        """)
+        """
+        )
         conn.commit()
         return conn
 
@@ -200,7 +222,9 @@ class LibroDeVida:
 
     def _build_search_text(self, ep: EpisodioVida) -> str:
         parts = [
-            ep.tipo_tarea, ep.objetivo, ep.contexto_entorno,
+            ep.tipo_tarea,
+            ep.objetivo,
+            ep.contexto_entorno,
             " ".join(ep.tags),
             " ".join(ep.restricciones_seguridad),
             ep.lecciones.texto,
@@ -224,47 +248,67 @@ class LibroDeVida:
         search_text = self._build_search_text(ep)
         reward = ep.feedback.recompensa - ep.feedback.penalizacion
 
-        self._conn.execute("""
+        self._conn.execute(
+            """
             INSERT OR REPLACE INTO episodios
             (id, timestamp_ts, tipo_tarea, objetivo, contexto_entorno,
              restricciones, participantes, percepciones, acciones,
              resultado, feedback, lecciones, importancia, tags,
              episode_ids_rel, valor_aprendizaje, exito, reward_total, search_text)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (
-            ep.id, ep.timestamp, ep.tipo_tarea, ep.objetivo, ep.contexto_entorno,
-            json.dumps(ep.restricciones_seguridad, ensure_ascii=False),
-            json.dumps(ep.participantes, ensure_ascii=False),
-            json.dumps(asdict(ep.percepciones), ensure_ascii=False),
-            json.dumps([asdict(a) for a in ep.acciones], ensure_ascii=False),
-            json.dumps(asdict(ep.resultado), ensure_ascii=False),
-            json.dumps(asdict(ep.feedback), ensure_ascii=False),
-            json.dumps(asdict(ep.lecciones), ensure_ascii=False),
-            ep.importancia,
-            json.dumps(ep.tags, ensure_ascii=False),
-            json.dumps(ep.episode_ids_relacionados, ensure_ascii=False),
-            ep.valor_aprendizaje,
-            1 if ep.resultado.exito else 0,
-            reward,
-            search_text,
-        ))
+        """,
+            (
+                ep.id,
+                ep.timestamp,
+                ep.tipo_tarea,
+                ep.objetivo,
+                ep.contexto_entorno,
+                json.dumps(ep.restricciones_seguridad, ensure_ascii=False),
+                json.dumps(ep.participantes, ensure_ascii=False),
+                json.dumps(asdict(ep.percepciones), ensure_ascii=False),
+                json.dumps([asdict(a) for a in ep.acciones], ensure_ascii=False),
+                json.dumps(asdict(ep.resultado), ensure_ascii=False),
+                json.dumps(asdict(ep.feedback), ensure_ascii=False),
+                json.dumps(asdict(ep.lecciones), ensure_ascii=False),
+                ep.importancia,
+                json.dumps(ep.tags, ensure_ascii=False),
+                json.dumps(ep.episode_ids_relacionados, ensure_ascii=False),
+                ep.valor_aprendizaje,
+                1 if ep.resultado.exito else 0,
+                reward,
+                search_text,
+            ),
+        )
         self._conn.commit()
 
         for regla_key, regla_val in ep.lecciones.reglas_numericas.items():
-            self._conn.execute("""
+            self._conn.execute(
+                """
                 INSERT OR REPLACE INTO reglas_aprendidas (id, episodio_id, tipo_tarea, regla, valor, confianza)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (self._gen_id(), ep.id, ep.tipo_tarea, regla_key, regla_val, 0.5 + ep.importancia * 0.5))
+            """,
+                (
+                    self._gen_id(),
+                    ep.id,
+                    ep.tipo_tarea,
+                    regla_key,
+                    regla_val,
+                    0.5 + ep.importancia * 0.5,
+                ),
+            )
             self._conn.commit()
 
         self._sync_to_subsystems(ep)
-        log.info("Episodio registrado: %s [%s] %s", ep.id, ep.tipo_tarea, ep.objetivo[:60])
+        log.info(
+            "Episodio registrado: %s [%s] %s", ep.id, ep.tipo_tarea, ep.objetivo[:60]
+        )
         return ep.id
 
     def _sync_to_subsystems(self, ep: EpisodioVida):
         """Propaga el episodio a Lifelog, World Model y Autobiographical si aplica."""
         try:
             from modules.humanoid.memory_engine.lifelog import get_lifelog
+
             ll = get_lifelog()
             ll.log(
                 event_type="libro_vida_episode",
@@ -284,11 +328,13 @@ class LibroDeVida:
 
         try:
             from modules.humanoid.world_model.engine import get_world_model
+
             wm = get_world_model()
             wm.record_outcome(
                 action_type=ep.tipo_tarea,
                 context={"objetivo": ep.objetivo, "entorno": ep.contexto_entorno},
-                predicted="exito", actual="exito" if ep.resultado.exito else "fallo",
+                predicted="exito",
+                actual="exito" if ep.resultado.exito else "fallo",
                 success=ep.resultado.exito,
                 duration_ms=sum(a.duracion_ms for a in ep.acciones),
             )
@@ -297,26 +343,35 @@ class LibroDeVida:
 
         if ep.importancia >= 0.8 or not ep.resultado.exito:
             try:
-                from modules.humanoid.memory_engine.autobiographical import get_autobiographical_memory
+                from modules.humanoid.memory_engine.autobiographical import \
+                    get_autobiographical_memory
+
                 am = get_autobiographical_memory()
                 cat = "achievement" if ep.resultado.exito else "failure"
                 am.record_milestone(
                     title=f"[{ep.tipo_tarea}] {ep.objetivo[:80]}",
-                    description=ep.lecciones.texto or f"Resultado: {'éxito' if ep.resultado.exito else 'fallo'}",
-                    category=cat, importance=ep.importancia,
+                    description=ep.lecciones.texto
+                    or f"Resultado: {'éxito' if ep.resultado.exito else 'fallo'}",
+                    category=cat,
+                    importance=ep.importancia,
                     episode_ids=[ep.id],
                 )
             except Exception as e:
                 log.debug("Autobiographical sync: %s", e)
 
     def obtener_episodio(self, ep_id: str) -> Optional[EpisodioVida]:
-        row = self._conn.execute("SELECT * FROM episodios WHERE id=?", (ep_id,)).fetchone()
+        row = self._conn.execute(
+            "SELECT * FROM episodios WHERE id=?", (ep_id,)
+        ).fetchone()
         if not row:
             return None
         return self._row_to_episodio(row)
 
     def _row_to_episodio(self, row) -> EpisodioVida:
-        cols = [d[0] for d in self._conn.execute("SELECT * FROM episodios LIMIT 0").description]
+        cols = [
+            d[0]
+            for d in self._conn.execute("SELECT * FROM episodios LIMIT 0").description
+        ]
         d = dict(zip(cols, row))
         ep = EpisodioVida()
         ep.id = d["id"]
@@ -327,7 +382,9 @@ class LibroDeVida:
         ep.restricciones_seguridad = json.loads(d.get("restricciones", "[]"))
         ep.participantes = json.loads(d.get("participantes", "[]"))
         ep.percepciones = Percepcion(**json.loads(d.get("percepciones", "{}")))
-        ep.acciones = [AccionEjecutada(**a) for a in json.loads(d.get("acciones", "[]"))]
+        ep.acciones = [
+            AccionEjecutada(**a) for a in json.loads(d.get("acciones", "[]"))
+        ]
         ep.resultado = Resultado(**json.loads(d.get("resultado", "{}")))
         ep.feedback = Feedback(**json.loads(d.get("feedback", "{}")))
         ep.lecciones = Leccion(**json.loads(d.get("lecciones", "{}")))
@@ -361,7 +418,11 @@ class LibroDeVida:
         elif solo_exitosos is False:
             conditions.append("exito = 0")
 
-        search_terms = " ".join(filter(None, [objetivo, contexto, " ".join(tags or [])])).lower().split()
+        search_terms = (
+            " ".join(filter(None, [objetivo, contexto, " ".join(tags or [])]))
+            .lower()
+            .split()
+        )
         for term in search_terms[:8]:
             conditions.append("search_text LIKE ?")
             params.append(f"%{term}%")
@@ -394,37 +455,60 @@ class LibroDeVida:
         rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_episodio(r) for r in rows]
 
-    def obtener_reglas(self, tipo_tarea: Optional[str] = None, limit: int = 20) -> List[Dict]:
+    def obtener_reglas(
+        self, tipo_tarea: Optional[str] = None, limit: int = 20
+    ) -> List[Dict]:
         if tipo_tarea:
             rows = self._conn.execute(
                 "SELECT * FROM reglas_aprendidas WHERE tipo_tarea=? ORDER BY confianza DESC LIMIT ?",
-                (tipo_tarea, limit)
+                (tipo_tarea, limit),
             ).fetchall()
         else:
             rows = self._conn.execute(
-                "SELECT * FROM reglas_aprendidas ORDER BY confianza DESC LIMIT ?", (limit,)
+                "SELECT * FROM reglas_aprendidas ORDER BY confianza DESC LIMIT ?",
+                (limit,),
             ).fetchall()
-        cols = [d[0] for d in self._conn.execute("SELECT * FROM reglas_aprendidas LIMIT 0").description]
+        cols = [
+            d[0]
+            for d in self._conn.execute(
+                "SELECT * FROM reglas_aprendidas LIMIT 0"
+            ).description
+        ]
         return [dict(zip(cols, r)) for r in rows]
 
     def obtener_principios(self, categoria: Optional[str] = None) -> List[Dict]:
         if categoria:
             rows = self._conn.execute(
-                "SELECT * FROM principios_generales WHERE categoria=? ORDER BY confianza DESC", (categoria,)
+                "SELECT * FROM principios_generales WHERE categoria=? ORDER BY confianza DESC",
+                (categoria,),
             ).fetchall()
         else:
             rows = self._conn.execute(
                 "SELECT * FROM principios_generales ORDER BY confianza DESC"
             ).fetchall()
-        cols = [d[0] for d in self._conn.execute("SELECT * FROM principios_generales LIMIT 0").description]
+        cols = [
+            d[0]
+            for d in self._conn.execute(
+                "SELECT * FROM principios_generales LIMIT 0"
+            ).description
+        ]
         return [dict(zip(cols, r)) for r in rows]
 
-    def registrar_principio(self, categoria: str, principio: str, episodio_ids: List[str] = None, confianza: float = 0.5) -> str:
+    def registrar_principio(
+        self,
+        categoria: str,
+        principio: str,
+        episodio_ids: List[str] = None,
+        confianza: float = 0.5,
+    ) -> str:
         pid = "pr_" + uuid.uuid4().hex[:10]
-        self._conn.execute("""
+        self._conn.execute(
+            """
             INSERT INTO principios_generales (id, categoria, principio, fuente_episodios, confianza)
             VALUES (?, ?, ?, ?, ?)
-        """, (pid, categoria, principio, json.dumps(episodio_ids or []), confianza))
+        """,
+            (pid, categoria, principio, json.dumps(episodio_ids or []), confianza),
+        )
         self._conn.commit()
         return pid
 
@@ -432,11 +516,21 @@ class LibroDeVida:
 
     def get_stats(self) -> Dict[str, Any]:
         total = self._conn.execute("SELECT COUNT(*) FROM episodios").fetchone()[0]
-        exitos = self._conn.execute("SELECT COUNT(*) FROM episodios WHERE exito=1").fetchone()[0]
-        fallos = self._conn.execute("SELECT COUNT(*) FROM episodios WHERE exito=0").fetchone()[0]
-        alto_valor = self._conn.execute("SELECT COUNT(*) FROM episodios WHERE valor_aprendizaje='alto'").fetchone()[0]
-        reglas = self._conn.execute("SELECT COUNT(*) FROM reglas_aprendidas").fetchone()[0]
-        principios = self._conn.execute("SELECT COUNT(*) FROM principios_generales").fetchone()[0]
+        exitos = self._conn.execute(
+            "SELECT COUNT(*) FROM episodios WHERE exito=1"
+        ).fetchone()[0]
+        fallos = self._conn.execute(
+            "SELECT COUNT(*) FROM episodios WHERE exito=0"
+        ).fetchone()[0]
+        alto_valor = self._conn.execute(
+            "SELECT COUNT(*) FROM episodios WHERE valor_aprendizaje='alto'"
+        ).fetchone()[0]
+        reglas = self._conn.execute(
+            "SELECT COUNT(*) FROM reglas_aprendidas"
+        ).fetchone()[0]
+        principios = self._conn.execute(
+            "SELECT COUNT(*) FROM principios_generales"
+        ).fetchone()[0]
 
         tipos_row = self._conn.execute(
             "SELECT tipo_tarea, COUNT(*) as c FROM episodios GROUP BY tipo_tarea ORDER BY c DESC LIMIT 10"
@@ -457,9 +551,19 @@ class LibroDeVida:
     def listar_recientes(self, limit: int = 10) -> List[Dict]:
         rows = self._conn.execute(
             "SELECT id, tipo_tarea, objetivo, exito, importancia, timestamp_ts FROM episodios ORDER BY timestamp_ts DESC LIMIT ?",
-            (limit,)
+            (limit,),
         ).fetchall()
-        return [{"id": r[0], "tipo_tarea": r[1], "objetivo": r[2], "exito": bool(r[3]), "importancia": r[4], "timestamp": r[5]} for r in rows]
+        return [
+            {
+                "id": r[0],
+                "tipo_tarea": r[1],
+                "objetivo": r[2],
+                "exito": bool(r[3]),
+                "importancia": r[4],
+                "timestamp": r[5],
+            }
+            for r in rows
+        ]
 
 
 def get_libro_vida() -> LibroDeVida:

@@ -15,11 +15,17 @@ from typing import Optional
 
 def _cached_chat_id() -> Optional[str]:
     # Explicit env first
-    raw = (os.getenv("TELEGRAM_CHAT_ID") or os.getenv("TELEGRAM_ADMIN_CHAT_ID") or "").strip()
+    raw = (
+        os.getenv("TELEGRAM_CHAT_ID") or os.getenv("TELEGRAM_ADMIN_CHAT_ID") or ""
+    ).strip()
     if raw:
         return raw
     # Common cache file (used by ops_bus)
-    p = Path(os.getenv("TELEGRAM_CHAT_ID_CACHE_PATH", r"C:\ATLAS_PUSH\logs\telegram_chat_id.txt"))
+    p = Path(
+        os.getenv(
+            "TELEGRAM_CHAT_ID_CACHE_PATH", r"C:\ATLAS_PUSH\logs\telegram_chat_id.txt"
+        )
+    )
     try:
         if p.is_file():
             v = p.read_text(encoding="utf-8", errors="ignore").strip()
@@ -53,4 +59,3 @@ async def send_telegram(message: str) -> bool:
         return bool(out and out.get("ok"))
     except Exception:
         return False
-

@@ -71,7 +71,9 @@ def main() -> int:
     print(json.dumps(env, indent=2, ensure_ascii=False))
 
     region = env.get("aws_region") or "us-east-1"
-    model_id = os.getenv("ATLAS_BEDROCK_FAST_MODEL", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+    model_id = os.getenv(
+        "ATLAS_BEDROCK_FAST_MODEL", "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    )
 
     try:
         sts = check_sts_identity(region)

@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from .base import BaseAgent
-from .registry import AgentRegistry, get_agent_registry
 from .executive import ExecutiveAgent, run_multi_agent_goal
+from .registry import AgentRegistry, get_agent_registry
 
 __all__ = [
     "BaseAgent",

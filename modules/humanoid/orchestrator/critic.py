@@ -50,7 +50,14 @@ def validate_plan_structure(plan: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
 def validate_no_destructive(description: str) -> bool:
     """Heuristic: block obviously destructive step descriptions."""
     lower = description.lower()
-    blocked = ("rm -rf", "format c:", "del /f /s", "drop database", "truncate", "delete from")
+    blocked = (
+        "rm -rf",
+        "format c:",
+        "del /f /s",
+        "drop database",
+        "truncate",
+        "delete from",
+    )
     return not any(b in lower for b in blocked)
 
 
@@ -74,7 +81,12 @@ def suggest_fix_for_failed_step(
             "Revisar permisos o ejecutar con privilegios adecuados.",
         )
     # Not found / path
-    if "not found" in err or "no such file" in err or "not found" in out or "no existe" in out:
+    if (
+        "not found" in err
+        or "no such file" in err
+        or "not found" in out
+        or "no existe" in out
+    ):
         return (
             f"if exist . (echo OK) else (echo Ruta no encontrada; {step_description[:60]})",
             "Comprobar rutas o crear directorio/archivo antes.",
@@ -86,7 +98,12 @@ def suggest_fix_for_failed_step(
             "Reintentar; el paso puede requerir más tiempo o menos carga.",
         )
     # Network / connection
-    if "connection" in err or "network" in err or "refused" in err or "econnrefused" in out:
+    if (
+        "connection" in err
+        or "network" in err
+        or "refused" in err
+        or "econnrefused" in out
+    ):
         return (
             f"echo Comprobar conectividad y reintentar: {step_description[:60]}",
             "Verificar red o servicio antes de reintentar.",

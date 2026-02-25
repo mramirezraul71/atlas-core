@@ -4,14 +4,10 @@ ATLAS NEXUS - Directives Module
 Sistema de gestión de directivas globales y por proyecto
 """
 
-from .directives_manager import DirectivesManager, get_directives_manager
-from .directives_manager import (
-    get_global_directives,
-    get_project_directives, 
-    get_active_directives,
-    list_projects,
-    get_summary
-)
+from .directives_manager import (DirectivesManager, get_active_directives,
+                                 get_directives_manager, get_global_directives,
+                                 get_project_directives, get_summary,
+                                 list_projects)
 
 __version__ = "1.0.0"
 __author__ = "ATLAS NEXUS"
@@ -22,13 +18,14 @@ __all__ = [
     "get_directives_manager",
     "get_global_directives",
     "get_project_directives",
-    "get_active_directives", 
+    "get_active_directives",
     "list_projects",
-    "get_summary"
+    "get_summary",
 ]
 
 # Instancia global para fácil acceso
 _directives_manager = None
+
 
 def get_directives_manager() -> DirectivesManager:
     """Obtener instancia global del DirectivesManager"""

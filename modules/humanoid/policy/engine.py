@@ -28,7 +28,9 @@ class PolicyEngine:
         self._allowed_prefixes = get_allowed_command_prefixes()
         self._allowed_paths = _allowed_paths()
 
-    def can(self, actor: ActorContext, module: str, action: str, target: Any = None) -> PolicyDecision:
+    def can(
+        self, actor: ActorContext, module: str, action: str, target: Any = None
+    ) -> PolicyDecision:
         """Return PolicyDecision(allow, reason). In strict mode, default is deny."""
         ctx: Dict[str, Any] = {
             "actor": actor.actor,
@@ -39,12 +41,20 @@ class PolicyEngine:
         }
         # Resolve derived context for hands
         if module == "hands" and action == "exec_command" and isinstance(target, str):
-            prefix = (shlex.split(target) or [target])[0].strip().lower() if target else ""
-            ctx["prefix_allowed"] = prefix in [p.lower() for p in self._allowed_prefixes]
+            prefix = (
+                (shlex.split(target) or [target])[0].strip().lower() if target else ""
+            )
+            ctx["prefix_allowed"] = prefix in [
+                p.lower() for p in self._allowed_prefixes
+            ]
         if module == "hands" and action == "read_file" and target:
             p = Path(target).resolve()
             try:
-                ctx["path_allowed"] = any(p == a.resolve() or (hasattr(p, "is_relative_to") and p.is_relative_to(a.resolve())) for a in self._allowed_paths)
+                ctx["path_allowed"] = any(
+                    p == a.resolve()
+                    or (hasattr(p, "is_relative_to") and p.is_relative_to(a.resolve()))
+                    for a in self._allowed_paths
+                )
             except (ValueError, OSError):
                 ctx["path_allowed"] = False
         if module == "update" and action == "apply":
@@ -60,12 +70,20 @@ class PolicyEngine:
             if not self._matches(rule.condition, ctx):
                 continue
             if rule.action == "deny":
-                return PolicyDecision(allow=False, reason=(rule.meta or {}).get("description", "denied"), details={"rule_id": rule.id})
+                return PolicyDecision(
+                    allow=False,
+                    reason=(rule.meta or {}).get("description", "denied"),
+                    details={"rule_id": rule.id},
+                )
             if rule.action == "allow":
                 allowed = True
 
         if _strict_mode() and not allowed:
-            return PolicyDecision(allow=False, reason="strict: no matching allow rule", details={"module": module, "action": action})
+            return PolicyDecision(
+                allow=False,
+                reason="strict: no matching allow rule",
+                details={"module": module, "action": action},
+            )
         if allowed:
             return PolicyDecision(allow=True, reason="ok", details=ctx)
         return PolicyDecision(allow=False, reason=deny_reason or "denied", details=ctx)

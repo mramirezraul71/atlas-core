@@ -83,6 +83,7 @@ Responde siempre en espanol."""
 # Planificador
 # ═══════════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class PlanLibroVida:
     objetivo: str = ""
@@ -104,7 +105,9 @@ _INSTANCE: Optional["LibroVidaPlanner"] = None
 class LibroVidaPlanner:
     """Planificador que consulta el Libro de Vida y genera planes con LLM."""
 
-    def planificar(self, tarea: str, contexto_extra: Dict[str, Any] = None) -> PlanLibroVida:
+    def planificar(
+        self, tarea: str, contexto_extra: Dict[str, Any] = None
+    ) -> PlanLibroVida:
         """Cadena completa: buscar experiencias → construir prompt → llamar LLM → parsear."""
         t0 = time.perf_counter()
         plan = PlanLibroVida(objetivo=tarea)
@@ -125,7 +128,9 @@ class LibroVidaPlanner:
         reglas = self._obtener_reglas_relevantes(tarea)
         principios = self._obtener_principios()
 
-        user_prompt = self._construir_prompt(tarea, episodios, reglas, principios, contexto_extra)
+        user_prompt = self._construir_prompt(
+            tarea, episodios, reglas, principios, contexto_extra
+        )
 
         respuesta, modelo = self._llamar_llm(user_prompt)
         plan.respuesta_completa = respuesta
@@ -141,7 +146,9 @@ class LibroVidaPlanner:
         resultados = []
 
         try:
-            from modules.humanoid.memory_engine.libro_vida import get_libro_vida
+            from modules.humanoid.memory_engine.libro_vida import \
+                get_libro_vida
+
             lv = get_libro_vida()
             eps = lv.buscar_por_texto(tarea, limit=5)
             for ep in eps:
@@ -155,34 +162,41 @@ class LibroVidaPlanner:
         if len(resultados) < 3:
             try:
                 from modules.humanoid.memory_engine.lifelog import get_lifelog
+
                 ll = get_lifelog()
                 entries = ll.search(tarea, limit=5)
                 for entry in entries:
-                    resultados.append({
-                        "id": entry.get("id", ""),
-                        "tipo_tarea": entry.get("event_type", ""),
-                        "objetivo": entry.get("perception", ""),
-                        "exito": bool(entry.get("success")),
-                        "leccion": entry.get("outcome", ""),
-                        "fuente": "lifelog",
-                    })
+                    resultados.append(
+                        {
+                            "id": entry.get("id", ""),
+                            "tipo_tarea": entry.get("event_type", ""),
+                            "objetivo": entry.get("perception", ""),
+                            "exito": bool(entry.get("success")),
+                            "leccion": entry.get("outcome", ""),
+                            "fuente": "lifelog",
+                        }
+                    )
             except Exception as e:
                 log.debug("Lifelog search: %s", e)
 
         if len(resultados) < 3:
             try:
-                from modules.humanoid.hippo.episodic_memory import EpisodicMemory
+                from modules.humanoid.hippo.episodic_memory import \
+                    EpisodicMemory
+
                 em = EpisodicMemory()
                 eps = em.recall_similar(tarea, limit=3)
                 for ep in eps:
-                    resultados.append({
-                        "id": getattr(ep, "id", ""),
-                        "tipo_tarea": getattr(ep, "goal_type", ""),
-                        "objetivo": getattr(ep, "goal", ""),
-                        "exito": getattr(ep, "outcome", None) == "SUCCESS",
-                        "leccion": "",
-                        "fuente": "episodic_hippo",
-                    })
+                    resultados.append(
+                        {
+                            "id": getattr(ep, "id", ""),
+                            "tipo_tarea": getattr(ep, "goal_type", ""),
+                            "objetivo": getattr(ep, "goal", ""),
+                            "exito": getattr(ep, "outcome", None) == "SUCCESS",
+                            "leccion": "",
+                            "fuente": "episodic_hippo",
+                        }
+                    )
             except Exception as e:
                 log.debug("Hippo search: %s", e)
 
@@ -190,7 +204,9 @@ class LibroVidaPlanner:
 
     def _obtener_reglas_relevantes(self, tarea: str) -> List[Dict]:
         try:
-            from modules.humanoid.memory_engine.libro_vida import get_libro_vida
+            from modules.humanoid.memory_engine.libro_vida import \
+                get_libro_vida
+
             lv = get_libro_vida()
             return lv.obtener_reglas(limit=10)
         except Exception:
@@ -198,20 +214,28 @@ class LibroVidaPlanner:
 
     def _obtener_principios(self) -> List[Dict]:
         try:
-            from modules.humanoid.memory_engine.libro_vida import get_libro_vida
+            from modules.humanoid.memory_engine.libro_vida import \
+                get_libro_vida
+
             lv = get_libro_vida()
             return lv.obtener_principios()
         except Exception:
             return []
 
     def _construir_prompt(
-        self, tarea: str, episodios: List[Dict], reglas: List[Dict],
-        principios: List[Dict], contexto: Dict = None,
+        self,
+        tarea: str,
+        episodios: List[Dict],
+        reglas: List[Dict],
+        principios: List[Dict],
+        contexto: Dict = None,
     ) -> str:
-        parts = [f"TAREA DEL HUMANO: \"{tarea}\""]
+        parts = [f'TAREA DEL HUMANO: "{tarea}"']
 
         if contexto:
-            parts.append(f"\nCONTEXTO ADICIONAL: {json.dumps(contexto, ensure_ascii=False)}")
+            parts.append(
+                f"\nCONTEXTO ADICIONAL: {json.dumps(contexto, ensure_ascii=False)}"
+            )
 
         if episodios:
             parts.append("\n--- EPISODIOS RELEVANTES DEL LIBRO DE VIDA ---")
@@ -224,39 +248,55 @@ class LibroVidaPlanner:
                 )
         else:
             parts.append("\n--- SIN EXPERIENCIAS PREVIAS SIMILARES ---")
-            parts.append("NOTA: No se encontraron episodios similares. Usa plan conservador con margenes de seguridad amplios.")
+            parts.append(
+                "NOTA: No se encontraron episodios similares. Usa plan conservador con margenes de seguridad amplios."
+            )
 
         if reglas:
             parts.append("\n--- REGLAS APRENDIDAS ---")
             for r in reglas[:8]:
-                parts.append(f"- {r.get('regla','')}: {r.get('valor','')} {r.get('unidad','')} (confianza: {r.get('confianza',0):.1f})")
+                parts.append(
+                    f"- {r.get('regla','')}: {r.get('valor','')} {r.get('unidad','')} (confianza: {r.get('confianza',0):.1f})"
+                )
 
         if principios:
             parts.append("\n--- PRINCIPIOS GENERALES ---")
             for p in principios[:5]:
                 parts.append(f"- [{p.get('categoria','')}] {p.get('principio','')}")
 
-        parts.append("\nResponde siguiendo el formato especificado en tus instrucciones.")
+        parts.append(
+            "\nResponde siguiendo el formato especificado en tus instrucciones."
+        )
         return "\n".join(parts)
 
     def _llamar_llm(self, user_prompt: str) -> tuple:
         """Llama al LLM con el system prompt del Libro de Vida."""
         try:
             from modules.humanoid.ai.router import _call_ollama
-            ok, output, ms = _call_ollama("qwen2.5:7b", user_prompt, LIBRO_VIDA_SYSTEM_PROMPT, 120)
+
+            ok, output, ms = _call_ollama(
+                "qwen2.5:7b", user_prompt, LIBRO_VIDA_SYSTEM_PROMPT, 120
+            )
             if ok and output and output.strip():
                 return output.strip(), "ollama:qwen2.5:7b"
         except Exception as e:
             log.debug("Ollama call: %s", e)
 
         try:
-            from modules.humanoid.ai.provider_credentials import get_provider_api_key
             from modules.humanoid.ai.external_llm import call_external
-            for provider, model in [("groq", "llama-3.3-70b-versatile"), ("gemini", "gemini-2.5-flash")]:
+            from modules.humanoid.ai.provider_credentials import \
+                get_provider_api_key
+
+            for provider, model in [
+                ("groq", "llama-3.3-70b-versatile"),
+                ("gemini", "gemini-2.5-flash"),
+            ]:
                 api_key = get_provider_api_key(provider)
                 if not api_key:
                     continue
-                ok, output, ms = call_external(provider, model, user_prompt, LIBRO_VIDA_SYSTEM_PROMPT, api_key, 120)
+                ok, output, ms = call_external(
+                    provider, model, user_prompt, LIBRO_VIDA_SYSTEM_PROMPT, api_key, 120
+                )
                 if ok and output and output.strip():
                     return output.strip(), f"{provider}:{model}"
         except Exception as e:
@@ -298,12 +338,18 @@ Avanzare despacio y verificare cada paso. Si detecto algo inesperado, me detendr
                 current_section = "episodios"
             elif stripped.startswith("## Plan"):
                 current_section = "plan"
-            elif stripped.startswith("## Explicacion") or stripped.startswith("## Explicación"):
+            elif stripped.startswith("## Explicacion") or stripped.startswith(
+                "## Explicación"
+            ):
                 current_section = "explicacion"
             elif stripped.startswith("## Registro"):
                 current_section = "registro"
-            elif current_section == "resumen" and stripped.startswith("- Restricciones"):
-                plan.restricciones.append(stripped.replace("- Restricciones criticas:", "").strip())
+            elif current_section == "resumen" and stripped.startswith(
+                "- Restricciones"
+            ):
+                plan.restricciones.append(
+                    stripped.replace("- Restricciones criticas:", "").strip()
+                )
             elif current_section == "plan" and stripped and stripped[0].isdigit():
                 plan.plan_pasos.append(stripped)
             elif current_section == "explicacion" and stripped:
@@ -326,10 +372,12 @@ Avanzare despacio y verificare cada paso. Si detecto algo inesperado, me detendr
         reglas_numericas: Dict[str, float] = None,
     ) -> str:
         """Registra el resultado de una tarea en el Libro de Vida."""
-        from modules.humanoid.memory_engine.libro_vida import (
-            EpisodioVida, AccionEjecutada, Resultado, Feedback,
-            Leccion, get_libro_vida,
-        )
+        from modules.humanoid.memory_engine.libro_vida import (AccionEjecutada,
+                                                               EpisodioVida,
+                                                               Feedback,
+                                                               Leccion,
+                                                               Resultado,
+                                                               get_libro_vida)
 
         acciones = [
             AccionEjecutada(paso=i + 1, descripcion=p, exitoso=True)

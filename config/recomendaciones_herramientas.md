@@ -17,12 +17,12 @@
 
 ### **🥇 PRIORIDAD ALTA (Usar Inmediatamente)**
 
-#### 1. **Ollama + Composio** 
+#### 1. **Ollama + Composio**
 - **Por qué**: 100% gratis, funcional ahora
 - **Uso**: Automatización con IA local
 - **Ejemplo**: `tools.ollama_generate()` + `tools.composio_connect_app()`
 
-#### 2. **n8n** 
+#### 2. **n8n**
 - **Por qué**: Automatización profesional sin código
 - **Uso**: Conectar Gmail, WhatsApp, APIs externas
 - **URL**: http://localhost:5678
@@ -68,7 +68,7 @@ tools.mem0_store_memory("Cliente prefiere EUR/USD", ["clientes"])
 
 ### **Opción C: Híbrido Inteligente**
 - Usar **Ollama** para IA (gratis)
-- Usar **n8n** para automatización (gratis) 
+- Usar **n8n** para automatización (gratis)
 - Usar **ChromaDB** para memoria (ya instalado en requirements)
 - Ignorar **Mem0** por costo
 
@@ -102,7 +102,7 @@ collection = client.create_collection("atlas_memory")
 
 ### **✅ Lista para Usar (5/6 herramientas):**
 - Ollama: IA local gratuita
-- n8n: Automatización profesional  
+- n8n: Automatización profesional
 - Home Assistant: IoT/control
 - Appsmith: Dashboards
 - Composio: Apps externas

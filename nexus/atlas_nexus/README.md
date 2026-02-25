@@ -1,6 +1,6 @@
 # 🚀 ATLAS NEXUS
 
-**Professional Autonomous AI System**  
+**Professional Autonomous AI System**
 Multi-LLM Intelligence | Autonomous Planning | 50+ Professional Tools | Mobile Control
 
 ---
@@ -307,7 +307,7 @@ class MyCustomTool(BaseTool):
             category=ToolCategory.CUSTOM,
             parameters={"param1": {"type": "string", "required": True}}
         ))
-    
+
     async def execute(self, parameters, context):
         # Your tool logic here
         return {"result": "success"}

@@ -8,6 +8,7 @@ from typing import Optional
 @dataclass
 class OwnerSession:
     """Owner session with TTL."""
+
     token: str
     actor: str
     method: str  # ui | telegram | voice | api
@@ -19,6 +20,7 @@ class OwnerSession:
 @dataclass
 class EmergencyState:
     """Emergency mode state with block flags."""
+
     enabled: bool
     block_deploy: bool
     block_remote_exec: bool

@@ -25,7 +25,9 @@ def error_category(error: Any) -> str:
     return "unknown"
 
 
-def extract(payload: Dict[str, Any], outcome: str = "ok", error: Any = None) -> Dict[str, Any]:
+def extract(
+    payload: Dict[str, Any], outcome: str = "ok", error: Any = None
+) -> Dict[str, Any]:
     """
     Extract deterministic features from event payload.
     Returns dict: is_repo_change, is_runtime_change, touches_update_engine, touches_shell, touches_remote,
@@ -33,15 +35,40 @@ def extract(payload: Dict[str, Any], outcome: str = "ok", error: Any = None) -> 
     """
     action = _bucket(payload.get("action_type") or payload.get("action", ""))
     ga_action = _bucket(payload.get("ga_action", ""))
-    combined = f"{action}_{ga_action}" if ga_action and ga_action != "unknown" else action
+    combined = (
+        f"{action}_{ga_action}" if ga_action and ga_action != "unknown" else action
+    )
 
-    is_repo = combined in ("refactor_plan", "autofix", "add_timeout", "add_smoke_test", "update_check", "update_apply") or "repo" in combined
-    is_runtime = combined in ("restart_internal_loop", "restart_component", "tune_router", "notify_owner") or "runtime" in combined
-    touches_update = "update" in combined or action in ("update_check", "update_apply", "system_update")
+    is_repo = (
+        combined
+        in (
+            "refactor_plan",
+            "autofix",
+            "add_timeout",
+            "add_smoke_test",
+            "update_check",
+            "update_apply",
+        )
+        or "repo" in combined
+    )
+    is_runtime = (
+        combined
+        in ("restart_internal_loop", "restart_component", "tune_router", "notify_owner")
+        or "runtime" in combined
+    )
+    touches_update = "update" in combined or action in (
+        "update_check",
+        "update_apply",
+        "system_update",
+    )
     touches_shell = action in ("exec_command", "shell_command", "hands", "remote_hands")
-    touches_remote = "remote" in combined or payload.get("node_id") or payload.get("origin_node_id")
+    touches_remote = (
+        "remote" in combined or payload.get("node_id") or payload.get("origin_node_id")
+    )
 
-    uses_vision = "vision" in combined or "vision" in str(payload.get("capabilities", ""))
+    uses_vision = "vision" in combined or "vision" in str(
+        payload.get("capabilities", "")
+    )
     uses_web = "web" in combined or "web" in str(payload.get("capabilities", ""))
     uses_voice = "voice" in combined or "voice" in str(payload.get("capabilities", ""))
 

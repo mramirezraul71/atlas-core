@@ -9,7 +9,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-MEMORY_DB_PATH = os.getenv("ATLAS_MEMORY_DB_PATH", "C:\\ATLAS_PUSH\\logs\\atlas_memory.sqlite")
+MEMORY_DB_PATH = os.getenv(
+    "ATLAS_MEMORY_DB_PATH", "C:\\ATLAS_PUSH\\logs\\atlas_memory.sqlite"
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS threads (
@@ -87,7 +89,9 @@ _fts_available: Optional[bool] = None
 
 
 def _db_path() -> str:
-    return os.getenv("ATLAS_MEMORY_DB_PATH", "C:\\ATLAS_PUSH\\logs\\atlas_memory.sqlite").strip()
+    return os.getenv(
+        "ATLAS_MEMORY_DB_PATH", "C:\\ATLAS_PUSH\\logs\\atlas_memory.sqlite"
+    ).strip()
 
 
 def _ensure() -> sqlite3.Connection:

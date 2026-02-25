@@ -1,10 +1,12 @@
 """ANS heals: register all heals."""
 from __future__ import annotations
 
-from . import clear_stale_locks, restart_scheduler, fallback_models, tune_router
-from . import rotate_logs, retry_gateway_bootstrap, mark_node_offline, regenerate_support_bundle
-from . import install_optional_deps, install_tesseract, restart_nexus_services
 from modules.humanoid.ans.registry import register_heal
+
+from . import (clear_stale_locks, fallback_models, install_optional_deps,
+               install_tesseract, mark_node_offline, regenerate_support_bundle,
+               restart_nexus_services, restart_scheduler,
+               retry_gateway_bootstrap, rotate_logs, tune_router)
 
 
 def _register_all() -> None:

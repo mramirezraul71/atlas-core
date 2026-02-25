@@ -11,7 +11,9 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def _run(repo: Path, *args: str, timeout_s: int = 20) -> subprocess.CompletedProcess[str]:
+def _run(
+    repo: Path, *args: str, timeout_s: int = 20
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
         cwd=str(repo),
@@ -25,13 +27,19 @@ def _run(repo: Path, *args: str, timeout_s: int = 20) -> subprocess.CompletedPro
 def _must(repo: Path, *args: str, timeout_s: int = 20) -> str:
     r = _run(repo, *args, timeout_s=timeout_s)
     if r.returncode != 0:
-        raise RuntimeError(f"git {' '.join(args)} failed: {(r.stderr or r.stdout or '').strip()}")
+        raise RuntimeError(
+            f"git {' '.join(args)} failed: {(r.stderr or r.stdout or '').strip()}"
+        )
     return (r.stdout or "").strip()
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Crear commit usando plumbing (evita wrappers de PowerShell).")
-    ap.add_argument("-m", "--message", required=True, help="Mensaje del commit (una sola linea).")
+    ap = argparse.ArgumentParser(
+        description="Crear commit usando plumbing (evita wrappers de PowerShell)."
+    )
+    ap.add_argument(
+        "-m", "--message", required=True, help="Mensaje del commit (una sola linea)."
+    )
     args = ap.parse_args()
 
     repo = _repo_root()
@@ -61,4 +69,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -4,11 +4,12 @@ from typing import Dict, List, Optional
 
 from .models import POT
 from .pots.git_safe_sync import get_pot as get_git_safe_sync_pot
-from .pots.system_doctor import get_pot as get_system_doctor_pot
-from .pots.services_ports_check import get_pot as get_services_ports_check_pot
-from .pots.quality_visits_audit import get_pot as get_quality_visits_audit_pot
-from .pots.vault_snapshot_backup import get_pot as get_vault_snapshot_backup_pot
 from .pots.humanoid_arch_audit import get_pot as get_humanoid_arch_audit_pot
+from .pots.quality_visits_audit import get_pot as get_quality_visits_audit_pot
+from .pots.services_ports_check import get_pot as get_services_ports_check_pot
+from .pots.system_doctor import get_pot as get_system_doctor_pot
+from .pots.vault_snapshot_backup import \
+    get_pot as get_vault_snapshot_backup_pot
 
 
 def list_pots() -> List[Dict]:
@@ -24,7 +25,9 @@ def list_pots() -> List[Dict]:
         {
             "id": p.id,
             "name": p.name,
-            "severity": p.severity.value if hasattr(p.severity, "value") else str(p.severity),
+            "severity": p.severity.value
+            if hasattr(p.severity, "value")
+            else str(p.severity),
             "description": p.description,
             "tags": list(p.tags),
             "rules": list(p.rules),
@@ -48,4 +51,3 @@ def get_pot(pot_id: str) -> Optional[POT]:
     if pid == "humanoid_arch_audit":
         return get_humanoid_arch_audit_pot()
     return None
-

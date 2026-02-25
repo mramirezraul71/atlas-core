@@ -7,8 +7,9 @@ Análogo biológico: Corteza auditiva + Área de Wernicke
 - EpisodicRecall: Recuperación de memorias episódicas
 """
 from .audio_processor import AudioProcessor
+from .episodic_recall import (EpisodicRecall, RecalledEpisode, RecallQuery,
+                              RecallResult)
 from .language_understanding import LanguageUnderstanding
-from .episodic_recall import EpisodicRecall, RecallQuery, RecallResult, RecalledEpisode
 
 __all__ = [
     "AudioProcessor",

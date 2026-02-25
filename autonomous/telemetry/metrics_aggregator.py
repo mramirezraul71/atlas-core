@@ -15,11 +15,14 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -39,14 +42,19 @@ class MetricsAggregator:
         self._retention_days = int(self._metrics_cfg.get("retention_days", 30))
         base = Path(__file__).resolve().parent.parent.parent
         db = self._config.get("timeseries_db", "logs/autonomous_metrics.sqlite")
-        self._db_path = base / db if isinstance(db, str) else base / "logs" / "autonomous_metrics.sqlite"
+        self._db_path = (
+            base / db
+            if isinstance(db, str)
+            else base / "logs" / "autonomous_metrics.sqlite"
+        )
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     def _init_db(self) -> None:
         try:
             with sqlite3.connect(str(self._db_path)) as conn:
-                conn.execute("""
+                conn.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS metrics (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         ts REAL NOT NULL,
@@ -56,9 +64,12 @@ class MetricsAggregator:
                         tags TEXT,
                         metadata TEXT
                     )
-                """)
+                """
+                )
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_metrics_ts ON metrics(ts)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_metrics_source_name ON metrics(source, metric_name)")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_metrics_source_name ON metrics(source, metric_name)"
+                )
         except Exception as e:
             logger.warning("MetricsAggregator init: %s", e)
 
@@ -138,12 +149,14 @@ class MetricsAggregator:
             with sqlite3.connect(str(self._db_path)) as conn:
                 if source:
                     cur = conn.execute(
-                        "SELECT %s(value) FROM metrics WHERE ts >= ? AND metric_name = ? AND source = ?" % operation,
+                        "SELECT %s(value) FROM metrics WHERE ts >= ? AND metric_name = ? AND source = ?"
+                        % operation,
                         (cutoff, metric_name, source),
                     )
                 else:
                     cur = conn.execute(
-                        "SELECT %s(value) FROM metrics WHERE ts >= ? AND metric_name = ?" % operation,
+                        "SELECT %s(value) FROM metrics WHERE ts >= ? AND metric_name = ?"
+                        % operation,
                         (cutoff, metric_name),
                     )
                 row = cur.fetchone()

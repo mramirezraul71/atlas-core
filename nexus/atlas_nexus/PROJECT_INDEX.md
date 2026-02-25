@@ -91,7 +91,7 @@ ATLAS_NEXUS/
    ```powershell
    # Option 1: Use quick start script
    PowerShell -ExecutionPolicy Bypass -File start.ps1
-   
+
    # Option 2: Direct command
    python nexus.py --mode api
    ```
@@ -112,52 +112,52 @@ python demo.py
 
 ### Core System Files
 
-- **`nexus.py`**  
+- **`nexus.py`**
   Main entry point. Initializes everything and starts the system.
-  
-- **`brain/neural_router.py`**  
+
+- **`brain/neural_router.py`**
   The "brain" - intelligently routes tasks to the best AI model.
-  
-- **`brain/autonomous_engine.py`**  
+
+- **`brain/autonomous_engine.py`**
   Makes the system autonomous - plans and executes multi-step goals.
-  
-- **`tools/tools_registry.py`**  
+
+- **`tools/tools_registry.py`**
   50+ professional tools for web, files, system, data, etc.
-  
-- **`api/rest_api.py`**  
+
+- **`api/rest_api.py`**
   Complete REST API + WebSocket for mobile control.
-  
-- **`config/nexus_config.py`**  
+
+- **`config/nexus_config.py`**
   All configuration management - paths, models, settings.
 
 ### Setup & Usage Files
 
-- **`install.ps1`**  
+- **`install.ps1`**
   One-click installation for Windows.
-  
-- **`start.ps1`**  
+
+- **`start.ps1`**
   Quick start script.
-  
-- **`requirements.txt`**  
+
+- **`requirements.txt`**
   All Python dependencies.
-  
-- **`.env.example`**  
+
+- **`.env.example`**
   Template for your configuration (copy to `config/.env`).
 
 ### Documentation Files
 
-- **`README.md`**  
+- **`README.md`**
   Complete English documentation.
-  
-- **`QUICKSTART_ES.md`**  
+
+- **`QUICKSTART_ES.md`**
   Spanish quick start guide.
-  
-- **`docs/ARCHITECTURE.md`**  
+
+- **`docs/ARCHITECTURE.md`**
   Technical architecture deep dive.
 
 ### Testing Files
 
-- **`demo.py`**  
+- **`demo.py`**
   Demonstration script showing all capabilities.
 
 ---

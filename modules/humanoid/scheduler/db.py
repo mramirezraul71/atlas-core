@@ -57,7 +57,9 @@ class SchedulerDB:
 
     @staticmethod
     def _default_path() -> str:
-        root = (os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or "").strip()
+        root = (
+            os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or ""
+        ).strip()
         if root:
             return str((Path(root).resolve() / "logs" / "scheduler.db"))
         # db.py -> modules/humanoid/scheduler/db.py, subir a raíz y usar logs/
@@ -104,8 +106,19 @@ class SchedulerDB:
             """INSERT INTO jobs (id, name, kind, payload_json, run_at, interval_seconds, enabled, status,
                retries, max_retries, backoff_seconds, lease_until, last_error, last_run_ts, next_run_ts, created_ts, updated_ts)
                VALUES (?, ?, ?, ?, ?, ?, 1, 'queued', 0, ?, ?, NULL, NULL, NULL, ?, ?, ?)""",
-            (jid, spec.name, spec.kind, json.dumps(spec.payload or {}), spec.run_at, spec.interval_seconds,
-             spec.max_retries, spec.backoff_seconds, next_run, now, now),
+            (
+                jid,
+                spec.name,
+                spec.kind,
+                json.dumps(spec.payload or {}),
+                spec.run_at,
+                spec.interval_seconds,
+                spec.max_retries,
+                spec.backoff_seconds,
+                next_run,
+                now,
+                now,
+            ),
         )
         conn.commit()
         return self.get_job(jid)
@@ -117,7 +130,9 @@ class SchedulerDB:
             return None
         return self._row_to_job(row)
 
-    def list_jobs(self, status: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def list_jobs(
+        self, status: Optional[str] = None, limit: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         conn = self._ensure()
         if status:
             sql = "SELECT * FROM jobs WHERE status = ? ORDER BY next_run_ts"
@@ -145,12 +160,25 @@ class SchedulerDB:
     def set_running(self, job_id: str, lease_until: Optional[str] = None) -> None:
         now = datetime.now(timezone.utc).isoformat()
         if lease_until:
-            self._ensure().execute("UPDATE jobs SET status = 'running', lease_until = ?, updated_ts = ? WHERE id = ?", (lease_until, now, job_id))
+            self._ensure().execute(
+                "UPDATE jobs SET status = 'running', lease_until = ?, updated_ts = ? WHERE id = ?",
+                (lease_until, now, job_id),
+            )
         else:
-            self._ensure().execute("UPDATE jobs SET status = 'running', updated_ts = ? WHERE id = ?", (now, job_id))
+            self._ensure().execute(
+                "UPDATE jobs SET status = 'running', updated_ts = ? WHERE id = ?",
+                (now, job_id),
+            )
         self._ensure().commit()
 
-    def set_finished(self, job_id: str, ok: bool, last_error: Optional[str], next_run_ts: Optional[str], retries: int) -> None:
+    def set_finished(
+        self,
+        job_id: str,
+        ok: bool,
+        last_error: Optional[str],
+        next_run_ts: Optional[str],
+        retries: int,
+    ) -> None:
         now = datetime.now(timezone.utc).isoformat()
         status = "success" if ok else "failed"
         conn = self._ensure()
@@ -162,18 +190,36 @@ class SchedulerDB:
 
     def set_paused(self, job_id: str) -> None:
         now = datetime.now(timezone.utc).isoformat()
-        self._ensure().execute("UPDATE jobs SET status = 'paused', updated_ts = ? WHERE id = ?", (now, job_id))
+        self._ensure().execute(
+            "UPDATE jobs SET status = 'paused', updated_ts = ? WHERE id = ?",
+            (now, job_id),
+        )
         self._ensure().commit()
 
     def set_queued(self, job_id: str, next_run_ts: Optional[str] = None) -> None:
         now = datetime.now(timezone.utc).isoformat()
         if next_run_ts:
-            self._ensure().execute("UPDATE jobs SET status = 'queued', next_run_ts = ?, updated_ts = ? WHERE id = ?", (next_run_ts, now, job_id))
+            self._ensure().execute(
+                "UPDATE jobs SET status = 'queued', next_run_ts = ?, updated_ts = ? WHERE id = ?",
+                (next_run_ts, now, job_id),
+            )
         else:
-            self._ensure().execute("UPDATE jobs SET status = 'queued', updated_ts = ? WHERE id = ?", (now, job_id))
+            self._ensure().execute(
+                "UPDATE jobs SET status = 'queued', updated_ts = ? WHERE id = ?",
+                (now, job_id),
+            )
         self._ensure().commit()
 
-    def insert_run(self, job_id: str, ts_start: str, ts_end: str, ok: bool, ms: int, result_json: Optional[str], error: Optional[str]) -> None:
+    def insert_run(
+        self,
+        job_id: str,
+        ts_start: str,
+        ts_end: str,
+        ok: bool,
+        ms: int,
+        result_json: Optional[str],
+        error: Optional[str],
+    ) -> None:
         conn = self._ensure()
         conn.execute(
             "INSERT INTO job_runs (job_id, ts_start, ts_end, ok, ms, result_json, error) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -188,7 +234,16 @@ class SchedulerDB:
             (job_id, limit),
         ).fetchall()
         return [
-            {"id": r[0], "job_id": r[1], "ts_start": r[2], "ts_end": r[3], "ok": bool(r[4]), "ms": r[5], "result": json.loads(r[6]) if r[6] else None, "error": r[7]}
+            {
+                "id": r[0],
+                "job_id": r[1],
+                "ts_start": r[2],
+                "ts_end": r[3],
+                "ok": bool(r[4]),
+                "ms": r[5],
+                "result": json.loads(r[6]) if r[6] else None,
+                "error": r[7],
+            }
             for r in rows
         ]
 
@@ -197,15 +252,34 @@ class SchedulerDB:
         n = len(r)
         if n >= 17:
             created_ts, updated_ts = r[15], r[16]
-            lease_until, last_error, last_run_ts, next_run_ts = r[11], r[12], r[13], r[14]
+            lease_until, last_error, last_run_ts, next_run_ts = (
+                r[11],
+                r[12],
+                r[13],
+                r[14],
+            )
         else:
             lease_until = None
-            last_error, last_run_ts, next_run_ts = (r[11], r[12], r[13]) if n > 13 else (None, None, None)
+            last_error, last_run_ts, next_run_ts = (
+                (r[11], r[12], r[13]) if n > 13 else (None, None, None)
+            )
             created_ts, updated_ts = r[14], r[15] if n > 15 else r[14]
         return {
-            "id": r[0], "name": r[1], "kind": r[2], "payload": json.loads(r[3]) if r[3] else {},
-            "run_at": r[4], "interval_seconds": r[5], "enabled": r[6], "status": r[7],
-            "retries": r[8], "max_retries": r[9], "backoff_seconds": r[10],
-            "lease_until": lease_until, "last_error": last_error, "last_run_ts": last_run_ts, "next_run_ts": next_run_ts,
-            "created_ts": created_ts, "updated_ts": updated_ts,
+            "id": r[0],
+            "name": r[1],
+            "kind": r[2],
+            "payload": json.loads(r[3]) if r[3] else {},
+            "run_at": r[4],
+            "interval_seconds": r[5],
+            "enabled": r[6],
+            "status": r[7],
+            "retries": r[8],
+            "max_retries": r[9],
+            "backoff_seconds": r[10],
+            "lease_until": lease_until,
+            "last_error": last_error,
+            "last_run_ts": last_run_ts,
+            "next_run_ts": next_run_ts,
+            "created_ts": created_ts,
+            "updated_ts": updated_ts,
         }

@@ -11,7 +11,9 @@ def test_execute_approved_screen_action(monkeypatch):
         called["payload"] = payload
         return {"ok": True, "error": None, "evidence": {"before": None, "after": None}}
 
-    monkeypatch.setattr("modules.humanoid.screen.actions.execute_action", fake_execute_action)
+    monkeypatch.setattr(
+        "modules.humanoid.screen.actions.execute_action", fake_execute_action
+    )
 
     item = {
         "action": "screen_act_destructive",
@@ -20,7 +22,12 @@ def test_execute_approved_screen_action(monkeypatch):
             "expected_window": "Dashboard",
             "expected_process": "chrome.exe",
             "requested_action": "click",
-            "requested_payload": {"x": 10, "y": 20, "confirm_text": "Eliminar", "expected_window": "Dashboard"},
+            "requested_payload": {
+                "x": 10,
+                "y": 20,
+                "confirm_text": "Eliminar",
+                "expected_window": "Dashboard",
+            },
         },
     }
     out = execute_approved(item, approval_id="abc123", resolved_by="test")
@@ -28,4 +35,3 @@ def test_execute_approved_screen_action(monkeypatch):
     assert called["action"] == "click"
     assert called["payload"]["approval_granted"] is True
     assert called["payload"]["record_evidence"] is True
-

@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from urllib import error, parse, request
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ROBOT_BASE = "http://127.0.0.1:8002"
 PUSH_BASE = "http://127.0.0.1:8791"
@@ -109,9 +108,13 @@ def _test_index(index: int) -> Dict[str, Any]:
     out["connect_status"] = sc_c
     out["connect_ok"] = bool(ok_c and body_c.get("ok") and body_c.get("connected"))
     out["frame_ok"] = bool(body_c.get("frame_ok")) if body_c else False
-    out["connect_error"] = err_c or body_c.get("error") or body_c.get("probe_error") or ""
+    out["connect_error"] = (
+        err_c or body_c.get("error") or body_c.get("probe_error") or ""
+    )
 
-    snap_qs = parse.urlencode({"source": "camera", "index": index, "jpeg_quality": 80, "t": int(time.time())})
+    snap_qs = parse.urlencode(
+        {"source": "camera", "index": index, "jpeg_quality": 80, "t": int(time.time())}
+    )
     snap_status = _req_status(f"{ROBOT_BASE}/api/vision/snapshot?{snap_qs}", timeout=14)
     out["snapshot_status"] = snap_status
     out["snapshot_ok"] = snap_status == 200
@@ -135,7 +138,12 @@ def _apply_best(index: int) -> Dict[str, Any]:
         {"index": int(index), "resolution": [640, 480]},
         timeout=15,
     )
-    result["configure"] = {"ok": ok_cfg, "status": sc_cfg, "error": err_cfg, "body": body_cfg}
+    result["configure"] = {
+        "ok": ok_cfg,
+        "status": sc_cfg,
+        "error": err_cfg,
+        "body": body_cfg,
+    }
 
     ok_p, sc_p, body_p, err_p = _req_json(
         "POST",
@@ -143,7 +151,12 @@ def _apply_best(index: int) -> Dict[str, Any]:
         {"index": int(index), "resolution": [640, 480]},
         timeout=35,
     )
-    result["proxy_connect"] = {"ok": ok_p, "status": sc_p, "error": err_p, "body": body_p}
+    result["proxy_connect"] = {
+        "ok": ok_p,
+        "status": sc_p,
+        "error": err_p,
+        "body": body_p,
+    }
     _req_json(
         "POST",
         f"{PUSH_BASE}/cuerpo/api/camera/disconnect",
@@ -164,14 +177,26 @@ def main() -> int:
 
     robot_ok = _req_status(f"{ROBOT_BASE}/api/health", timeout=6) == 200
     if not robot_ok:
-        ok, out = _run_ps([str(REPO_ROOT / "scripts" / "restart_service_clean.ps1"), "-Service", "robot"])
+        ok, out = _run_ps(
+            [
+                str(REPO_ROOT / "scripts" / "restart_service_clean.ps1"),
+                "-Service",
+                "robot",
+            ]
+        )
         report["actions"].append({"step": "restart_robot", "ok": ok, "output": out})
         robot_ok = _wait_health(f"{ROBOT_BASE}/api/health", seconds=45)
     report["robot_health"] = robot_ok
 
     push_ok = _req_status(f"{PUSH_BASE}/ui", timeout=6) == 200
     if not push_ok:
-        ok, out = _run_ps([str(REPO_ROOT / "scripts" / "restart_service_clean.ps1"), "-Service", "push"])
+        ok, out = _run_ps(
+            [
+                str(REPO_ROOT / "scripts" / "restart_service_clean.ps1"),
+                "-Service",
+                "push",
+            ]
+        )
         report["actions"].append({"step": "restart_push", "ok": ok, "output": out})
         push_ok = _wait_health(f"{PUSH_BASE}/ui", seconds=40)
     report["push_health"] = push_ok
@@ -189,8 +214,16 @@ def main() -> int:
     best = next((t for t in tests if t.get("ok")), None)
     if best is None:
         # One extra recovery attempt for Robot and a final short retest.
-        ok, out = _run_ps([str(REPO_ROOT / "scripts" / "restart_service_clean.ps1"), "-Service", "robot"])
-        report["actions"].append({"step": "restart_robot_retry", "ok": ok, "output": out})
+        ok, out = _run_ps(
+            [
+                str(REPO_ROOT / "scripts" / "restart_service_clean.ps1"),
+                "-Service",
+                "robot",
+            ]
+        )
+        report["actions"].append(
+            {"step": "restart_robot_retry", "ok": ok, "output": out}
+        )
         _wait_health(f"{ROBOT_BASE}/api/health", seconds=40)
         tests_retry = [_test_index(i) for i in INDICES]
         report["tests_retry"] = tests_retry
@@ -236,4 +269,3 @@ def _print_summary(report: Dict[str, Any]) -> None:
 
 if __name__ == "__main__":
     sys.exit(main())
-

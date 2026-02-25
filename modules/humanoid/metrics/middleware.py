@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 

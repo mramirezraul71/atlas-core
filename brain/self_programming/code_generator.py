@@ -7,7 +7,16 @@ import ast
 from typing import Any, Dict, List
 
 # Palabras prohibidas por seguridad
-FORBIDDEN = {"os.system", "subprocess", "eval(", "exec(", "__import__", "open(", "file(", "compile("}
+FORBIDDEN = {
+    "os.system",
+    "subprocess",
+    "eval(",
+    "exec(",
+    "__import__",
+    "open(",
+    "file(",
+    "compile(",
+}
 
 
 class CodeGenerator:

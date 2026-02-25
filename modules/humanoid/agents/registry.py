@@ -29,8 +29,19 @@ def get_agent_registry() -> AgentRegistry:
     global _registry
     if _registry is None:
         _registry = AgentRegistry()
-        from . import executive, strategist, architect, engineer, reviewer, researcher, ops, optimizer
-        for mod in (executive, strategist, architect, engineer, reviewer, researcher, ops, optimizer):
+        from . import (architect, engineer, executive, ops, optimizer,
+                       researcher, reviewer, strategist)
+
+        for mod in (
+            executive,
+            strategist,
+            architect,
+            engineer,
+            reviewer,
+            researcher,
+            ops,
+            optimizer,
+        ):
             if hasattr(mod, "agent"):
                 a = getattr(mod, "agent")
                 if isinstance(a, BaseAgent):

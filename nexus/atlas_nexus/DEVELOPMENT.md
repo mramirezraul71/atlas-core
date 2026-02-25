@@ -49,13 +49,13 @@ class MyCustomTool(Tool):
             description="What it does",
             category="category_name"  # web, files, code, data, etc.
         )
-    
+
     async def execute(self, param1: str, param2: int = 10, **kwargs) -> Dict:
         """Execute tool logic"""
         try:
             # Your implementation here
             result = do_something(param1, param2)
-            
+
             return {
                 'result': result,
                 'status': 'success'
@@ -74,7 +74,7 @@ In `ToolsManager._register_all_tools()`:
 ```python
 def _register_all_tools(self):
     # ... existing tools ...
-    
+
     # Add your tool
     self.register_tool(MyCustomTool())
 ```
@@ -106,7 +106,7 @@ Edit `config/nexus_config.py`:
 def _init_llm_config(self) -> Dict[str, Any]:
     return {
         # ... existing providers ...
-        
+
         'my_llm': {
             'enabled': bool(os.getenv('MY_LLM_API_KEY')),
             'api_key': os.getenv('MY_LLM_API_KEY', ''),
@@ -122,7 +122,7 @@ def _init_llm_config(self) -> Dict[str, Any]:
 Edit `brain/neural_router.py`:
 
 ```python
-async def _call_my_llm(self, prompt: str, system: Optional[str], 
+async def _call_my_llm(self, prompt: str, system: Optional[str],
                        temperature: float, max_tokens: int) -> Dict:
     """Call custom LLM provider"""
     # Your implementation
@@ -135,7 +135,7 @@ async def _call_my_llm(self, prompt: str, system: Optional[str],
             'max_tokens': max_tokens
         }
     )
-    
+
     return {
         'content': response.json()['text'],
         'tokens': response.json()['usage']['total_tokens']
@@ -149,7 +149,7 @@ In `_call_model()` method:
 ```python
 async def _call_model(self, model: str, ...):
     # ... existing code ...
-    
+
     elif model == 'my_llm':
         response = await self._call_my_llm(prompt, system, temperature, max_tokens)
 ```
@@ -165,13 +165,13 @@ from brain.autonomous_engine import AutonomousEngine, Task
 
 async def research_workflow(engine: AutonomousEngine, topic: str):
     """Custom research workflow"""
-    
+
     # Create main task
     task = Task(
         description=f"Research and analyze: {topic}",
         task_type='research'
     )
-    
+
     # Custom execution plan
     plan = {
         'understanding': f'Research {topic}',
@@ -197,7 +197,7 @@ async def research_workflow(engine: AutonomousEngine, topic: str):
             }
         ]
     }
-    
+
     # Execute
     result = await engine._execute_plan(task, plan)
     return result
@@ -221,7 +221,7 @@ async def custom_endpoint(
     try:
         # Your logic here
         result = process_data(data)
-        
+
         return {
             'success': True,
             'result': result
@@ -255,7 +255,7 @@ class SlackTool(Tool):
             category="communication"
         )
         self.webhook_url = os.getenv('SLACK_WEBHOOK_URL')
-    
+
     async def execute(self, message: str, channel: str = None, **kwargs) -> Dict:
         """Send Slack message"""
         try:
@@ -263,12 +263,12 @@ class SlackTool(Tool):
                 'text': message,
                 'channel': channel
             }
-            
+
             response = requests.post(
                 self.webhook_url,
                 json=payload
             )
-            
+
             return {
                 'success': response.ok,
                 'status': 'success' if response.ok else 'failed'
@@ -301,14 +301,14 @@ async def test_web_search():
 @pytest.mark.asyncio
 async def test_file_operations():
     tools = ToolsManager(config)
-    
+
     # Write file
     write_result = await tools.execute('file_write', {
         'path': '/tmp/test.txt',
         'content': 'test content'
     })
     assert write_result['status'] == 'success'
-    
+
     # Read file
     read_result = await tools.execute('file_read', {
         'path': '/tmp/test.txt'
@@ -335,18 +335,18 @@ class CachedTool(Tool):
     def __init__(self):
         super().__init__(name="cached_tool", ...)
         self.cache = {}
-    
+
     async def execute(self, query: str, **kwargs):
         # Create cache key
         key = hashlib.md5(query.encode()).hexdigest()
-        
+
         # Check cache
         if key in self.cache:
             return self.cache[key]
-        
+
         # Execute
         result = await self._expensive_operation(query)
-        
+
         # Cache result
         self.cache[key] = result
         return result
@@ -361,7 +361,7 @@ async def parallel_tasks():
         engine.execute("task 2"),
         engine.execute("task 3")
     ]
-    
+
     results = await asyncio.gather(*tasks)
     return results
 ```
@@ -397,7 +397,7 @@ async def parallel_tasks():
    ```python
    from fastapi_limiter import FastAPILimiter
    from fastapi_limiter.depends import RateLimiter
-   
+
    @app.post("/task/execute")
    @limiter.limit("10/minute")
    async def execute_task(...):

@@ -9,7 +9,7 @@ He analizado los 3 archivos de documentación proporcionados:
 - **Funcionalidades:** Directivas globales, por proyecto, API REST, enable/disable
 - **ESTADO:** 100% IMPLEMENTADO
 
-### 2. **COMANDOS_DIRECTIVAS.md** ✅  
+### 2. **COMANDOS_DIRECTIVAS.md** ✅
 - **Comandos PowerShell:** Get-Content, Get-ChildItem, notepad, Invoke-RestMethod
 - **Scripts de automatización:** Backup, creación de proyectos, templates
 - **ESTADO:** Comandos funcionales

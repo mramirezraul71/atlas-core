@@ -3,11 +3,11 @@ ATLAS NEXUS - Action Log
 Panel tipo Cursor: registro en vivo de pip install, comandos, acciones autónomas
 """
 
-from datetime import datetime
-from typing import List, Dict, Any, Optional, Callable
-from dataclasses import dataclass
 import json
 import logging
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger("atlas.actions")
 
@@ -15,6 +15,7 @@ logger = logging.getLogger("atlas.actions")
 @dataclass
 class ActionEntry:
     """Una entrada del log de acciones"""
+
     id: str
     timestamp: str
     action_type: str  # pip, cmd, file, heal, etc.
@@ -62,7 +63,9 @@ class ActionLog:
         self._counter += 1
         return f"act_{self._counter}_{datetime.now().strftime('%H%M%S')}"
 
-    def start(self, action_type: str, description: str, command: Optional[str] = None) -> str:
+    def start(
+        self, action_type: str, description: str, command: Optional[str] = None
+    ) -> str:
         """Inicia una acción. Devuelve id para actualizar luego."""
         entry = ActionEntry(
             id=self._next_id(),
@@ -87,7 +90,13 @@ class ActionLog:
                 self._emit(e, "output")
                 return
 
-    def finish(self, action_id: str, status: str = "ok", output: str = "", details: Optional[Dict] = None) -> None:
+    def finish(
+        self,
+        action_id: str,
+        status: str = "ok",
+        output: str = "",
+        details: Optional[Dict] = None,
+    ) -> None:
         """Marca una acción como terminada"""
         for e in reversed(self._entries):
             if e.id == action_id:
@@ -99,8 +108,15 @@ class ActionLog:
                 self._emit(e, "finish")
                 return
 
-    def log(self, action_type: str, description: str, command: Optional[str] = None,
-            status: str = "ok", output: str = "", details: Optional[Dict] = None) -> str:
+    def log(
+        self,
+        action_type: str,
+        description: str,
+        command: Optional[str] = None,
+        status: str = "ok",
+        output: str = "",
+        details: Optional[Dict] = None,
+    ) -> str:
         """Registro rápido de acción ya completada"""
         action_id = self.start(action_type, description, command)
         self.finish(action_id, status=status, output=output, details=details)
@@ -112,7 +128,9 @@ class ActionLog:
             "event": event,
             "data": entry.to_dict(),
         }
-        logger.info(f"Action {event}: {entry.action_type} - {entry.description[:50]}...")
+        logger.info(
+            f"Action {event}: {entry.action_type} - {entry.description[:50]}..."
+        )
         if self._broadcast_cb:
             try:
                 self._broadcast_cb(payload)

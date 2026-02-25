@@ -20,6 +20,7 @@ _log = logging.getLogger("humanoid.cortex.frontal.resource_arbiter")
 @dataclass
 class ResourceSlot:
     """Definicion de un recurso gestionado."""
+
     name: str
     max_slots: int = 1
     exclusive: bool = True
@@ -41,6 +42,7 @@ class ResourceSlot:
 @dataclass
 class WaitEntry:
     """Entrada en la cola de espera de un recurso."""
+
     goal_id: str
     priority: int
     requested_at: float = field(default_factory=time.time)
@@ -80,12 +82,20 @@ class ResourceArbiter:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._resources: Dict[str, ResourceSlot] = {
-            "vision":  ResourceSlot("vision",  max_slots=1, exclusive=True),
-            "hands":   ResourceSlot("hands",   max_slots=1, exclusive=True),
-            "voice":   ResourceSlot("voice",   max_slots=1, exclusive=True),
-            "web":     ResourceSlot("web",     max_slots=_env_int("CGE_RESOURCE_SLOTS_WEB", 3), exclusive=False),
-            "llm":     ResourceSlot("llm",     max_slots=_env_int("CGE_RESOURCE_SLOTS_LLM", 2), exclusive=False),
-            "compute": ResourceSlot("compute", max_slots=_env_int("CGE_RESOURCE_SLOTS_COMPUTE", 4), exclusive=False),
+            "vision": ResourceSlot("vision", max_slots=1, exclusive=True),
+            "hands": ResourceSlot("hands", max_slots=1, exclusive=True),
+            "voice": ResourceSlot("voice", max_slots=1, exclusive=True),
+            "web": ResourceSlot(
+                "web", max_slots=_env_int("CGE_RESOURCE_SLOTS_WEB", 3), exclusive=False
+            ),
+            "llm": ResourceSlot(
+                "llm", max_slots=_env_int("CGE_RESOURCE_SLOTS_LLM", 2), exclusive=False
+            ),
+            "compute": ResourceSlot(
+                "compute",
+                max_slots=_env_int("CGE_RESOURCE_SLOTS_COMPUTE", 4),
+                exclusive=False,
+            ),
         }
         self._wait_queues: Dict[str, List[WaitEntry]] = {r: [] for r in self._resources}
         self._goal_priorities: Dict[str, int] = {}
@@ -104,8 +114,7 @@ class ResourceArbiter:
 
     # -- Acquire / Release --------------------------------------------------
 
-    def acquire(self, goal_id: str, resources: List[str],
-                priority: int = 1) -> bool:
+    def acquire(self, goal_id: str, resources: List[str], priority: int = 1) -> bool:
         """
         Intenta adquirir multiples recursos atomicamente.
         Respeta orden global para prevencion de deadlocks.
@@ -121,8 +130,13 @@ class ResourceArbiter:
             self._goal_priorities[goal_id] = priority
             return True
 
-    def try_acquire(self, goal_id: str, resources: List[str],
-                    priority: int = 1, timeout_s: float = 10.0) -> bool:
+    def try_acquire(
+        self,
+        goal_id: str,
+        resources: List[str],
+        priority: int = 1,
+        timeout_s: float = 10.0,
+    ) -> bool:
         """Intenta adquirir con espera limitada."""
         deadline = time.time() + timeout_s
         while time.time() < deadline:
@@ -135,8 +149,9 @@ class ResourceArbiter:
         """Libera recursos. Si resources=None, libera todos los del goal."""
         with self._lock:
             if resources is None:
-                resources = [r for r, slot in self._resources.items()
-                             if slot.held_by(goal_id)]
+                resources = [
+                    r for r, slot in self._resources.items() if slot.held_by(goal_id)
+                ]
             for r in resources:
                 slot = self._resources.get(r)
                 if slot and slot.held_by(goal_id):
@@ -155,8 +170,9 @@ class ResourceArbiter:
 
     # -- Preemption ---------------------------------------------------------
 
-    def preempt(self, requester_id: str, resource: str,
-                requester_priority: int) -> Optional[str]:
+    def preempt(
+        self, requester_id: str, resource: str, requester_priority: int
+    ) -> Optional[str]:
         """
         Desaloja al holder de menor prioridad si el requester tiene mayor prioridad.
         Retorna goal_id desalojado, o None si no se pudo.
@@ -171,17 +187,21 @@ class ResourceArbiter:
                 return None
 
             lowest_id = min(
-                slot.holders.keys(),
-                key=lambda gid: self._goal_priorities.get(gid, 0)
+                slot.holders.keys(), key=lambda gid: self._goal_priorities.get(gid, 0)
             )
             lowest_prio = self._goal_priorities.get(lowest_id, 0)
 
             if requester_priority > lowest_prio:
                 slot.holders.pop(lowest_id, None)
                 self._do_acquire(resource, requester_id)
-                _log.info("Preempted %s from %s for %s (prio %d > %d)",
-                          resource, lowest_id, requester_id,
-                          requester_priority, lowest_prio)
+                _log.info(
+                    "Preempted %s from %s for %s (prio %d > %d)",
+                    resource,
+                    lowest_id,
+                    requester_id,
+                    requester_priority,
+                    lowest_prio,
+                )
                 return lowest_id
 
             return None
@@ -196,8 +216,7 @@ class ResourceArbiter:
     def check_availability(self, resources: List[str]) -> Dict[str, bool]:
         with self._lock:
             return {
-                r: self._resources[r].is_free
-                for r in resources if r in self._resources
+                r: self._resources[r].is_free for r in resources if r in self._resources
             }
 
     def get_allocations(self) -> Dict[str, Any]:
@@ -214,14 +233,13 @@ class ResourceArbiter:
 
     def get_goal_resources(self, goal_id: str) -> List[str]:
         with self._lock:
-            return [name for name, slot in self._resources.items()
-                    if slot.held_by(goal_id)]
+            return [
+                name for name, slot in self._resources.items() if slot.held_by(goal_id)
+            ]
 
     def get_status(self) -> Dict[str, Any]:
         alloc = self.get_allocations()
-        total_used = sum(
-            len(info["holders"]) for info in alloc.values()
-        )
+        total_used = sum(len(info["holders"]) for info in alloc.values())
         return {
             "resources": alloc,
             "total_used": total_used,

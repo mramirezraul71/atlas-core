@@ -20,7 +20,11 @@ def _git(repo: Path, *args: str, timeout_s: int = 10) -> Dict[str, str]:
         timeout=timeout_s,
         env={**os.environ, "LANG": "C"},
     )
-    return {"ok": "1" if r.returncode == 0 else "0", "stdout": (r.stdout or "").strip(), "stderr": (r.stderr or "").strip()}
+    return {
+        "ok": "1" if r.returncode == 0 else "0",
+        "stdout": (r.stdout or "").strip(),
+        "stderr": (r.stderr or "").strip(),
+    }
 
 
 def main() -> int:
@@ -45,14 +49,19 @@ def main() -> int:
     try:
         from modules.humanoid.comms.ops_bus import emit
 
-        emit("repo", msg, level="info", data={"commit": commit, "changed_files": changed})
+        emit(
+            "repo", msg, level="info", data={"commit": commit, "changed_files": changed}
+        )
     except Exception:
         pass
 
     try:
-        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        from modules.humanoid.ans.evolution_bitacora import \
+            append_evolution_log
 
-        append_evolution_log(f"[REPO] Commit creado. Resumen: {subject[:120]}", ok=True, source="repo")
+        append_evolution_log(
+            f"[REPO] Commit creado. Resumen: {subject[:120]}", ok=True, source="repo"
+        )
     except Exception:
         pass
 
@@ -61,4 +70,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

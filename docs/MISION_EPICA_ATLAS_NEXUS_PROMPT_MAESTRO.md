@@ -116,13 +116,13 @@ Objetivo: Memoria semántica, world model predictivo, chain-of-thought explícit
 
 ### DELIVERABLES FASE 1
 
-**Archivos creados:**  
+**Archivos creados:**
 `modules/humanoid/memory_engine/semantic_memory.py`, schema `embeddings_meta.sqlite`, `brain/world_model/__init__.py`, `physics_simulator.py`, `learned_model.py`, `mcts_planner.py`, `tests/memory/test_semantic_search.py`, `tests/world_model/test_simulation.py`, `tests/reasoning/test_chain_of_thought.py`.
 
-**Archivos modificados:**  
+**Archivos modificados:**
 `memory_engine/db.py`, `logic_engine.py` (CoT), `atlas_http_api.py`, `requirements.txt`.
 
-**Endpoints nuevos:**  
+**Endpoints nuevos:**
 POST /api/memory/add, /api/memory/search, GET /api/memory/stats | POST /api/world-model/simulate, /plan, /learn | POST /api/brain/reason, /api/brain/reflect, GET /api/brain/explain/{id}.
 
 **Tests:** 15+ unitarios, 5+ integración, benchmarks. **Valor:** $100K | **Tiempo:** 4 semanas.
@@ -205,8 +205,8 @@ Valor: $155K | Prioridad: ALTA. Objetivo: Aprendizaje activo (curiosity) + repla
 
 ## FASE 4: AUTONOMÍA SUPERIOR (Semanas 12-16)
 
-Valor: $285K | Prioridad: INNOVACIÓN MUNDIAL.  
-Objetivo: Meta-learning, razonamiento causal, self-programming (diferenciación mundial).  
+Valor: $285K | Prioridad: INNOVACIÓN MUNDIAL.
+Objetivo: Meta-learning, razonamiento causal, self-programming (diferenciación mundial).
 *[CONTINUARÁ EN SIGUIENTE MENSAJE - especificación detallada pendiente]*
 
 ---

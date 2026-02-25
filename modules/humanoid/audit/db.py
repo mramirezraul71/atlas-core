@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,6 +29,7 @@ class AuditDB:
 
     def __init__(self, path: str | Path | None = None) -> None:
         import os
+
         self._path: Optional[Path] = None
         if path is not None:
             self._path = Path(path)

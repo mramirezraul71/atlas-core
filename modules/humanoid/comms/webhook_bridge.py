@@ -4,8 +4,8 @@ from __future__ import annotations
 import json
 import os
 import threading
-import urllib.request
 import urllib.error
+import urllib.request
 from typing import Any, Dict, Optional
 
 _TIMEOUT_SEC = 5
@@ -13,7 +13,9 @@ _last_error: Optional[str] = None
 
 
 def _webhook_url() -> Optional[str]:
-    url = (os.getenv("MAKEPLAY_WEBHOOK_URL") or os.getenv("EXTERNAL_WEBHOOK_URL") or "").strip()
+    url = (
+        os.getenv("MAKEPLAY_WEBHOOK_URL") or os.getenv("EXTERNAL_WEBHOOK_URL") or ""
+    ).strip()
     return url if url.startswith("http") else None
 
 

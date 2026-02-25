@@ -1,11 +1,18 @@
 """Proxy inverso: /robot/* -> NEXUS. Acceso unificado desde el puerto de PUSH."""
 import os
+
 import httpx
 from fastapi import Request
 from fastapi.responses import Response
 
 NEXUS_BASE = (os.getenv("NEXUS_BASE_URL") or "").rstrip("/")
-NEXUS_ENABLED = os.getenv("NEXUS_ENABLED", "false").strip().lower() in ("1", "true", "yes", "y", "on")
+NEXUS_ENABLED = os.getenv("NEXUS_ENABLED", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+)
 TIMEOUT = float(os.getenv("NEXUS_TIMEOUT", "30"))
 
 
@@ -18,7 +25,11 @@ async def proxy_to_nexus(request: Request, path: str) -> Response:
             media_type="application/json",
         )
     url = f"{NEXUS_BASE}/{path}" if path else NEXUS_BASE + "/"
-    headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "connection")}
+    headers = {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() not in ("host", "connection")
+    }
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             if request.method == "GET":
@@ -38,11 +49,17 @@ async def proxy_to_nexus(request: Request, path: str) -> Response:
                 return Response(content="Method not allowed", status_code=405)
             # Filtrar headers de respuesta que no deben reenviarse
             exclude = {"transfer-encoding", "connection", "content-encoding"}
-            out_headers = {k: v for k, v in r.headers.items() if k.lower() not in exclude}
+            out_headers = {
+                k: v for k, v in r.headers.items() if k.lower() not in exclude
+            }
             content = r.content
             ct = (r.headers.get("content-type") or "").lower()
             # Inyectar barra de vuelta al dashboard principal (cámaras, voz) en HTML
-            if "text/html" in ct and r.status_code == 200 and b"<html" in content[:2048]:
+            if (
+                "text/html" in ct
+                and r.status_code == 200
+                and b"<html" in content[:2048]
+            ):
                 try:
                     body = content.decode("utf-8", errors="replace")
                     banner = (

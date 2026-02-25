@@ -16,4 +16,3 @@ def test_safe_shell_blocks_disallowed_cwd(monkeypatch, tmp_path: Path):
     r = sh.run("python -c \"print('ok')\"", cwd=str(disallowed), timeout_sec=5)
     assert r["ok"] is False
     assert r["error"] == "cwd_not_allowed"
-

@@ -3,12 +3,18 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+
 from .base import heal_result
 
 
 def run(**kwargs) -> dict:
     try:
-        base = (os.getenv("POLICY_ALLOWED_PATHS") or "C:\\ATLAS_PUSH").strip().split(",")[0].strip()
+        base = (
+            (os.getenv("POLICY_ALLOWED_PATHS") or "C:\\ATLAS_PUSH")
+            .strip()
+            .split(",")[0]
+            .strip()
+        )
         log_dir = Path(base) / "logs"
         if not log_dir.exists():
             return heal_result(True, "rotate_logs", "no logs", {})
@@ -23,6 +29,8 @@ def run(**kwargs) -> dict:
                     rotated += 1
             except Exception:
                 pass
-        return heal_result(True, "rotate_logs", f"rotated={rotated}", {"rotated": rotated})
+        return heal_result(
+            True, "rotate_logs", f"rotated={rotated}", {"rotated": rotated}
+        )
     except Exception as e:
         return heal_result(False, "rotate_logs", str(e), {}, str(e))

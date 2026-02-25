@@ -35,7 +35,9 @@ class AITutor:
         use_local_fallback: bool = True,
     ):
         self.tutor_type = tutor_type
-        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
+        self.api_key = (
+            api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY")
+        )
         self.review_interval = timedelta(hours=review_interval_hours)
         self.use_local_fallback = use_local_fallback
 
@@ -144,14 +146,20 @@ Genera {min(time_horizon_days // 2, 15)} lecciones. Responde solo con un array J
         print("[AI TUTOR] Curriculum completado!")
         return None
 
-    def review_robot_performance(self, lesson_id: str, robot_report: Dict[str, Any]) -> Dict[str, Any]:
+    def review_robot_performance(
+        self, lesson_id: str, robot_report: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Evalúa el desempeño del robot y devuelve evaluación con feedback y correcciones."""
         print(f"[AI TUTOR] Evaluando desempeño en lección {lesson_id}...")
         self.stats["total_evaluations"] += 1
 
         lesson = next((l for l in self.curriculum if l["lesson_id"] == lesson_id), None)
         if not lesson:
-            return {"error": f"Lesson {lesson_id} not found", "score": 0, "passed": False}
+            return {
+                "error": f"Lesson {lesson_id} not found",
+                "score": 0,
+                "passed": False,
+            }
 
         prompt = f"""Eres un tutor evaluando al robot ATLAS.
 
@@ -166,31 +174,39 @@ Evalúa y responde en JSON con: score (0-100), evaluation (texto), grade, passed
             evaluation = self._extract_json_from_response(response)
             if isinstance(evaluation, dict) and "score" in evaluation:
                 self._update_robot_profile(evaluation, lesson)
-                self.tutor_sessions.append({
-                    "session_id": f"session_{len(self.tutor_sessions) + 1}",
-                    "timestamp": datetime.now().isoformat(),
-                    "lesson_id": lesson_id,
-                    "evaluation": evaluation,
-                    "robot_report": robot_report,
-                })
+                self.tutor_sessions.append(
+                    {
+                        "session_id": f"session_{len(self.tutor_sessions) + 1}",
+                        "timestamp": datetime.now().isoformat(),
+                        "lesson_id": lesson_id,
+                        "evaluation": evaluation,
+                        "robot_report": robot_report,
+                    }
+                )
                 self.stats["total_feedback_given"] += 1
-                self.stats["total_corrections_made"] += len(evaluation.get("knowledge_corrected", []))
+                self.stats["total_corrections_made"] += len(
+                    evaluation.get("knowledge_corrected", [])
+                )
 
                 score = evaluation.get("score", 0)
                 if score >= 60:
-                    self.completed_lessons.append({
-                        "lesson_id": lesson_id,
-                        "completed_at": datetime.now().isoformat(),
-                        "score": score,
-                        "attempts": 1,
-                    })
+                    self.completed_lessons.append(
+                        {
+                            "lesson_id": lesson_id,
+                            "completed_at": datetime.now().isoformat(),
+                            "score": score,
+                            "attempts": 1,
+                        }
+                    )
                     print(f"[AI TUTOR] Leccion completada: {score}/100")
                 else:
-                    self.failed_lessons.append({
-                        "lesson_id": lesson_id,
-                        "failed_at": datetime.now().isoformat(),
-                        "score": score,
-                    })
+                    self.failed_lessons.append(
+                        {
+                            "lesson_id": lesson_id,
+                            "failed_at": datetime.now().isoformat(),
+                            "score": score,
+                        }
+                    )
                     print(f"[AI TUTOR] Leccion fallada: {score}/100")
                 self.last_review = datetime.now()
                 return evaluation
@@ -226,13 +242,21 @@ Evalúa y responde en JSON con: score (0-100), evaluation (texto), grade, passed
         passed = bool(passed)
 
         if lesson is None:
-            lesson = next((l for l in self.curriculum if l.get("lesson_id") == lesson_id), None)
+            lesson = next(
+                (l for l in self.curriculum if l.get("lesson_id") == lesson_id), None
+            )
         if lesson is None:
-            lesson = {"lesson_id": lesson_id, "name": lesson_id, "difficulty": "unknown"}
+            lesson = {
+                "lesson_id": lesson_id,
+                "name": lesson_id,
+                "difficulty": "unknown",
+            }
 
         self.stats["total_evaluations"] += 1
         try:
-            self._update_robot_profile({**evaluation, "score": score, "passed": passed}, lesson)
+            self._update_robot_profile(
+                {**evaluation, "score": score, "passed": passed}, lesson
+            )
         except Exception:
             pass
 
@@ -263,16 +287,24 @@ Evalúa y responde en JSON con: score (0-100), evaluation (texto), grade, passed
             print(f"[AI TUTOR] Leccion completada (offline): {score}/100")
         else:
             self.failed_lessons.append(
-                {"lesson_id": lesson_id, "failed_at": datetime.now().isoformat(), "score": score}
+                {
+                    "lesson_id": lesson_id,
+                    "failed_at": datetime.now().isoformat(),
+                    "score": score,
+                }
             )
             print(f"[AI TUTOR] Leccion fallada (offline): {score}/100")
 
         self.last_review = datetime.now()
         self.stats["total_feedback_given"] += 1
-        self.stats["total_corrections_made"] += len(evaluation.get("knowledge_corrected", []) or [])
+        self.stats["total_corrections_made"] += len(
+            evaluation.get("knowledge_corrected", []) or []
+        )
         return {**evaluation, "score": score, "passed": passed}
 
-    def validate_learned_knowledge(self, knowledge_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def validate_learned_knowledge(
+        self, knowledge_items: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         """Valida items de conocimiento aprendidos (correcto/parcial/incorrecto)."""
         if not knowledge_items:
             return []
@@ -305,7 +337,9 @@ CONOCIMIENTO: {json.dumps(knowledge_items, indent=2)}"""
         if response:
             task = self._extract_json_from_response(response)
             if isinstance(task, dict):
-                print(f"[AI TUTOR] Tarea sugerida: {task.get('task_name', 'Exploracion')}")
+                print(
+                    f"[AI TUTOR] Tarea sugerida: {task.get('task_name', 'Exploracion')}"
+                )
                 return task
         return self._generate_basic_exploration_task()
 
@@ -333,19 +367,32 @@ CONOCIMIENTO: {json.dumps(knowledge_items, indent=2)}"""
                     "max_tokens": max_tokens,
                     "messages": [{"role": "user", "content": prompt}],
                 }
-                resp = requests.post(self.api_endpoint, headers=headers, json=data, timeout=120)
+                resp = requests.post(
+                    self.api_endpoint, headers=headers, json=data, timeout=120
+                )
                 if resp.status_code == 200:
                     result = resp.json()["content"][0]["text"]
                     inp = len(prompt) / 4
                     out = len(result) / 4
-                    self.stats["total_api_cost_usd"] += (inp * 0.000015) + (out * 0.000075)
+                    self.stats["total_api_cost_usd"] += (inp * 0.000015) + (
+                        out * 0.000075
+                    )
                     return result
                 if self.use_local_fallback:
                     return self._call_local_llm(prompt)
             elif self.tutor_type == "gpt4":
-                headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-                data = {"model": self.model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]}
-                resp = requests.post(self.api_endpoint, headers=headers, json=data, timeout=120)
+                headers = {
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                }
+                data = {
+                    "model": self.model,
+                    "max_tokens": max_tokens,
+                    "messages": [{"role": "user", "content": prompt}],
+                }
+                resp = requests.post(
+                    self.api_endpoint, headers=headers, json=data, timeout=120
+                )
                 if resp.status_code == 200:
                     result = resp.json()["choices"][0]["message"]["content"]
                     return result
@@ -392,15 +439,23 @@ CONOCIMIENTO: {json.dumps(knowledge_items, indent=2)}"""
         except Exception:
             return {"error": "Could not parse JSON", "raw": response[:500]}
 
-    def _update_robot_profile(self, evaluation: Dict[str, Any], lesson: Dict[str, Any]) -> None:
+    def _update_robot_profile(
+        self, evaluation: Dict[str, Any], lesson: Dict[str, Any]
+    ) -> None:
         score = evaluation.get("score", 0)
         passed = evaluation.get("passed", score >= 60)
         if passed:
-            self.robot_profile["total_lessons_completed"] = self.robot_profile.get("total_lessons_completed", 0) + 1
+            self.robot_profile["total_lessons_completed"] = (
+                self.robot_profile.get("total_lessons_completed", 0) + 1
+            )
         else:
-            self.robot_profile["total_lessons_failed"] = self.robot_profile.get("total_lessons_failed", 0) + 1
+            self.robot_profile["total_lessons_failed"] = (
+                self.robot_profile.get("total_lessons_failed", 0) + 1
+            )
 
-        total = self.robot_profile["total_lessons_completed"] + self.robot_profile.get("total_lessons_failed", 0)
+        total = self.robot_profile["total_lessons_completed"] + self.robot_profile.get(
+            "total_lessons_failed", 0
+        )
         if total > 0:
             current_avg = self.robot_profile["average_score"]
             new_avg = (current_avg * (total - 1) + score) / total
@@ -409,7 +464,9 @@ CONOCIMIENTO: {json.dumps(knowledge_items, indent=2)}"""
         for s in evaluation.get("strengths_demonstrated", []):
             if s not in self.robot_profile["strengths"]:
                 self.robot_profile["strengths"].append(s)
-        self.robot_profile["weaknesses"] = evaluation.get("areas_for_improvement", self.robot_profile["weaknesses"])
+        self.robot_profile["weaknesses"] = evaluation.get(
+            "areas_for_improvement", self.robot_profile["weaknesses"]
+        )
 
         if self.robot_profile["average_score"] >= 90:
             self.robot_profile["knowledge_level"] = "advanced"
@@ -432,9 +489,17 @@ CONOCIMIENTO: {json.dumps(knowledge_items, indent=2)}"""
                 "prerequisites": [],
                 "learning_objectives": ["Identificar objetos comunes"],
                 "tasks": [
-                    {"task_id": "T001", "description": "Identificar 20 objetos", "success_criteria": "accuracy >= 0.7"},
+                    {
+                        "task_id": "T001",
+                        "description": "Identificar 20 objetos",
+                        "success_criteria": "accuracy >= 0.7",
+                    },
                 ],
-                "evaluation_criteria": {"excellent": "score >= 90", "good": "score >= 70", "acceptable": "score >= 60"},
+                "evaluation_criteria": {
+                    "excellent": "score >= 90",
+                    "good": "score >= 70",
+                    "acceptable": "score >= 60",
+                },
                 "next_lessons": [],
             },
         ]
@@ -478,7 +543,13 @@ CONOCIMIENTO: {json.dumps(knowledge_items, indent=2)}"""
         return {
             "score": score,
             "evaluation": "Bueno" if score >= 70 else "Aceptable",
-            "grade": "A" if score >= 90 else "B" if score >= 75 else "C" if score >= 60 else "D",
+            "grade": "A"
+            if score >= 90
+            else "B"
+            if score >= 75
+            else "C"
+            if score >= 60
+            else "D",
             "passed": score >= 60,
             "feedback": f"Tasa de éxito: {success_rate:.1%}",
             "next_steps": "Continuar con siguiente lección",
@@ -501,7 +572,9 @@ CONOCIMIENTO: {json.dumps(knowledge_items, indent=2)}"""
             "total_lessons_in_curriculum": len(self.curriculum),
             "lessons_completed": len(self.completed_lessons),
             "lessons_failed": len(self.failed_lessons),
-            "completion_rate": len(self.completed_lessons) / len(self.curriculum) if self.curriculum else 0,
+            "completion_rate": len(self.completed_lessons) / len(self.curriculum)
+            if self.curriculum
+            else 0,
             "robot_average_score": self.robot_profile.get("average_score", 0),
             "robot_level": self.robot_profile.get("knowledge_level", "beginner"),
             "total_evaluations": self.stats["total_evaluations"],

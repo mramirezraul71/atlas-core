@@ -3,6 +3,7 @@ Expone /status /tools /execute usando el command_router.handle de C:\ATLAS\modul
 """
 import asyncio
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -10,8 +11,6 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-
-import logging
 
 
 def _ts_to_epoch(ts_str: str) -> float:
@@ -24,6 +23,7 @@ def _ts_to_epoch(ts_str: str) -> float:
     except Exception:
         return 0.0
 
+
 # Cargar config ANTES de importar módulos que usan os.getenv (audit, policy, etc.)
 BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_PATH = BASE_DIR / "config" / "atlas.env"
@@ -31,6 +31,7 @@ if ENV_PATH.exists():
     # Reduce noisy dotenv parse warnings (e.g. malformed lines in vault/env).
     logging.getLogger("dotenv").setLevel(logging.ERROR)
     from dotenv import load_dotenv
+
     load_dotenv(ENV_PATH, override=True)
 else:
     logging.warning("atlas.env not found at %s", ENV_PATH)
@@ -64,25 +65,31 @@ _ensure_db_path("NERVOUS_DB_PATH", "atlas_nervous.sqlite")
 _ensure_db_path("NERVOUS_DB_PATH", "nervous_system.sqlite")
 _ensure_db_path("NERVOUS_DB_PATH", "nervous_system.sqlite")
 
+import importlib.util
 from typing import List, Optional
 
-from fastapi import FastAPI, Request, Header, WebSocket, File, UploadFile
+from fastapi import FastAPI, File, Header, Request, UploadFile, WebSocket
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, field_validator
-import importlib.util
 
 ATLAS_ROOT = Path(r"C:\ATLAS")
 ROUTER_PATH = ATLAS_ROOT / "modules" / "command_router.py"
 LOCAL_ROUTER = BASE_DIR / "modules" / "command_router.py"
 
+
 def load_handle():
     if ROUTER_PATH.exists():
-        spec = importlib.util.spec_from_file_location("command_router", str(ROUTER_PATH))
+        spec = importlib.util.spec_from_file_location(
+            "command_router", str(ROUTER_PATH)
+        )
     else:
-        spec = importlib.util.spec_from_file_location("command_router", str(LOCAL_ROUTER))
+        spec = importlib.util.spec_from_file_location(
+            "command_router", str(LOCAL_ROUTER)
+        )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # type: ignore
     return mod.handle  # type: ignore
+
 
 handle = load_handle()
 
@@ -94,14 +101,20 @@ from typing import Any, Dict
 async def _lifespan(app):
     try:
         from modules.humanoid.deploy.healthcheck import _set_app_start_time
+
         _set_app_start_time()
     except Exception:
         pass
     # Cargar Bóveda al arranque (tokens Telegram/WhatsApp, etc.) sin pedir .env.
     try:
-        from dotenv import load_dotenv
         from pathlib import Path
-        vault_path = (os.getenv("ATLAS_VAULT_PATH") or r"C:\Users\Raul\OneDrive\RAUL - Personal\Escritorio\credenciales.txt").strip()
+
+        from dotenv import load_dotenv
+
+        vault_path = (
+            os.getenv("ATLAS_VAULT_PATH")
+            or r"C:\Users\Raul\OneDrive\RAUL - Personal\Escritorio\credenciales.txt"
+        ).strip()
         candidates = [vault_path, r"C:\dev\credenciales.txt"]
         for c in candidates:
             p = Path(c)
@@ -112,24 +125,56 @@ async def _lifespan(app):
         pass
     try:
         from modules.humanoid.owner.emergency import set_emergency_from_env
+
         set_emergency_from_env()
     except Exception:
         pass
-    humanoid = os.getenv("HUMANOID_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
-    sched = os.getenv("SCHED_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
-    worker_only = os.getenv("WORKER_ONLY", "false").strip().lower() in ("1", "true", "yes")
-    safe_startup = os.getenv("ATLAS_SAFE_STARTUP", "false").strip().lower() in ("1", "true", "yes", "y", "on")
+    humanoid = os.getenv("HUMANOID_ENABLED", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    )
+    sched = os.getenv("SCHED_ENABLED", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    )
+    worker_only = os.getenv("WORKER_ONLY", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    safe_startup = os.getenv("ATLAS_SAFE_STARTUP", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    )
     if humanoid and sched:
+        from concurrent.futures import ThreadPoolExecutor
+
         from modules.humanoid.scheduler import start_scheduler
         from modules.humanoid.watchdog import start_watchdog
-        from concurrent.futures import ThreadPoolExecutor
+
         _executor = ThreadPoolExecutor(max_workers=2)
         start_scheduler(executor=_executor)
         start_watchdog()
         # Visión Ubicua: preparar DB y watchdog de movimiento (best-effort, no bloquea arranque)
         try:
-            if os.getenv("VISION_UBIQ_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on"):
-                from modules.humanoid.vision.ubiq import ensure_db, start_motion_watchdog
+            if os.getenv("VISION_UBIQ_ENABLED", "true").strip().lower() in (
+                "1",
+                "true",
+                "yes",
+                "y",
+                "on",
+            ):
+                from modules.humanoid.vision.ubiq import (
+                    ensure_db, start_motion_watchdog)
 
                 ensure_db()
                 start_motion_watchdog()
@@ -138,44 +183,66 @@ async def _lifespan(app):
         if not worker_only:
             try:
                 from modules.humanoid.ci import ensure_ci_jobs
+
                 ensure_ci_jobs()
             except Exception:
                 pass
             try:
                 from modules.humanoid.ga.scheduler_jobs import ensure_ga_jobs
+
                 ensure_ga_jobs()
             except Exception:
                 pass
             try:
-                from modules.humanoid.metalearn.scheduler_jobs import ensure_metalearn_jobs
+                from modules.humanoid.metalearn.scheduler_jobs import \
+                    ensure_metalearn_jobs
+
                 ensure_metalearn_jobs()
             except Exception:
                 pass
             try:
                 from modules.humanoid.ans.scheduler_jobs import ensure_ans_jobs
+
                 ensure_ans_jobs()
                 # Ejecutar triada ANS al arranque (una vez) para que la bitácora tenga acción desde el inicio
-                if (not safe_startup) and os.getenv("ANS_ENABLED", "true").strip().lower() in ("1", "true", "yes") and os.getenv("ANS_RUN_AT_STARTUP", "true").strip().lower() in ("1", "true", "yes"):
+                if (
+                    (not safe_startup)
+                    and os.getenv("ANS_ENABLED", "true").strip().lower()
+                    in ("1", "true", "yes")
+                    and os.getenv("ANS_RUN_AT_STARTUP", "true").strip().lower()
+                    in ("1", "true", "yes")
+                ):
+
                     def _run_triada_at_startup():
                         try:
-                            from modules.humanoid.ans.engine import run_ans_cycle
-                            run_ans_cycle(mode=os.getenv("ANS_MODE", "auto"), timeout_sec=60)
+                            from modules.humanoid.ans.engine import \
+                                run_ans_cycle
+
+                            run_ans_cycle(
+                                mode=os.getenv("ANS_MODE", "auto"), timeout_sec=60
+                            )
                         except Exception:
                             pass
+
                     import threading
+
                     t = threading.Thread(target=_run_triada_at_startup, daemon=True)
                     t.start()
             except Exception:
                 pass
             try:
                 # Sistema Nervioso: sensores -> score -> bitácora/incidentes (scheduler job)
-                from modules.humanoid.nervous.scheduler_jobs import ensure_nervous_jobs
+                from modules.humanoid.nervous.scheduler_jobs import \
+                    ensure_nervous_jobs
+
                 ensure_nervous_jobs()
             except Exception:
                 pass
             try:
                 # WorldState: visión+OCR periódicos (representación mínima del entorno)
-                from modules.humanoid.vision.world_state_jobs import ensure_world_state_jobs
+                from modules.humanoid.vision.world_state_jobs import \
+                    ensure_world_state_jobs
+
                 ensure_world_state_jobs()
             except Exception:
                 pass
@@ -184,35 +251,51 @@ async def _lifespan(app):
             # (reemplaza las inicializaciones individuales de makeplay y telegram_poller)
             try:
                 if not safe_startup:
-                    from modules.humanoid.comms.bootstrap import bootstrap_comms
+                    from modules.humanoid.comms.bootstrap import \
+                        bootstrap_comms
+
                     comms_result = bootstrap_comms(skip_tests=True)
                     if not comms_result.get("ok"):
                         import logging
+
                         _comms_logger = logging.getLogger("atlas.comms.startup")
                         for warning in comms_result.get("warnings", []):
                             _comms_logger.warning(f"Comms bootstrap: {warning}")
             except Exception as _comms_err:
                 import logging
-                logging.getLogger("atlas.comms.startup").error(f"Comms bootstrap failed: {_comms_err}")
+
+                logging.getLogger("atlas.comms.startup").error(
+                    f"Comms bootstrap failed: {_comms_err}"
+                )
 
             # === Quality / POT Autonomy ===
             # Activa dispatcher+triggers para ejecución autónoma de POTs.
             # Control: QUALITY_AUTONOMY_ENABLED=true|false (default true)
             try:
-                if (not safe_startup) and os.getenv("QUALITY_AUTONOMY_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on"):
-                    from modules.humanoid.quality import start_autonomous_system
+                if (not safe_startup) and os.getenv(
+                    "QUALITY_AUTONOMY_ENABLED", "true"
+                ).strip().lower() in ("1", "true", "yes", "y", "on"):
+                    from modules.humanoid.quality import \
+                        start_autonomous_system
+
                     q = start_autonomous_system()
                     # Autostart del Autonomy Daemon (evita estado CRITICAL post-restart)
                     # Control: AUTONOMY_DAEMON_AUTOSTART=true|false (default true)
                     try:
-                        if os.getenv("AUTONOMY_DAEMON_AUTOSTART", "true").strip().lower() in ("1", "true", "yes", "y", "on"):
-                            from modules.humanoid.quality.autonomy_daemon import is_autonomy_running, start_autonomy
+                        if os.getenv(
+                            "AUTONOMY_DAEMON_AUTOSTART", "true"
+                        ).strip().lower() in ("1", "true", "yes", "y", "on"):
+                            from modules.humanoid.quality.autonomy_daemon import (
+                                is_autonomy_running, start_autonomy)
+
                             if not is_autonomy_running():
                                 start_autonomy()
                     except Exception:
                         pass
                     try:
-                        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+                        from modules.humanoid.ans.evolution_bitacora import \
+                            append_evolution_log
+
                         append_evolution_log(
                             message="[QUALITY] Autonomía POT iniciada (dispatcher+triggers).",
                             ok=bool(q.get("all_ok", False)),
@@ -223,75 +306,106 @@ async def _lifespan(app):
             except Exception:
                 pass
             try:
-                from modules.humanoid.scheduler.repo_monitor_jobs import ensure_repo_monitor_jobs
+                from modules.humanoid.scheduler.repo_monitor_jobs import \
+                    ensure_repo_monitor_jobs
+
                 ensure_repo_monitor_jobs()
             except Exception:
                 pass
             try:
                 # MakePlay Scanner: snapshot local + (opcional) webhook externo
-                from modules.humanoid.comms.makeplay_scheduler import ensure_makeplay_jobs
+                from modules.humanoid.comms.makeplay_scheduler import \
+                    ensure_makeplay_jobs
+
                 ensure_makeplay_jobs()
             except Exception:
                 pass
             try:
-                from modules.humanoid.scheduler.repo_hygiene_jobs import ensure_repo_hygiene_jobs
+                from modules.humanoid.scheduler.repo_hygiene_jobs import \
+                    ensure_repo_hygiene_jobs
+
                 ensure_repo_hygiene_jobs()
             except Exception:
                 pass
             try:
-                from modules.humanoid.approvals.scheduler_jobs import ensure_approvals_jobs
+                from modules.humanoid.approvals.scheduler_jobs import \
+                    ensure_approvals_jobs
+
                 ensure_approvals_jobs()
             except Exception:
                 pass
             try:
-                from modules.humanoid.scheduler.workshop_jobs import ensure_workshop_jobs
+                from modules.humanoid.scheduler.workshop_jobs import \
+                    ensure_workshop_jobs
+
                 ensure_workshop_jobs()
             except Exception:
                 pass
             try:
-                from modules.humanoid.repo.git_hooks import ensure_post_commit_hook
+                from modules.humanoid.repo.git_hooks import \
+                    ensure_post_commit_hook
+
                 ensure_post_commit_hook()
             except Exception:
                 pass
         # Heartbeat NEXUS: ping 8000/health, auto-reactivación con start_all.ps1, registro en Bitácora
         try:
-            from modules.nexus_heartbeat import start_heartbeat, register_status_callback
-            _dashboard_base = (os.getenv("ATLAS_DASHBOARD_URL") or "http://127.0.0.1:8791").rstrip("/")
+            from modules.nexus_heartbeat import (register_status_callback,
+                                                 start_heartbeat)
+
+            _dashboard_base = (
+                os.getenv("ATLAS_DASHBOARD_URL") or "http://127.0.0.1:8791"
+            ).rstrip("/")
+
             def _on_nexus_change(connected: bool, message: str) -> None:
                 if connected:
                     text = "[CONEXIÓN] Buscando NEXUS en puerto 8000... OK."
                 else:
                     extra = (message or "").strip()
                     extra = (": " + extra[:120]) if extra else ""
-                    text = "[CONEXIÓN] Buscando NEXUS en puerto 8000... Desconectado" + extra
+                    text = (
+                        "[CONEXIÓN] Buscando NEXUS en puerto 8000... Desconectado"
+                        + extra
+                    )
                 try:
-                    import urllib.request
                     import json
+                    import urllib.request
+
                     req = urllib.request.Request(
                         _dashboard_base + "/ans/evolution-log",
-                        data=json.dumps({"message": text, "ok": connected}).encode("utf-8"),
+                        data=json.dumps({"message": text, "ok": connected}).encode(
+                            "utf-8"
+                        ),
                         headers={"Content-Type": "application/json"},
                         method="POST",
                     )
                     urllib.request.urlopen(req, timeout=3)
                 except Exception:
                     pass
+
             register_status_callback(_on_nexus_change)
             start_heartbeat()
+
             # Prueba de Nervios: autodiagnóstico de motores, mouse, cámara; actualiza Dashboard a CONECTADO | ACTIVO
             def _run_nerve_test_background():
                 try:
                     import sys
                     from pathlib import Path
+
                     push_base = Path(__file__).resolve().parent.parent
                     if str(push_base) not in sys.path:
                         sys.path.insert(0, str(push_base))
                     import nexus_actions
+
                     nexus_actions.run_nerve_test()
                 except Exception:
                     pass
+
             import threading
-            _nerve_thread = threading.Thread(target=_run_nerve_test_background, daemon=True)
+
+            _nerve_thread = threading.Thread(
+                target=_run_nerve_test_background, daemon=True
+            )
             _nerve_thread.start()
         except Exception:
             pass
@@ -299,12 +413,17 @@ async def _lifespan(app):
     try:
         import asyncio
         import sys
+
         if str(BASE_DIR) not in sys.path:
             sys.path.insert(0, str(BASE_DIR))
-        from autonomous.health_monitor.health_aggregator import HealthAggregator
-        from autonomous.telemetry.alert_manager import AlertManager
-        from autonomous.learning.learning_orchestrator import LearningOrchestrator
         import logging
+
+        from autonomous.health_monitor.health_aggregator import \
+            HealthAggregator
+        from autonomous.learning.learning_orchestrator import \
+            LearningOrchestrator
+        from autonomous.telemetry.alert_manager import AlertManager
+
         _log = logging.getLogger(__name__)
         _log.info("Iniciando background tasks de ATLAS AUTONOMOUS...")
         health_agg = HealthAggregator()
@@ -328,10 +447,14 @@ async def _lifespan(app):
         _log.info("✓ Learning Engine activo")
     except Exception as e:
         import logging
-        logging.getLogger(__name__).debug("ATLAS AUTONOMOUS background tasks no iniciados: %s", e)
+
+        logging.getLogger(__name__).debug(
+            "ATLAS AUTONOMOUS background tasks no iniciados: %s", e
+        )
     # Actualización periódica de métricas Prometheus (memoria, etc.)
     try:
         from modules.observability.metrics import update_system_metrics
+
         async def _metrics_loop():
             while True:
                 await asyncio.sleep(10)
@@ -339,14 +462,23 @@ async def _lifespan(app):
                     update_system_metrics()
                 except Exception:
                     pass
+
         asyncio.create_task(_metrics_loop())
     except Exception:
         pass
     # Failsafe: asegurar Autonomy Daemon activo al finalizar startup.
     # Esto cubre escenarios donde QUALITY_AUTONOMY_ENABLED no inició el daemon.
     try:
-        if os.getenv("AUTONOMY_DAEMON_AUTOSTART", "true").strip().lower() in ("1", "true", "yes", "y", "on"):
-            from modules.humanoid.quality.autonomy_daemon import is_autonomy_running
+        if os.getenv("AUTONOMY_DAEMON_AUTOSTART", "true").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        ):
+            from modules.humanoid.quality.autonomy_daemon import \
+                is_autonomy_running
+
             if not is_autonomy_running():
                 try:
                     # Reuse same startup logic used by POST /api/autonomy/daemon/start.
@@ -366,6 +498,7 @@ async def _lifespan(app):
     try:
         if not safe_startup:
             from atlas_adapter.supervisor_daemon import start_supervisor_daemon
+
             await start_supervisor_daemon()
     except Exception:
         pass
@@ -373,6 +506,7 @@ async def _lifespan(app):
     # Shutdown: detener supervisor residente (best-effort)
     try:
         from atlas_adapter.supervisor_daemon import stop_supervisor_daemon
+
         await stop_supervisor_daemon()
     except Exception:
         pass
@@ -383,10 +517,22 @@ app = FastAPI(
     version="1.0.0",
     lifespan=_lifespan,
     openapi_tags=[
-        {"name": "Health", "description": "Health check extendido (score 0-100, LLM, scheduler, memory, DB, uptime)."},
-        {"name": "Deploy", "description": "Blue-green deployment, canary ramp-up, deploy status y reportes."},
-        {"name": "Cluster", "description": "Atlas Cluster: nodos, heartbeat, routing, ejecución remota (hands/web/vision/voice)."},
-        {"name": "Gateway", "description": "Stealth Gateway: Cloudflare / Tailscale / SSH / LAN, bootstrap, health."},
+        {
+            "name": "Health",
+            "description": "Health check extendido (score 0-100, LLM, scheduler, memory, DB, uptime).",
+        },
+        {
+            "name": "Deploy",
+            "description": "Blue-green deployment, canary ramp-up, deploy status y reportes.",
+        },
+        {
+            "name": "Cluster",
+            "description": "Atlas Cluster: nodos, heartbeat, routing, ejecución remota (hands/web/vision/voice).",
+        },
+        {
+            "name": "Gateway",
+            "description": "Stealth Gateway: Cloudflare / Tailscale / SSH / LAN, bootstrap, health.",
+        },
         {
             "name": "Learning",
             "description": "Aprendizaje continuo: procesar situaciones, consolidar conocimiento, rutina diaria (lección del tutor), base de conocimiento, incertidumbre y métricas de crecimiento.",
@@ -401,18 +547,22 @@ app = FastAPI(
 # Observabilidad Prometheus (request count, duration, active)
 try:
     from modules.observability.middleware import ObservabilityMiddleware
+
     app.add_middleware(ObservabilityMiddleware)
 except Exception:
     pass
+
 
 class Step(BaseModel):
     tool: str
     args: dict = {}
 
+
 def _robot_connected() -> bool:
     """Ping Robot: prueba backend (8002) y luego UI (NEXUS_ROBOT_URL)."""
-    import urllib.request
     import os
+    import urllib.request
+
     base_api = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
     base_ui = (os.getenv("NEXUS_ROBOT_URL") or base_api).rstrip("/")
     for base in (base_api, base_ui):
@@ -473,7 +623,12 @@ def _status_bg_loop():
             robot_ok = _robot_connected()
         except Exception:
             robot_ok = False
-        _STATUS_CACHE["nexus"] = {"connected": True, "active": True, "last_check_ts": time.time(), "last_error": ""}
+        _STATUS_CACHE["nexus"] = {
+            "connected": True,
+            "active": True,
+            "last_check_ts": time.time(),
+            "last_error": "",
+        }
         _STATUS_CACHE["robot"] = robot_ok
         _STATUS_CACHE["ts"] = time.time()
         time.sleep(_STATUS_CACHE_TTL)
@@ -503,7 +658,13 @@ def status():
 @app.get("/api/nexus/connection", tags=["NEXUS"])
 def get_nexus_connection():
     """CEREBRO — CUERPO (NEXUS): estado de conexión (consolidado en PUSH)."""
-    return {"ok": True, "connected": True, "active": True, "last_check_ts": time.time(), "last_error": ""}
+    return {
+        "ok": True,
+        "connected": True,
+        "active": True,
+        "last_check_ts": time.time(),
+        "last_error": "",
+    }
 
 
 class NexusConnectionBody(BaseModel):
@@ -516,7 +677,9 @@ class NexusConnectionBody(BaseModel):
 def post_nexus_connection(body: NexusConnectionBody):
     """Actualiza estado de conexión NEXUS (heartbeat o Prueba de Nervios). active=True → CONECTADO | ACTIVO."""
     try:
-        from modules.nexus_heartbeat import set_nexus_connected, set_nexus_active
+        from modules.nexus_heartbeat import (set_nexus_active,
+                                             set_nexus_connected)
+
         set_nexus_connected(body.connected, body.message or "")
         if body.active is not None:
             set_nexus_active(body.active)
@@ -531,8 +694,11 @@ def nexus_reconnect(clear_cache: bool = False):
     try:
         if clear_cache:
             from modules.nexus_heartbeat import clear_nexus_cache
+
             clear_nexus_cache()
-        from modules.nexus_heartbeat import restart_nexus, get_nexus_connection_state
+        from modules.nexus_heartbeat import (get_nexus_connection_state,
+                                             restart_nexus)
+
         started = restart_nexus()
         state = get_nexus_connection_state()
         return {
@@ -551,6 +717,7 @@ def cache_clear():
     """Limpia cache del servidor (__pycache__, temp_models_cache). Para uso con botón Limpiar caché en navegador."""
     try:
         from modules.nexus_heartbeat import clear_nexus_cache
+
         clear_nexus_cache()
         return {"ok": True, "message": "Cache servidor limpiado"}
     except Exception as e:
@@ -567,7 +734,9 @@ def api_memory_add(
 ):
     """Añade una experiencia a la memoria semántica."""
     try:
-        from modules.humanoid.memory_engine.semantic_memory import get_semantic_memory
+        from modules.humanoid.memory_engine.semantic_memory import \
+            get_semantic_memory
+
         exp_id = get_semantic_memory().add_experience(
             description=description,
             context=context,
@@ -587,7 +756,9 @@ def api_memory_search(
 ):
     """Búsqueda por similaridad en memoria semántica."""
     try:
-        from modules.humanoid.memory_engine.semantic_memory import get_semantic_memory
+        from modules.humanoid.memory_engine.semantic_memory import \
+            get_semantic_memory
+
         results = get_semantic_memory().recall_similar(
             query, top_k=top_k, min_similarity=min_similarity
         )
@@ -600,26 +771,34 @@ def api_memory_search(
 def api_memory_stats():
     """Estadísticas de la memoria semántica."""
     try:
-        from modules.humanoid.memory_engine.semantic_memory import get_semantic_memory
+        from modules.humanoid.memory_engine.semantic_memory import \
+            get_semantic_memory
+
         return get_semantic_memory().get_statistics()
     except Exception as e:
-        return {"error": str(e), "total_experiences": 0, "embedding_dimension": 0, "storage_size_mb": 0}
+        return {
+            "error": str(e),
+            "total_experiences": 0,
+            "embedding_dimension": 0,
+            "storage_size_mb": 0,
+        }
 
 
 # ---------- Cerebro: modo Auto/Manual e IA dominante ----------
 class BrainStateBody(BaseModel):
-    mode: Optional[str] = None   # "auto" | "manual"
+    mode: Optional[str] = None  # "auto" | "manual"
     override_model: Optional[str] = None  # full_key ej. ollama:llama3.1:latest, o null
 
 
 class ProviderCredentialBody(BaseModel):
-    provider_id: str   # openai | anthropic | gemini | perplexity
+    provider_id: str  # openai | anthropic | gemini | perplexity
     api_key: Optional[str] = None  # null o vacío = borrar clave
 
 
 def _brain_ollama_available() -> bool:
     try:
         from modules.humanoid.deploy.healthcheck import _check_llm_reachable
+
         return _check_llm_reachable().get("ok", False)
     except Exception:
         return False
@@ -628,6 +807,7 @@ def _brain_ollama_available() -> bool:
 def _brain_ollama_available_timeout(seconds: float = 2.0) -> bool:
     """Comprueba Ollama con timeout para no bloquear el dashboard."""
     import concurrent.futures
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
         fut = ex.submit(_brain_ollama_available)
         try:
@@ -642,6 +822,7 @@ def api_brain_state():
     try:
         from modules.humanoid.ai.brain_state import get_brain_state
         from modules.humanoid.ai.registry import get_model_specs
+
         state = get_brain_state()
         ollama_ok = _brain_ollama_available_timeout(2.0)
         specs = get_model_specs(ollama_ok)
@@ -657,9 +838,13 @@ def api_brain_state():
             }
             for s in specs
         ]
-        from modules.humanoid.ai.provider_credentials import get_credentials_status
+        from modules.humanoid.ai.provider_credentials import \
+            get_credentials_status
+
         _credentials = get_credentials_status()
-        _allow_external = (os.getenv("AI_ALLOW_EXTERNAL_APIS") or "").strip().lower() in ("1", "true", "yes", "y", "on")
+        _allow_external = (
+            os.getenv("AI_ALLOW_EXTERNAL_APIS") or ""
+        ).strip().lower() in ("1", "true", "yes", "y", "on")
         _paid_default_models = {
             "gemini": "gemini-1.5-flash",
             "openai": "gpt-4o-mini",
@@ -669,14 +854,16 @@ def api_brain_state():
         for pid, default_model in _paid_default_models.items():
             if _allow_external and (_credentials.get(pid) or {}).get("configured"):
                 full_key = "%s:%s" % (pid, default_model)
-                models.append({
-                    "full_key": full_key,
-                    "label": "%s (manual)" % default_model,
-                    "model_name": default_model,
-                    "route": "CHAT",
-                    "is_free": False,
-                    "provider_id": pid,
-                })
+                models.append(
+                    {
+                        "full_key": full_key,
+                        "label": "%s (manual)" % default_model,
+                        "model_name": default_model,
+                        "route": "CHAT",
+                        "is_free": False,
+                        "provider_id": pid,
+                    }
+                )
         mode = state.get("mode") or "auto"
         override = state.get("override_model")
         provider_connect_urls = {
@@ -686,14 +873,36 @@ def api_brain_state():
             "perplexity": "https://www.perplexity.ai/settings/api",
         }
         provider_options = [
-            {"id": "openai", "name": "OpenAI (GPT)", "connect_url": provider_connect_urls["openai"]},
-            {"id": "anthropic", "name": "Anthropic (Claude)", "connect_url": provider_connect_urls["anthropic"]},
-            {"id": "gemini", "name": "Google Gemini", "connect_url": provider_connect_urls["gemini"]},
-            {"id": "perplexity", "name": "Perplexity", "connect_url": provider_connect_urls["perplexity"]},
+            {
+                "id": "openai",
+                "name": "OpenAI (GPT)",
+                "connect_url": provider_connect_urls["openai"],
+            },
+            {
+                "id": "anthropic",
+                "name": "Anthropic (Claude)",
+                "connect_url": provider_connect_urls["anthropic"],
+            },
+            {
+                "id": "gemini",
+                "name": "Google Gemini",
+                "connect_url": provider_connect_urls["gemini"],
+            },
+            {
+                "id": "perplexity",
+                "name": "Perplexity",
+                "connect_url": provider_connect_urls["perplexity"],
+            },
         ]
         if mode == "auto":
-            connected_names = [p["name"] for p in provider_options if (_credentials.get(p["id"]) or {}).get("configured")]
-            dominant_display = "Multi-IA (auto): el router elige el especialista por tarea"
+            connected_names = [
+                p["name"]
+                for p in provider_options
+                if (_credentials.get(p["id"]) or {}).get("configured")
+            ]
+            dominant_display = (
+                "Multi-IA (auto): el router elige el especialista por tarea"
+            )
             if connected_names:
                 dominant_display += " · " + ", ".join(connected_names) + " conectado(s)"
         else:
@@ -726,21 +935,44 @@ def api_brain_state():
             "perplexity": "https://www.perplexity.ai/settings/api",
         }
         provider_options = [
-            {"id": "openai", "name": "OpenAI (GPT)", "connect_url": provider_connect_urls["openai"]},
-            {"id": "anthropic", "name": "Anthropic (Claude)", "connect_url": provider_connect_urls["anthropic"]},
-            {"id": "gemini", "name": "Google Gemini", "connect_url": provider_connect_urls["gemini"]},
-            {"id": "perplexity", "name": "Perplexity", "connect_url": provider_connect_urls["perplexity"]},
+            {
+                "id": "openai",
+                "name": "OpenAI (GPT)",
+                "connect_url": provider_connect_urls["openai"],
+            },
+            {
+                "id": "anthropic",
+                "name": "Anthropic (Claude)",
+                "connect_url": provider_connect_urls["anthropic"],
+            },
+            {
+                "id": "gemini",
+                "name": "Google Gemini",
+                "connect_url": provider_connect_urls["gemini"],
+            },
+            {
+                "id": "perplexity",
+                "name": "Perplexity",
+                "connect_url": provider_connect_urls["perplexity"],
+            },
         ]
         credentials = {}
         try:
-            from modules.humanoid.ai.provider_credentials import get_credentials_status
+            from modules.humanoid.ai.provider_credentials import \
+                get_credentials_status
+
             credentials = get_credentials_status()
         except Exception:
             pass
         return {
-            "ok": False, "error": str(e), "mode": "auto", "override_model": None,
+            "ok": False,
+            "error": str(e),
+            "mode": "auto",
+            "override_model": None,
             "dominant_display": "Multi-IA (auto): el router elige el especialista por tarea",
-            "available_models": [], "provider_connect_urls": provider_connect_urls, "provider_options": provider_options,
+            "available_models": [],
+            "provider_connect_urls": provider_connect_urls,
+            "provider_options": provider_options,
             "credentials": credentials,
         }
 
@@ -750,31 +982,35 @@ def brain_status_alias():
     """Estado del cerebro para dashboard modals."""
     try:
         from modules.humanoid.ai.brain_state import get_brain_state
+
         state = get_brain_state()
-        
+
         # Verificar si hay modelos disponibles (Ollama online)
         ollama_online = _brain_ollama_available_timeout(2.0)
-        
+
         # Contar goals activos (placeholder - integrar con sistema real)
         active_goals = 0
-        
+
         # Contar memorias (placeholder - integrar con lifelog)
         memory_entries = 0
         try:
-            from modules.humanoid.cognitive.memory.lifelog import get_lifelog_stats
+            from modules.humanoid.cognitive.memory.lifelog import \
+                get_lifelog_stats
+
             stats = get_lifelog_stats()
             memory_entries = stats.get("total_entries", 0)
         except:
             pass
-        
+
         # Calcular uptime
         uptime_hours = 0
         try:
             from modules.humanoid.deploy.healthcheck import get_uptime_seconds
+
             uptime_hours = int(get_uptime_seconds() / 3600)
         except:
             pass
-        
+
         return {
             "ok": True,
             "online": ollama_online,  # Brain está online si Ollama responde
@@ -802,6 +1038,7 @@ def api_quality_pots_list(
     """Lista todos los POTs registrados con filtros opcionales."""
     try:
         from modules.humanoid.quality.registry import list_pots
+
         pots = list_pots(category=category, severity=severity)
         return {"ok": True, "pots": pots, "count": len(pots)}
     except Exception as e:
@@ -813,6 +1050,7 @@ def api_quality_executions_recent(limit: int = 10):
     """Obtiene historial reciente de ejecuciones de POTs."""
     try:
         from modules.humanoid.quality.dispatcher import get_dispatcher
+
         dispatcher = get_dispatcher()
         if dispatcher:
             history = dispatcher.get_history(limit=limit)
@@ -828,9 +1066,10 @@ def api_nervous_status():
     """Estado del sistema nervioso central."""
     try:
         from modules.humanoid.quality.dispatcher import get_dispatcher
+
         dispatcher = get_dispatcher()
         stats = dispatcher.get_stats() if dispatcher else {}
-        
+
         return {
             "ok": True,
             "signals_per_min": stats.get("dispatches_per_minute", 0),
@@ -848,28 +1087,30 @@ def api_ans_status():
     """Estado del Sistema Nervioso Autónomo."""
     try:
         from modules.humanoid.quality.dispatcher import get_dispatcher
-        
+
         dispatcher = get_dispatcher()
         stats = dispatcher.get_stats() if dispatcher else {}
-        
+
         # Obtener incidentes resueltos
         incidents_resolved = 0
         try:
             from modules.humanoid.ans.store import IncidentStore
+
             store = IncidentStore()
             incidents = store.list_incidents(status="resolved", limit=100)
             incidents_resolved = len(incidents)
         except:
             pass
-        
+
         # Calcular uptime desde healthcheck
         uptime_hours = 0
         try:
             from modules.humanoid.deploy.healthcheck import get_uptime_seconds
+
             uptime_hours = int(get_uptime_seconds() / 3600)
         except:
             pass
-        
+
         return {
             "ok": True,
             "cycles_completed": stats.get("total_dispatches", 0),
@@ -887,6 +1128,7 @@ def api_brain_state_post(body: BrainStateBody):
     """Fija modo (auto/manual) y/o modelo override. En auto se ignora override."""
     try:
         from modules.humanoid.ai.brain_state import set_brain_state
+
         state = set_brain_state(mode=body.mode, override_model=body.override_model)
         return {"ok": True, "state": state}
     except Exception as e:
@@ -897,18 +1139,20 @@ def api_brain_state_post(body: BrainStateBody):
 def supervisor_advise(payload: dict):
     """
     Supervisor LLM - Genera recomendaciones y prompts para el Owner (Raúl).
-    
+
     Usa arquitectura híbrida: Ollama (local) + OpenAI (cloud) con fallback automático.
     """
     try:
         from atlas_adapter.llm.supervisor import Supervisor
         from atlas_adapter.supervisor_policy import set_supervisor_policy
-        
+
         supervisor = Supervisor()
         objective = payload.get("objective", "Revisar estado del sistema")
         context = payload.get("context", {})
         user_id = (payload.get("user_id") or "owner").strip() or "owner"
-        thread_id = _ensure_thread_id(payload.get("thread_id"), title="Supervisor", user_id=user_id)
+        thread_id = _ensure_thread_id(
+            payload.get("thread_id"), title="Supervisor", user_id=user_id
+        )
 
         # If user pasted a supervisor policy into objective, store it and skip normal advise.
         # This prevents polluting the thread memory with long policy text that later gets "repeated".
@@ -916,7 +1160,11 @@ def supervisor_advise(payload: dict):
             obj_txt = str(objective or "").strip()
             head = obj_txt[:900].lower()
             looks_like_policy = (
-                ("supervisor residente" in head or "no eres un chatbot pasivo" in head or "cero errores" in head)
+                (
+                    "supervisor residente" in head
+                    or "no eres un chatbot pasivo" in head
+                    or "cero errores" in head
+                )
                 and ("objetivo principal" in head or "monitoreo continuo" in head)
                 and len(obj_txt) > 200
             )
@@ -928,7 +1176,12 @@ def supervisor_advise(payload: dict):
                         "ok": bool(saved.get("ok", True)),
                         "analysis": "OK: Política residente del Supervisor guardada. A partir de ahora se aplica automáticamente.",
                         "snapshot": {},
-                        "diagnosis": {"severity": "healthy", "issues": [], "warnings": [], "ok_items": ["policy_saved"]},
+                        "diagnosis": {
+                            "severity": "healthy",
+                            "issues": [],
+                            "warnings": [],
+                            "ok_items": ["policy_saved"],
+                        },
                         "actions": [],
                         "recommendations": [],
                     },
@@ -942,29 +1195,45 @@ def supervisor_advise(payload: dict):
         mgr = _get_chat_manager()
         if mgr and thread_id:
             try:
-                mgr.add_message(thread_id, sender=user_id, role="user", content=str(objective), metadata={"panel": "supervisor", "kind": "advise"})
+                mgr.add_message(
+                    thread_id,
+                    sender=user_id,
+                    role="user",
+                    content=str(objective),
+                    metadata={"panel": "supervisor", "kind": "advise"},
+                )
             except Exception:
                 pass
             # Enrich context with thread memory (resumen + últimos mensajes)
             try:
                 context = dict(context or {})
                 context["_thread_id"] = thread_id
-                context["_thread_memory"] = _llm_history_for_thread(thread_id, max_messages=18)
+                context["_thread_memory"] = _llm_history_for_thread(
+                    thread_id, max_messages=18
+                )
             except Exception:
                 pass
-        
+
         result = supervisor.advise(objective, context)
 
         # Persist assistant output + update rolling summary
         if mgr and thread_id:
             try:
-                analysis_txt = (result.get("analysis") or "") if isinstance(result, dict) else ""
+                analysis_txt = (
+                    (result.get("analysis") or "") if isinstance(result, dict) else ""
+                )
                 if analysis_txt:
-                    mgr.add_message(thread_id, sender="supervisor", role="assistant", content=str(analysis_txt), metadata={"panel": "supervisor", "kind": "advise"})
+                    mgr.add_message(
+                        thread_id,
+                        sender="supervisor",
+                        role="assistant",
+                        content=str(analysis_txt),
+                        metadata={"panel": "supervisor", "kind": "advise"},
+                    )
                     _update_thread_summary(thread_id, str(objective), str(analysis_txt))
             except Exception:
                 pass
-        
+
         return {
             "ok": result.get("ok", True),
             "result": result,
@@ -977,7 +1246,7 @@ def supervisor_advise(payload: dict):
             "result": {
                 "recommendations": [],
                 "prompts": [],
-                "analysis": f"Error: {str(e)}"
+                "analysis": f"Error: {str(e)}",
             },
             "thread_id": payload.get("thread_id"),
         }
@@ -1013,12 +1282,15 @@ def supervisor_investigate(payload: dict):
     Body: { objective: str, context?: {} }
     """
     from fastapi.responses import StreamingResponse
+
     from atlas_adapter.llm.supervisor import Supervisor
 
     objective = payload.get("objective", "Revisar estado del sistema")
     context = payload.get("context", {})
     user_id = (payload.get("user_id") or "owner").strip() or "owner"
-    thread_id = _ensure_thread_id(payload.get("thread_id"), title="Supervisor", user_id=user_id)
+    thread_id = _ensure_thread_id(
+        payload.get("thread_id"), title="Supervisor", user_id=user_id
+    )
 
     # If user pasted a supervisor policy into objective, store it and short-circuit investigation stream.
     try:
@@ -1027,7 +1299,11 @@ def supervisor_investigate(payload: dict):
         obj_txt = str(objective or "").strip()
         head = obj_txt[:900].lower()
         looks_like_policy = (
-            ("supervisor residente" in head or "no eres un chatbot pasivo" in head or "cero errores" in head)
+            (
+                "supervisor residente" in head
+                or "no eres un chatbot pasivo" in head
+                or "cero errores" in head
+            )
             and ("objetivo principal" in head or "monitoreo continuo" in head)
             and len(obj_txt) > 200
         )
@@ -1038,8 +1314,21 @@ def supervisor_investigate(payload: dict):
             def _policy_stream():
                 if thread_id:
                     yield f"event: thread\ndata: {json.dumps({'thread_id': thread_id}, ensure_ascii=False)}\n\n"
-                yield "event: text\ndata: " + json.dumps({"content": "OK: Política residente del Supervisor guardada. Se aplicará automáticamente."}, ensure_ascii=False) + "\n\n"
-                yield "event: done\ndata: " + json.dumps({"iterations": 0, "tools_used": [], "ms": 0, "policy_saved": bool(saved.get("ok", True))}, ensure_ascii=False) + "\n\n"
+                yield "event: text\ndata: " + json.dumps(
+                    {
+                        "content": "OK: Política residente del Supervisor guardada. Se aplicará automáticamente."
+                    },
+                    ensure_ascii=False,
+                ) + "\n\n"
+                yield "event: done\ndata: " + json.dumps(
+                    {
+                        "iterations": 0,
+                        "tools_used": [],
+                        "ms": 0,
+                        "policy_saved": bool(saved.get("ok", True)),
+                    },
+                    ensure_ascii=False,
+                ) + "\n\n"
                 yield "event: close\ndata: {}\n\n"
 
             return StreamingResponse(_policy_stream(), media_type="text/event-stream")
@@ -1051,7 +1340,9 @@ def supervisor_investigate(payload: dict):
         context = dict(context or {})
         if thread_id:
             context["_thread_id"] = thread_id
-            context["_thread_memory"] = _llm_history_for_thread(thread_id, max_messages=18)
+            context["_thread_memory"] = _llm_history_for_thread(
+                thread_id, max_messages=18
+            )
     except Exception:
         pass
 
@@ -1061,7 +1352,13 @@ def supervisor_investigate(payload: dict):
         mgr = _get_chat_manager()
         if mgr and thread_id:
             try:
-                mgr.add_message(thread_id, sender=user_id, role="user", content=str(objective), metadata={"panel": "supervisor", "kind": "investigate"})
+                mgr.add_message(
+                    thread_id,
+                    sender=user_id,
+                    role="user",
+                    content=str(objective),
+                    metadata={"panel": "supervisor", "kind": "investigate"},
+                )
             except Exception:
                 pass
         # Emit thread id early so UI can persist it
@@ -1090,7 +1387,13 @@ def supervisor_investigate(payload: dict):
         # Persist final assistant output + update summary
         try:
             if mgr and thread_id and final_text:
-                mgr.add_message(thread_id, sender="supervisor", role="assistant", content=final_text, metadata={"panel": "supervisor", "kind": "investigate"})
+                mgr.add_message(
+                    thread_id,
+                    sender="supervisor",
+                    role="assistant",
+                    content=final_text,
+                    metadata={"panel": "supervisor", "kind": "investigate"},
+                )
                 _update_thread_summary(thread_id, str(objective), final_text)
         except Exception:
             pass
@@ -1104,6 +1407,7 @@ def supervisor_daemon_status():
     """Estado del Supervisor residente (daemon)."""
     try:
         from atlas_adapter.supervisor_daemon import get_supervisor_daemon
+
         return get_supervisor_daemon().status()
     except Exception as e:
         return {"ok": False, "error": str(e)[:200], "data": {}}
@@ -1114,7 +1418,11 @@ def supervisor_directives(status: str = "", limit: int = 50):
     """Cola de directivas internas del Supervisor (persistidas en autonomy_tasks.db)."""
     try:
         from atlas_adapter.supervisor_daemon import list_supervisor_directives
-        return {"ok": True, "data": list_supervisor_directives(status=status or None, limit=limit)}
+
+        return {
+            "ok": True,
+            "data": list_supervisor_directives(status=status or None, limit=limit),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)[:200], "data": []}
 
@@ -1123,7 +1431,9 @@ def supervisor_directives(status: str = "", limit: int = 50):
 def api_brain_credentials_status():
     """Estado de API keys por proveedor (configured, masked). Nunca devuelve la clave en claro."""
     try:
-        from modules.humanoid.ai.provider_credentials import get_credentials_status
+        from modules.humanoid.ai.provider_credentials import \
+            get_credentials_status
+
         return {"ok": True, "credentials": get_credentials_status()}
     except Exception as e:
         return {"ok": False, "error": str(e), "credentials": {}}
@@ -1138,10 +1448,16 @@ def api_brain_credentials_load_vault():
     """
     try:
         from pathlib import Path
-        from dotenv import load_dotenv
-        from modules.humanoid.ai.provider_credentials import set_provider_api_key, get_credentials_status
 
-        vault_path = (os.getenv("ATLAS_VAULT_PATH") or r"C:\Users\Raul\OneDrive\RAUL - Personal\Escritorio\credenciales.txt").strip()
+        from dotenv import load_dotenv
+
+        from modules.humanoid.ai.provider_credentials import (
+            get_credentials_status, set_provider_api_key)
+
+        vault_path = (
+            os.getenv("ATLAS_VAULT_PATH")
+            or r"C:\Users\Raul\OneDrive\RAUL - Personal\Escritorio\credenciales.txt"
+        ).strip()
         candidates = [vault_path, r"C:\dev\credenciales.txt"]
         used = ""
         for c in candidates:
@@ -1151,7 +1467,12 @@ def api_brain_credentials_load_vault():
                 load_dotenv(str(p), override=True)
                 break
         if not used:
-            return {"ok": False, "error": "vault_not_found", "vault_candidates": candidates, "credentials": get_credentials_status()}
+            return {
+                "ok": False,
+                "error": "vault_not_found",
+                "vault_candidates": candidates,
+                "credentials": get_credentials_status(),
+            }
 
         mapping = {
             "openai": "OPENAI_API_KEY",
@@ -1168,7 +1489,12 @@ def api_brain_credentials_load_vault():
                     loaded.append(pid)
                 except Exception:
                     pass
-        return {"ok": True, "vault_path": used, "loaded_providers": loaded, "credentials": get_credentials_status()}
+        return {
+            "ok": True,
+            "vault_path": used,
+            "loaded_providers": loaded,
+            "credentials": get_credentials_status(),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e), "credentials": {}}
 
@@ -1177,9 +1503,13 @@ def api_brain_credentials_load_vault():
 def api_brain_credentials_post(body: ProviderCredentialBody):
     """Guarda o borra la API key de un proveedor (openai, anthropic, gemini, perplexity). La clave se guarda en config y el robot la usa para ese proveedor."""
     try:
-        from modules.humanoid.ai.provider_credentials import set_provider_api_key
+        from modules.humanoid.ai.provider_credentials import \
+            set_provider_api_key
+
         set_provider_api_key(body.provider_id, body.api_key)
-        from modules.humanoid.ai.provider_credentials import get_credentials_status
+        from modules.humanoid.ai.provider_credentials import \
+            get_credentials_status
+
         return {"ok": True, "credentials": get_credentials_status()}
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -1192,14 +1522,29 @@ def api_brain_models():
     """Lista de modelos disponibles (free + suscripción/API) para el selector del cerebro."""
     try:
         from modules.humanoid.ai.registry import get_model_specs
+
         ollama_ok = _brain_ollama_available_timeout(2.0)
         specs = get_model_specs(ollama_ok)
         free = [s for s in specs if s.is_free]
         paid = [s for s in specs if not s.is_free]
         return {
             "ok": True,
-            "free": [{"full_key": s.full_key, "label": "%s (%s)" % (s.model_name, s.route), "route": s.route} for s in free],
-            "paid": [{"full_key": s.full_key, "label": "%s (%s)" % (s.model_name, s.route), "route": s.route} for s in paid],
+            "free": [
+                {
+                    "full_key": s.full_key,
+                    "label": "%s (%s)" % (s.model_name, s.route),
+                    "route": s.route,
+                }
+                for s in free
+            ],
+            "paid": [
+                {
+                    "full_key": s.full_key,
+                    "label": "%s (%s)" % (s.model_name, s.route),
+                    "route": s.route,
+                }
+                for s in paid
+            ],
         }
     except Exception as e:
         return {"ok": False, "error": str(e), "free": [], "paid": []}
@@ -1207,34 +1552,49 @@ def api_brain_models():
 
 # ---------- Fase 2: Vision (depth + scene) ----------
 @app.post("/api/vision/depth/estimate", tags=["Vision"])
-async def api_vision_depth_estimate(file: UploadFile = File(..., description="Image file")):
+async def api_vision_depth_estimate(
+    file: UploadFile = File(..., description="Image file")
+):
     """Estima mapa de profundidad desde imagen. Devuelve depth coloreado base64 y shape."""
     try:
-        import numpy as np
-        import cv2
         import base64
+
+        import cv2
+        import numpy as np
+
         contents = await file.read()
         arr = np.frombuffer(contents, dtype=np.uint8)
         frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
         if frame is None:
             return {"ok": False, "error": "invalid image"}
-        from modules.humanoid.vision.depth_estimation import estimate_depth, depth_map_to_colored
+        from modules.humanoid.vision.depth_estimation import (
+            depth_map_to_colored, estimate_depth)
+
         depth = estimate_depth(frame)
         colored = depth_map_to_colored(depth)
         _, buf = cv2.imencode(".png", colored)
         b64 = base64.b64encode(buf).decode("utf-8")
-        return {"ok": True, "depth_map_b64": b64, "shape": list(depth.shape), "dtype": str(depth.dtype)}
+        return {
+            "ok": True,
+            "depth_map_b64": b64,
+            "shape": list(depth.shape),
+            "dtype": str(depth.dtype),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 @app.post("/api/vision/scene/describe", tags=["Vision"])
-async def api_vision_scene_describe(file: UploadFile = File(..., description="Image file"), detail_level: str = "medium"):
+async def api_vision_scene_describe(
+    file: UploadFile = File(..., description="Image file"), detail_level: str = "medium"
+):
     """Descripción de escena desde imagen. detail_level: brief | medium | detailed."""
     try:
-        import numpy as np
         import cv2
+        import numpy as np
+
         from modules.humanoid.vision.scene_understanding import describe_scene
+
         contents = await file.read()
         arr = np.frombuffer(contents, dtype=np.uint8)
         frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
@@ -1271,6 +1631,7 @@ _maml_instance = None
 
 class MetaAdaptBody(BaseModel):
     """Body para POST /api/meta-learning/adapt."""
+
     demonstrations: List[dict] = []
     num_steps: int = 5
 
@@ -1282,9 +1643,12 @@ def _get_maml():
         return _maml_instance
     try:
         from autonomous.learning.meta_learning.maml import MAML
+
         if MAML is None:
             return None
-        _maml_instance = MAML(state_dim=128, action_dim=64, meta_lr=1e-3, inner_lr=1e-2, inner_steps=5)
+        _maml_instance = MAML(
+            state_dim=128, action_dim=64, meta_lr=1e-3, inner_lr=1e-2, inner_steps=5
+        )
         return _maml_instance
     except Exception:
         return None
@@ -1298,13 +1662,20 @@ def api_meta_learning_train(num_tasks: int = 8, num_steps: int = 100):
         return {"status": "error", "error": "MAML no disponible (PyTorch requerido)"}
     try:
         import numpy as np
+
         results = []
         for step in range(num_steps):
             metrics = maml.meta_train_step(num_tasks=num_tasks)
             if "error" in metrics:
                 return {"status": "error", "error": metrics["error"]}
             if step % 10 == 0:
-                results.append({"step": step, "meta_loss": metrics["meta_loss"], "avg_task_loss": metrics["avg_task_loss"]})
+                results.append(
+                    {
+                        "step": step,
+                        "meta_loss": metrics["meta_loss"],
+                        "avg_task_loss": metrics["avg_task_loss"],
+                    }
+                )
         snap_dir = BASE_DIR / "snapshots"
         snap_dir.mkdir(parents=True, exist_ok=True)
         maml.save_checkpoint(str(snap_dir / "maml_checkpoint.pt"))
@@ -1328,14 +1699,22 @@ def api_meta_learning_adapt(body: MetaAdaptBody):
     num_steps = body.num_steps or 5
     try:
         import numpy as np
+
         demo_tuples = [
-            (np.array(d.get("state", [])), np.array(d.get("action", [])), float(d.get("reward", 0)))
+            (
+                np.array(d.get("state", [])),
+                np.array(d.get("action", [])),
+                float(d.get("reward", 0)),
+            )
             for d in demonstrations
         ]
-        adapted_policy = maml.adapt_to_new_task(demo_tuples, num_adaptation_steps=num_steps)
+        adapted_policy = maml.adapt_to_new_task(
+            demo_tuples, num_adaptation_steps=num_steps
+        )
         snap_dir = BASE_DIR / "snapshots"
         snap_dir.mkdir(parents=True, exist_ok=True)
         import torch
+
         torch.save(adapted_policy.state_dict(), str(snap_dir / "adapted_policy.pt"))
         return {
             "status": "adapted",
@@ -1362,13 +1741,17 @@ def api_meta_learning_stats():
 
 
 @app.post("/api/meta-learning/generate-tasks", tags=["MetaLearning"])
-def api_meta_learning_generate_tasks(task_type: str = "navigation", num_tasks: int = 50):
+def api_meta_learning_generate_tasks(
+    task_type: str = "navigation", num_tasks: int = 50
+):
     """Generar tareas sintéticas para meta-entrenamiento."""
     maml = _get_maml()
     if maml is None:
         return {"status": "error", "error": "MAML no disponible (PyTorch requerido)"}
     try:
-        from autonomous.learning.meta_learning.task_generator import TaskGenerator
+        from autonomous.learning.meta_learning.task_generator import \
+            TaskGenerator
+
         if task_type == "navigation":
             tasks = TaskGenerator.generate_navigation_tasks(num_tasks)
         elif task_type == "manipulation":
@@ -1397,6 +1780,7 @@ def _get_causal_reasoner():
         return _causal_reasoner
     try:
         from brain.reasoning.causal_model import CausalReasoner
+
         _causal_reasoner = CausalReasoner()
         return _causal_reasoner
     except Exception:
@@ -1455,6 +1839,7 @@ def api_causal_counterfactual(domain: str, variable: str, value: float, reality:
 # ---------- Fase 4.3: Self-Programming ----------
 class SelfProgramValidateBody(BaseModel):
     """Body para POST /api/self-programming/validate."""
+
     code: str = ""
     function_name: str = "run"
     test_cases: List[dict] = []
@@ -1479,6 +1864,7 @@ def _get_skill_validator():
     if _skill_validator is None:
         try:
             from brain.self_programming.skill_sandbox import SkillValidator
+
             _skill_validator = SkillValidator()
         except Exception:
             pass
@@ -1490,6 +1876,7 @@ def _get_skill_optimizer():
     if _skill_optimizer is None:
         try:
             from brain.self_programming.skill_optimizer import SkillOptimizer
+
             _skill_optimizer = SkillOptimizer()
         except Exception:
             pass
@@ -1521,6 +1908,7 @@ def api_self_programming_execute_sandbox(body: SelfProgramExecuteBody):
     """Ejecuta código en sandbox Docker."""
     try:
         from brain.self_programming.skill_sandbox import SkillSandbox
+
         sandbox = SkillSandbox()
         return sandbox.execute_safely(
             body.code or "",
@@ -1539,8 +1927,9 @@ def robot_status():
     1) Backend Robot/NEXUS (8002 / NEXUS_ROBOT_URL)
     2) Fallback local USB (si hay cámara local disponible)
     """
-    import urllib.request
     import os
+    import urllib.request
+
     base_api = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
     base_ui = (os.getenv("NEXUS_ROBOT_URL") or base_api).rstrip("/")
     for base in (base_api, base_ui):
@@ -1548,17 +1937,39 @@ def robot_status():
             req = urllib.request.Request(base + "/", method="GET")
             with urllib.request.urlopen(req, timeout=3) as r:
                 if r.status == 200:
-                    return {"ok": True, "connected": True, "robot_url": base, "source": "robot", "local_fallback": False}
+                    return {
+                        "ok": True,
+                        "connected": True,
+                        "robot_url": base,
+                        "source": "robot",
+                        "local_fallback": False,
+                    }
         except Exception:
             pass
         try:
-            req = urllib.request.Request(base + "/api/camera/service/status", method="GET", headers={"Accept": "application/json"})
+            req = urllib.request.Request(
+                base + "/api/camera/service/status",
+                method="GET",
+                headers={"Accept": "application/json"},
+            )
             with urllib.request.urlopen(req, timeout=3) as r:
                 if r.status == 200:
-                    return {"ok": True, "connected": True, "robot_url": base, "source": "robot", "local_fallback": False}
+                    return {
+                        "ok": True,
+                        "connected": True,
+                        "robot_url": base,
+                        "source": "robot",
+                        "local_fallback": False,
+                    }
         except Exception:
             pass
-    return {"ok": False, "connected": False, "robot_url": base_ui or base_api, "source": "none", "local_fallback": False}
+    return {
+        "ok": False,
+        "connected": False,
+        "robot_url": base_ui or base_api,
+        "source": "none",
+        "local_fallback": False,
+    }
 
 
 @app.post("/api/robot/reconnect", tags=["NEXUS"])
@@ -1567,26 +1978,49 @@ def robot_reconnect():
     import subprocess
     import urllib.request
     from pathlib import Path
+
     if ENV_PATH.exists():
         try:
             from dotenv import load_dotenv
+
             load_dotenv(ENV_PATH, override=True)
         except Exception:
             pass
-    robot_path = Path(os.getenv("NEXUS_ROBOT_PATH") or str(BASE_DIR / "nexus" / "atlas_nexus_robot" / "backend"))
+    robot_path = Path(
+        os.getenv("NEXUS_ROBOT_PATH")
+        or str(BASE_DIR / "nexus" / "atlas_nexus_robot" / "backend")
+    )
     base_api = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
     repo_root = BASE_DIR
     script = repo_root / "scripts" / "start_nexus_services.py"
     if not script.exists():
-        return {"ok": False, "connected": False, "robot_url": base_api, "message": "Script no encontrado.", "robot_path": str(robot_path)}
+        return {
+            "ok": False,
+            "connected": False,
+            "robot_url": base_api,
+            "message": "Script no encontrado.",
+            "robot_path": str(robot_path),
+        }
     if not robot_path.exists():
-        return {"ok": False, "connected": False, "robot_url": base_api, "message": "Carpeta del Robot no existe: " + str(robot_path), "robot_path": str(robot_path)}
+        return {
+            "ok": False,
+            "connected": False,
+            "robot_url": base_api,
+            "message": "Carpeta del Robot no existe: " + str(robot_path),
+            "robot_path": str(robot_path),
+        }
     try:
         py = os.getenv("PYTHON", "python")
-        flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+        flags = (
+            subprocess.CREATE_NO_WINDOW
+            if hasattr(subprocess, "CREATE_NO_WINDOW")
+            else 0
+        )
         env = os.environ.copy()
         env["NEXUS_ROBOT_PATH"] = str(robot_path)
-        env["NEXUS_ATLAS_PATH"] = os.getenv("NEXUS_ATLAS_PATH") or str(repo_root / "nexus" / "atlas_nexus")
+        env["NEXUS_ATLAS_PATH"] = os.getenv("NEXUS_ATLAS_PATH") or str(
+            repo_root / "nexus" / "atlas_nexus"
+        )
         r = subprocess.run(
             [py, str(script), "--robot-only"],
             cwd=str(repo_root),
@@ -1598,12 +2032,37 @@ def robot_reconnect():
         )
         out = (r.stdout or "").strip() or (r.stderr or "")[:200]
         if "Robot" in out:
-            return {"ok": True, "connected": False, "robot_url": base_api, "message": "Robot arrancando. Espera 10-15 s y pulsa «Actualizar cámaras».", "robot_path": str(robot_path)}
-        return {"ok": False, "connected": False, "robot_url": base_api, "message": "No arrancó (salida: %s). Comprueba que en %s exista main.py." % (out or "vacío", robot_path), "robot_path": str(robot_path)}
+            return {
+                "ok": True,
+                "connected": False,
+                "robot_url": base_api,
+                "message": "Robot arrancando. Espera 10-15 s y pulsa «Actualizar cámaras».",
+                "robot_path": str(robot_path),
+            }
+        return {
+            "ok": False,
+            "connected": False,
+            "robot_url": base_api,
+            "message": "No arrancó (salida: %s). Comprueba que en %s exista main.py."
+            % (out or "vacío", robot_path),
+            "robot_path": str(robot_path),
+        }
     except subprocess.TimeoutExpired:
-        return {"ok": False, "connected": False, "robot_url": base_api, "message": "Script tardó demasiado.", "robot_path": str(robot_path)}
+        return {
+            "ok": False,
+            "connected": False,
+            "robot_url": base_api,
+            "message": "Script tardó demasiado.",
+            "robot_path": str(robot_path),
+        }
     except Exception as e:
-        return {"ok": False, "connected": False, "robot_url": base_api, "message": str(e), "robot_path": str(robot_path)}
+        return {
+            "ok": False,
+            "connected": False,
+            "robot_url": base_api,
+            "message": str(e),
+            "robot_path": str(robot_path),
+        }
 
 
 @app.post("/api/cuerpo/reconnect", tags=["NEXUS"])
@@ -1611,25 +2070,48 @@ def cuerpo_reconnect():
     """Arranca Cuerpo completo (NEXUS 8000 + Robot 8002). Responde rápido (no-bloqueante)."""
     import subprocess
     from pathlib import Path
+
     if ENV_PATH.exists():
         try:
             from dotenv import load_dotenv
+
             load_dotenv(ENV_PATH, override=True)
         except Exception:
             pass
     repo_root = BASE_DIR
     script = repo_root / "scripts" / "start_nexus_services.py"
-    nexus_path = Path(os.getenv("NEXUS_ATLAS_PATH") or str(repo_root / "nexus" / "atlas_nexus"))
-    robot_path = Path(os.getenv("NEXUS_ROBOT_PATH") or str(repo_root / "nexus" / "atlas_nexus_robot" / "backend"))
+    nexus_path = Path(
+        os.getenv("NEXUS_ATLAS_PATH") or str(repo_root / "nexus" / "atlas_nexus")
+    )
+    robot_path = Path(
+        os.getenv("NEXUS_ROBOT_PATH")
+        or str(repo_root / "nexus" / "atlas_nexus_robot" / "backend")
+    )
     if not script.exists():
-        return {"ok": False, "started": False, "message": "Script no encontrado: scripts/start_nexus_services.py"}
+        return {
+            "ok": False,
+            "started": False,
+            "message": "Script no encontrado: scripts/start_nexus_services.py",
+        }
     if not nexus_path.exists():
-        return {"ok": False, "started": False, "message": "Carpeta NEXUS no existe: " + str(nexus_path)}
+        return {
+            "ok": False,
+            "started": False,
+            "message": "Carpeta NEXUS no existe: " + str(nexus_path),
+        }
     if not robot_path.exists():
-        return {"ok": False, "started": False, "message": "Carpeta Robot no existe: " + str(robot_path)}
+        return {
+            "ok": False,
+            "started": False,
+            "message": "Carpeta Robot no existe: " + str(robot_path),
+        }
     try:
         py = os.getenv("PYTHON", "python")
-        flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+        flags = (
+            subprocess.CREATE_NO_WINDOW
+            if hasattr(subprocess, "CREATE_NO_WINDOW")
+            else 0
+        )
         env = os.environ.copy()
         env["NEXUS_ATLAS_PATH"] = str(nexus_path)
         env["NEXUS_ROBOT_PATH"] = str(robot_path)
@@ -1651,7 +2133,11 @@ def cuerpo_reconnect():
             "output": out,
         }
     except subprocess.TimeoutExpired:
-        return {"ok": True, "started": True, "message": "Cuerpo lanzado (timeout corto). Espera 10-20s y revisa Estado."}
+        return {
+            "ok": True,
+            "started": True,
+            "message": "Cuerpo lanzado (timeout corto). Espera 10-20s y revisa Estado.",
+        }
     except Exception as e:
         return {"ok": False, "started": False, "message": str(e)}
 
@@ -1662,19 +2148,29 @@ def robot_start_commands():
     if ENV_PATH.exists():
         try:
             from dotenv import load_dotenv
+
             load_dotenv(ENV_PATH, override=True)
         except Exception:
             pass
-    robot_path = Path(os.getenv("NEXUS_ROBOT_PATH") or str(BASE_DIR / "nexus" / "atlas_nexus_robot" / "backend"))
-    nexus_path = Path(os.getenv("NEXUS_ATLAS_PATH") or str(BASE_DIR / "nexus" / "atlas_nexus"))
+    robot_path = Path(
+        os.getenv("NEXUS_ROBOT_PATH")
+        or str(BASE_DIR / "nexus" / "atlas_nexus_robot" / "backend")
+    )
+    nexus_path = Path(
+        os.getenv("NEXUS_ATLAS_PATH") or str(BASE_DIR / "nexus" / "atlas_nexus")
+    )
     py = os.getenv("PYTHON", "python")
     return {
         "ok": True,
         "robot_path": str(robot_path),
         "nexus_path": str(nexus_path),
         "commands": {
-            "robot": "cd /d \"%s\" && %s main.py" % (robot_path, py) if os.name == "nt" else "cd \"%s\" && %s main.py" % (robot_path, py),
-            "nexus": "cd /d \"%s\" && %s nexus.py --mode api" % (nexus_path, py) if os.name == "nt" else "cd \"%s\" && %s nexus.py --mode api" % (nexus_path, py),
+            "robot": 'cd /d "%s" && %s main.py' % (robot_path, py)
+            if os.name == "nt"
+            else 'cd "%s" && %s main.py' % (robot_path, py),
+            "nexus": 'cd /d "%s" && %s nexus.py --mode api' % (nexus_path, py)
+            if os.name == "nt"
+            else 'cd "%s" && %s nexus.py --mode api' % (nexus_path, py),
         },
         "hint": "Abre dos terminales, ejecuta uno en cada una. Robot usa puerto 8002, NEXUS 8000.",
     }
@@ -1694,7 +2190,7 @@ def _tail_text_file(path: Path, max_bytes: int = 65536, lines: int = 200) -> str
             data = f.read()
         text = data.decode("utf-8", errors="replace")
         parts = text.splitlines()
-        return "\n".join(parts[-max(1, int(lines)):])
+        return "\n".join(parts[-max(1, int(lines)) :])
     except Exception:
         return ""
 
@@ -1703,14 +2199,24 @@ def _tail_text_file(path: Path, max_bytes: int = 65536, lines: int = 200) -> str
 def robot_log_tail(lines: int = 200):
     """Últimas líneas del log del backend Robot (arranque/errores)."""
     p = BASE_DIR / "logs" / "robot_backend.log"
-    return {"ok": True, "path": str(p), "lines": int(lines), "text": _tail_text_file(p, lines=int(lines))}
+    return {
+        "ok": True,
+        "path": str(p),
+        "lines": int(lines),
+        "text": _tail_text_file(p, lines=int(lines)),
+    }
 
 
 @app.get("/api/nexus/log/tail", tags=["NEXUS"])
 def nexus_log_tail(lines: int = 200):
     """Últimas líneas del log de NEXUS (si se arrancó con script start_nexus_services)."""
     p = BASE_DIR / "logs" / "nexus_api.log"
-    return {"ok": True, "path": str(p), "lines": int(lines), "text": _tail_text_file(p, lines=int(lines))}
+    return {
+        "ok": True,
+        "path": str(p),
+        "lines": int(lines),
+        "text": _tail_text_file(p, lines=int(lines)),
+    }
 
 
 @app.get("/nervous/services", tags=["NEXUS"])
@@ -1723,11 +2229,13 @@ def nervous_services():
 def nerve_status():
     """Estado del nervio: ojos (Nexus disponible, snapshot_url), manos (local). Cerebro → Nexus/manos."""
     try:
-        from modules.humanoid.nerve import nerve_eyes_status, feet_status
+        from modules.humanoid.nerve import feet_status, nerve_eyes_status
+
         eyes = nerve_eyes_status()
         hands_deps_ok = None
         try:
             from modules.humanoid.screen.status import _screen_deps_ok as _ok
+
             hands_deps_ok = bool(_ok())
         except Exception:
             hands_deps_ok = None
@@ -1750,6 +2258,7 @@ def api_feet_execute(body: dict):
     """
     try:
         from modules.humanoid.nerve import feet_execute
+
         cmd = (body or {}).get("command") or ""
         payload = (body or {}).get("payload") or {}
         return feet_execute(str(cmd), payload if isinstance(payload, dict) else {})
@@ -1798,23 +2307,39 @@ def api_workspace_terminal_execute(body: WorkspaceTerminalBody):
     t0 = time.perf_counter()
     cmd = (body.command or "").strip()
     if not cmd:
-        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "command is required")
+        return _std_resp(
+            False, None, int((time.perf_counter() - t0) * 1000), "command is required"
+        )
     try:
         from modules.humanoid import get_humanoid_kernel
         from modules.humanoid.policy import ActorContext, get_policy_engine
 
-        actor = ActorContext(actor=(body.actor or "workspace"), role=(body.role or "owner"))
+        actor = ActorContext(
+            actor=(body.actor or "workspace"), role=(body.role or "owner")
+        )
         decision = get_policy_engine().can(actor, "hands", "exec_command", target=cmd)
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason or "policy denied")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                decision.reason or "policy denied",
+            )
 
         k = get_humanoid_kernel()
         hands = k.registry.get("hands") if k else None
         if not hands or not hasattr(hands, "shell"):
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "hands module not available")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "hands module not available",
+            )
 
         timeout_sec = max(5, min(int(body.timeout_sec or 90), 300))
-        result = hands.shell.run(cmd, cwd=(body.cwd or None), timeout_sec=timeout_sec, actor=actor)
+        result = hands.shell.run(
+            cmd, cwd=(body.cwd or None), timeout_sec=timeout_sec, actor=actor
+        )
         ms = int((time.perf_counter() - t0) * 1000)
         data = {
             "cmd": cmd,
@@ -1831,7 +2356,9 @@ def api_workspace_terminal_execute(body: WorkspaceTerminalBody):
 
 
 class WorkspaceNavigateBody(BaseModel):
-    action: str = "open_url"  # open_url|click|fill|extract_text|screenshot|close|workflow
+    action: str = (
+        "open_url"  # open_url|click|fill|extract_text|screenshot|close|workflow
+    )
     payload: Optional[dict] = None
 
 
@@ -1855,26 +2382,45 @@ async def api_workspace_chat_upload_image(file: UploadFile = File(...)):
                 ext = ".png"
 
         if content_type and not content_type.startswith("image/"):
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "only image files are allowed")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "only image files are allowed",
+            )
 
         raw = await file.read()
         if not raw:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "empty file")
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), "empty file"
+            )
         if len(raw) > 10 * 1024 * 1024:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "file too large (max 10MB)")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "file too large (max 10MB)",
+            )
 
         target_dir = (BASE_DIR / "snapshots" / "chat_uploads").resolve()
         target_dir.mkdir(parents=True, exist_ok=True)
         safe_name = f"chat_{int(time.time()*1000)}_{abs(hash(name)) % 100000}{ext}"
         dst = (target_dir / safe_name).resolve()
         if target_dir not in dst.parents and dst != target_dir:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "bad target path")
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), "bad target path"
+            )
         dst.write_bytes(raw)
 
         rel = f"snapshots/chat_uploads/{safe_name}".replace("\\", "/")
         url = f"/api/evidence/image?path={rel}"
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(True, {"name": safe_name, "path": rel, "url": url, "bytes": len(raw)}, ms, None)
+        return _std_resp(
+            True,
+            {"name": safe_name, "path": rel, "url": url, "bytes": len(raw)},
+            ms,
+            None,
+        )
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
@@ -1900,6 +2446,7 @@ def api_workspace_navigate(body: WorkspaceNavigateBody):
 # Open Interpreter — Motor de ejecucion autonoma del Workspace
 # -----------------------------------------------------------------------------
 
+
 class InterpreterExecuteBody(BaseModel):
     task: str
     model: Optional[str] = None
@@ -1918,7 +2465,9 @@ async def api_workspace_interpreter_execute(body: InterpreterExecuteBody):
 
     async def _sse_stream():
         try:
-            from modules.humanoid.hands.interpreter_bridge import execute_streaming
+            from modules.humanoid.hands.interpreter_bridge import \
+                execute_streaming
+
             async for chunk in execute_streaming(
                 task=task,
                 model=body.model,
@@ -1937,7 +2486,9 @@ def api_workspace_interpreter_status():
     """Return Open Interpreter engine status, available models and active sessions."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.hands.interpreter_bridge import interpreter_status
+        from modules.humanoid.hands.interpreter_bridge import \
+            interpreter_status
+
         data = interpreter_status()
         return _std_resp(True, data, int((time.perf_counter() - t0) * 1000), None)
     except Exception as e:
@@ -1949,7 +2500,9 @@ def api_workspace_interpreter_session_delete(session_id: str):
     """Close and dispose a specific interpreter session."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.hands.interpreter_bridge import get_session_manager
+        from modules.humanoid.hands.interpreter_bridge import \
+            get_session_manager
+
         ok = get_session_manager().close(session_id)
         ms = int((time.perf_counter() - t0) * 1000)
         if ok:
@@ -1964,10 +2517,17 @@ def api_workspace_interpreter_models():
     """List all AI models available for the interpreter engine."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.hands.interpreter_bridge import list_available_models, resolve_model
+        from modules.humanoid.hands.interpreter_bridge import (
+            list_available_models, resolve_model)
+
         models = list_available_models()
         default = resolve_model()
-        return _std_resp(True, {"models": models, "default": default, "total": len(models)}, int((time.perf_counter() - t0) * 1000), None)
+        return _std_resp(
+            True,
+            {"models": models, "default": default, "total": len(models)},
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
@@ -1981,6 +2541,7 @@ async def api_workspace_interpreter_quick(body: InterpreterExecuteBody):
         return _std_resp(False, None, 0, "task is required")
     try:
         from modules.humanoid.hands.interpreter_bridge import execute_quick
+
         result = await execute_quick(task=task, model=body.model)
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(result.get("ok", False), result, ms, result.get("error"))
@@ -1992,10 +2553,12 @@ async def api_workspace_interpreter_quick(body: InterpreterExecuteBody):
 # Primitivas (API) — wrappers explícitos por dominio (sin ejecutor genérico)
 # -----------------------------------------------------------------------------
 
+
 @app.get("/api/primitives/nexus/pulse-check", tags=["Primitives"])
 def api_prim_nexus_pulse_check():
     try:
         from modules.nexus_core.primitives import pulse_check
+
         return pulse_check()
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2005,12 +2568,27 @@ def api_prim_nexus_pulse_check():
 def api_prim_nexus_navigate_to(body: dict):
     try:
         from modules.nexus_core.primitives import navigate_to
+
         x = int((body or {}).get("x", 0))
         y = int((body or {}).get("y", 0))
         duration = float((body or {}).get("duration", 0.2) or 0.2)
-        expected_window = str((body or {}).get("expected_window") or (body or {}).get("expected_window_title") or "")
-        expected_process = str((body or {}).get("expected_process") or (body or {}).get("expected_exe") or "")
-        return navigate_to(x, y, duration=duration, expected_window=expected_window, expected_process=expected_process)
+        expected_window = str(
+            (body or {}).get("expected_window")
+            or (body or {}).get("expected_window_title")
+            or ""
+        )
+        expected_process = str(
+            (body or {}).get("expected_process")
+            or (body or {}).get("expected_exe")
+            or ""
+        )
+        return navigate_to(
+            x,
+            y,
+            duration=duration,
+            expected_window=expected_window,
+            expected_process=expected_process,
+        )
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -2019,6 +2597,7 @@ def api_prim_nexus_navigate_to(body: dict):
 def api_prim_nexus_reach_pose(body: dict):
     try:
         from modules.nexus_core.primitives import reach_pose
+
         pan = float((body or {}).get("pan", 0.0) or 0.0)
         tilt = float((body or {}).get("tilt", 0.0) or 0.0)
         zoom = float((body or {}).get("zoom", 1.0) or 1.0)
@@ -2032,6 +2611,7 @@ def api_prim_nexus_reach_pose(body: dict):
 def api_prim_nexus_grasp(body: dict):
     try:
         from modules.nexus_core.primitives import grasp
+
         target_id = str((body or {}).get("target_id") or "screen")
         region = (body or {}).get("region")
         region_t = None
@@ -2046,6 +2626,7 @@ def api_prim_nexus_grasp(body: dict):
 def api_prim_nexus_release(body: dict):
     try:
         from modules.nexus_core.primitives import release
+
         rid = str((body or {}).get("resource_id") or "")
         return release(rid)
     except Exception as e:
@@ -2056,6 +2637,7 @@ def api_prim_nexus_release(body: dict):
 def api_prim_vision_scan_network(body: dict):
     try:
         from modules.global_vision.primitives import scan_network
+
         protocol = str((body or {}).get("protocol") or "rtsp")
         return scan_network(protocol)
     except Exception as e:
@@ -2066,6 +2648,7 @@ def api_prim_vision_scan_network(body: dict):
 def api_prim_vision_stream_proxy(body: dict):
     try:
         from modules.global_vision.primitives import stream_proxy
+
         source_ip = str((body or {}).get("source_ip") or "")
         variant = str((body or {}).get("variant") or "mobile")
         return stream_proxy(source_ip, variant=variant)
@@ -2077,6 +2660,7 @@ def api_prim_vision_stream_proxy(body: dict):
 def api_prim_vision_perimeter_check(body: dict):
     try:
         from modules.global_vision.primitives import perimeter_check
+
         snapshot_limit = int((body or {}).get("snapshot_limit", 8) or 8)
         emit_ops = bool((body or {}).get("emit_ops", True))
         return perimeter_check(snapshot_limit=snapshot_limit, emit_ops=emit_ops)
@@ -2088,6 +2672,7 @@ def api_prim_vision_perimeter_check(body: dict):
 def api_prim_arch_create_environment(body: dict):
     try:
         from modules.atlas_architect.primitives import create_environment
+
         project_name = str((body or {}).get("project_name") or "")
         return create_environment(project_name)
     except Exception as e:
@@ -2098,6 +2683,7 @@ def api_prim_arch_create_environment(body: dict):
 def api_prim_arch_patch_code(body: dict):
     try:
         from modules.atlas_architect.primitives import patch_code
+
         file = str((body or {}).get("file") or "")
         pattern = str((body or {}).get("pattern") or "")
         replacement = str((body or {}).get("replacement") or "")
@@ -2111,6 +2697,7 @@ def api_prim_arch_patch_code(body: dict):
 def api_prim_arch_run_debug(body: dict):
     try:
         from modules.atlas_architect.primitives import run_debug
+
         script_path = str((body or {}).get("script_path") or "")
         max_attempts = int((body or {}).get("max_attempts", 3) or 3)
         cwd = str((body or {}).get("cwd") or "")
@@ -2123,6 +2710,7 @@ def api_prim_arch_run_debug(body: dict):
 def api_prim_arch_generate_docs(body: dict):
     try:
         from modules.atlas_architect.primitives import generate_docs
+
         ctx = (body or {}).get("app_context") or {}
         return generate_docs(ctx if isinstance(ctx, dict) else {})
     except Exception as e:
@@ -2133,6 +2721,7 @@ def api_prim_arch_generate_docs(body: dict):
 def api_prim_prod_schedule_event(body: dict):
     try:
         from modules.productividad.primitives import schedule_event
+
         title = str((body or {}).get("title") or "")
         time_text = str((body or {}).get("time") or (body or {}).get("time_text") or "")
         desc = str((body or {}).get("desc") or "")
@@ -2145,6 +2734,7 @@ def api_prim_prod_schedule_event(body: dict):
 def api_prim_prod_check_rauli_inventory(body: dict):
     try:
         from modules.productividad.primitives import check_rauli_inventory
+
         camera_id = str((body or {}).get("camera_id") or "")
         use_llm = bool((body or {}).get("use_llm_vision", False))
         return check_rauli_inventory(camera_id, use_llm_vision=use_llm)
@@ -2156,6 +2746,7 @@ def api_prim_prod_check_rauli_inventory(body: dict):
 def api_prim_prod_digest_notifications(body: dict):
     try:
         from modules.productividad.primitives import digest_notifications
+
         return digest_notifications()
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2165,6 +2756,7 @@ def api_prim_prod_digest_notifications(body: dict):
 def api_prim_prod_alert_user(body: dict):
     try:
         from modules.productividad.primitives import alert_user
+
         priority = str((body or {}).get("priority") or "info")
         message = str((body or {}).get("message") or "")
         return alert_user(priority, message)
@@ -2176,6 +2768,7 @@ def api_prim_prod_alert_user(body: dict):
 def api_prim_fin_grasp_market_data(body: dict):
     try:
         from modules.finanzas.primitives import grasp_market_data
+
         ticker = str((body or {}).get("ticker") or "")
         timeframe = str((body or {}).get("timeframe") or "1m")
         return grasp_market_data(ticker, timeframe)
@@ -2187,6 +2780,7 @@ def api_prim_fin_grasp_market_data(body: dict):
 def api_prim_fin_execute_trade(body: dict):
     try:
         from modules.finanzas.primitives import execute_trade
+
         ticker = str((body or {}).get("ticker") or "")
         side = str((body or {}).get("side") or "")
         qty = float((body or {}).get("qty") or 0)
@@ -2200,6 +2794,7 @@ def api_prim_fin_execute_trade(body: dict):
 def api_prim_fin_monitor_pnl(body: dict):
     try:
         from modules.finanzas.primitives import monitor_pnl
+
         return monitor_pnl()
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2209,6 +2804,7 @@ def api_prim_fin_monitor_pnl(body: dict):
 def api_prim_fin_hedge_position(body: dict):
     try:
         from modules.finanzas.primitives import hedge_position
+
         strategy = str((body or {}).get("strategy") or "")
         return hedge_position(strategy)
     except Exception as e:
@@ -2220,6 +2816,7 @@ def api_comms_status():
     """Estado del sistema de comunicación permanente (audio/telegram/whatsapp)."""
     try:
         from modules.humanoid.comms.ops_bus import status as ops_status
+
         return ops_status()
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2230,6 +2827,7 @@ def api_comms_recent(limit: int = 50):
     """Últimos eventos OPS emitidos."""
     try:
         from modules.humanoid.comms.ops_bus import recent as ops_recent
+
         return {"ok": True, "events": ops_recent(limit=limit)}
     except Exception as e:
         return {"ok": False, "error": str(e), "events": []}
@@ -2240,6 +2838,7 @@ def api_comms_test(body: dict):
     """Emite un evento de prueba (audio+telegram+whatsapp según configuración)."""
     try:
         from modules.humanoid.comms.ops_bus import emit as ops_emit
+
         msg = (body or {}).get("message") or "Test OPS: sistema de comunicación activo."
         subsystem = (body or {}).get("subsystem") or "ops"
         level = (body or {}).get("level") or "info"
@@ -2253,8 +2852,9 @@ def api_comms_test(body: dict):
 def api_comms_telegram_selftest(body: dict):
     """Descubre chat_id (si falta) y envía un mensaje de prueba. Retorna detalles."""
     try:
+        from modules.humanoid.comms.ops_bus import \
+            _telegram_chat_id  # type: ignore
         from modules.humanoid.comms.telegram_bridge import TelegramBridge
-        from modules.humanoid.comms.ops_bus import _telegram_chat_id  # type: ignore
 
         bridge = TelegramBridge()
         chat_id = (body or {}).get("chat_id") or _telegram_chat_id()
@@ -2263,10 +2863,19 @@ def api_comms_telegram_selftest(body: dict):
             if d.get("ok"):
                 chat_id = d.get("chat_id") or ""
         if not chat_id:
-            return {"ok": False, "error": "no_chat_id_available. Envía un mensaje al bot primero.", "chat_id": ""}
+            return {
+                "ok": False,
+                "error": "no_chat_id_available. Envía un mensaje al bot primero.",
+                "chat_id": "",
+            }
         text = (body or {}).get("text") or "[ATLAS] Test Telegram: canal operativo."
         r = bridge.send(str(chat_id), str(text))
-        return {"ok": bool(r.get("ok")), "chat_id": str(chat_id), "result": r, "error": r.get("error")}
+        return {
+            "ok": bool(r.get("ok")),
+            "chat_id": str(chat_id),
+            "result": r,
+            "error": r.get("error"),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e), "chat_id": ""}
 
@@ -2277,6 +2886,7 @@ def api_comms_speak(body: dict):
     try:
         text = (body or {}).get("text") or ""
         from modules.humanoid.voice.tts import speak
+
         return speak(str(text))
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2284,11 +2894,13 @@ def api_comms_speak(body: dict):
 
 # === WhatsApp API ===
 
+
 @app.get("/api/comms/whatsapp/status", tags=["Comms", "WhatsApp"])
 def api_whatsapp_status():
     """Estado del servicio WhatsApp (proveedor, autenticación, configuración)."""
     try:
-        from modules.humanoid.comms.whatsapp_bridge import status, health_check
+        from modules.humanoid.comms.whatsapp_bridge import health_check, status
+
         st = status()
         hc = health_check()
         return {**st, "health": hc}
@@ -2299,18 +2911,18 @@ def api_whatsapp_status():
 @app.post("/api/comms/whatsapp/send", tags=["Comms", "WhatsApp"])
 def api_whatsapp_send(body: dict):
     """Envía un mensaje de WhatsApp.
-    
+
     Body: {"text": "mensaje", "to": "+34612345678" (opcional)}
     """
     try:
         from modules.humanoid.comms.whatsapp_bridge import send_text
-        
+
         text = (body or {}).get("text") or ""
         to = (body or {}).get("to")
-        
+
         if not text:
             return {"ok": False, "error": "text is required"}
-        
+
         return send_text(text, to=to)
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2321,12 +2933,14 @@ def api_whatsapp_test():
     """Envía un mensaje de prueba a WhatsApp."""
     try:
         from modules.humanoid.comms.whatsapp_bridge import send_text, status
-        
+
         st = status()
         if not st.get("enabled"):
             return {"ok": False, "error": "WhatsApp no está habilitado", "details": st}
-        
-        result = send_text("[ATLAS] Prueba de WhatsApp - Sistema de comunicación activo.")
+
+        result = send_text(
+            "[ATLAS] Prueba de WhatsApp - Sistema de comunicación activo."
+        )
         return result
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2335,17 +2949,17 @@ def api_whatsapp_test():
 @app.get("/api/comms/whatsapp/qr", tags=["Comms", "WhatsApp"])
 def api_whatsapp_qr():
     """Obtiene el código QR para autenticar WAHA.
-    
+
     Solo disponible con proveedor WAHA.
     Escanea este QR con tu WhatsApp para vincular.
     """
     try:
         from modules.humanoid.comms.whatsapp_bridge import get_qr_code, status
-        
+
         st = status()
         if st.get("provider") != "waha":
             return {"ok": False, "error": "QR solo disponible para proveedor WAHA"}
-        
+
         return get_qr_code()
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2354,17 +2968,21 @@ def api_whatsapp_qr():
 @app.post("/api/comms/whatsapp/start-session", tags=["Comms", "WhatsApp"])
 def api_whatsapp_start_session():
     """Inicia la sesión WAHA (genera QR para autenticar).
-    
+
     Solo disponible con proveedor WAHA.
     Después de llamar esto, obtén el QR con GET /api/comms/whatsapp/qr
     """
     try:
-        from modules.humanoid.comms.whatsapp_bridge import start_session, status
-        
+        from modules.humanoid.comms.whatsapp_bridge import (start_session,
+                                                            status)
+
         st = status()
         if st.get("provider") != "waha":
-            return {"ok": False, "error": "Sesiones solo disponibles para proveedor WAHA"}
-        
+            return {
+                "ok": False,
+                "error": "Sesiones solo disponibles para proveedor WAHA",
+            }
+
         return start_session()
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2433,6 +3051,7 @@ def api_comms_alert(body: dict):
       { kind, message_human, action_human, level, technical }
     """
     import time as _time
+
     t0 = time.perf_counter()
     try:
         kind = str((body or {}).get("kind") or "ui").strip()[:40]
@@ -2459,7 +3078,9 @@ def api_comms_alert(body: dict):
 
         # Bitácora ANS (humano)
         try:
-            from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+            from modules.humanoid.ans.evolution_bitacora import \
+                append_evolution_log
+
             append_evolution_log(f"[ALERTA] {msg2}", ok=False, source="ui")
         except Exception:
             pass
@@ -2467,7 +3088,13 @@ def api_comms_alert(body: dict):
         # OPS Bus (multicanal)
         try:
             from modules.humanoid.comms.ops_bus import emit as ops_emit
-            ops_emit("dashboard", msg2, level=level, data={"kind": kind, "technical": technical or {}})
+
+            ops_emit(
+                "dashboard",
+                msg2,
+                level=level,
+                data={"kind": kind, "technical": technical or {}},
+            )
         except Exception:
             pass
 
@@ -2480,11 +3107,13 @@ def api_comms_alert(body: dict):
 
 # === Nuevos endpoints del Sistema de Comunicación Unificado ===
 
+
 @app.get("/api/comms/hub/health", tags=["Comms"])
 def api_comms_hub_health():
     """Estado de salud del CommsHub central (canales, circuit breakers, métricas)."""
     try:
         from modules.humanoid.comms import get_hub
+
         hub = get_hub()
         return hub.get_health()
     except Exception as e:
@@ -2496,6 +3125,7 @@ def api_comms_hub_messages(limit: int = 50):
     """Historial de mensajes del CommsHub."""
     try:
         from modules.humanoid.comms import get_hub
+
         hub = get_hub()
         return {"ok": True, "messages": hub.get_recent_messages(limit=limit)}
     except Exception as e:
@@ -2505,7 +3135,7 @@ def api_comms_hub_messages(limit: int = 50):
 @app.post("/api/comms/hub/emit", tags=["Comms"])
 def api_comms_hub_emit(body: dict):
     """Emite un mensaje a través del CommsHub (multicanal con retry/circuit breaker).
-    
+
     Body:
     {
         "message": "Contenido del mensaje",
@@ -2517,18 +3147,19 @@ def api_comms_hub_emit(body: dict):
     """
     try:
         from modules.humanoid.comms import get_hub
+
         hub = get_hub()
-        
+
         message = (body or {}).get("message") or ""
         level = (body or {}).get("level") or "info"
         subsystem = (body or {}).get("subsystem") or "api"
         data = (body or {}).get("data") or {}
         channels = (body or {}).get("channels")
         evidence_path = (body or {}).get("evidence_path") or ""
-        
+
         if not message:
             return {"ok": False, "error": "message is required"}
-        
+
         result = hub.send(
             content=message,
             level=level,
@@ -2537,7 +3168,7 @@ def api_comms_hub_emit(body: dict):
             evidence_path=evidence_path,
             channels=channels,
         )
-        
+
         return {
             "ok": len(result.channels_sent) > 0,
             "message_id": result.id,
@@ -2551,17 +3182,18 @@ def api_comms_hub_emit(body: dict):
 @app.post("/api/comms/hub/reset-channel", tags=["Comms"])
 def api_comms_hub_reset_channel(body: dict):
     """Resetea el estado de un canal (útil después de arreglar un problema).
-    
+
     Body: {"channel": "telegram"}
     """
     try:
         from modules.humanoid.comms import get_hub
+
         hub = get_hub()
-        
+
         channel = (body or {}).get("channel") or ""
         if not channel:
             return {"ok": False, "error": "channel is required"}
-        
+
         return hub.reset_channel(channel)
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2570,17 +3202,18 @@ def api_comms_hub_reset_channel(body: dict):
 @app.post("/api/comms/hub/disable-channel", tags=["Comms"])
 def api_comms_hub_disable_channel(body: dict):
     """Deshabilita temporalmente un canal.
-    
+
     Body: {"channel": "whatsapp"}
     """
     try:
         from modules.humanoid.comms import get_hub
+
         hub = get_hub()
-        
+
         channel = (body or {}).get("channel") or ""
         if not channel:
             return {"ok": False, "error": "channel is required"}
-        
+
         return hub.disable_channel(channel)
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2589,17 +3222,18 @@ def api_comms_hub_disable_channel(body: dict):
 @app.post("/api/comms/hub/enable-channel", tags=["Comms"])
 def api_comms_hub_enable_channel(body: dict):
     """Habilita un canal previamente deshabilitado.
-    
+
     Body: {"channel": "whatsapp"}
     """
     try:
         from modules.humanoid.comms import get_hub
+
         hub = get_hub()
-        
+
         channel = (body or {}).get("channel") or ""
         if not channel:
             return {"ok": False, "error": "channel is required"}
-        
+
         return hub.enable_channel(channel)
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2610,6 +3244,7 @@ def api_comms_bootstrap_status():
     """Estado de todos los servicios de comunicación inicializados por bootstrap."""
     try:
         from modules.humanoid.comms.bootstrap import get_status
+
         return get_status()
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2620,6 +3255,7 @@ def api_comms_bootstrap_health():
     """Health check completo de todos los servicios de comunicación."""
     try:
         from modules.humanoid.comms.bootstrap import health_check
+
         return health_check()
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2628,17 +3264,17 @@ def api_comms_bootstrap_health():
 @app.post("/api/comms/bootstrap/restart-service", tags=["Comms"])
 def api_comms_bootstrap_restart_service(body: dict):
     """Reinicia un servicio de comunicación específico.
-    
+
     Body: {"service": "telegram_poller"}
     Servicios reiniciables: hub, telegram_poller, makeplay
     """
     try:
         from modules.humanoid.comms.bootstrap import restart_service
-        
+
         service = (body or {}).get("service") or ""
         if not service:
             return {"ok": False, "error": "service is required"}
-        
+
         return restart_service(service)
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2649,6 +3285,7 @@ def api_kernel_event_bus_stats():
     """Estadísticas del Event Bus interno (handlers, eventos, métricas)."""
     try:
         from modules.humanoid import get_humanoid_kernel
+
         kernel = get_humanoid_kernel()
         return {"ok": True, "stats": kernel.events.get_stats()}
     except Exception as e:
@@ -2660,6 +3297,7 @@ def api_kernel_event_bus_history(limit: int = 50):
     """Historial de eventos del Event Bus."""
     try:
         from modules.humanoid import get_humanoid_kernel
+
         kernel = get_humanoid_kernel()
         return {"ok": True, "events": kernel.events.get_history(limit=limit)}
     except Exception as e:
@@ -2669,16 +3307,17 @@ def api_kernel_event_bus_history(limit: int = 50):
 @app.post("/api/kernel/event-bus/reset-errors", tags=["Kernel"])
 def api_kernel_event_bus_reset_errors(body: dict):
     """Resetea errores de handlers y rehabilita handlers desactivados.
-    
+
     Body: {"topic": "specific.topic"} o {} para todos
     """
     try:
         from modules.humanoid import get_humanoid_kernel
+
         kernel = get_humanoid_kernel()
-        
+
         topic = (body or {}).get("topic")
         rehabilitated = kernel.events.reset_handler_errors(topic=topic)
-        
+
         return {"ok": True, "rehabilitated_handlers": rehabilitated}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2690,6 +3329,7 @@ def health():
     try:
         from modules.humanoid.deploy.healthcheck import run_health_verbose
         from modules.humanoid.deploy.ports import get_ports
+
         active_port = get_ports()[0]
         return run_health_verbose(base_url=None, active_port=active_port)
     except Exception as e:
@@ -2701,10 +3341,9 @@ def health_debug():
     """Raw check results con mensajes de error para diagnóstico."""
     try:
         from modules.humanoid.deploy.healthcheck import (
-            _check_memory_writable,
-            _check_audit_writable,
-            _check_scheduler_running,
-        )
+            _check_audit_writable, _check_memory_writable,
+            _check_scheduler_running)
+
         return {
             "ok": True,
             "AUDIT_DB_PATH": os.getenv("AUDIT_DB_PATH"),
@@ -2723,6 +3362,7 @@ def doctor_endpoint():
     """Diagnostico rapido del sistema."""
     try:
         from atlas_runtime import doctor
+
         return {"ok": True, "result": doctor()}
     except Exception as e:
         return {"ok": True, "result": f"Doctor unavailable: {e}"}
@@ -2757,8 +3397,20 @@ def modules_check_all():
             results.append({"name": name, "status": "connected", "module": mod_path})
             connected += 1
         except Exception as e:
-            results.append({"name": name, "status": "error", "module": mod_path, "error": str(e)[:100]})
-    return {"ok": True, "modules": results, "connected": connected, "total": len(module_checks)}
+            results.append(
+                {
+                    "name": name,
+                    "status": "error",
+                    "module": mod_path,
+                    "error": str(e)[:100],
+                }
+            )
+    return {
+        "ok": True,
+        "modules": results,
+        "connected": connected,
+        "total": len(module_checks),
+    }
 
 
 @app.post("/modules/reconnect/{module_id}")
@@ -2766,6 +3418,7 @@ def modules_reconnect(module_id: str):
     """Intentar reconectar un modulo especifico."""
     try:
         import importlib
+
         mod_map = {
             "ans": "modules.humanoid.ans.api",
             "governance": "modules.humanoid.governance.api",
@@ -2792,29 +3445,45 @@ def modules_reconnect(module_id: str):
 # ═══════════════════════════════════════════════════════════════════
 
 import sqlite3 as _auto_sqlite
-_AUTO_DB = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "autonomy_tasks.db")
+
+_AUTO_DB = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "data", "autonomy_tasks.db"
+)
 os.makedirs(os.path.dirname(_AUTO_DB), exist_ok=True)
+
 
 def _auto_db():
     conn = _auto_sqlite.connect(_AUTO_DB)
     conn.row_factory = _auto_sqlite.Row
-    conn.execute("""CREATE TABLE IF NOT EXISTS autonomy_tasks (
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS autonomy_tasks (
         id TEXT PRIMARY KEY, title TEXT, status TEXT DEFAULT 'pending',
         priority TEXT DEFAULT 'medium', source TEXT DEFAULT 'system',
         detail TEXT DEFAULT '', action_taken TEXT DEFAULT '',
         created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
-    )""")
-    conn.execute("""CREATE TABLE IF NOT EXISTS autonomy_timeline (
+    )"""
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS autonomy_timeline (
         id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT DEFAULT (datetime('now')),
         event TEXT, kind TEXT DEFAULT 'info', result TEXT DEFAULT 'ok'
-    )""")
+    )"""
+    )
     conn.commit()
     return conn
 
+
 def _auto_log(event, kind="info", result="ok"):
     try:
-        c = _auto_db(); c.execute("INSERT INTO autonomy_timeline(event,kind,result) VALUES(?,?,?)", (event,kind,result)); c.commit(); c.close()
-    except: pass
+        c = _auto_db()
+        c.execute(
+            "INSERT INTO autonomy_timeline(event,kind,result) VALUES(?,?,?)",
+            (event, kind, result),
+        )
+        c.commit()
+        c.close()
+    except:
+        pass
 
 
 # Worker autónomo agresivo (vinculado a daemon + modo growth)
@@ -2828,10 +3497,21 @@ _aggr_last_user_active_log = 0.0
 _autodiag_kick_lock = threading.RLock()
 _autodiag_last_kick_ts = 0.0
 _aggr_config = {
-    "enabled": (os.getenv("AUTONOMY_AGGRESSIVE_ENABLED") or "true").strip().lower() in ("1", "true", "yes", "on"),
-    "idle_sec": max(5, int((os.getenv("AUTONOMY_USER_IDLE_SEC") or "25").strip() or "25")),
-    "interval_sec": max(8, int((os.getenv("AUTONOMY_AGGRESSIVE_INTERVAL_SEC") or "25").strip() or "25")),
-    "pages": [p.strip() for p in (os.getenv("AUTONOMY_AGGRESSIVE_PAGES") or "/ui,/workspace,/nexus").split(",") if str(p).strip()],
+    "enabled": (os.getenv("AUTONOMY_AGGRESSIVE_ENABLED") or "true").strip().lower()
+    in ("1", "true", "yes", "on"),
+    "idle_sec": max(
+        5, int((os.getenv("AUTONOMY_USER_IDLE_SEC") or "25").strip() or "25")
+    ),
+    "interval_sec": max(
+        8, int((os.getenv("AUTONOMY_AGGRESSIVE_INTERVAL_SEC") or "25").strip() or "25")
+    ),
+    "pages": [
+        p.strip()
+        for p in (
+            os.getenv("AUTONOMY_AGGRESSIVE_PAGES") or "/ui,/workspace,/nexus"
+        ).split(",")
+        if str(p).strip()
+    ],
 }
 
 
@@ -2857,7 +3537,9 @@ def _set_aggr_config(payload: Dict[str, Any]) -> Dict[str, Any]:
         if "idle_sec" in payload:
             _aggr_config["idle_sec"] = max(5, int(payload.get("idle_sec") or 25))
         if "interval_sec" in payload:
-            _aggr_config["interval_sec"] = max(8, int(payload.get("interval_sec") or 25))
+            _aggr_config["interval_sec"] = max(
+                8, int(payload.get("interval_sec") or 25)
+            )
         if "pages" in payload:
             raw_pages = payload.get("pages")
             pages = []
@@ -2914,10 +3596,17 @@ def _run_aggressive_cycle() -> Dict[str, Any]:
         hands = k.registry.get("hands") if k else None
         if hands and hasattr(hands, "shell"):
             actor = ActorContext(actor="autonomy_aggressive", role="owner")
-            r = hands.shell.run("python -c \"print('ATLAS_AGGRESSIVE_HANDS_OK')\"", cwd=None, timeout_sec=20, actor=actor)
+            r = hands.shell.run(
+                "python -c \"print('ATLAS_AGGRESSIVE_HANDS_OK')\"",
+                cwd=None,
+                timeout_sec=20,
+                actor=actor,
+            )
             out["hands_ok"] = bool((r or {}).get("ok"))
             if not out["hands_ok"] and not out.get("error"):
-                out["error"] = str((r or {}).get("error") or "hands command failed")[:200]
+                out["error"] = str((r or {}).get("error") or "hands command failed")[
+                    :200
+                ]
     except Exception as e:
         out["error"] = str(e)[:200]
 
@@ -2935,16 +3624,22 @@ def _run_aggressive_cycle() -> Dict[str, Any]:
         if path.startswith("http://") or path.startswith("https://"):
             target_url = path
         else:
-            target_url = f"http://127.0.0.1:8791{path if path.startswith('/') else '/' + path}"
+            target_url = (
+                f"http://127.0.0.1:8791{path if path.startswith('/') else '/' + path}"
+            )
 
-        r_open = feet_execute("open_url", {"url": target_url, "driver": "digital", "show_browser": False})
+        r_open = feet_execute(
+            "open_url", {"url": target_url, "driver": "digital", "show_browser": False}
+        )
         ok_open = bool((r_open or {}).get("ok"))
 
         # Regla general: verificación visual ANTES y DESPUÉS.
         r_pre = feet_execute("screenshot", {"driver": "digital"})
         out["visual_pre_ok"] = bool((r_pre or {}).get("ok"))
 
-        r_extract = feet_execute("extract_text", {"selector": "body", "driver": "digital"})
+        r_extract = feet_execute(
+            "extract_text", {"selector": "body", "driver": "digital"}
+        )
         ok_extract = bool((r_extract or {}).get("ok"))
 
         r_post = feet_execute("screenshot", {"driver": "digital"})
@@ -2982,8 +3677,9 @@ def _aggressive_worker_loop():
             if not _aggr_enabled():
                 _aggr_stop.wait(2.0)
                 continue
-            from modules.humanoid.quality.autonomy_daemon import is_autonomy_running
             from modules.humanoid.governance.state import get_mode
+            from modules.humanoid.quality.autonomy_daemon import \
+                is_autonomy_running
 
             if not is_autonomy_running() or get_mode() != "growth":
                 _aggr_stop.wait(2.0)
@@ -3023,7 +3719,9 @@ def _ensure_aggressive_worker():
         if _aggr_thread is not None and _aggr_thread.is_alive():
             return
         _aggr_stop.clear()
-        _aggr_thread = threading.Thread(target=_aggressive_worker_loop, name="atlas-aggressive-worker", daemon=True)
+        _aggr_thread = threading.Thread(
+            target=_aggressive_worker_loop, name="atlas-aggressive-worker", daemon=True
+        )
         _aggr_thread.start()
         _auto_log("Aggressive worker iniciado", "action", "ok")
 
@@ -3046,7 +3744,9 @@ def _run_autodiag_once_async():
         if not p.exists():
             _auto_log("Autodiagnostic cycle: script no encontrado", "action", "warn")
             return
-        spec = importlib.util.spec_from_file_location("atlas_autodiagnostic_runtime", str(p))
+        spec = importlib.util.spec_from_file_location(
+            "atlas_autodiagnostic_runtime", str(p)
+        )
         if not spec or not spec.loader:
             _auto_log("Autodiagnostic cycle: loader no disponible", "action", "warn")
             return
@@ -3055,7 +3755,11 @@ def _run_autodiag_once_async():
         run_fn = getattr(mod, "run_scan", None)
         if callable(run_fn):
             ok_count, warn_count, crit_count = run_fn()
-            _auto_log(f"Autodiagnostic cycle ejecutado: {ok_count} OK, {warn_count} WARN, {crit_count} CRIT", "action", "ok")
+            _auto_log(
+                f"Autodiagnostic cycle ejecutado: {ok_count} OK, {warn_count} WARN, {crit_count} CRIT",
+                "action",
+                "ok",
+            )
         else:
             _auto_log("Autodiagnostic cycle: run_scan no disponible", "action", "warn")
     except Exception as e:
@@ -3072,9 +3776,12 @@ def _kick_autodiag_if_stale(stale_sec: float, max_age_sec: int):
             if (now - _autodiag_last_kick_ts) < 45:
                 return
             _autodiag_last_kick_ts = now
-        threading.Thread(target=_run_autodiag_once_async, name="atlas-autodiag-once", daemon=True).start()
+        threading.Thread(
+            target=_run_autodiag_once_async, name="atlas-autodiag-once", daemon=True
+        ).start()
     except Exception:
         pass
+
 
 @app.get("/api/autonomy/status", tags=["Autonomia"])
 def autonomy_status():
@@ -3088,7 +3795,8 @@ def autonomy_status():
         mr = modules_check_all()
         mod_connected = mr.get("connected", 0)
         mod_total = mr.get("total", 1)
-    except: pass
+    except:
+        pass
 
     # --- Lifelog ---
     lifelog_rate = 0.0
@@ -3097,13 +3805,15 @@ def autonomy_status():
     lifelog_fail = 0
     try:
         from modules.humanoid.world_model.lifelog import LifeLog
+
         ll = LifeLog()
         ls = ll.status()
         lifelog_total = ls.get("total_entries", 0)
         lifelog_success = ls.get("success_count", 0)
         lifelog_fail = ls.get("failure_count", 0)
         lifelog_rate = ls.get("success_rate", 0.0)
-    except: pass
+    except:
+        pass
 
     # --- Libro de Vida ---
     libro_reglas = 0
@@ -3111,12 +3821,14 @@ def autonomy_status():
     libro_tasa = 0.0
     try:
         from modules.humanoid.memory_engine.libro_vida import get_libro_vida
+
         lv = get_libro_vida()
         lvs = lv.get_stats()
         libro_reglas = lvs.get("reglas_aprendidas", 0)
         libro_episodios = lvs.get("total_episodios", 0)
         libro_tasa = lvs.get("tasa_exito", 0.0)
-    except: pass
+    except:
+        pass
 
     # --- Modelos IA ---
     ai_available, ai_total = 0, 1
@@ -3124,8 +3836,11 @@ def autonomy_status():
         am = agent_models()
         models = am.get("data", [])
         ai_total = max(1, len([m for m in models if m.get("id") != "auto"]))
-        ai_available = len([m for m in models if m.get("available") and m.get("id") != "auto"])
-    except: pass
+        ai_available = len(
+            [m for m in models if m.get("available") and m.get("id") != "auto"]
+        )
+    except:
+        pass
 
     # --- Governance ---
     gov_mode = "unknown"
@@ -3134,6 +3849,7 @@ def autonomy_status():
     try:
         from modules.humanoid.governance.api import governance_router
         from modules.humanoid.governance.state import get_governance_state
+
         gs = get_governance_state()
         gov_mode = gs.get("mode", "governed")
         gov_emergency = gs.get("emergency_stop", False)
@@ -3141,34 +3857,43 @@ def autonomy_status():
     except:
         try:
             import requests as _rq
+
             gr = _rq.get("http://127.0.0.1:8791/governance/status", timeout=2).json()
             gov_mode = gr.get("mode", "governed")
             gov_emergency = gr.get("emergency_stop", False)
             gov_policies_count = len(gr.get("policies", []))
-        except: pass
+        except:
+            pass
 
     # --- Subsistemas activos ---
     daemon_active = False
     try:
         from modules.humanoid.quality.autonomy_daemon import _daemon
-        daemon_active = _daemon is not None and getattr(_daemon, '_running', False)
-    except: pass
+
+        daemon_active = _daemon is not None and getattr(_daemon, "_running", False)
+    except:
+        pass
 
     reactor_active = False
     reactor_cycles = 0
     reactor_fixes = 0
     try:
-        from modules.humanoid.ans.reactor import _reactor_running, _reactor_stats
+        from modules.humanoid.ans.reactor import (_reactor_running,
+                                                  _reactor_stats)
+
         reactor_active = _reactor_running
         reactor_cycles = _reactor_stats.get("cycles", 0)
         reactor_fixes = _reactor_stats.get("fixes_ok", 0)
-    except: pass
+    except:
+        pass
 
     scanner_active = False
     scanner_last = None
     try:
         log_path = str(_autodiag_log_path())
-        scanner_active_window_sec = int(os.getenv("AUTODIAGNOSTIC_ACTIVE_WINDOW_SEC", "7200") or "7200")
+        scanner_active_window_sec = int(
+            os.getenv("AUTODIAGNOSTIC_ACTIVE_WINDOW_SEC", "7200") or "7200"
+        )
         if os.path.exists(log_path):
             scanner_age_sec = max(0.0, time.time() - os.path.getmtime(log_path))
             scanner_active = scanner_age_sec < max(60, scanner_active_window_sec)
@@ -3182,18 +3907,21 @@ def autonomy_status():
                         break
             if not scanner_active and scanner_last:
                 scanner_last = f"{scanner_last} | refresh requested"
-    except: pass
+    except:
+        pass
 
     # --- Aprobaciones pendientes ---
     approvals_pending = 0
     approvals_total = 0
     try:
-        from modules.humanoid.approvals import list_pending, list_all
+        from modules.humanoid.approvals import list_all, list_pending
+
         pending = list_pending(limit=100)
         approvals_pending = len([p for p in pending if not p.get("expired")])
         all_approvals = list_all(limit=1000)
         approvals_total = len(all_approvals)
-    except: pass
+    except:
+        pass
 
     # --- Cola de tareas (autonomia_tasks) ---
     # IMPORTANTE: contar sobre la misma "ventana operativa" que ve el dashboard
@@ -3208,15 +3936,25 @@ def autonomy_status():
     reactor_mttr_samples = []
     try:
         c = _auto_db()
-        rows = c.execute("""
+        rows = c.execute(
+            """
             SELECT status, source, created_at, updated_at FROM autonomy_tasks
             ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
                      created_at DESC
             LIMIT 50
-        """).fetchall()
+        """
+        ).fetchall()
         for r in rows or []:
-            st = str(r["status"] if isinstance(r, dict) or hasattr(r, "keys") else r[0]).strip().lower()
-            src = str(r["source"] if isinstance(r, dict) or hasattr(r, "keys") else "").strip().lower()
+            st = (
+                str(r["status"] if isinstance(r, dict) or hasattr(r, "keys") else r[0])
+                .strip()
+                .lower()
+            )
+            src = (
+                str(r["source"] if isinstance(r, dict) or hasattr(r, "keys") else "")
+                .strip()
+                .lower()
+            )
             if st == "pending":
                 task_pending += 1
             elif st == "in_progress":
@@ -3229,8 +3967,16 @@ def autonomy_status():
             if src == "reactor" and st in ("done", "failed"):
                 reactor_resolved_count += 1
                 try:
-                    c_at = r["created_at"] if isinstance(r, dict) or hasattr(r, "keys") else None
-                    u_at = r["updated_at"] if isinstance(r, dict) or hasattr(r, "keys") else None
+                    c_at = (
+                        r["created_at"]
+                        if isinstance(r, dict) or hasattr(r, "keys")
+                        else None
+                    )
+                    u_at = (
+                        r["updated_at"]
+                        if isinstance(r, dict) or hasattr(r, "keys")
+                        else None
+                    )
                     if c_at and u_at:
                         dt_c = datetime.fromisoformat(str(c_at).replace("Z", "+00:00"))
                         dt_u = datetime.fromisoformat(str(u_at).replace("Z", "+00:00"))
@@ -3242,12 +3988,22 @@ def autonomy_status():
 
         # Ventana 24h para tasa de éxito más representativa en tiempo real.
         try:
-            rows24 = c.execute("""
+            rows24 = c.execute(
+                """
                 SELECT status FROM autonomy_tasks
                 WHERE updated_at >= datetime('now', '-1 day')
-            """).fetchall()
+            """
+            ).fetchall()
             for r24 in rows24 or []:
-                st24 = str(r24["status"] if isinstance(r24, dict) or hasattr(r24, "keys") else r24[0]).strip().lower()
+                st24 = (
+                    str(
+                        r24["status"]
+                        if isinstance(r24, dict) or hasattr(r24, "keys")
+                        else r24[0]
+                    )
+                    .strip()
+                    .lower()
+                )
                 if st24 == "done":
                     task_done_24h += 1
                 elif st24 == "failed":
@@ -3274,12 +4030,18 @@ def autonomy_status():
     if denom_24h > 0:
         success_rate_24h = round((task_done_24h / denom_24h) * 100, 1)
 
-    display_success_rate = success_rate_24h if success_rate_24h is not None else success_rate
+    display_success_rate = (
+        success_rate_24h if success_rate_24h is not None else success_rate
+    )
 
-    incidents_resolved_kpi = max(int(reactor_fixes or 0), int(reactor_resolved_count or 0))
+    incidents_resolved_kpi = max(
+        int(reactor_fixes or 0), int(reactor_resolved_count or 0)
+    )
     mttr_kpi = 0
     if reactor_mttr_samples:
-        mttr_kpi = round(sum(reactor_mttr_samples) / max(1, len(reactor_mttr_samples)), 1)
+        mttr_kpi = round(
+            sum(reactor_mttr_samples) / max(1, len(reactor_mttr_samples)), 1
+        )
     elif reactor_fixes:
         mttr_kpi = round(reactor_fixes * 2.5, 1)
 
@@ -3287,35 +4049,53 @@ def autonomy_status():
     uptime_hours = 0.0
     try:
         import psutil
+
         uptime_hours = round((time.time() - psutil.boot_time()) / 3600, 1)
-    except: pass
+    except:
+        pass
 
     # --- Calcular nivel de autonomia ---
     success_component = max(0.0, min(1.0, float(display_success_rate or 0.0) / 100.0))
-    ai_required_for_full = max(1, int((os.getenv("AUTONOMY_AI_REQUIRED_FOR_FULL") or "16").strip() or "16"))
+    ai_required_for_full = max(
+        1, int((os.getenv("AUTONOMY_AI_REQUIRED_FOR_FULL") or "16").strip() or "16")
+    )
     ai_component = max(0.0, min(1.0, float(ai_available) / float(ai_required_for_full)))
-    sub_active = sum([daemon_active, reactor_active, scanner_active, gov_mode != "emergency", True])
+    sub_active = sum(
+        [daemon_active, reactor_active, scanner_active, gov_mode != "emergency", True]
+    )
     level = round(
-        (mod_connected / max(mod_total, 1)) * 25 +
-        success_component * 25 +
-        ai_component * 20 +
-        (sub_active / 5) * 20 +
-        (0 if gov_emergency else 1) * 10
+        (mod_connected / max(mod_total, 1)) * 25
+        + success_component * 25
+        + ai_component * 20
+        + (sub_active / 5) * 20
+        + (0 if gov_emergency else 1) * 10
     )
 
     # --- Alertas activas ---
     alerts = []
-    if not daemon_active: alerts.append({"level": "warning", "msg": "Autonomy Daemon inactivo"})
-    if not reactor_active: alerts.append({"level": "warning", "msg": "Reactor inactivo"})
-    if gov_emergency: alerts.append({"level": "critical", "msg": "Emergency Stop ACTIVO"})
-    if ai_available == 0: alerts.append({"level": "critical", "msg": "0 modelos IA disponibles"})
-    if mod_connected < mod_total: alerts.append({"level": "info", "msg": f"{mod_total - mod_connected} modulo(s) desconectado(s)"})
+    if not daemon_active:
+        alerts.append({"level": "warning", "msg": "Autonomy Daemon inactivo"})
+    if not reactor_active:
+        alerts.append({"level": "warning", "msg": "Reactor inactivo"})
+    if gov_emergency:
+        alerts.append({"level": "critical", "msg": "Emergency Stop ACTIVO"})
+    if ai_available == 0:
+        alerts.append({"level": "critical", "msg": "0 modelos IA disponibles"})
+    if mod_connected < mod_total:
+        alerts.append(
+            {
+                "level": "info",
+                "msg": f"{mod_total - mod_connected} modulo(s) desconectado(s)",
+            }
+        )
 
     aggressive_cycles_seen = 0
     aggressive_last_page_seen = str(_aggr_last_page or "")
     try:
         c = _auto_db()
-        row_cnt = c.execute("SELECT COUNT(*) FROM autonomy_timeline WHERE event LIKE 'Aggressive cycle:%'").fetchone()
+        row_cnt = c.execute(
+            "SELECT COUNT(*) FROM autonomy_timeline WHERE event LIKE 'Aggressive cycle:%'"
+        ).fetchone()
         aggressive_cycles_seen = int((row_cnt[0] if row_cnt else 0) or 0)
         row_last = c.execute(
             "SELECT event FROM autonomy_timeline WHERE event LIKE 'Aggressive cycle:%' ORDER BY id DESC LIMIT 1"
@@ -3330,11 +4110,31 @@ def autonomy_status():
 
     data["level"] = min(100, max(0, level))
     data["subsystems"] = {
-        "daemon": {"active": daemon_active, "label": "Autonomy Daemon", "detail": "Health checks + auto-repair"},
-        "reactor": {"active": reactor_active, "label": "Reactor Autonomo", "detail": f"{reactor_cycles} ciclos, {reactor_fixes} fixes"},
-        "scanner": {"active": scanner_active, "label": "Autodiagnostic Scanner", "detail": scanner_last or "Sin datos"},
-        "governance": {"active": gov_mode != "emergency", "label": "Gobernanza", "detail": f"Modo: {gov_mode}"},
-        "healing": {"active": reactor_fixes > 0 or daemon_active, "label": "Auto-Healing", "detail": f"{reactor_fixes} reparaciones"}
+        "daemon": {
+            "active": daemon_active,
+            "label": "Autonomy Daemon",
+            "detail": "Health checks + auto-repair",
+        },
+        "reactor": {
+            "active": reactor_active,
+            "label": "Reactor Autonomo",
+            "detail": f"{reactor_cycles} ciclos, {reactor_fixes} fixes",
+        },
+        "scanner": {
+            "active": scanner_active,
+            "label": "Autodiagnostic Scanner",
+            "detail": scanner_last or "Sin datos",
+        },
+        "governance": {
+            "active": gov_mode != "emergency",
+            "label": "Gobernanza",
+            "detail": f"Modo: {gov_mode}",
+        },
+        "healing": {
+            "active": reactor_fixes > 0 or daemon_active,
+            "label": "Auto-Healing",
+            "detail": f"{reactor_fixes} reparaciones",
+        },
     }
     data["kpis"] = {
         "uptime_hours": uptime_hours,
@@ -3374,10 +4174,21 @@ def autonomy_status():
     timeline = []
     try:
         c = _auto_db()
-        rows = c.execute("SELECT ts, event, kind, result FROM autonomy_timeline ORDER BY id DESC LIMIT 10").fetchall()
-        timeline = [{"ts": r["ts"], "event": r["event"], "kind": r["kind"], "result": r["result"]} for r in rows]
+        rows = c.execute(
+            "SELECT ts, event, kind, result FROM autonomy_timeline ORDER BY id DESC LIMIT 10"
+        ).fetchall()
+        timeline = [
+            {
+                "ts": r["ts"],
+                "event": r["event"],
+                "kind": r["kind"],
+                "result": r["result"],
+            }
+            for r in rows
+        ]
         c.close()
-    except: pass
+    except:
+        pass
     data["timeline"] = timeline
 
     data["ms"] = int((time.perf_counter() - t0) * 1000)
@@ -3390,11 +4201,18 @@ def autonomy_daemon_start():
     """Inicia el daemon de autonomía en el proceso actual de la API."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.quality.autonomy_daemon import start_autonomy, is_autonomy_running
+        from modules.humanoid.quality.autonomy_daemon import (
+            is_autonomy_running, start_autonomy)
 
         if is_autonomy_running():
             _ensure_aggressive_worker()
-            return {"ok": True, "running": True, "already_running": True, "aggressive_worker": True, "ms": int((time.perf_counter() - t0) * 1000)}
+            return {
+                "ok": True,
+                "running": True,
+                "already_running": True,
+                "aggressive_worker": True,
+                "ms": int((time.perf_counter() - t0) * 1000),
+            }
 
         result = start_autonomy()
         _ensure_aggressive_worker()
@@ -3412,7 +4230,12 @@ def autonomy_daemon_start():
             "ms": int((time.perf_counter() - t0) * 1000),
         }
     except Exception as e:
-        return {"ok": False, "running": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
+        return {
+            "ok": False,
+            "running": False,
+            "error": str(e)[:300],
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
 
 
 @app.post("/api/autonomy/daemon/stop", tags=["Autonomia"])
@@ -3420,7 +4243,8 @@ def autonomy_daemon_stop():
     """Detiene el daemon de autonomía en el proceso actual de la API."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.quality.autonomy_daemon import stop_autonomy, is_autonomy_running
+        from modules.humanoid.quality.autonomy_daemon import (
+            is_autonomy_running, stop_autonomy)
 
         was_running = bool(is_autonomy_running())
         _stop_aggressive_worker()
@@ -3434,7 +4258,11 @@ def autonomy_daemon_stop():
             "ms": int((time.perf_counter() - t0) * 1000),
         }
     except Exception as e:
-        return {"ok": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
+        return {
+            "ok": False,
+            "error": str(e)[:300],
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
 
 
 @app.post("/api/autonomy/scanner/run-once", tags=["Autonomia"])
@@ -3443,9 +4271,18 @@ def autonomy_scanner_run_once():
     t0 = time.perf_counter()
     try:
         _run_autodiag_once_async()
-        return {"ok": True, "triggered": True, "ms": int((time.perf_counter() - t0) * 1000)}
+        return {
+            "ok": True,
+            "triggered": True,
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
     except Exception as e:
-        return {"ok": False, "triggered": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
+        return {
+            "ok": False,
+            "triggered": False,
+            "error": str(e)[:300],
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
 
 
 @app.get("/api/autonomy/aggressive/config", tags=["Autonomia"])
@@ -3456,7 +4293,11 @@ def autonomy_aggressive_config_get():
         cfg = _get_aggr_config()
         return {"ok": True, "config": cfg, "ms": int((time.perf_counter() - t0) * 1000)}
     except Exception as e:
-        return {"ok": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
+        return {
+            "ok": False,
+            "error": str(e)[:300],
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
 
 
 @app.post("/api/autonomy/aggressive/config", tags=["Autonomia"])
@@ -3466,14 +4307,20 @@ def autonomy_aggressive_config_set(body: dict):
     try:
         cfg = _set_aggr_config(body if isinstance(body, dict) else {})
         try:
-            from modules.humanoid.quality.autonomy_daemon import is_autonomy_running
+            from modules.humanoid.quality.autonomy_daemon import \
+                is_autonomy_running
+
             if cfg.get("enabled") and is_autonomy_running():
                 _ensure_aggressive_worker()
         except Exception:
             pass
         return {"ok": True, "config": cfg, "ms": int((time.perf_counter() - t0) * 1000)}
     except Exception as e:
-        return {"ok": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
+        return {
+            "ok": False,
+            "error": str(e)[:300],
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
 
 
 @app.get("/api/autonomy/tasks", tags=["Autonomia"])
@@ -3485,55 +4332,100 @@ def autonomy_tasks():
         c = _auto_db()
         # Sync external sources: approvals pending
         try:
-            from modules.humanoid.governance.approvals import get_pending_approvals
+            from modules.humanoid.governance.approvals import \
+                get_pending_approvals
+
             pending = get_pending_approvals()
-            for ap in (pending or []):
+            for ap in pending or []:
                 aid = f"approval_{ap.get('id', '')}"
-                c.execute("""INSERT OR IGNORE INTO autonomy_tasks(id,title,status,priority,source,detail)
+                c.execute(
+                    """INSERT OR IGNORE INTO autonomy_tasks(id,title,status,priority,source,detail)
                     VALUES(?,?,?,?,?,?)""",
-                    (aid, f"Aprobacion: {ap.get('action','?')}", "pending", "high", "governance", str(ap)[:300]))
-        except: pass
+                    (
+                        aid,
+                        f"Aprobacion: {ap.get('action','?')}",
+                        "pending",
+                        "high",
+                        "governance",
+                        str(ap)[:300],
+                    ),
+                )
+        except:
+            pass
         # Sync reactor issues
         try:
             from modules.humanoid.ans.reactor import _reactor_stats
+
             for issue in _reactor_stats.get("recent_issues", [])[-5:]:
                 iid = f"reactor_{hash(str(issue)) % 100000}"
-                c.execute("""INSERT OR IGNORE INTO autonomy_tasks(id,title,status,priority,source,detail)
+                c.execute(
+                    """INSERT OR IGNORE INTO autonomy_tasks(id,title,status,priority,source,detail)
                     VALUES(?,?,?,?,?,?)""",
-                    (iid, f"Reactor: {str(issue)[:60]}", "pending", "medium", "reactor", str(issue)[:300]))
-        except: pass
+                    (
+                        iid,
+                        f"Reactor: {str(issue)[:60]}",
+                        "pending",
+                        "medium",
+                        "reactor",
+                        str(issue)[:300],
+                    ),
+                )
+        except:
+            pass
         # Reaper: limpiar tareas 'in_progress' atascadas por más de 1h
         try:
-            c.execute("""
+            c.execute(
+                """
                 UPDATE autonomy_tasks
                 SET status='failed', action_taken='reaper_timeout'
                 WHERE status='in_progress' AND updated_at <= datetime('now', '-1 hour')
-            """)
-        except: pass
+            """
+            )
+        except:
+            pass
         c.commit()
-        rows = c.execute("SELECT * FROM autonomy_tasks ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC LIMIT 50").fetchall()
+        rows = c.execute(
+            "SELECT * FROM autonomy_tasks ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC LIMIT 50"
+        ).fetchall()
         tasks = [dict(r) for r in rows]
         c.close()
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
-    return {"ok": True, "tasks": tasks, "count": len(tasks), "ms": int((time.perf_counter() - t0) * 1000)}
+    return {
+        "ok": True,
+        "tasks": tasks,
+        "count": len(tasks),
+        "ms": int((time.perf_counter() - t0) * 1000),
+    }
 
 
 @app.post("/api/autonomy/task/{task_id}/action", tags=["Autonomia"])
 def autonomy_task_action(task_id: str, body: dict):
     """Ejecutar accion sobre una tarea: approve, reject, retry, close."""
     action = body.get("action", "close")
-    valid = {"approve": "done", "reject": "failed", "retry": "in_progress", "close": "done"}
+    valid = {
+        "approve": "done",
+        "reject": "failed",
+        "retry": "in_progress",
+        "close": "done",
+    }
     new_status = valid.get(action, "done")
     try:
         c = _auto_db()
-        c.execute("UPDATE autonomy_tasks SET status=?, action_taken=?, updated_at=datetime('now') WHERE id=?",
-                  (new_status, action, task_id))
+        c.execute(
+            "UPDATE autonomy_tasks SET status=?, action_taken=?, updated_at=datetime('now') WHERE id=?",
+            (new_status, action, task_id),
+        )
         c.commit()
         affected = c.total_changes
         c.close()
         _auto_log(f"Tarea {task_id}: {action}", "action", "ok")
-        return {"ok": True, "task_id": task_id, "action": action, "new_status": new_status}
+        return {
+            "ok": True,
+            "task_id": task_id,
+            "action": action,
+            "new_status": new_status,
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
 
@@ -3544,6 +4436,7 @@ def vision_cameras():
     cameras = []
     try:
         import cv2
+
         for i in range(3):
             cap = cv2.VideoCapture(i)
             if cap.isOpened():
@@ -3558,7 +4451,10 @@ def vision_cameras():
 def vision_capture(cam_id: int = 0):
     """Capturar frame de una camara."""
     try:
-        import cv2, base64
+        import base64
+
+        import cv2
+
         cap = cv2.VideoCapture(cam_id)
         if not cap.isOpened():
             return {"ok": False, "error": f"Camera {cam_id} not available"}
@@ -3566,7 +4462,7 @@ def vision_capture(cam_id: int = 0):
         cap.release()
         if not ret:
             return {"ok": False, "error": "Failed to capture frame"}
-        _, buf = cv2.imencode('.jpg', frame)
+        _, buf = cv2.imencode(".jpg", frame)
         b64 = base64.b64encode(buf).decode()
         return {"ok": True, "image": f"data:image/jpeg;base64,{b64}", "camera": cam_id}
     except ImportError:
@@ -3586,11 +4482,18 @@ def nervous_diagnostic():
     """Diagnostico del sistema nervioso."""
     try:
         from modules.humanoid.nervous.api import nerve_full_status
+
         return nerve_full_status()
     except Exception:
         try:
-            from modules.humanoid.nerve import nerve_eyes_status, feet_status
-            return {"ok": True, "eyes": nerve_eyes_status(), "feet": feet_status(), "nodes": []}
+            from modules.humanoid.nerve import feet_status, nerve_eyes_status
+
+            return {
+                "ok": True,
+                "eyes": nerve_eyes_status(),
+                "feet": feet_status(),
+                "nodes": [],
+            }
         except Exception as e:
             return {"ok": False, "error": str(e), "nodes": []}
 
@@ -3600,21 +4503,30 @@ def version():
     """Release version, git sha, channel (stable/canary), edition, product_mode."""
     try:
         from modules.humanoid.release import get_version_info
+
         out = {"ok": True, **get_version_info()}
         if os.getenv("PRODUCT_MODE", "").strip().lower() in ("1", "true", "yes"):
             try:
                 from modules.humanoid.product.license import license_status
+
                 out["license"] = license_status()
             except Exception:
                 out["license"] = {"status": "unknown"}
         return out
     except Exception as e:
-        return {"ok": False, "version": "0.0.0", "git_sha": "", "channel": "canary", "error": str(e)}
+        return {
+            "ok": False,
+            "version": "0.0.0",
+            "git_sha": "",
+            "channel": "canary",
+            "error": str(e),
+        }
 
 
 def _camera_stream_generator(stream_url: str):
     """Generador que mantiene la conexión HTTP abierta para MJPEG streaming."""
     import urllib.request
+
     resp = None
     try:
         req = urllib.request.Request(stream_url, method="GET")
@@ -3639,6 +4551,7 @@ def _camera_stream_generator(stream_url: str):
 def _local_camera_stream_generator(index: int = 0):
     """Fallback MJPEG local (USB) cuando backend Robot no responde."""
     import cv2
+
     cap = None
     try:
         backend = cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY
@@ -3660,8 +4573,11 @@ def _local_camera_stream_generator(index: int = 0):
             yield (
                 b"--frame\r\n"
                 b"Content-Type: image/jpeg\r\n"
-                b"Content-Length: " + str(len(jpeg)).encode("ascii") + b"\r\n\r\n"
-                + jpeg + b"\r\n"
+                b"Content-Length: "
+                + str(len(jpeg)).encode("ascii")
+                + b"\r\n\r\n"
+                + jpeg
+                + b"\r\n"
             )
     except GeneratorExit:
         pass
@@ -3679,6 +4595,7 @@ def _local_camera_stream_generator(index: int = 0):
 def camera_stream_proxy(index: int = 0):
     """Proxy para stream de cámara del robot (puerto 8002). index: 0, 1, 2... para cada cámara."""
     import urllib.request
+
     base_url = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
     stream_url = f"{base_url}/api/vision/camera/stream?index={index}"
     try:
@@ -3686,21 +4603,22 @@ def camera_stream_proxy(index: int = 0):
         with urllib.request.urlopen(test_req, timeout=3) as r:
             if r.status == 200:
                 from fastapi.responses import StreamingResponse
+
                 return StreamingResponse(
                     _camera_stream_generator(stream_url),
-                    media_type="multipart/x-mixed-replace; boundary=frame"
+                    media_type="multipart/x-mixed-replace; boundary=frame",
                 )
     except Exception as e:
         print(f"Camera proxy error (index={index}): {e}")
 
     # Fallback local USB opcional: desactivado por defecto para evitar bloqueos en Windows.
-    enable_local_fallback = (
-        os.getenv("ATLAS_ENABLE_LOCAL_CAMERA_FALLBACK", "false").strip().lower()
-        in ("1", "true", "yes", "y", "on")
-    )
+    enable_local_fallback = os.getenv(
+        "ATLAS_ENABLE_LOCAL_CAMERA_FALLBACK", "false"
+    ).strip().lower() in ("1", "true", "yes", "y", "on")
     if enable_local_fallback:
         try:
             from fastapi.responses import StreamingResponse
+
             return StreamingResponse(
                 _local_camera_stream_generator(index=index),
                 media_type="multipart/x-mixed-replace; boundary=frame",
@@ -3710,18 +4628,33 @@ def camera_stream_proxy(index: int = 0):
 
     # Último fallback: placeholder
     try:
-        import numpy as np
         import cv2
+        import numpy as np
+
         img = np.zeros((480, 640, 3), dtype=np.uint8)
         img[:] = (50, 50, 50)
-        cv2.putText(img, f"CAMERA {index} OFFLINE", (150, 240), 0, 1.5, (255, 255, 255), 3)
-        cv2.putText(img, "Robot Backend (8002) not running", (100, 280), 0, 0.8, (200, 200, 200), 2)
-        _, buffer = cv2.imencode('.jpg', img)
+        cv2.putText(
+            img, f"CAMERA {index} OFFLINE", (150, 240), 0, 1.5, (255, 255, 255), 3
+        )
+        cv2.putText(
+            img,
+            "Robot Backend (8002) not running",
+            (100, 280),
+            0,
+            0.8,
+            (200, 200, 200),
+            2,
+        )
+        _, buffer = cv2.imencode(".jpg", img)
         from fastapi.responses import Response
+
         return Response(content=buffer.tobytes(), media_type="image/jpeg")
     except Exception:
         from fastapi.responses import JSONResponse
-        return JSONResponse(content={"error": "Camera service unavailable"}, status_code=503)
+
+        return JSONResponse(
+            content={"error": "Camera service unavailable"}, status_code=503
+        )
 
 
 @app.get("/cuerpo/vision/snapshot")
@@ -3742,8 +4675,9 @@ def cuerpo_vision_snapshot(
     - focus_x/focus_y: 0..1 (pan digital)
     - zoom: 1..3
     """
-    import urllib.request
     import urllib.parse
+    import urllib.request
+
     base_url = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
     url = (
         f"{base_url}/api/vision/snapshot"
@@ -3759,21 +4693,33 @@ def cuerpo_vision_snapshot(
         with urllib.request.urlopen(req, timeout=10) as r:
             img = r.read()
         from fastapi.responses import Response
+
         return Response(content=img, media_type="image/jpeg")
     except Exception as e:
         # placeholder coherente para UI
         try:
-            import numpy as np
             import cv2
+            import numpy as np
+
             img = np.zeros((360, 640, 3), dtype=np.uint8)
             img[:] = (40, 40, 45)
             cv2.putText(img, "SNAPSHOT OFFLINE", (160, 185), 0, 1.2, (255, 255, 255), 3)
-            cv2.putText(img, f"{type(e).__name__}: {str(e)[:60]}", (30, 230), 0, 0.6, (200, 200, 200), 2)
+            cv2.putText(
+                img,
+                f"{type(e).__name__}: {str(e)[:60]}",
+                (30, 230),
+                0,
+                0.6,
+                (200, 200, 200),
+                2,
+            )
             _, buffer = cv2.imencode(".jpg", img)
             from fastapi.responses import Response
+
             return Response(content=buffer.tobytes(), media_type="image/jpeg")
         except Exception:
             from fastapi.responses import JSONResponse
+
             return JSONResponse(content={"ok": False, "error": str(e)}, status_code=503)
 
 
@@ -3785,6 +4731,7 @@ def api_evidence_image(path: str):
     bajo `snapshots/` para evitar lectura arbitraria.
     """
     from pathlib import Path
+
     from fastapi import HTTPException
     from fastapi.responses import FileResponse
 
@@ -3797,7 +4744,7 @@ def api_evidence_image(path: str):
 
     p = Path(raw)
     if not p.is_absolute():
-        p = (repo_root / p)
+        p = repo_root / p
     try:
         resolved = p.resolve()
     except Exception:
@@ -3821,23 +4768,31 @@ def product_status():
     """Product dashboard: version, edition, license, service hint, cluster, gateway, health score, last GA/metalearn, support_contact."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.release import get_version_info
-        from modules.humanoid.product.license import license_status
         from modules.humanoid.deploy.healthcheck import run_health_verbose
         from modules.humanoid.deploy.ports import get_ports
+        from modules.humanoid.product.license import license_status
+        from modules.humanoid.release import get_version_info
+
         version_info = get_version_info()
         license_info = license_status()
-        port = get_ports()[0] if get_ports() else int(os.getenv("SERVICE_PORT", "8791") or 8791)
+        port = (
+            get_ports()[0]
+            if get_ports()
+            else int(os.getenv("SERVICE_PORT", "8791") or 8791)
+        )
         health = run_health_verbose(base_url=None, active_port=port)
         ga_last = None
         meta_last = None
         try:
             from modules.humanoid.ga.cycle import get_status as ga_status
+
             ga_last = ga_status().get("last_run_ts")
         except Exception:
             pass
         try:
-            from modules.humanoid.metalearn.cycle import get_status as meta_status
+            from modules.humanoid.metalearn.cycle import \
+                get_status as meta_status
+
             meta_last = meta_status().get("last_update_ts")
         except Exception:
             pass
@@ -3845,30 +4800,37 @@ def product_status():
         gateway_state = "unknown"
         try:
             from modules.humanoid.cluster.registry import list_nodes
+
             cluster_nodes = len(list_nodes())
         except Exception:
             pass
         try:
             from modules.humanoid.gateway.store import build_gateway_status
+
             gw = build_gateway_status()
             gateway_state = gw.get("mode", "unknown")
         except Exception:
             pass
         service_name = os.getenv("SERVICE_NAME", "ATLAS_PUSH")
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(True, {
-            "version": version_info.get("version", "0.0.0"),
-            "edition": version_info.get("edition", "community"),
-            "license": license_info,
-            "service_name": service_name,
-            "active_port": port,
-            "health_score": health.get("score", 0),
-            "cluster_nodes": cluster_nodes,
-            "gateway_state": gateway_state,
-            "last_ga_run_ts": ga_last,
-            "last_metalearn_run_ts": meta_last,
-            "support_contact": os.getenv("SUPPORT_CONTACT", ""),
-        }, ms, None)
+        return _std_resp(
+            True,
+            {
+                "version": version_info.get("version", "0.0.0"),
+                "edition": version_info.get("edition", "community"),
+                "license": license_info,
+                "service_name": service_name,
+                "active_port": port,
+                "health_score": health.get("score", 0),
+                "cluster_nodes": cluster_nodes,
+                "gateway_state": gateway_state,
+                "last_ga_run_ts": ga_last,
+                "last_metalearn_run_ts": meta_last,
+                "support_contact": os.getenv("SUPPORT_CONTACT", ""),
+            },
+            ms,
+            None,
+        )
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
@@ -3882,6 +4844,7 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 def root_redirect():
     """Redirige a /ui para que el dashboard cargue desde el mismo servidor que expone /api."""
     from fastapi.responses import RedirectResponse
+
     # Default entrypoint: /ui is the v4 landing (presentation).
     return RedirectResponse(url="/ui", status_code=302)
 
@@ -3892,7 +4855,13 @@ def serve_ui():
     # v4 landing is canonical at /ui (presentation)
     path = STATIC_DIR / "v4" / "index.html"
     if path.exists():
-        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
+        return FileResponse(
+            path,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+            },
+        )
     return {"ok": False, "error": "v4/index.html not found"}
 
 
@@ -3901,7 +4870,13 @@ def serve_v3():
     """Legacy dashboard v3.8.0 (operational UI)."""
     path = STATIC_DIR / "dashboard.html"
     if path.exists():
-        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
+        return FileResponse(
+            path,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+            },
+        )
     return {"ok": False, "error": "dashboard.html not found"}
 
 
@@ -3910,12 +4885,24 @@ def serve_ui_legacy():
     """Emergency alias for legacy dashboard (kept behind ATLAS_UI_LEGACY=true)."""
     from fastapi import HTTPException
 
-    enabled = os.getenv("ATLAS_UI_LEGACY", "false").strip().lower() in ("1", "true", "yes", "y", "on")
+    enabled = os.getenv("ATLAS_UI_LEGACY", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    )
     if not enabled:
         raise HTTPException(status_code=404, detail="not_found")
     path = STATIC_DIR / "dashboard.html"
     if path.exists():
-        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
+        return FileResponse(
+            path,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+            },
+        )
     return {"ok": False, "error": "dashboard.html not found"}
 
 
@@ -3928,9 +4915,19 @@ def serve_ui_static(file_path: str):
     path = STATIC_DIR / "v4" / safe
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail=f"ui asset not found: {safe}")
-    ct_map = {".js": "application/javascript", ".css": "text/css", ".html": "text/html", ".json": "application/json", ".svg": "image/svg+xml"}
+    ct_map = {
+        ".js": "application/javascript",
+        ".css": "text/css",
+        ".html": "text/html",
+        ".json": "application/json",
+        ".svg": "image/svg+xml",
+    }
     ct = ct_map.get(path.suffix, "application/octet-stream")
-    return FileResponse(path, media_type=ct, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    return FileResponse(
+        path,
+        media_type=ct,
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @app.get("/workspace")
@@ -3938,7 +4935,13 @@ def serve_workspace():
     """ATLAS Agent Workspace — IDE-style interface para comandar ATLAS en tiempo real."""
     path = STATIC_DIR / "workspace.html"
     if path.exists():
-        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
+        return FileResponse(
+            path,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+            },
+        )
     return {"ok": False, "error": "workspace.html not found"}
 
 
@@ -3946,6 +4949,7 @@ def serve_workspace():
 def serve_v4():
     """Back-compat alias for the v4 landing."""
     from fastapi.responses import RedirectResponse
+
     return RedirectResponse(url="/ui", status_code=302)
 
 
@@ -3958,9 +4962,19 @@ def serve_v4_static(file_path: str):
     path = STATIC_DIR / "v4" / safe
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail=f"v4 asset not found: {safe}")
-    ct_map = {".js": "application/javascript", ".css": "text/css", ".html": "text/html", ".json": "application/json", ".svg": "image/svg+xml"}
+    ct_map = {
+        ".js": "application/javascript",
+        ".css": "text/css",
+        ".html": "text/html",
+        ".json": "application/json",
+        ".svg": "image/svg+xml",
+    }
     ct = ct_map.get(path.suffix, "application/octet-stream")
-    return FileResponse(path, media_type=ct, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+    return FileResponse(
+        path,
+        media_type=ct,
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @app.get("/nexus")
@@ -3968,7 +4982,13 @@ def serve_nexus():
     """Panel de Control ATLAS — vista consolidada del sistema (antes en puerto 8000)."""
     path = STATIC_DIR / "nexus.html"
     if path.exists():
-        return FileResponse(path, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"})
+        return FileResponse(
+            path,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+            },
+        )
     return {"ok": False, "error": "nexus.html not found"}
 
 
@@ -3977,64 +4997,366 @@ def serve_nexus():
 # ----------------------------------------------------------------------------
 
 _MODEL_CATALOG = [
-    {"id": "auto", "name": "Auto (Inteligente→Gratis→Local)", "provider": "atlas", "desc": "Cascada: API gratis (Gemini/Groq), luego pago (GPT-4.1/Claude), luego local", "category": "auto"},
-    {"id": "cascade:ide-agent", "name": "Cascade (IDE Agent)", "provider": "atlas", "desc": "Asistente del IDE; usa enrutamiento ATLAS auto para ejecución interna", "category": "assistant"},
+    {
+        "id": "auto",
+        "name": "Auto (Inteligente→Gratis→Local)",
+        "provider": "atlas",
+        "desc": "Cascada: API gratis (Gemini/Groq), luego pago (GPT-4.1/Claude), luego local",
+        "category": "auto",
+    },
+    {
+        "id": "cascade:ide-agent",
+        "name": "Cascade (IDE Agent)",
+        "provider": "atlas",
+        "desc": "Asistente del IDE; usa enrutamiento ATLAS auto para ejecución interna",
+        "category": "assistant",
+    },
     # ── Ollama LOCAL (gratis, tu PC) ──
-    {"id": "ollama:deepseek-r1:14b", "name": "DeepSeek R1 14B", "provider": "ollama", "desc": "Razonamiento local (gratis)", "category": "local"},
-    {"id": "ollama:deepseek-coder:6.7b", "name": "DeepSeek Coder 6.7B", "provider": "ollama", "desc": "Codigo local (gratis)", "category": "local"},
-    {"id": "ollama:qwen2.5:7b", "name": "Qwen 2.5 7B", "provider": "ollama", "desc": "General local (gratis)", "category": "local"},
-    {"id": "ollama:llama3.1:latest", "name": "Llama 3.1 8B", "provider": "ollama", "desc": "Meta local (gratis)", "category": "local"},
-    {"id": "ollama:deepseek-r1:latest", "name": "DeepSeek R1 7B", "provider": "ollama", "desc": "Razonamiento compacto (gratis)", "category": "local"},
-    {"id": "ollama:llama3.2-vision:11b", "name": "Llama 3.2 Vision 11B", "provider": "ollama", "desc": "Vision local (gratis)", "category": "local"},
+    {
+        "id": "ollama:deepseek-r1:14b",
+        "name": "DeepSeek R1 14B",
+        "provider": "ollama",
+        "desc": "Razonamiento local (gratis)",
+        "category": "local",
+    },
+    {
+        "id": "ollama:deepseek-coder:6.7b",
+        "name": "DeepSeek Coder 6.7B",
+        "provider": "ollama",
+        "desc": "Codigo local (gratis)",
+        "category": "local",
+    },
+    {
+        "id": "ollama:qwen2.5:7b",
+        "name": "Qwen 2.5 7B",
+        "provider": "ollama",
+        "desc": "General local (gratis)",
+        "category": "local",
+    },
+    {
+        "id": "ollama:llama3.1:latest",
+        "name": "Llama 3.1 8B",
+        "provider": "ollama",
+        "desc": "Meta local (gratis)",
+        "category": "local",
+    },
+    {
+        "id": "ollama:deepseek-r1:latest",
+        "name": "DeepSeek R1 7B",
+        "provider": "ollama",
+        "desc": "Razonamiento compacto (gratis)",
+        "category": "local",
+    },
+    {
+        "id": "ollama:llama3.2-vision:11b",
+        "name": "Llama 3.2 Vision 11B",
+        "provider": "ollama",
+        "desc": "Vision local (gratis)",
+        "category": "local",
+    },
     # ── API GRATIS (tier gratuito) ──
-    {"id": "groq:llama-3.3-70b-versatile", "name": "Llama 3.3 70B (Groq)", "provider": "groq", "desc": "Ultra rapido, tier gratis", "category": "free"},
-    {"id": "groq:llama-3.1-8b-instant", "name": "Llama 3.1 8B (Groq)", "provider": "groq", "desc": "Instantaneo, tier gratis", "category": "free"},
-    {"id": "groq:mixtral-8x7b-32768", "name": "Mixtral 8x7B (Groq)", "provider": "groq", "desc": "MoE via Groq, tier gratis", "category": "free"},
-    {"id": "groq:deepseek-r1-distill-llama-70b", "name": "DeepSeek R1 Distill 70B (Groq)", "provider": "groq", "desc": "Razonamiento gratis via Groq", "category": "free"},
-    {"id": "gemini:gemini-2.5-flash", "name": "Gemini 2.5 Flash", "provider": "gemini", "desc": "Google rapido, tier gratis", "category": "free"},
-    {"id": "gemini:gemini-2.5-pro-preview-06-05", "name": "Gemini 2.5 Pro", "provider": "gemini", "desc": "Google flagship, tier gratis limitado", "category": "free"},
+    {
+        "id": "groq:llama-3.3-70b-versatile",
+        "name": "Llama 3.3 70B (Groq)",
+        "provider": "groq",
+        "desc": "Ultra rapido, tier gratis",
+        "category": "free",
+    },
+    {
+        "id": "groq:llama-3.1-8b-instant",
+        "name": "Llama 3.1 8B (Groq)",
+        "provider": "groq",
+        "desc": "Instantaneo, tier gratis",
+        "category": "free",
+    },
+    {
+        "id": "groq:mixtral-8x7b-32768",
+        "name": "Mixtral 8x7B (Groq)",
+        "provider": "groq",
+        "desc": "MoE via Groq, tier gratis",
+        "category": "free",
+    },
+    {
+        "id": "groq:deepseek-r1-distill-llama-70b",
+        "name": "DeepSeek R1 Distill 70B (Groq)",
+        "provider": "groq",
+        "desc": "Razonamiento gratis via Groq",
+        "category": "free",
+    },
+    {
+        "id": "gemini:gemini-2.5-flash",
+        "name": "Gemini 2.5 Flash",
+        "provider": "gemini",
+        "desc": "Google rapido, tier gratis",
+        "category": "free",
+    },
+    {
+        "id": "gemini:gemini-2.5-pro-preview-06-05",
+        "name": "Gemini 2.5 Pro",
+        "provider": "gemini",
+        "desc": "Google flagship, tier gratis limitado",
+        "category": "free",
+    },
     # ── API DE PAGO ──
-    {"id": "openai:gpt-4.1", "name": "GPT-4.1", "provider": "openai", "desc": "Flagship OpenAI", "category": "premium"},
-    {"id": "openai:gpt-4.1-mini", "name": "GPT-4.1 Mini", "provider": "openai", "desc": "Rapido y economico", "category": "fast"},
-    {"id": "openai:gpt-4.1-nano", "name": "GPT-4.1 Nano", "provider": "openai", "desc": "Ultra rapido, tareas simples", "category": "fast"},
-    {"id": "openai:gpt-4o-mini", "name": "GPT-4o Mini", "provider": "openai", "desc": "Multimodal rapido y economico", "category": "fast"},
-    {"id": "openai:o4-mini", "name": "o4-mini", "provider": "openai", "desc": "Razonamiento avanzado", "category": "reasoning"},
-    {"id": "openai:o3-mini", "name": "o3-mini", "provider": "openai", "desc": "Razonamiento rapido", "category": "reasoning"},
-    {"id": "openai:o3", "name": "o3", "provider": "openai", "desc": "Razonamiento profundo", "category": "reasoning"},
-    {"id": "openai:o1", "name": "o1", "provider": "openai", "desc": "Razonamiento de alta calidad", "category": "reasoning"},
-    {"id": "openai:o1-mini", "name": "o1-mini", "provider": "openai", "desc": "Razonamiento eficiente", "category": "reasoning"},
-    {"id": "openai:gpt-4.5-preview", "name": "GPT-4.5 Preview", "provider": "openai", "desc": "Generación más reciente (preview)", "category": "premium"},
-    {"id": "openai:gpt-4o", "name": "GPT-4o", "provider": "openai", "desc": "Multimodal estable", "category": "premium"},
-    {"id": "anthropic:claude-sonnet-4-20250514", "name": "Claude Sonnet 4", "provider": "anthropic", "desc": "Codigo y analisis", "category": "premium"},
-    {"id": "anthropic:claude-sonnet-4-5", "name": "Claude Sonnet 4.5", "provider": "anthropic", "desc": "Sonnet avanzado (última generación)", "category": "premium"},
-    {"id": "anthropic:claude-sonnet-4-latest", "name": "Claude Sonnet 4 (latest)", "provider": "anthropic", "desc": "Alias estable para Sonnet 4", "category": "premium"},
-    {"id": "anthropic:claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku", "provider": "anthropic", "desc": "Ultra rapido", "category": "fast"},
-    {"id": "anthropic:claude-3-7-sonnet-latest", "name": "Claude 3.7 Sonnet", "provider": "anthropic", "desc": "Razonamiento + coding avanzado", "category": "reasoning"},
-    {"id": "anthropic:claude-haiku-4-latest", "name": "Claude Haiku 4", "provider": "anthropic", "desc": "Baja latencia, última generación", "category": "fast"},
-    {"id": "anthropic:claude-opus-4-20250514", "name": "Claude Opus 4", "provider": "anthropic", "desc": "Maximo razonamiento", "category": "reasoning"},
-    {"id": "anthropic:claude-opus-4-latest", "name": "Claude Opus 4 (latest)", "provider": "anthropic", "desc": "Alias estable para Opus 4", "category": "reasoning"},
-    {"id": "bedrock:us.anthropic.claude-opus-4-6-v1:0", "name": "Claude Opus 4.6 (Bedrock)", "provider": "anthropic", "desc": "Via AWS Bedrock (configurado)", "category": "reasoning"},
-    {"id": "deepseek:deepseek-chat", "name": "DeepSeek V3 (API)", "provider": "deepseek", "desc": "Chat y codigo, muy economico", "category": "fast"},
-    {"id": "deepseek:deepseek-v3", "name": "DeepSeek V3", "provider": "deepseek", "desc": "Modelo general avanzado", "category": "premium"},
-    {"id": "deepseek:deepseek-v3.1", "name": "DeepSeek V3.1", "provider": "deepseek", "desc": "Iteración reciente de alto rendimiento", "category": "premium"},
-    {"id": "deepseek:deepseek-reasoner", "name": "DeepSeek R1 (API)", "provider": "deepseek", "desc": "Razonamiento chain-of-thought", "category": "reasoning"},
-    {"id": "deepseek:deepseek-r1", "name": "DeepSeek R1", "provider": "deepseek", "desc": "Razonamiento avanzado (full)", "category": "reasoning"},
-    {"id": "xai:grok-3", "name": "Grok 3", "provider": "xai", "desc": "Flagship xAI", "category": "premium"},
-    {"id": "xai:grok-3-mini", "name": "Grok 3 Mini", "provider": "xai", "desc": "Rapido y eficiente", "category": "fast"},
-    {"id": "xai:grok-3-fast", "name": "Grok 3 Fast", "provider": "xai", "desc": "Baja latencia", "category": "fast"},
-    {"id": "xai:grok-4", "name": "Grok 4", "provider": "xai", "desc": "Siguiente generación xAI", "category": "premium"},
-    {"id": "xai:grok-4-fast", "name": "Grok 4 Fast", "provider": "xai", "desc": "Generación reciente con baja latencia", "category": "fast"},
-    {"id": "mistral:mistral-large-latest", "name": "Mistral Large", "provider": "mistral", "desc": "Flagship Mistral", "category": "premium"},
-    {"id": "mistral:codestral-latest", "name": "Codestral", "provider": "mistral", "desc": "Codigo especializado", "category": "code"},
-    {"id": "mistral:mistral-small-latest", "name": "Mistral Small", "provider": "mistral", "desc": "Rapido y economico", "category": "fast"},
-    {"id": "perplexity:sonar-pro", "name": "Sonar Pro", "provider": "perplexity", "desc": "Busqueda web + IA", "category": "search"},
-    {"id": "perplexity:sonar", "name": "Sonar", "provider": "perplexity", "desc": "Busqueda rapida", "category": "search"},
+    {
+        "id": "openai:gpt-4.1",
+        "name": "GPT-4.1",
+        "provider": "openai",
+        "desc": "Flagship OpenAI",
+        "category": "premium",
+    },
+    {
+        "id": "openai:gpt-4.1-mini",
+        "name": "GPT-4.1 Mini",
+        "provider": "openai",
+        "desc": "Rapido y economico",
+        "category": "fast",
+    },
+    {
+        "id": "openai:gpt-4.1-nano",
+        "name": "GPT-4.1 Nano",
+        "provider": "openai",
+        "desc": "Ultra rapido, tareas simples",
+        "category": "fast",
+    },
+    {
+        "id": "openai:gpt-4o-mini",
+        "name": "GPT-4o Mini",
+        "provider": "openai",
+        "desc": "Multimodal rapido y economico",
+        "category": "fast",
+    },
+    {
+        "id": "openai:o4-mini",
+        "name": "o4-mini",
+        "provider": "openai",
+        "desc": "Razonamiento avanzado",
+        "category": "reasoning",
+    },
+    {
+        "id": "openai:o3-mini",
+        "name": "o3-mini",
+        "provider": "openai",
+        "desc": "Razonamiento rapido",
+        "category": "reasoning",
+    },
+    {
+        "id": "openai:o3",
+        "name": "o3",
+        "provider": "openai",
+        "desc": "Razonamiento profundo",
+        "category": "reasoning",
+    },
+    {
+        "id": "openai:o1",
+        "name": "o1",
+        "provider": "openai",
+        "desc": "Razonamiento de alta calidad",
+        "category": "reasoning",
+    },
+    {
+        "id": "openai:o1-mini",
+        "name": "o1-mini",
+        "provider": "openai",
+        "desc": "Razonamiento eficiente",
+        "category": "reasoning",
+    },
+    {
+        "id": "openai:gpt-4.5-preview",
+        "name": "GPT-4.5 Preview",
+        "provider": "openai",
+        "desc": "Generación más reciente (preview)",
+        "category": "premium",
+    },
+    {
+        "id": "openai:gpt-4o",
+        "name": "GPT-4o",
+        "provider": "openai",
+        "desc": "Multimodal estable",
+        "category": "premium",
+    },
+    {
+        "id": "anthropic:claude-sonnet-4-20250514",
+        "name": "Claude Sonnet 4",
+        "provider": "anthropic",
+        "desc": "Codigo y analisis",
+        "category": "premium",
+    },
+    {
+        "id": "anthropic:claude-sonnet-4-5",
+        "name": "Claude Sonnet 4.5",
+        "provider": "anthropic",
+        "desc": "Sonnet avanzado (última generación)",
+        "category": "premium",
+    },
+    {
+        "id": "anthropic:claude-sonnet-4-latest",
+        "name": "Claude Sonnet 4 (latest)",
+        "provider": "anthropic",
+        "desc": "Alias estable para Sonnet 4",
+        "category": "premium",
+    },
+    {
+        "id": "anthropic:claude-3-5-haiku-20241022",
+        "name": "Claude 3.5 Haiku",
+        "provider": "anthropic",
+        "desc": "Ultra rapido",
+        "category": "fast",
+    },
+    {
+        "id": "anthropic:claude-3-7-sonnet-latest",
+        "name": "Claude 3.7 Sonnet",
+        "provider": "anthropic",
+        "desc": "Razonamiento + coding avanzado",
+        "category": "reasoning",
+    },
+    {
+        "id": "anthropic:claude-haiku-4-latest",
+        "name": "Claude Haiku 4",
+        "provider": "anthropic",
+        "desc": "Baja latencia, última generación",
+        "category": "fast",
+    },
+    {
+        "id": "anthropic:claude-opus-4-20250514",
+        "name": "Claude Opus 4",
+        "provider": "anthropic",
+        "desc": "Maximo razonamiento",
+        "category": "reasoning",
+    },
+    {
+        "id": "anthropic:claude-opus-4-latest",
+        "name": "Claude Opus 4 (latest)",
+        "provider": "anthropic",
+        "desc": "Alias estable para Opus 4",
+        "category": "reasoning",
+    },
+    {
+        "id": "bedrock:us.anthropic.claude-opus-4-6-v1:0",
+        "name": "Claude Opus 4.6 (Bedrock)",
+        "provider": "anthropic",
+        "desc": "Via AWS Bedrock (configurado)",
+        "category": "reasoning",
+    },
+    {
+        "id": "deepseek:deepseek-chat",
+        "name": "DeepSeek V3 (API)",
+        "provider": "deepseek",
+        "desc": "Chat y codigo, muy economico",
+        "category": "fast",
+    },
+    {
+        "id": "deepseek:deepseek-v3",
+        "name": "DeepSeek V3",
+        "provider": "deepseek",
+        "desc": "Modelo general avanzado",
+        "category": "premium",
+    },
+    {
+        "id": "deepseek:deepseek-v3.1",
+        "name": "DeepSeek V3.1",
+        "provider": "deepseek",
+        "desc": "Iteración reciente de alto rendimiento",
+        "category": "premium",
+    },
+    {
+        "id": "deepseek:deepseek-reasoner",
+        "name": "DeepSeek R1 (API)",
+        "provider": "deepseek",
+        "desc": "Razonamiento chain-of-thought",
+        "category": "reasoning",
+    },
+    {
+        "id": "deepseek:deepseek-r1",
+        "name": "DeepSeek R1",
+        "provider": "deepseek",
+        "desc": "Razonamiento avanzado (full)",
+        "category": "reasoning",
+    },
+    {
+        "id": "xai:grok-3",
+        "name": "Grok 3",
+        "provider": "xai",
+        "desc": "Flagship xAI",
+        "category": "premium",
+    },
+    {
+        "id": "xai:grok-3-mini",
+        "name": "Grok 3 Mini",
+        "provider": "xai",
+        "desc": "Rapido y eficiente",
+        "category": "fast",
+    },
+    {
+        "id": "xai:grok-3-fast",
+        "name": "Grok 3 Fast",
+        "provider": "xai",
+        "desc": "Baja latencia",
+        "category": "fast",
+    },
+    {
+        "id": "xai:grok-4",
+        "name": "Grok 4",
+        "provider": "xai",
+        "desc": "Siguiente generación xAI",
+        "category": "premium",
+    },
+    {
+        "id": "xai:grok-4-fast",
+        "name": "Grok 4 Fast",
+        "provider": "xai",
+        "desc": "Generación reciente con baja latencia",
+        "category": "fast",
+    },
+    {
+        "id": "mistral:mistral-large-latest",
+        "name": "Mistral Large",
+        "provider": "mistral",
+        "desc": "Flagship Mistral",
+        "category": "premium",
+    },
+    {
+        "id": "mistral:codestral-latest",
+        "name": "Codestral",
+        "provider": "mistral",
+        "desc": "Codigo especializado",
+        "category": "code",
+    },
+    {
+        "id": "mistral:mistral-small-latest",
+        "name": "Mistral Small",
+        "provider": "mistral",
+        "desc": "Rapido y economico",
+        "category": "fast",
+    },
+    {
+        "id": "perplexity:sonar-pro",
+        "name": "Sonar Pro",
+        "provider": "perplexity",
+        "desc": "Busqueda web + IA",
+        "category": "search",
+    },
+    {
+        "id": "perplexity:sonar",
+        "name": "Sonar",
+        "provider": "perplexity",
+        "desc": "Busqueda rapida",
+        "category": "search",
+    },
 ]
 
 _PROVIDER_LABELS = {
-    "atlas": "ATLAS", "openai": "OpenAI", "anthropic": "Anthropic", "gemini": "Google",
-    "xai": "xAI", "deepseek": "DeepSeek", "groq": "Groq", "mistral": "Mistral",
-    "perplexity": "Perplexity", "ollama": "Ollama", "bedrock": "AWS Bedrock",
+    "atlas": "ATLAS",
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "gemini": "Google",
+    "xai": "xAI",
+    "deepseek": "DeepSeek",
+    "groq": "Groq",
+    "mistral": "Mistral",
+    "perplexity": "Perplexity",
+    "ollama": "Ollama",
+    "bedrock": "AWS Bedrock",
 }
 
 # Estado runtime por proveedor (último error conocido para UI de Workspace)
@@ -4084,7 +5406,9 @@ def _classify_provider_error(error_text: str) -> Dict[str, Any]:
     }
 
 
-def _set_provider_runtime_status(provider_id: str, error_text: Optional[str] = None) -> None:
+def _set_provider_runtime_status(
+    provider_id: str, error_text: Optional[str] = None
+) -> None:
     pid = (provider_id or "").strip().lower()
     if not pid:
         return
@@ -4106,37 +5430,64 @@ def agent_models():
     """Catalogo de modelos IA con status de API key."""
     t0 = time.perf_counter()
     from modules.humanoid.ai.provider_credentials import get_provider_api_key
+
     status = {}
-    for pid in ("openai", "anthropic", "gemini", "xai", "deepseek", "groq", "mistral", "perplexity"):
+    for pid in (
+        "openai",
+        "anthropic",
+        "gemini",
+        "xai",
+        "deepseek",
+        "groq",
+        "mistral",
+        "perplexity",
+    ):
         key = get_provider_api_key(pid)
         status[pid] = bool(key and key.strip())
     status["ollama"] = True
     status["atlas"] = True
     status["bedrock"] = bool(
-        ((os.getenv("AWS_ACCESS_KEY_ID") or "").strip() and (os.getenv("AWS_SECRET_ACCESS_KEY") or "").strip())
+        (
+            (os.getenv("AWS_ACCESS_KEY_ID") or "").strip()
+            and (os.getenv("AWS_SECRET_ACCESS_KEY") or "").strip()
+        )
         or (os.getenv("ATLAS_AI_MODE", "").strip().lower() == "bedrock")
     )
     models = []
     for m in _MODEL_CATALOG:
         is_bedrock_model = str(m.get("id", "")).startswith("bedrock:")
-        available = status.get("bedrock", False) if is_bedrock_model else status.get(m["provider"], False)
+        available = (
+            status.get("bedrock", False)
+            if is_bedrock_model
+            else status.get(m["provider"], False)
+        )
         rt = _PROVIDER_RUNTIME_STATUS.get(m["provider"], {})
-        models.append({
-            **m,
-            "available": available,
-            "provider_label": "Anthropic (Bedrock)" if is_bedrock_model else _PROVIDER_LABELS.get(m["provider"], m["provider"]),
-            "status_code": rt.get("code"),
-            "status_message": rt.get("message"),
-            "runtime_state": rt.get("level", "ok"),
-            "runtime_error": rt.get("raw"),
-        })
+        models.append(
+            {
+                **m,
+                "available": available,
+                "provider_label": "Anthropic (Bedrock)"
+                if is_bedrock_model
+                else _PROVIDER_LABELS.get(m["provider"], m["provider"]),
+                "status_code": rt.get("code"),
+                "status_message": rt.get("message"),
+                "runtime_state": rt.get("level", "ok"),
+                "runtime_error": rt.get("raw"),
+            }
+        )
     ms = int((time.perf_counter() - t0) * 1000)
-    return {"ok": True, "data": models, "provider_runtime": _PROVIDER_RUNTIME_STATUS, "ms": ms}
+    return {
+        "ok": True,
+        "data": models,
+        "provider_runtime": _PROVIDER_RUNTIME_STATUS,
+        "ms": ms,
+    }
 
 
 # ----------------------------------------------------------------------------
 # Bitácora Central (UI -> servidor)
 # ----------------------------------------------------------------------------
+
 
 class BitacoraLogBody(BaseModel):
     message: str = ""
@@ -4160,7 +5511,9 @@ def bitacora_log(body: BitacoraLogBody):
         # Mapear nivel UI → ok boolean (para evolution_bitacora)
         ok = lvl not in ("error", "critical", "high", "fail", "failed")
         try:
-            from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+            from modules.humanoid.ans.evolution_bitacora import \
+                append_evolution_log
+
             append_evolution_log(message=msg[:500], ok=ok, source=src)
         except Exception:
             pass
@@ -4173,15 +5526,26 @@ def bitacora_log(body: BitacoraLogBody):
 def bitacora_stream(since_id: int = 0):
     """Entradas nuevas de la bitacora desde un ID especifico (polling incremental)."""
     try:
-        from modules.humanoid.ans.evolution_bitacora import get_evolution_entries
+        from modules.humanoid.ans.evolution_bitacora import \
+            get_evolution_entries
+
         all_entries = get_evolution_entries(limit=200)
         if since_id:
             ts_threshold = since_id / 1000.0
-            filtered = [e for e in all_entries if _ts_to_epoch(e.get("timestamp", "")) > ts_threshold]
+            filtered = [
+                e
+                for e in all_entries
+                if _ts_to_epoch(e.get("timestamp", "")) > ts_threshold
+            ]
         else:
             filtered = all_entries[:50]
         latest_id = int(time.time() * 1000)
-        return {"ok": True, "entries": filtered, "count": len(filtered), "latest_id": latest_id}
+        return {
+            "ok": True,
+            "entries": filtered,
+            "count": len(filtered),
+            "latest_id": latest_id,
+        }
     except Exception:
         return {"ok": True, "entries": [], "count": 0, "latest_id": 0}
 
@@ -4197,7 +5561,9 @@ def ops_event(body: dict):
         lvl = (body.get("level") or "info").strip().lower()
         ok = lvl not in ("error", "critical", "high", "fail", "failed")
         try:
-            from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+            from modules.humanoid.ans.evolution_bitacora import \
+                append_evolution_log
+
             append_evolution_log(message=msg[:500], ok=ok, source=src)
         except Exception:
             pass
@@ -4212,6 +5578,7 @@ def ui_lang(locale: str = "es"):
     try:
         from modules.humanoid.config import SUPPORTED_LOCALES
         from modules.humanoid.config.i18n import get_all_strings
+
         loc = locale.strip().lower() if locale else "es"
         if loc not in SUPPORTED_LOCALES:
             loc = "es"
@@ -4222,27 +5589,46 @@ def ui_lang(locale: str = "es"):
 
 @app.get("/tools")
 def tools():
-    return {"ok": True, "tools": [
-        "atlas.status","atlas.doctor","atlas.modules","atlas.snapshot",
-        "atlas.note.create","atlas.note.append","atlas.note.view","atlas.inbox"
-    ]}
+    return {
+        "ok": True,
+        "tools": [
+            "atlas.status",
+            "atlas.doctor",
+            "atlas.modules",
+            "atlas.snapshot",
+            "atlas.note.create",
+            "atlas.note.append",
+            "atlas.note.view",
+            "atlas.inbox",
+        ],
+    }
+
 
 @app.post("/execute")
 def execute(step: Step):
     t = step.tool
     a = step.args or {}
-    if t == "atlas.status": cmd = "/status"
-    elif t == "atlas.doctor": cmd = "/doctor"
-    elif t == "atlas.modules": cmd = "/modules"
-    elif t == "atlas.snapshot": cmd = f"/snapshot {a.get('label','snapshot')}"
-    elif t == "atlas.note.create": cmd = f"/note create {a.get('title','Nota')}"
-    elif t == "atlas.note.append": cmd = f"/note append {a.get('title','Inbox')} | {a.get('text','')}"
-    elif t == "atlas.note.view": cmd = f"/note view {a.get('title','Inbox')}"
-    elif t == "atlas.inbox": cmd = a.get("text","")
+    if t == "atlas.status":
+        cmd = "/status"
+    elif t == "atlas.doctor":
+        cmd = "/doctor"
+    elif t == "atlas.modules":
+        cmd = "/modules"
+    elif t == "atlas.snapshot":
+        cmd = f"/snapshot {a.get('label','snapshot')}"
+    elif t == "atlas.note.create":
+        cmd = f"/note create {a.get('title','Nota')}"
+    elif t == "atlas.note.append":
+        cmd = f"/note append {a.get('title','Inbox')} | {a.get('text','')}"
+    elif t == "atlas.note.view":
+        cmd = f"/note view {a.get('title','Inbox')}"
+    elif t == "atlas.inbox":
+        cmd = a.get("text", "")
     else:
         return {"ok": False, "error": f"Tool no soportada aún: {t}"}
     out = handle(cmd)
     return {"ok": True, "tool": t, "output": out}
+
 
 @app.get("/modules")
 def modules():
@@ -4253,17 +5639,21 @@ def modules():
             {"name": "voice", "enabled": False},
             {"name": "agent_router", "enabled": False},
             {"name": "telegram", "enabled": True},
-        ]
+        ],
     }
 
-from pydantic import BaseModel
-from typing import Any, List, Optional
+
 import time
+from typing import Any, List, Optional
+
+from pydantic import BaseModel
+
 
 class IntentIn(BaseModel):
     user: str = "raul"
     text: str
     meta: Optional[dict[str, Any]] = None
+
 
 @app.post("/intent")
 def intent(payload: IntentIn):
@@ -4275,20 +5665,25 @@ def intent(payload: IntentIn):
         "result": {
             "message": "Intent recibido",
             "ts": time.time(),
-        }
+        },
     }
+
+
+import time
+from typing import Any, List, Optional
+
 # --- Canonical Intent API (v1) ---
 from pydantic import BaseModel
-from typing import Any, List, Optional
-import time
 
 # Temporalmente comentado para evitar error de importación
 # from modules.command_router import handle as route_command
+
 
 class IntentIn(BaseModel):
     user: str = "raul"
     text: str = ""
     meta: Optional[dict[str, Any]] = None
+
 
 @app.post("/intent")
 def intent(payload: IntentIn):
@@ -4297,7 +5692,7 @@ def intent(payload: IntentIn):
         return {
             "ok": False,
             "received": payload.model_dump(),
-            "error": "Campo 'text' es requerido (ej: {\"text\": \"/status\"})",
+            "error": 'Campo \'text\' es requerido (ej: {"text": "/status"})',
             "ms": int((time.time() - t0) * 1000),
         }
     try:
@@ -4322,34 +5717,59 @@ _push_state: dict = {"last_command": None, "last_ack": None, "updated_at": None}
 
 # --- Evolution (ATLAS_EVOLUTION): gobernanza y pendientes de aprobación ---
 _evolution_pending: list = []  # [{ package, old_version, new_version, ts, worker }]
-_evolution_governed: bool = os.environ.get("EVOLUTION_GOVERNED", "").strip().upper() in ("1", "TRUE", "GOVERNED")
-_evolution_last_report: dict = {}  # Último reporte del daemon: { state, message, asimilacion_exitosa, ts }
+_evolution_governed: bool = os.environ.get(
+    "EVOLUTION_GOVERNED", ""
+).strip().upper() in ("1", "TRUE", "GOVERNED")
+_evolution_last_report: dict = (
+    {}
+)  # Último reporte del daemon: { state, message, asimilacion_exitosa, ts }
+
 
 class PushCommandBody(BaseModel):
     target: str = "NEXUS_ARM"
     action: str = "update_state"
     value: Any = 1
 
+
 @app.post("/api/push/command", tags=["Push"])
 def push_command(body: PushCommandBody):
     """Recibe comando del Cerebro; NEXUS lee el estado y ejecuta. Si target=EVOLUTION_REPORT, registra pendientes y último reporte (Asimilación Exitosa)."""
     global _push_state, _evolution_pending, _evolution_last_report
-    cmd = {"target": body.target, "action": body.action, "value": body.value, "ts": time.time()}
+    cmd = {
+        "target": body.target,
+        "action": body.action,
+        "value": body.value,
+        "ts": time.time(),
+    }
     _push_state["last_command"] = cmd
     _push_state["updated_at"] = time.time()
-    if body.target == "EVOLUTION_REPORT" and body.action == "worker_result" and isinstance(body.value, str):
+    if (
+        body.target == "EVOLUTION_REPORT"
+        and body.action == "worker_result"
+        and isinstance(body.value, str)
+    ):
         try:
             import json
+
             payload = json.loads(body.value)
-            if payload.get("status") == "pending_approval" or payload.get("event") == "evolution_pending_approval":
-                _evolution_pending.append({
-                    "package": payload.get("package"),
-                    "old_version": payload.get("old_version"),
-                    "new_version": payload.get("new_version"),
-                    "ts": time.time(),
-                    "worker": payload.get("worker", "pypi"),
-                })
-            if payload.get("event") == "ans_bitacora" or payload.get("asimilacion_exitosa") is not None or payload.get("state"):
+            if (
+                payload.get("status") == "pending_approval"
+                or payload.get("event") == "evolution_pending_approval"
+            ):
+                _evolution_pending.append(
+                    {
+                        "package": payload.get("package"),
+                        "old_version": payload.get("old_version"),
+                        "new_version": payload.get("new_version"),
+                        "ts": time.time(),
+                        "worker": payload.get("worker", "pypi"),
+                    }
+                )
+            if (
+                payload.get("event") == "ans_bitacora"
+                or payload.get("asimilacion_exitosa") is not None
+                or payload.get("state")
+            ):
                 _evolution_last_report = {
                     "state": payload.get("state", ""),
                     "message": payload.get("message", ""),
@@ -4360,10 +5780,17 @@ def push_command(body: PushCommandBody):
             pass
     return {"ok": True, "command": cmd}
 
+
 @app.get("/api/push/state", tags=["Push"])
 def push_state():
     """Estado actual del Dashboard para evitar comandos duplicados."""
-    return {"ok": True, "state": _push_state.get("last_command"), "ack": _push_state.get("last_ack"), "updated_at": _push_state.get("updated_at")}
+    return {
+        "ok": True,
+        "state": _push_state.get("last_command"),
+        "ack": _push_state.get("last_ack"),
+        "updated_at": _push_state.get("updated_at"),
+    }
+
 
 @app.post("/api/push/ack", tags=["Push"])
 def push_ack(body: dict):
@@ -4398,7 +5825,10 @@ def evolution_approve(body: EvolutionApproveBody):
     if not req_txt.exists():
         return {"ok": False, "error": "requirements.txt no encontrado"}
     for i, p in enumerate(_evolution_pending):
-        if p.get("package") == body.package and p.get("new_version") == body.new_version:
+        if (
+            p.get("package") == body.package
+            and p.get("new_version") == body.new_version
+        ):
             try:
                 text = req_txt.read_text(encoding="utf-8")
                 lines = text.splitlines()
@@ -4413,7 +5843,10 @@ def evolution_approve(body: EvolutionApproveBody):
                         new_lines.append(f"{body.package}=={body.new_version}")
                         continue
                     new_lines.append(line)
-                req_txt.write_text("\n".join(new_lines) + ("\n" if text.endswith("\n") else ""), encoding="utf-8")
+                req_txt.write_text(
+                    "\n".join(new_lines) + ("\n" if text.endswith("\n") else ""),
+                    encoding="utf-8",
+                )
             except Exception as e:
                 return {"ok": False, "error": str(e)}
             _evolution_pending.pop(i)
@@ -4426,18 +5859,31 @@ def evolution_trigger():
     """Fuerza la ejecución de un ciclo de la Tríada (PyPI | GitHub | Hugging Face) en segundo plano. No espera a que termine."""
     import subprocess
     import sys
+
     daemon_script = BASE_DIR / "evolution_daemon.py"
     if not daemon_script.exists():
-        return {"ok": False, "error": "evolution_daemon.py no encontrado", "triggered": False}
+        return {
+            "ok": False,
+            "error": "evolution_daemon.py no encontrado",
+            "triggered": False,
+        }
     try:
         subprocess.Popen(
             [sys.executable, str(daemon_script), "--run-once"],
             cwd=str(BASE_DIR),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            creationflags=(subprocess.CREATE_NO_WINDOW if (sys.platform == "win32" and hasattr(subprocess, "CREATE_NO_WINDOW")) else 0),
+            creationflags=(
+                subprocess.CREATE_NO_WINDOW
+                if (sys.platform == "win32" and hasattr(subprocess, "CREATE_NO_WINDOW"))
+                else 0
+            ),
         )
-        return {"ok": True, "triggered": True, "message": "Ciclo Tríada (PyPI/GitHub/HF) iniciado en segundo plano. Ver /api/evolution/status y logs/evolution_last_cycle.json"}
+        return {
+            "ok": True,
+            "triggered": True,
+            "message": "Ciclo Tríada (PyPI/GitHub/HF) iniciado en segundo plano. Ver /api/evolution/status y logs/evolution_last_cycle.json",
+        }
     except Exception as e:
         return {"ok": False, "error": str(e), "triggered": False}
 
@@ -4460,7 +5906,13 @@ def llm_endpoint(req: LLMRequest) -> LLMResponse:
     resp = llm_service.run(req)
     try:
         from modules.humanoid.metalearn.collector import record_router_call
-        record_router_call(getattr(resp, "route", "CHAT") or "CHAT", getattr(resp, "model_used", "") or "", "ok" if getattr(resp, "ok", True) else "fail", getattr(resp, "ms", None))
+
+        record_router_call(
+            getattr(resp, "route", "CHAT") or "CHAT",
+            getattr(resp, "model_used", "") or "",
+            "ok" if getattr(resp, "ok", True) else "fail",
+            getattr(resp, "ms", None),
+        )
     except Exception:
         pass
     return resp
@@ -4471,6 +5923,7 @@ def llm_endpoint(req: LLMRequest) -> LLMResponse:
 def ai_status():
     """Multi-AI status: providers, route_to_model, budget, policies, telemetry."""
     from modules.humanoid.ai.status import get_ai_status
+
     return get_ai_status()
 
 
@@ -4489,8 +5942,9 @@ class AIRouteBody(BaseModel):
 def ai_route(body: AIRouteBody):
     """Return RouteDecision for TaskProfile. Use prompt+intent_hint or intent/complexity/modality."""
     try:
-        from modules.humanoid.ai.router import infer_task_profile, decide_route
         from modules.humanoid.ai.models import TaskProfile
+        from modules.humanoid.ai.router import decide_route, infer_task_profile
+
         if body.prompt:
             profile = infer_task_profile(
                 body.prompt,
@@ -4505,7 +5959,10 @@ def ai_route(body: AIRouteBody):
                 modality=body.modality or "text",
                 safety=body.safety or "med",
             )
-        decision = decide_route(profile, prefer_free=body.prefer_free if body.prefer_free is not None else True)
+        decision = decide_route(
+            profile,
+            prefer_free=body.prefer_free if body.prefer_free is not None else True,
+        )
         return {
             "ok": True,
             "decision": {
@@ -4526,6 +5983,7 @@ def mode_capabilities():
     """ATLAS_MODE capabilities: screen_act, record_replay, playwright, benchmark."""
     try:
         from modules.humanoid.mode import get_mode_capabilities
+
         return {"ok": True, "data": get_mode_capabilities()}
     except Exception as e:
         return {"ok": False, "data": None, "error": str(e)}
@@ -4549,6 +6007,7 @@ def cursor_run_endpoint(body: CursorRunBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.cursor import cursor_run
+
         result = cursor_run(
             goal=body.goal,
             mode=body.mode or "plan_only",
@@ -4560,7 +6019,9 @@ def cursor_run_endpoint(body: CursorRunBody):
             resources=body.resources,
         )
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(result.get("ok", False), result.get("data"), ms, result.get("error"))
+        return _std_resp(
+            result.get("ok", False), result.get("data"), ms, result.get("error")
+        )
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
@@ -4576,14 +6037,29 @@ def cursor_step_execute(body: CursorStepBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.cursor import get_cursor_status
+
         status = get_cursor_status()
         data = status.get("data")
         if not data or not data.get("steps"):
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "no cursor run or no steps")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "no cursor run or no steps",
+            )
         idx = max(0, min(body.step_index, len(data["steps"]) - 1))
         step = data["steps"][idx]
         if not body.approve:
-            return _std_resp(True, {"step": step, "executed": False, "message": "Set approve=true to execute"}, int((time.perf_counter() - t0) * 1000), None)
+            return _std_resp(
+                True,
+                {
+                    "step": step,
+                    "executed": False,
+                    "message": "Set approve=true to execute",
+                },
+                int((time.perf_counter() - t0) * 1000),
+                None,
+            )
         # Ejecutar de verdad usando el ejecutor de Cursor (genera script/log).
         try:
             from modules.humanoid.cursor.executor import CursorExecutor
@@ -4600,34 +6076,64 @@ def cursor_step_execute(body: CursorStepBody):
             # Crear wrapper RunArtifacts desde artifacts path (mínimo necesario)
             from modules.humanoid.cursor.executor import RunArtifacts
 
-            run_dir = Path(artifacts.get("run_dir") or (Path(str(BASE_DIR)) / "snapshots" / "cursor"))
+            run_dir = Path(
+                artifacts.get("run_dir")
+                or (Path(str(BASE_DIR)) / "snapshots" / "cursor")
+            )
             ra = RunArtifacts(
                 run_id=str(artifacts.get("run_id") or "cursor_controlled"),
                 run_dir=run_dir,
-                log_path=Path(artifacts.get("terminal_log_path") or (run_dir / "terminal.log")),
+                log_path=Path(
+                    artifacts.get("terminal_log_path") or (run_dir / "terminal.log")
+                ),
                 script_path=Path(artifacts.get("script_path") or (run_dir / "run.ps1")),
-                json_path=Path(artifacts.get("run_json_path") or (run_dir / "run.json")),
+                json_path=Path(
+                    artifacts.get("run_json_path") or (run_dir / "run.json")
+                ),
             )
             r = ex.execute_step(ra, step)
             data.setdefault("controlled_result", {"executed": []})
             data["controlled_result"].setdefault("executed", []).append(r)
-            data["steps"][idx]["status"] = "done" if r.get("ok") else ("needs_human" if r.get("action") == "needs_human" else "failed")
+            data["steps"][idx]["status"] = (
+                "done"
+                if r.get("ok")
+                else ("needs_human" if r.get("action") == "needs_human" else "failed")
+            )
             # Preview terminal actualizado
             try:
                 if ra.log_path.exists():
-                    data["terminal_preview"] = ra.log_path.read_text(encoding="utf-8", errors="ignore")[-6000:]
+                    data["terminal_preview"] = ra.log_path.read_text(
+                        encoding="utf-8", errors="ignore"
+                    )[-6000:]
             except Exception:
                 pass
             # Persistir como last_run
             try:
                 from modules.humanoid.cursor.status import set_last_run
+
                 set_last_run(data)
             except Exception:
                 pass
-            return _std_resp(True, {"step": step, "executed": True, "result": r, "terminal_preview": data.get("terminal_preview"), "artifacts": data.get("artifacts")}, int((time.perf_counter() - t0) * 1000), None)
+            return _std_resp(
+                True,
+                {
+                    "step": step,
+                    "executed": True,
+                    "result": r,
+                    "terminal_preview": data.get("terminal_preview"),
+                    "artifacts": data.get("artifacts"),
+                },
+                int((time.perf_counter() - t0) * 1000),
+                None,
+            )
         except Exception as e:
             data["steps"][idx]["status"] = "failed"
-            return _std_resp(False, {"step": step, "executed": False}, int((time.perf_counter() - t0) * 1000), str(e))
+            return _std_resp(
+                False,
+                {"step": step, "executed": False},
+                int((time.perf_counter() - t0) * 1000),
+                str(e),
+            )
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
@@ -4637,6 +6143,7 @@ def cursor_status_endpoint():
     """Last cursor run state: goal, steps, model_routing, evidence."""
     try:
         from modules.humanoid.cursor import get_cursor_status
+
         return get_cursor_status()
     except Exception as e:
         return {"ok": False, "data": None, "message": str(e)}
@@ -4644,7 +6151,9 @@ def cursor_status_endpoint():
 
 # --- PC Walker (Windows navigation) ---
 class PcWalkBody(BaseModel):
-    command: str = "workflow"  # workflow | open_app | open_path | screenshot | ocr | alt_tab
+    command: str = (
+        "workflow"  # workflow | open_app | open_path | screenshot | ocr | alt_tab
+    )
     payload: Optional[dict] = None
 
 
@@ -4681,21 +6190,51 @@ def api_pc_walk(body: PcWalkBody):
             steps = payload.get("steps") or []
             if not isinstance(steps, list):
                 steps = []
-            result = run_workflow(steps, allow_destructive=allow_destructive, sleep_ms=sleep_ms, step_timeout_s=step_timeout_s)
+            result = run_workflow(
+                steps,
+                allow_destructive=allow_destructive,
+                sleep_ms=sleep_ms,
+                step_timeout_s=step_timeout_s,
+            )
         elif cmd == "open_app":
             name = str(payload.get("name") or payload.get("app") or "")
-            result = run_workflow([{"kind": "open_app", "name": name}], allow_destructive=allow_destructive, sleep_ms=sleep_ms, step_timeout_s=step_timeout_s)
+            result = run_workflow(
+                [{"kind": "open_app", "name": name}],
+                allow_destructive=allow_destructive,
+                sleep_ms=sleep_ms,
+                step_timeout_s=step_timeout_s,
+            )
         elif cmd == "open_path":
             path = str(payload.get("path") or "")
-            result = run_workflow([{"kind": "open_path", "path": path}], allow_destructive=allow_destructive, sleep_ms=sleep_ms, step_timeout_s=step_timeout_s)
+            result = run_workflow(
+                [{"kind": "open_path", "path": path}],
+                allow_destructive=allow_destructive,
+                sleep_ms=sleep_ms,
+                step_timeout_s=step_timeout_s,
+            )
         elif cmd == "screenshot":
             name = str(payload.get("name") or "pc_ui")
-            result = run_workflow([{"kind": "screenshot", "name": name}], allow_destructive=allow_destructive, sleep_ms=sleep_ms, step_timeout_s=step_timeout_s)
+            result = run_workflow(
+                [{"kind": "screenshot", "name": name}],
+                allow_destructive=allow_destructive,
+                sleep_ms=sleep_ms,
+                step_timeout_s=step_timeout_s,
+            )
         elif cmd == "ocr":
-            result = run_workflow([{"kind": "ocr"}], allow_destructive=allow_destructive, sleep_ms=sleep_ms, step_timeout_s=step_timeout_s)
+            result = run_workflow(
+                [{"kind": "ocr"}],
+                allow_destructive=allow_destructive,
+                sleep_ms=sleep_ms,
+                step_timeout_s=step_timeout_s,
+            )
         elif cmd == "alt_tab":
             count = int(payload.get("count") or 1)
-            result = run_workflow([{"kind": "alt_tab", "count": count}], allow_destructive=allow_destructive, sleep_ms=sleep_ms, step_timeout_s=step_timeout_s)
+            result = run_workflow(
+                [{"kind": "alt_tab", "count": count}],
+                allow_destructive=allow_destructive,
+                sleep_ms=sleep_ms,
+                step_timeout_s=step_timeout_s,
+            )
         else:
             result = {"ok": False, "error": "unsupported_command", "steps": [], "ms": 0}
 
@@ -4708,9 +6247,10 @@ def api_pc_walk(body: PcWalkBody):
 
 class RepoPushBody(BaseModel):
     """Solicitud de push de repo (esta u otra app). Desde Cursor o chat."""
-    app_id: Optional[str] = None   # atlas_push | atlas_nexus | robot | ...
+
+    app_id: Optional[str] = None  # atlas_push | atlas_nexus | robot | ...
     repo_path: Optional[str] = None  # ruta absoluta si no usa known_apps
-    message: Optional[str] = None    # mensaje de commit
+    message: Optional[str] = None  # mensaje de commit
 
 
 @app.post("/api/repo/push", tags=["Cursor", "Repo"])
@@ -4718,19 +6258,29 @@ def api_repo_push(body: RepoPushBody):
     """Sube el repo de esta app o de otra (app_id o repo_path). Usado por Cursor y por chat."""
     t0 = time.perf_counter()
     try:
-        from modules.repo_push import push_repo, resolve_path, list_known_apps
+        from modules.repo_push import list_known_apps, push_repo, resolve_path
+
         repo = resolve_path(app_id=body.app_id, repo_path=body.repo_path)
         msg = (body.message or "").strip() or "chore: sync (solicitado por Cursor/chat)"
         result = push_repo(repo_path=repo, message=msg)
         ms = int((time.perf_counter() - t0) * 1000)
         return {
             "ok": result.get("ok", False),
-            "data": {"message": result.get("message"), "branch": result.get("branch"), "pushed": result.get("pushed")},
+            "data": {
+                "message": result.get("message"),
+                "branch": result.get("branch"),
+                "pushed": result.get("pushed"),
+            },
             "ms": ms,
             "error": result.get("error"),
         }
     except Exception as e:
-        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+        return {
+            "ok": False,
+            "data": None,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": str(e),
+        }
 
 
 @app.get("/api/repo/apps", tags=["Repo"])
@@ -4738,6 +6288,7 @@ def api_repo_apps():
     """Lista apps conocidas (known_apps) para push desde Cursor/chat."""
     try:
         from modules.repo_push import list_known_apps
+
         return {"ok": True, "data": list_known_apps()}
     except Exception as e:
         return {"ok": False, "data": {}, "error": str(e)}
@@ -4750,13 +6301,22 @@ _learning_components: Optional[dict] = None
 def _get_semantic_memory_safe():
     """Semantic memory o stub si falla (p. ej. sin sentence_transformers)."""
     try:
-        from modules.humanoid.memory_engine.semantic_memory import get_semantic_memory
+        from modules.humanoid.memory_engine.semantic_memory import \
+            get_semantic_memory
+
         return get_semantic_memory()
     except Exception:
+
         class _StubSemanticMemory:
-            def add_experience(self, *args, **kwargs): return 0
-            def recall_similar(self, *args, **kwargs): return []
-            def get_statistics(self): return {"total_experiences": 0, "storage_size_mb": 0}
+            def add_experience(self, *args, **kwargs):
+                return 0
+
+            def recall_similar(self, *args, **kwargs):
+                return []
+
+            def get_statistics(self):
+                return {"total_experiences": 0, "storage_size_mb": 0}
+
         return _StubSemanticMemory()
 
 
@@ -4766,15 +6326,18 @@ def _get_learning_components():
     if _learning_components is not None:
         return _learning_components
     import sys
+
     if str(BASE_DIR) not in sys.path:
         sys.path.insert(0, str(BASE_DIR))
     try:
         from brain.knowledge.initial_knowledge import InitialKnowledgeBase
-        from brain.learning.uncertainty_detector import UncertaintyDetector
         from brain.learning.ai_consultant import AIConsultant
-        from brain.learning.knowledge_consolidator import KnowledgeConsolidator
-        from brain.learning.continual_learning_loop import ContinualLearningLoop
         from brain.learning.ai_tutor import AITutor
+        from brain.learning.continual_learning_loop import \
+            ContinualLearningLoop
+        from brain.learning.knowledge_consolidator import KnowledgeConsolidator
+        from brain.learning.uncertainty_detector import UncertaintyDetector
+
         kb = InitialKnowledgeBase()
         uncertainty_detector = UncertaintyDetector(uncertainty_threshold=0.6)
         ai_consultant = AIConsultant()
@@ -4782,6 +6345,7 @@ def _get_learning_components():
         episodic_memory = None
         try:
             from brain.learning.episodic_memory import EpisodicMemory
+
             episodic_memory = EpisodicMemory()
         except Exception:
             pass
@@ -4799,7 +6363,10 @@ def _get_learning_components():
                 tutor_type=tutor_type,
                 api_key=os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY"),
                 review_interval_hours=int(os.getenv("AI_TUTOR_REVIEW_HOURS", "6")),
-                use_local_fallback=os.getenv("AI_TUTOR_USE_LOCAL_FALLBACK", "true").lower() in ("1", "true", "yes"),
+                use_local_fallback=os.getenv(
+                    "AI_TUTOR_USE_LOCAL_FALLBACK", "true"
+                ).lower()
+                in ("1", "true", "yes"),
             )
         except Exception:
             ai_tutor = None
@@ -4871,11 +6438,17 @@ def _atomic_write_json(path: Path, payload: dict) -> None:
 
 
 def _cleanup_learning_snapshots(keep_last_n: Optional[int] = None) -> int:
-    keep = keep_last_n if keep_last_n is not None else int(os.getenv("LEARNING_SNAPSHOT_KEEP_LAST", "500"))
+    keep = (
+        keep_last_n
+        if keep_last_n is not None
+        else int(os.getenv("LEARNING_SNAPSHOT_KEEP_LAST", "500"))
+    )
     if keep <= 0:
         return 0
     d = _learning_snapshot_dir()
-    files = sorted(d.glob("LEARNING_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    files = sorted(
+        d.glob("LEARNING_*.json"), key=lambda p: p.stat().st_mtime, reverse=True
+    )
     removed = 0
     for f in files[keep:]:
         try:
@@ -4888,7 +6461,9 @@ def _cleanup_learning_snapshots(keep_last_n: Optional[int] = None) -> int:
 
 def _write_learning_snapshot(kind: str, data: dict) -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    safe_kind = "".join(c if (c.isalnum() or c in ("-", "_")) else "_" for c in (kind or "event"))[:48]
+    safe_kind = "".join(
+        c if (c.isalnum() or c in ("-", "_")) else "_" for c in (kind or "event")
+    )[:48]
     path = _learning_snapshot_dir() / f"LEARNING_{safe_kind}_{ts}.json"
     payload = {
         "kind": safe_kind,
@@ -4909,7 +6484,9 @@ class ProcessSituationBody(BaseModel):
     goal: Optional[str] = None
     entities: Optional[List[str]] = None
     constraints: Optional[List[str]] = None
-    risk_level: Optional[str] = None  # low | normal | high | critical (para should_ask_for_help)
+    risk_level: Optional[
+        str
+    ] = None  # low | normal | high | critical (para should_ask_for_help)
 
     @field_validator("risk_level")
     @classmethod
@@ -4962,25 +6539,38 @@ async def process_situation_with_learning(body: ProcessSituationBody):
         try:
             res = await comp["learning_loop"].process_situation(situation)
             try:
-                if episode_id is not None and comp.get("episodic_memory") and getattr(comp["episodic_memory"], "update_episode", None):
+                if (
+                    episode_id is not None
+                    and comp.get("episodic_memory")
+                    and getattr(comp["episodic_memory"], "update_episode", None)
+                ):
                     comp["episodic_memory"].update_episode(
                         int(episode_id),
                         action_taken="learn:process_situation",
                         result=res,
                         success=True,
-                        new_knowledge_count=int(res.get("new_knowledge_count", 0)) if isinstance(res, dict) else None,
-                        asked_for_help=bool(res.get("asked_for_help")) if isinstance(res, dict) and "asked_for_help" in res else None,
-                        uncertainty_score=float(res.get("uncertainty_score", 0.0)) if isinstance(res, dict) and "uncertainty_score" in res else None,
+                        new_knowledge_count=int(res.get("new_knowledge_count", 0))
+                        if isinstance(res, dict)
+                        else None,
+                        asked_for_help=bool(res.get("asked_for_help"))
+                        if isinstance(res, dict) and "asked_for_help" in res
+                        else None,
+                        uncertainty_score=float(res.get("uncertainty_score", 0.0))
+                        if isinstance(res, dict) and "uncertainty_score" in res
+                        else None,
                         tags=["learning", "process_situation"],
                     )
             except Exception:
                 pass
             try:
-                _write_learning_snapshot("process_situation_done", {"episode_id": episode_id, "result": res})
+                _write_learning_snapshot(
+                    "process_situation_done", {"episode_id": episode_id, "result": res}
+                )
             except Exception:
                 pass
             try:
                 from modules.humanoid.memory_engine.store import memory_write
+
                 memory_write(
                     thread_id=None,
                     kind="decision",
@@ -4997,16 +6587,30 @@ async def process_situation_with_learning(body: ProcessSituationBody):
                 pass
         except Exception as e:
             try:
-                if episode_id is not None and comp.get("episodic_memory") and getattr(comp["episodic_memory"], "update_episode", None):
-                    comp["episodic_memory"].update_episode(int(episode_id), action_taken="learn:process_situation", result=str(e), success=False, tags=["learning", "error"])
+                if (
+                    episode_id is not None
+                    and comp.get("episodic_memory")
+                    and getattr(comp["episodic_memory"], "update_episode", None)
+                ):
+                    comp["episodic_memory"].update_episode(
+                        int(episode_id),
+                        action_taken="learn:process_situation",
+                        result=str(e),
+                        success=False,
+                        tags=["learning", "error"],
+                    )
             except Exception:
                 pass
             try:
-                _write_learning_snapshot("process_situation_error", {"episode_id": episode_id, "error": str(e), "situation": situation})
+                _write_learning_snapshot(
+                    "process_situation_error",
+                    {"episode_id": episode_id, "error": str(e), "situation": situation},
+                )
             except Exception:
                 pass
             try:
                 from modules.humanoid.memory_engine.store import memory_write
+
                 memory_write(
                     thread_id=None,
                     kind="decision",
@@ -5043,7 +6647,13 @@ async def process_situation_with_learning(body: ProcessSituationBody):
             asyncio.create_task(_bg_job())
         except Exception:
             pass
-    return {"ok": True, "queued": True, "episode_id": episode_id, "snapshot": snapshot_queued, "status": "processing"}
+    return {
+        "ok": True,
+        "queued": True,
+        "episode_id": episode_id,
+        "snapshot": snapshot_queued,
+        "status": "processing",
+    }
 
 
 @app.get("/api/learning/knowledge-base", tags=["Learning"])
@@ -5077,7 +6687,13 @@ async def trigger_learning_consolidation():
         snap = _write_learning_snapshot("consolidate", {"report": report})
     except Exception:
         snap = ""
-    return {"ok": True, "status": "consolidated", "report": report, "snapshot": snap, "timestamp": datetime.now(timezone.utc).isoformat()}
+    return {
+        "ok": True,
+        "status": "consolidated",
+        "report": report,
+        "snapshot": snap,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @app.get("/api/learning/uncertainty-status", tags=["Learning"])
@@ -5134,7 +6750,12 @@ async def teach_new_concept(body: TeachConceptBody):
             )
         except Exception:
             pass
-    return {"ok": True, "status": "concept_taught", "concept": body.concept_name, "total_concepts": len(kb.concepts)}
+    return {
+        "ok": True,
+        "status": "concept_taught",
+        "concept": body.concept_name,
+        "total_concepts": len(kb.concepts),
+    }
 
 
 @app.get("/api/learning/growth-metrics", tags=["Learning"])
@@ -5150,7 +6771,9 @@ def get_learning_growth_metrics():
     stats = getattr(sem, "get_statistics", lambda: {})() or {}
     total_failures = sum(len(f) for f in ud.failure_memory.values())
     ep_stats = {}
-    if comp.get("episodic_memory") and getattr(comp["episodic_memory"], "get_statistics", None):
+    if comp.get("episodic_memory") and getattr(
+        comp["episodic_memory"], "get_statistics", None
+    ):
         try:
             ep_stats = comp["episodic_memory"].get_statistics()
         except Exception:
@@ -5158,10 +6781,20 @@ def get_learning_growth_metrics():
     return {
         "ok": True,
         "data": {
-            "knowledge_base": {"concepts": len(kb.concepts), "skills": len(kb.skills), "rules": len(kb.rules)},
-            "memory": {"total_experiences": stats.get("total_experiences", 0), "storage_mb": stats.get("storage_size_mb", 0)},
+            "knowledge_base": {
+                "concepts": len(kb.concepts),
+                "skills": len(kb.skills),
+                "rules": len(kb.rules),
+            },
+            "memory": {
+                "total_experiences": stats.get("total_experiences", 0),
+                "storage_mb": stats.get("storage_size_mb", 0),
+            },
             "episodic_memory": ep_stats,
-            "learning": {"total_experiences_processed": loop.experience_counter, "times_failures_tracked": total_failures},
+            "learning": {
+                "total_experiences_processed": loop.experience_counter,
+                "times_failures_tracked": total_failures,
+            },
         },
     }
 
@@ -5209,7 +6842,11 @@ async def start_learning_daily_routine():
                 "daily_routine_start",
                 {
                     "current_lesson": getattr(loop, "current_lesson", None),
-                    "lesson_start_time": (lambda t: t.isoformat() if t and hasattr(t, "isoformat") else None)(getattr(loop, "lesson_start_time", None)),
+                    "lesson_start_time": (
+                        lambda t: t.isoformat()
+                        if t and hasattr(t, "isoformat")
+                        else None
+                    )(getattr(loop, "lesson_start_time", None)),
                 },
             )
         except Exception:
@@ -5218,7 +6855,9 @@ async def start_learning_daily_routine():
             "ok": True,
             "status": "started",
             "current_lesson": getattr(loop, "current_lesson", None),
-            "lesson_start_time": (lambda t: t.isoformat() if t and hasattr(t, "isoformat") else None)(getattr(loop, "lesson_start_time", None)),
+            "lesson_start_time": (
+                lambda t: t.isoformat() if t and hasattr(t, "isoformat") else None
+            )(getattr(loop, "lesson_start_time", None)),
             "snapshot": snap,
         }
     except Exception as e:
@@ -5244,16 +6883,29 @@ async def end_learning_daily_report():
         if evaluation is None:
             snap = ""
             try:
-                snap = _write_learning_snapshot("daily_routine_end", {"evaluation": None, "status": "no_lesson"})
+                snap = _write_learning_snapshot(
+                    "daily_routine_end", {"evaluation": None, "status": "no_lesson"}
+                )
             except Exception:
                 snap = ""
-            return {"ok": True, "status": "no_lesson", "message": "No hay lección activa o tutor configurado"}
+            return {
+                "ok": True,
+                "status": "no_lesson",
+                "message": "No hay lección activa o tutor configurado",
+            }
         snap = ""
         try:
-            snap = _write_learning_snapshot("daily_routine_end", {"evaluation": evaluation, "status": "evaluated"})
+            snap = _write_learning_snapshot(
+                "daily_routine_end", {"evaluation": evaluation, "status": "evaluated"}
+            )
         except Exception:
             snap = ""
-        return {"ok": True, "status": "evaluated", "evaluation": evaluation, "snapshot": snap}
+        return {
+            "ok": True,
+            "status": "evaluated",
+            "evaluation": evaluation,
+            "snapshot": snap,
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -5271,7 +6923,13 @@ def get_learning_tutor_stats():
         return {"ok": False, "error": comp["error"]}
     tutor = comp.get("ai_tutor")
     if not tutor or not hasattr(tutor, "get_statistics"):
-        return {"ok": True, "data": {"enabled": False, "message": "IA Tutor no configurado (AI_TUTOR_TYPE=claude|gpt4 y API key)"}}
+        return {
+            "ok": True,
+            "data": {
+                "enabled": False,
+                "message": "IA Tutor no configurado (AI_TUTOR_TYPE=claude|gpt4 y API key)",
+            },
+        }
     try:
         data = tutor.get_statistics()
         data["enabled"] = True
@@ -5302,6 +6960,7 @@ def design_learning_curriculum(body: DesignCurriculumBody):
     if not tutor:
         try:
             from brain.learning.ai_tutor import AITutor
+
             tutor = AITutor(tutor_type="disabled")
             comp["ai_tutor"] = tutor
             if comp.get("learning_loop"):
@@ -5314,7 +6973,10 @@ def design_learning_curriculum(body: DesignCurriculumBody):
         time_horizon_days=body.time_horizon_days,
         difficulty_level=body.difficulty_level,
     )
-    return {"ok": True, "data": {"count": len(curriculum or []), "curriculum": curriculum}}
+    return {
+        "ok": True,
+        "data": {"count": len(curriculum or []), "curriculum": curriculum},
+    }
 
 
 @app.post(
@@ -5335,6 +6997,7 @@ def bootstrap_python_mastery():
     if not tutor:
         try:
             from brain.learning.ai_tutor import AITutor
+
             tutor = AITutor(tutor_type="disabled")
             comp["ai_tutor"] = tutor
             if comp.get("learning_loop"):
@@ -5343,7 +7006,13 @@ def bootstrap_python_mastery():
             return {"ok": False, "error": f"AI Tutor no disponible: {e}"}
     curriculum = tutor.design_curriculum(
         robot_capabilities=["repo_tools", "cli", "testing", "offline_first"],
-        learning_goals=["python_mastery", "python_scripting", "pytest", "sqlite", "tooling"],
+        learning_goals=[
+            "python_mastery",
+            "python_scripting",
+            "pytest",
+            "sqlite",
+            "tooling",
+        ],
         time_horizon_days=int(os.getenv("PYTHON_MASTERY_HORIZON_DAYS", "30") or 30),
         difficulty_level=os.getenv("PYTHON_MASTERY_DIFFICULTY", "progressive"),
     )
@@ -5353,7 +7022,10 @@ def bootstrap_python_mastery():
         current = tutor.assign_daily_lesson()
     except Exception:
         current = None
-    return {"ok": True, "data": {"count": len(curriculum or []), "current_lesson": current}}
+    return {
+        "ok": True,
+        "data": {"count": len(curriculum or []), "current_lesson": current},
+    }
 
 
 class PythonMasteryEvaluateBody(BaseModel):
@@ -5377,13 +7049,21 @@ def evaluate_python_mastery(body: PythonMasteryEvaluateBody):
         try:
             loop = comp.get("learning_loop")
             current = getattr(loop, "current_lesson", None) if loop else None
-            lesson_id = (current or {}).get("lesson_id", "") if isinstance(current, dict) else ""
+            lesson_id = (
+                (current or {}).get("lesson_id", "")
+                if isinstance(current, dict)
+                else ""
+            )
         except Exception:
             lesson_id = ""
     if not lesson_id:
-        return {"ok": False, "error": "lesson_id requerido (o iniciar daily-routine para tener current_lesson)"}
+        return {
+            "ok": False,
+            "error": "lesson_id requerido (o iniciar daily-routine para tener current_lesson)",
+        }
     try:
-        from brain.learning.python_mastery_evaluator import evaluate_python_mastery_lesson
+        from brain.learning.python_mastery_evaluator import \
+            evaluate_python_mastery_lesson
 
         evaluation = evaluate_python_mastery_lesson(
             lesson_id=lesson_id,
@@ -5392,7 +7072,10 @@ def evaluate_python_mastery(body: PythonMasteryEvaluateBody):
         )
         snap = ""
         try:
-            snap = _write_learning_snapshot("python_mastery_evaluate", {"lesson_id": lesson_id, "evaluation": evaluation})
+            snap = _write_learning_snapshot(
+                "python_mastery_evaluate",
+                {"lesson_id": lesson_id, "evaluation": evaluation},
+            )
         except Exception:
             snap = ""
         return {"ok": True, "evaluation": evaluation, "snapshot": snap}
@@ -5419,15 +7102,27 @@ async def python_mastery_campaign_start(body: PythonMasteryCampaignStartBody):
     if not tutor or not loop:
         return {"ok": False, "error": "Componentes de learning no disponibles"}
     try:
-        from brain.learning.python_mastery_campaign import start_or_resume_campaign
+        from brain.learning.python_mastery_campaign import \
+            start_or_resume_campaign
 
-        res = start_or_resume_campaign(tutor=tutor, loop=loop, repo_root=Path(str(BASE_DIR)), reset=bool(body.reset))
+        res = start_or_resume_campaign(
+            tutor=tutor,
+            loop=loop,
+            repo_root=Path(str(BASE_DIR)),
+            reset=bool(body.reset),
+        )
         snap = ""
         try:
             snap = _write_learning_snapshot("python_mastery_campaign_start", res)
         except Exception:
             snap = ""
-        return {"ok": True, "status": res["state"].get("status"), "current_lesson": res.get("current_lesson"), "state": res.get("state"), "snapshot": snap}
+        return {
+            "ok": True,
+            "status": res["state"].get("status"),
+            "current_lesson": res.get("current_lesson"),
+            "state": res.get("state"),
+            "snapshot": snap,
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -5473,7 +7168,14 @@ def python_mastery_campaign_step(body: PythonMasteryCampaignStepBody):
         )
         snap = ""
         try:
-            snap = _write_learning_snapshot("python_mastery_campaign_step", {"lesson_id": res.get("lesson_id"), "status": res.get("status"), "evaluation": res.get("evaluation")})
+            snap = _write_learning_snapshot(
+                "python_mastery_campaign_step",
+                {
+                    "lesson_id": res.get("lesson_id"),
+                    "status": res.get("status"),
+                    "evaluation": res.get("evaluation"),
+                },
+            )
         except Exception:
             snap = ""
         return {**res, "snapshot": snap}
@@ -5489,7 +7191,8 @@ def python_mastery_campaign_step(body: PythonMasteryCampaignStepBody):
 )
 def python_mastery_campaign_state():
     try:
-        from brain.learning.python_mastery_campaign import campaign_state_path, load_campaign_state
+        from brain.learning.python_mastery_campaign import (
+            campaign_state_path, load_campaign_state)
 
         path = campaign_state_path(Path(str(BASE_DIR)))
         state = load_campaign_state(path)
@@ -5572,9 +7275,19 @@ def architect_index():
     try:
         arch = _get_architect()
         data = arch.index_architecture()
-        return {"ok": True, "data": data, "ms": int((time.perf_counter() - t0) * 1000), "error": None}
+        return {
+            "ok": True,
+            "data": data,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": None,
+        }
     except Exception as e:
-        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+        return {
+            "ok": False,
+            "data": None,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": str(e),
+        }
 
 
 class ArchitectPytestBody(BaseModel):
@@ -5589,9 +7302,19 @@ def architect_pytest(body: ArchitectPytestBody):
         arch = _get_architect()
         data = arch.run_pytest_and_analyze(nodeid=body.nodeid)
         ok = bool(data.get("ok"))
-        return {"ok": ok, "data": data, "ms": int((time.perf_counter() - t0) * 1000), "error": None if ok else "pytest_failed"}
+        return {
+            "ok": ok,
+            "data": data,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": None if ok else "pytest_failed",
+        }
     except Exception as e:
-        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+        return {
+            "ok": False,
+            "data": None,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": str(e),
+        }
 
 
 class ArchitectProposeBody(BaseModel):
@@ -5606,11 +7329,23 @@ def architect_propose_fix(body: ArchitectProposeBody):
     t0 = time.perf_counter()
     try:
         arch = _get_architect()
-        data = arch.propose_code_fix(body.problem, context=body.context, prefer_free=bool(body.prefer_free))
+        data = arch.propose_code_fix(
+            body.problem, context=body.context, prefer_free=bool(body.prefer_free)
+        )
         ok = bool(data.get("ok"))
-        return {"ok": ok, "data": data, "ms": int((time.perf_counter() - t0) * 1000), "error": None if ok else "no_model_or_error"}
+        return {
+            "ok": ok,
+            "data": data,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": None if ok else "no_model_or_error",
+        }
     except Exception as e:
-        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+        return {
+            "ok": False,
+            "data": None,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": str(e),
+        }
 
 
 class ArchitectAgenticBody(BaseModel):
@@ -5625,10 +7360,24 @@ def architect_agentic_execute(body: ArchitectAgenticBody):
     t0 = time.perf_counter()
     try:
         arch = _get_architect()
-        data = arch.agentic_execute(body.goal, prefer_free=bool(body.prefer_free), max_iters=int(body.max_iters or 3))
-        return {"ok": True, "data": data, "ms": int((time.perf_counter() - t0) * 1000), "error": None}
+        data = arch.agentic_execute(
+            body.goal,
+            prefer_free=bool(body.prefer_free),
+            max_iters=int(body.max_iters or 3),
+        )
+        return {
+            "ok": True,
+            "data": data,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": None,
+        }
     except Exception as e:
-        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+        return {
+            "ok": False,
+            "data": None,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": str(e),
+        }
 
 
 class ArchitectOrderBody(BaseModel):
@@ -5650,9 +7399,19 @@ def architect_order(body: ArchitectOrderBody):
             prefer_free=bool(body.prefer_free),
             max_heal_attempts=int(body.max_heal_attempts or 3),
         )
-        return {"ok": bool(data.get("ok")), "data": data, "ms": int((time.perf_counter() - t0) * 1000), "error": None if data.get("ok") else "order_failed"}
+        return {
+            "ok": bool(data.get("ok")),
+            "data": data,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": None if data.get("ok") else "order_failed",
+        }
     except Exception as e:
-        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+        return {
+            "ok": False,
+            "data": None,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": str(e),
+        }
 
 
 class ArchitectApplyApprovedBody(BaseModel):
@@ -5666,18 +7425,27 @@ def architect_apply_approved(body: ArchitectApplyApprovedBody):
     try:
         arch = _get_architect()
         data = arch.apply_approved_plan(body.approval_id)
-        return {"ok": bool(data.get("ok")), "data": data, "ms": int((time.perf_counter() - t0) * 1000), "error": None if data.get("ok") else (data.get("error") or "apply_failed")}
+        return {
+            "ok": bool(data.get("ok")),
+            "data": data,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": None if data.get("ok") else (data.get("error") or "apply_failed"),
+        }
     except Exception as e:
-        return {"ok": False, "data": None, "ms": int((time.perf_counter() - t0) * 1000), "error": str(e)}
+        return {
+            "ok": False,
+            "data": None,
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": str(e),
+        }
 
 
+from modules.humanoid.ans.api import router as ans_router
 # --- Humanoid (kernel + modules) ---
 from modules.humanoid.api import router as humanoid_router
 from modules.humanoid.ga.api import router as ga_router
-from modules.humanoid.metalearn.api import router as metalearn_router
-
-from modules.humanoid.ans.api import router as ans_router
 from modules.humanoid.governance.api import router as governance_router
+from modules.humanoid.metalearn.api import router as metalearn_router
 from modules.humanoid.nervous.api import router as nervous_router
 
 try:
@@ -5704,53 +7472,68 @@ if cognitive_router:
 
 # Cognitive Memory (World Model, Autobiographical, Lifelog, Planner, Unified Memory)
 try:
-    from modules.humanoid.world_model.api import router as cognitive_memory_router
+    from modules.humanoid.world_model.api import \
+        router as cognitive_memory_router
+
     app.include_router(cognitive_memory_router)
 except Exception as _cme:
     import logging
+
     logging.getLogger(__name__).warning("Cognitive Memory module not loaded: %s", _cme)
 
 # Libro de Vida (Book of Life)
 try:
-    from modules.humanoid.memory_engine.libro_vida_api import router as libro_vida_router
+    from modules.humanoid.memory_engine.libro_vida_api import \
+        router as libro_vida_router
+
     app.include_router(libro_vida_router)
 except Exception as _lve:
     import logging
+
     logging.getLogger(__name__).warning("Libro de Vida module not loaded: %s", _lve)
 
 # Directives (migrated from NEXUS)
 try:
     from modules.humanoid.directives.api import router as directives_router
+
     app.include_router(directives_router)
 except Exception as _de:
     import logging
+
     logging.getLogger(__name__).warning("Directives module not loaded: %s", _de)
 
 # Tools Registry (migrated from NEXUS)
 try:
     from modules.humanoid.tools.api import router as tools_api_router
+
     app.include_router(tools_api_router)
 except Exception as _te:
     import logging
+
     logging.getLogger(__name__).warning("Tools module not loaded: %s", _te)
 
 # Tutorias y Visitas
 try:
     from modules.humanoid.quality.tutorias.api import router as tutorias_router
+
     app.include_router(tutorias_router)
 except Exception as _tr:
     import logging
+
     logging.getLogger(__name__).warning("Tutorias module not loaded: %s", _tr)
 
 # ATLAS AUTONOMOUS (health, healing, evolution, telemetry, resilience, learning)
 try:
     import sys
+
     if str(BASE_DIR) not in sys.path:
         sys.path.insert(0, str(BASE_DIR))
     from autonomous.api_routes import router as autonomous_router
+
     app.include_router(autonomous_router)
 except Exception as e:
     import logging
+
     logging.getLogger(__name__).warning("Autonomous module not loaded: %s", e)
 
 
@@ -5762,13 +7545,17 @@ async def autonomous_dashboard():
         return HTMLResponse("<h1>Dashboard no encontrado</h1>", status_code=404)
     return HTMLResponse(html_file.read_text(encoding="utf-8"))
 
+
 # --- /actions/log — log de acciones (antes proxy a NEXUS, ahora local) ---
+
 
 @app.get("/actions/log")
 def actions_log_endpoint(limit: int = 50):
     """Log de acciones del sistema — datos locales de la bitacora."""
     try:
-        from modules.humanoid.ans.evolution_bitacora import get_evolution_entries
+        from modules.humanoid.ans.evolution_bitacora import \
+            get_evolution_entries
+
         entries = get_evolution_entries(limit=limit)
         return {"ok": True, "entries": entries[:limit]}
     except Exception:
@@ -5780,8 +7567,11 @@ async def proxy_websocket(websocket: WebSocket):
     """Proxy WebSocket a NEXUS para tiempo real (evitar 403 cuando el cliente usa origen PUSH)."""
     import asyncio
     import logging
+
     log = logging.getLogger(__name__)
-    ws_nexus_url = NEXUS_BASE.replace("http://", "ws://").replace("https://", "wss://") + "/ws"
+    ws_nexus_url = (
+        NEXUS_BASE.replace("http://", "ws://").replace("https://", "wss://") + "/ws"
+    )
     try:
         import websockets
     except ImportError:
@@ -5833,6 +7623,7 @@ async def proxy_websocket(websocket: WebSocket):
         except Exception:
             pass
 
+
 # --- Cuerpo (NEXUS+Robot): proxies bajo el puerto de PUSH ---
 from fastapi import Request
 from fastapi.responses import Response
@@ -5841,25 +7632,33 @@ from fastapi.responses import Response
 # - /cuerpo/{path:path} es catch-all y debe ir DESPUÉS de rutas más específicas como /cuerpo/nexus/*
 from modules.nexus_proxy import proxy_to_nexus
 
+
 @app.api_route("/cuerpo/nexus", methods=["GET", "POST"])
-@app.api_route("/cuerpo/nexus/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+@app.api_route(
+    "/cuerpo/nexus/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+)
 async def nexus_proxy_route(request: Request, path: str = "") -> Response:
     """Proxy a NEXUS (dashboard + API) bajo el mismo puerto de PUSH."""
     return await proxy_to_nexus(request, path)
 
+
 from modules.cuerpo_proxy import proxy_to_cuerpo
 
+
 @app.api_route("/cuerpo", methods=["GET", "POST"])
-@app.api_route("/cuerpo/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+@app.api_route(
+    "/cuerpo/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+)
 async def cuerpo_proxy_route(request: Request, path: str = "") -> Response:
     """Proxy a Robot (cámaras, visión) en NEXUS_ROBOT_URL/NEXUS_ROBOT_API_URL. Panel de cámaras integrado."""
     return await proxy_to_cuerpo(request, path)
 
 
+from modules.humanoid.audit import get_audit_logger
 # --- Metrics / Policy / Audit endpoints ---
 from modules.humanoid.metrics import get_metrics_store
 from modules.humanoid.policy import ActorContext, get_policy_engine
-from modules.humanoid.audit import get_audit_logger
 
 
 @app.get("/metrics")
@@ -5873,15 +7672,20 @@ def metrics():
 def prometheus_metrics():
     """Métricas en formato Prometheus para scraping."""
     try:
-        from modules.observability.metrics import MetricsCollector
         from fastapi.responses import Response
+
+        from modules.observability.metrics import MetricsCollector
+
         return Response(
             content=MetricsCollector.get_prometheus_text(),
             media_type="text/plain; charset=utf-8",
         )
     except Exception as e:
         from fastapi.responses import Response
-        return Response(content=f"# error: {e}".encode(), media_type="text/plain", status_code=500)
+
+        return Response(
+            content=f"# error: {e}".encode(), media_type="text/plain", status_code=500
+        )
 
 
 @app.get("/api/observability/metrics", tags=["Observability"])
@@ -5889,9 +7693,15 @@ def api_observability_metrics():
     """Resumen de métricas (requests, memoria, health score)."""
     try:
         from modules.observability.metrics import MetricsCollector
+
         return MetricsCollector.get_metrics_summary()
     except Exception as e:
-        return {"error": str(e), "total_requests": 0, "active_requests": 0, "memory_mb": 0}
+        return {
+            "error": str(e),
+            "total_requests": 0,
+            "active_requests": 0,
+            "memory_mb": 0,
+        }
 
 
 class PolicyTestBody(BaseModel):
@@ -5907,7 +7717,11 @@ def policy_test(body: PolicyTestBody):
     """Test policy: {actor, role, module, action, target} -> {allow, reason}."""
     ctx = ActorContext(actor=body.actor, role=body.role)
     decision = get_policy_engine().can(ctx, body.module, body.action, body.target)
-    return {"allow": decision.allow, "reason": decision.reason, "details": decision.details}
+    return {
+        "allow": decision.allow,
+        "reason": decision.reason,
+        "details": decision.details,
+    }
 
 
 @app.get("/audit/tail")
@@ -5923,24 +7737,49 @@ def audit_tail(n: int = 50, module: Optional[str] = None):
 # Monitor Autónomo — SSE stream + snapshot
 # ────────────────────────────────────────────────────────────
 
+
 @app.get("/api/monitor/snapshot", tags=["Monitor"])
 def monitor_snapshot():
     """Snapshot completo del estado actual del sistema para el Monitor autónomo."""
     t0 = time.perf_counter()
-    result = {"ts": datetime.now(timezone.utc).isoformat(), "processes": [], "audit": [], "tasks": [], "bitacora": [], "health": {}, "shell_history": []}
+    result = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "processes": [],
+        "audit": [],
+        "tasks": [],
+        "bitacora": [],
+        "health": {},
+        "shell_history": [],
+    }
     try:
         import subprocess
+
         ps = subprocess.run(
-            ["powershell", "-NoProfile", "-Command",
-             "Get-Process | Where-Object {$_.CPU -gt 0} | Sort-Object CPU -Descending | Select-Object -First 20 Id,ProcessName,CPU,WorkingSet64,StartTime | ConvertTo-Json -Compress"],
-            capture_output=True, text=True, timeout=5
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "Get-Process | Where-Object {$_.CPU -gt 0} | Sort-Object CPU -Descending | Select-Object -First 20 Id,ProcessName,CPU,WorkingSet64,StartTime | ConvertTo-Json -Compress",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if ps.returncode == 0 and ps.stdout.strip():
             import json as _j
+
             procs = _j.loads(ps.stdout)
             if isinstance(procs, dict):
                 procs = [procs]
-            result["processes"] = [{"pid": p.get("Id"), "name": p.get("ProcessName"), "cpu": round(p.get("CPU", 0), 1), "mem_mb": round((p.get("WorkingSet64") or 0) / 1048576, 1)} for p in procs[:20]]
+            result["processes"] = [
+                {
+                    "pid": p.get("Id"),
+                    "name": p.get("ProcessName"),
+                    "cpu": round(p.get("CPU", 0), 1),
+                    "mem_mb": round((p.get("WorkingSet64") or 0) / 1048576, 1),
+                }
+                for p in procs[:20]
+            ]
     except Exception:
         pass
     try:
@@ -5949,40 +7788,58 @@ def monitor_snapshot():
         pass
     try:
         from modules.humanoid.orchestrator.memory import TaskMemory
+
         mem = TaskMemory()
         import sqlite3
+
         conn = sqlite3.connect(str(mem.db_path))
         conn.row_factory = sqlite3.Row
-        rows = conn.execute("SELECT id, goal, status, created_ts, updated_ts FROM task_memory ORDER BY updated_ts DESC LIMIT 15").fetchall()
+        rows = conn.execute(
+            "SELECT id, goal, status, created_ts, updated_ts FROM task_memory ORDER BY updated_ts DESC LIMIT 15"
+        ).fetchall()
         result["tasks"] = [dict(r) for r in rows]
         conn.close()
     except Exception:
         pass
     try:
-        from modules.humanoid.ans.evolution_bitacora import get_evolution_entries
+        from modules.humanoid.ans.evolution_bitacora import \
+            get_evolution_entries
+
         result["bitacora"] = get_evolution_entries(limit=20) or []
     except Exception:
         pass
     try:
         import psutil
+
         cpu = psutil.cpu_percent(interval=0.3)
         mem = psutil.virtual_memory()
         disk = psutil.disk_usage("C:\\")
         result["health"] = {
-            "cpu_pct": cpu, "ram_pct": mem.percent,
-            "ram_used_gb": round(mem.used / 1073741824, 1), "ram_total_gb": round(mem.total / 1073741824, 1),
-            "disk_pct": disk.percent, "disk_free_gb": round(disk.free / 1073741824, 1),
+            "cpu_pct": cpu,
+            "ram_pct": mem.percent,
+            "ram_used_gb": round(mem.used / 1073741824, 1),
+            "ram_total_gb": round(mem.total / 1073741824, 1),
+            "disk_pct": disk.percent,
+            "disk_free_gb": round(disk.free / 1073741824, 1),
         }
     except Exception:
         try:
             import shutil
+
             du = shutil.disk_usage("C:\\")
-            result["health"] = {"disk_pct": round(du.used / du.total * 100, 1), "disk_free_gb": round(du.free / 1073741824, 1)}
+            result["health"] = {
+                "disk_pct": round(du.used / du.total * 100, 1),
+                "disk_free_gb": round(du.free / 1073741824, 1),
+            }
         except Exception:
             pass
     try:
         entries = get_audit_logger().tail(n=20, module="hands")
-        result["shell_history"] = [e for e in (entries or []) if e.get("action") in ("exec_command", "shell_exec", "run")]
+        result["shell_history"] = [
+            e
+            for e in (entries or [])
+            if e.get("action") in ("exec_command", "shell_exec", "run")
+        ]
     except Exception:
         pass
     ms = int((time.perf_counter() - t0) * 1000)
@@ -6003,32 +7860,51 @@ async def monitor_stream():
                 audit_entries = get_audit_logger().tail(n=10) or []
                 if len(audit_entries) != last_audit_count:
                     for entry in audit_entries:
-                        events.append({"type": "audit", "data": {
-                            "ts": entry.get("ts", ""), "actor": entry.get("actor", ""),
-                            "module": entry.get("module", ""), "action": entry.get("action", ""),
-                            "ok": entry.get("ok", True), "ms": entry.get("ms", 0),
-                            "error": entry.get("error", ""),
-                        }})
+                        events.append(
+                            {
+                                "type": "audit",
+                                "data": {
+                                    "ts": entry.get("ts", ""),
+                                    "actor": entry.get("actor", ""),
+                                    "module": entry.get("module", ""),
+                                    "action": entry.get("action", ""),
+                                    "ok": entry.get("ok", True),
+                                    "ms": entry.get("ms", 0),
+                                    "error": entry.get("error", ""),
+                                },
+                            }
+                        )
                     last_audit_count = len(audit_entries)
             except Exception:
                 pass
             try:
                 import psutil
+
                 cpu = psutil.cpu_percent(interval=0)
                 mem = psutil.virtual_memory()
-                events.append({"type": "system", "data": {
-                    "cpu_pct": cpu, "ram_pct": mem.percent,
-                    "ram_used_gb": round(mem.used / 1073741824, 1),
-                }})
+                events.append(
+                    {
+                        "type": "system",
+                        "data": {
+                            "cpu_pct": cpu,
+                            "ram_pct": mem.percent,
+                            "ram_used_gb": round(mem.used / 1073741824, 1),
+                        },
+                    }
+                )
             except Exception:
                 pass
             try:
                 from modules.humanoid.orchestrator.memory import TaskMemory
+
                 mem_db = TaskMemory()
                 import sqlite3
+
                 conn = sqlite3.connect(str(mem_db.db_path))
                 conn.row_factory = sqlite3.Row
-                rows = conn.execute("SELECT id, goal, status, updated_ts FROM task_memory ORDER BY updated_ts DESC LIMIT 3").fetchall()
+                rows = conn.execute(
+                    "SELECT id, goal, status, updated_ts FROM task_memory ORDER BY updated_ts DESC LIMIT 3"
+                ).fetchall()
                 tasks = [dict(r) for r in rows]
                 conn.close()
                 if tasks and tasks[0].get("updated_ts", "") != last_task_ts:
@@ -6049,9 +7925,15 @@ async def monitor_stream():
 def _redact_tokens(text: str) -> str:
     """Redact token/secret-like substrings for support bundle."""
     import re
+
     if not text:
         return text
-    for pattern in [r"Bearer\s+[A-Za-z0-9_\-\.]+", r"token[=:]\s*[\w\-]+", r"api_key[=:]\s*[\w\-]+", r"secret[=:]\s*[\w\-]+"]:
+    for pattern in [
+        r"Bearer\s+[A-Za-z0-9_\-\.]+",
+        r"token[=:]\s*[\w\-]+",
+        r"api_key[=:]\s*[\w\-]+",
+        r"secret[=:]\s*[\w\-]+",
+    ]:
         text = re.sub(pattern, "***REDACTED***", text, flags=re.IGNORECASE)
     return text
 
@@ -6060,9 +7942,10 @@ def _redact_tokens(text: str) -> str:
 def support_bundle():
     """Export bundle: health, metrics, GA/metalearn/CI reports, deploy/gateway/cluster status, logs (redacted), config (no secrets). Returns {ok, data: {path}, ms, error}. Audited."""
     t0 = time.perf_counter()
-    import zipfile
     import json
+    import zipfile
     from datetime import datetime, timezone
+
     support_dir = BASE_DIR / "snapshots" / "support"
     support_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -6070,8 +7953,10 @@ def support_bundle():
     try:
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             try:
-                from modules.humanoid.deploy.healthcheck import run_health_verbose
+                from modules.humanoid.deploy.healthcheck import \
+                    run_health_verbose
                 from modules.humanoid.deploy.ports import get_ports
+
                 port = get_ports()[0] if get_ports() else 8791
                 health = run_health_verbose(base_url=None, active_port=port)
                 zf.writestr("health.json", json.dumps(health, indent=2))
@@ -6085,65 +7970,110 @@ def support_bundle():
             log_file = BASE_DIR / "logs" / "atlas.log"
             if log_file.exists():
                 try:
-                    tail = log_file.read_text(encoding="utf-8", errors="replace")[-50000:]
+                    tail = log_file.read_text(encoding="utf-8", errors="replace")[
+                        -50000:
+                    ]
                     zf.writestr("atlas_log_tail.txt", _redact_tokens(tail))
                 except Exception:
                     pass
             svc_log = BASE_DIR / "logs" / "service.log"
             if svc_log.exists():
                 try:
-                    tail = svc_log.read_text(encoding="utf-8", errors="replace")[-20000:]
+                    tail = svc_log.read_text(encoding="utf-8", errors="replace")[
+                        -20000:
+                    ]
                     zf.writestr("service_log_tail.txt", _redact_tokens(tail))
                 except Exception:
                     pass
-            ci_dir = Path(os.getenv("CI_EXPORT_DIR", str(BASE_DIR / "snapshots" / "ci")))
+            ci_dir = Path(
+                os.getenv("CI_EXPORT_DIR", str(BASE_DIR / "snapshots" / "ci"))
+            )
             if ci_dir.exists():
-                reports = sorted(ci_dir.glob("CI_REPORT_*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+                reports = sorted(
+                    ci_dir.glob("CI_REPORT_*.md"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
                 if reports:
                     zf.write(reports[0], "ci_last_report.md")
-            ga_dir = Path(os.getenv("GA_REPORT_DIR", str(BASE_DIR / "snapshots" / "ga")))
+            ga_dir = Path(
+                os.getenv("GA_REPORT_DIR", str(BASE_DIR / "snapshots" / "ga"))
+            )
             if ga_dir.exists():
-                reports = sorted(ga_dir.glob("GA_REPORT_*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+                reports = sorted(
+                    ga_dir.glob("GA_REPORT_*.md"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
                 if reports:
                     zf.write(reports[0], "ga_last_report.md")
-            meta_dir = Path(os.getenv("METALEARN_REPORT_DIR", str(BASE_DIR / "snapshots" / "metalearn")))
+            meta_dir = Path(
+                os.getenv(
+                    "METALEARN_REPORT_DIR", str(BASE_DIR / "snapshots" / "metalearn")
+                )
+            )
             if meta_dir.exists():
-                reports = sorted(meta_dir.glob("META_REPORT_*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+                reports = sorted(
+                    meta_dir.glob("META_REPORT_*.md"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
                 if reports:
                     zf.write(reports[0], "metalearn_last_report.md")
             try:
                 from modules.humanoid.deploy.switcher import get_deploy_state
+
                 deploy = get_deploy_state()
                 zf.writestr("deploy_status.json", json.dumps(deploy, indent=2))
             except Exception:
                 zf.writestr("deploy_status.json", "{}")
             try:
                 from modules.humanoid.gateway.store import build_gateway_status
+
                 gw = build_gateway_status()
                 zf.writestr("gateway_status.json", json.dumps(gw, indent=2))
             except Exception:
                 zf.writestr("gateway_status.json", "{}")
             try:
                 from modules.humanoid.cluster.registry import list_nodes
+
                 nodes = list_nodes()
-                zf.writestr("cluster_status.json", json.dumps({"nodes": nodes}, indent=2))
+                zf.writestr(
+                    "cluster_status.json", json.dumps({"nodes": nodes}, indent=2)
+                )
             except Exception:
                 zf.writestr("cluster_status.json", "{}")
             env_file = BASE_DIR / "config" / "atlas.env"
             if env_file.exists():
                 lines = []
-                for line in env_file.read_text(encoding="utf-8", errors="replace").splitlines():
-                    if "=" in line and any(s in line.lower() for s in ["secret", "password", "token", "key"]):
+                for line in env_file.read_text(
+                    encoding="utf-8", errors="replace"
+                ).splitlines():
+                    if "=" in line and any(
+                        s in line.lower()
+                        for s in ["secret", "password", "token", "key"]
+                    ):
                         lines.append(line.split("=")[0] + "=***REDACTED***")
                     else:
                         lines.append(line)
                 zf.writestr("config_redacted.env", "\n".join(lines))
-        get_audit_logger().log_event("support", "api", "bundle", True, int((time.perf_counter() - t0) * 1000), None, {"path": str(zip_path)}, None)
+        get_audit_logger().log_event(
+            "support",
+            "api",
+            "bundle",
+            True,
+            int((time.perf_counter() - t0) * 1000),
+            None,
+            {"path": str(zip_path)},
+            None,
+        )
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, {"path": str(zip_path)}, ms, None)
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
-        get_audit_logger().log_event("support", "api", "bundle", False, ms, str(e), None, None)
+        get_audit_logger().log_event(
+            "support", "api", "bundle", False, ms, str(e), None, None
+        )
         return _std_resp(False, None, ms, str(e))
 
 
@@ -6153,12 +8083,36 @@ def support_selfcheck():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.product.selfcheck import run_selfcheck
+
         result = run_selfcheck()
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(result.get("ok", True), {"problems": result.get("problems", []), "suggestions": result.get("suggestions", [])}, ms, None)
+        return _std_resp(
+            result.get("ok", True),
+            {
+                "problems": result.get("problems", []),
+                "suggestions": result.get("suggestions", []),
+            },
+            ms,
+            None,
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(False, {"problems": [{"id": "selfcheck_error", "severity": "critical", "message": str(e), "suggestion": "Check logs"}], "suggestions": []}, ms, str(e))
+        return _std_resp(
+            False,
+            {
+                "problems": [
+                    {
+                        "id": "selfcheck_error",
+                        "severity": "critical",
+                        "message": str(e),
+                        "suggestion": "Check logs",
+                    }
+                ],
+                "suggestions": [],
+            },
+            ms,
+            str(e),
+        )
 
 
 # --- Approvals (policy + audit) ---
@@ -6168,24 +8122,44 @@ def approvals_pending(limit: int = 50):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.approvals import list_all
+
         items = list_all(limit=limit, status="pending")
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": True, "data": [getattr(i, "__dict__", i) if hasattr(i, "__dict__") else i for i in items], "count": len(items), "ms": ms}
+        return {
+            "ok": True,
+            "data": [
+                getattr(i, "__dict__", i) if hasattr(i, "__dict__") else i
+                for i in items
+            ],
+            "count": len(items),
+            "ms": ms,
+        }
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": True, "data": [], "count": 0, "ms": ms}
 
 
 @app.get("/approvals/list")
-def approvals_list(status: Optional[str] = None, risk: Optional[str] = None, limit: int = 50):
+def approvals_list(
+    status: Optional[str] = None, risk: Optional[str] = None, limit: int = 50
+):
     """List approval items. ?status=pending&risk=high. Response: {ok, data: [items], ms, error}."""
     t0 = time.perf_counter()
     try:
         from modules.humanoid.approvals import list_all
+
         st = status if status else "pending"
         items = list_all(limit=limit, status=st, risk=risk)
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": True, "data": [getattr(i, "__dict__", i) if hasattr(i, "__dict__") else i for i in items], "ms": ms, "error": None}
+        return {
+            "ok": True,
+            "data": [
+                getattr(i, "__dict__", i) if hasattr(i, "__dict__") else i
+                for i in items
+            ],
+            "ms": ms,
+            "error": None,
+        }
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": False, "data": None, "ms": ms, "error": str(e)}
@@ -6200,16 +8174,35 @@ class ApprovalActionBody(BaseModel):
 
 
 @app.post("/approvals/approve")
-def approvals_approve(body: ApprovalActionBody, x_owner_session: Optional[str] = Header(None, alias="X-Owner-Session")):
+def approvals_approve(
+    body: ApprovalActionBody,
+    x_owner_session: Optional[str] = Header(None, alias="X-Owner-Session"),
+):
     """Approve item by id. Body: {id, approve?, session_token?, confirm_token?}. Risk>=medium require X-Owner-Session."""
     aid = body.id or body.approval_id
     if not aid:
-        return {"ok": False, "id": None, "status": "missing_id", "error": "id or approval_id required"}
+        return {
+            "ok": False,
+            "id": None,
+            "status": "missing_id",
+            "error": "id or approval_id required",
+        }
     token = body.session_token or x_owner_session
     try:
         from modules.humanoid.approvals import approve as approval_approve
-        out = approval_approve(aid, resolved_by="api", owner_session_token=token, confirm_token=body.confirm_token)
-        return {"ok": out.get("ok"), "id": aid, "status": out.get("status"), "error": out.get("error")}
+
+        out = approval_approve(
+            aid,
+            resolved_by="api",
+            owner_session_token=token,
+            confirm_token=body.confirm_token,
+        )
+        return {
+            "ok": out.get("ok"),
+            "id": aid,
+            "status": out.get("status"),
+            "error": out.get("error"),
+        }
     except Exception as e:
         return {"ok": False, "id": aid, "status": "error", "error": str(e)}
 
@@ -6220,12 +8213,30 @@ def approvals_chain_verify():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.approvals import verify_chain
+
         result = verify_chain()
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": result.get("ok", True), "valid": result.get("valid", True), "ms": ms, "broken_at_id": result.get("broken_at_id"), "first_invalid_id": result.get("broken_at_id"), "last_hash": result.get("last_hash"), "count": result.get("count"), "error": None}
+        return {
+            "ok": result.get("ok", True),
+            "valid": result.get("valid", True),
+            "ms": ms,
+            "broken_at_id": result.get("broken_at_id"),
+            "first_invalid_id": result.get("broken_at_id"),
+            "last_hash": result.get("last_hash"),
+            "count": result.get("count"),
+            "error": None,
+        }
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": False, "valid": False, "ms": ms, "first_invalid_id": None, "expected_hash": None, "got_hash": None, "error": str(e)}
+        return {
+            "ok": False,
+            "valid": False,
+            "ms": ms,
+            "first_invalid_id": None,
+            "expected_hash": None,
+            "got_hash": None,
+            "error": str(e),
+        }
 
 
 # --- Owner (zero-trust session + emergency) ---
@@ -6240,9 +8251,18 @@ def owner_session_start(body: OwnerSessionStartBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.owner.session import start as owner_start
+
         out = owner_start(actor=body.actor or "owner", method=body.method or "ui")
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": out.get("ok"), "session_token": out.get("session_token"), "ttl_seconds": out.get("ttl_seconds"), "method": out.get("method"), "expires_at": out.get("expires_at"), "ms": ms, "error": out.get("error")}
+        return {
+            "ok": out.get("ok"),
+            "session_token": out.get("session_token"),
+            "ttl_seconds": out.get("ttl_seconds"),
+            "method": out.get("method"),
+            "expires_at": out.get("expires_at"),
+            "ms": ms,
+            "error": out.get("error"),
+        }
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": False, "session_token": None, "ms": ms, "error": str(e)}
@@ -6255,6 +8275,7 @@ def owner_windows_user(request: Request):
         return {"ok": False, "username": "", "error": "Solo localhost"}
     try:
         from modules.humanoid.owner.windows_auth import current_windows_user
+
         return {"ok": True, "username": current_windows_user(), "error": None}
     except Exception as e:
         return {"ok": False, "username": "", "error": str(e)}
@@ -6270,18 +8291,38 @@ def owner_session_start_with_face(body: OwnerSessionStartWithFaceBody):
     t0 = time.perf_counter()
     try:
         import base64
+
         from modules.humanoid.face import face_check_image
         from modules.humanoid.owner.session import start as owner_start
+
         if not body.image_base64:
-            return {"ok": False, "session_token": None, "error": "Imagen requerida", "ms": int((time.perf_counter() - t0) * 1000)}
+            return {
+                "ok": False,
+                "session_token": None,
+                "error": "Imagen requerida",
+                "ms": int((time.perf_counter() - t0) * 1000),
+            }
         raw = base64.b64decode(body.image_base64)
         result = face_check_image(raw)
         faces = result.get("faces_detected", 0) or result.get("count", 0)
         if faces < 1:
-            return {"ok": False, "session_token": None, "error": "No se detectó rostro", "ms": int((time.perf_counter() - t0) * 1000)}
+            return {
+                "ok": False,
+                "session_token": None,
+                "error": "No se detectó rostro",
+                "ms": int((time.perf_counter() - t0) * 1000),
+            }
         out = owner_start(actor="face", method="ui")
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": out.get("ok"), "session_token": out.get("session_token"), "ttl_seconds": out.get("ttl_seconds"), "method": "face", "expires_at": out.get("expires_at"), "ms": ms, "error": out.get("error")}
+        return {
+            "ok": out.get("ok"),
+            "session_token": out.get("session_token"),
+            "ttl_seconds": out.get("ttl_seconds"),
+            "method": "face",
+            "expires_at": out.get("expires_at"),
+            "ms": ms,
+            "error": out.get("error"),
+        }
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": False, "session_token": None, "ms": ms, "error": str(e)}
@@ -6297,14 +8338,28 @@ def owner_session_start_with_windows(body: OwnerSessionStartWithWindowsBody):
     """Inicia sesión owner si la contraseña de usuario Windows es correcta."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.owner.windows_auth import verify_windows_user
         from modules.humanoid.owner.session import start as owner_start
+        from modules.humanoid.owner.windows_auth import verify_windows_user
+
         ok, err = verify_windows_user(body.username.strip(), body.password)
         if not ok:
-            return {"ok": False, "session_token": None, "error": err or "Credenciales incorrectas", "ms": int((time.perf_counter() - t0) * 1000)}
+            return {
+                "ok": False,
+                "session_token": None,
+                "error": err or "Credenciales incorrectas",
+                "ms": int((time.perf_counter() - t0) * 1000),
+            }
         out = owner_start(actor=body.username.strip(), method="ui")
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": out.get("ok"), "session_token": out.get("session_token"), "ttl_seconds": out.get("ttl_seconds"), "method": "windows", "expires_at": out.get("expires_at"), "ms": ms, "error": out.get("error")}
+        return {
+            "ok": out.get("ok"),
+            "session_token": out.get("session_token"),
+            "ttl_seconds": out.get("ttl_seconds"),
+            "method": "windows",
+            "expires_at": out.get("expires_at"),
+            "ms": ms,
+            "error": out.get("error"),
+        }
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": False, "session_token": None, "ms": ms, "error": str(e)}
@@ -6320,6 +8375,7 @@ def owner_session_end(body: OwnerSessionEndBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.owner.session import end as owner_end
+
         ok = owner_end(body.session_token)
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": ok, "ms": ms, "error": None}
@@ -6334,6 +8390,7 @@ def owner_session_status():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.owner.session import list_active
+
         sessions = list_active()
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": True, "sessions": sessions, "ms": ms, "error": None}
@@ -6348,6 +8405,7 @@ def owner_emergency_status():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.owner.emergency import get_emergency_state
+
         data = get_emergency_state()
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": True, "data": data, "ms": ms, "error": None}
@@ -6366,11 +8424,23 @@ def owner_emergency_set(body: OwnerEmergencySetBody):
     """Enable/disable emergency mode. When enabled: block deploys, remote_exec, shell; allow status/health."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.owner.emergency import set_emergency, is_emergency
+        from modules.humanoid.owner.emergency import (is_emergency,
+                                                      set_emergency)
+
         set_emergency(body.enable, reason=body.reason or "")
         try:
             from modules.humanoid.audit import get_audit_logger
-            get_audit_logger().log_event("owner", "api", "emergency_set", True, 0, None, {"enable": body.enable, "reason": body.reason}, None)
+
+            get_audit_logger().log_event(
+                "owner",
+                "api",
+                "emergency_set",
+                True,
+                0,
+                None,
+                {"enable": body.enable, "reason": body.reason},
+                None,
+            )
         except Exception:
             pass
         ms = int((time.perf_counter() - t0) * 1000)
@@ -6389,11 +8459,23 @@ def owner_emergency(body: OwnerEmergencyBody):
     """Enable/disable emergency mode (legacy). Prefer POST /owner/emergency/set."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.owner.emergency import set_emergency, is_emergency
+        from modules.humanoid.owner.emergency import (is_emergency,
+                                                      set_emergency)
+
         set_emergency(body.enable)
         try:
             from modules.humanoid.audit import get_audit_logger
-            get_audit_logger().log_event("owner", "api", "emergency", True, 0, None, {"enable": body.enable}, None)
+
+            get_audit_logger().log_event(
+                "owner",
+                "api",
+                "emergency",
+                True,
+                0,
+                None,
+                {"enable": body.enable},
+                None,
+            )
         except Exception:
             pass
         ms = int((time.perf_counter() - t0) * 1000)
@@ -6405,11 +8487,13 @@ def owner_emergency(body: OwnerEmergencyBody):
 
 def _owner_status_data():
     """Aggregate owner console data: sessions, pending, expired, emergency, chain, critical history."""
-    from modules.humanoid.owner.session import list_active
-    from modules.humanoid.owner.emergency import is_emergency
+    from datetime import datetime, timezone
+
     from modules.humanoid.approvals import list_pending, verify_chain
     from modules.humanoid.approvals.store import list_items
-    from datetime import datetime, timezone
+    from modules.humanoid.owner.emergency import is_emergency
+    from modules.humanoid.owner.session import list_active
+
     sessions = list_active()
     pending = list_pending(limit=50)
     all_items = list_items(status=None, limit=100)
@@ -6429,7 +8513,12 @@ def _owner_status_data():
         except Exception:
             pass
     chain = verify_chain()
-    critical_history = [x for x in all_items if x.get("status") == "approved" and (x.get("risk") or "").strip().lower() == "critical"][:20]
+    critical_history = [
+        x
+        for x in all_items
+        if x.get("status") == "approved"
+        and (x.get("risk") or "").strip().lower() == "critical"
+    ][:20]
     return {
         "active_sessions": sessions,
         "pending_approvals": pending,
@@ -6464,20 +8553,43 @@ def voice_approve(body: VoiceApproveBody):
     """Voice approval: 'aprobar <id>' -> 'di confirmar <id>'; 'confirmar <id>' -> approve. Replay-safe."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.owner.voice_approval import handle_voice_command, voice_approval_enabled
+        from modules.humanoid.owner.voice_approval import (
+            handle_voice_command, voice_approval_enabled)
+
         if not voice_approval_enabled():
-            return {"ok": False, "response": "", "approved": False, "ms": int((time.perf_counter() - t0) * 1000), "error": "voice_approvals disabled"}
-        response, approved = handle_voice_command(body.phrase or "", device_source="api")
+            return {
+                "ok": False,
+                "response": "",
+                "approved": False,
+                "ms": int((time.perf_counter() - t0) * 1000),
+                "error": "voice_approvals disabled",
+            }
+        response, approved = handle_voice_command(
+            body.phrase or "", device_source="api"
+        )
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": True, "response": response, "approved": approved, "ms": ms, "error": None}
+        return {
+            "ok": True,
+            "response": response,
+            "approved": approved,
+            "ms": ms,
+            "error": None,
+        }
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": False, "response": "", "approved": False, "ms": ms, "error": str(e)}
+        return {
+            "ok": False,
+            "response": "",
+            "approved": False,
+            "ms": ms,
+            "error": str(e),
+        }
 
 
 class OwnerVoiceCommandBody(BaseModel):
     transcript: str
     device_source: Optional[str] = None
+
 
 @app.post("/owner/voice/command")
 def owner_voice_command(body: OwnerVoiceCommandBody):
@@ -6485,17 +8597,33 @@ def owner_voice_command(body: OwnerVoiceCommandBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.owner.voice_approval import handle_voice_command
-        response, approved = handle_voice_command(body.transcript or "", body.device_source)
+
+        response, approved = handle_voice_command(
+            body.transcript or "", body.device_source
+        )
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": True, "response": response, "approved": approved, "ms": ms, "error": None}
+        return {
+            "ok": True,
+            "response": response,
+            "approved": approved,
+            "ms": ms,
+            "error": None,
+        }
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": False, "response": "", "approved": False, "ms": ms, "error": str(e)}
+        return {
+            "ok": False,
+            "response": "",
+            "approved": False,
+            "ms": ms,
+            "error": str(e),
+        }
 
 
 class OwnerTelegramCallbackBody(BaseModel):
-    callback_data: str   # approve:ID | reject:ID
+    callback_data: str  # approve:ID | reject:ID
     chat_id: str
+
 
 @app.post("/owner/telegram/callback")
 def owner_telegram_callback(body: OwnerTelegramCallbackBody):
@@ -6503,9 +8631,18 @@ def owner_telegram_callback(body: OwnerTelegramCallbackBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.comms.telegram_bridge import TelegramBridge
-        out = TelegramBridge().handle_callback_data(body.callback_data or "", body.chat_id or "")
+
+        out = TelegramBridge().handle_callback_data(
+            body.callback_data or "", body.chat_id or ""
+        )
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": out.get("ok"), "action": out.get("action"), "id": out.get("id"), "ms": ms, "error": out.get("error")}
+        return {
+            "ok": out.get("ok"),
+            "action": out.get("action"),
+            "id": out.get("id"),
+            "ms": ms,
+            "error": out.get("error"),
+        }
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": False, "action": None, "id": None, "ms": ms, "error": str(e)}
@@ -6516,17 +8653,30 @@ def approvals_reject(body: ApprovalActionBody):
     """Reject item by id. Body: {id} or {approval_id}. Audited."""
     aid = body.id or body.approval_id
     if not aid:
-        return {"ok": False, "id": None, "status": "missing_id", "error": "id or approval_id required"}
+        return {
+            "ok": False,
+            "id": None,
+            "status": "missing_id",
+            "error": "id or approval_id required",
+        }
     try:
         from modules.humanoid.approvals import reject as approval_reject
+
         out = approval_reject(aid, resolved_by="api")
-        return {"ok": out.get("ok"), "id": aid, "status": out.get("status"), "error": None}
+        return {
+            "ok": out.get("ok"),
+            "id": aid,
+            "status": out.get("status"),
+            "error": None,
+        }
     except Exception as e:
         return {"ok": False, "id": aid, "status": "error", "error": str(e)}
 
 
 # --- Scheduler / Watchdog / Healing ---
-def _std_resp(ok: bool, data: Any = None, ms: int = 0, error: Optional[str] = None) -> dict:
+def _std_resp(
+    ok: bool, data: Any = None, ms: int = 0, error: Optional[str] = None
+) -> dict:
     out = {"ok": ok, "data": data, "ms": ms, "error": error}
     return out
 
@@ -6543,17 +8693,21 @@ def _get_chat_manager():
     try:
         import sys as _sys
         from pathlib import Path as _Path
+
         _root = _Path(__file__).resolve().parent.parent
         if str(_root) not in _sys.path:
             _sys.path.insert(0, str(_root))
         from chat_thread_manager import ChatThreadManager  # type: ignore
+
         _chat_manager_singleton = ChatThreadManager()
     except Exception:
         _chat_manager_singleton = None
     return _chat_manager_singleton
 
 
-def _ensure_thread_id(thread_id: Optional[str], title: str, user_id: str) -> Optional[str]:
+def _ensure_thread_id(
+    thread_id: Optional[str], title: str, user_id: str
+) -> Optional[str]:
     mgr = _get_chat_manager()
     if not mgr:
         return None
@@ -6561,7 +8715,9 @@ def _ensure_thread_id(thread_id: Optional[str], title: str, user_id: str) -> Opt
     if tid and mgr.thread_exists(tid):
         return tid
     try:
-        return mgr.create_thread(title=title, user_id=user_id, description="", context={"kind": title})
+        return mgr.create_thread(
+            title=title, user_id=user_id, description="", context={"kind": title}
+        )
     except Exception:
         return None
 
@@ -6576,11 +8732,33 @@ def _extract_memory_lines(text: str, limit: int = 12) -> List[str]:
         if not s:
             continue
         up = s.upper()
-        if s.startswith(("##", "###", "- ", "* ", "ACTION:", "RISK:", "EXECUTE:", "✅", "⚠", "⛔", "OK:", "PROBLEMA:", "ADVERTENCIA:")):
+        if s.startswith(
+            (
+                "##",
+                "###",
+                "- ",
+                "* ",
+                "ACTION:",
+                "RISK:",
+                "EXECUTE:",
+                "✅",
+                "⚠",
+                "⛔",
+                "OK:",
+                "PROBLEMA:",
+                "ADVERTENCIA:",
+            )
+        ):
             lines.append(s)
-        elif "http://" in s or "https://" in s or s.startswith((".\\", "C:\\", "GET ", "POST ")):
+        elif (
+            "http://" in s
+            or "https://" in s
+            or s.startswith((".\\", "C:\\", "GET ", "POST "))
+        ):
             lines.append(s)
-        elif up.startswith("PLAN") or up.startswith("PASOS") or up.startswith("RESUMEN"):
+        elif (
+            up.startswith("PLAN") or up.startswith("PASOS") or up.startswith("RESUMEN")
+        ):
             lines.append(s)
         if len(lines) >= limit:
             break
@@ -6593,7 +8771,11 @@ def _looks_like_supervisor_policy(text: Optional[str]) -> bool:
         if not t:
             return False
         head = t[:900].lower()
-        sig = ("supervisor residente" in head) or ("no eres un chatbot pasivo" in head) or ("cero errores" in head)
+        sig = (
+            ("supervisor residente" in head)
+            or ("no eres un chatbot pasivo" in head)
+            or ("cero errores" in head)
+        )
         sec = ("objetivo principal" in head) and ("monitoreo continuo" in head)
         return bool(sig and (sec or len(t) > 800))
     except Exception:
@@ -6616,7 +8798,10 @@ def _strip_policy_like_blocks(text: Optional[str]) -> str:
     except Exception:
         return (text or "") if isinstance(text, str) else ""
 
-def _update_thread_summary(thread_id: str, user_text: Optional[str], assistant_text: Optional[str]) -> None:
+
+def _update_thread_summary(
+    thread_id: str, user_text: Optional[str], assistant_text: Optional[str]
+) -> None:
     mgr = _get_chat_manager()
     if not mgr or not thread_id:
         return
@@ -6649,17 +8834,26 @@ def _update_thread_summary(thread_id: str, user_text: Optional[str], assistant_t
         pass
 
 
-def _llm_history_for_thread(thread_id: str, max_messages: int = 24) -> List[Dict[str, str]]:
+def _llm_history_for_thread(
+    thread_id: str, max_messages: int = 24
+) -> List[Dict[str, str]]:
     mgr = _get_chat_manager()
     if not mgr or not thread_id:
         return []
     try:
         summary = mgr.get_context(thread_id, "summary")
-        summary = _strip_policy_like_blocks(summary if isinstance(summary, str) else (str(summary) if summary else ""))
+        summary = _strip_policy_like_blocks(
+            summary if isinstance(summary, str) else (str(summary) if summary else "")
+        )
         msgs = mgr.get_recent_messages(thread_id, limit=max_messages)
         out: List[Dict[str, str]] = []
         if summary and isinstance(summary, str) and summary.strip():
-            out.append({"role": "system", "content": "MEMORIA DEL HILO (resumen):\n" + summary.strip()})
+            out.append(
+                {
+                    "role": "system",
+                    "content": "MEMORIA DEL HILO (resumen):\n" + summary.strip(),
+                }
+            )
         for m in msgs:
             role = (m.get("role") or "user").strip()
             content = (m.get("content") or "").strip()
@@ -6681,6 +8875,7 @@ def scheduler_jobs(status: Optional[str] = None):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.scheduler import get_scheduler_db
+
         db = get_scheduler_db()
         jobs = db.list_jobs(status=status)
         ms = int((time.perf_counter() - t0) * 1000)
@@ -6705,10 +8900,20 @@ def scheduler_job_create(body: SchedulerJobCreateBody):
     """Create a job. run_at ISO or now; interval_seconds for recurring. Response: {ok, data, ms, error}."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.scheduler import JobSpec, get_scheduler_db
         import os
-        max_r = int(os.getenv("SCHED_DEFAULT_RETRIES", "3") or 3) if body.max_retries is None else body.max_retries
-        backoff = int(os.getenv("SCHED_BACKOFF_SECONDS", "5") or 5) if body.backoff_seconds is None else body.backoff_seconds
+
+        from modules.humanoid.scheduler import JobSpec, get_scheduler_db
+
+        max_r = (
+            int(os.getenv("SCHED_DEFAULT_RETRIES", "3") or 3)
+            if body.max_retries is None
+            else body.max_retries
+        )
+        backoff = (
+            int(os.getenv("SCHED_BACKOFF_SECONDS", "5") or 5)
+            if body.backoff_seconds is None
+            else body.backoff_seconds
+        )
         spec = JobSpec(
             name=body.name,
             kind=body.kind,
@@ -6720,7 +8925,17 @@ def scheduler_job_create(body: SchedulerJobCreateBody):
         )
         db = get_scheduler_db()
         job = db.create_job(spec)
-        get_audit_logger().log_event("api", "owner", "scheduler", "job_enqueue", True, 0, None, {"job_id": job.get("id"), "name": body.name, "kind": body.kind}, None)
+        get_audit_logger().log_event(
+            "api",
+            "owner",
+            "scheduler",
+            "job_enqueue",
+            True,
+            0,
+            None,
+            {"job_id": job.get("id"), "name": body.name, "kind": body.kind},
+            None,
+        )
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, job, ms, None)
     except Exception as e:
@@ -6737,10 +8952,13 @@ def scheduler_job_pause(body: SchedulerJobIdBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.scheduler import get_scheduler_db
+
         db = get_scheduler_db()
         j = db.get_job(body.job_id)
         if not j:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "job not found")
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), "job not found"
+            )
         db.set_paused(body.job_id)
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, {"job_id": body.job_id, "status": "paused"}, ms, None)
@@ -6752,16 +8970,25 @@ def scheduler_job_pause(body: SchedulerJobIdBody):
 def scheduler_job_resume(body: SchedulerJobIdBody):
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.scheduler import get_scheduler_db
         from datetime import datetime, timezone
+
+        from modules.humanoid.scheduler import get_scheduler_db
+
         db = get_scheduler_db()
         j = db.get_job(body.job_id)
         if not j:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "job not found")
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), "job not found"
+            )
         now = datetime.now(timezone.utc).isoformat()
         db.set_queued(body.job_id, now)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(True, {"job_id": body.job_id, "status": "queued", "next_run_ts": now}, ms, None)
+        return _std_resp(
+            True,
+            {"job_id": body.job_id, "status": "queued", "next_run_ts": now},
+            ms,
+            None,
+        )
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
@@ -6771,16 +8998,25 @@ def scheduler_job_run_now(body: SchedulerJobIdBody):
     """Schedule job to run immediately (set next_run_ts to now)."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.scheduler import get_scheduler_db
         from datetime import datetime, timezone
+
+        from modules.humanoid.scheduler import get_scheduler_db
+
         db = get_scheduler_db()
         j = db.get_job(body.job_id)
         if not j:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "job not found")
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), "job not found"
+            )
         now = datetime.now(timezone.utc).isoformat()
         db.set_queued(body.job_id, now)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(True, {"job_id": body.job_id, "status": "queued", "next_run_ts": now}, ms, None)
+        return _std_resp(
+            True,
+            {"job_id": body.job_id, "status": "queued", "next_run_ts": now},
+            ms,
+            None,
+        )
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
@@ -6790,6 +9026,7 @@ def scheduler_job_runs(job_id: str, limit: int = 50):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.scheduler import get_scheduler_db
+
         db = get_scheduler_db()
         runs = db.get_runs(job_id, limit=limit)
         ms = int((time.perf_counter() - t0) * 1000)
@@ -6804,7 +9041,9 @@ def update_status_endpoint():
     """Git-based update status: branch, head, remote, has_update. Response: {ok, data, ms, error}."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.update.update_engine import status as update_status
+        from modules.humanoid.update.update_engine import \
+            status as update_status
+
         data = update_status()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(data.get("ok", True), data, ms, data.get("error"))
@@ -6819,9 +9058,12 @@ def update_check_endpoint():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.update.update_engine import check as update_check
+
         result = update_check()
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(result.get("ok", False), result.get("data"), ms, result.get("error"))
+        return _std_resp(
+            result.get("ok", False), result.get("data"), ms, result.get("error")
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -6833,12 +9075,21 @@ def update_apply_endpoint():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.owner.emergency import is_emergency
+
         if is_emergency():
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "emergency mode: updates suspended")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "emergency mode: updates suspended",
+            )
         from modules.humanoid.update.update_engine import apply as update_apply
+
         result = update_apply()
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(result.get("ok", False), result.get("data"), ms, result.get("error"))
+        return _std_resp(
+            result.get("ok", False), result.get("data"), ms, result.get("error")
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -6849,9 +9100,11 @@ def deploy_status():
     """Deploy status: ok, mode, active_port, staging_port, active_pid, staging_pid, last_deploy, last_health, canary."""
     t0 = time.perf_counter()
     try:
+        from modules.humanoid.deploy.canary import (
+            set_canary_disabled_fallback, should_disable_canary)
         from modules.humanoid.deploy.status import build_deploy_status
-        from modules.humanoid.deploy.canary import should_disable_canary, set_canary_disabled_fallback
         from modules.humanoid.deploy.switcher import get_deploy_state
+
         state = get_deploy_state()
         if should_disable_canary() and not state.get("canary_disabled_fallback"):
             set_canary_disabled_fallback(True)
@@ -6864,7 +9117,7 @@ def deploy_status():
 
 
 class DeployApplyBody(BaseModel):
-    ref: Optional[str] = None   # origin/main | tag:vX.Y.Z | sha:....
+    ref: Optional[str] = None  # origin/main | tag:vX.Y.Z | sha:....
     mode: Optional[str] = None  # bluegreen | single
     force: Optional[bool] = False
 
@@ -6876,28 +9129,64 @@ def deploy_apply(body: Optional[DeployApplyBody] = None):
     body = body or DeployApplyBody()
     try:
         from modules.humanoid.owner.emergency import is_emergency
+
         if is_emergency():
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "emergency mode: deploys suspended")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "emergency mode: deploys suspended",
+            )
         decision = get_policy_engine().can(_memory_actor(), "deploy", "deploy_apply")
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason or "policy denied")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                decision.reason or "policy denied",
+            )
         ref = body.ref or "origin/main"
         if body.mode and body.mode.strip().lower() == "single":
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "mode=single not implemented for apply")
-        from modules.humanoid.update.git_manager import fetch, create_staging_branch
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "mode=single not implemented for apply",
+            )
         from modules.humanoid.deploy.bluegreen import run_bluegreen_flow
+        from modules.humanoid.update.git_manager import (create_staging_branch,
+                                                         fetch)
+
         r_fetch = fetch(os.getenv("UPDATE_REMOTE", "origin"))
         if not r_fetch.get("ok"):
-            return _std_resp(False, {"step": "fetch", "error": r_fetch.get("error")}, int((time.perf_counter() - t0) * 1000), r_fetch.get("error"))
+            return _std_resp(
+                False,
+                {"step": "fetch", "error": r_fetch.get("error")},
+                int((time.perf_counter() - t0) * 1000),
+                r_fetch.get("error"),
+            )
         remote = os.getenv("UPDATE_REMOTE", "origin")
-        branch = (ref.replace("origin/", "").strip() if ref.startswith("origin/") else "main")
-        staging_name = os.getenv("UPDATE_STAGING_BRANCH", "staging").strip() or "staging"
-        r_staging = create_staging_branch(remote=remote, branch=branch, staging_name=staging_name)
+        branch = (
+            ref.replace("origin/", "").strip() if ref.startswith("origin/") else "main"
+        )
+        staging_name = (
+            os.getenv("UPDATE_STAGING_BRANCH", "staging").strip() or "staging"
+        )
+        r_staging = create_staging_branch(
+            remote=remote, branch=branch, staging_name=staging_name
+        )
         if not r_staging.get("ok"):
-            return _std_resp(False, {"step": "create_staging", "error": r_staging.get("error")}, int((time.perf_counter() - t0) * 1000), r_staging.get("error"))
+            return _std_resp(
+                False,
+                {"step": "create_staging", "error": r_staging.get("error")},
+                int((time.perf_counter() - t0) * 1000),
+                r_staging.get("error"),
+            )
         result = run_bluegreen_flow(ref=ref, dry_run=False)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(result.get("ok", False), result.get("data"), ms, result.get("error"))
+        return _std_resp(
+            result.get("ok", False), result.get("data"), ms, result.get("error")
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -6909,14 +9198,23 @@ def deploy_bluegreen(dry_run: bool = False):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.owner.emergency import is_emergency
+
         if is_emergency():
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "emergency mode: deploys suspended")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "emergency mode: deploys suspended",
+            )
         from modules.humanoid.deploy import run_bluegreen_flow
         from modules.humanoid.metrics import get_metrics_store
+
         get_metrics_store().inc("deploy_bluegreen_runs")
         result = run_bluegreen_flow(dry_run=dry_run)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(result.get("ok", False), result.get("data"), ms, result.get("error"))
+        return _std_resp(
+            result.get("ok", False), result.get("data"), ms, result.get("error")
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -6928,6 +9226,7 @@ def canary_status():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.deploy.canary import get_canary_stats
+
         data = get_canary_stats()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
@@ -6965,8 +9264,8 @@ _ai_config = {
         "vision": {"enabled": True, "model": "llava"},
         "chat": {"enabled": True, "model": "llama3.2"},
         "analysis": {"enabled": True, "model": "llama3.2"},
-        "creative": {"enabled": False, "model": "llama3.2"}
-    }
+        "creative": {"enabled": False, "model": "llama3.2"},
+    },
 }
 
 _AI_CONFIG_FILE = BASE_DIR / "config" / "ai_config.json"
@@ -6982,6 +9281,7 @@ def _load_ai_config():
         except Exception:
             pass
 
+
 def _save_ai_config():
     try:
         _AI_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -6990,6 +9290,7 @@ def _save_ai_config():
             json.dump(safe, f, indent=2, ensure_ascii=False)
     except Exception:
         pass
+
 
 _load_ai_config()
 
@@ -7004,10 +9305,25 @@ def get_ai_config():
 @app.post("/config/ai", tags=["Config"])
 def update_ai_config(payload: dict):
     global _ai_config
-    allowed = {"mode", "provider", "model", "temperature", "top_p", "top_k",
-               "max_tokens", "repeat_penalty", "system_prompt", "memory_context",
-               "context_window", "ollama_url", "stream_response", "save_history",
-               "log_level", "api_key", "specialists"}
+    allowed = {
+        "mode",
+        "provider",
+        "model",
+        "temperature",
+        "top_p",
+        "top_k",
+        "max_tokens",
+        "repeat_penalty",
+        "system_prompt",
+        "memory_context",
+        "context_window",
+        "ollama_url",
+        "stream_response",
+        "save_history",
+        "log_level",
+        "api_key",
+        "specialists",
+    }
     for key in allowed:
         if key in payload:
             _ai_config[key] = payload[key]
@@ -7021,6 +9337,7 @@ def test_ai_connection():
     try:
         if provider == "ollama":
             import requests as req
+
             url = _ai_config.get("ollama_url", "http://localhost:11434")
             res = req.get(f"{url}/api/tags", timeout=5)
             if res.status_code == 200:
@@ -7035,6 +9352,7 @@ def test_ai_connection():
 def get_ollama_models():
     try:
         import requests as req
+
         url = _ai_config.get("ollama_url", "http://localhost:11434")
         res = req.get(f"{url}/api/tags", timeout=10)
         if res.status_code == 200:
@@ -7042,8 +9360,18 @@ def get_ollama_models():
             models = []
             for m in data.get("models", []):
                 sz = m.get("size", 0)
-                sz_str = f"{sz / (1024**3):.1f}GB" if sz > 1024**3 else f"{sz / (1024**2):.0f}MB"
-                models.append({"name": m.get("name", "").split(":")[0], "full_name": m.get("name", ""), "size": sz_str})
+                sz_str = (
+                    f"{sz / (1024**3):.1f}GB"
+                    if sz > 1024**3
+                    else f"{sz / (1024**2):.0f}MB"
+                )
+                models.append(
+                    {
+                        "name": m.get("name", "").split(":")[0],
+                        "full_name": m.get("name", ""),
+                        "size": sz_str,
+                    }
+                )
             return {"ok": True, "models": models}
         return {"ok": False, "error": f"Ollama status {res.status_code}"}
     except Exception as e:
@@ -7058,9 +9386,18 @@ def canary_config(body: Optional[CanaryConfigBody] = None):
     try:
         decision = get_policy_engine().can(_memory_actor(), "deploy", "canary_config")
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason or "policy denied")
-        from modules.humanoid.deploy.canary import set_canary_config, get_canary_stats
-        set_canary_config(enabled=body.enabled, percentage=body.percentage, features=body.features)
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                decision.reason or "policy denied",
+            )
+        from modules.humanoid.deploy.canary import (get_canary_stats,
+                                                    set_canary_config)
+
+        set_canary_config(
+            enabled=body.enabled, percentage=body.percentage, features=body.features
+        )
         data = get_canary_stats()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
@@ -7075,6 +9412,7 @@ def deploy_canary_report(hours: float = 24.0):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.deploy.canary import get_canary_report
+
         data = get_canary_report(hours=hours)
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
@@ -7090,10 +9428,27 @@ def cluster_status():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.cluster import registry
+
         if not registry.cluster_enabled():
-            return _std_resp(True, {"enabled": False, "node_id": registry.node_id(), "role": registry.node_role(), "nodes": []}, int((time.perf_counter() - t0) * 1000), None)
+            return _std_resp(
+                True,
+                {
+                    "enabled": False,
+                    "node_id": registry.node_id(),
+                    "role": registry.node_role(),
+                    "nodes": [],
+                },
+                int((time.perf_counter() - t0) * 1000),
+                None,
+            )
         nodes = registry.list_nodes()
-        data = {"enabled": True, "node_id": registry.node_id(), "role": registry.node_role(), "nodes": nodes, "count": len(nodes)}
+        data = {
+            "enabled": True,
+            "node_id": registry.node_id(),
+            "role": registry.node_role(),
+            "nodes": nodes,
+            "count": len(nodes),
+        }
         return _std_resp(True, data, int((time.perf_counter() - t0) * 1000), None)
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
@@ -7105,6 +9460,7 @@ def cluster_nodes(status_filter: Optional[str] = None):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.cluster import registry
+
         registry.mark_offline_stale()
         nodes = registry.list_nodes(status_filter=status_filter)
         return _std_resp(True, nodes, int((time.perf_counter() - t0) * 1000), None)
@@ -7118,6 +9474,7 @@ def cluster_events(limit: int = 50, node_id_filter: Optional[str] = None):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.cluster import db as cluster_db
+
         events = cluster_db.get_events(limit=limit, node_id=node_id_filter)
         return _std_resp(True, events, int((time.perf_counter() - t0) * 1000), None)
     except Exception as e:
@@ -7139,10 +9496,23 @@ def cluster_node_register(body: ClusterRegisterBody):
     try:
         decision = get_policy_engine().can(_memory_actor(), "cluster", "remote_execute")
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason or "policy denied")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                decision.reason or "policy denied",
+            )
         from modules.humanoid.cluster import registry
-        result = registry.register_node(body.node_id, body.role, body.base_url, body.capabilities, body.tags)
-        return _std_resp(result.get("ok", False), result, int((time.perf_counter() - t0) * 1000), result.get("error"))
+
+        result = registry.register_node(
+            body.node_id, body.role, body.base_url, body.capabilities, body.tags
+        )
+        return _std_resp(
+            result.get("ok", False),
+            result,
+            int((time.perf_counter() - t0) * 1000),
+            result.get("error"),
+        )
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
@@ -7162,8 +9532,21 @@ def cluster_heartbeat(body: ClusterHeartbeatBody, request: Request = None):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.cluster.heartbeat import receive_heartbeat
-        result = receive_heartbeat(body.node_id, body.capabilities, body.health, body.version, body.channel, base_url=body.base_url)
-        return _std_resp(result.get("ok", False), result, int((time.perf_counter() - t0) * 1000), result.get("error"))
+
+        result = receive_heartbeat(
+            body.node_id,
+            body.capabilities,
+            body.health,
+            body.version,
+            body.channel,
+            base_url=body.base_url,
+        )
+        return _std_resp(
+            result.get("ok", False),
+            result,
+            int((time.perf_counter() - t0) * 1000),
+            result.get("error"),
+        )
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
@@ -7186,7 +9569,12 @@ def cluster_route_decision(body: ClusterRouteBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.cluster.router import route_decision
-        decision = route_decision(body.task, prefer_remote=body.prefer_remote, require_capability=body.require_capability)
+
+        decision = route_decision(
+            body.task,
+            prefer_remote=body.prefer_remote,
+            require_capability=body.require_capability,
+        )
         return _std_resp(True, decision, int((time.perf_counter() - t0) * 1000), None)
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
@@ -7199,6 +9587,7 @@ def gateway_status():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.gateway.store import build_gateway_status
+
         data = build_gateway_status()
         return _std_resp(True, data, int((time.perf_counter() - t0) * 1000), None)
     except Exception as e:
@@ -7212,8 +9601,14 @@ def gateway_check():
     try:
         decision = get_policy_engine().can(_memory_actor(), "gateway", "gateway_check")
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason or "policy denied")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                decision.reason or "policy denied",
+            )
         from modules.humanoid.gateway.selector import check_candidates
+
         data = check_candidates()
         return _std_resp(True, data, int((time.perf_counter() - t0) * 1000), None)
     except Exception as e:
@@ -7225,14 +9620,24 @@ def gateway_bootstrap():
     """Bootstrap worker to HQ (policy: gateway_bootstrap). Returns quickly if no_gateway_config."""
     t0 = time.perf_counter()
     try:
-        decision = get_policy_engine().can(_memory_actor(), "gateway", "gateway_bootstrap")
+        decision = get_policy_engine().can(
+            _memory_actor(), "gateway", "gateway_bootstrap"
+        )
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason or "policy denied")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                decision.reason or "policy denied",
+            )
         from modules.humanoid.gateway import bootstrap as gw_bootstrap
         from modules.humanoid.gateway import selector as gw_selector
+
         target = gw_selector.resolve_worker_url(None)
         if not target:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "no_gateway_config")
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), "no_gateway_config"
+            )
         result = gw_bootstrap.bootstrap()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(result.get("ok", False), result, ms, result.get("error"))
@@ -7250,10 +9655,18 @@ def gateway_set_mode(body: GatewayModeBody):
     """Set gateway mode (policy: gateway_set_mode)."""
     t0 = time.perf_counter()
     try:
-        decision = get_policy_engine().can(_memory_actor(), "gateway", "gateway_set_mode")
+        decision = get_policy_engine().can(
+            _memory_actor(), "gateway", "gateway_set_mode"
+        )
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason or "policy denied")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                decision.reason or "policy denied",
+            )
         from modules.humanoid.gateway import store as gateway_store
+
         gateway_store.set_mode(body.mode)
         data = gateway_store.build_gateway_status()
         return _std_resp(True, data, int((time.perf_counter() - t0) * 1000), None)
@@ -7261,7 +9674,13 @@ def gateway_set_mode(body: GatewayModeBody):
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
 
-def _cluster_remote_result(ok: bool, data: Any = None, ms: int = 0, error: Optional[str] = None, correlation_id: Optional[str] = None) -> dict:
+def _cluster_remote_result(
+    ok: bool,
+    data: Any = None,
+    ms: int = 0,
+    error: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+) -> dict:
     out = {"ok": ok, "data": data, "ms": ms, "error": error}
     if correlation_id:
         out["correlation_id"] = correlation_id
@@ -7274,17 +9693,29 @@ def remote_hands(body: dict):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.owner.emergency import is_action_blocked
+
         if is_action_blocked("remote_hands"):
-            return _cluster_remote_result(False, None, int((time.perf_counter() - t0) * 1000), "emergency_mode_block", body.get("correlation_id"))
+            return _cluster_remote_result(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "emergency_mode_block",
+                body.get("correlation_id"),
+            )
         from modules.humanoid.cluster import trace
         from modules.humanoid.cluster.remote_server import execute_remote_hands
+
         cid = body.get("correlation_id") or trace.new_correlation_id()
         r = execute_remote_hands(body)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _cluster_remote_result(r.get("ok", False), r.get("data"), ms, r.get("error"), cid)
+        return _cluster_remote_result(
+            r.get("ok", False), r.get("data"), ms, r.get("error"), cid
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
-        return _cluster_remote_result(False, None, ms, str(e), body.get("correlation_id"))
+        return _cluster_remote_result(
+            False, None, ms, str(e), body.get("correlation_id")
+        )
 
 
 @app.post("/remote/web", tags=["Cluster"])
@@ -7293,17 +9724,29 @@ def remote_web(body: dict):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.owner.emergency import is_action_blocked
+
         if is_action_blocked("remote_web"):
-            return _cluster_remote_result(False, None, int((time.perf_counter() - t0) * 1000), "emergency_mode_block", body.get("correlation_id"))
+            return _cluster_remote_result(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "emergency_mode_block",
+                body.get("correlation_id"),
+            )
         from modules.humanoid.cluster import trace
         from modules.humanoid.cluster.remote_server import execute_remote_web
+
         cid = body.get("correlation_id") or trace.new_correlation_id()
         r = execute_remote_web(body)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _cluster_remote_result(r.get("ok", False), r.get("data"), ms, r.get("error"), cid)
+        return _cluster_remote_result(
+            r.get("ok", False), r.get("data"), ms, r.get("error"), cid
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
-        return _cluster_remote_result(False, None, ms, str(e), body.get("correlation_id"))
+        return _cluster_remote_result(
+            False, None, ms, str(e), body.get("correlation_id")
+        )
 
 
 @app.post("/remote/vision", tags=["Cluster"])
@@ -7312,17 +9755,30 @@ def remote_vision(body: dict):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.owner.emergency import is_action_blocked
+
         if is_action_blocked("remote_vision"):
-            return _cluster_remote_result(False, None, int((time.perf_counter() - t0) * 1000), "emergency_mode_block", body.get("correlation_id"))
+            return _cluster_remote_result(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "emergency_mode_block",
+                body.get("correlation_id"),
+            )
         from modules.humanoid.cluster import trace
-        from modules.humanoid.cluster.remote_server import execute_remote_vision
+        from modules.humanoid.cluster.remote_server import \
+            execute_remote_vision
+
         cid = body.get("correlation_id") or trace.new_correlation_id()
         r = execute_remote_vision(body)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _cluster_remote_result(r.get("ok", False), r.get("data"), ms, r.get("error"), cid)
+        return _cluster_remote_result(
+            r.get("ok", False), r.get("data"), ms, r.get("error"), cid
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
-        return _cluster_remote_result(False, None, ms, str(e), body.get("correlation_id"))
+        return _cluster_remote_result(
+            False, None, ms, str(e), body.get("correlation_id")
+        )
 
 
 @app.post("/remote/voice", tags=["Cluster"])
@@ -7331,17 +9787,29 @@ def remote_voice(body: dict):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.owner.emergency import is_action_blocked
+
         if is_action_blocked("remote_voice"):
-            return _cluster_remote_result(False, None, int((time.perf_counter() - t0) * 1000), "emergency_mode_block", body.get("correlation_id"))
+            return _cluster_remote_result(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "emergency_mode_block",
+                body.get("correlation_id"),
+            )
         from modules.humanoid.cluster import trace
         from modules.humanoid.cluster.remote_server import execute_remote_voice
+
         cid = body.get("correlation_id") or trace.new_correlation_id()
         r = execute_remote_voice(body)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _cluster_remote_result(r.get("ok", False), r.get("data"), ms, r.get("error"), cid)
+        return _cluster_remote_result(
+            r.get("ok", False), r.get("data"), ms, r.get("error"), cid
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
-        return _cluster_remote_result(False, None, ms, str(e), body.get("correlation_id"))
+        return _cluster_remote_result(
+            False, None, ms, str(e), body.get("correlation_id")
+        )
 
 
 @app.get("/watchdog/status")
@@ -7349,6 +9817,7 @@ def watchdog_status_endpoint():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.watchdog import watchdog_status
+
         data = watchdog_status()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
@@ -7362,6 +9831,7 @@ def healing_status_endpoint():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.healing import healing_status
+
         data = healing_status()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
@@ -7389,7 +9859,9 @@ def cge_submit(body: CGESubmitBody):
     """Registra un nuevo goal concurrente en el CGE."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.cortex.frontal.concurrent_engine import get_engine
+        from modules.humanoid.cortex.frontal.concurrent_engine import \
+            get_engine
+
         engine = get_engine()
         gid = engine.submit_goal(
             goal_type=body.goal_type,
@@ -7413,7 +9885,9 @@ def cge_status():
     """Estado completo del motor concurrente: goals activos, recursos, executor."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.cortex.frontal.concurrent_engine import get_engine
+        from modules.humanoid.cortex.frontal.concurrent_engine import \
+            get_engine
+
         data = get_engine().get_status()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
@@ -7427,7 +9901,9 @@ def cge_goal_detail(goal_id: str):
     """Detalle de un goal: contexto, plan, log de ejecucion, recursos."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.cortex.frontal.concurrent_engine import get_engine
+        from modules.humanoid.cortex.frontal.concurrent_engine import \
+            get_engine
+
         detail = get_engine().get_goal_detail(goal_id)
         ms = int((time.perf_counter() - t0) * 1000)
         if not detail:
@@ -7443,12 +9919,18 @@ def cge_cancel(goal_id: str, body: Optional[dict] = None):
     """Cancela un goal concurrente."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.cortex.frontal.concurrent_engine import get_engine
+        from modules.humanoid.cortex.frontal.concurrent_engine import \
+            get_engine
+
         reason = (body or {}).get("reason", "cancelled via API")
         ok = get_engine().cancel_goal(goal_id, reason)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(ok, {"goal_id": goal_id, "cancelled": ok}, ms,
-                         None if ok else "goal not found or already terminal")
+        return _std_resp(
+            ok,
+            {"goal_id": goal_id, "cancelled": ok},
+            ms,
+            None if ok else "goal not found or already terminal",
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -7459,7 +9941,9 @@ def cge_pause(goal_id: str):
     """Pausa un goal concurrente, liberando sus recursos."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.cortex.frontal.concurrent_engine import get_engine
+        from modules.humanoid.cortex.frontal.concurrent_engine import \
+            get_engine
+
         ok = get_engine().pause_goal(goal_id)
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(ok, {"goal_id": goal_id, "paused": ok}, ms, None)
@@ -7473,7 +9957,9 @@ def cge_resume(goal_id: str):
     """Reanuda un goal pausado."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.cortex.frontal.concurrent_engine import get_engine
+        from modules.humanoid.cortex.frontal.concurrent_engine import \
+            get_engine
+
         ok = get_engine().resume_goal(goal_id)
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(ok, {"goal_id": goal_id, "resumed": ok}, ms, None)
@@ -7487,7 +9973,9 @@ def cge_tick_endpoint():
     """Ejecuta un tick manual del motor concurrente."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.cortex.frontal.concurrent_engine import get_engine
+        from modules.humanoid.cortex.frontal.concurrent_engine import \
+            get_engine
+
         result = get_engine().tick()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, result, ms, None)
@@ -7498,12 +9986,20 @@ def cge_tick_endpoint():
 
 # --- Agent / Scaffold / Scripts / Web / Voice / Deps ---
 
+
 class AgentGoalBody(BaseModel):
     goal: str
     mode: str = "plan_only"  # plan_only | controlled | auto
     fast: Optional[bool] = True
-    depth: Optional[int] = 1  # 1-5: multi-agent depth (1=single planner, 2+=Executive pipeline)
-    model: Optional[str] = None  # auto | provider:model (e.g. "openai:gpt-4.1", "xai:grok-3")
+    depth: Optional[
+        int
+    ] = 1  # 1-5: multi-agent depth (1=single planner, 2+=Executive pipeline)
+    model: Optional[
+        str
+    ] = None  # auto | provider:model (e.g. "openai:gpt-4.1", "xai:grok-3")
+    strict_model: Optional[
+        bool
+    ] = True  # True = modelo explícito sin fallback automático
     sync_config: Optional[bool] = False  # True = usar system prompt/temp de Config IA
     thread_id: Optional[str] = None  # Para persistir hilo conversacional (Agent UI)
     user_id: Optional[str] = None  # Opcional: identificador de usuario/owner
@@ -7521,41 +10017,97 @@ def _agent_goal_mode(mode: str) -> str:
 # Cada entrada: (provider, model, tier)  tier: "local"=Ollama, "free_api"=tier gratis, "paid_api"=paga
 
 _TASK_PROFILES = {
-    "self":      {"keywords": ["autodiagnostico", "diagnostico", "tu estado", "como estas", "que modulos",
-                               "tu salud", "tus servicios", "verifica tu", "revisa tu", "reporta tu",
-                               "tu memoria", "repara", "corrige los errores", "selfcheck", "health check",
-                               "que sabes de ti", "quien eres", "presentate"],
-                  "local": "deepseek-r1:14b"},
-    "code":      {"keywords": ["codigo", "code", "script", "funcion", "function", "programa", "debug",
-                               "bug", "fix", "refactor", "implementa", "crea un", "desarrolla",
-                               "html", "css", "javascript", "python", "api", "endpoint",
-                               "clase", "class", "test"],
-                  "local": "deepseek-coder:6.7b"},
-    "reasoning": {"keywords": ["analiza", "explica", "por que", "porque", "razona", "compara", "evalua",
-                               "piensa", "plan", "estrategia", "arquitectura", "disena",
-                               "pros y contras", "ventajas", "desventajas", "opinion"],
-                  "local": "deepseek-r1:14b"},
-    "general":   {"keywords": [],
-                  "local": "deepseek-r1:14b"},
+    "self": {
+        "keywords": [
+            "autodiagnostico",
+            "diagnostico",
+            "tu estado",
+            "como estas",
+            "que modulos",
+            "tu salud",
+            "tus servicios",
+            "verifica tu",
+            "revisa tu",
+            "reporta tu",
+            "tu memoria",
+            "repara",
+            "corrige los errores",
+            "selfcheck",
+            "health check",
+            "que sabes de ti",
+            "quien eres",
+            "presentate",
+        ],
+        "local": "deepseek-r1:14b",
+    },
+    "code": {
+        "keywords": [
+            "codigo",
+            "code",
+            "script",
+            "funcion",
+            "function",
+            "programa",
+            "debug",
+            "bug",
+            "fix",
+            "refactor",
+            "implementa",
+            "crea un",
+            "desarrolla",
+            "html",
+            "css",
+            "javascript",
+            "python",
+            "api",
+            "endpoint",
+            "clase",
+            "class",
+            "test",
+        ],
+        "local": "deepseek-coder:6.7b",
+    },
+    "reasoning": {
+        "keywords": [
+            "analiza",
+            "explica",
+            "por que",
+            "porque",
+            "razona",
+            "compara",
+            "evalua",
+            "piensa",
+            "plan",
+            "estrategia",
+            "arquitectura",
+            "disena",
+            "pros y contras",
+            "ventajas",
+            "desventajas",
+            "opinion",
+        ],
+        "local": "deepseek-r1:14b",
+    },
+    "general": {"keywords": [], "local": "deepseek-r1:14b"},
 }
 
 _CASCADE_ORDER = [
     # Tier 0: BEDROCK — configured and available (AWS credentials)
     ("bedrock", "us.anthropic.claude-haiku-4-5-20251001-v1:0", "paid_api"),
-    ("bedrock", "us.anthropic.claude-opus-4-6-v1:0",           "paid_api"),
+    ("bedrock", "us.anthropic.claude-opus-4-6-v1:0", "paid_api"),
     # Tier 1: API GRATIS — modelos potentes sin costo
-    ("gemini", "gemini-2.5-flash",              "free_api"),
-    ("groq",   "llama-3.3-70b-versatile",       "free_api"),
+    ("gemini", "gemini-2.5-flash", "free_api"),
+    ("groq", "llama-3.3-70b-versatile", "free_api"),
     # Tier 2: API DE PAGO — maxima inteligencia disponible
-    ("openai",    "gpt-4.1",                    "paid_api"),
-    ("openai",    "gpt-4.1-mini",               "paid_api"),
-    ("anthropic", "claude-sonnet-4-20250514",   "paid_api"),
-    ("deepseek",  "deepseek-chat",              "paid_api"),
-    ("xai",       "grok-3",                     "paid_api"),
-    ("mistral",   "mistral-large-latest",       "paid_api"),
-    ("perplexity","sonar-pro",                  "paid_api"),
+    ("openai", "gpt-4.1", "paid_api"),
+    ("openai", "gpt-4.1-mini", "paid_api"),
+    ("anthropic", "claude-sonnet-4-20250514", "paid_api"),
+    ("deepseek", "deepseek-chat", "paid_api"),
+    ("xai", "grok-3", "paid_api"),
+    ("mistral", "mistral-large-latest", "paid_api"),
+    ("perplexity", "sonar-pro", "paid_api"),
     # Tier 3: LOCAL — fallback offline (sin internet)
-    ("ollama", "{local_model}",                 "local"),
+    ("ollama", "{local_model}", "local"),
 ]
 
 # Prioridad de especialistas API-first para modo rápido.
@@ -7602,7 +10154,9 @@ def _pick_local_model(goal: str) -> str:
     return _TASK_PROFILES[ttype]["local"]
 
 
-def _pick_specialist_model(goal: str, prefer_fast: bool = True) -> tuple[Optional[str], str, str, str]:
+def _pick_specialist_model(
+    goal: str, prefer_fast: bool = True
+) -> tuple[Optional[str], str, str, str]:
     """Devuelve (full_key, task_type, specialist_slot, routing_policy) en modo auto con specialist routing activo."""
     task_type = _infer_task_type(goal)
     slot_by_task = {
@@ -7624,14 +10178,18 @@ def _pick_specialist_model(goal: str, prefer_fast: bool = True) -> tuple[Optiona
             if (os.getenv("ATLAS_AI_MODE", "") or "").strip().lower() == "bedrock":
                 return True
             return bool(
-                ((os.getenv("AWS_ACCESS_KEY_ID") or "").strip() and (os.getenv("AWS_SECRET_ACCESS_KEY") or "").strip())
+                (
+                    (os.getenv("AWS_ACCESS_KEY_ID") or "").strip()
+                    and (os.getenv("AWS_SECRET_ACCESS_KEY") or "").strip()
+                )
                 or (os.getenv("AWS_PROFILE") or "").strip()
             )
         rt = _PROVIDER_RUNTIME_STATUS.get(provider_id, {})
         if rt.get("code") in ("auth_error", "quota_exhausted", "rate_limited"):
             return False
         try:
-            from modules.humanoid.ai.provider_credentials import get_provider_api_key
+            from modules.humanoid.ai.provider_credentials import \
+                get_provider_api_key
 
             key = get_provider_api_key(provider_id)
             return bool(key and key.strip())
@@ -7731,16 +10289,43 @@ def _get_system_prompt(use_config: bool = False) -> str:
 
 def _enrich_with_self_knowledge(goal: str) -> str:
     """Si la pregunta es sobre ATLAS mismo o requiere planificación, inyecta datos reales."""
-    keywords = ("autodiagnostico", "diagnostico", "estado", "salud", "health", "error",
-                "modulo", "memoria", "servicio", "corrige", "repara", "problema",
-                "tu estado", "como estas", "que sabes", "cuantos", "verifica",
-                "planifica", "lleva", "transporta", "abre", "cierra", "sube", "baja",
-                "libro de vida", "experiencia", "episodio")
+    keywords = (
+        "autodiagnostico",
+        "diagnostico",
+        "estado",
+        "salud",
+        "health",
+        "error",
+        "modulo",
+        "memoria",
+        "servicio",
+        "corrige",
+        "repara",
+        "problema",
+        "tu estado",
+        "como estas",
+        "que sabes",
+        "cuantos",
+        "verifica",
+        "planifica",
+        "lleva",
+        "transporta",
+        "abre",
+        "cierra",
+        "sube",
+        "baja",
+        "libro de vida",
+        "experiencia",
+        "episodio",
+    )
     if not any(k in goal.lower() for k in keywords):
         return goal
 
     context_parts = [goal, "\n\n--- DATOS REALES DEL SISTEMA ---"]
-    import concurrent.futures as _cf, requests as _rq
+    import concurrent.futures as _cf
+
+    import requests as _rq
+
     _SELF = "http://127.0.0.1:8791"
     _T = 2  # timeout per call
 
@@ -7757,32 +10342,53 @@ def _enrich_with_self_knowledge(goal: str) -> str:
             "status": pool.submit(_fetch, "/status"),
             "lifelog": pool.submit(_fetch, "/api/cognitive-memory/lifelog/status"),
             "lv": pool.submit(_fetch, "/api/libro-vida/status"),
-            "buscar": pool.submit(_fetch, "/api/libro-vida/buscar", method="post", json={"query": goal[:100], "limit": 3}),
+            "buscar": pool.submit(
+                _fetch,
+                "/api/libro-vida/buscar",
+                method="post",
+                json={"query": goal[:100], "limit": 3},
+            ),
         }
         done, _ = _cf.wait(futs.values(), timeout=4)
 
     h = futs["health"].result() if futs["health"].done() else None
     if h:
-        context_parts.append(f"SALUD: score={h.get('score')}/100, checks={h.get('checks', {})}")
+        context_parts.append(
+            f"SALUD: score={h.get('score')}/100, checks={h.get('checks', {})}"
+        )
     s = futs["status"].result() if futs["status"].done() else None
     if s:
         context_parts.append(f"SERVICIOS: push=ok, robot={s.get('robot_connected')}")
     ll = futs["lifelog"].result() if futs["lifelog"].done() else None
     if ll:
-        context_parts.append(f"LIFELOG: entries={ll.get('total_entries')}, success_rate={ll.get('success_rate')}")
+        context_parts.append(
+            f"LIFELOG: entries={ll.get('total_entries')}, success_rate={ll.get('success_rate')}"
+        )
     lv = futs["lv"].result() if futs["lv"].done() else None
     if lv and lv.get("ok"):
-        context_parts.append(f"LIBRO DE VIDA: episodios={lv.get('total_episodios')}, exitos={lv.get('exitos')}, fallos={lv.get('fallos')}, tasa_exito={lv.get('tasa_exito')}")
+        context_parts.append(
+            f"LIBRO DE VIDA: episodios={lv.get('total_episodios')}, exitos={lv.get('exitos')}, fallos={lv.get('fallos')}, tasa_exito={lv.get('tasa_exito')}"
+        )
     busq = futs["buscar"].result() if futs["buscar"].done() else None
     if busq and busq.get("ok") and busq.get("data"):
         context_parts.append("EXPERIENCIAS SIMILARES:")
         for ep in busq["data"][:3]:
-            context_parts.append(f"  - [{ep.get('tipo_tarea')}] {ep.get('objetivo','')[:80]} -> {'EXITO' if ep.get('exito') else 'FALLO'}")
-    context_parts.append("--- FIN DATOS ---\nResponde basandote en estos datos reales, no inventes.")
+            context_parts.append(
+                f"  - [{ep.get('tipo_tarea')}] {ep.get('objetivo','')[:80]} -> {'EXITO' if ep.get('exito') else 'FALLO'}"
+            )
+    context_parts.append(
+        "--- FIN DATOS ---\nResponde basandote en estos datos reales, no inventes."
+    )
     return "\n".join(context_parts)
 
 
-def _try_single_call(provider_id: str, model_name: str, goal: str, use_config: bool = False, enrich: bool = True) -> dict:
+def _try_single_call(
+    provider_id: str,
+    model_name: str,
+    goal: str,
+    use_config: bool = False,
+    enrich: bool = True,
+) -> dict:
     """Intenta una llamada a un modelo. Retorna dict con ok, output, ms, model_used."""
     spec = "%s:%s" % (provider_id, model_name)
     sys_prompt = _get_system_prompt(use_config)
@@ -7791,12 +10397,23 @@ def _try_single_call(provider_id: str, model_name: str, goal: str, use_config: b
     if provider_id == "ollama":
         try:
             from modules.humanoid.ai.router import _call_ollama
+
             ok, output, ms = _call_ollama(model_name, goal, sys_prompt, 20)
             if ok and output and output.strip():
                 return {"ok": True, "output": output, "ms": ms, "model_used": spec}
-            return {"ok": False, "error": "Ollama %s: respuesta vacia" % model_name, "ms": ms, "model_used": spec}
+            return {
+                "ok": False,
+                "error": "Ollama %s: respuesta vacia" % model_name,
+                "ms": ms,
+                "model_used": spec,
+            }
         except Exception as e:
-            return {"ok": False, "error": "Ollama %s: %s" % (model_name, str(e)), "ms": 0, "model_used": spec}
+            return {
+                "ok": False,
+                "error": "Ollama %s: %s" % (model_name, str(e)),
+                "ms": 0,
+                "model_used": spec,
+            }
     if provider_id == "bedrock":
         region = (os.getenv("AWS_REGION", "us-east-1") or "us-east-1").strip()
         t0 = time.perf_counter()
@@ -7825,67 +10442,145 @@ def _try_single_call(provider_id: str, model_name: str, goal: str, use_config: b
                 _set_provider_runtime_status(provider_id, None)
                 return {"ok": True, "output": output, "ms": ms, "model_used": spec}
             _set_provider_runtime_status(provider_id, "Respuesta vacia en Bedrock")
-            return {"ok": False, "error": "Bedrock %s: respuesta vacia" % model_name, "ms": ms, "model_used": spec}
+            return {
+                "ok": False,
+                "error": "Bedrock %s: respuesta vacia" % model_name,
+                "ms": ms,
+                "model_used": spec,
+            }
         except Exception as e:
             _set_provider_runtime_status(provider_id, str(e))
-            return {"ok": False, "error": "Bedrock %s: %s" % (model_name, str(e)), "ms": (time.perf_counter() - t0) * 1000, "model_used": spec}
+            return {
+                "ok": False,
+                "error": "Bedrock %s: %s" % (model_name, str(e)),
+                "ms": (time.perf_counter() - t0) * 1000,
+                "model_used": spec,
+            }
     from modules.humanoid.ai.provider_credentials import get_provider_api_key
+
     api_key = get_provider_api_key(provider_id)
     if not api_key:
         _set_provider_runtime_status(provider_id, "Sin API key")
-        return {"ok": False, "error": "Sin API key para %s" % provider_id, "ms": 0, "model_used": spec, "_skip": True}
+        return {
+            "ok": False,
+            "error": "Sin API key para %s" % provider_id,
+            "ms": 0,
+            "model_used": spec,
+            "_skip": True,
+        }
     from modules.humanoid.ai.external_llm import call_external
+
     try:
-        ok, output, ms = call_external(provider_id, model_name, goal, sys_prompt, api_key, timeout_s=25)
+        ok, output, ms = call_external(
+            provider_id, model_name, goal, sys_prompt, api_key, timeout_s=25
+        )
         if ok and output and output.strip():
             _set_provider_runtime_status(provider_id, None)
             return {"ok": True, "output": output, "ms": ms, "model_used": spec}
         # Conservar detalle original del proveedor para diagnóstico (auth, quota, modelo inválido, etc.)
-        err_detail = (output or "").strip() or "%s:%s respuesta vacia o error" % (provider_id, model_name)
+        err_detail = (output or "").strip() or "%s:%s respuesta vacia o error" % (
+            provider_id,
+            model_name,
+        )
         _set_provider_runtime_status(provider_id, err_detail)
         return {"ok": False, "error": err_detail, "ms": ms, "model_used": spec}
     except Exception as e:
         _set_provider_runtime_status(provider_id, str(e))
-        return {"ok": False, "error": "%s:%s: %s" % (provider_id, model_name, str(e)), "ms": 0, "model_used": spec}
+        return {
+            "ok": False,
+            "error": "%s:%s: %s" % (provider_id, model_name, str(e)),
+            "ms": 0,
+            "model_used": spec,
+        }
 
 
-def _direct_model_call(model_spec: str, goal: str, use_config: bool = False, prefer_fast: bool = True, enrich: bool = True) -> dict:
+def _direct_model_call(
+    model_spec: str,
+    goal: str,
+    use_config: bool = False,
+    prefer_fast: bool = True,
+    enrich: bool = True,
+    strict_model: bool = True,
+) -> dict:
     """Llamada con cascada inteligente: local → free API → paid API. Si un modelo falla, salta al siguiente."""
-    if (model_spec or "").strip().lower() in ("cascade:ide-agent", "cascade", "ide-agent"):
+    if (model_spec or "").strip().lower() in (
+        "cascade:ide-agent",
+        "cascade",
+        "ide-agent",
+    ):
         model_spec = "auto"
 
     if model_spec == "auto" or not model_spec:
-        specialist_key, task_type, specialist_slot, routing_policy = _pick_specialist_model(goal, prefer_fast=prefer_fast)
+        (
+            specialist_key,
+            task_type,
+            specialist_slot,
+            routing_policy,
+        ) = _pick_specialist_model(goal, prefer_fast=prefer_fast)
         local_model = _pick_local_model(goal)
         errors = []
         trace = []
         tried = set()
 
-        def _attempt(provider_id: str, model_name: str, tier: str, reason: str) -> Optional[dict]:
+        def _attempt(
+            provider_id: str, model_name: str, tier: str, reason: str
+        ) -> Optional[dict]:
             attempt_key = (provider_id, model_name)
             if attempt_key in tried:
                 return None
             tried.add(attempt_key)
-            trace.append({"event": "attempt", "provider": provider_id, "model": model_name, "tier": tier, "reason": reason})
-            result = _try_single_call(provider_id, model_name, goal, use_config, enrich=enrich)
+            trace.append(
+                {
+                    "event": "attempt",
+                    "provider": provider_id,
+                    "model": model_name,
+                    "tier": tier,
+                    "reason": reason,
+                }
+            )
+            result = _try_single_call(
+                provider_id, model_name, goal, use_config, enrich=enrich
+            )
             if result.get("ok"):
                 result["tier"] = tier
                 result["cascade_errors"] = len(errors)
                 result["task_type"] = task_type
                 result["specialist_slot"] = specialist_slot
                 result["routing_policy"] = routing_policy
-                trace.append({"event": "selected", "model_used": result.get("model_used"), "tier": tier, "reason": reason})
+                trace.append(
+                    {
+                        "event": "selected",
+                        "model_used": result.get("model_used"),
+                        "tier": tier,
+                        "reason": reason,
+                    }
+                )
                 result["routing_trace"] = trace
                 return result
             skip_reason = result.get("error", "unknown")
             errors.append("%s:%s → %s" % (provider_id, model_name, skip_reason[:80]))
-            trace.append({"event": "fail", "provider": provider_id, "model": model_name, "tier": tier, "reason": reason, "error": skip_reason[:120]})
+            trace.append(
+                {
+                    "event": "fail",
+                    "provider": provider_id,
+                    "model": model_name,
+                    "tier": tier,
+                    "reason": reason,
+                    "error": skip_reason[:120],
+                }
+            )
             return None
 
         if specialist_key and ":" in specialist_key:
             sp_provider, sp_model = specialist_key.split(":", 1)
-            sp_reason = routing_policy if routing_policy not in ("", "none") else "brain_specialist"
-            sp_result = _attempt(sp_provider.strip().lower(), sp_model.strip(), "specialist", sp_reason)
+            sp_reason = (
+                routing_policy
+                if routing_policy not in ("", "none")
+                else "brain_specialist"
+            )
+            sp_result = _attempt(
+                sp_provider.strip().lower(), sp_model.strip(), "specialist", sp_reason
+            )
             if sp_result:
                 return sp_result
 
@@ -7910,9 +10605,27 @@ def _direct_model_call(model_spec: str, goal: str, use_config: bool = False, pre
     provider_id, model_name = parts[0].lower(), parts[1]
     result = _try_single_call(provider_id, model_name, goal, use_config, enrich=enrich)
     if result.get("ok"):
-        result["routing_trace"] = [{"event": "selected", "model_used": result.get("model_used"), "tier": "manual", "reason": "explicit_model"}]
+        result["routing_trace"] = [
+            {
+                "event": "selected",
+                "model_used": result.get("model_used"),
+                "tier": "manual",
+                "reason": "explicit_model",
+            }
+        ]
     else:
-        result["routing_trace"] = [{"event": "fail", "provider": provider_id, "model": model_name, "tier": "manual", "reason": "explicit_model", "error": (result.get("error") or "")[:120]}]
+        result["routing_trace"] = [
+            {
+                "event": "fail",
+                "provider": provider_id,
+                "model": model_name,
+                "tier": "manual",
+                "reason": "explicit_model",
+                "error": (result.get("error") or "")[:120],
+            }
+        ]
+        if strict_model:
+            result["strict_model"] = True
     return result
 
 
@@ -7924,8 +10637,17 @@ def brain_process_endpoint(payload: dict):
         return {"ok": False, "error": "Texto vacio"}
     result = _direct_model_call("auto", text, use_config=True, prefer_fast=True)
     if result.get("ok"):
-        return {"ok": True, "response": result["output"], "model_used": result.get("model_used"), "source": "brain"}
-    return {"ok": False, "error": result.get("error", "Sin respuesta"), "source": "brain"}
+        return {
+            "ok": True,
+            "response": result["output"],
+            "model_used": result.get("model_used"),
+            "source": "brain",
+        }
+    return {
+        "ok": False,
+        "error": result.get("error", "Sin respuesta"),
+        "source": "brain",
+    }
 
 
 @app.post("/agent/goal")
@@ -7937,7 +10659,13 @@ def agent_goal(body: AgentGoalBody):
     mgr = _get_chat_manager()
     if mgr and thread_id:
         try:
-            mgr.add_message(thread_id, sender=user_id, role="user", content=str(body.goal), metadata={"panel": "agent", "kind": "goal"})
+            mgr.add_message(
+                thread_id,
+                sender=user_id,
+                role="user",
+                content=str(body.goal),
+                metadata={"panel": "agent", "kind": "goal"},
+            )
         except Exception:
             pass
 
@@ -7958,37 +10686,72 @@ def agent_goal(body: AgentGoalBody):
         except Exception:
             pass
         return resp
+
     explicit_model = (body.model or "").strip()
     model_spec = explicit_model or "auto"
+    strict_model = bool(body.strict_model) if body.strict_model is not None else True
     mode = _agent_goal_mode(body.mode or "plan_only")
     prefer_fast = bool(body.fast) if body.fast is not None else True
     # Respuesta directa de LLM solo en plan_only con provider:model explícito.
     # En modos auto/controlled SIEMPRE usamos orquestador para decidir y ejecutar.
-    if mode == "plan_only" and explicit_model and explicit_model.lower() not in ("auto", "cascade", "ide-agent", "cascade:ide-agent"):
-        result = _direct_model_call(model_spec, goal_text, use_config=bool(body.sync_config), prefer_fast=prefer_fast)
+    if (
+        mode == "plan_only"
+        and explicit_model
+        and explicit_model.lower()
+        not in ("auto", "cascade", "ide-agent", "cascade:ide-agent")
+    ):
+        result = _direct_model_call(
+            model_spec,
+            goal_text,
+            use_config=bool(body.sync_config),
+            prefer_fast=prefer_fast,
+            strict_model=strict_model,
+        )
         ms = int((time.perf_counter() - t0) * 1000)
         if result.get("ok"):
-            tier_label = {"local": "LOCAL (gratis)", "free_api": "API gratuita", "paid_api": "API paga"}.get(result.get("tier", ""), "")
+            tier_label = {
+                "local": "LOCAL (gratis)",
+                "free_api": "API gratuita",
+                "paid_api": "API paga",
+            }.get(result.get("tier", ""), "")
             cascade_note = ""
             if result.get("cascade_errors", 0) > 0:
-                cascade_note = " (fallback: %d intentos previos)" % result["cascade_errors"]
-            info_line = "Modelo: %s | %s%s | %dms" % (result.get("model_used", model_spec), tier_label, cascade_note, ms)
-            resp = _professional_resp(True, {
-                                      "output": result["output"],
-                                      "model_used": result.get("model_used"),
-                                      "tier": result.get("tier"),
-                                      "routing_trace": result.get("routing_trace", []),
-                                      "task_type": result.get("task_type"),
-                                      "specialist_slot": result.get("specialist_slot"),
-                                      "routing_policy": result.get("routing_policy"),
-                                      }, ms, None,
-                                      resumen=result["output"][:500] if result.get("output") else "Procesado",
-                                      siguientes_pasos=[info_line])
+                cascade_note = (
+                    " (fallback: %d intentos previos)" % result["cascade_errors"]
+                )
+            info_line = "Modelo: %s | %s%s | %dms" % (
+                result.get("model_used", model_spec),
+                tier_label,
+                cascade_note,
+                ms,
+            )
+            resp = _professional_resp(
+                True,
+                {
+                    "output": result["output"],
+                    "model_used": result.get("model_used"),
+                    "tier": result.get("tier"),
+                    "routing_trace": result.get("routing_trace", []),
+                    "task_type": result.get("task_type"),
+                    "specialist_slot": result.get("specialist_slot"),
+                    "routing_policy": result.get("routing_policy"),
+                },
+                ms,
+                None,
+                resumen=result["output"][:500] if result.get("output") else "Procesado",
+                siguientes_pasos=[info_line],
+            )
             if mgr and thread_id:
                 try:
                     out_txt = str(result.get("output") or "")
                     if out_txt.strip():
-                        mgr.add_message(thread_id, sender="agent", role="assistant", content=out_txt[:8000], metadata={"panel": "agent", "kind": "goal"})
+                        mgr.add_message(
+                            thread_id,
+                            sender="agent",
+                            role="assistant",
+                            content=out_txt[:8000],
+                            metadata={"panel": "agent", "kind": "goal"},
+                        )
                         _update_thread_summary(thread_id, str(body.goal), out_txt)
                 except Exception:
                     pass
@@ -7997,18 +10760,56 @@ def agent_goal(body: AgentGoalBody):
         err_l = str(err_detail).lower()
         # No ocultar credenciales inválidas detrás de fallback automático.
         # Si el modelo explícito falla por auth/API key, devolvemos error directo y accionable.
-        auth_tokens = ("authentication", "unauthorized", "invalid api key", "incorrect api key", "invalid x-api-key", "401")
+        auth_tokens = (
+            "authentication",
+            "unauthorized",
+            "invalid api key",
+            "incorrect api key",
+            "invalid x-api-key",
+            "401",
+        )
         if any(tok in err_l for tok in auth_tokens):
-            return _attach_thread(_professional_resp(
-                False,
-                {"error_detail": err_detail, "model_used": result.get("model_used"), "auth_error": True},
-                ms,
-                err_detail,
-                resumen=err_detail,
-                siguientes_pasos=["Credencial inválida o no autorizada para el proveedor seleccionado. Actualiza /api/brain/credentials y reintenta."],
-            ))
-        # Fallback resiliente: si modelo explícito falla, intentar cascada auto.
-        fallback = _direct_model_call("auto", goal_text, use_config=bool(body.sync_config), prefer_fast=prefer_fast)
+            return _attach_thread(
+                _professional_resp(
+                    False,
+                    {
+                        "error_detail": err_detail,
+                        "model_used": result.get("model_used"),
+                        "auth_error": True,
+                    },
+                    ms,
+                    err_detail,
+                    resumen=err_detail,
+                    siguientes_pasos=[
+                        "Credencial inválida o no autorizada para el proveedor seleccionado. Actualiza /api/brain/credentials y reintenta."
+                    ],
+                )
+            )
+        if strict_model:
+            return _attach_thread(
+                _professional_resp(
+                    False,
+                    {
+                        "error_detail": err_detail,
+                        "model_used": result.get("model_used"),
+                        "strict_model": True,
+                    },
+                    ms,
+                    err_detail,
+                    resumen=err_detail,
+                    siguientes_pasos=[
+                        "Strict model activo: desactívalo para permitir fallback automático entre proveedores."
+                    ],
+                )
+            )
+
+        # Fallback resiliente: si modelo explícito falla y strict_model=False, intentar cascada auto.
+        fallback = _direct_model_call(
+            "auto",
+            goal_text,
+            use_config=bool(body.sync_config),
+            prefer_fast=prefer_fast,
+        )
         if fallback.get("ok"):
             ms2 = int((time.perf_counter() - t0) * 1000)
             note = "Fallback automático activado: modelo seleccionado falló, se usó cascada."
@@ -8019,12 +10820,16 @@ def agent_goal(body: AgentGoalBody):
                 "tier": fallback.get("tier"),
                 "fallback_from": model_spec,
                 "fallback": True,
-                "routing_trace": (result.get("routing_trace") or []) + [{
-                    "event": "fallback_switch",
-                    "from": model_spec,
-                    "to": fallback.get("model_used"),
-                    "reason": short_err,
-                }] + (fallback.get("routing_trace") or []),
+                "routing_trace": (result.get("routing_trace") or [])
+                + [
+                    {
+                        "event": "fallback_switch",
+                        "from": model_spec,
+                        "to": fallback.get("model_used"),
+                        "reason": short_err,
+                    }
+                ]
+                + (fallback.get("routing_trace") or []),
                 "provider_warning": {
                     "message": short_err,
                     "source_model": model_spec,
@@ -8034,43 +10839,87 @@ def agent_goal(body: AgentGoalBody):
                 try:
                     out_txt = str(fallback.get("output") or "")
                     if out_txt.strip():
-                        mgr.add_message(thread_id, sender="agent", role="assistant", content=out_txt[:8000], metadata={"panel": "agent", "kind": "goal_fallback"})
+                        mgr.add_message(
+                            thread_id,
+                            sender="agent",
+                            role="assistant",
+                            content=out_txt[:8000],
+                            metadata={"panel": "agent", "kind": "goal_fallback"},
+                        )
                         _update_thread_summary(thread_id, str(body.goal), out_txt)
                 except Exception:
                     pass
-            return _attach_thread(_professional_resp(
-                True,
-                data,
-                ms2,
-                None,
-                resumen=(fallback.get("output") or "Procesado")[:500],
-                siguientes_pasos=[note, f"Causa detectada: {short_err}"],
-            ))
+            return _attach_thread(
+                _professional_resp(
+                    True,
+                    data,
+                    ms2,
+                    None,
+                    resumen=(fallback.get("output") or "Procesado")[:500],
+                    siguientes_pasos=[note, f"Causa detectada: {short_err}"],
+                )
+            )
 
         fb_detail = fallback.get("error") if isinstance(fallback, dict) else None
-        full_err = err_detail if not fb_detail else f"{err_detail} | fallback: {fb_detail}"
-        return _professional_resp(False, {"error_detail": full_err, "model_used": result.get("model_used")}, ms, full_err, resumen=full_err)
+        full_err = (
+            err_detail if not fb_detail else f"{err_detail} | fallback: {fb_detail}"
+        )
+        return _professional_resp(
+            False,
+            {"error_detail": full_err, "model_used": result.get("model_used")},
+            ms,
+            full_err,
+            resumen=full_err,
+        )
     depth = max(1, min(5, body.depth or 1))
-    ORCH_TIMEOUT_SEC = 20  # max seconds for orchestrator before falling back to direct LLM
+    ORCH_TIMEOUT_SEC = (
+        20  # max seconds for orchestrator before falling back to direct LLM
+    )
     try:
         import concurrent.futures
+
         def _run_orchestrator():
             if depth >= 2:
                 from modules.humanoid.agents import run_multi_agent_goal
                 from modules.humanoid.orchestrator import run_goal_with_plan
+
                 ma = run_multi_agent_goal(goal_text, depth=depth, mode=mode)
                 if not ma.get("ok"):
                     return ma
                 if ma.get("decision") == "replan":
-                    return {"ok": True, "_replan": True, **{k: v for k, v in ma.items() if k not in ("ok",)}}
+                    return {
+                        "ok": True,
+                        "_replan": True,
+                        **{k: v for k, v in ma.items() if k not in ("ok",)},
+                    }
                 steps_raw = ma.get("steps") or []
-                steps_list = [s.get("description", s) if isinstance(s, dict) else str(s) for s in steps_raw]
-                if mode != "plan_only" and steps_list and ma.get("decision") == "approve":
+                steps_list = [
+                    s.get("description", s) if isinstance(s, dict) else str(s)
+                    for s in steps_raw
+                ]
+                if (
+                    mode != "plan_only"
+                    and steps_list
+                    and ma.get("decision") == "approve"
+                ):
                     return run_goal_with_plan(goal_text, steps_list, mode=mode)
-                return {"ok": True, "plan": ma.get("plan"), "steps": steps_raw, "task_id": ma.get("task_id"), "execution_log": [], "artifacts": [], "pipeline": ma.get("pipeline", [])}
+                return {
+                    "ok": True,
+                    "plan": ma.get("plan"),
+                    "steps": steps_raw,
+                    "task_id": ma.get("task_id"),
+                    "execution_log": [],
+                    "artifacts": [],
+                    "pipeline": ma.get("pipeline", []),
+                }
             else:
                 from modules.humanoid.orchestrator import run_goal
-                return run_goal(goal_text, mode=mode, fast=body.fast if body.fast is not None else True)
+
+                return run_goal(
+                    goal_text,
+                    mode=mode,
+                    fast=body.fast if body.fast is not None else True,
+                )
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(_run_orchestrator)
@@ -8082,33 +10931,71 @@ def agent_goal(body: AgentGoalBody):
         # Handle replan marker from multi-agent
         if result.get("_replan"):
             ms = int((time.perf_counter() - t0) * 1000)
-            data = {k: v for k, v in result.items() if k not in ("ok", "error", "_replan")}
-            return _professional_resp(True, data, ms, None, resumen="Reviewer rechazó; replan sugerido", siguientes_pasos=["Ajuste objetivo o replan"])
+            data = {
+                k: v for k, v in result.items() if k not in ("ok", "error", "_replan")
+            }
+            return _professional_resp(
+                True,
+                data,
+                ms,
+                None,
+                resumen="Reviewer rechazó; replan sugerido",
+                siguientes_pasos=["Ajuste objetivo o replan"],
+            )
         ms = int((time.perf_counter() - t0) * 1000)
         ok = result.get("ok", False)
 
         # Resilient fallback: if orchestrator failed, try direct LLM so user always gets a response
         if not ok and not result.get("steps"):
-            orch_err = result.get("error") or result.get("message") or "orchestrator_failed"
-            fb = _direct_model_call("auto", goal_text, use_config=bool(body.sync_config), prefer_fast=prefer_fast, enrich=False)
+            orch_err = (
+                result.get("error") or result.get("message") or "orchestrator_failed"
+            )
+            fb = _direct_model_call(
+                "auto",
+                goal_text,
+                use_config=bool(body.sync_config),
+                prefer_fast=prefer_fast,
+                enrich=False,
+            )
             if fb.get("ok"):
                 ms2 = int((time.perf_counter() - t0) * 1000)
-                return _professional_resp(True, {
-                    "output": fb["output"],
-                    "model_used": fb.get("model_used"),
-                    "tier": fb.get("tier"),
-                    "fallback_from": "orchestrator",
-                    "fallback": True,
-                    "routing_trace": fb.get("routing_trace", []) + [{"event": "fallback_switch", "from": "orchestrator", "to": fb.get("model_used"), "reason": orch_err[:140]}],
-                }, ms2, None,
-                resumen=(fb["output"] or "Procesado")[:500],
-                siguientes_pasos=[f"Fallback LLM directo (orquestador: {orch_err[:100]})"])
+                return _professional_resp(
+                    True,
+                    {
+                        "output": fb["output"],
+                        "model_used": fb.get("model_used"),
+                        "tier": fb.get("tier"),
+                        "fallback_from": "orchestrator",
+                        "fallback": True,
+                        "routing_trace": fb.get("routing_trace", [])
+                        + [
+                            {
+                                "event": "fallback_switch",
+                                "from": "orchestrator",
+                                "to": fb.get("model_used"),
+                                "reason": orch_err[:140],
+                            }
+                        ],
+                    },
+                    ms2,
+                    None,
+                    resumen=(fb["output"] or "Procesado")[:500],
+                    siguientes_pasos=[
+                        f"Fallback LLM directo (orquestador: {orch_err[:100]})"
+                    ],
+                )
 
-        data = {k: v for k, v in result.items() if k not in ("ok", "error", "fallback", "message")}
+        data = {
+            k: v
+            for k, v in result.items()
+            if k not in ("ok", "error", "fallback", "message")
+        }
         steps_raw = result.get("steps") or []
         exec_log = result.get("execution_log") or []
         done_count = len([e for e in exec_log if e.get("status") == "success"])
-        fail_count = len([e for e in exec_log if e.get("status") != "success" and e.get("status")])
+        fail_count = len(
+            [e for e in exec_log if e.get("status") != "success" and e.get("status")]
+        )
 
         if ok:
             if exec_log:
@@ -8118,19 +11005,34 @@ def agent_goal(body: AgentGoalBody):
                 for s in steps_raw[:3]:
                     d = s.get("description", s) if isinstance(s, dict) else str(s)
                     step_descs.append(d[:80])
-                resumen = "Plan (%d pasos):\n%s" % (len(steps_raw), "\n".join("• " + d for d in step_descs))
+                resumen = "Plan (%d pasos):\n%s" % (
+                    len(steps_raw),
+                    "\n".join("• " + d for d in step_descs),
+                )
             else:
                 resumen = result.get("plan") or "Objetivo procesado"
         else:
-            resumen = result.get("message") or result.get("error") or "Error al procesar"
+            resumen = (
+                result.get("message") or result.get("error") or "Error al procesar"
+            )
 
         archivos = result.get("artifacts") or []
         siguientes = []
         if mode == "execute_controlled":
-            siguientes = ["Ejecute cada paso vía POST /agent/step/execute con approve=true"]
+            siguientes = [
+                "Ejecute cada paso vía POST /agent/step/execute con approve=true"
+            ]
         elif result.get("message"):
             siguientes = [result.get("message")]
-        out = _professional_resp(ok, data, ms, result.get("error"), resumen=resumen, archivos=archivos if archivos else None, siguientes_pasos=siguientes if siguientes else None)
+        out = _professional_resp(
+            ok,
+            data,
+            ms,
+            result.get("error"),
+            resumen=resumen,
+            archivos=archivos if archivos else None,
+            siguientes_pasos=siguientes if siguientes else None,
+        )
         if result.get("fallback"):
             out["fallback"] = True
             out["message"] = result.get("message")
@@ -8138,12 +11040,20 @@ def agent_goal(body: AgentGoalBody):
         if mgr and thread_id:
             try:
                 assistant_txt = ""
-                if isinstance(out.get("data"), dict) and isinstance(out["data"].get("output"), str):
+                if isinstance(out.get("data"), dict) and isinstance(
+                    out["data"].get("output"), str
+                ):
                     assistant_txt = out["data"]["output"]
                 elif isinstance(out.get("resumen"), str):
                     assistant_txt = out.get("resumen") or ""
                 if assistant_txt.strip():
-                    mgr.add_message(thread_id, sender="agent", role="assistant", content=assistant_txt[:8000], metadata={"panel": "agent", "kind": "goal_orchestrator"})
+                    mgr.add_message(
+                        thread_id,
+                        sender="agent",
+                        role="assistant",
+                        content=assistant_txt[:8000],
+                        metadata={"panel": "agent", "kind": "goal_orchestrator"},
+                    )
                     _update_thread_summary(thread_id, str(body.goal), assistant_txt)
             except Exception:
                 pass
@@ -8151,21 +11061,42 @@ def agent_goal(body: AgentGoalBody):
     except Exception as e:
         # Last resort: try direct LLM even on exception
         try:
-            fb = _direct_model_call("auto", body.goal, use_config=bool(body.sync_config), prefer_fast=prefer_fast, enrich=False)
+            fb = _direct_model_call(
+                "auto",
+                body.goal,
+                use_config=bool(body.sync_config),
+                prefer_fast=prefer_fast,
+                enrich=False,
+            )
             if fb.get("ok"):
                 ms2 = int((time.perf_counter() - t0) * 1000)
-                resp = _professional_resp(True, {
-                    "output": fb["output"],
-                    "model_used": fb.get("model_used"),
-                    "fallback_from": "exception",
-                    "fallback": True,
-                }, ms2, None, resumen=(fb["output"] or "")[:500],
-                siguientes_pasos=[f"Fallback LLM (error: {str(e)[:100]})"])
+                resp = _professional_resp(
+                    True,
+                    {
+                        "output": fb["output"],
+                        "model_used": fb.get("model_used"),
+                        "fallback_from": "exception",
+                        "fallback": True,
+                    },
+                    ms2,
+                    None,
+                    resumen=(fb["output"] or "")[:500],
+                    siguientes_pasos=[f"Fallback LLM (error: {str(e)[:100]})"],
+                )
                 if mgr and thread_id:
                     try:
                         out_txt = str(fb.get("output") or "")
                         if out_txt.strip():
-                            mgr.add_message(thread_id, sender="agent", role="assistant", content=out_txt[:8000], metadata={"panel": "agent", "kind": "goal_exception_fallback"})
+                            mgr.add_message(
+                                thread_id,
+                                sender="agent",
+                                role="assistant",
+                                content=out_txt[:8000],
+                                metadata={
+                                    "panel": "agent",
+                                    "kind": "goal_exception_fallback",
+                                },
+                            )
                             _update_thread_summary(thread_id, str(body.goal), out_txt)
                     except Exception:
                         pass
@@ -8188,9 +11119,15 @@ def agent_step_execute(body: AgentStepBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.orchestrator import execute_step
+
         result = execute_step(body.task_id, body.step_id, approve=body.approve)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(result.get("ok", False), {"result": result.get("result"), "artifacts": result.get("artifacts", [])}, ms, result.get("error"))
+        return _std_resp(
+            result.get("ok", False),
+            {"result": result.get("result"), "artifacts": result.get("artifacts", [])},
+            ms,
+            result.get("error"),
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -8204,23 +11141,37 @@ def agent_chat(payload: dict):
     Events: thinking, tool_call, tool_result, text, done, error
     """
     from fastapi.responses import StreamingResponse
+
     from atlas_adapter.agent_engine import run_agent
 
     user_msg = payload.get("message", "").strip()
     if not user_msg:
         return {"ok": False, "error": "Empty message"}
     user_id = (payload.get("user_id") or "owner").strip() or "owner"
-    thread_id = _ensure_thread_id(payload.get("thread_id"), title="Agent", user_id=user_id)
+    thread_id = _ensure_thread_id(
+        payload.get("thread_id"), title="Agent", user_id=user_id
+    )
     # Use server-side history when thread_id is present (survives reloads)
-    history = _llm_history_for_thread(thread_id, max_messages=24) if thread_id else (payload.get("history") or [])
+    history = (
+        _llm_history_for_thread(thread_id, max_messages=24)
+        if thread_id
+        else (payload.get("history") or [])
+    )
     model = payload.get("model") or None
+    strict_model = bool(payload.get("strict_model", True))
 
     def _sse_generator():
         mgr = _get_chat_manager()
         # Persist user message (best-effort)
         if mgr and thread_id:
             try:
-                mgr.add_message(thread_id, sender=user_id, role="user", content=user_msg, metadata={"panel": "agent", "kind": "chat"})
+                mgr.add_message(
+                    thread_id,
+                    sender=user_id,
+                    role="user",
+                    content=user_msg,
+                    metadata={"panel": "agent", "kind": "chat"},
+                )
             except Exception:
                 pass
         # Emit thread id early so UI can persist it
@@ -8230,7 +11181,12 @@ def agent_chat(payload: dict):
         final_done_data = {}
         final_error = None
         try:
-            for event in run_agent(user_msg, conversation_history=history, model=model):
+            for event in run_agent(
+                user_msg,
+                conversation_history=history,
+                model=model,
+                strict_model=strict_model,
+            ):
                 evt_type = event.get("event", "info")
                 data_obj = event.get("data", {}) or {}
                 if thread_id and evt_type in ("thinking", "done"):
@@ -8259,6 +11215,7 @@ def agent_chat(payload: dict):
         # Persist execution history record (best-effort)
         try:
             from atlas_adapter.execution_history import append_execution_record
+
             rec = {
                 "id": str(uuid.uuid4()),
                 "ts": datetime.now(timezone.utc).isoformat(),
@@ -8267,7 +11224,9 @@ def agent_chat(payload: dict):
                 "message": user_msg[:4000],
                 "final_text": (final_text or "")[:8000],
                 "error": final_error,
-                "verification_passed": bool((final_done_data or {}).get("verification_passed", False)),
+                "verification_passed": bool(
+                    (final_done_data or {}).get("verification_passed", False)
+                ),
                 "final_state": (final_done_data or {}).get("final_state"),
                 "runner_state": (final_done_data or {}).get("runner_state"),
                 "iterations": (final_done_data or {}).get("iterations"),
@@ -8283,7 +11242,13 @@ def agent_chat(payload: dict):
         # Persist final assistant output + update summary
         try:
             if mgr and thread_id and final_text:
-                mgr.add_message(thread_id, sender="agent", role="assistant", content=final_text, metadata={"panel": "agent", "kind": "chat"})
+                mgr.add_message(
+                    thread_id,
+                    sender="agent",
+                    role="assistant",
+                    content=final_text,
+                    metadata={"panel": "agent", "kind": "chat"},
+                )
                 _update_thread_summary(thread_id, user_msg, final_text)
         except Exception:
             pass
@@ -8298,6 +11263,7 @@ def agent_executions_recent(limit: int = 20):
     t0 = time.perf_counter()
     try:
         from atlas_adapter.execution_history import list_recent_executions
+
         items = list_recent_executions(limit=limit)
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, {"items": items, "count": len(items)}, ms, None)
@@ -8312,6 +11278,7 @@ def agent_execution_detail(execution_id: str):
     t0 = time.perf_counter()
     try:
         from atlas_adapter.execution_history import get_execution_by_id
+
         item = get_execution_by_id(execution_id)
         ms = int((time.perf_counter() - t0) * 1000)
         if not item:
@@ -8333,7 +11300,9 @@ def conversation_thread_new(payload: dict):
         title = "Supervisor" if kind.lower().startswith("sup") else "Agent"
         tid = _ensure_thread_id(None, title=title, user_id=user_id)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(True, {"thread_id": tid, "title": title, "user_id": user_id}, ms, None)
+        return _std_resp(
+            True, {"thread_id": tid, "title": title, "user_id": user_id}, ms, None
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -8349,7 +11318,12 @@ def conversation_thread_reset(payload: dict):
         title = "Supervisor" if kind.lower().startswith("sup") else "Agent"
         tid = _ensure_thread_id(None, title=title, user_id=user_id)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(True, {"thread_id": tid, "title": title, "user_id": user_id, "reset": True}, ms, None)
+        return _std_resp(
+            True,
+            {"thread_id": tid, "title": title, "user_id": user_id, "reset": True},
+            ms,
+            None,
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -8361,11 +11335,21 @@ def conversation_thread_history(thread_id: str, limit: int = 80):
     t0 = time.perf_counter()
     mgr = _get_chat_manager()
     if not mgr:
-        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "chat_manager_unavailable")
+        return _std_resp(
+            False,
+            None,
+            int((time.perf_counter() - t0) * 1000),
+            "chat_manager_unavailable",
+        )
     try:
         msgs = mgr.get_recent_messages(thread_id, limit=limit)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(True, {"thread_id": thread_id, "messages": msgs, "count": len(msgs)}, ms, None)
+        return _std_resp(
+            True,
+            {"thread_id": thread_id, "messages": msgs, "count": len(msgs)},
+            ms,
+            None,
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -8377,7 +11361,12 @@ def conversation_thread_summary(thread_id: str):
     t0 = time.perf_counter()
     mgr = _get_chat_manager()
     if not mgr:
-        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "chat_manager_unavailable")
+        return _std_resp(
+            False,
+            None,
+            int((time.perf_counter() - t0) * 1000),
+            "chat_manager_unavailable",
+        )
     try:
         summary = mgr.get_context(thread_id, "summary") or ""
         ms = int((time.perf_counter() - t0) * 1000)
@@ -8393,6 +11382,7 @@ def agent_benchmark():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.metrics import get_metrics_store
+
         store = get_metrics_store()
         snap = store.snapshot()
         counters = snap.get("counters") or {}
@@ -8407,7 +11397,10 @@ def agent_benchmark():
         weaknesses = []
         if not latencies:
             weaknesses.append("Pocas métricas de latencia registradas")
-        gaps = ["Embeddings opcional pendiente", "Adaptive routing por modelo en refinamiento"]
+        gaps = [
+            "Embeddings opcional pendiente",
+            "Adaptive routing por modelo en refinamiento",
+        ]
         improvement_map = [
             "Aumentar depth en /agent/goal para tareas complejas",
             "Revisar /agent/system-intel para cuellos de botella",
@@ -8420,7 +11413,13 @@ def agent_benchmark():
             "metrics": {"counters": counters, "latency_avg_ms": avg_lat},
         }
         ms = int((time.perf_counter() - t0) * 1000)
-        return _professional_resp(True, data, ms, None, resumen=f"Benchmark: {len(strengths)} strengths, {len(gaps)} gaps")
+        return _professional_resp(
+            True,
+            data,
+            ms,
+            None,
+            resumen=f"Benchmark: {len(strengths)} strengths, {len(gaps)} gaps",
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -8434,6 +11433,7 @@ def agent_system_intel():
     try:
         from modules.humanoid.audit import get_audit_logger
         from modules.humanoid.metrics import get_metrics_store
+
         entries = get_audit_logger().tail(n=100, module=None)
         store = get_metrics_store()
         snap = store.snapshot()
@@ -8442,7 +11442,9 @@ def agent_system_intel():
         for e in errors:
             msg = (e.get("error") or "unknown")[:80]
             error_msgs[msg] = error_msgs.get(msg, 0) + 1
-        repeated = [{"error": k, "count": v} for k, v in error_msgs.items() if v >= 2][:10]
+        repeated = [{"error": k, "count": v} for k, v in error_msgs.items() if v >= 2][
+            :10
+        ]
         latencies = snap.get("latencies") or {}
         bottlenecks = []
         for name, stat in latencies.items():
@@ -8453,7 +11455,9 @@ def agent_system_intel():
         if repeated:
             suggestions.append("Revisar errores repetidos y añadir fallback o retry")
         if bottlenecks:
-            suggestions.append("Revisar endpoints con latencia >5s para optimizar o cache")
+            suggestions.append(
+                "Revisar endpoints con latencia >5s para optimizar o cache"
+            )
         data = {
             "repeated_errors": repeated,
             "bottlenecks": bottlenecks[:10],
@@ -8461,7 +11465,13 @@ def agent_system_intel():
             "audit_sample_size": len(entries or []),
         }
         ms = int((time.perf_counter() - t0) * 1000)
-        return _professional_resp(True, data, ms, None, resumen=f"System intel: {len(repeated)} errores repetidos, {len(bottlenecks)} cuellos")
+        return _professional_resp(
+            True,
+            data,
+            ms,
+            None,
+            resumen=f"System intel: {len(repeated)} errores repetidos, {len(bottlenecks)} cuellos",
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -8481,6 +11491,7 @@ def agent_improve(body: AgentImproveBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.ci import run_improve
+
         result = run_improve(
             scope=body.scope or "all",
             mode=body.mode or "plan_only",
@@ -8516,6 +11527,7 @@ def agent_improve_status():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.ci import get_improve_status
+
         data = get_improve_status()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
@@ -8535,17 +11547,35 @@ def agent_improve_apply(body: AgentImproveApplyBody):
     """Execute only approved items allowed by policy. plan_id must match last run."""
     t0 = time.perf_counter()
     if not body.approve:
-        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "approve must be true")
+        return _std_resp(
+            False, None, int((time.perf_counter() - t0) * 1000), "approve must be true"
+        )
     try:
-        from modules.humanoid.ci import get_last_plan, execute_plan
+        from modules.humanoid.ci import execute_plan, get_last_plan
+
         plan = get_last_plan()
         if not plan:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "no previous plan; run POST /agent/improve first")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "no previous plan; run POST /agent/improve first",
+            )
         if body.plan_id and plan.get("plan_id") != body.plan_id:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "plan_id does not match last cycle")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "plan_id does not match last cycle",
+            )
         result = execute_plan(plan)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(result.get("ok", True), {"executed": result.get("executed"), "errors": result.get("errors")}, ms, result.get("errors") and result["errors"][0] or None)
+        return _std_resp(
+            result.get("ok", True),
+            {"executed": result.get("executed"), "errors": result.get("errors")},
+            ms,
+            result.get("errors") and result["errors"][0] or None,
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -8563,9 +11593,15 @@ def scaffold_app(body: ScaffoldBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.scaffolder import generate
+
         result = generate(body.type, body.name, options=body.options or {})
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(result.get("ok", False), {k: v for k, v in result.items() if k != "ok"}, ms, result.get("error"))
+        return _std_resp(
+            result.get("ok", False),
+            {k: v for k, v in result.items() if k != "ok"},
+            ms,
+            result.get("error"),
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -8582,14 +11618,27 @@ def scripts_generate(body: ScriptsGenerateBody):
     """Generate script. Returns {ok, data: {path, preview, how_to_run}, ms, error}."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.scripts import generate_script
         from modules.humanoid import get_humanoid_kernel
+        from modules.humanoid.scripts import generate_script
+
         k = get_humanoid_kernel()
         hands = k.registry.get("hands")
         fs = getattr(hands, "fs", None) if hands else None
-        result = generate_script(body.kind, body.purpose, options=body.options or {}, fs_controller=fs)
+        result = generate_script(
+            body.kind, body.purpose, options=body.options or {}, fs_controller=fs
+        )
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(result.get("ok", False), {"path": result.get("path"), "preview": result.get("preview"), "how_to_run": result.get("how_to_run"), "validated": result.get("validated")}, ms, result.get("error"))
+        return _std_resp(
+            result.get("ok", False),
+            {
+                "path": result.get("path"),
+                "preview": result.get("preview"),
+                "how_to_run": result.get("how_to_run"),
+                "validated": result.get("validated"),
+            },
+            ms,
+            result.get("error"),
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -8601,6 +11650,7 @@ def web_session_start():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.web import status as web_status
+
         data = web_status()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
@@ -8618,6 +11668,7 @@ def web_navigate(body: WebNavigateBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.web import open_url
+
         result = open_url(body.url or "")
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(result.get("ok", False), result, ms, result.get("error"))
@@ -8631,6 +11682,7 @@ def web_extract():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.web import extract_text
+
         result = extract_text()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(result.get("ok", False), result, ms, result.get("error"))
@@ -8644,6 +11696,7 @@ def web_screenshot():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.web import screenshot
+
         result = screenshot()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(result.get("ok", False), result, ms, result.get("error"))
@@ -8657,6 +11710,7 @@ def web_status_endpoint():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.web import status as web_status
+
         data = web_status()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
@@ -8674,6 +11728,7 @@ def voice_speak_endpoint(body: VoiceSpeakBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.voice import voice_speak
+
         result = voice_speak(body.text or "")
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(result.get("ok", False), result, ms, result.get("error"))
@@ -8687,6 +11742,7 @@ def voice_listen_endpoint():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.voice import voice_listen_stub
+
         result = voice_listen_stub()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(result.get("ok", True), result, ms, result.get("error"))
@@ -8700,6 +11756,7 @@ def voice_status_endpoint():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.voice import voice_status
+
         data = voice_status()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
@@ -8721,11 +11778,20 @@ def voice_transcribe_endpoint(body: VoiceTranscribeBody):
         import base64
         import tempfile
         from pathlib import Path
-        from modules.humanoid.voice.stt import transcribe, is_available
+
+        from modules.humanoid.voice.stt import is_available, transcribe
+
         if not body.audio_base64:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "audio_base64 requerido")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "audio_base64 requerido",
+            )
         if not is_available():
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "STT no disponible")
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), "STT no disponible"
+            )
         raw = base64.b64decode(body.audio_base64)
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             f.write(raw)
@@ -8733,7 +11799,12 @@ def voice_transcribe_endpoint(body: VoiceTranscribeBody):
         try:
             result = transcribe(path, options={"language": body.language or "es-ES"})
             ms = int((time.perf_counter() - t0) * 1000)
-            return _std_resp(result.get("ok", False), {"text": result.get("text", "")}, ms, result.get("error"))
+            return _std_resp(
+                result.get("ok", False),
+                {"text": result.get("text", "")},
+                ms,
+                result.get("error"),
+            )
         finally:
             Path(path).unlink(missing_ok=True)
     except Exception as e:
@@ -8751,13 +11822,24 @@ def face_check_endpoint(body: FaceCheckBody):
     t0 = time.perf_counter()
     try:
         import base64
+
         from modules.humanoid.face import face_check_image
+
         if not body.image_base64:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "image_base64 requerido")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "image_base64 requerido",
+            )
         raw = base64.b64decode(body.image_base64)
         result = face_check_image(raw)
         ms = int((time.perf_counter() - t0) * 1000)
-        data = {"faces_detected": result.get("faces_detected", 0), "message": result.get("message", ""), "count": result.get("count", 0)}
+        data = {
+            "faces_detected": result.get("faces_detected", 0),
+            "message": result.get("message", ""),
+            "count": result.get("count", 0),
+        }
         return _std_resp(result.get("ok", False), data, ms, result.get("error"))
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
@@ -8769,7 +11851,8 @@ def face_status_endpoint():
     """Estado del módulo de reconocimiento facial."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.face.detector import is_available, _check_deps
+        from modules.humanoid.face.detector import _check_deps, is_available
+
         data = {"available": is_available(), "missing_deps": _check_deps()}
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
@@ -8784,6 +11867,7 @@ def deps_check_endpoint():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.deps_checker import check_all
+
         data = check_all()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(data.get("ok", True), data, ms, None)
@@ -8798,6 +11882,7 @@ def deps_check_get():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.deps_checker import check_all
+
         data = check_all()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(data.get("ok", True), data, ms, None)
@@ -8813,7 +11898,15 @@ class VisionAnalyzeBody(BaseModel):
     use_llm_vision: Optional[bool] = True
 
 
-def _professional_resp(ok: bool, data: Any, ms: int, error: Optional[str], resumen: str = "", archivos: Optional[list] = None, siguientes_pasos: Optional[list] = None) -> dict:
+def _professional_resp(
+    ok: bool,
+    data: Any,
+    ms: int,
+    error: Optional[str],
+    resumen: str = "",
+    archivos: Optional[list] = None,
+    siguientes_pasos: Optional[list] = None,
+) -> dict:
     """Respuesta profesional: resumen, resultado técnico, evidencia, siguientes pasos."""
     out = _std_resp(ok, data, ms, error)
     if resumen:
@@ -8831,13 +11924,33 @@ def vision_analyze(body: VisionAnalyzeBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.vision import analyze
-        result = analyze(body.image_path, use_ocr=body.use_ocr if body.use_ocr is not None else True, use_llm_vision=body.use_llm_vision if body.use_llm_vision is not None else True)
+
+        result = analyze(
+            body.image_path,
+            use_ocr=body.use_ocr if body.use_ocr is not None else True,
+            use_llm_vision=body.use_llm_vision
+            if body.use_llm_vision is not None
+            else True,
+        )
         ms = int((time.perf_counter() - t0) * 1000)
         ok = result.get("ok", False)
         result.setdefault("suggested_actions", result.get("acciones_sugeridas") or [])
-        resumen = f"Imagen analizada: {len(result.get('extracted_text', ''))} chars texto, {len(result.get('entities', []))} entidades" if ok else "Análisis fallido"
-        siguientes = result.get("acciones_sugeridas") or result.get("suggested_actions") or []
-        return _professional_resp(ok, result, ms, result.get("error"), resumen=resumen, siguientes_pasos=siguientes)
+        resumen = (
+            f"Imagen analizada: {len(result.get('extracted_text', ''))} chars texto, {len(result.get('entities', []))} entidades"
+            if ok
+            else "Análisis fallido"
+        )
+        siguientes = (
+            result.get("acciones_sugeridas") or result.get("suggested_actions") or []
+        )
+        return _professional_resp(
+            ok,
+            result,
+            ms,
+            result.get("error"),
+            resumen=resumen,
+            siguientes_pasos=siguientes,
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -8852,6 +11965,7 @@ def vision_ocr(body: VisionOcrBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.vision import ocr
+
         result = ocr(body.image_path or "")
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(result.get("ok", False), result, ms, result.get("error"))
@@ -8869,6 +11983,7 @@ def vision_screenshot(body: VisionScreenshotBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.vision import screenshot_analyze
+
         result = screenshot_analyze(body.screenshot_path or "")
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(result.get("ok", False), result, ms, result.get("error"))
@@ -8882,6 +11997,7 @@ def vision_status_endpoint():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.vision import vision_status
+
         data = vision_status()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
@@ -8901,11 +12017,14 @@ def api_vision_ubiq_discover(body: Optional[VisionUbiqDiscoverBody] = None):
     """Escaneo LAN: RTSP/MJPEG + ONVIF (WS-Discovery). Persiste y registra en ANS."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.vision.ubiq import ensure_db, discover_local_cameras
+        from modules.humanoid.vision.ubiq import (discover_local_cameras,
+                                                  ensure_db)
 
         ensure_db()
         out = discover_local_cameras(
-            scan_ports=bool(body.scan_ports) if body and body.scan_ports is not None else True,
+            scan_ports=bool(body.scan_ports)
+            if body and body.scan_ports is not None
+            else True,
             onvif=bool(body.onvif) if body and body.onvif is not None else True,
         )
         ms = int((time.perf_counter() - t0) * 1000)
@@ -8936,7 +12055,9 @@ class VisionUbiqStreamBody(BaseModel):
 
 
 @app.post("/api/vision/ubiq/streams/{cam_id}/start", tags=["Vision"])
-def api_vision_ubiq_stream_start(cam_id: str, body: Optional[VisionUbiqStreamBody] = None):
+def api_vision_ubiq_stream_start(
+    cam_id: str, body: Optional[VisionUbiqStreamBody] = None
+):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.vision.ubiq import start_stream
@@ -8951,7 +12072,9 @@ def api_vision_ubiq_stream_start(cam_id: str, body: Optional[VisionUbiqStreamBod
 
 
 @app.post("/api/vision/ubiq/streams/{cam_id}/stop", tags=["Vision"])
-def api_vision_ubiq_stream_stop(cam_id: str, body: Optional[VisionUbiqStreamBody] = None):
+def api_vision_ubiq_stream_stop(
+    cam_id: str, body: Optional[VisionUbiqStreamBody] = None
+):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.vision.ubiq import stop_stream
@@ -8969,7 +12092,7 @@ def api_vision_ubiq_stream_stop(cam_id: str, body: Optional[VisionUbiqStreamBody
 def api_vision_ubiq_stream_status():
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.vision.ubiq import stream_status, get_setting
+        from modules.humanoid.vision.ubiq import get_setting, stream_status
 
         st = stream_status()
         active_eye = (get_setting("vision.active_eye") or "").strip()
@@ -8991,13 +12114,23 @@ def api_vision_ubiq_set_active_eye(body: VisionUbiqActiveEyeBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.vision.ubiq import set_setting
+
         eye = (body.eye or "").strip()
         if eye and not eye.lower().startswith("ubiq:"):
-            return _std_resp(False, {"ok": False, "error": "eye must be '' or 'ubiq:<cam_id>'"}, 0, "bad eye")
+            return _std_resp(
+                False,
+                {"ok": False, "error": "eye must be '' or 'ubiq:<cam_id>'"},
+                0,
+                "bad eye",
+            )
         set_setting("vision.active_eye", eye)
         if eye:
             import time as _time
-            set_setting("vision.active_eye_until", str(_time.time() + max(3.0, float(body.hold_s or 25.0))))
+
+            set_setting(
+                "vision.active_eye_until",
+                str(_time.time() + max(3.0, float(body.hold_s or 25.0))),
+            )
         else:
             set_setting("vision.active_eye_until", "")
         ms = int((time.perf_counter() - t0) * 1000)
@@ -9016,7 +12149,12 @@ def api_vision_ubiq_snapshot(cam_id: str):
 
         out = take_snapshot(cam_id, timeout_s=4.0)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(bool(out.get("ok")), {k: v for k, v in out.items() if k != "jpeg_bytes"}, ms, out.get("error"))
+        return _std_resp(
+            bool(out.get("ok")),
+            {k: v for k, v in out.items() if k != "jpeg_bytes"},
+            ms,
+            out.get("error"),
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -9024,13 +12162,21 @@ def api_vision_ubiq_snapshot(cam_id: str):
 
 def _safe_stream_file(cam_id: str, variant: str, rel: str):
     from pathlib import Path
+
     from fastapi import HTTPException
 
     cid = (cam_id or "").strip()
     var = (variant or "").strip().lower()
     if var not in ("local", "mobile"):
         raise HTTPException(status_code=400, detail="bad variant")
-    root = (Path(__file__).resolve().parents[1] / "snapshots" / "vision" / "ubiq_streams" / cid / var).resolve()
+    root = (
+        Path(__file__).resolve().parents[1]
+        / "snapshots"
+        / "vision"
+        / "ubiq_streams"
+        / cid
+        / var
+    ).resolve()
     p = (root / rel).resolve()
     if root not in p.parents and p != root:
         raise HTTPException(status_code=400, detail="bad path")
@@ -9067,6 +12213,7 @@ def api_vision_ubiq_stream_key(cam_id: str, token: str = ""):
     """Key AES-128 para HLS mobile. Requiere token."""
     from fastapi import HTTPException
     from fastapi.responses import FileResponse
+
     from modules.humanoid.vision.ubiq.streaming import get_mobile_token
 
     tok = (token or "").strip()
@@ -9080,6 +12227,7 @@ def api_vision_ubiq_stream_key(cam_id: str, token: str = ""):
 def api_vision_ubiq_mobile_token(request: Request):
     """Devuelve token mobile (solo localhost) para armar el link en Dashboard."""
     from fastapi import HTTPException
+
     from modules.humanoid.vision.ubiq.streaming import get_mobile_token
 
     host = ""
@@ -9097,6 +12245,7 @@ def mobile_vision_playlist(cam_id: str, token: str = ""):
     """Playlist mobile cifrada. Requiere token (para no divulgar URLs/keys)."""
     from fastapi import HTTPException
     from fastapi.responses import FileResponse
+
     from modules.humanoid.vision.ubiq.streaming import get_mobile_token
 
     tok = (token or "").strip()
@@ -9111,6 +12260,7 @@ def mobile_vision_segment(cam_id: str, segment: str, token: str = ""):
     """Segmentos mobile cifrados. Requiere token."""
     from fastapi import HTTPException
     from fastapi.responses import FileResponse
+
     from modules.humanoid.vision.ubiq.streaming import get_mobile_token
 
     tok = (token or "").strip()
@@ -9158,6 +12308,7 @@ def screen_status_endpoint():
     t0 = time.perf_counter()
     try:
         from modules.humanoid.screen import get_screen_status
+
         data = get_screen_status()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
@@ -9176,18 +12327,40 @@ def screen_capture(body: Optional[ScreenCaptureBody] = None):
     """Capture screen or region. Returns {ok, data: {path?, b64?}, ms, error}."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.screen.capture import capture_screen, save_capture_to_file
-        region = tuple(body.region) if body and body.region and len(body.region) == 4 else None
+        from modules.humanoid.screen.capture import (capture_screen,
+                                                     save_capture_to_file)
+
+        region = (
+            tuple(body.region)
+            if body and body.region and len(body.region) == 4
+            else None
+        )
         png, err = capture_screen(region=region, format=body.format if body else "png")
         if err or not png:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), err or "no capture")
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), err or "no capture"
+            )
         import base64
         import os
-        out_dir = (os.getenv("ATLAS_REPO_PATH") or os.getenv("POLICY_ALLOWED_PATHS", "C:\\ATLAS_PUSH")).strip().split(",")[0].strip()
+
+        out_dir = (
+            (
+                os.getenv("ATLAS_REPO_PATH")
+                or os.getenv("POLICY_ALLOWED_PATHS", "C:\\ATLAS_PUSH")
+            )
+            .strip()
+            .split(",")[0]
+            .strip()
+        )
         logs_dir = os.path.join(out_dir, "logs", "screen")
         path = save_capture_to_file(png, logs_dir, "capture")
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(True, {"path": path, "b64": base64.b64encode(png).decode("ascii")[:200] + "..."}, ms, None)
+        return _std_resp(
+            True,
+            {"path": path, "b64": base64.b64encode(png).decode("ascii")[:200] + "..."},
+            ms,
+            None,
+        )
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
@@ -9205,12 +12378,19 @@ def screen_analyze(body: Optional[ScreenAnalyzeBody] = None):
     try:
         from modules.humanoid.screen.layout import get_layout
         from modules.humanoid.screen.vision_llm import analyze_image
+
         layout = get_layout()
         desc_result = {"description": "", "suggestions": []}
         if body and (body.image_b64 or body.image_path):
-            desc_result = analyze_image(image_base64=body.image_b64, image_path=body.image_path, prompt=body.prompt or "Describe UI and suggest actions.")
+            desc_result = analyze_image(
+                image_base64=body.image_b64,
+                image_path=body.image_path,
+                prompt=body.prompt or "Describe UI and suggest actions.",
+            )
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(True, {"layout": layout, **desc_result}, ms, layout.get("error"))
+        return _std_resp(
+            True, {"layout": layout, **desc_result}, ms, layout.get("error")
+        )
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
@@ -9226,6 +12406,7 @@ def screen_locate(body: ScreenLocateBody):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.screen.locator import locate
+
         region = tuple(body.region) if body.region and len(body.region) == 4 else None
         result = locate(body.query, region=region)
         ms = int((time.perf_counter() - t0) * 1000)
@@ -9245,47 +12426,99 @@ def screen_act(body: ScreenActBody):
     """Execute screen action (policy-gated). Evidence: screenshot_before/after, coords, ms. Destructive -> ApprovalItem."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.policy import ActorContext, get_policy_engine
-        from modules.humanoid.screen.status import get_screen_status
-        from modules.humanoid.screen.policy import check_rate_limit, is_destructive_action, record_screen_act
-        from modules.humanoid.screen.capture import capture_screen, save_capture_to_file
-        from modules.humanoid.screen.actions import execute_action
         import os
+
+        from modules.humanoid.policy import ActorContext, get_policy_engine
+        from modules.humanoid.screen.actions import execute_action
+        from modules.humanoid.screen.capture import (capture_screen,
+                                                     save_capture_to_file)
+        from modules.humanoid.screen.policy import (check_rate_limit,
+                                                    is_destructive_action,
+                                                    record_screen_act)
+        from modules.humanoid.screen.status import get_screen_status
+
         if not get_screen_status().get("enabled", False):
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "screen module disabled")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "screen module disabled",
+            )
         try:
             from modules.humanoid.mode import is_screen_act_allowed
+
             if not is_screen_act_allowed():
-                return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "screen_act disabled (ATLAS_MODE=lite or deps missing)")
+                return _std_resp(
+                    False,
+                    None,
+                    int((time.perf_counter() - t0) * 1000),
+                    "screen_act disabled (ATLAS_MODE=lite or deps missing)",
+                )
         except Exception:
             pass
         ctx = ActorContext(actor="api", role="owner")
         decision = get_policy_engine().can(ctx, "screen", "screen_act", None)
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), decision.reason
+            )
         allowed, reason = check_rate_limit()
         if not allowed:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), reason)
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), reason
+            )
         before_png, _ = capture_screen()
-        _base = (os.getenv("ATLAS_REPO_PATH") or os.getenv("POLICY_ALLOWED_PATHS", "C:\\ATLAS_PUSH")).strip().split(",")[0].strip()
+        _base = (
+            (
+                os.getenv("ATLAS_REPO_PATH")
+                or os.getenv("POLICY_ALLOWED_PATHS", "C:\\ATLAS_PUSH")
+            )
+            .strip()
+            .split(",")[0]
+            .strip()
+        )
         _screen_logs = os.path.join(_base, "logs", "screen")
-        path_before = save_capture_to_file(before_png, _screen_logs, "before") if before_png else None
+        path_before = (
+            save_capture_to_file(before_png, _screen_logs, "before")
+            if before_png
+            else None
+        )
         result = execute_action(body.action, body.payload or {})
         try:
-            from modules.humanoid.screen.record import is_recording, record_action
+            from modules.humanoid.screen.record import (is_recording,
+                                                        record_action)
+
             if is_recording():
                 record_action(body.action, body.payload or {})
         except Exception:
             pass
         after_png, _ = capture_screen()
-        path_after = save_capture_to_file(after_png, _screen_logs, "after") if after_png else None
+        path_after = (
+            save_capture_to_file(after_png, _screen_logs, "after")
+            if after_png
+            else None
+        )
         record_screen_act()
         ms = int((time.perf_counter() - t0) * 1000)
-        evidence = {"screenshot_before": path_before, "screenshot_after": path_after, "coords": body.payload, "ms": ms}
-        destructive = body.destructive if body.destructive is not None else is_destructive_action(body.action, body.payload or {})
+        evidence = {
+            "screenshot_before": path_before,
+            "screenshot_after": path_after,
+            "coords": body.payload,
+            "ms": ms,
+        }
+        destructive = (
+            body.destructive
+            if body.destructive is not None
+            else is_destructive_action(body.action, body.payload or {})
+        )
         if destructive:
             evidence["approval_required"] = True
-        return _std_resp(result.get("ok", False), {"evidence": evidence, "result": result}, ms, result.get("error"))
+        return _std_resp(
+            result.get("ok", False),
+            {"evidence": evidence, "result": result},
+            ms,
+            result.get("error"),
+        )
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
@@ -9295,9 +12528,11 @@ def screen_record_start():
     """Start recording screen actions (macro). Pro/Ultra only."""
     try:
         from modules.humanoid.mode import is_record_replay_allowed
+
         if not is_record_replay_allowed():
             return _std_resp(False, None, 0, "record/replay disabled (ATLAS_MODE)")
         from modules.humanoid.screen.record import start_recording
+
         r = start_recording()
         return _std_resp(r.get("ok", False), r, 0, r.get("error"))
     except Exception as e:
@@ -9309,6 +12544,7 @@ def screen_record_stop():
     """Stop recording and return recorded actions."""
     try:
         from modules.humanoid.screen.record import stop_recording
+
         r = stop_recording()
         return _std_resp(r.get("ok", False), r, 0, r.get("error"))
     except Exception as e:
@@ -9326,27 +12562,49 @@ def screen_replay(body: ScreenReplayBody):
     """Replay macro by id or inline actions. Policy-gated."""
     t0 = time.perf_counter()
     try:
-        from modules.humanoid.policy import ActorContext, get_policy_engine
         from modules.humanoid.mode import is_record_replay_allowed
+        from modules.humanoid.policy import ActorContext, get_policy_engine
+
         if not is_record_replay_allowed():
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "record/replay disabled")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "record/replay disabled",
+            )
         ctx = ActorContext(actor="api", role="owner")
         decision = get_policy_engine().can(ctx, "screen", "screen_act", None)
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), decision.reason
+            )
         actions = body.actions
         if not actions and body.macro_id:
             from modules.humanoid.macros import get_macro
+
             m = get_macro(body.macro_id)
             if not m:
-                return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "macro not found")
+                return _std_resp(
+                    False,
+                    None,
+                    int((time.perf_counter() - t0) * 1000),
+                    "macro not found",
+                )
             actions = m.get("actions", [])
         if not actions:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "no actions")
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), "no actions"
+            )
         from modules.humanoid.screen.replay import replay_actions
+
         r = replay_actions(actions, delay_ms=body.delay_ms or 100)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _std_resp(r.get("ok", False), r, ms, r.get("errors", [None])[0] if r.get("errors") else None)
+        return _std_resp(
+            r.get("ok", False),
+            r,
+            ms,
+            r.get("errors", [None])[0] if r.get("errors") else None,
+        )
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
@@ -9357,6 +12615,7 @@ def macros_list(limit: int = 50):
     """List saved macros."""
     try:
         from modules.humanoid.macros import list_macros
+
         return {"ok": True, "data": list_macros(limit=limit)}
     except Exception as e:
         return {"ok": False, "data": [], "error": str(e)}
@@ -9373,6 +12632,7 @@ def macros_save(body: MacrosSaveBody):
     """Save macro (e.g. from record/stop actions)."""
     try:
         from modules.humanoid.macros import save_macro
+
         r = save_macro(body.id, body.name, body.actions)
         return _std_resp(r.get("ok", False), r, 0, r.get("error"))
     except Exception as e:
@@ -9386,6 +12646,7 @@ def macros_get(id: Optional[str] = None):
         return {"ok": False, "data": None, "error": "id required"}
     try:
         from modules.humanoid.macros import get_macro
+
         m = get_macro(id)
         return {"ok": m is not None, "data": m, "error": None if m else "not found"}
     except Exception as e:
@@ -9401,11 +12662,13 @@ def macros_delete(body: MacrosDeleteBody):
     """Delete macro. Denied by default; approval required."""
     try:
         from modules.humanoid.policy import ActorContext, get_policy_engine
+
         ctx = ActorContext(actor="api", role="owner")
         decision = get_policy_engine().can(ctx, "macros", "delete", body.id)
         if not decision.allow:
             return _std_resp(False, None, 0, decision.reason)
         from modules.humanoid.macros import delete_macro
+
         r = delete_macro(body.id)
         return _std_resp(r.get("ok", False), r, 0, r.get("error"))
     except Exception as e:
@@ -9423,9 +12686,16 @@ def bench_run(body: Optional[BenchRunBody] = None):
     t0 = time.perf_counter()
     try:
         from modules.humanoid.mode import is_benchmark_allowed
+
         if not is_benchmark_allowed():
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "benchmark disabled (ATLAS_MODE or METALEARN)")
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                "benchmark disabled (ATLAS_MODE or METALEARN)",
+            )
         from modules.humanoid.bench import run_bench
+
         level = (body and body.level) or "quick"
         r = run_bench(level=level)
         ms = int((time.perf_counter() - t0) * 1000)
@@ -9438,6 +12708,7 @@ def bench_run(body: Optional[BenchRunBody] = None):
 def _memory_actor():
     return ActorContext(actor="api", role=os.getenv("POLICY_DEFAULT_ROLE", "owner"))
 
+
 @app.get("/memory/recall")
 def memory_recall(query: str = "", limit: int = 20):
     """Recall by search query. FTS or LIKE fallback. Policy: memory_read."""
@@ -9445,11 +12716,16 @@ def memory_recall(query: str = "", limit: int = 20):
     try:
         decision = get_policy_engine().can(_memory_actor(), "memory", "memory_read")
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), decision.reason
+            )
         from modules.humanoid.memory_engine import recall_by_query
+
         data = recall_by_query(query or "", limit=limit)
         ms = int((time.perf_counter() - t0) * 1000)
-        return _professional_resp(True, {"results": data}, ms, None, resumen=f"Recall: {len(data)} resultados")
+        return _professional_resp(
+            True, {"results": data}, ms, None, resumen=f"Recall: {len(data)} resultados"
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
@@ -9462,8 +12738,11 @@ def memory_thread(thread_id: str = "", limit: int = 50):
     try:
         decision = get_policy_engine().can(_memory_actor(), "memory", "memory_read")
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), decision.reason
+            )
         from modules.humanoid.memory_engine import recall_by_thread
+
         data = recall_by_thread(thread_id or "", limit=limit)
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, data, ms, None)
@@ -9475,6 +12754,7 @@ def memory_thread(thread_id: str = "", limit: int = 50):
 class MemoryThreadCreateBody(BaseModel):
     title: str = ""
 
+
 @app.post("/memory/thread/create")
 def memory_thread_create(body: MemoryThreadCreateBody):
     """Create or get thread. Returns thread_id. Policy: memory_write."""
@@ -9482,8 +12762,11 @@ def memory_thread_create(body: MemoryThreadCreateBody):
     try:
         decision = get_policy_engine().can(_memory_actor(), "memory", "memory_write")
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), decision.reason
+            )
         from modules.humanoid.memory_engine import ensure_thread
+
         thread_id = ensure_thread(None, (body.title or "")[:200])
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, {"thread_id": thread_id}, ms, None)
@@ -9499,8 +12782,11 @@ def memory_thread_list(limit: int = 50):
     try:
         decision = get_policy_engine().can(_memory_actor(), "memory", "memory_read")
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), decision.reason
+            )
         from modules.humanoid.memory_engine import list_threads
+
         data = list_threads(limit=limit)
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, {"threads": data}, ms, None)
@@ -9516,6 +12802,7 @@ class MemoryWriteBody(BaseModel):
     task_id: Optional[str] = None
     run_id: Optional[int] = None
 
+
 @app.post("/memory/write")
 def memory_write_endpoint(body: MemoryWriteBody):
     """Write artifact/decision/summary. Policy: memory_write. Redacts secrets."""
@@ -9523,9 +12810,18 @@ def memory_write_endpoint(body: MemoryWriteBody):
     try:
         decision = get_policy_engine().can(_memory_actor(), "memory", "memory_write")
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), decision.reason
+            )
         from modules.humanoid.memory_engine import memory_write as mem_write
-        out = mem_write(body.thread_id or None, body.kind, body.payload or {}, body.task_id, body.run_id)
+
+        out = mem_write(
+            body.thread_id or None,
+            body.kind,
+            body.payload or {},
+            body.task_id,
+            body.run_id,
+        )
         ms = int((time.perf_counter() - t0) * 1000)
         if not out.get("ok"):
             return _std_resp(False, None, ms, out.get("error"))
@@ -9539,6 +12835,7 @@ class MemorySummarizeBody(BaseModel):
     thread_id: str
     use_llm: bool = True
 
+
 @app.post("/memory/summarize")
 def memory_summarize(body: MemorySummarizeBody):
     """Incremental summary for thread. FAST LLM if use_llm else deterministic. Policy: memory_write. Timeout 15s."""
@@ -9547,25 +12844,37 @@ def memory_summarize(body: MemorySummarizeBody):
     try:
         decision = get_policy_engine().can(_memory_actor(), "memory", "memory_write")
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
-        from modules.humanoid.memory_engine import recall_by_thread, add_summary
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), decision.reason
+            )
+        from modules.humanoid.memory_engine import (add_summary,
+                                                    recall_by_thread)
+
         data = recall_by_thread(body.thread_id, limit=20)
         tasks = data.get("tasks", [])
         summaries = data.get("summaries", [])
         if body.use_llm:
             try:
                 from modules.humanoid import get_humanoid_kernel
+
                 k = get_humanoid_kernel()
                 brain = k.registry.get("brain")
                 if brain and hasattr(brain, "run_llm"):
                     goals = [t.get("goal", "")[:100] for t in tasks[:5]]
                     prompt = f"Resumen en una frase: hilo con {len(tasks)} tareas. Primeras: {'; '.join(goals)}."
-                    r = brain.run_llm(prompt, route="FAST", max_tokens=128, timeout_override=timeout_sec)
+                    r = brain.run_llm(
+                        prompt,
+                        route="FAST",
+                        max_tokens=128,
+                        timeout_override=timeout_sec,
+                    )
                     text = (r.get("output") or "").strip()[:2000] if r.get("ok") else ""
                     if text:
                         add_summary(body.thread_id, text)
                         ms = int((time.perf_counter() - t0) * 1000)
-                        return _std_resp(True, {"summary_preview": text[:200]}, ms, None)
+                        return _std_resp(
+                            True, {"summary_preview": text[:200]}, ms, None
+                        )
             except Exception:
                 pass
         text = f"Resumen: {len(tasks)} tareas, {len(summaries)} resúmenes previos."
@@ -9584,8 +12893,11 @@ def memory_export(thread_id: str = "", task_id: str = "", limit: int = 100):
     try:
         decision = get_policy_engine().can(_memory_actor(), "memory", "memory_export")
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), decision.reason
+            )
         from modules.humanoid.memory_engine import export_markdown
+
         md = export_markdown(thread_id=thread_id, task_id=task_id, limit=limit)
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, {"markdown": md}, ms, None)
@@ -9601,13 +12913,14 @@ def memory_snapshot():
     try:
         decision = get_policy_engine().can(_memory_actor(), "memory", "memory_read")
         if not decision.allow:
-            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), decision.reason)
+            return _std_resp(
+                False, None, int((time.perf_counter() - t0) * 1000), decision.reason
+            )
         from modules.humanoid.memory_engine import snapshot
+
         data = snapshot()
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(data.get("ok", True), data, ms, None)
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
-
-

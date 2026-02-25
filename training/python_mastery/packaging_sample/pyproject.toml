@@ -7,4 +7,3 @@ dependencies = []
 
 [project.scripts]
 atlas-py-tool = "atlas_py_tool.cli:main"
-

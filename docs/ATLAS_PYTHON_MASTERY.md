@@ -151,4 +151,3 @@ Body ejemplo:
 - Este track no fuerza cambios en producción automáticamente. Es un sistema de entrenamiento: crea misiones y criterios.
 - Los tests del track Python se activan con `RUN_PYTHON_MASTERY=1`. Por defecto están **skip** para no romper el repo.
 - El endpoint `python-mastery/evaluate` activa esos tests automáticamente para el scoring.
-

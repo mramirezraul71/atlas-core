@@ -11,11 +11,14 @@ from typing import Any, Dict, List, Optional
 
 from . import db
 from .scoring import Signal, compute_score, normalize_severity
-from .sensors import collect_from_ans, collect_from_metrics, collect_from_organs
+from .sensors import (collect_from_ans, collect_from_metrics,
+                      collect_from_organs)
 
 
 def _snapshot_dir() -> Path:
-    root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or "C:\\ATLAS_PUSH"
+    root = (
+        os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or "C:\\ATLAS_PUSH"
+    )
     p = Path(root).resolve() / "snapshots" / "nervous"
     p.mkdir(parents=True, exist_ok=True)
     return p
@@ -46,16 +49,24 @@ def _atomic_write_json(path: Path, payload: dict) -> None:
 
 def _write_snapshot(kind: str, data: dict) -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    safe = "".join(c if (c.isalnum() or c in ("-", "_")) else "_" for c in (kind or "cycle"))[:48]
+    safe = "".join(
+        c if (c.isalnum() or c in ("-", "_")) else "_" for c in (kind or "cycle")
+    )[:48]
     path = _snapshot_dir() / f"NERVE_{safe}_{ts}.json"
-    payload = {"kind": safe, "ts_utc": datetime.now(timezone.utc).isoformat(), "data": data}
+    payload = {
+        "kind": safe,
+        "ts_utc": datetime.now(timezone.utc).isoformat(),
+        "data": data,
+    }
     _atomic_write_json(path, payload)
     return str(path)
 
 
 def _append_bitacora(message: str, ok: bool, source: str = "nervous") -> None:
     try:
-        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        from modules.humanoid.ans.evolution_bitacora import \
+            append_evolution_log
+
         append_evolution_log(message=message, ok=ok, source=source)
     except Exception:
         pass
@@ -64,12 +75,17 @@ def _append_bitacora(message: str, ok: bool, source: str = "nervous") -> None:
 def _create_incident_from_signal(sig: Signal) -> Optional[str]:
     try:
         from modules.humanoid.ans.incident import create_incident
+
         inc_id = create_incident(
             check_id=sig.sensor_id,
             fingerprint=sig.fingerprint,
             severity=normalize_severity(sig.severity),
             message=sig.message,
-            evidence={"details": sig.details, "subsystem": sig.subsystem, "points": sig.points},
+            evidence={
+                "details": sig.details,
+                "subsystem": sig.subsystem,
+                "points": sig.points,
+            },
             suggested_heals=list(sig.suggested_heals or []),
         )
         return inc_id
@@ -90,8 +106,8 @@ def _attempt_reflex_heals(sig: Signal) -> List[Dict[str, Any]]:
         from modules.humanoid.ans.engine import SAFE_HEALS
         from modules.humanoid.ans.limits import can_auto_action, record_action
         from modules.humanoid.ans.registry import run_heal
-        from modules.humanoid.policy import ActorContext, get_policy_engine
         from modules.humanoid.governance.gates import decide
+        from modules.humanoid.policy import ActorContext, get_policy_engine
     except Exception:
         return actions
 
@@ -99,28 +115,59 @@ def _attempt_reflex_heals(sig: Signal) -> List[Dict[str, Any]]:
     try:
         d = decide("ans_heal")
         if d.blocked_by_emergency:
-            return [{"heal_id": "(blocked)", "ok": False, "message": "emergency_stop activo"}]
+            return [
+                {
+                    "heal_id": "(blocked)",
+                    "ok": False,
+                    "message": "emergency_stop activo",
+                }
+            ]
     except Exception:
         pass
 
     for heal_id in heals:
         if heal_id not in SAFE_HEALS:
-            actions.append({"heal_id": heal_id, "ok": False, "message": "heal no seguro"})
+            actions.append(
+                {"heal_id": heal_id, "ok": False, "message": "heal no seguro"}
+            )
             continue
         allowed, reason = can_auto_action(heal_id)
         if not allowed:
-            actions.append({"heal_id": heal_id, "ok": False, "message": f"límite/cooldown: {reason}"})
+            actions.append(
+                {
+                    "heal_id": heal_id,
+                    "ok": False,
+                    "message": f"límite/cooldown: {reason}",
+                }
+            )
             continue
         try:
-            policy_ok = get_policy_engine().can(ActorContext(actor="nervous", role="system"), "ans", "ans_autofix", heal_id).allow
+            policy_ok = (
+                get_policy_engine()
+                .can(
+                    ActorContext(actor="nervous", role="system"),
+                    "ans",
+                    "ans_autofix",
+                    heal_id,
+                )
+                .allow
+            )
             if not policy_ok:
-                actions.append({"heal_id": heal_id, "ok": False, "message": "policy bloqueó"})
+                actions.append(
+                    {"heal_id": heal_id, "ok": False, "message": "policy bloqueó"}
+                )
                 continue
         except Exception:
             pass
         hr = run_heal(heal_id) or {}
         record_action()
-        actions.append({"heal_id": heal_id, "ok": bool(hr.get("ok")), "message": (hr.get("message") or "")[:200]})
+        actions.append(
+            {
+                "heal_id": heal_id,
+                "ok": bool(hr.get("ok")),
+                "message": (hr.get("message") or "")[:200],
+            }
+        )
         if hr.get("ok"):
             break
     return actions
@@ -135,6 +182,7 @@ def run_nervous_cycle(mode: str = "auto") -> Dict[str, Any]:
     base_health = 0
     try:
         from modules.humanoid.deploy.healthcheck import run_health_verbose
+
         port = int(os.getenv("ACTIVE_PORT", "8791") or "8791")
         h = run_health_verbose(base_url=None, active_port=port)
         base_health = int(h.get("score", 0) or 0)
@@ -188,7 +236,10 @@ def run_nervous_cycle(mode: str = "auto") -> Dict[str, Any]:
             )
 
     points = db.open_points()
-    score = compute_score(base_health_score=int(base_health), open_points_total=int(points.get("points_total", 0)))
+    score = compute_score(
+        base_health_score=int(base_health),
+        open_points_total=int(points.get("points_total", 0)),
+    )
 
     # Snapshot cycle
     snapshot_path = ""
@@ -210,6 +261,7 @@ def run_nervous_cycle(mode: str = "auto") -> Dict[str, Any]:
     # Memory decision (central brain memory)
     try:
         from modules.humanoid.memory_engine.store import memory_write
+
         memory_write(
             thread_id=None,
             kind="decision",
@@ -243,6 +295,7 @@ def get_nervous_status(limit: int = 50) -> Dict[str, Any]:
     """Summary status for UI/API."""
     try:
         from modules.humanoid.deploy.healthcheck import run_health_verbose
+
         port = int(os.getenv("ACTIVE_PORT", "8791") or "8791")
         h = run_health_verbose(base_url=None, active_port=port)
         base_health = int(h.get("score", 0) or 0)
@@ -251,7 +304,10 @@ def get_nervous_status(limit: int = 50) -> Dict[str, Any]:
     window_sec = int(os.getenv("NERVOUS_WINDOW_SECONDS", "300") or 300)
     window_sec = max(30, min(window_sec, 3600))
     points = db.open_points(window_seconds=window_sec)
-    score = compute_score(base_health_score=base_health, open_points_total=int(points.get("points_total", 0)))
+    score = compute_score(
+        base_health_score=base_health,
+        open_points_total=int(points.get("points_total", 0)),
+    )
     return {
         "ok": score >= int(os.getenv("NERVOUS_OK_MIN_SCORE", "75") or "75"),
         "score": score,
@@ -259,4 +315,3 @@ def get_nervous_status(limit: int = 50) -> Dict[str, Any]:
         "points": points,
         "signals": db.list_signals(limit=int(limit)),
     }
-

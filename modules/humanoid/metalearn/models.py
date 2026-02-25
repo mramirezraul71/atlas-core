@@ -8,11 +8,12 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class FeedbackEvent:
     """Single feedback event for learning."""
+
     ts: str
     action_type: str
     risk_level: str
     decision: str  # approve | reject | auto | failed | expired
-    outcome: str   # ok | fail
+    outcome: str  # ok | fail
     latency_ms: Optional[int] = None
     node_id: Optional[str] = None
     model_used: Optional[str] = None
@@ -26,6 +27,7 @@ class FeedbackEvent:
 @dataclass
 class LearnedRule:
     """Inferred rule: conditions -> bounded adjustments."""
+
     rule_id: str
     conditions: Dict[str, Any]
     risk_adjust: float
@@ -40,6 +42,7 @@ class LearnedRule:
 @dataclass
 class ScoreAdjust:
     """Bounded score adjustment for an action type."""
+
     action_type: str
     risk_shift: float
     evidence_count: int
@@ -48,6 +51,7 @@ class ScoreAdjust:
 @dataclass
 class RouterStats:
     """Per-route/model stats for routing hints."""
+
     route: str
     model_family: str
     success_count: int

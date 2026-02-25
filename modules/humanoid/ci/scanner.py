@@ -42,7 +42,15 @@ def scan_repo(scope: str = "repo", max_items: int = 50) -> Dict[str, Any]:
         try:
             size_kb = p.stat().st_size / 1024
             if size_kb > MAX_FILE_KB:
-                findings.append({"kind": "large_file", "path": str(p.relative_to(root)), "detail": f"{size_kb:.0f} KB", "score": min(1.0, size_kb / 1000), "autofix_allowed": False})
+                findings.append(
+                    {
+                        "kind": "large_file",
+                        "path": str(p.relative_to(root)),
+                        "detail": f"{size_kb:.0f} KB",
+                        "score": min(1.0, size_kb / 1000),
+                        "autofix_allowed": False,
+                    }
+                )
         except (OSError, ValueError):
             pass
         if len(findings) >= max_items:
@@ -53,11 +61,21 @@ def scan_repo(scope: str = "repo", max_items: int = 50) -> Dict[str, Any]:
     for p in _iter_files(root, ".py")[:200]:
         try:
             text = p.read_text(encoding="utf-8", errors="ignore")
-            todo_count += len(re.findall(r"#\s*(TODO|FIXME|XXX)[^\n]*", text, re.IGNORECASE))
+            todo_count += len(
+                re.findall(r"#\s*(TODO|FIXME|XXX)[^\n]*", text, re.IGNORECASE)
+            )
         except Exception:
             pass
     if todo_count > 0:
-        findings.append({"kind": "todo_count", "path": "repo", "detail": f"{todo_count} TODO/FIXME in .py", "score": 0.3, "autofix_allowed": False})
+        findings.append(
+            {
+                "kind": "todo_count",
+                "path": "repo",
+                "detail": f"{todo_count} TODO/FIXME in .py",
+                "score": 0.3,
+                "autofix_allowed": False,
+            }
+        )
 
     # PowerShell without param block (heuristic)
     for p in _iter_files(root, ".ps1")[:50]:
@@ -66,7 +84,15 @@ def scan_repo(scope: str = "repo", max_items: int = 50) -> Dict[str, Any]:
         try:
             text = p.read_text(encoding="utf-8", errors="ignore")
             if "param(" not in text and "Param(" not in text and text.strip():
-                findings.append({"kind": "ps1_no_param", "path": str(p.relative_to(root)), "detail": "No param() block", "score": 0.2, "autofix_allowed": True})
+                findings.append(
+                    {
+                        "kind": "ps1_no_param",
+                        "path": str(p.relative_to(root)),
+                        "detail": "No param() block",
+                        "score": 0.2,
+                        "autofix_allowed": True,
+                    }
+                )
         except Exception:
             pass
 
@@ -75,12 +101,22 @@ def scan_repo(scope: str = "repo", max_items: int = 50) -> Dict[str, Any]:
     if env_example.exists() and scope in ("repo", "all"):
         try:
             keys = set()
-            for line in env_example.read_text(encoding="utf-8", errors="ignore").splitlines():
+            for line in env_example.read_text(
+                encoding="utf-8", errors="ignore"
+            ).splitlines():
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     keys.add(line.split("=")[0].strip())
             if keys and len(findings) < max_items:
-                findings.append({"kind": "config_env_keys", "path": "config/.env.example", "detail": f"{len(keys)} keys documented", "score": 0.1, "autofix_allowed": False})
+                findings.append(
+                    {
+                        "kind": "config_env_keys",
+                        "path": "config/.env.example",
+                        "detail": f"{len(keys)} keys documented",
+                        "score": 0.1,
+                        "autofix_allowed": False,
+                    }
+                )
         except Exception:
             pass
 

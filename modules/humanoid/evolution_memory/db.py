@@ -8,7 +8,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-_DB_PATH = os.getenv("EVOLUTION_MEMORY_DB_PATH", "C:\\ATLAS_PUSH\\logs\\atlas_evolution.sqlite")
+_DB_PATH = os.getenv(
+    "EVOLUTION_MEMORY_DB_PATH", "C:\\ATLAS_PUSH\\logs\\atlas_evolution.sqlite"
+)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS evolution_history (
@@ -84,7 +86,9 @@ def _ts() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def record_model_failure(provider_id: str, model_key: str, error: str = "", latency_ms: float = 0) -> None:
+def record_model_failure(
+    provider_id: str, model_key: str, error: str = "", latency_ms: float = 0
+) -> None:
     c = _ensure()
     cur = c.execute(
         "SELECT id, failure_count, success_count, last_error FROM model_scores WHERE provider_id=? AND model_key=?",
@@ -104,7 +108,9 @@ def record_model_failure(provider_id: str, model_key: str, error: str = "", late
     c.commit()
 
 
-def record_model_success(provider_id: str, model_key: str, latency_ms: float = 0) -> None:
+def record_model_success(
+    provider_id: str, model_key: str, latency_ms: float = 0
+) -> None:
     c = _ensure()
     cur = c.execute(
         "SELECT id FROM model_scores WHERE provider_id=? AND model_key=?",
@@ -124,7 +130,14 @@ def record_model_success(provider_id: str, model_key: str, latency_ms: float = 0
     c.commit()
 
 
-def record_evolution(kind: str, goal: str = "", spec_json: Optional[Dict] = None, outcome: str = "", ok: bool = True, ms: int = 0) -> None:
+def record_evolution(
+    kind: str,
+    goal: str = "",
+    spec_json: Optional[Dict] = None,
+    outcome: str = "",
+    ok: bool = True,
+    ms: int = 0,
+) -> None:
     c = _ensure()
     c.execute(
         "INSERT INTO evolution_history (kind, goal, spec_json, outcome, ok, ms, created_ts) VALUES (?,?,?,?,?,?,?)",
@@ -133,7 +146,9 @@ def record_evolution(kind: str, goal: str = "", spec_json: Optional[Dict] = None
     c.commit()
 
 
-def record_performance(source: str, metric_name: str, value_real: float = 0, value_int: int = 0) -> None:
+def record_performance(
+    source: str, metric_name: str, value_real: float = 0, value_int: int = 0
+) -> None:
     c = _ensure()
     c.execute(
         "INSERT INTO performance_metrics (source, metric_name, value_real, value_int, created_ts) VALUES (?,?,?,?,?)",
@@ -142,7 +157,9 @@ def record_performance(source: str, metric_name: str, value_real: float = 0, val
     c.commit()
 
 
-def record_incident(fingerprint: str, action: str, ok: bool, rollback: bool = False) -> None:
+def record_incident(
+    fingerprint: str, action: str, ok: bool, rollback: bool = False
+) -> None:
     c = _ensure()
     c.execute(
         "INSERT INTO incident_history (fingerprint, action, ok, rollback, created_ts) VALUES (?,?,?,?,?)",
@@ -151,7 +168,9 @@ def record_incident(fingerprint: str, action: str, ok: bool, rollback: bool = Fa
     c.commit()
 
 
-def record_refactor(target_path: str, kind: str, ok: bool, rollback: bool = False) -> None:
+def record_refactor(
+    target_path: str, kind: str, ok: bool, rollback: bool = False
+) -> None:
     c = _ensure()
     c.execute(
         "INSERT INTO refactor_log (target_path, kind, ok, rollback, created_ts) VALUES (?,?,?,?,?)",
@@ -175,7 +194,17 @@ def get_evolution_history(limit: int = 50) -> List[Dict[str, Any]]:
         "SELECT kind, goal, outcome, ok, ms, created_ts FROM evolution_history ORDER BY id DESC LIMIT ?",
         (limit,),
     ).fetchall()
-    return [{"kind": r[0], "goal": r[1], "outcome": r[2], "ok": bool(r[3]), "ms": r[4], "created_ts": r[5]} for r in rows]
+    return [
+        {
+            "kind": r[0],
+            "goal": r[1],
+            "outcome": r[2],
+            "ok": bool(r[3]),
+            "ms": r[4],
+            "created_ts": r[5],
+        }
+        for r in rows
+    ]
 
 
 def get_model_scores() -> List[Dict[str, Any]]:
@@ -185,9 +214,13 @@ def get_model_scores() -> List[Dict[str, Any]]:
     ).fetchall()
     return [
         {
-            "provider_id": r[0], "model_key": r[1],
-            "failure_count": r[2], "success_count": r[3],
-            "last_latency_ms": r[4], "last_error": r[5], "updated_ts": r[6],
+            "provider_id": r[0],
+            "model_key": r[1],
+            "failure_count": r[2],
+            "success_count": r[3],
+            "last_latency_ms": r[4],
+            "last_error": r[5],
+            "updated_ts": r[6],
         }
         for r in rows
     ]
@@ -199,4 +232,13 @@ def get_incident_history(limit: int = 50) -> List[Dict[str, Any]]:
         "SELECT fingerprint, action, ok, rollback, created_ts FROM incident_history ORDER BY id DESC LIMIT ?",
         (limit,),
     ).fetchall()
-    return [{"fingerprint": r[0], "action": r[1], "ok": bool(r[2]), "rollback": bool(r[3]), "created_ts": r[4]} for r in rows]
+    return [
+        {
+            "fingerprint": r[0],
+            "action": r[1],
+            "ok": bool(r[2]),
+            "rollback": bool(r[3]),
+            "created_ts": r[4],
+        }
+        for r in rows
+    ]

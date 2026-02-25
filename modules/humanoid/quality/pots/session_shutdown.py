@@ -10,7 +10,8 @@ Triggers:
 
 Severidad: LOW
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -28,16 +29,20 @@ Procedimiento de cierre de sesión que asegura:
         severity=POTSeverity.LOW,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["shutdown_*", "session_end"],
-        trigger_keywords=["shutdown", "cierre", "buenas noches", "end session", "goodnight", "finalizar"],
-        
+        trigger_keywords=[
+            "shutdown",
+            "cierre",
+            "buenas noches",
+            "end session",
+            "goodnight",
+            "finalizar",
+        ],
         prerequisites=[
             "Sesión activa",
         ],
         required_services=["push"],
         required_permissions=["git_write", "git_push"],
-        
         objectives=[
             "Guardar cambios pendientes",
             "Sincronizar con remoto",
@@ -46,7 +51,6 @@ Procedimiento de cierre de sesión que asegura:
         ],
         success_criteria="Todos los cambios guardados y sincronizados",
         estimated_duration_minutes=3,
-        
         tutorial_overview="""
 ## Guía de Cierre de Sesión
 
@@ -64,16 +68,13 @@ Procedimiento de cierre de sesión que asegura:
 3. **Documentación**: Log de lo trabajado
 4. **Tranquilidad**: Saber que todo está guardado
         """.strip(),
-        
         best_practices=[
             "Ejecutar antes de cerrar la PC",
             "Revisar qué se va a commitear",
             "Verificar que el push fue exitoso",
         ],
-        
         related_pots=["git_commit", "git_push", "session_startup"],
         tags=["shutdown", "session", "sync", "backup"],
-        
         steps=[
             POTStep(
                 id="check_local_changes",
@@ -84,7 +85,6 @@ Procedimiento de cierre de sesión que asegura:
                 timeout_seconds=10,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="stage_all",
                 name="Stage todos los cambios",
@@ -93,7 +93,6 @@ Procedimiento de cierre de sesión que asegura:
                 command="git add -A",
                 timeout_seconds=15,
             ),
-            
             POTStep(
                 id="commit_session",
                 name="Commit de sesión",
@@ -103,7 +102,6 @@ Procedimiento de cierre de sesión que asegura:
                 timeout_seconds=30,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="push_changes",
                 name="Push al remoto",
@@ -114,7 +112,6 @@ Procedimiento de cierre de sesión que asegura:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="get_session_stats",
                 name="Obtener estadísticas de sesión",
@@ -124,7 +121,6 @@ Procedimiento de cierre de sesión que asegura:
                 timeout_seconds=10,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="log_shutdown",
                 name="Registrar cierre de sesión",
@@ -135,10 +131,9 @@ Procedimiento de cierre de sesión que asegura:
                 http_body={
                     "message": "[SESSION] Cierre de sesión - Trabajo guardado y sincronizado",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
             ),
-            
             POTStep(
                 id="notify_shutdown",
                 name="Notificar cierre",

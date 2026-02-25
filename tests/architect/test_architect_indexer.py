@@ -29,4 +29,3 @@ services:
     ports = {s["port"] for s in data["services"]}
     assert {8791, 8000, 8002}.issubset(ports)
     assert "NEXUS_BASE_URL" in data["env"]
-

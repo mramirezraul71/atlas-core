@@ -4,10 +4,17 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
-SAFE_AUTOFIX_KINDS = frozenset({
-    "add_timeout", "add_param_defaults", "add_gitignore", "improve_error_message",
-    "add_smoke_check", "minor_format", "add_typing",
-})
+SAFE_AUTOFIX_KINDS = frozenset(
+    {
+        "add_timeout",
+        "add_param_defaults",
+        "add_gitignore",
+        "improve_error_message",
+        "add_smoke_check",
+        "minor_format",
+        "add_typing",
+    }
+)
 
 
 def _ci_enabled() -> bool:
@@ -34,8 +41,11 @@ def can_autofix(action_kind: str, actor: Any = None) -> bool:
     if not _ci_autofix_allowed():
         return False
     try:
-        from modules.humanoid.policy import get_policy_engine, ActorContext
-        ctx = actor or ActorContext(actor="ci", role=os.getenv("POLICY_DEFAULT_ROLE", "owner"))
+        from modules.humanoid.policy import ActorContext, get_policy_engine
+
+        ctx = actor or ActorContext(
+            actor="ci", role=os.getenv("POLICY_DEFAULT_ROLE", "owner")
+        )
         d = get_policy_engine().can(ctx, "ci", "ci_autofix")
         return d.allow
     except Exception:

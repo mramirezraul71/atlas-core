@@ -3,9 +3,11 @@ from fastapi import FastAPI
 
 app = FastAPI(title="smoke_fastapi_minimal", version="0.1.0")
 
+
 @app.get("/")
 def root():
     return {"ok": True, "app": "smoke_fastapi_minimal"}
+
 
 @app.get("/health")
 def health():

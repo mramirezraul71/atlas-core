@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
 
 
 def run() -> dict:
@@ -23,6 +23,7 @@ def run() -> dict:
                 "suggested_heals": [],
             }
         import json
+
         data = json.loads(state_file.read_text(encoding="utf-8"))
         ts_str = data.get("ts", "")
         cycle_ok = data.get("ok", False)
@@ -34,9 +35,13 @@ def run() -> dict:
         # Umbral 24h: el daemon de evolución corre tipicamente 1x/día; 13h generaba falsos positivos
         stale = ts is None or (now - ts) > timedelta(hours=24)
         ok = cycle_ok and not stale
-        message = data.get("message", "Asimilación Exitosa" if cycle_ok else "Ciclo con errores")
+        message = data.get(
+            "message", "Asimilación Exitosa" if cycle_ok else "Ciclo con errores"
+        )
         if stale:
-            message = "Último ciclo Evolution hace >24h. Comprobar daemon atlas_evolution.py"
+            message = (
+                "Último ciclo Evolution hace >24h. Comprobar daemon atlas_evolution.py"
+            )
         return {
             "ok": ok,
             "check_id": "evolution_health",
@@ -46,4 +51,11 @@ def run() -> dict:
             "suggested_heals": [],
         }
     except Exception as e:
-        return {"ok": False, "check_id": "evolution_health", "message": str(e)[:200], "details": {"error": str(e)}, "severity": "low", "suggested_heals": []}
+        return {
+            "ok": False,
+            "check_id": "evolution_health",
+            "message": str(e)[:200],
+            "details": {"error": str(e)},
+            "severity": "low",
+            "suggested_heals": [],
+        }

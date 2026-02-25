@@ -16,17 +16,21 @@ logger = logging.getLogger(__name__)
 # GPU opcional (GPUtil puede no estar en todos los entornos)
 try:
     import GPUtil
+
     _GPU_AVAILABLE = True
 except ImportError:
     _GPU_AVAILABLE = False
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception as e:
@@ -37,6 +41,7 @@ def _load_config() -> dict:
 @dataclass
 class SystemMetricsResult:
     """Resultado de get_current_metrics()."""
+
     cpu_percent: float
     cpu_per_core: list[float]
     ram_total_mb: float
@@ -124,8 +129,8 @@ class SystemMetrics:
             swap_total_mb=swap.total / (1024 * 1024),
             swap_used_mb=swap.used / (1024 * 1024),
             disk_usage_percent=disk.percent,
-            disk_free_gb=disk.free / (1024 ** 3),
-            disk_used_gb=disk.used / (1024 ** 3),
+            disk_free_gb=disk.free / (1024**3),
+            disk_used_gb=disk.used / (1024**3),
             gpu_available=_GPU_AVAILABLE,
             gpu_vram_used_mb=gpu_vram_used,
             gpu_vram_total_mb=gpu_vram_total,
@@ -158,7 +163,9 @@ class SystemMetrics:
 
         scores.append(_score(m.cpu_percent, self._cpu_warning, self._cpu_critical))
         scores.append(_score(m.ram_percent, self._ram_warning, self._ram_critical))
-        scores.append(_score(m.disk_usage_percent, self._disk_warning, self._disk_critical))
+        scores.append(
+            _score(m.disk_usage_percent, self._disk_warning, self._disk_critical)
+        )
         return round(sum(scores) / len(scores), 1)
 
     def detect_anomaly(self, historical_data: list[dict]) -> bool:
@@ -169,6 +176,7 @@ class SystemMetrics:
         if len(historical_data) < 10:
             return False
         import statistics
+
         m = self.get_current_metrics()
         keys = ["cpu_percent", "ram_percent", "disk_usage_percent"]
         current = [m.cpu_percent, m.ram_percent, m.disk_usage_percent]

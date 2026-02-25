@@ -7,11 +7,13 @@ import logging
 import socket
 import threading
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-REGISTRY_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "network_cameras.json"
+REGISTRY_PATH = (
+    Path(__file__).resolve().parent.parent.parent / "config" / "network_cameras.json"
+)
 _registry: List[Dict[str, Any]] = []
 _lock = threading.Lock()
 
@@ -36,7 +38,9 @@ def _probe_rtsp_path(ip: str, port: int, path: str = "") -> bool:
         sock.settimeout(2)
         sock.connect((ip, port))
         req_path = path or "/"
-        sock.send(f"OPTIONS rtsp://{ip}:{port}{req_path} RTSP/1.0\r\nCSeq: 1\r\n\r\n".encode())
+        sock.send(
+            f"OPTIONS rtsp://{ip}:{port}{req_path} RTSP/1.0\r\nCSeq: 1\r\n\r\n".encode()
+        )
         data = sock.recv(512).decode("utf-8", errors="ignore")
         sock.close()
         return "RTSP" in data.upper()
@@ -65,6 +69,7 @@ def _probe_http_mjpeg(ip: str, port: int) -> Optional[Dict[str, Any]]:
     """Prueba si hay stream MJPEG por HTTP."""
     try:
         import urllib.request
+
         base = f"http://{ip}:{port}"
         for path in ["/", "/video", "/stream", "/mjpeg", "/cam", "/api/camera/stream"]:
             try:
@@ -72,7 +77,11 @@ def _probe_http_mjpeg(ip: str, port: int) -> Optional[Dict[str, Any]]:
                 req.add_header("User-Agent", "ATLAS-NEXUS/1.0")
                 with urllib.request.urlopen(req, timeout=3) as resp:
                     ct = resp.headers.get("Content-Type", "")
-                    if "mjpeg" in ct.lower() or "multipart" in ct.lower() or "image" in ct.lower():
+                    if (
+                        "mjpeg" in ct.lower()
+                        or "multipart" in ct.lower()
+                        or "image" in ct.lower()
+                    ):
                         url = f"{base}{path}"
                         return {
                             "id": f"mjpeg_{ip.replace('.', '_')}_{port}",
@@ -101,18 +110,25 @@ def _probe_dashcam_streams(ip: str, port: int) -> List[Dict[str, Any]]:
         path_norm = path if path.startswith("/") else f"/{path}"
         if _probe_rtsp_path(ip, port, path_norm):
             url = f"rtsp://{ip}:{port}{path_norm}"
-            safe_path = path.replace("/", "_").replace("?", "_").replace("&", "_").replace("=", "_")[:25]
+            safe_path = (
+                path.replace("/", "_")
+                .replace("?", "_")
+                .replace("&", "_")
+                .replace("=", "_")[:25]
+            )
             cam_id = f"auto_{ip.replace('.', '_')}_{port}_{safe_path}"
-            found.append({
-                "id": cam_id,
-                "ip": ip,
-                "port": port,
-                "protocol": "rtsp",
-                "url": url,
-                "model": f"{label} ({ip})",
-                "source": "network",
-                "type": "auto",
-            })
+            found.append(
+                {
+                    "id": cam_id,
+                    "ip": ip,
+                    "port": port,
+                    "protocol": "rtsp",
+                    "url": url,
+                    "model": f"{label} ({ip})",
+                    "source": "network",
+                    "type": "auto",
+                }
+            )
     return found
 
 
@@ -199,6 +215,7 @@ def _make_camera_id(cam: Dict[str, Any]) -> str:
     url = cam.get("url", "")
     if url:
         import hashlib
+
         h = hashlib.md5(url.encode()).hexdigest()[:12]
         return f"remote_{h}"
     return f"manual_{cam.get('ip', '')}_{cam.get('port', 0)}".replace(".", "_")

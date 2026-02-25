@@ -7,7 +7,7 @@ Análogo biológico: Médula espinal
 - Reflejos básicos sin intervención cortical
 """
 from .bus import MedullaAtlas, SharedState, get_medulla
-from .schemas import SensorReading, MotorCommand, WorldState, ActionDecision
+from .schemas import ActionDecision, MotorCommand, SensorReading, WorldState
 
 __all__ = [
     "MedullaAtlas",

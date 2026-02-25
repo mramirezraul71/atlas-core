@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from .bluegreen import run_bluegreen_flow
-from .healthcheck import run_health, health_score
+from .healthcheck import health_score, run_health
 from .switcher import get_deploy_state, switch_active_port
 
 try:

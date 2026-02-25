@@ -11,6 +11,7 @@ import os
 def run() -> dict:
     try:
         from modules.humanoid.nervous.engine import get_nervous_status
+
         data = get_nervous_status(limit=80) or {}
         score = int(data.get("score", 100) or 0)
         ok_thr = int(os.getenv("NERVOUS_OK_THRESHOLD", "75") or 75)
@@ -35,7 +36,10 @@ def run() -> dict:
             heals.append("restart_nexus_services")
         if any(s.get("sensor_id") == "api_health" for s in failing):
             heals.extend(["clear_stale_locks", "restart_scheduler"])
-        if any(str(s.get("sensor_id") or "").startswith("metrics_latency:") for s in failing):
+        if any(
+            str(s.get("sensor_id") or "").startswith("metrics_latency:")
+            for s in failing
+        ):
             heals.append("rotate_logs")
 
         return {
@@ -47,5 +51,11 @@ def run() -> dict:
             "suggested_heals": list(dict.fromkeys(heals)) if not ok else [],
         }
     except Exception as e:
-        return {"ok": False, "check_id": "nervous_health", "message": str(e), "details": {"error": str(e)}, "severity": "med", "suggested_heals": []}
-
+        return {
+            "ok": False,
+            "check_id": "nervous_health",
+            "message": str(e),
+            "details": {"error": str(e)},
+            "severity": "med",
+            "suggested_heals": [],
+        }

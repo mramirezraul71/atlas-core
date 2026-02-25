@@ -10,4 +10,3 @@ def test_mttr_start_and_resolve(monkeypatch, tmp_path):
     mttr.resolve(eid, ok=True)
     s = mttr.stats(hours=24)
     assert s["count"] >= 1
-

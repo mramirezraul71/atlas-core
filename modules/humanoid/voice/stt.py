@@ -15,18 +15,21 @@ def _check_deps() -> List[str]:
     global _missing
     try:
         import speech_recognition as sr
+
         _missing = []
         return []
     except ImportError:
         pass
     try:
         import faster_whisper
+
         _missing = []
         return []
     except ImportError:
         pass
     try:
         import whisper
+
         _missing = []
         return []
     except ImportError:
@@ -44,12 +47,20 @@ def get_missing_deps() -> List[str]:
     return list(_check_deps())
 
 
-def transcribe(audio_path: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def transcribe(
+    audio_path: str, options: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """Transcribe audio file (WAV). Uses SpeechRecognition (Google by default) or faster_whisper if available."""
     if not is_available():
-        return {"ok": False, "text": "", "error": "STT not available", "missing_deps": get_missing_deps()}
+        return {
+            "ok": False,
+            "text": "",
+            "error": "STT not available",
+            "missing_deps": get_missing_deps(),
+        }
     try:
         import speech_recognition as sr
+
         r = sr.Recognizer()
         with sr.AudioFile(audio_path) as source:
             audio = r.record(source)

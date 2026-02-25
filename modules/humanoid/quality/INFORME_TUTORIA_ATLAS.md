@@ -1,9 +1,9 @@
 # INFORME DE TUTORÍA TÉCNICA ATLAS
 
-**Fecha:** 15 de Febrero de 2026  
-**Tutor:** Claude Opus 4.5 - Arquitecto Senior de Sistemas Robóticos  
-**Alumno:** ATLAS Humanoid Robot System  
-**Versión del Sistema:** 2.0  
+**Fecha:** 15 de Febrero de 2026
+**Tutor:** Claude Opus 4.5 - Arquitecto Senior de Sistemas Robóticos
+**Alumno:** ATLAS Humanoid Robot System
+**Versión del Sistema:** 2.0
 
 ---
 
@@ -250,11 +250,11 @@ def get_pot() -> POT:
         severity=POTSeverity.MEDIUM,
         version="1.0.0",
         author="ATLAS",
-        
+
         trigger_keywords=["mi", "nuevo"],
-        
+
         tutorial_overview="## Tutorial...",
-        
+
         steps=[
             POTStep(
                 id="paso1",

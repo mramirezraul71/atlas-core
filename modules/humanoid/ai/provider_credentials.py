@@ -6,7 +6,18 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-_VALID_IDS = frozenset({"openai", "anthropic", "gemini", "perplexity", "groq", "xai", "deepseek", "mistral"})
+_VALID_IDS = frozenset(
+    {
+        "openai",
+        "anthropic",
+        "gemini",
+        "perplexity",
+        "groq",
+        "xai",
+        "deepseek",
+        "mistral",
+    }
+)
 _ENV_KEYS = {
     "openai": "OPENAI_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
@@ -25,7 +36,11 @@ def _store_path() -> Path:
     root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or ""
     if root:
         return Path(root).resolve() / "config" / "provider_api_keys.json"
-    return Path(__file__).resolve().parent.parent.parent.parent / "config" / "provider_api_keys.json"
+    return (
+        Path(__file__).resolve().parent.parent.parent.parent
+        / "config"
+        / "provider_api_keys.json"
+    )
 
 
 def _load_store() -> Dict[str, str]:
@@ -39,7 +54,11 @@ def _load_store() -> Dict[str, str]:
     try:
         with open(p, "r", encoding="utf-8") as f:
             data = json.load(f)
-        _store = {k: v for k, v in (data or {}).items() if k in _VALID_IDS and isinstance(v, str) and v.strip()}
+        _store = {
+            k: v
+            for k, v in (data or {}).items()
+            if k in _VALID_IDS and isinstance(v, str) and v.strip()
+        }
         return _store
     except Exception:
         _store = {}
@@ -56,7 +75,10 @@ def _save_store(data: Dict[str, str]) -> None:
         _store = data
     except (OSError, IOError, PermissionError) as e:
         import logging
-        logging.getLogger(__name__).warning("provider_credentials: no se pudo guardar en %s: %s", p, e)
+
+        logging.getLogger(__name__).warning(
+            "provider_credentials: no se pudo guardar en %s: %s", p, e
+        )
         raise RuntimeError(
             "No se pudo guardar la clave en %s. Comprueba que la carpeta config existe y tiene permisos de escritura."
             % str(p)

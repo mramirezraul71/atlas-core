@@ -10,7 +10,10 @@ from .validators import validate_script
 
 
 def _allowed_base() -> str:
-    base = os.getenv("ATLAS_SCRIPTS_BASE") or os.getenv("POLICY_ALLOWED_PATHS", "C:\\ATLAS_PUSH").split(",")[0].strip()
+    base = (
+        os.getenv("ATLAS_SCRIPTS_BASE")
+        or os.getenv("POLICY_ALLOWED_PATHS", "C:\\ATLAS_PUSH").split(",")[0].strip()
+    )
     return base.rstrip("\\/")
 
 
@@ -95,7 +98,15 @@ def generate_script(
     valid, missing = validate_script(kind, content)
     preview = content[:2000] + ("..." if len(content) > 2000 else "")
 
-    out = {"ok": True, "path": "", "preview": preview, "how_to_run": how_to_run, "validated": valid, "missing": missing, "error": None}
+    out = {
+        "ok": True,
+        "path": "",
+        "preview": preview,
+        "how_to_run": how_to_run,
+        "validated": valid,
+        "missing": missing,
+        "error": None,
+    }
 
     write_path = options.get("output_path") or base_path
     if not write_path:
@@ -114,14 +125,27 @@ def generate_script(
             if w.get("ok"):
                 out["path"] = write_path
                 try:
-                    from modules.humanoid.memory_engine import store_artifact, ensure_thread
+                    from modules.humanoid.memory_engine import (ensure_thread,
+                                                                store_artifact)
+
                     ensure_thread(None, f"script:{kind}")
                     store_artifact(None, None, "script", write_path, purpose[:200])
                 except Exception:
                     pass
                 try:
                     from modules.humanoid.audit import get_audit_logger
-                    get_audit_logger().log_event("script_factory", "system", "scripts", "generate", True, 0, None, {"kind": kind, "path": write_path, "purpose": purpose[:100]}, None)
+
+                    get_audit_logger().log_event(
+                        "script_factory",
+                        "system",
+                        "scripts",
+                        "generate",
+                        True,
+                        0,
+                        None,
+                        {"kind": kind, "path": write_path, "purpose": purpose[:100]},
+                        None,
+                    )
                 except Exception:
                     pass
             else:

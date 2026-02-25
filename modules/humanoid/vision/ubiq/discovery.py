@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from .onvif_wsdiscovery import discover_onvif_devices
 from .registry import upsert_camera
 
-
 CAMERA_PORTS = [554, 80, 8080, 8081, 8000, 443]
 CONNECT_TIMEOUT = float(os.getenv("VISION_DISCOVERY_TIMEOUT", "1.5"))
 MAX_WORKERS = int(os.getenv("VISION_DISCOVERY_WORKERS", "60"))
@@ -127,7 +126,9 @@ def _probe_rtsp_path(ip: str, port: int, path: str = "/") -> bool:
         sock.connect((ip, int(port)))
         req_path = path if path.startswith("/") else f"/{path}"
         sock.send(
-            f"OPTIONS rtsp://{ip}:{int(port)}{req_path} RTSP/1.0\r\nCSeq: 1\r\n\r\n".encode("utf-8")
+            f"OPTIONS rtsp://{ip}:{int(port)}{req_path} RTSP/1.0\r\nCSeq: 1\r\n\r\n".encode(
+                "utf-8"
+            )
         )
         data = sock.recv(512).decode("utf-8", errors="ignore")
         sock.close()
@@ -142,7 +143,12 @@ def _probe_dashcam_streams(ip: str, port: int) -> List[Dict[str, Any]]:
         path_norm = path if path.startswith("/") else f"/{path}"
         if _probe_rtsp_path(ip, port, path_norm):
             url = f"rtsp://{ip}:{port}{path_norm}"
-            safe_path = path.replace("/", "_").replace("?", "_").replace("&", "_").replace("=", "_")[:25]
+            safe_path = (
+                path.replace("/", "_")
+                .replace("?", "_")
+                .replace("&", "_")
+                .replace("=", "_")[:25]
+            )
             cam_id = f"auto_{ip.replace('.', '_')}_{port}_{safe_path}"
             found.append(
                 {
@@ -197,7 +203,10 @@ def discover_local_cameras(
                     "source": "network",
                     "type": "network",
                     "onvif_xaddr": xaddr,
-                    "meta": {"endpoint": d.get("endpoint", ""), "discovery": "ws-discovery"},
+                    "meta": {
+                        "endpoint": d.get("endpoint", ""),
+                        "discovery": "ws-discovery",
+                    },
                 }
                 if cam["id"] in seen_ids:
                     continue
@@ -286,7 +295,8 @@ def discover_local_cameras(
                 new_count += 1
                 ip = (cam.get("ip") or cam.get("url") or "").split("/")[0]
                 try:
-                    from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+                    from modules.humanoid.ans.evolution_bitacora import \
+                        append_evolution_log
 
                     append_evolution_log(
                         f"[VISION] Nuevo nodo de video asimilado: {cam.get('ip') or cam.get('url')}",
@@ -306,4 +316,3 @@ def discover_local_cameras(
         "candidates_count": len(candidates),
         "ts": time.time(),
     }
-

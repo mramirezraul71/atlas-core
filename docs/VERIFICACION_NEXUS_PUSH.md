@@ -1,6 +1,6 @@
 # Verificación: archivos de unificación ATLAS NEXUS + PUSH
 
-**Fecha:** 2025-02-14  
+**Fecha:** 2025-02-14
 **Objetivo:** Comprobar que el repo ATLAS_PUSH contiene todos los archivos de la unión con Atlas Nexus.
 
 ---

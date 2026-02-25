@@ -4,8 +4,9 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from modules.humanoid.kernel import BaseModule, HealthCheckMixin
-from .env_scanner import EnvScanner
+
 from .dep_resolver import DepResolver
+from .env_scanner import EnvScanner
 from .updater import Updater
 
 

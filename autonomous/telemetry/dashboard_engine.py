@@ -11,11 +11,14 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -37,22 +40,36 @@ class DashboardEngine:
         try:
             if dashboard_type == "health_overview":
                 from autonomous.health_monitor import HealthAggregator
+
                 agg = HealthAggregator()
                 report = agg.get_global_health()
-                data["gauges"] = [{"name": "global_score", "value": report.score, "max": 100}]
+                data["gauges"] = [
+                    {"name": "global_score", "value": report.score, "max": 100}
+                ]
                 data["tables"] = [{"name": "components", "rows": [report.components]}]
                 data["recommendations"] = report.recommendations
             elif dashboard_type == "services_status":
                 from autonomous.health_monitor import ServiceHealth
+
                 sh = ServiceHealth()
                 statuses = sh.get_all_services_status()
-                data["tables"] = [{"name": "services", "rows": [{"name": k, "online": v.online, "latency_ms": v.latency_ms} for k, v in statuses.items()]}]
+                data["tables"] = [
+                    {
+                        "name": "services",
+                        "rows": [
+                            {"name": k, "online": v.online, "latency_ms": v.latency_ms}
+                            for k, v in statuses.items()
+                        ],
+                    }
+                ]
             elif dashboard_type == "self_healing":
                 from autonomous.self_healing import HealingOrchestrator
+
                 ho = HealingOrchestrator()
                 data["gauges"] = [{"name": "stats", "value": ho.get_healing_stats()}]
             elif dashboard_type == "evolution":
                 from autonomous.evolution import EvolutionOrchestratorV2
+
                 ev = EvolutionOrchestratorV2()
                 data["gauges"] = [{"name": "status", "value": ev.get_status()}]
             else:
@@ -64,4 +81,8 @@ class DashboardEngine:
 
     def create_chart(self, metric: str, chart_type: str = "line") -> dict[str, Any]:
         """Configuración de gráfico para una métrica."""
-        return {"metric": metric, "chart_type": chart_type, "title": metric.replace("_", " ").title()}
+        return {
+            "metric": metric,
+            "chart_type": chart_type,
+            "title": metric.replace("_", " ").title(),
+        }

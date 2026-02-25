@@ -1,5 +1,6 @@
 """Proxy /api/* -> Robot backend (8002). Para que el iframe /cuerpo/ funcione."""
 import os
+
 import httpx
 from fastapi import Request
 from fastapi.responses import Response
@@ -11,7 +12,11 @@ TIMEOUT = 30.0
 async def proxy_robot_api(request: Request, path: str) -> Response:
     """Reenvía /api/* al backend Robot (8002)."""
     url = f"{ROBOT_API}/api/{path}" if path else f"{ROBOT_API}/api/"
-    headers = {k: v for k, v in request.headers.items() if k.lower() not in ("host", "connection")}
+    headers = {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() not in ("host", "connection")
+    }
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             if request.method == "GET":

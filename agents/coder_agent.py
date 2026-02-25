@@ -23,7 +23,9 @@ TEMP_SCRIPTS.mkdir(parents=True, exist_ok=True)
 class AtlasCoder:
     """Genera código vía LLM, lo guarda en atlas_workspace/, ejecuta con subprocess y autocorrige si hay Traceback."""
 
-    def __init__(self, workspace: Optional[Path] = None, timeout_sec: int = EXECUTE_TIMEOUT) -> None:
+    def __init__(
+        self, workspace: Optional[Path] = None, timeout_sec: int = EXECUTE_TIMEOUT
+    ) -> None:
         self._workspace = Path(workspace) if workspace else ATLAS_WORKSPACE
         self._timeout_sec = timeout_sec
         self._workspace.mkdir(parents=True, exist_ok=True)
@@ -59,7 +61,12 @@ class AtlasCoder:
         if not path.suffix:
             path = self._workspace / f"{filename}.py"
         if not path.exists():
-            return {"ok": False, "stdout": "", "stderr": f"File not found: {path}", "returncode": -1}
+            return {
+                "ok": False,
+                "stdout": "",
+                "stderr": f"File not found: {path}",
+                "returncode": -1,
+            }
         try:
             py = os.environ.get("PYTHON", sys.executable)
             r = subprocess.run(
@@ -76,7 +83,12 @@ class AtlasCoder:
                 "returncode": r.returncode,
             }
         except subprocess.TimeoutExpired:
-            return {"ok": False, "stdout": "", "stderr": f"Timeout ({self._timeout_sec}s)", "returncode": -1}
+            return {
+                "ok": False,
+                "stdout": "",
+                "stderr": f"Timeout ({self._timeout_sec}s)",
+                "returncode": -1,
+            }
         except Exception as e:
             return {"ok": False, "stdout": "", "stderr": str(e), "returncode": -1}
 
@@ -89,11 +101,15 @@ class AtlasCoder:
             return _mock_generate(prompt)
         try:
             import openai
+
             client = openai.OpenAI(api_key=api_key)
             r = client.chat.completions.create(
                 model=os.environ.get("CODER_AGENT_MODEL", "gpt-4o-mini"),
                 messages=[
-                    {"role": "system", "content": "You are a Python 3 code generator. Reply with valid code only; use markdown code block if needed."},
+                    {
+                        "role": "system",
+                        "content": "You are a Python 3 code generator. Reply with valid code only; use markdown code block if needed.",
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 max_tokens=2000,
@@ -104,7 +120,9 @@ class AtlasCoder:
             logger.warning("LLM falló: %s", e)
             return _mock_generate(prompt)
 
-    def auto_program_loop(self, prompt_tarea: str, max_intentos: int = 3, filename: str = "auto_script.py") -> Dict[str, Any]:
+    def auto_program_loop(
+        self, prompt_tarea: str, max_intentos: int = 3, filename: str = "auto_script.py"
+    ) -> Dict[str, Any]:
         """
         Pide código al LLM, extrae y guarda, ejecuta. Si stderr tiene Traceback/error,
         envía el error al LLM y repite hasta stderr limpio o max_intentos.
@@ -154,7 +172,7 @@ def _mock_generate(prompt: str) -> str:
     """Mock: genera código según el prompt (Fibonacci, etc.)."""
     lower = prompt.lower()
     if "fibonacci" in lower or "fib" in lower:
-        return '''def fib(n):
+        return """def fib(n):
     a, b = 0, 1
     out = []
     for _ in range(n):
@@ -162,10 +180,10 @@ def _mock_generate(prompt: str) -> str:
         a, b = b, a + b
     return out
 print(fib(20))
-'''
-    return f'''# Mock: {prompt[:60]}
+"""
+    return f"""# Mock: {prompt[:60]}
 print("Script generado (mock). Tarea:", {repr(prompt[:80])})
-'''
+"""
 
 
 def execute_order(order: str) -> Dict[str, Any]:

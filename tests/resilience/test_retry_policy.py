@@ -19,4 +19,3 @@ def test_retry_policy_exponential_cap():
     assert p.delay_for_attempt(1) == 15
     assert p.delay_for_attempt(2) == 30  # cap
     assert p.delay_for_attempt(3) == 30  # cap stays
-

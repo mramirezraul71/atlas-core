@@ -11,7 +11,8 @@ def scan_network(protocol: str = "rtsp") -> Dict[str, Any]:
     """
     proto = (protocol or "rtsp").strip().lower()
     try:
-        from modules.humanoid.vision.ubiq.discovery import discover_local_cameras
+        from modules.humanoid.vision.ubiq.discovery import \
+            discover_local_cameras
 
         r = discover_local_cameras(protocol=proto)
         return {"ok": bool(r.get("ok", True)), "protocol": proto, "result": r}
@@ -37,29 +38,48 @@ def stream_proxy(source_ip: str, *, variant: str = "mobile") -> Dict[str, Any]:
             return {"ok": False, "error": "camera_not_found_for_ip", "ip": ip}
         cam_id = cam.get("id")
         r = start_stream(str(cam_id), variant=variant)
-        return {"ok": bool(r.get("ok")), "cam_id": cam_id, "variant": variant, "result": r}
+        return {
+            "ok": bool(r.get("ok")),
+            "cam_id": cam_id,
+            "variant": variant,
+            "result": r,
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)[:200], "ip": ip}
 
 
-def perimeter_check(*, snapshot_limit: int = 8, emit_ops: bool = True) -> Dict[str, Any]:
+def perimeter_check(
+    *, snapshot_limit: int = 8, emit_ops: bool = True
+) -> Dict[str, Any]:
     """
     Ronda de vigilancia: recorre cámaras registradas y toma un snapshot por cada una (hasta snapshot_limit).
     """
     try:
+        from modules.humanoid.comms.ops_bus import emit as ops_emit
         from modules.humanoid.vision.ubiq.registry import list_cameras
         from modules.humanoid.vision.ubiq.streaming import take_snapshot
-        from modules.humanoid.comms.ops_bus import emit as ops_emit
 
         cams = list_cameras(limit=max(1, int(snapshot_limit or 8)))
         out: List[Dict[str, Any]] = []
         for cam in cams[: max(1, int(snapshot_limit or 8))]:
             cid = cam.get("id")
             snap = take_snapshot(str(cid), timeout_s=3.0)
-            out.append({"cam_id": cid, "ip": cam.get("ip"), "ok": bool(snap.get("ok")), "error": snap.get("error")})
+            out.append(
+                {
+                    "cam_id": cid,
+                    "ip": cam.get("ip"),
+                    "ok": bool(snap.get("ok")),
+                    "error": snap.get("error"),
+                }
+            )
             if emit_ops and snap.get("ok"):
                 try:
-                    ops_emit("vision", f"Perímetro: snapshot OK ({cid})", level="low", data={"cam_id": cid})
+                    ops_emit(
+                        "vision",
+                        f"Perímetro: snapshot OK ({cid})",
+                        level="low",
+                        data={"cam_id": cid},
+                    )
                 except Exception:
                     pass
             time.sleep(0.1)
@@ -67,4 +87,3 @@ def perimeter_check(*, snapshot_limit: int = 8, emit_ops: bool = True) -> Dict[s
         return {"ok": ok, "checked": len(out), "results": out}
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}
-

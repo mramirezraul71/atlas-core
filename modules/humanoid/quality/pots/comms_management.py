@@ -17,7 +17,8 @@ Este POT enseña a ATLAS a:
 4. Enviar mensajes de prueba
 5. Gestionar la bitácora de comunicaciones
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -52,20 +53,34 @@ ARQUITECTURA:
 NIVELES DE PRIORIDAD:
 - INFO/LOW: Solo log
 - MEDIUM: Log + Audio
-- HIGH: Log + Audio + Telegram  
+- HIGH: Log + Audio + Telegram
 - CRITICAL: Log + Audio + Telegram + WhatsApp
         """.strip(),
         category=POTCategory.MAINTENANCE,
         severity=POTSeverity.HIGH,
         version="1.0.0",
         author="ATLAS Communications Team",
-        
-        trigger_check_ids=["comms_health", "whatsapp_health", "telegram_health", "waha_*", "audio_*"],
-        trigger_keywords=[
-            "whatsapp", "waha", "telegram", "audio", "comunicacion", "mensaje", 
-            "notificacion", "bot", "tts", "speech", "qr", "sesion"
+        trigger_check_ids=[
+            "comms_health",
+            "whatsapp_health",
+            "telegram_health",
+            "waha_*",
+            "audio_*",
         ],
-        
+        trigger_keywords=[
+            "whatsapp",
+            "waha",
+            "telegram",
+            "audio",
+            "comunicacion",
+            "mensaje",
+            "notificacion",
+            "bot",
+            "tts",
+            "speech",
+            "qr",
+            "sesion",
+        ],
         prerequisites=[
             "Docker instalado y corriendo (para WAHA)",
             "Contenedor WAHA desplegado en puerto 3010",
@@ -74,7 +89,6 @@ NIVELES DE PRIORIDAD:
         ],
         required_services=["docker"],
         required_permissions=["docker_exec", "http_requests"],
-        
         objectives=[
             "Verificar estado de todos los canales de comunicación",
             "Diagnosticar y reparar conexión de WAHA/WhatsApp",
@@ -83,7 +97,6 @@ NIVELES DE PRIORIDAD:
         ],
         success_criteria="Todos los canales configurados responden correctamente a mensajes de prueba",
         estimated_duration_minutes=5,
-        
         tutorial_overview="""
 ## Sistema de Comunicaciones ATLAS
 
@@ -147,7 +160,6 @@ AUDIO_ENABLED=1
 | Telegram no envía | Token inválido | Verificar TELEGRAM_BOT_TOKEN |
 | Audio no funciona | pyttsx3 no instalado | `pip install pyttsx3` |
         """.strip(),
-        
         best_practices=[
             "Verificar estado de WAHA antes de enviar mensajes importantes",
             "Usar el Dashboard de WAHA para diagnóstico visual rápido",
@@ -156,7 +168,6 @@ AUDIO_ENABLED=1
             "Registrar todos los envíos importantes en la bitácora",
             "Usar niveles de prioridad apropiados (no todo es CRITICAL)",
         ],
-        
         warnings=[
             "WAHA requiere Docker corriendo - verificar antes de usar",
             "El QR de WhatsApp expira en ~60 segundos - escanear rápido",
@@ -164,11 +175,17 @@ AUDIO_ENABLED=1
             "WhatsApp puede desconectarse si el teléfono pierde internet",
             "Telegram tiene límite de mensajes por minuto",
         ],
-        
         related_pots=["services_repair", "notification_broadcast", "diagnostic_full"],
-        tags=["comms", "whatsapp", "telegram", "waha", "audio", "notifications", "messaging"],
+        tags=[
+            "comms",
+            "whatsapp",
+            "telegram",
+            "waha",
+            "audio",
+            "notifications",
+            "messaging",
+        ],
         has_rollback=False,
-        
         steps=[
             # ============ VERIFICACIÓN INICIAL ============
             POTStep(
@@ -181,7 +198,6 @@ AUDIO_ENABLED=1
                 on_failure="skip_waha",
                 timeout_seconds=10,
             ),
-            
             POTStep(
                 id="check_waha_container",
                 name="Verificar Contenedor WAHA",
@@ -192,7 +208,6 @@ AUDIO_ENABLED=1
                 on_failure="start_waha_container",
                 timeout_seconds=10,
             ),
-            
             POTStep(
                 id="start_waha_container",
                 name="Iniciar Contenedor WAHA",
@@ -202,7 +217,6 @@ AUDIO_ENABLED=1
                 on_failure="fail",
                 timeout_seconds=30,
             ),
-            
             # ============ ESTADO DE CANALES ============
             POTStep(
                 id="check_comms_status",
@@ -215,7 +229,6 @@ AUDIO_ENABLED=1
                 on_failure="log_comms_error",
                 timeout_seconds=15,
             ),
-            
             POTStep(
                 id="check_whatsapp_session",
                 name="Verificar Sesión WhatsApp",
@@ -228,7 +241,6 @@ AUDIO_ENABLED=1
                 on_failure="restart_waha_session",
                 timeout_seconds=10,
             ),
-            
             # ============ REPARACIÓN WAHA ============
             POTStep(
                 id="restart_waha_session",
@@ -241,7 +253,6 @@ AUDIO_ENABLED=1
                 on_failure="manual_waha_intervention",
                 timeout_seconds=15,
             ),
-            
             POTStep(
                 id="get_whatsapp_qr",
                 name="Obtener QR de WhatsApp",
@@ -253,7 +264,6 @@ AUDIO_ENABLED=1
                 on_failure="log_qr_error",
                 timeout_seconds=10,
             ),
-            
             # ============ PRUEBAS DE ENVÍO ============
             POTStep(
                 id="test_telegram",
@@ -266,7 +276,6 @@ AUDIO_ENABLED=1
                 on_failure="log_telegram_error",
                 timeout_seconds=15,
             ),
-            
             POTStep(
                 id="test_whatsapp",
                 name="Probar Envío WhatsApp",
@@ -278,7 +287,6 @@ AUDIO_ENABLED=1
                 on_failure="log_whatsapp_error",
                 timeout_seconds=15,
             ),
-            
             POTStep(
                 id="test_audio",
                 name="Probar Audio TTS",
@@ -290,7 +298,6 @@ AUDIO_ENABLED=1
                 on_failure="log_audio_error",
                 timeout_seconds=10,
             ),
-            
             # ============ REGISTRO EN BITÁCORA ============
             POTStep(
                 id="log_success",
@@ -299,11 +306,14 @@ AUDIO_ENABLED=1
                 step_type=StepType.HTTP,
                 http_url="http://127.0.0.1:8791/ans/evolution-log",
                 http_method="POST",
-                http_body={"message": "[COMMS] Sistema de comunicaciones verificado - Todos los canales operativos", "ok": True, "source": "comms"},
+                http_body={
+                    "message": "[COMMS] Sistema de comunicaciones verificado - Todos los canales operativos",
+                    "ok": True,
+                    "source": "comms",
+                },
                 expected_status=200,
                 timeout_seconds=5,
             ),
-            
             # ============ PASOS DE ERROR/FALLBACK ============
             POTStep(
                 id="log_comms_error",
@@ -312,11 +322,14 @@ AUDIO_ENABLED=1
                 step_type=StepType.HTTP,
                 http_url="http://127.0.0.1:8791/ans/evolution-log",
                 http_method="POST",
-                http_body={"message": "[COMMS] Error verificando sistema de comunicaciones", "ok": False, "source": "comms"},
+                http_body={
+                    "message": "[COMMS] Error verificando sistema de comunicaciones",
+                    "ok": False,
+                    "source": "comms",
+                },
                 expected_status=200,
                 timeout_seconds=5,
             ),
-            
             POTStep(
                 id="log_telegram_error",
                 name="Registrar Error Telegram",
@@ -324,11 +337,14 @@ AUDIO_ENABLED=1
                 step_type=StepType.HTTP,
                 http_url="http://127.0.0.1:8791/ans/evolution-log",
                 http_method="POST",
-                http_body={"message": "[TELEGRAM] Error enviando mensaje - verificar token y chat_id", "ok": False, "source": "telegram"},
+                http_body={
+                    "message": "[TELEGRAM] Error enviando mensaje - verificar token y chat_id",
+                    "ok": False,
+                    "source": "telegram",
+                },
                 expected_status=200,
                 timeout_seconds=5,
             ),
-            
             POTStep(
                 id="log_whatsapp_error",
                 name="Registrar Error WhatsApp",
@@ -336,11 +352,14 @@ AUDIO_ENABLED=1
                 step_type=StepType.HTTP,
                 http_url="http://127.0.0.1:8791/ans/evolution-log",
                 http_method="POST",
-                http_body={"message": "[WHATSAPP] Error enviando mensaje - verificar sesión WAHA y QR", "ok": False, "source": "whatsapp"},
+                http_body={
+                    "message": "[WHATSAPP] Error enviando mensaje - verificar sesión WAHA y QR",
+                    "ok": False,
+                    "source": "whatsapp",
+                },
                 expected_status=200,
                 timeout_seconds=5,
             ),
-            
             POTStep(
                 id="log_audio_error",
                 name="Registrar Error Audio",
@@ -348,11 +367,14 @@ AUDIO_ENABLED=1
                 step_type=StepType.HTTP,
                 http_url="http://127.0.0.1:8791/ans/evolution-log",
                 http_method="POST",
-                http_body={"message": "[AUDIO] Error reproduciendo audio - verificar pyttsx3", "ok": False, "source": "audio"},
+                http_body={
+                    "message": "[AUDIO] Error reproduciendo audio - verificar pyttsx3",
+                    "ok": False,
+                    "source": "audio",
+                },
                 expected_status=200,
                 timeout_seconds=5,
             ),
-            
             POTStep(
                 id="log_qr_error",
                 name="Registrar Error QR",
@@ -360,11 +382,14 @@ AUDIO_ENABLED=1
                 step_type=StepType.HTTP,
                 http_url="http://127.0.0.1:8791/ans/evolution-log",
                 http_method="POST",
-                http_body={"message": "[WAHA] No se pudo obtener QR - WhatsApp puede estar ya vinculado", "ok": True, "source": "whatsapp"},
+                http_body={
+                    "message": "[WAHA] No se pudo obtener QR - WhatsApp puede estar ya vinculado",
+                    "ok": True,
+                    "source": "whatsapp",
+                },
                 expected_status=200,
                 timeout_seconds=5,
             ),
-            
             POTStep(
                 id="manual_waha_intervention",
                 name="Intervención Manual WAHA",
@@ -372,11 +397,14 @@ AUDIO_ENABLED=1
                 step_type=StepType.HTTP,
                 http_url="http://127.0.0.1:8791/ans/evolution-log",
                 http_method="POST",
-                http_body={"message": "[WAHA] Requiere intervención manual - abrir http://localhost:3010 y escanear QR", "ok": False, "source": "whatsapp"},
+                http_body={
+                    "message": "[WAHA] Requiere intervención manual - abrir http://localhost:3010 y escanear QR",
+                    "ok": False,
+                    "source": "whatsapp",
+                },
                 expected_status=200,
                 timeout_seconds=5,
             ),
-            
             POTStep(
                 id="skip_waha",
                 name="Omitir WAHA (Docker no disponible)",
@@ -384,12 +412,15 @@ AUDIO_ENABLED=1
                 step_type=StepType.HTTP,
                 http_url="http://127.0.0.1:8791/ans/evolution-log",
                 http_method="POST",
-                http_body={"message": "[WAHA] Docker no disponible - WhatsApp deshabilitado temporalmente", "ok": False, "source": "whatsapp"},
+                http_body={
+                    "message": "[WAHA] Docker no disponible - WhatsApp deshabilitado temporalmente",
+                    "ok": False,
+                    "source": "whatsapp",
+                },
                 expected_status=200,
                 timeout_seconds=5,
             ),
         ],
-        
         # Documentación adicional para ATLAS
         additional_notes="""
 ## Uso Programático
@@ -468,16 +499,16 @@ Credenciales por defecto:
 # Función para verificación rápida
 def quick_check() -> dict:
     """Verificación rápida del estado de comunicaciones."""
-    import urllib.request
     import json
-    
+    import urllib.request
+
     result = {"ok": True, "channels": {}}
-    
+
     # WAHA
     try:
         req = urllib.request.Request(
             "http://localhost:3010/api/sessions/default",
-            headers={"X-Api-Key": "atlas123"}
+            headers={"X-Api-Key": "atlas123"},
         )
         with urllib.request.urlopen(req, timeout=5) as r:
             data = json.loads(r.read().decode())
@@ -488,7 +519,7 @@ def quick_check() -> dict:
     except Exception as e:
         result["channels"]["whatsapp"] = {"ok": False, "error": str(e)}
         result["ok"] = False
-    
+
     # Dashboard
     try:
         req = urllib.request.Request("http://127.0.0.1:8791/health")
@@ -497,5 +528,5 @@ def quick_check() -> dict:
     except Exception as e:
         result["channels"]["dashboard"] = {"ok": False, "error": str(e)}
         result["ok"] = False
-    
+
     return result

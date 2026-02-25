@@ -22,4 +22,3 @@ def test_dynamic_risk_screen_destructive_requires_approval():
     a = assess_action("screen_act_destructive", {"confirm_text": "Eliminar"})
     assert a.requires_approval is True
     assert a.risk in ("high", "critical")
-

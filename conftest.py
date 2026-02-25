@@ -9,7 +9,9 @@ def _truthy_env(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
     """Por defecto, no ejecutar E2E en `pytest` local.
 
     Activación explícita:
@@ -23,4 +25,3 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         path = str(getattr(item, "fspath", "")).replace("\\", "/")
         if "/tests/e2e/" in path:
             item.add_marker(skip_e2e)
-

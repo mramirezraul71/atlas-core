@@ -12,12 +12,14 @@ def _screen_deps_ok() -> bool:
         return _screen_deps_cache["capture"]
     try:
         import mss
+
         _screen_deps_cache["capture"] = True
         return True
     except ImportError:
         pass
     try:
         import pyautogui
+
         _screen_deps_cache["capture"] = True
         return True
     except ImportError:
@@ -29,6 +31,7 @@ def _screen_deps_ok() -> bool:
 def get_screen_status() -> Dict[str, Any]:
     """Status for GET /screen/status. Always responds; enabled=false when deps missing."""
     from modules.humanoid.deps_checker import check_screen
+
     dep = check_screen()
     return {
         "ok": True,

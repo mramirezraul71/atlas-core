@@ -1,6 +1,6 @@
 """Tipos compartidos entre NEXUS y PUSH para el contrato de integración."""
 
-from typing import Optional, Any
+from typing import Any, Optional
 
 
 def nexus_status_shape() -> dict:

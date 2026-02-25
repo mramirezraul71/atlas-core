@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import json
 import logging
-import urllib.request
 import urllib.error
+import urllib.request
 from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,12 @@ class RouteOptimizer:
     def record_model_usage(self, model: str, success: bool, latency_ms: float) -> None:
         """Registrar uso de un modelo."""
         if model not in self.model_stats:
-            self.model_stats[model] = {"success": 0, "failures": 0, "total_latency": 0.0, "count": 0}
+            self.model_stats[model] = {
+                "success": 0,
+                "failures": 0,
+                "total_latency": 0.0,
+                "count": 0,
+            }
         self.model_stats[model]["count"] += 1
         self.model_stats[model]["total_latency"] += latency_ms
         if success:
@@ -31,7 +36,9 @@ class RouteOptimizer:
         else:
             self.model_stats[model]["failures"] += 1
 
-    def analyze_model_performance(self, model_name: str, time_range: int = 7) -> Dict[str, Any] | None:
+    def analyze_model_performance(
+        self, model_name: str, time_range: int = 7
+    ) -> Dict[str, Any] | None:
         """Analizar performance de un modelo (time_range en días, ignorado por ahora; stats en memoria)."""
         if model_name not in self.model_stats:
             return None
@@ -57,16 +64,26 @@ class RouteOptimizer:
                 data = json.loads(r.read().decode())
             available_models = data.get("neural_router", {}).get("models", [])
             if isinstance(available_models, dict):
-                available_models = list(available_models.keys()) if available_models else []
+                available_models = (
+                    list(available_models.keys()) if available_models else []
+                )
         except Exception as e:
             logger.debug("RouteOptimizer: no NEXUS status: %s", e)
             available_models = []
         if not available_models:
             return "llama3.2"
         if query_type == "code":
-            return "deepseek-coder" if "deepseek-coder" in available_models else available_models[0]
+            return (
+                "deepseek-coder"
+                if "deepseek-coder" in available_models
+                else available_models[0]
+            )
         if query_type == "reasoning":
-            return "deepseek-r1" if "deepseek-r1" in available_models else available_models[0]
+            return (
+                "deepseek-r1"
+                if "deepseek-r1" in available_models
+                else available_models[0]
+            )
         return available_models[0]
 
     def optimize_routing_rules(self) -> Dict[str, Dict[str, Any]]:

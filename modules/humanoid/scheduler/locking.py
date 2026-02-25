@@ -28,6 +28,7 @@ def try_acquire_lease(db: SchedulerDB, job_id: str) -> bool:
     """
     now = datetime.now(timezone.utc)
     from datetime import timedelta
+
     lease_until = (now + timedelta(seconds=_lease_seconds())).isoformat()
     now_iso = now.isoformat()
     conn = db._ensure()
@@ -45,7 +46,9 @@ def try_acquire_lease(db: SchedulerDB, job_id: str) -> bool:
 def release_lease(db: SchedulerDB, job_id: str) -> None:
     """Clear lease_until for job (e.g. when finished)."""
     now = datetime.now(timezone.utc).isoformat()
-    db._ensure().execute("UPDATE jobs SET lease_until = NULL, updated_ts = ? WHERE id = ?", (now, job_id))
+    db._ensure().execute(
+        "UPDATE jobs SET lease_until = NULL, updated_ts = ? WHERE id = ?", (now, job_id)
+    )
     db._ensure().commit()
 
 
@@ -58,6 +61,7 @@ def recover_stale_locks(db: Optional[SchedulerDB] = None) -> int:
         return 0
     if db is None:
         from .engine import get_scheduler_db
+
         db = get_scheduler_db()
     now = datetime.now(timezone.utc).isoformat()
     conn = db._ensure()

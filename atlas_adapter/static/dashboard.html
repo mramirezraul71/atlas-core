@@ -210,7 +210,7 @@
     }
     .nav-tab:hover { background: var(--bg-elevated); color: var(--text); }
     .nav-tab.active { background: var(--accent-cyan); color: var(--bg); font-weight: 600; }
-    
+
     /* Theme Selector */
     .theme-selector {
       display: flex;
@@ -1258,7 +1258,7 @@
       display: block;
       margin-top: 0.25rem;
     }
-    
+
     /* Mini modules inside nodes */
     .node-modules {
       display: flex;
@@ -1289,7 +1289,7 @@
     .cognitive-signal {
       background: linear-gradient(90deg, var(--accent-purple), var(--accent-cyan));
     }
-    
+
     /* Signals Monitor */
     .nervous-signals-panel {
       background: var(--bg-card);
@@ -1336,7 +1336,7 @@
       font-weight: 600;
       color: var(--accent-cyan);
     }
-    
+
     /* Nervous Log */
     .nervous-log {
       background: var(--bg-card);
@@ -1632,7 +1632,7 @@
       <button class="btn-back" onclick="backToBitacora()">&#8592; Bitacora</button>
       <span class="panel-title-bar" id="panel-title-bar"></span>
     </div>
-    
+
     <!-- Module Detail Modal -->
     <div class="module-modal-overlay" id="module-modal-overlay" onclick="closeModuleModal(event)">
       <div class="module-modal" onclick="event.stopPropagation()">
@@ -1648,7 +1648,7 @@
         </div>
       </div>
     </div>
-    
+
     <div class="panel-body" id="panel-body">
     <!-- ========== TAB: CHAT ========== -->
     <div class="tab-panel" id="panel-chat">
@@ -2567,7 +2567,7 @@
               <button class="action-btn" style="flex: 1;" id="voice-toggle-btn" onclick="toggleVoiceAssistant()">🎤 Iniciar Voz</button>
             </div>
             <div style="margin-top: 0.5rem;">
-              <input type="text" id="speak-text-input" placeholder="Escribe para que ATLAS hable..." 
+              <input type="text" id="speak-text-input" placeholder="Escribe para que ATLAS hable..."
                      style="width: 100%; padding: 0.5rem; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; color: var(--text);">
               <button class="action-btn" style="width: 100%; margin-top: 0.5rem;" onclick="speakCustomText()">🔊 Hablar</button>
             </div>
@@ -2874,7 +2874,7 @@
 
     // Activity log
     let activityLog = [];
-    
+
     // Bitácora central
     let bitacoraLog = [];
     let bitacoraFilter = 'all';
@@ -2956,13 +2956,13 @@
       updateMiniRobot();
       setInterval(updateMiniRobot, 3000);
     });
-    
+
     // Theme selector
     function initThemeSelector() {
       // Cargar tema guardado
       const savedTheme = localStorage.getItem('atlas-theme') || 'cyan';
       setTheme(savedTheme);
-      
+
       // Event listeners para botones de tema
       document.querySelectorAll('.theme-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -2973,10 +2973,10 @@
         });
       });
     }
-    
+
     function setTheme(themeName) {
       document.documentElement.setAttribute('data-theme', themeName);
-      
+
       // Actualizar botón activo
       document.querySelectorAll('.theme-btn').forEach(btn => {
         btn.classList.remove('active');
@@ -3035,8 +3035,8 @@
       const grid = document.getElementById('modules-grid');
       if (grid) {
         grid.innerHTML = MODULES.map(mod => `
-          <div class="module-tile ${mod.status === 'ok' ? 'connected' : 'error'}" 
-               onclick="openModuleDetail('${mod.id}')" 
+          <div class="module-tile ${mod.status === 'ok' ? 'connected' : 'error'}"
+               onclick="openModuleDetail('${mod.id}')"
                id="tile-${mod.id}">
             <span class="module-emoji">${mod.icon}</span>
             <div class="module-tile-name">${mod.name}</div>
@@ -3047,27 +3047,27 @@
       updateModuleCounter();
       updateSystemBadge();
     }
-    
+
     // ═══════════════════════════════════════════════════════════════
     // MODULE DETAIL MODALS
     // ═══════════════════════════════════════════════════════════════
-    
+
     async function openModuleDetail(moduleId) {
       const mod = MODULES.find(m => m.id === moduleId);
       if (!mod) return;
-      
+
       const overlay = document.getElementById('module-modal-overlay');
       const modalTitle = document.getElementById('modal-title');
       const modalIcon = document.getElementById('modal-icon');
       const modalBody = document.getElementById('modal-body');
-      
+
       modalTitle.textContent = mod.name;
       modalIcon.textContent = mod.icon;
-      
+
       // Generar contenido específico por módulo
       modalBody.innerHTML = '<div style="text-align:center;padding:2rem;"><div style="font-size:2rem;">⏳</div><div>Cargando datos...</div></div>';
       overlay.classList.add('active');
-      
+
       try {
         const content = await generateModuleContent(moduleId, mod);
         modalBody.innerHTML = content;
@@ -3075,12 +3075,12 @@
         modalBody.innerHTML = `<div class="module-empty-state">❌ Error cargando datos: ${e.message}</div>`;
       }
     }
-    
+
     function closeModuleModal(event) {
       if (event && event.target !== document.getElementById('module-modal-overlay')) return;
       document.getElementById('module-modal-overlay').classList.remove('active');
     }
-    
+
     async function generateModuleContent(moduleId, mod) {
       const generators = {
         quality: generateQualityContent,
@@ -3094,28 +3094,28 @@
         comms: generateCommsContent,
         navigation: generateNavigationContent,
       };
-      
+
       const generator = generators[moduleId] || generateGenericContent;
       return await generator(mod);
     }
-    
+
     async function generateQualityContent(mod) {
       let html = '<div class="module-modal-section"><div class="module-modal-section-title">📊 Estadísticas</div><div class="module-stats-grid">';
-      
+
       try {
         const potsRes = await fetch('/quality/pots/list');
         const potsData = await potsRes.json();
         const pots = potsData.pots || [];
-        
+
         const execRes = await fetch('/quality/executions/recent?limit=10');
         const execData = await execRes.json();
         const execs = execData.executions || [];
-        
+
         const active = pots.filter(p => p.enabled !== false).length;
         const total = pots.length;
         const recentSuccess = execs.filter(e => e.ok).length;
         const recentTotal = execs.length;
-        
+
         html += `
           <div class="module-stat-card">
             <div class="module-stat-value success">${active}</div>
@@ -3134,11 +3134,11 @@
             <div class="module-stat-label">Deshabilitados</div>
           </div>
         </div></div>
-        
+
         <div class="module-modal-section">
           <div class="module-modal-section-title">📋 POTs Registrados</div>
           <div class="module-item-list">`;
-        
+
         if (pots.length === 0) {
           html += '<div class="module-empty-state">No hay POTs registrados</div>';
         } else {
@@ -3154,13 +3154,13 @@
               </div>`;
           });
         }
-        
+
         html += `</div></div>
-        
+
         <div class="module-modal-section">
           <div class="module-modal-section-title">⚡ Ejecuciones Recientes</div>
           <div class="module-item-list">`;
-        
+
         if (execs.length === 0) {
           html += '<div class="module-empty-state">No hay ejecuciones recientes</div>';
         } else {
@@ -3177,22 +3177,22 @@
               </div>`;
           });
         }
-        
+
         html += '</div></div>';
       } catch (e) {
         html += `<div class="module-stat-card"><div class="module-stat-value error">N/A</div><div class="module-stat-label">Error cargando</div></div></div></div>`;
       }
-      
+
       return html;
     }
-    
+
     async function generateBrainContent(mod) {
       let html = '<div class="module-modal-section"><div class="module-modal-section-title">🧠 Estado del Cerebro</div><div class="module-stats-grid">';
-      
+
       try {
         const res = await fetch('/brain/status');
         const data = await res.json();
-        
+
         html += `
           <div class="module-stat-card">
             <div class="module-stat-value ${data.online ? 'success' : 'error'}">${data.online ? 'Online' : 'Offline'}</div>
@@ -3214,17 +3214,17 @@
       } catch (e) {
         html += '<div class="module-stat-card"><div class="module-stat-value error">Error</div><div class="module-stat-label">No disponible</div></div></div></div>';
       }
-      
+
       return html;
     }
-    
+
     async function generateMemoryContent(mod) {
       let html = '<div class="module-modal-section"><div class="module-modal-section-title">💾 Memoria Cognitiva</div><div class="module-stats-grid">';
-      
+
       try {
         const res = await fetch('/api/cognitive-memory/lifelog/status');
         const data = await res.json();
-        
+
         if (data.ok) {
           html += `
             <div class="module-stat-card">
@@ -3248,17 +3248,17 @@
       } catch (e) {
         html += '<div class="module-stat-card"><div class="module-stat-value error">N/A</div></div></div></div>';
       }
-      
+
       return html;
     }
-    
+
     async function generateANSContent(mod) {
       let html = '<div class="module-modal-section"><div class="module-modal-section-title">❤️ Sistema Nervioso Autónomo</div><div class="module-stats-grid">';
-      
+
       try {
         const res = await fetch('/ans/status');
         const data = await res.json();
-        
+
         if (data.ok) {
           html += `
             <div class="module-stat-card">
@@ -3282,17 +3282,17 @@
       } catch (e) {
         html += '<div class="module-stat-card"><div class="module-stat-value error">N/A</div></div></div></div>';
       }
-      
+
       return html;
     }
-    
+
     async function generateNervousContent(mod) {
       let html = '<div class="module-modal-section"><div class="module-modal-section-title">🔗 Sistema Nervioso</div><div class="module-stats-grid">';
-      
+
       try {
         const res = await fetch('/nervous/status');
         const data = await res.json();
-        
+
         if (data.ok) {
           html += `
             <div class="module-stat-card">
@@ -3316,10 +3316,10 @@
       } catch (e) {
         html += '<div class="module-stat-card"><div class="module-stat-value error">N/A</div></div></div></div>';
       }
-      
+
       return html;
     }
-    
+
     async function generateVisionContent(mod) {
       return `<div class="module-modal-section">
         <div class="module-modal-section-title">👁️ Sistema de Visión</div>
@@ -3331,7 +3331,7 @@
         </div>
       </div>`;
     }
-    
+
     async function generateHandsContent(mod) {
       return `<div class="module-modal-section">
         <div class="module-modal-section-title">🤖 Manos (Ejecución)</div>
@@ -3343,7 +3343,7 @@
         </div>
       </div>`;
     }
-    
+
     async function generateVoiceContent(mod) {
       return `<div class="module-modal-section">
         <div class="module-modal-section-title">🔊 Sistema de Voz</div>
@@ -3355,14 +3355,14 @@
         </div>
       </div>`;
     }
-    
+
     async function generateCommsContent(mod) {
       let html = '<div class="module-modal-section"><div class="module-modal-section-title">📱 Comunicaciones</div><div class="module-stats-grid">';
-      
+
       try {
         const res = await fetch('/ans/comms/status');
         const data = await res.json();
-        
+
         html += `
           <div class="module-stat-card">
             <div class="module-stat-value ${data.whatsapp?.connected ? 'success' : 'error'}">${data.whatsapp?.connected ? 'OK' : 'OFF'}</div>
@@ -3384,10 +3384,10 @@
       } catch (e) {
         html += '<div class="module-stat-card"><div class="module-stat-value error">Error</div></div></div></div>';
       }
-      
+
       return html;
     }
-    
+
     async function generateNavigationContent(mod) {
       return `<div class="module-modal-section">
         <div class="module-modal-section-title">🧭 Navegación Digital</div>
@@ -3399,7 +3399,7 @@
         </div>
       </div>`;
     }
-    
+
     async function generateGenericContent(mod) {
       return `<div class="module-modal-section">
         <div class="module-modal-section-title">ℹ️ Información del Módulo</div>
@@ -3422,7 +3422,7 @@
       const badge = document.getElementById('system-status-badge');
       if (badge) {
         badge.textContent = `${percentage}% OPERATIVO`;
-        badge.style.background = percentage === 100 ? 'var(--accent-green)' : 
+        badge.style.background = percentage === 100 ? 'var(--accent-green)' :
                                   percentage >= 80 ? 'var(--accent-orange)' : 'var(--accent-red)';
       }
     }
@@ -3461,7 +3461,7 @@
 
     // Vision/Camera functions
     let selectedCamera = null;
-    
+
     function getCameraIcon(name) {
       const nameLower = (name || '').toLowerCase();
       if (nameLower.includes('insta360') || nameLower.includes('360')) return '🎥';
@@ -3479,51 +3479,51 @@
     function selectCamera(camId, event) {
       // Evitar propagación si se hace click en el botón
       if (event) event.stopPropagation();
-      
+
       selectedCamera = camId;
-      
+
       // Quitar selección anterior de todas las filas de cámaras
       document.querySelectorAll('#cameras-list .module-row').forEach(row => {
         row.classList.remove('selected');
       });
-      
+
       // Marcar la fila actual como seleccionada usando data-cam-id
       const selectedRow = document.querySelector(`#cameras-list .module-row[data-cam-id="${camId}"]`);
       if (selectedRow) {
         selectedRow.classList.add('selected');
       }
-      
+
       // Actualizar info
       const camName = selectedRow ? selectedRow.querySelector('.module-name-text').textContent : `Cámara ${camId}`;
       document.getElementById('camera-info').textContent = `${camName} seleccionada`;
       addActivity(`${camName} seleccionada`, 'info');
-      
+
       // Capturar frame de preview
       captureSnapshot();
     }
 
     function streamCamera(camId, event) {
       if (event) event.stopPropagation();
-      
+
       // Quitar streaming anterior
       document.querySelectorAll('#cameras-list .module-row').forEach(row => {
         row.classList.remove('streaming');
       });
-      
+
       streamingCamera = camId;
       selectedCamera = camId;
-      
+
       // Quitar selección y marcar como streaming
       document.querySelectorAll('#cameras-list .module-row').forEach(row => {
         row.classList.remove('selected');
       });
-      
+
       const streamRow = document.querySelector(`#cameras-list .module-row[data-cam-id="${camId}"]`);
       if (streamRow) {
         streamRow.classList.add('streaming');
         streamRow.classList.add('selected');
       }
-      
+
       // Iniciar stream de video continuo
       const preview = document.getElementById('vision-preview');
       preview.innerHTML = `
@@ -3534,21 +3534,21 @@
           </div>
         </div>
       `;
-      
+
       const camName = streamRow ? streamRow.querySelector('.module-name-text').textContent : `Cámara ${camId}`;
       document.getElementById('camera-info').textContent = `🔴 STREAMING - ${camName}`;
       addActivity(`Stream iniciado: ${camName}`, 'success');
-      
+
       // Actualizar contadores
       document.getElementById('vision-active').textContent = '1';
-      
+
       // Actualizar frames continuamente
       updateStreamFrame(camId);
     }
-    
+
     async function updateStreamFrame(camId) {
       if (streamingCamera !== camId) return;
-      
+
       try {
         const res = await fetch(`${API_BASE}/vision/capture/${camId}`);
         const data = await res.json();
@@ -3561,13 +3561,13 @@
       } catch (e) {
         console.error('Stream error:', e);
       }
-      
+
       // Siguiente frame (aprox 10 FPS)
       if (streamingCamera === camId) {
         setTimeout(() => updateStreamFrame(camId), 100);
       }
     }
-    
+
     function stopStream() {
       const wasStreaming = streamingCamera;
       streamingCamera = null;
@@ -3580,7 +3580,7 @@
         document.getElementById('camera-info').textContent = selectedCamera !== null ? `Cámara ${selectedCamera} seleccionada` : 'Ninguna cámara seleccionada';
       }
     }
-    
+
     function startStreamSelected() {
       if (selectedCamera === null) {
         addActivity('Selecciona una cámara primero', 'error');
@@ -3614,21 +3614,21 @@
     async function checkForUpdates() {
       const btn = document.getElementById('btn-check-update');
       const originalText = btn ? btn.innerHTML : '';
-      
+
       if (btn) {
         btn.disabled = true;
         btn.innerHTML = '⏳ Buscando...';
         btn.classList.add('checking');
       }
-      
+
       addActivity('🔍 Buscando actualizaciones...', 'info');
-      
+
       try {
         const res = await fetch(`${API_BASE}/version`, { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
           const serverVersion = data.version || 'unknown';
-          
+
           if (serverVersion !== ATLAS_VERSION && serverVersion !== 'unknown') {
             addActivity(`🔄 Nueva versión disponible: ${serverVersion}`, 'success');
             if (confirm(`Nueva versión disponible: ${serverVersion}\n\n¿Desea actualizar ahora?`)) {
@@ -3671,7 +3671,7 @@
       activityLog.unshift({ time, message, type });
       if (activityLog.length > 50) activityLog.pop();
       renderActivity();
-      
+
       // También agregar a la bitácora central
       addToBitacora(message, type, source);
     }
@@ -3687,7 +3687,7 @@
         try { el.remove(); } catch(_) {}
       }, Math.max(1200, Number(timeoutMs) || 2600));
     }
-    
+
     // ═══════════════════════════════════════════════════════════════
     // TTS - ATLAS habla eventos importantes
     // ═══════════════════════════════════════════════════════════════
@@ -3767,7 +3767,7 @@
     // ═══════════════════════════════════════════════════════════════
     // Bitácora Central
     // ═══════════════════════════════════════════════════════════════
-    
+
     const SPEAK_TYPES = ['error', 'warning', 'critical'];
     const SPEAK_SOURCES = ['telegram', 'whatsapp', 'governance', 'healing', 'audit'];
     const APPROVAL_RE = /\b(deploy|git push|npm install|pip install|delete|eliminar|borrar|drop table|drop database|factory reset|migration|production|publish|release|aprobar|permiso|confirm|critical|destructi)/i;
@@ -3793,7 +3793,7 @@
         timestamp: Date.now(),
         approval: needsApproval
       };
-      
+
       bitacoraLog.unshift(entry);
       if (bitacoraLog.length > 200) bitacoraLog.pop();
 
@@ -3809,18 +3809,18 @@
         syncBitacoraToServer(message, type, source);
       }
     }
-    
+
     function renderBitacora() {
       const content = document.getElementById('bitacora-content');
       if (!content) return;
-      
+
       let filtered = bitacoraLog;
       if (bitacoraFilter === 'pending') {
         filtered = bitacoraLog.filter(e => !e.state && (e.approval || APPROVAL_RE.test(e.message)));
       } else if (bitacoraFilter !== 'all') {
         filtered = bitacoraLog.filter(e => e.type === bitacoraFilter || e.source === bitacoraFilter);
       }
-      
+
       const html = [];
       filtered.slice(0, 200).forEach((entry, idx) => {
         try {
@@ -3850,7 +3850,7 @@
         } catch(e) { console.error('Bitacora render error:', e); }
       });
       content.innerHTML = html.join('');
-      
+
       if (content.scrollTop < 50) {
         content.scrollTop = 0;
       }
@@ -3889,7 +3889,7 @@
       a.download = `atlas_bitacora_${new Date().toISOString().slice(0,10)}.txt`;
       a.click();
     }
-    
+
     function getSourceIcon(source) {
       const icons = {
         system: '⚙️',
@@ -3914,15 +3914,15 @@
       };
       return icons[source] || '📋';
     }
-    
+
     function updateBitacoraStats() {
       const countEl = document.getElementById('bitacora-count');
       const sessionEl = document.getElementById('bitacora-session');
-      
+
       if (countEl) {
         countEl.textContent = `${bitacoraLog.length} eventos`;
       }
-      
+
       if (sessionEl) {
         const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
         const hours = Math.floor(elapsed / 3600);
@@ -3931,12 +3931,12 @@
         sessionEl.textContent = `Sesión: ${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
       }
     }
-    
+
     function toggleBitacora() { }
     function toggleBitacoraSize() { }
     function showBitacora() { }
     function hideBitacora() { }
-    
+
     function clearBitacora() {
       if (confirm('¿Limpiar toda la bitácora?')) {
         bitacoraLog = [];
@@ -3946,7 +3946,7 @@
         _scheduleSaveBitacoraState();
       }
     }
-    
+
     function initBitacora() {
       // Evitar reinicializaciones (intervalos duplicados / "reinicios" aparentes)
       if (window.__atlasV3BitacoraInitialized) return;
@@ -3979,16 +3979,16 @@
           _scheduleSaveBitacoraState();
         });
       });
-      
+
       // Actualizar tiempo de sesión cada segundo
       every(updateBitacoraStats, 1000);
-      
+
       // Cargar bitácora del servidor
       loadBitacoraFromServer();
 
       // Cargar aprobaciones pendientes reales
       pollPendingApprovals();
-      
+
       // Polling para nuevas entradas cada 15 segundos
       every(pollBitacora, 5000);
 
@@ -4051,9 +4051,9 @@
       const badge = document.getElementById('version-badge');
       if (badge) badge.textContent = `v${ATLAS_VERSION}`;
     }
-    
+
     let lastBitacoraId = 0;
-    
+
     async function loadBitacoraFromServer() {
       try {
         const res = await fetch(`${API_BASE}/ans/bitacora?limit=100`);
@@ -4071,8 +4071,8 @@
               source: entry.source || 'system',
               timestamp: ts.getTime()
             };
-            const isDupe = bitacoraLog.some(e => 
-              Math.abs(e.timestamp - localEntry.timestamp) < 30000 && 
+            const isDupe = bitacoraLog.some(e =>
+              Math.abs(e.timestamp - localEntry.timestamp) < 30000 &&
               e.message === localEntry.message
             );
             if (!isDupe) {
@@ -4092,7 +4092,7 @@
         console.error('Error loading bitacora:', e);
       }
     }
-    
+
     async function pollBitacora() {
       try {
         const res = await fetch(`${API_BASE}/ans/bitacora?limit=20`);
@@ -4109,8 +4109,8 @@
               source: entry.source || 'system',
               timestamp: ts.getTime()
             };
-            const isDupe = bitacoraLog.some(e => 
-              Math.abs(e.timestamp - localEntry.timestamp) < 30000 && 
+            const isDupe = bitacoraLog.some(e =>
+              Math.abs(e.timestamp - localEntry.timestamp) < 30000 &&
               e.message === localEntry.message
             );
             if (!isDupe && !ROUTINE_RE.test(localEntry.message)) {
@@ -4119,7 +4119,7 @@
               newEntries++;
             }
           });
-          
+
           if (newEntries > 0) {
             bitacoraLog.sort((a, b) => b.timestamp - a.timestamp);
             renderBitacora();
@@ -4130,7 +4130,7 @@
         // Silenciar errores de polling
       }
     }
-    
+
     let lastCommsTs = 0;
     let _pendingSyncSig = '';
 
@@ -4453,7 +4453,7 @@
     async function loadInitialData() {
       try {
         addActivity('Conectando al cerebro...', 'info');
-        
+
         // 1. Verificar estado del cerebro
         const brainRes = await fetch(`${API_BASE}/brain/status`);
         if (brainRes.ok) {
@@ -4463,20 +4463,20 @@
             document.getElementById('cerebro-dot').classList.remove('offline');
           }
         }
-        
+
         // 2. Cargar estado de todos los módulos
         await loadModulesFromAPI();
-        
+
         // 3. Cargar configuración de IA
         await loadAIConfig();
-        
+
         // 4. Cargar estado de gobernanza + autonomía
         await loadGovernanceStatus();
         await loadAutonomia();
-        
+
         // 5. Verificar cámaras
         await loadCameras();
-        
+
         addActivity('Sistema inicializado correctamente', 'success');
       } catch (e) {
         addActivity('Error conectando: ' + e.message, 'error');
@@ -4530,13 +4530,13 @@
         if (data.ok) {
           document.getElementById('ai-mode').value = data.mode || 'auto';
           document.getElementById('ai-provider').value = data.provider || 'ollama';
-          
+
           // Cargar modelos del proveedor y seleccionar el actual
           onProviderChange();
           setTimeout(() => {
             document.getElementById('ai-model').value = data.model || 'llama3.2';
           }, 100);
-          
+
           // Parámetros
           if (data.temperature !== undefined) {
             document.getElementById('ai-temperature').value = data.temperature * 100;
@@ -4569,18 +4569,18 @@
           if (data.ollama_url) {
             document.getElementById('ollama-url').value = data.ollama_url;
           }
-          
+
           // Estado de conexión
           document.getElementById('ai-status-dot').classList.remove('offline');
           document.getElementById('ai-status-text').textContent = 'Conectado';
           addAILog('info', `Configuración cargada: ${data.provider}/${data.model}`);
         }
-        
+
         // Cargar modelos de Ollama si está seleccionado
         if (document.getElementById('ai-provider').value === 'ollama') {
           refreshOllamaModels();
         }
-        
+
       } catch (e) {
         console.error('Error loading AI config:', e);
         document.getElementById('ai-status-dot').classList.add('offline');
@@ -4594,7 +4594,7 @@
       const modelSelect = document.getElementById('ai-model');
       const apiKeyItem = document.getElementById('api-key-item');
       const ollamaUrlItem = document.getElementById('ollama-url-item');
-      
+
       // Mostrar/ocultar campos según proveedor
       if (provider === 'ollama') {
         apiKeyItem.style.display = 'none';
@@ -4603,11 +4603,11 @@
         apiKeyItem.style.display = 'flex';
         ollamaUrlItem.style.display = 'none';
       }
-      
+
       // Cargar modelos del proveedor
       const models = MODELS_BY_PROVIDER[provider] || [];
       modelSelect.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
-      
+
       addAILog('info', `Proveedor cambiado a: ${provider}`);
     }
 
@@ -4620,7 +4620,7 @@
       const slider = document.getElementById(`ai-${type.replace('-', '-')}`);
       const valueSpan = document.getElementById(`${type}-value`);
       if (!slider || !valueSpan) return;
-      
+
       let value;
       switch(type) {
         case 'temperature':
@@ -4664,12 +4664,12 @@
         save_history: document.getElementById('ai-save-history').checked,
         log_level: document.getElementById('ai-log-level').value
       };
-      
+
       // API Key si no es Ollama
       if (config.provider !== 'ollama') {
         config.api_key = document.getElementById('ai-api-key').value;
       }
-      
+
       try {
         const res = await fetch(`${API_BASE}/config/ai`, {
           method: 'POST',
@@ -4693,19 +4693,19 @@
       const statusDot = document.getElementById('ai-status-dot');
       const statusText = document.getElementById('ai-status-text');
       const latencyEl = document.getElementById('ai-latency');
-      
+
       statusText.textContent = 'Probando...';
       addAILog('info', `Probando conexión a ${provider}...`);
-      
+
       const startTime = Date.now();
-      
+
       try {
         const res = await fetch(`${API_BASE}/config/ai/test`, { method: 'POST' });
         const data = await res.json();
         const latency = Date.now() - startTime;
-        
+
         latencyEl.textContent = latency;
-        
+
         if (data.ok) {
           statusDot.classList.remove('offline');
           statusText.textContent = 'Conectado';
@@ -4727,11 +4727,11 @@
     async function refreshOllamaModels() {
       const listEl = document.getElementById('ollama-models-list');
       listEl.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 0.5rem;">Cargando...</div>';
-      
+
       try {
         const res = await fetch(`${API_BASE}/config/ai/ollama-models`);
         const data = await res.json();
-        
+
         if (data.ok && data.models && data.models.length > 0) {
           const currentModel = document.getElementById('ai-model').value;
           listEl.innerHTML = data.models.map(m => `
@@ -4764,10 +4764,10 @@
     async function pullOllamaModel() {
       const modelName = prompt('Nombre del modelo a descargar (ej: llama3.2, mistral, codellama):');
       if (!modelName) return;
-      
+
       addAILog('info', `Descargando modelo: ${modelName}...`);
       addActivity(`Descargando modelo ${modelName}...`, 'info');
-      
+
       try {
         const res = await fetch(`${API_BASE}/config/ai/ollama-pull`, {
           method: 'POST',
@@ -4790,14 +4790,14 @@
     function addAILog(level, message) {
       const logEl = document.getElementById('ai-log-preview');
       if (!logEl) return;
-      
+
       const time = new Date().toLocaleTimeString();
       const entry = document.createElement('div');
       entry.className = `log-entry log-${level}`;
       entry.textContent = `[${time}] ${message}`;
       logEl.appendChild(entry);
       logEl.scrollTop = logEl.scrollHeight;
-      
+
       // Limitar a 50 entradas
       while (logEl.children.length > 50) {
         logEl.removeChild(logEl.firstChild);
@@ -5091,11 +5091,11 @@
           body: JSON.stringify({ text: message })
         });
         const data = await res.json();
-        
+
         // Remover indicador de pensando
         const thinkingEl = document.getElementById(thinkingId);
         if (thinkingEl) thinkingEl.remove();
-        
+
         if (data.ok) {
           const response = data.response || data.result || 'Sin respuesta';
           messagesDiv.innerHTML += `<div class="chat-message assistant">${formatResponse(response)}</div>`;
@@ -5139,7 +5139,7 @@
     // Governance
     async function setGovMode(mode) {
       try {
-        const res = await fetch(`${API_BASE}/governance/mode`, { 
+        const res = await fetch(`${API_BASE}/governance/mode`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ mode: mode })
@@ -5159,7 +5159,7 @@
     async function emergencyStop() {
       if (confirm('⚠️ ¿Confirmar EMERGENCY STOP?\n\nEsto detendrá todas las operaciones automáticas.')) {
         try {
-          const res = await fetch(`${API_BASE}/governance/emergency`, { 
+          const res = await fetch(`${API_BASE}/governance/emergency`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ activate: true, reason: 'Manual emergency stop' })
@@ -5333,13 +5333,13 @@
     // ═══════════════════════════════════════════════════════════════
     // Sistema Nervioso Functions
     // ═══════════════════════════════════════════════════════════════
-    
+
     const NERVOUS_NODES = [
       'cerebro', 'cerebelo', 'tronco', 'medula',
       'sensorial', 'motor', 'craneal', 'espinal',
       'simpatico', 'parasimpatico', 'enterico', 'cardiaco'
     ];
-    
+
     let nervousState = {
       mode: 'normal', // normal, stress, calm
       heartbeat: 72,
@@ -5361,17 +5361,17 @@
       try {
         const res = await fetch(`${API_BASE}/cognitive/status`);
         const data = await res.json();
-        
+
         if (data.ok !== false) {
           document.getElementById('nervous-signals').textContent = data.signals_per_minute || 0;
           document.getElementById('nervous-latency').textContent = data.avg_latency_ms?.toFixed(1) || '0.0';
           document.getElementById('nervous-uptime').textContent = ((data.uptime_seconds || 0) / 3600).toFixed(1) + 'h';
           document.getElementById('nervous-goals').textContent = data.active_goals || 0;
           document.getElementById('nervous-memory').textContent = data.memory_episodes || 0;
-          
+
           updateCortexModules(data.cortex || {});
           updateCognitiveSignals(data);
-          
+
           updateNodeStatus('limbic', data.limbic);
           updateNodeStatus('hippo', data.hippo);
           updateNodeStatus('brainstem', data.brainstem);
@@ -5379,7 +5379,7 @@
           updateNodeStatus('motor', data.motor);
           updateNodeStatus('medulla', data.medulla);
           updateNodeStatus('learning', data.learning);
-          
+
           cognitiveState.lastUpdate = Date.now();
           document.getElementById('nervous-main-status').textContent = 'OPERATIVO';
           document.getElementById('nervous-main-status').className = 'status-badge';
@@ -5403,11 +5403,11 @@
     async function refreshCognitive() {
       addNervousLog('Actualizando arquitectura cognitiva...', 'info');
       addActivity('Actualizando sistema cognitivo...', 'info');
-      
+
       try {
         const res = await fetch(`${API_BASE}/cognitive/status`);
         const data = await res.json();
-        
+
         if (data.ok !== false) {
           // Actualizar stats principales
           document.getElementById('nervous-signals').textContent = data.signals_per_minute || 0;
@@ -5415,13 +5415,13 @@
           document.getElementById('nervous-uptime').textContent = ((data.uptime_seconds || 0) / 3600).toFixed(1) + 'h';
           document.getElementById('nervous-goals').textContent = data.active_goals || 0;
           document.getElementById('nervous-memory').textContent = data.memory_episodes || 0;
-          
+
           // Actualizar estado de módulos del Cortex
           updateCortexModules(data.cortex || {});
-          
+
           // Actualizar señales de módulos
           updateCognitiveSignals(data);
-          
+
           // Actualizar estado de nodos
           updateNodeStatus('limbic', data.limbic);
           updateNodeStatus('hippo', data.hippo);
@@ -5430,10 +5430,10 @@
           updateNodeStatus('motor', data.motor);
           updateNodeStatus('medulla', data.medulla);
           updateNodeStatus('learning', data.learning);
-          
+
           addNervousLog('Sistema cognitivo actualizado', 'success');
           addActivity('Arquitectura cognitiva OK', 'success');
-          
+
           cognitiveState.lastUpdate = Date.now();
           document.getElementById('nervous-main-status').textContent = 'OPERATIVO';
           document.getElementById('nervous-main-status').className = 'status-badge';
@@ -5449,15 +5449,15 @@
       // Frontal
       const frontalCount = Object.keys(cortex.frontal || {}).length;
       updateNodeModuleCount('frontal', frontalCount);
-      
-      // Parietal  
+
+      // Parietal
       const parietalCount = Object.keys(cortex.parietal || {}).length;
       updateNodeModuleCount('parietal', parietalCount);
-      
+
       // Temporal
       const temporalCount = Object.keys(cortex.temporal || {}).length;
       updateNodeModuleCount('temporal', temporalCount);
-      
+
       // Occipital
       const occipitalCount = Object.keys(cortex.occipital || {}).length;
       updateNodeModuleCount('occipital', occipitalCount);
@@ -5480,26 +5480,26 @@
       const frontalOk = Object.keys(data.cortex?.frontal || {}).filter(k => data.cortex.frontal[k]?.status === 'ok').length;
       const frontalTotal = Object.keys(data.cortex?.frontal || {}).length || 1;
       updateSignalBar('frontal', (frontalOk / frontalTotal) * 100);
-      
+
       // Occipital
       const occipitalOk = Object.keys(data.cortex?.occipital || {}).filter(k => data.cortex.occipital[k]?.status === 'ok').length;
       const occipitalTotal = Object.keys(data.cortex?.occipital || {}).length || 1;
       updateSignalBar('occipital', (occipitalOk / occipitalTotal) * 100);
-      
+
       // Limbic
       const limbicOk = Object.keys(data.limbic || {}).filter(k => data.limbic[k]?.status === 'ok').length;
       const limbicTotal = Object.keys(data.limbic || {}).length || 1;
       updateSignalBar('limbic', (limbicOk / limbicTotal) * 100);
-      
+
       // Hippo
       const hippoStatus = data.hippo?.status === 'ok' ? 100 : 0;
       updateSignalBar('hippo', hippoStatus);
-      
+
       // Brainstem
       const brainstemOk = Object.keys(data.brainstem || {}).filter(k => data.brainstem[k]?.status === 'ok').length;
       const brainstemTotal = Object.keys(data.brainstem || {}).length || 1;
       updateSignalBar('brainstem', (brainstemOk / brainstemTotal) * 100);
-      
+
       // Motor
       const motorOk = Object.keys(data.motor || {}).filter(k => data.motor[k]?.status === 'ok').length;
       const motorTotal = Object.keys(data.motor || {}).length || 1;
@@ -5525,7 +5525,7 @@
     function updateNodeStatus(nodeId, data) {
       const node = document.getElementById(`node-${nodeId}`);
       if (!node) return;
-      
+
       let isOk = false;
       if (data && typeof data === 'object') {
         if (data.status === 'ok') {
@@ -5534,7 +5534,7 @@
           isOk = Object.values(data).some(m => m?.status === 'ok');
         }
       }
-      
+
       if (isOk) {
         node.classList.add('connected');
         node.classList.remove('error');
@@ -5546,9 +5546,9 @@
     async function cognitiveDiagnostic() {
       addNervousLog('Iniciando diagnóstico cognitivo completo...', 'info');
       addActivity('Diagnóstico cognitivo...', 'info');
-      
+
       const modules = ['frontal', 'parietal', 'temporal', 'occipital', 'limbic', 'hippo', 'basal', 'brainstem', 'medulla', 'motor', 'learning'];
-      
+
       for (const moduleId of modules) {
         const node = document.getElementById(`node-${moduleId}`);
         if (node) {
@@ -5557,7 +5557,7 @@
           node.classList.remove('active');
         }
       }
-      
+
       await refreshCognitive();
       addNervousLog('Diagnóstico cognitivo completado', 'success');
     }
@@ -5577,9 +5577,9 @@
         'learning': '📚 Aprendizaje - LfD, RL, NL Feedback',
         'snp': '🌐 SNP - Sensores y Drivers'
       };
-      
+
       addNervousLog(`Inspeccionando: ${nodeNames[endpoint] || endpoint}`, 'info');
-      
+
       // Fetch detailed info
       fetch(`${API_BASE}/cognitive/${endpoint}`)
         .then(res => res.json())
@@ -5589,7 +5589,7 @@
             const count = Object.keys(modules).length;
             const okCount = Object.values(modules).filter(m => m?.status === 'ok').length;
             addNervousLog(`  → ${okCount}/${count} módulos activos`, 'success');
-            
+
             // Show detailed info
             Object.entries(modules).forEach(([name, info]) => {
               const status = info?.status || 'unknown';
@@ -5610,19 +5610,19 @@
         cognitiveState.connected = false;
         return;
       }
-      
+
       const wsUrl = `ws://${window.location.host}/cognitive/ws`;
       addNervousLog(`Conectando WebSocket: ${wsUrl}`, 'info');
-      
+
       try {
         cognitiveWS = new WebSocket(wsUrl);
-        
+
         cognitiveWS.onopen = () => {
           cognitiveState.connected = true;
           addNervousLog('WebSocket conectado - datos en tiempo real', 'success');
           addActivity('WebSocket cognitivo activo', 'success');
         };
-        
+
         cognitiveWS.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
@@ -5631,19 +5631,19 @@
             document.getElementById('nervous-latency').textContent = data.avg_latency_ms?.toFixed(1) || '0.0';
             document.getElementById('nervous-goals').textContent = data.active_goals || 0;
             document.getElementById('nervous-memory').textContent = data.memory_episodes || 0;
-            
+
             updateCognitiveSignals(data);
             cognitiveState.lastUpdate = Date.now();
           } catch (e) {
             // Ignore parse errors
           }
         };
-        
+
         cognitiveWS.onclose = () => {
           cognitiveState.connected = false;
           addNervousLog('WebSocket cerrado', 'info');
         };
-        
+
         cognitiveWS.onerror = (e) => {
           addNervousLog('Error WebSocket: conexión fallida', 'error');
         };
@@ -5654,11 +5654,11 @@
 
     async function showGoals() {
       addNervousLog('Obteniendo objetivos activos...', 'info');
-      
+
       try {
         const res = await fetch(`${API_BASE}/cognitive/goals`);
         const data = await res.json();
-        
+
         if (data.ok && data.goals?.length > 0) {
           addNervousLog(`${data.goals.length} objetivos activos:`, 'success');
           data.goals.forEach((g, i) => {
@@ -5674,11 +5674,11 @@
 
     async function showMemories() {
       addNervousLog('Obteniendo memorias recientes...', 'info');
-      
+
       try {
         const res = await fetch(`${API_BASE}/cognitive/memory/recent`);
         const data = await res.json();
-        
+
         if (data.ok && data.episodes?.length > 0) {
           addNervousLog(`${data.episodes.length} episodios recientes:`, 'success');
           data.episodes.forEach((e, i) => {
@@ -5708,7 +5708,7 @@
     async function nervousDiagnostic() {
       addNervousLog('Iniciando diagnóstico completo...', 'info');
       addActivity('Diagnóstico del sistema nervioso...', 'info');
-      
+
       // Animar nodos durante diagnóstico
       for (const nodeId of NERVOUS_NODES) {
         const node = document.getElementById(`node-${nodeId}`);
@@ -5718,15 +5718,15 @@
           node.classList.remove('active');
         }
       }
-      
+
       try {
         const res = await fetch(`${API_BASE}/nervous/diagnostic`);
         const data = await res.json();
-        
+
         if (data.ok) {
           addNervousLog(`Diagnóstico completo: ${data.health || 100}% salud`, 'success');
           addActivity('Diagnóstico completo: Sistema OK', 'success');
-          
+
           // Marcar todos los nodos como conectados
           NERVOUS_NODES.forEach(nodeId => {
             const node = document.getElementById(`node-${nodeId}`);
@@ -5756,14 +5756,14 @@
         enterico: '🫃 Sistema Entérico - Digestión',
         cardiaco: '💓 Sistema Cardíaco - Ritmo del Corazón'
       };
-      
+
       const node = document.getElementById(`node-${nodeId}`);
       if (node) {
         // Highlight temporal
         node.classList.add('active');
         setTimeout(() => node.classList.remove('active'), 1000);
       }
-      
+
       addNervousLog(`Inspeccionando: ${nodeNames[nodeId] || nodeId}`, 'info');
       addActivity(`Nodo: ${nodeNames[nodeId] || nodeId}`, 'info');
     }
@@ -5771,10 +5771,10 @@
     async function testReflexes() {
       addNervousLog('Iniciando test de reflejos...', 'info');
       addActivity('Test de reflejos iniciado', 'info');
-      
+
       const reflexNodes = ['sensorial', 'espinal', 'motor'];
       let reflexCount = 0;
-      
+
       for (let i = 0; i < 5; i++) {
         // Simular señal sensorial -> espinal -> motor
         for (const nodeId of reflexNodes) {
@@ -5789,7 +5789,7 @@
         document.getElementById('nervous-reflexes').textContent = reflexCount;
         await sleep(300);
       }
-      
+
       addNervousLog(`Test completado: ${reflexCount} reflejos verificados`, 'success');
       addActivity(`Reflejos OK: ${reflexCount} verificados`, 'success');
     }
@@ -5797,16 +5797,16 @@
     async function simulateStress() {
       addNervousLog('⚠️ Simulando respuesta de estrés...', 'warning');
       addActivity('Simulando estrés del sistema', 'info');
-      
+
       nervousState.mode = 'stress';
-      
+
       // Activar sistema simpático
       const simpatico = document.getElementById('node-simpatico');
       const cardiaco = document.getElementById('node-cardiaco');
-      
+
       if (simpatico) simpatico.classList.add('active');
       if (cardiaco) cardiaco.classList.add('active');
-      
+
       // Aumentar heartbeat
       let bpm = 72;
       const interval = setInterval(() => {
@@ -5818,18 +5818,18 @@
         document.getElementById('nervous-heartbeat').textContent = bpm;
         nervousState.heartbeat = bpm;
       }, 200);
-      
+
       // Cambiar colores de señales a warning
       document.querySelectorAll('.signal-fill').forEach(el => {
         el.classList.add('warning');
       });
-      
+
       // Actualizar badge
       document.getElementById('nervous-main-status').textContent = 'ESTRÉS';
       document.getElementById('nervous-main-status').style.background = 'var(--accent-red)';
-      
+
       addNervousLog('Sistema simpático activado - BPM aumentando', 'warning');
-      
+
       // Auto-calmar después de 5 segundos
       setTimeout(() => {
         if (nervousState.mode === 'stress') {
@@ -5841,17 +5841,17 @@
     async function calmSystem() {
       addNervousLog('🧘 Activando sistema parasimpático...', 'info');
       addActivity('Calmando sistema...', 'info');
-      
+
       nervousState.mode = 'calm';
-      
+
       // Activar sistema parasimpático
       const parasimpatico = document.getElementById('node-parasimpatico');
       const simpatico = document.getElementById('node-simpatico');
       const cardiaco = document.getElementById('node-cardiaco');
-      
+
       if (simpatico) simpatico.classList.remove('active');
       if (parasimpatico) parasimpatico.classList.add('active');
-      
+
       // Reducir heartbeat gradualmente
       let bpm = nervousState.heartbeat;
       const interval = setInterval(() => {
@@ -5866,16 +5866,16 @@
         document.getElementById('nervous-heartbeat').textContent = bpm;
         nervousState.heartbeat = bpm;
       }, 150);
-      
+
       // Restaurar colores de señales
       document.querySelectorAll('.signal-fill').forEach(el => {
         el.classList.remove('warning');
       });
-      
+
       // Restaurar badge
       document.getElementById('nervous-main-status').textContent = 'OPERATIVO';
       document.getElementById('nervous-main-status').style.background = 'var(--accent-green)';
-      
+
       addNervousLog('Sistema parasimpático activado - Normalizando', 'success');
     }
 
@@ -5887,7 +5887,7 @@
         { id: 'motor', min: 88, max: 99 },
         { id: 'ans', min: 82, max: 95 }
       ];
-      
+
       signals.forEach(s => {
         const value = Math.floor(Math.random() * (s.max - s.min)) + s.min;
         const fill = document.getElementById(`signal-${s.id}`);
@@ -5908,7 +5908,7 @@
           document.getElementById('nervous-heartbeat').textContent = bpm;
         }
       }, 2000);
-      
+
       // Incrementar señales por minuto
       setInterval(() => {
         nervousState.signalsPerMin += Math.floor(Math.random() * 5) + 1;
@@ -5919,7 +5919,7 @@
     function addNervousLog(message, type = 'info') {
       const logList = document.getElementById('nervous-log-list');
       if (!logList) return;
-      
+
       const time = new Date().toLocaleTimeString();
       const entry = document.createElement('div');
       entry.className = `nervous-log-entry ${type}`;
@@ -5927,10 +5927,10 @@
         <span class="log-time">${time}</span>
         <span class="log-msg">${message}</span>
       `;
-      
+
       logList.appendChild(entry);
       logList.scrollTop = logList.scrollHeight;
-      
+
       // Limitar a 50 entradas
       while (logList.children.length > 50) {
         logList.removeChild(logList.firstChild);
@@ -6021,14 +6021,14 @@
     function renderEspecialistas(especialistas) {
       const container = document.getElementById('lista-especialistas');
       if (!container) return;
-      
+
       if (!especialistas.length) {
         container.innerHTML = `<div style="color: var(--text-muted); text-align: center; padding: 2rem;">
           No hay especialistas registrados aún
         </div>`;
         return;
       }
-      
+
       container.innerHTML = especialistas.map(esp => `
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: var(--bg-elevated); border-radius: 8px; margin-bottom: 0.5rem;">
           <div>
@@ -6050,7 +6050,7 @@
     function actualizarSelectEspecialistas(especialistas) {
       const select = document.getElementById('visita-especialista');
       if (!select) return;
-      
+
       select.innerHTML = '<option value="">Seleccionar especialista...</option>' +
         especialistas.map(esp => `<option value="${esp.id}">${esp.nombre} (${esp.rol})</option>`).join('');
     }
@@ -6060,12 +6060,12 @@
       const rol = document.getElementById('esp-rol').value;
       const especialidad = document.getElementById('esp-especialidad').value.trim();
       const email = document.getElementById('esp-email').value.trim();
-      
+
       if (!nombre || !especialidad) {
         alert('Por favor ingrese nombre y especialidad');
         return;
       }
-      
+
       try {
         const res = await fetch(`${API_BASE}/tutorias/especialistas`, {
           method: 'POST',
@@ -6073,16 +6073,16 @@
           body: JSON.stringify({ nombre, rol, especialidad, email })
         });
         const data = await res.json();
-        
+
         if (data.ok) {
           addToBitacora(`Especialista registrado: ${nombre}`, 'success', 'tutorias');
           addActivity(`Nuevo especialista: ${nombre}`, 'success');
-          
+
           // Limpiar campos
           document.getElementById('esp-nombre').value = '';
           document.getElementById('esp-especialidad').value = '';
           document.getElementById('esp-email').value = '';
-          
+
           // Recargar lista
           await cargarEspecialistas();
           await cargarEstadisticas();
@@ -6098,10 +6098,10 @@
       const especialistaId = document.getElementById('visita-especialista').value;
       const tipo = document.getElementById('visita-tipo').value;
       const motivo = document.getElementById('visita-motivo').value.trim();
-      
+
       const modulosChecked = document.querySelectorAll('.modulo-check:checked');
       const modulos = Array.from(modulosChecked).map(cb => cb.value);
-      
+
       if (!especialistaId) {
         alert('Por favor seleccione un especialista');
         return;
@@ -6110,7 +6110,7 @@
         alert('Por favor ingrese el motivo de la visita');
         return;
       }
-      
+
       try {
         const res = await fetch(`${API_BASE}/tutorias/visitas`, {
           method: 'POST',
@@ -6124,7 +6124,7 @@
           })
         });
         const data = await res.json();
-        
+
         if (data.ok) {
           visitaEnCurso = {
             id: data.visita_id,
@@ -6132,19 +6132,19 @@
             especialista: data.especialista,
             inicio: new Date()
           };
-          
+
           // Mostrar panel de visita en curso
           document.getElementById('visita-en-curso').style.display = 'block';
           document.getElementById('visita-actual-tipo').textContent = tipo.toUpperCase();
           document.getElementById('visita-actual-esp').textContent = data.especialista;
-          
+
           // Iniciar timer
           visitaStartTime = Date.now();
           visitaTimer = setInterval(updateVisitaTimer, 1000);
-          
+
           addToBitacora(`Visita iniciada: ${tipo} por ${data.especialista}`, 'success', 'tutorias');
           addActivity(`Visita ${tipo} iniciada`, 'info');
-          
+
           // Limpiar formulario
           document.getElementById('visita-motivo').value = '';
           document.querySelectorAll('.modulo-check').forEach(cb => cb.checked = false);
@@ -6161,7 +6161,7 @@
       const hours = Math.floor(elapsed / 3600000);
       const mins = Math.floor((elapsed % 3600000) / 60000);
       const secs = Math.floor((elapsed % 60000) / 1000);
-      document.getElementById('visita-timer').textContent = 
+      document.getElementById('visita-timer').textContent =
         `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     }
 
@@ -6176,7 +6176,7 @@
 
     function mostrarFormularioInforme() {
       const notas = document.getElementById('visita-notas').value;
-      
+
       // Crear modal para informe
       const modal = document.createElement('div');
       modal.id = 'informe-modal';
@@ -6188,22 +6188,22 @@
       modal.innerHTML = `
         <div style="background: var(--bg-card); border-radius: 16px; padding: 2rem; width: 90%; max-width: 700px; max-height: 90vh; overflow-y: auto; border: 1px solid var(--border);">
           <h2 style="color: var(--accent-cyan); margin-bottom: 1.5rem;">📝 Crear Informe de Visita</h2>
-          
+
           <div style="margin-bottom: 1rem;">
             <label style="display: block; margin-bottom: 0.5rem; color: var(--text-muted);">Título del Informe</label>
             <input type="text" id="inf-titulo" value="Informe de ${visitaEnCurso?.tipo || 'visita'} - ${new Date().toLocaleDateString()}" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text);">
           </div>
-          
+
           <div style="margin-bottom: 1rem;">
             <label style="display: block; margin-bottom: 0.5rem; color: var(--text-muted);">Resumen</label>
             <input type="text" id="inf-resumen" placeholder="Resumen breve del informe" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text);">
           </div>
-          
+
           <div style="margin-bottom: 1rem;">
             <label style="display: block; margin-bottom: 0.5rem; color: var(--text-muted);">Contenido Detallado</label>
             <textarea id="inf-contenido" rows="5" placeholder="Descripción detallada de la visita...">${notas}</textarea>
           </div>
-          
+
           <div style="margin-bottom: 1rem;">
             <label style="display: block; margin-bottom: 0.5rem; color: var(--text-cyan);">📊 Evaluaciones</label>
             <div id="evaluaciones-list">
@@ -6221,7 +6221,7 @@
             </div>
             <button onclick="agregarEvaluacion()" style="padding: 0.5rem 1rem; background: var(--bg-elevated); color: var(--accent-cyan); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">+ Agregar Evaluación</button>
           </div>
-          
+
           <div style="margin-bottom: 1rem;">
             <label style="display: block; margin-bottom: 0.5rem; color: var(--accent-orange);">💡 Recomendaciones</label>
             <div id="recomendaciones-list">
@@ -6242,14 +6242,14 @@
             </div>
             <button onclick="agregarRecomendacion()" style="padding: 0.5rem 1rem; background: var(--bg-elevated); color: var(--accent-orange); border: 1px solid var(--border); border-radius: 4px; cursor: pointer;">+ Agregar Recomendación</button>
           </div>
-          
+
           <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
             <button class="btn btn-primary" onclick="enviarInforme()" style="flex: 1;">✍️ Firmar y Enviar Informe</button>
             <button class="btn" onclick="cerrarModalInforme()" style="background: var(--bg-elevated);">Cancelar</button>
           </div>
         </div>
       `;
-      
+
       document.body.appendChild(modal);
     }
 
@@ -6303,12 +6303,12 @@
       const titulo = document.getElementById('inf-titulo').value.trim();
       const resumen = document.getElementById('inf-resumen').value.trim();
       const contenido = document.getElementById('inf-contenido').value.trim();
-      
+
       // Recoger evaluaciones
       const evalItems = document.querySelectorAll('.eval-item');
       const evaluaciones = [];
       const nivelPuntuacion = { EXCELENTE: 5, BUENO: 4, ACEPTABLE: 3, MEJORABLE: 2, CRITICO: 1 };
-      
+
       evalItems.forEach(item => {
         const aspecto = item.querySelector('.eval-aspecto').value.trim();
         const nivel = item.querySelector('.eval-nivel').value;
@@ -6322,11 +6322,11 @@
           });
         }
       });
-      
+
       // Recoger recomendaciones
       const recItems = document.querySelectorAll('.rec-item');
       const recomendaciones = [];
-      
+
       recItems.forEach(item => {
         const rec_titulo = item.querySelector('.rec-titulo').value.trim();
         const prioridad = item.querySelector('.rec-prioridad').value;
@@ -6342,12 +6342,12 @@
           });
         }
       });
-      
+
       if (!titulo || !resumen) {
         alert('Por favor complete el título y resumen del informe');
         return;
       }
-      
+
       try {
         const res = await fetch(`${API_BASE}/tutorias/visitas/${visitaEnCurso.id}/finalizar`, {
           method: 'POST',
@@ -6364,20 +6364,20 @@
           })
         });
         const data = await res.json();
-        
+
         if (data.ok) {
           addToBitacora(`Informe firmado: ${titulo}`, 'success', 'tutorias');
           addActivity(`Visita finalizada - Informe: ${data.informe?.firma?.substring(0, 8)}`, 'success');
-          
+
           // Cerrar modal y limpiar
           cerrarModalInforme();
           if (visitaTimer) clearInterval(visitaTimer);
           visitaEnCurso = null;
           document.getElementById('visita-en-curso').style.display = 'none';
-          
+
           // Actualizar datos
           await refreshTutorias();
-          
+
           alert(`✅ Informe firmado exitosamente!\n\nFirma: ${data.informe?.firma || 'N/A'}\nHash: ${data.informe?.hash?.substring(0, 16) || 'N/A'}\nPuntuación: ${data.informe?.puntuacion_global?.toFixed(1) || 'N/A'}/5`);
         } else {
           alert('Error: ' + (data.detail || 'No se pudo enviar el informe'));
@@ -6402,19 +6402,19 @@
     function renderHistorialVisitas(visitas) {
       const container = document.getElementById('historial-visitas');
       if (!container) return;
-      
+
       if (!visitas.length) {
         container.innerHTML = `<div style="color: var(--text-muted); text-align: center; padding: 2rem;">
           No hay visitas registradas aún
         </div>`;
         return;
       }
-      
+
       const tipoEmojis = {
         tutoria: '📚', revision: '🔍', auditoria: '📊', capacitacion: '🎓',
         mantenimiento: '🔧', emergencia: '🚨', seguimiento: '📌'
       };
-      
+
       container.innerHTML = visitas.map(v => `
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; background: var(--bg-elevated); border-radius: 8px; margin-bottom: 0.5rem;">
           <div>
@@ -6452,19 +6452,19 @@
     function renderRecomendaciones(recomendaciones) {
       const container = document.getElementById('lista-recomendaciones');
       if (!container) return;
-      
+
       if (!recomendaciones.length) {
         container.innerHTML = `<div style="color: var(--text-muted); text-align: center; padding: 2rem;">
           No hay recomendaciones pendientes 👍
         </div>`;
         return;
       }
-      
+
       const prioridadColors = {
         CRITICA: 'var(--accent-red)', ALTA: 'var(--accent-orange)',
         MEDIA: 'var(--accent-orange)', BAJA: 'var(--accent-green)', OPCIONAL: 'var(--text-muted)'
       };
-      
+
       container.innerHTML = recomendaciones.map(r => `
         <div style="padding: 0.75rem; background: var(--bg-elevated); border-radius: 8px; margin-bottom: 0.5rem; border-left: 3px solid ${prioridadColors[r.prioridad] || 'var(--border)'};">
           <div style="display: flex; justify-content: space-between; align-items: flex-start;">
@@ -6512,14 +6512,14 @@
     function renderSeguimientos(seguimientos) {
       const container = document.getElementById('lista-seguimientos');
       if (!container) return;
-      
+
       if (!seguimientos.length) {
         container.innerHTML = `<div style="color: var(--text-muted); text-align: center; padding: 2rem;">
           No hay seguimientos activos
         </div>`;
         return;
       }
-      
+
       container.innerHTML = seguimientos.map(s => `
         <div style="padding: 0.75rem; background: var(--bg-elevated); border-radius: 8px; margin-bottom: 0.5rem;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
@@ -6573,45 +6573,45 @@
     // ═══════════════════════════════════════════════════════════════
     // COMUNICACIONES
     // ═══════════════════════════════════════════════════════════════
-    
+
     async function refreshCommsStatus() {
       try {
         document.getElementById('comms-status').textContent = 'VERIFICANDO...';
         document.getElementById('comms-status').style.background = 'var(--accent-orange)';
-        
+
         const response = await fetch('/ans/comms/status');
         if (!response.ok) throw new Error('API no disponible');
-        
+
         const data = await response.json();
-        
+
         // WhatsApp
         const waStatus = data.whatsapp?.connected ? '✅ Conectado' : '❌ Desconectado';
         document.getElementById('comms-whatsapp-status').textContent = waStatus;
         document.getElementById('waha-connection-status').textContent = waStatus;
         document.getElementById('waha-session-name').textContent = data.whatsapp?.session || 'default';
         document.getElementById('waha-phone-number').textContent = data.whatsapp?.phone || '--';
-        
+
         // Telegram
         const tgStatus = data.telegram?.configured ? '✅ Configurado' : '⚠️ Sin configurar';
         document.getElementById('comms-telegram-status').textContent = tgStatus;
         document.getElementById('telegram-connection-status').textContent = tgStatus;
         document.getElementById('telegram-token-status').textContent = data.telegram?.has_token ? '✅ Presente' : '❌ Falta';
         document.getElementById('telegram-chat-id').textContent = data.telegram?.chat_id || '--';
-        
+
         // Audio
         const audioStatus = data.audio?.available ? '✅ Disponible' : '❌ No disponible';
         document.getElementById('comms-audio-status').textContent = audioStatus;
         document.getElementById('audio-connection-status').textContent = audioStatus;
         document.getElementById('audio-engine').textContent = data.audio?.engine || 'pyttsx3';
-        
+
         // Messages today
         document.getElementById('comms-messages-today').textContent = data.messages_today || '0';
-        
+
         // Overall status
         const allOk = data.whatsapp?.connected && data.telegram?.configured && data.audio?.available;
         document.getElementById('comms-status').textContent = allOk ? 'OPERATIVO' : 'PARCIAL';
         document.getElementById('comms-status').style.background = allOk ? 'var(--accent-green)' : 'var(--accent-orange)';
-        
+
         addToBitacora('Estado de comunicaciones actualizado', 'success', 'comms');
       } catch (e) {
         console.error('Error refreshing comms:', e);
@@ -6620,22 +6620,22 @@
         addToBitacora('Error verificando comunicaciones: ' + e.message, 'error', 'comms');
       }
     }
-    
+
     function openWahaDashboard() {
       window.open('http://localhost:3000/dashboard', '_blank');
       addToBitacora('Abriendo WAHA Dashboard', 'info', 'comms');
     }
-    
+
     async function showQRCode() {
       try {
         const container = document.getElementById('waha-qr-container');
         const img = document.getElementById('waha-qr-image');
-        
+
         addToBitacora('Obteniendo código QR de WhatsApp...', 'info', 'comms');
-        
+
         const response = await fetch('/ans/comms/waha/qr');
         if (!response.ok) throw new Error('No se pudo obtener QR');
-        
+
         const data = await response.json();
         if (data.qr_base64) {
           img.src = 'data:image/png;base64,' + data.qr_base64;
@@ -6650,15 +6650,15 @@
         addToBitacora('Error obteniendo QR: ' + e.message, 'error', 'comms');
       }
     }
-    
+
     async function restartWahaSession() {
       if (!confirm('¿Reiniciar sesión de WhatsApp? Se desconectará temporalmente.')) return;
-      
+
       try {
         addToBitacora('Reiniciando sesión WAHA...', 'info', 'comms');
         const response = await fetch('/ans/comms/waha/restart', { method: 'POST' });
         const data = await response.json();
-        
+
         if (data.ok) {
           addToBitacora('Sesión reiniciada - mostrando QR', 'success', 'comms');
           setTimeout(showQRCode, 2000);
@@ -6670,7 +6670,7 @@
         addToBitacora('Error reiniciando sesión: ' + e.message, 'error', 'comms');
       }
     }
-    
+
     async function testWhatsApp() {
       try {
         addToBitacora('Enviando test a WhatsApp...', 'info', 'comms');
@@ -6691,7 +6691,7 @@
         addToBitacora('Error test WhatsApp: ' + e.message, 'error', 'comms');
       }
     }
-    
+
     async function testTelegram() {
       try {
         addToBitacora('Enviando test a Telegram...', 'info', 'comms');
@@ -6712,7 +6712,7 @@
         addToBitacora('Error test Telegram: ' + e.message, 'error', 'comms');
       }
     }
-    
+
     async function testAudio() {
       try {
         addToBitacora('Probando audio TTS...', 'info', 'comms');
@@ -6733,7 +6733,7 @@
         addToBitacora('Error test Audio: ' + e.message, 'error', 'comms');
       }
     }
-    
+
     async function testAllComms() {
       addToBitacora('Probando todos los canales...', 'info', 'comms');
       await testWhatsApp();
@@ -6741,7 +6741,7 @@
       await testAudio();
       addToBitacora('Test completo finalizado', 'success', 'comms');
     }
-    
+
     async function sendTestAll() {
       try {
         addToBitacora('Enviando notificación a todos los canales...', 'info', 'comms');
@@ -6759,38 +6759,38 @@
         alert('Error: ' + e.message);
       }
     }
-    
+
     async function reconnectAllComms() {
       addToBitacora('Reconectando servicios de comunicación...', 'info', 'comms');
       await restartWahaSession();
       setTimeout(refreshCommsStatus, 3000);
     }
-    
+
     async function loadCommsBitacora() {
       try {
         const response = await fetch('/ans/bitacora?limit=20');
         if (!response.ok) return;
-        
+
         const data = await response.json();
         const container = document.getElementById('comms-activity-list');
-        
+
         // Filter comms-related entries
-        const commsEntries = (data.entries || []).filter(e => 
+        const commsEntries = (data.entries || []).filter(e =>
           ['whatsapp', 'telegram', 'audio', 'comms'].includes(e.category?.toLowerCase())
         );
-        
+
         if (commsEntries.length === 0) {
           container.innerHTML = '<p style="color: var(--text-muted);">Sin eventos de comunicación recientes</p>';
           return;
         }
-        
+
         container.innerHTML = commsEntries.slice(0, 10).map(e => {
           const time = new Date(e.timestamp || Date.now()).toLocaleTimeString();
           const icon = e.icon || '📡';
-          const levelColor = e.level === 'error' ? 'var(--accent-red)' : 
+          const levelColor = e.level === 'error' ? 'var(--accent-red)' :
                              e.level === 'warning' ? 'var(--accent-orange)' : 'var(--text-muted)';
           return `<div style="padding: 0.5rem; border-bottom: 1px solid var(--border);">
-            <span style="color: var(--text-muted);">${time}</span> ${icon} 
+            <span style="color: var(--text-muted);">${time}</span> ${icon}
             <span style="color: ${levelColor};">${e.message || e.event || '--'}</span>
           </div>`;
         }).join('');
@@ -6798,27 +6798,27 @@
         console.error('Error loading comms bitacora:', e);
       }
     }
-    
+
     // ═══════════════════════════════════════════════════════════════
     // HEALTH WIDGET
     // ═══════════════════════════════════════════════════════════════
-    
+
     async function updateHealthWidget() {
       try {
         const response = await fetch('/health');
         if (!response.ok) throw new Error('Health endpoint unavailable');
-        
+
         const data = await response.json();
         const score = data.score || 0;
         const checks = data.checks || {};
-        
+
         // Update score badge
         const scoreBadge = document.getElementById('health-score-badge');
         const scoreValue = document.getElementById('health-score-value');
         const statusIcon = document.getElementById('health-status-icon');
-        
+
         if (scoreValue) scoreValue.textContent = score;
-        
+
         if (scoreBadge && statusIcon) {
           scoreBadge.className = 'health-score-badge';
           statusIcon.className = 'health-status-icon';
@@ -6832,13 +6832,13 @@
             statusIcon.classList.add('critical');
           }
         }
-        
+
         // Update metrics
         const servicesOk = Object.values(checks).filter(c => c === true).length;
         const servicesTotal = Object.keys(checks).length;
         document.getElementById('health-services').textContent = `${servicesOk}/${servicesTotal}`;
         document.getElementById('health-services').className = 'health-metric-value ' + (servicesOk === servicesTotal ? 'ok' : 'warning');
-        
+
         // Memory status
         try {
           const memRes = await fetch('/api/cognitive-memory/lifelog/status');
@@ -6852,7 +6852,7 @@
           document.getElementById('health-memory').textContent = 'N/A';
           document.getElementById('health-memory').className = 'health-metric-value';
         }
-        
+
         // ANS cycles
         try {
           const ansRes = await fetch('/nervous/status');
@@ -6866,14 +6866,14 @@
           document.getElementById('health-ans').textContent = 'N/A';
           document.getElementById('health-ans').className = 'health-metric-value';
         }
-        
+
         // Uptime
         const uptime = data.uptime_seconds || 0;
         const hours = Math.floor(uptime / 3600);
         const mins = Math.floor((uptime % 3600) / 60);
         document.getElementById('health-uptime').textContent = `${hours}h ${mins}m`;
         document.getElementById('health-uptime').className = 'health-metric-value ok';
-        
+
         // Lifelog
         try {
           const llRes = await fetch('/api/cognitive-memory/lifelog/status');
@@ -6887,7 +6887,7 @@
           document.getElementById('health-lifelog').textContent = 'N/A';
           document.getElementById('health-lifelog').className = 'health-metric-value';
         }
-        
+
         // Incidents
         try {
           const incRes = await fetch('/ans/incidents?status=open&limit=100');
@@ -6899,7 +6899,7 @@
           document.getElementById('health-incidents').textContent = '0';
           document.getElementById('health-incidents').className = 'health-metric-value ok';
         }
-        
+
       } catch (e) {
         console.error('Error updating health widget:', e);
         document.getElementById('health-score-value').textContent = 'ERR';
@@ -6916,7 +6916,7 @@
           refreshVoiceStatus();
         });
       }
-      
+
       // Update health widget on modules tab load
       const modulosTab = document.querySelector('[data-tab="modulos"]');
       if (modulosTab) {
@@ -6924,31 +6924,31 @@
           updateHealthWidget();
         });
       }
-      
+
       // Initial health widget update
       updateHealthWidget();
-      
+
       // Auto-refresh health widget every 30 seconds
       setInterval(updateHealthWidget, 10000);
     });
-    
+
     // ═══════════════════════════════════════════════════════════════
     // VOICE ASSISTANT - Control de interacción por voz
     // ═══════════════════════════════════════════════════════════════
-    
+
     let voiceAssistantRunning = false;
-    
+
     async function refreshVoiceStatus() {
       try {
         const response = await fetch('/ans/voice/status');
         if (!response.ok) return;
-        
+
         const data = await response.json();
         voiceAssistantRunning = data.running;
-        
+
         const statusEl = document.getElementById('voice-assistant-status');
         const btnEl = document.getElementById('voice-toggle-btn');
-        
+
         if (data.running) {
           statusEl.textContent = '🟢 Activo (PID: ' + data.pid + ')';
           statusEl.style.color = 'var(--accent-green)';
@@ -6964,17 +6964,17 @@
         console.error('Error refreshing voice status:', e);
       }
     }
-    
+
     async function toggleVoiceAssistant() {
       const endpoint = voiceAssistantRunning ? '/ans/voice/stop' : '/ans/voice/start';
       const action = voiceAssistantRunning ? 'Deteniendo' : 'Iniciando';
-      
+
       try {
         addToBitacora(action + ' asistente de voz...', 'info', 'voice');
-        
+
         const response = await fetch(endpoint, { method: 'POST' });
         const data = await response.json();
-        
+
         if (data.ok) {
           addToBitacora('Asistente de voz ' + (voiceAssistantRunning ? 'detenido' : 'iniciado'), 'success', 'voice');
           setTimeout(refreshVoiceStatus, 1000);
@@ -6986,24 +6986,24 @@
         addToBitacora('Error con asistente de voz: ' + e.message, 'error', 'voice');
       }
     }
-    
+
     async function speakCustomText() {
       const input = document.getElementById('speak-text-input');
       const text = (input.value || '').trim();
-      
+
       if (!text) {
         alert('Escribe algo para que ATLAS hable');
         return;
       }
-      
+
       try {
         addToBitacora('ATLAS hablando: ' + text.substring(0, 30) + '...', 'info', 'voice');
-        
+
         const response = await fetch('/ans/voice/speak?text=' + encodeURIComponent(text), {
           method: 'POST'
         });
         const data = await response.json();
-        
+
         if (data.ok) {
           addToBitacora('ATLAS habló correctamente', 'success', 'voice');
           input.value = '';
@@ -7014,7 +7014,7 @@
         alert('Error: ' + e.message);
       }
     }
-    
+
     // Enter key para hablar
     document.addEventListener('DOMContentLoaded', () => {
       const speakInput = document.getElementById('speak-text-input');

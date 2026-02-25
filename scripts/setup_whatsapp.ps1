@@ -23,7 +23,7 @@ if (-not $dockerRunning) {
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     Start-Process "C:\Program Files\Docker\Docker\Docker Desktop.exe"
     Write-Host "   Esperando que Docker inicie (esto puede tomar 1-2 minutos)..." -ForegroundColor Yellow
-    
+
     $timeout = 120
     $elapsed = 0
     while ($elapsed -lt $timeout) {
@@ -39,7 +39,7 @@ if (-not $dockerRunning) {
         } catch {}
         Write-Host "   Esperando... ($elapsed/$timeout segundos)" -ForegroundColor Gray
     }
-    
+
     if (-not $dockerRunning) {
         Write-Host "   ERROR: Docker no inicio en tiempo." -ForegroundColor Red
         exit 1

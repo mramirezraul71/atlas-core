@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import re
 import difflib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -30,13 +30,20 @@ class ScaffoldResult:
 class AppScaffolder:
     """Crea estructura completa de apps (Frontend/Backend/DB) desde cero."""
 
-    def __init__(self, repo_root: Path, fs: FilesystemTools, ans: Optional[ANSBitacoraLogger] = None) -> None:
+    def __init__(
+        self,
+        repo_root: Path,
+        fs: FilesystemTools,
+        ans: Optional[ANSBitacoraLogger] = None,
+    ) -> None:
         self.repo_root = Path(repo_root).resolve()
         self.fs = fs
         self.ans = ans
         self.indexer = ProjectIndexer(repo_root=self.repo_root)
 
-    def plan_inventory_app(self, org_name: str, app_name: str = "inventario", *, mode: str = "governed") -> ChangePlan:
+    def plan_inventory_app(
+        self, org_name: str, app_name: str = "inventario", *, mode: str = "governed"
+    ) -> ChangePlan:
         slug = _slug(f"{org_name}_{app_name}")
         root = (self.repo_root / "apps" / slug).resolve()
         backend = root / "backend"
@@ -65,7 +72,9 @@ class AppScaffolder:
         changes: List[PlannedChange] = []
         for path, content in files.items():
             p = Path(path)
-            before = p.read_text(encoding="utf-8", errors="ignore") if p.exists() else ""
+            before = (
+                p.read_text(encoding="utf-8", errors="ignore") if p.exists() else ""
+            )
             after = content
             diff = "\n".join(
                 difflib.unified_diff(
@@ -101,9 +110,13 @@ class AppScaffolder:
                 ),
             )
 
-        return ChangePlan(goal=f"Scaffold inventario {slug}", mode=mode, changes=changes)
+        return ChangePlan(
+            goal=f"Scaffold inventario {slug}", mode=mode, changes=changes
+        )
 
-    def scaffold_inventory_app(self, org_name: str, app_name: str = "inventario") -> ScaffoldResult:
+    def scaffold_inventory_app(
+        self, org_name: str, app_name: str = "inventario"
+    ) -> ScaffoldResult:
         slug = _slug(f"{org_name}_{app_name}")
         root = (self.repo_root / "apps" / slug).resolve()
         backend = root / "backend"
@@ -111,7 +124,9 @@ class AppScaffolder:
         db = root / "db"
 
         if self.ans:
-            self.ans.log_suggestion(f"Diseñando arquitectura para nueva App: {slug} (inventario panadería).")
+            self.ans.log_suggestion(
+                f"Diseñando arquitectura para nueva App: {slug} (inventario panadería)."
+            )
 
         # Directorios
         self.fs.create_directory(str(backend))
@@ -175,7 +190,12 @@ class AppScaffolder:
         if self.ans:
             self.ans.log_suggestion(f"Scaffold completo. Index guardado en: {idx_path}")
 
-        return ScaffoldResult(ok=True, project_root=str(root), index_path=idx_path, notes="scaffold_inventory_app")
+        return ScaffoldResult(
+            ok=True,
+            project_root=str(root),
+            index_path=idx_path,
+            notes="scaffold_inventory_app",
+        )
 
 
 _TEMPLATE_DB = """\
@@ -446,4 +466,3 @@ Desde `backend/`:
 python -m pytest -q
 ```
 """
-

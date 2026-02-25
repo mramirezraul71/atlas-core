@@ -4,16 +4,16 @@ Task planner (bridges to PUSH /agent/goal) and Path planner.
 """
 import json
 import math
-import time
-import threading
-import urllib.request
-import urllib.error
-import sys
 import os
+import sys
+import threading
+import time
+import urllib.error
+import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import atlas_ros2_lite as rclpy
-from atlas_ros2_lite import Node, make_string, make_header
+from atlas_ros2_lite import Node, make_header, make_string
 
 
 class TaskPlanner(Node):
@@ -30,38 +30,61 @@ class TaskPlanner(Node):
         goal = data.get("goal", "")
         mode = data.get("mode", "plan_only")
         self.get_logger().info(f"Planning: '{goal[:60]}' mode={mode}")
-        self.status_pub.publish(make_string(json.dumps({"status": "planning", "goal": goal[:200]})))
+        self.status_pub.publish(
+            make_string(json.dumps({"status": "planning", "goal": goal[:200]}))
+        )
         t = threading.Thread(target=self._plan, args=(goal, mode), daemon=True)
         t.start()
 
     def _plan(self, goal, mode):
         try:
-            body = json.dumps({"goal": goal, "mode": mode, "depth": 1, "fast": True}).encode()
+            body = json.dumps(
+                {"goal": goal, "mode": mode, "depth": 1, "fast": True}
+            ).encode()
             req = urllib.request.Request(
-                f"{self.push_url}/agent/goal", data=body,
-                headers={"Content-Type": "application/json"}, method="POST",
+                f"{self.push_url}/agent/goal",
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
             )
             with urllib.request.urlopen(req, timeout=30) as resp:
                 result = json.loads(resp.read().decode())
             if result.get("ok"):
                 plan = {
-                    "goal": goal, "source": "orchestrator",
+                    "goal": goal,
+                    "source": "orchestrator",
                     "output": (result.get("data") or {}).get("output"),
                     "steps": (result.get("data") or {}).get("steps", []),
                     "model_used": (result.get("data") or {}).get("model_used"),
                 }
                 self.plan_pub.publish(make_string(json.dumps(plan)))
-                self.status_pub.publish(make_string(json.dumps({"status": "planned", "goal": goal[:200]})))
+                self.status_pub.publish(
+                    make_string(json.dumps({"status": "planned", "goal": goal[:200]}))
+                )
                 return
         except Exception as e:
             self.get_logger().warn(f"Orchestrator call failed: {e}")
 
         # Fallback
-        self.plan_pub.publish(make_string(json.dumps({
-            "goal": goal, "source": "fallback",
-            "steps": [{"action": "analyze"}, {"action": "plan"}, {"action": "execute"}, {"action": "verify"}],
-        })))
-        self.status_pub.publish(make_string(json.dumps({"status": "planned_fallback", "goal": goal[:200]})))
+        self.plan_pub.publish(
+            make_string(
+                json.dumps(
+                    {
+                        "goal": goal,
+                        "source": "fallback",
+                        "steps": [
+                            {"action": "analyze"},
+                            {"action": "plan"},
+                            {"action": "execute"},
+                            {"action": "verify"},
+                        ],
+                    }
+                )
+            )
+        )
+        self.status_pub.publish(
+            make_string(json.dumps({"status": "planned_fallback", "goal": goal[:200]}))
+        )
 
 
 class PathPlanner(Node):
@@ -91,5 +114,9 @@ class PathPlanner(Node):
         for i in range(n + 1):
             t = i / n
             waypoints.append({"x": sx + t * (gx - sx), "y": sy + t * (gy - sy)})
-        self.path_pub.publish(make_string(json.dumps({"waypoints": waypoints, "count": len(waypoints)})))
-        self.status_pub.publish(make_string(json.dumps({"status": "ready", "waypoints": len(waypoints)})))
+        self.path_pub.publish(
+            make_string(json.dumps({"waypoints": waypoints, "count": len(waypoints)}))
+        )
+        self.status_pub.publish(
+            make_string(json.dumps({"status": "ready", "waypoints": len(waypoints)}))
+        )

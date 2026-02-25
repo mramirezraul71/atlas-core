@@ -94,8 +94,10 @@ def create(
     requires_2fa: bool = False,
     origin_node_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    from .chain import compute_request_hash
+    from .chain import enabled as chain_enabled
     from .ttl import expires_at_seconds
-    from .chain import compute_request_hash, enabled as chain_enabled
+
     aid = str(uuid.uuid4())[:12]
     now = _now()
     expires_at = expires_at_seconds()
@@ -103,14 +105,35 @@ def create(
     conn = _ensure()
     with _LOCK:
         conn.execute(
-        """INSERT INTO approvals (id, created_ts, action, payload_json, risk, status, job_id, run_id, requires_2fa, expires_at, origin_node_id, request_hash)
+            """INSERT INTO approvals (id, created_ts, action, payload_json, risk, status, job_id, run_id, requires_2fa, expires_at, origin_node_id, request_hash)
            VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)""",
-        (aid, now, action, json.dumps(payload), risk, job_id, run_id, 1 if requires_2fa else 0, expires_at, origin_node_id, request_hash[:64] if request_hash else None),
+            (
+                aid,
+                now,
+                action,
+                json.dumps(payload),
+                risk,
+                job_id,
+                run_id,
+                1 if requires_2fa else 0,
+                expires_at,
+                origin_node_id,
+                request_hash[:64] if request_hash else None,
+            ),
         )
         conn.commit()
     return {
-        "id": aid, "created_ts": now, "action": action, "payload": payload, "risk": risk, "status": "pending",
-        "job_id": job_id, "run_id": run_id, "requires_2fa": requires_2fa, "expires_at": expires_at, "origin_node_id": origin_node_id,
+        "id": aid,
+        "created_ts": now,
+        "action": action,
+        "payload": payload,
+        "risk": risk,
+        "status": "pending",
+        "job_id": job_id,
+        "run_id": run_id,
+        "requires_2fa": requires_2fa,
+        "expires_at": expires_at,
+        "origin_node_id": origin_node_id,
     }
 
 
@@ -138,10 +161,16 @@ def list_items(
     out = []
     for r in rows:
         d = {
-            "id": r[0], "created_ts": r[1], "action": r[2],
+            "id": r[0],
+            "created_ts": r[1],
+            "action": r[2],
             "payload": json.loads(r[3]) if r[3] else {},
-            "risk": r[4], "status": r[5], "job_id": r[6], "run_id": r[7],
-            "resolved_ts": r[8], "resolved_by": r[9],
+            "risk": r[4],
+            "status": r[5],
+            "job_id": r[6],
+            "run_id": r[7],
+            "resolved_ts": r[8],
+            "resolved_by": r[9],
         }
         d["requires_2fa"] = bool(r[10]) if len(r) > 10 else False
         d["expires_at"] = r[11] if len(r) > 11 else None
@@ -160,14 +189,22 @@ def get(aid: str) -> Optional[Dict[str, Any]]:
     conn = _ensure()
     cols = "id, created_ts, action, payload_json, risk, status, job_id, run_id, resolved_ts, resolved_by, requires_2fa, expires_at, approval_signature, origin_node_id, chain_hash"
     with _LOCK:
-        row = conn.execute(f"SELECT {cols} FROM approvals WHERE id = ?", (aid,)).fetchone()
+        row = conn.execute(
+            f"SELECT {cols} FROM approvals WHERE id = ?", (aid,)
+        ).fetchone()
     if not row:
         return None
     d = {
-        "id": row[0], "created_ts": row[1], "action": row[2],
+        "id": row[0],
+        "created_ts": row[1],
+        "action": row[2],
         "payload": json.loads(row[3]) if row[3] else {},
-        "risk": row[4], "status": row[5], "job_id": row[6], "run_id": row[7],
-        "resolved_ts": row[8], "resolved_by": row[9],
+        "risk": row[4],
+        "status": row[5],
+        "job_id": row[6],
+        "run_id": row[7],
+        "resolved_ts": row[8],
+        "resolved_by": row[9],
     }
     if len(row) > 10:
         d["requires_2fa"] = bool(row[10])
@@ -182,7 +219,9 @@ def get(aid: str) -> Optional[Dict[str, Any]]:
     return d
 
 
-def find_pending_equivalent(action: str, risk: str, request_hash: str) -> Optional[Dict[str, Any]]:
+def find_pending_equivalent(
+    action: str, risk: str, request_hash: str
+) -> Optional[Dict[str, Any]]:
     """Return an active pending approval equivalent to the incoming request if any."""
     if not (action or "").strip() or not (request_hash or "").strip():
         return None
@@ -192,7 +231,11 @@ def find_pending_equivalent(action: str, risk: str, request_hash: str) -> Option
         with _LOCK:
             row = conn.execute(
                 f"SELECT {cols} FROM approvals WHERE status = 'pending' AND action = ? AND risk = ? AND request_hash = ? ORDER BY created_ts DESC LIMIT 1",
-                ((action or "").strip(), (risk or "").strip().lower(), (request_hash or "").strip()[:64]),
+                (
+                    (action or "").strip(),
+                    (risk or "").strip().lower(),
+                    (request_hash or "").strip()[:64],
+                ),
             ).fetchone()
     except Exception:
         return None
@@ -201,10 +244,16 @@ def find_pending_equivalent(action: str, risk: str, request_hash: str) -> Option
         return None
 
     d = {
-        "id": row[0], "created_ts": row[1], "action": row[2],
+        "id": row[0],
+        "created_ts": row[1],
+        "action": row[2],
         "payload": json.loads(row[3]) if row[3] else {},
-        "risk": row[4], "status": row[5], "job_id": row[6], "run_id": row[7],
-        "resolved_ts": row[8], "resolved_by": row[9],
+        "risk": row[4],
+        "status": row[5],
+        "job_id": row[6],
+        "run_id": row[7],
+        "resolved_ts": row[8],
+        "resolved_by": row[9],
     }
     if len(row) > 10:
         d["requires_2fa"] = bool(row[10])
@@ -221,21 +270,33 @@ def find_pending_equivalent(action: str, risk: str, request_hash: str) -> Option
 
 def _is_expired(expires_at: Optional[str]) -> bool:
     from .ttl import is_expired as ttl_expired
+
     return ttl_expired(expires_at)
 
 
-def _compute_chain_hash(prev_hash: str, item: Dict[str, Any], resolved_ts: str, resolved_by: str) -> str:
+def _compute_chain_hash(
+    prev_hash: str, item: Dict[str, Any], resolved_ts: str, resolved_by: str
+) -> str:
     from .chain import compute_chain_hash, compute_request_hash
-    req_hash = item.get("request_hash") or compute_request_hash(item.get("payload") or {})
-    return compute_chain_hash(prev_hash, item.get("id", ""), "approved", req_hash, resolved_ts, resolved_by)
+
+    req_hash = item.get("request_hash") or compute_request_hash(
+        item.get("payload") or {}
+    )
+    return compute_chain_hash(
+        prev_hash, item.get("id", ""), "approved", req_hash, resolved_ts, resolved_by
+    )
 
 
 def _last_chain_hash(conn: sqlite3.Connection) -> str:
-    row = conn.execute("SELECT chain_hash FROM approvals WHERE status='approved' AND chain_hash IS NOT NULL ORDER BY created_ts DESC LIMIT 1").fetchone()
+    row = conn.execute(
+        "SELECT chain_hash FROM approvals WHERE status='approved' AND chain_hash IS NOT NULL ORDER BY created_ts DESC LIMIT 1"
+    ).fetchone()
     return row[0] if row and row[0] else "0"
 
 
-def approve(aid: str, resolved_by: str = "api", signature: Optional[str] = None) -> bool:
+def approve(
+    aid: str, resolved_by: str = "api", signature: Optional[str] = None
+) -> bool:
     conn = _ensure()
     item = get(aid)
     if not item or item.get("status") != "pending":
@@ -261,7 +322,10 @@ def reject(aid: str, resolved_by: str = "api") -> bool:
         return False
     now = _now()
     with _LOCK:
-        cur = conn.execute("UPDATE approvals SET status = 'rejected', resolved_ts = ?, resolved_by = ? WHERE id = ? AND status = 'pending'", (now, resolved_by, aid))
+        cur = conn.execute(
+            "UPDATE approvals SET status = 'rejected', resolved_ts = ?, resolved_by = ? WHERE id = ? AND status = 'pending'",
+            (now, resolved_by, aid),
+        )
         conn.commit()
         return cur.rowcount > 0
 
@@ -308,10 +372,23 @@ def list_for_chain() -> List[Dict[str, Any]]:
     conn = _ensure()
     cols = "id, created_ts, action, payload_json, risk, status, job_id, run_id, resolved_ts, resolved_by, requires_2fa, expires_at, approval_signature, origin_node_id, chain_hash"
     with _LOCK:
-        rows = conn.execute(f"SELECT {cols} FROM approvals ORDER BY created_ts ASC").fetchall()
+        rows = conn.execute(
+            f"SELECT {cols} FROM approvals ORDER BY created_ts ASC"
+        ).fetchall()
     out = []
     for r in rows:
-        d = {"id": r[0], "created_ts": r[1], "action": r[2], "payload": json.loads(r[3]) if r[3] else {}, "risk": r[4], "status": r[5], "job_id": r[6], "run_id": r[7], "resolved_ts": r[8], "resolved_by": r[9]}
+        d = {
+            "id": r[0],
+            "created_ts": r[1],
+            "action": r[2],
+            "payload": json.loads(r[3]) if r[3] else {},
+            "risk": r[4],
+            "status": r[5],
+            "job_id": r[6],
+            "run_id": r[7],
+            "resolved_ts": r[8],
+            "resolved_by": r[9],
+        }
         if len(r) > 14:
             d["chain_hash"] = r[14]
         out.append(d)
@@ -320,8 +397,16 @@ def list_for_chain() -> List[Dict[str, Any]]:
 
 def verify_chain() -> Dict[str, Any]:
     """Recompute hashes; return {ok, valid, broken_at_id?, last_hash, count}."""
-    from .chain import verify_chain as chain_verify, enabled
+    from .chain import enabled
+    from .chain import verify_chain as chain_verify
+
     items = list_for_chain()
     if not enabled():
-        return {"ok": True, "valid": True, "broken_at_id": None, "last_hash": "0", "count": 0}
+        return {
+            "ok": True,
+            "valid": True,
+            "broken_at_id": None,
+            "last_hash": "0",
+            "count": 0,
+        }
     return chain_verify(items)

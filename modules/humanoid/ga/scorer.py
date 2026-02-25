@@ -40,7 +40,10 @@ def _map_finding_to_action(f: Finding) -> tuple[str, int]:
     """Map finding kind to action_type and roi_score."""
     k = f.kind
     if k in ("latency_spike", "error_rate", "module_down"):
-        return "tune_router" if "router" in f.detail.lower() else "restart_component", 60
+        return (
+            "tune_router" if "router" in f.detail.lower() else "restart_component",
+            60,
+        )
     if k == "job_failure":
         return "restart_internal_loop", 70
     if k == "pending_update":
@@ -68,6 +71,7 @@ def score_finding(f: Finding) -> ActionCandidate:
     risk_level = RISK_MAP.get(action_type, "medium")
     try:
         from modules.humanoid.metalearn.tuner import get_risk_overrides
+
         overrides = get_risk_overrides()
         if overrides and action_type in overrides:
             risk_level = overrides[action_type]

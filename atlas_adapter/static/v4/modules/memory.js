@@ -79,4 +79,3 @@ function _card(title, data) {
 function _esc(s) { const d = document.createElement('span'); d.textContent = s || ''; return d.innerHTML; }
 
 window.AtlasModuleMemory = { id: 'memory' };
-

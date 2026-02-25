@@ -1,5 +1,6 @@
 """Ollama API client. Base URL and timeouts via env."""
 import os
+
 import httpx
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
@@ -17,11 +18,15 @@ def ollama_chat(model: str, messages: list[dict], timeout_sec: int = 60) -> str:
             r = client.post(url, json=payload)
             r.raise_for_status()
     except httpx.ConnectError as e:
-        raise RuntimeError(f"Ollama: no se pudo conectar a {OLLAMA_BASE_URL}: {e}") from e
+        raise RuntimeError(
+            f"Ollama: no se pudo conectar a {OLLAMA_BASE_URL}: {e}"
+        ) from e
     except httpx.TimeoutException as e:
         raise RuntimeError(f"Ollama: timeout ({timeout_sec}s) en {url}: {e}") from e
     except httpx.HTTPStatusError as e:
-        raise RuntimeError(f"Ollama: HTTP {e.response.status_code} - {e.response.text}") from e
+        raise RuntimeError(
+            f"Ollama: HTTP {e.response.status_code} - {e.response.text}"
+        ) from e
 
     try:
         data = r.json()

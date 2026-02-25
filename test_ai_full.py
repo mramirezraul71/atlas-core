@@ -8,45 +8,41 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from modules.humanoid.ai import (
-    get_brain_state,
-    set_full_auto_mode,
-    auto_route,
-    TaskType,
-    get_auto_router
-)
+from modules.humanoid.ai import (TaskType, auto_route, get_auto_router,
+                                 get_brain_state, set_full_auto_mode)
+
 
 def main():
     print("=" * 60)
     print("  ATLAS - Test Sistema IA Full Automatico")
     print("=" * 60)
     print()
-    
+
     # Configurar modo full auto
     state = set_full_auto_mode()
     print("=== ESTADO DEL CEREBRO ===")
     print(f"  Modo: {state.get('mode')}")
     print(f"  Auto Route: {state.get('auto_route')}")
     print(f"  Especialistas: {len(state.get('specialists', {}))}")
-    
-    specialists = state.get('specialists', {})
+
+    specialists = state.get("specialists", {})
     for task, model in specialists.items():
         print(f"    - {task}: {model}")
-    
-    features = state.get('features', {})
+
+    features = state.get("features", {})
     print(f"  Features habilitadas:")
     for feat, val in features.items():
         print(f"    - {feat}: {val}")
-    
+
     print()
     print("=== PRUEBA AUTO ROUTER ===")
     router = get_auto_router()
     status = router.get_status()
     print(f"  Modelos configurados: {status['models_configured']}")
-    
-    for key, info in status['models'].items():
+
+    for key, info in status["models"].items():
         print(f"    [{info['provider']}] {info['model']} -> {info['tasks']}")
-    
+
     print()
     print("=== PRUEBA DE ROUTING ===")
     tests = [
@@ -58,14 +54,14 @@ def main():
         "Optimiza este codigo para que sea mas eficiente",
         "Escribe una historia corta sobre un robot",
     ]
-    
+
     for prompt in tests:
         result = auto_route(prompt)
         task = result.task_type.value
         model = result.model_config.model_name
         conf = f"{result.confidence:.0%}"
         print(f"  [{task:10}] ({conf:>4}) -> {model:25} | {prompt[:35]}...")
-    
+
     print()
     print("=" * 60)
     print("  [OK] Sistema IA Full Automatico operativo")

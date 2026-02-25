@@ -37,9 +37,11 @@ class Decision:
     approval_id: Optional[str] = None
 
 
-HARD_LIMIT_ACTION_KINDS = frozenset({
-    "secrets_keys_change",
-    "network_tunnel_firewall",
-    "deletion_audit_snapshots_policy_rollback",
-    "destructive_db",
-})
+HARD_LIMIT_ACTION_KINDS = frozenset(
+    {
+        "secrets_keys_change",
+        "network_tunnel_firewall",
+        "deletion_audit_snapshots_policy_rollback",
+        "destructive_db",
+    }
+)

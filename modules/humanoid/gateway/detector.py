@@ -21,14 +21,20 @@ def _exe_exists(path: Path) -> bool:
 
 
 def detect_cloudflared() -> Dict[str, Any]:
-    path = _env_path("CLOUDFLARE_CLOUDFLARED_PATH", "C:\\ATLAS_PUSH\\bin\\cloudflared.exe")
+    path = _env_path(
+        "CLOUDFLARE_CLOUDFLARED_PATH", "C:\\ATLAS_PUSH\\bin\\cloudflared.exe"
+    )
     if not path.is_absolute():
         path = Path(os.getcwd()) / path
     present = _exe_exists(path)
     token = bool(os.getenv("CLOUDFLARE_TOKEN", "").strip())
     tunnel_url = os.getenv("CLOUDFLARE_TUNNEL_URL", "").strip()
     tunnel_name = os.getenv("CLOUDFLARE_TUNNEL_NAME", "").strip()
-    enabled = os.getenv("CLOUDFLARE_TUNNEL_ENABLED", "").strip().lower() in ("1", "true", "yes")
+    enabled = os.getenv("CLOUDFLARE_TUNNEL_ENABLED", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     return {
         "available": present,
         "path": str(path),
@@ -41,11 +47,18 @@ def detect_cloudflared() -> Dict[str, Any]:
 
 
 def detect_tailscale() -> Dict[str, Any]:
-    path = _env_path("TAILSCALE_EXE_PATH", "C:\\Program Files\\Tailscale\\tailscale.exe")
+    path = _env_path(
+        "TAILSCALE_EXE_PATH", "C:\\Program Files\\Tailscale\\tailscale.exe"
+    )
     present = _exe_exists(path)
     if not present:
         try:
-            r = subprocess.run(["where", "tailscale"], capture_output=True, text=True, timeout=TIMEOUT_SEC)
+            r = subprocess.run(
+                ["where", "tailscale"],
+                capture_output=True,
+                text=True,
+                timeout=TIMEOUT_SEC,
+            )
             present = r.returncode == 0 and "tailscale" in (r.stdout or "").lower()
         except Exception:
             pass
@@ -67,11 +80,17 @@ def detect_ssh() -> Dict[str, Any]:
     present = _exe_exists(path)
     if not present:
         try:
-            r = subprocess.run(["where", "ssh"], capture_output=True, text=True, timeout=TIMEOUT_SEC)
+            r = subprocess.run(
+                ["where", "ssh"], capture_output=True, text=True, timeout=TIMEOUT_SEC
+            )
             present = r.returncode == 0 and "ssh" in (r.stdout or "").lower()
         except Exception:
             pass
-    enabled = os.getenv("SSH_TUNNEL_ENABLED", "").strip().lower() in ("1", "true", "yes")
+    enabled = os.getenv("SSH_TUNNEL_ENABLED", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     user = os.getenv("SSH_USER", "").strip()
     host = os.getenv("SSH_HOST", "").strip()
     return {

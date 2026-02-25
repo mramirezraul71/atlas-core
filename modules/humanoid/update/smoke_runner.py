@@ -22,7 +22,9 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-def run_smoke(repo_path: str | None = None, port: int = 8791, timeout_sec: int = 120) -> Dict[str, Any]:
+def run_smoke(
+    repo_path: str | None = None, port: int = 8791, timeout_sec: int = 120
+) -> Dict[str, Any]:
     """
     Execute 04_smoke_tests.ps1. Returns {ok, stdout, stderr, returncode, error, ms}.
     Uses subprocess (script is trusted); policy still applies if we run via Hands.
@@ -32,9 +34,26 @@ def run_smoke(repo_path: str | None = None, port: int = 8791, timeout_sec: int =
     script = _smoke_script_path()
     if not script.exists():
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": f"Script not found: {script}", "ms": ms}
+        return {
+            "ok": False,
+            "stdout": "",
+            "stderr": "",
+            "returncode": -1,
+            "error": f"Script not found: {script}",
+            "ms": ms,
+        }
     try:
-        cmd = ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(script), "-RepoPath", repo, "-AtlasPort", str(port)]
+        cmd = [
+            "powershell",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+            "-RepoPath",
+            repo,
+            "-AtlasPort",
+            str(port),
+        ]
         r = subprocess.run(
             cmd,
             capture_output=True,
@@ -50,12 +69,28 @@ def run_smoke(repo_path: str | None = None, port: int = 8791, timeout_sec: int =
             "stdout": (r.stdout or "")[-4096:],
             "stderr": (r.stderr or "")[-2048:],
             "returncode": r.returncode,
-            "error": None if r.returncode == 0 else (r.stderr or f"exit {r.returncode}"),
+            "error": None
+            if r.returncode == 0
+            else (r.stderr or f"exit {r.returncode}"),
             "ms": ms,
         }
     except subprocess.TimeoutExpired:
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": False, "stdout": "", "stderr": "timeout", "returncode": -1, "error": "smoke timeout", "ms": ms}
+        return {
+            "ok": False,
+            "stdout": "",
+            "stderr": "timeout",
+            "returncode": -1,
+            "error": "smoke timeout",
+            "ms": ms,
+        }
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
-        return {"ok": False, "stdout": "", "stderr": str(e), "returncode": -1, "error": str(e), "ms": ms}
+        return {
+            "ok": False,
+            "stdout": "",
+            "stderr": str(e),
+            "returncode": -1,
+            "error": str(e),
+            "ms": ms,
+        }

@@ -22,4 +22,3 @@ Start-Process -WindowStyle Minimized -FilePath "powershell.exe" -ArgumentList @(
   "-NoProfile","-ExecutionPolicy","Bypass",
   "-Command", "cloudflared tunnel --url http://127.0.0.1:$PORT"
 )
-

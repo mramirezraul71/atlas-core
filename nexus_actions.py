@@ -15,7 +15,9 @@ from typing import Callable, Optional
 logger = logging.getLogger("atlas.nexus_actions")
 
 BASE = Path(__file__).resolve().parent
-DASHBOARD_URL = (os.getenv("ATLAS_DASHBOARD_URL") or "http://127.0.0.1:8791").rstrip("/")
+DASHBOARD_URL = (os.getenv("ATLAS_DASHBOARD_URL") or "http://127.0.0.1:8791").rstrip(
+    "/"
+)
 # Coordenadas del botón "Actualizar" en el Dashboard (ajustar según resolución; por defecto zona superior derecha)
 REFRESH_BUTTON_X = int(os.getenv("DASHBOARD_REFRESH_BUTTON_X", "0"))
 REFRESH_BUTTON_Y = int(os.getenv("DASHBOARD_REFRESH_BUTTON_Y", "0"))
@@ -87,9 +89,13 @@ def camera_pan_tilt_test() -> tuple[bool, str]:
     # 1) Intentar pyuvc (pupil-labs-uvc) para controles UVC
     try:
         import uvc
+
         devs = uvc.device_list()
         if devs:
-            _bitacora("[CÁMARA] Dispositivo UVC detectado. Posicionando Insta360 Link 2 para Snapshot de Tríada...", ok=True)
+            _bitacora(
+                "[CÁMARA] Dispositivo UVC detectado. Posicionando Insta360 Link 2 para Snapshot de Tríada...",
+                ok=True,
+            )
             # Muchas UVC no exponen PTZ estándar; al menos verificamos dispositivo
             return True, "UVC device list OK"
     except ImportError:
@@ -99,18 +105,27 @@ def camera_pan_tilt_test() -> tuple[bool, str]:
     # 2) Fallback: OpenCV abrir/cerrar como verificación de cámara
     try:
         import cv2
-        cap = cv2.VideoCapture(0, cv2.CAP_MSMF if hasattr(cv2, "CAP_MSMF") else cv2.CAP_ANY)
+
+        cap = cv2.VideoCapture(
+            0, cv2.CAP_MSMF if hasattr(cv2, "CAP_MSMF") else cv2.CAP_ANY
+        )
         if cap.isOpened():
             ret, _ = cap.read()
             cap.release()
             if ret:
-                _bitacora("[CÁMARA] Posicionando Insta360 Link 2 para Snapshot de Tríada... OK.", ok=True)
+                _bitacora(
+                    "[CÁMARA] Posicionando Insta360 Link 2 para Snapshot de Tríada... OK.",
+                    ok=True,
+                )
                 return True, "OpenCV camera open OK"
     except ImportError:
         pass
     except Exception as e:
         logger.debug("opencv camera: %s", e)
-    _bitacora("[CÁMARA] Posicionando Insta360 Link 2 para Snapshot de Tríada... (sin pyuvc/OpenCV, verificación omitida)", ok=True)
+    _bitacora(
+        "[CÁMARA] Posicionando Insta360 Link 2 para Snapshot de Tríada... (sin pyuvc/OpenCV, verificación omitida)",
+        ok=True,
+    )
     return True, "no UVC/OpenCV; verification skipped"
 
 
@@ -123,7 +138,9 @@ def camera_verify() -> bool:
 # --- Mouse (prueba de vida) ---
 
 
-def mouse_move_verify(x: Optional[int] = None, y: Optional[int] = None) -> tuple[bool, str]:
+def mouse_move_verify(
+    x: Optional[int] = None, y: Optional[int] = None
+) -> tuple[bool, str]:
     """
     Mueve el cursor a (x,y) como prueba de vida. Si x,y son None o 0,0 y USE_SCREEN_CENTER_IF_ZERO,
     usa el centro de la pantalla. Devuelve (éxito, mensaje).
@@ -135,17 +152,24 @@ def mouse_move_verify(x: Optional[int] = None, y: Optional[int] = None) -> tuple
     if USE_SCREEN_CENTER_IF_ZERO and (x == 0 and y == 0):
         try:
             import pyautogui
+
             w, h = pyautogui.size()
             x, y = w // 2, h // 2
         except Exception:
             x, y = 960, 540
     try:
         import pyautogui
+
         pyautogui.moveTo(x, y, duration=0.2)
-        _bitacora(f"[MOUSE] Movimiento verificado en eje X/Y (destino: {x}, {y}).", ok=True)
+        _bitacora(
+            f"[MOUSE] Movimiento verificado en eje X/Y (destino: {x}, {y}).", ok=True
+        )
         return True, f"move to {x},{y} OK"
     except ImportError:
-        _bitacora("[MOUSE] Movimiento verificado en eje X/Y (pyautogui no instalado, omitido).", ok=True)
+        _bitacora(
+            "[MOUSE] Movimiento verificado en eje X/Y (pyautogui no instalado, omitido).",
+            ok=True,
+        )
         return True, "pyautogui missing"
     except Exception as e:
         _bitacora(f"[MOUSE] Error en movimiento X/Y: {e}", ok=False)
@@ -172,17 +196,27 @@ def mouse_move_and_click_text(query: str = "Actualizar") -> tuple[bool, str]:
     _bitacora(f"[MOUSE] Buscando botón por texto OCR: '{q}'...", ok=True)
     try:
         from modules.humanoid.screen.locator import locate
+
         r = locate(q)
         matches = r.get("matches") or []
         if not r.get("ok") or not matches:
-            _bitacora(f"[MOUSE] No se encontró '{q}' por OCR. Fallback a movimiento simple.", ok=False)
+            _bitacora(
+                f"[MOUSE] No se encontró '{q}' por OCR. Fallback a movimiento simple.",
+                ok=False,
+            )
             return mouse_move_verify(None, None)
         # elegir match más "arriba" (y menor) para aproximar botones de header
-        matches.sort(key=lambda m: (m.get("bbox", [0, 10**9, 0, 0])[1], m.get("bbox", [0, 0, 0, 0])[0]))
+        matches.sort(
+            key=lambda m: (
+                m.get("bbox", [0, 10**9, 0, 0])[1],
+                m.get("bbox", [0, 0, 0, 0])[0],
+            )
+        )
         bbox = matches[0].get("bbox") or [0, 0, 0, 0]
         x, y, w, h = [int(v or 0) for v in bbox]
         cx, cy = x + max(1, w) // 2, y + max(1, h) // 2
         import pyautogui
+
         pyautogui.moveTo(cx, cy, duration=0.25)
         pyautogui.click(cx, cy)
         _bitacora(f"[MOUSE] Movimiento+Click OK en '{q}' @ ({cx},{cy}).", ok=True)
@@ -201,7 +235,11 @@ def camera_sweep_verify() -> tuple[bool, str]:
     Guarda evidencia en snapshots/nexus_actions/.
     """
     _bitacora("[NEXUS] Barrido de cámara (Insta360 Link 2): iniciando...", ok=True)
-    base = (os.getenv("NEXUS_ROBOT_API_URL") or os.getenv("ROBOT_BASE_URL") or "http://127.0.0.1:8002").rstrip("/")
+    base = (
+        os.getenv("NEXUS_ROBOT_API_URL")
+        or os.getenv("ROBOT_BASE_URL")
+        or "http://127.0.0.1:8002"
+    ).rstrip("/")
     out_dir = BASE / "snapshots" / "nexus_actions"
     out_dir.mkdir(parents=True, exist_ok=True)
     combos = [
@@ -211,8 +249,9 @@ def camera_sweep_verify() -> tuple[bool, str]:
     ]
     ok_any = False
     try:
-        from urllib.parse import urlencode
         from datetime import datetime, timezone
+        from urllib.parse import urlencode
+
         for i, c in enumerate(combos):
             qs = urlencode({"source": "camera", **c})
             url = f"{base}/api/vision/snapshot?{qs}"
@@ -244,7 +283,9 @@ def post_dashboard_connected_active() -> bool:
     try:
         req = urllib.request.Request(
             f"{DASHBOARD_URL}/api/nexus/connection",
-            data=json.dumps({"connected": True, "message": "CONECTADO | ACTIVO", "active": True}).encode("utf-8"),
+            data=json.dumps(
+                {"connected": True, "message": "CONECTADO | ACTIVO", "active": True}
+            ).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
@@ -271,7 +312,10 @@ def run_nerve_test() -> dict:
     if mouse_ok and camera_ok:
         if post_dashboard_connected_active():
             results["dashboard_updated"] = True
-            _bitacora("[NEXUS] CEREBRO — CUERPO: CONECTADO | ACTIVO. Dashboard actualizado.", ok=True)
+            _bitacora(
+                "[NEXUS] CEREBRO — CUERPO: CONECTADO | ACTIVO. Dashboard actualizado.",
+                ok=True,
+            )
     return results
 
 
@@ -280,6 +324,8 @@ def run_nerve_test_before_triada() -> bool:
     Invocado antes de cada escaneo de PyPI/GitHub/Hugging Face: mueve la cámara para verificar
     el entorno y registra en Bitácora. Devuelve True si la verificación puede continuar.
     """
-    _bitacora("[CÁMARA] Posicionando Insta360 Link 2 para Snapshot de Tríada...", ok=True)
+    _bitacora(
+        "[CÁMARA] Posicionando Insta360 Link 2 para Snapshot de Tríada...", ok=True
+    )
     camera_verify()
     return True

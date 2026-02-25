@@ -66,7 +66,12 @@ def main() -> int:
         PolicyName="ATLASBedrockInvokePolicy",
         PolicyDocument=json.dumps(policy),
     )
-    print(json.dumps({"ok": True, "user": user_name, "policy_name": "ATLASBedrockInvokePolicy"}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {"ok": True, "user": user_name, "policy_name": "ATLASBedrockInvokePolicy"},
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 

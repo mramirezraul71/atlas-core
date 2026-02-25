@@ -17,11 +17,14 @@ T = TypeVar("T")
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -51,8 +54,11 @@ class RecoveryStrategies:
         max_attempts = max_attempts or int(self._retry_cfg.get("max_attempts", 5))
         initial_delay = float(self._retry_cfg.get("initial_delay", initial_delay))
         max_delay = float(self._retry_cfg.get("max_delay", max_delay))
-        exponential_base = float(self._retry_cfg.get("exponential_base", exponential_base))
+        exponential_base = float(
+            self._retry_cfg.get("exponential_base", exponential_base)
+        )
         import random
+
         last_exc = None
         for attempt in range(max_attempts):
             try:
@@ -61,7 +67,7 @@ class RecoveryStrategies:
                 last_exc = e
                 if attempt == max_attempts - 1:
                     raise
-                delay = min(initial_delay * (exponential_base ** attempt), max_delay)
+                delay = min(initial_delay * (exponential_base**attempt), max_delay)
                 jitter = delay * 0.1 * random.random()
                 time.sleep(delay + jitter)
         raise last_exc
@@ -74,9 +80,20 @@ class RecoveryStrategies:
             if script.exists():
                 try:
                     subprocess.Popen(
-                        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script), "-Service", "nexus"],
+                        [
+                            "powershell",
+                            "-NoProfile",
+                            "-ExecutionPolicy",
+                            "Bypass",
+                            "-File",
+                            str(script),
+                            "-Service",
+                            "nexus",
+                        ],
                         cwd=str(self._base),
-                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                        if os.name == "nt"
+                        else 0,
                     )
                     return True
                 except Exception as e:
@@ -87,14 +104,26 @@ class RecoveryStrategies:
             if free_port.exists():
                 try:
                     subprocess.run(
-                        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(free_port), "-Port", "8000", "-Kill"],
+                        [
+                            "powershell",
+                            "-NoProfile",
+                            "-ExecutionPolicy",
+                            "Bypass",
+                            "-File",
+                            str(free_port),
+                            "-Port",
+                            "8000",
+                            "-Kill",
+                        ],
                         cwd=str(self._base),
                         timeout=15,
                         capture_output=True,
                     )
                 except Exception:
                     pass
-            nexus_dir = os.getenv("NEXUS_ATLAS_PATH") or str(self._base / "nexus" / "atlas_nexus")
+            nexus_dir = os.getenv("NEXUS_ATLAS_PATH") or str(
+                self._base / "nexus" / "atlas_nexus"
+            )
             try:
                 subprocess.Popen(
                     [os.environ.get("PYTHON", "python"), "nexus.py", "--mode", "api"],
@@ -110,9 +139,20 @@ class RecoveryStrategies:
             if script.exists():
                 try:
                     subprocess.Popen(
-                        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script), "-Service", "robot"],
+                        [
+                            "powershell",
+                            "-NoProfile",
+                            "-ExecutionPolicy",
+                            "Bypass",
+                            "-File",
+                            str(script),
+                            "-Service",
+                            "robot",
+                        ],
                         cwd=str(self._base),
-                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                        if os.name == "nt"
+                        else 0,
                     )
                     return True
                 except Exception as e:
@@ -134,6 +174,7 @@ class RecoveryStrategies:
         """Restaura a una versión/snapshot. Depende de Evolution BackupManager (opcional)."""
         try:
             from autonomous.evolution.backup_manager import BackupManager
+
             bm = BackupManager()
             return bm.restore_snapshot(version)
         except ImportError:
@@ -148,10 +189,13 @@ class RecoveryStrategies:
         logger.info("activate_fallback component=%s (no-op in this version)", component)
         return True
 
-    def enter_degraded_mode(self, available_resources: dict[str, Any] | None = None) -> bool:
+    def enter_degraded_mode(
+        self, available_resources: dict[str, Any] | None = None
+    ) -> bool:
         """Entra en modo degradado. Delega a Resilience SurvivalMode (opcional)."""
         try:
             from autonomous.resilience.survival_mode import SurvivalMode
+
             sm = SurvivalMode()
             sm.enter_survival_mode("self_healing requested")
             return True

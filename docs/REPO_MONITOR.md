@@ -16,26 +16,26 @@
 
 ### Por ciclos (monitoreo periódico)
 
-- **Un ciclo (manual o programado):**  
-  `scripts\run_repo_monitor.ps1 -Cycle`  
+- **Un ciclo (manual o programado):**
+  `scripts\run_repo_monitor.ps1 -Cycle`
   Equivalente: `python scripts/repo_monitor.py --cycle`
 
 - Hace: `git fetch`, comprueba estado (branch, head, remote), aplica filtros a `git status` y, si está configurado, puede hacer `pull` (o solo reportar "update available").
 
-- **Ejecución automática por ATLAS:**  
+- **Ejecución automática por ATLAS:**
   Al arrancar el servidor ATLAS (con `SCHED_ENABLED=true`), se registran dos jobs:
   - **repo_monitor_cycle:** ejecuta `--cycle` (fetch + status) cada `cycle.interval_seconds` (por defecto 600).
   - **repo_monitor_after_fix:** ejecuta `--after-fix` (commit + push) cada `after_fix.auto_schedule_interval_seconds` si es > 0 (por defecto 1800 = 30 min). Así los cambios locales se suben al remoto de forma automática.
   Ver `modules/humanoid/scheduler/repo_monitor_jobs.py` y `runner.py` (kinds `repo_monitor_cycle`, `repo_monitor_after_fix`).
 
-- **Programar ciclos (Windows, sin ATLAS):**  
+- **Programar ciclos (Windows, sin ATLAS):**
   Si no usas el servidor ATLAS, Programador de tareas: ejecutar `powershell.exe -File "C:\ATLAS_PUSH\scripts\run_repo_monitor.ps1" -Cycle` con la periodicidad deseada.
 
 ### Tras arreglos (commit + push)
 
-- **Commit y push de cambios filtrados:**  
-  `scripts\run_repo_monitor.ps1 -AfterFix`  
-  Con mensaje:  
+- **Commit y push de cambios filtrados:**
+  `scripts\run_repo_monitor.ps1 -AfterFix`
+  Con mensaje:
   `scripts\run_repo_monitor.ps1 -AfterFix -Message "fix: descripción"`
 
 - **Automático:** Si en `config/repo_monitor.yaml` tienes `after_fix.auto_schedule_interval_seconds: 1800` (o otro valor en segundos), el scheduler ejecuta after-fix cada ese intervalo y los cambios del repo se suben solos a la rama configurada en `repo.push_branch` (p. ej. `intent-input-rename`).
@@ -44,7 +44,7 @@
 
 ### Solo estado
 
-- **Consultar estado sin modificar nada:**  
+- **Consultar estado sin modificar nada:**
   `scripts\run_repo_monitor.ps1 -StatusOnly`
 
 ## Filtros Git

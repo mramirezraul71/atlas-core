@@ -13,23 +13,39 @@ _MAX_INCIDENTS = 200
 
 def _env_int(name: str, default: int) -> int:
     import os
+
     try:
         return int(os.getenv(name, str(default)).strip() or default)
     except Exception:
         return default
 
 
-def create_incident(check_id: str, fingerprint: str, severity: str, message: str, evidence: Dict[str, Any] = None, suggested_heals: List[str] = None) -> str:
+def create_incident(
+    check_id: str,
+    fingerprint: str,
+    severity: str,
+    message: str,
+    evidence: Dict[str, Any] = None,
+    suggested_heals: List[str] = None,
+) -> str:
     cooldown = _env_int("ANS_COOLDOWN_SECONDS", 30)
     now = time.time()
     last = _FINGERPRINT_LAST.get(fingerprint, 0)
     if now - last < cooldown:
-        existing = next((i for i in _INCIDENTS.values() if i.get("fingerprint") == fingerprint and i.get("status") == "open"), None)
+        existing = next(
+            (
+                i
+                for i in _INCIDENTS.values()
+                if i.get("fingerprint") == fingerprint and i.get("status") == "open"
+            ),
+            None,
+        )
         if existing:
             return existing["id"]
     _FINGERPRINT_LAST[fingerprint] = now
     inc_id = str(uuid.uuid4())[:8]
     from datetime import datetime, timezone
+
     _INCIDENTS[inc_id] = {
         "id": inc_id,
         "fingerprint": fingerprint,
@@ -51,6 +67,7 @@ def create_incident(check_id: str, fingerprint: str, severity: str, message: str
 
 def resolve_incident(inc_id: str, actions: List[Dict[str, Any]] = None) -> None:
     from datetime import datetime, timezone
+
     if inc_id in _INCIDENTS:
         _INCIDENTS[inc_id]["status"] = "resolved"
         _INCIDENTS[inc_id]["resolved_at"] = datetime.now(timezone.utc).isoformat()
@@ -60,7 +77,9 @@ def resolve_incident(inc_id: str, actions: List[Dict[str, Any]] = None) -> None:
 
 def add_action(inc_id: str, heal_id: str, ok: bool, message: str) -> None:
     if inc_id in _INCIDENTS:
-        _INCIDENTS[inc_id]["actions_taken"].append({"heal_id": heal_id, "ok": ok, "message": message})
+        _INCIDENTS[inc_id]["actions_taken"].append(
+            {"heal_id": heal_id, "ok": ok, "message": message}
+        )
 
 
 def get_incidents(status: str = None, limit: int = 50) -> List[Dict[str, Any]]:
@@ -78,6 +97,7 @@ def get_incident(inc_id: str) -> Optional[Dict[str, Any]]:
 def resolve_all_open(check_id: Optional[str] = None) -> int:
     """Resuelve todos los incidentes abiertos, opcionalmente filtrados por check_id. Devuelve cantidad resueltos."""
     from datetime import datetime, timezone
+
     resolved = 0
     for inc in list(_INCIDENTS.values()):
         if inc.get("status") != "open":

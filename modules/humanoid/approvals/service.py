@@ -5,7 +5,7 @@ import os
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from .gate import requires_approval, risk_level, requires_2fa_for_risk
+from .gate import requires_2fa_for_risk, requires_approval, risk_level
 
 
 def _bool(name: str, default: bool) -> bool:
@@ -17,7 +17,13 @@ def _bool(name: str, default: bool) -> bool:
 
 def _human_risk(risk: str) -> str:
     r = (risk or "").strip().lower()
-    return {"low": "BAJO", "medium": "MEDIO", "med": "MEDIO", "high": "ALTO", "critical": "CRÍTICO"}.get(r, r.upper() or "MEDIO")
+    return {
+        "low": "BAJO",
+        "medium": "MEDIO",
+        "med": "MEDIO",
+        "high": "ALTO",
+        "critical": "CRÍTICO",
+    }.get(r, r.upper() or "MEDIO")
 
 
 def _summarize_action(action: str, payload: Dict[str, Any]) -> Tuple[str, str]:
@@ -30,39 +36,70 @@ def _summarize_action(action: str, payload: Dict[str, Any]) -> Tuple[str, str]:
 
     # POT execution
     if low.startswith("pot_execute:") or low.startswith("pot_execute"):
-        pot_id = (a.split(":", 1)[1].strip() if ":" in a else (p.get("pot_id") or "")).strip() or "POT"
+        pot_id = (
+            a.split(":", 1)[1].strip() if ":" in a else (p.get("pot_id") or "")
+        ).strip() or "POT"
         pot_name = ""
         try:
             from modules.humanoid.quality import get_pot
+
             pot = get_pot(pot_id)
             if pot:
                 pot_name = (pot.name or "").strip()
         except Exception:
             pot_name = ""
-        title = f"Ejecutar procedimiento: {pot_id}" + (f" — {pot_name}" if pot_name else "")
+        title = f"Ejecutar procedimiento: {pot_id}" + (
+            f" — {pot_name}" if pot_name else ""
+        )
         why = (p.get("reason") or p.get("trigger") or p.get("check_id") or "").strip()
         if why:
-            return (f"{title}\nMotivo: {why}", "Tienes una aprobación pendiente para ejecutar un procedimiento.")
-        return (title, "Tienes una aprobación pendiente para ejecutar un procedimiento.")
+            return (
+                f"{title}\nMotivo: {why}",
+                "Tienes una aprobación pendiente para ejecutar un procedimiento.",
+            )
+        return (
+            title,
+            "Tienes una aprobación pendiente para ejecutar un procedimiento.",
+        )
 
     # Shell exec
     if low == "shell_exec" or "shell_exec" in low:
         cmd = (p.get("command") or p.get("cmd") or "").strip()
         if cmd:
             short = cmd if len(cmd) <= 140 else cmd[:140] + "..."
-            return (f"Ejecutar comando en PC:\n{short}", "Tienes una aprobación pendiente para ejecutar un comando.")
-        return ("Ejecutar un comando en PC (detalle no disponible).", "Tienes una aprobación pendiente para ejecutar un comando.")
+            return (
+                f"Ejecutar comando en PC:\n{short}",
+                "Tienes una aprobación pendiente para ejecutar un comando.",
+            )
+        return (
+            "Ejecutar un comando en PC (detalle no disponible).",
+            "Tienes una aprobación pendiente para ejecutar un comando.",
+        )
 
     # Screen action destructive
     if low == "screen_act_destructive":
         ra = (p.get("requested_action") or "acción de pantalla").strip()
-        hint = (p.get("confirm_text") or p.get("expected_window") or p.get("expected_process") or "").strip()
+        hint = (
+            p.get("confirm_text")
+            or p.get("expected_window")
+            or p.get("expected_process")
+            or ""
+        ).strip()
         if hint:
-            return (f"Acción en pantalla (destructiva): {ra}\nConfirmación esperada: {hint}", "Tienes una aprobación pendiente para una acción en pantalla.")
-        return (f"Acción en pantalla (destructiva): {ra}", "Tienes una aprobación pendiente para una acción en pantalla.")
+            return (
+                f"Acción en pantalla (destructiva): {ra}\nConfirmación esperada: {hint}",
+                "Tienes una aprobación pendiente para una acción en pantalla.",
+            )
+        return (
+            f"Acción en pantalla (destructiva): {ra}",
+            "Tienes una aprobación pendiente para una acción en pantalla.",
+        )
 
     # Generic fallback
-    return (f"Ejecutar acción: {a or 'aprobación'}", "Tienes una aprobación pendiente en ATLAS.")
+    return (
+        f"Ejecutar acción: {a or 'aprobación'}",
+        "Tienes una aprobación pendiente en ATLAS.",
+    )
 
 
 def _approval_human_message(item: Dict[str, Any]) -> Tuple[str, str]:
@@ -100,6 +137,7 @@ def _notify_audio_approval_pending(item: Dict[str, Any]) -> None:
         if not _bool("OPS_AUDIO_ENABLED", True):
             return
         from modules.humanoid.voice.tts import speak
+
         _text, audio = _approval_human_message(item)
         speak((audio or "Tienes una aprobación pendiente. Revisa Telegram.")[:200])
     except Exception:
@@ -112,6 +150,7 @@ def _notify_whatsapp_approval_pending(item: Dict[str, Any]) -> None:
         if not enabled:
             return
         from modules.humanoid.comms.whatsapp_bridge import send_text
+
         text, _audio = _approval_human_message(item)
         # WhatsApp no soporta HTML: limpiar tags básicos.
         clean = (
@@ -126,12 +165,15 @@ def _notify_whatsapp_approval_pending(item: Dict[str, Any]) -> None:
         pass
 
 
-def _notify_whatsapp_approval_resolved(item: Optional[Dict[str, Any]], aid: str, status: str) -> None:
+def _notify_whatsapp_approval_resolved(
+    item: Optional[Dict[str, Any]], aid: str, status: str
+) -> None:
     try:
         enabled = _bool("APPROVALS_WHATSAPP_ENABLED", True)
         if not enabled:
             return
         from modules.humanoid.comms.whatsapp_bridge import send_text
+
         st = (status or "").strip().lower()
         if st == "approved":
             msg = "Aprobación ejecutada: APROBADA."
@@ -141,7 +183,9 @@ def _notify_whatsapp_approval_resolved(item: Optional[Dict[str, Any]], aid: str,
             msg = "Aprobación: estado actualizado."
         action = ((item or {}).get("action") or "").strip()
         risk = _human_risk(((item or {}).get("risk") or "medium").strip())
-        send_text(f"ATLAS\n{msg}\nAcción: {action or '—'}\nRiesgo: {risk}\nID: {aid}"[:1200])
+        send_text(
+            f"ATLAS\n{msg}\nAcción: {action or '—'}\nRiesgo: {risk}\nID: {aid}"[:1200]
+        )
     except Exception:
         pass
 
@@ -149,11 +193,20 @@ def _notify_whatsapp_approval_resolved(item: Optional[Dict[str, Any]], aid: str,
 def _notify_telegram_approval_pending(item: Dict[str, Any]) -> None:
     """Push a Telegram for ANY high/critical approval (owner away from dashboard)."""
     try:
+        from modules.humanoid.comms.ops_bus import \
+            _telegram_chat_id  # type: ignore
         from modules.humanoid.comms.telegram_bridge import TelegramBridge
-        from modules.humanoid.comms.ops_bus import _telegram_chat_id  # type: ignore
 
         # Enabled by default if token+chat_id exist; can be disabled explicitly.
-        enabled = (os.getenv("TELEGRAM_APPROVALS_ENABLED") or os.getenv("TELEGRAM_ENABLED", "true") or "").strip().lower()
+        enabled = (
+            (
+                os.getenv("TELEGRAM_APPROVALS_ENABLED")
+                or os.getenv("TELEGRAM_ENABLED", "true")
+                or ""
+            )
+            .strip()
+            .lower()
+        )
         if enabled not in ("1", "true", "yes"):
             return
         chat_id = (_telegram_chat_id() or "").strip()
@@ -172,12 +225,23 @@ def _notify_telegram_approval_pending(item: Dict[str, Any]) -> None:
         pass
 
 
-def _notify_telegram_approval_resolved(item: Optional[Dict[str, Any]], aid: str, status: str, resolved_by: str) -> None:
+def _notify_telegram_approval_resolved(
+    item: Optional[Dict[str, Any]], aid: str, status: str, resolved_by: str
+) -> None:
     try:
+        from modules.humanoid.comms.ops_bus import \
+            _telegram_chat_id  # type: ignore
         from modules.humanoid.comms.telegram_bridge import TelegramBridge
-        from modules.humanoid.comms.ops_bus import _telegram_chat_id  # type: ignore
 
-        enabled = (os.getenv("TELEGRAM_APPROVALS_ENABLED") or os.getenv("TELEGRAM_ENABLED", "true") or "").strip().lower()
+        enabled = (
+            (
+                os.getenv("TELEGRAM_APPROVALS_ENABLED")
+                or os.getenv("TELEGRAM_ENABLED", "true")
+                or ""
+            )
+            .strip()
+            .lower()
+        )
         if enabled not in ("1", "true", "yes"):
             return
         chat_id = (_telegram_chat_id() or "").strip()
@@ -193,7 +257,12 @@ def _notify_telegram_approval_resolved(item: Optional[Dict[str, Any]], aid: str,
         TelegramBridge().send(chat_id, f"<b>ATLAS</b>\n{msg}\nID: <code>{aid}</code>")
     except Exception:
         pass
-from .store import create as store_create, list_items, get, approve as store_approve, reject as store_reject
+
+
+from .store import approve as store_approve
+from .store import create as store_create
+from .store import get, list_items
+from .store import reject as store_reject
 
 
 def _log_to_autonomy_timeline(event: str, kind: str, result: str) -> None:
@@ -201,7 +270,12 @@ def _log_to_autonomy_timeline(event: str, kind: str, result: str) -> None:
     try:
         import sqlite3
         from pathlib import Path
-        db_path = Path(__file__).resolve().parent.parent.parent.parent / "data" / "autonomy_tasks.db"
+
+        db_path = (
+            Path(__file__).resolve().parent.parent.parent.parent
+            / "data"
+            / "autonomy_tasks.db"
+        )
         db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(db_path), timeout=5)
         conn.execute(
@@ -209,7 +283,7 @@ def _log_to_autonomy_timeline(event: str, kind: str, result: str) -> None:
         )
         conn.execute(
             "INSERT INTO autonomy_timeline(event, kind, result) VALUES(?, ?, ?)",
-            (event[:500], kind[:50], result[:500])
+            (event[:500], kind[:50], result[:500]),
         )
         conn.commit()
         conn.close()
@@ -217,15 +291,27 @@ def _log_to_autonomy_timeline(event: str, kind: str, result: str) -> None:
         pass
 
 
-def create(action: str, payload: Dict[str, Any], job_id: Optional[str] = None, run_id: Optional[int] = None, origin_node_id: Optional[str] = None) -> Dict[str, Any]:
+def create(
+    action: str,
+    payload: Dict[str, Any],
+    job_id: Optional[str] = None,
+    run_id: Optional[int] = None,
+    origin_node_id: Optional[str] = None,
+) -> Dict[str, Any]:
     """Enqueue item if it requires approval. Returns {ok, approval_id?, error}."""
     if not requires_approval(action, payload):
         return {"ok": True, "approval_id": None, "error": None}
     try:
         # Permitir override de riesgo desde payload (p. ej. dispatcher determina riesgo por severidad de POT).
-        override_risk = (payload.get("risk") if isinstance(payload, dict) else None) or ""
-        override_risk = (str(override_risk).strip().lower() if override_risk else "")
-        risk = override_risk if override_risk in ("low", "medium", "high", "critical") else risk_level(action, payload)
+        override_risk = (
+            payload.get("risk") if isinstance(payload, dict) else None
+        ) or ""
+        override_risk = str(override_risk).strip().lower() if override_risk else ""
+        risk = (
+            override_risk
+            if override_risk in ("low", "medium", "high", "critical")
+            else risk_level(action, payload)
+        )
 
         # Dedupe en origen: si ya existe pending equivalente vigente, reutilizarla.
         try:
@@ -233,7 +319,9 @@ def create(action: str, payload: Dict[str, Any], job_id: Optional[str] = None, r
             from .store import find_pending_equivalent
 
             req_hash = compute_request_hash(payload or {})
-            existing = find_pending_equivalent(action=action, risk=risk, request_hash=req_hash)
+            existing = find_pending_equivalent(
+                action=action, risk=risk, request_hash=req_hash
+            )
             if existing and not bool(existing.get("expired")):
                 return {
                     "ok": True,
@@ -244,11 +332,33 @@ def create(action: str, payload: Dict[str, Any], job_id: Optional[str] = None, r
         except Exception:
             pass
 
-        node_id = origin_node_id or (payload.get("origin_node_id") if isinstance(payload, dict) else None) or os.getenv("CLUSTER_NODE_ID")
-        item = store_create(action=action, payload=payload, risk=risk, job_id=job_id, run_id=run_id, requires_2fa=requires_2fa_for_risk(risk), origin_node_id=node_id)
+        node_id = (
+            origin_node_id
+            or (payload.get("origin_node_id") if isinstance(payload, dict) else None)
+            or os.getenv("CLUSTER_NODE_ID")
+        )
+        item = store_create(
+            action=action,
+            payload=payload,
+            risk=risk,
+            job_id=job_id,
+            run_id=run_id,
+            requires_2fa=requires_2fa_for_risk(risk),
+            origin_node_id=node_id,
+        )
         try:
             from modules.humanoid.audit import get_audit_logger
-            get_audit_logger().log_event("approvals", "system", "create", True, 0, None, {"id": item["id"], "action": action, "risk": risk}, None)
+
+            get_audit_logger().log_event(
+                "approvals",
+                "system",
+                "create",
+                True,
+                0,
+                None,
+                {"id": item["id"], "action": action, "risk": risk},
+                None,
+            )
         except Exception:
             pass
         # Autonomía: TODA aprobación debe llegar a Telegram (owner puede estar fuera del dashboard).
@@ -257,12 +367,16 @@ def create(action: str, payload: Dict[str, Any], job_id: Optional[str] = None, r
         _notify_audio_approval_pending(item)
         try:
             from modules.humanoid.comms.ops_bus import emit as ops_emit
+
             # Log interno (no spam a canales): low no manda Telegram/WhatsApp ni audio desde ops_bus.
             lvl = "low"
             text, _audio = _approval_human_message(item)
             ops_emit(
                 "approval",
-                text.replace("<b>", "").replace("</b>", "").replace("<code>", "").replace("</code>", "")[:800],
+                text.replace("<b>", "")
+                .replace("</b>", "")
+                .replace("<code>", "")
+                .replace("</code>", "")[:800],
                 level=lvl,
                 data={"id": item.get("id"), "action": action, "risk": risk},
             )
@@ -270,7 +384,9 @@ def create(action: str, payload: Dict[str, Any], job_id: Optional[str] = None, r
             pass
         # Registrar en autonomy_timeline para dashboard
         try:
-            _log_to_autonomy_timeline(f"Aprobación creada: {action}", "approval", f"pending:{item.get('id')}")
+            _log_to_autonomy_timeline(
+                f"Aprobación creada: {action}", "approval", f"pending:{item.get('id')}"
+            )
         except Exception:
             pass
         return {"ok": True, "approval_id": item["id"], "error": None}
@@ -282,6 +398,7 @@ def list_pending(limit: int = 50, risk: Optional[str] = None) -> List[Dict[str, 
     # Reaper liviano: evita backlog zombie de approvals vencidas.
     try:
         from .store import expire_pending
+
         expire_pending(limit=max(100, int(limit or 50) * 4))
     except Exception:
         pass
@@ -291,7 +408,9 @@ def list_pending(limit: int = 50, risk: Optional[str] = None) -> List[Dict[str, 
     return alive[: max(1, int(limit or 50))]
 
 
-def list_all(limit: int = 50, status: Optional[str] = None, risk: Optional[str] = None) -> List[Dict[str, Any]]:
+def list_all(
+    limit: int = 50, status: Optional[str] = None, risk: Optional[str] = None
+) -> List[Dict[str, Any]]:
     return list_items(status=status, risk=risk, limit=limit)
 
 
@@ -304,8 +423,10 @@ def approve(
     confirm_token: Optional[str] = None,
 ) -> Dict[str, Any]:
     from modules.humanoid.owner.gate import check_owner_gate
+
     from .replay import consume_nonce
     from .ttl import is_expired
+
     item = get(aid)
     if item:
         # Idempotencia: si ya está resuelta, no fallar (evita re-aprobar en Telegram)
@@ -313,61 +434,122 @@ def approve(
         if st0 == "approved":
             return {"ok": True, "id": aid, "status": "already_approved", "error": None}
         if st0 == "rejected":
-            return {"ok": False, "id": aid, "status": "already_rejected", "error": "Ya fue rechazada."}
+            return {
+                "ok": False,
+                "id": aid,
+                "status": "already_rejected",
+                "error": "Ya fue rechazada.",
+            }
         risk = (item.get("risk") or "medium").strip().lower()
         allow, err = check_owner_gate(risk, owner_session_token, action=None)
         if not allow:
-            return {"ok": False, "id": aid, "status": "owner_session_required", "error": err or "X-Owner-Session required"}
+            return {
+                "ok": False,
+                "id": aid,
+                "status": "owner_session_required",
+                "error": err or "X-Owner-Session required",
+            }
         if is_expired(item.get("expires_at")):
-            return {"ok": False, "id": aid, "status": "expired", "error": "Approval expirado. Rechaza y regenera el plan."}
+            return {
+                "ok": False,
+                "id": aid,
+                "status": "expired",
+                "error": "Approval expirado. Rechaza y regenera el plan.",
+            }
         if confirm_token and not consume_nonce(confirm_token):
-            return {"ok": False, "id": aid, "status": "replay_or_invalid", "error": "Invalid or reused confirm_token (nonce)"}
+            return {
+                "ok": False,
+                "id": aid,
+                "status": "replay_or_invalid",
+                "error": "Invalid or reused confirm_token (nonce)",
+            }
     ok = store_approve(aid, resolved_by=resolved_by, signature=signature)
     try:
         from modules.humanoid.audit import get_audit_logger
-        get_audit_logger().log_event("approvals", resolved_by, "approve", ok, 0, None, {"id": aid}, None)
+
+        get_audit_logger().log_event(
+            "approvals", resolved_by, "approve", ok, 0, None, {"id": aid}, None
+        )
     except Exception:
         pass
     try:
-        from modules.humanoid.metalearn.collector import record_approval_resolved
-        record_approval_resolved(aid, item.get("action"), item.get("risk"), "approved", item)
+        from modules.humanoid.metalearn.collector import \
+            record_approval_resolved
+
+        record_approval_resolved(
+            aid, item.get("action"), item.get("risk"), "approved", item
+        )
     except Exception:
         pass
     # Si existía item pero no aprobó, distinguir expiración vs no encontrado.
     if not ok and item:
         try:
             from .ttl import is_expired
+
             if is_expired(item.get("expires_at")):
-                return {"ok": False, "id": aid, "status": "expired", "error": "Approval expirado. Rechaza y regenera el plan."}
+                return {
+                    "ok": False,
+                    "id": aid,
+                    "status": "expired",
+                    "error": "Approval expirado. Rechaza y regenera el plan.",
+                }
         except Exception:
             pass
-        return {"ok": False, "id": aid, "status": "failed", "error": "No se pudo aprobar (estado inválido o condición de seguridad)."}
+        return {
+            "ok": False,
+            "id": aid,
+            "status": "failed",
+            "error": "No se pudo aprobar (estado inválido o condición de seguridad).",
+        }
     if ok:
-        _notify_telegram_approval_resolved(item, aid, "approved", resolved_by=resolved_by)
+        _notify_telegram_approval_resolved(
+            item, aid, "approved", resolved_by=resolved_by
+        )
         _notify_whatsapp_approval_resolved(item, aid, "approved")
         try:
             from modules.humanoid.comms.ops_bus import emit as ops_emit
-            ops_emit("approval", f"Aprobación APROBADA: id={aid} action={(item or {}).get('action')}", level="info", data={"id": aid, "status": "approved"})
+
+            ops_emit(
+                "approval",
+                f"Aprobación APROBADA: id={aid} action={(item or {}).get('action')}",
+                level="info",
+                data={"id": aid, "status": "approved"},
+            )
         except Exception:
             pass
         # Registrar en autonomy_timeline
         try:
-            _log_to_autonomy_timeline(f"Aprobación aprobada: {(item or {}).get('action')}", "approval", f"approved:{aid}")
+            _log_to_autonomy_timeline(
+                f"Aprobación aprobada: {(item or {}).get('action')}",
+                "approval",
+                f"approved:{aid}",
+            )
         except Exception:
             pass
         # Ejecutar acción aprobada (si hay ejecutor). No bloquea el approve.
         exec_out = None
         try:
             from modules.humanoid.approvals.executor import execute_approved
-            exec_out = execute_approved(item or {}, approval_id=aid, resolved_by=resolved_by)
+
+            exec_out = execute_approved(
+                item or {}, approval_id=aid, resolved_by=resolved_by
+            )
             try:
                 from modules.humanoid.comms.ops_bus import emit as ops_emit
+
                 lvl = "info" if exec_out.get("ok") else "med"
                 ops_emit(
                     "approval",
-                    "Acción aprobada ejecutada." if exec_out.get("ok") else "Aprobación aprobada, pero la ejecución falló.",
+                    "Acción aprobada ejecutada."
+                    if exec_out.get("ok")
+                    else "Aprobación aprobada, pero la ejecución falló.",
                     level=lvl,
-                    data={"id": aid, "action": (item or {}).get("action"), "exec_ok": exec_out.get("ok"), "error": exec_out.get("error")},
+                    data={
+                        "id": aid,
+                        "action": (item or {}).get("action"),
+                        "exec_ok": exec_out.get("ok"),
+                        "error": exec_out.get("error"),
+                    },
                 )
             except Exception:
                 pass
@@ -381,7 +563,12 @@ def approve(
             "executed": bool(exec_out is not None),
             "execution": exec_out,
         }
-    return {"ok": ok, "id": aid, "status": "approved" if ok else "not_found", "error": None if ok else "not_found"}
+    return {
+        "ok": ok,
+        "id": aid,
+        "status": "approved" if ok else "not_found",
+        "error": None if ok else "not_found",
+    }
 
 
 def reject(aid: str, resolved_by: str = "api") -> Dict[str, Any]:
@@ -396,25 +583,48 @@ def reject(aid: str, resolved_by: str = "api") -> Dict[str, Any]:
     ok = store_reject(aid, resolved_by=resolved_by)
     try:
         from modules.humanoid.audit import get_audit_logger
-        get_audit_logger().log_event("approvals", resolved_by, "reject", ok, 0, None, {"id": aid}, None)
+
+        get_audit_logger().log_event(
+            "approvals", resolved_by, "reject", ok, 0, None, {"id": aid}, None
+        )
     except Exception:
         pass
     try:
-        from modules.humanoid.metalearn.collector import record_approval_resolved
-        record_approval_resolved(aid, (item or {}).get("action"), (item or {}).get("risk"), "rejected", item or {})
+        from modules.humanoid.metalearn.collector import \
+            record_approval_resolved
+
+        record_approval_resolved(
+            aid,
+            (item or {}).get("action"),
+            (item or {}).get("risk"),
+            "rejected",
+            item or {},
+        )
     except Exception:
         pass
     if ok:
-        _notify_telegram_approval_resolved(item, aid, "rejected", resolved_by=resolved_by)
+        _notify_telegram_approval_resolved(
+            item, aid, "rejected", resolved_by=resolved_by
+        )
         _notify_whatsapp_approval_resolved(item, aid, "rejected")
         try:
             from modules.humanoid.comms.ops_bus import emit as ops_emit
-            ops_emit("approval", f"Aprobación RECHAZADA: id={aid} action={(item or {}).get('action')}", level="info", data={"id": aid, "status": "rejected"})
+
+            ops_emit(
+                "approval",
+                f"Aprobación RECHAZADA: id={aid} action={(item or {}).get('action')}",
+                level="info",
+                data={"id": aid, "status": "rejected"},
+            )
         except Exception:
             pass
         # Registrar en autonomy_timeline
         try:
-            _log_to_autonomy_timeline(f"Aprobación rechazada: {(item or {}).get('action')}", "approval", f"rejected:{aid}")
+            _log_to_autonomy_timeline(
+                f"Aprobación rechazada: {(item or {}).get('action')}",
+                "approval",
+                f"rejected:{aid}",
+            )
         except Exception:
             pass
     return {"ok": ok, "id": aid, "status": "rejected" if ok else "not_found"}

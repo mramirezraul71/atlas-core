@@ -15,7 +15,7 @@ class OpsAgent(BaseAgent):
         # Classify steps as shell / scheduler / update; return suggested actions only
         suggested = []
         for s in steps[:20]:
-            desc = (s if isinstance(s, str) else s.get("description", ""))
+            desc = s if isinstance(s, str) else s.get("description", "")
             if not desc:
                 continue
             lower = desc.lower()
@@ -25,7 +25,12 @@ class OpsAgent(BaseAgent):
                 suggested.append({"type": "update_check", "description": desc[:200]})
             else:
                 suggested.append({"type": "shell", "description": desc[:200]})
-        return {"ok": True, "output": {"suggested_actions": suggested}, "error": None, "ms": 0}
+        return {
+            "ok": True,
+            "output": {"suggested_actions": suggested},
+            "error": None,
+            "ms": 0,
+        }
 
 
 agent = OpsAgent()

@@ -21,6 +21,10 @@ def score_findings(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         kind = f.get("kind") or ""
         base = KIND_WEIGHTS.get(kind, 0.3)
         f["score"] = float(f.get("score", base))
-        f["risk"] = "high" if kind in ("high_latency", "error_rate", "scheduler_stopped") else "low"
+        f["risk"] = (
+            "high"
+            if kind in ("high_latency", "error_rate", "scheduler_stopped")
+            else "low"
+        )
         f["dev_effort"] = "high" if kind in ("large_file",) else "low"
     return sorted(findings, key=lambda x: -x.get("score", 0))[:20]

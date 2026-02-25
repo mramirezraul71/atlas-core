@@ -9,7 +9,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 def _db_path() -> Path:
-    return Path((__import__("os").environ.get("ATLAS_MTTR_DB_PATH") or r"C:\ATLAS_PUSH\logs\mttr.sqlite").strip())
+    return Path(
+        (
+            __import__("os").environ.get("ATLAS_MTTR_DB_PATH")
+            or r"C:\ATLAS_PUSH\logs\mttr.sqlite"
+        ).strip()
+    )
 
 
 SCHEMA = """
@@ -41,7 +46,14 @@ def start(subsystem: str, signature: str, meta: Optional[Dict[str, Any]] = None)
     conn = _ensure()
     cur = conn.execute(
         "INSERT INTO mttr_events(ts_start, ts_end, ok, subsystem, signature, meta_json) VALUES (?,?,?,?,?,?)",
-        (time.time(), None, None, (subsystem or "system")[:40], (signature or "")[:64], json.dumps(meta or {}, default=str)[:2000]),
+        (
+            time.time(),
+            None,
+            None,
+            (subsystem or "system")[:40],
+            (signature or "")[:64],
+            json.dumps(meta or {}, default=str)[:2000],
+        ),
     )
     conn.commit()
     return int(cur.lastrowid)
@@ -51,7 +63,10 @@ def resolve(event_id: int, ok: bool = True) -> None:
     if not event_id:
         return
     conn = _ensure()
-    conn.execute("UPDATE mttr_events SET ts_end=?, ok=? WHERE id=?", (time.time(), 1 if ok else 0, int(event_id)))
+    conn.execute(
+        "UPDATE mttr_events SET ts_end=?, ok=? WHERE id=?",
+        (time.time(), 1 if ok else 0, int(event_id)),
+    )
     conn.commit()
 
 
@@ -83,7 +98,9 @@ def stats(hours: int = 24, limit: int = 10) -> Dict[str, Any]:
     by_sub: Dict[str, List[float]] = {}
     for sub, _sig, ms, _ok in durs:
         by_sub.setdefault(sub, []).append(ms)
-    top = sorted(by_sub.items(), key=lambda kv: (sum(kv[1]) / max(1, len(kv[1]))), reverse=True)[: max(1, int(limit))]
+    top = sorted(
+        by_sub.items(), key=lambda kv: (sum(kv[1]) / max(1, len(kv[1]))), reverse=True
+    )[: max(1, int(limit))]
     return {
         "hours": int(hours),
         "count": len(durs),
@@ -91,7 +108,14 @@ def stats(hours: int = 24, limit: int = 10) -> Dict[str, Any]:
         "fail_count": fail_cnt,
         "avg_ms": round(sum(all_ms) / max(1, len(all_ms)), 2) if all_ms else 0.0,
         "p95_ms": round(_p95(all_ms), 2) if all_ms else 0.0,
-        "by_subsystem": [{"subsystem": sub, "avg_ms": round(sum(xs) / max(1, len(xs)), 2), "count": len(xs)} for sub, xs in top],
+        "by_subsystem": [
+            {
+                "subsystem": sub,
+                "avg_ms": round(sum(xs) / max(1, len(xs)), 2),
+                "count": len(xs),
+            }
+            for sub, xs in top
+        ],
     }
 
 
@@ -99,8 +123,11 @@ def format_stats_human(hours: int = 24) -> str:
     s = stats(hours=hours, limit=8)
     if not s.get("count"):
         return "MTTR (recuperación): sin datos recientes."
-    lines = [f"MTTR {s['hours']}h: avg={int(s['avg_ms'])}ms p95={int(s['p95_ms'])}ms eventos={s['count']}"]
+    lines = [
+        f"MTTR {s['hours']}h: avg={int(s['avg_ms'])}ms p95={int(s['p95_ms'])}ms eventos={s['count']}"
+    ]
     for item in s.get("by_subsystem") or []:
-        lines.append(f"- {item['subsystem']}: avg={int(item['avg_ms'])}ms (n={item['count']})")
+        lines.append(
+            f"- {item['subsystem']}: avg={int(item['avg_ms'])}ms (n={item['count']})"
+        )
     return "\n".join(lines)
-

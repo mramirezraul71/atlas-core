@@ -58,4 +58,3 @@ function _render(container, data) {
 }
 
 window.AtlasModuleEvents = { id: 'events' };
-

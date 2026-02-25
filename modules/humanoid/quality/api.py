@@ -3,10 +3,11 @@ Quality API: Endpoints para gestión de POTs.
 """
 from __future__ import annotations
 
+import json
+from typing import List, Optional
+
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import Optional, List
-import json
 
 router = APIRouter(prefix="/quality", tags=["Quality"])
 
@@ -25,7 +26,7 @@ def list_pots(
 ):
     """
     Lista todos los POTs disponibles.
-    
+
     Query params:
     - category: Filtrar por categoría (repair, maintenance, incident, diagnostic, etc)
     - severity: Filtrar por severidad (low, medium, high, critical)
@@ -33,6 +34,7 @@ def list_pots(
     """
     try:
         from modules.humanoid.quality import list_pots as _list_pots
+
         tag_list = [t.strip() for t in tags.split(",")] if tags else None
         pots = _list_pots(category=category, severity=severity, tags=tag_list)
         return {"ok": True, "pots": pots, "count": len(pots)}
@@ -44,7 +46,7 @@ def list_pots(
 def get_pot_details(pot_id: str):
     """
     Obtiene detalles completos de un POT específico.
-    
+
     Incluye:
     - Todos los pasos con descripciones tutoriales
     - Requisitos previos
@@ -53,6 +55,7 @@ def get_pot_details(pot_id: str):
     """
     try:
         from modules.humanoid.quality import get_pot
+
         pot = get_pot(pot_id)
         if not pot:
             return {"ok": False, "error": f"POT not found: {pot_id}"}
@@ -65,19 +68,20 @@ def get_pot_details(pot_id: str):
 def execute_pot(body: ExecutePOTBody):
     """
     Ejecuta un POT manualmente.
-    
+
     Body:
     - pot_id: ID del POT a ejecutar
     - context: Contexto inicial (opcional)
     - dry_run: Si true, solo simula (opcional)
     """
     try:
-        from modules.humanoid.quality import get_pot, execute_pot as _execute_pot
-        
+        from modules.humanoid.quality import execute_pot as _execute_pot
+        from modules.humanoid.quality import get_pot
+
         pot = get_pot(body.pot_id)
         if not pot:
             return {"ok": False, "error": f"POT not found: {body.pot_id}"}
-        
+
         result = _execute_pot(
             pot,
             context=body.context or {},
@@ -101,13 +105,14 @@ def execute_pot(body: ExecutePOTBody):
 def match_pot_for_incident(check_id: str, message: Optional[str] = None):
     """
     Encuentra el POT más apropiado para un incidente dado.
-    
+
     Query params:
     - check_id: ID del check que generó el incidente
     - message: Mensaje del incidente (opcional)
     """
     try:
         from modules.humanoid.quality import get_pot_by_incident
+
         pot = get_pot_by_incident(check_id=check_id, message=message or "")
         if not pot:
             return {"ok": True, "match": None, "message": "No matching POT found"}
@@ -116,9 +121,13 @@ def match_pot_for_incident(check_id: str, message: Optional[str] = None):
             "match": {
                 "pot_id": pot.id,
                 "pot_name": pot.name,
-                "category": pot.category.value if hasattr(pot.category, 'value') else pot.category,
-                "severity": pot.severity.value if hasattr(pot.severity, 'value') else pot.severity,
-            }
+                "category": pot.category.value
+                if hasattr(pot.category, "value")
+                else pot.category,
+                "severity": pot.severity.value
+                if hasattr(pot.severity, "value")
+                else pot.severity,
+            },
         }
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -129,25 +138,30 @@ def list_reports(limit: int = 20):
     """Lista los últimos reportes de ejecución de POTs."""
     try:
         from pathlib import Path
+
         reports_dir = Path(__file__).parent / "reports"
         if not reports_dir.exists():
             return {"ok": True, "reports": [], "count": 0}
-        
-        files = sorted(reports_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
+
+        files = sorted(
+            reports_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True
+        )[:limit]
         reports = []
         for f in files:
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
-                reports.append({
-                    "filename": f.name,
-                    "pot_id": data.get("pot_id"),
-                    "pot_name": data.get("pot_name"),
-                    "ok": data.get("ok"),
-                    "started_at": data.get("started_at"),
-                    "elapsed_ms": data.get("elapsed_ms"),
-                    "steps_ok": data.get("steps_ok"),
-                    "steps_failed": data.get("steps_failed"),
-                })
+                reports.append(
+                    {
+                        "filename": f.name,
+                        "pot_id": data.get("pot_id"),
+                        "pot_name": data.get("pot_name"),
+                        "ok": data.get("ok"),
+                        "started_at": data.get("started_at"),
+                        "elapsed_ms": data.get("elapsed_ms"),
+                        "steps_ok": data.get("steps_ok"),
+                        "steps_failed": data.get("steps_failed"),
+                    }
+                )
             except Exception:
                 reports.append({"filename": f.name, "error": "parse_failed"})
         return {"ok": True, "reports": reports, "count": len(reports)}
@@ -160,12 +174,13 @@ def get_report(filename: str):
     """Obtiene un reporte específico de ejecución de POT."""
     try:
         from pathlib import Path
+
         reports_dir = Path(__file__).parent / "reports"
         report_path = reports_dir / filename
-        
+
         if not report_path.exists():
             return {"ok": False, "error": f"Report not found: {filename}"}
-        
+
         data = json.loads(report_path.read_text(encoding="utf-8"))
         return {"ok": True, "report": data}
     except Exception as e:
@@ -177,6 +192,7 @@ def list_categories():
     """Lista todas las categorías de POTs disponibles."""
     try:
         from modules.humanoid.quality.models import POTCategory
+
         categories = [
             {
                 "id": c.value,
@@ -191,7 +207,7 @@ def list_categories():
                     "security": "Procedimientos de seguridad",
                     "calibration": "Calibración de sensores/cámaras",
                     "upgrade": "Actualizaciones de sistema",
-                }.get(c.value, "")
+                }.get(c.value, ""),
             }
             for c in POTCategory
         ]
@@ -204,7 +220,7 @@ def list_categories():
 def get_pot_tutorial(pot_id: str):
     """
     Obtiene el tutorial completo de un POT.
-    
+
     Incluye:
     - Overview tutorial
     - Best practices
@@ -214,21 +230,24 @@ def get_pot_tutorial(pot_id: str):
     """
     try:
         from modules.humanoid.quality import get_pot
+
         pot = get_pot(pot_id)
         if not pot:
             return {"ok": False, "error": f"POT not found: {pot_id}"}
-        
+
         steps_tutorial = []
         for step in pot.steps:
-            steps_tutorial.append({
-                "id": step.id,
-                "name": step.name,
-                "description": step.description,
-                "tutorial_notes": step.tutorial_notes,
-                "common_errors": step.common_errors,
-                "troubleshooting": step.troubleshooting,
-            })
-        
+            steps_tutorial.append(
+                {
+                    "id": step.id,
+                    "name": step.name,
+                    "description": step.description,
+                    "tutorial_notes": step.tutorial_notes,
+                    "common_errors": step.common_errors,
+                    "troubleshooting": step.troubleshooting,
+                }
+            )
+
         return {
             "ok": True,
             "pot_id": pot.id,

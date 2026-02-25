@@ -4,9 +4,10 @@ Métricas Prometheus para ATLAS: requests, latencia, salud autónoma.
 from __future__ import annotations
 
 import time
-from typing import Dict, Any
+from typing import Any, Dict
 
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, REGISTRY
+from prometheus_client import (REGISTRY, Counter, Gauge, Histogram,
+                               generate_latest)
 
 # --- Métricas ---
 request_count = Counter(
@@ -51,7 +52,9 @@ _summary: Dict[str, Any] = {
 }
 
 
-def record_request(method: str, endpoint: str, status: int, duration_sec: float) -> None:
+def record_request(
+    method: str, endpoint: str, status: int, duration_sec: float
+) -> None:
     request_count.labels(method=method, endpoint=endpoint, status=str(status)).inc()
     request_duration.labels(method=method, endpoint=endpoint).observe(duration_sec)
     _summary["total_requests"] = _summary.get("total_requests", 0) + 1
@@ -71,6 +74,7 @@ def update_system_metrics() -> None:
     """Actualiza métricas de sistema (memoria, etc.). Llamar periódicamente."""
     try:
         import psutil
+
         rss = psutil.Process().memory_info().rss
         memory_usage.set(rss)
         _summary["memory_mb"] = round(rss / 1024 / 1024, 2)

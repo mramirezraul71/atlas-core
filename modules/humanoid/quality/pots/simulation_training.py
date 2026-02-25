@@ -11,7 +11,8 @@ Triggers:
 
 Severidad: MEDIUM
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -30,17 +31,21 @@ Procedimiento para operaciones de simulación:
         severity=POTSeverity.MEDIUM,
         version="1.0.0",
         author="ATLAS Robotics Architect",
-        
         trigger_check_ids=["simulation_*", "training_*", "sim2real_*"],
-        trigger_keywords=["simulación", "entrenar", "mujoco", "sim2real", "RL", "policy"],
-        
+        trigger_keywords=[
+            "simulación",
+            "entrenar",
+            "mujoco",
+            "sim2real",
+            "RL",
+            "policy",
+        ],
         prerequisites=[
             "Python con numpy disponible",
             "Opcionalmente: MuJoCo, PyBullet, o Isaac Sim",
         ],
         required_services=[],
         required_permissions=[],
-        
         objectives=[
             "Inicializar entorno de simulación",
             "Cargar y validar modelo del robot",
@@ -50,7 +55,6 @@ Procedimiento para operaciones de simulación:
         ],
         success_criteria="Política entrenada y lista para transferencia",
         estimated_duration_minutes=60,
-        
         tutorial_overview="""
 ## Guía de Simulación ATLAS
 
@@ -133,7 +137,6 @@ adapted_policy = transfer.prepare_policy(trained_policy)
 transfer.collect_real_data(state, action, next_state)
 ```
         """,
-        
         steps=[
             POTStep(
                 id="init_simulation",
@@ -204,7 +207,6 @@ Métricas de brecha:
                 notify_message="Simulación/entrenamiento completado",
             ),
         ],
-        
         has_rollback=False,
         tags=["simulation", "training", "RL", "sim2real", "mujoco"],
     )

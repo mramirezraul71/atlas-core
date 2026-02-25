@@ -9,7 +9,9 @@ from typing import Any, Dict, List, Optional
 REPORT_DIR = Path(os.getenv("BRAIN_REPORT_DIR", "C:\\ATLAS_PUSH\\snapshots\\brain"))
 
 
-def format_report(goal: str, bullets: List[str], ok: bool, rollback: bool = False) -> str:
+def format_report(
+    goal: str, bullets: List[str], ok: bool, rollback: bool = False
+) -> str:
     """Formatea reporte: max 10 bullets, concreto."""
     lines = [
         f"# Reporte Cerebro - {datetime.now(timezone.utc).isoformat()}",
@@ -24,7 +26,13 @@ def format_report(goal: str, bullets: List[str], ok: bool, rollback: bool = Fals
     return "\n".join(lines)
 
 
-def emit_report(goal: str, bullets: List[str], ok: bool = True, rollback: bool = False, payload: Optional[Dict] = None) -> str:
+def emit_report(
+    goal: str,
+    bullets: List[str],
+    ok: bool = True,
+    rollback: bool = False,
+    payload: Optional[Dict] = None,
+) -> str:
     """Emite reporte y guarda en disco. Retorna path."""
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -33,7 +41,18 @@ def emit_report(goal: str, bullets: List[str], ok: bool = True, rollback: bool =
     path.write_text(content, encoding="utf-8")
     try:
         from modules.humanoid.audit import get_audit_logger
-        get_audit_logger().log_event("brain_report", "system", "brain_report", "emit", ok, 0, None, payload or {}, {"path": str(path)})
+
+        get_audit_logger().log_event(
+            "brain_report",
+            "system",
+            "brain_report",
+            "emit",
+            ok,
+            0,
+            None,
+            payload or {},
+            {"path": str(path)},
+        )
     except Exception:
         pass
     return str(path)
@@ -43,5 +62,9 @@ def get_latest_report() -> Optional[str]:
     """Retorna path del último reporte."""
     if not REPORT_DIR.exists():
         return None
-    files = sorted(REPORT_DIR.glob("brain_report_*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+    files = sorted(
+        REPORT_DIR.glob("brain_report_*.md"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
     return str(files[0]) if files else None

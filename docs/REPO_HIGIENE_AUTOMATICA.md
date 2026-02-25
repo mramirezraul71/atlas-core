@@ -96,4 +96,3 @@ Opciones:
 - conteos de archivos prohibidos trackeados
 - reglas agregadas a `.gitignore`
 - resultado de commit/push automático
-

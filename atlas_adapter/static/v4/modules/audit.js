@@ -68,4 +68,3 @@ function _render(container, data) {
 }
 
 window.AtlasModuleAudit = { id: 'audit' };
-

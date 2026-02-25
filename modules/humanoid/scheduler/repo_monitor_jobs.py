@@ -26,6 +26,7 @@ def _load_repo_monitor_config() -> dict:
         return {"cycle": {"enabled": True, "interval_seconds": 600}}
     try:
         import yaml
+
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         return data
@@ -51,7 +52,9 @@ def ensure_repo_monitor_jobs() -> None:
         if cycle.get("enabled", True):
             interval_sec = int(cycle.get("interval_seconds", 600) or 600)
             interval_sec = max(60, min(interval_sec, 86400))
-            repo_job = next((j for j in jobs if j.get("name") == "repo_monitor_cycle"), None)
+            repo_job = next(
+                (j for j in jobs if j.get("name") == "repo_monitor_cycle"), None
+            )
             if repo_job:
                 conn = db._ensure()
                 conn.execute(
@@ -68,20 +71,24 @@ def ensure_repo_monitor_jobs() -> None:
                 except Exception:
                     pass
             else:
-                db.create_job(JobSpec(
-                    name="repo_monitor_cycle",
-                    kind="repo_monitor_cycle",
-                    payload={},
-                    run_at=now,
-                    interval_seconds=interval_sec,
-                ))
+                db.create_job(
+                    JobSpec(
+                        name="repo_monitor_cycle",
+                        kind="repo_monitor_cycle",
+                        payload={},
+                        run_at=now,
+                        interval_seconds=interval_sec,
+                    )
+                )
 
         # Job 2: after-fix (commit + push) cada N segundos si esta habilitado
         af = cfg.get("after_fix") or {}
         auto_interval = int(af.get("auto_schedule_interval_seconds", 0) or 0)
         if af.get("enabled", True) and auto_interval > 0:
             auto_interval = max(300, min(auto_interval, 86400))  # entre 5 min y 24 h
-            after_job = next((j for j in jobs if j.get("name") == "repo_monitor_after_fix"), None)
+            after_job = next(
+                (j for j in jobs if j.get("name") == "repo_monitor_after_fix"), None
+            )
             if after_job:
                 conn = db._ensure()
                 conn.execute(
@@ -97,12 +104,14 @@ def ensure_repo_monitor_jobs() -> None:
                 except Exception:
                     pass
             else:
-                db.create_job(JobSpec(
-                    name="repo_monitor_after_fix",
-                    kind="repo_monitor_after_fix",
-                    payload={},
-                    run_at=now,
-                    interval_seconds=auto_interval,
-                ))
+                db.create_job(
+                    JobSpec(
+                        name="repo_monitor_after_fix",
+                        kind="repo_monitor_after_fix",
+                        payload={},
+                        run_at=now,
+                        interval_seconds=auto_interval,
+                    )
+                )
     except Exception:
         pass

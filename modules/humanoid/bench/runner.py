@@ -11,7 +11,13 @@ def run_bench(level: str = "quick") -> Dict[str, Any]:
     """Run probes against AI router. Returns latency, success, recommended mapping."""
     probes = get_probes(level)
     results: List[Dict[str, Any]] = []
-    route_map = {"chat": "CHAT", "code": "CODE", "reason": "REASON", "tools": "TOOLS", "vision": "VISION"}
+    route_map = {
+        "chat": "CHAT",
+        "code": "CODE",
+        "reason": "REASON",
+        "tools": "TOOLS",
+        "vision": "VISION",
+    }
 
     for probe_type, prompt in probes.items():
         if probe_type == "vision":
@@ -22,13 +28,18 @@ def run_bench(level: str = "quick") -> Dict[str, Any]:
         err = ""
         try:
             from modules.humanoid.ai.router import route_and_run
-            out, decision, meta = route_and_run(prompt, intent_hint=probe_type, prefer_free=True)
+
+            out, decision, meta = route_and_run(
+                prompt, intent_hint=probe_type, prefer_free=True
+            )
             ok = bool(out and len(str(out).strip()) > 0)
             err = meta.get("used_fallback") and "used_fallback" or ""
         except Exception as e:
             err = str(e)
         ms = int((time.perf_counter() - t0) * 1000)
-        results.append({"probe": probe_type, "route": route, "ok": ok, "ms": ms, "error": err})
+        results.append(
+            {"probe": probe_type, "route": route, "ok": ok, "ms": ms, "error": err}
+        )
 
     # Recommender: use fastest ok model per route
     recommended = {}

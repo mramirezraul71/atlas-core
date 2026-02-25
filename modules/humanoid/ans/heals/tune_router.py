@@ -8,6 +8,7 @@ def run(**kwargs) -> dict:
     # Metalearn handles tuning; ANS can trigger metalearn run
     try:
         from modules.humanoid.metalearn.cycle import run_cycle
+
         run_cycle()
         return heal_result(True, "tune_router", "metalearn cycle triggered", {})
     except Exception as e:

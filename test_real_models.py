@@ -3,8 +3,9 @@
 Test de integración de modelos IA reales en ATLAS.
 Verifica que los módulos cognitivos usen GPU cuando está disponible.
 """
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import numpy as np
@@ -27,26 +28,26 @@ print("1. DepthEstimation (MiDaS)")
 print("-" * 40)
 try:
     from modules.humanoid.cortex.occipital import DepthEstimation
-    
+
     de = DepthEstimation(model_name="midas", model_size="MiDaS_small")
     de.load()
-    
+
     # Crear imagen de prueba
     test_image = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
-    
+
     output = de.estimate(test_image)
-    
+
     print(f"   Modelo: {output.model_used}")
     print(f"   Profundidad media: {output.mean_depth:.2f}m")
     print(f"   Tiempo: {output.processing_time_ms:.1f}ms")
-    
+
     if "mock" not in output.model_used.lower():
         print("   ✅ Usando modelo REAL")
         results["depth"] = True
     else:
         print("   ⚠️  Usando mock")
         results["depth"] = False
-        
+
 except Exception as e:
     print(f"   ❌ Error: {e}")
     results["depth"] = False
@@ -57,23 +58,23 @@ print("2. ObjectRecognition (CLIP)")
 print("-" * 40)
 try:
     from modules.humanoid.cortex.occipital import ObjectRecognition
-    
+
     orec = ObjectRecognition(embedding_model="clip")
-    
+
     # Extraer embedding
     test_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
     embedding = orec._extractor.extract(test_image)
-    
+
     print(f"   Embedding dim: {len(embedding)}")
     print(f"   Modelo cargado: {orec._extractor._use_real_clip}")
-    
+
     if orec._extractor._use_real_clip:
         print("   ✅ Usando CLIP REAL")
         results["clip"] = True
     else:
         print("   ⚠️  Usando mock")
         results["clip"] = False
-        
+
 except Exception as e:
     print(f"   ❌ Error: {e}")
     results["clip"] = False
@@ -84,19 +85,19 @@ print("3. VisionPipeline (YOLO)")
 print("-" * 40)
 try:
     from modules.humanoid.cortex.occipital import VisionPipeline
-    
+
     vp = VisionPipeline(detector_model="yolov8n", enable_depth=False, enable_pose=False)
     print(f"   Device: {vp.device}")
-    
+
     # Procesar frame
     test_frame = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
     output = vp.process_frame(test_frame, detect_humans=False, estimate_depth=False)
-    
+
     print(f"   Detecciones: {len(output.detections)}")
     print(f"   Tiempo: {output.processing_time_ms:.1f}ms")
-    
+
     if vp._detector is not None and not isinstance(vp._detector, type):
-        if hasattr(vp._detector, 'detect'):
+        if hasattr(vp._detector, "detect"):
             # Es mock
             print("   ⚠️  Usando mock detector")
             results["yolo"] = False
@@ -105,7 +106,7 @@ try:
             results["yolo"] = True
     else:
         results["yolo"] = False
-        
+
 except Exception as e:
     print(f"   ❌ Error: {e}")
     results["yolo"] = False
@@ -116,17 +117,17 @@ print("4. AudioProcessor (Whisper)")
 print("-" * 40)
 try:
     from modules.humanoid.cortex.temporal import AudioProcessor
-    
+
     ap = AudioProcessor(asr_model="whisper-base")
     ap._load_asr()
-    
+
     if ap._asr != "mock":
         print("   ✅ Whisper cargado")
         results["whisper"] = True
     else:
         print("   ⚠️  Usando mock ASR")
         results["whisper"] = False
-        
+
 except Exception as e:
     print(f"   ❌ Error: {e}")
     results["whisper"] = False

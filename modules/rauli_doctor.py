@@ -1,19 +1,27 @@
-﻿from pathlib import Path
+﻿import os
 from datetime import datetime
-import os
+from pathlib import Path
+
 
 def _env(name: str, default: str) -> str:
     v = os.getenv(name)
     return v.strip() if v and v.strip() else default
 
+
 ATLAS_ROOT = Path(_env("ATLAS_ROOT", r"C:\ATLAS"))
-VAULT_DIR  = Path(_env("ATLAS_VAULT_DIR", str(ATLAS_ROOT / "ATLAS_VAULT")))
-NOTES_DIR  = Path(_env("ATLAS_NOTES_DIR", str(VAULT_DIR / "NOTES")))
-LOGS_DIR   = Path(_env("ATLAS_LOGS_DIR", str(ATLAS_ROOT / "logs")))
-SNAPS_DIR  = Path(_env("ATLAS_SNAPS_DIR", str(ATLAS_ROOT / "snapshots")))
+VAULT_DIR = Path(_env("ATLAS_VAULT_DIR", str(ATLAS_ROOT / "ATLAS_VAULT")))
+NOTES_DIR = Path(_env("ATLAS_NOTES_DIR", str(VAULT_DIR / "NOTES")))
+LOGS_DIR = Path(_env("ATLAS_LOGS_DIR", str(ATLAS_ROOT / "logs")))
+SNAPS_DIR = Path(_env("ATLAS_SNAPS_DIR", str(ATLAS_ROOT / "snapshots")))
+
 
 def doctor_report() -> str:
-    parts = [("VAULT", VAULT_DIR), ("NOTES", NOTES_DIR), ("LOGS", LOGS_DIR), ("SNAPS", SNAPS_DIR)]
+    parts = [
+        ("VAULT", VAULT_DIR),
+        ("NOTES", NOTES_DIR),
+        ("LOGS", LOGS_DIR),
+        ("SNAPS", SNAPS_DIR),
+    ]
     lines = ["ATLAS DOCTOR:"]
     ok = True
 
@@ -35,9 +43,11 @@ def doctor_report() -> str:
 
     return "\n".join(lines)
 
+
 def run_doctor() -> str:
     # Para GUI: devuelve texto listo para mostrar
     return doctor_report()
+
 
 if __name__ == "__main__":
     print(doctor_report())

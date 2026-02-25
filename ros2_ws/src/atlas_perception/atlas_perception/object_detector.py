@@ -7,12 +7,13 @@ Publishes detection results as PerceptionResult messages.
 
 Bridges to: modules/humanoid/vision/
 """
+import json
+import os
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
-import json
-import os
 
 
 class ObjectDetector(Node):
@@ -33,7 +34,9 @@ class ObjectDetector(Node):
         self.create_subscription(Image, "/atlas/camera/head/rgb", self._image_cb, 10)
 
         # Publishers
-        self.detections_pub = self.create_publisher(String, "/atlas/perception/detections", 10)
+        self.detections_pub = self.create_publisher(
+            String, "/atlas/perception/detections", 10
+        )
 
         self.get_logger().info(
             f"Object detector started: model={self._model_name}, "
@@ -44,6 +47,7 @@ class ObjectDetector(Node):
         """Attempt to load YOLO model from existing Atlas project."""
         try:
             from ultralytics import YOLO
+
             # Check common locations for the model
             candidates = [
                 os.path.join("C:", os.sep, "ATLAS_PUSH", "yolov8n.pt"),
@@ -72,6 +76,7 @@ class ObjectDetector(Node):
         if self._model is not None:
             try:
                 import numpy as np
+
                 # Convert ROS Image to numpy
                 if msg.encoding in ("rgb8", "bgr8"):
                     channels = 3
@@ -91,21 +96,27 @@ class ObjectDetector(Node):
                         conf = float(box.conf[0])
                         cls_name = r.names.get(cls_id, f"class_{cls_id}")
                         x1, y1, x2, y2 = box.xyxy[0].tolist()
-                        detections.append({
-                            "class": cls_name,
-                            "confidence": round(conf, 3),
-                            "bbox": [round(v, 1) for v in [x1, y1, x2, y2]],
-                        })
+                        detections.append(
+                            {
+                                "class": cls_name,
+                                "confidence": round(conf, 3),
+                                "bbox": [round(v, 1) for v in [x1, y1, x2, y2]],
+                            }
+                        )
             except Exception as e:
-                self.get_logger().warn(f"Detection error: {e}", throttle_duration_sec=5.0)
+                self.get_logger().warn(
+                    f"Detection error: {e}", throttle_duration_sec=5.0
+                )
 
         # Publish detections as JSON
         det_msg = String()
-        det_msg.data = json.dumps({
-            "frame": self._frame_count,
-            "count": len(detections),
-            "detections": detections,
-        })
+        det_msg.data = json.dumps(
+            {
+                "frame": self._frame_count,
+                "count": len(detections),
+                "detections": detections,
+            }
+        )
         self.detections_pub.publish(det_msg)
 
 

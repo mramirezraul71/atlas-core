@@ -18,11 +18,14 @@ T = TypeVar("T")
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -75,7 +78,9 @@ class CircuitBreaker:
     @classmethod
     def get(cls, name: str = "default", config: dict | None = None) -> "CircuitBreaker":
         """Obtiene o crea instancia por nombre."""
-        cfg = config or _load_config().get("self_healing", {}).get("circuit_breaker", {})
+        cfg = config or _load_config().get("self_healing", {}).get(
+            "circuit_breaker", {}
+        )
         with cls._lock:
             if name not in cls._instances:
                 cls._instances[name] = CircuitBreaker(
@@ -144,5 +149,7 @@ def circuit_breaker(name: str = "default"):
         def wrapper(*args: Any, **kwargs: Any) -> T:
             cb = CircuitBreaker.get(name)
             return cb.call(f, *args, **kwargs)
+
         return wrapper
+
     return decorator

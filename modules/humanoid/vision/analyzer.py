@@ -21,8 +21,10 @@ def _check_pytesseract() -> bool:
         return _ocr_available
     try:
         from modules.humanoid.screen.tesseract_config import set_tesseract_cmd
+
         set_tesseract_cmd()
         import pytesseract
+
         pytesseract.get_tesseract_version()
         _ocr_available = True
     except Exception:
@@ -33,6 +35,7 @@ def _check_pytesseract() -> bool:
 def _check_pillow() -> bool:
     try:
         from PIL import Image
+
         return True
     except ImportError:
         return False
@@ -54,7 +57,14 @@ def _read_image_as_base64(path: str, max_size_mb: float = 5.0) -> Optional[str]:
 def ocr(image_path: str) -> Dict[str, Any]:
     """Extract text with pytesseract. Fallback: empty if not available."""
     t0 = time.perf_counter()
-    out = {"ok": False, "extracted_text": "", "interpretation": "", "entities": [], "ms": 0, "error": None}
+    out = {
+        "ok": False,
+        "extracted_text": "",
+        "interpretation": "",
+        "entities": [],
+        "ms": 0,
+        "error": None,
+    }
     if not _check_pillow():
         out["error"] = "PIL/Pillow not available"
         out["ms"] = int((time.perf_counter() - t0) * 1000)
@@ -65,9 +75,11 @@ def ocr(image_path: str) -> Dict[str, Any]:
         return out
     try:
         from modules.humanoid.screen.tesseract_config import set_tesseract_cmd
+
         set_tesseract_cmd()
-        from PIL import Image
         import pytesseract
+        from PIL import Image
+
         img = Image.open(image_path)
         text = pytesseract.image_to_string(img)
         out["ok"] = True
@@ -79,10 +91,19 @@ def ocr(image_path: str) -> Dict[str, Any]:
     return out
 
 
-def analyze_with_llm(image_path: str, prompt: str = "Describe what you see and any text.") -> Dict[str, Any]:
+def analyze_with_llm(
+    image_path: str, prompt: str = "Describe what you see and any text."
+) -> Dict[str, Any]:
     """Analyze image with vision model (Ollama llama3.2-vision etc). Fallback: metadata only."""
     t0 = time.perf_counter()
-    out = {"ok": False, "extracted_text": "", "interpretation": "", "entities": [], "ms": 0, "error": None}
+    out = {
+        "ok": False,
+        "extracted_text": "",
+        "interpretation": "",
+        "entities": [],
+        "ms": 0,
+        "error": None,
+    }
     b64 = _read_image_as_base64(image_path)
     if not b64:
         out["error"] = "could not read image"
@@ -90,6 +111,7 @@ def analyze_with_llm(image_path: str, prompt: str = "Describe what you see and a
         return out
     try:
         import httpx
+
         url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434") + "/api/generate"
         payload = {
             "model": os.getenv("LLM_VISION_MODEL", "llava:7b"),
@@ -112,7 +134,9 @@ def analyze_with_llm(image_path: str, prompt: str = "Describe what you see and a
     return out
 
 
-def analyze(image_path: str, use_ocr: bool = True, use_llm_vision: bool = True) -> Dict[str, Any]:
+def analyze(
+    image_path: str, use_ocr: bool = True, use_llm_vision: bool = True
+) -> Dict[str, Any]:
     """Full analysis: OCR + LLM vision. Fallbacks: OCR only; then metadata only."""
     t0 = time.perf_counter()
     extracted_text = ""
@@ -131,13 +155,16 @@ def analyze(image_path: str, use_ocr: bool = True, use_llm_vision: bool = True) 
     if not extracted_text and not interpretation:
         try:
             from PIL import Image
+
             img = Image.open(image_path)
             interpretation = f"Image {img.size[0]}x{img.size[1]} mode={img.mode}"
         except Exception:
             interpretation = "Could not read image"
     # Insights y acciones sugeridas (respuesta profesional)
     insights = _build_insights(extracted_text, interpretation, entities)
-    acciones_sugeridas = _build_acciones_sugeridas(extracted_text, interpretation, entities)
+    acciones_sugeridas = _build_acciones_sugeridas(
+        extracted_text, interpretation, entities
+    )
     ms = int((time.perf_counter() - t0) * 1000)
     return {
         "ok": True,
@@ -151,11 +178,15 @@ def analyze(image_path: str, use_ocr: bool = True, use_llm_vision: bool = True) 
     }
 
 
-def _build_insights(extracted_text: str, interpretation: str, entities: List[str]) -> List[str]:
+def _build_insights(
+    extracted_text: str, interpretation: str, entities: List[str]
+) -> List[str]:
     """Deriva insights cortos a partir de texto e interpretación."""
     insights: List[str] = []
     if interpretation:
-        insights.append(interpretation[:300] if len(interpretation) > 300 else interpretation)
+        insights.append(
+            interpretation[:300] if len(interpretation) > 300 else interpretation
+        )
     if extracted_text and extracted_text not in (interpretation or ""):
         insights.append(f"Texto detectado: {len(extracted_text)} caracteres")
     if entities:
@@ -163,12 +194,16 @@ def _build_insights(extracted_text: str, interpretation: str, entities: List[str
     return insights[:5]
 
 
-def _build_acciones_sugeridas(extracted_text: str, interpretation: str, entities: List[str]) -> List[str]:
+def _build_acciones_sugeridas(
+    extracted_text: str, interpretation: str, entities: List[str]
+) -> List[str]:
     """Sugerencias de acción según contenido."""
     acciones: List[str] = []
     if extracted_text:
         acciones.append("Copiar texto extraído al portapapeles o guardar en memoria")
-    if interpretation and ("código" in interpretation.lower() or "code" in interpretation.lower()):
+    if interpretation and (
+        "código" in interpretation.lower() or "code" in interpretation.lower()
+    ):
         acciones.append("Revisar si hay código en imagen para ejecutar o guardar")
     if entities:
         acciones.append("Usar entidades para búsqueda o etiquetado")
@@ -194,6 +229,7 @@ def vision_status() -> Dict[str, Any]:
 def _check_llm_vision() -> bool:
     try:
         import httpx
+
         url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434") + "/api/tags"
         with httpx.Client(timeout=5) as c:
             r = c.get(url)

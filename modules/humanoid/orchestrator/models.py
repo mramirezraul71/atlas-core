@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class Step:
     """Single step in a plan with definition of done."""
+
     id: str
     description: str
     definition_of_done: Optional[str] = None
@@ -20,6 +21,7 @@ class Step:
 @dataclass
 class Plan:
     """Plan: goal + steps from decomposer."""
+
     goal: str
     steps: List[Step]
     task_id: Optional[str] = None
@@ -30,6 +32,7 @@ class Plan:
 @dataclass
 class Task:
     """Task with context and execution log."""
+
     id: str
     goal: str
     plan: Plan
@@ -41,6 +44,7 @@ class Task:
 @dataclass
 class Result:
     """Result of step execution or full goal run."""
+
     ok: bool
     data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None

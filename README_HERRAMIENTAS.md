@@ -41,7 +41,7 @@ python config/atlas_tools_config.py
 ## URLs de Acceso
 
 - **Home Assistant**: http://localhost:8123
-- **Appsmith**: http://localhost  
+- **Appsmith**: http://localhost
 - **Ollama API**: http://localhost:11434
 
 ## Configuración de API Keys
@@ -65,7 +65,7 @@ memory = Memory()
 # Recordar detalles de clientes y hábitos
 ```
 
-### Composio - Conectividad  
+### Composio - Conectividad
 ```python
 from composio import App, Action
 # Integrar con Excel, Notion, Gmail sin programar

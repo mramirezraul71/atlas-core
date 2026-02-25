@@ -2,13 +2,14 @@
 Factory de cámaras: obtiene la cámara activa según config o auto-detecta.
 """
 
-import cv2
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
-from .standard_webcam import StandardWebcam
-from .detector import detect_cameras, load_active_config, save_active_config
+import cv2
+
 from .backend import preferred_backends
+from .detector import detect_cameras, load_active_config, save_active_config
+from .standard_webcam import StandardWebcam
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +65,14 @@ def get_camera(force_detect: bool = False):
     )
     if cam.open():
         _camera_instance = cam
-        save_active_config({
-            "index": idx,
-            "model": model,
-            "resolution": res,
-            "capabilities": first.get("capabilities", ["video"]),
-        })
+        save_active_config(
+            {
+                "index": idx,
+                "model": model,
+                "resolution": res,
+                "capabilities": first.get("capabilities", ["video"]),
+            }
+        )
         return cam
     return None
 

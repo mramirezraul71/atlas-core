@@ -10,7 +10,7 @@ import logging
 import os
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Set
 
@@ -23,6 +23,7 @@ _STEP_TIMEOUT = int(os.getenv("CGE_STEP_TIMEOUT", "20"))
 @dataclass
 class StepResult:
     """Resultado de la ejecucion de un paso."""
+
     goal_id: str
     step_index: int
     action: str
@@ -35,6 +36,7 @@ class StepResult:
 @dataclass
 class GoalStep:
     """Paso listo para ejecutar en paralelo."""
+
     goal_id: str
     step_index: int
     action_type: str
@@ -135,9 +137,7 @@ class ParallelExecutor:
         """Recolecta resultados de pasos terminados. No bloquea."""
         results = []
         with self._lock:
-            done_goals = [
-                gid for gid, fut in self._running.items() if fut.done()
-            ]
+            done_goals = [gid for gid, fut in self._running.items() if fut.done()]
         for gid in done_goals:
             with self._lock:
                 fut = self._running.pop(gid, None)
@@ -148,10 +148,15 @@ class ParallelExecutor:
                 if isinstance(result, StepResult):
                     results.append(result)
             except Exception as exc:
-                results.append(StepResult(
-                    goal_id=gid, step_index=-1, action="unknown",
-                    ok=False, error=str(exc),
-                ))
+                results.append(
+                    StepResult(
+                        goal_id=gid,
+                        step_index=-1,
+                        action="unknown",
+                        ok=False,
+                        error=str(exc),
+                    )
+                )
         for r in results:
             for cb in self._on_step_done:
                 try:
@@ -200,20 +205,22 @@ class ParallelExecutor:
             )
 
     @staticmethod
-    def _dispatch(action: str, params: Dict[str, Any],
-                  timeout_s: float) -> Dict[str, Any]:
+    def _dispatch(
+        action: str, params: Dict[str, Any], timeout_s: float
+    ) -> Dict[str, Any]:
         """Despacha al dispatcher unificado segun tipo de accion."""
         try:
-            from modules.humanoid.dispatch import (
-                run_hands, run_web, run_vision, run_voice,
-            )
+            from modules.humanoid.dispatch import (run_hands, run_vision,
+                                                   run_voice, run_web)
         except ImportError:
             return {"ok": False, "error": "dispatch module not available"}
 
         timeout_int = int(timeout_s)
 
         if action in ("navigate", "grasp", "place", "execute"):
-            command = params.get("command") or params.get("target") or params.get("goal", "")
+            command = (
+                params.get("command") or params.get("target") or params.get("goal", "")
+            )
             return run_hands(str(command), timeout_sec=timeout_int)
 
         if action in ("look", "analyze_image"):
@@ -237,4 +244,6 @@ class ParallelExecutor:
             command = params.get("query") or params.get("goal", str(params))
             return run_hands(f"echo LLM stub: {command}", timeout_sec=timeout_int)
 
-        return run_hands(str(params.get("command", str(params))), timeout_sec=timeout_int)
+        return run_hands(
+            str(params.get("command", str(params))), timeout_sec=timeout_int
+        )

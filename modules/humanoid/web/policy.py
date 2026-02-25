@@ -24,6 +24,7 @@ def _domain_allowed(url: str) -> bool:
         return True
     try:
         from urllib.parse import urlparse
+
         host = urlparse(url).netloc.lower().split(":")[0]
         return host in domains or any(host.endswith("." + d) for d in domains)
     except Exception:

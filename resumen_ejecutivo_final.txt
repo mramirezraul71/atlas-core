@@ -3,8 +3,8 @@ RESUMEN EJECUTIVO - INSPECCION DE METRICAS DEL DASHBOARD
 ===============================================================================
 
 TAREA SOLICITADA:
-Realizar una inspección de cada métrica del dashboard en los dos sitios y en 
-todos los módulos del dashboard y comprobar si están brindando los datos en 
+Realizar una inspección de cada métrica del dashboard en los dos sitios y en
+todos los módulos del dashboard y comprobar si están brindando los datos en
 tiempo real, de no hacerlo rectificarlo e informar por audio.
 
 RESULTADO: ✓ COMPLETADO EXITOSAMENTE

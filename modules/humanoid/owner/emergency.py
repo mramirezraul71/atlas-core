@@ -61,7 +61,13 @@ def is_action_blocked(action: str) -> bool:
         return False
     if _block_deploy() and a in ("deploy_apply", "deploy_bluegreen", "update_apply"):
         return True
-    if _block_remote_exec() and a in ("remote_hands", "remote_web", "remote_vision", "remote_voice", "remote_execute"):
+    if _block_remote_exec() and a in (
+        "remote_hands",
+        "remote_web",
+        "remote_vision",
+        "remote_voice",
+        "remote_execute",
+    ):
         return True
     if _block_shell() and a in ("shell_command", "exec_command", "hands"):
         return True

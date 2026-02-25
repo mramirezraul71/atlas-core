@@ -19,7 +19,9 @@ from .audit import AuditLogger
 
 # Import memory integration
 try:
-    from nexus.atlas_nexus.brain.supervisor_memory_integration import get_supervisor_memory
+    from nexus.atlas_nexus.brain.supervisor_memory_integration import \
+        get_supervisor_memory
+
     MEMORY_AVAILABLE = True
 except ImportError:
     MEMORY_AVAILABLE = False
@@ -31,6 +33,7 @@ _TIMEOUT = 5
 def _get(path: str) -> Optional[dict]:
     try:
         import requests
+
         r = requests.get(f"{_ATLAS_BASE}{path}", timeout=_TIMEOUT)
         return r.json() if r.ok else None
     except Exception:
@@ -87,7 +90,7 @@ class Supervisor:
 
     def __init__(self):
         self.audit = AuditLogger()
-        
+
         # Initialize memory integration
         self.memory = None
         if MEMORY_AVAILABLE:
@@ -102,21 +105,26 @@ class Supervisor:
 
     def advise(self, objective: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Quick advisory: gather data + LLM analysis without tool calling."""
-        self.audit.log("supervisor_request", {
-            "objective": objective,
-            "context_keys": list(context.keys()),
-        })
+        self.audit.log(
+            "supervisor_request",
+            {
+                "objective": objective,
+                "context_keys": list(context.keys()),
+            },
+        )
 
         t0 = time.perf_counter()
         snapshot = self._gather_system_snapshot()
         gather_ms = int((time.perf_counter() - t0) * 1000)
 
         diagnosis = self._diagnose(snapshot)
-        
+
         # Enhance with memory context
         memory_context = ""
         if self.memory:
-            memory_context = self.memory.enhance_supervisor_analysis(objective, snapshot)
+            memory_context = self.memory.enhance_supervisor_analysis(
+                objective, snapshot
+            )
 
         # Add persistent thread memory if provided by API layer
         thread_memory_text = ""
@@ -150,15 +158,29 @@ class Supervisor:
 
         try:
             from atlas_adapter.atlas_http_api import _direct_model_call
-            result = _direct_model_call("auto", prompt, use_config=False, prefer_fast=False, enrich=False)
+
+            result = _direct_model_call(
+                "auto", prompt, use_config=False, prefer_fast=False, enrich=False
+            )
         except Exception as e:
-            return {"ok": False, "error": str(e), "analysis": f"Error LLM: {e}",
-                    "recommendations": [], "snapshot": snapshot, "diagnosis": diagnosis}
+            return {
+                "ok": False,
+                "error": str(e),
+                "analysis": f"Error LLM: {e}",
+                "recommendations": [],
+                "snapshot": snapshot,
+                "diagnosis": diagnosis,
+            }
 
         if not result.get("ok"):
-            return {"ok": False, "error": result.get("error"),
-                    "analysis": f"LLM falló: {result.get('error')}",
-                    "recommendations": [], "snapshot": snapshot, "diagnosis": diagnosis}
+            return {
+                "ok": False,
+                "error": result.get("error"),
+                "analysis": f"LLM falló: {result.get('error')}",
+                "recommendations": [],
+                "snapshot": snapshot,
+                "diagnosis": diagnosis,
+            }
 
         analysis = result.get("output", "")
         actions = self._extract_actions(analysis)
@@ -175,7 +197,9 @@ class Supervisor:
             "ms": int(result.get("ms", 0)),
         }
 
-    def investigate(self, objective: str, context: Dict[str, Any]) -> Generator[Dict[str, Any], None, None]:
+    def investigate(
+        self, objective: str, context: Dict[str, Any]
+    ) -> Generator[Dict[str, Any], None, None]:
         """
         Deep investigation using tool calling (like the Agent).
         Yields SSE events for streaming to the frontend.
@@ -188,7 +212,9 @@ class Supervisor:
         # Enhance with memory context
         memory_context = ""
         if self.memory:
-            memory_context = self.memory.enhance_supervisor_analysis(objective, snapshot)
+            memory_context = self.memory.enhance_supervisor_analysis(
+                objective, snapshot
+            )
 
         enriched_msg = (
             f"OBJETIVO DEL OWNER: {objective}\n\n"
@@ -205,7 +231,7 @@ class Supervisor:
         if len(snap_json) > 2000:
             snap_json = snap_json[:2000] + "..."
         enriched_msg += f"\nDATOS DEL SISTEMA:\n{snap_json}\n\n"
-        
+
         # Add memory context if available
         if memory_context:
             enriched_msg += memory_context + "\n\n"
@@ -224,17 +250,27 @@ class Supervisor:
                         role = "user"
                     lines.append(f"[{role}] {content[:260]}")
                 if lines:
-                    enriched_msg += "HILO CONVERSACIONAL (resumen+últimos mensajes):\n" + "\n".join(lines) + "\n\n"
+                    enriched_msg += (
+                        "HILO CONVERSACIONAL (resumen+últimos mensajes):\n"
+                        + "\n".join(lines)
+                        + "\n\n"
+                    )
         except Exception:
             pass
-        
+
         enriched_msg += "Investiga a fondo usando las herramientas disponibles. Lee archivos, consulta endpoints, ejecuta comandos según necesites."
 
         from atlas_adapter.agent_engine import run_agent
+
         resident_policy = _load_resident_policy_text()
         system_prompt = SUPERVISOR_SYSTEM_PROMPT
         if resident_policy:
-            system_prompt = system_prompt + "\n\n" + "POLÍTICA RESIDENTE DEL SUPERVISOR (obligatoria):\n" + resident_policy
+            system_prompt = (
+                system_prompt
+                + "\n\n"
+                + "POLÍTICA RESIDENTE DEL SUPERVISOR (obligatoria):\n"
+                + resident_policy
+            )
         yield from run_agent(
             enriched_msg,
             system_prompt=system_prompt,
@@ -258,9 +294,14 @@ class Supervisor:
         aud = _get("/audit/tail?n=15")
         if aud and aud.get("entries"):
             snap["recent_audit"] = [
-                {"ts": e.get("ts", ""), "module": e.get("module", ""),
-                 "action": e.get("action", ""), "ok": e.get("ok", True),
-                 "error": (e.get("error") or "")[:100], "ms": e.get("ms", 0)}
+                {
+                    "ts": e.get("ts", ""),
+                    "module": e.get("module", ""),
+                    "action": e.get("action", ""),
+                    "ok": e.get("ok", True),
+                    "error": (e.get("error") or "")[:100],
+                    "ms": e.get("ms", 0),
+                }
                 for e in aud["entries"][:15]
             ]
 
@@ -275,13 +316,18 @@ class Supervisor:
         bit = _get("/bitacora/stream?since_id=0")
         if bit and bit.get("entries"):
             snap["bitacora_recent"] = [
-                {"ts": e.get("timestamp", ""), "msg": (e.get("message") or "")[:120],
-                 "ok": e.get("ok", True), "source": e.get("source", "")}
+                {
+                    "ts": e.get("timestamp", ""),
+                    "msg": (e.get("message") or "")[:120],
+                    "ok": e.get("ok", True),
+                    "source": e.get("source", ""),
+                }
                 for e in bit["entries"][:10]
             ]
 
         try:
             import psutil
+
             snap["system"] = {
                 "cpu_pct": psutil.cpu_percent(interval=0.3),
                 "ram_pct": psutil.virtual_memory().percent,
@@ -311,7 +357,9 @@ class Supervisor:
         for name, val in checks.items():
             if isinstance(val, dict):
                 if not val.get("ok", True):
-                    issues.append(f"Check '{name}' fallido: {val.get('error', 'unknown')}")
+                    issues.append(
+                        f"Check '{name}' fallido: {val.get('error', 'unknown')}"
+                    )
             elif val is False:
                 issues.append(f"Check '{name}' fallido")
 
@@ -319,9 +367,13 @@ class Supervisor:
         errors = [e for e in audit if not e.get("ok", True)]
         if errors:
             modules_with_errors = list(set(e.get("module", "?") for e in errors))
-            issues.append(f"{len(errors)} errores recientes en auditoría (módulos: {', '.join(modules_with_errors)})")
+            issues.append(
+                f"{len(errors)} errores recientes en auditoría (módulos: {', '.join(modules_with_errors)})"
+            )
             for e in errors[:3]:
-                issues.append(f"  → {e.get('module')}.{e.get('action')}: {e.get('error', '?')}")
+                issues.append(
+                    f"  → {e.get('module')}.{e.get('action')}: {e.get('error', '?')}"
+                )
 
         status = snap.get("status", {})
         if status and not status.get("robot_connected"):
@@ -344,7 +396,11 @@ class Supervisor:
             "issues": issues,
             "warnings": warnings,
             "ok_items": ok_items,
-            "severity": "critical" if len(issues) > 3 else "warning" if issues else "healthy",
+            "severity": "critical"
+            if len(issues) > 3
+            else "warning"
+            if issues
+            else "healthy",
         }
 
     def _build_analysis_prompt(
@@ -374,11 +430,17 @@ class Supervisor:
 
         thread_section = ""
         if thread_memory:
-            thread_section = "HILO CONVERSACIONAL (resumen+últimos mensajes):\n" + thread_memory + "\n"
+            thread_section = (
+                "HILO CONVERSACIONAL (resumen+últimos mensajes):\n"
+                + thread_memory
+                + "\n"
+            )
 
         policy_section = ""
         if resident_policy:
-            policy_section = "\nPOLÍTICA RESIDENTE (obligatoria):\n" + resident_policy + "\n"
+            policy_section = (
+                "\nPOLÍTICA RESIDENTE (obligatoria):\n" + resident_policy + "\n"
+            )
 
         return f"""Eres el Supervisor técnico de ATLAS, subordinado al Owner (Raúl).
 
@@ -420,7 +482,11 @@ Solo usa endpoints reales de ATLAS."""
             if up.startswith("ACTION:"):
                 if current:
                     actions.append(current)
-                current = {"description": stripped[7:].strip(), "risk": "low", "execute": ""}
+                current = {
+                    "description": stripped[7:].strip(),
+                    "risk": "low",
+                    "execute": "",
+                }
             elif up.startswith("RISK:") and current:
                 current["risk"] = stripped[5:].strip().lower()
             elif up.startswith("EXECUTE:") and current:

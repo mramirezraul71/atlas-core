@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict
 
+
 def _env(name: str, default: str) -> str:
     v = os.getenv(name)
     return (v or "").strip().lower() or default
@@ -89,6 +90,7 @@ def _screen_act_deps_ok() -> bool:
 def _playwright_ok() -> bool:
     try:
         from modules.humanoid.deps_checker import check_playwright
+
         return check_playwright().get("available", False)
     except Exception:
         return False
@@ -97,8 +99,10 @@ def _playwright_ok() -> bool:
 def _tesseract_ok() -> bool:
     try:
         from modules.humanoid.screen.tesseract_config import set_tesseract_cmd
+
         set_tesseract_cmd()
         import pytesseract
+
         pytesseract.get_tesseract_version()
         return True
     except Exception:
@@ -109,6 +113,7 @@ def _low_resource_heuristic() -> bool:
     """Heuristic: low RAM or no GPU => prefer fast model."""
     try:
         import psutil
+
         mem = psutil.virtual_memory()
         if mem.total < 8 * 1024 * 1024 * 1024:  # < 8GB
             return True

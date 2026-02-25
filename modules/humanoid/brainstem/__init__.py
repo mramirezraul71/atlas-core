@@ -7,9 +7,9 @@ Analogo biologico: Bulbo raquideo + formacion reticular
 - GlobalState: Estados globales del sistema
 - Watchdog: Vigilancia y heartbeats
 """
-from .vitals_monitor import VitalsMonitor, VitalsReading
-from .safety_policy import SafetyPolicy, SafetyVerdict, SafetyRule
 from .global_state import GlobalState, SystemMode
+from .safety_policy import SafetyPolicy, SafetyRule, SafetyVerdict
+from .vitals_monitor import VitalsMonitor, VitalsReading
 from .watchdog import Watchdog
 
 __all__ = [

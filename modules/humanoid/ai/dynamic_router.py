@@ -4,14 +4,16 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-from .telemetry import aggregate_by_provider, get_recent, quality_insufficient_count
-from .registry import resolve_model_for_route, get_model_specs
 from .models import ModelSpec
+from .registry import get_model_specs, resolve_model_for_route
+from .telemetry import (aggregate_by_provider, get_recent,
+                        quality_insufficient_count)
 
 
 def _ollama_available() -> bool:
     try:
         from modules.humanoid.deploy.healthcheck import _check_llm_reachable
+
         return _check_llm_reachable().get("ok", False)
     except Exception:
         return False
@@ -37,7 +39,9 @@ def get_dynamic_weights(route: str) -> Dict[str, float]:
     return weights
 
 
-def resolve_with_telemetry(route: str, ollama_ok: bool, prefer_free: bool = True) -> Optional[ModelSpec]:
+def resolve_with_telemetry(
+    route: str, ollama_ok: bool, prefer_free: bool = True
+) -> Optional[ModelSpec]:
     """Resuelve modelo para route considerando telemetría. Fallback si falla => registrar en memory."""
     specs = [s for s in get_model_specs(ollama_ok) if s.route == route]
     if not specs:
@@ -58,6 +62,7 @@ def record_failure_and_adjust(provider_id: str, model_key: str) -> None:
     """Registrar fallo en memory para ajuste futuro. Integración con evolution_memory."""
     try:
         from modules.humanoid.evolution_memory import record_model_failure
+
         record_model_failure(provider_id, model_key)
     except ImportError:
         pass
@@ -70,7 +75,8 @@ def route_with_adaptation(
     prefer_free: bool = True,
 ) -> Tuple[Optional[ModelSpec], str]:
     """Decide modelo con telemetría; retorna (spec, route)."""
-    from .router import infer_task_profile, _profile_to_route
+    from .router import _profile_to_route, infer_task_profile
+
     profile = infer_task_profile(prompt, intent_hint=intent_hint, modality=modality)
     route = _profile_to_route(profile)
     ollama_ok = _ollama_available()

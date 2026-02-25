@@ -7,6 +7,7 @@ from .base import heal_result
 def run(**kwargs) -> dict:
     try:
         from modules.humanoid.gateway.bootstrap import bootstrap
+
         r = bootstrap()
         ok = r.get("ok", False)
         return heal_result(ok, "retry_gateway_bootstrap", r.get("message", "ok"), r)

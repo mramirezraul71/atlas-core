@@ -10,16 +10,16 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-        
+
         * {
             font-family: 'Inter', sans-serif;
         }
-        
+
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
-        
+
         .animate-pulse {
             animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
@@ -240,7 +240,7 @@
 
             return (
                 <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-gray-100 p-6">
-                    
+
                     {/* Header */}
                     <header className="mb-8">
                         <div className="flex items-center justify-between flex-wrap gap-4">
@@ -255,7 +255,7 @@
                                     <p className="text-sm text-gray-400 mt-1">Sistema autonomo de gestion inteligente <span className="text-xs font-mono text-gray-600 ml-2">v2.0.0</span></p>
                                 </div>
                             </div>
-                            
+
                             <div className="flex items-center space-x-3 flex-shrink-0">
                                 <div className="flex space-x-2 flex-shrink-0">
                                     <a href={ORIGIN+'/ui'} className="px-3 py-1.5 bg-slate-800/80 border border-slate-700/50 rounded-lg text-xs text-gray-400 hover:text-cyan-400 hover:border-cyan-500/30 transition-all no-underline">📊 Bitacora</a>
@@ -283,17 +283,17 @@
 
                     {/* Main Grid */}
                     <div className="grid grid-cols-12 gap-6">
-                        
+
                         {/* Left Column */}
                         <div className="col-span-8 space-y-6">
-                            
+
                             {/* Services */}
                             <div className="bg-slate-900/50 backdrop-blur border border-slate-800 rounded-2xl p-6 shadow-xl">
                                 <h2 className="text-lg font-semibold mb-4 flex items-center space-x-2">
                                     <Icons.Layers className="w-5 h-5 text-cyan-400" />
                                     <span>Servicios Core</span>
                                 </h2>
-                                
+
                                 <div className="grid grid-cols-2 gap-4">
                                     {Object.entries(systemData.services).map(([name, service]) => {
                                         const isOn = service.status === 'healthy';
@@ -309,7 +309,7 @@
                                                     <span className={"text-xs " + labelColor}>{isOn ? 'Online' : 'Offline'}</span>
                                                 </div>
                                             </div>
-                                            
+
                                             <div className="space-y-2">
                                                 <div className="flex justify-between text-xs">
                                                     <span className="text-gray-500">Port</span>
@@ -319,14 +319,14 @@
                                                     <span className="text-gray-500">Uptime</span>
                                                     <span className="font-mono text-gray-300">{service.uptime}</span>
                                                 </div>
-                                                
+
                                                 <div>
                                                     <div className="flex justify-between text-xs mb-1">
                                                         <span className="text-gray-500">Load</span>
                                                         <span className="font-mono text-gray-300">{Math.round(service.load)}%</span>
                                                     </div>
                                                     <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                                                        <div 
+                                                        <div
                                                             className={"h-full bg-gradient-to-r transition-all duration-500 " + barColor}
                                                             style={{ width: `${service.load}%` }}
                                                         ></div>
@@ -350,21 +350,21 @@
                                         {systemData.learning.tasksTotal > 0 ? 'Activo' : 'Esperando'}
                                     </div>
                                 </div>
-                                
+
                                 <div className="mb-4">
                                     <div className="flex items-center justify-between mb-2">
                                         <h3 className="font-medium text-white">{systemData.learning.currentLesson}</h3>
                                         <span className="text-2xl font-bold text-violet-400">{systemData.learning.progress}%</span>
                                     </div>
-                                    
+
                                     <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                                        <div 
+                                        <div
                                             className="h-full bg-gradient-to-r from-violet-500 via-fuchsia-500 to-pink-500 transition-all duration-500"
                                             style={{ width: `${systemData.learning.progress}%` }}
                                         ></div>
                                     </div>
                                 </div>
-                                
+
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                     <div className="text-center p-2 bg-slate-800/50 rounded-lg">
                                         <div className="text-lg font-bold text-white">{systemData.learning.tasksCompleted}/{systemData.learning.tasksTotal}</div>
@@ -391,7 +391,7 @@
                                     <Icons.Activity className="w-5 h-5 text-cyan-400" />
                                     <span>Actividad Reciente</span>
                                 </h2>
-                                
+
                                 <div className="space-y-2">
                                     {systemData.recentActivity.map((activity, idx) => (
                                         <div key={idx} className="flex items-center justify-between p-3 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 transition-all">
@@ -411,14 +411,14 @@
 
                         {/* Right Column */}
                         <div className="col-span-4 space-y-6">
-                            
+
                             {/* Memory */}
                             <div className="bg-slate-900/50 backdrop-blur border border-slate-800 rounded-2xl p-6 shadow-xl">
                                 <h2 className="text-lg font-semibold mb-4 flex items-center space-x-2">
                                     <Icons.Database className="w-5 h-5 text-cyan-400" />
                                     <span>Sistema de Memoria</span>
                                 </h2>
-                                
+
                                 <div className="space-y-4">
                                     <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-lg p-4">
                                         <div className="flex items-center justify-between mb-2">
@@ -428,7 +428,7 @@
                                         <div className="text-xs text-gray-400">Eventos registrados</div>
                                         <div className="text-xs text-cyan-400/70">+{systemData.memory.episodic.today} hoy</div>
                                     </div>
-                                    
+
                                     <div className="bg-violet-500/10 border border-violet-500/20 rounded-lg p-4">
                                         <div className="flex items-center justify-between mb-2">
                                             <h3 className="font-medium text-white">Memoria Semantica</h3>
@@ -437,7 +437,7 @@
                                         <div className="text-xs text-gray-400">Experiencias + Episodios</div>
                                         <div className="text-xs text-violet-400/70">{systemData.memory.semantic.concepts} reglas/principios</div>
                                     </div>
-                                    
+
                                     <div className="bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-lg p-4">
                                         <div className="flex items-center justify-between mb-2">
                                             <h3 className="font-medium text-white">Base de Conocimiento</h3>
@@ -455,33 +455,33 @@
                                     <Icons.Brain className="w-5 h-5 text-emerald-400" />
                                     <span>AI & Modulos</span>
                                 </h2>
-                                
+
                                 <div className="space-y-3">
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-400">Modelos IA</span>
                                         <span className="text-sm font-mono text-emerald-400">{systemData.ai.available}<span className="text-gray-500">/{systemData.ai.total}</span> activos</span>
                                     </div>
-                                    
+
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-400">Modo</span>
                                         <span className="text-sm font-mono text-gray-300">Cascada Auto</span>
                                     </div>
-                                    
+
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-400">Modulos ATLAS</span>
                                         <span className="text-sm font-medium text-emerald-400">{systemData.extra.modulesConnected}<span className="text-gray-500">/{systemData.extra.modulesTotal}</span></span>
                                     </div>
-                                    
+
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-400">Herramientas</span>
                                         <span className="text-sm font-bold text-white">{systemData.extra.toolsCount}</span>
                                     </div>
-                                    
+
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-400">Reglas aprendidas</span>
                                         <span className="text-sm font-mono text-fuchsia-400">{systemData.extra.reglas}</span>
                                     </div>
-                                    
+
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-400">Tasa exito</span>
                                         <span className={"text-sm font-mono " + (systemData.metrics.successRate>=60?"text-emerald-400":systemData.metrics.successRate>=30?"text-amber-400":"text-red-400")}>{systemData.metrics.successRate}%</span>
@@ -495,7 +495,7 @@
                                     <Icons.Cpu className="w-5 h-5 text-cyan-400" />
                                     <span>Recursos Sistema</span>
                                 </h2>
-                                
+
                                 <div className="space-y-3">
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm text-gray-400">CPU</span>

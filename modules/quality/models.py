@@ -38,4 +38,3 @@ class POTResult:
     output: str
     step_outputs: List[Dict] = field(default_factory=list)
     report_path: Optional[str] = None
-

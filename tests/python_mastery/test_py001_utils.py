@@ -6,10 +6,18 @@ import pytest
 
 
 def _enabled() -> bool:
-    return os.getenv("RUN_PYTHON_MASTERY", "").strip().lower() in ("1", "true", "yes", "on")
+    return os.getenv("RUN_PYTHON_MASTERY", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
-pytestmark = pytest.mark.skipif(not _enabled(), reason="Python Mastery tests deshabilitados (set RUN_PYTHON_MASTERY=1).")
+pytestmark = pytest.mark.skipif(
+    not _enabled(),
+    reason="Python Mastery tests deshabilitados (set RUN_PYTHON_MASTERY=1).",
+)
 
 
 def test_normalize_text_rules():
@@ -31,4 +39,3 @@ def test_safe_get_nested():
     d = {"a": {"b": {"c": 7}}}
     assert safe_get(d, "a.b.c") == 7
     assert safe_get(d, "a.b.x", default=9) == 9
-

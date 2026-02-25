@@ -105,8 +105,8 @@ c:\ATLAS_PUSH\
 - `resilience`: priority_queue max_queue_size, throttling max_concurrent_requests/rate_limit_per_second, survival_mode triggers, backup_dir.
 - `learning`: pattern_analysis min_data_points, auto_optimization, knowledge_graph max_nodes, feedback_db.
 
-**requirements.txt** (añadidos):  
-`psutil>=5.9.0`, `scikit-learn>=1.3.0`, `py-cpuinfo>=9.0.0`, `PyYAML>=6.0`.  
+**requirements.txt** (añadidos):
+`psutil>=5.9.0`, `scikit-learn>=1.3.0`, `py-cpuinfo>=9.0.0`, `PyYAML>=6.0`.
 GPU opcional: `GPUtil` no está en requirements; si se instala, SystemMetrics usa GPU.
 
 ---
@@ -152,20 +152,20 @@ Todos bajo el router montado desde `autonomous.api_routes` (prefix `/api`). Si e
 
 ## 7. Cómo ejecutar y probar
 
-1. **Dependencias:**  
+1. **Dependencias:**
    `pip install psutil scikit-learn py-cpuinfo PyYAML` (o `pip install -r requirements.txt`).
 
-2. **Arrancar PUSH:**  
-   Desde la raíz del repo:  
+2. **Arrancar PUSH:**
+   Desde la raíz del repo:
    `python -m uvicorn atlas_adapter.atlas_http_api:app --host 0.0.0.0 --port 8791`
 
-3. **Probar Autonomous:**  
-   - Salud global: `GET http://127.0.0.1:8791/api/health/comprehensive`  
-   - Servicios: `GET http://127.0.0.1:8791/api/health/metrics/services`  
-   - Healing stats: `GET http://127.0.0.1:8791/api/healing/stats`  
+3. **Probar Autonomous:**
+   - Salud global: `GET http://127.0.0.1:8791/api/health/comprehensive`
+   - Servicios: `GET http://127.0.0.1:8791/api/health/metrics/services`
+   - Healing stats: `GET http://127.0.0.1:8791/api/healing/stats`
    - Dashboard data: `GET http://127.0.0.1:8791/api/telemetry/dashboard/health_overview`
 
-4. **Si autonomous no carga:** En el log de arranque aparecerá algo como:  
+4. **Si autonomous no carga:** En el log de arranque aparecerá algo como:
    `Autonomous module not loaded: <mensaje>`. Revisar que la raíz del repo esté en `sys.path` y que no falte ninguna dependencia.
 
 ---

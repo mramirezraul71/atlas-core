@@ -11,29 +11,31 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
+
 def main():
     """Ejecutar repo scanner y mostrar resultados."""
     try:
         from modules.humanoid.ci.scanner import scan_repo
+
         result = scan_repo(scope="repo", max_items=20)
-        
+
         print("=== REPO SCANNER ===")
         print(f"OK: {result.get('ok', False)}")
         print(f"Hallazgos: {len(result.get('findings', []))}")
         print()
-        
-        for f in result.get('findings', [])[:10]:
-            kind = f.get('kind', 'unknown')
-            path = f.get('path', '')
-            detail = f.get('detail', '')
+
+        for f in result.get("findings", [])[:10]:
+            kind = f.get("kind", "unknown")
+            path = f.get("path", "")
+            detail = f.get("detail", "")
             print(f"  [{kind}] {path}: {detail}")
-        
+
         # Retornar JSON para captura
         print()
         print("JSON_OUTPUT:", json.dumps(result))
-        
-        return 0 if result.get('ok') else 1
-        
+
+        return 0 if result.get("ok") else 1
+
     except ImportError as e:
         print(f"Error importando scanner: {e}")
         print("JSON_OUTPUT:", json.dumps({"ok": False, "error": str(e)}))

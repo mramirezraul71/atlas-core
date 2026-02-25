@@ -9,7 +9,8 @@ Triggers:
 
 Severidad: MEDIUM
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -25,16 +26,23 @@ pruebas de carga básicas.
         severity=POTSeverity.MEDIUM,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["api_health", "endpoint_*", "http_*"],
-        trigger_keywords=["api", "endpoint", "500", "502", "503", "504", "timeout", "error", "response"],
-        
+        trigger_keywords=[
+            "api",
+            "endpoint",
+            "500",
+            "502",
+            "503",
+            "504",
+            "timeout",
+            "error",
+            "response",
+        ],
         prerequisites=[
             "Dashboard Push accesible",
             "Acceso a logs del servidor",
         ],
         required_services=["push"],
-        
         objectives=[
             "Identificar endpoint(s) fallando",
             "Diagnosticar causa raíz (timeout, exception, dependencia)",
@@ -43,7 +51,6 @@ pruebas de carga básicas.
         ],
         success_criteria="Endpoint(s) afectados responden 200 con payload válido",
         estimated_duration_minutes=2,
-        
         tutorial_overview="""
 ## Guía de Reparación de APIs
 
@@ -62,17 +69,14 @@ pruebas de carga básicas.
 3. Probar endpoint con payload mínimo
 4. Si falla, reiniciar servicio afectado
         """.strip(),
-        
         best_practices=[
             "Siempre revisar logs antes de reiniciar",
             "Probar con payload mínimo primero",
             "Verificar que dependencias (DB, Redis) estén UP",
             "Documentar el error para prevenir recurrencia",
         ],
-        
         related_pots=["services_repair", "diagnostic_full"],
         tags=["api", "http", "endpoint", "repair"],
-        
         steps=[
             POTStep(
                 id="check_base_health",
@@ -84,7 +88,6 @@ pruebas de carga básicas.
                 timeout_seconds=10,
                 tutorial_notes="Si /health falla, el problema es más grave que un endpoint específico.",
             ),
-            
             POTStep(
                 id="trigger_ans_cycle",
                 name="Ejecutar ciclo ANS",
@@ -100,7 +103,6 @@ El ANS puede detectar y auto-reparar muchos problemas.
 Lo ejecutamos primero para aprovechar los heals existentes.
                 """,
             ),
-            
             POTStep(
                 id="wait_ans",
                 name="Esperar ciclo ANS",
@@ -108,7 +110,6 @@ Lo ejecutamos primero para aprovechar los heals existentes.
                 step_type=StepType.WAIT,
                 wait_seconds=5,
             ),
-            
             POTStep(
                 id="check_incidents",
                 name="Verificar incidentes recientes",
@@ -119,7 +120,6 @@ Lo ejecutamos primero para aprovechar los heals existentes.
                 timeout_seconds=10,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="restart_push_if_needed",
                 name="Reiniciar Push si necesario",
@@ -130,7 +130,6 @@ Lo ejecutamos primero para aprovechar los heals existentes.
                 condition="context.get('restart_required', False)",
                 tutorial_notes="Solo reiniciar si los pasos anteriores no resolvieron.",
             ),
-            
             POTStep(
                 id="verify_endpoints",
                 name="Verificar endpoints críticos",
@@ -140,7 +139,6 @@ Lo ejecutamos primero para aprovechar los heals existentes.
                 timeout_seconds=60,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="log_result",
                 name="Registrar resultado",
@@ -151,7 +149,7 @@ Lo ejecutamos primero para aprovechar los heals existentes.
                 http_body={
                     "message": "[REPARACIÓN] APIs verificadas por POT api_repair",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
                 continue_on_failure=True,
             ),

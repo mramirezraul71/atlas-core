@@ -19,6 +19,7 @@ FETCH_TIMEOUT_MS = 15000
 def _clean_visible_text(html: str) -> str:
     try:
         from bs4 import BeautifulSoup
+
         soup = BeautifulSoup(html or "", "html.parser")
         for tag in soup(["script", "style", "nav", "footer", "header"]):
             tag.decompose()
@@ -32,7 +33,9 @@ def _clean_visible_text(html: str) -> str:
 class AtlasNavigator:
     """Navegador asíncrono: Chromium headless, extracción de texto con BeautifulSoup, screenshot en temp_vision/."""
 
-    def __init__(self, headless: bool = True, timeout_ms: int = FETCH_TIMEOUT_MS) -> None:
+    def __init__(
+        self, headless: bool = True, timeout_ms: int = FETCH_TIMEOUT_MS
+    ) -> None:
         self._headless = headless
         self._timeout_ms = timeout_ms
         self._playwright = None
@@ -42,8 +45,11 @@ class AtlasNavigator:
         """Inicia contexto Chromium en modo headless."""
         try:
             from playwright.async_api import async_playwright
+
             self._playwright = await async_playwright().start()
-            self._browser = await self._playwright.chromium.launch(headless=self._headless)
+            self._browser = await self._playwright.chromium.launch(
+                headless=self._headless
+            )
         except Exception as e:
             logger.exception("start_browser: %s", e)
             raise
@@ -55,12 +61,24 @@ class AtlasNavigator:
         si falla: {"status": "error", "message": "..."}.
         """
         TEMP_VISION.mkdir(parents=True, exist_ok=True)
-        default_fail = {"status": "error", "message": "unknown", "title": "", "text": "", "screenshot_path": ""}
+        default_fail = {
+            "status": "error",
+            "message": "unknown",
+            "title": "",
+            "text": "",
+            "screenshot_path": "",
+        }
         if not self._browser:
             try:
                 await self.start_browser()
             except Exception as e:
-                return {"status": "error", "message": str(e), "title": "", "text": "", "screenshot_path": ""}
+                return {
+                    "status": "error",
+                    "message": str(e),
+                    "title": "",
+                    "text": "",
+                    "screenshot_path": "",
+                }
         try:
             page = await self._browser.new_page()
             try:
@@ -99,10 +117,22 @@ class AtlasNavigator:
                 "screenshot_path": screenshot_path,
             }
         except asyncio.TimeoutError as e:
-            return {"status": "error", "message": f"timeout: {e}", "title": "", "text": "", "screenshot_path": ""}
+            return {
+                "status": "error",
+                "message": f"timeout: {e}",
+                "title": "",
+                "text": "",
+                "screenshot_path": "",
+            }
         except Exception as e:
             logger.debug("fetch_page_content: %s", e)
-            return {"status": "error", "message": str(e), "title": "", "text": "", "screenshot_path": ""}
+            return {
+                "status": "error",
+                "message": str(e),
+                "title": "",
+                "text": "",
+                "screenshot_path": "",
+            }
 
     async def close_browser(self) -> None:
         """Cierra navegador y Playwright."""
@@ -136,6 +166,7 @@ async def fetch_page_text(url: str) -> Optional[str]:
 
 
 if __name__ == "__main__":
+
     async def _test() -> None:
         nav = AtlasNavigator(headless=True, timeout_ms=15000)
         try:

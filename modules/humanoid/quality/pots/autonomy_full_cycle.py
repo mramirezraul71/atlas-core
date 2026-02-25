@@ -20,7 +20,8 @@ Triggers:
 
 Severidad: MEDIUM (modifica sistema si hay healing)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -46,18 +47,27 @@ al sistema vivo, aprendiendo y mejorando continuamente.
         severity=POTSeverity.MEDIUM,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["autonomy_*", "cycle_*", "heartbeat_*"],
-        trigger_keywords=["autonomy", "autonomous", "cycle", "heartbeat", "latido", "auto"],
-        
+        trigger_keywords=[
+            "autonomy",
+            "autonomous",
+            "cycle",
+            "heartbeat",
+            "latido",
+            "auto",
+        ],
         prerequisites=[
             "Servicios básicos funcionando (Push, Robot)",
             "Módulo autonomous disponible",
             "Configuración autonomous.yaml presente",
         ],
         required_services=["push"],
-        required_permissions=["health_read", "healing_execute", "learning_read", "git_write"],
-        
+        required_permissions=[
+            "health_read",
+            "healing_execute",
+            "learning_read",
+            "git_write",
+        ],
         objectives=[
             "Ejecutar auto-inspección completa",
             "Detectar y corregir anomalías",
@@ -68,7 +78,6 @@ al sistema vivo, aprendiendo y mejorando continuamente.
         ],
         success_criteria="Ciclo completado con health score >= 70 y sin errores críticos",
         estimated_duration_minutes=5,
-        
         tutorial_overview="""
 ## Guía del Ciclo de Autonomía Completo
 
@@ -125,7 +134,6 @@ survival_mode       →  Solo operaciones críticas
 - **Desarrollo**: Cada 30 minutos
 - **Producción crítica**: Cada 2-3 minutos
         """.strip(),
-        
         best_practices=[
             "Ejecutar regularmente via scheduler",
             "Monitorear health_score trends",
@@ -133,13 +141,11 @@ survival_mode       →  Solo operaciones críticas
             "No ejecutar durante deploys activos",
             "Permitir healing automático solo en modo growth",
         ],
-        
         warnings=[
             "Healing puede reiniciar servicios",
             "Evolution puede aplicar actualizaciones",
             "Verificar modo governance antes de ejecutar",
         ],
-        
         related_pots=[
             "diagnostic_full",
             "services_repair",
@@ -147,9 +153,16 @@ survival_mode       →  Solo operaciones críticas
             "session_startup",
             "git_push",
         ],
-        tags=["autonomy", "cycle", "health", "healing", "learning", "evolution", "master"],
+        tags=[
+            "autonomy",
+            "cycle",
+            "health",
+            "healing",
+            "learning",
+            "evolution",
+            "master",
+        ],
         has_rollback=False,  # El ciclo es mayormente read-only, healing tiene su propio rollback
-        
         steps=[
             # ================================================================
             # FASE 1: AUTO-INSPECCIÓN (Health Monitor)
@@ -166,7 +179,6 @@ survival_mode       →  Solo operaciones críticas
                 continue_on_failure=True,
                 tutorial_notes="survival_mode activo = solo operaciones críticas",
             ),
-            
             POTStep(
                 id="health_comprehensive",
                 name="Obtener salud comprehensiva",
@@ -186,7 +198,6 @@ Respuesta incluye:
 - recommendations: acciones sugeridas
                 """,
             ),
-            
             POTStep(
                 id="health_system_metrics",
                 name="Métricas de sistema",
@@ -198,7 +209,6 @@ Respuesta incluye:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="health_services",
                 name="Estado de servicios",
@@ -210,7 +220,6 @@ Respuesta incluye:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_anomalies",
                 name="Detectar anomalías",
@@ -222,7 +231,6 @@ Respuesta incluye:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="log_health_status",
                 name="Log estado de salud",
@@ -230,7 +238,6 @@ Respuesta incluye:
                 step_type=StepType.LOG,
                 tutorial_notes="El health_score se usa para decidir si hacer healing",
             ),
-            
             # ================================================================
             # FASE 2: AUTO-CORRECCIÓN (Self Healing)
             # ================================================================
@@ -243,7 +250,6 @@ Respuesta incluye:
                 capture_output=True,
                 tutorial_notes="Si el health check falló, necesitamos healing",
             ),
-            
             POTStep(
                 id="healing_stats",
                 name="Obtener estadísticas de healing",
@@ -255,7 +261,6 @@ Respuesta incluye:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_ans_incidents",
                 name="Verificar incidentes ANS",
@@ -267,7 +272,6 @@ Respuesta incluye:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="trigger_ans_cycle",
                 name="Ejecutar ciclo ANS",
@@ -280,7 +284,6 @@ Respuesta incluye:
                 continue_on_failure=True,
                 tutorial_notes="ANS ejecuta sus propios checks y heals internos",
             ),
-            
             # ================================================================
             # FASE 3: AUTO-APRENDIZAJE (Learning)
             # ================================================================
@@ -295,7 +298,6 @@ Respuesta incluye:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="learning_insights",
                 name="Obtener insights de aprendizaje",
@@ -308,7 +310,6 @@ Respuesta incluye:
                 continue_on_failure=True,
                 tutorial_notes="Insights incluyen optimizaciones sugeridas",
             ),
-            
             # ================================================================
             # FASE 4: AUTO-EVOLUCIÓN (Evolution Check)
             # ================================================================
@@ -323,7 +324,6 @@ Respuesta incluye:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_git_status",
                 name="Verificar estado Git",
@@ -334,7 +334,6 @@ Respuesta incluye:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_git_behind",
                 name="Verificar commits remotos",
@@ -345,7 +344,6 @@ Respuesta incluye:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             # ================================================================
             # FASE 5: TELEMETRÍA (Record Metrics)
             # ================================================================
@@ -360,7 +358,6 @@ Respuesta incluye:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_resilience_queue",
                 name="Verificar cola de resiliencia",
@@ -372,7 +369,6 @@ Respuesta incluye:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_throttling",
                 name="Verificar throttling",
@@ -384,7 +380,6 @@ Respuesta incluye:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             # ================================================================
             # FASE 6: REGISTRO EN CEREBRO
             # ================================================================
@@ -398,11 +393,10 @@ Respuesta incluye:
                 http_body={
                     "message": "[AUTONOMY] Ciclo de autonomía completo ejecutado",
                     "ok": True,
-                    "source": "quality_pot.autonomy_full_cycle"
+                    "source": "quality_pot.autonomy_full_cycle",
                 },
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="refresh_dashboard",
                 name="Refrescar dashboard",
@@ -413,7 +407,6 @@ Respuesta incluye:
                 timeout_seconds=15,
                 continue_on_failure=True,
             ),
-            
             # ================================================================
             # FASE 7: NOTIFICACIÓN
             # ================================================================

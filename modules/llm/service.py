@@ -1,11 +1,14 @@
 from __future__ import annotations
-import time
+
 import math
-from typing import Dict, Any
+import time
+from typing import Any, Dict
+
 from .config import LLMSettings
-from .router import HybridRouter
 from .ollama_client import OllamaClient
+from .router import HybridRouter
 from .schemas import LLMRequest, LLMResponse
+
 
 class LLMService:
     """Orchestrates HybridRouter + OllamaClient for a single LLM request."""
@@ -47,7 +50,10 @@ class LLMService:
             ms_total = int((time.perf_counter() - t0) * 1000)
             tokens_est = max(1, math.ceil(len(req.prompt) / 4))
 
-            meta: Dict[str, Any] = {"decision_reason": decision.reason, "ollama_ms": ms_ollama}
+            meta: Dict[str, Any] = {
+                "decision_reason": decision.reason,
+                "ollama_ms": ms_ollama,
+            }
 
             return LLMResponse(
                 ok=True,

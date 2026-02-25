@@ -13,11 +13,14 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -29,14 +32,19 @@ class FeedbackLoop:
         self._config = config or _load_config().get("learning", {})
         base = Path(__file__).resolve().parent.parent.parent
         db = self._config.get("feedback_db", "logs/autonomous_learning.sqlite")
-        self._db_path = base / db if isinstance(db, str) else base / "logs" / "autonomous_learning.sqlite"
+        self._db_path = (
+            base / db
+            if isinstance(db, str)
+            else base / "logs" / "autonomous_learning.sqlite"
+        )
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
     def _init_db(self) -> None:
         try:
             with sqlite3.connect(str(self._db_path)) as conn:
-                conn.execute("""
+                conn.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS feedback (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         ts REAL NOT NULL,
@@ -44,7 +52,8 @@ class FeedbackLoop:
                         feedback_type TEXT NOT NULL,
                         value REAL NOT NULL
                     )
-                """)
+                """
+                )
         except Exception as e:
             logger.warning("FeedbackLoop init: %s", e)
 
@@ -68,7 +77,9 @@ class FeedbackLoop:
                     "SELECT feedback_type, AVG(value), COUNT(*) FROM feedback WHERE ts >= ? GROUP BY feedback_type",
                     (cutoff,),
                 )
-                return {row[0]: {"avg": row[1], "count": row[2]} for row in cur.fetchall()}
+                return {
+                    row[0]: {"avg": row[1], "count": row[2]} for row in cur.fetchall()
+                }
         except Exception as e:
             logger.debug("analyze_feedback: %s", e)
             return {}

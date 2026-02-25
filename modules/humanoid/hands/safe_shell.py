@@ -19,6 +19,7 @@ def _env_list(name: str, default: str) -> List[str]:
 
 def _default_actor():
     from modules.humanoid.policy import ActorContext
+
     role = os.getenv("POLICY_DEFAULT_ROLE", "owner")
     return ActorContext(actor="api", role=role)
 
@@ -26,6 +27,7 @@ def _default_actor():
 def _norm_win(p: str) -> str:
     try:
         from pathlib import Path
+
         return str(Path(p).resolve()).replace("/", "\\").lower()
     except Exception:
         return (p or "").replace("/", "\\").lower()
@@ -46,7 +48,10 @@ def _allowed_prefixes() -> List[str]:
         return [_norm_win(x.strip()) for x in v2.split(",") if x.strip()]
     try:
         from pathlib import Path
-        base = Path(__file__).resolve().parents[3]  # .../modules/humanoid/hands -> repo root
+
+        base = (
+            Path(__file__).resolve().parents[3]
+        )  # .../modules/humanoid/hands -> repo root
         return [_norm_win(str(base))]
     except Exception:
         return []
@@ -65,8 +70,16 @@ def _path_allowed(path: str, prefixes: List[str]) -> bool:
 class SafeShellExecutor:
     """Run shell commands with allowlist/blocklist. PolicyEngine + AuditLogger."""
 
-    def __init__(self, allowed_cmds: Optional[List[str]] = None, blocklist: Optional[List[str]] = None) -> None:
-        self.safe_mode = os.getenv("HANDS_SAFE_MODE", "true").strip().lower() in ("1", "true", "yes")
+    def __init__(
+        self,
+        allowed_cmds: Optional[List[str]] = None,
+        blocklist: Optional[List[str]] = None,
+    ) -> None:
+        self.safe_mode = os.getenv("HANDS_SAFE_MODE", "true").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
         if allowed_cmds is not None:
             self.allowed_cmds = allowed_cmds
         elif self.safe_mode:
@@ -89,7 +102,7 @@ class SafeShellExecutor:
                 return False
         if self.allowed_cmds:
             parts = shlex.split(cmd) or [cmd]
-            first_raw = (parts[0] or "")
+            first_raw = parts[0] or ""
             first = first_raw.lower()
             allowed = [a.lower() for a in self.allowed_cmds]
             if first in allowed:
@@ -110,63 +123,143 @@ class SafeShellExecutor:
             return False
         return True
 
-    def run(self, cmd: str, cwd: Optional[str] = None, timeout_sec: int = 60, actor: Optional[Any] = None, *, approval_granted: bool = False) -> Dict[str, Any]:
+    def run(
+        self,
+        cmd: str,
+        cwd: Optional[str] = None,
+        timeout_sec: int = 60,
+        actor: Optional[Any] = None,
+        *,
+        approval_granted: bool = False,
+    ) -> Dict[str, Any]:
         """Run cmd. Policy check first; then execute; then audit log. Returns {ok, stdout, stderr, returncode, error}."""
         t0 = time.perf_counter()
         actor_ctx = actor or _default_actor()
         # Sandbox de cwd/paths: si sale del perímetro permitido, bloquear.
         prefixes = _allowed_prefixes()
         if cwd and prefixes and not _path_allowed(cwd, prefixes):
-            return {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": "cwd_not_allowed"}
+            return {
+                "ok": False,
+                "stdout": "",
+                "stderr": "",
+                "returncode": -1,
+                "error": "cwd_not_allowed",
+            }
         # Si el comando contiene paths absolutos fuera del perímetro, bloquear.
         try:
             for m in _RE_WIN_ABS.findall(cmd or ""):
                 if prefixes and not _path_allowed(m, prefixes):
-                    return {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": "path_not_allowed"}
+                    return {
+                        "ok": False,
+                        "stdout": "",
+                        "stderr": "",
+                        "returncode": -1,
+                        "error": "path_not_allowed",
+                    }
         except Exception:
             pass
         # Gobernanza dinámica: si el comando es de alto riesgo, encolar aprobación y no ejecutar.
         try:
             if not approval_granted:
                 from modules.humanoid.governance.gates import decide
+
                 d = decide("shell_exec", context={"command": cmd, "cwd": cwd or ""})
             else:
                 d = None
             if d and d.needs_approval and not d.allow:
                 try:
-                    from modules.humanoid.approvals.service import create as create_approval
-                    from modules.humanoid.governance.dynamic_risk import assess_shell_command
+                    from modules.humanoid.approvals.service import \
+                        create as create_approval
+                    from modules.humanoid.governance.dynamic_risk import \
+                        assess_shell_command
+
                     a = assess_shell_command(cmd, cwd=cwd or "")
                     cr = create_approval(
                         "shell_exec",
-                        {"command": cmd, "cwd": cwd or "", "risk": a.risk, "reason": a.reason, "signature": a.signature},
+                        {
+                            "command": cmd,
+                            "cwd": cwd or "",
+                            "risk": a.risk,
+                            "reason": a.reason,
+                            "signature": a.signature,
+                        },
                     )
                     aid = cr.get("approval_id")
-                    return {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": "approval_required", "approval_id": aid}
+                    return {
+                        "ok": False,
+                        "stdout": "",
+                        "stderr": "",
+                        "returncode": -1,
+                        "error": "approval_required",
+                        "approval_id": aid,
+                    }
                 except Exception:
-                    return {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": "approval_required"}
+                    return {
+                        "ok": False,
+                        "stdout": "",
+                        "stderr": "",
+                        "returncode": -1,
+                        "error": "approval_required",
+                    }
         except Exception:
             pass
         try:
             from modules.humanoid.policy import get_policy_engine
-            decision = get_policy_engine().can(actor_ctx, "hands", "exec_command", target=cmd)
+
+            decision = get_policy_engine().can(
+                actor_ctx, "hands", "exec_command", target=cmd
+            )
             if not decision.allow:
-                out = {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": decision.reason}
+                out = {
+                    "ok": False,
+                    "stdout": "",
+                    "stderr": "",
+                    "returncode": -1,
+                    "error": decision.reason,
+                }
                 ms = int((time.perf_counter() - t0) * 1000)
                 try:
                     from modules.humanoid.audit import get_audit_logger
-                    get_audit_logger().log_event(actor_ctx.actor, actor_ctx.role, "hands", "exec_command", False, ms, decision.reason, {"command": cmd, "cwd": cwd}, None)
+
+                    get_audit_logger().log_event(
+                        actor_ctx.actor,
+                        actor_ctx.role,
+                        "hands",
+                        "exec_command",
+                        False,
+                        ms,
+                        decision.reason,
+                        {"command": cmd, "cwd": cwd},
+                        None,
+                    )
                 except Exception:
                     pass
                 return out
         except Exception:
             pass
         if not self.is_safe(cmd):
-            out = {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": "command not allowed"}
+            out = {
+                "ok": False,
+                "stdout": "",
+                "stderr": "",
+                "returncode": -1,
+                "error": "command not allowed",
+            }
             ms = int((time.perf_counter() - t0) * 1000)
             try:
                 from modules.humanoid.audit import get_audit_logger
-                get_audit_logger().log_event(actor_ctx.actor, actor_ctx.role, "hands", "exec_command", False, ms, "command not allowed", {"command": cmd, "cwd": cwd}, None)
+
+                get_audit_logger().log_event(
+                    actor_ctx.actor,
+                    actor_ctx.role,
+                    "hands",
+                    "exec_command",
+                    False,
+                    ms,
+                    "command not allowed",
+                    {"command": cmd, "cwd": cwd},
+                    None,
+                )
             except Exception:
                 pass
             return out
@@ -191,25 +284,74 @@ class SafeShellExecutor:
             ms = int((time.perf_counter() - t0) * 1000)
             try:
                 from modules.humanoid.audit import get_audit_logger
-                get_audit_logger().log_event(actor_ctx.actor, actor_ctx.role, "hands", "exec_command", out["ok"], ms, out.get("error"), {"command": cmd, "cwd": cwd}, {"returncode": r.returncode, "stdout_len": len(r.stdout or ""), "stderr_len": len(r.stderr or "")})
+
+                get_audit_logger().log_event(
+                    actor_ctx.actor,
+                    actor_ctx.role,
+                    "hands",
+                    "exec_command",
+                    out["ok"],
+                    ms,
+                    out.get("error"),
+                    {"command": cmd, "cwd": cwd},
+                    {
+                        "returncode": r.returncode,
+                        "stdout_len": len(r.stdout or ""),
+                        "stderr_len": len(r.stderr or ""),
+                    },
+                )
             except Exception:
                 pass
             return out
         except subprocess.TimeoutExpired:
-            out = {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": "timeout"}
+            out = {
+                "ok": False,
+                "stdout": "",
+                "stderr": "",
+                "returncode": -1,
+                "error": "timeout",
+            }
             ms = int((time.perf_counter() - t0) * 1000)
             try:
                 from modules.humanoid.audit import get_audit_logger
-                get_audit_logger().log_event(actor_ctx.actor, actor_ctx.role, "hands", "exec_command", False, ms, "timeout", {"command": cmd, "cwd": cwd}, None)
+
+                get_audit_logger().log_event(
+                    actor_ctx.actor,
+                    actor_ctx.role,
+                    "hands",
+                    "exec_command",
+                    False,
+                    ms,
+                    "timeout",
+                    {"command": cmd, "cwd": cwd},
+                    None,
+                )
             except Exception:
                 pass
             return out
         except Exception as e:
-            out = {"ok": False, "stdout": "", "stderr": "", "returncode": -1, "error": str(e)}
+            out = {
+                "ok": False,
+                "stdout": "",
+                "stderr": "",
+                "returncode": -1,
+                "error": str(e),
+            }
             ms = int((time.perf_counter() - t0) * 1000)
             try:
                 from modules.humanoid.audit import get_audit_logger
-                get_audit_logger().log_event(actor_ctx.actor, actor_ctx.role, "hands", "exec_command", False, ms, str(e), {"command": cmd, "cwd": cwd}, None)
+
+                get_audit_logger().log_event(
+                    actor_ctx.actor,
+                    actor_ctx.role,
+                    "hands",
+                    "exec_command",
+                    False,
+                    ms,
+                    str(e),
+                    {"command": cmd, "cwd": cwd},
+                    None,
+                )
             except Exception:
                 pass
             return out

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+
 # Verification helper: call from FastAPI dependency or before handler.
 def verify_cluster_request(
     node_id: str,
@@ -14,7 +15,10 @@ def verify_cluster_request(
     signature: str,
 ) -> bool:
     from . import auth as cluster_auth
-    return cluster_auth.verify_request(node_id, ts, nonce, method, path, body, signature)
+
+    return cluster_auth.verify_request(
+        node_id, ts, nonce, method, path, body, signature
+    )
 
 
 def execute_remote_hands(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -22,16 +26,25 @@ def execute_remote_hands(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         from modules.humanoid.hands.safe_shell import SafeShell
         from modules.humanoid.policy import ActorContext, get_policy_engine
+
         cmd = payload.get("command") or payload.get("cmd") or ""
         if not cmd:
             return {"ok": False, "error": "missing command", "data": None}
         actor = ActorContext(actor="cluster", role="worker")
         decision = get_policy_engine().can(actor, "hands", "exec_command", target=cmd)
         if not decision.allow:
-            return {"ok": False, "error": decision.reason or "policy denied", "data": None}
+            return {
+                "ok": False,
+                "error": decision.reason or "policy denied",
+                "data": None,
+            }
         shell = SafeShell()
         result = shell.run(cmd, timeout_sec=payload.get("timeout_sec", 30))
-        return {"ok": result.get("ok", False), "data": result, "error": result.get("error")}
+        return {
+            "ok": result.get("ok", False),
+            "data": result,
+            "error": result.get("error"),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e), "data": None}
 
@@ -40,6 +53,7 @@ def execute_remote_web(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Run web action locally. If playwright not available, fallback to screen (plan_only with instructions)."""
     try:
         from modules.humanoid.deps_checker import check_playwright
+
         if not check_playwright().get("available", False):
             return {
                 "ok": False,
@@ -51,9 +65,14 @@ def execute_remote_web(payload: Dict[str, Any]) -> Dict[str, Any]:
         if not url:
             return {"ok": False, "error": "missing action/url", "data": None}
         from modules.humanoid.web.navigator import open_url
+
         timeout_ms = (payload.get("timeout_sec") or 30) * 1000
         result = open_url(url, timeout_ms=timeout_ms)
-        return {"ok": result.get("ok", False), "data": result, "error": result.get("error")}
+        return {
+            "ok": result.get("ok", False),
+            "data": result,
+            "error": result.get("error"),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e), "data": None}
 
@@ -65,6 +84,7 @@ def execute_remote_vision(payload: Dict[str, Any]) -> Dict[str, Any]:
         if not image_path:
             return {"ok": False, "error": "missing image_path", "data": None}
         from modules.humanoid.vision.analyzer import analyze
+
         result = analyze(image_path)
         return {"ok": True, "data": result, "error": None}
     except Exception as e:
@@ -76,7 +96,9 @@ def execute_remote_voice(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         action = payload.get("action") or "status"
         if action == "status":
-            enabled = __import__("os").getenv("VOICE_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+            enabled = __import__("os").getenv(
+                "VOICE_ENABLED", "true"
+            ).strip().lower() in ("1", "true", "yes")
             return {"ok": True, "data": {"enabled": enabled}, "error": None}
         return {"ok": False, "error": "unsupported action", "data": None}
     except Exception as e:

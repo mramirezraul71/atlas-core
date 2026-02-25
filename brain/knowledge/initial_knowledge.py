@@ -91,7 +91,11 @@ class InitialKnowledgeBase:
                 "effects": ["object_held", "gripper_occupied"],
                 "preconditions": ["object_reachable", "object_graspable"],
                 "can_fail": True,
-                "failure_reasons": ["object_too_far", "object_too_heavy", "object_slippery"],
+                "failure_reasons": [
+                    "object_too_far",
+                    "object_too_heavy",
+                    "object_slippery",
+                ],
                 "learned_from": "initial_knowledge",
             },
             "place": {
@@ -372,11 +376,13 @@ class InitialKnowledgeBase:
         """Encontrar reglas aplicables a la situación (ordenadas por prioridad)."""
         applicable = []
         for rule_id, rule in self.rules.items():
-            applicable.append({
-                "rule_id": rule_id,
-                "rule": rule,
-                "priority": rule.get("priority", "medium"),
-            })
+            applicable.append(
+                {
+                    "rule_id": rule_id,
+                    "rule": rule,
+                    "priority": rule.get("priority", "medium"),
+                }
+            )
         priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
         applicable.sort(key=lambda x: priority_order.get(x["priority"], 4))
         return applicable
@@ -411,7 +417,9 @@ class InitialKnowledgeBase:
             "times_used": 0,
             "times_confirmed": 0,
         }
-        self.metadata["total_learned_concepts"] = self.metadata.get("total_learned_concepts", 0) + 1
+        self.metadata["total_learned_concepts"] = (
+            self.metadata.get("total_learned_concepts", 0) + 1
+        )
         self.save_to_disk()
         return True
 
@@ -545,7 +553,8 @@ class InitialKnowledgeBase:
     def get_statistics(self) -> Dict[str, Any]:
         """Estadísticas de la base de conocimiento."""
         learned_concepts = sum(
-            1 for c in self.concepts.values()
+            1
+            for c in self.concepts.values()
             if isinstance(c, dict) and c.get("learned_from") != "initial_knowledge"
         )
         return {

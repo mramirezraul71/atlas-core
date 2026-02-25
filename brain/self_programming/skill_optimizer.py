@@ -52,12 +52,18 @@ class SkillOptimizer:
             else:
                 new_lines.append(line)
         new_lines.append(" " * body_indent + "except Exception as e:")
-        new_lines.append(" " * (body_indent + 4) + "return {'success': False, 'error': str(e)}")
+        new_lines.append(
+            " " * (body_indent + 4) + "return {'success': False, 'error': str(e)}"
+        )
         return "\n".join(new_lines)
 
     def _add_type_hints(self, code: str) -> str:
         code = re.sub(r"(def \w+\([^)]*\)):", r"\1 -> Dict:", code)
-        if "-> Dict" in code and "from typing import" not in code and "import Dict" not in code:
+        if (
+            "-> Dict" in code
+            and "from typing import" not in code
+            and "import Dict" not in code
+        ):
             code = "from typing import Dict, Optional, List\n\n" + code
         return code
 
@@ -90,7 +96,9 @@ class SkillOptimizer:
         used_imports = []
         for imp_line in import_lines:
             if "import " in imp_line:
-                module = imp_line.split("import ")[-1].split(" as ")[0].split(",")[0].strip()
+                module = (
+                    imp_line.split("import ")[-1].split(" as ")[0].split(",")[0].strip()
+                )
                 if module in code_body:
                     used_imports.append(imp_line)
         return "\n".join(used_imports + [""] + code_lines)

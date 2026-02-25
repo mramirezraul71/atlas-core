@@ -14,12 +14,17 @@ sys.path.insert(0, str(BASE))
 ENV = BASE / "config" / "atlas.env"
 if ENV.exists():
     from dotenv import load_dotenv
+
     load_dotenv(ENV, override=True)
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logger = logging.getLogger("nexus_worker")
 
-DASHBOARD_BASE = (os.getenv("ATLAS_DASHBOARD_URL") or "http://127.0.0.1:8791").rstrip("/")
+DASHBOARD_BASE = (os.getenv("ATLAS_DASHBOARD_URL") or "http://127.0.0.1:8791").rstrip(
+    "/"
+)
 POLL_INTERVAL = float(os.getenv("NEXUS_WORKER_POLL_INTERVAL", "1.0"))
 SIMULATE_MOTOR_SEC = float(os.getenv("NEXUS_WORKER_SIMULATE_MOTOR_SEC", "2.0"))
 
@@ -44,6 +49,7 @@ async def fetch_state(session) -> dict | None:
     """GET /api/push/state. Retorna None si falla la conexión."""
     try:
         import aiohttp
+
         async with session.get(
             f"{DASHBOARD_BASE}/api/push/state",
             timeout=aiohttp.ClientTimeout(total=5),
@@ -60,6 +66,7 @@ async def send_ack(session, payload: dict) -> bool:
     """POST /api/push/ack. Retorna True si se envió correctamente."""
     try:
         import aiohttp
+
         async with session.post(
             f"{DASHBOARD_BASE}/api/push/ack",
             json=payload,
@@ -74,6 +81,7 @@ async def send_ack(session, payload: dict) -> bool:
 async def run_worker() -> None:
     """Bucle infinito: polling al Dashboard, ejecutar comando, ACK. Tolerante a fallos."""
     import aiohttp
+
     controller = HardwareController()
     last_executed_ts: float | None = None
 
@@ -124,7 +132,11 @@ async def run_worker() -> None:
 
 
 def main() -> None:
-    logger.info("NEXUS Worker iniciando (Dashboard=%s, poll=%.1fs)", DASHBOARD_BASE, POLL_INTERVAL)
+    logger.info(
+        "NEXUS Worker iniciando (Dashboard=%s, poll=%.1fs)",
+        DASHBOARD_BASE,
+        POLL_INTERVAL,
+    )
     try:
         asyncio.run(run_worker())
     except KeyboardInterrupt:

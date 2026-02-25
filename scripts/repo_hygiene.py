@@ -24,7 +24,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-
 FORBIDDEN_DIRS = ["logs", "snapshots"]
 FORBIDDEN_GLOBS = [
     "camera_*.jpg",
@@ -59,7 +58,9 @@ def _run_git(args: List[str], cwd: Path, timeout: int = 120) -> Tuple[int, str, 
     return r.returncode, r.stdout or "", r.stderr or ""
 
 
-def _ops_emit(subsystem: str, message: str, level: str = "info", data: Dict | None = None) -> None:
+def _ops_emit(
+    subsystem: str, message: str, level: str = "info", data: Dict | None = None
+) -> None:
     try:
         repo = _repo_root()
         if str(repo) not in sys.path:
@@ -111,7 +112,9 @@ def _list_tracked(repo: Path) -> Dict[str, List[str]]:
     # globs sueltos
     code, stdout, _ = _run_git(["ls-files", "--", *FORBIDDEN_GLOBS], repo, timeout=120)
     if code == 0 and stdout.strip():
-        out["forbidden_globs"] = [ln.strip() for ln in stdout.splitlines() if ln.strip()]
+        out["forbidden_globs"] = [
+            ln.strip() for ln in stdout.splitlines() if ln.strip()
+        ]
     return out
 
 
@@ -120,9 +123,15 @@ def _untrack(repo: Path, tracked: Dict[str, List[str]]) -> Dict[str, int]:
     # Directorios completos
     for d in ("logs", "snapshots"):
         if tracked.get(d):
-            code, _, err = _run_git(["rm", "-r", "--cached", "--", d], repo, timeout=300)
+            code, _, err = _run_git(
+                ["rm", "-r", "--cached", "--", d], repo, timeout=300
+            )
             if code != 0 and err:
-                _ops_emit("repo_hygiene", f"git rm --cached {d} falló: {err[:200]}", level="warn")
+                _ops_emit(
+                    "repo_hygiene",
+                    f"git rm --cached {d} falló: {err[:200]}",
+                    level="warn",
+                )
             else:
                 removed += len(tracked.get(d) or [])
     # Archivos por glob (en raíz u otros)
@@ -131,7 +140,9 @@ def _untrack(repo: Path, tracked: Dict[str, List[str]]) -> Dict[str, int]:
         if code == 0:
             removed += 1
         elif err:
-            _ops_emit("repo_hygiene", f"git rm --cached {p} falló: {err[:200]}", level="warn")
+            _ops_emit(
+                "repo_hygiene", f"git rm --cached {p} falló: {err[:200]}", level="warn"
+            )
     return {"removed_tracked": removed}
 
 
@@ -144,7 +155,11 @@ def _commit(repo: Path, message: str) -> Dict[str, str]:
     # Asegura .gitignore en staging si cambió.
     _run_git(["add", "--", ".gitignore"], repo, timeout=60)
     code, stdout, err = _run_git(["commit", "-m", message], repo, timeout=120)
-    return {"ok": "true" if code == 0 else "false", "stdout": stdout[-400:], "stderr": err[-400:]}
+    return {
+        "ok": "true" if code == 0 else "false",
+        "stdout": stdout[-400:],
+        "stderr": err[-400:],
+    }
 
 
 def _push(repo: Path) -> Dict[str, str]:
@@ -158,28 +173,50 @@ def _push(repo: Path) -> Dict[str, str]:
         timeout=600,
         env=env,
     )
-    return {"ok": "true" if r.returncode == 0 else "false", "stdout": (r.stdout or "")[-400:], "stderr": (r.stderr or "")[-400:]}
+    return {
+        "ok": "true" if r.returncode == 0 else "false",
+        "stdout": (r.stdout or "")[-400:],
+        "stderr": (r.stderr or "")[-400:],
+    }
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--scan", action="store_true", help="Solo reporta (no toca Git).")
-    ap.add_argument("--fix", action="store_true", help="Aplica higiene: untrack + refuerza .gitignore.")
-    ap.add_argument("--commit", action="store_true", help="Hace commit si hubo cambios.")
+    ap.add_argument(
+        "--fix",
+        action="store_true",
+        help="Aplica higiene: untrack + refuerza .gitignore.",
+    )
+    ap.add_argument(
+        "--commit", action="store_true", help="Hace commit si hubo cambios."
+    )
     ap.add_argument("--push", action="store_true", help="Hace push si hubo commit.")
-    ap.add_argument("--auto", action="store_true", help="Equivalente a --fix --commit --push (si está permitido).")
+    ap.add_argument(
+        "--auto",
+        action="store_true",
+        help="Equivalente a --fix --commit --push (si está permitido).",
+    )
     args = ap.parse_args()
 
     repo = _repo_root()
     t0 = time.perf_counter()
 
-    allow_auto = os.getenv("REPO_HYGIENE_AUTO", "false").strip().lower() in ("1", "true", "yes")
+    allow_auto = os.getenv("REPO_HYGIENE_AUTO", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     do_fix = args.fix or args.auto
     do_commit = args.commit or args.auto
     do_push = args.push or args.auto
 
     if args.auto and not allow_auto:
-        _ops_emit("repo_hygiene", "AUTO deshabilitado. Set REPO_HYGIENE_AUTO=true para permitir --auto.", level="warn")
+        _ops_emit(
+            "repo_hygiene",
+            "AUTO deshabilitado. Set REPO_HYGIENE_AUTO=true para permitir --auto.",
+            level="warn",
+        )
         # Degradar a scan (seguro)
         do_fix = False
         do_commit = False
@@ -197,7 +234,9 @@ def main() -> int:
 
     if args.scan and not do_fix:
         ms = int((time.perf_counter() - t0) * 1000)
-        _ops_emit("repo_hygiene", "Scan completado.", level="info", data={**counts, "ms": ms})
+        _ops_emit(
+            "repo_hygiene", "Scan completado.", level="info", data={**counts, "ms": ms}
+        )
         print(counts)
         return 0
 
@@ -218,12 +257,22 @@ def main() -> int:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%MZ")
         msg = f"chore: repo hygiene (logs/snapshots) [{now}]"
         c = _commit(repo, msg)
-        _ops_emit("repo_hygiene", "Commit higiene OK." if c.get("ok") == "true" else "Commit higiene FAIL.", level="info" if c.get("ok") == "true" else "error", data=c)
+        _ops_emit(
+            "repo_hygiene",
+            "Commit higiene OK." if c.get("ok") == "true" else "Commit higiene FAIL.",
+            level="info" if c.get("ok") == "true" else "error",
+            data=c,
+        )
         if c.get("ok") != "true":
             return 2
         if do_push:
             p = _push(repo)
-            _ops_emit("repo_hygiene", "Push higiene OK." if p.get("ok") == "true" else "Push higiene FAIL.", level="info" if p.get("ok") == "true" else "error", data=p)
+            _ops_emit(
+                "repo_hygiene",
+                "Push higiene OK." if p.get("ok") == "true" else "Push higiene FAIL.",
+                level="info" if p.get("ok") == "true" else "error",
+                data=p,
+            )
             return 0 if p.get("ok") == "true" else 3
 
     return 0
@@ -231,4 +280,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

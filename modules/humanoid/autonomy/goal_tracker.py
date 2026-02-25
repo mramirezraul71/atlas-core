@@ -28,7 +28,7 @@ class GoalTracker:
             "goal": self._goal,
             "steps": self._steps,
             "done": self._done,
-            "pending": self._steps[len(self._done):] if self._steps else [],
+            "pending": self._steps[len(self._done) :] if self._steps else [],
             "progress": len(self._done) / len(self._steps) if self._steps else 0.0,
         }
 

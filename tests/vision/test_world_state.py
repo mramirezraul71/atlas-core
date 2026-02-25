@@ -5,8 +5,9 @@ from pathlib import Path
 
 
 def _make_jpeg_bytes() -> bytes:
-    from PIL import Image
     import io
+
+    from PIL import Image
 
     img = Image.new("RGB", (64, 48), color=(120, 200, 80))
     buf = io.BytesIO()
@@ -22,7 +23,13 @@ def test_capture_world_state_persists(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("ATLAS_WORLD_STATE_PATH", str(tmp_path / "world_state.json"))
 
     def fake_eyes_capture(**kwargs):
-        return {"ok": True, "image_base64": b64, "source": "local", "evidence_path": None, "error": None}
+        return {
+            "ok": True,
+            "image_base64": b64,
+            "source": "local",
+            "evidence_path": None,
+            "error": None,
+        }
 
     import modules.humanoid.vision.world_state as ws
 
@@ -38,4 +45,3 @@ def test_capture_world_state_persists(monkeypatch, tmp_path: Path):
     assert (tmp_path / "world_state.json").is_file()
     latest = ws.load_latest_world_state()
     assert isinstance(latest, dict)
-

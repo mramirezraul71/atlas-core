@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Test de modelos IA con CUDA."""
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import torch
@@ -31,12 +32,14 @@ except Exception as e:
 print("2. CLIP (Embeddings)...")
 try:
     import clip
+
     model, preprocess = clip.load("ViT-B/32", device="cuda")
     print("   OK - CLIP cargado en GPU")
     results["clip"] = True
 except ImportError:
     try:
         from transformers import CLIPModel
+
         model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
         model.cuda().eval()
         print("   OK - CLIP (transformers) cargado en GPU")
@@ -52,6 +55,7 @@ except Exception as e:
 print("3. Whisper (STT)...")
 try:
     import whisper
+
     model = whisper.load_model("base", device="cuda")
     print("   OK - Whisper cargado en GPU")
     results["whisper"] = True
@@ -63,6 +67,7 @@ except Exception as e:
 print("4. YOLO (Deteccion)...")
 try:
     from ultralytics import YOLO
+
     model = YOLO("yolov8n.pt")
     model.to("cuda")
     print("   OK - YOLOv8n cargado en GPU")

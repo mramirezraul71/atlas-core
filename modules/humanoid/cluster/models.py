@@ -20,6 +20,7 @@ class Node:
 
     def to_dict(self) -> Dict[str, Any]:
         import json
+
         return {
             "node_id": self.node_id,
             "role": self.role,

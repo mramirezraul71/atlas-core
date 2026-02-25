@@ -5,7 +5,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
-
 STATE_RECEIVE = "RECEIVE"
 STATE_PLAN = "PLAN"
 STATE_EXECUTE = "EXECUTE"
@@ -54,7 +53,11 @@ class ExecutionRunner:
         if not isinstance(path_raw, str) or not path_raw.strip():
             return
         path = Path(path_raw)
-        key = str(path.resolve()) if path.is_absolute() else str((self.atlas_root / path).resolve())
+        key = (
+            str(path.resolve())
+            if path.is_absolute()
+            else str((self.atlas_root / path).resolve())
+        )
         if key in self._file_snapshots:
             return
         if path.exists():
@@ -65,11 +68,17 @@ class ExecutionRunner:
                     "content": path.read_text(encoding="utf-8", errors="replace"),
                 }
             except Exception:
-                self._file_snapshots[key] = {"path": key, "existed": True, "content": None}
+                self._file_snapshots[key] = {
+                    "path": key,
+                    "existed": True,
+                    "content": None,
+                }
         else:
             self._file_snapshots[key] = {"path": key, "existed": False, "content": None}
 
-    def record_tool_result(self, tool_name: str, ok: bool, ms: int, output_preview: str) -> None:
+    def record_tool_result(
+        self, tool_name: str, ok: bool, ms: int, output_preview: str
+    ) -> None:
         self.tool_results.append(
             {
                 "tool": tool_name,
@@ -97,17 +106,28 @@ class ExecutionRunner:
             try:
                 if snap.get("existed"):
                     if snap.get("content") is None:
-                        results.append({"path": str(p), "ok": False, "action": "restore", "error": "snapshot_missing_content"})
+                        results.append(
+                            {
+                                "path": str(p),
+                                "ok": False,
+                                "action": "restore",
+                                "error": "snapshot_missing_content",
+                            }
+                        )
                     else:
                         p.parent.mkdir(parents=True, exist_ok=True)
                         p.write_text(snap["content"], encoding="utf-8")
-                        results.append({"path": str(p), "ok": True, "action": "restore"})
+                        results.append(
+                            {"path": str(p), "ok": True, "action": "restore"}
+                        )
                 else:
                     if p.exists():
                         p.unlink()
                     results.append({"path": str(p), "ok": True, "action": "delete"})
             except Exception as e:
-                results.append({"path": str(p), "ok": False, "action": "rollback", "error": str(e)})
+                results.append(
+                    {"path": str(p), "ok": False, "action": "rollback", "error": str(e)}
+                )
         return results
 
     def kpis(self) -> Dict[str, Any]:
@@ -119,8 +139,11 @@ class ExecutionRunner:
             "total_tools": len(self.tool_results),
             "ok_tools": ok_tools,
             "failed_tools": fail_tools,
-            "pre_checks_ok": all(c.get("ok") for c in self.pre_checks) if self.pre_checks else True,
-            "post_checks_ok": all(c.get("ok") for c in self.post_checks) if self.post_checks else False,
+            "pre_checks_ok": all(c.get("ok") for c in self.pre_checks)
+            if self.pre_checks
+            else True,
+            "post_checks_ok": all(c.get("ok") for c in self.post_checks)
+            if self.post_checks
+            else False,
             "states_visited": [t.get("state") for t in self.timeline],
         }
-

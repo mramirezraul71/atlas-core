@@ -28,12 +28,18 @@ def receive_heartbeat(
     """HQ: process incoming heartbeat from worker. If node unknown, register with base_url from request."""
     if not registry.cluster_enabled():
         return {"ok": False, "error": "CLUSTER_ENABLED=false"}
-    score = int(health.get("score", 0)) if isinstance(health.get("score"), (int, float)) else 0
+    score = (
+        int(health.get("score", 0))
+        if isinstance(health.get("score"), (int, float))
+        else 0
+    )
     status = "online" if score >= 50 else "degraded"
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     node = cluster_db.get_node(node_id_arg)
     if not node and base_url:
-        cluster_db.upsert_node(node_id_arg, "worker", base_url, capabilities or {}, now, score, status, {})
+        cluster_db.upsert_node(
+            node_id_arg, "worker", base_url, capabilities or {}, now, score, status, {}
+        )
         node = cluster_db.get_node(node_id_arg)
     if node:
         cluster_db.upsert_node(
@@ -57,13 +63,17 @@ def send_heartbeat_to_hq(hq_base_url: str) -> Dict[str, Any]:
     try:
         from modules.humanoid.deploy.healthcheck import run_health_verbose
         from modules.humanoid.release import get_version_info
+
         health = run_health_verbose(base_url=None)
         version_info = get_version_info()
         caps = _local_capabilities()
         body = {
             "node_id": registry.node_id(),
             "capabilities": caps,
-            "health": {"score": health.get("score", 0), "checks": health.get("checks", {})},
+            "health": {
+                "score": health.get("score", 0),
+                "checks": health.get("checks", {}),
+            },
             "version": version_info.get("version", "0.0.0"),
             "channel": version_info.get("channel", "canary"),
         }

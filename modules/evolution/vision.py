@@ -24,6 +24,7 @@ def configure_tesseract(path: str | None = None) -> bool:
     os.environ["TESSERACT_CMD"] = exe
     try:
         import pytesseract
+
         pytesseract.pytesseract.tesseract_cmd = exe
         logger.info("Visión: pytesseract -> %s", exe)
         return True
@@ -47,8 +48,10 @@ def test_vision_snapshot() -> Tuple[bool, str]:
     if err or not png_bytes:
         return False, err or "No se pudo capturar pantalla"
     try:
-        from PIL import Image
         import io
+
+        from PIL import Image
+
         img = Image.open(io.BytesIO(png_bytes))
         text = pytesseract.image_to_string(img, lang="eng").strip()
         if text and len(text) > 0:
@@ -64,16 +67,19 @@ def _capture_screen() -> Tuple[bytes | None, str]:
     """Captura pantalla completa. Devuelve (png_bytes, error_message)."""
     try:
         from modules.humanoid.screen.capture import capture_screen
+
         png_bytes, err = capture_screen(region=None, format="png")
         return png_bytes, err or ""
     except ImportError:
         pass
     try:
         import mss
+
         with mss.mss() as sct:
             mon = sct.monitors[0]
             shot = sct.grab(mon)
             from PIL import Image
+
             img = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
             buf = __import__("io").BytesIO()
             img.save(buf, "PNG")

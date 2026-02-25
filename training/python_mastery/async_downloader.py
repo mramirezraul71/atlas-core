@@ -53,7 +53,9 @@ async def gather_with_limit(
     tasks = [asyncio.create_task(_run_one(it)) for it in items]
     try:
         await asyncio.gather(*tasks)
-        return BatchResult(ok=len(errors) == 0, results=results, errors=errors, cancelled=False)
+        return BatchResult(
+            ok=len(errors) == 0, results=results, errors=errors, cancelled=False
+        )
     except asyncio.CancelledError:
         # Cancelar todo lo pendiente y propagar un resultado coherente.
         for t in tasks:
@@ -66,4 +68,3 @@ async def gather_with_limit(
         except Exception:
             pass
         return BatchResult(ok=False, results=results, errors=errors, cancelled=True)
-

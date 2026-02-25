@@ -7,7 +7,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
 # ----- KnowledgeConsolidator -----
 
 
@@ -38,6 +37,7 @@ def real_kb_temp():
 
 def test_knowledge_consolidator_should_consolidate_force():
     from brain.learning.knowledge_consolidator import KnowledgeConsolidator
+
     sem = MagicMock()
     ep = MagicMock()
     ep.get_recent_episodes.return_value = []
@@ -47,12 +47,15 @@ def test_knowledge_consolidator_should_consolidate_force():
     kb.relations = {}
     kb.rules = {}
     kb.save_to_disk = MagicMock()
-    c = KnowledgeConsolidator(semantic_memory=sem, episodic_memory=ep, knowledge_base=kb)
+    c = KnowledgeConsolidator(
+        semantic_memory=sem, episodic_memory=ep, knowledge_base=kb
+    )
     assert c.should_consolidate(force=True) is True
 
 
 def test_knowledge_consolidator_get_statistics():
     from brain.learning.knowledge_consolidator import KnowledgeConsolidator
+
     sem = MagicMock()
     ep = MagicMock()
     ep.get_recent_episodes.return_value = []
@@ -60,7 +63,9 @@ def test_knowledge_consolidator_get_statistics():
     kb.concepts = {}
     kb.relations = {}
     kb.rules = {}
-    c = KnowledgeConsolidator(semantic_memory=sem, episodic_memory=ep, knowledge_base=kb)
+    c = KnowledgeConsolidator(
+        semantic_memory=sem, episodic_memory=ep, knowledge_base=kb
+    )
     stats = c.get_statistics()
     assert "total_consolidations" in stats
     assert "patterns_found_total" in stats
@@ -71,13 +76,16 @@ def test_knowledge_consolidator_get_statistics():
 def test_knowledge_consolidator_consolidate_returns_report(real_kb_temp):
     from brain.knowledge.initial_knowledge import InitialKnowledgeBase
     from brain.learning.knowledge_consolidator import KnowledgeConsolidator
+
     kb = InitialKnowledgeBase(storage_path=real_kb_temp)
     sem = MagicMock()
     sem.recall_similar.return_value = []
     ep = MagicMock()
     ep.get_recent_episodes.return_value = []
     ep.get_recent.return_value = []
-    c = KnowledgeConsolidator(semantic_memory=sem, episodic_memory=ep, knowledge_base=kb)
+    c = KnowledgeConsolidator(
+        semantic_memory=sem, episodic_memory=ep, knowledge_base=kb
+    )
     report = c.consolidate_knowledge()
     assert "consolidation_id" in report
     assert "timestamp" in report
@@ -94,10 +102,11 @@ def test_knowledge_consolidator_consolidate_returns_report(real_kb_temp):
 @pytest.fixture
 def learning_loop_components(mock_semantic_memory, mock_episodic_memory, real_kb_temp):
     from brain.knowledge.initial_knowledge import InitialKnowledgeBase
-    from brain.learning.uncertainty_detector import UncertaintyDetector
     from brain.learning.ai_consultant import AIConsultant
-    from brain.learning.knowledge_consolidator import KnowledgeConsolidator
     from brain.learning.continual_learning_loop import ContinualLearningLoop
+    from brain.learning.knowledge_consolidator import KnowledgeConsolidator
+    from brain.learning.uncertainty_detector import UncertaintyDetector
+
     kb = InitialKnowledgeBase(storage_path=real_kb_temp)
     ud = UncertaintyDetector(uncertainty_threshold=0.6)
     ai = MagicMock()
@@ -123,7 +132,9 @@ def learning_loop_components(mock_semantic_memory, mock_episodic_memory, real_kb
 
 
 @pytest.mark.asyncio
-async def test_continual_learning_loop_process_situation_returns_structure(learning_loop_components):
+async def test_continual_learning_loop_process_situation_returns_structure(
+    learning_loop_components,
+):
     loop = learning_loop_components
     situation = {
         "description": "Objeto en mesa - agarrar",
@@ -143,6 +154,7 @@ async def test_continual_learning_loop_process_situation_returns_structure(learn
 
 def test_continual_learning_loop_self_assess():
     from brain.learning.continual_learning_loop import ContinualLearningLoop
+
     loop = ContinualLearningLoop(
         knowledge_base=MagicMock(),
         uncertainty_detector=MagicMock(),
@@ -159,6 +171,7 @@ def test_continual_learning_loop_self_assess():
 
 def test_continual_learning_loop_find_relevant_skills():
     from brain.learning.continual_learning_loop import ContinualLearningLoop
+
     kb = MagicMock()
     kb.skills = {
         "grab_object": {"description": "grab object with gripper"},
@@ -183,6 +196,7 @@ def test_continual_learning_loop_find_relevant_skills():
 def mock_ai_tutor():
     """Tutor que asigna una leccion y devuelve evaluacion basica."""
     from brain.learning.ai_tutor import AITutor
+
     tutor = AITutor(tutor_type="disabled")
     tutor.curriculum = [
         {
@@ -200,20 +214,28 @@ def mock_ai_tutor():
 
 
 @pytest.fixture
-def learning_loop_with_tutor(mock_semantic_memory, mock_episodic_memory, real_kb_temp, mock_ai_tutor):
+def learning_loop_with_tutor(
+    mock_semantic_memory, mock_episodic_memory, real_kb_temp, mock_ai_tutor
+):
     """Loop con AITutor inyectado (mock con curriculum de fallback)."""
     from brain.knowledge.initial_knowledge import InitialKnowledgeBase
-    from brain.learning.uncertainty_detector import UncertaintyDetector
     from brain.learning.ai_consultant import AIConsultant
-    from brain.learning.knowledge_consolidator import KnowledgeConsolidator
     from brain.learning.continual_learning_loop import ContinualLearningLoop
+    from brain.learning.knowledge_consolidator import KnowledgeConsolidator
+    from brain.learning.uncertainty_detector import UncertaintyDetector
+
     kb = InitialKnowledgeBase(storage_path=real_kb_temp)
     ud = UncertaintyDetector(uncertainty_threshold=0.6)
     ai = MagicMock()
-    ai.ask_for_guidance.return_value = {"suggested_action": "move_forward", "new_knowledge": []}
+    ai.ask_for_guidance.return_value = {
+        "suggested_action": "move_forward",
+        "new_knowledge": [],
+    }
     sem = mock_semantic_memory
     ep = mock_episodic_memory
-    consolidator = KnowledgeConsolidator(semantic_memory=sem, episodic_memory=ep, knowledge_base=kb)
+    consolidator = KnowledgeConsolidator(
+        semantic_memory=sem, episodic_memory=ep, knowledge_base=kb
+    )
     loop = ContinualLearningLoop(
         knowledge_base=kb,
         uncertainty_detector=ud,
@@ -227,7 +249,9 @@ def learning_loop_with_tutor(mock_semantic_memory, mock_episodic_memory, real_kb
 
 
 @pytest.mark.asyncio
-async def test_continual_learning_loop_with_tutor_start_daily_routine(learning_loop_with_tutor, mock_ai_tutor):
+async def test_continual_learning_loop_with_tutor_start_daily_routine(
+    learning_loop_with_tutor, mock_ai_tutor
+):
     """Con tutor mock, start_daily_routine asigna current_lesson y daily_report."""
     loop = learning_loop_with_tutor
     try:
@@ -242,7 +266,9 @@ async def test_continual_learning_loop_with_tutor_start_daily_routine(learning_l
 
 
 @pytest.mark.asyncio
-async def test_continual_learning_loop_with_tutor_end_of_day_report(learning_loop_with_tutor, mock_ai_tutor):
+async def test_continual_learning_loop_with_tutor_end_of_day_report(
+    learning_loop_with_tutor, mock_ai_tutor
+):
     """Con tutor y leccion activa, end_of_day_report devuelve evaluacion (fallback)."""
     loop = learning_loop_with_tutor
     try:

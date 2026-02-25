@@ -25,16 +25,22 @@ class MetricsStore:
 
     def latency_timer(self, name: str):
         """Context manager to record elapsed ms."""
+
         class _Timer:
             def __init__(self, store: MetricsStore, n: str):
                 self._store = store
                 self._name = n
                 self._t0 = 0.0
+
             def __enter__(self):
                 self._t0 = time.perf_counter()
                 return self
+
             def __exit__(self, *args):
-                self._store.record_latency(self._name, (time.perf_counter() - self._t0) * 1000)
+                self._store.record_latency(
+                    self._name, (time.perf_counter() - self._t0) * 1000
+                )
+
         return _Timer(self, name)
 
     def snapshot(self) -> Dict[str, Any]:

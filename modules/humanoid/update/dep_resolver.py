@@ -14,7 +14,9 @@ class DepResolver:
         }
 
     def set_packages(self, packages: List[Dict[str, Any]]) -> None:
-        self._packages = {(p.get("name") or "").lower(): p.get("version") for p in packages}
+        self._packages = {
+            (p.get("name") or "").lower(): p.get("version") for p in packages
+        }
 
     def check(self, required: List[str]) -> Dict[str, Any]:
         """Returns {ok, missing, installed}."""

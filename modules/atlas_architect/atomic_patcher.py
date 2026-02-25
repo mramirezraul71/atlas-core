@@ -61,7 +61,9 @@ class AtomicPatcher:
     - Devuelve (after, diff) sin escribir.
     """
 
-    def apply(self, before: str, ops: List[PatchOp], *, file_path: str = "") -> Tuple[str, str]:
+    def apply(
+        self, before: str, ops: List[PatchOp], *, file_path: str = ""
+    ) -> Tuple[str, str]:
         after = before
         for op in ops:
             if isinstance(op, ReplaceBlock):
@@ -75,7 +77,9 @@ class AtomicPatcher:
         diff = _udiff(before, after, file_path or "file")
         return after, diff
 
-    def patch_file_preview(self, path: Path, ops: List[PatchOp]) -> Tuple[str, str, str]:
+    def patch_file_preview(
+        self, path: Path, ops: List[PatchOp]
+    ) -> Tuple[str, str, str]:
         p = Path(path)
         before = p.read_text(encoding="utf-8", errors="ignore") if p.exists() else ""
         after, diff = self.apply(before, ops, file_path=str(p).replace("\\", "/"))
@@ -129,4 +133,3 @@ class AtomicPatcher:
             raise AtomicPatchError("Anchor no único (require_unique=True)")
         i = idxs[0] + len(op.anchor)
         return text[:i] + op.text + text[i:]
-

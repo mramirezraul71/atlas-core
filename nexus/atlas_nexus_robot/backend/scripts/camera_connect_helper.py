@@ -3,10 +3,10 @@
 Ayuda para conexión de cámara - Diagnóstico y configuración.
 Ejecutar desde backend: python scripts/camera_connect_helper.py
 """
-import sys
-import os
 import json
+import os
 import subprocess
+import sys
 
 # Añadir backend al path
 BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -22,6 +22,7 @@ def run():
     # 1. Verificar OpenCV
     try:
         import cv2
+
         print("\n[OK] OpenCV instalado:", cv2.__version__)
     except ImportError:
         print("\n[ERROR] OpenCV no instalado. Ejecuta: pip install opencv-python")
@@ -33,18 +34,22 @@ def run():
         try:
             ps = subprocess.run(
                 [
-                    "powershell", "-NoProfile", "-Command",
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
                     "Get-PnpDevice -Class Camera -EA SilentlyContinue | "
                     "Select-Object Status,FriendlyName | ConvertTo-Json -Compress; "
                     "Get-PnpDevice -Class Image -EA SilentlyContinue | "
                     "Select-Object Status,FriendlyName | ConvertTo-Json -Compress",
                 ],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if ps.returncode == 0 and ps.stdout:
                 try:
                     data = json.loads("[" + ps.stdout.replace("}\n{", "},{") + "]")
-                    for d in (data if isinstance(data, list) else [data]):
+                    for d in data if isinstance(data, list) else [data]:
                         name = (d.get("FriendlyName") or "").strip()
                         if name and d.get("Status") == "OK":
                             pnp_devices.append({"name": name, "status": "OK"})
@@ -61,8 +66,14 @@ def run():
         print("\n[AVISO] No se encontraron dispositivos PnP Camera/Image.")
 
     # 3. Escanear índices OpenCV
-    backend = cv2.CAP_MSMF if hasattr(cv2, "CAP_MSMF") and sys.platform == "win32" else cv2.CAP_ANY
-    backend_name = "MSMF (Windows)" if backend == getattr(cv2, "CAP_MSMF", -1) else "ANY"
+    backend = (
+        cv2.CAP_MSMF
+        if hasattr(cv2, "CAP_MSMF") and sys.platform == "win32"
+        else cv2.CAP_ANY
+    )
+    backend_name = (
+        "MSMF (Windows)" if backend == getattr(cv2, "CAP_MSMF", -1) else "ANY"
+    )
     print(f"\n[INFO] Escaneando índices OpenCV (backend: {backend_name})...")
 
     available = []
@@ -94,7 +105,9 @@ def run():
         ret, frame = cap.read()
         cap.release()
         if ret and frame is not None:
-            print(f"     [OK] Índice {idx}: lectura correcta, frame {frame.shape[1]}x{frame.shape[0]}")
+            print(
+                f"     [OK] Índice {idx}: lectura correcta, frame {frame.shape[1]}x{frame.shape[0]}"
+            )
         else:
             print(f"     [AVISO] Índice {idx}: abre pero no devuelve frames.")
     else:
@@ -104,6 +117,7 @@ def run():
     # 5. Configurar cámara activa
     try:
         from vision.cameras.detector import detect_cameras, save_active_config
+
         detected = detect_cameras()
         print(f"\n[OK] Detección completa: {len(detected)} cámara(s)")
         for c in detected:
@@ -117,14 +131,18 @@ def run():
                 "capabilities": detected[0].get("capabilities", ["video"]),
             }
             if save_active_config(config):
-                print(f"\n[OK] Config guardada: active_camera.json (índice {config['index']})")
+                print(
+                    f"\n[OK] Config guardada: active_camera.json (índice {config['index']})"
+                )
             else:
                 print("\n[AVISO] No se pudo guardar config.")
     except Exception as e:
         print(f"\n[AVISO] Detección del módulo: {e}")
 
     print("\n" + "=" * 60)
-    print("Siguiente paso: reinicia el backend Robot (puerto 8002) para usar la cámara.")
+    print(
+        "Siguiente paso: reinicia el backend Robot (puerto 8002) para usar la cámara."
+    )
     print("=" * 60)
     return 0
 

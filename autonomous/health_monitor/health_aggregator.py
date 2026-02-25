@@ -13,19 +13,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .system_metrics import SystemMetrics
-from .service_health import ServiceHealth, ServiceStatus
 from .anomaly_detector import AnomalyDetector, AnomalyReport
+from .service_health import ServiceHealth, ServiceStatus
+from .system_metrics import SystemMetrics
 
 logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -35,6 +38,7 @@ def _load_config() -> dict:
 @dataclass
 class GlobalHealth:
     """Salud global del sistema."""
+
     score: float
     components: dict[str, Any]
     anomalies: list[AnomalyReport]
@@ -73,7 +77,8 @@ class HealthAggregator:
             return
         try:
             with sqlite3.connect(str(self._db_path)) as conn:
-                conn.execute("""
+                conn.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS health_reports (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         ts REAL NOT NULL,
@@ -82,8 +87,11 @@ class HealthAggregator:
                         services_score REAL,
                         payload TEXT
                     )
-                """)
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_health_ts ON health_reports(ts)")
+                """
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_health_ts ON health_reports(ts)"
+                )
         except Exception as e:
             logger.warning("Health DB init: %s", e)
 
@@ -92,8 +100,12 @@ class HealthAggregator:
         sys_metrics = self._system.get_current_metrics()
         sys_score = self._system.get_health_score()
         service_statuses = self._services.get_all_services_status()
-        service_scores = [self._services.calculate_service_score(s) for s in service_statuses.values()]
-        services_score = sum(service_scores) / len(service_scores) if service_scores else 0.0
+        service_scores = [
+            self._services.calculate_service_score(s) for s in service_statuses.values()
+        ]
+        services_score = (
+            sum(service_scores) / len(service_scores) if service_scores else 0.0
+        )
 
         raw = {
             "cpu_percent": sys_metrics.cpu_percent,
@@ -116,9 +128,20 @@ class HealthAggregator:
                 score=0.0,
             )
 
-        global_score = (sys_score * 0.5 + services_score * 0.5)
+        global_score = sys_score * 0.5 + services_score * 0.5
         if anomaly_report.detected:
-            global_score = max(0, global_score - 10 * (3 if anomaly_report.severity == "severa" else 2 if anomaly_report.severity == "moderada" else 1))
+            global_score = max(
+                0,
+                global_score
+                - 10
+                * (
+                    3
+                    if anomaly_report.severity == "severa"
+                    else 2
+                    if anomaly_report.severity == "moderada"
+                    else 1
+                ),
+            )
 
         components = {
             "system": {
@@ -128,7 +151,11 @@ class HealthAggregator:
                 "disk_percent": sys_metrics.disk_usage_percent,
             },
             "services": {
-                name: {"online": s.online, "latency_ms": s.latency_ms, "score": self._services.calculate_service_score(s)}
+                name: {
+                    "online": s.online,
+                    "latency_ms": s.latency_ms,
+                    "score": self._services.calculate_service_score(s),
+                }
                 for name, s in service_statuses.items()
             },
         }
@@ -139,10 +166,14 @@ class HealthAggregator:
         if sys_metrics.ram_percent >= 85:
             recommendations.append("RAM alto: revisar fugas o aumentar memoria")
         if sys_metrics.disk_usage_percent >= 90:
-            recommendations.append("Disco casi lleno: limpiar logs o ampliar almacenamiento")
+            recommendations.append(
+                "Disco casi lleno: limpiar logs o ampliar almacenamiento"
+            )
         for name, s in service_statuses.items():
             if not s.online:
-                recommendations.append(f"Servicio {name} caído: revisar proceso y puerto")
+                recommendations.append(
+                    f"Servicio {name} caído: revisar proceso y puerto"
+                )
         bottlenecks = self._services.get_bottlenecks()
         for b in bottlenecks:
             if b not in recommendations:
@@ -162,15 +193,27 @@ class HealthAggregator:
         if not self._db_path:
             return
         try:
-            payload = json.dumps({
-                "components": health_report.components,
-                "recommendations": health_report.recommendations,
-                "anomalies": [{"severity": a.severity, "metrics_affected": a.metrics_affected} for a in health_report.anomalies],
-            }, default=str)
+            payload = json.dumps(
+                {
+                    "components": health_report.components,
+                    "recommendations": health_report.recommendations,
+                    "anomalies": [
+                        {"severity": a.severity, "metrics_affected": a.metrics_affected}
+                        for a in health_report.anomalies
+                    ],
+                },
+                default=str,
+            )
             with sqlite3.connect(str(self._db_path)) as conn:
                 conn.execute(
                     "INSERT INTO health_reports (ts, score, system_score, services_score, payload) VALUES (?,?,?,?,?)",
-                    (health_report.timestamp, health_report.score, health_report.system_score, health_report.services_score, payload),
+                    (
+                        health_report.timestamp,
+                        health_report.score,
+                        health_report.system_score,
+                        health_report.services_score,
+                        payload,
+                    ),
                 )
         except Exception as e:
             logger.debug("Save health report: %s", e)
@@ -224,7 +267,9 @@ class HealthAggregator:
         except RuntimeError:
             # No event loop (e.g. script directo)
             self._running = False
-            logger.warning("Health monitoring: no asyncio loop; use get_global_health() manually")
+            logger.warning(
+                "Health monitoring: no asyncio loop; use get_global_health() manually"
+            )
         except Exception as e:
             self._running = False
             logger.exception("Health monitoring start: %s", e)

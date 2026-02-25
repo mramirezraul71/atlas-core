@@ -5,10 +5,12 @@ Para que pasen (no skip): PyTorch>=2.4, sentence-transformers>=3.0, datasets>=2.
 """
 import os
 import tempfile
+
 import pytest
 
 try:
     from modules.humanoid.memory_engine.semantic_memory import SemanticMemory
+
     _tmp = tempfile.mkdtemp()
     _path = os.path.join(_tmp, "probe.sqlite")
     try:
@@ -58,19 +60,27 @@ def semantic_memory_db():
 @pytest.mark.skipif(SKIP_TESTS, reason=f"Dependencies missing: {skip_reason}")
 def test_semantic_memory_add_and_recall(semantic_memory_db):
     from modules.humanoid.memory_engine.semantic_memory import SemanticMemory
+
     sm = SemanticMemory(db_path=semantic_memory_db)
     id1 = sm.add_experience("cocinar pasta con tomate", context="cocina", tags=["plan"])
-    id2 = sm.add_experience("preparar espagueti a la boloñesa", context="cocina", tags=["plan"])
+    id2 = sm.add_experience(
+        "preparar espagueti a la boloñesa", context="cocina", tags=["plan"]
+    )
     assert id1 >= 1
     assert id2 >= 1
     results = sm.recall_similar("cocinar pasta", top_k=3, min_similarity=0.3)
     assert len(results) >= 1
-    assert any("pasta" in (r.get("description") or "") or "espagueti" in (r.get("description") or "") for r in results)
+    assert any(
+        "pasta" in (r.get("description") or "")
+        or "espagueti" in (r.get("description") or "")
+        for r in results
+    )
 
 
 @pytest.mark.skipif(SKIP_TESTS, reason=f"Dependencies missing: {skip_reason}")
 def test_semantic_memory_stats(semantic_memory_db):
     from modules.humanoid.memory_engine.semantic_memory import SemanticMemory
+
     sm = SemanticMemory(db_path=semantic_memory_db)
     sm.add_experience("reparar bug en API", outcome="fixed", tags=["plan"])
     stats = sm.get_statistics()
@@ -82,6 +92,7 @@ def test_semantic_memory_stats(semantic_memory_db):
 @pytest.mark.skipif(SKIP_TESTS, reason=f"Dependencies missing: {skip_reason}")
 def test_semantic_memory_empty_recall(semantic_memory_db):
     from modules.humanoid.memory_engine.semantic_memory import SemanticMemory
+
     sm = SemanticMemory(db_path=semantic_memory_db)
     results = sm.recall_similar("cualquier query", top_k=5)
     assert results == []

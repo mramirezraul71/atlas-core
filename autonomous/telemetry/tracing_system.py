@@ -48,9 +48,19 @@ class TracingSystem:
             self._traces.pop(tid, None)
             self._spans.pop(tid, None)
 
-    def add_span(self, trace_id: str, component: str, duration_sec: float, metadata: dict | None = None) -> None:
+    def add_span(
+        self,
+        trace_id: str,
+        component: str,
+        duration_sec: float,
+        metadata: dict | None = None,
+    ) -> None:
         """Añade un span al trace."""
-        span = {"component": component, "duration_sec": duration_sec, "metadata": metadata or {}}
+        span = {
+            "component": component,
+            "duration_sec": duration_sec,
+            "metadata": metadata or {},
+        }
         if trace_id in self._traces:
             self._traces[trace_id]["spans"].append(span)
         self._spans[trace_id].append(span)
@@ -63,7 +73,9 @@ class TracingSystem:
         return {
             **t,
             "trace_id": trace_id,
-            "total_duration_sec": sum(s.get("duration_sec", 0) for s in t.get("spans", [])),
+            "total_duration_sec": sum(
+                s.get("duration_sec", 0) for s in t.get("spans", [])
+            ),
         }
 
     def analyze_slowest_traces(self, time_range_sec: float = 3600) -> list[dict]:
@@ -75,6 +87,12 @@ class TracingSystem:
                 continue
             total = sum(s.get("duration_sec", 0) for s in t.get("spans", []))
             if total > 0:
-                slow.append({"trace_id": trace_id, "operation": t.get("operation", ""), "total_sec": total})
+                slow.append(
+                    {
+                        "trace_id": trace_id,
+                        "operation": t.get("operation", ""),
+                        "total_sec": total,
+                    }
+                )
         slow.sort(key=lambda x: x["total_sec"], reverse=True)
         return slow[:20]

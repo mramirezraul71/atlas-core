@@ -17,15 +17,24 @@ def hands_execute(
     """
     try:
         from modules.humanoid.hands_eyes import execute_action
-        return execute_action(action, payload, verify_before=verify_before, verify_after=verify_after)
+
+        return execute_action(
+            action, payload, verify_before=verify_before, verify_after=verify_after
+        )
     except Exception as e:
-        return {"ok": False, "error": str(e), "evidence_before": None, "evidence_after": None}
+        return {
+            "ok": False,
+            "error": str(e),
+            "evidence_before": None,
+            "evidence_after": None,
+        }
 
 
 def hands_locate(query: str, region: Optional[tuple] = None) -> Dict[str, Any]:
     """Localiza elemento en pantalla (ojos + coordenadas). Para usar antes de hands_execute(click)."""
     try:
         from modules.humanoid.hands_eyes import locate_element
+
         return locate_element(query, region=region)
     except Exception as e:
         return {"ok": False, "matches": [], "error": str(e)}

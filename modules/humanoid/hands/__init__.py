@@ -4,15 +4,17 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from modules.humanoid.kernel import BaseModule, HealthCheckMixin
-from .safe_shell import SafeShellExecutor
+
 from .fs_controller import FileSystemController
 from .process_manager import ProcessManager
+from .safe_shell import SafeShellExecutor
 
 
 def _get_interpreter_bridge():
     """Lazy import to avoid hard dependency on open-interpreter at startup."""
     try:
         from .interpreter_bridge import get_session_manager, interpreter_status
+
         return get_session_manager, interpreter_status
     except ImportError:
         return None, None
@@ -50,13 +52,23 @@ class HandsModule(BaseModule, HealthCheckMixin):
         return {
             "ok": True,
             "message": "ok",
-            "details": {"shell": True, "fs": True, "process": True, "interpreter": interp_ok},
+            "details": {
+                "shell": True,
+                "fs": True,
+                "process": True,
+                "interpreter": interp_ok,
+            },
         }
 
     def info(self) -> Dict[str, Any]:
         return {
             "module": self.name,
-            "components": ["SafeShellExecutor", "FileSystemController", "ProcessManager", "InterpreterBridge"],
+            "components": [
+                "SafeShellExecutor",
+                "FileSystemController",
+                "ProcessManager",
+                "InterpreterBridge",
+            ],
         }
 
 

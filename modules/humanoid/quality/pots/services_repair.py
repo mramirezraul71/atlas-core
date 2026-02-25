@@ -12,7 +12,9 @@ Severidad: HIGH (servicios caídos afectan funcionalidad core)
 import os
 import sys
 from pathlib import Path
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 # Ruta absoluta al repo para que los comandos funcionen desde cualquier cwd
 _REPO_ROOT = str(Path(__file__).resolve().parent.parent.parent.parent.parent)
@@ -36,10 +38,23 @@ Procedimiento para diagnosticar y restaurar servicios críticos de ATLAS:
         severity=POTSeverity.HIGH,
         version="2.0.0",
         author="ATLAS QA Senior",
-        
-        trigger_check_ids=["nexus_health", "robot_health", "gateway_health", "service_*", "port_*"],
-        trigger_keywords=["service", "nexus", "robot", "gateway", "port", "connection", "refused", "timeout"],
-        
+        trigger_check_ids=[
+            "nexus_health",
+            "robot_health",
+            "gateway_health",
+            "service_*",
+            "port_*",
+        ],
+        trigger_keywords=[
+            "service",
+            "nexus",
+            "robot",
+            "gateway",
+            "port",
+            "connection",
+            "refused",
+            "timeout",
+        ],
         prerequisites=[
             "Acceso a PowerShell con permisos de administrador",
             "Scripts de reinicio disponibles en scripts/",
@@ -47,7 +62,6 @@ Procedimiento para diagnosticar y restaurar servicios críticos de ATLAS:
         ],
         required_services=[],  # No requiere servicios previos (los va a reparar)
         required_permissions=["service_restart", "process_kill"],
-        
         objectives=[
             "Identificar qué servicio(s) está(n) caído(s)",
             "Limpiar procesos zombie si existen",
@@ -56,7 +70,6 @@ Procedimiento para diagnosticar y restaurar servicios críticos de ATLAS:
         ],
         success_criteria="Todos los servicios responden a /health con status 200",
         estimated_duration_minutes=3,
-        
         tutorial_overview="""
 ## Guía de Reparación de Servicios
 
@@ -87,24 +100,20 @@ Procedimiento para diagnosticar y restaurar servicios críticos de ATLAS:
 - Timeout de base de datos
 - Memoria agotada
         """.strip(),
-        
         best_practices=[
             "Siempre verificar estado ANTES de reiniciar",
             "Matar procesos zombie antes de iniciar nuevos",
             "Esperar a que el servicio esté completamente UP antes del siguiente",
             "Verificar logs si el reinicio falla repetidamente",
         ],
-        
         warnings=[
             "Reiniciar servicios puede interrumpir operaciones en curso",
             "Si un servicio falla repetidamente, revisar logs antes de reintentar",
             "No reiniciar todos a la vez, hacerlo secuencialmente",
         ],
-        
         related_pots=["diagnostic_full", "recovery_full", "port_repair"],
         tags=["services", "nexus", "robot", "gateway", "repair", "restart"],
         has_rollback=False,  # Servicios no tienen rollback tradicional
-        
         steps=[
             # Diagnóstico inicial
             POTStep(
@@ -122,7 +131,6 @@ Primer paso: verificar qué servicios están caídos.
 Si Robot responde 200, está OK. Si falla, necesita reinicio.
                 """,
             ),
-            
             POTStep(
                 id="diagnose_nexus",
                 name="Diagnosticar NEXUS",
@@ -134,7 +142,6 @@ Si Robot responde 200, está OK. Si falla, necesita reinicio.
                 continue_on_failure=True,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="diagnose_push",
                 name="Diagnosticar Push Dashboard",
@@ -146,7 +153,6 @@ Si Robot responde 200, está OK. Si falla, necesita reinicio.
                 continue_on_failure=True,
                 capture_output=True,
             ),
-            
             # Limpieza de procesos zombie — SOLO si robot NO responde
             POTStep(
                 id="kill_zombie_processes",
@@ -155,8 +161,8 @@ Si Robot responde 200, está OK. Si falla, necesita reinicio.
                 step_type=StepType.COMMAND,
                 command=(
                     'powershell -Command "'
-                    'try { $r = Invoke-WebRequest -Uri http://127.0.0.1:8002/api/health -TimeoutSec 3 -UseBasicParsing -EA Stop; exit 0 } catch {};'
-                    'Get-NetTCPConnection -LocalPort 8000,8002 -State Listen -ErrorAction SilentlyContinue'
+                    "try { $r = Invoke-WebRequest -Uri http://127.0.0.1:8002/api/health -TimeoutSec 3 -UseBasicParsing -EA Stop; exit 0 } catch {};"
+                    "Get-NetTCPConnection -LocalPort 8000,8002 -State Listen -ErrorAction SilentlyContinue"
                     ' | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"'
                 ),
                 timeout_seconds=15,
@@ -166,7 +172,6 @@ Primero verifica si robot responde. Si responde, no mata nada.
 Si no responde, limpia procesos zombie para liberar puertos.
                 """,
             ),
-            
             POTStep(
                 id="wait_port_release",
                 name="Esperar liberación de puertos",
@@ -174,7 +179,6 @@ Si no responde, limpia procesos zombie para liberar puertos.
                 step_type=StepType.WAIT,
                 wait_seconds=3,
             ),
-            
             # Reinicio secuencial
             POTStep(
                 id="restart_robot",
@@ -192,7 +196,6 @@ Robot Backend se inicia primero porque:
 3. Es más rápido de iniciar que NEXUS
                 """,
             ),
-            
             POTStep(
                 id="wait_robot_ready",
                 name="Esperar Robot listo",
@@ -200,7 +203,6 @@ Robot Backend se inicia primero porque:
                 step_type=StepType.WAIT,
                 wait_seconds=5,
             ),
-            
             POTStep(
                 id="verify_robot",
                 name="Verificar Robot activo",
@@ -212,7 +214,6 @@ Robot Backend se inicia primero porque:
                 retries=3,
                 retry_delay_seconds=3,
             ),
-            
             POTStep(
                 id="restart_nexus",
                 name="Reiniciar NEXUS",
@@ -228,7 +229,6 @@ NEXUS solo se reinicia si estaba caído.
 Es el servicio más pesado (carga modelos, etc).
                 """,
             ),
-            
             POTStep(
                 id="restart_push",
                 name="Reiniciar Push Dashboard",
@@ -239,7 +239,6 @@ Es el servicio más pesado (carga modelos, etc).
                 continue_on_failure=True,
                 condition="context.get('diagnose_push_failed', False)",
             ),
-            
             # Verificación final
             POTStep(
                 id="final_health_check",
@@ -256,7 +255,6 @@ El script check_nexus_ports.py verifica:
 - Muestra resumen de estado
                 """,
             ),
-            
             POTStep(
                 id="log_completion",
                 name="Registrar en bitácora",
@@ -267,7 +265,7 @@ El script check_nexus_ports.py verifica:
                 http_body={
                     "message": "[REPARACIÓN] Servicios reparados por POT services_repair",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
                 continue_on_failure=True,
             ),

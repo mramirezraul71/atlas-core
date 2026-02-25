@@ -90,7 +90,9 @@ class ContinualLearningLoop:
         Returns: action_taken, result, learned, asked_for_help, new_knowledge, uncertainty_score
         """
         self.experience_counter += 1
-        print(f"\n[EXPERIENCE #{self.experience_counter}] {situation.get('description', 'N/A')[:60]}...")
+        print(
+            f"\n[EXPERIENCE #{self.experience_counter}] {situation.get('description', 'N/A')[:60]}..."
+        )
         understanding = await self._understand_situation(situation)
         similar_exp: List[Dict[str, Any]] = []
         if getattr(self.semantic_mem, "recall_similar", None):
@@ -106,7 +108,9 @@ class ContinualLearningLoop:
         action_plan, uncertainty_info = await self._decide_action(
             understanding, similar_exp, situation
         )
-        print(f"  -> Incertidumbre: {uncertainty_info.get('score', 0):.2f} - {uncertainty_info.get('reason', '')}")
+        print(
+            f"  -> Incertidumbre: {uncertainty_info.get('score', 0):.2f} - {uncertainty_info.get('reason', '')}"
+        )
         asked_for_help = False
         if uncertainty_info.get("is_uncertain"):
             should_ask = getattr(self.uncertainty, "should_ask_for_help", None)
@@ -140,16 +144,20 @@ class ContinualLearningLoop:
             situation, action_plan, result, uncertainty_info, asked_for_help
         )
         if self.current_lesson:
-            self.daily_report.setdefault("tasks_completed", []).append({
-                "task": situation.get("type"),
-                "success": result.get("success"),
-                "timestamp": datetime.now().isoformat(),
-            })
+            self.daily_report.setdefault("tasks_completed", []).append(
+                {
+                    "task": situation.get("type"),
+                    "success": result.get("success"),
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
             if uncertainty_info.get("is_uncertain"):
                 self.daily_report["uncertainty_episodes"] = (
                     self.daily_report.get("uncertainty_episodes", 0) + 1
                 )
-        if getattr(self.consolidator, "should_consolidate", lambda f=False: False)(False):
+        if getattr(self.consolidator, "should_consolidate", lambda f=False: False)(
+            False
+        ):
             print("  -> Consolidando conocimiento...")
             await self._consolidate_async()
         return {
@@ -178,7 +186,9 @@ class ContinualLearningLoop:
     ) -> tuple:
         """Decidir acción con detección de incertidumbre. Returns (action_plan, uncertainty_info)."""
         relevant_skills = self._find_relevant_skills(understanding)
-        confidence = min(len(similar_experiences) / 5.0, 0.95) if similar_experiences else 0.0
+        confidence = (
+            min(len(similar_experiences) / 5.0, 0.95) if similar_experiences else 0.0
+        )
         situation_novelty = 1.0 - confidence if len(similar_experiences) == 0 else 0.3
         ensemble_preds = [0.8, 0.75, 0.82] if len(relevant_skills) > 1 else None
         is_uncertain, reason, score = self.uncertainty.is_uncertain(
@@ -195,7 +205,11 @@ class ContinualLearningLoop:
             action = similar_experiences[0].get("description", "explore_cautiously")
         else:
             action = "request_guidance"
-        uncertainty_info = {"is_uncertain": is_uncertain, "reason": reason, "score": score}
+        uncertainty_info = {
+            "is_uncertain": is_uncertain,
+            "reason": reason,
+            "score": score,
+        }
         return action, uncertainty_info
 
     async def _ask_for_help(
@@ -223,16 +237,22 @@ class ContinualLearningLoop:
         if (
             self.action_executor
             and action_plan
-            and str(action_plan).strip().lower() not in ("ask_for_help", "request_guidance")
+            and str(action_plan).strip().lower()
+            not in ("ask_for_help", "request_guidance")
         ):
             try:
                 result = self.action_executor(action_plan, situation)
                 if hasattr(result, "__await__"):
                     return await result
-                return result if isinstance(result, dict) else {"success": True, "details": result}
+                return (
+                    result
+                    if isinstance(result, dict)
+                    else {"success": True, "details": result}
+                )
             except Exception as e:
                 return {"success": False, "error": str(e), "details": "Executor failed"}
         import random
+
         success_prob = 0.8
         if "complex" in (situation.get("description") or "").lower():
             success_prob = 0.6
@@ -292,21 +312,25 @@ class ContinualLearningLoop:
         if result.get("success"):
             if getattr(self.uncertainty, "record_success", None):
                 self.uncertainty.record_success(situation.get("type", "unknown"))
-            new_knowledge.append({
-                "type": "success_pattern",
-                "situation_type": situation.get("type"),
-                "action": action,
-                "confidence": 1.0 - uncertainty_info.get("score", 0),
-            })
+            new_knowledge.append(
+                {
+                    "type": "success_pattern",
+                    "situation_type": situation.get("type"),
+                    "action": action,
+                    "confidence": 1.0 - uncertainty_info.get("score", 0),
+                }
+            )
         else:
             if getattr(self.uncertainty, "record_failure", None):
                 self.uncertainty.record_failure(situation.get("type", "unknown"))
-            new_knowledge.append({
-                "type": "failure_pattern",
-                "situation_type": situation.get("type"),
-                "action": action,
-                "reason": result.get("error", "unknown"),
-            })
+            new_knowledge.append(
+                {
+                    "type": "failure_pattern",
+                    "situation_type": situation.get("type"),
+                    "action": action,
+                    "reason": result.get("error", "unknown"),
+                }
+            )
         return new_knowledge
 
     async def _store_new_knowledge(self, knowledge_items: List[Dict[str, Any]]) -> None:
@@ -348,7 +372,9 @@ class ContinualLearningLoop:
         )
         time_taken = 0.0
         if self.lesson_start_time:
-            time_taken = (datetime.now() - self.lesson_start_time).total_seconds() / 3600
+            time_taken = (
+                datetime.now() - self.lesson_start_time
+            ).total_seconds() / 3600
         report = {
             "lesson_id": self.current_lesson.get("lesson_id"),
             "tasks_completed": tasks,
@@ -360,22 +386,30 @@ class ContinualLearningLoop:
             "times_asked_for_help": self.daily_report.get("times_asked_for_help", 0),
             "self_assessment": self._self_assess(success_rate),
         }
-        print(f"Tareas: {len(tasks)}, Éxito: {success_rate:.1%}, Ayuda: {report['times_asked_for_help']}")
+        print(
+            f"Tareas: {len(tasks)}, Éxito: {success_rate:.1%}, Ayuda: {report['times_asked_for_help']}"
+        )
 
         # --- Python Mastery: evaluación determinista/offline (score objetivo) ---
         try:
             lesson_id = str(self.current_lesson.get("lesson_id") or "").strip()
             if lesson_id.upper().startswith("PY"):
                 from pathlib import Path
-                from brain.learning.python_mastery_evaluator import evaluate_python_mastery_lesson
 
-                repo_root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or ""
+                from brain.learning.python_mastery_evaluator import \
+                    evaluate_python_mastery_lesson
+
+                repo_root = (
+                    os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or ""
+                )
                 if repo_root:
                     root = Path(repo_root)
                 else:
                     # brain/learning/continual_learning_loop.py -> repo_root
                     root = Path(__file__).resolve().parents[2]
-                evaluation = evaluate_python_mastery_lesson(lesson_id=lesson_id, repo_root=root)
+                evaluation = evaluate_python_mastery_lesson(
+                    lesson_id=lesson_id, repo_root=root
+                )
                 # Registrar en tutor si soporta recording offline (offline-first).
                 if getattr(self.ai_tutor, "record_offline_evaluation", None):
                     try:
@@ -387,7 +421,7 @@ class ContinualLearningLoop:
                         )
                     except Exception:
                         pass
-                for correction in (evaluation.get("knowledge_corrected") or []):
+                for correction in evaluation.get("knowledge_corrected") or []:
                     await self._apply_knowledge_correction(correction)
                 return evaluation
         except Exception:
@@ -425,11 +459,14 @@ class ContinualLearningLoop:
 
     async def _start_background_tasks(self) -> None:
         """Iniciar tareas de fondo (p. ej. consolidación periódica)."""
+
         async def consolidation_loop() -> None:
             try:
                 while True:
                     await asyncio.sleep(14400)
-                    if getattr(self.consolidator, "should_consolidate", lambda f=False: False)(False):
+                    if getattr(
+                        self.consolidator, "should_consolidate", lambda f=False: False
+                    )(False):
                         if hasattr(self.consolidator, "consolidate_knowledge"):
                             self.consolidator.consolidate_knowledge()
             except asyncio.CancelledError:
@@ -469,6 +506,9 @@ class ContinualLearningLoop:
         task_type = (understanding.get("type") or "").lower()
         relevant: List[str] = []
         for skill_name, skill_def in getattr(self.kb, "skills", {}).items():
-            if isinstance(skill_def, dict) and task_type in (skill_def.get("description") or "").lower():
+            if (
+                isinstance(skill_def, dict)
+                and task_type in (skill_def.get("description") or "").lower()
+            ):
                 relevant.append(skill_name)
         return relevant

@@ -13,7 +13,11 @@ class EnvScanner:
     def python_version(self) -> Dict[str, Any]:
         try:
             v = sys.version_info
-            return {"ok": True, "version": f"{v.major}.{v.minor}.{v.micro}", "error": None}
+            return {
+                "ok": True,
+                "version": f"{v.major}.{v.minor}.{v.micro}",
+                "error": None,
+            }
         except Exception as e:
             return {"ok": False, "version": "", "error": str(e)}
 
@@ -28,7 +32,11 @@ class EnvScanner:
                 timeout=10,
             )
             out = (r.stdout or r.stderr or "").strip()
-            return {"ok": r.returncode == 0, "version_output": out, "error": None if r.returncode == 0 else out}
+            return {
+                "ok": r.returncode == 0,
+                "version_output": out,
+                "error": None if r.returncode == 0 else out,
+            }
         except Exception as e:
             return {"ok": False, "version_output": "", "error": str(e)}
 
@@ -50,8 +58,15 @@ class EnvScanner:
 
     def is_venv(self) -> Dict[str, Any]:
         try:
-            active = getattr(sys, "prefix", "") != getattr(sys, "base_prefix", sys.prefix)
-            return {"ok": True, "in_venv": active, "prefix": getattr(sys, "prefix", ""), "error": None}
+            active = getattr(sys, "prefix", "") != getattr(
+                sys, "base_prefix", sys.prefix
+            )
+            return {
+                "ok": True,
+                "in_venv": active,
+                "prefix": getattr(sys, "prefix", ""),
+                "error": None,
+            }
         except Exception as e:
             return {"ok": False, "in_venv": False, "error": str(e)}
 
@@ -66,9 +81,15 @@ class EnvScanner:
                 timeout=30,
             )
             if r.returncode != 0:
-                return {"ok": False, "packages": [], "error": r.stderr or "pip list failed"}
+                return {
+                    "ok": False,
+                    "packages": [],
+                    "error": r.stderr or "pip list failed",
+                }
             raw = json.loads(r.stdout)
-            packages = [{"name": x.get("name"), "version": x.get("version")} for x in raw]
+            packages = [
+                {"name": x.get("name"), "version": x.get("version")} for x in raw
+            ]
             return {"ok": True, "packages": packages, "error": None}
         except Exception as e:
             return {"ok": False, "packages": [], "error": str(e)}

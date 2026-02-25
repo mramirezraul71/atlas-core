@@ -13,24 +13,18 @@ Cada especialista que instruya a ATLAS debe dejar constancia
 de sus instrucciones, evaluaciones y recomendaciones.
 """
 
-from .models import (
-    Especialista,
-    Visita,
-    Informe,
-    Recomendacion,
-    Evaluacion,
-    SeguimientoMejora
-)
 from .manager import TutoriasManager
+from .models import (Especialista, Evaluacion, Informe, Recomendacion,
+                     SeguimientoMejora, Visita)
 from .reports import ReportGenerator
 
 __all__ = [
-    'Especialista',
-    'Visita', 
-    'Informe',
-    'Recomendacion',
-    'Evaluacion',
-    'SeguimientoMejora',
-    'TutoriasManager',
-    'ReportGenerator'
+    "Especialista",
+    "Visita",
+    "Informe",
+    "Recomendacion",
+    "Evaluacion",
+    "SeguimientoMejora",
+    "TutoriasManager",
+    "ReportGenerator",
 ]

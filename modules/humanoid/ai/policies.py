@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from typing import Callable, Optional
 
+
 def _env(name: str, default: str) -> str:
     v = os.getenv(name)
     return (v or "").strip() or default

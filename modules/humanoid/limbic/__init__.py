@@ -6,9 +6,9 @@ Analogo biologico: Sistema limbico (amigdala, hipotalamo, nucleo accumbens)
 - RewardEngine: Funcion de recompensa y senales de refuerzo
 - StateRegulator: Regulacion del estado interno
 """
-from .goal_manager import GoalManager, Goal
+from .goal_manager import Goal, GoalManager
 from .reward_engine import RewardEngine, RewardSignal
-from .state_regulator import StateRegulator, InternalState
+from .state_regulator import InternalState, StateRegulator
 
 __all__ = [
     "GoalManager",

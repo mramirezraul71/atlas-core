@@ -1,13 +1,13 @@
 """ANS checks: register all checks."""
 from __future__ import annotations
 
-from . import api_health, scheduler_health, memory_health, audit_health, llm_health, deps_health, router_health
-from . import ui_health, deploy_health, gateway_health, cluster_health, disk_health, logs_health, evolution_health
-from . import nexus_services_health
-from . import robot_camera_health
-from . import nervous_health
-from . import cge_health
 from modules.humanoid.ans.registry import register_check
+
+from . import (api_health, audit_health, cge_health, cluster_health,
+               deploy_health, deps_health, disk_health, evolution_health,
+               gateway_health, llm_health, logs_health, memory_health,
+               nervous_health, nexus_services_health, robot_camera_health,
+               router_health, scheduler_health, ui_health)
 
 
 def _register_all() -> None:

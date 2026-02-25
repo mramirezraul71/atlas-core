@@ -5,34 +5,61 @@ Publishes joint positions, velocities, and efforts for all Atlas DOF.
 In simulation mode, publishes a default standing pose.
 In hardware mode, reads from motor encoders.
 """
+import math
+import time
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
-import math
-import time
 
 # Atlas humanoid joint names (30 DOF)
 JOINT_NAMES = [
     # Left leg (6)
-    "l_hip_yaw", "l_hip_roll", "l_hip_pitch", "l_knee", "l_ankle_pitch", "l_ankle_roll",
+    "l_hip_yaw",
+    "l_hip_roll",
+    "l_hip_pitch",
+    "l_knee",
+    "l_ankle_pitch",
+    "l_ankle_roll",
     # Right leg (6)
-    "r_hip_yaw", "r_hip_roll", "r_hip_pitch", "r_knee", "r_ankle_pitch", "r_ankle_roll",
+    "r_hip_yaw",
+    "r_hip_roll",
+    "r_hip_pitch",
+    "r_knee",
+    "r_ankle_pitch",
+    "r_ankle_roll",
     # Torso (2)
-    "torso_yaw", "torso_pitch",
+    "torso_yaw",
+    "torso_pitch",
     # Left arm (7)
-    "l_shoulder_pitch", "l_shoulder_roll", "l_shoulder_yaw", "l_elbow",
-    "l_wrist_yaw", "l_wrist_roll", "l_wrist_pitch",
+    "l_shoulder_pitch",
+    "l_shoulder_roll",
+    "l_shoulder_yaw",
+    "l_elbow",
+    "l_wrist_yaw",
+    "l_wrist_roll",
+    "l_wrist_pitch",
     # Right arm (7)
-    "r_shoulder_pitch", "r_shoulder_roll", "r_shoulder_yaw", "r_elbow",
-    "r_wrist_yaw", "r_wrist_roll", "r_wrist_pitch",
+    "r_shoulder_pitch",
+    "r_shoulder_roll",
+    "r_shoulder_yaw",
+    "r_elbow",
+    "r_wrist_yaw",
+    "r_wrist_roll",
+    "r_wrist_pitch",
     # Head (2)
-    "head_yaw", "head_pitch",
+    "head_yaw",
+    "head_pitch",
 ]
 
 # Default standing pose (radians)
 STANDING_POSE = {
-    "l_hip_pitch": -0.1, "l_knee": 0.2, "l_ankle_pitch": -0.1,
-    "r_hip_pitch": -0.1, "r_knee": 0.2, "r_ankle_pitch": -0.1,
+    "l_hip_pitch": -0.1,
+    "l_knee": 0.2,
+    "l_ankle_pitch": -0.1,
+    "r_hip_pitch": -0.1,
+    "r_knee": 0.2,
+    "r_ankle_pitch": -0.1,
 }
 
 

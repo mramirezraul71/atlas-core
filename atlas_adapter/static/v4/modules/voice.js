@@ -100,4 +100,3 @@ async function _speak(text) {
 }
 
 window.AtlasModuleVoice = { id: 'voice' };
-

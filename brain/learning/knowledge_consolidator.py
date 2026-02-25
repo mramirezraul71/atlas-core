@@ -43,12 +43,16 @@ class KnowledgeConsolidator:
         time_elapsed = datetime.now() - self.last_consolidation
         if time_elapsed > self.consolidation_interval:
             return True
-        get_recent = getattr(self.episodic_memory, "get_recent_episodes", None) or getattr(
-            self.episodic_memory, "get_recent", None
-        )
+        get_recent = getattr(
+            self.episodic_memory, "get_recent_episodes", None
+        ) or getattr(self.episodic_memory, "get_recent", None)
         if get_recent:
             try:
-                recent = get_recent(limit=100) if callable(get_recent) else get_recent(limit=100)
+                recent = (
+                    get_recent(limit=100)
+                    if callable(get_recent)
+                    else get_recent(limit=100)
+                )
                 if len(recent) >= 50:
                     return True
             except Exception:
@@ -111,17 +115,24 @@ class KnowledgeConsolidator:
             "rules_updated_total": self.stats["rules_updated"],
             "contradictions_resolved_total": self.stats["contradictions_resolved"],
             "last_consolidation": self.last_consolidation.isoformat(),
-            "hours_since_last": (datetime.now() - self.last_consolidation).total_seconds() / 3600,
+            "hours_since_last": (
+                datetime.now() - self.last_consolidation
+            ).total_seconds()
+            / 3600,
         }
 
     def _get_recent_episodes(self, limit: int = 200) -> List[Dict[str, Any]]:
         """Obtener episodios recientes (episódica o semántica como fallback)."""
-        get_recent = getattr(self.episodic_memory, "get_recent_episodes", None) or getattr(
-            self.episodic_memory, "get_recent", None
-        )
+        get_recent = getattr(
+            self.episodic_memory, "get_recent_episodes", None
+        ) or getattr(self.episodic_memory, "get_recent", None)
         if get_recent:
             try:
-                raw = get_recent(limit=limit) if callable(get_recent) else get_recent(limit=limit)
+                raw = (
+                    get_recent(limit=limit)
+                    if callable(get_recent)
+                    else get_recent(limit=limit)
+                )
                 out: List[Dict[str, Any]] = []
                 for ep in raw:
                     e = dict(ep)
@@ -129,7 +140,9 @@ class KnowledgeConsolidator:
                     e.setdefault("task_type", e.get("situation_type", "general"))
                     e.setdefault("action", e.get("action_taken", ""))
                     e.setdefault("action_taken", e.get("action", ""))
-                    e.setdefault("situation", e.get("description", e.get("situation", "")))
+                    e.setdefault(
+                        "situation", e.get("description", e.get("situation", ""))
+                    )
                     out.append(e)
                 return out[:limit]
             except Exception:
@@ -145,18 +158,21 @@ class KnowledgeConsolidator:
                         desc = (it.get("description") or "").split(" → ")
                         situation = desc[0] if desc else ""
                         action = desc[1] if len(desc) > 1 else ""
-                        out.append({
-                            "situation_type": (it.get("tags") or ["general"])[0],
-                            "task_type": (it.get("tags") or ["general"])[0],
-                            "description": it.get("description", ""),
-                            "situation": situation,
-                            "action": action,
-                            "action_taken": action,
-                            "outcome": it.get("outcome", ""),
-                            "result": it.get("outcome", ""),
-                            "success": "success" in (it.get("outcome") or "").lower()
-                            or "success" in query,
-                        })
+                        out.append(
+                            {
+                                "situation_type": (it.get("tags") or ["general"])[0],
+                                "task_type": (it.get("tags") or ["general"])[0],
+                                "description": it.get("description", ""),
+                                "situation": situation,
+                                "action": action,
+                                "action_taken": action,
+                                "outcome": it.get("outcome", ""),
+                                "result": it.get("outcome", ""),
+                                "success": "success"
+                                in (it.get("outcome") or "").lower()
+                                or "success" in query,
+                            }
+                        )
                 except Exception:
                     pass
         return out[:limit]
@@ -172,35 +188,41 @@ class KnowledgeConsolidator:
                         "success outcome", top_k=20, min_similarity=0.5
                     )
                     if len(recent) >= 3:
-                        patterns.append({
-                            "pattern": "repeated_success",
-                            "count": len(recent),
-                            "source": "semantic",
-                        })
+                        patterns.append(
+                            {
+                                "pattern": "repeated_success",
+                                "count": len(recent),
+                                "source": "semantic",
+                            }
+                        )
                 except Exception:
                     pass
             return patterns
         success_count = sum(1 for e in episodes if e.get("success"))
         if success_count >= 3:
-            patterns.append({
-                "pattern": "repeated_success",
-                "count": success_count,
-                "total": len(episodes),
-                "source": "episodic",
-            })
+            patterns.append(
+                {
+                    "pattern": "repeated_success",
+                    "count": success_count,
+                    "total": len(episodes),
+                    "source": "episodic",
+                }
+            )
         by_type: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
         for e in episodes:
             t = (e.get("situation_type") or "general").strip() or "general"
             by_type[t].append(e)
         for sit_type, group in by_type.items():
             if len(group) >= 3 and sum(1 for e in group if e.get("success")) >= 2:
-                patterns.append({
-                    "pattern": "reliable_situation_type",
-                    "situation_type": sit_type,
-                    "task_type": sit_type,
-                    "count": len(group),
-                    "successes": sum(1 for e in group if e.get("success")),
-                })
+                patterns.append(
+                    {
+                        "pattern": "reliable_situation_type",
+                        "situation_type": sit_type,
+                        "task_type": sit_type,
+                        "count": len(group),
+                        "successes": sum(1 for e in group if e.get("success")),
+                    }
+                )
         return patterns
 
     def _generalize_from_cases(self) -> List[Dict[str, Any]]:
@@ -217,21 +239,25 @@ class KnowledgeConsolidator:
                 continue
             success_rate = sum(outcomes) / len(outcomes)
             if success_rate >= 0.75:
-                generalizations.append({
-                    "situation_type": sit,
-                    "action": action,
-                    "success_rate": round(success_rate, 2),
-                    "n": len(outcomes),
-                    "generalization": f"{sit} + {action} → success (conf ~{success_rate:.2f})",
-                })
+                generalizations.append(
+                    {
+                        "situation_type": sit,
+                        "action": action,
+                        "success_rate": round(success_rate, 2),
+                        "n": len(outcomes),
+                        "generalization": f"{sit} + {action} → success (conf ~{success_rate:.2f})",
+                    }
+                )
             elif success_rate <= 0.25:
-                generalizations.append({
-                    "situation_type": sit,
-                    "action": action,
-                    "success_rate": round(success_rate, 2),
-                    "n": len(outcomes),
-                    "generalization": f"{sit} + {action} → often fails (conf ~{1 - success_rate:.2f})",
-                })
+                generalizations.append(
+                    {
+                        "situation_type": sit,
+                        "action": action,
+                        "success_rate": round(success_rate, 2),
+                        "n": len(outcomes),
+                        "generalization": f"{sit} + {action} → often fails (conf ~{1 - success_rate:.2f})",
+                    }
+                )
         return generalizations
 
     def _identify_new_concepts(self) -> List[Dict[str, Any]]:
@@ -246,12 +272,14 @@ class KnowledgeConsolidator:
         existing = set(getattr(kb, "concepts", {}).keys())
         for sit_type, count in type_counts.items():
             if count >= 3 and sit_type not in existing and sit_type != "general":
-                new_concepts.append({
-                    "name": sit_type,
-                    "suggested_type": "situation_type",
-                    "occurrences": count,
-                    "definition": f"Tipo de situación observado {count} veces en episodios.",
-                })
+                new_concepts.append(
+                    {
+                        "name": sit_type,
+                        "suggested_type": "situation_type",
+                        "occurrences": count,
+                        "definition": f"Tipo de situación observado {count} veces en episodios.",
+                    }
+                )
         return new_concepts
 
     def _update_causal_rules(self) -> List[Dict[str, Any]]:
@@ -282,12 +310,14 @@ class KnowledgeConsolidator:
                 new_conf = success / total if total else conf
                 new_conf = max(0.2, min(0.98, new_conf))
                 rel["confidence"] = round(new_conf, 2)
-                updated.append({
-                    "rule": str(key),
-                    "old_confidence": conf,
-                    "new_confidence": rel["confidence"],
-                    "evidence": total,
-                })
+                updated.append(
+                    {
+                        "rule": str(key),
+                        "old_confidence": conf,
+                        "new_confidence": rel["confidence"],
+                        "evidence": total,
+                    }
+                )
         if updated:
             kb.save_to_disk()
         return updated
@@ -307,14 +337,16 @@ class KnowledgeConsolidator:
             has_success = any(outcomes)
             has_failure = not all(outcomes)
             if has_success and has_failure:
-                weakened.append({
-                    "situation_type": sit,
-                    "action": action,
-                    "contradiction": "both success and failure observed",
-                    "n": len(outcomes),
-                    "success_count": sum(outcomes),
-                    "failure_count": len(outcomes) - sum(outcomes),
-                })
+                weakened.append(
+                    {
+                        "situation_type": sit,
+                        "action": action,
+                        "contradiction": "both success and failure observed",
+                        "n": len(outcomes),
+                        "success_count": sum(outcomes),
+                        "failure_count": len(outcomes) - sum(outcomes),
+                    }
+                )
         return weakened
 
     def _resolve_contradictions(self) -> List[Dict[str, Any]]:
@@ -329,13 +361,15 @@ class KnowledgeConsolidator:
             if times_triggered >= 5:
                 success_rate = times_successful / times_triggered
                 if success_rate < 0.4:
-                    contradictions.append({
-                        "rule_id": rule_id,
-                        "rule": rule,
-                        "success_rate": success_rate,
-                        "action": "weaken_or_remove",
-                        "reason": f"Regla solo exitosa {success_rate:.0%} del tiempo",
-                    })
+                    contradictions.append(
+                        {
+                            "rule_id": rule_id,
+                            "rule": rule,
+                            "success_rate": success_rate,
+                            "action": "weaken_or_remove",
+                            "reason": f"Regla solo exitosa {success_rate:.0%} del tiempo",
+                        }
+                    )
                     rule["confidence"] = success_rate
         return contradictions
 
@@ -352,7 +386,9 @@ class KnowledgeConsolidator:
                 kb.concepts[name] = {
                     "type": "emergent",
                     "definition": concept.get("definition", "PENDING_DEFINITION"),
-                    "frequency": concept.get("frequency", concept.get("occurrences", 0)),
+                    "frequency": concept.get(
+                        "frequency", concept.get("occurrences", 0)
+                    ),
                     "confidence": concept.get("confidence", 0.7),
                     "learned_from": "consolidation",
                     "learned_at": datetime.now().isoformat(),
@@ -364,12 +400,19 @@ class KnowledgeConsolidator:
                     concept_type=concept.get("suggested_type", "learned"),
                 )
         for gen in report.get("generalizations", []):
-            action = gen.get("action") or (gen.get("situation_type", "") + "_" + gen.get("action", ""))
+            action = gen.get("action") or (
+                gen.get("situation_type", "") + "_" + gen.get("action", "")
+            )
             if not action:
                 continue
             rule_id = f"rule_{str(action).replace(' ', '_')[:50]}"
-            if hasattr(kb, "add_learned_rule") and rule_id not in getattr(kb, "rules", {}):
-                typical = gen.get("typical_result", "success" if gen.get("success_rate", 0) >= 0.5 else "failure")
+            if hasattr(kb, "add_learned_rule") and rule_id not in getattr(
+                kb, "rules", {}
+            ):
+                typical = gen.get(
+                    "typical_result",
+                    "success" if gen.get("success_rate", 0) >= 0.5 else "failure",
+                )
                 kb.add_learned_rule(
                     rule_id=rule_id,
                     condition=f"action == '{action}'",

@@ -15,11 +15,14 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -30,7 +33,9 @@ class DisasterRecovery:
     def __init__(self, config: dict | None = None):
         self._config = config or _load_config().get("resilience", {})
         self._base = Path(__file__).resolve().parent.parent.parent
-        self._backup_dir = self._base / self._config.get("backup_dir", "snapshots/disaster_recovery")
+        self._backup_dir = self._base / self._config.get(
+            "backup_dir", "snapshots/disaster_recovery"
+        )
         self._backup_dir.mkdir(parents=True, exist_ok=True)
         self._last_full: str | None = None
 
@@ -42,14 +47,30 @@ class DisasterRecovery:
         for d in ["config", "logs"]:
             src = self._base / d
             if src.exists():
-                shutil.copytree(src, dest / d, dirs_exist_ok=True, ignore=shutil.ignore_patterns("*.log"))
-        for db in ["logs/atlas_audit.sqlite", "logs/atlas_memory.sqlite", "logs/autonomous_health.sqlite", "logs/autonomous_failure_memory.sqlite"]:
+                shutil.copytree(
+                    src,
+                    dest / d,
+                    dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns("*.log"),
+                )
+        for db in [
+            "logs/atlas_audit.sqlite",
+            "logs/atlas_memory.sqlite",
+            "logs/autonomous_health.sqlite",
+            "logs/autonomous_failure_memory.sqlite",
+        ]:
             src = self._base / db
             if src.exists():
                 (dest / db).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dest / db)
         try:
-            r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self._base, capture_output=True, text=True, timeout=5)
+            r = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=self._base,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
             if r.returncode == 0:
                 (dest / "git_sha.txt").write_text(r.stdout.strip())
         except Exception:
@@ -66,7 +87,10 @@ class DisasterRecovery:
         dest = self._backup_dir / f"incr_{ts}"
         dest.mkdir(parents=True, exist_ok=True)
         (dest / "parent.txt").write_text(self._last_full or "")
-        for db in ["logs/autonomous_health.sqlite", "logs/autonomous_failure_memory.sqlite"]:
+        for db in [
+            "logs/autonomous_health.sqlite",
+            "logs/autonomous_failure_memory.sqlite",
+        ]:
             src = self._base / db
             if src.exists():
                 (dest / db).parent.mkdir(parents=True, exist_ok=True)

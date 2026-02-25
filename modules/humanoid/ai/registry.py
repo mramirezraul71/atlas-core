@@ -21,6 +21,7 @@ def _provider_has_key(provider_id: str) -> bool:
     """True si el proveedor tiene API key (env o almacén del dashboard)."""
     try:
         from .provider_credentials import get_provider_api_key
+
         return bool(get_provider_api_key(provider_id))
     except Exception:
         return False
@@ -56,7 +57,11 @@ def list_providers(ollama_available: bool) -> List[Provider]:
             is_free=True,
             supports_vision=True,
             available=ollama_available,
-            models=[_parse_model_key(m)[1] or m for m in ollama_models if m.startswith("ollama:")],
+            models=[
+                _parse_model_key(m)[1] or m
+                for m in ollama_models
+                if m.startswith("ollama:")
+            ],
         )
     )
 
@@ -64,19 +69,47 @@ def list_providers(ollama_available: bool) -> List[Provider]:
     allow_external = _env_bool("AI_ALLOW_EXTERNAL_APIS", False)
     if _provider_has_key("openai") and allow_external:
         providers.append(
-            Provider(id="openai", name="OpenAI", is_free=False, supports_vision=True, available=True, models=[])
+            Provider(
+                id="openai",
+                name="OpenAI",
+                is_free=False,
+                supports_vision=True,
+                available=True,
+                models=[],
+            )
         )
     if _provider_has_key("anthropic") and allow_external:
         providers.append(
-            Provider(id="anthropic", name="Anthropic", is_free=False, supports_vision=True, available=True, models=[])
+            Provider(
+                id="anthropic",
+                name="Anthropic",
+                is_free=False,
+                supports_vision=True,
+                available=True,
+                models=[],
+            )
         )
     if _provider_has_key("gemini") and allow_external:
         providers.append(
-            Provider(id="gemini", name="Google Gemini", is_free=False, supports_vision=True, available=True, models=[])
+            Provider(
+                id="gemini",
+                name="Google Gemini",
+                is_free=False,
+                supports_vision=True,
+                available=True,
+                models=[],
+            )
         )
     if _provider_has_key("perplexity") and allow_external:
         providers.append(
-            Provider(id="perplexity", name="Perplexity", is_free=False, supports_vision=False, available=True, models=[])
+            Provider(
+                id="perplexity",
+                name="Perplexity",
+                is_free=False,
+                supports_vision=False,
+                available=True,
+                models=[],
+            )
         )
 
     # 6) NullProvider fallback
@@ -114,7 +147,9 @@ def get_model_specs(ollama_available: bool) -> List[ModelSpec]:
         is_free = prov_id in ("ollama", "null")
         if prov_id == "ollama" and not ollama_available:
             continue
-        if prov_id in ("openai", "anthropic", "gemini", "perplexity") and not _env_bool("AI_ALLOW_EXTERNAL_APIS", False):
+        if prov_id in ("openai", "anthropic", "gemini", "perplexity") and not _env_bool(
+            "AI_ALLOW_EXTERNAL_APIS", False
+        ):
             continue
         specs.append(
             ModelSpec(
@@ -129,7 +164,9 @@ def get_model_specs(ollama_available: bool) -> List[ModelSpec]:
     return specs
 
 
-def resolve_model_for_route(route: str, ollama_available: bool, prefer_free: bool = True) -> Optional[ModelSpec]:
+def resolve_model_for_route(
+    route: str, ollama_available: bool, prefer_free: bool = True
+) -> Optional[ModelSpec]:
     """Return best ModelSpec for route; free-first if prefer_free."""
     specs = [s for s in get_model_specs(ollama_available) if s.route == route]
     if not specs:

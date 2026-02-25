@@ -9,20 +9,23 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .regression_tester import RegressionTester, TestResults
 from .backup_manager import BackupManager
-from .staged_rollout import StagedRollout, RolloutPhase
-from .metrics_comparator import MetricsComparator, ComparisonReport
+from .metrics_comparator import ComparisonReport, MetricsComparator
+from .regression_tester import RegressionTester, TestResults
+from .staged_rollout import RolloutPhase, StagedRollout
 
 logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -58,21 +61,38 @@ class EvolutionOrchestratorV2:
             "recommendation": "proceed" if results.all_passed else "fix_failures_first",
         }
 
-    def execute_full_update_pipeline(self, packages: list[str] | None = None) -> dict[str, Any]:
+    def execute_full_update_pipeline(
+        self, packages: list[str] | None = None
+    ) -> dict[str, Any]:
         """
         Flujo: 1) Regression test 2) Backup 3) Baseline 4) Staged rollout (simulado si no hay updater real)
         5) Post metrics 6) Compare 7) Rollback si degradación 8) Report.
         """
         if self._in_progress:
-            return {"ok": False, "error": "Update already in progress", "report": self._last_report}
+            return {
+                "ok": False,
+                "error": "Update already in progress",
+                "report": self._last_report,
+            }
         self._in_progress = True
-        report = {"steps": [], "success": False, "rollback_performed": False, "snapshot_id": None}
+        report = {
+            "steps": [],
+            "success": False,
+            "rollback_performed": False,
+            "snapshot_id": None,
+        }
         packages = packages or []
 
         try:
             # 1) Regression test
             results = self._tester.run_full_test_suite()
-            report["steps"].append({"step": "regression_test", "passed": results.all_passed, "details": f"passed={results.passed}, failed={results.failed}"})
+            report["steps"].append(
+                {
+                    "step": "regression_test",
+                    "passed": results.all_passed,
+                    "details": f"passed={results.passed}, failed={results.failed}",
+                }
+            )
             if not results.all_passed:
                 report["error"] = "Regression tests failed"
                 return self._finalize_report(report)
@@ -93,7 +113,12 @@ class EvolutionOrchestratorV2:
             self._rollout.advance_phase()
             self._rollout.advance_phase()
             self._rollout.advance_phase()
-            report["steps"].append({"step": "staged_rollout", "note": "phases advanced (no package install in this stub)"})
+            report["steps"].append(
+                {
+                    "step": "staged_rollout",
+                    "note": "phases advanced (no package install in this stub)",
+                }
+            )
 
             # 5) Post-update metrics
             self._comparator.capture_post_update()
@@ -101,10 +126,16 @@ class EvolutionOrchestratorV2:
 
             # 6) Compare
             comp = self._comparator.compare_metrics()
-            report["comparison"] = {"degraded": comp.degraded, "improved": comp.improved, "stable": comp.stable}
+            report["comparison"] = {
+                "degraded": comp.degraded,
+                "improved": comp.improved,
+                "stable": comp.stable,
+            }
 
             # 7) Auto-rollback si degradación
-            if self._comparator.should_rollback() and self._config.get("auto_rollback", {}).get("enabled", True):
+            if self._comparator.should_rollback() and self._config.get(
+                "auto_rollback", {}
+            ).get("enabled", True):
                 ok = self._backup.restore_snapshot(snapshot_id)
                 report["rollback_performed"] = True
                 report["steps"].append({"step": "rollback", "success": ok})
@@ -141,7 +172,11 @@ class EvolutionOrchestratorV2:
         r = self._last_report
         if not r:
             return "No update report available."
-        lines = ["=== Evolution Update Report ===", f"Success: {r.get('success', False)}", f"Rollback: {r.get('rollback_performed', False)}"]
+        lines = [
+            "=== Evolution Update Report ===",
+            f"Success: {r.get('success', False)}",
+            f"Rollback: {r.get('rollback_performed', False)}",
+        ]
         for step in r.get("steps", []):
             lines.append(f"  - {step.get('step', '')}: {step}")
         if r.get("comparison"):

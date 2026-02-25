@@ -4,8 +4,8 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from .session import validate as session_validate
 from .emergency import is_action_blocked
+from .session import validate as session_validate
 
 
 def owner_enabled() -> bool:
@@ -18,7 +18,11 @@ def owner_id() -> str:
 
 def require_session_for_risk() -> str:
     """low|medium|high|critical - actions at or above need session."""
-    return (os.getenv("OWNER_REQUIRE_SESSION_FOR_RISK", "medium") or "medium").strip().lower()
+    return (
+        (os.getenv("OWNER_REQUIRE_SESSION_FOR_RISK", "medium") or "medium")
+        .strip()
+        .lower()
+    )
 
 
 def risk_ordinal(r: str) -> int:

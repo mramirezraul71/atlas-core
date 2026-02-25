@@ -46,7 +46,9 @@ def ensure_nervous_jobs() -> None:
                 status = (existing.get("status") or "").strip().lower()
                 next_ts = (existing.get("next_run_ts") or "").strip()
                 if status in ("failed", "success", "paused") and not next_ts:
-                    db.set_queued(existing.get("id"), datetime.now(timezone.utc).isoformat())
+                    db.set_queued(
+                        existing.get("id"), datetime.now(timezone.utc).isoformat()
+                    )
             except Exception:
                 pass
             return
@@ -63,4 +65,3 @@ def ensure_nervous_jobs() -> None:
         )
     except Exception:
         pass
-

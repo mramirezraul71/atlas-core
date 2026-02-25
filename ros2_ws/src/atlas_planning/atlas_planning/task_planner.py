@@ -7,11 +7,12 @@ and publishes them for the supervisor/executor.
 
 Bridges to: modules/humanoid/orchestrator/, atlas_adapter /agent/goal
 """
+import json
+import time
+
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-import json
-import time
 
 
 class TaskPlanner(Node):
@@ -42,7 +43,9 @@ class TaskPlanner(Node):
         mode = goal_data.get("mode", "plan_only")
         depth = goal_data.get("depth", 1)
 
-        self.get_logger().info(f"Planning goal: '{goal[:80]}' mode={mode} depth={depth}")
+        self.get_logger().info(
+            f"Planning goal: '{goal[:80]}' mode={mode} depth={depth}"
+        )
 
         # Publish status
         self._publish_status("planning", goal)
@@ -66,19 +69,22 @@ class TaskPlanner(Node):
     def _call_orchestrator(self, goal: str, mode: str, depth: int) -> dict:
         """Call existing Atlas /agent/goal endpoint for AI-powered planning."""
         try:
-            import urllib.request
             import urllib.error
+            import urllib.request
 
             url = f"{self.push_url}/agent/goal"
-            body = json.dumps({
-                "goal": goal,
-                "mode": mode,
-                "depth": depth,
-                "fast": True,
-            }).encode("utf-8")
+            body = json.dumps(
+                {
+                    "goal": goal,
+                    "mode": mode,
+                    "depth": depth,
+                    "fast": True,
+                }
+            ).encode("utf-8")
 
             req = urllib.request.Request(
-                url, data=body,
+                url,
+                data=body,
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
@@ -105,14 +111,22 @@ class TaskPlanner(Node):
 
         if any(w in goal_lower for w in ("camina", "walk", "ve a", "go to", "navega")):
             steps = [
-                {"action": "localize", "description": "Determine current position via SLAM"},
+                {
+                    "action": "localize",
+                    "description": "Determine current position via SLAM",
+                },
                 {"action": "plan_path", "description": "Compute path to target"},
                 {"action": "execute_gait", "description": "Walk along planned path"},
                 {"action": "verify", "description": "Confirm arrival at target"},
             ]
-        elif any(w in goal_lower for w in ("agarra", "pick", "toma", "grab", "levanta")):
+        elif any(
+            w in goal_lower for w in ("agarra", "pick", "toma", "grab", "levanta")
+        ):
             steps = [
-                {"action": "detect_object", "description": "Locate target object with vision"},
+                {
+                    "action": "detect_object",
+                    "description": "Locate target object with vision",
+                },
                 {"action": "approach", "description": "Navigate to grasping distance"},
                 {"action": "grasp", "description": "Execute grasp with manipulator"},
                 {"action": "verify", "description": "Confirm object is held"},
@@ -120,7 +134,10 @@ class TaskPlanner(Node):
         elif any(w in goal_lower for w in ("diagnostico", "health", "estado", "check")):
             steps = [
                 {"action": "self_check", "description": "Run system diagnostics"},
-                {"action": "report", "description": "Compile and publish health report"},
+                {
+                    "action": "report",
+                    "description": "Compile and publish health report",
+                },
             ]
         else:
             steps = [

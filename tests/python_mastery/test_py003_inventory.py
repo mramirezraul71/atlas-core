@@ -7,10 +7,18 @@ import pytest
 
 
 def _enabled() -> bool:
-    return os.getenv("RUN_PYTHON_MASTERY", "").strip().lower() in ("1", "true", "yes", "on")
+    return os.getenv("RUN_PYTHON_MASTERY", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
-pytestmark = pytest.mark.skipif(not _enabled(), reason="Python Mastery tests deshabilitados (set RUN_PYTHON_MASTERY=1).")
+pytestmark = pytest.mark.skipif(
+    not _enabled(),
+    reason="Python Mastery tests deshabilitados (set RUN_PYTHON_MASTERY=1).",
+)
 
 
 def test_scan_inventory_counts_and_exts(tmp_path: Path):
@@ -34,4 +42,3 @@ def test_scan_inventory_counts_and_exts(tmp_path: Path):
     assert exts[".txt"] == 2
     assert exts[".md"] == 1
     assert exts["<noext>"] == 1
-

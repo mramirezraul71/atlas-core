@@ -14,4 +14,3 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     print("atlas-py-tool")
     return 0
-

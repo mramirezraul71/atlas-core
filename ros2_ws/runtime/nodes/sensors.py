@@ -3,31 +3,56 @@ Sensor nodes for Atlas spine runtime (lite mode).
 IMU, Joint State, Force-Torque publishers.
 """
 import math
-import time
-import sys
 import os
+import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import atlas_ros2_lite as rclpy
-from atlas_ros2_lite import (
-    Node, make_imu, make_joint_state, make_wrench_stamped, make_header,
-)
+from atlas_ros2_lite import (Node, make_header, make_imu, make_joint_state,
+                             make_wrench_stamped)
 
 # 30 DOF joint names
 JOINT_NAMES = [
-    "l_hip_yaw", "l_hip_roll", "l_hip_pitch", "l_knee", "l_ankle_pitch", "l_ankle_roll",
-    "r_hip_yaw", "r_hip_roll", "r_hip_pitch", "r_knee", "r_ankle_pitch", "r_ankle_roll",
-    "torso_yaw", "torso_pitch",
-    "l_shoulder_pitch", "l_shoulder_roll", "l_shoulder_yaw", "l_elbow",
-    "l_wrist_yaw", "l_wrist_roll", "l_wrist_pitch",
-    "r_shoulder_pitch", "r_shoulder_roll", "r_shoulder_yaw", "r_elbow",
-    "r_wrist_yaw", "r_wrist_roll", "r_wrist_pitch",
-    "head_yaw", "head_pitch",
+    "l_hip_yaw",
+    "l_hip_roll",
+    "l_hip_pitch",
+    "l_knee",
+    "l_ankle_pitch",
+    "l_ankle_roll",
+    "r_hip_yaw",
+    "r_hip_roll",
+    "r_hip_pitch",
+    "r_knee",
+    "r_ankle_pitch",
+    "r_ankle_roll",
+    "torso_yaw",
+    "torso_pitch",
+    "l_shoulder_pitch",
+    "l_shoulder_roll",
+    "l_shoulder_yaw",
+    "l_elbow",
+    "l_wrist_yaw",
+    "l_wrist_roll",
+    "l_wrist_pitch",
+    "r_shoulder_pitch",
+    "r_shoulder_roll",
+    "r_shoulder_yaw",
+    "r_elbow",
+    "r_wrist_yaw",
+    "r_wrist_roll",
+    "r_wrist_pitch",
+    "head_yaw",
+    "head_pitch",
 ]
 
 STANDING_POSE = {
-    "l_hip_pitch": -0.1, "l_knee": 0.2, "l_ankle_pitch": -0.1,
-    "r_hip_pitch": -0.1, "r_knee": 0.2, "r_ankle_pitch": -0.1,
+    "l_hip_pitch": -0.1,
+    "l_knee": 0.2,
+    "l_ankle_pitch": -0.1,
+    "r_hip_pitch": -0.1,
+    "r_knee": 0.2,
+    "r_ankle_pitch": -0.1,
 }
 
 
@@ -56,7 +81,9 @@ class JointStatePublisher(Node):
         self.pub = self.create_publisher(None, "/atlas/joint_states", 10)
         self.t0 = time.time()
         self.create_timer(1.0 / rate_hz, self._tick)
-        self.get_logger().info(f"Joint state publisher started: {len(JOINT_NAMES)} joints at {rate_hz}Hz")
+        self.get_logger().info(
+            f"Joint state publisher started: {len(JOINT_NAMES)} joints at {rate_hz}Hz"
+        )
 
     def _tick(self):
         t = time.time() - self.t0
@@ -92,11 +119,15 @@ class ForceTorquePublisher(Node):
         sway = math.sin(t * 0.3) * 0.05
         fz_left = total_weight * (0.5 + sway)
         fz_right = total_weight * (0.5 - sway)
-        self.pub_left.publish(make_wrench_stamped(
-            header=make_header("l_foot_ft_link"),
-            force={"x": 0.0, "y": 0.0, "z": fz_left},
-        ))
-        self.pub_right.publish(make_wrench_stamped(
-            header=make_header("r_foot_ft_link"),
-            force={"x": 0.0, "y": 0.0, "z": fz_right},
-        ))
+        self.pub_left.publish(
+            make_wrench_stamped(
+                header=make_header("l_foot_ft_link"),
+                force={"x": 0.0, "y": 0.0, "z": fz_left},
+            )
+        )
+        self.pub_right.publish(
+            make_wrench_stamped(
+                header=make_header("r_foot_ft_link"),
+                force={"x": 0.0, "y": 0.0, "z": fz_right},
+            )
+        )

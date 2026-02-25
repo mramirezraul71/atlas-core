@@ -6,8 +6,10 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from .stt import get_missing_deps as stt_missing, is_available as stt_available
-from .tts import get_missing_deps as tts_missing, is_available as tts_available
+from .stt import get_missing_deps as stt_missing
+from .stt import is_available as stt_available
+from .tts import get_missing_deps as tts_missing
+from .tts import is_available as tts_available
 
 
 def voice_status() -> Dict[str, Any]:
@@ -20,9 +22,15 @@ def voice_status() -> Dict[str, Any]:
 
 def voice_speak(text: str) -> Dict[str, Any]:
     from .tts import speak
+
     return speak(text)
 
 
 def voice_listen_stub() -> Dict[str, Any]:
     """Stub: listen not implemented."""
-    return {"ok": True, "text": "", "error": None, "message": "listen is a stub (STT required)"}
+    return {
+        "ok": True,
+        "text": "",
+        "error": None,
+        "message": "listen is a stub (STT required)",
+    }

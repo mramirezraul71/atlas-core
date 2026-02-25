@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Diagnóstico: comprueba si NEXUS (8000) y Robot (8002) responden. Para revisar por qué no se conecta."""
+import json
 import sys
 import urllib.request
-import json
 from pathlib import Path
 from typing import Tuple
 
@@ -11,16 +11,21 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+
 def check(url: str, name: str, timeout: int = 3) -> Tuple[bool, str]:
     """GET url. Devuelve (ok, mensaje)."""
     try:
-        req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
+        req = urllib.request.Request(
+            url, method="GET", headers={"Accept": "application/json"}
+        )
         with urllib.request.urlopen(req, timeout=timeout) as r:
             if r.status != 200:
                 return False, f"HTTP {r.status}"
             try:
                 data = json.loads(r.read().decode("utf-8"))
-                return True, json.dumps(data)[:120] + ("..." if len(json.dumps(data)) > 120 else "")
+                return True, json.dumps(data)[:120] + (
+                    "..." if len(json.dumps(data)) > 120 else ""
+                )
             except Exception:
                 return True, "OK (no JSON)"
     except urllib.error.HTTPError as e:
@@ -44,7 +49,9 @@ def main():
     else:
         print("NEXUS (8000): DESCONECTADO")
         print("  ", msg_nexus)
-        print("  Acción: arrancar NEXUS (ej. cd nexus/atlas_nexus && python nexus.py --mode api)")
+        print(
+            "  Acción: arrancar NEXUS (ej. cd nexus/atlas_nexus && python nexus.py --mode api)"
+        )
 
     print()
 
@@ -60,17 +67,23 @@ def main():
     else:
         print("Robot (8002): DESCONECTADO")
         print("  ", msg_robot)
-        print("  Acción: arrancar backend robot (ej. cd nexus/atlas_nexus_robot/backend && python main.py)")
+        print(
+            "  Acción: arrancar backend robot (ej. cd nexus/atlas_nexus_robot/backend && python main.py)"
+        )
 
     print()
     if ok_nexus and ok_robot:
-        print("Resumen: ambos servicios responden. El dashboard debería mostrar Conectado.")
+        print(
+            "Resumen: ambos servicios responden. El dashboard debería mostrar Conectado."
+        )
     elif ok_nexus:
         print("Resumen: solo NEXUS responde. Robot (cámaras) no está en marcha.")
     elif ok_robot:
         print("Resumen: solo Robot responde. NEXUS (8000) no está en marcha.")
     else:
-        print("Resumen: ni NEXUS ni Robot responden. Arrancar ambos (ver docs/PROMPT_NEXUS_CLAUDE_MAPEO.md sección 7).")
+        print(
+            "Resumen: ni NEXUS ni Robot responden. Arrancar ambos (ver docs/PROMPT_NEXUS_CLAUDE_MAPEO.md sección 7)."
+        )
 
 
 if __name__ == "__main__":

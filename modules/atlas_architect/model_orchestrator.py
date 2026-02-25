@@ -22,7 +22,13 @@ class MultiModelOrchestrator:
     def __init__(self) -> None:
         pass
 
-    def run(self, prompt: str, intent_hint: str = "code", prefer_free: bool = True, timeout_s: int = 60) -> ModelOutput:
+    def run(
+        self,
+        prompt: str,
+        intent_hint: str = "code",
+        prefer_free: bool = True,
+        timeout_s: int = 60,
+    ) -> ModelOutput:
         try:
             from modules.humanoid.ai.router import route_and_run
 
@@ -42,5 +48,8 @@ class MultiModelOrchestrator:
             }
             return ModelOutput(ok=bool(out), text=(out or "").strip(), model_routing=mr)
         except Exception as e:
-            return ModelOutput(ok=False, text=str(e), model_routing={"provider_id": "error", "error": str(e)})
-
+            return ModelOutput(
+                ok=False,
+                text=str(e),
+                model_routing={"provider_id": "error", "error": str(e)},
+            )

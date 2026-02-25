@@ -5,12 +5,13 @@ Camera driver and image publisher for Atlas head and chest cameras.
 Bridges to existing Atlas vision modules (modules/humanoid/vision/).
 In simulation, publishes synthetic images or reads from webcam.
 """
+import time
+
+import numpy as np
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import Header
-import numpy as np
-import time
 
 
 class VisionNode(Node):
@@ -24,8 +25,12 @@ class VisionNode(Node):
 
         # Publishers for each camera
         self.head_rgb_pub = self.create_publisher(Image, "/atlas/camera/head/rgb", 10)
-        self.chest_depth_pub = self.create_publisher(Image, "/atlas/camera/chest/depth", 10)
-        self.head_info_pub = self.create_publisher(CameraInfo, "/atlas/camera/head/info", 10)
+        self.chest_depth_pub = self.create_publisher(
+            Image, "/atlas/camera/chest/depth", 10
+        )
+        self.head_info_pub = self.create_publisher(
+            CameraInfo, "/atlas/camera/head/info", 10
+        )
 
         # Publish at configured FPS
         self.rgb_timer = self.create_timer(1.0 / 30.0, self._publish_head_rgb)
@@ -37,16 +42,21 @@ class VisionNode(Node):
         if self.hw_enabled:
             try:
                 import cv2
+
                 self._cap = cv2.VideoCapture(0)
                 if self._cap.isOpened():
                     self.get_logger().info("Hardware camera opened (device 0)")
                 else:
                     self._cap = None
-                    self.get_logger().warn("Failed to open hardware camera, falling back to synthetic")
+                    self.get_logger().warn(
+                        "Failed to open hardware camera, falling back to synthetic"
+                    )
             except ImportError:
                 self.get_logger().warn("cv2 not available, using synthetic images")
 
-        self.get_logger().info(f"Vision node started (hw={'ON' if self.hw_enabled and self._cap else 'SIM'})")
+        self.get_logger().info(
+            f"Vision node started (hw={'ON' if self.hw_enabled and self._cap else 'SIM'})"
+        )
 
     def _make_synthetic_rgb(self, width=640, height=480) -> Image:
         """Generate a synthetic RGB image with a gradient pattern."""
@@ -92,6 +102,7 @@ class VisionNode(Node):
 
         if self._cap is not None:
             import cv2
+
             ret, frame = self._cap.read()
             if ret:
                 msg = Image()

@@ -3,13 +3,13 @@ Fundación Cognitiva + Percepción Avanzada + Aprendizaje Activo
 
 ---
 
-**ROL:** Ingeniero Jefe de ATLAS NEXUS  
-**OBJETIVO:** Implementar 11 semanas de desarrollo en 3 fases secuenciales  
-**REPOSITORIO:** C:\ATLAS_PUSH (atlas-core)  
-**BRANCH:** intent-input-rename  
-**COMMIT BASE:** 6a1f882  
+**ROL:** Ingeniero Jefe de ATLAS NEXUS
+**OBJETIVO:** Implementar 11 semanas de desarrollo en 3 fases secuenciales
+**REPOSITORIO:** C:\ATLAS_PUSH (atlas-core)
+**BRANCH:** intent-input-rename
+**COMMIT BASE:** 6a1f882
 
-**CONTEXTO:**  
+**CONTEXTO:**
 Sistema robótico funcional 72/100 con gaps críticos en: memoria sin embeddings, sin world model, visión 2D sin depth/scene, learning pasivo, planning reactivo.
 
 **TRANSFORMACIÓN:** 72/100 → 85/100 (Fases 1-3) | $145K-$240K → $500K-$600K | 7.2/10 → 8.5/10

@@ -10,12 +10,13 @@ import sys
 import time
 from typing import Any, Dict, List
 
-from .env_scanner import EnvScanner
 from .dep_resolver import DepResolver
+from .env_scanner import EnvScanner
 
 
 def _default_actor():
     from modules.humanoid.policy import ActorContext
+
     return ActorContext(actor="api", role=os.getenv("POLICY_DEFAULT_ROLE", "owner"))
 
 
@@ -42,7 +43,12 @@ class Updater:
     def snapshot_before_apply(self, cwd: str | None = None) -> Dict[str, Any]:
         """Run git status + git diff (plan only, no commit). Returns {ok, status_output, diff_output}."""
         cwd = cwd or os.getcwd()
-        out: Dict[str, Any] = {"ok": True, "status_output": "", "diff_output": "", "error": None}
+        out: Dict[str, Any] = {
+            "ok": True,
+            "status_output": "",
+            "diff_output": "",
+            "error": None,
+        }
         try:
             r = subprocess.run(
                 ["git", "status", "--short"],
@@ -114,12 +120,28 @@ class Updater:
         ms = round((time.perf_counter() - t0) * 1000)
         try:
             from modules.humanoid.audit import get_audit_logger
-            get_audit_logger().log_event(actor_ctx.actor, actor_ctx.role, "update", "check", out["ok"], ms, out.get("error"), {"required_packages": required_packages}, {"missing": out.get("missing", []), "plan_commands": out.get("plan_commands", [])})
+
+            get_audit_logger().log_event(
+                actor_ctx.actor,
+                actor_ctx.role,
+                "update",
+                "check",
+                out["ok"],
+                ms,
+                out.get("error"),
+                {"required_packages": required_packages},
+                {
+                    "missing": out.get("missing", []),
+                    "plan_commands": out.get("plan_commands", []),
+                },
+            )
         except Exception:
             pass
         return out
 
-    def apply(self, required_packages: List[str], force: bool = False, actor: Any = None) -> Dict[str, Any]:
+    def apply(
+        self, required_packages: List[str], force: bool = False, actor: Any = None
+    ) -> Dict[str, Any]:
         """Run installs only if UPDATE_APPLY=true or force=true. Returns {ok, ms, error, applied_commands, snapshot}."""
         t0 = time.perf_counter()
         out: Dict[str, Any] = {
@@ -130,10 +152,14 @@ class Updater:
             "snapshot": None,
         }
         if not (self.update_apply or force):
-            out["error"] = "UPDATE_APPLY=false and force not set; refusing to run installs"
+            out[
+                "error"
+            ] = "UPDATE_APPLY=false and force not set; refusing to run installs"
             out["ms"] = round((time.perf_counter() - t0) * 1000)
             return out
-        policy_allow = os.getenv("POLICY_ALLOW_UPDATE_APPLY", "false").strip().lower() in ("1", "true", "yes")
+        policy_allow = os.getenv(
+            "POLICY_ALLOW_UPDATE_APPLY", "false"
+        ).strip().lower() in ("1", "true", "yes")
         if not policy_allow and not force:
             out["error"] = "POLICY_ALLOW_UPDATE_APPLY=false; refusing to run installs"
             out["ms"] = round((time.perf_counter() - t0) * 1000)
@@ -141,6 +167,7 @@ class Updater:
         actor_ctx = actor or _default_actor()
         try:
             from modules.humanoid.policy import get_policy_engine
+
             decision = get_policy_engine().can(actor_ctx, "update", "apply")
             if not decision.allow and not force:
                 out["error"] = decision.reason
@@ -163,14 +190,26 @@ class Updater:
         for cmd in commands:
             try:
                 r = subprocess.run(
-                    [sys.executable, "-m", "pip", "install", cmd.replace("pip install ", "").strip()],
+                    [
+                        sys.executable,
+                        "-m",
+                        "pip",
+                        "install",
+                        cmd.replace("pip install ", "").strip(),
+                    ],
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
                     errors="replace",
                     timeout=300,
                 )
-                out["applied_commands"].append({"cmd": cmd, "returncode": r.returncode, "stderr": (r.stderr or "")[:500]})
+                out["applied_commands"].append(
+                    {
+                        "cmd": cmd,
+                        "returncode": r.returncode,
+                        "stderr": (r.stderr or "")[:500],
+                    }
+                )
                 if r.returncode != 0:
                     out["error"] = out["error"] or (r.stderr or str(r.returncode))
             except Exception as e:
@@ -180,7 +219,18 @@ class Updater:
         out["ms"] = round((time.perf_counter() - t0) * 1000)
         try:
             from modules.humanoid.audit import get_audit_logger
-            get_audit_logger().log_event(actor_ctx.actor, actor_ctx.role, "update", "apply", out["ok"], out["ms"], out.get("error"), {"required_packages": required_packages, "force": force}, {"applied_commands": len(out.get("applied_commands", []))})
+
+            get_audit_logger().log_event(
+                actor_ctx.actor,
+                actor_ctx.role,
+                "update",
+                "apply",
+                out["ok"],
+                out["ms"],
+                out.get("error"),
+                {"required_packages": required_packages, "force": force},
+                {"applied_commands": len(out.get("applied_commands", []))},
+            )
         except Exception:
             pass
         return out

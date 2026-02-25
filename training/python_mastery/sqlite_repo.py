@@ -38,7 +38,9 @@ class SQLiteRepo:
                 )
                 """
             )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_items_created ON items(created_ts);")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_items_created ON items(created_ts);"
+            )
 
     def upsert_item(self, key: str, value: str) -> None:
         if not key:
@@ -51,7 +53,9 @@ class SQLiteRepo:
 
     def get_item(self, key: str) -> Optional[Item]:
         with self._connect() as conn:
-            row = conn.execute("SELECT key, value FROM items WHERE key = ?", (key,)).fetchone()
+            row = conn.execute(
+                "SELECT key, value FROM items WHERE key = ?", (key,)
+            ).fetchone()
             return Item(key=row[0], value=row[1]) if row else None
 
     def list_items(self, limit: int = 50) -> List[Item]:
@@ -61,4 +65,3 @@ class SQLiteRepo:
                 (int(limit),),
             ).fetchall()
             return [Item(key=r[0], value=r[1]) for r in rows]
-

@@ -9,7 +9,8 @@ Triggers:
 
 Severidad: CRITICAL (afecta producción)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -29,10 +30,14 @@ Procedimiento completo de despliegue que incluye:
         severity=POTSeverity.CRITICAL,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["deploy_*", "release_*"],
-        trigger_keywords=["deploy", "deployment", "release", "produccion", "production"],
-        
+        trigger_keywords=[
+            "deploy",
+            "deployment",
+            "release",
+            "produccion",
+            "production",
+        ],
         prerequisites=[
             "Todos los tests pasando",
             "Cambios revisados y aprobados",
@@ -41,7 +46,6 @@ Procedimiento completo de despliegue que incluye:
         ],
         required_services=["push", "robot"],
         required_permissions=["deploy", "git_push", "service_restart", "notify_all"],
-        
         objectives=[
             "Verificar estado pre-deploy",
             "Crear backup/snapshot",
@@ -52,7 +56,6 @@ Procedimiento completo de despliegue que incluye:
         ],
         success_criteria="Sistema en producción con nuevo código, todos los health checks pasando",
         estimated_duration_minutes=15,
-        
         tutorial_overview="""
 ## Guía de Despliegue Completo
 
@@ -84,7 +87,6 @@ Procedimiento completo de despliegue que incluye:
 3. **Bitácora ANS**: Registro permanente
 4. **Dashboard**: Actualización visual
         """.strip(),
-        
         best_practices=[
             "SIEMPRE crear backup antes de deploy",
             "Deploy en ventana de bajo tráfico",
@@ -92,18 +94,15 @@ Procedimiento completo de despliegue que incluye:
             "Monitorear métricas post-deploy",
             "Notificar a todos los stakeholders",
         ],
-        
         warnings=[
             "CRITICAL: Requiere aprobación para ejecutar",
             "Tener acceso a rollback en caso de fallo",
             "No hacer deploy en viernes tarde",
             "Verificar que no hay operaciones críticas en curso",
         ],
-        
         related_pots=["git_commit", "git_push", "services_repair", "diagnostic_full"],
         tags=["deploy", "deployment", "production", "release", "critical"],
         has_rollback=True,
-        
         steps=[
             # Pre-checks
             POTStep(
@@ -117,7 +116,6 @@ Procedimiento completo de despliegue que incluye:
                 check_expression="response.get('score', 0) >= 80",
                 tutorial_notes="Solo proceder si health score >= 80",
             ),
-            
             POTStep(
                 id="precheck_no_incidents",
                 name="Verificar sin incidentes críticos",
@@ -128,7 +126,6 @@ Procedimiento completo de despliegue que incluye:
                 timeout_seconds=10,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="notify_deploy_start",
                 name="Notificar inicio de deploy",
@@ -137,7 +134,6 @@ Procedimiento completo de despliegue que incluye:
                 notify_channel="telegram",
                 notify_message="🚀 Iniciando deployment completo...",
             ),
-            
             # Backup
             POTStep(
                 id="create_backup_snapshot",
@@ -148,7 +144,6 @@ Procedimiento completo de despliegue que incluye:
                 timeout_seconds=30,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="tag_pre_deploy",
                 name="Crear tag pre-deploy",
@@ -157,7 +152,6 @@ Procedimiento completo de despliegue que incluye:
                 command="git tag -f pre-deploy-backup",
                 timeout_seconds=10,
             ),
-            
             # Deploy
             POTStep(
                 id="stage_all_changes",
@@ -167,7 +161,6 @@ Procedimiento completo de despliegue que incluye:
                 command="git add -A",
                 timeout_seconds=15,
             ),
-            
             POTStep(
                 id="commit_deploy",
                 name="Commit de deploy",
@@ -177,7 +170,6 @@ Procedimiento completo de despliegue que incluye:
                 timeout_seconds=30,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="push_to_remote",
                 name="Push al remoto",
@@ -187,7 +179,6 @@ Procedimiento completo de despliegue que incluye:
                 timeout_seconds=180,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="restart_all_services",
                 name="Reiniciar todos los servicios",
@@ -196,7 +187,6 @@ Procedimiento completo de despliegue que incluye:
                 command="powershell -ExecutionPolicy Bypass -File scripts/restart_service_clean.ps1 -Service all",
                 timeout_seconds=180,
             ),
-            
             POTStep(
                 id="wait_services",
                 name="Esperar servicios",
@@ -204,7 +194,6 @@ Procedimiento completo de despliegue que incluye:
                 step_type=StepType.WAIT,
                 wait_seconds=15,
             ),
-            
             # Verification
             POTStep(
                 id="verify_health",
@@ -218,7 +207,6 @@ Procedimiento completo de despliegue que incluye:
                 retry_delay_seconds=5,
                 check_expression="response.get('score', 0) >= 70",
             ),
-            
             POTStep(
                 id="verify_robot",
                 name="Verificar Robot backend",
@@ -228,7 +216,6 @@ Procedimiento completo de despliegue que incluye:
                 http_url="http://127.0.0.1:8002/api/health",
                 timeout_seconds=15,
             ),
-            
             POTStep(
                 id="run_smoke_test",
                 name="Ejecutar smoke test",
@@ -238,7 +225,6 @@ Procedimiento completo de despliegue que incluye:
                 timeout_seconds=60,
                 capture_output=True,
             ),
-            
             # Notify all channels
             POTStep(
                 id="log_to_bitacora",
@@ -250,10 +236,9 @@ Procedimiento completo de despliegue que incluye:
                 http_body={
                     "message": "[DEPLOY] Deployment completo exitoso por POT deployment_full",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
             ),
-            
             POTStep(
                 id="notify_telegram",
                 name="Notificar a Telegram",
@@ -262,7 +247,6 @@ Procedimiento completo de despliegue que incluye:
                 notify_channel="telegram",
                 notify_message="✅ Deployment completado exitosamente. Sistema operativo.",
             ),
-            
             POTStep(
                 id="notify_ops",
                 name="Notificar a OPS Bus",
@@ -272,7 +256,6 @@ Procedimiento completo de despliegue que incluye:
                 notify_message="Deployment completado. Todos los servicios verificados.",
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="update_dashboard_status",
                 name="Actualizar estado en Dashboard",
@@ -284,7 +267,6 @@ Procedimiento completo de despliegue que incluye:
                 continue_on_failure=True,
             ),
         ],
-        
         rollback_steps=[
             POTStep(
                 id="rollback_notify_start",
@@ -294,7 +276,6 @@ Procedimiento completo de despliegue que incluye:
                 notify_channel="telegram",
                 notify_message="⚠️ Deployment fallido. Iniciando ROLLBACK...",
             ),
-            
             POTStep(
                 id="rollback_reset",
                 name="Revertir a tag pre-deploy",
@@ -303,7 +284,6 @@ Procedimiento completo de despliegue que incluye:
                 command="git reset --hard pre-deploy-backup",
                 timeout_seconds=30,
             ),
-            
             POTStep(
                 id="rollback_pop_stash",
                 name="Restaurar stash si existe",
@@ -313,7 +293,6 @@ Procedimiento completo de despliegue que incluye:
                 timeout_seconds=30,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="rollback_restart",
                 name="Reiniciar servicios",
@@ -322,7 +301,6 @@ Procedimiento completo de despliegue que incluye:
                 command="powershell -ExecutionPolicy Bypass -File scripts/restart_service_clean.ps1 -Service all",
                 timeout_seconds=180,
             ),
-            
             POTStep(
                 id="rollback_verify",
                 name="Verificar rollback",
@@ -332,7 +310,6 @@ Procedimiento completo de despliegue que incluye:
                 http_url="http://127.0.0.1:8791/health",
                 timeout_seconds=30,
             ),
-            
             POTStep(
                 id="rollback_notify_complete",
                 name="Notificar rollback completado",

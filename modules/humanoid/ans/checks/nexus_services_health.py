@@ -14,7 +14,9 @@ _TIMEOUT = int(os.getenv("NEXUS_TIMEOUT", "12"))
 
 def _probe(url: str, timeout: int) -> bool:
     try:
-        req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
+        req = urllib.request.Request(
+            url, method="GET", headers={"Accept": "application/json"}
+        )
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status == 200
     except Exception:
@@ -22,7 +24,9 @@ def _probe(url: str, timeout: int) -> bool:
 
 
 def run() -> dict:
-    robot_api = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
+    robot_api = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip(
+        "/"
+    )
 
     # Intentar con el endpoint /api/health primero, luego /status como fallback
     endpoints = [robot_api + "/api/health", robot_api + "/status"]

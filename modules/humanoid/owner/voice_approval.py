@@ -14,7 +14,9 @@ def _normalize_id(text: str) -> Optional[str]:
     return m.group(0).lower() if m else None
 
 
-def handle_voice_command(transcript: str, device_source: Optional[str] = None) -> Tuple[str, bool]:
+def handle_voice_command(
+    transcript: str, device_source: Optional[str] = None
+) -> Tuple[str, bool]:
     """
     Procesa comando de voz. transcript en minúsculas/normalizado.
     Returns: (response_text, did_approve).
@@ -29,17 +31,38 @@ def handle_voice_command(transcript: str, device_source: Optional[str] = None) -
         if not aid:
             return "Dime el número de aprobación para confirmar.", False
         if aid not in _PENDING:
-            return f"No hay solicitud pendiente para {aid}. Di primero: aprobar {aid}.", False
+            return (
+                f"No hay solicitud pendiente para {aid}. Di primero: aprobar {aid}.",
+                False,
+            )
         del _PENDING[aid]
         try:
             from modules.humanoid.approvals import approve
+
             out = approve(aid, resolved_by="voice", owner_session_token=None)
             if not out.get("ok"):
-                return f"No se pudo aprobar {aid}: " + (out.get("error") or "rechazado"), False
+                return (
+                    f"No se pudo aprobar {aid}: " + (out.get("error") or "rechazado"),
+                    False,
+                )
             try:
                 from modules.humanoid.audit import get_audit_logger
+
                 th = hashlib.sha256(transcript.encode("utf-8")).hexdigest()[:16]
-                get_audit_logger().log_event("owner", "voice", "approve", True, 0, None, {"approval_id": aid, "transcript_hash": th, "device": device_source or "voice"}, None)
+                get_audit_logger().log_event(
+                    "owner",
+                    "voice",
+                    "approve",
+                    True,
+                    0,
+                    None,
+                    {
+                        "approval_id": aid,
+                        "transcript_hash": th,
+                        "device": device_source or "voice",
+                    },
+                    None,
+                )
             except Exception:
                 pass
             return f"Aprobado {aid}.", True
@@ -51,6 +74,7 @@ def handle_voice_command(transcript: str, device_source: Optional[str] = None) -
         if not aid:
             return "Dime el número de aprobación. Ejemplo: aprobar abc123.", False
         from modules.humanoid.approvals import get
+
         item = get(aid)
         if not item:
             return f"No existe la aprobación {aid}.", False

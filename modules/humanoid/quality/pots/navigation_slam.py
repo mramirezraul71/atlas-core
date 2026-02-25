@@ -11,7 +11,8 @@ Triggers:
 
 Severidad: MEDIUM (control de movimiento)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -29,10 +30,16 @@ Procedimiento maestro para operaciones de navegación:
         severity=POTSeverity.MEDIUM,
         version="1.0.0",
         author="ATLAS Robotics Architect",
-        
         trigger_check_ids=["navigation_*", "slam_*", "localization_*", "path_*"],
-        trigger_keywords=["navegar", "mapa", "slam", "goto", "posición", "localización", "camino"],
-        
+        trigger_keywords=[
+            "navegar",
+            "mapa",
+            "slam",
+            "goto",
+            "posición",
+            "localización",
+            "camino",
+        ],
         prerequisites=[
             "Sistema de navegación inicializado",
             "Sensores (LiDAR/depth) disponibles",
@@ -40,7 +47,6 @@ Procedimiento maestro para operaciones de navegación:
         ],
         required_services=["navigation_system"],
         required_permissions=["movement"],
-        
         objectives=[
             "Verificar estado del sistema de navegación",
             "Iniciar SLAM si se requiere mapeo",
@@ -50,7 +56,6 @@ Procedimiento maestro para operaciones de navegación:
         ],
         success_criteria="Robot en posición objetivo o mapa guardado",
         estimated_duration_minutes=10,
-        
         tutorial_overview="""
 ## Guía de Navegación ATLAS
 
@@ -97,7 +102,6 @@ nav.set_initial_pose(0, 0, 0)
 nav.goto(x=2.0, y=1.5)
 ```
         """,
-        
         steps=[
             # === FASE 1: VERIFICACIÓN ===
             POTStep(
@@ -116,11 +120,10 @@ nav.goto(x=2.0, y=1.5)
                 name="Verificar sensores",
                 description="Comprobar LiDAR, IMU y odometría",
                 step_type=StepType.COMMAND,
-                command='python -c "from modules.humanoid.navigation import NavigationSystem; print(\'Navigation module OK\')"',
+                command="python -c \"from modules.humanoid.navigation import NavigationSystem; print('Navigation module OK')\"",
                 timeout_seconds=15,
                 capture_output=True,
             ),
-            
             # === FASE 2: INICIALIZACIÓN ===
             POTStep(
                 id="init_navigation",
@@ -138,7 +141,6 @@ nav.start()
 ```
                 """,
             ),
-            
             # === FASE 3: MAPEO (OPCIONAL) ===
             POTStep(
                 id="start_mapping",
@@ -159,7 +161,6 @@ nav.save_map("data/maps/nuevo_mapa.npz")
 ```
                 """,
             ),
-            
             # === FASE 4: LOCALIZACIÓN ===
             POTStep(
                 id="load_map",
@@ -174,7 +175,6 @@ nav.set_initial_pose(x=0, y=0, theta=0)
 ```
                 """,
             ),
-            
             # === FASE 5: NAVEGACIÓN ===
             POTStep(
                 id="plan_path",
@@ -208,7 +208,6 @@ while not nav.is_goal_reached():
 ```
                 """,
             ),
-            
             # === FASE 6: RECUPERACIÓN ===
             POTStep(
                 id="recovery_behaviors",
@@ -226,7 +225,6 @@ Si hay obstáculos, el sistema ejecuta:
 Cada comportamiento se intenta hasta 3 veces.
                 """,
             ),
-            
             # === FASE 7: FINALIZACIÓN ===
             POTStep(
                 id="log_result",
@@ -236,7 +234,6 @@ Cada comportamiento se intenta hasta 3 veces.
                 notify_message="Navegación completada",
             ),
         ],
-        
         rollback_steps=[
             POTStep(
                 id="rollback_stop_nav",
@@ -245,7 +242,6 @@ Cada comportamiento se intenta hasta 3 veces.
                 step_type=StepType.LOG,
             ),
         ],
-        
         has_rollback=True,
         tags=["navigation", "slam", "localization", "autonomous"],
     )

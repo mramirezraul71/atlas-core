@@ -5,8 +5,10 @@ import time
 from typing import Any, Dict, Optional, Tuple
 
 from .status import _screen_deps_ok
-from .window_focus import active_window_matches, active_window_process_matches, get_active_window_title, get_active_window_process_path
-
+from .window_focus import (active_window_matches,
+                           active_window_process_matches,
+                           get_active_window_process_path,
+                           get_active_window_title)
 
 _rate_window_s = 1.0
 _recent_actions: list[float] = []
@@ -56,7 +58,9 @@ def _governance_allows_input() -> Tuple[bool, Optional[str]]:
     return True, None
 
 
-def _guard(action_kind: str, payload: Optional[Dict[str, Any]] = None, weight: int = 1) -> Optional[str]:
+def _guard(
+    action_kind: str, payload: Optional[Dict[str, Any]] = None, weight: int = 1
+) -> Optional[str]:
     ok, reason = _governance_allows_input()
     if not ok:
         return reason or "blocked"
@@ -67,13 +71,24 @@ def _guard(action_kind: str, payload: Optional[Dict[str, Any]] = None, weight: i
         expected = ""
         expected_proc = ""
         if payload:
-            expected = str(payload.get("expected_window") or payload.get("expected_window_title") or "")
-            expected_proc = str(payload.get("expected_process") or payload.get("expected_exe") or payload.get("expected_process_path") or "")
+            expected = str(
+                payload.get("expected_window")
+                or payload.get("expected_window_title")
+                or ""
+            )
+            expected_proc = str(
+                payload.get("expected_process")
+                or payload.get("expected_exe")
+                or payload.get("expected_process_path")
+                or ""
+            )
         if not expected:
             import os
+
             expected = (os.getenv("HANDS_EXPECT_WINDOW_TITLE") or "").strip()
         if not expected_proc:
             import os
+
             expected_proc = (os.getenv("HANDS_EXPECT_WINDOW_PROCESS") or "").strip()
         if expected and not active_window_matches(expected):
             return "wrong_active_window"
@@ -90,29 +105,46 @@ def _guard(action_kind: str, payload: Optional[Dict[str, Any]] = None, weight: i
             if payload and bool(payload.get("approval_granted")):
                 if confirm_text:
                     from .locator import locate
+
                     m = locate(confirm_text)
                     if not m.get("ok") or not (m.get("matches") or []):
                         return "confirm_text_not_found"
                 # continuar sin generar approval
                 return None
             from modules.humanoid.governance.gates import decide
-            d = decide("screen_act_destructive", context={"target": confirm_text, "expected_window": expected})
+
+            d = decide(
+                "screen_act_destructive",
+                context={"target": confirm_text, "expected_window": expected},
+            )
             if d.needs_approval and not d.allow:
                 try:
                     # Evidencia (antes): screenshot + ventana activa
                     evidence_path = ""
                     try:
                         from pathlib import Path
-                        from .capture import capture_screen, save_capture_to_file
+
+                        from .capture import (capture_screen,
+                                              save_capture_to_file)
+
                         root = Path(__file__).resolve().parents[3]
                         png, err = capture_screen()
                         if png and not err:
-                            evidence_path = save_capture_to_file(png, str(root / "snapshots" / "hands_eyes" / "preflight"), prefix="preflight")
+                            evidence_path = save_capture_to_file(
+                                png,
+                                str(root / "snapshots" / "hands_eyes" / "preflight"),
+                                prefix="preflight",
+                            )
                     except Exception:
                         evidence_path = ""
-                    from modules.humanoid.approvals.service import create as create_approval
-                    from modules.humanoid.governance.dynamic_risk import assess_action
-                    a = assess_action("screen_act_destructive", {"confirm_text": confirm_text})
+                    from modules.humanoid.approvals.service import \
+                        create as create_approval
+                    from modules.humanoid.governance.dynamic_risk import \
+                        assess_action
+
+                    a = assess_action(
+                        "screen_act_destructive", {"confirm_text": confirm_text}
+                    )
                     # Guardar el action+payload original para ejecución post-aprobación.
                     req_payload = dict(payload or {})
                     # Sanitizar texto largo si existiera (evitar mega-payload en DB)
@@ -141,15 +173,25 @@ def _guard(action_kind: str, payload: Optional[Dict[str, Any]] = None, weight: i
                     # Enviar evidencia por OPS (Telegram/Audio) si existe
                     try:
                         if evidence_path:
-                            from modules.humanoid.comms.ops_bus import emit as ops_emit
-                            ops_emit("approval", "Confirmación requerida para acción destructiva (evidencia adjunta).", level="high", evidence_path=evidence_path)
+                            from modules.humanoid.comms.ops_bus import \
+                                emit as ops_emit
+
+                            ops_emit(
+                                "approval",
+                                "Confirmación requerida para acción destructiva (evidencia adjunta).",
+                                level="high",
+                                evidence_path=evidence_path,
+                            )
                     except Exception:
                         pass
-                    return f"approval_required:{cr.get('approval_id') or ''}".rstrip(":")
+                    return f"approval_required:{cr.get('approval_id') or ''}".rstrip(
+                        ":"
+                    )
                 except Exception:
                     return "approval_required"
             if confirm_text:
                 from .locator import locate
+
                 m = locate(confirm_text)
                 if not m.get("ok") or not (m.get("matches") or []):
                     return "confirm_text_not_found"
@@ -195,6 +237,7 @@ def do_click(x: int, y: int) -> Dict[str, Any]:
         return {"ok": False, "error": err}
     try:
         import pyautogui
+
         pyautogui.click(x, y)
         return {"ok": True, "error": None}
     except Exception as e:
@@ -210,6 +253,7 @@ def do_move(x: int, y: int, duration: float = 0.2) -> Dict[str, Any]:
         return {"ok": False, "error": err}
     try:
         import pyautogui
+
         pyautogui.moveTo(int(x), int(y), duration=float(duration or 0.0))
         return {"ok": True, "error": None}
     except Exception as e:
@@ -226,6 +270,7 @@ def do_type(text: str, interval: Optional[float] = None) -> Dict[str, Any]:
         return {"ok": False, "error": err}
     try:
         import pyautogui
+
         if interval is not None:
             pyautogui.write(text, interval=interval)
         else:
@@ -244,13 +289,16 @@ def do_hotkey(*keys: str) -> Dict[str, Any]:
         return {"ok": False, "error": err}
     try:
         import pyautogui
+
         pyautogui.hotkey(*keys)
         return {"ok": True, "error": None}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
-def do_scroll(clicks: int, x: Optional[int] = None, y: Optional[int] = None) -> Dict[str, Any]:
+def do_scroll(
+    clicks: int, x: Optional[int] = None, y: Optional[int] = None
+) -> Dict[str, Any]:
     """Scroll. clicks > 0 up, < 0 down. Optional (x,y) for position."""
     if not _screen_deps_ok():
         return {"ok": False, "error": "screen_deps_missing"}
@@ -259,6 +307,7 @@ def do_scroll(clicks: int, x: Optional[int] = None, y: Optional[int] = None) -> 
         return {"ok": False, "error": err}
     try:
         import pyautogui
+
         if x is not None and y is not None:
             pyautogui.scroll(clicks, x=x, y=y)
         else:
@@ -289,7 +338,11 @@ def execute_action(action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
                 proc = get_active_window_process_path()
             except Exception:
                 proc = ""
-            out = {"ok": False, "error": err, "active_window": title[:120] if title else ""}
+            out = {
+                "ok": False,
+                "error": err,
+                "active_window": title[:120] if title else "",
+            }
             if proc:
                 out["active_process_path"] = proc[:220]
             # Si la guard devolvió approval_required:<id>, devolver id separado
@@ -304,11 +357,17 @@ def execute_action(action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         if evidence:
             try:
                 from pathlib import Path
+
                 from .capture import capture_screen, save_capture_to_file
+
                 root = Path(__file__).resolve().parents[3]
                 png, e = capture_screen()
                 if png and not e:
-                    before_path = save_capture_to_file(png, str(root / "snapshots" / "hands_eyes" / "actions"), prefix="before")
+                    before_path = save_capture_to_file(
+                        png,
+                        str(root / "snapshots" / "hands_eyes" / "actions"),
+                        prefix="before",
+                    )
             except Exception:
                 before_path = ""
         r = do_click(x, y)
@@ -316,18 +375,33 @@ def execute_action(action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
             try:
                 time.sleep(0.25)
                 from pathlib import Path
+
                 from .capture import capture_screen, save_capture_to_file
+
                 root = Path(__file__).resolve().parents[3]
                 png, e = capture_screen()
                 if png and not e:
-                    after_path = save_capture_to_file(png, str(root / "snapshots" / "hands_eyes" / "actions"), prefix="after")
+                    after_path = save_capture_to_file(
+                        png,
+                        str(root / "snapshots" / "hands_eyes" / "actions"),
+                        prefix="after",
+                    )
             except Exception:
                 after_path = ""
             if before_path or after_path:
-                r["evidence"] = {"before": before_path or None, "after": after_path or None}
+                r["evidence"] = {
+                    "before": before_path or None,
+                    "after": after_path or None,
+                }
         try:
             from modules.humanoid.comms.ops_bus import emit as ops_emit
-            ops_emit("hands", f"Click en ({x},{y}) => {'OK' if r.get('ok') else 'FAIL'}", level="med" if not r.get("ok") else "info", data={"action": "click", "x": x, "y": y, "ok": r.get("ok")})
+
+            ops_emit(
+                "hands",
+                f"Click en ({x},{y}) => {'OK' if r.get('ok') else 'FAIL'}",
+                level="med" if not r.get("ok") else "info",
+                data={"action": "click", "x": x, "y": y, "ok": r.get("ok")},
+            )
         except Exception:
             pass
         return r
@@ -338,7 +412,13 @@ def execute_action(action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         r = do_move(x, y, duration=dur)
         try:
             from modules.humanoid.comms.ops_bus import emit as ops_emit
-            ops_emit("hands", f"Move a ({x},{y}) => {'OK' if r.get('ok') else 'FAIL'}", level="med" if not r.get("ok") else "info", data={"action": "move", "x": x, "y": y, "ok": r.get("ok")})
+
+            ops_emit(
+                "hands",
+                f"Move a ({x},{y}) => {'OK' if r.get('ok') else 'FAIL'}",
+                level="med" if not r.get("ok") else "info",
+                data={"action": "move", "x": x, "y": y, "ok": r.get("ok")},
+            )
         except Exception:
             pass
         return r
@@ -347,7 +427,13 @@ def execute_action(action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         r = do_type(text, payload.get("interval"))
         try:
             from modules.humanoid.comms.ops_bus import emit as ops_emit
-            ops_emit("hands", f"Type len={len(str(text))} => {'OK' if r.get('ok') else 'FAIL'}", level="med" if not r.get("ok") else "info", data={"action": "type", "len": len(str(text)), "ok": r.get("ok")})
+
+            ops_emit(
+                "hands",
+                f"Type len={len(str(text))} => {'OK' if r.get('ok') else 'FAIL'}",
+                level="med" if not r.get("ok") else "info",
+                data={"action": "type", "len": len(str(text)), "ok": r.get("ok")},
+            )
         except Exception:
             pass
         return r
@@ -358,7 +444,13 @@ def execute_action(action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         r = do_hotkey(*keys)
         try:
             from modules.humanoid.comms.ops_bus import emit as ops_emit
-            ops_emit("hands", f"Hotkey {'+'.join(keys)} => {'OK' if r.get('ok') else 'FAIL'}", level="med" if not r.get("ok") else "info", data={"action": "hotkey", "keys": keys, "ok": r.get("ok")})
+
+            ops_emit(
+                "hands",
+                f"Hotkey {'+'.join(keys)} => {'OK' if r.get('ok') else 'FAIL'}",
+                level="med" if not r.get("ok") else "info",
+                data={"action": "hotkey", "keys": keys, "ok": r.get("ok")},
+            )
         except Exception:
             pass
         return r
@@ -367,7 +459,13 @@ def execute_action(action: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         r = do_scroll(clicks, payload.get("x"), payload.get("y"))
         try:
             from modules.humanoid.comms.ops_bus import emit as ops_emit
-            ops_emit("hands", f"Scroll {clicks} => {'OK' if r.get('ok') else 'FAIL'}", level="med" if not r.get("ok") else "info", data={"action": "scroll", "clicks": clicks, "ok": r.get("ok")})
+
+            ops_emit(
+                "hands",
+                f"Scroll {clicks} => {'OK' if r.get('ok') else 'FAIL'}",
+                level="med" if not r.get("ok") else "info",
+                data={"action": "scroll", "clicks": clicks, "ok": r.get("ok")},
+            )
         except Exception:
             pass
         return r

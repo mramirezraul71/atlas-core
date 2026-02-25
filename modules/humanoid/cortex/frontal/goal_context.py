@@ -44,6 +44,7 @@ class CGEGoalPriority(Enum):
 @dataclass
 class GoalContext:
     """Contexto completo de ejecucion de un goal concurrente."""
+
     goal_id: str
     goal_type: str
     description: str
@@ -191,14 +192,23 @@ class GoalContextDB:
         VALUES (?,?,?,?,?, ?,?,?,?, ?,?,?, ?,?,?,?,?)
         """
         vals = (
-            ctx.goal_id, ctx.goal_type, ctx.description,
-            ctx.priority.value, ctx.status.value,
-            ctx.plan_json, ctx.step_index, ctx.progress,
+            ctx.goal_id,
+            ctx.goal_type,
+            ctx.description,
+            ctx.priority.value,
+            ctx.status.value,
+            ctx.plan_json,
+            ctx.step_index,
+            ctx.progress,
             json.dumps(ctx.context_data, default=str),
             json.dumps(ctx.resources_needed),
             json.dumps(ctx.resources_held),
-            ctx.parent_goal_id, ctx.source, ctx.error,
-            ctx.created_ts, ctx.updated_ts, ctx.deadline_ts,
+            ctx.parent_goal_id,
+            ctx.source,
+            ctx.error,
+            ctx.created_ts,
+            ctx.updated_ts,
+            ctx.deadline_ts,
         )
         try:
             with self._conn() as conn:
@@ -238,8 +248,9 @@ class GoalContextDB:
             _log.error("list_all failed: %s", exc)
             return []
 
-    def update_status(self, goal_id: str, status: CGEGoalStatus,
-                      error: Optional[str] = None) -> None:
+    def update_status(
+        self, goal_id: str, status: CGEGoalStatus, error: Optional[str] = None
+    ) -> None:
         sql = "UPDATE goal_contexts SET status=?, error=?, updated_ts=? WHERE goal_id=?"
         try:
             with self._conn() as conn:
@@ -247,8 +258,13 @@ class GoalContextDB:
         except Exception as exc:
             _log.error("update_status %s failed: %s", goal_id, exc)
 
-    def update_progress(self, goal_id: str, step_index: int,
-                        progress: float, plan_json: Optional[str] = None) -> None:
+    def update_progress(
+        self,
+        goal_id: str,
+        step_index: int,
+        progress: float,
+        plan_json: Optional[str] = None,
+    ) -> None:
         if plan_json is not None:
             sql = "UPDATE goal_contexts SET step_index=?, progress=?, plan_json=?, updated_ts=? WHERE goal_id=?"
             params = (step_index, progress, plan_json, time.time(), goal_id)
@@ -263,17 +279,25 @@ class GoalContextDB:
 
     # -- Exec log -----------------------------------------------------------
 
-    def log_step(self, goal_id: str, step_index: int, action: str,
-                 result: Any, ok: bool, ms: int) -> None:
+    def log_step(
+        self, goal_id: str, step_index: int, action: str, result: Any, ok: bool, ms: int
+    ) -> None:
         sql = """INSERT INTO goal_exec_log (goal_id, step_index, action, result_json, ok, ms, ts)
                  VALUES (?,?,?,?,?,?,?)"""
         try:
             with self._conn() as conn:
-                conn.execute(sql, (
-                    goal_id, step_index, action,
-                    json.dumps(result, default=str) if result else None,
-                    1 if ok else 0, ms, time.time(),
-                ))
+                conn.execute(
+                    sql,
+                    (
+                        goal_id,
+                        step_index,
+                        action,
+                        json.dumps(result, default=str) if result else None,
+                        1 if ok else 0,
+                        ms,
+                        time.time(),
+                    ),
+                )
         except Exception as exc:
             _log.error("log_step %s failed: %s", goal_id, exc)
 
@@ -288,8 +312,9 @@ class GoalContextDB:
 
     # -- Resource ledger ----------------------------------------------------
 
-    def log_resource_alloc(self, resource_type: str, goal_id: str,
-                           priority: int) -> None:
+    def log_resource_alloc(
+        self, resource_type: str, goal_id: str, priority: int
+    ) -> None:
         sql = "INSERT INTO resource_ledger (resource_type, goal_id, priority, allocated_ts) VALUES (?,?,?,?)"
         try:
             with self._conn() as conn:
@@ -315,8 +340,12 @@ class GoalContextDB:
             with self._conn() as conn:
                 cur = conn.execute(sql, (cutoff,))
                 n = cur.rowcount
-                conn.execute("DELETE FROM goal_exec_log WHERE goal_id NOT IN (SELECT goal_id FROM goal_contexts)")
-                conn.execute("DELETE FROM resource_ledger WHERE goal_id NOT IN (SELECT goal_id FROM goal_contexts)")
+                conn.execute(
+                    "DELETE FROM goal_exec_log WHERE goal_id NOT IN (SELECT goal_id FROM goal_contexts)"
+                )
+                conn.execute(
+                    "DELETE FROM resource_ledger WHERE goal_id NOT IN (SELECT goal_id FROM goal_contexts)"
+                )
                 return n
         except Exception as exc:
             _log.error("cleanup failed: %s", exc)

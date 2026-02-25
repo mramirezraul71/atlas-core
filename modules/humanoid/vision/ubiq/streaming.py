@@ -12,7 +12,6 @@ from typing import Any, Dict, Optional, Tuple
 
 from .registry import get_camera, get_setting, set_setting
 
-
 _LOCK = threading.Lock()
 _PROCS: Dict[str, subprocess.Popen] = {}  # key -> popen
 
@@ -80,7 +79,9 @@ def get_stream_paths(cam_id: str) -> Dict[str, str]:
     }
 
 
-def _build_ffmpeg_cmd(url: str, out_dir: Path, *, encrypted: bool, key_uri: str = "") -> Tuple[list, Path]:
+def _build_ffmpeg_cmd(
+    url: str, out_dir: Path, *, encrypted: bool, key_uri: str = ""
+) -> Tuple[list, Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     playlist = out_dir / "index.m3u8"
     seg_pat = str(out_dir / "seg%05d.ts")
@@ -125,7 +126,12 @@ def _build_ffmpeg_cmd(url: str, out_dir: Path, *, encrypted: bool, key_uri: str 
         keyinfo.write_text(f"{key_uri}\n{str(key_file)}\n", encoding="utf-8")
         hls_args += ["-hls_key_info_file", str(keyinfo)]
 
-    cmd = [_ffmpeg(), "-hide_banner", "-loglevel", "error"] + input_args + hls_args + [str(playlist)]
+    cmd = (
+        [_ffmpeg(), "-hide_banner", "-loglevel", "error"]
+        + input_args
+        + hls_args
+        + [str(playlist)]
+    )
     return cmd, playlist
 
 
@@ -158,9 +164,17 @@ def start_stream(cam_id: str, variant: str = "local") -> Dict[str, Any]:
     with _LOCK:
         p = _PROCS.get(proc_key)
         if p and p.poll() is None:
-            return {"ok": True, "already_running": True, "cam_id": cid, "variant": variant, "paths": paths}
+            return {
+                "ok": True,
+                "already_running": True,
+                "cam_id": cid,
+                "variant": variant,
+                "paths": paths,
+            }
 
-        cmd, playlist = _build_ffmpeg_cmd(url, out_dir, encrypted=encrypted, key_uri=key_uri)
+        cmd, playlist = _build_ffmpeg_cmd(
+            url, out_dir, encrypted=encrypted, key_uri=key_uri
+        )
         try:
             # Windows: CREATE_NO_WINDOW para no abrir consola
             creationflags = 0x08000000 if os.name == "nt" else 0
@@ -173,7 +187,13 @@ def start_stream(cam_id: str, variant: str = "local") -> Dict[str, Any]:
             )
             _PROCS[proc_key] = p
         except Exception as e:
-            return {"ok": False, "error": str(e), "cam_id": cid, "variant": variant, "cmd": cmd}
+            return {
+                "ok": False,
+                "error": str(e),
+                "cam_id": cid,
+                "variant": variant,
+                "cmd": cmd,
+            }
 
     return {"ok": True, "cam_id": cid, "variant": variant, "paths": paths}
 
@@ -205,7 +225,9 @@ def stream_status() -> Dict[str, Any]:
         items = list(_PROCS.items())
     out = []
     for k, p in items:
-        out.append({"key": k, "running": p.poll() is None, "pid": getattr(p, "pid", None)})
+        out.append(
+            {"key": k, "running": p.poll() is None, "pid": getattr(p, "pid", None)}
+        )
     return {"ok": True, "processes": out, "count": len(out), "ffmpeg": _ffmpeg()}
 
 
@@ -225,13 +247,30 @@ def take_snapshot(cam_id: str, timeout_s: float = 3.5) -> Dict[str, Any]:
     cmd = [_ffmpeg(), "-hide_banner", "-loglevel", "error"]
     if url.lower().startswith("rtsp://"):
         cmd += ["-rtsp_transport", "tcp"]
-    cmd += ["-i", url, "-frames:v", "1", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"]
+    cmd += [
+        "-i",
+        url,
+        "-frames:v",
+        "1",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "mjpeg",
+        "pipe:1",
+    ]
     try:
         r = subprocess.run(cmd, capture_output=True, timeout=float(timeout_s))
         if r.returncode != 0 or not r.stdout:
-            return {"ok": False, "error": "snapshot_failed", "stderr": (r.stderr or b"")[:400].decode("utf-8", "ignore")}
+            return {
+                "ok": False,
+                "error": "snapshot_failed",
+                "stderr": (r.stderr or b"")[:400].decode("utf-8", "ignore"),
+            }
         b = r.stdout
-        return {"ok": True, "jpeg_bytes": b, "image_base64": base64.b64encode(b).decode("ascii")}
+        return {
+            "ok": True,
+            "jpeg_bytes": b,
+            "image_base64": base64.b64encode(b).decode("ascii"),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e), "cmd": cmd}
-

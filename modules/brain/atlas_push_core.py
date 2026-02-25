@@ -48,13 +48,21 @@ class ActionCommand:
     extra: Dict = field(default_factory=dict)
 
     def to_dict(self) -> Dict:
-        return {"actuador": self.actuador, "estado": self.estado, "velocidad": self.velocidad, **self.extra}
+        return {
+            "actuador": self.actuador,
+            "estado": self.estado,
+            "velocidad": self.velocidad,
+            **self.extra,
+        }
 
 
 def _fetch_json(url: str, timeout: float = 3) -> Optional[Dict]:
     try:
         import urllib.request
-        req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
+
+        req = urllib.request.Request(
+            url, method="GET", headers={"Accept": "application/json"}
+        )
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8"))
     except Exception:
@@ -64,6 +72,7 @@ def _fetch_json(url: str, timeout: float = 3) -> Optional[Dict]:
 def _capture_screen_meta() -> Optional[Dict]:
     try:
         import mss
+
         with mss.mss() as sct:
             mon = sct.monitors[0]
             return {"width": mon["width"], "height": mon["height"], "capture_ok": True}
@@ -94,9 +103,13 @@ def capture_snapshot() -> Snapshot:
 
 def review_snapshot(snap: Snapshot) -> Optional[ActionCommand]:
     if snap.robot_status and snap.robot_status.get("status") != "online":
-        return ActionCommand(actuador="wake_robot", estado=1, extra={"reason": "robot_offline"})
+        return ActionCommand(
+            actuador="wake_robot", estado=1, extra={"reason": "robot_offline"}
+        )
     if snap.nexus_status is None and NEXUS_URL:
-        return ActionCommand(actuador="wake_nexus", estado=1, extra={"reason": "nexus_unreachable"})
+        return ActionCommand(
+            actuador="wake_nexus", estado=1, extra={"reason": "nexus_unreachable"}
+        )
     return None
 
 
@@ -148,7 +161,9 @@ class AtlasPushCore:
                     self._action_queue.put(cmd)
                     continue
                 payload = cmd.to_dict() if hasattr(cmd, "to_dict") else cmd
-                self._bridge.send(payload if isinstance(payload, dict) else {"actuador": str(cmd)})
+                self._bridge.send(
+                    payload if isinstance(payload, dict) else {"actuador": str(cmd)}
+                )
                 self._last_action_ts = time.time()
             except Exception as e:
                 logger.debug("Action error: %s", e)
@@ -170,7 +185,10 @@ class AtlasPushCore:
         self._rev_thread.start()
         self._act_thread = threading.Thread(target=self._action_loop, daemon=True)
         self._act_thread.start()
-        logger.info("AtlasPushCore started: Snapshot(%.1fs) + Review + Action", SNAPSHOT_INTERVAL)
+        logger.info(
+            "AtlasPushCore started: Snapshot(%.1fs) + Review + Action",
+            SNAPSHOT_INTERVAL,
+        )
 
     def stop(self) -> None:
         self._running = False

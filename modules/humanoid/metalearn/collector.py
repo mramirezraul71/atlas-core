@@ -10,7 +10,11 @@ from .features import extract
 
 
 def _enabled() -> bool:
-    return os.getenv("METALEARN_ENABLED", "true").strip().lower() in ("1", "true", "yes")
+    return os.getenv("METALEARN_ENABLED", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def _now() -> str:
@@ -20,7 +24,17 @@ def _now() -> str:
 def _audit_event_recorded(source: str, event_hash: str) -> None:
     try:
         from modules.humanoid.audit import get_audit_logger
-        get_audit_logger().log_event("metalearn", "system", "event_recorded", True, 0, None, {"source": source, "event_hash": event_hash}, None)
+
+        get_audit_logger().log_event(
+            "metalearn",
+            "system",
+            "event_recorded",
+            True,
+            0,
+            None,
+            {"source": source, "event_hash": event_hash},
+            None,
+        )
     except Exception:
         pass
 
@@ -55,7 +69,10 @@ def record_feedback(
         features_json = {**payload, **features}
         # Redact large or PII-like fields for storage
         for k in list(features_json):
-            if k in ("content", "output", "prompt", "transcript") or (isinstance(features_json.get(k), str) and len(str(features_json[k])) > 500):
+            if k in ("content", "output", "prompt", "transcript") or (
+                isinstance(features_json.get(k), str)
+                and len(str(features_json[k])) > 500
+            ):
                 features_json[k] = "[redacted]"
         row_id = db.insert_event(
             ts=_now(),
@@ -131,7 +148,13 @@ def record_deploy(outcome: str, payload: Optional[Dict[str, Any]] = None) -> boo
     )
 
 
-def record_scheduler_job(job_id: str, kind: str, outcome: str, latency_ms: Optional[int] = None, error: Any = None) -> bool:
+def record_scheduler_job(
+    job_id: str,
+    kind: str,
+    outcome: str,
+    latency_ms: Optional[int] = None,
+    error: Any = None,
+) -> bool:
     """Convenience: record scheduler job ok/fail."""
     return record_feedback(
         action_type=kind or "job",
@@ -146,7 +169,9 @@ def record_scheduler_job(job_id: str, kind: str, outcome: str, latency_ms: Optio
     )
 
 
-def record_router_call(route: str, model_used: str, outcome: str, latency_ms: Optional[int] = None) -> bool:
+def record_router_call(
+    route: str, model_used: str, outcome: str, latency_ms: Optional[int] = None
+) -> bool:
     """Convenience: record LLM router call."""
     return record_feedback(
         action_type="llm",

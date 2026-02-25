@@ -20,7 +20,9 @@ def _truthy(v: str | None) -> bool:
     return (v or "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def _run_pytest(nodeids: List[str], repo_root: Path, timeout_s: int = 180) -> Dict[str, Any]:
+def _run_pytest(
+    nodeids: List[str], repo_root: Path, timeout_s: int = 180
+) -> Dict[str, Any]:
     """Corre pytest sobre nodeids concretos y devuelve {ok, exit_code, output}."""
     if not nodeids:
         return {"ok": False, "exit_code": None, "output": "No nodeids provided"}
@@ -64,7 +66,12 @@ def _run_pytest(nodeids: List[str], repo_root: Path, timeout_s: int = 180) -> Di
             "cmd": cmd,
         }
     except Exception as e:
-        return {"ok": False, "exit_code": None, "output": f"pytest error: {e}", "cmd": cmd}
+        return {
+            "ok": False,
+            "exit_code": None,
+            "output": f"pytest error: {e}",
+            "cmd": cmd,
+        }
 
 
 def _file_exists(repo_root: Path, rel_path: str) -> bool:
@@ -176,7 +183,11 @@ def _lesson_plan(lesson_id: str) -> Dict[str, Any]:
             ],
             "pytest_nodeids": ["tests/python_mastery/test_py012_packaging.py"],
         }
-    return {"required_files": [], "pytest_nodeids": [], "note": "No evaluator mapping for this lesson yet"}
+    return {
+        "required_files": [],
+        "pytest_nodeids": [],
+        "note": "No evaluator mapping for this lesson yet",
+    }
 
 
 def get_lesson_plan(lesson_id: str) -> Dict[str, Any]:
@@ -227,7 +238,14 @@ def evaluate_python_mastery_lesson(
     if pytest_nodeids:
         pytest_res = _run_pytest(pytest_nodeids, root, timeout_s=timeout_s)
         pytest_ok = bool(pytest_res.get("ok"))
-    checks.append({"name": "pytest", "ok": pytest_ok, "result": pytest_res, "nodeids": pytest_nodeids})
+    checks.append(
+        {
+            "name": "pytest",
+            "ok": pytest_ok,
+            "result": pytest_res,
+            "nodeids": pytest_nodeids,
+        }
+    )
 
     # Scoring: simple y determinista (expandible).
     # - Archivos: 20 puntos
@@ -243,9 +261,13 @@ def evaluate_python_mastery_lesson(
     if pytest_nodeids and not pytest_ok:
         improv.append("Hacer que los tests de la lección pasen (RUN_PYTHON_MASTERY=1).")
     if not pytest_nodeids:
-        improv.append("Lección aún sin mapping de evaluador; extender `python_mastery_evaluator.py`.")
+        improv.append(
+            "Lección aún sin mapping de evaluador; extender `python_mastery_evaluator.py`."
+        )
 
-    feedback = f"Lección {lid}: score={score}/100. " + ("APROBADA." if passed else "NO APROBADA.")
+    feedback = f"Lección {lid}: score={score}/100. " + (
+        "APROBADA." if passed else "NO APROBADA."
+    )
     if plan.get("note"):
         feedback += f" Nota: {plan['note']}"
 
@@ -253,14 +275,21 @@ def evaluate_python_mastery_lesson(
         "lesson_id": lid,
         "score": score,
         "passed": passed,
-        "grade": "A" if score >= 90 else "B" if score >= 75 else "C" if score >= 60 else "D",
+        "grade": "A"
+        if score >= 90
+        else "B"
+        if score >= 75
+        else "C"
+        if score >= 60
+        else "D",
         "evaluation": feedback,
         "feedback": feedback,
         "areas_for_improvement": improv,
-        "strengths_demonstrated": ["offline-first evaluation", "deterministic checks"] if score > 0 else [],
+        "strengths_demonstrated": ["offline-first evaluation", "deterministic checks"]
+        if score > 0
+        else [],
         "knowledge_validated": [],
         "knowledge_corrected": [],
         "next_steps": "Implementar tareas de la lección y re-evaluar.",
         "evidence": {"checks": checks},
     }
-

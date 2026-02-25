@@ -10,7 +10,8 @@ Triggers:
 
 Severidad: MEDIUM (modifica historial de Git)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -25,10 +26,8 @@ Incluye verificación de cambios, staging, generación de mensaje y commit.
         severity=POTSeverity.MEDIUM,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["git_pending", "repo_changes", "commit_*"],
         trigger_keywords=["commit", "git", "save", "guardar", "cambios"],
-        
         prerequisites=[
             "Repositorio Git inicializado",
             "Cambios pendientes en working directory",
@@ -36,7 +35,6 @@ Incluye verificación de cambios, staging, generación de mensaje y commit.
         ],
         required_services=[],
         required_permissions=["git_write"],
-        
         objectives=[
             "Verificar estado del repositorio",
             "Revisar cambios pendientes",
@@ -47,7 +45,6 @@ Incluye verificación de cambios, staging, generación de mensaje y commit.
         ],
         success_criteria="Commit creado exitosamente con hash válido",
         estimated_duration_minutes=2,
-        
         tutorial_overview="""
 ## Guía de Commit de Cambios
 
@@ -82,7 +79,6 @@ Tipos válidos:
 - `*.log`, `*.tmp`
 - `node_modules/`, `venv/`
         """.strip(),
-        
         best_practices=[
             "Commits pequeños y frecuentes",
             "Un commit = un cambio lógico",
@@ -90,16 +86,13 @@ Tipos válidos:
             "No commitear archivos sensibles",
             "Verificar diff antes de commit",
         ],
-        
         warnings=[
             "NUNCA commitear credenciales o secrets",
             "Verificar que no hay archivos grandes binarios",
             "No usar --force en commits normales",
         ],
-        
         related_pots=["git_push", "git_pull", "repo_update"],
         tags=["git", "commit", "vcs", "deployment"],
-        
         steps=[
             POTStep(
                 id="check_git_status",
@@ -117,7 +110,6 @@ git status --porcelain devuelve formato parseable:
 - ?? = untracked
                 """,
             ),
-            
             POTStep(
                 id="check_no_conflicts",
                 name="Verificar sin conflictos",
@@ -128,7 +120,6 @@ git status --porcelain devuelve formato parseable:
                 continue_on_failure=True,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="show_diff_summary",
                 name="Mostrar resumen de cambios",
@@ -139,7 +130,6 @@ git status --porcelain devuelve formato parseable:
                 capture_output=True,
                 tutorial_notes="Muestra archivos cambiados con +/- de líneas.",
             ),
-            
             POTStep(
                 id="stage_changes",
                 name="Staging de cambios",
@@ -155,7 +145,6 @@ git add -A agrega:
 Excluye lo que está en .gitignore
                 """,
             ),
-            
             POTStep(
                 id="verify_staged",
                 name="Verificar staged",
@@ -165,7 +154,6 @@ Excluye lo que está en .gitignore
                 timeout_seconds=10,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="execute_commit",
                 name="Ejecutar commit",
@@ -179,7 +167,6 @@ El mensaje puede personalizarse vía contexto:
 context['commit_message'] = "feat: nueva funcionalidad"
                 """,
             ),
-            
             POTStep(
                 id="get_commit_hash",
                 name="Obtener hash del commit",
@@ -189,7 +176,6 @@ context['commit_message'] = "feat: nueva funcionalidad"
                 timeout_seconds=5,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="log_to_bitacora",
                 name="Registrar en bitácora",
@@ -200,11 +186,10 @@ context['commit_message'] = "feat: nueva funcionalidad"
                 http_body={
                     "message": "[GIT] Commit realizado por POT git_commit",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="notify_commit",
                 name="Notificar commit",

@@ -2,10 +2,12 @@
 import shutil
 from datetime import datetime
 from pathlib import Path
+
 from core.logger import log
 
 BASE = Path(r"C:\ATLAS")
 SNAPSHOTS = BASE / "snapshots"
+
 
 def snapshot(label="auto"):
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

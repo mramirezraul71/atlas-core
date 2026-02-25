@@ -8,13 +8,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-
 _LOCK = threading.RLock()
 _CONN: Optional[sqlite3.Connection] = None
 
 
 def _db_path() -> Path:
-    raw = (os.getenv("ATLAS_VISION_UBIQ_DB_PATH") or r"C:\ATLAS_PUSH\logs\vision_ubiq.db").strip()
+    raw = (
+        os.getenv("ATLAS_VISION_UBIQ_DB_PATH") or r"C:\ATLAS_PUSH\logs\vision_ubiq.db"
+    ).strip()
     return Path(raw)
 
 
@@ -188,8 +189,20 @@ def upsert_camera(cam: Dict[str, Any]) -> bool:
               meta_json=excluded.meta_json,
               last_seen_ts=excluded.last_seen_ts
             """,
-            (cid, ip, port, protocol, url, model, source, typ, onvif_xaddr, meta_json, now, now),
+            (
+                cid,
+                ip,
+                port,
+                protocol,
+                url,
+                model,
+                source,
+                typ,
+                onvif_xaddr,
+                meta_json,
+                now,
+                now,
+            ),
         )
         c.commit()
     return not existed
-

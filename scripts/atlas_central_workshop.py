@@ -34,7 +34,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKSHOP_ROOT = REPO_ROOT / "logs" / "workshop"
 INBOX_DIR = WORKSHOP_ROOT / "inbox"
@@ -45,8 +44,12 @@ REPORTS_DIR = WORKSHOP_ROOT / "reports"
 MAINTENANCE_DIR = WORKSHOP_ROOT / "maintenance"
 APPROVAL_STATE_FILE = WORKSHOP_ROOT / "approval_state.json"
 
-DEFAULT_PUSH_BASE = os.getenv("ATLAS_PUSH_BASE_URL", "http://127.0.0.1:8791").rstrip("/")
-DEFAULT_ROBOT_BASE = os.getenv("ATLAS_ROBOT_BASE_URL", "http://127.0.0.1:8002").rstrip("/")
+DEFAULT_PUSH_BASE = os.getenv("ATLAS_PUSH_BASE_URL", "http://127.0.0.1:8791").rstrip(
+    "/"
+)
+DEFAULT_ROBOT_BASE = os.getenv("ATLAS_ROBOT_BASE_URL", "http://127.0.0.1:8002").rstrip(
+    "/"
+)
 
 
 @dataclass
@@ -62,13 +65,22 @@ def _now_iso() -> str:
 
 
 def _safe_slug(text: str) -> str:
-    out = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in (text or "x"))
+    out = "".join(
+        ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in (text or "x")
+    )
     out = out.strip("_")
     return out[:80] or "x"
 
 
 def _ensure_dirs() -> None:
-    for d in (INBOX_DIR, WORKING_DIR, RESOLVED_DIR, FAILED_DIR, REPORTS_DIR, MAINTENANCE_DIR):
+    for d in (
+        INBOX_DIR,
+        WORKING_DIR,
+        RESOLVED_DIR,
+        FAILED_DIR,
+        REPORTS_DIR,
+        MAINTENANCE_DIR,
+    ):
         d.mkdir(parents=True, exist_ok=True)
 
 
@@ -84,12 +96,16 @@ def _load_approval_state() -> Dict[str, Any]:
 def _save_approval_state(state: Dict[str, Any]) -> None:
     try:
         APPROVAL_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        APPROVAL_STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        APPROVAL_STATE_FILE.write_text(
+            json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
     except Exception:
         pass
 
 
-def _approval_gate_for_heavy(mode: str, require_approval_heavy: bool, approval_cooldown_seconds: int = 900) -> Dict[str, Any]:
+def _approval_gate_for_heavy(
+    mode: str, require_approval_heavy: bool, approval_cooldown_seconds: int = 900
+) -> Dict[str, Any]:
     """
     Gate for heavy operations (maintenance/full):
     - If approval is not required: granted immediately.
@@ -103,9 +119,13 @@ def _approval_gate_for_heavy(mode: str, require_approval_heavy: bool, approval_c
         return {"granted": True, "reason": "not_required"}
 
     try:
-        from modules.humanoid.approvals import list_pending, list_all, create
+        from modules.humanoid.approvals import create, list_all, list_pending
     except Exception as e:
-        return {"granted": False, "reason": f"approval_module_unavailable: {e}", "pending": False}
+        return {
+            "granted": False,
+            "reason": f"approval_module_unavailable: {e}",
+            "pending": False,
+        }
 
     marker = {"domain": "workshop", "operation": "maintenance", "source": "scheduler"}
     state = _load_approval_state()
@@ -114,7 +134,10 @@ def _approval_gate_for_heavy(mode: str, require_approval_heavy: bool, approval_c
     approved = list_all(limit=50, status="approved")
     for item in approved:
         payload = item.get("payload") or {}
-        if payload.get("domain") == "workshop" and payload.get("operation") == "maintenance":
+        if (
+            payload.get("domain") == "workshop"
+            and payload.get("operation") == "maintenance"
+        ):
             aid = str(item.get("id") or "")
             if aid and aid not in consumed:
                 consumed.add(aid)
@@ -125,13 +148,25 @@ def _approval_gate_for_heavy(mode: str, require_approval_heavy: bool, approval_c
     pending = list_pending(limit=50)
     for item in pending:
         payload = item.get("payload") or {}
-        if payload.get("domain") == "workshop" and payload.get("operation") == "maintenance":
-            return {"granted": False, "reason": "pending", "pending": True, "approval_id": item.get("id")}
+        if (
+            payload.get("domain") == "workshop"
+            and payload.get("operation") == "maintenance"
+        ):
+            return {
+                "granted": False,
+                "reason": "pending",
+                "pending": True,
+                "approval_id": item.get("id"),
+            }
 
     now = time.time()
     try:
         last_ts = state.get("last_request_ts") or ""
-        last_epoch = datetime.fromisoformat(last_ts.replace("Z", "+00:00")).timestamp() if last_ts else 0.0
+        last_epoch = (
+            datetime.fromisoformat(last_ts.replace("Z", "+00:00")).timestamp()
+            if last_ts
+            else 0.0
+        )
     except Exception:
         last_epoch = 0.0
     if now - last_epoch < max(60, int(approval_cooldown_seconds or 900)):
@@ -154,11 +189,22 @@ def _approval_gate_for_heavy(mode: str, require_approval_heavy: bool, approval_c
         state["last_request_ts"] = _now_iso()
         state["last_request_id"] = out.get("approval_id")
         _save_approval_state(state)
-        return {"granted": False, "reason": "created_pending", "pending": True, "approval_id": out.get("approval_id")}
-    return {"granted": False, "reason": out.get("error") or "approval_create_failed", "pending": False}
+        return {
+            "granted": False,
+            "reason": "created_pending",
+            "pending": True,
+            "approval_id": out.get("approval_id"),
+        }
+    return {
+        "granted": False,
+        "reason": out.get("error") or "approval_create_failed",
+        "pending": False,
+    }
 
 
-def _http_json(method: str, url: str, payload: Optional[Dict[str, Any]] = None, timeout: int = 20) -> Tuple[bool, int, Dict[str, Any], str]:
+def _http_json(
+    method: str, url: str, payload: Optional[Dict[str, Any]] = None, timeout: int = 20
+) -> Tuple[bool, int, Dict[str, Any], str]:
     data = None
     headers = {"Accept": "application/json"}
     if payload is not None:
@@ -193,7 +239,9 @@ def _http_status(url: str, timeout: int = 10) -> int:
         return 0
 
 
-def _run_cmd(name: str, cmd: List[str], cwd: Optional[Path] = None, timeout_s: int = 90) -> StepResult:
+def _run_cmd(
+    name: str, cmd: List[str], cwd: Optional[Path] = None, timeout_s: int = 90
+) -> StepResult:
     t0 = time.time()
     try:
         p = subprocess.run(
@@ -209,7 +257,9 @@ def _run_cmd(name: str, cmd: List[str], cwd: Optional[Path] = None, timeout_s: i
         return StepResult(name=name, ok=ok, detail=detail[:4000], elapsed_ms=elapsed)
     except Exception as e:
         elapsed = int((time.time() - t0) * 1000)
-        return StepResult(name=name, ok=False, detail=f"{type(e).__name__}: {e}", elapsed_ms=elapsed)
+        return StepResult(
+            name=name, ok=False, detail=f"{type(e).__name__}: {e}", elapsed_ms=elapsed
+        )
 
 
 def _fetch_open_incidents(push_base: str, limit: int) -> List[Dict[str, Any]]:
@@ -261,12 +311,13 @@ def _select_runbook(check_id: str, message: str) -> str:
     # Intentar usar el sistema de POTs del módulo de Calidad
     try:
         from modules.humanoid.quality import get_pot_by_incident
+
         pot = get_pot_by_incident(check_id=check_id, message=message)
         if pot:
             return pot.id
     except ImportError:
         pass  # Fallback a lógica legacy
-    
+
     # Lógica legacy de selección
     cid = (check_id or "").lower()
     msg = (message or "").lower()
@@ -293,7 +344,11 @@ def _verify_baseline(push_base: str, robot_base: str) -> Dict[str, Any]:
 
 def _runbook_camera_repair() -> List[StepResult]:
     return [
-        _run_cmd("camera_autorepair", [sys.executable, str(REPO_ROOT / "scripts" / "atlas_camera_autorepair.py")], timeout_s=240),
+        _run_cmd(
+            "camera_autorepair",
+            [sys.executable, str(REPO_ROOT / "scripts" / "atlas_camera_autorepair.py")],
+            timeout_s=240,
+        ),
     ]
 
 
@@ -301,12 +356,28 @@ def _runbook_services_repair() -> List[StepResult]:
     return [
         _run_cmd(
             "restart_robot",
-            ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(REPO_ROOT / "scripts" / "restart_service_clean.ps1"), "-Service", "robot"],
+            [
+                "powershell",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(REPO_ROOT / "scripts" / "restart_service_clean.ps1"),
+                "-Service",
+                "robot",
+            ],
             timeout_s=90,
         ),
         _run_cmd(
             "restart_push",
-            ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(REPO_ROOT / "scripts" / "restart_service_clean.ps1"), "-Service", "push"],
+            [
+                "powershell",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(REPO_ROOT / "scripts" / "restart_service_clean.ps1"),
+                "-Service",
+                "push",
+            ],
             timeout_s=120,
         ),
     ]
@@ -314,8 +385,20 @@ def _runbook_services_repair() -> List[StepResult]:
 
 def _runbook_dependency_repair() -> List[StepResult]:
     return [
-        _run_cmd("ans_run_now", [sys.executable, "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8791/ans/run-now')"], timeout_s=75),
-        _run_cmd("repo_hygiene", [sys.executable, str(REPO_ROOT / "scripts" / "repo_hygiene.py")], timeout_s=150),
+        _run_cmd(
+            "ans_run_now",
+            [
+                sys.executable,
+                "-c",
+                "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8791/ans/run-now')",
+            ],
+            timeout_s=75,
+        ),
+        _run_cmd(
+            "repo_hygiene",
+            [sys.executable, str(REPO_ROOT / "scripts" / "repo_hygiene.py")],
+            timeout_s=150,
+        ),
     ]
 
 
@@ -323,7 +406,16 @@ def _runbook_disk_maintenance() -> List[StepResult]:
     return [
         _run_cmd(
             "clear_project_cache",
-            ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(REPO_ROOT / "scripts" / "restart_service_clean.ps1"), "-Service", "robot", "-ClearCache"],
+            [
+                "powershell",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(REPO_ROOT / "scripts" / "restart_service_clean.ps1"),
+                "-Service",
+                "robot",
+                "-ClearCache",
+            ],
             timeout_s=180,
         ),
     ]
@@ -333,7 +425,15 @@ def _runbook_api_repair() -> List[StepResult]:
     return [
         _run_cmd(
             "restart_push",
-            ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(REPO_ROOT / "scripts" / "restart_service_clean.ps1"), "-Service", "push"],
+            [
+                "powershell",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(REPO_ROOT / "scripts" / "restart_service_clean.ps1"),
+                "-Service",
+                "push",
+            ],
             timeout_s=120,
         ),
     ]
@@ -341,7 +441,15 @@ def _runbook_api_repair() -> List[StepResult]:
 
 def _runbook_generic_repair() -> List[StepResult]:
     return [
-        _run_cmd("ans_run_now", [sys.executable, "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8791/ans/run-now')"], timeout_s=75),
+        _run_cmd(
+            "ans_run_now",
+            [
+                sys.executable,
+                "-c",
+                "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8791/ans/run-now')",
+            ],
+            timeout_s=75,
+        ),
     ]
 
 
@@ -349,23 +457,26 @@ def _execute_runbook(runbook_id: str) -> List[StepResult]:
     """Ejecuta el runbook/POT especificado."""
     # Intentar usar el sistema de POTs del módulo de Calidad
     try:
-        from modules.humanoid.quality import get_pot, execute_pot
+        from modules.humanoid.quality import execute_pot, get_pot
+
         pot = get_pot(runbook_id)
         if pot:
             # Ejecutar POT y convertir resultado a StepResults
             result = execute_pot(pot, context={"source": "workshop"})
             steps = []
             for sr in result.step_results:
-                steps.append(StepResult(
-                    name=sr.step_name,
-                    ok=sr.ok,
-                    detail=sr.output or sr.error or "",
-                    elapsed_ms=sr.elapsed_ms,
-                ))
+                steps.append(
+                    StepResult(
+                        name=sr.step_name,
+                        ok=sr.ok,
+                        detail=sr.output or sr.error or "",
+                        elapsed_ms=sr.elapsed_ms,
+                    )
+                )
             return steps
     except ImportError:
         pass  # Fallback a lógica legacy
-    
+
     # Lógica legacy de ejecución
     if runbook_id == "camera_repair":
         return _runbook_camera_repair()
@@ -394,7 +505,11 @@ def _process_ticket(path: Path, push_base: str, robot_base: str) -> Dict[str, An
     steps = _execute_runbook(runbook_id=runbook)
     after = _verify_baseline(push_base=push_base, robot_base=robot_base)
     ok_steps = all(s.ok for s in steps) if steps else False
-    ok_verify = after["push_ui"] == 200 and after["push_health"] == 200 and after["robot_health"] == 200
+    ok_verify = (
+        after["push_ui"] == 200
+        and after["push_health"] == 200
+        and after["robot_health"] == 200
+    )
     ok_final = bool(ok_steps and ok_verify)
 
     result = {
@@ -426,9 +541,17 @@ def _run_incident_cycle(push_base: str, robot_base: str, limit: int) -> Dict[str
     processed: List[Dict[str, Any]] = []
     for p in sorted(INBOX_DIR.glob("*.json")):
         try:
-            processed.append(_process_ticket(p, push_base=push_base, robot_base=robot_base))
+            processed.append(
+                _process_ticket(p, push_base=push_base, robot_base=robot_base)
+            )
         except Exception as e:
-            processed.append({"ticket": p.name, "ok_final": False, "error": f"{type(e).__name__}: {e}"})
+            processed.append(
+                {
+                    "ticket": p.name,
+                    "ok_final": False,
+                    "error": f"{type(e).__name__}: {e}",
+                }
+            )
     return {
         "ingested": ingested,
         "processed_count": len(processed),
@@ -440,16 +563,40 @@ def _run_maintenance(push_base: str, robot_base: str) -> Dict[str, Any]:
     tasks: List[Dict[str, Any]] = []
 
     baseline = _verify_baseline(push_base=push_base, robot_base=robot_base)
-    tasks.append({"name": "baseline_health", "ok": baseline["push_ui"] == 200 and baseline["robot_health"] == 200, "detail": baseline})
+    tasks.append(
+        {
+            "name": "baseline_health",
+            "ok": baseline["push_ui"] == 200 and baseline["robot_health"] == 200,
+            "detail": baseline,
+        }
+    )
 
-    r = _run_cmd("camera_autorepair", [sys.executable, str(REPO_ROOT / "scripts" / "atlas_camera_autorepair.py")], timeout_s=240)
-    tasks.append({"name": r.name, "ok": r.ok, "detail": r.detail, "elapsed_ms": r.elapsed_ms})
+    r = _run_cmd(
+        "camera_autorepair",
+        [sys.executable, str(REPO_ROOT / "scripts" / "atlas_camera_autorepair.py")],
+        timeout_s=240,
+    )
+    tasks.append(
+        {"name": r.name, "ok": r.ok, "detail": r.detail, "elapsed_ms": r.elapsed_ms}
+    )
 
-    r2 = _run_cmd("check_nexus_ports", [sys.executable, str(REPO_ROOT / "scripts" / "check_nexus_ports.py")], timeout_s=60)
-    tasks.append({"name": r2.name, "ok": r2.ok, "detail": r2.detail, "elapsed_ms": r2.elapsed_ms})
+    r2 = _run_cmd(
+        "check_nexus_ports",
+        [sys.executable, str(REPO_ROOT / "scripts" / "check_nexus_ports.py")],
+        timeout_s=60,
+    )
+    tasks.append(
+        {"name": r2.name, "ok": r2.ok, "detail": r2.detail, "elapsed_ms": r2.elapsed_ms}
+    )
 
     end_health = _verify_baseline(push_base=push_base, robot_base=robot_base)
-    tasks.append({"name": "post_health", "ok": end_health["push_ui"] == 200 and end_health["robot_health"] == 200, "detail": end_health})
+    tasks.append(
+        {
+            "name": "post_health",
+            "ok": end_health["push_ui"] == 200 and end_health["robot_health"] == 200,
+            "detail": end_health,
+        }
+    )
 
     ok = all(bool(t.get("ok")) for t in tasks)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -495,8 +642,12 @@ def _write_report(report: Dict[str, Any]) -> Tuple[str, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="ATLAS Central Workshop")
-    parser.add_argument("--mode", choices=["full", "incidents", "maintenance"], default="full")
-    parser.add_argument("--limit", type=int, default=50, help="Max open incidents to ingest from ANS")
+    parser.add_argument(
+        "--mode", choices=["full", "incidents", "maintenance"], default="full"
+    )
+    parser.add_argument(
+        "--limit", type=int, default=50, help="Max open incidents to ingest from ANS"
+    )
     parser.add_argument("--push-base", default=DEFAULT_PUSH_BASE)
     parser.add_argument("--robot-base", default=DEFAULT_ROBOT_BASE)
     parser.add_argument(
@@ -544,14 +695,21 @@ def main() -> int:
         return 0
 
     if args.mode in ("full", "incidents"):
-        report["incident_cycle"] = _run_incident_cycle(push_base=args.push_base, robot_base=args.robot_base, limit=args.limit)
+        report["incident_cycle"] = _run_incident_cycle(
+            push_base=args.push_base, robot_base=args.robot_base, limit=args.limit
+        )
     if args.mode in ("full", "maintenance"):
-        report["maintenance"] = _run_maintenance(push_base=args.push_base, robot_base=args.robot_base)
+        report["maintenance"] = _run_maintenance(
+            push_base=args.push_base, robot_base=args.robot_base
+        )
 
     report["ended_at"] = _now_iso()
     incident_ok = True
     if report.get("incident_cycle", {}).get("processed"):
-        incident_ok = all(bool(x.get("ok_final", False)) for x in report["incident_cycle"]["processed"])
+        incident_ok = all(
+            bool(x.get("ok_final", False))
+            for x in report["incident_cycle"]["processed"]
+        )
     maintenance_ok = report.get("maintenance", {}).get("ok", True)
     report["overall_ok"] = bool(incident_ok and maintenance_ok)
 
@@ -561,10 +719,12 @@ def main() -> int:
     print("REPORT_JSON:", json_report)
     print("REPORT_MD:", md_report)
     print("INCIDENTS_INGESTED:", report.get("incident_cycle", {}).get("ingested", 0))
-    print("INCIDENTS_PROCESSED:", report.get("incident_cycle", {}).get("processed_count", 0))
+    print(
+        "INCIDENTS_PROCESSED:",
+        report.get("incident_cycle", {}).get("processed_count", 0),
+    )
     return 0 if report["overall_ok"] else 2
 
 
 if __name__ == "__main__":
     sys.exit(main())
-

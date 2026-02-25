@@ -20,7 +20,15 @@ def recall_by_query(query: str, limit: int = 20) -> List[Dict[str, Any]]:
                     (query_clean, limit),
                 ).fetchall()
                 for r in rows:
-                    results.append({"rowid": r[0], "content": r[1][:500], "thread_id": r[2], "task_id": r[3], "kind": r[4]})
+                    results.append(
+                        {
+                            "rowid": r[0],
+                            "content": r[1][:500],
+                            "thread_id": r[2],
+                            "task_id": r[3],
+                            "kind": r[4],
+                        }
+                    )
                 if results:
                     return results
             except Exception:
@@ -32,9 +40,16 @@ def recall_by_query(query: str, limit: int = 20) -> List[Dict[str, Any]]:
                 (like, like, limit),
             ).fetchall()
             for r in rows:
-                results.append({
-                    "task_id": r[0], "thread_id": r[1], "goal": r[2], "plan": json.loads(r[3]) if r[3] else {}, "status": r[4], "created_ts": r[5],
-                })
+                results.append(
+                    {
+                        "task_id": r[0],
+                        "thread_id": r[1],
+                        "goal": r[2],
+                        "plan": json.loads(r[3]) if r[3] else {},
+                        "status": r[4],
+                        "created_ts": r[5],
+                    }
+                )
             if results:
                 return results
         except Exception:
@@ -46,9 +61,16 @@ def recall_by_query(query: str, limit: int = 20) -> List[Dict[str, Any]]:
             (limit,),
         ).fetchall()
         for r in rows:
-            results.append({
-                "task_id": r[0], "thread_id": r[1], "goal": r[2], "plan": json.loads(r[3]) if r[3] else {}, "status": r[4], "created_ts": r[5],
-            })
+            results.append(
+                {
+                    "task_id": r[0],
+                    "thread_id": r[1],
+                    "goal": r[2],
+                    "plan": json.loads(r[3]) if r[3] else {},
+                    "status": r[4],
+                    "created_ts": r[5],
+                }
+            )
     except Exception:
         pass
     return results
@@ -62,24 +84,59 @@ def recall_by_thread(thread_id: str, limit: int = 50) -> Dict[str, Any]:
         "SELECT id, goal, plan_json, status, created_ts FROM tasks WHERE thread_id = ? ORDER BY created_ts DESC LIMIT ?",
         (thread_id, limit),
     ).fetchall():
-        tasks.append({"id": row[0], "goal": row[1], "plan": json.loads(row[2]) if row[2] else {}, "status": row[3], "created_ts": row[4]})
+        tasks.append(
+            {
+                "id": row[0],
+                "goal": row[1],
+                "plan": json.loads(row[2]) if row[2] else {},
+                "status": row[3],
+                "created_ts": row[4],
+            }
+        )
     runs = []
     for row in conn.execute(
         """SELECT r.id, r.task_id, r.step_id, r.ok, r.result_json, r.error, r.created_ts FROM runs r
            JOIN tasks t ON t.id = r.task_id WHERE t.thread_id = ? ORDER BY r.created_ts DESC LIMIT ?""",
         (thread_id, limit),
     ).fetchall():
-        runs.append({"id": row[0], "task_id": row[1], "step_id": row[2], "ok": bool(row[3]), "result": json.loads(row[4]) if row[4] else None, "error": row[5], "created_ts": row[6]})
+        runs.append(
+            {
+                "id": row[0],
+                "task_id": row[1],
+                "step_id": row[2],
+                "ok": bool(row[3]),
+                "result": json.loads(row[4]) if row[4] else None,
+                "error": row[5],
+                "created_ts": row[6],
+            }
+        )
     artifacts = []
     for row in conn.execute(
         "SELECT a.id, a.task_id, a.kind, a.path_or_uri, a.created_ts FROM artifacts a JOIN tasks t ON t.id = a.task_id WHERE t.thread_id = ? ORDER BY a.created_ts DESC LIMIT ?",
         (thread_id, limit),
     ).fetchall():
-        artifacts.append({"id": row[0], "task_id": row[1], "kind": row[2], "path_or_uri": row[3], "created_ts": row[4]})
+        artifacts.append(
+            {
+                "id": row[0],
+                "task_id": row[1],
+                "kind": row[2],
+                "path_or_uri": row[3],
+                "created_ts": row[4],
+            }
+        )
     summaries = []
-    for row in conn.execute("SELECT id, content, created_ts FROM summaries WHERE thread_id = ? ORDER BY created_ts DESC LIMIT ?", (thread_id, limit)).fetchall():
+    for row in conn.execute(
+        "SELECT id, content, created_ts FROM summaries WHERE thread_id = ? ORDER BY created_ts DESC LIMIT ?",
+        (thread_id, limit),
+    ).fetchall():
         summaries.append({"id": row[0], "content": row[1], "created_ts": row[2]})
-    return {"thread_id": thread_id, "tasks": tasks, "runs": runs, "artifacts": artifacts, "summaries": summaries}
+    return {
+        "thread_id": thread_id,
+        "tasks": tasks,
+        "runs": runs,
+        "artifacts": artifacts,
+        "summaries": summaries,
+    }
 
 
 # --- RECORDATORIO: Embeddings pendiente ---

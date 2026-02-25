@@ -7,20 +7,23 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from .pattern_analyzer import PatternAnalyzer
-from .performance_optimizer import PerformanceOptimizer
 from .feedback_loop import FeedbackLoop
 from .knowledge_graph import KnowledgeGraph
+from .pattern_analyzer import PatternAnalyzer
+from .performance_optimizer import PerformanceOptimizer
 
 logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -40,7 +43,11 @@ class LearningOrchestrator:
         insights = self._pattern.generate_insights()
         suggestions = self._optimizer.suggest_optimizations()
         areas = self._feedback.identify_improvement_areas()
-        return {"insights": insights, "suggestions": suggestions, "improvement_areas": areas}
+        return {
+            "insights": insights,
+            "suggestions": suggestions,
+            "improvement_areas": areas,
+        }
 
     def get_learning_insights(self) -> list[str]:
         """Insights recientes."""

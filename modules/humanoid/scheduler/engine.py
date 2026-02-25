@@ -49,10 +49,20 @@ def get_scheduler_db() -> SchedulerDB:
     return _sched_db
 
 
-def _audit(module: str, action: str, ok: bool, payload: Optional[Dict] = None, error: Optional[str] = None, ms: int = 0) -> None:
+def _audit(
+    module: str,
+    action: str,
+    ok: bool,
+    payload: Optional[Dict] = None,
+    error: Optional[str] = None,
+    ms: int = 0,
+) -> None:
     try:
         from modules.humanoid.audit import get_audit_logger
-        get_audit_logger().log_event("scheduler", "system", module, action, ok, ms, error, payload, None)
+
+        get_audit_logger().log_event(
+            "scheduler", "system", module, action, ok, ms, error, payload, None
+        )
     except Exception:
         pass
 
@@ -75,7 +85,9 @@ async def _run_one_job(job: Dict[str, Any]) -> None:
     result_json = result.get("result_json")
 
     db.insert_run(jid, job.get("last_run_ts") or now, now, ok, ms, result_json, err)
-    _audit("scheduler", "job_run_end", ok, {"job_id": jid, "kind": kind, "ms": ms}, err, ms)
+    _audit(
+        "scheduler", "job_run_end", ok, {"job_id": jid, "kind": kind, "ms": ms}, err, ms
+    )
 
     retries = job.get("retries", 0)
     max_retries = job.get("max_retries", _default_retries())
@@ -86,7 +98,10 @@ async def _run_one_job(job: Dict[str, Any]) -> None:
         next_ts = None
         if interval:
             from datetime import timedelta
-            next_dt = datetime.fromisoformat(now.replace("Z", "+00:00")) + timedelta(seconds=interval)
+
+            next_dt = datetime.fromisoformat(now.replace("Z", "+00:00")) + timedelta(
+                seconds=interval
+            )
             next_ts = next_dt.isoformat()
         db.set_finished(jid, True, None, next_ts, retries)
         if interval and next_ts:
@@ -98,16 +113,31 @@ async def _run_one_job(job: Dict[str, Any]) -> None:
     if retries >= max_retries:
         next_ts = None
         db.set_finished(jid, False, err, next_ts, retries)
-        _audit("scheduler", "job_failed", False, {"job_id": jid, "retries": retries}, err)
+        _audit(
+            "scheduler", "job_failed", False, {"job_id": jid, "retries": retries}, err
+        )
     else:
         from datetime import timedelta
+
         # Progressive backoff: backoff_seconds * (retries)
         delay = backoff * retries
-        next_dt = datetime.fromisoformat(now.replace("Z", "+00:00")) + timedelta(seconds=delay)
+        next_dt = datetime.fromisoformat(now.replace("Z", "+00:00")) + timedelta(
+            seconds=delay
+        )
         next_ts = next_dt.isoformat()
         db.set_finished(jid, False, err, next_ts, retries)
         db.set_queued(jid, next_ts)
-        _audit("scheduler", "job_retry", True, {"job_id": jid, "retry": retries, "next_run": next_ts, "backoff_seconds": delay})
+        _audit(
+            "scheduler",
+            "job_retry",
+            True,
+            {
+                "job_id": jid,
+                "retry": retries,
+                "next_run": next_ts,
+                "backoff_seconds": delay,
+            },
+        )
     _running -= 1
 
 
@@ -128,7 +158,9 @@ async def _tick() -> None:
         if not try_acquire_lease(db, jid):
             continue
         _running += 1
-        _audit("scheduler", "job_run_start", True, {"job_id": jid, "kind": job.get("kind")})
+        _audit(
+            "scheduler", "job_run_start", True, {"job_id": jid, "kind": job.get("kind")}
+        )
         asyncio.create_task(_run_one_job(dict(job, last_run_ts=now)))
 
 

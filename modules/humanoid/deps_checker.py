@@ -8,33 +8,59 @@ from typing import Any, Dict, List
 def check_sqlite() -> Dict[str, Any]:
     try:
         sqlite3.connect(":memory:").close()
-        return {"module": "sqlite", "available": True, "missing_deps": [], "suggested": ""}
+        return {
+            "module": "sqlite",
+            "available": True,
+            "missing_deps": [],
+            "suggested": "",
+        }
     except Exception as e:
-        return {"module": "sqlite", "available": False, "missing_deps": ["sqlite3"], "error": str(e), "suggested": "sqlite3 is usually built-in"}
+        return {
+            "module": "sqlite",
+            "available": False,
+            "missing_deps": ["sqlite3"],
+            "error": str(e),
+            "suggested": "sqlite3 is usually built-in",
+        }
 
 
 def check_ollama() -> Dict[str, Any]:
     import os
+
     try:
         import httpx
+
         url = (os.getenv("OLLAMA_BASE_URL") or "http://127.0.0.1:11434") + "/api/tags"
         with httpx.Client(timeout=5) as client:
             r = client.get(url)
-            return {"module": "ollama", "available": r.status_code == 200, "missing_deps": [] if r.status_code == 200 else ["ollama running"], "suggested": "Start Ollama service"}
+            return {
+                "module": "ollama",
+                "available": r.status_code == 200,
+                "missing_deps": [] if r.status_code == 200 else ["ollama running"],
+                "suggested": "Start Ollama service",
+            }
     except Exception as e:
-        return {"module": "ollama", "available": False, "missing_deps": ["ollama running"], "error": str(e), "suggested": "Start Ollama: ollama serve"}
+        return {
+            "module": "ollama",
+            "available": False,
+            "missing_deps": ["ollama running"],
+            "error": str(e),
+            "suggested": "Start Ollama: ollama serve",
+        }
 
 
 def _tesseract_exe_path() -> str:
     import os
+
     return os.getenv("TESSERACT_CMD") or r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 
 def _tesseract_find_binary() -> str:
     """Devuelve la primera ruta donde exista el binario Tesseract (env, Program Files, PATH). Evita bucle en Bitácora."""
     import os
-    from pathlib import Path
     import shutil
+    from pathlib import Path
+
     candidates = []
     env_path = os.getenv("TESSERACT_CMD")
     if env_path:
@@ -59,10 +85,12 @@ def _tesseract_binary_exists() -> bool:
 
 def _set_tesseract_cmd() -> None:
     import sys
+
     if sys.platform != "win32":
         return
     try:
         import pytesseract
+
         path = _tesseract_find_binary() or _tesseract_exe_path()
         pytesseract.pytesseract.tesseract_cmd = path
     except Exception:
@@ -81,7 +109,12 @@ def check_vision() -> Dict[str, Any]:
         import pytesseract
     except ImportError:
         missing.append("pytesseract")
-        return {"module": "vision", "available": False, "missing_deps": missing, "suggested": "pip install pillow pytesseract"}
+        return {
+            "module": "vision",
+            "available": False,
+            "missing_deps": missing,
+            "suggested": "pip install pillow pytesseract",
+        }
     try:
         pytesseract.get_tesseract_version()
     except Exception:
@@ -93,35 +126,78 @@ def check_vision() -> Dict[str, Any]:
                 pass
         if not _tesseract_binary_exists():
             missing.append("tesseract")
-    return {"module": "vision", "available": len(missing) == 0, "missing_deps": missing, "suggested": "pip install pillow pytesseract; install Tesseract OCR en el OS" if missing else ""}
+    return {
+        "module": "vision",
+        "available": len(missing) == 0,
+        "missing_deps": missing,
+        "suggested": "pip install pillow pytesseract; install Tesseract OCR en el OS"
+        if missing
+        else "",
+    }
 
 
 def check_playwright() -> Dict[str, Any]:
     try:
         from modules.humanoid.web.navigator import get_missing_deps
+
         missing = get_missing_deps()
-        return {"module": "web", "available": len(missing) == 0, "missing_deps": missing, "suggested": "pip install playwright && playwright install chromium"}
+        return {
+            "module": "web",
+            "available": len(missing) == 0,
+            "missing_deps": missing,
+            "suggested": "pip install playwright && playwright install chromium",
+        }
     except Exception as e:
-        return {"module": "web", "available": False, "missing_deps": ["playwright"], "error": str(e), "suggested": "pip install playwright"}
+        return {
+            "module": "web",
+            "available": False,
+            "missing_deps": ["playwright"],
+            "error": str(e),
+            "suggested": "pip install playwright",
+        }
 
 
 def check_stt() -> Dict[str, Any]:
     """STT: whisper/faster-whisper. Spec: whisper si existe."""
     try:
         from modules.humanoid.voice.stt import get_missing_deps
+
         missing = get_missing_deps()
-        return {"module": "voice_stt", "available": len(missing) == 0, "missing_deps": missing, "suggested": "pip install faster-whisper"}
+        return {
+            "module": "voice_stt",
+            "available": len(missing) == 0,
+            "missing_deps": missing,
+            "suggested": "pip install faster-whisper",
+        }
     except Exception as e:
-        return {"module": "voice_stt", "available": False, "missing_deps": ["faster-whisper"], "error": str(e), "suggested": "pip install faster-whisper"}
+        return {
+            "module": "voice_stt",
+            "available": False,
+            "missing_deps": ["faster-whisper"],
+            "error": str(e),
+            "suggested": "pip install faster-whisper",
+        }
 
 
 def check_tts() -> Dict[str, Any]:
     try:
         from modules.humanoid.voice.tts import get_missing_deps
+
         missing = get_missing_deps()
-        return {"module": "voice_tts", "available": len(missing) == 0, "missing_deps": missing, "suggested": "pip install pyttsx3"}
+        return {
+            "module": "voice_tts",
+            "available": len(missing) == 0,
+            "missing_deps": missing,
+            "suggested": "pip install pyttsx3",
+        }
     except Exception as e:
-        return {"module": "voice_tts", "available": False, "missing_deps": ["pyttsx3"], "error": str(e), "suggested": "pip install pyttsx3"}
+        return {
+            "module": "voice_tts",
+            "available": False,
+            "missing_deps": ["pyttsx3"],
+            "error": str(e),
+            "suggested": "pip install pyttsx3",
+        }
 
 
 def check_screen() -> Dict[str, Any]:
@@ -187,15 +263,21 @@ def check_hardware() -> Dict[str, Any]:
     low_ram = False
     try:
         import psutil
+
         mem = psutil.virtual_memory()
-        ram_gb = round(mem.total / (1024 ** 3), 1)
-        low_ram = mem.total < 8 * 1024 ** 3
+        ram_gb = round(mem.total / (1024**3), 1)
+        low_ram = mem.total < 8 * 1024**3
     except ImportError:
         pass
     gpu = False
     try:
         import subprocess
-        r = subprocess.run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], capture_output=True, timeout=3)
+
+        r = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True,
+            timeout=3,
+        )
         gpu = r.returncode == 0 and bool(r.stdout)
     except Exception:
         pass
@@ -211,7 +293,16 @@ def check_hardware() -> Dict[str, Any]:
 
 def check_all() -> Dict[str, Any]:
     """Return {ok, modules: [{module, available, missing_deps, suggested}], missing_deps: [...], suggested_commands: [...]}."""
-    results = [check_sqlite(), check_ollama(), check_vision(), check_playwright(), check_stt(), check_tts(), check_screen(), check_hardware()]
+    results = [
+        check_sqlite(),
+        check_ollama(),
+        check_vision(),
+        check_playwright(),
+        check_stt(),
+        check_tts(),
+        check_screen(),
+        check_hardware(),
+    ]
     all_missing: List[str] = []
     suggested: List[str] = []
     for r in results:

@@ -26,7 +26,9 @@ def create_approval(
     except ImportError:
         return None
     risk = cand.risk_level.strip().lower()
-    requires_session = risk in [x.strip() for x in _owner_require_session_for_risk().split(",") if x.strip()]
+    requires_session = risk in [
+        x.strip() for x in _owner_require_session_for_risk().split(",") if x.strip()
+    ]
     payload = {
         "ga_action": cand.action_type,
         "finding": {

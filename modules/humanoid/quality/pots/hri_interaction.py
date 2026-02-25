@@ -11,7 +11,8 @@ Triggers:
 
 Severidad: HIGH (interacción con humanos)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -30,10 +31,15 @@ Procedimiento para operaciones de HRI:
         severity=POTSeverity.HIGH,
         version="1.0.0",
         author="ATLAS Robotics Architect",
-        
         trigger_check_ids=["hri_*", "voice_*", "gesture_*", "safety_*"],
-        trigger_keywords=["interacción", "voz", "gesto", "humano", "seguridad", "diálogo"],
-        
+        trigger_keywords=[
+            "interacción",
+            "voz",
+            "gesto",
+            "humano",
+            "seguridad",
+            "diálogo",
+        ],
         prerequisites=[
             "Cámaras y micrófonos activos",
             "Detección de personas funcionando",
@@ -41,7 +47,6 @@ Procedimiento para operaciones de HRI:
         ],
         required_services=["hri", "vision", "audio"],
         required_permissions=["communication", "movement"],
-        
         objectives=[
             "Detectar y localizar humanos",
             "Mantener zonas de seguridad",
@@ -51,7 +56,6 @@ Procedimiento para operaciones de HRI:
         ],
         success_criteria="Interacción completada sin incidentes de seguridad",
         estimated_duration_minutes=5,
-        
         tutorial_overview="""
 ## Guía de Interacción Humano-Robot ATLAS
 
@@ -151,7 +155,7 @@ print(results["safety_level"])
 safe, reason = hri.get_safety_status()["safe_to_move"]
 if not safe:
     print(f"Inseguro: {reason}")
-    
+
 # Parada de emergencia
 hri.emergency_stop()
 
@@ -168,7 +172,6 @@ Usuario: "En la cocina"
 Robot:  "Entendido, voy a traer el vaso de la cocina"
 ```
         """,
-        
         steps=[
             POTStep(
                 id="detect_humans",
@@ -257,7 +260,6 @@ else:
                 notify_message="Sesión de interacción completada",
             ),
         ],
-        
         rollback_steps=[
             POTStep(
                 id="rollback_stop",
@@ -266,7 +268,6 @@ else:
                 step_type=StepType.LOG,
             ),
         ],
-        
         has_rollback=True,
         tags=["hri", "voice", "gesture", "safety", "dialog"],
     )

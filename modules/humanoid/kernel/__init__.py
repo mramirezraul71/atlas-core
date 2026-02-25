@@ -39,4 +39,12 @@ class Kernel:
         }
 
 
-__all__ = ["Kernel", "BaseModule", "HealthCheckMixin", "ModuleRegistry", "EventBus", "HealthMonitor", "health_all"]
+__all__ = [
+    "Kernel",
+    "BaseModule",
+    "HealthCheckMixin",
+    "ModuleRegistry",
+    "EventBus",
+    "HealthMonitor",
+    "health_all",
+]

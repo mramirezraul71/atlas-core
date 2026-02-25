@@ -15,7 +15,11 @@ def _report_dir() -> Path:
 
 
 def _strict_evidence() -> bool:
-    return os.getenv("GA_STRICT_EVIDENCE", "true").strip().lower() in ("1", "true", "yes")
+    return os.getenv("GA_STRICT_EVIDENCE", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def _format_finding(f: Finding) -> str:
@@ -42,7 +46,9 @@ def generate_report(
     """Build markdown report content."""
     lines: List[str] = []
     lines.append("# GA Report")
-    lines.append(f"\nGenerated: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}\n")
+    lines.append(
+        f"\nGenerated: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}\n"
+    )
     lines.append("## Top Findings")
     for f in findings[:5]:
         lines.append(_format_finding(f))
@@ -56,7 +62,9 @@ def generate_report(
         lines.append("- (none)")
     lines.append("\n## Approvals Required")
     for a in approvals_created:
-        lines.append(f"- id={a.get('id')} risk={a.get('risk')} action={a.get('action')}")
+        lines.append(
+            f"- id={a.get('id')} risk={a.get('risk')} action={a.get('action')}"
+        )
     if not approvals_created:
         lines.append("- (none)")
     if metrics:
@@ -103,7 +111,9 @@ def get_latest_report_path() -> Optional[str]:
         d = _report_dir()
         if not d.exists():
             return None
-        reports = sorted(d.glob("GA_REPORT_*.md"), key=lambda p: p.stat().st_mtime, reverse=True)
+        reports = sorted(
+            d.glob("GA_REPORT_*.md"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
         return str(reports[0]) if reports else None
     except Exception:
         return None

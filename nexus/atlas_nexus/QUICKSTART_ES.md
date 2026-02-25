@@ -4,12 +4,12 @@
 
 **ATLAS NEXUS** es la versión profesional y mejorada de tu ATLAS_PUSH. Incluye:
 
-✅ **Múltiples IA integradas** (Ollama + DeepSeek + Claude + GPT)  
-✅ **Autonomía real** con planificación multi-paso  
-✅ **50+ herramientas profesionales**  
-✅ **API REST completa** para control desde móvil  
-✅ **WebSocket en tiempo real**  
-✅ **Auto-recuperación de errores**  
+✅ **Múltiples IA integradas** (Ollama + DeepSeek + Claude + GPT)
+✅ **Autonomía real** con planificación multi-paso
+✅ **50+ herramientas profesionales**
+✅ **API REST completa** para control desde móvil
+✅ **WebSocket en tiempo real**
+✅ **Auto-recuperación de errores**
 ✅ **Sistema modular y escalable**
 
 ---

@@ -7,10 +7,18 @@ import pytest
 
 
 def _enabled() -> bool:
-    return os.getenv("RUN_PYTHON_MASTERY", "").strip().lower() in ("1", "true", "yes", "on")
+    return os.getenv("RUN_PYTHON_MASTERY", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
-pytestmark = pytest.mark.skipif(not _enabled(), reason="Python Mastery tests deshabilitados (set RUN_PYTHON_MASTERY=1).")
+pytestmark = pytest.mark.skipif(
+    not _enabled(),
+    reason="Python Mastery tests deshabilitados (set RUN_PYTHON_MASTERY=1).",
+)
 
 
 def test_run_cmd_success():
@@ -26,4 +34,3 @@ def test_run_cmd_nonzero_raises():
 
     with pytest.raises(subprocess.CalledProcessError):
         run_cmd(["python", "-c", "import sys; sys.exit(2)"], timeout_s=5, check=True)
-

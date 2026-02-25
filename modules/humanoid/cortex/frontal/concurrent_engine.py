@@ -17,13 +17,11 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from .goal_context import (
-    CGEGoalPriority, CGEGoalStatus, GoalContext, GoalContextDB, new_goal_id,
-)
+from .goal_context import (CGEGoalPriority, CGEGoalStatus, GoalContext,
+                           GoalContextDB, new_goal_id)
+from .parallel_executor import (GoalStep, ParallelExecutor, StepResult,
+                                infer_resources)
 from .resource_arbiter import ResourceArbiter
-from .parallel_executor import (
-    GoalStep, ParallelExecutor, StepResult, infer_resources,
-)
 
 _log = logging.getLogger("humanoid.cortex.frontal.concurrent_engine")
 
@@ -34,7 +32,9 @@ _STEP_TIMEOUT = int(os.getenv("CGE_STEP_TIMEOUT", "20"))
 
 def _bitacora(msg: str, ok: bool = True) -> None:
     try:
-        from modules.humanoid.ans.evolution_bitacora import append_evolution_log
+        from modules.humanoid.ans.evolution_bitacora import \
+            append_evolution_log
+
         append_evolution_log(msg, ok=ok, source="cge")
     except Exception:
         pass
@@ -43,16 +43,19 @@ def _bitacora(msg: str, ok: bool = True) -> None:
 def _ops_event(msg: str, level: str = "low") -> None:
     try:
         from modules.humanoid.comms.ops_bus import emit
+
         emit(msg, level=level, subsystem="cge")
     except Exception:
         pass
 
 
-def _lifelog_action(action: str, params: Dict = None,
-                    outcome: str = "", success: bool = True) -> None:
+def _lifelog_action(
+    action: str, params: Dict = None, outcome: str = "", success: bool = True
+) -> None:
     """Registra accion del CGE en el Lifelog de ATLAS."""
     try:
         from modules.humanoid.memory_engine.lifelog import get_lifelog
+
         ll = get_lifelog()
         ll.log_action(
             source="concurrent_engine",
@@ -69,17 +72,20 @@ def _governance_check(action_kind: str, context: Dict = None) -> bool:
     """Consulta Governance antes de ejecutar acciones criticas. Retorna True si permitido."""
     try:
         from modules.humanoid.governance.gates import decide
+
         decision = decide(action_kind, context=context)
         return getattr(decision, "allow", True)
     except Exception:
         return True
 
 
-def _world_model_update(goal_id: str, status: str, goal_type: str = "goal",
-                        extra: Dict = None) -> None:
+def _world_model_update(
+    goal_id: str, status: str, goal_type: str = "goal", extra: Dict = None
+) -> None:
     """Actualiza el World Model con el estado del goal."""
     try:
         from modules.humanoid.world_model.engine import get_world_model
+
         wm = get_world_model()
         state = {"status": status}
         if extra:
@@ -94,11 +100,13 @@ def _world_model_update(goal_id: str, status: str, goal_type: str = "goal",
         pass
 
 
-def _world_model_record_outcome(action: str, context: Dict,
-                                success: bool, ms: float = 0) -> None:
+def _world_model_record_outcome(
+    action: str, context: Dict, success: bool, ms: float = 0
+) -> None:
     """Registra resultado de accion en el World Model para aprendizaje."""
     try:
         from modules.humanoid.world_model.engine import get_world_model
+
         wm = get_world_model()
         wm.record_outcome(
             action_type=action,
@@ -190,7 +198,9 @@ class ConcurrentGoalEngine:
             resources_needed=resources_needed or [],
         )
 
-        if not _governance_check("cge_submit_goal", {"goal_type": goal_type, "priority": priority}):
+        if not _governance_check(
+            "cge_submit_goal", {"goal_type": goal_type, "priority": priority}
+        ):
             _log.warning("Governance blocked goal submission: %s", description)
             _ops_event(f"Governance bloqueó goal: {description}", level="med")
             return ""
@@ -204,9 +214,15 @@ class ConcurrentGoalEngine:
         _log.info("Goal submitted: %s — %s (prio %d)", gid, description, priority)
         _bitacora(f"CGE goal enviado: {description} prio={priority}")
         _ops_event(f"Nuevo goal CGE: {description}", level="low")
-        _lifelog_action("submit_goal", {"goal_id": gid, "type": goal_type, "priority": priority},
-                        outcome=description, success=True)
-        _world_model_update(gid, "pending", extra={"description": description, "priority": priority})
+        _lifelog_action(
+            "submit_goal",
+            {"goal_id": gid, "type": goal_type, "priority": priority},
+            outcome=description,
+            success=True,
+        )
+        _world_model_update(
+            gid, "pending", extra={"description": description, "priority": priority}
+        )
 
         return gid
 
@@ -337,11 +353,12 @@ class ConcurrentGoalEngine:
         planned = 0
         with self._lock:
             pending = [
-                g for g in self._active_goals.values()
+                g
+                for g in self._active_goals.values()
                 if g.status == CGEGoalStatus.PENDING and g.plan_json is None
             ]
 
-        for ctx in pending[:self.max_concurrent]:
+        for ctx in pending[: self.max_concurrent]:
             if self._plan_goal(ctx):
                 planned += 1
         return planned
@@ -351,7 +368,8 @@ class ConcurrentGoalEngine:
         dispatched = 0
         with self._lock:
             active = [
-                g for g in self._active_goals.values()
+                g
+                for g in self._active_goals.values()
                 if g.status == CGEGoalStatus.ACTIVE
                 and not self.executor.is_running(g.goal_id)
             ]
@@ -371,10 +389,14 @@ class ConcurrentGoalEngine:
             if not self.arbiter.acquire(ctx.goal_id, resources, ctx.priority.value):
                 if ctx.priority.value >= CGEGoalPriority.URGENT.value:
                     for r in resources:
-                        displaced = self.arbiter.preempt(ctx.goal_id, r, ctx.priority.value)
+                        displaced = self.arbiter.preempt(
+                            ctx.goal_id, r, ctx.priority.value
+                        )
                         if displaced:
                             self._pause_displaced_goal(displaced, r)
-                    if not self.arbiter.acquire(ctx.goal_id, resources, ctx.priority.value):
+                    if not self.arbiter.acquire(
+                        ctx.goal_id, resources, ctx.priority.value
+                    ):
                         ctx.status = CGEGoalStatus.WAITING_RESOURCE
                         self.db.save(ctx)
                         continue
@@ -387,10 +409,17 @@ class ConcurrentGoalEngine:
             for r in resources:
                 self.db.log_resource_alloc(r, ctx.goal_id, ctx.priority.value)
 
-            if not _governance_check("cge_execute_step",
-                                     {"goal_id": ctx.goal_id, "action": step.action_type,
-                                      "priority": ctx.priority.value}):
-                _log.info("Governance bloqueó paso %d de %s", step.step_index, ctx.goal_id)
+            if not _governance_check(
+                "cge_execute_step",
+                {
+                    "goal_id": ctx.goal_id,
+                    "action": step.action_type,
+                    "priority": ctx.priority.value,
+                },
+            ):
+                _log.info(
+                    "Governance bloqueó paso %d de %s", step.step_index, ctx.goal_id
+                )
                 self.arbiter.release(ctx.goal_id, resources)
                 continue
 
@@ -398,8 +427,12 @@ class ConcurrentGoalEngine:
             if fut:
                 dispatched += 1
                 running_count += 1
-                _log.debug("Dispatched step %d for %s (%s)",
-                           step.step_index, ctx.goal_id, step.action_type)
+                _log.debug(
+                    "Dispatched step %d for %s (%s)",
+                    step.step_index,
+                    ctx.goal_id,
+                    step.action_type,
+                )
 
         return dispatched
 
@@ -426,16 +459,18 @@ class ConcurrentGoalEngine:
 
         try:
             from .task_planner import TaskPlanner
+
             planner = TaskPlanner()
 
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     import concurrent.futures
+
                     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                         plan = pool.submit(
                             asyncio.run,
-                            planner.plan(ctx.description, None, ctx.context_data)
+                            planner.plan(ctx.description, None, ctx.context_data),
                         ).result(timeout=15)
                 else:
                     plan = loop.run_until_complete(
@@ -452,20 +487,24 @@ class ConcurrentGoalEngine:
                 ctx.step_index = 0
                 self.db.save(ctx)
                 _log.info("Goal %s planned: %d steps", ctx.goal_id, len(plan.steps))
-                _bitacora(f"CGE plan generado: {ctx.description} ({len(plan.steps)} pasos)")
+                _bitacora(
+                    f"CGE plan generado: {ctx.description} ({len(plan.steps)} pasos)"
+                )
                 return True
 
             ctx.status = CGEGoalStatus.ACTIVE
             fallback = {
                 "id": f"plan_fallback_{ctx.goal_id}",
                 "goal": ctx.description,
-                "steps": [{
-                    "id": f"step_0_{ctx.goal_id}",
-                    "description": f"Ejecutar: {ctx.description}",
-                    "action_type": "execute",
-                    "parameters": ctx.context_data,
-                    "status": "pending",
-                }],
+                "steps": [
+                    {
+                        "id": f"step_0_{ctx.goal_id}",
+                        "description": f"Ejecutar: {ctx.description}",
+                        "action_type": "execute",
+                        "parameters": ctx.context_data,
+                        "status": "pending",
+                    }
+                ],
                 "status": "active",
                 "progress": 0.0,
             }
@@ -502,7 +541,8 @@ class ConcurrentGoalEngine:
         if step_data.get("status") in ("completed", "failed", "skipped"):
             ctx.step_index = idx + 1
             self.db.update_progress(
-                ctx.goal_id, ctx.step_index,
+                ctx.goal_id,
+                ctx.step_index,
                 ctx.step_index / max(len(steps), 1),
             )
             return self._next_step_for_goal(ctx)
@@ -524,8 +564,12 @@ class ConcurrentGoalEngine:
             return
 
         self.db.log_step(
-            result.goal_id, result.step_index, result.action,
-            result.data, result.ok, result.ms,
+            result.goal_id,
+            result.step_index,
+            result.action,
+            result.data,
+            result.ok,
+            result.ms,
         )
 
         self.arbiter.release_all(result.goal_id)
@@ -536,22 +580,33 @@ class ConcurrentGoalEngine:
         _world_model_record_outcome(
             result.action,
             {"goal_id": result.goal_id, "step": result.step_index},
-            success=result.ok, ms=result.ms,
+            success=result.ok,
+            ms=result.ms,
         )
 
         if not result.ok:
-            _log.warning("Step %d failed for %s: %s",
-                         result.step_index, result.goal_id, result.error)
+            _log.warning(
+                "Step %d failed for %s: %s",
+                result.step_index,
+                result.goal_id,
+                result.error,
+            )
             ctx.status = CGEGoalStatus.FAILED
             ctx.error = result.error
             self.db.save(ctx)
             with self._lock:
                 self._active_goals.pop(result.goal_id, None)
             self.arbiter.unregister_goal(result.goal_id)
-            _bitacora(f"CGE step falló: {ctx.description} paso {result.step_index}", ok=False)
+            _bitacora(
+                f"CGE step falló: {ctx.description} paso {result.step_index}", ok=False
+            )
             _ops_event(f"CGE goal falló: {ctx.description}", level="med")
-            _lifelog_action("goal_failed", {"goal_id": result.goal_id, "step": result.step_index},
-                            outcome=result.error or "step failed", success=False)
+            _lifelog_action(
+                "goal_failed",
+                {"goal_id": result.goal_id, "step": result.step_index},
+                outcome=result.error or "step failed",
+                success=False,
+            )
             _world_model_update(result.goal_id, "failed", extra={"error": result.error})
             return
 
@@ -586,12 +641,19 @@ class ConcurrentGoalEngine:
         _log.info("Goal completed: %s — %s", ctx.goal_id, ctx.description)
         _bitacora(f"CGE goal completado: {ctx.description}")
         _ops_event(f"Goal completado: {ctx.description}", level="low")
-        _lifelog_action("goal_completed",
-                        {"goal_id": ctx.goal_id, "type": ctx.goal_type,
-                         "elapsed_s": round(ctx.elapsed_s(), 1)},
-                        outcome=ctx.description, success=True)
-        _world_model_update(ctx.goal_id, "completed",
-                            extra={"elapsed_s": round(ctx.elapsed_s(), 1)})
+        _lifelog_action(
+            "goal_completed",
+            {
+                "goal_id": ctx.goal_id,
+                "type": ctx.goal_type,
+                "elapsed_s": round(ctx.elapsed_s(), 1),
+            },
+            outcome=ctx.description,
+            success=True,
+        )
+        _world_model_update(
+            ctx.goal_id, "completed", extra={"elapsed_s": round(ctx.elapsed_s(), 1)}
+        )
 
     def _pause_displaced_goal(self, goal_id: str, resource: str) -> None:
         """Pausa un goal que fue desplazado por preemption."""
@@ -613,9 +675,7 @@ class ConcurrentGoalEngine:
             with self._lock:
                 for ctx in active:
                     self._active_goals[ctx.goal_id] = ctx
-                    self.arbiter.register_goal_priority(
-                        ctx.goal_id, ctx.priority.value
-                    )
+                    self.arbiter.register_goal_priority(ctx.goal_id, ctx.priority.value)
             if active:
                 _log.info("Restored %d active goals from DB", len(active))
         except Exception as exc:
@@ -623,6 +683,7 @@ class ConcurrentGoalEngine:
 
 
 # ---- Convenience function for scheduler -----------------------------------
+
 
 def cge_tick() -> Dict[str, Any]:
     """Punto de entrada para el scheduler."""

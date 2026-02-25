@@ -32,10 +32,19 @@ def _restart_window_seconds() -> float:
         return 600.0
 
 
-def _audit(module: str, action: str, ok: bool, payload: Optional[Dict] = None, error: Optional[str] = None) -> None:
+def _audit(
+    module: str,
+    action: str,
+    ok: bool,
+    payload: Optional[Dict] = None,
+    error: Optional[str] = None,
+) -> None:
     try:
         from modules.humanoid.audit import get_audit_logger
-        get_audit_logger().log_event("healing", "system", module, action, ok, 0, error, payload, None)
+
+        get_audit_logger().log_event(
+            "healing", "system", module, action, ok, 0, error, payload, None
+        )
     except Exception:
         pass
 
@@ -44,6 +53,7 @@ def _policy_allows_healing(action: str) -> bool:
     """Check policy for healing action (e.g. restart_scheduler)."""
     try:
         from modules.humanoid.policy import ActorContext, get_policy_engine
+
         ctx = ActorContext(actor="healing", role="system")
         decision = get_policy_engine().can(ctx, "healing", action, None)
         return decision.allow
@@ -74,7 +84,9 @@ def restart_scheduler() -> Dict[str, Any]:
     if not can_restart_scheduler():
         return {"ok": False, "message": "healing not allowed or max restarts exceeded"}
     try:
-        from modules.humanoid.scheduler.engine import start_scheduler, stop_scheduler
+        from modules.humanoid.scheduler.engine import (start_scheduler,
+                                                       stop_scheduler)
+
         stop_scheduler()
         asyncio.get_event_loop().call_soon_threadsafe(lambda: start_scheduler())
         _restart_timestamps.append(time.time())

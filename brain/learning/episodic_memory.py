@@ -11,13 +11,19 @@ from typing import Any, Dict, List, Optional
 
 
 def _db_path() -> Path:
-    forced = os.getenv("LEARNING_EPISODIC_DB_PATH") or os.getenv("ATLAS_LEARNING_EPISODIC_DB_PATH")
+    forced = os.getenv("LEARNING_EPISODIC_DB_PATH") or os.getenv(
+        "ATLAS_LEARNING_EPISODIC_DB_PATH"
+    )
     if forced:
         return Path(forced).resolve()
     root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or ""
     if root:
         return Path(root).resolve() / "logs" / "learning_episodic.sqlite"
-    return Path(__file__).resolve().parent.parent.parent / "logs" / "learning_episodic.sqlite"
+    return (
+        Path(__file__).resolve().parent.parent.parent
+        / "logs"
+        / "learning_episodic.sqlite"
+    )
 
 
 class EpisodicMemory:
@@ -34,7 +40,8 @@ class EpisodicMemory:
     def _init_db(self) -> None:
         """Esquema SQLite alineado con spec + compatibilidad."""
         conn = sqlite3.connect(self.db_path)
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS episodes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp REAL NOT NULL,
@@ -53,21 +60,32 @@ class EpisodicMemory:
                 created_at TEXT,
                 metadata TEXT
             )
-        """)
+        """
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ep_ts ON episodes(timestamp)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ep_task ON episodes(task_type)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ep_success ON episodes(success)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_ep_situation ON episodes(situation)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ep_situation ON episodes(situation)"
+        )
         # Migrar tabla antigua: si existe columna description/situation_type, añadir columnas spec
         try:
             info = conn.execute("PRAGMA table_info(episodes)").fetchall()
             names = [row[1] for row in info]
             if "situation" not in names and "description" in names:
                 for col, ctype in [
-                    ("situation", "TEXT"), ("context", "TEXT"), ("action_taken", "TEXT"),
-                    ("result", "TEXT"), ("uncertainty_score", "REAL"), ("asked_for_help", "INTEGER"),
-                    ("new_knowledge_count", "INTEGER"), ("task_type", "TEXT"), ("tags", "TEXT"),
-                    ("importance", "REAL"), ("times_recalled", "INTEGER"), ("created_at", "TEXT"),
+                    ("situation", "TEXT"),
+                    ("context", "TEXT"),
+                    ("action_taken", "TEXT"),
+                    ("result", "TEXT"),
+                    ("uncertainty_score", "REAL"),
+                    ("asked_for_help", "INTEGER"),
+                    ("new_knowledge_count", "INTEGER"),
+                    ("task_type", "TEXT"),
+                    ("tags", "TEXT"),
+                    ("importance", "REAL"),
+                    ("times_recalled", "INTEGER"),
+                    ("created_at", "TEXT"),
                     ("metadata", "TEXT"),
                 ]:
                     if col not in names:
@@ -109,7 +127,9 @@ class EpisodicMemory:
                 result = json.dumps(result, ensure_ascii=False)
             else:
                 result = str(result) if result is not None else ""
-            task_type = task_type if task_type != "general" else (situation_type or "general")
+            task_type = (
+                task_type if task_type != "general" else (situation_type or "general")
+            )
             success = success if success is not None else True
         else:
             situation = situation or ""
@@ -145,7 +165,9 @@ class EpisodicMemory:
                 (situation or "")[:2000],
                 ctx_str,
                 (action_taken or "")[:500],
-                (result or "")[:2000] if isinstance(result, str) else str(result)[:2000],
+                (result or "")[:2000]
+                if isinstance(result, str)
+                else str(result)[:2000],
                 1 if success else 0,
                 uncertainty_score,
                 1 if asked_for_help else 0,
@@ -252,10 +274,13 @@ class EpisodicMemory:
         successes = sum(1 for e in episodes if e.get("success"))
         success_rate = successes / total
         mid = total // 2
-        first_half = sum(1 for e in episodes[:mid] if e.get("success")) / mid if mid else 0
+        first_half = (
+            sum(1 for e in episodes[:mid] if e.get("success")) / mid if mid else 0
+        )
         second_half = (
             sum(1 for e in episodes[mid:] if e.get("success")) / (total - mid)
-            if total > mid else 0
+            if total > mid
+            else 0
         )
         if second_half > first_half + 0.1:
             trend = "improving"
@@ -322,7 +347,9 @@ class EpisodicMemory:
         )
         top_tasks = cursor.fetchall()
         conn.close()
-        size_mb = self.db_path.stat().st_size / (1024 * 1024) if self.db_path.exists() else 0
+        size_mb = (
+            self.db_path.stat().st_size / (1024 * 1024) if self.db_path.exists() else 0
+        )
         return {
             "total_episodes": total,
             "success_count": success_count,
@@ -407,7 +434,11 @@ def _row_to_dict(r: sqlite3.Row) -> Dict[str, Any]:
         elif key == "result" and d.get(key):
             try:
                 val = d["result"]
-                d["result"] = json.loads(val) if isinstance(val, str) and val.strip().startswith("{") else val
+                d["result"] = (
+                    json.loads(val)
+                    if isinstance(val, str) and val.strip().startswith("{")
+                    else val
+                )
             except Exception:
                 pass
         elif key == "metadata" and d.get(key):

@@ -6,11 +6,12 @@ merges them with priority, and dispatches to hardware (or simulation).
 
 Priority: balance corrections > gait trajectory > default pose
 """
+import time
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
-import time
 
 
 class JointCommander(Node):
@@ -33,12 +34,18 @@ class JointCommander(Node):
         self._cmd_timeout = 0.1  # seconds before a command source is considered stale
 
         # Subscribers
-        self.create_subscription(JointState, "/atlas/joint_commands", self._balance_cb, 10)
-        self.create_subscription(JointState, "/atlas/gait/trajectory", self._gait_cb, 10)
+        self.create_subscription(
+            JointState, "/atlas/joint_commands", self._balance_cb, 10
+        )
+        self.create_subscription(
+            JointState, "/atlas/gait/trajectory", self._gait_cb, 10
+        )
 
         # Publisher: final merged commands to hardware/sim
         self.hw_pub = self.create_publisher(JointState, "/atlas/hw/joint_target", 10)
-        self.debug_pub = self.create_publisher(Float64MultiArray, "/atlas/hw/debug_efforts", 10)
+        self.debug_pub = self.create_publisher(
+            Float64MultiArray, "/atlas/hw/debug_efforts", 10
+        )
 
         self.timer = self.create_timer(1.0 / rate, self._dispatch)
         self.get_logger().info(

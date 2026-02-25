@@ -19,17 +19,44 @@ def status() -> Dict[str, Any]:
     """Check if cloudflared exists and config present."""
     path = _cloudflared_path()
     if not path.exists():
-        return {"ok": False, "available": False, "error": "missing_deps", "message": "cloudflared.exe not found"}
+        return {
+            "ok": False,
+            "available": False,
+            "error": "missing_deps",
+            "message": "cloudflared.exe not found",
+        }
     token = os.getenv("CLOUDFLARE_TOKEN", "").strip()
     tunnel_url = os.getenv("CLOUDFLARE_TUNNEL_URL", "").strip()
     tunnel_name = os.getenv("CLOUDFLARE_TUNNEL_NAME", "").strip()
     if token:
-        return {"ok": True, "available": True, "mode": "token", "message": "token configured"}
+        return {
+            "ok": True,
+            "available": True,
+            "mode": "token",
+            "message": "token configured",
+        }
     if tunnel_url:
-        return {"ok": True, "available": True, "mode": "named", "url": tunnel_url, "message": "tunnel URL set"}
+        return {
+            "ok": True,
+            "available": True,
+            "mode": "named",
+            "url": tunnel_url,
+            "message": "tunnel URL set",
+        }
     if tunnel_name:
-        return {"ok": True, "available": True, "mode": "named", "tunnel_name": tunnel_name, "message": "tunnel name set"}
-    return {"ok": False, "available": True, "error": "config_missing", "message": "set CLOUDFLARE_TOKEN or CLOUDFLARE_TUNNEL_URL"}
+        return {
+            "ok": True,
+            "available": True,
+            "mode": "named",
+            "tunnel_name": tunnel_name,
+            "message": "tunnel name set",
+        }
+    return {
+        "ok": False,
+        "available": True,
+        "error": "config_missing",
+        "message": "set CLOUDFLARE_TOKEN or CLOUDFLARE_TUNNEL_URL",
+    }
 
 
 def get_worker_url() -> Optional[str]:

@@ -51,6 +51,6 @@ Cualquier persona que tenga un clon antiguo deberá re-clonar o hacer `git fetch
 
 ---
 
-*Mantener el repo sin credenciales protege a todo el equipo y evita fugas.*  
+*Mantener el repo sin credenciales protege a todo el equipo y evita fugas.*
 
 *Generado como parte del blindaje del repo atlas-core.*

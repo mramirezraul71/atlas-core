@@ -9,20 +9,24 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from .error_classifier import ErrorClassifier, ClassificationResult, RecoveryStrategy
-from .recovery_strategies import RecoveryStrategies
 from .circuit_breaker import CircuitBreaker, CircuitBreakerError
+from .error_classifier import (ClassificationResult, ErrorClassifier,
+                               RecoveryStrategy)
 from .failure_memory import FailureMemory
+from .recovery_strategies import RecoveryStrategies
 
 logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -56,7 +60,9 @@ class HealingOrchestrator:
             except Exception:
                 pass
 
-    def handle_error(self, error: BaseException, context: dict[str, Any] | None = None) -> dict[str, Any]:
+    def handle_error(
+        self, error: BaseException, context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         Flujo: clasificar → sugerencia de memoria → ejecutar estrategia → registrar.
         Retorna {success, strategy_used, message, classification}.
@@ -66,19 +72,33 @@ class HealingOrchestrator:
         suggested = self._memory.suggest_recovery(error)
         strategy = classification.suggested_strategy
         if suggested and classification.recoverable:
-            strategy = RecoveryStrategy(suggested) if suggested in [s.value for s in RecoveryStrategy] else strategy
+            strategy = (
+                RecoveryStrategy(suggested)
+                if suggested in [s.value for s in RecoveryStrategy]
+                else strategy
+            )
 
-        result = {"success": False, "strategy_used": strategy.value, "message": "", "classification": classification.message}
+        result = {
+            "success": False,
+            "strategy_used": strategy.value,
+            "message": "",
+            "classification": classification.message,
+        }
 
         try:
             if self._cb_healing.get_state().value == "open":
                 result["message"] = "Circuit breaker open; skipping healing"
-                self._healing_history.append({"ts": time.time(), "error": str(error), "result": result})
+                self._healing_history.append(
+                    {"ts": time.time(), "error": str(error), "result": result}
+                )
                 return result
 
             if strategy == RecoveryStrategy.ALERT_HUMAN:
                 result["message"] = "Escalated to human"
-                self._notify("healing_alert_human", {"error": str(error), "classification": classification.message})
+                self._notify(
+                    "healing_alert_human",
+                    {"error": str(error), "classification": classification.message},
+                )
                 self._memory.record_failure(error, context, "alert_human", False)
                 return result
 
@@ -94,7 +114,9 @@ class HealingOrchestrator:
                 except Exception as e:
                     result["message"] = f"Retry failed: {e}"
                     self._memory.record_failure(error, context, "retry", False)
-                self._healing_history.append({"ts": time.time(), "error": str(error)[:200], "result": result})
+                self._healing_history.append(
+                    {"ts": time.time(), "error": str(error)[:200], "result": result}
+                )
                 return result
 
             if strategy == RecoveryStrategy.RESTART_SERVICE:
@@ -110,7 +132,9 @@ class HealingOrchestrator:
                 result["message"] = f"restart_all={ok}"
                 self._memory.record_failure(error, context, "restart_all", ok)
             elif strategy == RecoveryStrategy.DEGRADE:
-                ok = self._strategies.enter_degraded_mode(context.get("available_resources"))
+                ok = self._strategies.enter_degraded_mode(
+                    context.get("available_resources")
+                )
                 result["success"] = ok
                 result["message"] = f"degraded_mode={ok}"
                 self._memory.record_failure(error, context, "degrade", ok)
@@ -120,7 +144,9 @@ class HealingOrchestrator:
 
             if len(self._healing_history) > self._max_history:
                 self._healing_history.pop(0)
-            self._healing_history.append({"ts": time.time(), "error": str(error)[:200], "result": result})
+            self._healing_history.append(
+                {"ts": time.time(), "error": str(error)[:200], "result": result}
+            )
             return result
         except CircuitBreakerError as e:
             result["message"] = str(e)
@@ -134,7 +160,9 @@ class HealingOrchestrator:
     def get_healing_stats(self) -> dict[str, Any]:
         """Estadísticas de intentos de healing."""
         total = len(self._healing_history)
-        success = sum(1 for h in self._healing_history if h.get("result", {}).get("success"))
+        success = sum(
+            1 for h in self._healing_history if h.get("result", {}).get("success")
+        )
         strategies_used: dict[str, int] = {}
         for h in self._healing_history:
             s = h.get("result", {}).get("strategy_used", "unknown")

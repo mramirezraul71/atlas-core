@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
-import re
 
 
 def _now_iso() -> str:
@@ -60,7 +60,9 @@ def _extract_checks(evaluation: Dict[str, Any]) -> list[dict]:
         return []
 
 
-def generate_remediation_plan(lesson_id: str, evaluation: Dict[str, Any]) -> Dict[str, Any]:
+def generate_remediation_plan(
+    lesson_id: str, evaluation: Dict[str, Any]
+) -> Dict[str, Any]:
     """Genera un plan de corrección accionable a partir de la evaluación.
 
     No aplica cambios por sí mismo. Solo produce instrucciones (offline-first).
@@ -98,7 +100,10 @@ def generate_remediation_plan(lesson_id: str, evaluation: Dict[str, Any]) -> Dic
         if isinstance(m, str) and m:
             files_hint.append(m)
     # Extraer rutas de archivo del output (si aparecen)
-    for match in re.findall(r"(training/python_mastery/[A-Za-z0-9_./-]+\.py)", pytest_output.replace("\\", "/")):
+    for match in re.findall(
+        r"(training/python_mastery/[A-Za-z0-9_./-]+\.py)",
+        pytest_output.replace("\\", "/"),
+    ):
         files_hint.append(match)
 
     # Deducción de causa probable a partir de señales comunes
@@ -106,66 +111,106 @@ def generate_remediation_plan(lesson_id: str, evaluation: Dict[str, Any]) -> Dic
     if "NotImplementedError" in pytest_output:
         probable.append("Funciones stub (NotImplementedError) aún no implementadas.")
     if "AssertionError" in pytest_output:
-        probable.append("Comportamiento no coincide con criterios del test (AssertionError).")
+        probable.append(
+            "Comportamiento no coincide con criterios del test (AssertionError)."
+        )
     if "ModuleNotFoundError" in pytest_output or "ImportError" in pytest_output:
-        probable.append("Problema de imports/paquete (ModuleNotFoundError/ImportError).")
+        probable.append(
+            "Problema de imports/paquete (ModuleNotFoundError/ImportError)."
+        )
 
     # Plan de ejecución mínimo: pasos accionables
     steps: list[str] = []
     if missing_files:
         steps.append(f"Crear archivos requeridos: {', '.join(missing_files)}")
     if pytest_nodeids:
-        steps.append(f"Ejecutar verificación local: python -m pytest -q {' '.join(pytest_nodeids)} (RUN_PYTHON_MASTERY=1)")
+        steps.append(
+            f"Ejecutar verificación local: python -m pytest -q {' '.join(pytest_nodeids)} (RUN_PYTHON_MASTERY=1)"
+        )
     if probable:
         steps.append("Causa probable: " + " | ".join(probable))
-    steps.append("Implementar cambios en `training/python_mastery/` hasta que los tests pasen.")
+    steps.append(
+        "Implementar cambios en `training/python_mastery/` hasta que los tests pasen."
+    )
 
-    def _edge_case_checklist(lid_: str, pytest_output_: str, missing_: list[str], nodeids_: list[str]) -> list[str]:
+    def _edge_case_checklist(
+        lid_: str, pytest_output_: str, missing_: list[str], nodeids_: list[str]
+    ) -> list[str]:
         """Checklist offline derivado de señales comunes (sin LLM)."""
         out = (pytest_output_ or "").lower()
         checks: list[str] = []
 
         # Señales generales
         if missing_:
-            checks.append("Archivos requeridos existen en rutas correctas (no en temp_*/).")
+            checks.append(
+                "Archivos requeridos existen en rutas correctas (no en temp_*/)."
+            )
         if "notimplementederror" in out:
-            checks.append("Eliminar `NotImplementedError`: implementar funciones reales.")
+            checks.append(
+                "Eliminar `NotImplementedError`: implementar funciones reales."
+            )
         if "assertionerror" in out:
-            checks.append("Alinear comportamiento exactamente con asserts del test (no aproximaciones).")
+            checks.append(
+                "Alinear comportamiento exactamente con asserts del test (no aproximaciones)."
+            )
         if "modulenotfounderror" in out or "importerror" in out:
-            checks.append("Arreglar imports/paquete: módulos importables sin hacks de sys.path.")
+            checks.append(
+                "Arreglar imports/paquete: módulos importables sin hacks de sys.path."
+            )
         if "timeout" in out or "timed out" in out:
             checks.append("Evitar bloqueos: timeouts y bucles con condición de salida.")
         if "typeerror" in out:
-            checks.append("Validar tipos/contratos: entradas inválidas deben manejarse (ValueError/TypeError según convenga).")
+            checks.append(
+                "Validar tipos/contratos: entradas inválidas deben manejarse (ValueError/TypeError según convenga)."
+            )
 
         # Señales por lección
         lid_ = (lid_ or "").strip().upper()
         if lid_ in ("PY003", "PY004"):
-            checks.append("Tolerar errores del sistema de archivos (permisos/archivos desaparecidos) sin romper.")
+            checks.append(
+                "Tolerar errores del sistema de archivos (permisos/archivos desaparecidos) sin romper."
+            )
         if lid_ in ("PY003",):
             checks.append("Extensiones case-insensitive; sin extensión -> '<noext>'.")
         if lid_ in ("PY004",):
-            checks.append("Lock: timeout real; cleanup garantizado en __exit__ incluso con excepción.")
+            checks.append(
+                "Lock: timeout real; cleanup garantizado en __exit__ incluso con excepción."
+            )
         if lid_ in ("PY005",):
-            checks.append("Atomic write: tmp en mismo directorio; `os.replace`; cleanup tmp en finally.")
+            checks.append(
+                "Atomic write: tmp en mismo directorio; `os.replace`; cleanup tmp en finally."
+            )
         if lid_ in ("PY006",):
-            checks.append("CLI: `--json` produce JSON válido en stdout y return code 0.")
+            checks.append(
+                "CLI: `--json` produce JSON válido en stdout y return code 0."
+            )
         if lid_ in ("PY008",):
-            checks.append("Subprocess: nunca usar shell=True; capturar stdout/stderr; raise si check=True y rc!=0.")
+            checks.append(
+                "Subprocess: nunca usar shell=True; capturar stdout/stderr; raise si check=True y rc!=0."
+            )
         if lid_ in ("PY009",):
-            checks.append("HTTP: sin red en tests; usar session inyectable; retries solo para transitorios (>=500/excepciones).")
+            checks.append(
+                "HTTP: sin red en tests; usar session inyectable; retries solo para transitorios (>=500/excepciones)."
+            )
         if lid_ in ("PY010",):
-            checks.append("SQLite: transacciones; PRAGMAs; upsert correcto; lectura estable.")
+            checks.append(
+                "SQLite: transacciones; PRAGMAs; upsert correcto; lectura estable."
+            )
         if lid_ in ("PY011",):
-            checks.append("Async: respetar limit (Semaphore); cancelación limpia; no dejar tasks colgadas.")
+            checks.append(
+                "Async: respetar limit (Semaphore); cancelación limpia; no dejar tasks colgadas."
+            )
         if lid_ in ("PY012",):
-            checks.append("Packaging: pyproject con [project] y [project.scripts]; CLI smoke --ping -> pong.")
+            checks.append(
+                "Packaging: pyproject con [project] y [project.scripts]; CLI smoke --ping -> pong."
+            )
 
         # Señales por nodeids (si vienen)
         nid = " ".join(nodeids_ or []).lower()
         if "cli" in nid:
-            checks.append("Tests de CLI: usar argv explícito, no sys.argv global en tests.")
+            checks.append(
+                "Tests de CLI: usar argv explícito, no sys.argv global en tests."
+            )
         if "sqlite" in nid:
             checks.append("DB: ubicar en tmp_path y cerrar conexiones.")
 
@@ -336,7 +381,11 @@ def generate_remediation_plan(lesson_id: str, evaluation: Dict[str, Any]) -> Dic
         },
         "PY010": {
             "files": ["training/python_mastery/sqlite_repo.py"],
-            "functions": ["SQLiteRepo.upsert_item", "SQLiteRepo.get_item", "SQLiteRepo.list_items"],
+            "functions": [
+                "SQLiteRepo.upsert_item",
+                "SQLiteRepo.get_item",
+                "SQLiteRepo.list_items",
+            ],
             "objective": "Repositorio SQLite offline-first con WAL/PRAGMA y CRUD estable.",
         },
         "PY011": {
@@ -345,7 +394,10 @@ def generate_remediation_plan(lesson_id: str, evaluation: Dict[str, Any]) -> Dic
             "objective": "Concurrencia con límite (Semaphore), timeout opcional y cancelación limpia.",
         },
         "PY012": {
-            "files": ["training/python_mastery/packaging_sample/pyproject.toml", "training/python_mastery/packaging_sample/atlas_py_tool/cli.py"],
+            "files": [
+                "training/python_mastery/packaging_sample/pyproject.toml",
+                "training/python_mastery/packaging_sample/atlas_py_tool/cli.py",
+            ],
             "functions": ["main"],
             "objective": "Packaging sample con pyproject y console_scripts; CLI smoke --ping -> pong.",
         },
@@ -355,11 +407,15 @@ def generate_remediation_plan(lesson_id: str, evaluation: Dict[str, Any]) -> Dic
         "lesson_id": lid,
         "files": obj.get("files", []),
         "symbols": obj.get("functions", []),
-        "objective": obj.get("objective", "Extender mapping de objetivos para esta lección."),
+        "objective": obj.get(
+            "objective", "Extender mapping de objetivos para esta lección."
+        ),
         "acceptance_tests": pytest_nodeids,
         "rule": "Modificar primero `training/python_mastery/*`. Solo tocar tests si están mal especificados.",
         "patch_template": _patch_template_for(lid),
-        "edge_case_checklist": _edge_case_checklist(lid, pytest_output, missing_files, pytest_nodeids),
+        "edge_case_checklist": _edge_case_checklist(
+            lid, pytest_output, missing_files, pytest_nodeids
+        ),
     }
 
     # Deduplicar hints
@@ -468,7 +524,13 @@ def _ensure_python_curriculum(tutor: Any) -> None:
     # Forzar currículum Python Mastery (offline-first).
     tutor.design_curriculum(
         robot_capabilities=["repo_tools", "cli", "testing", "offline_first"],
-        learning_goals=["python_mastery", "python_scripting", "pytest", "sqlite", "tooling"],
+        learning_goals=[
+            "python_mastery",
+            "python_scripting",
+            "pytest",
+            "sqlite",
+            "tooling",
+        ],
         time_horizon_days=int(os.getenv("PYTHON_MASTERY_HORIZON_DAYS", "30") or 30),
         difficulty_level=os.getenv("PYTHON_MASTERY_DIFFICULTY", "progressive"),
     )
@@ -519,7 +581,9 @@ def start_or_resume_campaign(
     except Exception:
         lesson = None
     _set_loop_current_lesson(loop, lesson)
-    state["current_lesson_id"] = (lesson or {}).get("lesson_id") if isinstance(lesson, dict) else None
+    state["current_lesson_id"] = (
+        (lesson or {}).get("lesson_id") if isinstance(lesson, dict) else None
+    )
     state["status"] = "active" if lesson else "completed"
     state = _persist_from_tutor(state, tutor)
     _atomic_write_json(path, state)
@@ -556,7 +620,9 @@ def campaign_step(
     lid = (lesson_id or "").strip().upper()
     if not lid:
         try:
-            current = getattr(loop, "current_lesson", None) or getattr(tutor, "current_lesson", None)
+            current = getattr(loop, "current_lesson", None) or getattr(
+                tutor, "current_lesson", None
+            )
             if isinstance(current, dict):
                 lid = (current.get("lesson_id") or "").strip().upper()
         except Exception:
@@ -609,14 +675,20 @@ def campaign_step(
                 pass
 
         evaluations.append(evaluation)
-        passed = bool(evaluation.get("passed")) if isinstance(evaluation, dict) else False
+        passed = (
+            bool(evaluation.get("passed")) if isinstance(evaluation, dict) else False
+        )
         if passed:
             try:
                 next_lesson = tutor.assign_daily_lesson()
             except Exception:
                 next_lesson = None
             _set_loop_current_lesson(loop, next_lesson)
-            state["current_lesson_id"] = (next_lesson or {}).get("lesson_id") if isinstance(next_lesson, dict) else None
+            state["current_lesson_id"] = (
+                (next_lesson or {}).get("lesson_id")
+                if isinstance(next_lesson, dict)
+                else None
+            )
             state["status"] = "active" if next_lesson else "completed"
             break
         if auto_remediate and isinstance(evaluation, dict):
@@ -626,7 +698,8 @@ def campaign_step(
                 state["last_remediation_ts"] = _now_iso()
                 # Best-effort: registrar en memoria (si está disponible)
                 try:
-                    from modules.humanoid.memory_engine.store import memory_write
+                    from modules.humanoid.memory_engine.store import \
+                        memory_write
 
                     memory_write(
                         thread_id=None,
@@ -704,7 +777,9 @@ def campaign_run(
     - tiempo excede max_seconds.
     """
     root = (repo_root or _repo_root_fallback()).resolve()
-    started = start_or_resume_campaign(tutor=tutor, loop=loop, repo_root=root, reset=reset)
+    started = start_or_resume_campaign(
+        tutor=tutor, loop=loop, repo_root=root, reset=reset
+    )
     t0 = time.time()
     steps = []
     max_steps = max(1, int(max_steps or 1))
@@ -744,7 +819,9 @@ def campaign_run(
                 "attempts_run": res.get("attempts_run"),
                 "passed": bool((res.get("evaluation") or {}).get("passed")),
                 "score": (res.get("evaluation") or {}).get("score"),
-                "next_lesson_id": (res.get("next_lesson") or {}).get("lesson_id") if isinstance(res.get("next_lesson"), dict) else None,
+                "next_lesson_id": (res.get("next_lesson") or {}).get("lesson_id")
+                if isinstance(res.get("next_lesson"), dict)
+                else None,
                 "remediation_plan": res.get("remediation_plan"),
             }
         )
@@ -758,7 +835,10 @@ def campaign_run(
         "status": status,
         "steps_run": len(steps),
         "seconds": round(time.time() - t0, 2),
-        "start": {"current_lesson": started.get("current_lesson"), "state": started.get("state"), "state_path": started.get("state_path")},
+        "start": {
+            "current_lesson": started.get("current_lesson"),
+            "state": started.get("state"),
+            "state_path": started.get("state_path"),
+        },
         "steps": steps,
     }
-

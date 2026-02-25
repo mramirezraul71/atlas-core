@@ -11,7 +11,10 @@ from .templates import get_template
 
 
 def _allowed_base() -> str:
-    base = os.getenv("ATLAS_SCAFFOLD_BASE") or os.getenv("POLICY_ALLOWED_PATHS", "C:\\ATLAS_PUSH").split(",")[0].strip()
+    base = (
+        os.getenv("ATLAS_SCAFFOLD_BASE")
+        or os.getenv("POLICY_ALLOWED_PATHS", "C:\\ATLAS_PUSH").split(",")[0].strip()
+    )
     return base.rstrip("\\/")
 
 
@@ -39,17 +42,29 @@ def generate(
     if fs_controller is None:
         try:
             from modules.humanoid import get_humanoid_kernel
+
             k = get_humanoid_kernel()
             hands = k.registry.get("hands")
-            fs_controller = getattr(hands, "fs", None) or getattr(hands, "fs_controller", None)
+            fs_controller = getattr(hands, "fs", None) or getattr(
+                hands, "fs_controller", None
+            )
         except Exception:
             pass
     if fs_controller is None:
         try:
-            from modules.humanoid.hands.fs_controller import FileSystemController
+            from modules.humanoid.hands.fs_controller import \
+                FileSystemController
+
             fs_controller = FileSystemController()
         except Exception:
-            return {"ok": False, "tree": [], "files_created": [], "runbook_path": "", "base_path": base_path, "error": "FileSystemController not available"}
+            return {
+                "ok": False,
+                "tree": [],
+                "files_created": [],
+                "runbook_path": "",
+                "base_path": base_path,
+                "error": "FileSystemController not available",
+            }
 
     template = get_template(app_type)
     content_map = {k: v.replace("{{name}}", name) for k, v in template.items()}
@@ -60,7 +75,14 @@ def generate(
     # Ensure base dir
     r = fs_controller.ensure_dir(base_path)
     if not r.get("ok"):
-        return {"ok": False, "tree": [], "files_created": [], "runbook_path": "", "base_path": base_path, "error": r.get("error")}
+        return {
+            "ok": False,
+            "tree": [],
+            "files_created": [],
+            "runbook_path": "",
+            "base_path": base_path,
+            "error": r.get("error"),
+        }
 
     for rel_path, content in content_map.items():
         full_path = str(Path(base_path) / rel_path)
@@ -81,7 +103,9 @@ def generate(
         files_created.append(runbook_path)
 
     try:
-        from modules.humanoid.memory_engine import store_artifact, ensure_thread
+        from modules.humanoid.memory_engine import (ensure_thread,
+                                                    store_artifact)
+
         thread_id = ensure_thread(None, f"scaffold:{name}")
         for fp in files_created:
             store_artifact(None, None, "scaffold_file", fp, "")

@@ -4,8 +4,8 @@ from __future__ import annotations
 import json
 import os
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from typing import Any, Dict, Optional
 
 PROBE_TIMEOUT_SEC = 10
@@ -30,7 +30,10 @@ def probe_ping(base_url: str) -> Dict[str, Any]:
                 return {"ok": data.get("data", {}).get("pong", False), "error": None}
             return {"ok": False, "error": f"status {r.status}"}
     except urllib.error.URLError as e:
-        return {"ok": False, "error": str(e.reason) if getattr(e, "reason", None) else str(e)}
+        return {
+            "ok": False,
+            "error": str(e.reason) if getattr(e, "reason", None) else str(e),
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -44,8 +47,14 @@ def probe_health(base_url: str) -> Dict[str, Any]:
             raw = r.read().decode()
             data = json.loads(raw) if raw else {}
             score = data.get("score", 0)
-            ok = data.get("ok", False) and score >= _env_int("GATEWAY_HEALTH_MIN_SCORE", 75)
-            return {"ok": ok, "score": score, "error": None if ok else f"score {score} < min"}
+            ok = data.get("ok", False) and score >= _env_int(
+                "GATEWAY_HEALTH_MIN_SCORE", 75
+            )
+            return {
+                "ok": ok,
+                "score": score,
+                "error": None if ok else f"score {score} < min",
+            }
     except Exception as e:
         return {"ok": False, "score": 0, "error": str(e)}
 
@@ -64,7 +73,14 @@ def probe_worker_with_retries(base_url: str) -> Dict[str, Any]:
             continue
         health = probe_health(base_url)
         if health.get("ok") and (health.get("score") or 0) >= min_score:
-            return {"ok": True, "score": health.get("score"), "error": None, "attempts": attempt + 1}
-        last_error = health.get("error") or f"score {health.get('score', 0)} < {min_score}"
+            return {
+                "ok": True,
+                "score": health.get("score"),
+                "error": None,
+                "attempts": attempt + 1,
+            }
+        last_error = (
+            health.get("error") or f"score {health.get('score', 0)} < {min_score}"
+        )
         time.sleep(retry_sec)
     return {"ok": False, "score": 0, "error": last_error, "attempts": max_retries}

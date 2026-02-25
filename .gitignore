@@ -1,9 +1,33 @@
-.env
-*.env
-**/.env
-**/*.env
-snapshots/**/config/.env
-snapshots/**/.env
+# Atlas Automation Security Excludes
+*.key
+*.pem
+*.secret
+*.token
+*.tmp
+*.log
+*.cache
+*.bak
+*.swp
+*.swo
+*.pid
+*.lock
+.DS_Store
+Thumbs.db
+
+# Directories
+node_modules/
+.vscode/
+.idea/
+data/
+cache/
+temp/
+backup/
+appsmith_data/
+homeassistant_config/
+n8n_data/
+mem0_repo/
+
+# Existing excludes
 .env
 *.env
 **/.env
@@ -12,6 +36,7 @@ snapshots/**/config/.env
 snapshots/**/.env
 __pycache__/
 *.pyc
+
 # Python venv
 .venv/
 venv/

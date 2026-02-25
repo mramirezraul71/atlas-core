@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-
 SEVERITY_ORDER = ("low", "med", "high", "critical")
 
 
@@ -50,4 +49,3 @@ class Signal:
     message: str
     details: Dict[str, Any]
     suggested_heals: list[str]
-

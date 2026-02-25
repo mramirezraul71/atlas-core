@@ -9,11 +9,14 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/governance", tags=["Governance"])
 
 
-def _require_owner_session(x_owner_session: Optional[str] = None) -> tuple[bool, Optional[str]]:
+def _require_owner_session(
+    x_owner_session: Optional[str] = None,
+) -> tuple[bool, Optional[str]]:
     if not x_owner_session:
         return False, "owner_session_required"
     try:
         from modules.humanoid.owner.session import session_validate
+
         if not session_validate(x_owner_session):
             return False, "owner_session_invalid"
     except Exception:
@@ -35,8 +38,11 @@ class EmergencyBody(BaseModel):
 def governance_status():
     """GET /governance/status -> {mode, emergency_stop, rules_summary}. Fallback a governed si falla la DB."""
     try:
-        from modules.humanoid.governance.state import get_mode, get_emergency_stop
-        from modules.humanoid.governance.gates import get_emergency_blocked_actions
+        from modules.humanoid.governance.gates import \
+            get_emergency_blocked_actions
+        from modules.humanoid.governance.state import (get_emergency_stop,
+                                                       get_mode)
+
         mode = get_mode()
         emergency = get_emergency_stop()
         return {
@@ -49,7 +55,10 @@ def governance_status():
         }
     except Exception as e:
         import logging
-        logging.getLogger("atlas.governance").warning("governance/status fallback: %s", e)
+
+        logging.getLogger("atlas.governance").warning(
+            "governance/status fallback: %s", e
+        )
         return {
             "ok": True,
             "mode": "governed",
@@ -63,8 +72,9 @@ def governance_status():
 @router.get("/rules")
 def governance_rules():
     """GET /governance/rules -> hard limits + allowlists."""
-    from modules.humanoid.governance.models import HARD_LIMIT_ACTION_KINDS
     from modules.humanoid.governance.gates import get_emergency_blocked_actions
+    from modules.humanoid.governance.models import HARD_LIMIT_ACTION_KINDS
+
     return {
         "ok": True,
         "hard_limits_always_approval": list(HARD_LIMIT_ACTION_KINDS),
@@ -81,15 +91,24 @@ def governance_set_mode(
     prev = "growth"
     mode = (getattr(body, "mode", None) or "governed").strip().lower()
     if mode not in ("growth", "governed"):
-        return {"ok": False, "mode": mode, "prev": prev, "error": "invalid_mode", "valid": ["growth", "governed"]}
+        return {
+            "ok": False,
+            "mode": mode,
+            "prev": prev,
+            "error": "invalid_mode",
+            "valid": ["growth", "governed"],
+        }
     try:
-        from modules.humanoid.governance.state import get_mode, set_mode
         from modules.humanoid.governance.audit import audit_mode_change
         from modules.humanoid.governance.notifier import notify_mode_change
+        from modules.humanoid.governance.state import get_mode, set_mode
+
         prev = get_mode()
         set_mode(mode, reason=getattr(body, "reason", "") or "", actor="api")
         try:
-            audit_mode_change(prev, mode, getattr(body, "reason", "") or "", "api", True)
+            audit_mode_change(
+                prev, mode, getattr(body, "reason", "") or "", "api", True
+            )
             notify_mode_change(mode, getattr(body, "reason", "") or "")
         except Exception:
             pass
@@ -97,6 +116,7 @@ def governance_set_mode(
     except Exception:
         try:
             import modules.humanoid.governance.state as _state
+
             _state._cache["mode"] = mode
         except Exception:
             pass
@@ -111,9 +131,12 @@ def governance_emergency(
     """POST /governance/emergency. RESTRICCIONES DESACTIVADAS - no requiere owner session."""
     # ok, err check desactivado hasta indicar
     try:
-        from modules.humanoid.governance.state import get_emergency_stop, set_emergency_stop
         from modules.humanoid.governance.audit import audit_emergency_change
-        from modules.humanoid.governance.notifier import notify_emergency_change
+        from modules.humanoid.governance.notifier import \
+            notify_emergency_change
+        from modules.humanoid.governance.state import (get_emergency_stop,
+                                                       set_emergency_stop)
+
         success = set_emergency_stop(body.enable, reason=body.reason or "", actor="api")
         audit_emergency_change(body.enable, body.reason or "", "api", success)
         if success:
@@ -128,6 +151,7 @@ def governance_log(limit: int = 20):
     """GET /governance/log -> cambios de modo."""
     try:
         from modules.humanoid.governance.state import get_log
+
         return {"ok": True, "log": get_log(limit=min(limit, 100))}
     except Exception as e:
         return {"ok": False, "log": [], "error": str(e)}

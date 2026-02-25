@@ -1,9 +1,9 @@
 # Informe: Integraciones ATLAS AUTONOMOUS y correcciones de arranque
 
-**Fecha:** 14 de febrero de 2025  
-**Repositorio:** ATLAS_PUSH (atlas-core)  
-**Rama:** intent-input-rename  
-**Commit:** 6a1f882  
+**Fecha:** 14 de febrero de 2025
+**Repositorio:** ATLAS_PUSH (atlas-core)
+**Rama:** intent-input-rename
+**Commit:** 6a1f882
 
 ---
 
@@ -113,7 +113,7 @@ Se completaron las **5 integraciones críticas** de ATLAS AUTONOMOUS descritas e
 ## 5. Commit y actualización del repositorio
 
 - **Acción:** `git add -A` (excluyendo `pip/` y `snapshots/ans/` vía `.gitignore`), commit y push.
-- **Mensaje de commit:**  
+- **Mensaje de commit:**
   `ATLAS AUTONOMOUS: integraciones, proxy NEXUS/ws/cuerpo, dashboard`
 - **Rama:** `intent-input-rename`
 - **Remoto:** `origin` → `https://github.com/mramirezraul71/atlas-core.git`

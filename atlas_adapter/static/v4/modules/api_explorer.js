@@ -91,4 +91,3 @@ async function _loadOpenApi(container) {
 }
 
 window.AtlasModuleApiExplorer = { id: 'api' };
-

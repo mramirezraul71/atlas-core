@@ -11,7 +11,8 @@ Triggers:
 
 Severidad: HIGH (percepción crítica)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -30,10 +31,15 @@ Procedimiento para operaciones de visión:
         severity=POTSeverity.HIGH,
         version="1.0.0",
         author="ATLAS Robotics Architect",
-        
         trigger_check_ids=["vision_*", "camera_*", "detection_*"],
-        trigger_keywords=["visión", "cámara", "imagen", "detección", "objeto", "persona"],
-        
+        trigger_keywords=[
+            "visión",
+            "cámara",
+            "imagen",
+            "detección",
+            "objeto",
+            "persona",
+        ],
         prerequisites=[
             "Cámaras conectadas y alimentadas",
             "Drivers de cámara instalados",
@@ -41,7 +47,6 @@ Procedimiento para operaciones de visión:
         ],
         required_services=["vision"],
         required_permissions=["camera"],
-        
         objectives=[
             "Verificar funcionamiento de cámaras",
             "Asegurar calibración correcta",
@@ -51,7 +56,6 @@ Procedimiento para operaciones de visión:
         ],
         success_criteria="Pipeline procesando a >15 FPS con detecciones correctas",
         estimated_duration_minutes=5,
-        
         tutorial_overview="""
 ## Guía del Pipeline de Visión ATLAS
 
@@ -185,7 +189,6 @@ for track in tracks:
    - Mejorar iluminación
    - Re-entrenar modelo si necesario
         """,
-        
         steps=[
             POTStep(
                 id="check_cameras",
@@ -269,7 +272,6 @@ Métricas objetivo:
                 notify_message="Pipeline de visión operativo",
             ),
         ],
-        
         rollback_steps=[
             POTStep(
                 id="rollback_stop_pipeline",
@@ -278,7 +280,6 @@ Métricas objetivo:
                 step_type=StepType.LOG,
             ),
         ],
-        
         has_rollback=True,
         tags=["vision", "camera", "detection", "depth", "tracking"],
     )

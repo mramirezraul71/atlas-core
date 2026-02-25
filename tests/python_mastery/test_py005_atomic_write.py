@@ -8,10 +8,18 @@ import pytest
 
 
 def _enabled() -> bool:
-    return os.getenv("RUN_PYTHON_MASTERY", "").strip().lower() in ("1", "true", "yes", "on")
+    return os.getenv("RUN_PYTHON_MASTERY", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
 
 
-pytestmark = pytest.mark.skipif(not _enabled(), reason="Python Mastery tests deshabilitados (set RUN_PYTHON_MASTERY=1).")
+pytestmark = pytest.mark.skipif(
+    not _enabled(),
+    reason="Python Mastery tests deshabilitados (set RUN_PYTHON_MASTERY=1).",
+)
 
 
 def test_atomic_write_json_writes_valid_json(tmp_path: Path):
@@ -23,4 +31,3 @@ def test_atomic_write_json_writes_valid_json(tmp_path: Path):
     data = json.loads(p.read_text(encoding="utf-8"))
     assert data["a"] == 1
     assert data["b"] == "ATLAS"
-

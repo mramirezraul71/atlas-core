@@ -1,8 +1,8 @@
 # ANÁLISIS DE MADUREZ ROBÓTICA DE ATLAS
 ## Comparativa con Prototipos de Vanguardia 2025-2026
 
-**Fecha:** 2026-02-16  
-**Autor:** Senior Robotics Systems Architect  
+**Fecha:** 2026-02-16
+**Autor:** Senior Robotics Systems Architect
 **Versión:** 1.0
 
 ---

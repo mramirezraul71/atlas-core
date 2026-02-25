@@ -13,11 +13,14 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -40,7 +43,9 @@ class MetricsComparator:
     def __init__(self, config: dict | None = None):
         self._config = config or _load_config().get("evolution", {})
         self._rollback_cfg = self._config.get("auto_rollback", {})
-        self._degradation_threshold_pct = float(self._rollback_cfg.get("degradation_threshold", 15))
+        self._degradation_threshold_pct = float(
+            self._rollback_cfg.get("degradation_threshold", 15)
+        )
         self._baseline: dict[str, float] = {}
         self._post: dict[str, float] = {}
 
@@ -48,6 +53,7 @@ class MetricsComparator:
         """Captura métricas actuales como baseline. Retorna dict de métricas."""
         try:
             from autonomous.health_monitor import HealthAggregator
+
             agg = HealthAggregator()
             report = agg.get_global_health()
             self._baseline = {
@@ -70,6 +76,7 @@ class MetricsComparator:
         """Captura métricas tras la actualización."""
         try:
             from autonomous.health_monitor import HealthAggregator
+
             agg = HealthAggregator()
             report = agg.get_global_health()
             self._post = {
@@ -121,7 +128,9 @@ class MetricsComparator:
                 else:
                     stable.append(f"{key}: {b} -> {p}")
 
-        return ComparisonReport(degraded=degraded, improved=improved, stable=stable, details=details)
+        return ComparisonReport(
+            degraded=degraded, improved=improved, stable=stable, details=details
+        )
 
     def should_rollback(self) -> bool:
         """True si hay degradación por encima del umbral."""

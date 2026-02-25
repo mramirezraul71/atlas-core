@@ -13,17 +13,21 @@ logger = logging.getLogger(__name__)
 
 try:
     from sklearn.ensemble import IsolationForest
+
     _SKLEARN_AVAILABLE = True
 except ImportError:
     _SKLEARN_AVAILABLE = False
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -33,6 +37,7 @@ def _load_config() -> dict:
 @dataclass
 class AnomalyReport:
     """Reporte de anomalía."""
+
     detected: bool
     severity: str  # "leve" | "moderada" | "severa"
     metrics_affected: list[str]
@@ -64,6 +69,7 @@ class AnomalyDetector:
             self._trained = False
             return
         import numpy as np
+
         X = []
         for h in historical_metrics:
             row = [
@@ -105,11 +111,16 @@ class AnomalyDetector:
 
         if _SKLEARN_AVAILABLE and self._model is not None and self._trained:
             import numpy as np
+
             X = np.array([values], dtype=float)
             pred = self._model.predict(X)[0]  # -1 = anomaly, 1 = normal
             score = float(self._model.decision_function(X)[0])
             if pred == -1:
-                severity = "severa" if score < -0.3 else ("moderada" if score < -0.1 else "leve")
+                severity = (
+                    "severa"
+                    if score < -0.3
+                    else ("moderada" if score < -0.1 else "leve")
+                )
                 return AnomalyReport(
                     detected=True,
                     severity=severity,
@@ -143,8 +154,17 @@ class AnomalyDetector:
             return None
         # Simplificación: si CPU/RAM suben linealmente, extrapolar cuándo cruzan 95%
         import statistics
-        cpu = [t.get("cpu_percent") or 0 for t in current_trend if t.get("cpu_percent") is not None]
-        ram = [t.get("ram_percent") or 0 for t in current_trend if t.get("ram_percent") is not None]
+
+        cpu = [
+            t.get("cpu_percent") or 0
+            for t in current_trend
+            if t.get("cpu_percent") is not None
+        ]
+        ram = [
+            t.get("ram_percent") or 0
+            for t in current_trend
+            if t.get("ram_percent") is not None
+        ]
         if len(cpu) < 3 or len(ram) < 3:
             return None
         cpu_slope = (cpu[-1] - cpu[0]) / len(cpu) if len(cpu) > 1 else 0

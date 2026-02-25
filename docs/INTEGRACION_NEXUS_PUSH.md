@@ -1,6 +1,6 @@
 # Integración ATLAS NEXUS + PUSH
 
-**Documento de arquitectura unificada.**  
+**Documento de arquitectura unificada.**
 Ref: `ATLAS_VISION_E_INTEGRACION.md` (escritorio).
 
 ---
@@ -104,7 +104,7 @@ El dashboard de PUSH incluye:
 
 ## Ensamblado: cerebro conoce y domina
 
-El cerebro expone `GET /brain/assembly` con inventario, estado de cada pieza y rutas de control.  
+El cerebro expone `GET /brain/assembly` con inventario, estado de cada pieza y rutas de control.
 Ver `C:\ATLAS_NEXUS\ENSAMBLADO_ATLAS.md` para el documento completo de ensamblado.
 
 *Generado como parte de la integración NEXUS + PUSH.*

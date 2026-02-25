@@ -1,6 +1,6 @@
 # Mapeo: Prompt Claude Sonnet 4.5 (NEXUS) a repo ATLAS_PUSH
 
-**Origen:** Prompt usado en Nexus para diagnosticar "robot no funciona" y restaurar conexion PUSH-NEXUS.  
+**Origen:** Prompt usado en Nexus para diagnosticar "robot no funciona" y restaurar conexion PUSH-NEXUS.
 **Repo actual:** atlas-core (ATLAS_PUSH), monorepo con `nexus/` dentro.
 
 ---

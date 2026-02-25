@@ -10,7 +10,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from .status import _screen_deps_ok
 
 
-def run_ocr(image_bytes: Optional[bytes] = None, image_path: Optional[str] = None) -> Tuple[str, str]:
+def run_ocr(
+    image_bytes: Optional[bytes] = None, image_path: Optional[str] = None
+) -> Tuple[str, str]:
     """
     Run OCR. Provide image_bytes or image_path. Returns (text, error).
     If pytesseract/tesseract not available, returns ("", "ocr_not_available").
@@ -19,9 +21,11 @@ def run_ocr(image_bytes: Optional[bytes] = None, image_path: Optional[str] = Non
         return "", "screen_deps_missing"
     try:
         from modules.humanoid.screen.tesseract_config import set_tesseract_cmd
+
         set_tesseract_cmd()
         import pytesseract
         from PIL import Image
+
         if image_bytes:
             img = Image.open(io.BytesIO(image_bytes))
         elif image_path:
@@ -36,7 +40,9 @@ def run_ocr(image_bytes: Optional[bytes] = None, image_path: Optional[str] = Non
         return "", str(e)
 
 
-def run_ocr_data(image_bytes: Optional[bytes] = None, image_path: Optional[str] = None) -> Tuple[List[Dict[str, Any]], str]:
+def run_ocr_data(
+    image_bytes: Optional[bytes] = None, image_path: Optional[str] = None
+) -> Tuple[List[Dict[str, Any]], str]:
     """
     Run OCR and return bounding boxes. Returns (items, error).
     item: {text, conf, bbox:[x,y,w,h]} in screen coordinates.
@@ -45,9 +51,11 @@ def run_ocr_data(image_bytes: Optional[bytes] = None, image_path: Optional[str] 
         return [], "screen_deps_missing"
     try:
         from modules.humanoid.screen.tesseract_config import set_tesseract_cmd
+
         set_tesseract_cmd()
         import pytesseract
         from PIL import Image
+
         if image_bytes:
             img = Image.open(io.BytesIO(image_bytes))
         elif image_path:

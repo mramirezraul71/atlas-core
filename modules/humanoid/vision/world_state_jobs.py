@@ -10,12 +10,24 @@ from datetime import datetime, timezone
 
 
 def _sched_enabled() -> bool:
-    return os.getenv("SCHED_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
+    return os.getenv("SCHED_ENABLED", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    )
 
 
 def _world_state_enabled() -> bool:
     # Desactivado por defecto - solo ejecución interna sin notificaciones
-    return os.getenv("WORLD_STATE_ENABLED", "false").strip().lower() in ("1", "true", "yes", "y", "on")
+    return os.getenv("WORLD_STATE_ENABLED", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    )
 
 
 def _interval_seconds() -> int:
@@ -57,4 +69,3 @@ def ensure_world_state_jobs() -> None:
     except Exception:
         # best-effort
         pass
-

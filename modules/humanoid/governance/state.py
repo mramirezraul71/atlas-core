@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -27,6 +27,7 @@ def _get_survival():
         if str(base) not in sys.path:
             sys.path.insert(0, str(base))
         from autonomous.resilience.survival_mode import SurvivalMode
+
         _survival = SurvivalMode()
         return _survival
     except Exception as e:
@@ -42,14 +43,19 @@ def _get_optimizer():
         base = Path(__file__).resolve().parent.parent.parent
         if str(base) not in sys.path:
             sys.path.insert(0, str(base))
-        from autonomous.learning.performance_optimizer import PerformanceOptimizer
+        from autonomous.learning.performance_optimizer import \
+            PerformanceOptimizer
+
         _optimizer = PerformanceOptimizer()
         return _optimizer
     except Exception as e:
         logger.debug("PerformanceOptimizer no disponible: %s", e)
         return None
 
-_DB_PATH = os.getenv("GOVERNANCE_DB_PATH", "C:\\ATLAS_PUSH\\logs\\atlas_governance.sqlite")
+
+_DB_PATH = os.getenv(
+    "GOVERNANCE_DB_PATH", "C:\\ATLAS_PUSH\\logs\\atlas_governance.sqlite"
+)
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS governance_state (
     key TEXT PRIMARY KEY,
@@ -140,7 +146,9 @@ def set_mode(mode: str, reason: str = "", actor: str = "api") -> bool:
             logger.info("[GOVERNANCE] Modo Growth → Auto-optimizaciones habilitadas")
         else:
             opt.approval_required = True
-            logger.info("[GOVERNANCE] Modo Governed → Optimizaciones requieren aprobación")
+            logger.info(
+                "[GOVERNANCE] Modo Governed → Optimizaciones requieren aprobación"
+            )
     if prev == mode:
         return True
     c = _ensure()
@@ -189,7 +197,14 @@ def set_emergency_stop(enable: bool, reason: str = "", actor: str = "api") -> bo
         )
         c.execute(
             "INSERT INTO governance_log (action, from_val, to_val, reason, actor, created_ts) VALUES (?, ?, ?, ?, ?, ?)",
-            ("emergency_stop", "true" if prev else "false", val, reason[:500], actor, _ts()),
+            (
+                "emergency_stop",
+                "true" if prev else "false",
+                val,
+                reason[:500],
+                actor,
+                _ts(),
+            ),
         )
         c.commit()
         _cache["emergency_stop"] = val
@@ -207,4 +222,14 @@ def get_log(limit: int = 20) -> list:
         "SELECT action, from_val, to_val, reason, actor, created_ts FROM governance_log ORDER BY id DESC LIMIT ?",
         (limit,),
     ).fetchall()
-    return [{"action": r[0], "from_val": r[1], "to_val": r[2], "reason": r[3], "actor": r[4], "created_ts": r[5]} for r in rows]
+    return [
+        {
+            "action": r[0],
+            "from_val": r[1],
+            "to_val": r[2],
+            "reason": r[3],
+            "actor": r[4],
+            "created_ts": r[5],
+        }
+        for r in rows
+    ]

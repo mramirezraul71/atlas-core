@@ -8,13 +8,22 @@ from typing import Any, Dict, Optional
 from .status import _screen_deps_ok
 
 
-def analyze_image(image_base64: Optional[str] = None, image_path: Optional[str] = None, prompt: str = "Describe what you see. If UI: list buttons, fields, labels and suggest actions.") -> Dict[str, Any]:
+def analyze_image(
+    image_base64: Optional[str] = None,
+    image_path: Optional[str] = None,
+    prompt: str = "Describe what you see. If UI: list buttons, fields, labels and suggest actions.",
+) -> Dict[str, Any]:
     """
     Send image to vision model. Returns {ok, description, suggestions, error}.
     Uses Ollama vision model from config.
     """
     if not _screen_deps_ok():
-        return {"ok": False, "description": "", "suggestions": [], "error": "screen_deps_missing"}
+        return {
+            "ok": False,
+            "description": "",
+            "suggestions": [],
+            "error": "screen_deps_missing",
+        }
     b64 = image_base64
     if not b64 and image_path and os.path.isfile(image_path):
         with open(image_path, "rb") as f:
@@ -30,6 +39,7 @@ def analyze_image(image_base64: Optional[str] = None, image_path: Optional[str] 
 
     try:
         import httpx
+
         r = httpx.post(
             f"{url}/api/generate",
             json={
@@ -41,7 +51,12 @@ def analyze_image(image_base64: Optional[str] = None, image_path: Optional[str] 
             timeout=timeout,
         )
         if r.status_code != 200:
-            return {"ok": False, "description": "", "suggestions": [], "error": f"ollama status {r.status_code}"}
+            return {
+                "ok": False,
+                "description": "",
+                "suggestions": [],
+                "error": f"ollama status {r.status_code}",
+            }
         data = r.json()
         desc = (data.get("response") or "").strip()
         return {"ok": True, "description": desc, "suggestions": [], "error": None}

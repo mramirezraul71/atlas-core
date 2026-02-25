@@ -9,7 +9,8 @@ Triggers:
 
 Severidad: HIGH (modifica repositorio remoto)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -24,10 +25,8 @@ Incluye verificación de estado, pull previo si necesario, y push.
         severity=POTSeverity.HIGH,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["git_ahead", "push_pending", "sync_*"],
         trigger_keywords=["push", "sync", "upload", "github", "remote"],
-        
         prerequisites=[
             "Commits locales pendientes de push",
             "Acceso al repositorio remoto configurado",
@@ -35,7 +34,6 @@ Incluye verificación de estado, pull previo si necesario, y push.
         ],
         required_services=[],
         required_permissions=["git_push", "network_access"],
-        
         objectives=[
             "Verificar commits pendientes de push",
             "Hacer pull previo para evitar conflictos",
@@ -45,7 +43,6 @@ Incluye verificación de estado, pull previo si necesario, y push.
         ],
         success_criteria="Branch local sincronizado con remoto",
         estimated_duration_minutes=3,
-        
         tutorial_overview="""
 ## Guía de Push al Remoto
 
@@ -70,24 +67,20 @@ Si pull tiene conflictos:
 3. git commit
 4. Reintentar push
         """.strip(),
-        
         best_practices=[
             "SIEMPRE hacer pull antes de push",
             "Verificar que CI/CD no está corriendo",
             "No hacer push --force a main/master",
             "Revisar commits antes de push",
         ],
-        
         warnings=[
             "NUNCA push --force sin autorización explícita",
             "Verificar que no hay secrets en commits",
             "Si hay conflictos, resolver antes de push",
         ],
-        
         related_pots=["git_commit", "git_pull", "repo_update"],
         tags=["git", "push", "sync", "remote", "deployment"],
         has_rollback=False,  # Push no tiene rollback simple
-        
         steps=[
             POTStep(
                 id="check_remote",
@@ -98,7 +91,6 @@ Si pull tiene conflictos:
                 timeout_seconds=10,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="check_ahead_behind",
                 name="Verificar commits pendientes",
@@ -109,7 +101,6 @@ Si pull tiene conflictos:
                 capture_output=True,
                 tutorial_notes="[ahead N] = N commits para push, [behind N] = N para pull",
             ),
-            
             POTStep(
                 id="fetch_remote",
                 name="Fetch del remoto",
@@ -119,7 +110,6 @@ Si pull tiene conflictos:
                 timeout_seconds=60,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="pull_if_behind",
                 name="Pull si hay cambios remotos",
@@ -130,7 +120,6 @@ Si pull tiene conflictos:
                 continue_on_failure=True,
                 tutorial_notes="--rebase mantiene historial limpio",
             ),
-            
             POTStep(
                 id="execute_push",
                 name="Ejecutar push",
@@ -140,7 +129,6 @@ Si pull tiene conflictos:
                 timeout_seconds=180,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="verify_sync",
                 name="Verificar sincronización",
@@ -151,7 +139,6 @@ Si pull tiene conflictos:
                 capture_output=True,
                 check_expression="'ahead' not in output and 'behind' not in output",
             ),
-            
             POTStep(
                 id="log_to_bitacora",
                 name="Registrar en bitácora",
@@ -162,11 +149,10 @@ Si pull tiene conflictos:
                 http_body={
                     "message": "[GIT] Push al remoto completado por POT git_push",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="notify_push",
                 name="Notificar push",

@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from typing import Dict
 
+
 def _env_float(name: str, default: float) -> float:
     try:
         return float((os.getenv(name) or "").strip() or default)
@@ -28,6 +29,7 @@ def record_spend(date_str: str, amount_usd: float) -> None:
 
 def spent_today_usd() -> float:
     import datetime
+
     today = datetime.date.today().isoformat()
     return BUDGET_STORE.get(today, 0.0)
 

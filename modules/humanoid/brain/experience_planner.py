@@ -44,10 +44,15 @@ class ExperiencePlan:
         return {
             "goal": self.goal,
             "steps": [
-                {"action": s.action, "params": s.params,
-                 "expected_outcome": s.expected_outcome,
-                 "confidence": s.confidence, "evidence": s.evidence,
-                 "alternatives": s.alternatives, "risk_level": s.risk_level}
+                {
+                    "action": s.action,
+                    "params": s.params,
+                    "expected_outcome": s.expected_outcome,
+                    "confidence": s.confidence,
+                    "evidence": s.evidence,
+                    "alternatives": s.alternatives,
+                    "risk_level": s.risk_level,
+                }
                 for s in self.steps
             ],
             "total_confidence": self.total_confidence,
@@ -61,8 +66,9 @@ class ExperiencePlan:
 class ExperiencePlanner:
     """Planificador que consulta experiencia pasada antes de actuar."""
 
-    def plan(self, goal: str, context: Dict[str, Any] = None,
-             actions: List[str] = None) -> ExperiencePlan:
+    def plan(
+        self, goal: str, context: Dict[str, Any] = None, actions: List[str] = None
+    ) -> ExperiencePlan:
         plan = ExperiencePlan(goal=goal)
         context = context or {}
 
@@ -70,7 +76,7 @@ class ExperiencePlanner:
         plan.similar_episodes_found = len(episodes)
 
         outcome_predictions = {}
-        for action in (actions or [goal]):
+        for action in actions or [goal]:
             pred = self._predict_outcome(action, context)
             outcome_predictions[action] = pred
 
@@ -97,7 +103,7 @@ class ExperiencePlanner:
                     f"Acciones que han fallado antes: {', '.join(failed_actions[:3])}"
                 )
 
-        for action in (actions or [goal]):
+        for action in actions or [goal]:
             pred = outcome_predictions.get(action, {})
             step = PlanStep(
                 action=action,
@@ -107,7 +113,12 @@ class ExperiencePlanner:
                 risk_level=self._assess_risk(pred),
             )
 
-            relevant = [e for e in episodes if action.lower() in (e.get("goal", "") + str(e.get("actions", ""))).lower()]
+            relevant = [
+                e
+                for e in episodes
+                if action.lower()
+                in (e.get("goal", "") + str(e.get("actions", ""))).lower()
+            ]
             for ep in relevant[:3]:
                 step.evidence.append(
                     f"Episodio {ep.get('id', '?')}: {ep.get('outcome', '?')} "
@@ -124,7 +135,9 @@ class ExperiencePlanner:
             plan.steps.append(step)
 
         if plan.steps:
-            plan.total_confidence = sum(s.confidence for s in plan.steps) / len(plan.steps)
+            plan.total_confidence = sum(s.confidence for s in plan.steps) / len(
+                plan.steps
+            )
 
         self._log_plan(plan)
         return plan
@@ -133,6 +146,7 @@ class ExperiencePlanner:
         results = []
         try:
             from modules.humanoid.hippo import EpisodicMemory
+
             hippo = EpisodicMemory()
             episodes = hippo.recall_by_goal(goal, limit=10)
             for ep in episodes:
@@ -142,15 +156,19 @@ class ExperiencePlanner:
 
         try:
             from modules.humanoid.memory_engine.lifelog import get_lifelog
+
             ll = get_lifelog()
             entries = ll.search(goal, limit=10)
             for e in entries:
-                results.append({
-                    "id": e.get("id"), "goal": e.get("action", ""),
-                    "outcome": "success" if e.get("success") else "failure",
-                    "reward": e.get("reward", 0),
-                    "actions": e.get("action", ""),
-                })
+                results.append(
+                    {
+                        "id": e.get("id"),
+                        "goal": e.get("action", ""),
+                        "outcome": "success" if e.get("success") else "failure",
+                        "reward": e.get("reward", 0),
+                        "actions": e.get("action", ""),
+                    }
+                )
         except Exception:
             pass
 
@@ -159,10 +177,15 @@ class ExperiencePlanner:
     def _predict_outcome(self, action: str, context: Dict) -> Dict:
         try:
             from modules.humanoid.world_model.predictor import OutcomePredictor
+
             predictor = OutcomePredictor()
             return predictor.predict(action, context)
         except Exception:
-            return {"prediction": "unknown", "success_probability": 0.5, "confidence": 0.0}
+            return {
+                "prediction": "unknown",
+                "success_probability": 0.5,
+                "confidence": 0.0,
+            }
 
     def _extract_successful_patterns(self, episodes: List[Dict]) -> List[str]:
         actions = []
@@ -192,13 +215,14 @@ class ExperiencePlanner:
     def _log_plan(self, plan: ExperiencePlan):
         try:
             from modules.humanoid.memory_engine.lifelog import get_lifelog
+
             ll = get_lifelog()
             ll.log_decision(
                 source="experience_planner",
                 perception=f"Goal: {plan.goal}",
                 action=f"Plan generado con {len(plan.steps)} pasos",
                 outcome=f"Confianza: {plan.total_confidence:.2f}, "
-                        f"Episodios similares: {plan.similar_episodes_found}",
+                f"Episodios similares: {plan.similar_episodes_found}",
                 success=plan.total_confidence > 0.3,
                 reward=plan.total_confidence,
             )

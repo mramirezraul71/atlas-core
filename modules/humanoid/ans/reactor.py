@@ -19,7 +19,12 @@ log = logging.getLogger("atlas.reactor")
 _REACTOR_RUNNING = False
 _REACTOR_THREAD: Optional[threading.Thread] = None
 _reactor_running = False
-_reactor_stats: Dict[str, Any] = {"cycles": 0, "fixes_ok": 0, "fixes_failed": 0, "recent_issues": []}
+_reactor_stats: Dict[str, Any] = {
+    "cycles": 0,
+    "fixes_ok": 0,
+    "fixes_failed": 0,
+    "recent_issues": [],
+}
 
 REACTION_REGISTRY: Dict[str, dict] = {
     "fix_logs_dir": {
@@ -50,17 +55,21 @@ def _emit_bitacora(message: str, ok: bool = True, source: str = "reactor"):
     """Report to both evolution log and lifelog."""
     try:
         from modules.humanoid.ans.live_stream import emit
+
         emit("reactor", message=message, ok=ok)
     except Exception:
         pass
     try:
         from modules.humanoid.memory_engine.lifelog import get_lifelog
+
         ll = get_lifelog()
         ll.log(
-            event_type="reactor_action", source=source,
+            event_type="reactor_action",
+            source=source,
             perception=message,
             outcome="fixed" if ok else "failed",
-            success=ok, importance=0.8 if not ok else 0.5,
+            success=ok,
+            importance=0.8 if not ok else 0.5,
         )
     except Exception:
         pass
@@ -93,7 +102,10 @@ def _fix_config_missing() -> dict:
             env_file.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
             msg = "config/atlas.env creado desde template"
         elif not env_file.exists():
-            env_file.write_text("# ATLAS config - auto-generated\nATLAS_REPO_PATH=C:\\ATLAS_PUSH\n", encoding="utf-8")
+            env_file.write_text(
+                "# ATLAS config - auto-generated\nATLAS_REPO_PATH=C:\\ATLAS_PUSH\n",
+                encoding="utf-8",
+            )
             msg = "config/atlas.env creado con defaults"
         else:
             msg = "config/atlas.env ya existe"
@@ -109,6 +121,7 @@ def _fix_service_restart(service_port: int = 8791) -> dict:
     """Attempt to verify and report service status."""
     try:
         import requests
+
         r = requests.get(f"http://127.0.0.1:{service_port}/health", timeout=5)
         if r.status_code == 200:
             msg = f"Servicio en puerto {service_port} verificado: operativo"
@@ -126,6 +139,7 @@ def _get_recent_failures() -> List[dict]:
     failures = []
     try:
         from modules.humanoid.memory_engine.lifelog import get_lifelog
+
         ll = get_lifelog()
         # Limitar explícitamente a la última hora para evitar ruido histórico
         # que dispara falsos "recurring_*" aunque el problema ya esté resuelto.
@@ -140,6 +154,7 @@ def _get_selfcheck_problems() -> List[dict]:
     """Get current selfcheck problems."""
     try:
         from modules.humanoid.product.selfcheck import run_selfcheck
+
         result = run_selfcheck()
         return result.get("problems", [])
     except Exception:
@@ -157,7 +172,9 @@ def run_reaction_cycle() -> Dict[str, Any]:
         pid = p.get("id", "")
         msg = p.get("message", "")
         severity = p.get("severity", "info")
-        issues_found.append({"source": "selfcheck", "id": pid, "message": msg, "severity": severity})
+        issues_found.append(
+            {"source": "selfcheck", "id": pid, "message": msg, "severity": severity}
+        )
 
         if pid == "logs_dir" or "logs dir" in msg.lower():
             result = _fix_logs_dir()
@@ -191,12 +208,14 @@ def run_reaction_cycle() -> Dict[str, Any]:
             if not actionable:
                 continue
 
-            issues_found.append({
-                "source": "lifelog_pattern",
-                "id": f"recurring_{source}",
-                "message": f"Fallo recurrente ({count}x): {key}",
-                "severity": "high",
-            })
+            issues_found.append(
+                {
+                    "source": "lifelog_pattern",
+                    "id": f"recurring_{source}",
+                    "message": f"Fallo recurrente ({count}x): {key}",
+                    "severity": "high",
+                }
+            )
 
     successful_fixes = sum(1 for a in actions_taken if a.get("ok"))
     failed_fixes = sum(1 for a in actions_taken if not a.get("ok"))
@@ -238,7 +257,11 @@ def _reactor_loop():
         try:
             result = run_reaction_cycle()
             if result.get("issues_found", 0) > 0:
-                log.info("Reactor cycle: %d issues, %d fixed", result["issues_found"], result["fixes_ok"])
+                log.info(
+                    "Reactor cycle: %d issues, %d fixed",
+                    result["issues_found"],
+                    result["fixes_ok"],
+                )
         except Exception as e:
             log.error("Reactor cycle error: %s", e)
         time.sleep(interval)
@@ -251,7 +274,9 @@ def start_reactor():
         return {"ok": True, "message": "Reactor ya corriendo"}
     _REACTOR_RUNNING = True
     _reactor_running = True
-    _REACTOR_THREAD = threading.Thread(target=_reactor_loop, daemon=True, name="atlas-reactor")
+    _REACTOR_THREAD = threading.Thread(
+        target=_reactor_loop, daemon=True, name="atlas-reactor"
+    )
     _REACTOR_THREAD.start()
     return {"ok": True, "message": "Reactor iniciado"}
 

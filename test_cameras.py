@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-import cv2
 import sys
+
+import cv2
 
 print("=== Camera Detection Test ===")
 print(f"OpenCV version: {cv2.__version__}")
@@ -18,15 +19,17 @@ for i in range(10):
         height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
         fps = cap.get(cv2.CAP_PROP_FPS)
         backend = cap.getBackendName()
-        
+
         available_cameras.append(i)
-        camera_details.append({
-            'index': i,
-            'width': width,
-            'height': height,
-            'fps': fps,
-            'backend': backend
-        })
+        camera_details.append(
+            {
+                "index": i,
+                "width": width,
+                "height": height,
+                "fps": fps,
+                "backend": backend,
+            }
+        )
         print(f"✓ Camera {i}: Available")
         print(f"  Resolution: {width}x{height}")
         print(f"  FPS: {fps}")
@@ -42,7 +45,7 @@ print(f"Camera indices: {available_cameras}")
 # Try to capture a test frame from each camera
 print("\n=== Test Frame Capture ===")
 for cam in camera_details:
-    idx = cam['index']
+    idx = cam["index"]
     cap = cv2.VideoCapture(idx)
     if cap.isOpened():
         ret, frame = cap.read()

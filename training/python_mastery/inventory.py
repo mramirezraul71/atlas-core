@@ -22,4 +22,3 @@ def scan_inventory(root: Path, min_size_kb: int = 0) -> InventoryResult:
     - ignorar errores de permisos sin romper
     """
     raise NotImplementedError("Implementar en PY003")
-

@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from modules.humanoid.kernel import BaseModule, HealthCheckMixin
+
 from .vision_service import VisionService
 
 
@@ -20,7 +21,9 @@ class EyesModule(BaseModule, HealthCheckMixin):
         missing = [] if self.vision._ocr_available else ["pytesseract", "Pillow"]
         return {
             "ok": True,
-            "message": "ok" if self.vision._ocr_available else "vision disabled (missing deps)",
+            "message": "ok"
+            if self.vision._ocr_available
+            else "vision disabled (missing deps)",
             "details": {"ocr_available": self.vision._ocr_available},
             "missing_deps": missing,
         }

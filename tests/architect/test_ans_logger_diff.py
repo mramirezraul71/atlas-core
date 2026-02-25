@@ -16,4 +16,3 @@ def test_ans_logger_writes_diff_file(tmp_path: Path):
     assert diff_path.exists()
     txt = diff_path.read_text(encoding="utf-8", errors="ignore")
     assert "-b" in txt or "+c" in txt
-

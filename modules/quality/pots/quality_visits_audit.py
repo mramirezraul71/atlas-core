@@ -8,7 +8,9 @@ from ..models import POT, POTSeverity, POTStep
 
 def get_pot() -> POT:
     def _run(ctx: Dict) -> str:
-        root = Path(__file__).resolve().parents[3]  # .../modules/quality/pots -> repo root
+        root = (
+            Path(__file__).resolve().parents[3]
+        )  # .../modules/quality/pots -> repo root
         tutorias = root / "modules" / "humanoid" / "quality" / "tutorias"
         visitas = tutorias / "visitas"
         index = tutorias / "index.md"
@@ -21,7 +23,9 @@ def get_pot() -> POT:
         lines.append(f"- opus_4_5_visit_exists={opus.exists()}")
 
         if tutorias.exists():
-            md = sorted([p.name for p in visitas.glob("*.md")] if visitas.exists() else [])
+            md = sorted(
+                [p.name for p in visitas.glob("*.md")] if visitas.exists() else []
+            )
             lines.append(f"- visitas_md_count={len(md)}")
             for n in md[:20]:
                 lines.append(f"  - {n}")
@@ -30,7 +34,9 @@ def get_pot() -> POT:
 
         lines.append("")
         lines.append("Regla de especialista:")
-        lines.append("- Si una visita/tutoría ocurre, debe quedar aquí como MD + index actualizado.")
+        lines.append(
+            "- Si una visita/tutoría ocurre, debe quedar aquí como MD + index actualizado."
+        )
         return "\n".join(lines)
 
     return POT(
@@ -43,6 +49,12 @@ def get_pot() -> POT:
             "Si falta evidencia, la corrección es crear un nuevo MD de visita y actualizar index.md.",
         ],
         tags=["quality", "tutorias", "visitas", "audit"],
-        steps=[POTStep(id="audit_visits", name="Auditar carpeta tutorías/visitas", run=_run, fatal=True)],
+        steps=[
+            POTStep(
+                id="audit_visits",
+                name="Auditar carpeta tutorías/visitas",
+                run=_run,
+                fatal=True,
+            )
+        ],
     )
-

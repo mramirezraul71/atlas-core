@@ -5,22 +5,11 @@ Implementa el proceso Go/NoGo de los ganglios basales:
 - ActionSelector: Seleccion entre candidatos de accion
 - Inhibitor: Control inhibitorio de acciones
 """
-from .action_selector import (
-    ActionSelector,
-    ActionCandidate,
-    ActionType,
-    SelectionContext,
-    SelectionResult,
-    SelectionStrategy,
-)
-from .inhibitor import (
-    Inhibitor,
-    InhibitionRule,
-    InhibitionVerdict,
-    InhibitionLevel,
-    InhibitionSource,
-    Override,
-)
+from .action_selector import (ActionCandidate, ActionSelector, ActionType,
+                              SelectionContext, SelectionResult,
+                              SelectionStrategy)
+from .inhibitor import (InhibitionLevel, InhibitionRule, InhibitionSource,
+                        InhibitionVerdict, Inhibitor, Override)
 
 __all__ = [
     # Action Selector

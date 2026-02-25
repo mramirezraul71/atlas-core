@@ -9,7 +9,8 @@ Triggers:
 
 Severidad: LOW (operaciones de rutina)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -25,16 +26,13 @@ archivos temporales y verificación de salud general.
         severity=POTSeverity.LOW,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["scheduled_maintenance", "daily_check"],
         trigger_keywords=["maintenance", "daily", "cleanup", "routine"],
-        
         prerequisites=[
             "Sistema en estado estable (no en medio de operación crítica)",
             "Preferiblemente ejecutar en horario de baja actividad",
         ],
         required_services=["push"],
-        
         objectives=[
             "Limpiar archivos temporales y logs antiguos",
             "Verificar espacio en disco",
@@ -44,7 +42,6 @@ archivos temporales y verificación de salud general.
         ],
         success_criteria="Todas las tareas de mantenimiento completadas sin error",
         estimated_duration_minutes=10,
-        
         tutorial_overview="""
 ## Guía de Mantenimiento Diario
 
@@ -67,22 +64,18 @@ __pycache__/ (completo)
 snapshots/temp/ (> 3 días)
 ```
         """.strip(),
-        
         best_practices=[
             "No ejecutar durante operaciones críticas",
             "Verificar backup antes de eliminar logs importantes",
             "Mantener al menos 7 días de logs para debugging",
             "Monitorear espacio en disco post-limpieza",
         ],
-        
         warnings=[
             "No eliminar logs del día actual",
             "Preservar logs de errores críticos",
         ],
-        
         related_pots=["maintenance_weekly", "disk_cleanup", "log_rotation"],
         tags=["maintenance", "daily", "cleanup", "logs", "preventive"],
-        
         steps=[
             POTStep(
                 id="check_system_idle",
@@ -95,7 +88,6 @@ snapshots/temp/ (> 3 días)
                 check_expression="response.get('score', 0) >= 70",
                 tutorial_notes="Solo proceder si el health score es >= 70",
             ),
-            
             POTStep(
                 id="clean_pycache",
                 name="Limpiar __pycache__",
@@ -106,7 +98,6 @@ snapshots/temp/ (> 3 días)
                 continue_on_failure=True,
                 tutorial_notes="__pycache__ se regenera automáticamente. Seguro eliminar.",
             ),
-            
             POTStep(
                 id="clean_pytest_cache",
                 name="Limpiar .pytest_cache",
@@ -116,7 +107,6 @@ snapshots/temp/ (> 3 días)
                 timeout_seconds=30,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="clean_old_logs",
                 name="Limpiar logs antiguos",
@@ -127,7 +117,6 @@ snapshots/temp/ (> 3 días)
                 continue_on_failure=True,
                 tutorial_notes="Mantener 7 días de logs para debugging de problemas recientes.",
             ),
-            
             POTStep(
                 id="clean_temp_snapshots",
                 name="Limpiar snapshots temporales",
@@ -137,7 +126,6 @@ snapshots/temp/ (> 3 días)
                 timeout_seconds=60,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_disk_space",
                 name="Verificar espacio en disco",
@@ -148,7 +136,6 @@ snapshots/temp/ (> 3 días)
                 capture_output=True,
                 tutorial_notes="Si el disco tiene menos del 10% libre, considerar limpieza urgente.",
             ),
-            
             POTStep(
                 id="verify_sqlite_dbs",
                 name="Verificar integridad SQLite",
@@ -159,7 +146,6 @@ snapshots/temp/ (> 3 días)
                 continue_on_failure=True,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="generate_health_snapshot",
                 name="Generar snapshot de salud",
@@ -171,7 +157,6 @@ snapshots/temp/ (> 3 días)
                 capture_output=True,
                 tutorial_notes="Este snapshot se guarda para comparar evolución día a día.",
             ),
-            
             POTStep(
                 id="log_maintenance",
                 name="Registrar mantenimiento",
@@ -182,7 +167,7 @@ snapshots/temp/ (> 3 días)
                 http_body={
                     "message": "[MANTENIMIENTO] Mantenimiento diario completado por POT",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
                 continue_on_failure=True,
             ),

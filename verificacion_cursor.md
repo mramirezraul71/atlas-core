@@ -4,7 +4,7 @@
 
 **Estado:** GET `/ui` responde **200** y sirve el dashboard.
 
-- **URL:** http://127.0.0.1:8791/ui  
+- **URL:** http://127.0.0.1:8791/ui
 - **Contenido:** Una sola página HTML (ATLAS Dashboard) con:
   - Tema oscuro (`--bg: #0f0f12`, `--card: #1a1a20`), título "ATLAS Dashboard"
   - Grid de tarjetas para: Status, Version, Metrics, Scheduler jobs, Update, Approvals

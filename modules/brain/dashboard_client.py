@@ -9,7 +9,9 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger("atlas.dashboard")
 
-DASHBOARD_BASE = (os.getenv("ATLAS_DASHBOARD_URL") or "http://127.0.0.1:8791").rstrip("/")
+DASHBOARD_BASE = (os.getenv("ATLAS_DASHBOARD_URL") or "http://127.0.0.1:8791").rstrip(
+    "/"
+)
 BACKOFF_INIT = float(os.getenv("ATLAS_DASHBOARD_BACKOFF_INIT", "1.0"))
 BACKOFF_MAX = float(os.getenv("ATLAS_DASHBOARD_BACKOFF_MAX", "60.0"))
 BACKOFF_MULT = float(os.getenv("ATLAS_DASHBOARD_BACKOFF_MULT", "2.0"))
@@ -24,6 +26,7 @@ class AtlasDashboardClient:
     async def _session_ensure(self) -> bool:
         try:
             import aiohttp
+
             if self._session is None or self._session.closed:
                 self._session = aiohttp.ClientSession()
             return True
@@ -38,7 +41,11 @@ class AtlasDashboardClient:
                     await asyncio.sleep(self._backoff)
                     continue
                 import aiohttp
-                async with self._session.get(f"{self._base}/api/push/state", timeout=aiohttp.ClientTimeout(total=5)) as r:
+
+                async with self._session.get(
+                    f"{self._base}/api/push/state",
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as r:
                     if r.status == 200:
                         self._backoff = BACKOFF_INIT
                         return await r.json()
@@ -48,7 +55,9 @@ class AtlasDashboardClient:
                 await asyncio.sleep(self._backoff)
         return None
 
-    async def send_command(self, target: str = "NEXUS_ARM", action: str = "update_state", value: Any = 1) -> bool:
+    async def send_command(
+        self, target: str = "NEXUS_ARM", action: str = "update_state", value: Any = 1
+    ) -> bool:
         payload = {"target": target, "action": action, "value": value}
         for _ in range(3):
             try:
@@ -56,6 +65,7 @@ class AtlasDashboardClient:
                     await asyncio.sleep(self._backoff)
                     continue
                 import aiohttp
+
                 async with self._session.post(
                     f"{self._base}/api/push/command",
                     json=payload,

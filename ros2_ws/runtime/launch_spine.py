@@ -10,53 +10,68 @@ Usage:
   python launch_spine.py --monitor        # full spine + live topic monitor
   python launch_spine.py --test           # quick self-test (5 seconds)
 """
-import sys
-import os
-import time
-import json
 import argparse
+import json
+import os
+import sys
 import threading
+import time
 
 # Ensure runtime is importable
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import atlas_ros2_lite as rclpy
-
-from nodes.sensors import ImuPublisher, JointStatePublisher, ForceTorquePublisher
 from nodes.control import BalanceController, GaitGenerator, JointCommander
-from nodes.perception import VisionNode, ObjectDetector, SlamNode
-from nodes.planning import TaskPlanner, PathPlanner
-from nodes.supervisor import SupervisorNode, BrainBridgeNode
-
+from nodes.perception import ObjectDetector, SlamNode, VisionNode
+from nodes.planning import PathPlanner, TaskPlanner
+from nodes.sensors import (ForceTorquePublisher, ImuPublisher,
+                           JointStatePublisher)
+from nodes.supervisor import BrainBridgeNode, SupervisorNode
 
 LAYERS = {
-    1: ("HARDWARE (Sensors)", [
-        ("ImuPublisher", lambda: ImuPublisher(rate_hz=50)),
-        ("JointStatePublisher", lambda: JointStatePublisher(rate_hz=50)),
-        ("ForceTorquePublisher", lambda: ForceTorquePublisher(rate_hz=50)),
-    ]),
-    2: ("CONTROL (Motor)", [
-        ("BalanceController", lambda: BalanceController(rate_hz=100)),
-        ("GaitGenerator", lambda: GaitGenerator(rate_hz=100)),
-        ("JointCommander", lambda: JointCommander(rate_hz=100)),
-    ]),
-    3: ("PERCEPTION (Vision)", [
-        ("VisionNode", lambda: VisionNode(fps=5)),
-        ("ObjectDetector", lambda: ObjectDetector()),
-        ("SlamNode", lambda: SlamNode()),
-    ]),
-    4: ("PLANNING", [
-        ("TaskPlanner", lambda: TaskPlanner()),
-        ("PathPlanner", lambda: PathPlanner()),
-    ]),
-    5: ("SUPERVISOR + BRAIN", [
-        ("SupervisorNode", lambda: SupervisorNode()),
-        ("BrainBridgeNode", lambda: BrainBridgeNode()),
-    ]),
+    1: (
+        "HARDWARE (Sensors)",
+        [
+            ("ImuPublisher", lambda: ImuPublisher(rate_hz=50)),
+            ("JointStatePublisher", lambda: JointStatePublisher(rate_hz=50)),
+            ("ForceTorquePublisher", lambda: ForceTorquePublisher(rate_hz=50)),
+        ],
+    ),
+    2: (
+        "CONTROL (Motor)",
+        [
+            ("BalanceController", lambda: BalanceController(rate_hz=100)),
+            ("GaitGenerator", lambda: GaitGenerator(rate_hz=100)),
+            ("JointCommander", lambda: JointCommander(rate_hz=100)),
+        ],
+    ),
+    3: (
+        "PERCEPTION (Vision)",
+        [
+            ("VisionNode", lambda: VisionNode(fps=5)),
+            ("ObjectDetector", lambda: ObjectDetector()),
+            ("SlamNode", lambda: SlamNode()),
+        ],
+    ),
+    4: (
+        "PLANNING",
+        [
+            ("TaskPlanner", lambda: TaskPlanner()),
+            ("PathPlanner", lambda: PathPlanner()),
+        ],
+    ),
+    5: (
+        "SUPERVISOR + BRAIN",
+        [
+            ("SupervisorNode", lambda: SupervisorNode()),
+            ("BrainBridgeNode", lambda: BrainBridgeNode()),
+        ],
+    ),
 }
 
 
 def print_banner():
-    print("""
+    print(
+        """
 ╔══════════════════════════════════════════════════════════╗
 ║           ATLAS SPINE — Columna Vertebral               ║
 ║           ROS 2 Lite Runtime (Pure Python)              ║
@@ -67,7 +82,8 @@ def print_banner():
 ║  L4  Planning   : Task Planner(AI), Path Planner        ║
 ║  L5  Supervisor : Heartbeat, Governance, Brain Bridge   ║
 ╚══════════════════════════════════════════════════════════╝
-""")
+"""
+    )
 
 
 def topic_monitor(interval=3.0):
@@ -126,9 +142,15 @@ def run_self_test(duration=5):
     print(f"  Messages sent: {total_msgs}")
 
     # Check critical topics
-    critical = ["/atlas/imu/data", "/atlas/joint_states", "/atlas/ft/left_foot",
-                "/atlas/joint_commands", "/atlas/gait/trajectory", "/atlas/hw/joint_target",
-                "/atlas/supervisor/heartbeat"]
+    critical = [
+        "/atlas/imu/data",
+        "/atlas/joint_states",
+        "/atlas/ft/left_foot",
+        "/atlas/joint_commands",
+        "/atlas/gait/trajectory",
+        "/atlas/hw/joint_target",
+        "/atlas/supervisor/heartbeat",
+    ]
     ok_count = 0
     for t in critical:
         count = rclpy.get_pub_count(t)
@@ -153,12 +175,18 @@ def run_self_test(duration=5):
 
 def main():
     parser = argparse.ArgumentParser(description="Atlas Spine Launcher")
-    parser.add_argument("--layers", type=str, default="1,2,3,4,5",
-                        help="Comma-separated layer numbers to start (default: all)")
-    parser.add_argument("--monitor", action="store_true",
-                        help="Enable live topic monitor")
-    parser.add_argument("--test", action="store_true",
-                        help="Run quick self-test (5 seconds)")
+    parser.add_argument(
+        "--layers",
+        type=str,
+        default="1,2,3,4,5",
+        help="Comma-separated layer numbers to start (default: all)",
+    )
+    parser.add_argument(
+        "--monitor", action="store_true", help="Enable live topic monitor"
+    )
+    parser.add_argument(
+        "--test", action="store_true", help="Run quick self-test (5 seconds)"
+    )
     args = parser.parse_args()
 
     if args.test:

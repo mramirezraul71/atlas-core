@@ -8,12 +8,26 @@ from typing import Any, Dict, List
 
 
 def _sched_enabled() -> bool:
-    return os.getenv("SCHED_ENABLED", "true").strip().lower() in ("1", "true", "yes", "y", "on")
+    return os.getenv("SCHED_ENABLED", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    )
 
 
 def _telegram_enabled() -> bool:
     # Default ON if token exists; can be disabled explicitly.
-    v = (os.getenv("TELEGRAM_APPROVALS_ENABLED") or os.getenv("TELEGRAM_ENABLED", "true") or "").strip().lower()
+    v = (
+        (
+            os.getenv("TELEGRAM_APPROVALS_ENABLED")
+            or os.getenv("TELEGRAM_ENABLED", "true")
+            or ""
+        )
+        .strip()
+        .lower()
+    )
     return v in ("1", "true", "yes", "y", "on")
 
 
@@ -31,8 +45,12 @@ def ensure_approvals_jobs() -> None:
         interval_sec = max(60, min(interval_sec, 1800))
         reaper_interval_sec = int(os.getenv("APPROVALS_REAPER_SECONDS", "60") or 60)
         reaper_interval_sec = max(30, min(reaper_interval_sec, 900))
-        job = next((j for j in jobs if j.get("name") == "approvals_digest_telegram"), None)
-        reaper_job = next((j for j in jobs if j.get("name") == "approvals_expiry_reaper"), None)
+        job = next(
+            (j for j in jobs if j.get("name") == "approvals_digest_telegram"), None
+        )
+        reaper_job = next(
+            (j for j in jobs if j.get("name") == "approvals_expiry_reaper"), None
+        )
         now = datetime.now(timezone.utc).isoformat()
         payload = {"limit": 8}
         reaper_payload = {"limit": 2000}
@@ -57,7 +75,12 @@ def ensure_approvals_jobs() -> None:
             conn = db._ensure()
             conn.execute(
                 "UPDATE jobs SET interval_seconds = ?, payload_json = ?, updated_ts = ? WHERE id = ?",
-                (reaper_interval_sec, json.dumps(reaper_payload), now, reaper_job.get("id")),
+                (
+                    reaper_interval_sec,
+                    json.dumps(reaper_payload),
+                    now,
+                    reaper_job.get("id"),
+                ),
             )
             conn.commit()
             return
@@ -73,4 +96,3 @@ def ensure_approvals_jobs() -> None:
         )
     except Exception:
         pass
-

@@ -48,10 +48,16 @@ def get_pot() -> POT:
 
         lines.append("")
         lines.append("Acciones recomendadas (manuales):")
-        lines.append("- Levantar API Adapter: ejecutar `03_run_atlas_api.ps1` (puerto 8791).")
+        lines.append(
+            "- Levantar API Adapter: ejecutar `03_run_atlas_api.ps1` (puerto 8791)."
+        )
         lines.append("- Verificar NEXUS: confirmar proceso y `/health` en 8000.")
-        lines.append("- Verificar Robot Backend: confirmar proceso y `/health` en 8002.")
-        lines.append("- WhatsApp (WAHA): confirmar contenedor/servicio en 3010 si se usa.")
+        lines.append(
+            "- Verificar Robot Backend: confirmar proceso y `/health` en 8002."
+        )
+        lines.append(
+            "- WhatsApp (WAHA): confirmar contenedor/servicio en 3010 si se usa."
+        )
 
         return "\n".join(lines)
 
@@ -65,6 +71,7 @@ def get_pot() -> POT:
             "Solo evidencia: TCP y HTTP GET.",
         ],
         tags=["services", "ports", "nexus", "robot", "waha"],
-        steps=[POTStep(id="ports", name="Chequear puertos y /status", run=_run, fatal=True)],
+        steps=[
+            POTStep(id="ports", name="Chequear puertos y /status", run=_run, fatal=True)
+        ],
     )
-

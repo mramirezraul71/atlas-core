@@ -5,13 +5,13 @@ El cerebro (PUSH) CONOCE qué tiene y ejerce su dominio sobre cada parte.
 Este módulo define el ensamblado completo: inventario, rutas de control, salud.
 """
 
-import os
-import logging
-import urllib.request
-import urllib.error
 import json
-from typing import Dict, Any, List, Optional
+import logging
+import os
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +20,16 @@ logger = logging.getLogger(__name__)
 # =========================
 NEXUS_BASE_URL = (os.getenv("NEXUS_BASE_URL") or "http://127.0.0.1:8000").rstrip("/")
 NEXUS_ROBOT_URL = (os.getenv("NEXUS_ROBOT_URL") or "http://127.0.0.1:5174").rstrip("/")
-NEXUS_ROBOT_API_URL = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
-NEXUS_ENABLED = os.getenv("NEXUS_ENABLED", "false").strip().lower() in ("1", "true", "yes", "y", "on")
+NEXUS_ROBOT_API_URL = (
+    os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002"
+).rstrip("/")
+NEXUS_ENABLED = os.getenv("NEXUS_ENABLED", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+)
 PROBE_TIMEOUT = int(os.getenv("NEXUS_TIMEOUT", "5"))
 
 
@@ -32,7 +40,11 @@ def _probe(url: str, expect_json: bool = True) -> Optional[dict]:
         req = urllib.request.Request(url, method="GET", headers=headers)
         with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT) as resp:
             if not expect_json:
-                return {"ok": True, "status_code": resp.status} if resp.status == 200 else None
+                return (
+                    {"ok": True, "status_code": resp.status}
+                    if resp.status == 200
+                    else None
+                )
             data = resp.read().decode("utf-8")
             return json.loads(data) if data.strip() else {}
     except Exception as e:
@@ -44,9 +56,11 @@ def _probe(url: str, expect_json: bool = True) -> Optional[dict]:
 # INVENTARIO — Partes que el cerebro controla
 # =========================
 
+
 @dataclass
 class PartDef:
     """Definición de una pieza del robot bajo dominio del cerebro."""
+
     id: str
     name: str
     role: str  # cerebro | directivas | cuerpo | sensores | memoria | comunicacion
@@ -134,7 +148,12 @@ def get_assembly_status() -> Dict[str, Any]:
         if part.get("enabled"):
             probes[part["id"]] = probe_part(part)
         else:
-            probes[part["id"]] = {"id": part["id"], "ok": False, "status": None, "error": "Deshabilitado"}
+            probes[part["id"]] = {
+                "id": part["id"],
+                "ok": False,
+                "status": None,
+                "error": "Deshabilitado",
+            }
 
     # Rutas de control: a dónde enviar cada tipo de comando
     control_routes = {

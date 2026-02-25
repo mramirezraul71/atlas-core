@@ -45,7 +45,11 @@ def _db_path() -> Path:
     p = os.getenv("CLUSTER_REGISTRY_DB") or ""
     if p:
         return Path(p)
-    return Path(os.getenv("ATLAS_PUSH_ROOT", os.getcwd())) / "logs" / "atlas_cluster.sqlite"
+    return (
+        Path(os.getenv("ATLAS_PUSH_ROOT", os.getcwd()))
+        / "logs"
+        / "atlas_cluster.sqlite"
+    )
 
 
 _conn: Optional[sqlite3.Connection] = None
@@ -86,7 +90,18 @@ def upsert_node(
              role=excluded.role, base_url=excluded.base_url, capabilities_json=excluded.capabilities_json,
              last_seen_ts=excluded.last_seen_ts, health_score=excluded.health_score, status=excluded.status,
              tags_json=excluded.tags_json, updated_ts=excluded.updated_ts""",
-        (node_id, role, base_url, caps_json, last_seen_ts or now, health_score, status, tags_json, now, now),
+        (
+            node_id,
+            role,
+            base_url,
+            caps_json,
+            last_seen_ts or now,
+            health_score,
+            status,
+            tags_json,
+            now,
+            now,
+        ),
     )
     conn.commit()
 
@@ -94,7 +109,10 @@ def upsert_node(
 def list_nodes(status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
     conn = _ensure_conn()
     if status_filter:
-        rows = conn.execute("SELECT * FROM nodes WHERE status = ? ORDER BY last_seen_ts DESC", (status_filter,)).fetchall()
+        rows = conn.execute(
+            "SELECT * FROM nodes WHERE status = ? ORDER BY last_seen_ts DESC",
+            (status_filter,),
+        ).fetchall()
     else:
         rows = conn.execute("SELECT * FROM nodes ORDER BY last_seen_ts DESC").fetchall()
     cols = [c[0] for c in conn.execute("PRAGMA table_info(nodes)").fetchall()]
@@ -143,16 +161,25 @@ def log_event(node_id: str, kind: str, data: Optional[Dict[str, Any]] = None) ->
     conn = _ensure_conn()
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     data_json = json.dumps(data or {}) if data else None
-    conn.execute("INSERT INTO node_events (ts, node_id, kind, data_json) VALUES (?, ?, ?, ?)", (now, node_id, kind, data_json))
+    conn.execute(
+        "INSERT INTO node_events (ts, node_id, kind, data_json) VALUES (?, ?, ?, ?)",
+        (now, node_id, kind, data_json),
+    )
     conn.commit()
 
 
 def get_events(limit: int = 50, node_id: Optional[str] = None) -> List[Dict[str, Any]]:
     conn = _ensure_conn()
     if node_id:
-        rows = conn.execute("SELECT id, ts, node_id, kind, data_json FROM node_events WHERE node_id = ? ORDER BY id DESC LIMIT ?", (node_id, limit)).fetchall()
+        rows = conn.execute(
+            "SELECT id, ts, node_id, kind, data_json FROM node_events WHERE node_id = ? ORDER BY id DESC LIMIT ?",
+            (node_id, limit),
+        ).fetchall()
     else:
-        rows = conn.execute("SELECT id, ts, node_id, kind, data_json FROM node_events ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        rows = conn.execute(
+            "SELECT id, ts, node_id, kind, data_json FROM node_events ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
     out = []
     for row in rows:
         id_, ts, nid, kind, data_json = row

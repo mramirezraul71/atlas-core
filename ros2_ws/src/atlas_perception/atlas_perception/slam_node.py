@@ -7,13 +7,14 @@ Replace with real SLAM (ORB-SLAM3, rtabmap, etc.) when ready.
 
 Bridges to: modules/humanoid/navigation/
 """
-import rclpy
-from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped, TransformStamped
-from nav_msgs.msg import OccupancyGrid
-from std_msgs.msg import Bool
 import math
 import time
+
+import rclpy
+from geometry_msgs.msg import PoseStamped, TransformStamped
+from nav_msgs.msg import OccupancyGrid
+from rclpy.node import Node
+from std_msgs.msg import Bool
 
 
 class SlamNode(Node):
@@ -39,7 +40,9 @@ class SlamNode(Node):
             self.get_logger().info("SLAM node started (placeholder mode)")
         else:
             self.timer = self.create_timer(1.0, self._publish_status_only)
-            self.get_logger().info("SLAM node started (DISABLED, publishing status only)")
+            self.get_logger().info(
+                "SLAM node started (DISABLED, publishing status only)"
+            )
 
     def _publish_status_only(self):
         msg = Bool()
@@ -71,7 +74,7 @@ class SlamNode(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = "map"
         msg.info.resolution = 0.05  # 5cm per cell
-        msg.info.width = 100        # 5m x 5m
+        msg.info.width = 100  # 5m x 5m
         msg.info.height = 100
         msg.info.origin.position.x = -2.5
         msg.info.origin.position.y = -2.5

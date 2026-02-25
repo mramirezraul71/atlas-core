@@ -14,7 +14,9 @@ logger = logging.getLogger(__name__)
 class EpisodicReplay:
     """Replay de episodios para consolidar aprendizaje (estilo 'sueños')."""
 
-    def __init__(self, buffer_size: int = 10_000, config: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, buffer_size: int = 10_000, config: Optional[Dict[str, Any]] = None
+    ):
         self.buffer_size = buffer_size
         self._config = config or {}
         self._buffer: List[Tuple[Any, ...]] = []
@@ -39,6 +41,7 @@ class EpisodicReplay:
         if not self._buffer:
             return []
         import random
+
         k = min(batch_size, len(self._buffer))
         return random.sample(self._buffer, k)
 

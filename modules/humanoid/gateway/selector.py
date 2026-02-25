@@ -3,12 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from . import cloudflare
-from . import tailscale
-from . import ssh_tunnel
-from . import lan
-from . import detector
-from . import store
+from . import cloudflare, detector, lan, ssh_tunnel, store, tailscale
 from .models import WorkerTarget
 
 

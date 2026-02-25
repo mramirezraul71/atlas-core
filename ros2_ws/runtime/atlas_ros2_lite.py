@@ -17,18 +17,19 @@ Features:
 """
 from __future__ import annotations
 
-import threading
-import time
+import copy
 import json
 import logging
-import copy
-from typing import Any, Callable, Dict, List, Optional, Tuple
-from dataclasses import dataclass, field
+import threading
+import time
 from collections import defaultdict
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 log = logging.getLogger("atlas_ros2_lite")
 
 # ─── Global Message Bus ───
+
 
 class _MessageBus:
     """Process-wide pub/sub message bus (singleton)."""
@@ -61,7 +62,11 @@ class _MessageBus:
 
     def get_topics(self) -> Dict[str, int]:
         with self._lock:
-            return {t: len(subs) for t, subs in self._topics.items() if subs or t in self._latest}
+            return {
+                t: len(subs)
+                for t, subs in self._topics.items()
+                if subs or t in self._latest
+            }
 
     def get_latest(self, topic: str) -> Any:
         with self._lock:
@@ -77,11 +82,14 @@ _BUS = _MessageBus()
 
 # ─── Message Types (dict-based, compatible with ROS 2 field names) ───
 
+
 def make_header(frame_id: str = "", stamp: float = None) -> dict:
     return {"stamp": stamp or time.time(), "frame_id": frame_id}
 
 
-def make_imu(header=None, orientation=None, angular_velocity=None, linear_acceleration=None) -> dict:
+def make_imu(
+    header=None, orientation=None, angular_velocity=None, linear_acceleration=None
+) -> dict:
     return {
         "_type": "sensor_msgs/Imu",
         "header": header or make_header(),
@@ -91,7 +99,9 @@ def make_imu(header=None, orientation=None, angular_velocity=None, linear_accele
     }
 
 
-def make_joint_state(header=None, name=None, position=None, velocity=None, effort=None) -> dict:
+def make_joint_state(
+    header=None, name=None, position=None, velocity=None, effort=None
+) -> dict:
     return {
         "_type": "sensor_msgs/JointState",
         "header": header or make_header(),
@@ -142,6 +152,7 @@ def make_vector3_stamped(header=None, vector=None) -> dict:
 
 # ─── Clock ───
 
+
 class Clock:
     def now(self):
         return time.time()
@@ -161,6 +172,7 @@ class _StampProxy:
 
 
 # ─── Logger ───
+
 
 class NodeLogger:
     def __init__(self, name: str):
@@ -183,6 +195,7 @@ class NodeLogger:
 
 # ─── Publisher / Subscriber ───
 
+
 class Publisher:
     def __init__(self, topic: str, msg_type=None, qos: int = 10):
         self._topic = topic
@@ -203,6 +216,7 @@ class Subscription:
 
 
 # ─── Timer ───
+
 
 class Timer:
     def __init__(self, period: float, callback: Callable):
@@ -228,6 +242,7 @@ class Timer:
 
 
 # ─── Node ───
+
 
 class Node:
     """Lightweight ROS 2 Node emulation."""
@@ -263,7 +278,9 @@ class Node:
         self._publishers.append(pub)
         return pub
 
-    def create_subscription(self, msg_type, topic: str, callback: Callable, qos: int = 10) -> Subscription:
+    def create_subscription(
+        self, msg_type, topic: str, callback: Callable, qos: int = 10
+    ) -> Subscription:
         sub = Subscription(topic, msg_type, callback, qos)
         self._subscriptions.append(sub)
         return sub
@@ -330,6 +347,7 @@ def ok() -> bool:
 
 
 # ─── Introspection ───
+
 
 def get_topic_list() -> Dict[str, int]:
     """Returns {topic_name: subscriber_count}."""

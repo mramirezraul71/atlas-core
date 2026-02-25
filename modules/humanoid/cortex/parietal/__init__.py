@@ -6,9 +6,9 @@ Análogo biológico: Corteza parietal posterior
 - SpatialMap: Mapa espacial egocéntrico/alocéntrico
 - BodySchema: Modelo del propio cuerpo
 """
+from .body_schema import BodySchema
 from .sensory_fusion import SensoryFusion
 from .spatial_map import SpatialMap
-from .body_schema import BodySchema
 
 __all__ = [
     "SensoryFusion",

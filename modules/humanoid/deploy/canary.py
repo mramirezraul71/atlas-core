@@ -49,6 +49,7 @@ def is_canary_enabled() -> bool:
         return False
     try:
         from .switcher import get_deploy_state
+
         state = get_deploy_state()
         if state.get("canary_disabled_fallback"):
             return False
@@ -73,6 +74,7 @@ def set_canary_disabled_fallback(disabled: bool) -> None:
     """Set canary_disabled_fallback in deploy_state (fallback when error rate > threshold)."""
     try:
         from .switcher import get_deploy_state, persist_state
+
         state = get_deploy_state()
         state["canary_disabled_fallback"] = disabled
         persist_state(state)
@@ -102,19 +104,24 @@ def use_canary_version(feature: str) -> bool:
     return should_use_canary(feature, None)
 
 
-def record_canary_call(feature: str, used_canary: bool, ok: bool, latency_ms: float) -> None:
+def record_canary_call(
+    feature: str, used_canary: bool, ok: bool, latency_ms: float
+) -> None:
     """Record one call for comparative metrics."""
-    _CANARY_METRICS.append({
-        "ts": time.time(),
-        "feature": feature,
-        "canary": used_canary,
-        "ok": ok,
-        "latency_ms": latency_ms,
-    })
+    _CANARY_METRICS.append(
+        {
+            "ts": time.time(),
+            "feature": feature,
+            "canary": used_canary,
+            "ok": ok,
+            "latency_ms": latency_ms,
+        }
+    )
     if not ok and used_canary:
         _CANARY_ERRORS[feature] = _CANARY_ERRORS.get(feature, 0) + 1
     try:
         from modules.humanoid.metrics import get_metrics_store
+
         store = get_metrics_store()
         store.inc("canary_requests")
         store.record_latency(f"canary_{feature}", latency_ms)
@@ -141,12 +148,26 @@ def _maybe_auto_disable_canary() -> None:
         set_canary_disabled_fallback(True)
         try:
             from modules.humanoid.audit import get_audit_logger
-            get_audit_logger().log_event("deploy", "canary", "auto_disable", False, 0, "threshold exceeded", {"error_rate": err, "latency_ms": lat}, None)
+
+            get_audit_logger().log_event(
+                "deploy",
+                "canary",
+                "auto_disable",
+                False,
+                0,
+                "threshold exceeded",
+                {"error_rate": err, "latency_ms": lat},
+                None,
+            )
         except Exception:
             pass
 
 
-def set_canary_config(enabled: Optional[bool] = None, percentage: Optional[float] = None, features: Optional[List[str]] = None) -> None:
+def set_canary_config(
+    enabled: Optional[bool] = None,
+    percentage: Optional[float] = None,
+    features: Optional[List[str]] = None,
+) -> None:
     """Runtime override for canary (POST /canary/config)."""
     global _runtime_enabled, _runtime_percentage, _runtime_features
     if enabled is not None:
@@ -168,7 +189,11 @@ def get_canary_stats() -> Dict[str, Any]:
     canary_errors = sum(1 for m in canary_calls if not m["ok"])
     canary_total = len(canary_calls)
     error_rate = (canary_errors / canary_total) if canary_total else 0.0
-    canary_avg = round(sum(m["latency_ms"] for m in canary_calls) / canary_total, 2) if canary_total else None
+    canary_avg = (
+        round(sum(m["latency_ms"] for m in canary_calls) / canary_total, 2)
+        if canary_total
+        else None
+    )
     return {
         "enabled": canary_enabled,
         "percentage": pct,
@@ -177,8 +202,13 @@ def get_canary_stats() -> Dict[str, Any]:
         "stable_calls_1h": len(stable_calls),
         "canary_error_rate": round(error_rate, 4),
         "canary_avg_latency_ms": canary_avg,
-        "stable_avg_latency_ms": round(sum(m["latency_ms"] for m in stable_calls) / len(stable_calls), 2) if stable_calls else None,
-        "disabled_due_to_errors": canary_enabled and error_rate > _error_rate_threshold(),
+        "stable_avg_latency_ms": round(
+            sum(m["latency_ms"] for m in stable_calls) / len(stable_calls), 2
+        )
+        if stable_calls
+        else None,
+        "disabled_due_to_errors": canary_enabled
+        and error_rate > _error_rate_threshold(),
         "latency_threshold_ms": _latency_threshold_ms(),
         "error_rate_threshold": _error_rate_threshold(),
     }
@@ -211,7 +241,19 @@ def get_canary_report(hours: float = 24.0) -> Dict[str, Any]:
         "stable_calls": stable_n,
         "canary_errors": canary_errors,
         "canary_error_rate": round(canary_errors / canary_n, 4) if canary_n else 0.0,
-        "canary_avg_latency_ms": round(sum(m["latency_ms"] for m in canary_calls) / canary_n, 2) if canary_n else None,
-        "stable_avg_latency_ms": round(sum(m["latency_ms"] for m in stable_calls) / stable_n, 2) if stable_n else None,
-        **{k: v for k, v in stats.items() if k in ("enabled", "percentage", "features", "disabled_due_to_errors")},
+        "canary_avg_latency_ms": round(
+            sum(m["latency_ms"] for m in canary_calls) / canary_n, 2
+        )
+        if canary_n
+        else None,
+        "stable_avg_latency_ms": round(
+            sum(m["latency_ms"] for m in stable_calls) / stable_n, 2
+        )
+        if stable_n
+        else None,
+        **{
+            k: v
+            for k, v in stats.items()
+            if k in ("enabled", "percentage", "features", "disabled_due_to_errors")
+        },
     }

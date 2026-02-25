@@ -15,6 +15,7 @@ def call_external(
 ) -> Tuple[bool, str, float]:
     """Llama al proveedor externo. Devuelve (ok, output_text, latency_ms)."""
     import httpx
+
     t0 = time.perf_counter()
     try:
         if provider_id == "gemini":
@@ -26,27 +27,79 @@ def call_external(
         if provider_id == "perplexity":
             return _call_perplexity(model_name, prompt, system, api_key, timeout_s, t0)
         if provider_id == "groq":
-            return _call_openai_compat("https://api.groq.com/openai/v1/chat/completions", model_name or "llama-3.3-70b-versatile", prompt, system, api_key, timeout_s, t0, "Groq")
+            return _call_openai_compat(
+                "https://api.groq.com/openai/v1/chat/completions",
+                model_name or "llama-3.3-70b-versatile",
+                prompt,
+                system,
+                api_key,
+                timeout_s,
+                t0,
+                "Groq",
+            )
         if provider_id == "xai":
-            return _call_openai_compat("https://api.x.ai/v1/chat/completions", model_name or "grok-3-mini", prompt, system, api_key, timeout_s, t0, "xAI")
+            return _call_openai_compat(
+                "https://api.x.ai/v1/chat/completions",
+                model_name or "grok-3-mini",
+                prompt,
+                system,
+                api_key,
+                timeout_s,
+                t0,
+                "xAI",
+            )
         if provider_id == "deepseek":
-            return _call_openai_compat("https://api.deepseek.com/chat/completions", model_name or "deepseek-chat", prompt, system, api_key, timeout_s, t0, "DeepSeek")
+            return _call_openai_compat(
+                "https://api.deepseek.com/chat/completions",
+                model_name or "deepseek-chat",
+                prompt,
+                system,
+                api_key,
+                timeout_s,
+                t0,
+                "DeepSeek",
+            )
         if provider_id == "mistral":
-            return _call_openai_compat("https://api.mistral.ai/v1/chat/completions", model_name or "mistral-large-latest", prompt, system, api_key, timeout_s, t0, "Mistral")
-        return False, "Proveedor no soportado: %s" % provider_id, (time.perf_counter() - t0) * 1000
+            return _call_openai_compat(
+                "https://api.mistral.ai/v1/chat/completions",
+                model_name or "mistral-large-latest",
+                prompt,
+                system,
+                api_key,
+                timeout_s,
+                t0,
+                "Mistral",
+            )
+        return (
+            False,
+            "Proveedor no soportado: %s" % provider_id,
+            (time.perf_counter() - t0) * 1000,
+        )
     except Exception as e:
         return False, str(e), (time.perf_counter() - t0) * 1000
 
 
 def _call_gemini(
-    model: str, prompt: str, system: Optional[str], api_key: str, timeout_s: int, t0: float
+    model: str,
+    prompt: str,
+    system: Optional[str],
+    api_key: str,
+    timeout_s: int,
+    t0: float,
 ) -> Tuple[bool, str, float]:
     import httpx
+
     model_id = (model or "gemini-1.5-flash").replace("/", "-").strip()
-    url = "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" % model_id
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent"
+        % model_id
+    )
     params = {"key": api_key}
     text = (system.strip() + "\n\n" + prompt) if system and system.strip() else prompt
-    body = {"contents": [{"parts": [{"text": text}]}], "generationConfig": {"temperature": 0.2}}
+    body = {
+        "contents": [{"parts": [{"text": text}]}],
+        "generationConfig": {"temperature": 0.2},
+    }
     with httpx.Client(timeout=timeout_s) as client:
         r = client.post(url, params=params, json=body)
     ms = (time.perf_counter() - t0) * 1000
@@ -60,11 +113,20 @@ def _call_gemini(
 
 
 def _call_openai(
-    model: str, prompt: str, system: Optional[str], api_key: str, timeout_s: int, t0: float
+    model: str,
+    prompt: str,
+    system: Optional[str],
+    api_key: str,
+    timeout_s: int,
+    t0: float,
 ) -> Tuple[bool, str, float]:
     import httpx
+
     url = "https://api.openai.com/v1/chat/completions"
-    headers = {"Authorization": "Bearer %s" % api_key, "Content-Type": "application/json"}
+    headers = {
+        "Authorization": "Bearer %s" % api_key,
+        "Content-Type": "application/json",
+    }
     messages = []
     if system and system.strip():
         messages.append({"role": "system", "content": system})
@@ -82,9 +144,15 @@ def _call_openai(
 
 
 def _call_anthropic(
-    model: str, prompt: str, system: Optional[str], api_key: str, timeout_s: int, t0: float
+    model: str,
+    prompt: str,
+    system: Optional[str],
+    api_key: str,
+    timeout_s: int,
+    t0: float,
 ) -> Tuple[bool, str, float]:
     import httpx
+
     url = "https://api.anthropic.com/v1/messages"
     headers = {
         "x-api-key": api_key,
@@ -107,22 +175,52 @@ def _call_anthropic(
 
 
 def _call_perplexity(
-    model: str, prompt: str, system: Optional[str], api_key: str, timeout_s: int, t0: float
+    model: str,
+    prompt: str,
+    system: Optional[str],
+    api_key: str,
+    timeout_s: int,
+    t0: float,
 ) -> Tuple[bool, str, float]:
-    return _call_openai_compat("https://api.perplexity.ai/chat/completions", model or "sonar", prompt, system, api_key, timeout_s, t0, "Perplexity")
+    return _call_openai_compat(
+        "https://api.perplexity.ai/chat/completions",
+        model or "sonar",
+        prompt,
+        system,
+        api_key,
+        timeout_s,
+        t0,
+        "Perplexity",
+    )
 
 
 def _call_openai_compat(
-    url: str, model: str, prompt: str, system: Optional[str], api_key: str, timeout_s: int, t0: float, label: str
+    url: str,
+    model: str,
+    prompt: str,
+    system: Optional[str],
+    api_key: str,
+    timeout_s: int,
+    t0: float,
+    label: str,
 ) -> Tuple[bool, str, float]:
     """Generic caller for any OpenAI-compatible API (Groq, xAI/Grok, DeepSeek, Mistral, Perplexity)."""
     import httpx
-    headers = {"Authorization": "Bearer %s" % api_key, "Content-Type": "application/json"}
+
+    headers = {
+        "Authorization": "Bearer %s" % api_key,
+        "Content-Type": "application/json",
+    }
     messages = []
     if system and system.strip():
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
-    body = {"model": model, "messages": messages, "max_tokens": 4096, "temperature": 0.2}
+    body = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": 4096,
+        "temperature": 0.2,
+    }
     with httpx.Client(timeout=timeout_s) as client:
         r = client.post(url, headers=headers, json=body)
     ms = (time.perf_counter() - t0) * 1000

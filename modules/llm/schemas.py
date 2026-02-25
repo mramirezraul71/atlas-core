@@ -11,7 +11,9 @@ RouteName = Literal["FAST", "CHAT", "CODE", "REASON", "TOOLS"]
 class LLMRequest(BaseModel):
     """Body for POST /llm. Prompt required; route/model/system/temperature optional."""
 
-    prompt: str = Field(..., min_length=1, description="User prompt to send to the LLM.")
+    prompt: str = Field(
+        ..., min_length=1, description="User prompt to send to the LLM."
+    )
     route: Optional[RouteName] = None
     model: Optional[str] = None
     system: Optional[str] = None
@@ -20,7 +22,9 @@ class LLMRequest(BaseModel):
     max_tokens: Optional[int] = None
     stream: Optional[bool] = False
     tools: Optional[List[Dict[str, Any]]] = None
-    timeout_override: Optional[int] = None  # seconds; if set, overrides client default for this request
+    timeout_override: Optional[
+        int
+    ] = None  # seconds; if set, overrides client default for this request
 
 
 class LLMResponse(BaseModel):

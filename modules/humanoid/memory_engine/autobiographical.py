@@ -23,7 +23,10 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 _DB_PATH = os.path.join(
-    os.environ.get("ATLAS_DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "..", "..", "logs")),
+    os.environ.get(
+        "ATLAS_DATA_DIR",
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "logs"),
+    ),
     "autobiographical_memory.sqlite",
 )
 _lock = threading.Lock()
@@ -39,7 +42,8 @@ def _con() -> sqlite3.Connection:
 
 def _ensure():
     with _con() as c:
-        c.executescript("""
+        c.executescript(
+            """
         CREATE TABLE IF NOT EXISTS life_periods (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -102,7 +106,8 @@ def _ensure():
             notes TEXT DEFAULT '[]',
             UNIQUE(entity_name, entity_type)
         );
-        """)
+        """
+        )
 
 
 _ensure()
@@ -119,25 +124,33 @@ class AutobiographicalMemory:
         self._end_current_period()
         with _lock:
             with _con() as c:
-                c.execute("""
+                c.execute(
+                    """
                     INSERT INTO life_periods (id, name, description, start_ts)
                     VALUES (?, ?, ?, ?)
-                """, (pid, name, description, now))
+                """,
+                    (pid, name, description, now),
+                )
         return pid
 
     def _end_current_period(self):
         with _lock:
             with _con() as c:
-                c.execute("""
+                c.execute(
+                    """
                     UPDATE life_periods SET end_ts = ? WHERE end_ts IS NULL
-                """, (time.time(),))
+                """,
+                    (time.time(),),
+                )
 
     def get_current_period(self) -> Optional[Dict]:
         with _con() as c:
-            row = c.execute("""
+            row = c.execute(
+                """
                 SELECT * FROM life_periods WHERE end_ts IS NULL
                 ORDER BY start_ts DESC LIMIT 1
-            """).fetchone()
+            """
+            ).fetchone()
             return dict(row) if row else None
 
     def get_all_periods(self) -> List[Dict]:
@@ -147,73 +160,109 @@ class AutobiographicalMemory:
 
     # ── Hitos ──────────────────────────────────────────────
 
-    def record_milestone(self, title: str, description: str, category: str,
-                         importance: float = 0.7, episode_ids: List[str] = None,
-                         metadata: Dict = None) -> str:
+    def record_milestone(
+        self,
+        title: str,
+        description: str,
+        category: str,
+        importance: float = 0.7,
+        episode_ids: List[str] = None,
+        metadata: Dict = None,
+    ) -> str:
         mid = f"ms_{uuid.uuid4().hex[:8]}"
         now = time.time()
         period = self.get_current_period()
         with _lock:
             with _con() as c:
-                c.execute("""
+                c.execute(
+                    """
                     INSERT INTO milestones (id, title, description, category, importance,
                         timestamp_ts, period_id, episode_ids, metadata)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (mid, title, description, category, importance, now,
-                      period["id"] if period else None,
-                      json.dumps(episode_ids or []),
-                      json.dumps(metadata or {})))
+                """,
+                    (
+                        mid,
+                        title,
+                        description,
+                        category,
+                        importance,
+                        now,
+                        period["id"] if period else None,
+                        json.dumps(episode_ids or []),
+                        json.dumps(metadata or {}),
+                    ),
+                )
         return mid
 
     def get_milestones(self, category: str = None, limit: int = 50) -> List[Dict]:
         with _con() as c:
             if category:
-                rows = c.execute("""
+                rows = c.execute(
+                    """
                     SELECT * FROM milestones WHERE category = ?
                     ORDER BY timestamp_ts DESC LIMIT ?
-                """, (category, limit)).fetchall()
+                """,
+                    (category, limit),
+                ).fetchall()
             else:
-                rows = c.execute("""
+                rows = c.execute(
+                    """
                     SELECT * FROM milestones ORDER BY importance DESC, timestamp_ts DESC LIMIT ?
-                """, (limit,)).fetchall()
+                """,
+                    (limit,),
+                ).fetchall()
             return [dict(r) for r in rows]
 
     def get_milestone_categories(self) -> List[str]:
         with _con() as c:
-            rows = c.execute("SELECT DISTINCT category FROM milestones ORDER BY category").fetchall()
+            rows = c.execute(
+                "SELECT DISTINCT category FROM milestones ORDER BY category"
+            ).fetchall()
             return [r["category"] for r in rows]
 
     # ── Identidad (traits, valores, preferencias) ──────────
 
-    def update_trait(self, trait_type: str, key: str, value: str,
-                     confidence: float = 0.5) -> None:
+    def update_trait(
+        self, trait_type: str, key: str, value: str, confidence: float = 0.5
+    ) -> None:
         now = time.time()
         with _lock:
             with _con() as c:
-                existing = c.execute("""
+                existing = c.execute(
+                    """
                     SELECT * FROM identity_traits WHERE trait_type = ? AND key = ?
-                """, (trait_type, key)).fetchone()
+                """,
+                    (trait_type, key),
+                ).fetchone()
                 if existing:
                     new_conf = min(1.0, existing["confidence"] + 0.05)
                     new_count = existing["evidence_count"] + 1
-                    c.execute("""
+                    c.execute(
+                        """
                         UPDATE identity_traits SET value = ?, confidence = ?,
                             evidence_count = ?, last_updated_ts = ?
                         WHERE trait_type = ? AND key = ?
-                    """, (value, new_conf, new_count, now, trait_type, key))
+                    """,
+                        (value, new_conf, new_count, now, trait_type, key),
+                    )
                 else:
                     tid = f"trait_{uuid.uuid4().hex[:8]}"
-                    c.execute("""
+                    c.execute(
+                        """
                         INSERT INTO identity_traits (id, trait_type, key, value,
                             confidence, evidence_count, first_observed_ts, last_updated_ts)
                         VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-                    """, (tid, trait_type, key, value, confidence, now, now))
+                    """,
+                        (tid, trait_type, key, value, confidence, now, now),
+                    )
 
     def get_identity(self) -> Dict[str, Any]:
         with _con() as c:
-            rows = c.execute("""
+            rows = c.execute(
+                """
                 SELECT * FROM identity_traits ORDER BY confidence DESC
-            """).fetchall()
+            """
+            ).fetchall()
         identity: Dict[str, Dict] = {}
         for r in rows:
             tt = r["trait_type"]
@@ -228,52 +277,91 @@ class AutobiographicalMemory:
 
     def get_traits(self, trait_type: str) -> List[Dict]:
         with _con() as c:
-            rows = c.execute("""
+            rows = c.execute(
+                """
                 SELECT * FROM identity_traits WHERE trait_type = ?
                 ORDER BY confidence DESC
-            """, (trait_type,)).fetchall()
+            """,
+                (trait_type,),
+            ).fetchall()
             return [dict(r) for r in rows]
 
     # ── Relaciones (con humanos, servicios, entidades) ─────
 
-    def record_interaction(self, entity_name: str, entity_type: str = "human",
-                           sentiment: float = 0.0, note: str = "") -> None:
+    def record_interaction(
+        self,
+        entity_name: str,
+        entity_type: str = "human",
+        sentiment: float = 0.0,
+        note: str = "",
+    ) -> None:
         now = time.time()
         with _lock:
             with _con() as c:
-                existing = c.execute("""
+                existing = c.execute(
+                    """
                     SELECT * FROM relationships WHERE entity_name = ? AND entity_type = ?
-                """, (entity_name, entity_type)).fetchone()
+                """,
+                    (entity_name, entity_type),
+                ).fetchone()
                 if existing:
                     notes = json.loads(existing["notes"] or "[]")
                     if note:
                         notes.append({"text": note, "ts": now})
                         if len(notes) > 50:
                             notes = notes[-50:]
-                    avg_sent = (existing["sentiment"] * existing["interaction_count"] + sentiment) / (existing["interaction_count"] + 1)
-                    c.execute("""
+                    avg_sent = (
+                        existing["sentiment"] * existing["interaction_count"]
+                        + sentiment
+                    ) / (existing["interaction_count"] + 1)
+                    c.execute(
+                        """
                         UPDATE relationships SET sentiment = ?, interaction_count = interaction_count + 1,
                             last_interaction_ts = ?, notes = ?
                         WHERE entity_name = ? AND entity_type = ?
-                    """, (round(avg_sent, 3), now, json.dumps(notes), entity_name, entity_type))
+                    """,
+                        (
+                            round(avg_sent, 3),
+                            now,
+                            json.dumps(notes),
+                            entity_name,
+                            entity_type,
+                        ),
+                    )
                 else:
                     rid = f"rel_{uuid.uuid4().hex[:8]}"
                     notes_list = [{"text": note, "ts": now}] if note else []
-                    c.execute("""
+                    c.execute(
+                        """
                         INSERT INTO relationships (id, entity_name, entity_type, sentiment,
                             interaction_count, first_interaction_ts, last_interaction_ts, notes)
                         VALUES (?, ?, ?, ?, 1, ?, ?, ?)
-                    """, (rid, entity_name, entity_type, sentiment, now, now, json.dumps(notes_list)))
+                    """,
+                        (
+                            rid,
+                            entity_name,
+                            entity_type,
+                            sentiment,
+                            now,
+                            now,
+                            json.dumps(notes_list),
+                        ),
+                    )
 
     def get_relationships(self, entity_type: str = None) -> List[Dict]:
         with _con() as c:
             if entity_type:
-                rows = c.execute("""
+                rows = c.execute(
+                    """
                     SELECT * FROM relationships WHERE entity_type = ?
                     ORDER BY interaction_count DESC
-                """, (entity_type,)).fetchall()
+                """,
+                    (entity_type,),
+                ).fetchall()
             else:
-                rows = c.execute("SELECT * FROM relationships ORDER BY interaction_count DESC").fetchall()
+                rows = c.execute(
+                    "SELECT * FROM relationships ORDER BY interaction_count DESC"
+                ).fetchall()
             return [dict(r) for r in rows]
 
     # ── Narrativas (resumen de vida generado) ──────────────
@@ -290,25 +378,35 @@ class AutobiographicalMemory:
         if periods:
             for p in periods[-3:]:
                 start = datetime.fromtimestamp(p["start_ts"]).strftime("%Y-%m-%d")
-                end = datetime.fromtimestamp(p["end_ts"]).strftime("%Y-%m-%d") if p.get("end_ts") else "presente"
+                end = (
+                    datetime.fromtimestamp(p["end_ts"]).strftime("%Y-%m-%d")
+                    if p.get("end_ts")
+                    else "presente"
+                )
                 parts.append(f"  Periodo '{p['name']}': {start} - {end}")
 
         if milestones:
             parts.append(f"\nHitos importantes ({len(milestones)}):")
             for m in milestones[:10]:
-                parts.append(f"  [{m['category']}] {m['title']} (importancia: {m['importance']})")
+                parts.append(
+                    f"  [{m['category']}] {m['title']} (importancia: {m['importance']})"
+                )
 
         if identity:
             parts.append("\nIdentidad:")
             for trait_type, traits in identity.items():
-                vals = ", ".join(f"{k}={v['value']}" for k, v in list(traits.items())[:5])
+                vals = ", ".join(
+                    f"{k}={v['value']}" for k, v in list(traits.items())[:5]
+                )
                 parts.append(f"  {trait_type}: {vals}")
 
         if relationships:
             parts.append(f"\nRelaciones ({len(relationships)}):")
             for rel in relationships[:5]:
-                parts.append(f"  {rel['entity_name']} ({rel['entity_type']}): "
-                           f"sentiment={rel['sentiment']}, interacciones={rel['interaction_count']}")
+                parts.append(
+                    f"  {rel['entity_name']} ({rel['entity_type']}): "
+                    f"sentiment={rel['sentiment']}, interacciones={rel['interaction_count']}"
+                )
 
         narrative = "\n".join(parts)
 
@@ -316,20 +414,31 @@ class AutobiographicalMemory:
         with _lock:
             with _con() as c:
                 period = self.get_current_period()
-                c.execute("""
+                c.execute(
+                    """
                     INSERT INTO narratives (id, period_id, scope, narrative,
                         milestone_count, generated_ts)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (nid, period["id"] if period else None, scope, narrative,
-                      len(milestones), time.time()))
+                """,
+                    (
+                        nid,
+                        period["id"] if period else None,
+                        scope,
+                        narrative,
+                        len(milestones),
+                        time.time(),
+                    ),
+                )
 
         return narrative
 
     def get_latest_narrative(self) -> Optional[str]:
         with _con() as c:
-            row = c.execute("""
+            row = c.execute(
+                """
                 SELECT narrative FROM narratives ORDER BY generated_ts DESC LIMIT 1
-            """).fetchone()
+            """
+            ).fetchone()
             return row["narrative"] if row else None
 
     # ── Estadisticas ───────────────────────────────────────
@@ -340,10 +449,14 @@ class AutobiographicalMemory:
             milestones = c.execute("SELECT COUNT(*) FROM milestones").fetchone()[0]
             traits = c.execute("SELECT COUNT(*) FROM identity_traits").fetchone()[0]
             narratives = c.execute("SELECT COUNT(*) FROM narratives").fetchone()[0]
-            relationships = c.execute("SELECT COUNT(*) FROM relationships").fetchone()[0]
+            relationships = c.execute("SELECT COUNT(*) FROM relationships").fetchone()[
+                0
+            ]
         return {
-            "periods": periods, "milestones": milestones,
-            "identity_traits": traits, "narratives": narratives,
+            "periods": periods,
+            "milestones": milestones,
+            "identity_traits": traits,
+            "narratives": narratives,
             "relationships": relationships,
         }
 

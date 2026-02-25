@@ -59,6 +59,7 @@ def collect_from_ans(selected_checks: Optional[List[str]] = None) -> List[Signal
     """
     try:
         from modules.humanoid.ans.checks import _register_all
+
         _register_all()
     except Exception:
         pass
@@ -104,7 +105,9 @@ def collect_from_ans(selected_checks: Optional[List[str]] = None) -> List[Signal
                 points=_weighted_points(sev, domain),
                 fingerprint=_fingerprint(cid, msg),
                 message=str(msg)[:500],
-                details=details if isinstance(details, dict) else {"details": str(details)[:500]},
+                details=details
+                if isinstance(details, dict)
+                else {"details": str(details)[:500]},
                 suggested_heals=suggested,
             )
         )
@@ -116,6 +119,7 @@ def collect_from_metrics() -> List[Signal]:
     out: List[Signal] = []
     try:
         from modules.humanoid.metrics import get_metrics_store
+
         snap = get_metrics_store().snapshot()
         lat = (snap.get("latencies") or {}) if isinstance(snap, dict) else {}
     except Exception:
@@ -160,11 +164,18 @@ def collect_from_metrics() -> List[Signal]:
 
     # Aprendizaje: persistencia DB + snapshots (si falla, es degradación seria de "memoria viva")
     try:
-        from pathlib import Path
         import sqlite3
+        from pathlib import Path
 
-        db_path = Path(os.getenv("LEARNING_EPISODIC_DB_PATH", r"C:\ATLAS_PUSH\logs\learning_episodic.sqlite"))
-        snap_dir = Path(os.getenv("LEARNING_SNAPSHOT_DIR", r"C:\ATLAS_PUSH\snapshots\learning"))
+        db_path = Path(
+            os.getenv(
+                "LEARNING_EPISODIC_DB_PATH",
+                r"C:\ATLAS_PUSH\logs\learning_episodic.sqlite",
+            )
+        )
+        snap_dir = Path(
+            os.getenv("LEARNING_SNAPSHOT_DIR", r"C:\ATLAS_PUSH\snapshots\learning")
+        )
         ok_db = False
         ok_snap = False
         try:
@@ -195,8 +206,15 @@ def collect_from_metrics() -> List[Signal]:
                     points=_weighted_points(sev, "memory"),
                     fingerprint=_fingerprint(sensor_id, msg),
                     message=msg,
-                    details={"db_path": str(db_path), "snap_dir": str(snap_dir), "db_ok": ok_db, "snap_ok": ok_snap},
-                    suggested_heals=["clear_stale_locks"] if not (ok_db and ok_snap) else [],
+                    details={
+                        "db_path": str(db_path),
+                        "snap_dir": str(snap_dir),
+                        "db_ok": ok_db,
+                        "snap_ok": ok_snap,
+                    },
+                    suggested_heals=["clear_stale_locks"]
+                    if not (ok_db and ok_snap)
+                    else [],
                 )
             )
     except Exception:
@@ -243,6 +261,7 @@ def collect_from_organs() -> List[Signal]:
         if driver == "digital":
             try:
                 from modules.humanoid.deps_checker import check_playwright
+
                 pw = check_playwright()
                 if not pw.get("available", False):
                     sev = "med"
@@ -256,7 +275,10 @@ def collect_from_organs() -> List[Signal]:
                             points=_weighted_points(sev, "brain"),
                             fingerprint=_fingerprint(sensor_id, msg),
                             message=msg,
-                            details={"missing_deps": pw.get("missing_deps", []), "suggested": pw.get("suggested", "")},
+                            details={
+                                "missing_deps": pw.get("missing_deps", []),
+                                "suggested": pw.get("suggested", ""),
+                            },
                             suggested_heals=["install_optional_deps"],
                         )
                     )
@@ -283,4 +305,3 @@ def collect_from_organs() -> List[Signal]:
         pass
 
     return out
-

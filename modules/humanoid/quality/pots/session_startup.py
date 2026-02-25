@@ -10,7 +10,8 @@ Triggers:
 
 Severidad: LOW
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -28,17 +29,20 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
         severity=POTSeverity.LOW,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["startup_*", "session_start"],
-        trigger_keywords=["startup", "inicio", "buenos dias", "start session", "morning"],
-        
+        trigger_keywords=[
+            "startup",
+            "inicio",
+            "buenos dias",
+            "start session",
+            "morning",
+        ],
         prerequisites=[
             "Sistema arrancado",
             "Servicios básicos disponibles",
         ],
         required_services=[],
         required_permissions=["git_read", "service_status"],
-        
         objectives=[
             "Sincronizar repositorio",
             "Verificar salud del sistema",
@@ -47,7 +51,6 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
         ],
         success_criteria="Sistema listo para trabajo con todos los servicios verificados",
         estimated_duration_minutes=3,
-        
         tutorial_overview="""
 ## Guía de Inicio de Sesión
 
@@ -70,16 +73,13 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
 - `curl localhost:8791/health` - Health check
 - `curl localhost:8791/status` - Estado detallado
         """.strip(),
-        
         best_practices=[
             "Ejecutar al inicio de cada sesión de trabajo",
             "Revisar el resumen de cambios remotos",
             "Verificar que no hay incidentes pendientes",
         ],
-        
         related_pots=["git_pull", "diagnostic_full", "session_shutdown"],
         tags=["startup", "session", "sync", "initialization"],
-        
         steps=[
             POTStep(
                 id="fetch_remote",
@@ -90,7 +90,6 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
                 timeout_seconds=60,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_behind",
                 name="Verificar commits pendientes",
@@ -100,7 +99,6 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
                 timeout_seconds=10,
                 capture_output=True,
             ),
-            
             POTStep(
                 id="pull_if_needed",
                 name="Pull si hay cambios",
@@ -110,7 +108,6 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
                 timeout_seconds=120,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_health",
                 name="Verificar salud del sistema",
@@ -122,7 +119,6 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_robot",
                 name="Verificar Robot backend",
@@ -133,7 +129,6 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
                 timeout_seconds=15,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_incidents",
                 name="Revisar incidentes pendientes",
@@ -145,7 +140,6 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="check_approvals",
                 name="Revisar aprobaciones pendientes",
@@ -157,7 +151,6 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
                 capture_output=True,
                 continue_on_failure=True,
             ),
-            
             POTStep(
                 id="log_startup",
                 name="Registrar inicio de sesión",
@@ -168,10 +161,9 @@ Procedimiento de inicio de sesión que prepara el sistema para trabajo:
                 http_body={
                     "message": "[SESSION] Inicio de sesión - Sistema preparado",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
             ),
-            
             POTStep(
                 id="notify_ready",
                 name="Notificar disponibilidad",

@@ -31,25 +31,15 @@ class TaskGenerator:
             for demo_idx in range(20):
                 start_x = np.random.uniform(-10, 10)
                 start_y = np.random.uniform(-10, 10)
-                distance = np.sqrt(
-                    (goal_x - start_x) ** 2 + (goal_y - start_y) ** 2
-                )
+                distance = np.sqrt((goal_x - start_x) ** 2 + (goal_y - start_y) ** 2)
                 state = _pad_state(
                     np.array(
                         [start_x, start_y, goal_x, goal_y, distance],
                         dtype=np.float32,
                     )
                 )
-                move_x = (
-                    (goal_x - start_x) / distance
-                    if distance > 1e-6
-                    else 0.0
-                )
-                move_y = (
-                    (goal_y - start_y) / distance
-                    if distance > 1e-6
-                    else 0.0
-                )
+                move_x = (goal_x - start_x) / distance if distance > 1e-6 else 0.0
+                move_y = (goal_y - start_y) / distance if distance > 1e-6 else 0.0
                 action = np.array([move_x, move_y], dtype=np.float32)
                 action = _pad_state(action, 64)
                 reward = float(-distance)

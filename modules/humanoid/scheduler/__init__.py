@@ -2,13 +2,8 @@
 from __future__ import annotations
 
 from .db import SchedulerDB
-from .engine import (
-    get_scheduler_db,
-    is_scheduler_running,
-    request_cancel,
-    start_scheduler,
-    stop_scheduler,
-)
+from .engine import (get_scheduler_db, is_scheduler_running, request_cancel,
+                     start_scheduler, stop_scheduler)
 from .models import JobSpec
 
 __all__ = [

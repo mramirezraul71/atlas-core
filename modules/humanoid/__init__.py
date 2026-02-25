@@ -20,55 +20,71 @@ Módulos Legacy:
 """
 from __future__ import annotations
 
+from modules.humanoid.autonomy import AutonomyModule
+from modules.humanoid.brain import BrainOrchestrator
+from modules.humanoid.comms import CommsModule
+from modules.humanoid.ears import EarsModule
+from modules.humanoid.eyes import EyesModule
+from modules.humanoid.hands import HandsModule
 # Legacy modules
 from modules.humanoid.kernel import Kernel
-from modules.humanoid.brain import BrainOrchestrator
-from modules.humanoid.hands import HandsModule
-from modules.humanoid.eyes import EyesModule
-from modules.humanoid.ears import EarsModule
-from modules.humanoid.autonomy import AutonomyModule
-from modules.humanoid.comms import CommsModule
 from modules.humanoid.update import UpdateModule
+
 
 # Cognitive Architecture - lazy imports to avoid circular dependencies
 def get_medulla():
     """Get Medulla Atlas bus."""
     from modules.humanoid.medulla import MedullaAtlas
+
     return MedullaAtlas
+
 
 def get_cortex():
     """Get Cortex modules."""
     from modules.humanoid import cortex
+
     return cortex
+
 
 def get_limbic():
     """Get Limbic system modules."""
     from modules.humanoid import limbic
+
     return limbic
+
 
 def get_hippo():
     """Get Hippocampus memory modules."""
     from modules.humanoid import hippo
+
     return hippo
+
 
 def get_brainstem():
     """Get Brainstem modules."""
     from modules.humanoid import brainstem
+
     return brainstem
+
 
 def get_basal():
     """Get Basal ganglia modules."""
     from modules.humanoid import basal
+
     return basal
+
 
 def get_motor():
     """Get Motor control modules."""
     from modules.humanoid import motor
+
     return motor
+
 
 def get_learning():
     """Get Learning modules."""
     from modules.humanoid import learning
+
     return learning
 
 
@@ -91,28 +107,38 @@ def create_humanoid_kernel() -> Kernel:
 def create_cognitive_system():
     """
     Creates full cognitive system with all Atlas brain components.
-    
+
     Returns:
         Dictionary with all cognitive modules initialized.
     """
-    from modules.humanoid.medulla import MedullaAtlas
-    from modules.humanoid.cortex.frontal import TaskPlanner, DecisionMaker, InhibitoryControl
-    from modules.humanoid.cortex.parietal import SensoryFusion, SpatialMap, BodySchema
-    from modules.humanoid.cortex.temporal import AudioProcessor, LanguageUnderstanding, EpisodicRecall
-    from modules.humanoid.cortex.occipital import VisionPipeline, DepthEstimation, ObjectRecognition
-    from modules.humanoid.limbic import GoalManager, RewardEngine, StateRegulator
-    from modules.humanoid.hippo import HippoAPI
-    from modules.humanoid.brainstem import VitalsMonitor, SafetyPolicy, GlobalState, Watchdog
     from modules.humanoid.basal import ActionSelector, Inhibitor
-    from modules.humanoid.motor import TrajectoryPlanner, MotorController, MotorInterface
+    from modules.humanoid.brainstem import (GlobalState, SafetyPolicy,
+                                            VitalsMonitor, Watchdog)
+    from modules.humanoid.cortex.frontal import (DecisionMaker,
+                                                 InhibitoryControl,
+                                                 TaskPlanner)
+    from modules.humanoid.cortex.occipital import (DepthEstimation,
+                                                   ObjectRecognition,
+                                                   VisionPipeline)
+    from modules.humanoid.cortex.parietal import (BodySchema, SensoryFusion,
+                                                  SpatialMap)
+    from modules.humanoid.cortex.temporal import (AudioProcessor,
+                                                  EpisodicRecall,
+                                                  LanguageUnderstanding)
+    from modules.humanoid.hippo import HippoAPI
     from modules.humanoid.learning import LearningAPI
-    
+    from modules.humanoid.limbic import (GoalManager, RewardEngine,
+                                         StateRegulator)
+    from modules.humanoid.medulla import MedullaAtlas
+    from modules.humanoid.motor import (MotorController, MotorInterface,
+                                        TrajectoryPlanner)
+
     # Initialize bus
     medulla = MedullaAtlas(use_zmq=False)  # Use threading bus by default
-    
+
     # Initialize memory
     hippo = HippoAPI()
-    
+
     # Initialize cortex
     cortex = {
         "frontal": {
@@ -136,14 +162,14 @@ def create_cognitive_system():
             "object_recognition": ObjectRecognition(),
         },
     }
-    
+
     # Initialize limbic
     limbic = {
         "goal_manager": GoalManager(),
         "reward_engine": RewardEngine(),
         "state_regulator": StateRegulator(),
     }
-    
+
     # Initialize brainstem
     brainstem = {
         "vitals_monitor": VitalsMonitor(),
@@ -151,27 +177,27 @@ def create_cognitive_system():
         "global_state": GlobalState(),
         "watchdog": Watchdog(),
     }
-    
+
     # Initialize basal ganglia
     basal = {
         "action_selector": ActionSelector(),
         "inhibitor": Inhibitor(),
     }
-    
+
     # Initialize motor control
     trajectory_planner = TrajectoryPlanner()
     motor_controller = MotorController()
     motor_interface = MotorInterface(trajectory_planner, motor_controller)
-    
+
     motor = {
         "trajectory_planner": trajectory_planner,
         "motor_controller": motor_controller,
         "motor_interface": motor_interface,
     }
-    
+
     # Initialize learning
     learning = LearningAPI()
-    
+
     return {
         "medulla": medulla,
         "cortex": cortex,

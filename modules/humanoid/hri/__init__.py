@@ -13,18 +13,18 @@ Componentes:
 
 Uso:
     from modules.humanoid.hri import HRISystem
-    
+
     hri = HRISystem()
     hri.start()
     intent = hri.process_input("Hola, tráeme un vaso")
 """
-from .voice_interface import VoiceInterface, VoiceConfig
-from .gesture_recognition import GestureRecognizer, Gesture
-from .emotion_recognition import EmotionRecognizer, Emotion
-from .intent_parser import IntentParser, Intent
 from .dialog_manager import DialogManager, DialogState
+from .emotion_recognition import Emotion, EmotionRecognizer
+from .gesture_recognition import Gesture, GestureRecognizer
+from .hri_system import HRIConfig, HRISystem
+from .intent_parser import Intent, IntentParser
 from .safety_monitor import SafetyMonitor, SafetyZone
-from .hri_system import HRISystem, HRIConfig
+from .voice_interface import VoiceConfig, VoiceInterface
 
 __all__ = [
     "VoiceInterface",

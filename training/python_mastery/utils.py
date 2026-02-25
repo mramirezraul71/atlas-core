@@ -24,4 +24,3 @@ def chunk_list(items: Sequence[T], size: int) -> List[List[T]]:
 def safe_get(d: dict, key: str, default: Optional[Any] = None) -> Any:
     """PY001: Obtener clave anidada por 'a.b.c' con default."""
     raise NotImplementedError("Implementar en PY001")
-

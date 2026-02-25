@@ -2,16 +2,17 @@
 Modelos de datos para el sistema de chats de ATLAS
 """
 
-from dataclasses import dataclass, field, asdict
-from datetime import datetime
-from typing import List, Optional, Dict, Any
-from enum import Enum
-import uuid
 import json
+import uuid
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 
 class TipoMensaje(str, Enum):
     """Tipos de mensajes"""
+
     TEXTO = "texto"
     COMANDO = "comando"
     NOTIFICACION = "notificacion"
@@ -22,6 +23,7 @@ class TipoMensaje(str, Enum):
 
 class RolParticipante(str, Enum):
     """Roles de participantes en chats"""
+
     ESPECIALISTA = "especialista"
     ATLAS = "atlas"
     SISTEMA = "sistema"
@@ -31,6 +33,7 @@ class RolParticipante(str, Enum):
 
 class EstadoConversacion(str, Enum):
     """Estados de una conversación"""
+
     ACTIVA = "ACTIVA"
     PAUSADA = "PAUSADA"
     CERRADA = "CERRADA"
@@ -40,6 +43,7 @@ class EstadoConversacion(str, Enum):
 @dataclass
 class Mensaje:
     """Representa un mensaje en una conversación"""
+
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     conversacion_id: str = ""
     remitente: str = ""
@@ -48,7 +52,7 @@ class Mensaje:
     timestamp: datetime = field(default_factory=datetime.now)
     tipo: TipoMensaje = TipoMensaje.TEXTO
     metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convierte el mensaje a diccionario"""
         return {
@@ -59,11 +63,11 @@ class Mensaje:
             "contenido": self.contenido,
             "timestamp": self.timestamp.isoformat(),
             "tipo": self.tipo.value,
-            "metadata": self.metadata
+            "metadata": self.metadata,
         }
-    
+
     @staticmethod
-    def from_dict(data: Dict[str, Any]) -> 'Mensaje':
+    def from_dict(data: Dict[str, Any]) -> "Mensaje":
         """Crea un mensaje desde un diccionario"""
         msg = Mensaje(
             id=data.get("id", str(uuid.uuid4())),
@@ -72,7 +76,7 @@ class Mensaje:
             rol=RolParticipante(data.get("rol", "usuario")),
             contenido=data.get("contenido", ""),
             tipo=TipoMensaje(data.get("tipo", "texto")),
-            metadata=data.get("metadata", {})
+            metadata=data.get("metadata", {}),
         )
         if isinstance(data.get("timestamp"), str):
             msg.timestamp = datetime.fromisoformat(data["timestamp"])
@@ -82,6 +86,7 @@ class Mensaje:
 @dataclass
 class Conversacion:
     """Representa una conversación (hilo de chat)"""
+
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     titulo: str = ""
     especialista_id: Optional[str] = None
@@ -93,25 +98,25 @@ class Conversacion:
     resumen: str = ""
     mensajes: List[Mensaje] = field(default_factory=list)
     participantes: List[str] = field(default_factory=list)
-    
+
     def agregar_mensaje(self, mensaje: Mensaje) -> None:
         """Agrega un mensaje a la conversación"""
         mensaje.conversacion_id = self.id
         self.mensajes.append(mensaje)
         if mensaje.remitente not in self.participantes:
             self.participantes.append(mensaje.remitente)
-    
+
     def obtener_historial(self, limite: int = None) -> List[Mensaje]:
         """Obtiene el historial de mensajes"""
         if limite:
             return self.mensajes[-limite:]
         return self.mensajes
-    
+
     def cerrar(self) -> None:
         """Cierra la conversación"""
         self.estado = EstadoConversacion.CERRADA
         self.fecha_fin = datetime.now()
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convierte la conversación a diccionario"""
         return {
@@ -126,11 +131,11 @@ class Conversacion:
             "resumen": self.resumen,
             "total_mensajes": len(self.mensajes),
             "participantes": self.participantes,
-            "mensajes": [m.to_dict() for m in self.mensajes]
+            "mensajes": [m.to_dict() for m in self.mensajes],
         }
-    
+
     @staticmethod
-    def from_dict(data: Dict[str, Any]) -> 'Conversacion':
+    def from_dict(data: Dict[str, Any]) -> "Conversacion":
         """Crea una conversación desde un diccionario"""
         conv = Conversacion(
             id=data.get("id", str(uuid.uuid4())),
@@ -140,23 +145,24 @@ class Conversacion:
             estado=EstadoConversacion(data.get("estado", "ACTIVA")),
             tema=data.get("tema", ""),
             resumen=data.get("resumen", ""),
-            participantes=data.get("participantes", [])
+            participantes=data.get("participantes", []),
         )
         if isinstance(data.get("fecha_inicio"), str):
             conv.fecha_inicio = datetime.fromisoformat(data["fecha_inicio"])
         if isinstance(data.get("fecha_fin"), str):
             conv.fecha_fin = datetime.fromisoformat(data["fecha_fin"])
-        
+
         # Cargar mensajes
         for msg_data in data.get("mensajes", []):
             conv.mensajes.append(Mensaje.from_dict(msg_data))
-        
+
         return conv
 
 
 @dataclass
 class EventoAuditoria:
     """Evento de auditoría de chat"""
+
     id: int = field(default_factory=lambda: int(datetime.now().timestamp() * 1000))
     conversacion_id: str = ""
     mensaje_id: Optional[str] = None
@@ -164,7 +170,7 @@ class EventoAuditoria:
     actor: str = ""
     timestamp: datetime = field(default_factory=datetime.now)
     detalles: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convierte el evento a diccionario"""
         return {
@@ -174,23 +180,24 @@ class EventoAuditoria:
             "accion": self.accion,
             "actor": self.actor,
             "timestamp": self.timestamp.isoformat(),
-            "detalles": self.detalles
+            "detalles": self.detalles,
         }
 
 
 @dataclass
 class ResultadoBusqueda:
     """Resultado de búsqueda en chats"""
+
     total: int = 0
     mensajes: List[Mensaje] = field(default_factory=list)
     conversaciones: List[Conversacion] = field(default_factory=list)
     tiempo_busqueda_ms: float = 0.0
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convierte el resultado a diccionario"""
         return {
             "total": self.total,
             "mensajes": [m.to_dict() for m in self.mensajes],
             "conversaciones": [c.to_dict() for c in self.conversaciones],
-            "tiempo_busqueda_ms": self.tiempo_busqueda_ms
+            "tiempo_busqueda_ms": self.tiempo_busqueda_ms,
         }

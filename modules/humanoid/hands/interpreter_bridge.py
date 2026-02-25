@@ -27,13 +27,33 @@ logger = logging.getLogger("atlas.interpreter")
 
 _MODEL_CATALOG: Dict[str, List[Dict[str, str]]] = {
     "bedrock": [
-        {"id": "bedrock/us.anthropic.claude-opus-4-6-v1:0", "label": "Claude Opus 4.6 (Bedrock)", "tier": "premium"},
-        {"id": "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0", "label": "Claude Sonnet 4 (Bedrock)", "tier": "standard"},
-        {"id": "bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0", "label": "Claude Haiku 4.5 (Bedrock)", "tier": "fast"},
+        {
+            "id": "bedrock/us.anthropic.claude-opus-4-6-v1:0",
+            "label": "Claude Opus 4.6 (Bedrock)",
+            "tier": "premium",
+        },
+        {
+            "id": "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0",
+            "label": "Claude Sonnet 4 (Bedrock)",
+            "tier": "standard",
+        },
+        {
+            "id": "bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "label": "Claude Haiku 4.5 (Bedrock)",
+            "tier": "fast",
+        },
     ],
     "anthropic": [
-        {"id": "anthropic/claude-opus-4-20250514", "label": "Claude Opus 4 (Direct)", "tier": "premium"},
-        {"id": "anthropic/claude-sonnet-4-20250514", "label": "Claude Sonnet 4 (Direct)", "tier": "standard"},
+        {
+            "id": "anthropic/claude-opus-4-20250514",
+            "label": "Claude Opus 4 (Direct)",
+            "tier": "premium",
+        },
+        {
+            "id": "anthropic/claude-sonnet-4-20250514",
+            "label": "Claude Sonnet 4 (Direct)",
+            "tier": "standard",
+        },
     ],
     "openai": [
         {"id": "openai/gpt-4.1", "label": "GPT-4.1", "tier": "premium"},
@@ -51,19 +71,40 @@ _MODEL_CATALOG: Dict[str, List[Dict[str, str]]] = {
     ],
     "deepseek": [
         {"id": "deepseek/deepseek-chat", "label": "DeepSeek V3", "tier": "standard"},
-        {"id": "deepseek/deepseek-reasoner", "label": "DeepSeek R1", "tier": "reasoning"},
+        {
+            "id": "deepseek/deepseek-reasoner",
+            "label": "DeepSeek R1",
+            "tier": "reasoning",
+        },
     ],
     "groq": [
-        {"id": "groq/llama-3.3-70b-versatile", "label": "Llama 3.3 70B (Groq)", "tier": "fast"},
+        {
+            "id": "groq/llama-3.3-70b-versatile",
+            "label": "Llama 3.3 70B (Groq)",
+            "tier": "fast",
+        },
     ],
     "ollama": [
         {"id": "ollama/llama3.1:latest", "label": "Llama 3.1 (Local)", "tier": "local"},
-        {"id": "ollama/deepseek-r1:latest", "label": "DeepSeek R1 (Local)", "tier": "local"},
+        {
+            "id": "ollama/deepseek-r1:latest",
+            "label": "DeepSeek R1 (Local)",
+            "tier": "local",
+        },
         {"id": "ollama/qwen2.5:latest", "label": "Qwen 2.5 (Local)", "tier": "local"},
     ],
 }
 
-_PROVIDER_PRIORITY = ["bedrock", "anthropic", "openai", "xai", "gemini", "deepseek", "groq", "ollama"]
+_PROVIDER_PRIORITY = [
+    "bedrock",
+    "anthropic",
+    "openai",
+    "xai",
+    "gemini",
+    "deepseek",
+    "groq",
+    "ollama",
+]
 
 _ATLAS_SYSTEM_MESSAGE = """\
 Eres el agente de ejecucion autonoma del sistema ATLAS NEXUS.
@@ -145,6 +186,7 @@ def list_available_models() -> List[Dict[str, str]]:
 # InterpreterSession
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class InterpreterSession:
     """Isolated Open Interpreter instance with its own conversation state."""
@@ -160,6 +202,7 @@ class InterpreterSession:
         if self._interpreter is not None:
             return self._interpreter
         from interpreter import OpenInterpreter
+
         oi = OpenInterpreter()
         model_id = self.model or resolve_model()
         self.model = model_id
@@ -170,7 +213,9 @@ class InterpreterSession:
 
         prov = model_id.split("/")[0] if "/" in model_id else model_id.split(":")[0]
         if prov == "bedrock":
-            os.environ.setdefault("AWS_REGION_NAME", os.getenv("AWS_REGION", "us-east-1"))
+            os.environ.setdefault(
+                "AWS_REGION_NAME", os.getenv("AWS_REGION", "us-east-1")
+            )
         elif prov == "ollama":
             oi.llm.api_base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         elif prov == "openai":
@@ -178,7 +223,9 @@ class InterpreterSession:
         elif prov == "anthropic":
             oi.llm.api_key = os.getenv("ANTHROPIC_API_KEY", "")
         elif prov == "gemini":
-            oi.llm.api_key = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
+            oi.llm.api_key = os.getenv("GEMINI_API_KEY", "") or os.getenv(
+                "GOOGLE_API_KEY", ""
+            )
         elif prov == "xai":
             oi.llm.api_key = os.getenv("XAI_API_KEY", "")
         elif prov == "deepseek":
@@ -186,7 +233,11 @@ class InterpreterSession:
         elif prov == "groq":
             oi.llm.api_key = os.getenv("GROQ_API_KEY", "")
 
-        oi.auto_run = os.getenv("INTERPRETER_AUTO_RUN", "false").strip().lower() in ("1", "true", "yes")
+        oi.auto_run = os.getenv("INTERPRETER_AUTO_RUN", "false").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
         oi.safe_mode = "ask"
         oi.verbose = False
         oi.system_message = _ATLAS_SYSTEM_MESSAGE
@@ -197,10 +248,14 @@ class InterpreterSession:
         oi.max_output = 3000
 
         self._interpreter = oi
-        logger.info("InterpreterSession %s created with model=%s", self.session_id, model_id)
+        logger.info(
+            "InterpreterSession %s created with model=%s", self.session_id, model_id
+        )
         return oi
 
-    def chat_sync(self, task: str, stream: bool = True, auto_run: Optional[bool] = None) -> list:
+    def chat_sync(
+        self, task: str, stream: bool = True, auto_run: Optional[bool] = None
+    ) -> list:
         """Blocking chat call.  Returns list of message chunks."""
         with self._lock:
             oi = self._ensure_interpreter()
@@ -223,6 +278,7 @@ class InterpreterSession:
 # Session Manager
 # ---------------------------------------------------------------------------
 
+
 class InterpreterSessionManager:
     """Thread-safe pool of interpreter sessions with TTL eviction."""
 
@@ -236,7 +292,9 @@ class InterpreterSessionManager:
         self._sessions: Dict[str, InterpreterSession] = {}
         self._lock = threading.Lock()
 
-    def get_or_create(self, session_id: Optional[str] = None, model: Optional[str] = None) -> InterpreterSession:
+    def get_or_create(
+        self, session_id: Optional[str] = None, model: Optional[str] = None
+    ) -> InterpreterSession:
         with self._lock:
             self._evict_expired()
             if session_id and session_id in self._sessions:
@@ -244,7 +302,9 @@ class InterpreterSessionManager:
                 s.last_active = time.time()
                 return s
             if len(self._sessions) >= self._max:
-                oldest_key = min(self._sessions, key=lambda k: self._sessions[k].last_active)
+                oldest_key = min(
+                    self._sessions, key=lambda k: self._sessions[k].last_active
+                )
                 old = self._sessions.pop(oldest_key)
                 old.reset()
                 logger.info("Evicted oldest session %s to make room", oldest_key)
@@ -277,7 +337,9 @@ class InterpreterSessionManager:
 
     def _evict_expired(self) -> None:
         now = time.time()
-        expired = [k for k, v in self._sessions.items() if (now - v.last_active) > self._ttl]
+        expired = [
+            k for k, v in self._sessions.items() if (now - v.last_active) > self._ttl
+        ]
         for k in expired:
             s = self._sessions.pop(k, None)
             if s:
@@ -306,6 +368,7 @@ def get_session_manager() -> InterpreterSessionManager:
 # Execution helpers (async wrappers)
 # ---------------------------------------------------------------------------
 
+
 def _policy_check(task: str) -> Optional[str]:
     """
     Return error string if policy explicitly denies execution, else None.
@@ -317,6 +380,7 @@ def _policy_check(task: str) -> Optional[str]:
     """
     try:
         from modules.humanoid.policy import ActorContext, get_policy_engine
+
         role = os.getenv("POLICY_DEFAULT_ROLE", "owner")
         actor = ActorContext(actor="interpreter", role=role)
         decision = get_policy_engine().can(actor, "hands", "exec_command", target=task)
@@ -332,9 +396,12 @@ def _policy_check(task: str) -> Optional[str]:
     return None
 
 
-def _audit_log(task: str, ok: bool, ms: int, error: Optional[str], meta: Optional[dict] = None) -> None:
+def _audit_log(
+    task: str, ok: bool, ms: int, error: Optional[str], meta: Optional[dict] = None
+) -> None:
     try:
         from modules.humanoid.audit import get_audit_logger
+
         get_audit_logger().log_event(
             "interpreter",
             os.getenv("POLICY_DEFAULT_ROLE", "owner"),
@@ -395,21 +462,52 @@ async def execute_streaming(
     for chunk in chunks:
         ctype = chunk.get("type", "message")
         if ctype == "message":
-            yield {"type": "message", "content": chunk.get("content", ""), "role": chunk.get("role", "assistant")}
+            yield {
+                "type": "message",
+                "content": chunk.get("content", ""),
+                "role": chunk.get("role", "assistant"),
+            }
         elif ctype == "code":
-            yield {"type": "code", "language": chunk.get("format", "python"), "content": chunk.get("content", "")}
+            yield {
+                "type": "code",
+                "language": chunk.get("format", "python"),
+                "content": chunk.get("content", ""),
+            }
         elif ctype == "console":
-            yield {"type": "output", "content": chunk.get("output", chunk.get("content", "")), "format": chunk.get("format", "output")}
+            yield {
+                "type": "output",
+                "content": chunk.get("output", chunk.get("content", "")),
+                "format": chunk.get("format", "output"),
+            }
         elif ctype == "confirmation":
             yield {"type": "confirmation", "content": chunk.get("content", "")}
         elif ctype == "image":
-            yield {"type": "image", "content": chunk.get("content", ""), "format": chunk.get("format", "png")}
+            yield {
+                "type": "image",
+                "content": chunk.get("content", ""),
+                "format": chunk.get("format", "png"),
+            }
         else:
             yield {"type": ctype, "content": str(chunk.get("content", ""))}
 
     ms = int((time.perf_counter() - t0) * 1000)
-    _audit_log(task, True, ms, None, {"session_id": session.session_id, "model": session.model, "chunks": len(chunks)})
-    yield {"type": "done", "content": "Tarea completada", "elapsed_ms": ms, "session_id": session.session_id}
+    _audit_log(
+        task,
+        True,
+        ms,
+        None,
+        {
+            "session_id": session.session_id,
+            "model": session.model,
+            "chunks": len(chunks),
+        },
+    )
+    yield {
+        "type": "done",
+        "content": "Tarea completada",
+        "elapsed_ms": ms,
+        "session_id": session.session_id,
+    }
 
 
 async def execute_quick(task: str, model: Optional[str] = None) -> Dict[str, Any]:
@@ -442,7 +540,9 @@ async def execute_quick(task: str, model: Optional[str] = None) -> Dict[str, Any
         if m.get("type") == "message" and m.get("role") == "assistant"
     ]
     ms = int((time.perf_counter() - t0) * 1000)
-    _audit_log(task, True, ms, None, {"session_id": session.session_id, "model": session.model})
+    _audit_log(
+        task, True, ms, None, {"session_id": session.session_id, "model": session.model}
+    )
     return {
         "ok": True,
         "result": "\n".join(text_parts) or "Tarea ejecutada",
@@ -456,6 +556,7 @@ def interpreter_status() -> Dict[str, Any]:
     """Return engine status for the /status endpoint."""
     try:
         import interpreter as _oi_pkg
+
         version = getattr(_oi_pkg, "__version__", "unknown")
     except Exception:
         version = "not_installed"

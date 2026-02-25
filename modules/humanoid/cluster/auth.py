@@ -15,15 +15,20 @@ def _secret() -> bytes:
     return s.encode("utf-8") if isinstance(s, str) else s
 
 
-def _sign_payload(node_id: str, ts: str, nonce: str, method: str, path: str, body_hash: str) -> str:
+def _sign_payload(
+    node_id: str, ts: str, nonce: str, method: str, path: str, body_hash: str
+) -> str:
     payload = f"{node_id}|{ts}|{nonce}|{method}|{path}|{body_hash}"
     return hmac.new(_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def sign_request(node_id: str, method: str, path: str, body: Optional[bytes] = None) -> tuple[str, str, str]:
+def sign_request(
+    node_id: str, method: str, path: str, body: Optional[bytes] = None
+) -> tuple[str, str, str]:
     """Return (ts, nonce, signature) for headers."""
     ts = str(int(time.time()))
     import uuid
+
     nonce = str(uuid.uuid4())
     body_hash = hashlib.sha256(body or b"").hexdigest()
     sig = _sign_payload(node_id, ts, nonce, method.upper(), path, body_hash)

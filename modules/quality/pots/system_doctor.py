@@ -24,4 +24,3 @@ def get_pot() -> POT:
         tags=["health", "doctor", "vault", "paths"],
         steps=[POTStep(id="doctor", name="Ejecutar /doctor", run=_run, fatal=True)],
     )
-

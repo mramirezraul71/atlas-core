@@ -47,9 +47,11 @@ def _describe_scene_impl(frame: np.ndarray, detail_level: str) -> Dict[str, Any]
     """Implementación: intentar LLaVA/Ollama, luego fallback por detección o placeholder."""
     # 1) Ollama LLaVA si está disponible
     try:
-        import requests
         import base64
+
         import cv2
+        import requests
+
         _, buf = cv2.imencode(".jpg", frame)
         b64 = base64.b64encode(buf).decode("utf-8")
         url = "http://127.0.0.1:11434/api/generate"
@@ -91,13 +93,20 @@ def _describe_scene_impl(frame: np.ndarray, detail_level: str) -> Dict[str, Any]
 def answer_visual_question(frame: np.ndarray, question: str) -> Dict[str, Any]:
     """VQA: responde una pregunta sobre la imagen. { answer, confidence }."""
     try:
-        import requests
         import base64
+
         import cv2
+        import requests
+
         _, buf = cv2.imencode(".jpg", frame)
         b64 = base64.b64encode(buf).decode("utf-8")
         url = "http://127.0.0.1:11434/api/generate"
-        payload = {"model": "llava", "prompt": question, "images": [b64], "stream": False}
+        payload = {
+            "model": "llava",
+            "prompt": question,
+            "images": [b64],
+            "stream": False,
+        }
         r = requests.post(url, json=payload, timeout=15)
         if r.status_code == 200:
             answer = r.json().get("response", "").strip()

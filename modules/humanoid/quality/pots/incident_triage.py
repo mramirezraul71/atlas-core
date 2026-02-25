@@ -9,7 +9,8 @@ Triggers:
 
 Severidad: LOW (es un proceso de clasificación, no de reparación)
 """
-from modules.humanoid.quality.models import POT, POTStep, POTCategory, POTSeverity, StepType
+from modules.humanoid.quality.models import (POT, POTCategory, POTSeverity,
+                                             POTStep, StepType)
 
 
 def get_pot() -> POT:
@@ -24,16 +25,13 @@ Determina la severidad real, el POT apropiado y si requiere aprobación.
         severity=POTSeverity.LOW,
         version="1.0.0",
         author="ATLAS QA Senior",
-        
         trigger_check_ids=["incident_new", "triage_*"],
         trigger_keywords=["triage", "classify", "prioritize", "incident"],
-        
         prerequisites=[
             "Acceso al Workshop Central",
             "Acceso al ANS para consultar incidentes",
         ],
         required_services=["push"],
-        
         objectives=[
             "Clasificar incidentes por severidad (low, medium, high, critical)",
             "Identificar el POT apropiado para cada incidente",
@@ -42,7 +40,6 @@ Determina la severidad real, el POT apropiado y si requiere aprobación.
         ],
         success_criteria="Todos los incidentes clasificados con POT asignado",
         estimated_duration_minutes=2,
-        
         tutorial_overview="""
 ## Guía de Triaje de Incidentes
 
@@ -70,17 +67,14 @@ default → generic_repair
 3. MEDIUM: Cola normal
 4. LOW: Puede esperar, agregar al batch
         """.strip(),
-        
         best_practices=[
             "Revisar incidentes similares recientes antes de clasificar",
             "Agrupar incidentes relacionados para tratarlos juntos",
             "Escalar a CRITICAL si hay múltiples incidentes HIGH",
             "Documentar razón de clasificación para auditoría",
         ],
-        
         related_pots=["incident_response", "incident_postmortem"],
         tags=["incident", "triage", "classification", "priority"],
-        
         steps=[
             POTStep(
                 id="fetch_open_incidents",
@@ -93,7 +87,6 @@ default → generic_repair
                 capture_output=True,
                 tutorial_notes="Obtenemos todos los incidentes abiertos para clasificar.",
             ),
-            
             POTStep(
                 id="classify_by_check_id",
                 name="Clasificar por check_id",
@@ -110,7 +103,6 @@ La clasificación usa estas reglas:
 - disk_* → disk_cleanup (LOW)
                 """,
             ),
-            
             POTStep(
                 id="check_related_incidents",
                 name="Detectar incidentes relacionados",
@@ -124,7 +116,6 @@ Si hay múltiples servicios fallando, puede ser un problema upstream:
 - Recursos agotados (memoria/disco)
                 """,
             ),
-            
             POTStep(
                 id="prioritize_queue",
                 name="Priorizar cola de trabajo",
@@ -138,7 +129,6 @@ Orden de prioridad:
 4. LOW → Agregar al batch de mantenimiento
                 """,
             ),
-            
             POTStep(
                 id="log_triage_result",
                 name="Registrar resultado de triaje",
@@ -149,7 +139,7 @@ Orden de prioridad:
                 http_body={
                     "message": "[TRIAJE] Incidentes clasificados y priorizados",
                     "ok": True,
-                    "source": "quality_pot"
+                    "source": "quality_pot",
                 },
                 continue_on_failure=True,
             ),

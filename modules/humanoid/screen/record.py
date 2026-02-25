@@ -24,7 +24,11 @@ def stop_recording() -> Dict[str, Any]:
     if not _recording:
         return {"ok": False, "error": "not_recording", "actions": []}
     _recording = False
-    return {"ok": True, "actions": list(_recorded_actions), "count": len(_recorded_actions)}
+    return {
+        "ok": True,
+        "actions": list(_recorded_actions),
+        "count": len(_recorded_actions),
+    }
 
 
 def record_action(action: str, payload: Dict[str, Any]) -> None:

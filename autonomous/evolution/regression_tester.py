@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import logging
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -16,11 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config() -> dict:
-    cfg_path = Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    cfg_path = (
+        Path(__file__).resolve().parent.parent.parent / "config" / "autonomous.yaml"
+    )
     if not cfg_path.exists():
         return {}
     try:
         import yaml
+
         with open(cfg_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
@@ -64,12 +67,16 @@ class RegressionTester:
             "robot": "http://127.0.0.1:8002",
         }
 
-    def _check_url(self, url: str, timeout: int | None = None) -> tuple[bool, float, str]:
+    def _check_url(
+        self, url: str, timeout: int | None = None
+    ) -> tuple[bool, float, str]:
         """GET url; retorna (ok, latency_ms, message)."""
         timeout = timeout or self._timeout
         start = time.perf_counter()
         try:
-            req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
+            req = urllib.request.Request(
+                url, method="GET", headers={"Accept": "application/json"}
+            )
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 latency = (time.perf_counter() - start) * 1000
                 return (r.status == 200, latency, f"HTTP {r.status}")
@@ -92,13 +99,15 @@ class RegressionTester:
         ]
         for name, url in endpoints:
             ok, lat_ms, msg = self._check_url(url)
-            results.append(TestResult(
-                name=name,
-                passed=ok,
-                duration_ms=round(lat_ms, 2),
-                message=msg,
-                details={"url": url},
-            ))
+            results.append(
+                TestResult(
+                    name=name,
+                    passed=ok,
+                    duration_ms=round(lat_ms, 2),
+                    message=msg,
+                    details={"url": url},
+                )
+            )
         return results
 
     def run_performance_benchmark(self) -> dict[str, float]:
@@ -110,7 +119,12 @@ class RegressionTester:
             out[name] = round(lat_ms, 2)
         return out
 
-    def compare_with_baseline(self, current_metrics: dict[str, float], baseline: dict[str, float], max_degradation_pct: float = 10) -> tuple[bool, list[str]]:
+    def compare_with_baseline(
+        self,
+        current_metrics: dict[str, float],
+        baseline: dict[str, float],
+        max_degradation_pct: float = 10,
+    ) -> tuple[bool, list[str]]:
         """True si no hay regresión; lista de mensajes de regresión."""
         regressions = []
         for key, current in current_metrics.items():
@@ -119,7 +133,9 @@ class RegressionTester:
                 continue
             pct = ((current - base_val) / base_val) * 100
             if pct > max_degradation_pct:
-                regressions.append(f"{key}: latency +{pct:.1f}% (current={current}ms, baseline={base_val}ms)")
+                regressions.append(
+                    f"{key}: latency +{pct:.1f}% (current={current}ms, baseline={base_val}ms)"
+                )
         return (len(regressions) == 0, regressions)
 
     def run_full_test_suite(self) -> TestResults:

@@ -21,8 +21,8 @@ ATLAS NEXUS is a professional-grade autonomous AI system built on a layered micr
 └─────────────────────────────────────────┘
 ```
 
-**Purpose**: Provide multiple entry points for user interaction  
-**Technologies**: FastAPI, WebSocket, python-telegram-bot, Click  
+**Purpose**: Provide multiple entry points for user interaction
+**Technologies**: FastAPI, WebSocket, python-telegram-bot, Click
 **Key Files**: `api/rest_api.py`, `modules/atlas_telegram.py`
 
 ---
@@ -47,9 +47,9 @@ ATLAS NEXUS is a professional-grade autonomous AI system built on a layered micr
 └─────────────────────────────────────────┘
 ```
 
-**Purpose**: Intelligently route tasks to the best LLM  
-**Key Innovation**: Automatic model selection based on task type  
-**Technologies**: asyncio, aiohttp, OpenAI SDK, Anthropic SDK  
+**Purpose**: Intelligently route tasks to the best LLM
+**Key Innovation**: Automatic model selection based on task type
+**Technologies**: asyncio, aiohttp, OpenAI SDK, Anthropic SDK
 **Key Files**: `brain/neural_router.py`
 
 **Routing Logic**:
@@ -90,9 +90,9 @@ ATLAS NEXUS is a professional-grade autonomous AI system built on a layered micr
 └─────────────────────────────────────────┘
 ```
 
-**Purpose**: Execute multi-step goals autonomously  
-**Key Innovation**: Self-recovery and adaptive planning  
-**Technologies**: asyncio, dataclasses  
+**Purpose**: Execute multi-step goals autonomously
+**Key Innovation**: Self-recovery and adaptive planning
+**Technologies**: asyncio, dataclasses
 **Key Files**: `brain/autonomous_engine.py`
 
 **Execution Flow**:
@@ -123,9 +123,9 @@ ATLAS NEXUS is a professional-grade autonomous AI system built on a layered micr
 └─────────────────────────────────────────┘
 ```
 
-**Purpose**: Provide 50+ professional tools  
-**Key Innovation**: Extensible plugin architecture  
-**Technologies**: ABC, asyncio, Beautiful Soup, aiohttp  
+**Purpose**: Provide 50+ professional tools
+**Key Innovation**: Extensible plugin architecture
+**Technologies**: ABC, asyncio, Beautiful Soup, aiohttp
 **Key Files**: `tools/tools_registry.py`
 
 **Tool Categories**:
@@ -155,9 +155,9 @@ ATLAS NEXUS is a professional-grade autonomous AI system built on a layered micr
 └─────────────────────────────────────────┘
 ```
 
-**Purpose**: Persistent storage and state management  
-**Current**: File-based logs, snapshots, config  
-**Future**: Vector DB, Graph DB for advanced memory  
+**Purpose**: Persistent storage and state management
+**Current**: File-based logs, snapshots, config
+**Future**: Vector DB, Graph DB for advanced memory
 **Key Files**: `config/nexus_config.py`, logging system
 
 ---
@@ -354,7 +354,7 @@ logger.info("event", extra={
 class NewProviderClient:
     async def generate(self, prompt, model, ...):
         # Implementation
-        
+
 # Register in neural_router.py
 ```
 
@@ -363,7 +363,7 @@ class NewProviderClient:
 class CustomTool(BaseTool):
     def __init__(self):
         super().__init__(ToolMetadata(...))
-    
+
     async def execute(self, params, context):
         # Implementation
 

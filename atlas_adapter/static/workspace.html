@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CASCADE Workspace — Agent IDE</title>
+  <title>ATLAS Workspace — Agent IDE</title>
   <style>
     /* ═══════════════════════════════════════════
        THEMES — Same system as Dashboard v3.8
@@ -1293,7 +1293,7 @@
   <header class="topbar">
     <div class="topbar-brand">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/><line x1="12" y1="22" x2="12" y2="15.5"/><polyline points="22 8.5 12 15.5 2 8.5"/></svg>
-      CASCADE WORKSPACE
+      ATLAS WORKSPACE
     </div>
     <nav class="topbar-nav">
       <button class="topbar-btn active" data-view="chat" title="Agent Chat">Agent</button>
@@ -1302,7 +1302,7 @@
     </nav>
     <div class="topbar-spacer"></div>
     <div class="topbar-services">
-      <a class="svc" href="javascript:void(0)" onclick="window.open('/nexus','_blank')" title="Panel de Control CASCADE" style="cursor:pointer;text-decoration:none;color:inherit;"><span class="svc-dot" id="svc-nexus"></span>PANEL</a>
+      <a class="svc" href="javascript:void(0)" onclick="window.open('/nexus','_blank')" title="Panel de Control ATLAS" style="cursor:pointer;text-decoration:none;color:inherit;"><span class="svc-dot" id="svc-nexus"></span>PANEL</a>
       <span class="svc"><span class="svc-dot" id="svc-push"></span>PUSH</span>
       <a class="svc" href="javascript:void(0)" onclick="window.open('http://'+location.hostname+':8002/dashboard','_blank')" title="Robot 3D (puerto 8002)" style="cursor:pointer;text-decoration:none;color:inherit;"><span class="svc-dot" id="svc-robot"></span>ROBOT</a>
     </div>
@@ -1327,14 +1327,14 @@
     <section class="panel-left" id="panel-left">
       <div class="chat-header">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-        CASCADE AGENT
+        ATLAS AGENT
         <span class="badge" id="session-badge">Session</span>
       </div>
 
       <div class="chat-messages" id="chat-messages">
         <div class="msg cascade">
-          <div class="msg-label">CASCADE</div>
-          CASCADE Workspace listo. Escribe un objetivo, prompt, o comando para comenzar. Puedo crear apps, configurar sitios, generar scripts, y ejecutar tareas en tiempo real.
+          <div class="msg-label">ATLAS</div>
+          ATLAS Workspace listo. Escribe un objetivo, prompt, o comando para comenzar. Puedo crear apps, configurar sitios, generar scripts, y ejecutar tareas en tiempo real.
         </div>
       </div>
 
@@ -1392,6 +1392,10 @@
             <input type="checkbox" id="sync-config-toggle" onchange="toggleSyncConfig(this.checked)">
             <span class="sync-label" id="sync-label">🔗 Sync Config</span>
           </label>
+          <label class="sync-toggle" title="Si está ON, un modelo manual no hará failover automático">
+            <input type="checkbox" id="strict-model-toggle" onchange="onStrictModelToggle(this.checked)">
+            <span class="sync-label">🔒 Strict model</span>
+          </label>
         </div>
         <div class="preset-row" id="preset-row">
           <button class="preset-btn" id="preset-architect" onclick="applyPreset('architect')">Architect</button>
@@ -1445,7 +1449,7 @@
           <span class="chat-hint" onclick="insertHint(this)">/cascade status</span>
           <span class="chat-hint" onclick="insertHint(this)">Deploy a produccion</span>
           <span class="chat-hint" onclick="insertHint(this)">Revisa y corrige errores</span>
-          <span class="chat-hint" onclick="insertHint(this)">🗣️ Queja sobre CASCADE</span>
+          <span class="chat-hint" onclick="insertHint(this)">🗣️ Queja sobre ATLAS</span>
         </div>
       </div>
     </section>
@@ -1462,7 +1466,7 @@
       <div class="chat-messages" id="supervisor-messages">
         <div class="msg cascade">
           <div class="msg-label">SUPERVISOR</div>
-          Hola Raúl, soy tu Supervisor LLM. Puedo analizar el estado de CASCADE, generar recomendaciones profesionales y proponer próximos pasos. Describe qué necesitas revisar o analizar, incluyendo quejas específicas sobre el sistema CASCADE.
+          Hola Raúl, soy tu Supervisor LLM. Puedo analizar el estado de ATLAS, generar recomendaciones profesionales y proponer próximos pasos. Describe qué necesitas revisar o analizar, incluyendo quejas específicas sobre el sistema ATLAS.
         </div>
       </div>
 
@@ -1495,14 +1499,14 @@
             </button>
             <span id="supervisor-policy-status" style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;"></span>
           </div>
-          
+
           <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">CONTEXTO (opcional)</label>
           <div style="display:flex;gap:6px;margin-bottom:6px;">
-            <input type="text" id="supervisor-issues" placeholder="Issues CASCADE: dashboard, monitor, atascado, errores..." style="flex:1;padding:6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;">
+            <input type="text" id="supervisor-issues" placeholder="Issues ATLAS: dashboard, monitor, atascado, errores..." style="flex:1;padding:6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;">
             <input type="text" id="supervisor-modules" placeholder="Módulos: telegram, quality..." style="flex:1;padding:6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:12px;">
           </div>
         </div>
-        
+
         <div class="chat-input-row" style="display:flex;gap:6px;">
           <button class="chat-send" id="btn-supervisor-send" onclick="askSupervisor()" style="flex:1;justify-content:center;gap:6px;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
@@ -1512,7 +1516,7 @@
             🔍 Investigar
           </button>
         </div>
-        
+
         <!-- Execution Control Buttons -->
         <div style="display:flex;gap:6px;margin-top:8px;">
           <button id="btn-approve-high" onclick="approveHighPending()" style="flex:1;padding:8px;background:var(--accent-orange);color:var(--bg);border:none;border-radius:4px;cursor:pointer;font-weight:bold;font-size:12px;">
@@ -1522,7 +1526,7 @@
             <span id="autorun-mode-label">🔒 GUARDED</span>
           </button>
         </div>
-        
+
         <div class="chat-hints">
           <span class="chat-hint" onclick="setSupervisorHint(this)">Revisar salud del sistema</span>
           <span class="chat-hint" onclick="setSupervisorHint(this)">Analizar módulos con errores</span>
@@ -1722,7 +1726,7 @@
         <div class="live-header">
           <div class="live-indicator" id="live-indicator">
             <span class="live-dot"></span>
-            CASCADE
+            ATLAS
           </div>
           <div class="live-filter-tabs">
             <button class="live-filter active" data-filter="all" onclick="filterLive('all')">All</button>
@@ -1735,7 +1739,7 @@
         </div>
         <div class="live-feed" id="live-feed"></div>
         <div class="live-terminal-input">
-          <label>CASCADE &gt;</label>
+          <label>ATLAS &gt;</label>
           <input id="terminal-input" placeholder="Comando directo..." />
         </div>
       </div>
@@ -1747,7 +1751,7 @@
   <footer class="bottombar">
     <div class="bottombar-section">
       <span class="dot" style="background:var(--accent-primary)"></span>
-      CASCADE Agent v3.0
+      ATLAS Agent v3.0
     </div>
     <div class="bottombar-section" id="git-info">
       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 012 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>
@@ -1784,7 +1788,7 @@
 
 <script>
 // ═══════════════════════════════════════════════════════════════
-// CASCADE WORKSPACE — Engine
+// ATLAS WORKSPACE — Engine
 // ═══════════════════════════════════════════════════════════════
 
 const API = window.location.origin;
@@ -1923,7 +1927,7 @@ function stopChatRequest() {
     setChatProcessing(false);
     emitLive('warn', '<strong>⏹️ Generación interrumpida por usuario</strong>');
     addChatMessage('⏹️ Proceso interrumpido. Esperando nueva instrucción...', 'cascade');
-    
+
     // Limpiar cualquier indicador de pensamiento activo
     const activeThinking = document.querySelector('.thinking.active');
     if (activeThinking) {
@@ -1952,7 +1956,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSupervisorPolicy();
   loadExecutionHistory(false);
 
-  emitLive('info', '<strong>CASCADE Workspace iniciado</strong> — Esperando instrucciones');
+  emitLive('info', '<strong>ATLAS Workspace iniciado</strong> — Esperando instrucciones');
   document.getElementById('chat-input').focus();
 });
 
@@ -1974,7 +1978,7 @@ function switchView(view) {
   const panelSupervisor = document.getElementById('panel-supervisor');
   const panelInterpreter = document.getElementById('panel-interpreter');
   const panelMonitor = document.getElementById('panel-monitor');
-  
+
   panelAgent.style.display = 'none';
   panelSupervisor.style.display = 'none';
   if (panelInterpreter) panelInterpreter.style.display = 'none';
@@ -2496,63 +2500,63 @@ async function executePlan(plan) {
 function renderPlan(plan) {
   const lowSteps = plan.steps.filter(s => s.risk === 'low');
   const highSteps = plan.steps.filter(s => s.risk === 'high');
-  
+
   let html = '<div style="margin-bottom:16px;"><strong style="color:var(--accent-green);">📋 PLAN DE EJECUCIÓN</strong><br>';
   html += '<div id="plan-container" style="margin-top:8px;">';
-  
+
   plan.steps.forEach(step => {
     const riskColor = step.risk === 'low' ? 'var(--accent-green)' : 'var(--accent-orange)';
     const riskLabel = step.risk === 'low' ? 'LOW' : 'HIGH';
     const cmd = step.cmd || (step.method + ' ' + step.url);
-    
+
     html += `<div id="step-${step.id}" style="padding:6px;margin-bottom:4px;background:var(--bg-elevated);border-left:3px solid ${riskColor};border-radius:3px;font-size:12px;">`;
     html += `<span style="color:${riskColor};font-weight:bold;">[${riskLabel}]</span> `;
     html += `<code style="color:var(--text);">${escapeHtml(cmd)}</code>`;
     html += `<span id="step-${step.id}-status" style="margin-left:8px;font-size:11px;"></span>`;
     html += '</div>';
   });
-  
+
   html += '</div>';
-  
+
   // Buttons
   html += '<div style="margin-top:12px;display:flex;gap:8px;">';
   html += `<button onclick="executeLowSteps(window.__currentPlan)" style="padding:6px 12px;background:var(--accent-green);color:var(--bg);border:none;border-radius:4px;cursor:pointer;font-weight:bold;">▶ AUTO-LOW (${lowSteps.length})</button>`;
-  
+
   if (highSteps.length > 0) {
     html += `<button id="approve-high-btn" onclick="executeHighSteps()" style="padding:6px 12px;background:var(--accent-orange);color:var(--bg);border:none;border-radius:4px;cursor:pointer;font-weight:bold;">⚠ APROBAR HIGH (${highSteps.length})</button>`;
   }
-  
+
   html += `<button onclick="toggleAutorunMode()" style="padding:6px 12px;background:var(--accent-purple);color:var(--text);border:1px solid var(--border);border-radius:4px;cursor:pointer;">`;
   html += `<span id="autorun-mode-label">${window.__autorunMode === 'full' ? '🔓 FULL AUTO' : '🔒 GUARDED'}</span>`;
   html += '</button>';
   html += '</div></div>';
-  
+
   return html;
 }
 
 async function executeLowSteps(plan) {
   if (!plan || !plan.steps) return;
-  
+
   const lowSteps = plan.steps.filter(s => s.risk === 'low');
   emitLive('exec', `<strong>Ejecutando ${lowSteps.length} steps LOW...</strong>`);
-  
+
   let okCount = 0;
   let errorCount = 0;
-  
+
   for (const step of lowSteps) {
     const result = await executeStep(step);
     if (result.ok) okCount++;
     else errorCount++;
   }
-  
+
   // Store pending HIGH steps
   const highSteps = plan.steps.filter(s => s.risk === 'high');
   window.__pendingHighSteps = highSteps;
-  
+
   // Show summary
   const summaryHtml = `<div style="margin-top:8px;padding:8px;background:var(--bg-elevated);border-radius:4px;"><strong>RESUMEN:</strong> ✅ ${okCount} OK · ❌ ${errorCount} ERROR · ⏸ ${highSteps.length} HIGH PENDING</div>`;
   addSupervisorMessage('supervisor', summaryHtml);
-  
+
   // Auto-execute HIGH if FULL AUTO mode
   if (window.__autorunMode === 'full' && highSteps.length > 0) {
     setTimeout(() => executeHighSteps(), 1000);
@@ -2562,23 +2566,23 @@ async function executeLowSteps(plan) {
 async function executeHighSteps() {
   const highSteps = window.__pendingHighSteps;
   if (!highSteps || highSteps.length === 0) return;
-  
+
   emitLive('exec', `<strong>Ejecutando ${highSteps.length} steps HIGH...</strong>`);
-  
+
   let okCount = 0;
   let errorCount = 0;
-  
+
   for (const step of highSteps) {
     const result = await executeStep(step);
     if (result.ok) okCount++;
     else errorCount++;
   }
-  
+
   window.__pendingHighSteps = [];
-  
+
   const summaryHtml = `<div style="margin-top:8px;padding:8px;background:var(--bg-elevated);border-radius:4px;"><strong>HIGH EJECUTADOS:</strong> ✅ ${okCount} OK · ❌ ${errorCount} ERROR</div>`;
   addSupervisorMessage('supervisor', summaryHtml);
-  
+
   // Update button
   const btn = document.getElementById('approve-high-btn');
   if (btn) btn.disabled = true;
@@ -2587,7 +2591,7 @@ async function executeHighSteps() {
 async function executeStep(step) {
   const statusEl = document.getElementById(`step-${step.id}-status`);
   if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-cyan);">⏳ ejecutando...</span>';
-  
+
   try {
     if (step.type === 'terminal') {
       const response = await fetch('/api/workspace/terminal/execute', {
@@ -2595,9 +2599,9 @@ async function executeStep(step) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command: step.cmd })
       });
-      
+
       const data = await response.json();
-      
+
       if (data.ok) {
         if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-green);">✅ OK</span>';
         emitLive('exec', `<strong>[${step.id}]</strong> ${escapeHtml(step.cmd)} → OK`);
@@ -2613,13 +2617,13 @@ async function executeStep(step) {
       if (url.hostname !== '127.0.0.1' && url.hostname !== 'localhost') {
         throw new Error('Only localhost HTTP calls allowed');
       }
-      
+
       const response = await fetch(step.url, {
         method: step.method || 'GET',
         headers: step.json ? { 'Content-Type': 'application/json' } : {},
         body: step.json ? JSON.stringify(step.json) : undefined
       });
-      
+
       if (response.ok) {
         if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-green);">✅ OK</span>';
         emitLive('exec', `<strong>[${step.id}]</strong> ${step.method} ${step.url} → OK`);
@@ -2649,16 +2653,16 @@ function addSupervisorMessage(type, content) {
   const div = document.createElement('div');
   div.id = msgId;
   div.className = 'msg ' + (type === 'user' ? 'user' : 'cascade');
-  
+
   if (type === 'user') {
     div.innerHTML = '<div class="msg-label">RAÚL</div>' + escapeHtml(content);
   } else {
     div.innerHTML = '<div class="msg-label">SUPERVISOR</div>' + content;
   }
-  
+
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
-  
+
   return msgId;
 }
 
@@ -2737,6 +2741,7 @@ let selectedModel = 'auto';
 let modelCatalog = [];
 let providerRuntime = {};
 let selectedPreset = localStorage.getItem('cascade-ws-preset') || '';
+let strictSingleModel = localStorage.getItem('cascade-ws-strict-model') !== 'false';
 
 const PROVIDER_ICONS = {
   cascade: '⚡', openai: 'O', anthropic: 'A', gemini: 'G', google: 'G',
@@ -2763,6 +2768,7 @@ async function initModelSelector() {
 
   renderModelDropdown();
   updateModelBtn();
+  syncStrictModelToggle();
 
   const btn = document.getElementById('model-selector-btn');
   const dd = document.getElementById('model-dropdown');
@@ -2774,6 +2780,20 @@ async function initModelSelector() {
   if (selectedPreset && ['architect', 'builder', 'multifuncion'].includes(selectedPreset)) {
     applyPreset(selectedPreset);
   }
+}
+
+function syncStrictModelToggle() {
+  const el = document.getElementById('strict-model-toggle');
+  if (!el) return;
+  el.checked = !!strictSingleModel;
+}
+
+function onStrictModelToggle(value) {
+  strictSingleModel = !!value;
+  localStorage.setItem('cascade-ws-strict-model', strictSingleModel ? 'true' : 'false');
+  emitLive('info', strictSingleModel
+    ? '<strong>Strict model:</strong> ON (sin failover automático al elegir modelo manual)'
+    : '<strong>Strict model:</strong> OFF (permite failover si falla el modelo manual)');
 }
 
 function renderModelDropdown() {
@@ -3046,14 +3066,14 @@ async function sendMessage() {
   _globalMute();
   const input = document.getElementById('chat-input');
   const text = input.value.trim();
-  
+
   // Si hay un proceso activo, detenerlo primero
   if (isProcessing && currentRequestController) {
     stopChatRequest();
     // Pequeña pausa para que se complete la detención
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  
+
   if (!text) return;
 
   const agentMode = document.getElementById('agent-mode').value;
@@ -3108,7 +3128,15 @@ async function sendMessage() {
     }, 120000);
     const rawMode = document.getElementById('agent-mode').value;
     const backendMode = rawMode === 'auto' ? 'plan_only' : rawMode;
-    const requestBody = { goal: goalText, mode: backendMode, depth: parseInt(document.getElementById('agent-depth').value), fast: true, model: selectedModel, sync_config: syncConfigActive };
+    const requestBody = {
+      goal: goalText,
+      mode: backendMode,
+      depth: parseInt(document.getElementById('agent-depth').value),
+      fast: true,
+      model: selectedModel,
+      strict_model: strictSingleModel,
+      sync_config: syncConfigActive
+    };
 
     thoughtUpdateStep(thinkingId, sRoute, 'done');
     const sModel = thoughtAddStep(thinkingId, 'Enviando al modelo (' + (selectedModel || 'auto') + ')', 'active');
@@ -3331,7 +3359,11 @@ async function sendViaAgentEngine(goalText, _chip) {
     const response = await fetch(API + '/agent/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: goalText, model: selectedModel !== 'auto' ? selectedModel : null }),
+      body: JSON.stringify({
+        message: goalText,
+        model: selectedModel !== 'auto' ? selectedModel : null,
+        strict_model: strictSingleModel
+      }),
       signal: controller.signal
     });
 
@@ -3401,7 +3433,7 @@ async function sendViaAgentEngine(goalText, _chip) {
     clearTimeout(timeout);
     currentRequestController = null;
     thoughtSetError(thinkingId);
-    
+
     if (err.name === 'AbortError') {
       addChatMessage('⏹️ Ejecución interrumpida por usuario', 'cascade');
     } else {
@@ -4016,49 +4048,49 @@ function activityUpdateProgress(pct, stepLabel) {
   const pctEl = document.getElementById('progress-pct');
   const stepEl = document.getElementById('progress-step');
   const etaEl = document.getElementById('progress-eta');
-  
+
   if (fill) fill.style.width = Math.min(pct, 100) + '%';
   if (pctEl) pctEl.textContent = Math.round(pct) + '%';
   if (stepEl) stepEl.textContent = stepLabel || '';
-  
+
   // Calcular ETA
   if (etaEl && pct > 0) {
     const now = Date.now();
     const elapsed = (now - _activityState.startTime) / 1000;
-    
+
     // Guardar historial de progreso
     _activityState.progressHistory.push({
       time: now,
       progress: pct,
       elapsed: elapsed
     });
-    
+
     // Mantener solo últimos 10 puntos
     if (_activityState.progressHistory.length > 10) {
       _activityState.progressHistory.shift();
     }
-    
+
     // Calcular velocidad promedio reciente
     if (_activityState.progressHistory.length >= 2) {
       const recent = _activityState.progressHistory.slice(-5);
       let totalSpeed = 0;
       let count = 0;
-      
+
       for (let i = 1; i < recent.length; i++) {
         const timeDiff = (recent[i].time - recent[i-1].time) / 1000;
         const progressDiff = recent[i].progress - recent[i-1].progress;
-        
+
         if (timeDiff > 0 && progressDiff > 0) {
           totalSpeed += progressDiff / timeDiff;
           count++;
         }
       }
-      
+
       if (count > 0) {
         const avgSpeed = totalSpeed / count;
         const remainingProgress = 100 - pct;
         const etaSeconds = remainingProgress / avgSpeed;
-        
+
         // Formatear ETA
         let etaText = 'ETA: ';
         if (etaSeconds < 60) {
@@ -4068,7 +4100,7 @@ function activityUpdateProgress(pct, stepLabel) {
         } else {
           etaText += (etaSeconds / 3600).toFixed(1) + 'h';
         }
-        
+
         etaEl.textContent = etaText;
       }
     }
@@ -4082,7 +4114,7 @@ function activityOnToolCall(name, input, serverPct) {
   activityAddEntry('tool-call', icon, '<strong>' + escapeHtml(name) + '</strong> ' + escapeHtml(label));
   const pct = serverPct || Math.min((_activityState.completedTools / Math.max(_activityState.totalTools + 2, 5)) * 85, 85);
   activityUpdateProgress(pct, 'Ejecutando ' + name + '...');
-  
+
   // Actualizar estado mental
   updateMentalState('executing', `Ejecutando herramienta: ${name}`);
 }
@@ -4118,7 +4150,7 @@ function activityOnProgress(name, line, elapsed_s) {
 function activityOnThinking(msg) {
   if (msg.length > 10) {
     activityAddEntry('thinking', '🧠', escapeHtml(msg.substring(0, 150)));
-    
+
     // Actualizar estado mental basado en contenido
     if (msg.toLowerCase().includes('plan') || msg.toLowerCase().includes('estrategia') || msg.toLowerCase().includes('secuencia')) {
       updateMentalState('planning', msg.substring(0, 100));
@@ -4140,7 +4172,7 @@ function activityOnDone(data) {
     '<strong>Tarea completada</strong> — ' + iters + ' iteraciones, ' + tools + ' herramientas, ' + elapsed + 's');
   const fill = document.getElementById('progress-fill');
   if (fill) fill.style.background = 'linear-gradient(90deg, var(--accent-green), var(--accent-cyan))';
-  
+
   // Actualizar estado mental a completado
   updateMentalState('idle', `Tarea completada en ${elapsed}s con ${iters} iteraciones`);
 }
@@ -4150,7 +4182,7 @@ function activityOnError(msg) {
   activityUpdateProgress(0, 'Error');
   const fill = document.getElementById('progress-fill');
   if (fill) { fill.style.width = '100%'; fill.style.background = 'var(--accent-red)'; }
-  
+
   // Actualizar estado mental a error
   updateMentalState('error', msg.substring(0, 100));
 }
@@ -4336,7 +4368,7 @@ function initWaveformBars() {
   if (ttsState === 'off') { ttsEnabled = false; }
   updateTTSBtn();
   document.getElementById('voice-orb').addEventListener('click', toggleListening);
-  
+
   // Supervisor voice orb
   const supervisorWave = document.getElementById('voice-wave-supervisor');
   if (supervisorWave) {
@@ -4456,7 +4488,7 @@ function setOrbStateSupervisor(state) {
 
 function startVoiceSupervisor() {
   if (isListening || !SpeechRecognition) {
-    if (!SpeechRecognition) { 
+    if (!SpeechRecognition) {
       document.getElementById('voice-status-supervisor').textContent = 'Web Speech API no soportada';
       emitLive('err', 'Navegador no soporta Web Speech API');
     }
@@ -4546,7 +4578,7 @@ function speakSupervisor(text) {
   if (!ttsEnabled || !window.speechSynthesis || !text) return;
   if (_shouldSuppress()) return;
   if (isSpeaking) return;
-  
+
   // Clean text for TTS
   let clean = text
     .replace(/```[\s\S]*?```/g, '')
@@ -4556,14 +4588,14 @@ function speakSupervisor(text) {
     .replace(/\n{2,}/g, '. ')
     .replace(/\n/g, ' ')
     .trim();
-  
+
   if (!clean) return;
-  
+
   // Limit length for TTS
   if (clean.length > 500) {
     clean = clean.substring(0, 500) + '...';
   }
-  
+
   _doSpeakSupervisor(clean);
 }
 
@@ -4587,14 +4619,14 @@ function _doSpeakSupervisor(clean) {
   setOrbStateSupervisor('speaking');
   document.getElementById('voice-status-supervisor').textContent = 'Hablando...';
 
-  utter.onend = () => { 
-    isSpeaking = false; 
-    setOrbStateSupervisor('idle'); 
-    document.getElementById('voice-status-supervisor').textContent = 'Click en el orbe para hablar'; 
+  utter.onend = () => {
+    isSpeaking = false;
+    setOrbStateSupervisor('idle');
+    document.getElementById('voice-status-supervisor').textContent = 'Click en el orbe para hablar';
   };
-  utter.onerror = () => { 
-    isSpeaking = false; 
-    setOrbStateSupervisor('idle'); 
+  utter.onerror = () => {
+    isSpeaking = false;
+    setOrbStateSupervisor('idle');
   };
 
   window.speechSynthesis.speak(utter);
@@ -5099,7 +5131,7 @@ const MENTAL_STATES = {
 function updateMentalState(state, details = '') {
   const stateInfo = MENTAL_STATES[state] || MENTAL_STATES.idle;
   currentMentalState = state;
-  
+
   // Actualizar elementos UI
   const rectangle = document.getElementById('mental-state-rectangle');
   const icon = document.getElementById('mental-state-icon');
@@ -5107,11 +5139,11 @@ function updateMentalState(state, details = '') {
   const description = document.getElementById('mental-state-description');
   const indicator = document.getElementById('mental-state-indicator');
   const bar = document.getElementById('mental-state-bar');
-  
+
   if (rectangle) {
     rectangle.className = 'mental-state-rectangle ' + state;
   }
-  
+
   if (icon) icon.textContent = stateInfo.icon;
   if (title) title.textContent = stateInfo.title;
   if (description) description.textContent = details || stateInfo.description;
@@ -5119,14 +5151,14 @@ function updateMentalState(state, details = '') {
     indicator.textContent = stateInfo.title.toUpperCase();
     indicator.className = 'mental-state-indicator ' + state;
   }
-  
+
   // Reiniciar timer si cambia el estado
   if (state !== 'idle' && state !== 'waiting') {
     startMentalStateTimer();
   } else {
     stopMentalStateTimer();
   }
-  
+
   // Animación de progreso
   if (bar) {
     if (state === 'thinking' || state === 'planning' || state === 'elaborating') {
@@ -5137,19 +5169,19 @@ function updateMentalState(state, details = '') {
       bar.style.width = '0%';
     }
   }
-  
+
   // Guardar en historial
   mentalStateHistory.push({
     state: state,
     timestamp: Date.now(),
     details: details
   });
-  
+
   // Mantener solo últimos 20 estados
   if (mentalStateHistory.length > 20) {
     mentalStateHistory.shift();
   }
-  
+
   // Detectar si está atascado
   detectStuckState();
 }
@@ -5157,7 +5189,7 @@ function updateMentalState(state, details = '') {
 function startMentalStateTimer() {
   stopMentalStateTimer();
   mentalStateStartTime = Date.now();
-  
+
   mentalStateTimer = setInterval(() => {
     const elapsed = Math.floor((Date.now() - mentalStateStartTime) / 1000);
     const timerEl = document.getElementById('mental-state-timer');
@@ -5173,7 +5205,7 @@ function stopMentalStateTimer() {
     mentalStateTimer = null;
   }
   mentalStateStartTime = null;
-  
+
   const timerEl = document.getElementById('mental-state-timer');
   if (timerEl) {
     timerEl.textContent = '0s';
@@ -5183,7 +5215,7 @@ function stopMentalStateTimer() {
 function animateMentalProgress(bar) {
   let progress = 0;
   let direction = 1;
-  
+
   const animate = () => {
     progress += direction * 2;
     if (progress >= 100) {
@@ -5193,24 +5225,24 @@ function animateMentalProgress(bar) {
       progress = 0;
       direction = 1;
     }
-    
+
     bar.style.width = progress + '%';
-    
+
     if (currentMentalState === 'thinking' || currentMentalState === 'planning' || currentMentalState === 'elaborating') {
       requestAnimationFrame(animate);
     }
   };
-  
+
   animate();
 }
 
 function detectStuckState() {
   if (mentalStateHistory.length < 5) return;
-  
+
   const recent = mentalStateHistory.slice(-5);
   const sameStateCount = recent.filter(h => h.state === currentMentalState).length;
   const elapsed = mentalStateStartTime ? (Date.now() - mentalStateStartTime) / 1000 : 0;
-  
+
   // Si está en el mismo estado por más de 30 segundos y no es idle/waiting
   if (sameStateCount >= 5 && elapsed > 30 && currentMentalState !== 'idle' && currentMentalState !== 'waiting') {
     updateMentalState('stuck', `Atascado en estado "${currentMentalState}" por ${Math.floor(elapsed)}s`);
@@ -5225,10 +5257,10 @@ function initMonitor() {
   if (monitorInitialized) return;
   monitorInitialized = true;
   monitorStartTime = Date.now();
-  
+
   // Inicializar sistema de estado mental
   initMentalState();
-  
+
   loadMonitorSnapshot();
   connectMonitorSSE();
   monitorUptimeTimer = setInterval(updateMonitorUptime, 1000);

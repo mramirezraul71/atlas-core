@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional
 # Configuración
 # -----------------------------------------------------------------------------
 
+
 def _repo_root() -> Path:
     root = os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT")
     if root:
@@ -47,17 +48,25 @@ def _load_config() -> Dict[str, Any]:
         return _default_config()
     try:
         import yaml
+
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         return {**_default_config(), **data}
     except Exception as e:
-        logging.warning("No se pudo cargar %s: %s. Usando valores por defecto.", path, e)
+        logging.warning(
+            "No se pudo cargar %s: %s. Usando valores por defecto.", path, e
+        )
         return _default_config()
 
 
 def _default_config() -> Dict[str, Any]:
     return {
-        "repo": {"path": None, "remote": "origin", "branch": "main", "push_branch": None},
+        "repo": {
+            "path": None,
+            "remote": "origin",
+            "branch": "main",
+            "push_branch": None,
+        },
         "git": {"exclude_paths": [], "include_paths_for_commit": []},
         "cycle": {
             "enabled": True,
@@ -72,7 +81,11 @@ def _default_config() -> Dict[str, Any]:
             "allow_empty_commit": False,
         },
         "on_error": {
-            "fetch_fail": {"retries": 3, "delay_seconds": 5, "then": "log_and_continue"},
+            "fetch_fail": {
+                "retries": 3,
+                "delay_seconds": 5,
+                "then": "log_and_continue",
+            },
             "pull_fail": {"retries": 2, "then": "log_and_abort"},
             "push_fail": {"retries": 3, "delay_seconds": 10, "then": "log_and_abort"},
             "reset_branch": "main",
@@ -95,6 +108,7 @@ def _default_config() -> Dict[str, Any]:
 # Logging
 # -----------------------------------------------------------------------------
 
+
 def _setup_logging(cfg: Dict[str, Any]) -> None:
     log_cfg = cfg.get("logging", {}) or {}
     log_file = log_cfg.get("file", "logs/repo_monitor.log")
@@ -105,6 +119,7 @@ def _setup_logging(cfg: Dict[str, Any]) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         from logging.handlers import RotatingFileHandler
+
         handler = RotatingFileHandler(
             log_path,
             maxBytes=int(log_cfg.get("max_bytes", 10485760)),
@@ -113,7 +128,9 @@ def _setup_logging(cfg: Dict[str, Any]) -> None:
         )
     except Exception:
         handler = logging.FileHandler(log_path, encoding="utf-8")
-    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
     handler.setFormatter(fmt)
     log = logging.getLogger("repo_monitor")
     log.setLevel(level)
@@ -130,6 +147,7 @@ def _setup_logging(cfg: Dict[str, Any]) -> None:
 # Bitácora ANS: enviar tareas a la Bitácora (dashboard) para que se vean reflejadas
 # -----------------------------------------------------------------------------
 
+
 def _bitacora(cfg: Dict[str, Any], message: str, ok: bool = True) -> None:
     """Envía una entrada a la Bitácora ANS (POST /ans/evolution-log, source=repo_monitor)."""
     bc = cfg.get("bitacora") or {}
@@ -140,7 +158,9 @@ def _bitacora(cfg: Dict[str, Any], message: str, ok: bool = True) -> None:
         return
     timeout = int(bc.get("timeout_seconds", 3))
     try:
-        data = json.dumps({"message": (message or "")[:500], "ok": ok, "source": "repo_monitor"}).encode("utf-8")
+        data = json.dumps(
+            {"message": (message or "")[:500], "ok": ok, "source": "repo_monitor"}
+        ).encode("utf-8")
         req = urllib.request.Request(
             f"{url}/ans/evolution-log",
             data=data,
@@ -157,6 +177,7 @@ def _bitacora(cfg: Dict[str, Any], message: str, ok: bool = True) -> None:
 # -----------------------------------------------------------------------------
 # Git (subprocess, sin dependencias humanoid)
 # -----------------------------------------------------------------------------
+
 
 def _git(repo_path: Path, *args: str, timeout_sec: int = 60) -> Dict[str, Any]:
     cmd = ["git"] + list(args)
@@ -190,7 +211,9 @@ def _git_fetch(repo: Path, remote: str, cfg: Dict) -> Dict[str, Any]:
         last = _git(repo, "fetch", remote, timeout_sec=30)
         if last.get("ok"):
             return last
-        logging.getLogger("repo_monitor").warning("fetch intento %s/%s: %s", attempt, retries, last.get("stderr"))
+        logging.getLogger("repo_monitor").warning(
+            "fetch intento %s/%s: %s", attempt, retries, last.get("stderr")
+        )
         if attempt < retries:
             time.sleep(delay)
     then = on_err.get("then", "log_and_continue")
@@ -266,6 +289,7 @@ def _remote_commit(repo: Path, remote: str, branch: str) -> Dict[str, Any]:
 # Ciclo: fetch + status + opcional pull
 # -----------------------------------------------------------------------------
 
+
 def run_cycle(cfg: Dict[str, Any]) -> int:
     repo_cfg = cfg.get("repo") or {}
     path = repo_cfg.get("path")
@@ -289,7 +313,11 @@ def run_cycle(cfg: Dict[str, Any]) -> int:
         r = _git_fetch(repo, remote, cfg)
         if not r.get("ok"):
             log.error("Fetch falló: %s", r.get("stderr"))
-            _bitacora(cfg, "[REPO] Ciclo: fetch fallido. %s" % (r.get("stderr") or "")[:120], ok=False)
+            _bitacora(
+                cfg,
+                "[REPO] Ciclo: fetch fallido. %s" % (r.get("stderr") or "")[:120],
+                ok=False,
+            )
             return 1
 
     # Estado
@@ -298,7 +326,11 @@ def run_cycle(cfg: Dict[str, Any]) -> int:
     cur = _current_branch(repo)
     status_r = _git_status_short(repo)
     exclude = (cfg.get("git") or {}).get("exclude_paths") or []
-    filtered = _filter_status_lines(status_r.get("lines") or [], exclude) if status_r.get("ok") else []
+    filtered = (
+        _filter_status_lines(status_r.get("lines") or [], exclude)
+        if status_r.get("ok")
+        else []
+    )
 
     head_commit = head.get("commit", "?")[:8]
     remote_commit = rem.get("commit", "?")[:8] if rem.get("ok") else "?"
@@ -314,7 +346,13 @@ def run_cycle(cfg: Dict[str, Any]) -> int:
     _bitacora(
         cfg,
         "[REPO] Ciclo finalizado: branch=%s head=%s remote=%s has_update=%s changed=%s"
-        % (cur.get("branch", "?"), head_commit, remote_commit, has_remote_newer, len(filtered)),
+        % (
+            cur.get("branch", "?"),
+            head_commit,
+            remote_commit,
+            has_remote_newer,
+            len(filtered),
+        ),
         ok=True,
     )
 
@@ -330,7 +368,11 @@ def run_cycle(cfg: Dict[str, Any]) -> int:
                 return 0
             time.sleep(2)
         log.error("Pull falló: %s", last.get("stderr"))
-        _bitacora(cfg, "[REPO] Ciclo: pull fallido. %s" % (last.get("stderr") or "")[:120], ok=False)
+        _bitacora(
+            cfg,
+            "[REPO] Ciclo: pull fallido. %s" % (last.get("stderr") or "")[:120],
+            ok=False,
+        )
         return 1
     return 0
 
@@ -338,6 +380,7 @@ def run_cycle(cfg: Dict[str, Any]) -> int:
 # -----------------------------------------------------------------------------
 # After-fix: add + commit + push (solo archivos no excluidos)
 # -----------------------------------------------------------------------------
+
 
 def run_after_fix(cfg: Dict[str, Any], message: Optional[str] = None) -> int:
     repo_cfg = cfg.get("repo") or {}
@@ -380,7 +423,9 @@ def run_after_fix(cfg: Dict[str, Any], message: Optional[str] = None) -> int:
         if len(parts) >= 2:
             paths_to_add.append(parts[1].strip())
     if include:
-        paths_to_add = [p for p in paths_to_add if any(_path_matches(p, inc) for inc in include)]
+        paths_to_add = [
+            p for p in paths_to_add if any(_path_matches(p, inc) for inc in include)
+        ]
     if not paths_to_add and not allow_empty:
         log.info("Sin archivos a añadir tras filtros.")
         _bitacora(cfg, "[REPO] After-fix: sin archivos tras filtros", ok=True)
@@ -398,7 +443,11 @@ def run_after_fix(cfg: Dict[str, Any], message: Optional[str] = None) -> int:
                 top = "modules"
             if p2.startswith("atlas_adapter/"):
                 top = "atlas_adapter"
-            if p2.startswith("brain/") or p2.startswith("training/") or p2.startswith("tests/"):
+            if (
+                p2.startswith("brain/")
+                or p2.startswith("training/")
+                or p2.startswith("tests/")
+            ):
                 top = "learning"
             groups.setdefault(top, []).append(p)
     else:
@@ -424,14 +473,30 @@ def run_after_fix(cfg: Dict[str, Any], message: Optional[str] = None) -> int:
             bc = cfg.get("bitacora") or {}
             url = (bc.get("dashboard_url") or "").rstrip("/")
             if url:
-                data = json.dumps({"message": "Repositorio actualizado: cambios guardados en Git.", "subsystem": "repo", "level": "info"}).encode("utf-8")
-                req = urllib.request.Request(f"{url}/api/comms/test", data=data, method="POST", headers={"Content-Type": "application/json"})
+                data = json.dumps(
+                    {
+                        "message": "Repositorio actualizado: cambios guardados en Git.",
+                        "subsystem": "repo",
+                        "level": "info",
+                    }
+                ).encode("utf-8")
+                req = urllib.request.Request(
+                    f"{url}/api/comms/test",
+                    data=data,
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
                 urllib.request.urlopen(req, timeout=3).read()
         except Exception:
             try:
-                from modules.humanoid.comms.ops_bus import emit as ops_emit  # type: ignore
+                from modules.humanoid.comms.ops_bus import \
+                    emit as ops_emit  # type: ignore
 
-                ops_emit("repo", "Repositorio actualizado: cambios guardados en Git.", level="info")
+                ops_emit(
+                    "repo",
+                    "Repositorio actualizado: cambios guardados en Git.",
+                    level="info",
+                )
             except Exception:
                 pass
 
@@ -448,17 +513,31 @@ def run_after_fix(cfg: Dict[str, Any], message: Optional[str] = None) -> int:
         push_r = _git(repo, "push", remote, branch, timeout_sec=60)
         if push_r.get("ok"):
             log.info("Push OK a %s/%s", remote, branch)
-            _bitacora(cfg, "[REPO] After-fix: push OK a %s/%s" % (remote, branch), ok=True)
+            _bitacora(
+                cfg, "[REPO] After-fix: push OK a %s/%s" % (remote, branch), ok=True
+            )
             try:
                 bc = cfg.get("bitacora") or {}
                 url = (bc.get("dashboard_url") or "").rstrip("/")
                 if url:
-                    data = json.dumps({"message": "Cambios subidos a GitHub.", "subsystem": "repo", "level": "info"}).encode("utf-8")
-                    req = urllib.request.Request(f"{url}/api/comms/test", data=data, method="POST", headers={"Content-Type": "application/json"})
+                    data = json.dumps(
+                        {
+                            "message": "Cambios subidos a GitHub.",
+                            "subsystem": "repo",
+                            "level": "info",
+                        }
+                    ).encode("utf-8")
+                    req = urllib.request.Request(
+                        f"{url}/api/comms/test",
+                        data=data,
+                        method="POST",
+                        headers={"Content-Type": "application/json"},
+                    )
                     urllib.request.urlopen(req, timeout=3).read()
             except Exception:
                 try:
-                    from modules.humanoid.comms.ops_bus import emit as ops_emit  # type: ignore
+                    from modules.humanoid.comms.ops_bus import \
+                        emit as ops_emit  # type: ignore
 
                     ops_emit("repo", "Cambios subidos a GitHub.", level="info")
                 except Exception:
@@ -484,6 +563,7 @@ def _path_matches(path: str, pattern: str) -> bool:
 # Status solo
 # -----------------------------------------------------------------------------
 
+
 def run_status_only(cfg: Dict[str, Any]) -> int:
     repo_cfg = cfg.get("repo") or {}
     path = repo_cfg.get("path")
@@ -501,7 +581,11 @@ def run_status_only(cfg: Dict[str, Any]) -> int:
     rem = _remote_commit(repo, remote, branch)
     status_r = _git_status_short(repo)
     exclude = (cfg.get("git") or {}).get("exclude_paths") or []
-    filtered = _filter_status_lines(status_r.get("lines") or [], exclude) if status_r.get("ok") else []
+    filtered = (
+        _filter_status_lines(status_r.get("lines") or [], exclude)
+        if status_r.get("ok")
+        else []
+    )
 
     summary = "branch=%s head=%s remote=%s changed=%s" % (
         cur.get("branch"),
@@ -518,13 +602,30 @@ def run_status_only(cfg: Dict[str, Any]) -> int:
 # Main
 # -----------------------------------------------------------------------------
 
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="ATLAS PUSH — Monitoreo y actualización del repo.")
-    parser.add_argument("--cycle", action="store_true", help="Un ciclo: fetch, status, opcional pull")
-    parser.add_argument("--after-fix", action="store_true", help="Commit + push de cambios filtrados")
-    parser.add_argument("--status-only", action="store_true", help="Solo mostrar estado")
-    parser.add_argument("-m", "--message", type=str, default=None, help="Mensaje de commit (con --after-fix)")
-    parser.add_argument("--config", type=str, default=None, help="Ruta a repo_monitor.yaml")
+    parser = argparse.ArgumentParser(
+        description="ATLAS PUSH — Monitoreo y actualización del repo."
+    )
+    parser.add_argument(
+        "--cycle", action="store_true", help="Un ciclo: fetch, status, opcional pull"
+    )
+    parser.add_argument(
+        "--after-fix", action="store_true", help="Commit + push de cambios filtrados"
+    )
+    parser.add_argument(
+        "--status-only", action="store_true", help="Solo mostrar estado"
+    )
+    parser.add_argument(
+        "-m",
+        "--message",
+        type=str,
+        default=None,
+        help="Mensaje de commit (con --after-fix)",
+    )
+    parser.add_argument(
+        "--config", type=str, default=None, help="Ruta a repo_monitor.yaml"
+    )
     args = parser.parse_args()
 
     if args.config:

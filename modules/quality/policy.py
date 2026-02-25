@@ -26,7 +26,9 @@ class GitPolicy:
 
 def repo_root() -> Path:
     # Este repo (ATLAS_PUSH) es la fuente de verdad para POTs.
-    env_root = (os.getenv("ATLAS_PUSH_ROOT") or os.getenv("ATLAS_REPO_PATH") or "").strip()
+    env_root = (
+        os.getenv("ATLAS_PUSH_ROOT") or os.getenv("ATLAS_REPO_PATH") or ""
+    ).strip()
     if env_root:
         return Path(env_root).resolve()
     return Path(__file__).resolve().parents[2]
@@ -45,7 +47,10 @@ def get_git_policy() -> GitPolicy:
 
     include_paths = tuple(
         p.strip()
-        for p in (os.getenv("QUALITY_GIT_INCLUDE_PATHS") or "atlas_adapter,modules,tools,config").split(",")
+        for p in (
+            os.getenv("QUALITY_GIT_INCLUDE_PATHS")
+            or "atlas_adapter,modules,tools,config"
+        ).split(",")
         if p.strip()
     )
     exclude_paths = tuple(
@@ -100,4 +105,3 @@ def filter_paths_for_commit(paths: List[str], policy: GitPolicy) -> List[str]:
             continue
         out.append(p)
     return out
-

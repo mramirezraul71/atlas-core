@@ -16,7 +16,9 @@ from .engine import _con
 class OutcomePredictor:
     """Predice outcomes de acciones usando historial + estadisticas bayesianas."""
 
-    def predict(self, action_type: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
+    def predict(
+        self, action_type: str, context: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
         stats = self._get_stats(action_type)
         similar = self._find_similar_contexts(action_type, context or {})
 
@@ -61,7 +63,8 @@ class OutcomePredictor:
     def suggest_alternative(self, action_type: str) -> Optional[Dict[str, Any]]:
         """Sugiere accion alternativa con mejor tasa de exito."""
         with _con() as c:
-            rows = c.execute("""
+            rows = c.execute(
+                """
                 SELECT action_type, COUNT(*) as n,
                        AVG(success) as rate, AVG(reward) as avg_r
                 FROM action_outcomes
@@ -70,38 +73,51 @@ class OutcomePredictor:
                 HAVING n >= 3
                 ORDER BY rate DESC, avg_r DESC
                 LIMIT 5
-            """, (action_type,)).fetchall()
+            """,
+                (action_type,),
+            ).fetchall()
 
         if not rows:
             return None
 
         return {
             "alternatives": [
-                {"action": r["action_type"], "success_rate": round(r["rate"], 3),
-                 "avg_reward": round(r["avg_r"], 3), "count": r["n"]}
+                {
+                    "action": r["action_type"],
+                    "success_rate": round(r["rate"], 3),
+                    "avg_reward": round(r["avg_r"], 3),
+                    "count": r["n"],
+                }
                 for r in rows
             ]
         }
 
     def _get_stats(self, action_type: str) -> Dict[str, Any]:
         with _con() as c:
-            row = c.execute("""
+            row = c.execute(
+                """
                 SELECT COUNT(*) as total, COALESCE(AVG(success), 0) as success_rate,
                        COALESCE(AVG(reward), 0) as avg_reward,
                        COALESCE(AVG(duration_ms), 0) as avg_duration_ms
                 FROM action_outcomes WHERE action_type = ?
-            """, (action_type,)).fetchone()
+            """,
+                (action_type,),
+            ).fetchone()
             return dict(row)
 
-    def _find_similar_contexts(self, action_type: str, context: Dict[str, Any],
-                                limit: int = 10) -> List[Dict]:
+    def _find_similar_contexts(
+        self, action_type: str, context: Dict[str, Any], limit: int = 10
+    ) -> List[Dict]:
         if not context:
             return []
         with _con() as c:
-            rows = c.execute("""
+            rows = c.execute(
+                """
                 SELECT context, success, reward FROM action_outcomes
                 WHERE action_type = ? ORDER BY timestamp_ts DESC LIMIT ?
-            """, (action_type, limit * 3)).fetchall()
+            """,
+                (action_type, limit * 3),
+            ).fetchall()
 
         scored = []
         for r in rows:
@@ -111,10 +127,14 @@ class OutcomePredictor:
                 continue
             overlap = sum(1 for k, v in context.items() if ctx.get(k) == v)
             if overlap > 0:
-                scored.append({
-                    "context": ctx, "success": r["success"],
-                    "reward": r["reward"], "overlap": overlap
-                })
+                scored.append(
+                    {
+                        "context": ctx,
+                        "success": r["success"],
+                        "reward": r["reward"],
+                        "overlap": overlap,
+                    }
+                )
         scored.sort(key=lambda x: x["overlap"], reverse=True)
         return scored[:limit]
 
