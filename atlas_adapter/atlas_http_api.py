@@ -7,6 +7,7 @@ import os
 import tempfile
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -8226,6 +8227,8 @@ def agent_chat(payload: dict):
         if thread_id:
             yield f"event: thread\ndata: {json.dumps({'thread_id': thread_id}, ensure_ascii=False)}\n\n"
         final_text = ""
+        final_done_data = {}
+        final_error = None
         try:
             for event in run_agent(user_msg, conversation_history=history, model=model):
                 evt_type = event.get("event", "info")
@@ -8241,10 +8244,42 @@ def agent_chat(payload: dict):
                         final_text = str((data_obj or {}).get("content") or "")
                     except Exception:
                         final_text = ""
+                if evt_type == "done":
+                    try:
+                        final_done_data = dict(data_obj or {})
+                    except Exception:
+                        final_done_data = {}
+                if evt_type == "error":
+                    final_error = str((data_obj or {}).get("message") or "")
                 data = json.dumps(data_obj, ensure_ascii=False, default=str)
                 yield f"event: {evt_type}\ndata: {data}\n\n"
         except Exception as e:
+            final_error = str(e)
             yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+        # Persist execution history record (best-effort)
+        try:
+            from atlas_adapter.execution_history import append_execution_record
+            rec = {
+                "id": str(uuid.uuid4()),
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "thread_id": thread_id,
+                "user_id": user_id,
+                "message": user_msg[:4000],
+                "final_text": (final_text or "")[:8000],
+                "error": final_error,
+                "verification_passed": bool((final_done_data or {}).get("verification_passed", False)),
+                "final_state": (final_done_data or {}).get("final_state"),
+                "runner_state": (final_done_data or {}).get("runner_state"),
+                "iterations": (final_done_data or {}).get("iterations"),
+                "tools_used": (final_done_data or {}).get("tools_used", []),
+                "pre_checks": (final_done_data or {}).get("pre_checks", []),
+                "post_checks": (final_done_data or {}).get("post_checks", []),
+                "rollback": (final_done_data or {}).get("rollback", []),
+                "kpis": (final_done_data or {}).get("kpis", {}),
+            }
+            append_execution_record(rec)
+        except Exception:
+            pass
         # Persist final assistant output + update summary
         try:
             if mgr and thread_id and final_text:
@@ -8255,6 +8290,36 @@ def agent_chat(payload: dict):
         yield "event: close\ndata: {}\n\n"
 
     return StreamingResponse(_sse_generator(), media_type="text/event-stream")
+
+
+@app.get("/agent/executions/recent", tags=["Agent Engine"])
+def agent_executions_recent(limit: int = 20):
+    """Recent execution runs from persistent JSONL history."""
+    t0 = time.perf_counter()
+    try:
+        from atlas_adapter.execution_history import list_recent_executions
+        items = list_recent_executions(limit=limit)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, {"items": items, "count": len(items)}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/agent/executions/{execution_id}", tags=["Agent Engine"])
+def agent_execution_detail(execution_id: str):
+    """Get one execution record by id."""
+    t0 = time.perf_counter()
+    try:
+        from atlas_adapter.execution_history import get_execution_by_id
+        item = get_execution_by_id(execution_id)
+        ms = int((time.perf_counter() - t0) * 1000)
+        if not item:
+            return _std_resp(False, None, ms, "execution_not_found")
+        return _std_resp(True, {"item": item}, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
 
 
 # --- Conversation thread utilities (debug/ops) ---

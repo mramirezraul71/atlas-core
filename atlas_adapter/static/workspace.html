@@ -219,11 +219,22 @@
       overflow: hidden;
       align-self: flex-start;
       width: 100%;
-      transition: border-color 0.3s;
+      transition: border-color 0.3s, box-shadow 0.3s, background 0.3s;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.02);
     }
-    .thought-dialog.active { border-color: rgba(88,166,255,0.3); }
-    .thought-dialog.done { border-color: rgba(63,185,80,0.3); }
-    .thought-dialog.error { border-color: rgba(248,81,73,0.3); }
+    .thought-dialog.active {
+      border-color: rgba(88,166,255,0.45);
+      box-shadow: 0 8px 22px rgba(0,0,0,0.34), 0 0 0 1px rgba(88,166,255,0.16), 0 0 18px rgba(88,166,255,0.14);
+      background: linear-gradient(180deg, rgba(88,166,255,0.08), rgba(13,17,23,0)) , var(--bg-elevated);
+    }
+    .thought-dialog.done {
+      border-color: rgba(63,185,80,0.5);
+      box-shadow: 0 8px 22px rgba(0,0,0,0.34), 0 0 0 1px rgba(63,185,80,0.16), 0 0 18px rgba(63,185,80,0.16);
+    }
+    .thought-dialog.error {
+      border-color: rgba(248,81,73,0.5);
+      box-shadow: 0 8px 22px rgba(0,0,0,0.34), 0 0 0 1px rgba(248,81,73,0.16), 0 0 18px rgba(248,81,73,0.18);
+    }
 
     .thought-header {
       display: flex; align-items: center; gap: 8px;
@@ -286,11 +297,39 @@
     }
     .thought-step {
       display: flex; align-items: flex-start; gap: 8px;
-      padding: 4px 0; color: var(--text-muted);
+      padding: 6px 8px; color: var(--text-muted);
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 8px;
+      margin-bottom: 10px;
+      background: rgba(255,255,255,0.02);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
     }
-    .thought-step.active { color: var(--text); }
-    .thought-step.done { color: var(--accent-green); }
-    .thought-step.error { color: var(--accent-red); }
+    .thought-step.active {
+      color: var(--text);
+      border-color: rgba(88,166,255,0.45);
+      background: rgba(88,166,255,0.11);
+      box-shadow: 0 0 0 1px rgba(88,166,255,0.12), 0 6px 14px rgba(0,0,0,0.25);
+      animation: thought-step-pulse 1.6s ease-in-out infinite;
+    }
+    .thought-step.done {
+      color: var(--accent-green);
+      border-color: rgba(63,185,80,0.45);
+      background: rgba(63,185,80,0.1);
+      opacity: 0.82;
+    }
+    .thought-step.error {
+      color: var(--accent-red);
+      border-color: rgba(248,81,73,0.45);
+      background: rgba(248,81,73,0.1);
+    }
+    @keyframes thought-step-pulse {
+      0%, 100% {
+        box-shadow: 0 0 0 1px rgba(88,166,255,0.12), 0 6px 14px rgba(0,0,0,0.25);
+      }
+      50% {
+        box-shadow: 0 0 0 1px rgba(88,166,255,0.22), 0 8px 18px rgba(0,0,0,0.32), 0 0 14px rgba(88,166,255,0.18);
+      }
+    }
 
     .ts-icon {
       width: 16px; height: 16px; display: flex; align-items: center;
@@ -305,7 +344,12 @@
     .ts-text { flex: 1; line-height: 1.4; }
     .ts-detail {
       font-size: 10px; color: var(--text-dim); margin-top: 2px;
-      padding-left: 24px;
+      padding: 4px 8px;
+      margin-left: 24px;
+      margin-bottom: 6px;
+      border-left: 2px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.03);
+      border-radius: 0 6px 6px 0;
     }
 
     .thought-action {
@@ -1362,6 +1406,39 @@
           <span class="token-chip">Total: <strong id="tok-total">0</strong></span>
           <span class="token-chip">Input est.: <strong id="tok-input-est">0</strong></span>
         </div>
+        <div id="execution-evidence" style="margin-top:8px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg-elevated);font-size:11px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+            <span style="font-weight:700;color:var(--accent-cyan);">Execution Evidence</span>
+            <span id="exec-state-chip" style="margin-left:auto;padding:2px 6px;border-radius:999px;border:1px solid var(--border);color:var(--text-muted);">state: --</span>
+          </div>
+          <div id="exec-kpis" style="color:var(--text-muted);margin-bottom:6px;">KPIs: --</div>
+          <div id="exec-prechecks" style="color:var(--text-muted);margin-bottom:4px;">Pre-checks: --</div>
+          <div id="exec-postchecks" style="color:var(--text-muted);margin-bottom:4px;">Post-checks: --</div>
+          <div id="exec-rollback" style="color:var(--text-muted);">Rollback: --</div>
+          <div id="exec-timeline" style="color:var(--text-muted);margin-top:4px;">Timeline: --</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:8px;">
+            <span style="font-weight:600;color:var(--text);">Historial reciente</span>
+            <button onclick="loadExecutionHistory(true)" style="margin-left:auto;padding:2px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-muted);font-size:10px;cursor:pointer;">Refrescar</button>
+          </div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">
+            <button id="hist-filter-all" onclick="setExecutionHistoryFilter('all')" style="padding:1px 7px;border:1px solid var(--accent-cyan);border-radius:999px;background:rgba(57,211,196,0.12);color:var(--accent-cyan);font-size:10px;cursor:pointer;">all</button>
+            <button id="hist-filter-verified" onclick="setExecutionHistoryFilter('verified')" style="padding:1px 7px;border:1px solid var(--border);border-radius:999px;background:var(--bg-card);color:var(--text-muted);font-size:10px;cursor:pointer;">verified</button>
+            <button id="hist-filter-blocked" onclick="setExecutionHistoryFilter('blocked')" style="padding:1px 7px;border:1px solid var(--border);border-radius:999px;background:var(--bg-card);color:var(--text-muted);font-size:10px;cursor:pointer;">blocked</button>
+            <button id="hist-filter-error" onclick="setExecutionHistoryFilter('error')" style="padding:1px 7px;border:1px solid var(--border);border-radius:999px;background:var(--bg-card);color:var(--text-muted);font-size:10px;cursor:pointer;">error</button>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;margin-top:6px;">
+            <input id="exec-history-search" type="text" placeholder="buscar..." oninput="loadExecutionHistory(false)" style="flex:1;min-width:0;padding:3px 7px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text);font-size:10px;">
+            <select id="exec-history-range" onchange="loadExecutionHistory(false)" style="padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-muted);font-size:10px;">
+              <option value="all">todo</option>
+              <option value="24h">24h</option>
+              <option value="7d">7d</option>
+              <option value="30d">30d</option>
+            </select>
+          </div>
+          <div id="exec-history-list" style="margin-top:6px;max-height:140px;overflow:auto;border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:6px;background:rgba(255,255,255,0.02);color:var(--text-muted);">
+            Cargando historial...
+          </div>
+        </div>
         <div class="chat-hints">
           <span class="chat-hint" onclick="insertHint(this)">Crea una app web</span>
           <span class="chat-hint" onclick="insertHint(this)">Genera un script Python</span>
@@ -1873,6 +1950,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(refreshSupervisorDaemonStatus, 15000);
   // Supervisor resident policy (best-effort)
   loadSupervisorPolicy();
+  loadExecutionHistory(false);
 
   emitLive('info', '<strong>CASCADE Workspace iniciado</strong> — Esperando instrucciones');
   document.getElementById('chat-input').focus();
@@ -3231,6 +3309,8 @@ async function sendMessage() {
 // ─── AGENTIC ENGINE (Cursor-like tool calling) ───
 async function sendViaAgentEngine(goalText, _chip) {
   const thinkingId = addThinking('Agente analizando...');
+  initCognitivePipeline(thinkingId);
+  setCognitivePhase(thinkingId, 'thinking', 'Analizando objetivo y contexto');
   _chip.textContent = 'Agent ejecutando...';
   _chip.style.color = 'var(--accent-cyan)';
   thoughtAddStep(thinkingId, 'Conectando con motor agéntico', 'active');
@@ -3342,6 +3422,7 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
 
   if (eventType === 'thinking') {
     const msg = data.message || 'Pensando...';
+    setCognitivePhase(thinkingId, 'thinking', msg);
     if (window._wsCompanion) { window._wsCompanion.setState('thinking'); window._wsCompanion.showBubble('Analizando...', 5000); }
     thoughtSetAction(thinkingId, msg, '🧠');
     if (data.complexity) {
@@ -3361,7 +3442,20 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
       activityOnThinking(msg);
     }
   }
+  else if (eventType === 'precheck') {
+    setCognitivePhase(thinkingId, 'planning', 'Definiendo contrato y validaciones iniciales');
+    updateExecutionEvidencePanel({
+      pre_checks: data.pre_checks || [],
+      runner_state: 'PLAN',
+      verification_passed: false,
+      kpis: { total_tools: 0, ok_tools: 0, failed_tools: 0, total_ms: 0 },
+      post_checks: [],
+      rollback: [],
+    });
+    thoughtAddStep(thinkingId, 'Pre-checks recibidos', 'done');
+  }
   else if (eventType === 'tool_call') {
+    setCognitivePhase(thinkingId, 'organizing', 'Preparando herramientas y orden de ejecución');
     const icon = _toolIcon(data.name);
     const label = _toolLabel(data.name, data.input);
     const stepId = thoughtAddStep(thinkingId, icon + ' ' + label, 'active');
@@ -3372,6 +3466,7 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
     activityOnToolCall(data.name, data.input, data.progress_pct);
   }
   else if (eventType === 'tool_progress') {
+    setCognitivePhase(thinkingId, 'building', data.name + ' en ejecución');
     const line = data.line || '';
     const elapsed = data.elapsed_s || 0;
     if (window.__lastToolStep) {
@@ -3382,6 +3477,7 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
     activityOnProgress(data.name, line, elapsed);
   }
   else if (eventType === 'tool_result') {
+    setCognitivePhase(thinkingId, 'building', (data.ok !== false ? 'Resultado OK: ' : 'Resultado con error: ') + data.name);
     const ok = data.ok !== false;
     const icon = ok ? '✓' : '✗';
     if (window.__lastToolStep) {
@@ -3395,11 +3491,13 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
     activityOnToolResult(data.name, data.output || '', ok, data.ms || 0, data.progress_pct);
   }
   else if (eventType === 'text') {
+    setCognitivePhase(thinkingId, 'verifying', 'Consolidando y verificando evidencia');
     if (window._wsCompanion) window._wsCompanion.setState('speaking');
     thoughtAddStep(thinkingId, 'Respuesta generada (' + (data.llm_ms || 0) + 'ms)', 'done');
     _chip.textContent = 'Generando respuesta...';
   }
   else if (eventType === 'done') {
+    setCognitivePhase(thinkingId, 'reporting', 'Generando reporte final');
     if (window._wsCompanion) { window._wsCompanion.setState('done'); window._wsCompanion.showBubble('Listo!', 3000); setTimeout(function() { window._wsCompanion.setState('idle'); }, 3000); }
     const ms = data.ms || 0;
     const tier = data.complexity || '';
@@ -3410,15 +3508,19 @@ function _handleAgentEvent(thinkingId, eventType, data, _chip) {
     _chip.style.color = 'var(--accent-green)';
     const providerLabel = data.provider ? data.provider + ':' : '';
     if (data.model) emitLive('info', '<strong>Modelo:</strong> <code>' + escapeHtml(providerLabel + data.model) + '</code> | ' + (data.iterations || 0) + ' iteraciones | ' + (data.tools_used || []).length + ' tools');
+    updateExecutionEvidencePanel(data);
+    loadExecutionHistory(false);
     setTimeout(() => { _chip.textContent = 'Listo'; _chip.style.color = ''; }, 5000);
     activityOnDone(data);
   }
   else if (eventType === 'error') {
+    setCognitivePhase(thinkingId, 'reporting', 'Error detectado y reportado');
     if (window._wsCompanion) { window._wsCompanion.setState('idle'); window._wsCompanion.showBubble('Error detectado', 3000); }
     thoughtSetError(thinkingId);
     thoughtAddStep(thinkingId, 'Error: ' + (data.message || ''), 'error');
     emitLive('err', '<strong>Error:</strong> ' + escapeHtml(data.message || ''));
     activityOnError(data.message || 'Error desconocido');
+    loadExecutionHistory(false);
   }
 }
 
@@ -3441,6 +3543,236 @@ function _toolLabel(name, input) {
   if (name === 'interpreter') return 'Interpreter: ' + (input.task || '').substring(0, 60);
   if (name === 'atlas_api') return input.method + ' ' + (input.endpoint || '');
   return name;
+}
+
+function _renderCheckList(arr) {
+  if (!Array.isArray(arr) || !arr.length) return '--';
+  return arr.map(c => (c && c.ok ? '✓' : '✗') + ' ' + (c && c.name ? c.name : 'check')).join(' | ');
+}
+
+const COGNITIVE_PHASES = [
+  { key: 'thinking', label: 'Pensando', icon: '🧠' },
+  { key: 'planning', label: 'Planificando', icon: '🧭' },
+  { key: 'organizing', label: 'Organizando', icon: '🗂️' },
+  { key: 'building', label: 'Construyendo', icon: '🛠️' },
+  { key: 'verifying', label: 'Verificando', icon: '✅' },
+  { key: 'reporting', label: 'Reportando', icon: '📣' },
+];
+
+function initCognitivePipeline(thinkingId) {
+  const reg = _thoughtRegistry[thinkingId];
+  if (!reg) return;
+  if (reg.pipeline) return;
+  reg.pipeline = {};
+  COGNITIVE_PHASES.forEach((p) => {
+    const sid = thoughtAddStep(thinkingId, p.icon + ' ' + p.label, 'pending');
+    reg.pipeline[p.key] = sid;
+  });
+}
+
+function setCognitivePhase(thinkingId, activeKey, detail) {
+  const reg = _thoughtRegistry[thinkingId];
+  if (!reg || !reg.pipeline) return;
+  COGNITIVE_PHASES.forEach((p) => {
+    const sid = reg.pipeline[p.key];
+    if (!sid) return;
+    if (p.key === activeKey) {
+      thoughtUpdateStep(thinkingId, sid, 'active', detail || p.label);
+    } else {
+      const current = document.getElementById(sid);
+      const isDone = current && current.className.indexOf(' done') >= 0;
+      const isError = current && current.className.indexOf(' error') >= 0;
+      if (!isDone && !isError) thoughtUpdateStep(thinkingId, sid, 'done');
+    }
+  });
+}
+
+function updateExecutionEvidencePanel(payload) {
+  const data = payload || {};
+  const boxEl = document.getElementById('execution-evidence');
+  const stateEl = document.getElementById('exec-state-chip');
+  const kpisEl = document.getElementById('exec-kpis');
+  const preEl = document.getElementById('exec-prechecks');
+  const postEl = document.getElementById('exec-postchecks');
+  const rbEl = document.getElementById('exec-rollback');
+  const tlEl = document.getElementById('exec-timeline');
+  if (!boxEl || !stateEl || !kpisEl || !preEl || !postEl || !rbEl || !tlEl) return;
+
+  const runnerState = data.runner_state || '--';
+  const verification = data.verification_passed === true;
+  stateEl.textContent = 'state: ' + runnerState;
+  stateEl.style.borderColor = verification ? 'rgba(63,185,80,0.5)' : 'var(--border)';
+  stateEl.style.color = verification ? 'var(--accent-green)' : 'var(--text-muted)';
+  boxEl.style.boxShadow = verification
+    ? '0 8px 22px rgba(0,0,0,0.32), 0 0 0 1px rgba(63,185,80,0.20), 0 0 18px rgba(63,185,80,0.12)'
+    : '0 8px 22px rgba(0,0,0,0.32), 0 0 0 1px rgba(88,166,255,0.14), 0 0 14px rgba(88,166,255,0.08)';
+  boxEl.style.borderColor = verification ? 'rgba(63,185,80,0.45)' : 'rgba(88,166,255,0.35)';
+  boxEl.style.background = verification
+    ? 'linear-gradient(180deg, rgba(63,185,80,0.10), rgba(13,17,23,0.2)), var(--bg-elevated)'
+    : 'linear-gradient(180deg, rgba(88,166,255,0.09), rgba(13,17,23,0.2)), var(--bg-elevated)';
+
+  const k = data.kpis || {};
+  const totalMs = Number(k.total_ms || data.ms || 0);
+  kpisEl.textContent = 'KPIs: tools ' + Number(k.total_tools || 0) + ' | ok ' + Number(k.ok_tools || 0) + ' | fail ' + Number(k.failed_tools || 0) + ' | ' + Math.round(totalMs / 1000) + 's';
+  preEl.textContent = 'Pre-checks: ' + _renderCheckList(data.pre_checks);
+  postEl.textContent = 'Post-checks: ' + _renderCheckList(data.post_checks);
+
+  const rb = Array.isArray(data.rollback) ? data.rollback : [];
+  if (rb.length) {
+    const okCount = rb.filter(x => x && x.ok).length;
+    rbEl.textContent = 'Rollback: ' + okCount + '/' + rb.length + ' aplicado';
+    rbEl.style.color = okCount === rb.length ? 'var(--accent-green)' : 'var(--accent-orange)';
+  } else {
+    rbEl.textContent = 'Rollback: no aplicado';
+    rbEl.style.color = 'var(--text-muted)';
+  }
+
+  const tl = Array.isArray(data.runner_timeline) ? data.runner_timeline : [];
+  if (tl.length) {
+    tlEl.textContent = 'Timeline: ' + tl.map(t => (t && t.state) ? t.state : '--').join(' → ');
+  } else {
+    tlEl.textContent = 'Timeline: --';
+  }
+}
+
+async function loadExecutionHistory(showLiveNote) {
+  const listEl = document.getElementById('exec-history-list');
+  if (!listEl) return;
+  if (showLiveNote) listEl.textContent = 'Actualizando historial...';
+  try {
+    const r = await fetch(API + '/agent/executions/recent?limit=12', { cache: 'no-store' });
+    const j = await r.json();
+    const items = (((j || {}).data || {}).items) || [];
+    updateExecutionHistoryFilterCounts(items);
+    const filtered = items.filter(_matchExecutionHistoryFilter).filter(_matchExecutionHistorySearchAndRange);
+    if (!filtered.length) {
+      listEl.textContent = 'Sin ejecuciones recientes.';
+      return;
+    }
+    listEl.innerHTML = filtered.map((it, idx) => {
+      const state = String(it.final_state || it.runner_state || '--');
+      const ok = it.verification_passed === true;
+      const k = it.kpis || {};
+      const sec = Math.round(Number(k.total_ms || 0) / 1000);
+      const checks = Array.isArray(it.post_checks) ? it.post_checks : [];
+      const checksOk = checks.filter(c => c && c.ok).length;
+      const checksTotal = checks.length;
+      const msg = String(it.message || '').replace(/\s+/g, ' ').slice(0, 90);
+      const color = ok ? 'var(--accent-green)' : 'var(--accent-orange)';
+      const timeline = Array.isArray(it.runner_timeline) ? it.runner_timeline.map(x => (x && x.state) ? x.state : '--').join(' → ') : '--';
+      const pre = Array.isArray(it.pre_checks) ? it.pre_checks : [];
+      const post = Array.isArray(it.post_checks) ? it.post_checks : [];
+      const rb = Array.isArray(it.rollback) ? it.rollback : [];
+      const preTxt = pre.length ? pre.map(c => (c && c.ok ? '✓ ' : '✗ ') + (c && c.name ? c.name : 'check')).join(' | ') : '--';
+      const postTxt = post.length ? post.map(c => (c && c.ok ? '✓ ' : '✗ ') + (c && c.name ? c.name : 'check')).join(' | ') : '--';
+      const rbTxt = rb.length ? rb.map(r => ((r && r.ok) ? '✓ ' : '✗ ') + (r && r.path ? r.path.split(/[\\/]/).pop() : (r && r.action ? r.action : 'rollback'))).join(' | ') : 'no aplicado';
+      const detailId = 'exec-detail-' + idx;
+      return '<div style="padding:6px 7px;margin-bottom:6px;border:1px solid rgba(255,255,255,0.08);border-radius:6px;background:rgba(0,0,0,0.12);">' +
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">' +
+          '<span style="font-size:10px;padding:1px 6px;border-radius:999px;border:1px solid rgba(255,255,255,0.14);color:' + color + ';">' + escapeHtml(state) + '</span>' +
+          '<span style="font-size:10px;color:var(--text-dim);margin-left:auto;">' + sec + 's</span>' +
+        '</div>' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-bottom:3px;">' + escapeHtml(msg || '(sin mensaje)') + '</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;">' +
+          '<div style="font-size:10px;color:var(--text-dim);">verify: ' + (ok ? 'true' : 'false') + ' | checks: ' + checksOk + '/' + checksTotal + '</div>' +
+          '<button type="button" onclick="toggleExecDetail(\'' + detailId + '\')" style="margin-left:auto;padding:1px 7px;border:1px solid rgba(255,255,255,0.16);border-radius:5px;background:rgba(255,255,255,0.02);color:var(--text-muted);font-size:10px;cursor:pointer;">detalle</button>' +
+        '</div>' +
+        '<div id="' + detailId + '" style="display:none;margin-top:6px;padding:6px;border:1px solid rgba(255,255,255,0.10);border-radius:6px;background:rgba(255,255,255,0.02);font-size:10px;line-height:1.45;color:var(--text-dim);">' +
+          '<div><strong>Timeline:</strong> ' + escapeHtml(timeline) + '</div>' +
+          '<div style="margin-top:4px;"><strong>Pre-checks:</strong> ' + escapeHtml(preTxt) + '</div>' +
+          '<div style="margin-top:4px;"><strong>Post-checks:</strong> ' + escapeHtml(postTxt) + '</div>' +
+          '<div style="margin-top:4px;"><strong>Rollback:</strong> ' + escapeHtml(rbTxt) + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch (e) {
+    updateExecutionHistoryFilterCounts([]);
+    listEl.textContent = 'Error al cargar historial: ' + (e.message || e);
+  }
+}
+
+let _executionHistoryFilter = 'all';
+
+function _matchExecutionHistoryFilter(it) {
+  const f = _executionHistoryFilter;
+  if (f === 'all') return true;
+  const finalState = String((it && it.final_state) || '');
+  const hasError = !!((it && it.error) || '').trim();
+  const verified = it && it.verification_passed === true;
+  if (f === 'verified') return verified;
+  if (f === 'blocked') return finalState === 'blocked_no_verification' || finalState === 'cycle_escaped' || verified === false;
+  if (f === 'error') return hasError || finalState.toLowerCase().indexOf('error') >= 0;
+  return true;
+}
+
+function _matchExecutionHistorySearchAndRange(it) {
+  const searchEl = document.getElementById('exec-history-search');
+  const rangeEl = document.getElementById('exec-history-range');
+  const q = ((searchEl && searchEl.value) ? searchEl.value : '').trim().toLowerCase();
+  if (q) {
+    const hay = [
+      String((it && it.message) || ''),
+      String((it && it.final_text) || ''),
+      String((it && it.final_state) || ''),
+      String((it && it.error) || ''),
+    ].join(' ').toLowerCase();
+    if (hay.indexOf(q) === -1) return false;
+  }
+  const range = ((rangeEl && rangeEl.value) ? rangeEl.value : 'all');
+  if (range === 'all') return true;
+  const tsRaw = String((it && it.ts) || '');
+  const ts = Date.parse(tsRaw);
+  if (!Number.isFinite(ts)) return true;
+  const now = Date.now();
+  const hour = 60 * 60 * 1000;
+  if (range === '24h') return ts >= (now - 24 * hour);
+  if (range === '7d') return ts >= (now - 7 * 24 * hour);
+  if (range === '30d') return ts >= (now - 30 * 24 * hour);
+  return true;
+}
+
+function setExecutionHistoryFilter(mode) {
+  _executionHistoryFilter = mode || 'all';
+  const ids = ['all', 'verified', 'blocked', 'error'];
+  ids.forEach((id) => {
+    const el = document.getElementById('hist-filter-' + id);
+    if (!el) return;
+    const active = id === _executionHistoryFilter;
+    el.style.borderColor = active ? 'var(--accent-cyan)' : 'var(--border)';
+    el.style.color = active ? 'var(--accent-cyan)' : 'var(--text-muted)';
+    el.style.background = active ? 'rgba(57,211,196,0.12)' : 'var(--bg-card)';
+  });
+  loadExecutionHistory(false);
+}
+
+function updateExecutionHistoryFilterCounts(items) {
+  const safeItems = Array.isArray(items) ? items : [];
+  const counts = { all: 0, verified: 0, blocked: 0, error: 0 };
+  counts.all = safeItems.length;
+  safeItems.forEach((it) => {
+    const finalState = String((it && it.final_state) || '');
+    const hasError = !!((it && it.error) || '').trim();
+    const verified = it && it.verification_passed === true;
+    if (verified) counts.verified += 1;
+    if (finalState === 'blocked_no_verification' || finalState === 'cycle_escaped' || verified === false) counts.blocked += 1;
+    if (hasError || finalState.toLowerCase().indexOf('error') >= 0) counts.error += 1;
+  });
+  const labels = {
+    all: 'all(' + counts.all + ')',
+    verified: 'verified(' + counts.verified + ')',
+    blocked: 'blocked(' + counts.blocked + ')',
+    error: 'error(' + counts.error + ')',
+  };
+  Object.keys(labels).forEach((k) => {
+    const el = document.getElementById('hist-filter-' + k);
+    if (el) el.textContent = labels[k];
+  });
+}
+
+function toggleExecDetail(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
 }
 
 // ─── CHAT HELPERS ───

@@ -127,6 +127,25 @@ class AgentCyclePrevention:
                 tool_key = f"atlas_api:{method}:{endpoint}"
             except Exception:
                 tool_key = tool_name
+        elif tool_name == "list_directory":
+            try:
+                path = str((tool_input or {}).get("path") or "").strip() or "?"
+                tool_key = f"list_directory:{path}"
+            except Exception:
+                tool_key = tool_name
+        elif tool_name == "read_file":
+            try:
+                path = str((tool_input or {}).get("path") or (tool_input or {}).get("file_path") or "").strip() or "?"
+                tool_key = f"read_file:{path}"
+            except Exception:
+                tool_key = tool_name
+        elif tool_name == "search_text":
+            try:
+                patt = str((tool_input or {}).get("pattern") or "").strip() or "?"
+                directory = str((tool_input or {}).get("directory") or "").strip() or "?"
+                tool_key = f"search_text:{directory}:{patt[:80]}"
+            except Exception:
+                tool_key = tool_name
         tool_record = {
             "name": tool_key,
             "input": tool_input,
@@ -166,8 +185,20 @@ class AgentCyclePrevention:
     
     def _check_tool_repetition(self, check_result: Dict) -> bool:
         """Verifica repetición de tools."""
+        default_limit = int(self.config.get("tool_repetition_limit", 3) or 3)
         for tool_name, count in self.tool_repetition_counter.items():
-            if count >= self.config["tool_repetition_limit"]:
+            # More tolerant thresholds for exploratory tools (common in healthy runs).
+            if tool_name.startswith("list_directory:"):
+                limit = 6
+            elif tool_name.startswith("read_file:"):
+                limit = 6
+            elif tool_name.startswith("search_text:"):
+                limit = 6
+            elif tool_name.startswith("atlas_api:"):
+                limit = 6
+            else:
+                limit = default_limit
+            if count >= limit:
                 check_result["escape_reason"] = f"Tool '{tool_name}' repetido {count} veces"
                 check_result["escape_strategy"] = "change_approach"
                 return True
@@ -216,9 +247,17 @@ class AgentCyclePrevention:
             last_three = list(self.tool_history)[-3:]
             if (last_three[0]["name"] == last_three[1]["name"] == last_three[2]["name"] and
                 last_three[0]["input"] == last_three[1]["input"] == last_three[2]["input"]):
-                check_result["escape_reason"] = f"Tool repetido con mismo input: {last_three[0]['name']}"
-                check_result["escape_strategy"] = "ask_for_clarification"
-                return True
+                repeated_name = str(last_three[0]["name"] or "")
+                # Exploratory tools may legitimately repeat with same input in short bursts.
+                if not (
+                    repeated_name.startswith("list_directory:")
+                    or repeated_name.startswith("read_file:")
+                    or repeated_name.startswith("search_text:")
+                    or repeated_name.startswith("atlas_api:")
+                ):
+                    check_result["escape_reason"] = f"Tool repetido con mismo input: {repeated_name}"
+                    check_result["escape_strategy"] = "ask_for_clarification"
+                    return True
         
         # Patrón 2: Secuencia circular de tools
         if len(self.tool_history) >= 4:

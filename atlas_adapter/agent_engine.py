@@ -13,10 +13,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
+from .execution_runner import ExecutionRunner
 
 _log = logging.getLogger("atlas.agent_engine")
 
@@ -25,10 +27,16 @@ SAFETY_MAX_ITERATIONS = 50  # Reducido de 100 para prevención de ciclos
 MAX_TOOL_OUTPUT = 8000
 COMMAND_TIMEOUT = 60
 
-# Importar sistema de prevención de ciclos
+_COMPLETION_PATTERNS = (
+    r"\b(completad[oa]|finalizad[oa]|hech[oa]|list[oa]|resuelt[oa])\b",
+    r"\b(task|tarea)\s+(completad[ao]|finalizad[ao])\b",
+)
+
+# Importar sistema de prevención de ciclos (desactivado por defecto para "modo limpio")
+_CYCLE_PREVENTION_ENABLED = os.getenv("AGENT_CYCLE_PREVENTION_ENABLED", "false").strip().lower() in ("1", "true", "yes", "y", "on")
 try:
     from .agent_cycle_prevention import get_cycle_prevention
-    CYCLE_PREVENTION_AVAILABLE = True
+    CYCLE_PREVENTION_AVAILABLE = bool(_CYCLE_PREVENTION_ENABLED)
 except ImportError:
     CYCLE_PREVENTION_AVAILABLE = False
     _log.warning("Cycle prevention not available")
@@ -831,7 +839,14 @@ def run_agent(
     messages = list(conversation_history or [])
     messages.append({"role": "user", "content": user_message})
 
+    runner = ExecutionRunner(user_message, ATLAS_ROOT)
     tools_used = []
+    checks: List[Dict[str, Any]] = []
+    task_contract = _build_task_contract(user_message)
+    runner.move_to_plan(task_contract)
+    pre_checks = _run_pre_checks(task_contract)
+    runner.move_to_execute(pre_checks)
+    post_checks: List[Dict[str, Any]] = []
     total_t0 = time.perf_counter()
     consecutive_errors = 0
 
@@ -852,6 +867,10 @@ def run_agent(
         "model": selected_model,
         "provider": current_provider,
         "failover_chain": active_chain,
+    }}
+    yield {"event": "precheck", "data": {
+        "task_contract": task_contract,
+        "pre_checks": pre_checks,
     }}
 
     iteration = 0
@@ -884,6 +903,18 @@ def run_agent(
                 yield {"event": "done", "data": {
                     "iterations": iteration,
                     "tools_used": tools_used,
+                    "task_contract": task_contract,
+                    "pre_checks": pre_checks,
+                    "post_checks": [{
+                        "name": "cycle_escape",
+                        "ok": True,
+                        "detail": cycle_check["escape_reason"],
+                    }],
+                    "verification_passed": False,
+                    "final_state": "cycle_escaped",
+                    "runner_state": runner.state,
+                    "runner_timeline": runner.timeline,
+                    "kpis": runner.kpis(),
                     "ms": total_ms,
                     "model": selected_model,
                     "provider": current_provider,
@@ -935,11 +966,30 @@ def run_agent(
 
         if text_parts and not tool_use_blocks:
             final_text = "\n".join(text_parts)
+            post_checks = _run_post_checks(task_contract, pre_checks, checks, final_text)
+            runner.move_to_verify(post_checks)
+            verification_passed = all(c.get("ok") for c in post_checks) if post_checks else False
+            if _looks_like_completion_claim(final_text) and not verification_passed:
+                final_text = _blocked_no_verification_message()
+            rollback_results: List[Dict[str, Any]] = []
+            if runner.should_auto_rollback(verification_passed):
+                rollback_results = runner.rollback()
+            runner.move_to_report("completed")
             yield {"event": "text", "data": {"content": final_text, "llm_ms": llm_ms}}
             total_ms = int((time.perf_counter() - total_t0) * 1000)
             yield {"event": "done", "data": {
                 "iterations": iteration,
                 "tools_used": tools_used,
+                "checks": checks,
+                "task_contract": task_contract,
+                "pre_checks": pre_checks,
+                "post_checks": post_checks,
+                "rollback": rollback_results,
+                "verification_passed": verification_passed,
+                "final_state": "success_verified" if verification_passed else "blocked_no_verification",
+                "runner_state": runner.state,
+                "runner_timeline": runner.timeline,
+                "kpis": runner.kpis(),
                 "ms": total_ms,
                 "model": selected_model,
                 "provider": current_provider,
@@ -964,6 +1014,7 @@ def run_agent(
         for tool_block in tool_use_blocks:
             tool_name = tool_block.name
             tool_input = tool_block.input
+            runner.before_tool(tool_name, tool_input)
 
             yield {"event": "tool_call", "data": {
                 "name": tool_name,
@@ -1010,6 +1061,19 @@ def run_agent(
 
             tool_ms = int((time.perf_counter() - t0) * 1000)
             tools_used.append({"name": tool_name, "ms": tool_ms})
+            checks.append({
+                "step": len(checks) + 1,
+                "tool": tool_name,
+                "ok": not result_text.startswith("Error"),
+                "evidence": result_text[:180],
+                "ms": tool_ms,
+            })
+            runner.record_tool_result(
+                tool_name=tool_name,
+                ok=not result_text.startswith("Error"),
+                ms=tool_ms,
+                output_preview=result_text[:180],
+            )
 
             yield {"event": "tool_result", "data": {
                 "name": tool_name,
@@ -1029,8 +1093,36 @@ def run_agent(
         _audit_tool_calls(tool_use_blocks, tools_used[-len(tool_use_blocks):])
 
     total_ms = int((time.perf_counter() - total_t0) * 1000)
-    yield {"event": "text", "data": {"content": f"Tarea completada tras {SAFETY_MAX_ITERATIONS} iteraciones.", "llm_ms": 0}}
-    yield {"event": "done", "data": {"iterations": SAFETY_MAX_ITERATIONS, "tools_used": tools_used, "ms": total_ms, "model": selected_model, "provider": current_provider, "complexity": complexity, "progress_pct": 100}}
+    post_checks = _run_post_checks(task_contract, pre_checks, checks, "")
+    runner.move_to_verify(post_checks)
+    verification_passed = all(c.get("ok") for c in post_checks) if post_checks else False
+    final_text = f"Tarea completada tras {SAFETY_MAX_ITERATIONS} iteraciones."
+    if not verification_passed:
+        final_text = _blocked_no_verification_message()
+    rollback_results: List[Dict[str, Any]] = []
+    if runner.should_auto_rollback(verification_passed):
+        rollback_results = runner.rollback()
+    runner.move_to_report("max_iterations_reached")
+    yield {"event": "text", "data": {"content": final_text, "llm_ms": 0}}
+    yield {"event": "done", "data": {
+        "iterations": SAFETY_MAX_ITERATIONS,
+        "tools_used": tools_used,
+        "checks": checks,
+        "task_contract": task_contract,
+        "pre_checks": pre_checks,
+        "post_checks": post_checks,
+        "rollback": rollback_results,
+        "verification_passed": verification_passed,
+        "final_state": "success_verified" if verification_passed else "blocked_no_verification",
+        "runner_state": runner.state,
+        "runner_timeline": runner.timeline,
+        "kpis": runner.kpis(),
+        "ms": total_ms,
+        "model": selected_model,
+        "provider": current_provider,
+        "complexity": complexity,
+        "progress_pct": 100
+    }}
 
 
 def _sanitize_input(name: str, inp: Dict) -> Dict:
@@ -1041,6 +1133,97 @@ def _sanitize_input(name: str, inp: Dict) -> Dict:
         else:
             sanitized[k] = v
     return sanitized
+
+
+def _build_task_contract(user_message: str) -> Dict[str, Any]:
+    lower = (user_message or "").lower()
+    needs_runtime = any(k in lower for k in ("puerto", "http://", "https://", "/ui", "/api", "status", "health", "conexion", "conexión"))
+    needs_files = any(k in lower for k in ("archivo", "file", ".py", ".json", "ruta", "path", "write", "edit"))
+    expected_tools = []
+    if needs_runtime:
+        expected_tools.extend(["atlas_api", "execute_command"])
+    if needs_files:
+        expected_tools.extend(["read_file", "write_file", "edit_file"])
+    if not expected_tools:
+        expected_tools = ["read_file", "execute_command", "atlas_api"]
+    return {
+        "task_type": "runtime" if needs_runtime else ("file_ops" if needs_files else "generic"),
+        "requires_runtime_evidence": needs_runtime,
+        "requires_file_evidence": needs_files,
+        "expected_tools": expected_tools,
+        "success_criteria": [
+            "at_least_one_successful_tool_call",
+            "no_unverified_completion_claim",
+        ],
+    }
+
+
+def _run_pre_checks(contract: Dict[str, Any]) -> List[Dict[str, Any]]:
+    checks: List[Dict[str, Any]] = []
+    root_ok = ATLAS_ROOT.exists()
+    checks.append({
+        "name": "atlas_root_exists",
+        "ok": root_ok,
+        "detail": str(ATLAS_ROOT),
+    })
+    if contract.get("requires_runtime_evidence"):
+        health_out = _tool_atlas_api({"method": "GET", "endpoint": "/health"})
+        health_ok = "error" not in health_out.lower()
+        checks.append({
+            "name": "atlas_health_reachable",
+            "ok": health_ok,
+            "detail": health_out[:180],
+        })
+    return checks
+
+
+def _run_post_checks(contract: Dict[str, Any], pre_checks: List[Dict[str, Any]], tool_checks: List[Dict[str, Any]], final_text: str) -> List[Dict[str, Any]]:
+    successful_tools = [c for c in tool_checks if c.get("ok")]
+    tool_names = {c.get("tool") for c in successful_tools}
+    checks: List[Dict[str, Any]] = [
+        {
+            "name": "at_least_one_successful_tool_call",
+            "ok": len(successful_tools) > 0,
+            "detail": f"successful_tools={len(successful_tools)}",
+        }
+    ]
+    if contract.get("requires_runtime_evidence"):
+        checks.append({
+            "name": "runtime_evidence_present",
+            "ok": any(t in tool_names for t in ("atlas_api", "execute_command", "interpreter")),
+            "detail": "needs one of atlas_api/execute_command/interpreter",
+        })
+    if contract.get("requires_file_evidence"):
+        checks.append({
+            "name": "file_evidence_present",
+            "ok": any(t in tool_names for t in ("read_file", "write_file", "edit_file")),
+            "detail": "needs one of read_file/write_file/edit_file",
+        })
+    unverified_claim = _looks_like_completion_claim(final_text or "") and len(successful_tools) == 0
+    checks.append({
+        "name": "no_unverified_completion_claim",
+        "ok": not unverified_claim,
+        "detail": "completion claim requires evidence",
+    })
+    checks.append({
+        "name": "pre_checks_ok",
+        "ok": all(c.get("ok") for c in pre_checks),
+        "detail": f"pre_checks={len(pre_checks)}",
+    })
+    return checks
+
+
+def _looks_like_completion_claim(text: str) -> bool:
+    t = (text or "").lower()
+    return any(re.search(p, t, re.IGNORECASE) for p in _COMPLETION_PATTERNS)
+
+
+def _blocked_no_verification_message() -> str:
+    return (
+        "Estado: BLOCKED_NO_VERIFICATION\n"
+        "No puedo declarar cumplimiento sin evidencia verificable de ejecución.\n"
+        "Ejecuta al menos un paso comprobable (comando/API/archivo) y vuelve a validar."
+    )
 
 
 def _audit_tool_calls(blocks: list, results: list) -> None:
