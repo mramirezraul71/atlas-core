@@ -50,7 +50,7 @@ def call_external(
             )
         if provider_id == "deepseek":
             return _call_openai_compat(
-                "https://api.deepseek.com/chat/completions",
+                "https://api.deepseek.com/v1/chat/completions",
                 model_name or "deepseek-chat",
                 prompt,
                 system,

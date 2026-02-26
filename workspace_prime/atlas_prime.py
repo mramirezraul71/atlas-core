@@ -1,30 +1,34 @@
 import asyncio
-import json
+import io
 import sys
-from datetime import datetime
-from pathlib import Path
 
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+import json
+from datetime import datetime
+
+import load_credentials  # noqa: F401 — carga credenciales antes de boto3
 from desktop_hands import DesktopHands
 from memory_manager import MemoryManager
 from nl_parser import NLParser
 from plan_executor import PlanExecutor
+from smart_browser import SmartBrowser
 from vision_eyes import VisionEyes
-
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-from modules.humanoid.ai.router import route_and_run
 
 
 class AtlasPrime:
     """
-    ATLAS-WORKSPACE-PRIME — Interfaz principal de lenguaje natural
+    ATLAS-WORKSPACE-PRIME v3.0 — Interfaz principal de lenguaje natural.
+
+    Elige automáticamente la herramienta correcta:
+    - Tarea simple web    → Playwright (BrowserHands)
+    - Tarea compleja web  → browser-use + Claude (SmartBrowser)
+    - Tarea de escritorio → PyAutoGUI (DesktopHands)
+    - Análisis visual     → Claude Vision vía Bedrock (VisionEyes)
+    - Todo persistido     → MemoryManager (4 capas)
 
     Uso:
         atlas = AtlasPrime()
         await atlas.run("Entra a Gmail y dime mis correos de hoy")
-        await atlas.run("Abre el explorador y organiza mis archivos de escritorio")
-        await atlas.run("Busca en Google el precio del dólar y guárdalo en un archivo")
     """
 
     def __init__(self, headless_browser: bool = False, auto_confirm: bool = False):
@@ -32,160 +36,232 @@ class AtlasPrime:
         self.memory = MemoryManager()
         self.eyes = VisionEyes()
         self.desktop = DesktopHands()
+        self.smart = SmartBrowser()
         self.headless = headless_browser
         self.auto_confirm = auto_confirm
         print("🤖 ATLAS-WORKSPACE-PRIME v3.0 iniciado")
+        print(
+            f"   Smart Browser: {'✅ disponible' if self.smart._available else '⚠️ instalar browser-use'}"
+        )
 
     async def run(
         self,
         instruction: str,
         show_plan: bool = True,
-        take_context_screenshot: bool = True,
+        take_context: bool = True,
+        force_smart: bool = False,
     ) -> dict:
         """
         Ejecuta cualquier instrucción en lenguaje natural.
-        Este es el método principal — úsalo para todo.
+
+        force_smart=True → usa browser-use directamente sin planificar
         """
         print(f"\n{'='*60}")
         print(f"📥 INSTRUCCIÓN: {instruction}")
         print(f"{'='*60}")
 
-        # 1. Capturar contexto visual actual
+        # Modo fast: browser-use directo sin pasos intermedios
+        if force_smart and self.smart._available:
+            print("🤖 Modo SmartBrowser directo (browser-use + Claude)...")
+            result = await self.smart.run_task(instruction)
+            self.memory.save_episode(
+                task=instruction,
+                result=result.get("result", "")[:200],
+                success=result.get("success", False),
+            )
+            if result.get("success"):
+                print(f"\n✅ RESULTADO:\n{result.get('result','')}")
+            return result
+
+        # Modo normal: NLParser → PlanExecutor
         screen_context = ""
-        if take_context_screenshot:
+        if take_context:
             print("👁️  Analizando pantalla actual...")
             vision = self.eyes.analyze_screenshot_bytes(
                 self.desktop.screenshot_bytes(),
-                "Describe brevemente qué hay en pantalla ahora mismo: aplicaciones abiertas, ventanas visibles",
+                "Describe brevemente qué hay en pantalla: apps abiertas, ventanas",
             )
             screen_context = vision.get("analysis", "")
             print(f"   Contexto: {screen_context[:100]}...")
 
-        # 2. Parsear instrucción a plan
-        print("🧠 Generando plan de ejecución...")
+        print("🧠 Generando plan...")
         parsed = self.parser.parse_instruction(instruction, screen_context)
 
         if not parsed["success"]:
-            return {
-                "success": False,
-                "error": f"No pude generar plan: {parsed['error']}",
-            }
+            # Fallback a SmartBrowser si falla el parser
+            if self.smart._available:
+                print("⚠️  Parser falló, usando SmartBrowser como fallback...")
+                return await self.smart.run_task(instruction)
+            return {"success": False, "error": parsed["error"]}
 
         plan = parsed["plan"]
 
-        # 3. Mostrar plan al usuario
         if show_plan:
             print("\n" + self.parser.explain_plan(plan))
 
-        # 4. Confirmar si es necesario
         if plan.get("requires_confirmation") and not self.auto_confirm:
-            print("\n❓ Esta tarea requiere confirmación. ¿Ejecutar? (s/n): ", end="")
-            if input().strip().lower() != "s":
-                return {"success": False, "reason": "Cancelado por usuario"}
+            if sys.stdin.isatty():
+                print("\n❓ ¿Ejecutar? (s/n): ", end="")
+                if input().strip().lower() != "s":
+                    return {"success": False, "reason": "Cancelado"}
+            else:
+                pass  # Sin TTY: continuar sin preguntar
 
-        # 5. Ejecutar plan
-        print("\n🚀 Iniciando ejecución...")
         executor = PlanExecutor(headless_browser=self.headless)
         result = await executor.execute_plan(
-            plan, confirm_before_high_risk=not self.auto_confirm
+            plan, confirm_high_risk=not self.auto_confirm
         )
 
-        # 6. Generar resumen final con IA
         if result.get("final_output"):
-            summary = await self._summarize_result(instruction, result)
+            summary = await self._summarize(instruction, result)
             result["summary"] = summary
             print(f"\n📊 RESUMEN:\n{summary}")
 
-        # 7. Guardar en memoria
         self.memory.save_episode(
             task=instruction,
-            result=result.get("summary", str(result))[:200],
+            result=result.get("summary", "")[:200],
             success=result.get("success", False),
         )
-
         return result
 
-    async def _summarize_result(self, instruction: str, result: dict) -> str:
-        """Resume el resultado final en lenguaje natural"""
+    async def _summarize(self, instruction: str, result: dict) -> str:
+        from llm_router import text_completion
+
         content = result.get("final_output", {})
-        prompt = f"""
-Tarea ejecutada: {instruction}
+        user_msg = f"""
+Tarea: {instruction}
 Pasos completados: {result.get('steps_executed', 0)}
-Contenido obtenido: {str(content.get('page_content', ''))[:1000]}
-Análisis visual: {str(content.get('last_analysis', ''))[:500]}
+Contenido: {str(content.get('page_content',''))[:1000]}
+Análisis: {str(content.get('last_analysis',''))[:500]}
+Resultado smart: {str(content.get('smart_result',''))[:500]}
 
-Resume en 3-5 líneas en español qué se logró y cuáles son los datos más importantes obtenidos.
+Resume en 3-5 líneas qué se logró y los datos más importantes.
 """
+        out = text_completion(
+            user_msg,
+            system="Eres un asistente que resume tareas completadas.",
+            max_tokens=500,
+        )
+        if out.get("success"):
+            return out.get("text", "").strip()
+        return f"Completado en {result.get('steps_executed', 0)} pasos."
 
-        try:
-            out, _decision, _meta = route_and_run(
-                prompt=prompt,
-                intent_hint="chat",
-                modality="text",
-                prefer_free=False,
-            )
-            return (
-                out or ""
-            ).strip() or f"Tarea completada en {result.get('steps_executed', 0)} pasos."
-        except Exception:
-            return f"Tarea completada en {result.get('steps_executed', 0)} pasos."
-
-    def see_now(self, question: str = "¿Qué ves en pantalla ahora mismo?") -> str:
-        """Mira la pantalla ahora mismo y describe lo que ve"""
+    def see_now(self, question: str = "¿Qué hay en pantalla ahora mismo?") -> str:
         vision = self.eyes.analyze_screenshot_bytes(
             self.desktop.screenshot_bytes(), question
         )
         return vision.get("analysis", "No pude analizar la pantalla")
 
-    def recent_history(self, n: int = 5) -> list:
-        """Retorna las últimas N tareas ejecutadas"""
+    def history(self, n: int = 5) -> list:
         return self.memory.get_recent_episodes(n)
 
+    def status(self) -> dict:
+        from visual_agent import VisualAgent
 
-# ══════════════════════════════════════════════════════════════
-# MODO INTERACTIVO — Ejecuta atlas_prime.py y escribe tareas
-# ══════════════════════════════════════════════════════════════
+        va = VisualAgent()
+        return va.full_status()
+
+
+# ══════════════════════════════════════════════════════════════════
+# MODO INTERACTIVO
+# ══════════════════════════════════════════════════════════════════
+async def run_single_cmd(cmd: str) -> None:
+    """Ejecuta un solo comando sin TTY (para scripts/agente)."""
+    atlas = AtlasPrime(headless_browser=True, auto_confirm=True)
+    c = cmd.strip()
+    if not c:
+        return
+    if c.lower() == "ver":
+        print(atlas.see_now())
+    elif c.lower() == "historial":
+        for ep in atlas.history():
+            icon = "OK" if ep.get("success") else "FAIL"
+            print(f"{icon} [{ep['timestamp'][:16]}] {ep['task'][:60]}")
+    elif c.lower() == "status":
+        print(json.dumps(atlas.status(), indent=2, ensure_ascii=False))
+    elif c.lower().startswith("smart "):
+        task = c[6:].strip()
+        result = await atlas.run(task, force_smart=True)
+        if result.get("success"):
+            print(result.get("result", ""))
+        else:
+            print("ERROR:", result.get("error") or result.get("reason"))
+    else:
+        result = await atlas.run(c)
+        if result.get("success") and result.get("summary"):
+            print(result.get("summary", ""))
+        elif not result.get("success"):
+            print("ERROR:", result.get("error") or result.get("reason"))
+
+
 async def interactive_mode():
+    if not sys.stdin.isatty():
+        print("Modo interactivo requiere terminal (stdin no es TTY).")
+        print("Opciones: -h/--help (ayuda), --version (versión).")
+        return
     atlas = AtlasPrime(headless_browser=False, auto_confirm=False)
 
     print("\n" + "=" * 60)
-    print("🤖 ATLAS-WORKSPACE-PRIME — MODO INTERACTIVO")
+    print("🤖 ATLAS-WORKSPACE-PRIME v3.0 — MODO INTERACTIVO")
     print("=" * 60)
     print("Escribe cualquier instrucción en español.")
-    print("Comandos especiales:")
-    print("  'ver'      → ve la pantalla ahora mismo")
-    print("  'historial'→ muestra tareas recientes")
-    print("  'salir'    → termina el programa")
+    print("Comandos:")
+    print("  'ver'       → analiza la pantalla ahora mismo")
+    print("  'smart X'   → ejecuta X con browser-use directo")
+    print("  'historial' → últimas tareas")
+    print("  'status'    → estado del sistema")
+    print("  'salir'     → termina")
     print("=" * 60 + "\n")
 
     while True:
         try:
-            instruction = input("📥 Tu instrucción: ").strip()
-            if not instruction:
+            cmd = input("📥 Tu instrucción: ").strip()
+            if not cmd:
                 continue
-            elif instruction.lower() == "salir":
+            elif cmd.lower() == "salir":
                 print("👋 Hasta luego")
                 break
-            elif instruction.lower() == "ver":
+            elif cmd.lower() == "ver":
                 print(atlas.see_now())
-            elif instruction.lower() == "historial":
-                history = atlas.recent_history()
-                for ep in history:
-                    status = "✅" if ep.get("success") else "❌"
-                    print(f"{status} [{ep['timestamp'][:16]}] {ep['task'][:60]}")
-            else:
-                result = await atlas.run(instruction)
+            elif cmd.lower() == "historial":
+                for ep in atlas.history():
+                    icon = "✅" if ep.get("success") else "❌"
+                    print(f"{icon} [{ep['timestamp'][:16]}] {ep['task'][:60]}")
+            elif cmd.lower() == "status":
+                print(json.dumps(atlas.status(), indent=2, ensure_ascii=False))
+            elif cmd.lower().startswith("smart "):
+                task = cmd[6:].strip()
+                result = await atlas.run(task, force_smart=True)
                 if not result.get("success"):
-                    print(f"❌ Error: {result.get('error') or result.get('reason')}")
+                    print(f"❌ {result.get('error') or result.get('reason')}")
+            else:
+                result = await atlas.run(cmd)
+                if not result.get("success"):
+                    print(f"❌ {result.get('error') or result.get('reason')}")
         except KeyboardInterrupt:
             print("\n👋 Interrumpido")
+            break
+        except EOFError:
+            print("\nSin entrada (stdin cerrado). Saliendo.")
             break
 
 
 if __name__ == "__main__":
-    try:
-        if hasattr(sys.stdout, "reconfigure"):
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
-    asyncio.run(interactive_mode())
+    import argparse
+
+    p = argparse.ArgumentParser(
+        description="ATLAS-WORKSPACE-PRIME v3.0 — Modo interactivo",
+        epilog="Sin TTY: usa --cmd COMANDO para ejecutar una instrucción (ej: status, ver, historial).",
+    )
+    p.add_argument("--version", action="version", version="ATLAS-WORKSPACE-PRIME 3.0")
+    p.add_argument(
+        "--cmd",
+        type=str,
+        metavar="COMANDO",
+        help="Ejecutar un solo comando sin terminal (status, ver, historial, o instrucción)",
+    )
+    args = p.parse_args()
+    if args.cmd is not None:
+        asyncio.run(run_single_cmd(args.cmd))
+    else:
+        asyncio.run(interactive_mode())

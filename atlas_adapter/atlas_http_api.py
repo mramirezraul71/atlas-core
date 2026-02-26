@@ -9074,6 +9074,14 @@ def update_apply_endpoint():
     """Git update apply: staging -> smoke -> promote or rollback. Policy must allow. Response: {ok, data, ms, error}."""
     t0 = time.perf_counter()
     try:
+        # Recargar atlas.env para que POLICY_ALLOW_UPDATE_APPLY tenga efecto sin reiniciar el servidor
+        if ENV_PATH.exists():
+            try:
+                from dotenv import load_dotenv
+
+                load_dotenv(ENV_PATH, override=True)
+            except Exception:
+                pass
         from modules.humanoid.owner.emergency import is_emergency
 
         if is_emergency():
@@ -9093,6 +9101,197 @@ def update_apply_endpoint():
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/api/v4/update/prereqs")
+def update_prereqs_endpoint():
+    """Verificación de software para actualizar repo: Git, Python, pip, estado del repo."""
+    return _update_prereqs_impl()
+
+
+@app.get("/update/prereqs")
+def update_prereqs_short():
+    """Misma respuesta que /api/v4/update/prereqs (ruta corta para evitar 404 con proxies)."""
+    return _update_prereqs_impl()
+
+
+@app.post("/update/restart")
+def update_restart_endpoint():
+    """Reinicia el servidor PUSH (8791): programa un reinicio en 3s y responde de inmediato. Recargar la página tras unos segundos."""
+    try:
+        repo_root = os.getenv("REPO_ROOT", str(BASE_DIR))
+        script_path = (BASE_DIR / "scripts" / "restart_push_from_api.ps1").resolve()
+        use_script = script_path.is_file()
+        import subprocess
+
+        CREATE_NEW_PROCESS_GROUP = 0x00000200
+        DETACHED_PROCESS = 0x00000008
+        flags = CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS if os.name == "nt" else 0
+        if use_script:
+            subprocess.Popen(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(script_path),
+                    "-DelaySeconds",
+                    "3",
+                ],
+                cwd=repo_root,
+                creationflags=flags,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            # Inline: no depender del .ps1 por si no está en la ruta esperada
+            repo_esc = repo_root.replace("'", "''")
+            cmd = (
+                "Start-Sleep 3; "
+                "Get-NetTCPConnection -LocalPort 8791 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; "
+                "Start-Sleep -Milliseconds 500; "
+                "Set-Location '%s'; "
+                "Start-Process python -ArgumentList '-m','uvicorn','atlas_adapter.atlas_http_api:app','--host','0.0.0.0','--port','8791' -WorkingDirectory '%s' -WindowStyle Normal"
+            ) % (repo_esc, repo_esc)
+            subprocess.Popen(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    cmd,
+                ],
+                creationflags=flags,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        return _std_resp(
+            True,
+            {
+                "message": "Reinicio programado en 3 segundos. Recarga la página en unos segundos."
+            },
+            0,
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, 0, str(e))
+
+
+def _update_prereqs_impl():
+    import subprocess
+    import sys
+
+    t0 = time.perf_counter()
+    out = {
+        "git_ok": False,
+        "git_version": None,
+        "python_ok": False,
+        "python_version": None,
+        "pip_ok": False,
+        "pip_version": None,
+        "repo_has_changes": None,
+        "branch": None,
+        "ms": 0,
+    }
+    repo_root = os.getenv(
+        "REPO_ROOT", os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    )
+    use_shell = os.name == "nt"
+
+    # Python: el proceso actual es Python, así que siempre OK
+    out["python_ok"] = True
+    out["python_version"] = (sys.version or "").split("\n")[0].strip()[:80]
+
+    # pip: mismo intérprete
+    try:
+        r = subprocess.run(
+            [sys.executable, "-m", "pip", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=repo_root,
+            shell=False,
+        )
+        out["pip_ok"] = r.returncode == 0
+        if r.stdout:
+            out["pip_version"] = (r.stdout.strip() or "")[:80]
+    except Exception:
+        pass
+
+    # Git: en Windows usar shell=True para que use el PATH del usuario
+    try:
+        if use_shell:
+            r = subprocess.run(
+                "git --version",
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=repo_root,
+                shell=True,
+            )
+        else:
+            r = subprocess.run(
+                ["git", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=repo_root,
+            )
+        out["git_ok"] = r.returncode == 0
+        if r.stdout:
+            out["git_version"] = r.stdout.strip()
+    except Exception:
+        pass
+
+    # Repo status (en Windows con shell para PATH)
+    try:
+        if use_shell:
+            r = subprocess.run(
+                "git status --porcelain",
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=repo_root,
+                shell=True,
+            )
+            r2 = subprocess.run(
+                "git rev-parse --abbrev-ref HEAD",
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=repo_root,
+                shell=True,
+            )
+        else:
+            r = subprocess.run(
+                ["git", "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=repo_root,
+            )
+            r2 = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=repo_root,
+            )
+        out["repo_has_changes"] = bool((r.stdout or "").strip())
+        if r2.returncode == 0 and r2.stdout:
+            out["branch"] = r2.stdout.strip()
+        # Si tenemos rama pero git_ok era False, Git sí está (p. ej. status desde otro proceso)
+        if out["branch"] and not out["git_ok"]:
+            out["git_ok"] = True
+            out["git_version"] = out["git_version"] or "OK (detectado por repo)"
+    except Exception:
+        pass
+    out["ms"] = int((time.perf_counter() - t0) * 1000)
+    return _std_resp(True, out, out["ms"], None)
 
 
 @app.get("/deploy/status", tags=["Deploy"])

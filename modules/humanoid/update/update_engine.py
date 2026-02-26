@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 from .git_manager import (checkout_branch, create_staging_branch,
                           delete_branch, fetch, get_current_branch, get_diff,
                           get_head_commit, get_remote_commit, get_status,
-                          merge_staging)
+                          merge_remote, merge_staging)
 from .rollback import rollback as do_rollback
 from .smoke_runner import run_smoke
 
@@ -24,6 +24,25 @@ def _env_bool(name: str, default: bool) -> bool:
 
 def _env_str(name: str, default: str) -> str:
     return (os.getenv(name) or default).strip()
+
+
+def _shell_error(r: Dict[str, Any]) -> Optional[str]:
+    """Build user-visible error from shell result: error, stderr, stdout, or returncode."""
+    if r.get("ok"):
+        return None
+    err = (r.get("error") or "").strip()
+    if err:
+        return err
+    stderr = (r.get("stderr") or "").strip()
+    if stderr:
+        return stderr[:500] if len(stderr) > 500 else stderr
+    stdout = (r.get("stdout") or "").strip()
+    if stdout:
+        return stdout[:500] if len(stdout) > 500 else stdout
+    rc = r.get("returncode")
+    if rc is not None and rc != 0:
+        return f"exit code {rc}"
+    return "unknown error"
 
 
 def _audit(
@@ -69,6 +88,11 @@ def _in_update_window() -> bool:
 def status() -> Dict[str, Any]:
     """Current update status: branch, head, remote, has_update, config."""
     t0 = time.perf_counter()
+    remote = _env_str("UPDATE_REMOTE", "origin")
+    branch_cfg = os.getenv("UPDATE_BRANCH", "").strip()
+    if not branch_cfg:
+        r_cur = get_current_branch()
+        branch_cfg = (r_cur.get("branch") or "").strip() or "main"
     out: Dict[str, Any] = {
         "ok": True,
         "enabled": update_enabled(),
@@ -77,12 +101,13 @@ def status() -> Dict[str, Any]:
         "remote_commit": None,
         "has_update": False,
         "config": {
-            "remote": _env_str("UPDATE_REMOTE", "origin"),
-            "branch": _env_str("UPDATE_BRANCH", "main"),
+            "remote": remote,
+            "branch": branch_cfg,
             "staging_branch": _env_str("UPDATE_STAGING_BRANCH", "staging"),
             "require_smoke": _env_bool("UPDATE_REQUIRE_SMOKE", True),
             "auto_promote": _env_bool("UPDATE_AUTO_PROMOTE", False),
             "allow_rollback": _env_bool("UPDATE_ALLOW_ROLLBACK", True),
+            "use_staging": _env_bool("UPDATE_USE_STAGING", False),
             "update_window_start": _env_str("UPDATE_WINDOW_START", "01:00"),
             "update_window_end": _env_str("UPDATE_WINDOW_END", "04:00"),
             "in_update_window": _in_update_window(),
@@ -214,7 +239,10 @@ def apply(
     except Exception:
         pass
     remote = _env_str("UPDATE_REMOTE", "origin")
-    branch = _env_str("UPDATE_BRANCH", "main")
+    branch = os.getenv("UPDATE_BRANCH", "").strip()
+    if not branch:
+        r_cur = get_current_branch()
+        branch = (r_cur.get("branch") or "").strip() or "main"
     staging_name = _env_str("UPDATE_STAGING_BRANCH", "staging")
     require_smoke = (
         require_smoke
@@ -223,42 +251,148 @@ def apply(
     )
     allow_rollback = _env_bool("UPDATE_ALLOW_ROLLBACK", True)
 
+    r_status = get_status()
+    dirty = r_status.get("ok") and (r_status.get("output") or "").strip()
+    use_staging = _env_bool("UPDATE_USE_STAGING", False)
     steps = []
+    if dirty:
+        steps.append(
+            {
+                "step": "dirty_worktree",
+                "ok": False,
+                "error": "Repo con cambios locales. Se intentará merge directo con --autostash.",
+            }
+        )
     # 1) Fetch
     r_fetch = fetch(remote)
-    steps.append(
-        {"step": "fetch", "ok": r_fetch.get("ok"), "error": r_fetch.get("error")}
-    )
+    err_fetch = _shell_error(r_fetch)
+    steps.append({"step": "fetch", "ok": r_fetch.get("ok"), "error": err_fetch})
     if not r_fetch.get("ok"):
-        _audit("update", "apply", False, {"steps": steps}, r_fetch.get("error"))
+        _audit("update", "apply", False, {"steps": steps}, err_fetch)
         return {
             "ok": False,
             "data": {"steps": steps},
             "ms": int((time.perf_counter() - t0) * 1000),
-            "error": r_fetch.get("error"),
+            "error": err_fetch,
         }
 
-    # 2) Create staging from origin/main
+    # 2) Comprobar que la ref remota existe tras el fetch (evita create_staging con ref inválida)
+    r_remote = get_remote_commit(remote=remote, branch=branch)
+    err_remote = _shell_error(r_remote)
+    steps.append(
+        {"step": "verify_remote", "ok": r_remote.get("ok"), "error": err_remote}
+    )
+    if not r_remote.get("ok"):
+        _audit("update", "apply", False, {"steps": steps}, err_remote)
+        return {
+            "ok": False,
+            "data": {"steps": steps},
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": err_remote
+            or f"La rama remota {remote}/{branch} no existe. ¿Hiciste push de esa rama?",
+        }
+
+    # Ruta principal: merge directo con autostash (no exige staging)
+    if not use_staging:
+        # Si ya estamos en la rama de trabajo, no hacemos checkout (evita fallo por cambios locales).
+        r_direct = merge_remote(remote=remote, branch=branch, autostash=True)
+        err_direct = _shell_error(r_direct)
+        steps.append(
+            {
+                "step": "direct_merge_autostash",
+                "ok": r_direct.get("ok"),
+                "error": err_direct,
+            }
+        )
+        if r_direct.get("ok"):
+            _audit(
+                "update",
+                "apply",
+                True,
+                {"steps": steps, "direct_merge_autostash": True},
+                None,
+                int((time.perf_counter() - t0) * 1000),
+            )
+            return {
+                "ok": True,
+                "data": {
+                    "steps": steps,
+                    "promoted": True,
+                    "direct_merge_autostash": True,
+                },
+                "ms": int((time.perf_counter() - t0) * 1000),
+                "error": None,
+            }
+        _audit(
+            "update", "apply", False, {"steps": steps}, "direct_merge_autostash_failed"
+        )
+        return {
+            "ok": False,
+            "data": {"steps": steps},
+            "ms": int((time.perf_counter() - t0) * 1000),
+            "error": "direct_merge_autostash_failed",
+        }
+
+    # 3) Create staging desde origin/<branch>
     r_staging = create_staging_branch(
         remote=remote, branch=branch, staging_name=staging_name
     )
+    err_staging = _shell_error(r_staging)
     steps.append(
         {
             "step": "create_staging",
             "ok": r_staging.get("ok"),
-            "error": r_staging.get("error"),
+            "error": err_staging,
         }
     )
     if not r_staging.get("ok"):
-        _audit("update", "apply", False, {"steps": steps}, r_staging.get("error"))
+        # Fallback pragmático: si falla staging, intentar merge directo del remoto en la rama de trabajo.
+        r_back = checkout_branch(branch)
+        steps.append(
+            {
+                "step": "fallback_checkout_branch",
+                "ok": r_back.get("ok"),
+                "error": _shell_error(r_back),
+            }
+        )
+        if r_back.get("ok"):
+            r_direct = merge_remote(remote=remote, branch=branch)
+            err_direct = _shell_error(r_direct)
+            steps.append(
+                {
+                    "step": "fallback_merge_remote",
+                    "ok": r_direct.get("ok"),
+                    "error": err_direct,
+                }
+            )
+            if r_direct.get("ok"):
+                _audit(
+                    "update",
+                    "apply",
+                    True,
+                    {"steps": steps, "fallback_direct_merge": True},
+                    None,
+                    int((time.perf_counter() - t0) * 1000),
+                )
+                return {
+                    "ok": True,
+                    "data": {
+                        "steps": steps,
+                        "promoted": True,
+                        "fallback_direct_merge": True,
+                    },
+                    "ms": int((time.perf_counter() - t0) * 1000),
+                    "error": None,
+                }
+        _audit("update", "apply", False, {"steps": steps}, err_staging)
         return {
             "ok": False,
             "data": {"steps": steps},
             "ms": int((time.perf_counter() - t0) * 1000),
-            "error": r_staging.get("error"),
+            "error": err_staging or "create_staging failed",
         }
 
-    # 3) Smoke
+    # 4) Smoke
     smoke_ok = True
     if require_smoke:
         smoke_result = run_smoke(timeout_sec=120)
@@ -281,38 +415,40 @@ def apply(
         )
 
     if smoke_ok:
-        # 4a) Promote: checkout main, merge staging
+        # 5a) Promote: volver a la rama de trabajo, merge staging
         r_main = checkout_branch(branch)
+        err_main = _shell_error(r_main)
         steps.append(
             {
                 "step": "checkout_main",
                 "ok": r_main.get("ok"),
-                "error": r_main.get("error"),
+                "error": err_main,
             }
         )
         if not r_main.get("ok"):
-            _audit("update", "apply", False, {"steps": steps}, r_main.get("error"))
+            _audit("update", "apply", False, {"steps": steps}, err_main)
             return {
                 "ok": False,
                 "data": {"steps": steps},
                 "ms": int((time.perf_counter() - t0) * 1000),
-                "error": r_main.get("error"),
+                "error": err_main,
             }
         r_merge = merge_staging(staging_name=staging_name)
+        err_merge = _shell_error(r_merge)
         steps.append(
             {
                 "step": "merge_staging",
                 "ok": r_merge.get("ok"),
-                "error": r_merge.get("error"),
+                "error": err_merge,
             }
         )
         if not r_merge.get("ok"):
-            _audit("update", "apply", False, {"steps": steps}, r_merge.get("error"))
+            _audit("update", "apply", False, {"steps": steps}, err_merge)
             return {
                 "ok": False,
                 "data": {"steps": steps},
                 "ms": int((time.perf_counter() - t0) * 1000),
-                "error": r_merge.get("error"),
+                "error": err_merge,
             }
         delete_branch(staging_name, force=True)
         _audit(
@@ -330,7 +466,7 @@ def apply(
             "error": None,
         }
     else:
-        # 4b) Rollback
+        # 5b) Rollback
         if allow_rollback:
             r_rollback = do_rollback(
                 main_branch=branch,

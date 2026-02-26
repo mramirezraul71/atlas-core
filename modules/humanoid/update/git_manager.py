@@ -105,6 +105,15 @@ def merge_staging(staging_name: str = "staging") -> Dict[str, Any]:
     return r
 
 
+def merge_remote(
+    remote: str = "origin", branch: str = "main", autostash: bool = False
+) -> Dict[str, Any]:
+    """Merge remote branch directly into current branch."""
+    opt = " --autostash" if autostash else ""
+    r = _shell(f"git merge --no-edit{opt} {remote}/{branch}", timeout_sec=30)
+    return r
+
+
 def delete_branch(branch: str, force: bool = True) -> Dict[str, Any]:
     opt = " -D" if force else " -d"
     r = _shell(f"git branch{opt} {branch}", timeout_sec=5)

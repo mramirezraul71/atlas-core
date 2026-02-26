@@ -1,5 +1,3 @@
-import json
-
 import httpx
 
 
@@ -42,6 +40,13 @@ class WebTools:
 
 
 if __name__ == "__main__":
+    import sys
+
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     wt = WebTools()
     r = wt.fetch("https://httpbin.org/get")
-    print("WebTools OK - status:", r.get("status_code"))
+    print("OK WebTools - status:", r.get("status_code"))

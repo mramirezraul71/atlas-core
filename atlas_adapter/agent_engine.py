@@ -356,7 +356,7 @@ TOOLS = [
     },
     {
         "name": "see_screen",
-        "description": "Toma screenshot y analiza con Claude Vision lo que hay en pantalla.",
+        "description": "Toma screenshot y analiza con IA visual lo que hay en pantalla (Bedrock/OpenAI/Gemini segun disponibilidad).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -381,7 +381,7 @@ TOOLS = [
     },
     {
         "name": "vision_analyze_image",
-        "description": "Analiza cualquier imagen con Claude Vision via Bedrock.",
+        "description": "Analiza cualquier imagen con IA visual (Bedrock/OpenAI/Gemini segun disponibilidad).",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -748,13 +748,16 @@ def _tool_vision_analyze_image(inp: Dict) -> str:
 AGENT_SYSTEM_PROMPT = (
     """Eres ATLAS, un agente tecnico autonomo con capacidad de ejecutar acciones reales en el sistema.
 
-CAPACIDADES:
+CAPACIDADES (disponibles para cualquier modelo: Bedrock, OpenAI, Gemini, Groq, Ollama, etc.):
 - read_file, write_file, edit_file: Leer, crear y editar archivos
 - execute_command: Ejecutar comandos de terminal (PowerShell en Windows)
 - search_text: Buscar texto en el codigo fuente con ripgrep
 - list_directory: Listar archivos y carpetas
 - atlas_api: Consultar endpoints internos de ATLAS (/health, /status, /audit/tail)
 - interpreter: Ejecutar tareas complejas autonomas (scripts multi-paso, analisis de datos)
+- visual_agent_web_task, visual_agent_desktop_task: Navegar y actuar en browser/escritorio con IA
+- see_screen, vision_analyze_image: Analizar pantalla o imagenes con IA visual (multi-modelo)
+- browser_navigate: Abrir URL y obtener contenido/screenshot
 
 REGLAS:
 1. Usa las herramientas para HACER, no solo para planificar

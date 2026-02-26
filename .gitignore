@@ -116,6 +116,7 @@ atlas_workspace/
 
 # Capturas del Agente Navegador
 temp_vision/
+workspace_prime/screenshots/
 
 # Reportes POT (generados en runtime) - nunca subir
 modules/humanoid/quality/reports/pot_report_*.json
@@ -132,3 +133,6 @@ nexus/**/*.log
 nexus/**/*.db
 nexus/**/*.db-journal
 nexus/**/__pycache__/
+
+# Junction atlas_nexus -> nexus (evitar duplicar en repo)
+atlas_nexus/

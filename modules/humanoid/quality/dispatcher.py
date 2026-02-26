@@ -99,7 +99,7 @@ class POTDispatcher:
 
     # Cooldown mínimo entre ejecuciones del mismo POT tras fallo (segundos)
     _POT_COOLDOWN_ON_FAIL: Dict[str, int] = {
-        "services_repair": 300,  # 5 min: evita bucle reactor infinito
+        "services_repair": 900,  # 15 min: evita bucle infinito (era 300)
         "camera_repair": 180,
         "api_repair": 120,
         "diagnostic_full": 600,
@@ -122,6 +122,9 @@ class POTDispatcher:
 
         # Circuit breaker: {pot_id: {"last_fail_ts": float, "consecutive_fails": int}}
         self._circuit_breaker: Dict[str, Dict] = {}
+
+        # Última vez que notificamos "omitido por cooldown" (para no saturar Telegram/bitácora)
+        self._last_skip_notify: Dict[str, float] = {}
 
         # Estadísticas
         self._stats = {
@@ -227,6 +230,57 @@ class POTDispatcher:
                 cb["consecutive_fails"] += 1
                 cb["last_fail_ts"] = time.time()
 
+    def _maybe_notify_skip_cooldown(self, pot_id: str) -> None:
+        """
+        Envía un único aviso a Telegram y bitácora cuando se omite un POT por cooldown,
+        como máximo una vez por ventana de cooldown (evita saturar).
+        """
+        cooldown_sec = self._POT_COOLDOWN_ON_FAIL.get(pot_id, self._DEFAULT_COOLDOWN)
+        with self._lock:
+            last = self._last_skip_notify.get(pot_id, 0)
+            if time.time() - last < cooldown_sec:
+                return
+            self._last_skip_notify[pot_id] = time.time()
+        msg = (
+            f"[POT] {pot_id} omitido (circuit breaker / cooldown {cooldown_sec}s). "
+            "No se re-ejecutará hasta pasado el cooldown."
+        )
+        # Bitácora (sync)
+        try:
+            import urllib.request
+
+            payload = {
+                "message": msg,
+                "ok": True,
+                "source": "quality.dispatcher",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            req = urllib.request.Request(
+                "http://127.0.0.1:8791/ans/evolution-log",
+                data=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10):
+                pass
+        except Exception as e:
+            _log.debug("Skip-cooldown bitacora failed: %s", e)
+
+        # Telegram (async en hilo aparte para no bloquear ni depender del loop del main)
+        def _send():
+            try:
+                asyncio.run(send_telegram(msg))
+            except Exception as e:
+                _log.debug("Skip-cooldown telegram failed: %s", e)
+
+        try:
+            from modules.humanoid.notify import send_telegram
+
+            t = threading.Thread(target=_send, daemon=True)
+            t.start()
+        except Exception as e:
+            _log.debug("Skip-cooldown telegram import/start failed: %s", e)
+
     def dispatch(self, request: DispatchRequest) -> str:
         """
         Encola un request para ejecución.
@@ -250,6 +304,8 @@ class POTDispatcher:
                     self._stats.get("skipped_cooldown", 0) + 1
                 )
             _log.info("Skipped dispatch of POT %s (circuit breaker open)", pot_id)
+            # Un solo aviso a Telegram y bitácora cada 15 min (evita saturación)
+            self._maybe_notify_skip_cooldown(pot_id)
             return request_id  # Devuelve ID sin encolar
 
         with self._lock:

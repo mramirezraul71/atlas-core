@@ -49,6 +49,13 @@ class MemoryManager:
 
 
 if __name__ == "__main__":
+    import sys
+
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     mm = MemoryManager()
     mm.update_field("session_count", 1)
-    print("MemoryManager OK:", mm.read_working())
+    print("OK MemoryManager:", mm.read_working())

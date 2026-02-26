@@ -40,19 +40,205 @@ function _buildTopbar(app) {
     <div class="topbar-center"></div>
     <div class="topbar-right">
       <span class="topbar-version" id="topbar-version">v4.0</span>
-      <button class="topbar-btn" id="btn-theme" title="Change theme">${SVG.theme}</button>
-      <button class="topbar-btn" id="btn-home" title="Home">${SVG.home}</button>
-      <button class="topbar-btn" id="btn-dashboard" title="Open Dashboard" style="font-weight:600;padding:8px 10px">Dashboard</button>
-      <button class="topbar-btn" id="btn-workspace" title="Open Workspace" style="font-weight:600;padding:8px 10px">Workspace</button>
+      <button class="topbar-btn" id="btn-theme" title="Cambiar tema">${SVG.theme}</button>
+      <button class="topbar-btn" id="btn-home" title="Inicio">${SVG.home}</button>
+      <div class="topbar-menu-wrap">
+        <button class="topbar-btn" id="btn-menu" title="Menú">${SVG.menu}</button>
+        <div class="topbar-menu" id="topbar-menu" role="menu" aria-label="Navegación">
+          <a class="topbar-menu-item" href="/v3" role="menuitem">📊 Dashboard</a>
+          <a class="topbar-menu-item" href="/workspace" role="menuitem">⚡ Workspace</a>
+          <div class="topbar-menu-divider"></div>
+          <button type="button" class="topbar-menu-item" id="btn-actualizar" role="menuitem">🔄 Actualizar ATLAS</button>
+        </div>
+      </div>
     </div>
   `;
   app.appendChild(bar);
 
-  bar.querySelector('#btn-dashboard')?.addEventListener('click', () => { window.location.href = '/v3'; });
-  bar.querySelector('#btn-workspace')?.addEventListener('click', () => { window.location.href = '/workspace'; });
+  const menuEl = bar.querySelector('#topbar-menu');
+  const btnMenu = bar.querySelector('#btn-menu');
+  const btnActualizar = bar.querySelector('#btn-actualizar');
+
+  function closeMenu() {
+    menuEl.classList.remove('open');
+    btnMenu.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', _closeOnOutside);
+  }
+  function _closeOnOutside(e) {
+    if (!bar.contains(e.target)) closeMenu();
+  }
+  btnMenu.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = menuEl.classList.toggle('open');
+    btnMenu.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) setTimeout(() => document.addEventListener('click', _closeOnOutside), 0);
+    else document.removeEventListener('click', _closeOnOutside);
+  });
+  bar.querySelectorAll('.topbar-menu-item[href]').forEach((a) => {
+    a.addEventListener('click', () => closeMenu());
+  });
+  btnActualizar.addEventListener('click', () => {
+    closeMenu();
+    window.AtlasUpdatePanel?.open?.() || _openUpdatePanel();
+  });
+
   bar.querySelector('#btn-home').addEventListener('click', () => { location.hash = '/'; });
   bar.querySelector('#btn-theme').addEventListener('click', _cycleTheme);
   bar.querySelector('#topbar-logo').addEventListener('click', () => { location.hash = '/'; });
+}
+
+function _openUpdatePanel() {
+  const overlay = document.createElement('div');
+  overlay.className = 'update-panel-overlay';
+  overlay.innerHTML = `
+    <div class="update-panel">
+      <button type="button" class="update-panel-close" aria-label="Cerrar">&times;</button>
+      <h2>Actualizar ATLAS</h2>
+      <p class="subtitle">Comprobar prerequisitos, estado del repo y aplicar actualizaciones desde el remoto. Si «Aplicar» falla por política, configura <code>POLICY_ALLOW_UPDATE_APPLY=true</code> en <code>config/atlas.env</code> y reinicia el servidor.</p>
+      <div class="update-panel-section">
+        <div class="update-panel-section-title">Software</div>
+        <div id="update-prereqs"></div>
+      </div>
+      <div class="update-panel-section">
+        <div class="update-panel-section-title">Repositorio</div>
+        <div id="update-repo"></div>
+      </div>
+      <div class="update-panel-actions">
+        <button type="button" class="update-panel-btn" id="update-btn-refresh">Comprobar</button>
+        <button type="button" class="update-panel-btn primary" id="update-btn-apply">Aplicar actualización</button>
+        <button type="button" class="update-panel-btn" id="update-btn-restart" title="Reinicia el servidor ATLAS para cargar cambios (config, código).">Reiniciar servidor</button>
+      </div>
+      <div class="update-panel-log" id="update-log"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const logEl = overlay.querySelector('#update-log');
+  const prereqsEl = overlay.querySelector('#update-prereqs');
+  const repoEl = overlay.querySelector('#update-repo');
+
+  function log(msg, isError = false) {
+    const line = (typeof msg === 'string' ? msg : JSON.stringify(msg)) + '\n';
+    logEl.textContent = (logEl.textContent || '') + line;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  async function loadPrereqs() {
+    try {
+      let r = await fetch('/update/prereqs');
+      if (!r.ok) r = await fetch('/api/v4/update/prereqs');
+      const j = await r.json();
+      const d = j.data || {};
+      if (!r.ok) {
+        prereqsEl.innerHTML = '<div class="update-panel-row"><span class="status-dot error"></span> Error API: ' + _esc(j.error || r.status) + '</div>';
+        return;
+      }
+      prereqsEl.innerHTML = `
+        <div class="update-panel-row"><span class="status-dot ${d.git_ok ? 'ok' : 'error'}"></span> Git: ${d.git_ok ? (d.git_version || 'OK') : 'No detectado'}</div>
+        <div class="update-panel-row"><span class="status-dot ${d.python_ok ? 'ok' : 'error'}"></span> Python: ${d.python_ok ? (d.python_version || 'OK') : 'No detectado'}</div>
+        <div class="update-panel-row"><span class="status-dot ${d.pip_ok ? 'ok' : 'error'}"></span> pip: ${d.pip_ok ? (d.pip_version || 'OK') : 'No detectado'}</div>
+        <div class="update-panel-row"><span class="status-dot ${d.repo_has_changes ? 'warn' : 'ok'}"></span> Repo: ${_esc(d.branch || '?')} ${d.repo_has_changes ? '(cambios locales)' : 'limpio'}</div>
+      `;
+    } catch (e) {
+      prereqsEl.innerHTML = '<div class="update-panel-row"><span class="status-dot error"></span> Error: ' + _esc(String(e)) + '. Comprueba que el servidor esté en marcha y recarga la página.</div>';
+    }
+  }
+
+  async function loadRepo() {
+    try {
+      const r = await fetch('/update/status');
+      const j = await r.json();
+      const d = (j.data || j) || {};
+      repoEl.innerHTML = `
+        <div class="update-panel-row"><span class="status-dot ok"></span> Rama: ${_esc(d.branch || '—')}</div>
+        <div class="update-panel-row">Commit actual: ${_esc((d.head_commit || '').slice(0, 8) || '—')}</div>
+        <div class="update-panel-row">Remoto: ${_esc((d.remote_commit || '').slice(0, 8) || '—')}</div>
+        <div class="update-panel-row"><span class="status-dot ${d.has_update ? 'warn' : 'ok'}"></span> ${d.has_update ? 'Hay actualizaciones disponibles' : 'Al día'}</div>
+      `;
+    } catch (e) {
+      repoEl.innerHTML = '<div class="update-panel-row"><span class="status-dot error"></span> Error: ' + _esc(String(e)) + '</div>';
+    }
+  }
+
+  overlay.querySelector('.update-panel-close').addEventListener('click', () => {
+    overlay.classList.remove('open');
+    setTimeout(() => overlay.remove(), 250);
+  });
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.querySelector('.update-panel-close').click();
+  });
+
+  overlay.querySelector('#update-btn-refresh').addEventListener('click', async () => {
+    log('Comprobando...');
+    await loadPrereqs();
+    await loadRepo();
+    log('Comprobación lista.');
+  });
+
+  overlay.querySelector('#update-btn-restart').addEventListener('click', async () => {
+    if (!confirm('¿Reiniciar el servidor ATLAS ahora? Se cerrará esta sesión en ~3 segundos. Deberás recargar la página cuando vuelva a estar en línea.')) return;
+    const btn = overlay.querySelector('#update-btn-restart');
+    btn.disabled = true;
+    log('Solicitando reinicio del servidor...');
+    try {
+      const r = await fetch('/update/restart', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok) {
+        log(j.data && j.data.message ? j.data.message : 'Reinicio programado.');
+        log('Recarga la página en 5-10 segundos (F5).');
+      } else {
+        log('Error: ' + (j.error || r.status));
+        if (r.status === 404) {
+          log('');
+          log('Este servidor no tiene la ruta de reinicio (código antiguo). Reinicio manual:');
+          log('  1. Cierra esta ventana y en una terminal ejecuta:');
+          log('  2. cd ' + (window.location.pathname.startsWith('/ui') ? 'tu_carpeta_ATLAS_PUSH' : 'C:\\ATLAS_PUSH'));
+          log('  3. powershell -ExecutionPolicy Bypass -File scripts\\restart_push_from_api.ps1');
+          log('  O mata el proceso en el puerto 8791 y vuelve a iniciar: python -m uvicorn atlas_adapter.atlas_http_api:app --host 0.0.0.0 --port 8791');
+        }
+      }
+    } catch (e) {
+      log('Error: ' + String(e) + ' (el servidor puede estar reiniciándose).');
+    }
+    btn.disabled = false;
+  });
+
+  overlay.querySelector('#update-btn-apply').addEventListener('click', async () => {
+    if (!confirm('¿Aplicar actualización desde el remoto? (fetch + staging + smoke + promote).')) return;
+    const btn = overlay.querySelector('#update-btn-apply');
+    btn.disabled = true;
+    log('Aplicando actualización...');
+    try {
+      const r = await fetch('/update/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const j = await r.json();
+      const err = j.error || '';
+      if (j.ok) {
+        log('OK: ' + JSON.stringify(j.data));
+      } else {
+        log('');
+        log('Error: ' + err);
+        if (j.data && j.data.steps && Array.isArray(j.data.steps)) {
+          const lastBad = j.data.steps.filter(s => !s.ok).pop();
+          if (lastBad) log('Último paso fallido: ' + (lastBad.step || '') + (lastBad.error ? ' — ' + lastBad.error : ''));
+        }
+        if (err.includes('POLICY_ALLOW_UPDATE_APPLY') || err.includes('policy')) {
+          log('');
+          log('Para permitir aplicar actualizaciones desde este panel, configura en el entorno o en config/atlas.env:');
+          log('  POLICY_ALLOW_UPDATE_APPLY=true');
+          log('');
+          log('Luego reinicia el servidor ATLAS.');
+        }
+      }
+      await loadRepo();
+      await loadPrereqs();
+    } catch (e) {
+      log('Error: ' + String(e), true);
+    }
+    btn.disabled = false;
+  });
+
+  overlay.classList.add('open');
+  loadPrereqs();
+  loadRepo();
 }
 
 function _getViewContainer() {

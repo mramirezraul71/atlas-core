@@ -113,16 +113,20 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         # Por defecto exige aprobación: toca el repositorio.
         require_approval=_env_bool("QUALITY_GIT_UNSAFE_REQUIRE_APPROVAL", True),
     ),
-    # Service Health Triggers - TURBO
+    # Service Health Triggers - Cooldown alto para services_repair (evitar ciclo infinito)
+    # Causa raíz del ciclo: check_service_down usaba 8787 para atlas_api/ans; PUSH está en 8791.
+    # Corregido: todos los endpoints apuntan a ATLAS_PUSH_URL (8791). Trigger seguro si se habilita.
     TriggerRule(
         id="service_down_repair",
         name="Reparar servicio caído",
         condition=TriggerCondition.SERVICE_DOWN,
         pot_id="services_repair",
-        enabled=True,
-        priority=1,  # TURBO: Máxima prioridad
-        cooldown_seconds=30,  # TURBO: Era 120s, ahora 30s
-        check_interval_seconds=5,  # TURBO: Check cada 5s
+        enabled=_env_bool(
+            "QUALITY_SERVICE_REPAIR_TRIGGER_ENABLED", False
+        ),  # OFF por defecto: opt-in
+        priority=1,
+        cooldown_seconds=900,  # 15 min
+        check_interval_seconds=60,
         require_approval=False,
         params={"services": ["atlas_api", "scheduler", "ans"]},
     ),
@@ -378,15 +382,23 @@ def check_git_unsafe() -> Dict[str, Any]:
 
 
 def check_service_down(services: Optional[List[str]] = None) -> Dict[str, Any]:
-    """Verifica si algún servicio está caído."""
-    services = services or ["atlas_api", "scheduler"]
+    """
+    Verifica si algún servicio está caído.
+
+    IMPORTANTE: En el despliegue por defecto, PUSH (puerto 8791) sirve /health,
+    /scheduler/jobs y /ans/status en el mismo proceso. Los tres endpoints deben
+    apuntar a 8791. Usar 8787 provocaba siempre 2 de 3 "down" → trigger constante
+    → ciclo infinito de services_repair.
+    """
+    services = services or ["atlas_api", "scheduler", "ans"]
     down_services = []
 
-    # Endpoints a verificar
+    # Todos en 8791: es el proceso PUSH que sirve API, scheduler y ANS
+    base = os.getenv("ATLAS_PUSH_URL", "http://127.0.0.1:8791").strip().rstrip("/")
     endpoints = {
-        "atlas_api": "http://127.0.0.1:8787/health",
-        "scheduler": "http://127.0.0.1:8791/scheduler/jobs",
-        "ans": "http://127.0.0.1:8787/ans/status",
+        "atlas_api": f"{base}/health",
+        "scheduler": f"{base}/scheduler/jobs",
+        "ans": f"{base}/ans/status",
     }
 
     import urllib.error
