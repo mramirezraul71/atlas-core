@@ -1,0 +1,30 @@
+{
+  "version": 0,
+  "updated_at": "2026-02-27T17:20:04",
+  "reason": "bootstrap",
+  "actor": "memory_engine_v2",
+  "state": {
+    "legacy_bridge": {
+      "legacy_root": "C:\\ATLAS\\MEMORY",
+      "managed": true,
+      "files": {
+        "decisions_json": {
+          "path": "C:\\ATLAS\\MEMORY\\decisions.json",
+          "exists": true
+        },
+        "modules_state_json": {
+          "path": "C:\\ATLAS\\MEMORY\\modules_state.json",
+          "exists": true
+        },
+        "long_term_context_md": {
+          "path": "C:\\ATLAS\\MEMORY\\long_term_context.md",
+          "exists": true
+        },
+        "last_snapshot_pointer_txt": {
+          "path": "C:\\ATLAS\\MEMORY\\last_snapshot_pointer.txt",
+          "exists": true
+        }
+      }
+    }
+  }
+}
