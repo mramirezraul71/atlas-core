@@ -1,0 +1,18 @@
+# Vision Ubiq V2 - Nuevas Dependencias
+
+# FASE 3: Auto-Discovery
+zeroconf>=0.131.0              # mDNS/Bonjour scanner
+# miniupnpc>=2.2.6             # UPnP (opcional, comentado por defecto)
+
+# FASE 4: Dashcam (opcional)
+# tailscale-python>=0.3.0      # VPN control (puede usar CLI en su lugar)
+
+# Dependencias ya instaladas (verificar):
+# opencv-python>=4.9.0
+# numpy>=1.24.0
+# Pillow>=10.0.0
+# fastapi>=0.104.0
+# uvicorn>=0.24.0
+
+# Instalación:
+# pip install -r requirements-vision-v2.txt

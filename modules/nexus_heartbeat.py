@@ -62,6 +62,7 @@ _nexus_last_error: str = ""
 _heartbeat_thread: Optional[threading.Thread] = None
 _heartbeat_stop = threading.Event()
 _on_status_change: Optional[Callable[[bool, str], None]] = None
+_heartbeat_grace_until: float = 0.0  # No restart_nexus() until time.time() > this
 
 # Backoff para evitar spam en Bitácora durante reconexión.
 _DISCONNECT_EMIT_BACKOFF = [5, 10, 30]
@@ -316,6 +317,10 @@ def _heartbeat_loop() -> None:
                 except Exception as e:
                     logger.debug("Healing handle_error: %s", e)
             if consecutive_failures >= 2:
+                # Grace period: no restart while adapter is still booting
+                if time.time() < _heartbeat_grace_until:
+                    logger.debug("Heartbeat: grace period activo, omitiendo restart (%d fallos)", consecutive_failures)
+                    continue
                 delay = 5
                 try:
                     if _RESTART_POLICY is not None:
@@ -335,20 +340,32 @@ def _heartbeat_loop() -> None:
                 consecutive_failures = 0
 
 
-def start_heartbeat() -> None:
-    """Inicia el hilo de heartbeat. Idempotente. Primer ping; si falla, intenta arrancar NEXUS una vez."""
-    global _heartbeat_thread
+def start_heartbeat(*, skip_initial_restart: bool = False, grace_sec: float = 90) -> None:
+    """Inicia el hilo de heartbeat. Idempotente.
+
+    Args:
+        skip_initial_restart: Si True, NO intenta arrancar nexus.py al inicio.
+            Usar cuando el adapter mismo sirve en el puerto 8000 y aún no ha
+            terminado de bindear — evita la race condition Errno 10048.
+        grace_sec: Segundos tras el inicio durante los que el loop NO llamará
+            restart_nexus() (solo aplica si skip_initial_restart=True).
+    """
+    global _heartbeat_thread, _heartbeat_grace_until
     if _heartbeat_thread is not None and _heartbeat_thread.is_alive():
         return
+    if skip_initial_restart:
+        _heartbeat_grace_until = time.time() + grace_sec
     ok, msg = ping_nexus()
     set_nexus_connected(ok, "" if ok else msg)
-    if not ok:
+    if not ok and not skip_initial_restart:
         logger.info("NEXUS no responde en 8000. Intentando arrancar una vez...")
         restart_nexus()
     _heartbeat_stop.clear()
     _heartbeat_thread = threading.Thread(target=_heartbeat_loop, name="nexus-heartbeat", daemon=True)
     _heartbeat_thread.start()
-    logger.info("Heartbeat NEXUS iniciado (intervalo %ss). Primer ping: %s", NEXUS_HEARTBEAT_INTERVAL_SEC, "OK" if ok else msg)
+    logger.info("Heartbeat NEXUS iniciado (intervalo %ss). Primer ping: %s%s",
+                NEXUS_HEARTBEAT_INTERVAL_SEC, "OK" if ok else msg,
+                " [skip_initial_restart]" if skip_initial_restart else "")
 
 
 def stop_heartbeat() -> None:

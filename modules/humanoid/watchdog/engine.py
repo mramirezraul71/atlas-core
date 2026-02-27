@@ -9,7 +9,15 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-from .rules import check_error_rate, check_latency, check_scheduler_alive, max_error_rate, max_latency_ms
+from .rules import (
+    check_error_rate,
+    check_latency,
+    check_scheduler_alive,
+    check_stale_jobs,
+    check_critical_services,
+    max_error_rate,
+    max_latency_ms,
+)
 
 _log = logging.getLogger("humanoid.watchdog")
 
@@ -71,6 +79,18 @@ async def _tick() -> None:
             pass
         alerts.extend(check_scheduler_alive(scheduler_running))
 
+        # Detectar jobs colgados en el scheduler
+        try:
+            alerts.extend(check_stale_jobs())
+        except Exception:
+            pass
+
+        # Verificar servicios críticos (adapter, robot backend)
+        try:
+            alerts.extend(check_critical_services())
+        except Exception:
+            pass
+
         if alerts:
             _last_alerts = alerts
             _audit("watchdog", "alerts", False, {"alerts": alerts}, f"{len(alerts)} alert(s)")
@@ -88,6 +108,21 @@ async def _tick() -> None:
                     except Exception:
                         pass
                     break
+
+            # Self-healing: resetear jobs colgados a 'queued' para que se re-ejecuten
+            for a in alerts:
+                if a.get("rule") == "stale_job":
+                    jid = a.get("job_id")
+                    if not jid:
+                        continue
+                    try:
+                        from modules.humanoid.scheduler.engine import get_scheduler_db
+                        db = get_scheduler_db()
+                        db.set_queued(jid)
+                        _audit("watchdog", "healing_reset_stale_job", True, {"job_id": jid, "kind": a.get("kind")})
+                        _log.warning("Watchdog auto-reset stale job %s (%s) to 'queued'", jid, a.get("kind"))
+                    except Exception as he:
+                        _log.error("Watchdog failed to reset stale job %s: %s", jid, he)
     except Exception as e:
         _log.exception("Watchdog tick error: %s", e)
         _audit("watchdog", "tick_error", False, {"error": str(e)})

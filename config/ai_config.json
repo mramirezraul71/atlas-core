@@ -1,6 +1,6 @@
 {
   "mode": "hybrid",
-  "provider": "ollama",
+  "provider": "bedrock",
   "model": "",
   "temperature": 0.2,
   "top_p": 0.8,

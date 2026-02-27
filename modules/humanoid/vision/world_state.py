@@ -78,14 +78,11 @@ class WorldState:
     error: str = ""
 
 
-def capture_world_state(*, eye: Optional[str] = None, include_ocr_items: bool = False, use_llm_vision: bool = False) -> Dict[str, Any]:
-    """
-    Captura un "estado del mundo" minimalista y persistible.
-    - Captura imagen (ubiq/nexus/local)
-    - Calcula métricas de calidad
-    - Ejecuta OCR (texto + opcional bounding boxes)
-    - (opcional) LLM vision para interpretación
-    """
+_WORLD_STATE_TIMEOUT_SEC: float = float(os.getenv("ATLAS_WORLD_STATE_TIMEOUT_SEC", "30") or 30)
+
+
+def _capture_world_state_inner(*, eye: Optional[str] = None, include_ocr_items: bool = False, use_llm_vision: bool = False) -> Dict[str, Any]:
+    """Lógica interna (sin timeout envolvente)."""
     from modules.humanoid.nerve.eyes import eyes_capture
 
     snap = eyes_capture(use_nexus_if_available=True, source="camera", enhance="auto", eye=eye)
@@ -115,7 +112,7 @@ def capture_world_state(*, eye: Optional[str] = None, include_ocr_items: bool = 
     except Exception:
         pass
 
-    # OCR
+    # OCR (con timeout interno de 15s por defecto en ocr.py)
     ocr_text = ""
     ocr_err = ""
     ocr_items: list[dict] = []
@@ -165,6 +162,38 @@ def capture_world_state(*, eye: Optional[str] = None, include_ocr_items: bool = 
     except Exception:
         pass
     return out
+
+
+def capture_world_state(*, eye: Optional[str] = None, include_ocr_items: bool = False, use_llm_vision: bool = False) -> Dict[str, Any]:
+    """
+    Captura un "estado del mundo" minimalista y persistible.
+    Envuelve la lógica interna con un timeout global (ATLAS_WORLD_STATE_TIMEOUT_SEC, default 30s)
+    para evitar que un OCR o capture colgado bloquee el scheduler indefinidamente.
+    """
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            _capture_world_state_inner,
+            eye=eye,
+            include_ocr_items=include_ocr_items,
+            use_llm_vision=use_llm_vision,
+        )
+        try:
+            return future.result(timeout=_WORLD_STATE_TIMEOUT_SEC)
+        except concurrent.futures.TimeoutError:
+            ws = WorldState(
+                ts=time.time(),
+                source="timeout",
+                ok=False,
+                error=f"capture_world_state timed out after {_WORLD_STATE_TIMEOUT_SEC}s",
+            )
+            out = asdict(ws)
+            try:
+                _safe_write_json(_logs_path(), out)
+            except Exception:
+                pass
+            return out
 
 
 def load_latest_world_state() -> Dict[str, Any]:

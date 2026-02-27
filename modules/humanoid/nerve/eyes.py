@@ -181,7 +181,13 @@ def eyes_capture(
             }
     try:
         from modules.humanoid.hands_eyes.engine import capture_full_scene
-        out = capture_full_scene(region=region, save_evidence=True)
+        # Para refrescos frecuentes (dashboard), no guardar evidencia por defecto.
+        # Se puede activar con NERVE_EYES_SAVE_EVIDENCE=true.
+        try:
+            save_ev = (os.getenv("NERVE_EYES_SAVE_EVIDENCE", "false") or "").strip().lower() in ("1", "true", "yes", "y", "on")
+        except Exception:
+            save_ev = False
+        out = capture_full_scene(region=region, save_evidence=bool(save_ev))
         if not out.get("ok"):
             return {
                 "ok": False,

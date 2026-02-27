@@ -1,0 +1,733 @@
+2026-02-25T02:03:35.772Z Load environment configuration
+2026-02-25T02:03:35.791Z Running with mongo.
+2026-02-25T02:03:35.808Z Waiting for RTS to start ...
+{"success":true}2026-02-25T02:03:36.849Z RTS started.
+[2026-02-25 02:03:38,503] [main] requestId= userEmail= orgId= traceId= spanId= - Starting ServerApplication vv1.96 using Java 17.0.9 with PID 2029 (/opt/appsmith/server/mongo/server.jar started by root in /opt/appsmith/server/mongo)
+[2026-02-25 02:03:38,506] [main] requestId= userEmail= orgId= traceId= spanId= - Running with Spring Boot v3.3.13, Spring v6.1.21
+[2026-02-25 02:03:38,508] [main] requestId= userEmail= orgId= traceId= spanId= - The following 1 profile is active: "production"
+[2026-02-25 02:03:41,322] [main] requestId= userEmail= orgId= traceId= spanId= - Multiple Spring Data modules found, entering strict repository configuration mode
+[2026-02-25 02:03:41,323] [main] requestId= userEmail= orgId= traceId= spanId= - Bootstrapping Spring Data Reactive MongoDB repositories in DEFAULT mode.
+[2026-02-25 02:03:41,787] [main] requestId= userEmail= orgId= traceId= spanId= - Finished Spring Data repository scanning in 457 ms. Found 45 Reactive MongoDB repository interfaces.
+[2026-02-25 02:03:43,323] [main] requestId= userEmail= orgId= traceId= spanId= - OAuth2PropertiesCustomizer: Processing OAuth2 properties early in application startup
+[2026-02-25 02:03:43,323] [main] requestId= userEmail= orgId= traceId= spanId= - Found OAuth client ID properties: [spring.security.oauth2.client.registration.github.client-id, spring.security.oauth2.client.registration.google.client-id]
+[2026-02-25 02:03:44,364] [main] requestId= userEmail= orgId= traceId= spanId= - Application started with build version v1.96, and commitSha b207dbb84d4b985dd60ef5411c47d9bd8721fde9
+[2026-02-25 02:03:44,502] [main] requestId= userEmail= orgId= traceId= spanId= - Found MongoDB uri configuring now
+[2026-02-25 02:03:45,091] [main] requestId= userEmail= orgId= traceId= spanId= - MongoClient with metadata {"driver": {"name": "mongo-java-driver|reactive-streams|spring-boot", "version": "5.0.1"}, "os": {"type": "Linux", "name": "Linux", "architecture": "amd64", "version": "6.6.87.2-microsoft-standard-WSL2"}, "platform": "Java/Eclipse Adoptium/17.0.9+9", "env": {"container": {"runtime": "docker"}}} created with settings MongoClientSettings{readPreference=primary, writeConcern=WriteConcern{w=null, wTimeout=null ms, journal=null}, retryWrites=true, retryReads=true, readConcern=ReadConcern{level=null}, credential=MongoCredential{mechanism=null, userName='appsmith', source='appsmith', password=<hidden>, mechanismProperties=<hidden>}, transportSettings=NettyTransportSettings{eventLoopGroup=io.netty.channel.nio.NioEventLoopGroup@20a2930f, socketChannelClass=null, allocator=null, sslContext=null}, commandListeners=[io.micrometer.core.instrument.binder.mongodb.MongoMetricsCommandListener@7a491a60], codecRegistry=ProvidersCodecRegistry{codecProviders=[ValueCodecProvider{}, BsonValueCodecProvider{}, DBRefCodecProvider{}, DBObjectCodecProvider{}, DocumentCodecProvider{}, CollectionCodecProvider{}, IterableCodecProvider{}, MapCodecProvider{}, GeoJsonCodecProvider{}, GridFSFileCodecProvider{}, Jsr310CodecProvider{}, JsonObjectCodecProvider{}, BsonCodecProvider{}, EnumCodecProvider{}, com.mongodb.client.model.mql.ExpressionCodecProvider@609edb55, com.mongodb.Jep395RecordCodecProvider@147892be, com.mongodb.KotlinCodecProvider@13d1653]}, loggerSettings=LoggerSettings{maxDocumentLength=1000}, clusterSettings={hosts=[localhost:27017], srvServiceName=mongodb, mode=SINGLE, requiredClusterType=UNKNOWN, requiredReplicaSetName='null', serverSelector='null', clusterListeners='[]', serverSelectionTimeout='30000 ms', localThreshold='15 ms'}, socketSettings=SocketSettings{connectTimeoutMS=10000, readTimeoutMS=0, receiveBufferSize=0, proxySettings=ProxySettings{host=null, port=null, username=null, password=null}}, heartbeatSocketSettings=SocketSettings{connectTimeoutMS=10000, readTimeoutMS=10000, receiveBufferSize=0, proxySettings=ProxySettings{host=null, port=null, username=null, password=null}}, connectionPoolSettings=ConnectionPoolSettings{maxSize=100, minSize=0, maxWaitTimeMS=120000, maxConnectionLifeTimeMS=0, maxConnectionIdleTimeMS=0, maintenanceInitialDelayMS=0, maintenanceFrequencyMS=60000, connectionPoolListeners=[io.micrometer.core.instrument.binder.mongodb.MongoMetricsConnectionPoolListener@217009bd], maxConnecting=2}, serverSettings=ServerSettings{heartbeatFrequencyMS=10000, minHeartbeatFrequencyMS=500, serverListeners='[]', serverMonitorListeners='[]'}, sslSettings=SslSettings{enabled=false, invalidHostNameAllowed=false, context=null}, applicationName='null', compressorList=[], uuidRepresentation=JAVA_LEGACY, serverApi=null, autoEncryptionSettings=null, dnsClient=null, inetAddressResolver=null, contextProvider=null}
+[2026-02-25 02:03:45,161] [cluster-ClusterId{value='699e5880d0e68818aa294a45', description='null'}-localhost:27017] requestId= userEmail= orgId= traceId= spanId= - Exception in monitor thread while connecting to server localhost:27017
+com.mongodb.MongoSocketOpenException: Exception opening socket
+	at com.mongodb.internal.connection.netty.NettyStream$OpenChannelFutureListener.lambda$operationComplete$1(NettyStream.java:527)
+	at com.mongodb.internal.Locks.lambda$withLock$0(Locks.java:33)
+	at com.mongodb.internal.Locks.checkedWithLock(Locks.java:45)
+	at com.mongodb.internal.Locks.withLock(Locks.java:39)
+	at com.mongodb.internal.Locks.withLock(Locks.java:32)
+	at com.mongodb.internal.connection.netty.NettyStream$OpenChannelFutureListener.operationComplete(NettyStream.java:514)
+	at com.mongodb.internal.connection.netty.NettyStream$OpenChannelFutureListener.operationComplete(NettyStream.java:500)
+	at io.netty.util.concurrent.DefaultPromise.notifyListener0(DefaultPromise.java:603)
+	at io.netty.util.concurrent.DefaultPromise.notifyListeners0(DefaultPromise.java:596)
+	at io.netty.util.concurrent.DefaultPromise.notifyListenersNow(DefaultPromise.java:572)
+	at io.netty.util.concurrent.DefaultPromise.notifyListeners(DefaultPromise.java:505)
+	at io.netty.util.concurrent.DefaultPromise.setValue0(DefaultPromise.java:649)
+	at io.netty.util.concurrent.DefaultPromise.setFailure0(DefaultPromise.java:642)
+	at io.netty.util.concurrent.DefaultPromise.tryFailure(DefaultPromise.java:131)
+	at io.netty.channel.nio.AbstractNioChannel$AbstractNioUnsafe.fulfillConnectPromise(AbstractNioChannel.java:326)
+	at io.netty.channel.nio.AbstractNioChannel$AbstractNioUnsafe.finishConnect(AbstractNioChannel.java:342)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:784)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:732)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:658)
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:562)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:998)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+Caused by: io.netty.channel.AbstractChannel$AnnotatedConnectException: Connection refused: localhost/[0:0:0:0:0:0:0:1]:27017
+Caused by: java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at io.netty.channel.socket.nio.NioSocketChannel.doFinishConnect(NioSocketChannel.java:336)
+	at io.netty.channel.nio.AbstractNioChannel$AbstractNioUnsafe.finishConnect(AbstractNioChannel.java:339)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:784)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:732)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:658)
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:562)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:998)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+[2026-02-25 02:03:48,992] [cluster-ClusterId{value='699e5884d0e68818aa294a46', description='null'}-localhost:27017] requestId= userEmail= orgId= traceId= spanId= - Exception in monitor thread while connecting to server localhost:27017
+com.mongodb.MongoSocketOpenException: Exception opening socket
+	at com.mongodb.internal.connection.netty.NettyStream$OpenChannelFutureListener.lambda$operationComplete$1(NettyStream.java:527)
+	at com.mongodb.internal.Locks.lambda$withLock$0(Locks.java:33)
+	at com.mongodb.internal.Locks.checkedWithLock(Locks.java:45)
+	at com.mongodb.internal.Locks.withLock(Locks.java:39)
+	at com.mongodb.internal.Locks.withLock(Locks.java:32)
+	at com.mongodb.internal.connection.netty.NettyStream$OpenChannelFutureListener.operationComplete(NettyStream.java:514)
+	at com.mongodb.internal.connection.netty.NettyStream$OpenChannelFutureListener.operationComplete(NettyStream.java:500)
+	at io.netty.util.concurrent.DefaultPromise.notifyListener0(DefaultPromise.java:603)
+	at io.netty.util.concurrent.DefaultPromise.notifyListeners0(DefaultPromise.java:596)
+	at io.netty.util.concurrent.DefaultPromise.notifyListenersNow(DefaultPromise.java:572)
+	at io.netty.util.concurrent.DefaultPromise.notifyListeners(DefaultPromise.java:505)
+	at io.netty.util.concurrent.DefaultPromise.setValue0(DefaultPromise.java:649)
+	at io.netty.util.concurrent.DefaultPromise.setFailure0(DefaultPromise.java:642)
+	at io.netty.util.concurrent.DefaultPromise.tryFailure(DefaultPromise.java:131)
+	at io.netty.channel.nio.AbstractNioChannel$AbstractNioUnsafe.fulfillConnectPromise(AbstractNioChannel.java:326)
+	at io.netty.channel.nio.AbstractNioChannel$AbstractNioUnsafe.finishConnect(AbstractNioChannel.java:342)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:784)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:732)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:658)
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:562)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:998)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+Caused by: io.netty.channel.AbstractChannel$AnnotatedConnectException: Connection refused: localhost/[0:0:0:0:0:0:0:1]:27017
+Caused by: java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.pollConnect(Native Method)
+	at java.base/sun.nio.ch.Net.pollConnectNow(Net.java:672)
+	at java.base/sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:946)
+	at io.netty.channel.socket.nio.NioSocketChannel.doFinishConnect(NioSocketChannel.java:336)
+	at io.netty.channel.nio.AbstractNioChannel$AbstractNioUnsafe.finishConnect(AbstractNioChannel.java:339)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:784)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:732)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:658)
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:562)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:998)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+[2026-02-25 02:03:48,995] [main] requestId= userEmail= orgId= traceId= spanId= - MongoClient with metadata {"driver": {"name": "mongo-java-driver|sync|spring-boot", "version": "5.0.1"}, "os": {"type": "Linux", "name": "Linux", "architecture": "amd64", "version": "6.6.87.2-microsoft-standard-WSL2"}, "platform": "Java/Eclipse Adoptium/17.0.9+9", "env": {"container": {"runtime": "docker"}}} created with settings MongoClientSettings{readPreference=primary, writeConcern=WriteConcern{w=null, wTimeout=null ms, journal=null}, retryWrites=true, retryReads=true, readConcern=ReadConcern{level=null}, credential=MongoCredential{mechanism=null, userName='appsmith', source='appsmith', password=<hidden>, mechanismProperties=<hidden>}, transportSettings=NettyTransportSettings{eventLoopGroup=io.netty.channel.nio.NioEventLoopGroup@69c413f7, socketChannelClass=null, allocator=null, sslContext=null}, commandListeners=[io.micrometer.core.instrument.binder.mongodb.MongoMetricsCommandListener@7a491a60], codecRegistry=ProvidersCodecRegistry{codecProviders=[ValueCodecProvider{}, BsonValueCodecProvider{}, DBRefCodecProvider{}, DBObjectCodecProvider{}, DocumentCodecProvider{}, CollectionCodecProvider{}, IterableCodecProvider{}, MapCodecProvider{}, GeoJsonCodecProvider{}, GridFSFileCodecProvider{}, Jsr310CodecProvider{}, JsonObjectCodecProvider{}, BsonCodecProvider{}, EnumCodecProvider{}, com.mongodb.client.model.mql.ExpressionCodecProvider@609edb55, com.mongodb.Jep395RecordCodecProvider@147892be, com.mongodb.KotlinCodecProvider@13d1653]}, loggerSettings=LoggerSettings{maxDocumentLength=1000}, clusterSettings={hosts=[localhost:27017], srvServiceName=mongodb, mode=SINGLE, requiredClusterType=UNKNOWN, requiredReplicaSetName='null', serverSelector='null', clusterListeners='[]', serverSelectionTimeout='30000 ms', localThreshold='15 ms'}, socketSettings=SocketSettings{connectTimeoutMS=10000, readTimeoutMS=0, receiveBufferSize=0, proxySettings=ProxySettings{host=null, port=null, username=null, password=null}}, heartbeatSocketSettings=SocketSettings{connectTimeoutMS=10000, readTimeoutMS=10000, receiveBufferSize=0, proxySettings=ProxySettings{host=null, port=null, username=null, password=null}}, connectionPoolSettings=ConnectionPoolSettings{maxSize=100, minSize=0, maxWaitTimeMS=120000, maxConnectionLifeTimeMS=0, maxConnectionIdleTimeMS=0, maintenanceInitialDelayMS=0, maintenanceFrequencyMS=60000, connectionPoolListeners=[io.micrometer.core.instrument.binder.mongodb.MongoMetricsConnectionPoolListener@217009bd], maxConnecting=2}, serverSettings=ServerSettings{heartbeatFrequencyMS=10000, minHeartbeatFrequencyMS=500, serverListeners='[]', serverMonitorListeners='[]'}, sslSettings=SslSettings{enabled=false, invalidHostNameAllowed=false, context=null}, applicationName='null', compressorList=[], uuidRepresentation=JAVA_LEGACY, serverApi=null, autoEncryptionSettings=null, dnsClient=null, inetAddressResolver=null, contextProvider=null}
+[2026-02-25 02:03:49,969] [main] requestId= userEmail= orgId= traceId= spanId= - Enabled plugins: []
+[2026-02-25 02:03:49,969] [main] requestId= userEmail= orgId= traceId= spanId= - Disabled plugins: []
+[2026-02-25 02:03:49,978] [main] requestId= userEmail= orgId= traceId= spanId= - PF4J version 3.10.0 in 'deployment' mode
+[2026-02-25 02:03:50,523] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'appsmithai-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,524] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'saas-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,524] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'google-sheets-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,524] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'js-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,524] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'oracle-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,524] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'smtp-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,524] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'amazons3-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,524] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'mysql-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,524] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'restapi-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,524] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'postgres-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,524] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'snowflake-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,524] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'googleai-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,524] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'anthropic-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,524] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'elasticsearch-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,524] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'mssql-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,525] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'redshift-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,525] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'databricks-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,525] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'mongo-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,525] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'graphql-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,525] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'aws-lambda-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,525] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'openai-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,525] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'dynamo-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,525] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'arangodb-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,525] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'redis-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,525] [main] requestId= userEmail= orgId= traceId= spanId= - Plugin 'firestore-plugin@1.0-SNAPSHOT' resolved
+[2026-02-25 02:03:50,525] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'appsmithai-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,532] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'saas-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,536] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'google-sheets-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,547] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'js-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,548] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'oracle-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,555] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'smtp-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,557] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'amazons3-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,560] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'mysql-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,565] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'restapi-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,566] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'postgres-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,570] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'snowflake-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,583] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'googleai-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,585] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'anthropic-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,586] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'elasticsearch-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,588] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'mssql-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,591] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'redshift-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,594] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'databricks-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,602] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'mongo-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,607] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'graphql-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,609] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'aws-lambda-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,682] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'openai-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,690] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'dynamo-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,694] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'arangodb-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,696] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'redis-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:50,698] [main] requestId= userEmail= orgId= traceId= spanId= - Start plugin 'firestore-plugin@1.0-SNAPSHOT'
+[2026-02-25 02:03:55,240] [cluster-ClusterId{value='699e5880d0e68818aa294a45', description='null'}-localhost:27017] requestId= userEmail= orgId= traceId= spanId= - Monitor thread successfully connected to server with description ServerDescription{address=localhost:27017, type=REPLICA_SET_PRIMARY, state=CONNECTED, ok=true, minWireVersion=0, maxWireVersion=17, maxDocumentSize=16777216, logicalSessionTimeoutMinutes=30, roundTripTimeNanos=54300675, setName='mr1', canonicalAddress=localhost:27017, hosts=[localhost:27017], passives=[], arbiters=[], primary='localhost:27017', tagSet=TagSet{[]}, electionId=7fffffff0000000000000002, setVersion=1, topologyVersion=TopologyVersion{processId=699e58779421b83de60a1b36, counter=6}, lastWriteDate=Wed Feb 25 02:03:52 UTC 2026, lastUpdateTimeNanos=303168042879}
+[2026-02-25 02:03:55,617] [main] requestId= userEmail= orgId= traceId= spanId= - A MeterFilter is being configured after a Meter has been registered to this registry. All MeterFilters should be configured before any Meters are registered. If that is not possible or you have a use case where it should be allowed, let the Micrometer maintainers know at https://github.com/micrometer-metrics/micrometer/issues/4920. Enable DEBUG level logging on this logger to see a stack trace of the call configuring this MeterFilter.
+[2026-02-25 02:03:56,014] [main] requestId= userEmail= orgId= traceId= spanId= - Mongock runner COMMUNITY version[5.1.6]
+[2026-02-25 02:03:56,014] [main] requestId= userEmail= orgId= traceId= spanId= - Running Mongock with NO metadata
+[2026-02-25 02:03:56,014] [main] requestId= userEmail= orgId= traceId= spanId= - Property transaction-enabled not provided. It will become true as default in next versions. Set explicit value to false in case transaction are not desired.
+[2026-02-25 02:03:56,014] [main] requestId= userEmail= orgId= traceId= spanId= - Property transaction-enabled not provided, but driver is transactionable. BY DEFAULT MONGOCK WILL RUN IN TRANSACTION MODE.
+[2026-02-25 02:03:56,228] [main] requestId= userEmail= orgId= traceId= spanId= - Reflections took 158 ms to scan 1 urls, producing 6 keys and 90 values
+[2026-02-25 02:03:56,293] [main] requestId= userEmail= orgId= traceId= spanId= - Reflections took 26 ms to scan 1 urls, producing 6 keys and 90 values
+[2026-02-25 02:03:57,265] [main] requestId= userEmail= orgId= traceId= spanId= - Mongock trying to acquire the lock
+[2026-02-25 02:03:57,343] [main] requestId= userEmail= orgId= traceId= spanId= - Mongock acquired the lock until: Wed Feb 25 02:04:57 UTC 2026
+[2026-02-25 02:03:57,344] [Thread-3] requestId= userEmail= orgId= traceId= spanId= - Starting mongock lock daemon...
+[2026-02-25 02:03:57,350] [main] requestId= userEmail= orgId= traceId= spanId= - Mongock starting the data migration sequence id[2026-02-25T02:03:55.730105756-888]...
+[2026-02-25 02:03:57,433] [main] requestId= userEmail= orgId= traceId= spanId= - method[initializeSchemaVersion] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:57,492] [main] requestId= userEmail= orgId= traceId= spanId= - Waiting for server to become available for operation with ID 25. Remaining time: 30000 ms. Selector: ReadPreferenceServerSelector{readPreference=primary}, topology description: {type=UNKNOWN, servers=[{address=localhost:27017, type=UNKNOWN, state=CONNECTING, exception={com.mongodb.MongoSocketOpenException: Exception opening socket}, caused by {io.netty.channel.AbstractChannel$AnnotatedConnectException: Connection refused: localhost/[0:0:0:0:0:0:0:1]:27017}, caused by {java.net.ConnectException: Connection refused}}].
+[2026-02-25 02:03:57,511] [cluster-ClusterId{value='699e5884d0e68818aa294a46', description='null'}-localhost:27017] requestId= userEmail= orgId= traceId= spanId= - Monitor thread successfully connected to server with description ServerDescription{address=localhost:27017, type=REPLICA_SET_PRIMARY, state=CONNECTED, ok=true, minWireVersion=0, maxWireVersion=17, maxDocumentSize=16777216, logicalSessionTimeoutMinutes=30, roundTripTimeNanos=15227697, setName='mr1', canonicalAddress=localhost:27017, hosts=[localhost:27017], passives=[], arbiters=[], primary='localhost:27017', tagSet=TagSet{[]}, electionId=7fffffff0000000000000002, setVersion=1, topologyVersion=TopologyVersion{processId=699e58779421b83de60a1b36, counter=6}, lastWriteDate=Wed Feb 25 02:03:57 UTC 2026, lastUpdateTimeNanos=305447599599}
+[2026-02-25 02:03:57,827] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="initialize-schema-version", "type"="execution", "author"="", "class"="DatabaseChangelog0", "method"="initializeSchemaVersion"}
+[2026-02-25 02:03:57,927] [main] requestId= userEmail= orgId= traceId= spanId= - method[initialPlugins] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:58,047] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="initial-plugins", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="initialPlugins"}
+[2026-02-25 02:03:58,055] [main] requestId= userEmail= orgId= traceId= spanId= - method[addInitialIndexes] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,604] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="initial-indexes", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addInitialIndexes"}
+[2026-02-25 02:03:59,610] [main] requestId= userEmail= orgId= traceId= spanId= - method[setInitialSequenceForDatasource] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,641] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="set-initial-sequence-for-datasource", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="setInitialSequenceForDatasource"}
+[2026-02-25 02:03:59,648] [main] requestId= userEmail= orgId= traceId= spanId= - method[setPluginImageAndDocsLink] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,706] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="set-plugin-image-and-docs-link", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="setPluginImageAndDocsLink"}
+[2026-02-25 02:03:59,712] [main] requestId= userEmail= orgId= traceId= spanId= - method[mysqlPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,756] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="install-mysql-plugins", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="mysqlPlugin"}
+[2026-02-25 02:03:59,762] [main] requestId= userEmail= orgId= traceId= spanId= - method[updateDatabaseDocumentationLinks] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,785] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-database-documentation-links", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="updateDatabaseDocumentationLinks"}
+[2026-02-25 02:03:59,792] [main] requestId= userEmail= orgId= traceId= spanId= - method[generateUniqueIdForInstance] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,826] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="generate-unique-id-for-instance", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="generateUniqueIdForInstance"}
+[2026-02-25 02:03:59,834] [main] requestId= userEmail= orgId= traceId= spanId= - method[fixTokenExpiration] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,670] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="fix-password-reset-token-expiration", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="fixTokenExpiration"}
+[2026-02-25 02:03:59,676] [main] requestId= userEmail= orgId= traceId= spanId= - method[addElasticSearchPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,688] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-elastic-search-plugin", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addElasticSearchPlugin"}
+[2026-02-25 02:03:59,693] [main] requestId= userEmail= orgId= traceId= spanId= - method[addDynamoPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,705] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-dynamo-plugin", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addDynamoPlugin"}
+[2026-02-25 02:03:59,710] [main] requestId= userEmail= orgId= traceId= spanId= - method[usePngLogos] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,718] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="use-png-logos", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="usePngLogos"}
+[2026-02-25 02:03:59,723] [main] requestId= userEmail= orgId= traceId= spanId= - method[addRedisPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,735] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-redis-plugin", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addRedisPlugin"}
+[2026-02-25 02:03:59,741] [main] requestId= userEmail= orgId= traceId= spanId= - method[addMsSqlPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,751] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-msSql-plugin", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addMsSqlPlugin"}
+[2026-02-25 02:03:59,757] [main] requestId= userEmail= orgId= traceId= spanId= - method[addNewPageIndexAfterDroppingNewPage] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,807] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="createNewPageIndexAfterDroppingNewPage", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addNewPageIndexAfterDroppingNewPage"}
+[2026-02-25 02:03:59,812] [main] requestId= userEmail= orgId= traceId= spanId= - method[addNewActionIndexAfterDroppingNewAction] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,865] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="createNewActionIndexAfterDroppingNewAction", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addNewActionIndexAfterDroppingNewAction"}
+[2026-02-25 02:03:59,870] [main] requestId= userEmail= orgId= traceId= spanId= - method[addNewPageAndNewActionNewIndexes] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,907] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="new-page-new-action-add-indexes", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addNewPageAndNewActionNewIndexes"}
+[2026-02-25 02:03:59,913] [main] requestId= userEmail= orgId= traceId= spanId= - method[updateActionIndexToSingleMultipleIndices] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,952] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-action-index-to-single-multiple-indices", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="updateActionIndexToSingleMultipleIndices"}
+[2026-02-25 02:03:59,957] [main] requestId= userEmail= orgId= traceId= spanId= - method[addFirestorePlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,969] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-firestore-plugin", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addFirestorePlugin"}
+[2026-02-25 02:03:59,974] [main] requestId= userEmail= orgId= traceId= spanId= - method[addRedshiftPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,985] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-redshift-plugin", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addRedshiftPlugin"}
+[2026-02-25 02:03:59,991] [main] requestId= userEmail= orgId= traceId= spanId= - method[clearUserDataCollection] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:03:59,995] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="clear-userdata-collection", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="clearUserDataCollection"}
+[2026-02-25 02:04:00,001] [main] requestId= userEmail= orgId= traceId= spanId= - method[updateDatabaseDocumentationLinks_v1_2_1] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,049] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-database-documentation-links-v1-2-1", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="updateDatabaseDocumentationLinks_v1_2_1"}
+[2026-02-25 02:04:00,054] [main] requestId= userEmail= orgId= traceId= spanId= - method[addAmazonS3Plugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,067] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-amazons3-plugin", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addAmazonS3Plugin"}
+[2026-02-25 02:04:00,072] [main] requestId= userEmail= orgId= traceId= spanId= - method[updatePluginDatasourceFormComponents] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,155] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-plugin-datasource-form-components", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="updatePluginDatasourceFormComponents"}
+[2026-02-25 02:04:00,160] [main] requestId= userEmail= orgId= traceId= spanId= - method[updateS3DatasourceConfigurationAndLabel] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,172] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-s3-datasource-configuration-and-label", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="updateS3DatasourceConfigurationAndLabel"}
+[2026-02-25 02:04:00,177] [main] requestId= userEmail= orgId= traceId= spanId= - method[addGoogleSheetsPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,192] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-google-sheets-plugin", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addGoogleSheetsPlugin"}
+[2026-02-25 02:04:00,196] [main] requestId= userEmail= orgId= traceId= spanId= - method[markInstanceAsUnregistered] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,202] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="mark-instance-unregistered", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="markInstanceAsUnregistered"}
+[2026-02-25 02:04:00,207] [main] requestId= userEmail= orgId= traceId= spanId= - method[addSnowflakePlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,216] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-snowflake-plugin", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addSnowflakePlugin"}
+[2026-02-25 02:04:00,221] [main] requestId= userEmail= orgId= traceId= spanId= - method[addArangoDBPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,232] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-arangodb-plugin", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addArangoDBPlugin"}
+[2026-02-25 02:04:00,236] [main] requestId= userEmail= orgId= traceId= spanId= - method[setSvgLogoToPluginIcons] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,324] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="set-svg-logo-to-plugins", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="setSvgLogoToPluginIcons"}
+[2026-02-25 02:04:00,328] [main] requestId= userEmail= orgId= traceId= spanId= - method[createPluginReferenceForGenerateCRUDPage] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,400] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="create-plugin-reference-for-genarate-CRUD-page", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="createPluginReferenceForGenerateCRUDPage"}
+[2026-02-25 02:04:00,405] [main] requestId= userEmail= orgId= traceId= spanId= - method[createPluginReferenceForS3AndGSheetGenerateCRUDPage] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,464] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="create-plugin-reference-for-S3-GSheet-genarate-CRUD-page", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="createPluginReferenceForS3AndGSheetGenerateCRUDPage"}
+[2026-02-25 02:04:00,469] [main] requestId= userEmail= orgId= traceId= spanId= - method[addJSPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,480] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-js-plugin", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addJSPlugin"}
+[2026-02-25 02:04:00,487] [main] requestId= userEmail= orgId= traceId= spanId= - method[updatePluginPackageNameIndexToPluginNamePackageNameAndVersion] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,611] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-plugin-package-name-index", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="updatePluginPackageNameIndexToPluginNamePackageNameAndVersion"}
+[2026-02-25 02:04:00,617] [main] requestId= userEmail= orgId= traceId= spanId= - method[migrateS3PluginToUqi] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,627] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="migrate-s3-to-uqi", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="migrateS3PluginToUqi"}
+[2026-02-25 02:04:00,631] [main] requestId= userEmail= orgId= traceId= spanId= - method[addSmtpPluginPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,645] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-smtp-plugin", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addSmtpPluginPlugin"}
+[2026-02-25 02:04:00,649] [main] requestId= userEmail= orgId= traceId= spanId= - method[addPluginNameForGoogleSheets] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,659] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-google-sheets-plugin-name", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="addPluginNameForGoogleSheets"}
+[2026-02-25 02:04:00,662] [main] requestId= userEmail= orgId= traceId= spanId= - method[migrateFirestorePluginToUqi] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,671] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="migrate-firestore-to-uqi", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="migrateFirestorePluginToUqi"}
+[2026-02-25 02:04:00,675] [main] requestId= userEmail= orgId= traceId= spanId= - method[migrateFirestorePluginToUqi3] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,681] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="migrate-firestore-to-uqi-3", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="migrateFirestorePluginToUqi3"}
+[2026-02-25 02:04:00,685] [main] requestId= userEmail= orgId= traceId= spanId= - method[updateGitIndexes] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,792] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-index-for-git", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="updateGitIndexes"}
+[2026-02-25 02:04:00,797] [main] requestId= userEmail= orgId= traceId= spanId= - method[useAssetsCDNForPluginIcons] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,905] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="use-assets-cdn-for-plugin-icons", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="useAssetsCDNForPluginIcons"}
+[2026-02-25 02:04:00,909] [main] requestId= userEmail= orgId= traceId= spanId= - method[updateNewActionActionCollectionAndUserDataIndexes] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,974] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-index-for-newAction-actionCollection-userData", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="updateNewActionActionCollectionAndUserDataIndexes"}
+[2026-02-25 02:04:00,979] [main] requestId= userEmail= orgId= traceId= spanId= - method[markMSSQLCrudUnavailable] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:00,990] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="mark-mssql-crud-unavailable", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="markMSSQLCrudUnavailable"}
+[2026-02-25 02:04:00,995] [main] requestId= userEmail= orgId= traceId= spanId= - method[updateNewActionActionCollectionIndexes] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:01,078] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-index-for-newAction-actionCollection", "type"="execution", "author"="", "class"="DatabaseChangelog1", "method"="updateNewActionActionCollectionIndexes"}
+[2026-02-25 02:04:01,182] [main] requestId= userEmail= orgId= traceId= spanId= - method[fixPluginTitleCasing] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:01,204] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="fix-plugin-title-casing", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="fixPluginTitleCasing"}
+[2026-02-25 02:04:01,209] [main] requestId= userEmail= orgId= traceId= spanId= - method[addIndexesForGit] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:01,274] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-git-indexes", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="addIndexesForGit"}
+[2026-02-25 02:04:01,278] [main] requestId= userEmail= orgId= traceId= spanId= - method[addWorkspaceIndexes] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:01,318] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-workspace-indexes", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="addWorkspaceIndexes"}
+[2026-02-25 02:04:01,323] [main] requestId= userEmail= orgId= traceId= spanId= - method[addDefaultTenant] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:01,365] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-default-tenant", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="addDefaultTenant"}
+[2026-02-25 02:04:01,370] [main] requestId= userEmail= orgId= traceId= spanId= - method[organizationToWorkspaceIndexesRecreate] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:01,419] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="organization-to-workspace-indexes-recreate", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="organizationToWorkspaceIndexesRecreate"}
+[2026-02-25 02:04:01,426] [main] requestId= userEmail= orgId= traceId= spanId= - method[clearRedisCache2] with arguments: [org.springframework.data.redis.core.ReactiveRedisOperations]
+[2026-02-25 02:04:01,500] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="flush-spring-redis-keys-2a", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="clearRedisCache2"}
+[2026-02-25 02:04:01,505] [main] requestId= userEmail= orgId= traceId= spanId= - method[addAnonymousUser] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:01,527] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-anonymousUser", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="addAnonymousUser"}
+[2026-02-25 02:04:01,531] [main] requestId= userEmail= orgId= traceId= spanId= - method[addInstanceConfigurationPlaceHolder] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:01,607] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-instance-config-object", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="addInstanceConfigurationPlaceHolder"}
+[2026-02-25 02:04:01,612] [main] requestId= userEmail= orgId= traceId= spanId= - method[addAnonymousUserPermissionGroup] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:01,636] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-anonymous-user-permission-group", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="addAnonymousUserPermissionGroup"}
+[2026-02-25 02:04:01,641] [main] requestId= userEmail= orgId= traceId= spanId= - method[createThemesIndices] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:01,708] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="create-themes-indices", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="createThemesIndices"}
+[2026-02-25 02:04:01,712] [main] requestId= userEmail= orgId= traceId= spanId= - method[createSystemThemes3] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:01,888] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="create-system-themes-v3", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="createSystemThemes3"}
+[2026-02-25 02:04:01,893] [main] requestId= userEmail= orgId= traceId= spanId= - method[addPermissionGroupIndex] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:02,031] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="create-indices-on-permissions-for-performance", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="addPermissionGroupIndex"}
+[2026-02-25 02:04:02,037] [main] requestId= userEmail= orgId= traceId= spanId= - method[updateBadThemeState] with arguments: [org.springframework.data.mongodb.core.MongoTemplate, com.appsmith.server.acl.PolicyGenerator, com.appsmith.server.repositories.CacheableRepositoryHelper]
+[2026-02-25 02:04:02,044] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-bad-theme-state", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="updateBadThemeState"}
+[2026-02-25 02:04:02,050] [main] requestId= userEmail= orgId= traceId= spanId= - method[addTenantAdminPermissionsToInstanceAdmin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate, com.appsmith.server.solutions.PolicySolutionImpl]
+[2026-02-25 02:04:02,087] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-tenant-admin-permissions-instance-admin", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="addTenantAdminPermissionsToInstanceAdmin"}
+[2026-02-25 02:04:02,092] [main] requestId= userEmail= orgId= traceId= spanId= - method[addGraphQLPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:02,103] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-graphql-plugin", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="addGraphQLPlugin"}
+[2026-02-25 02:04:02,107] [main] requestId= userEmail= orgId= traceId= spanId= - method[addIndicesRecommendedByMongoCloud] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:02,171] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="indices-recommended-by-mongodb-cloud", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="addIndicesRecommendedByMongoCloud"}
+[2026-02-25 02:04:02,176] [main] requestId= userEmail= orgId= traceId= spanId= - method[addUniqueIndexOnUidString] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:02,217] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-unique-index-for-uidstring", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="addUniqueIndexOnUidString"}
+[2026-02-25 02:04:02,221] [main] requestId= userEmail= orgId= traceId= spanId= - method[modifyReadPermissionGroupToReadPermissionGroupMembers] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:02,225] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="change-readPermissionGroup-to-readPermissionGroupMembers", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="modifyReadPermissionGroupToReadPermissionGroupMembers"}
+[2026-02-25 02:04:02,230] [main] requestId= userEmail= orgId= traceId= spanId= - method[deletePermissionsInPermissionGroups] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:02,236] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="delete-permissions-in-permissionGroups", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="deletePermissionsInPermissionGroups"}
+[2026-02-25 02:04:02,240] [main] requestId= userEmail= orgId= traceId= spanId= - method[removeUsagePulsesForAppsmithCloud] with arguments: [org.springframework.data.mongodb.core.MongoTemplate, com.appsmith.server.configurations.CommonConfig$$SpringCGLIB$$0]
+[2026-02-25 02:04:02,240] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="remove-usage-pulses-for-appsmith-cloud", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="removeUsagePulsesForAppsmithCloud"}
+[2026-02-25 02:04:02,244] [main] requestId= userEmail= orgId= traceId= spanId= - method[addSslModeSettingsForExistingMssqlDatasource] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:02,253] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-ssl-mode-settings-for-existing-mssql-datasources", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="addSslModeSettingsForExistingMssqlDatasource"}
+[2026-02-25 02:04:02,258] [main] requestId= userEmail= orgId= traceId= spanId= - method[addOraclePlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:02,269] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-oracle-plugin", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="addOraclePlugin"}
+[2026-02-25 02:04:02,276] [main] requestId= userEmail= orgId= traceId= spanId= - method[updateOraclePluginName] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:02,283] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-oracle-plugin-name", "type"="execution", "author"="", "class"="DatabaseChangelog2", "method"="updateOraclePluginName"}
+[2026-02-25 02:04:02,392] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration003AddInstanceNameToTenantConfiguration] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:02,392] [main] requestId= userEmail= orgId= traceId= spanId= - method[addInstanceNameEnvVarToTenantConfiguration] with arguments: []
+[2026-02-25 02:04:02,409] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-instance-name-env-variable-tenant-configuration", "type"="execution", "author"="default_author", "class"="Migration003AddInstanceNameToTenantConfiguration", "method"="addInstanceNameEnvVarToTenantConfiguration"}
+[2026-02-25 02:04:02,510] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration004PermissionGroupDefaultWorkspaceIdMigration] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:02,510] [main] requestId= userEmail= orgId= traceId= spanId= - method[defaultWorkspaceIdMigration] with arguments: []
+No permissionGroup data to migrate.
+[2026-02-25 02:04:02,513] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="migrate-default-workspace-id-to-default-domain-id", "type"="execution", "author"="default_author", "class"="Migration004PermissionGroupDefaultWorkspaceIdMigration", "method"="defaultWorkspaceIdMigration"}
+[2026-02-25 02:04:02,613] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration005CreateIndexForApplicationSnapshotMigration] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:02,613] [main] requestId= userEmail= orgId= traceId= spanId= - method[addIndexOnApplicationIdAndChunkOrder] with arguments: []
+[2026-02-25 02:04:02,657] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="create-index-for-application-snapshot-collection", "type"="execution", "author"="default_author", "class"="Migration005CreateIndexForApplicationSnapshotMigration", "method"="addIndexOnApplicationIdAndChunkOrder"}
+[2026-02-25 02:04:02,761] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration006ResetOnPageLoadEdgesInLayouts] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:02,761] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:02,766] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="reset-on-page-load-edges-in-layouts", "type"="execution", "author"="default_author", "class"="Migration006ResetOnPageLoadEdgesInLayouts", "method"="executeMigration"}
+[2026-02-25 02:04:02,868] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration007OptOutUnsupportedPluginsForAirGap] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:02,869] [main] requestId= userEmail= orgId= traceId= spanId= - method[optOutUnsupportedPluginsForAirGapInstance] with arguments: []
+[2026-02-25 02:04:02,907] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="opt-out-unsupported-plugins-airgap-instance", "type"="execution", "author"="default_author", "class"="Migration007OptOutUnsupportedPluginsForAirGap", "method"="optOutUnsupportedPluginsForAirGapInstance"}
+[2026-02-25 02:04:03,013] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration008SupportNonHostedPluginsForAirgap] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:03,014] [main] requestId= userEmail= orgId= traceId= spanId= - method[supportNonHostedPluginsForAirgap] with arguments: []
+[2026-02-25 02:04:03,046] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="support-non-self-hosted-plugins-for-airgap", "type"="execution", "author"="default_author", "class"="Migration008SupportNonHostedPluginsForAirgap", "method"="supportNonHostedPluginsForAirgap"}
+[2026-02-25 02:04:03,151] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration009UpdateOracleLogoToSVG] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:03,151] [main] requestId= userEmail= orgId= traceId= spanId= - method[updateOracleLogoToSVG] with arguments: []
+[2026-02-25 02:04:03,157] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-oracle-logo-to-svg", "type"="execution", "author"="default_author", "class"="Migration009UpdateOracleLogoToSVG", "method"="updateOracleLogoToSVG"}
+[2026-02-25 02:04:03,262] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration010UpdatePluginDocsLink] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:03,262] [main] requestId= userEmail= orgId= traceId= spanId= - method[updatePluginDocumentationLinks] with arguments: []
+[2026-02-25 02:04:03,364] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-plugins-docs-link", "type"="execution", "author"="default_author", "class"="Migration010UpdatePluginDocsLink", "method"="updatePluginDocumentationLinks"}
+[2026-02-25 02:04:03,469] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration011CreateIndexDefaultDomainIdDefaultDomainTypeDropIndexDefaultWorkspaceId] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:03,469] [main] requestId= userEmail= orgId= traceId= spanId= - method[createNewIndexDefaultDomainIdDefaultDomainTypeAndDropOldIndexDefaultWorkspaceId] with arguments: []
+[2026-02-25 02:04:03,598] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="create-index-default-domain-id-default-domain-type", "type"="execution", "author"="default_author", "class"="Migration011CreateIndexDefaultDomainIdDefaultDomainTypeDropIndexDefaultWorkspaceId", "method"="createNewIndexDefaultDomainIdDefaultDomainTypeAndDropOldIndexDefaultWorkspaceId"}
+[2026-02-25 02:04:03,715] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration012RemoveStructureFromWithinDatasource] with arguments: [org.springframework.data.mongodb.core.MongoOperations, org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:03,715] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:03,769] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="remove-structure-from-within-datasource-modified", "type"="execution", "author"="default_author", "class"="Migration012RemoveStructureFromWithinDatasource", "method"="executeMigration"}
+[2026-02-25 02:04:03,873] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration013AddEmailBodyTypeToSMTPPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:03,874] [main] requestId= userEmail= orgId= traceId= spanId= - method[addSmtpEmailBodyType] with arguments: []
+[2026-02-25 02:04:03,893] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-smtp-email-body-type", "type"="execution", "author"="default_author", "class"="Migration013AddEmailBodyTypeToSMTPPlugin", "method"="addSmtpEmailBodyType"}
+[2026-02-25 02:04:03,995] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration014AddIndexToDatasourceStorage] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:03,995] [main] requestId= userEmail= orgId= traceId= spanId= - method[addingIndexToDatasourceStorage] with arguments: []
+[2026-02-25 02:04:04,039] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="index-for-datasource-storage", "type"="execution", "author"="default_author", "class"="Migration014AddIndexToDatasourceStorage", "method"="addingIndexToDatasourceStorage"}
+[2026-02-25 02:04:04,143] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration015AddPluginTypeIndexToNewActionCollection] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:04,143] [main] requestId= userEmail= orgId= traceId= spanId= - method[addingIndexToNewAction] with arguments: []
+[2026-02-25 02:04:04,162] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="app-id-plugin-type-index-for-new-action", "type"="execution", "author"="default_author", "class"="Migration015AddPluginTypeIndexToNewActionCollection", "method"="addingIndexToNewAction"}
+[2026-02-25 02:04:04,266] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration016RenameIndexesWithLongNames] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:04,266] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:04,455] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="rename-indexes-with-long-names", "type"="execution", "author"="default_author", "class"="Migration016RenameIndexesWithLongNames", "method"="executeMigration"}
+[2026-02-25 02:04:04,559] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration017UnsetEncryptionVersion2Fields] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:04,560] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: [org.springframework.data.mongodb.core.MongoOperations]
+[2026-02-25 02:04:04,565] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="unset-not-encrypted-encryption-version-2-fields", "type"="execution", "author"="default_author", "class"="Migration017UnsetEncryptionVersion2Fields", "method"="executeMigration"}
+[2026-02-25 02:04:04,669] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration018UpdateOraclePluginDocumentationLink] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:04,669] [main] requestId= userEmail= orgId= traceId= spanId= - method[updateOracleDocumentationLink] with arguments: []
+[2026-02-25 02:04:04,678] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-oracle-doc-link", "type"="execution", "author"="default_author", "class"="Migration018UpdateOraclePluginDocumentationLink", "method"="updateOracleDocumentationLink"}
+[2026-02-25 02:04:04,782] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration019RemoveNullEnvIdDatasourceStructureDocuments] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:04,783] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:04,791] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="delete-null-envId-key-document", "type"="execution", "author"="default_author", "class"="Migration019RemoveNullEnvIdDatasourceStructureDocuments", "method"="executeMigration"}
+[2026-02-25 02:04:04,898] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration021MoveGoogleMapsKeyToTenantConfiguration] with arguments: [org.springframework.data.mongodb.core.MongoTemplate, com.appsmith.server.configurations.CommonConfig]
+[2026-02-25 02:04:04,898] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:04,899] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="move-google-maps-key-to-tenant-configuration", "type"="execution", "author"="default_author", "class"="Migration021MoveGoogleMapsKeyToTenantConfiguration", "method"="executeMigration"}
+[2026-02-25 02:04:04,998] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration022AddConnectionMethodDefaultValueToAllMySQLDatasources] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:04,998] [main] requestId= userEmail= orgId= traceId= spanId= - method[updateConnectionMethodDefaultValueForMySQL] with arguments: []
+[2026-02-25 02:04:05,005] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-connection-method-default-value-for-mysql", "type"="execution", "author"="default_author", "class"="Migration022AddConnectionMethodDefaultValueToAllMySQLDatasources", "method"="updateConnectionMethodDefaultValueForMySQL"}
+[2026-02-25 02:04:05,100] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration023UpdateJSPluginIcon] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:05,100] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:05,109] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-js-plugin-icon", "type"="execution", "author"="default_author", "class"="Migration023UpdateJSPluginIcon", "method"="executeMigration"}
+[2026-02-25 02:04:05,217] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration024EnableGenerateCRUDPageToggleForMssqlPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:05,218] [main] requestId= userEmail= orgId= traceId= spanId= - method[enableGenerateCRUDPageToggle] with arguments: []
+[2026-02-25 02:04:05,227] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="enable-generate-crud-page-for-mssql", "type"="execution", "author"="default_author", "class"="Migration024EnableGenerateCRUDPageToggleForMssqlPlugin", "method"="enableGenerateCRUDPageToggle"}
+[2026-02-25 02:04:05,330] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration025AddIndexDeletedInApplication] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:05,330] [main] requestId= userEmail= orgId= traceId= spanId= - method[createIndexInApplicationCollection] with arguments: []
+[2026-02-25 02:04:05,351] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-index-application-deleted", "type"="execution", "author"="default_author", "class"="Migration025AddIndexDeletedInApplication", "method"="createIndexInApplicationCollection"}
+[2026-02-25 02:04:05,455] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration025RemoveUnassignPermissionFromUnnecessaryRoles] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:05,455] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:05,456] [main] requestId= userEmail= orgId= traceId= spanId= - Check if performant query can be used.
+[2026-02-25 02:04:05,460] [main] requestId= userEmail= orgId= traceId= spanId= - Using performant query.
+[2026-02-25 02:04:05,463] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="remove-unassign-permission-from-workspace-dev-viewer-roles", "type"="execution", "author"="default_author", "class"="Migration025RemoveUnassignPermissionFromUnnecessaryRoles", "method"="executeMigration"}
+[2026-02-25 02:04:05,557] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration026AddIndexTenantAndDeletedInWorkspace] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:05,557] [main] requestId= userEmail= orgId= traceId= spanId= - method[addIndexInWorkspaceCollection] with arguments: []
+[2026-02-25 02:04:05,577] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-index-workspace-tenant-deleted", "type"="execution", "author"="default_author", "class"="Migration026AddIndexTenantAndDeletedInWorkspace", "method"="addIndexInWorkspaceCollection"}
+[2026-02-25 02:04:05,684] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration027AddIndexDatasourceIdAndDeletedInAction] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:05,684] [main] requestId= userEmail= orgId= traceId= spanId= - method[addIndexInNewActionCollection] with arguments: []
+[2026-02-25 02:04:05,721] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="new-action-compound-index-datasource-id", "type"="execution", "author"="default_author", "class"="Migration027AddIndexDatasourceIdAndDeletedInAction", "method"="addIndexInNewActionCollection"}
+[2026-02-25 02:04:05,825] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration028TagUserManagementRolesWithoutDefaultDomainTypeAndId] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:05,825] [main] requestId= userEmail= orgId= traceId= spanId= - method[tagUserManagementRolesWithoutDefaultDomainTypeAndId] with arguments: []
+[2026-02-25 02:04:05,836] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="tag-user-management-roles-without-default-domain-type-and-id", "type"="execution", "author"="default_author", "class"="Migration028TagUserManagementRolesWithoutDefaultDomainTypeAndId", "method"="tagUserManagementRolesWithoutDefaultDomainTypeAndId"}
+[2026-02-25 02:04:05,938] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration029PopulateDefaultDomainIdInUserManagementRoles] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:05,939] [main] requestId= userEmail= orgId= traceId= spanId= - method[populateDefaultDomainIdInUserManagementRoles] with arguments: []
+[2026-02-25 02:04:05,951] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="populate-default-domain-id-in-user-management-roles", "type"="execution", "author"="default_author", "class"="Migration029PopulateDefaultDomainIdInUserManagementRoles", "method"="populateDefaultDomainIdInUserManagementRoles"}
+[2026-02-25 02:04:06,045] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration030TagUsersWithNoUserManagementRoles] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:06,045] [main] requestId= userEmail= orgId= traceId= spanId= - method[tagUsersWithNoUserManagementRoles] with arguments: []
+[2026-02-25 02:04:06,051] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="tag-users-with-no-user-management-roles", "type"="execution", "author"="default_author", "class"="Migration030TagUsersWithNoUserManagementRoles", "method"="tagUsersWithNoUserManagementRoles"}
+[2026-02-25 02:04:06,162] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration031CreateUserManagementRolesForUsersTaggedIn030] with arguments: [org.springframework.data.mongodb.core.MongoTemplate, com.appsmith.server.solutions.PolicySolution]
+[2026-02-25 02:04:06,163] [main] requestId= userEmail= orgId= traceId= spanId= - method[createUserManagementRolesForUsersTaggedInMigration030] with arguments: []
+[2026-02-25 02:04:06,163] [main] requestId= userEmail= orgId= traceId= spanId= - Check if performant query can be used.
+[2026-02-25 02:04:06,165] [main] requestId= userEmail= orgId= traceId= spanId= - Using performant query.
+[2026-02-25 02:04:06,168] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="create-user-management-roles-for-users-tagged-in-migration-030", "type"="execution", "author"="default_author", "class"="Migration031CreateUserManagementRolesForUsersTaggedIn030", "method"="createUserManagementRolesForUsersTaggedInMigration030"}
+[2026-02-25 02:04:06,267] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration032AddingXmlParserToApplicationLibraries] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:06,267] [main] requestId= userEmail= orgId= traceId= spanId= - method[addXmlParserEntryToEachApplication] with arguments: []
+[2026-02-25 02:04:06,277] [main] requestId= userEmail= orgId= traceId= spanId= - Going to add Xml Parser uid in all application DTOs
+[2026-02-25 02:04:06,283] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-xml-parser-to-application-jslibs", "type"="execution", "author"="default_author", "class"="Migration032AddingXmlParserToApplicationLibraries", "method"="addXmlParserEntryToEachApplication"}
+[2026-02-25 02:04:06,387] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration033AddOpenAIPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:06,387] [main] requestId= userEmail= orgId= traceId= spanId= - method[addPluginToDbAndWorkspace] with arguments: []
+[2026-02-25 02:04:06,394] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-open-ai-plugin", "type"="execution", "author"="default_author", "class"="Migration033AddOpenAIPlugin", "method"="addPluginToDbAndWorkspace"}
+[2026-02-25 02:04:06,499] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration034ChangeOpenAIIntegrationDocumentationLink] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:06,500] [main] requestId= userEmail= orgId= traceId= spanId= - method[changeDocumentationLink] with arguments: []
+[2026-02-25 02:04:06,508] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="change-open-ai-integration-documentation-link", "type"="execution", "author"="default_author", "class"="Migration034ChangeOpenAIIntegrationDocumentationLink", "method"="changeDocumentationLink"}
+[2026-02-25 02:04:06,611] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration035AddAnthropicPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:06,611] [main] requestId= userEmail= orgId= traceId= spanId= - method[addPluginToDbAndWorkspace] with arguments: []
+[2026-02-25 02:04:06,620] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-anthropic-plugin", "type"="execution", "author"="default_author", "class"="Migration035AddAnthropicPlugin", "method"="addPluginToDbAndWorkspace"}
+[2026-02-25 02:04:06,725] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration035RemoveMockDbEndPointInDatasourceInSelfHostedInstance] with arguments: [org.springframework.data.mongodb.core.MongoTemplate, com.appsmith.server.configurations.CommonConfig, com.appsmith.server.solutions.EnvManager]
+[2026-02-25 02:04:06,725] [main] requestId= userEmail= orgId= traceId= spanId= - method[removeMockDbEndpointInDatasource] with arguments: []
+[2026-02-25 02:04:06,729] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="remove-mockdb-endpoint-in-datasource-self-hosted-instance", "type"="execution", "author"="default_author", "class"="Migration035RemoveMockDbEndPointInDatasourceInSelfHostedInstance", "method"="removeMockDbEndpointInDatasource"}
+[2026-02-25 02:04:06,832] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration036AddRecentlyUsedEntitiesForUserData] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:06,832] [main] requestId= userEmail= orgId= traceId= spanId= - method[addRecentlyUsedEntitiesForUserData] with arguments: []
+[2026-02-25 02:04:06,835] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-recently-used-entities-for-user", "type"="execution", "author"="default_author", "class"="Migration036AddRecentlyUsedEntitiesForUserData", "method"="addRecentlyUsedEntitiesForUserData"}
+[2026-02-25 02:04:06,936] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration037AddCompoundIndexForNameAndDeletedAt] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:06,936] [main] requestId= userEmail= orgId= traceId= spanId= - method[addIndexInWorkspaceAndApplicationsCollection] with arguments: []
+[2026-02-25 02:04:06,977] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-compound-index-name-deleted", "type"="execution", "author"="default_author", "class"="Migration037AddCompoundIndexForNameAndDeletedAt", "method"="addIndexInWorkspaceAndApplicationsCollection"}
+[2026-02-25 02:04:07,081] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration037MarkAnonymousUserAsSystemGenerated] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:07,081] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:07,087] [main] requestId= userEmail= orgId= traceId= spanId= - Marked 1 anonymous users as system generated
+[2026-02-25 02:04:07,087] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="mark-anonymous-user-as-system-generated", "type"="execution", "author"="default_author", "class"="Migration037MarkAnonymousUserAsSystemGenerated", "method"="executeMigration"}
+[2026-02-25 02:04:07,191] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration038AddCompoundIndexForActionCollection] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:07,191] [main] requestId= userEmail= orgId= traceId= spanId= - method[addIndexInActionCollection] with arguments: []
+[2026-02-25 02:04:07,216] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-compound-index-action-collection", "type"="execution", "author"="default_author", "class"="Migration038AddCompoundIndexForActionCollection", "method"="addIndexInActionCollection"}
+[2026-02-25 02:04:07,320] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration038AddGoogleAIPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:07,320] [main] requestId= userEmail= orgId= traceId= spanId= - method[addPluginToDbAndWorkspace] with arguments: []
+[2026-02-25 02:04:07,329] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-google-ai-plugin", "type"="execution", "author"="default_author", "class"="Migration038AddGoogleAIPlugin", "method"="addPluginToDbAndWorkspace"}
+[2026-02-25 02:04:07,435] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration039AddCompoundIndexForDatasourceStorage] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:07,436] [main] requestId= userEmail= orgId= traceId= spanId= - method[addIndexInDatasourceStorageCollection] with arguments: []
+[2026-02-25 02:04:07,457] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-compound-index-datasource-storage", "type"="execution", "author"="default_author", "class"="Migration039AddCompoundIndexForDatasourceStorage", "method"="addIndexInDatasourceStorageCollection"}
+[2026-02-25 02:04:07,560] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration039AddDatabricksPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:07,561] [main] requestId= userEmail= orgId= traceId= spanId= - method[addPluginToDbAndWorkspace] with arguments: []
+[2026-02-25 02:04:07,568] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-databricks-plugin", "type"="execution", "author"="default_author", "class"="Migration039AddDatabricksPlugin", "method"="addPluginToDbAndWorkspace"}
+[2026-02-25 02:04:07,681] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration039OpenAIMessagesJsToggle] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:07,682] [main] requestId= userEmail= orgId= traceId= spanId= - method[moveMessagesToDataKeyForSupportingJsToggle] with arguments: []
+[2026-02-25 02:04:07,688] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="move-messages-to-data-key-in-openai", "type"="execution", "author"="default_author", "class"="Migration039OpenAIMessagesJsToggle", "method"="moveMessagesToDataKeyForSupportingJsToggle"}
+[2026-02-25 02:04:07,775] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration040AddAWSLambdaPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:07,775] [main] requestId= userEmail= orgId= traceId= spanId= - method[addPluginToDbAndWorkspace] with arguments: []
+[2026-02-25 02:04:07,783] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-aws-lambda-plugin", "type"="execution", "author"="default_author", "class"="Migration040AddAWSLambdaPlugin", "method"="addPluginToDbAndWorkspace"}
+[2026-02-25 02:04:07,891] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration040AddAppsmithAiPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:07,891] [main] requestId= userEmail= orgId= traceId= spanId= - method[addPluginToDbAndWorkspace] with arguments: []
+[2026-02-25 02:04:07,900] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-appsmith-ai-plugin", "type"="execution", "author"="default_author", "class"="Migration040AddAppsmithAiPlugin", "method"="addPluginToDbAndWorkspace"}
+[2026-02-25 02:04:08,004] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration041TagWorkspacesForGitOperationsPermissionMigration] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:08,004] [main] requestId= userEmail= orgId= traceId= spanId= - method[addPermissionForGitOperationsToExistingWorkspaces] with arguments: []
+[2026-02-25 02:04:08,010] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="tag-workspaces-to-migrate-adding-git-permissions", "type"="execution", "author"="default_author", "class"="Migration041TagWorkspacesForGitOperationsPermissionMigration", "method"="addPermissionForGitOperationsToExistingWorkspaces"}
+[2026-02-25 02:04:08,117] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration042AddPermissionsForGitOperations] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:08,118] [main] requestId= userEmail= orgId= traceId= spanId= - method[addPermissionForGitOperationsToExistingApplications] with arguments: []
+[2026-02-25 02:04:08,121] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-permissions-for-git-operations", "type"="execution", "author"="default_author", "class"="Migration042AddPermissionsForGitOperations", "method"="addPermissionForGitOperationsToExistingApplications"}
+[2026-02-25 02:04:08,224] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration043AddIndexActionCollectionPageID] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:08,224] [main] requestId= userEmail= orgId= traceId= spanId= - method[addIndexToActionCollectionCollection] with arguments: []
+[2026-02-25 02:04:08,248] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-index-to-action-collection-default-resources-pageid", "type"="execution", "author"="default_author", "class"="Migration043AddIndexActionCollectionPageID", "method"="addIndexToActionCollectionCollection"}
+[2026-02-25 02:04:08,357] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration044AddIndexesToDomainObjects] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:08,357] [main] requestId= userEmail= orgId= traceId= spanId= - method[addIndexToDomainObjects] with arguments: []
+[2026-02-25 02:04:08,427] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-index-to-domain-objects", "type"="execution", "author"="default_author", "class"="Migration044AddIndexesToDomainObjects", "method"="addIndexToDomainObjects"}
+[2026-02-25 02:04:08,536] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration045AddDefaultAppsmithAiDatasourceForOrphanActions] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:08,537] [main] requestId= userEmail= orgId= traceId= spanId= - method[addDefaultAppsmithAiDatasourceForOrphanActions] with arguments: []
+[2026-02-25 02:04:08,541] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-default-appsmith-datasource", "type"="execution", "author"="default_author", "class"="Migration045AddDefaultAppsmithAiDatasourceForOrphanActions", "method"="addDefaultAppsmithAiDatasourceForOrphanActions"}
+[2026-02-25 02:04:08,638] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration046DeleteArchivedPlugins] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:08,638] [main] requestId= userEmail= orgId= traceId= spanId= - method[deleteArchivedPlugins] with arguments: []
+[2026-02-25 02:04:08,647] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="delete-archived-pluginsd", "type"="execution", "author"="default_author", "class"="Migration046DeleteArchivedPlugins", "method"="deleteArchivedPlugins"}
+[2026-02-25 02:04:08,753] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration047AddMissingFieldsInDefaultAppsmithAiDatasource] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:08,754] [main] requestId= userEmail= orgId= traceId= spanId= - method[addMissingFieldsInDefaultAppsmithAiDatasource] with arguments: []
+[2026-02-25 02:04:08,760] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-missing-fields-in-default-appsmith-datasource", "type"="execution", "author"="default_author", "class"="Migration047AddMissingFieldsInDefaultAppsmithAiDatasource", "method"="addMissingFieldsInDefaultAppsmithAiDatasource"}
+[2026-02-25 02:04:08,858] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration048AddCompoundIndexToUserEntity] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:08,859] [main] requestId= userEmail= orgId= traceId= spanId= - method[addMissingIndexInUserCollection] with arguments: []
+[2026-02-25 02:04:08,987] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-compound-index-in-user-collection", "type"="execution", "author"="default_author", "class"="Migration048AddCompoundIndexToUserEntity", "method"="addMissingIndexInUserCollection"}
+[2026-02-25 02:04:09,089] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration049RemoveLayoutBaseFields] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:09,090] [main] requestId= userEmail= orgId= traceId= spanId= - method[execute] with arguments: []
+[2026-02-25 02:04:09,107] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="remove-layout-base-fields", "type"="execution", "author"="default_author", "class"="Migration049RemoveLayoutBaseFields", "method"="execute"}
+[2026-02-25 02:04:09,210] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration050MoveAnthropicLegacyModelsInQueries] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:09,210] [main] requestId= userEmail= orgId= traceId= spanId= - method[moveAnthropicLegacyModelsInQueries] with arguments: []
+[2026-02-25 02:04:09,210] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating Anthropic legacy models in queries to next version models
+[2026-02-25 02:04:09,214] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="move-anthropic-legacy-models", "type"="execution", "author"="default_author", "class"="Migration050MoveAnthropicLegacyModelsInQueries", "method"="moveAnthropicLegacyModelsInQueries"}
+[2026-02-25 02:04:09,312] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration051AddNewActionCollectionIdIndex] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:09,313] [main] requestId= userEmail= orgId= traceId= spanId= - method[addMissingIndexInNewActionCollection] with arguments: []
+[2026-02-25 02:04:09,358] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-idx-new-action-coll-id", "type"="execution", "author"="default_author", "class"="Migration051AddNewActionCollectionIdIndex", "method"="addMissingIndexInNewActionCollection"}
+[2026-02-25 02:04:09,465] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration052RemoveInvalidPluginsInWorkspaces] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:09,465] [main] requestId= userEmail= orgId= traceId= spanId= - method[execute] with arguments: []
+[2026-02-25 02:04:09,468] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="remove-invalid-plugins-in-workspaces", "type"="execution", "author"="default_author", "class"="Migration052RemoveInvalidPluginsInWorkspaces", "method"="execute"}
+[2026-02-25 02:04:09,578] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration053AddApplicationDeletePagePermissionToApplications] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:09,578] [main] requestId= userEmail= orgId= traceId= spanId= - method[addApplicationDeletePagesPermissionToApplication] with arguments: []
+[2026-02-25 02:04:09,585] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-app-delete-pages-permission-to-application", "type"="execution", "author"="default_author", "class"="Migration053AddApplicationDeletePagePermissionToApplications", "method"="addApplicationDeletePagesPermissionToApplication"}
+[2026-02-25 02:04:09,692] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration055AddIsAtomicPushAllowedEnvVarToTenantConfiguration] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:09,692] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:09,699] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-is-atomic-push-allowed-env-variable-tenant-configuration", "type"="execution", "author"="default_author", "class"="Migration055AddIsAtomicPushAllowedEnvVarToTenantConfiguration", "method"="executeMigration"}
+[2026-02-25 02:04:09,804] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration056AddBranchNameAndDefaultArtifactIndexToApplication] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:09,804] [main] requestId= userEmail= orgId= traceId= spanId= - method[createIndexForApplication] with arguments: []
+[2026-02-25 02:04:09,826] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-idx-branch-name-default-artifact-id", "type"="execution", "author"="default_author", "class"="Migration056AddBranchNameAndDefaultArtifactIndexToApplication", "method"="createIndexForApplication"}
+[2026-02-25 02:04:09,931] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration057MoveDRToBaseIds] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:09,931] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:09,940] [boundedElastic-1] requestId= userEmail= orgId= traceId= spanId= - NewPage
+[2026-02-25 02:04:09,942] [boundedElastic-2] requestId= userEmail= orgId= traceId= spanId= - NewAction
+[2026-02-25 02:04:09,942] [boundedElastic-3] requestId= userEmail= orgId= traceId= spanId= - ActionCollection
+[2026-02-25 02:04:09,969] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="move-dr-to-base-ids", "type"="execution", "author"="default_author", "class"="Migration057MoveDRToBaseIds", "method"="executeMigration"}
+[2026-02-25 02:04:10,076] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration058AddIndexesToBranchAwareDomains] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:10,076] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:10,077] [boundedElastic-3] requestId= userEmail= orgId= traceId= spanId= - Fixing NewPage indices
+[2026-02-25 02:04:10,077] [boundedElastic-2] requestId= userEmail= orgId= traceId= spanId= - Fixing NewAction indices
+[2026-02-25 02:04:10,077] [boundedElastic-1] requestId= userEmail= orgId= traceId= spanId= - Fixing ActionCollection indices
+[2026-02-25 02:04:10,131] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-idx-branch-aware", "type"="execution", "author"="default_author", "class"="Migration058AddIndexesToBranchAwareDomains", "method"="executeMigration"}
+[2026-02-25 02:04:10,245] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration059PolicySetToPolicyMap] with arguments: [org.springframework.data.mongodb.core.ReactiveMongoTemplate, com.appsmith.server.repositories.CacheableRepositoryHelper]
+[2026-02-25 02:04:10,246] [main] requestId= userEmail= orgId= traceId= spanId= - method[execute] with arguments: []
+[2026-02-25 02:04:10,246] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in newAction
+[2026-02-25 02:04:10,262] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in user
+[2026-02-25 02:04:10,263] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in datasourceStorageStructure
+[2026-02-25 02:04:10,264] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in asset
+[2026-02-25 02:04:10,265] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in theme
+[2026-02-25 02:04:10,266] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in gitDeployKeys
+[2026-02-25 02:04:10,267] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in tenant
+[2026-02-25 02:04:10,267] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in datasourceStorage
+[2026-02-25 02:04:10,269] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in collection
+[2026-02-25 02:04:10,271] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in applicationSnapshot
+[2026-02-25 02:04:10,273] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in workspace
+[2026-02-25 02:04:10,275] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in userData
+[2026-02-25 02:04:10,276] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in application
+[2026-02-25 02:04:10,278] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in actionCollection
+[2026-02-25 02:04:10,279] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in config
+[2026-02-25 02:04:10,280] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in plugin
+[2026-02-25 02:04:10,282] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in customJSLib
+[2026-02-25 02:04:10,283] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in datasource
+[2026-02-25 02:04:10,284] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in permissionGroup
+[2026-02-25 02:04:10,287] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in newPage
+[2026-02-25 02:04:10,289] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in emailVerificationToken
+[2026-02-25 02:04:10,290] [main] requestId= userEmail= orgId= traceId= spanId= - Migrating policies to policyMap in passwordResetToken
+[2026-02-25 02:04:10,300] [nioEventLoopGroup-3-7] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in user in 3ms
+[2026-02-25 02:04:10,300] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in newAction in 6ms
+[2026-02-25 02:04:10,303] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in theme in 5ms
+[2026-02-25 02:04:10,303] [nioEventLoopGroup-3-7] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in gitDeployKeys in 5ms
+[2026-02-25 02:04:10,305] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in tenant in 7ms
+[2026-02-25 02:04:10,307] [nioEventLoopGroup-3-7] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in datasourceStorage in 9ms
+[2026-02-25 02:04:10,308] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in collection in 10ms
+[2026-02-25 02:04:10,309] [nioEventLoopGroup-3-7] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in applicationSnapshot in 10ms
+[2026-02-25 02:04:10,310] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in workspace in 11ms
+[2026-02-25 02:04:10,310] [nioEventLoopGroup-3-7] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in userData in 11ms
+[2026-02-25 02:04:10,312] [nioEventLoopGroup-3-7] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in actionCollection in 12ms
+[2026-02-25 02:04:10,312] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in application in 12ms
+[2026-02-25 02:04:10,317] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 1 documents in config in 17ms
+[2026-02-25 02:04:10,317] [nioEventLoopGroup-3-7] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in plugin in 16ms
+[2026-02-25 02:04:10,319] [nioEventLoopGroup-3-7] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in customJSLib in 17ms
+[2026-02-25 02:04:10,319] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in datasource in 17ms
+[2026-02-25 02:04:10,320] [nioEventLoopGroup-3-10] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in asset in 23ms
+[2026-02-25 02:04:10,320] [nioEventLoopGroup-3-9] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in datasourceStorageStructure in 23ms
+[2026-02-25 02:04:10,322] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in newPage in 19ms
+[2026-02-25 02:04:10,322] [nioEventLoopGroup-3-7] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in emailVerificationToken in 19ms
+[2026-02-25 02:04:10,322] [nioEventLoopGroup-3-9] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in passwordResetToken in 19ms
+[2026-02-25 02:04:10,336] [nioEventLoopGroup-3-11] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in permissionGroup in 33ms
+[2026-02-25 02:04:10,350] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="policy-set-to-policy-map", "type"="execution", "author"="default_author", "class"="Migration059PolicySetToPolicyMap", "method"="execute"}
+[2026-02-25 02:04:10,446] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration060AddIndexesForPolicyMap] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:10,446] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:10,447] [boundedElastic-1] requestId= userEmail= orgId= traceId= spanId= - Adding read workspace policy map indices
+[2026-02-25 02:04:10,447] [boundedElastic-3] requestId= userEmail= orgId= traceId= spanId= - Adding manage workspace policy map indices
+[2026-02-25 02:04:10,481] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-idx-policy-map", "type"="execution", "author"="default_author", "class"="Migration060AddIndexesForPolicyMap", "method"="executeMigration"}
+[2026-02-25 02:04:10,585] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration061TenantPolicySetToPolicyMap] with arguments: [org.springframework.data.mongodb.core.MongoTemplate, com.appsmith.server.repositories.CacheableRepositoryHelper]
+[2026-02-25 02:04:10,585] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:10,587] [main] requestId= userEmail= orgId= traceId= spanId= - Tenant already has policyMap set. Skipping migration to update policy set to map in tenant Migration061TenantPolicySetToPolicyMap.
+[2026-02-25 02:04:10,587] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="migrate-policy-set-to-map-tenant", "type"="execution", "author"="default_author", "class"="Migration061TenantPolicySetToPolicyMap", "method"="executeMigration"}
+[2026-02-25 02:04:10,687] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration062AddEmptyPolicyMapForNullValues] with arguments: [org.springframework.data.mongodb.core.ReactiveMongoTemplate]
+[2026-02-25 02:04:10,687] [main] requestId= userEmail= orgId= traceId= spanId= - method[execute] with arguments: []
+[2026-02-25 02:04:10,691] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies actionCollection
+[2026-02-25 02:04:10,694] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies newPage
+[2026-02-25 02:04:10,695] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies workflow
+[2026-02-25 02:04:10,696] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies userApiKey
+[2026-02-25 02:04:10,697] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies package
+[2026-02-25 02:04:10,698] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies customJSLib
+[2026-02-25 02:04:10,698] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies theme
+[2026-02-25 02:04:10,699] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies gitDeployKeys
+[2026-02-25 02:04:10,699] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies newAction
+[2026-02-25 02:04:10,700] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies config
+[2026-02-25 02:04:10,701] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies collection
+[2026-02-25 02:04:10,701] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies asset
+[2026-02-25 02:04:10,703] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies datasource
+[2026-02-25 02:04:10,704] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies userGroup
+[2026-02-25 02:04:10,705] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies role
+[2026-02-25 02:04:10,706] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies knowledgeStore
+[2026-02-25 02:04:10,707] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies datasourceStorage
+[2026-02-25 02:04:10,707] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies passwordResetToken
+[2026-02-25 02:04:10,708] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies inviteUser
+[2026-02-25 02:04:10,708] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies emailVerificationToken
+[2026-02-25 02:04:10,709] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies userData
+[2026-02-25 02:04:10,709] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies moduleInstance
+[2026-02-25 02:04:10,710] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies module
+[2026-02-25 02:04:10,710] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies environment
+[2026-02-25 02:04:10,711] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies user
+[2026-02-25 02:04:10,711] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies auditLog
+[2026-02-25 02:04:10,711] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies approvalRequest
+[2026-02-25 02:04:10,712] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies permissionGroup
+[2026-02-25 02:04:10,712] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies datasourceConfigurationStructure
+[2026-02-25 02:04:10,713] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies plugin
+[2026-02-25 02:04:10,714] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies datasourceStorageStructure
+[2026-02-25 02:04:10,714] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies application
+[2026-02-25 02:04:10,715] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies workspace
+[2026-02-25 02:04:10,715] [main] requestId= userEmail= orgId= traceId= spanId= - Adding empty policyMap for empty policies applicationSnapshot
+[2026-02-25 02:04:10,718] [nioEventLoopGroup-3-9] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in newPage in 2ms
+[2026-02-25 02:04:10,718] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in workflow in 1ms
+[2026-02-25 02:04:10,718] [nioEventLoopGroup-3-11] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in actionCollection in 2ms
+[2026-02-25 02:04:10,718] [nioEventLoopGroup-3-7] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in userApiKey in 1ms
+[2026-02-25 02:04:10,719] [nioEventLoopGroup-3-10] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in package in 2ms
+[2026-02-25 02:04:10,721] [nioEventLoopGroup-3-7] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in gitDeployKeys in 3ms
+[2026-02-25 02:04:10,721] [nioEventLoopGroup-3-10] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in theme in 4ms
+[2026-02-25 02:04:10,721] [nioEventLoopGroup-3-11] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in config in 2ms
+[2026-02-25 02:04:10,721] [nioEventLoopGroup-3-9] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in collection in 2ms
+[2026-02-25 02:04:10,722] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in newAction in 4ms
+[2026-02-25 02:04:10,723] [nioEventLoopGroup-3-9] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in datasource in 3ms
+[2026-02-25 02:04:10,724] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in userGroup in 3ms
+[2026-02-25 02:04:10,726] [nioEventLoopGroup-3-7] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in knowledgeStore in 3ms
+[2026-02-25 02:04:10,726] [nioEventLoopGroup-3-9] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in datasourceStorage in 3ms
+[2026-02-25 02:04:10,726] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in passwordResetToken in 2ms
+[2026-02-25 02:04:10,726] [nioEventLoopGroup-3-10] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in inviteUser in 2ms
+[2026-02-25 02:04:10,727] [nioEventLoopGroup-3-11] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in role in 5ms
+[2026-02-25 02:04:10,727] [nioEventLoopGroup-3-9] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in userData in 2ms
+[2026-02-25 02:04:10,727] [nioEventLoopGroup-3-10] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in moduleInstance in 2ms
+[2026-02-25 02:04:10,728] [nioEventLoopGroup-3-7] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in emailVerificationToken in 4ms
+[2026-02-25 02:04:10,729] [nioEventLoopGroup-3-9] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in user in 2ms
+[2026-02-25 02:04:10,729] [nioEventLoopGroup-3-11] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in environment in 4ms
+[2026-02-25 02:04:10,729] [nioEventLoopGroup-3-10] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in auditLog in 3ms
+[2026-02-25 02:04:10,729] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in module in 4ms
+[2026-02-25 02:04:10,730] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in plugin in 3ms
+[2026-02-25 02:04:10,730] [nioEventLoopGroup-3-10] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in datasourceConfigurationStructure in 3ms
+[2026-02-25 02:04:10,731] [nioEventLoopGroup-3-11] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in datasourceStorageStructure in 4ms
+[2026-02-25 02:04:10,731] [nioEventLoopGroup-3-7] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in approvalRequest in 5ms
+[2026-02-25 02:04:10,731] [nioEventLoopGroup-3-9] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in permissionGroup in 5ms
+[2026-02-25 02:04:10,732] [nioEventLoopGroup-3-10] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in workspace in 4ms
+[2026-02-25 02:04:10,732] [nioEventLoopGroup-3-8] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in application in 5ms
+[2026-02-25 02:04:10,732] [nioEventLoopGroup-3-7] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in applicationSnapshot in 4ms
+[2026-02-25 02:04:10,737] [nioEventLoopGroup-3-13] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in asset in 18ms
+[2026-02-25 02:04:10,741] [nioEventLoopGroup-3-12] requestId= userEmail= orgId= traceId= spanId= - Migrated 0 documents in customJSLib in 24ms
+[2026-02-25 02:04:10,742] [main] requestId= userEmail= orgId= traceId= spanId= - Execute time: Migration062AddEmptyPolicyMapForNullValues, Time elapsed: 50ms
+[2026-02-25 02:04:10,742] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add_empty_policyMap_for_null_entries", "type"="execution", "author"="default_author", "class"="Migration062AddEmptyPolicyMapForNullValues", "method"="execute"}
+[2026-02-25 02:04:10,842] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration063CacheBustSpringBoot3_3] with arguments: []
+[2026-02-25 02:04:10,844] [main] requestId= userEmail= orgId= traceId= spanId= - method[execute] with arguments: [org.springframework.data.redis.core.ReactiveRedisOperations]
+[2026-02-25 02:04:10,861] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="reset_session_oauth2_spring_3_3", "type"="execution", "author"="default_author", "class"="Migration063CacheBustSpringBoot3_3", "method"="execute"}
+[2026-02-25 02:04:10,945] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration064AddPluginDocUrlToRestApiPlugin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:10,945] [main] requestId= userEmail= orgId= traceId= spanId= - method[execute] with arguments: []
+[2026-02-25 02:04:10,950] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add_plugin_doc_url_to_rest_api_plugin", "type"="execution", "author"="default_author", "class"="Migration064AddPluginDocUrlToRestApiPlugin", "method"="execute"}
+[2026-02-25 02:04:11,068] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration065_CopyTenantIdToOrganizationId] with arguments: [org.springframework.data.redis.core.ReactiveRedisOperations, com.fasterxml.jackson.databind.ObjectMapper, org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:11,068] [main] requestId= userEmail= orgId= traceId= spanId= - method[execute] with arguments: []
+[2026-02-25 02:04:11,126] [main] requestId= userEmail= orgId= traceId= spanId= - Successfully migrated tenant to organization with id: 699e5891d0e68818aa294a5b
+[2026-02-25 02:04:11,140] [main] requestId= userEmail= orgId= traceId= spanId= - Successfully copied tenantId to organizationId for 1 documents in collection: User
+[2026-02-25 02:04:11,143] [main] requestId= userEmail= orgId= traceId= spanId= - Successfully copied tenantId to organizationId for 0 documents in collection: Workspace
+[2026-02-25 02:04:11,145] [main] requestId= userEmail= orgId= traceId= spanId= - Successfully copied tenantId to organizationId for 0 documents in collection: PermissionGroup
+[2026-02-25 02:04:11,148] [main] requestId= userEmail= orgId= traceId= spanId= - Successfully copied tenantId to organizationId for 0 documents in collection: UsagePulse
+[2026-02-25 02:04:11,148] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="copy-tenant-id-to-organization-id", "type"="execution", "author"="default_author", "class"="Migration065_CopyTenantIdToOrganizationId", "method"="execute"}
+[2026-02-25 02:04:11,251] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration066_CacheBustTenantOrgMigration] with arguments: []
+[2026-02-25 02:04:11,252] [main] requestId= userEmail= orgId= traceId= spanId= - method[execute] with arguments: [org.springframework.data.redis.core.ReactiveRedisOperations]
+[2026-02-25 02:04:11,252] [main] requestId= userEmail= orgId= traceId= spanId= - Starting cache bust migration
+[2026-02-25 02:04:11,257] [lettuce-epollEventLoop-10-1] requestId= userEmail= orgId= traceId= spanId= - Total Redis keys processed: 0
+[2026-02-25 02:04:11,257] [main] requestId= userEmail= orgId= traceId= spanId= - Completed cache bust migration
+[2026-02-25 02:04:11,257] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="cache-bust-tenant-org-migration", "type"="execution", "author"="default_author", "class"="Migration066_CacheBustTenantOrgMigration", "method"="execute"}
+[2026-02-25 02:04:11,356] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration066_RenameInstanceAdminRoleToOrgAdmin] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:11,356] [main] requestId= userEmail= orgId= traceId= spanId= - method[execute] with arguments: []
+[2026-02-25 02:04:11,365] [main] requestId= userEmail= orgId= traceId= spanId= - Successfully renamed instance admin role to organization admin role for group: 699e5891d0e68818aa294a5e
+[2026-02-25 02:04:11,381] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="rename-instance-admin-role-to-org-admin-role", "type"="execution", "author"="default_author", "class"="Migration066_RenameInstanceAdminRoleToOrgAdmin", "method"="execute"}
+[2026-02-25 02:04:11,484] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration067_UpdateUserEmailIndex] with arguments: []
+[2026-02-25 02:04:11,485] [main] requestId= userEmail= orgId= traceId= spanId= - method[execute] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:11,485] [main] requestId= userEmail= orgId= traceId= spanId= - Starting migration to update user email index
+[2026-02-25 02:04:11,611] [main] requestId= userEmail= orgId= traceId= spanId= - Completed migration to update user email index
+[2026-02-25 02:04:11,611] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-user-email-index", "type"="execution", "author"="default_author", "class"="Migration067_UpdateUserEmailIndex", "method"="execute"}
+[2026-02-25 02:04:11,714] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration068_AddOrganizationIdToPasswordResetToken] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:11,715] [main] requestId= userEmail= orgId= traceId= spanId= - method[execute] with arguments: []
+[2026-02-25 02:04:11,720] [main] requestId= userEmail= orgId= traceId= spanId= - Successfully set organizationId for 0 password reset token documents
+[2026-02-25 02:04:11,720] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-organization-id-to-password-reset-token", "type"="execution", "author"="default_author", "class"="Migration068_AddOrganizationIdToPasswordResetToken", "method"="execute"}
+[2026-02-25 02:04:11,824] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration069MigrateOrganizationConfigToInstanceConfig] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:11,824] [main] requestId= userEmail= orgId= traceId= spanId= - method[migrateOrganizationConfigToInstanceConfig] with arguments: []
+[2026-02-25 02:04:11,824] [main] requestId= userEmail= orgId= traceId= spanId= - Starting migration of organization configuration fields to instance config
+[2026-02-25 02:04:11,833] [main] requestId= userEmail= orgId= traceId= spanId= - Successfully migrated organization configuration fields to instance config
+[2026-02-25 02:04:11,833] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="migrate-organization-config-to-instance-config", "type"="execution", "author"="default_author", "class"="Migration069MigrateOrganizationConfigToInstanceConfig", "method"="migrateOrganizationConfigToInstanceConfig"}
+[2026-02-25 02:04:11,942] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration070_AddOrganizationIdToEmailVerificationToken] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:11,942] [main] requestId= userEmail= orgId= traceId= spanId= - method[addOrganizationIdToEmailVerificationToken] with arguments: []
+[2026-02-25 02:04:11,942] [main] requestId= userEmail= orgId= traceId= spanId= - Adding organizationId to EmailVerificationToken documents
+[2026-02-25 02:04:11,946] [main] requestId= userEmail= orgId= traceId= spanId= - Updated 0 EmailVerificationToken documents with organizationId
+[2026-02-25 02:04:11,947] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-organization-id-to-email-verification-token", "type"="execution", "author"="default_author", "class"="Migration070_AddOrganizationIdToEmailVerificationToken", "method"="addOrganizationIdToEmailVerificationToken"}
+[2026-02-25 02:04:12,051] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration071MoveFormLoginDisabledToOrganizationConfiguration] with arguments: [org.springframework.data.mongodb.core.MongoTemplate, com.appsmith.server.configurations.CommonConfig]
+[2026-02-25 02:04:12,051] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:12,059] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="move-form-login-disabled-to-organization-configuration", "type"="execution", "author"="default_author", "class"="Migration071MoveFormLoginDisabledToOrganizationConfiguration", "method"="executeMigration"}
+[2026-02-25 02:04:12,162] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration072MoveSignupDisabledToOrganizationConfiguration] with arguments: [org.springframework.data.mongodb.core.MongoTemplate, com.appsmith.server.configurations.CommonConfig]
+[2026-02-25 02:04:12,162] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:12,168] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="move-signup-disabled-to-organization-configuration", "type"="execution", "author"="default_author", "class"="Migration072MoveSignupDisabledToOrganizationConfiguration", "method"="executeMigration"}
+[2026-02-25 02:04:12,271] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration073_AddUniqueIndexOnOrganizationSlug] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:12,272] [main] requestId= userEmail= orgId= traceId= spanId= - method[addUniqueIndexOnOrganizationSlug] with arguments: []
+[2026-02-25 02:04:12,272] [main] requestId= userEmail= orgId= traceId= spanId= - Adding unique index on organization slug field
+[2026-02-25 02:04:12,393] [main] requestId= userEmail= orgId= traceId= spanId= - Successfully added unique index on organization slug field
+[2026-02-25 02:04:12,393] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-unique-index-on-organization-slug", "type"="execution", "author"="default_author", "class"="Migration073_AddUniqueIndexOnOrganizationSlug", "method"="addUniqueIndexOnOrganizationSlug"}
+[2026-02-25 02:04:12,497] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration074AddUniqueSlugIndicesForApplicationAndNewPage] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:12,497] [main] requestId= userEmail= orgId= traceId= spanId= - method[createIndexes] with arguments: []
+[2026-02-25 02:04:12,561] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="add-idx-unique-slug-on-application-and-newpage", "type"="execution", "author"="default_author", "class"="Migration074AddUniqueSlugIndicesForApplicationAndNewPage", "method"="createIndexes"}
+[2026-02-25 02:04:12,672] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration10000_UpdateSuperUser] with arguments: [org.springframework.data.mongodb.core.MongoTemplate, com.appsmith.server.repositories.CacheableRepositoryHelper, com.appsmith.server.solutions.PolicySolution, com.appsmith.server.acl.PolicyGenerator]
+[2026-02-25 02:04:12,672] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:12,689] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="update-super-users", "type"="execution", "author"="default_author", "class"="Migration10000_UpdateSuperUser", "method"="executeMigration"}
+[2026-02-25 02:04:12,791] [main] requestId= userEmail= orgId= traceId= spanId= - method[com.appsmith.server.migrations.db.ce.Migration020TransferToDatasourceStorage] with arguments: [org.springframework.data.mongodb.core.MongoTemplate]
+[2026-02-25 02:04:12,792] [main] requestId= userEmail= orgId= traceId= spanId= - method[executeMigration] with arguments: []
+[2026-02-25 02:04:12,792] [main] requestId= userEmail= orgId= traceId= spanId= - Check if performant query can be used.
+[2026-02-25 02:04:12,795] [main] requestId= userEmail= orgId= traceId= spanId= - Using performant query.
+[2026-02-25 02:04:12,797] [main] requestId= userEmail= orgId= traceId= spanId= - APPLIED - {"id"="migrate-configurations-to-data-storage-v2", "type"="execution", "author"="default_author", "class"="Migration020TransferToDatasourceStorage", "method"="executeMigration"}
+[2026-02-25 02:04:12,893] [main] requestId= userEmail= orgId= traceId= spanId= - Mongock releasing the lock
+[2026-02-25 02:04:12,893] [main] requestId= userEmail= orgId= traceId= spanId= - Mongock releasing the lock
+[2026-02-25 02:04:12,996] [main] requestId= userEmail= orgId= traceId= spanId= - Mongock released the lock
+[2026-02-25 02:04:12,996] [main] requestId= userEmail= orgId= traceId= spanId= - Mongock has finished
+[2026-02-25 02:04:14,366] [main] requestId= userEmail= orgId= traceId= spanId= - Exposing 1 endpoint beneath base path '/actuator'
+[2026-02-25 02:04:14,938] [Thread-3] requestId= userEmail= orgId= traceId= spanId= - Cancelled mongock lock daemon
+[2026-02-25 02:04:15,149] [main] requestId= userEmail= orgId= traceId= spanId= - Netty started on port 8080 (http)
+[2026-02-25 02:04:15,181] [main] requestId= userEmail= orgId= traceId= spanId= - Started ServerApplication in 37.41 seconds (process running for 40.631)
+[2026-02-25 02:04:15,183] [main] requestId= userEmail= orgId= traceId= spanId= - Cleaning up and updating default organization policies on server startup
+[2026-02-25 02:04:15,235] [main] requestId= userEmail= orgId= traceId= spanId= - Performing RTS health check of this instance...
+[2026-02-25 02:04:15,246] [main] requestId= userEmail= orgId= traceId= spanId= - In memory cache miss for anonymous user permission groups. Fetching from DB and adding it to in memory storage.
+[2026-02-25 02:04:15,254] [nioEventLoopGroup-3-12] requestId= userEmail= orgId= traceId= spanId= - Fetched and set conenncted mongo db version as: 6.0.27
+[2026-02-25 02:04:15,269] [nioEventLoopGroup-3-12] requestId= userEmail= orgId= traceId= spanId= - Triggering registration of this instance...
+[2026-02-25 02:04:16,020] [reactor-http-epoll-3] requestId= userEmail= orgId= traceId= spanId= - Registration successful, updating state ...
+[2026-02-25 02:04:16,092] [reactor-http-epoll-5] requestId= userEmail= orgId= traceId= spanId= - RTS health check succeeded
+[2026-02-25 02:04:16,115] [lettuce-epollEventLoop-10-1] requestId= userEmail= orgId= traceId= spanId= - Cache miss for key organizationNewFeatures:699e5891d0e68818aa294a5b
+[2026-02-25 02:04:16,370] [reactor-http-epoll-6] requestId= userEmail= orgId= traceId= spanId= - Cache entry added for key organizationNewFeatures:699e5891d0e68818aa294a5b
+[2026-02-25 02:04:17,402] [nioEventLoopGroup-3-12] requestId= userEmail=anonymousUser orgId=699e5891d0e68818aa294a5b traceId=c3804cae0771e686d1af39e10da93b37 spanId=494910634d6fc1fb - Checking server health ...
+[2026-02-25 02:04:25,225] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Acquired lock for: lock:699e588fd0e68818aa294a4c:fetchFeatures
+[2026-02-25 02:04:25,226] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Fetching features for organizations
+[2026-02-25 02:04:25,458] [lettuce-epollEventLoop-10-1] requestId= userEmail= orgId= traceId= spanId= - Cache entry evicted for key organization:699e5891d0e68818aa294a5b
+[2026-02-25 02:06:06,005] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Acquired lock for: lock:699e588fd0e68818aa294a4c:pingSchedule
+[2026-02-25 02:06:06,009] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Acquired lock for: lock:699e588fd0e68818aa294a4c:pingStats
+[2026-02-25 02:59:49,962] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Acquired lock for: lock:699e588fd0e68818aa294a4c:fetchFeatures
+[2026-02-25 02:59:49,969] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Fetching features for organizations
+[2026-02-25 03:55:12,931] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Acquired lock for: lock:699e588fd0e68818aa294a4c:fetchFeatures
+[2026-02-25 03:55:12,939] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Fetching features for organizations
+[2026-02-25 04:50:35,859] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Acquired lock for: lock:699e588fd0e68818aa294a4c:fetchFeatures
+[2026-02-25 04:50:35,866] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Fetching features for organizations
+[2026-02-25 04:50:36,196] [lettuce-epollEventLoop-10-1] requestId= userEmail= orgId= traceId= spanId= - Cache entry evicted for key organizationNewFeatures:699e5891d0e68818aa294a5b
+[2026-02-25 04:50:36,219] [lettuce-epollEventLoop-10-1] requestId= userEmail= orgId= traceId= spanId= - Cache miss for key organizationNewFeatures:699e5891d0e68818aa294a5b
+[2026-02-25 04:50:36,723] [reactor-http-epoll-1] requestId= userEmail= orgId= traceId= spanId= - Cache entry added for key organizationNewFeatures:699e5891d0e68818aa294a5b
+[2026-02-25 05:46:10,330] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Acquired lock for: lock:699e588fd0e68818aa294a4c:fetchFeatures
+[2026-02-25 05:46:10,333] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Fetching features for organizations
+[2026-02-25 06:41:33,656] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Acquired lock for: lock:699e588fd0e68818aa294a4c:fetchFeatures
+[2026-02-25 06:41:33,663] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Fetching features for organizations
+[2026-02-25 07:38:04,648] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Acquired lock for: lock:699e588fd0e68818aa294a4c:fetchFeatures
+[2026-02-25 07:38:04,654] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Fetching features for organizations
+[2026-02-25 07:38:04,965] [lettuce-epollEventLoop-10-1] requestId= userEmail= orgId= traceId= spanId= - Cache entry evicted for key organizationNewFeatures:699e5891d0e68818aa294a5b
+[2026-02-25 07:38:04,973] [lettuce-epollEventLoop-10-1] requestId= userEmail= orgId= traceId= spanId= - Cache miss for key organizationNewFeatures:699e5891d0e68818aa294a5b
+[2026-02-25 07:38:05,464] [reactor-http-epoll-4] requestId= userEmail= orgId= traceId= spanId= - Cache entry added for key organizationNewFeatures:699e5891d0e68818aa294a5b
+[2026-02-25 07:39:54,570] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Acquired lock for: lock:699e588fd0e68818aa294a4c:pingSchedule
+[2026-02-25 08:38:02,863] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Acquired lock for: lock:699e588fd0e68818aa294a4c:fetchFeatures
+[2026-02-25 08:38:02,870] [scheduling-1] requestId= userEmail= orgId= traceId= spanId= - Fetching features for organizations

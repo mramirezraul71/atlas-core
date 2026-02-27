@@ -45,13 +45,12 @@ def capture_full_scene(region: Optional[Tuple[int, int, int, int]] = None, save_
     if not _screen_deps_ok():
         return {"ok": False, "png_bytes": None, "base64": None, "evidence_path": None, "error": "screen_deps_missing"}
     try:
-        from modules.humanoid.screen.capture import capture_screen, capture_to_base64
+        # Importante: capturar UNA sola vez (evita duplicar latencia).
+        from modules.humanoid.screen.capture import capture_screen
         png, err = capture_screen(region=region)
         if err or not png:
             return {"ok": False, "png_bytes": None, "base64": None, "evidence_path": None, "error": err or "no_data"}
-        b64, _ = capture_to_base64(region=region)
-        if not b64:
-            b64 = base64.b64encode(png).decode("ascii")
+        b64 = base64.b64encode(png).decode("ascii")
         evidence = _save_evidence("capture", png, {}) if save_evidence else None
         _audit("hands_eyes", "capture", True, {"region": region}, evidence)
         return {"ok": True, "png_bytes": png, "base64": b64, "evidence_path": evidence, "error": None}
