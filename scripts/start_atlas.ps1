@@ -18,7 +18,17 @@ if (Test-Path "$ROBOT\main.py") {
     Start-Process python -ArgumentList "main.py" -WorkingDirectory $ROBOT -WindowStyle Minimized
     Start-Sleep 3
 }
-# 3. PUSH (este proceso continúa en foreground)
+# 3. PUSH — verificar si ya hay instancia antes de lanzar (anti-doble-arranque)
 Set-Location $PUSH
-Write-Host "Iniciando PUSH en http://localhost:8791" -ForegroundColor Green
-python -m uvicorn atlas_adapter.atlas_http_api:app --host 0.0.0.0 --port 8791
+$_apiAlive = $false
+try {
+    $resp = Invoke-WebRequest -Uri "http://127.0.0.1:8791/health" -TimeoutSec 3 -UseBasicParsing -ErrorAction Stop
+    if ($resp.StatusCode -eq 200) { $_apiAlive = $true }
+} catch {}
+
+if ($_apiAlive) {
+    Write-Host "PUSH ya activo en 8791 (instancia detectada). Saltando arranque." -ForegroundColor Yellow
+} else {
+    Write-Host "Iniciando PUSH en http://localhost:8791" -ForegroundColor Green
+    python -m uvicorn atlas_adapter.atlas_http_api:app --host 0.0.0.0 --port 8791
+}

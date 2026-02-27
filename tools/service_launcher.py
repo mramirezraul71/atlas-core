@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import urllib.request
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -34,6 +35,16 @@ logging.basicConfig(
 log = logging.getLogger("atlas.service")
 
 
+def _api_already_up(host: str, port: int) -> bool:
+    """Sonda HTTP antes de lanzar uvicorn. Evita doble instancia en el mismo puerto."""
+    try:
+        url = f"http://{host}:{port}/health"
+        with urllib.request.urlopen(url, timeout=3) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
 def main():
     host = os.getenv("SERVICE_BIND", "127.0.0.1")
     port = int(os.getenv("SERVICE_PORT", "8791") or 8791)
@@ -47,6 +58,10 @@ def main():
                 port = int(state.get("active_port", port))
             except Exception:
                 pass
+    if _api_already_up(host, port):
+        log.info("API ya activa en %s:%s. service_launcher saliendo sin duplicar.", host, port)
+        return 0
+
     app_import = os.getenv("SERVICE_APP_IMPORT", "atlas_adapter.atlas_http_api:app")
     log.info("Starting ATLAS service on %s:%s (app=%s)", host, port, app_import)
     import uvicorn

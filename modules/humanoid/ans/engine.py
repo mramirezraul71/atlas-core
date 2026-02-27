@@ -7,6 +7,21 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+# Backoff por tipo de heal: evita repetición agresiva cuando el servicio tarda en recuperarse.
+# Configurable via env sin tocar código: ANS_HEAL_BACKOFF_SEC=0 desactiva el backoff.
+_HEAL_LAST_RUN: Dict[str, float] = {}
+_HEAL_BACKOFF_SEC: int = int(os.getenv("ANS_HEAL_BACKOFF_SEC", "300") or "300")
+
+
+def _heal_in_backoff(heal_name: str) -> bool:
+    if _HEAL_BACKOFF_SEC <= 0:
+        return False
+    return (time.time() - _HEAL_LAST_RUN.get(heal_name, 0.0)) < _HEAL_BACKOFF_SEC
+
+
+def _mark_heal_ran(heal_name: str) -> None:
+    _HEAL_LAST_RUN[heal_name] = time.time()
+
 # Heals que Atlas puede ejecutar automáticamente sin supervisión
 SAFE_HEALS = {
     # Básicos
@@ -349,12 +364,26 @@ def _run_full(timeout_sec: int) -> Dict[str, Any]:
                             continue
                     except Exception:
                         policy_ok = True
+                    if _heal_in_backoff(heal_id):
+                        try:
+                            from modules.humanoid.ans.live_stream import emit
+
+                            emit(
+                                "skip",
+                                check_id=cid,
+                                heal_id=heal_id,
+                                message=f"backoff activo ({_HEAL_BACKOFF_SEC}s entre ejecuciones)",
+                            )
+                        except Exception:
+                            pass
+                        continue
                     try:
                         from modules.humanoid.ans.live_stream import emit
 
                         emit("heal_attempt", check_id=cid, heal_id=heal_id)
                     except Exception:
                         pass
+                    _mark_heal_ran(heal_id)
                     hr = run_heal(heal_id)
                     try:
                         from modules.humanoid.ans.live_stream import emit
