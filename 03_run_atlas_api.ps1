@@ -11,19 +11,25 @@ Set-Location $RepoPath
 $venvAct = Join-Path $RepoPath ".venv\Scripts\Activate.ps1"
 if (!(Test-Path $venvAct)) { Write-Error "No existe venv. Ejecuta 01_setup_venv.ps1 primero."; exit 1 }
 & $venvAct
+$py = Join-Path $RepoPath ".venv\Scripts\python.exe"
+if (!(Test-Path $py)) { Write-Error "No existe python.exe en .venv. Ejecuta 01_setup_venv.ps1 primero."; exit 1 }
 
 # liberar puerto si ocupado
-$cons = Get-NetTCPConnection -LocalPort $AtlasPort -ErrorAction SilentlyContinue
-if ($cons) {
-  $pid = $cons[0].OwningProcess
-  Write-Host "Puerto $AtlasPort ocupado por PID $pid. Matando..." -ForegroundColor Yellow
-  Stop-Process -Id $pid -Force
+$listeners = Get-NetTCPConnection -LocalPort $AtlasPort -State Listen -ErrorAction SilentlyContinue
+if ($listeners) {
+  $pids = @($listeners | Select-Object -ExpandProperty OwningProcess | Sort-Object -Unique)
+  foreach ($p in $pids) {
+    if ($p -and $p -gt 0) {
+      Write-Host "Puerto $AtlasPort ocupado por PID $p. Matando..." -ForegroundColor Yellow
+      Stop-Process -Id $p -Force -ErrorAction SilentlyContinue
+    }
+  }
   Start-Sleep -Milliseconds 300
 }
 
 function Try-Run($importPath) {
   Write-Host "Intentando: $importPath" -ForegroundColor Yellow
-  python -m uvicorn $importPath --host $BindHost --port $AtlasPort
+  & $py -m uvicorn $importPath --host $BindHost --port $AtlasPort
   return $LASTEXITCODE
 }
 

@@ -1,0 +1,53 @@
+# =============================================================================
+# Atlas Robot — Global Parameters
+# =============================================================================
+# This file is loaded by atlas_bringup launch and shared across all nodes.
+# It does NOT replace existing Atlas config files (config/ai_config.json, etc.)
+# It only governs the ROS 2 spine layer.
+
+atlas:
+  robot_name: "atlas"
+  version: "0.1.0"
+
+  # --- Hardware layer ---
+  hardware:
+    motor_bus: "can0"            # CAN bus for motor drivers
+    sensor_rate_hz: 50           # IMU / force-torque publish rate
+    joint_count: 30              # total DOF (legs 12, arms 14, torso 2, head 2)
+    enable_hardware: false       # false = simulation only (safe default)
+
+  # --- Control layer ---
+  control:
+    loop_rate_hz: 200            # main control loop frequency
+    balance_mode: "static"       # static | dynamic | impulse (IHMC-style)
+    gait_type: "stand"           # stand | walk | trot | custom
+    pid_gains:
+      kp: 50.0
+      ki: 0.5
+      kd: 5.0
+
+  # --- Perception layer ---
+  perception:
+    cameras:
+      - name: "head_rgb"
+        topic: "/atlas/camera/head/rgb"
+        fps: 30
+      - name: "chest_depth"
+        topic: "/atlas/camera/chest/depth"
+        fps: 15
+    yolo_model: "yolov8n"        # reuses existing yolov8n.pt
+    slam_enabled: false
+
+  # --- Planning layer ---
+  planning:
+    planner: "nav2"              # nav2 | custom
+    max_velocity: 0.5            # m/s
+    obstacle_margin: 0.3         # meters
+
+  # --- Supervisor layer ---
+  supervisor:
+    push_api_url: "http://127.0.0.1:8791"   # existing Atlas PUSH backend
+    robot_api_url: "http://127.0.0.1:8002"   # existing Atlas ROBOT backend
+    heartbeat_interval_sec: 5
+    governance_mode: "governed"               # governed | growth | emergency
+    ai_backend: "bedrock"                     # bedrock | direct | local

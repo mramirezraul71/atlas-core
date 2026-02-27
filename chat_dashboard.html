@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATLAS Chat Thread Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #333;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #1e3c72;
+            margin-bottom: 10px;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .stat-card h3 {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+        
+        .stat-card .value {
+            font-size: 28px;
+            font-weight: bold;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+        }
+        
+        .panel {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .panel-header {
+            background: #f8f9fa;
+            padding: 15px;
+            border-bottom: 1px solid #e9ecef;
+            font-weight: 600;
+            color: #1e3c72;
+        }
+        
+        .panel-body {
+            padding: 15px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .thread-item {
+            padding: 12px;
+            border-bottom: 1px solid #e9ecef;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .thread-item:hover {
+            background: #f8f9fa;
+        }
+        
+        .thread-item.active {
+            background: #e7f3ff;
+            border-left: 3px solid #667eea;
+        }
+        
+        .thread-title {
+            font-weight: 600;
+            color: #1e3c72;
+            margin-bottom: 5px;
+        }
+        
+        .thread-meta {
+            font-size: 12px;
+            color: #6c757d;
+        }
+        
+        .message {
+            margin-bottom: 15px;
+            padding: 12px;
+            border-radius: 6px;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .message.user {
+            background: #e7f3ff;
+            margin-left: 20px;
+            border-left: 3px solid #667eea;
+        }
+        
+        .message.assistant {
+            background: #f0f0f0;
+            margin-right: 20px;
+            border-left: 3px solid #764ba2;
+        }
+        
+        .message-sender {
+            font-weight: 600;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .message-content {
+            color: #333;
+            line-height: 1.5;
+        }
+        
+        .message-time {
+            font-size: 11px;
+            color: #999;
+            margin-top: 5px;
+        }
+        
+        .input-area {
+            padding: 15px;
+            border-top: 1px solid #e9ecef;
+            display: flex;
+            gap: 10px;
+        }
+        
+        input[type="text"], textarea {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 14px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+        
+        button:hover {
+            background: #764ba2;
+        }
+        
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .search-box {
+            margin-bottom: 15px;
+        }
+        
+        .search-box input {
+            width: 100%;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        
+        .context-info {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-bottom: 15px;
+        }
+        
+        .context-info strong {
+            color: #1e3c72;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>ATLAS Chat Thread Manager</h1>
+            <p>Sistema centralizado para gestionar hilos de conversación</p>
+            <div class="stats" id="stats">
+                <div class="stat-card">
+                    <h3>Hilos Totales</h3>
+                    <div class="value" id="stat-threads">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Mensajes</h3>
+                    <div class="value" id="stat-messages">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Usuarios</h3>
+                    <div class="value" id="stat-users">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Activos</h3>
+                    <div class="value" id="stat-active">0</div>
+                </div>
+            </div>
+        </header>
+        
+        <div class="main-content">
+            <!-- Panel de Hilos -->
+            <div class="panel">
+                <div class="panel-header">Hilos de Conversacion</div>
+                <div class="panel-body">
+                    <div class="search-box">
+                        <input type="text" id="search-input" placeholder="Buscar hilos...">
+                    </div>
+                    <div id="threads-list">
+                        <div class="loading">Cargando hilos...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Panel de Chat -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span id="current-thread-title">Selecciona un hilo</span>
+                </div>
+                <div class="panel-body" id="messages-container">
+                    <div class="loading">Selecciona un hilo para ver los mensajes</div>
+                </div>
+                <div class="input-area">
+                    <textarea id="message-input" placeholder="Escribe tu mensaje..." rows="2"></textarea>
+                    <button onclick="sendMessage()" id="send-btn">Enviar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = '/api/chat';
+        let currentThreadId = null;
+        let threads = [];
+        
+        // Cargar estadísticas
+        async function loadStats() {
+            try {
+                const res = await fetch(`${API_BASE}/stats`);
+                const data = await res.json();
+                if (data.ok) {
+                    document.getElementById('stat-threads').textContent = data.stats.total_threads;
+                    document.getElementById('stat-messages').textContent = data.stats.total_messages;
+                    document.getElementById('stat-users').textContent = data.stats.total_users;
+                    document.getElementById('stat-active').textContent = data.stats.active_threads;
+                }
+            } catch (e) {
+                console.error('Error cargando stats:', e);
+            }
+        }
+        
+        // Cargar hilos
+        async function loadThreads() {
+            try {
+                const res = await fetch(`${API_BASE}/threads`);
+                const data = await res.json();
+                if (data.ok) {
+                    threads = data.threads;
+                    renderThreads(threads);
+                }
+            } catch (e) {
+                console.error('Error cargando threads:', e);
+            }
+        }
+        
+        // Renderizar lista de hilos
+        function renderThreads(threadList) {
+            const container = document.getElementById('threads-list');
+            if (threadList.length === 0) {
+                container.innerHTML = '<div class="loading">No hay hilos</div>';
+                return;
+            }
+            
+            container.innerHTML = threadList.map(thread => `
+                <div class="thread-item ${thread.thread_id === currentThreadId ? 'active' : ''}" 
+                     onclick="selectThread('${thread.thread_id}', '${thread.title}')">
+                    <div class="thread-title">${thread.title}</div>
+                    <div class="thread-meta">
+                        ${thread.message_count} mensajes | ${new Date(thread.updated_at).toLocaleDateString()}
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Seleccionar hilo
+        async function selectThread(threadId, title) {
+            currentThreadId = threadId;
+            document.getElementById('current-thread-title').textContent = title;
+            document.getElementById('messages-container').innerHTML = '<div class="loading">Cargando mensajes...</div>';
+            
+            try {
+                const res = await fetch(`${API_BASE}/threads/${threadId}/history`);
+                const data = await res.json();
+                if (data.ok) {
+                    renderMessages(data.messages);
+                }
+            } catch (e) {
+                console.error('Error cargando historial:', e);
+            }
+            
+            renderThreads(threads);
+        }
+        
+        // Renderizar mensajes
+        function renderMessages(messages) {
+            const container = document.getElementById('messages-container');
+            if (messages.length === 0) {
+                container.innerHTML = '<div class="loading">No hay mensajes en este hilo</div>';
+                return;
+            }
+            
+            container.innerHTML = messages.map(msg => `
+                <div class="message ${msg.role}">
+                    <div class="message-sender">${msg.sender}</div>
+                    <div class="message-content">${msg.content}</div>
+                    <div class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</div>
+                </div>
+            `).join('');
+            
+            // Scroll al final
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        // Enviar mensaje
+        async function sendMessage() {
+            if (!currentThreadId) {
+                alert('Selecciona un hilo primero');
+                return;
+            }
+            
+            const content = document.getElementById('message-input').value.trim();
+            if (!content) return;
+            
+            const btn = document.getElementById('send-btn');
+            btn.disabled = true;
+            
+            try {
+                const res = await fetch(`${API_BASE}/messages/add`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        thread_id: currentThreadId,
+                        sender: 'user',
+                        role: 'user',
+                        content: content
+                    })
+                });
+                
+                if (res.ok) {
+                    document.getElementById('message-input').value = '';
+                    selectThread(currentThreadId, document.getElementById('current-thread-title').textContent);
+                }
+            } catch (e) {
+                console.error('Error enviando mensaje:', e);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+        
+        // Buscar hilos
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const filtered = threads.filter(t => 
+                t.title.toLowerCase().includes(query) || 
+                t.description.toLowerCase().includes(query)
+            );
+            renderThreads(filtered);
+        });
+        
+        // Cargar datos iniciales
+        loadStats();
+        loadThreads();
+        
+        // Actualizar cada 5 segundos
+        setInterval(() => {
+            loadStats();
+            if (!currentThreadId) loadThreads();
+        }, 5000);
+    </script>
+</body>
+</html>

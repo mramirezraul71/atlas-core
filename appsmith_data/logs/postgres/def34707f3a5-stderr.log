@@ -1,0 +1,8 @@
+2026-02-25 02:03:35.883 UTC [2036] LOG:  starting PostgreSQL 14.20 (Ubuntu 14.20-1.pgdg24.04+1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0, 64-bit
+2026-02-25 02:03:35.883 UTC [2036] LOG:  listening on IPv4 address "127.0.0.1", port 5432
+2026-02-25 02:03:35.909 UTC [2036] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-02-25 02:03:35.966 UTC [2102] LOG:  database system was shut down at 2026-02-25 02:03:34 UTC
+2026-02-25 02:03:36.017 UTC [2036] LOG:  database system is ready to accept connections
+2026-02-25 05:05:38.370 UTC [2117] LOG:  stats_timestamp 2026-02-25 05:05:38.380198+00 is later than collector's time 2026-02-25 05:05:38.369305+00 for database 13824
+2026-02-25 05:17:37.362 UTC [10243] LOG:  statistics collector's time 2026-02-25 05:17:39.449717+00 is later than backend local time 2026-02-25 05:17:37.362217+00
+2026-02-25 05:17:37.363 UTC [2117] LOG:  stats_timestamp 2026-02-25 05:17:39.449717+00 is later than collector's time 2026-02-25 05:17:37.363269+00 for database 13824

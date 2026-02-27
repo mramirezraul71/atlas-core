@@ -1,4 +1,4 @@
-﻿.env
+.env
 *.env
 **/.env
 **/*.env
@@ -12,3 +12,98 @@ snapshots/**/config/.env
 snapshots/**/.env
 __pycache__/
 *.pyc
+# Python venv
+.venv/
+venv/
+ENV/
+env/
+
+# Pip cache (local)
+pip/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Editor/OS
+.vscode/
+.DS_Store
+
+# CI reportes generados
+snapshots/ci/
+
+# Snapshots / evidencia generada (LOCAL) - nunca subir
+snapshots/**
+
+# API keys guardadas desde el dashboard (nunca subir)
+config/provider_api_keys.json
+
+# Audit DB (local)
+logs/*.sqlite
+logs/*.sqlite-shm
+logs/*.sqlite-wal
+# Runtime logs / bitácoras (local)
+logs/*.log
+logs/*.err.log
+logs/*.out.log
+logs/*.json
+logs/*.txt
+# Logs (LOCAL) - nunca subir
+logs/**
+# Repo monitor (tarea asignada)
+logs/repo_monitor.log*
+# Task/orchestrator local state
+atlas_task_memory.sqlite
+
+# Emergency dashboards/servers (local recovery tools)
+dashboard_emergency.py
+emergency_server.py
+
+# Local chat threads DB (never commit)
+data/chat_threads.db
+
+# Runtime DBs (local)
+data/autonomy_tasks.db
+
+# Reportes ANS/GA/Metalearn/Brain/Hands-Eyes generados
+snapshots/ga/
+snapshots/metalearn/
+snapshots/support/
+snapshots/brain/
+snapshots/hands_eyes/
+snapshots/ans/
+
+# Capturas sueltas de cámara/evidencia (LOCAL)
+camera_*.jpg
+camera_*.png
+*_camera_*.jpg
+*_camera_*.png
+direct_camera_*.jpg
+direct_camera_*.png
+proxy_camera_*.jpg
+proxy_camera_*.png
+vision_camera_*.jpg
+vision_camera_*.png
+
+# Scripts generados por CoderAgent / AtlasCoder (sandbox)
+temp_scripts/
+atlas_workspace/
+
+# Capturas del Agente Navegador
+temp_vision/
+
+# Reportes POT (generados en runtime) - nunca subir
+modules/humanoid/quality/reports/pot_report_*.json
+
+# ATLAS_EVOLUTION sandbox
+.temp_venv/
+temp_workspace/
+temp_growth/
+temp_models_cache/
+
+# NEXUS (unificado en monorepo): logs y DBs locales
+nexus/**/logs/
+nexus/**/*.log
+nexus/**/*.db
+nexus/**/*.db-journal
+nexus/**/__pycache__/

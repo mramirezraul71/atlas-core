@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>ATLAS AUTONOMOUS - Dashboard</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0a0e1a; color: #e0e0e0; margin: 0; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { color: #8b5cf6; text-align: center; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }
+        .card { background: #1a1f35; border: 1px solid #2d3548; border-radius: 8px; padding: 20px; }
+        .card h2 { color: #8b5cf6; margin-top: 0; font-size: 1.2em; }
+        .health-score { font-size: 3em; font-weight: bold; text-align: center; margin: 20px 0; }
+        .health-good { color: #10b981; }
+        .health-warning { color: #f59e0b; }
+        .health-critical { color: #ef4444; }
+        .metric { display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #2d3548; }
+        .metric:last-child { border-bottom: none; }
+        .btn { background: #8b5cf6; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 5px; }
+        .btn:hover { background: #7c3aed; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 ATLAS AUTONOMOUS - Control Center</h1>
+
+        <div class="grid">
+            <div class="card">
+                <h2>🏥 Salud Global del Sistema</h2>
+                <div class="health-score" id="health-score">--</div>
+                <div id="health-components"></div>
+            </div>
+
+            <div class="card">
+                <h2>⚙️ Estado de Servicios</h2>
+                <div id="services-status"></div>
+            </div>
+
+            <div class="card">
+                <h2>🔧 Auto-Corrección</h2>
+                <div id="healing-stats"></div>
+            </div>
+
+            <div class="card">
+                <h2>🧠 Aprendizaje Autónomo</h2>
+                <div id="learning-insights"></div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top: 20px;">
+            <h2>🎛️ Controles Manuales</h2>
+            <button class="btn" onclick="triggerHealing()">Trigger Self-Healing</button>
+            <button class="btn" onclick="runLearningCycle()">Run Learning Cycle</button>
+            <button class="btn" onclick="enterSurvivalMode()">Enter Survival Mode</button>
+        </div>
+    </div>
+
+    <script>
+        async function fetchData() {
+            try {
+                const healthResp = await fetch('/api/health/comprehensive');
+                const health = await healthResp.json();
+                const score = health.score != null ? health.score : 0;
+                const scoreEl = document.getElementById('health-score');
+                scoreEl.textContent = score.toFixed(0);
+                scoreEl.className = 'health-score ' + (score >= 80 ? 'health-good' : score >= 60 ? 'health-warning' : 'health-critical');
+
+                const servicesResp = await fetch('/api/health/metrics/services');
+                const services = await servicesResp.json();
+                const servicesList = typeof services === 'object' && !Array.isArray(services)
+                    ? Object.entries(services).map(([name, s]) => ({ name, ...s }))
+                    : (services.services || services || []);
+                const servicesHTML = servicesList.map(s =>
+                    '<div class="metric"><span>' + (s.name || s) + '</span><span>' + (s.online ? '🟢 Online' : '🔴 Offline') + ' (' + (s.latency_ms != null ? s.latency_ms.toFixed(0) : 0) + 'ms)</span></div>'
+                ).join('');
+                document.getElementById('services-status').innerHTML = servicesHTML || '<div class="metric">Sin datos</div>';
+
+                const healingResp = await fetch('/api/healing/stats');
+                const healing = await healingResp.json();
+                const total = healing.total_attempts || 0;
+                const rate = healing.success_rate != null ? healing.success_rate : 0;
+                document.getElementById('healing-stats').innerHTML =
+                    '<div class="metric"><span>Total Attempts</span><span>' + total + '</span></div>' +
+                    '<div class="metric"><span>Success Rate</span><span>' + (rate * 100).toFixed(1) + '%</span></div>';
+
+                const learningResp = await fetch('/api/learning/insights');
+                const learning = await learningResp.json();
+                const insights = learning.insights || [];
+                document.getElementById('learning-insights').innerHTML =
+                    '<div class="metric"><span>Patterns / Insights</span><span>' + insights.length + '</span></div>';
+            } catch (e) {
+                console.error('Error fetching data:', e);
+            }
+        }
+
+        async function triggerHealing() {
+            try {
+                await fetch('/api/healing/trigger', { method: 'POST' });
+                alert('Self-Healing triggered');
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function runLearningCycle() {
+            alert('Learning cycle: use API /api/learning/feedback o ejecutar ciclo en backend.');
+        }
+
+        async function enterSurvivalMode() {
+            alert('Survival mode: configurar vía governance emergency_stop o API resilience.');
+        }
+
+        fetchData();
+        setInterval(fetchData, 5000);
+    </script>
+</body>
+</html>

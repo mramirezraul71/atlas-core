@@ -1,0 +1,31 @@
+---
+description: ATLAS servicios — puertos, simbiosis, handshake de sesion
+alwaysApply: true
+---
+
+# ATLAS — Servicios y Handshake
+
+## Servicios Core
+| Servicio | Puerto | Funcion |
+|----------|--------|---------|
+| NEXUS    | :8000  | Cerebro principal (FastAPI) |
+| PUSH     | :8791  | Mensajeria y eventos |
+| Robot    | :8002  | Ejecucion robotica |
+| Continual Learning | interno | IA Tutor (Opus 24/7) |
+
+## Handshake de Sesion
+Al iniciar cada sesion, verificar automaticamente:
+1. `netstat` para confirmar puertos :8000, :8791, :8002
+2. `git status` + ultimos 3 commits
+3. Reportar estado en formato:
+```
+NEXUS :8000  → [ONLINE/OFFLINE]
+PUSH  :8791  → [ONLINE/OFFLINE]
+Robot :8002  → [ONLINE/OFFLINE]
+Ultimo commit: [hash] [mensaje]
+```
+
+## Gestion de Servicios
+- Antes de modificar codigo de un servicio, verificar que esta corriendo
+- Despues de cambios, validar que sigue operativo
+- NUNCA detener los 3 servicios simultaneamente

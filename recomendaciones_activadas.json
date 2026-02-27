@@ -1,0 +1,65 @@
+{
+  "recomendaciones_activadas": {
+    "timestamp": "2026-02-22T22:46:46Z",
+    "estado": "ACTIVO",
+    "recomendaciones": [
+      {
+        "id": 1,
+        "nombre": "Monitoreo continuo de incidentes abiertos",
+        "descripcion": "Vigilancia en tiempo real de los 5 incidentes abiertos para detectar escaladas",
+        "estado": "ACTIVO",
+        "prioridad": "ALTA",
+        "intervalo_chequeo": "5 minutos"
+      },
+      {
+        "id": 2,
+        "nombre": "Alertas de rendimiento en tiempo real",
+        "descripcion": "Notificaciones inmediatas si latencia > 100ms o tasa de error > 0.1%",
+        "estado": "ACTIVO",
+        "prioridad": "ALTA",
+        "umbral_latencia_ms": 100,
+        "umbral_error_rate": 0.001
+      },
+      {
+        "id": 3,
+        "nombre": "Validación de conectividad",
+        "descripcion": "Verificación periódica de conexión con Nexus y Robot",
+        "estado": "ACTIVO",
+        "prioridad": "MEDIA",
+        "intervalo_chequeo": "5 minutos"
+      },
+      {
+        "id": 4,
+        "nombre": "Reporte automático de anomalías",
+        "descripcion": "Generación automática de reportes cuando se detecten desviaciones",
+        "estado": "ACTIVO",
+        "prioridad": "MEDIA",
+        "intervalo_reporte": "1 hora"
+      },
+      {
+        "id": 5,
+        "nombre": "Optimización de recursos del sistema",
+        "descripcion": "Ajuste automático de recursos para mantener rendimiento óptimo",
+        "estado": "ACTIVO",
+        "prioridad": "MEDIA",
+        "intervalo_optimizacion": "30 minutos"
+      },
+      {
+        "id": 6,
+        "nombre": "Auditoría de seguridad continua",
+        "descripcion": "Monitoreo de logs de auditoría para detectar actividades sospechosas",
+        "estado": "ACTIVO",
+        "prioridad": "ALTA",
+        "intervalo_auditoria": "10 minutos"
+      }
+    ],
+    "resumen": {
+      "total_recomendaciones": 6,
+      "activas": 6,
+      "inactivas": 0,
+      "prioridad_alta": 3,
+      "prioridad_media": 3,
+      "prioridad_baja": 0
+    }
+  }
+}

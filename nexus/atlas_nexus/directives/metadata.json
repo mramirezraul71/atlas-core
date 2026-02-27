@@ -1,0 +1,21 @@
+{
+  "version": "1.0.0",
+  "created": "2026-02-10T06:14:46.006378",
+  "last_updated": "2026-02-10T06:15:41.121807",
+  "global_enabled": true,
+  "projects": {
+    "trading_bot": {
+      "created": "2026-02-10T06:15:40.069725",
+      "enabled": true
+    },
+    "rauli_erp": {
+      "created": "2026-02-10T06:15:41.121807",
+      "enabled": true
+    }
+  },
+  "stats": {
+    "total_projects": 2,
+    "total_directives": 3,
+    "last_backup": null
+  }
+}

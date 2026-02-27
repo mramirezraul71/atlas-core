@@ -1,0 +1,9 @@
+# Request: run system diagnostic
+string subsystem          # all | hardware | control | perception | planning | brain
+---
+# Response
+bool healthy
+float64 health_score      # 0-100
+string[] issues           # list of detected issues
+string[] recommendations  # suggested fixes
+string report_json        # full diagnostic report
