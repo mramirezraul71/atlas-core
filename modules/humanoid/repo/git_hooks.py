@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -26,6 +28,32 @@ def ensure_post_commit_hook() -> dict:
     Nota: .git/hooks no se versiona, por eso se auto-instala al arranque.
     """
     repo = _repo_root()
+    installer = repo / "scripts" / "install_git_hooks.py"
+    if installer.exists():
+        try:
+            if os.getenv("ATLAS_HOOK_PYTHON"):
+                py = os.getenv("ATLAS_HOOK_PYTHON")
+            elif (repo / ".venv" / "Scripts" / "python.exe").exists():
+                py = str(repo / ".venv" / "Scripts" / "python.exe")
+            else:
+                py = sys.executable or "python"
+            r = subprocess.run(
+                [py, str(installer)],
+                cwd=str(repo),
+                capture_output=True,
+                text=True,
+                timeout=20,
+                env={**os.environ, "LANG": "C"},
+            )
+            if r.returncode == 0:
+                return {
+                    "ok": True,
+                    "installed": True,
+                    "path": str(repo / ".githooks" / "post-commit"),
+                }
+        except Exception:
+            pass
+
     hooks = repo / ".git" / "hooks"
     if not hooks.exists():
         return {"ok": False, "error": "no_git_hooks_dir", "path": str(hooks)}

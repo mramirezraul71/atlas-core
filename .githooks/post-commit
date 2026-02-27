@@ -1,0 +1,29 @@
+#!/bin/sh
+# ATLAS: post-commit notify (Audio/Telegram). Best-effort, never blocks commit.
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+LOG_DIR="$REPO_ROOT/logs"
+LOG_FILE="$LOG_DIR/git_post_commit.log"
+if [ -n "${ATLAS_HOOK_PYTHON:-}" ]; then
+  PYTHON_BIN="${ATLAS_HOOK_PYTHON}"
+elif [ -x "$REPO_ROOT/.venv/Scripts/python.exe" ]; then
+  PYTHON_BIN="$REPO_ROOT/.venv/Scripts/python.exe"
+else
+  PYTHON_BIN="python"
+fi
+
+mkdir -p "$LOG_DIR" >/dev/null 2>&1 || true
+
+if [ "${ATLAS_GIT_HOOKS_ENABLED:-1}" != "1" ]; then
+  printf "[%s] [INFO] post-commit deshabilitado (ATLAS_GIT_HOOKS_ENABLED=%s)\n" "$(date +"%Y-%m-%dT%H:%M:%S%z")" "${ATLAS_GIT_HOOKS_ENABLED:-unset}" >> "$LOG_FILE" 2>/dev/null || true
+  exit 0
+fi
+
+cd "$REPO_ROOT" >/dev/null 2>&1 || true
+{
+  printf "[%s] [INFO] post-commit start\n" "$(date +"%Y-%m-%dT%H:%M:%S%z")"
+  ATLAS_GIT_HOOKS_ENABLED=1 "$PYTHON_BIN" "scripts/git_post_commit_hook.py"
+  RC=$?
+  printf "[%s] [INFO] post-commit end rc=%s\n" "$(date +"%Y-%m-%dT%H:%M:%S%z")" "$RC"
+} >> "$LOG_FILE" 2>&1 || true
+
+exit 0
