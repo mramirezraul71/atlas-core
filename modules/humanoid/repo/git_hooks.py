@@ -34,8 +34,14 @@ def ensure_post_commit_hook() -> dict:
 
     script = """#!/bin/sh
 # ATLAS: post-commit notify (Audio/Telegram). Best-effort, never blocks commit.
-PYTHON_BIN="${ATLAS_HOOK_PYTHON:-python}"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+if [ -n "${ATLAS_HOOK_PYTHON:-}" ]; then
+  PYTHON_BIN="${ATLAS_HOOK_PYTHON}"
+elif [ -x "$REPO_ROOT/.venv/Scripts/python.exe" ]; then
+  PYTHON_BIN="$REPO_ROOT/.venv/Scripts/python.exe"
+else
+  PYTHON_BIN="python"
+fi
 cd "$REPO_ROOT" >/dev/null 2>&1 || true
 $PYTHON_BIN "scripts/git_post_commit_hook.py" >/dev/null 2>&1 || true
 exit 0
