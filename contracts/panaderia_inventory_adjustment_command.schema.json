@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Panaderia Inventory Adjustment Command",
+  "type": "object",
+  "required": [
+    "product_id",
+    "quantity",
+    "type",
+    "notes"
+  ],
+  "properties": {
+    "product_id": {
+      "type": "string"
+    },
+    "quantity": {
+      "type": "number"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "entrada",
+        "salida",
+        "ajuste",
+        "merma"
+      ]
+    },
+    "notes": {
+      "type": "string"
+    },
+    "employee_id": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,23 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "ATLAS: Snapshot Safe Diagnostic",
+      "type": "shell",
+      "command": "powershell -ExecutionPolicy Bypass -File .\\scripts\\atlas_snapshot_safe.ps1",
+      "problemMatcher": []
+    },
+    {
+      "label": "ATLAS: Cortex Bridge Dry Run",
+      "type": "shell",
+      "command": "python .\\scripts\\atlas_cortex_orchestrate_event.py --sample",
+      "problemMatcher": []
+    },
+    {
+      "label": "ATLAS: Cortex Queue Worker (Once)",
+      "type": "shell",
+      "command": "python .\\scripts\\atlas_cortex_queue_worker.py --once",
+      "problemMatcher": []
+    }
+  ]
+}
