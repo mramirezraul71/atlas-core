@@ -52,4 +52,46 @@ try {
     Write-Line ("LISTEN ERR " + $_.Exception.Message)
 }
 
+try {
+    $cfProc = Get-Process -Name cloudflared -ErrorAction SilentlyContinue
+    if ($cfProc) {
+        foreach ($p in $cfProc) {
+            Write-Line ("CF_TUNNEL_PROCESS pid=" + $p.Id)
+        }
+    } else {
+        Write-Line "CF_TUNNEL_PROCESS none"
+    }
+} catch {
+    Write-Line ("CF_TUNNEL_PROCESS ERR " + $_.Exception.Message)
+}
+
+try {
+    $taskName = "ATLAS_SnapshotSafe"
+    $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    if ($task) {
+        $taskInfo = Get-ScheduledTaskInfo -TaskName $taskName
+        Write-Line ("TASK_OK name=" + $taskName + " next_run=" + $taskInfo.NextRunTime + " last_result=" + $taskInfo.LastTaskResult)
+    } else {
+        Write-Line ("TASK_WARN missing_task=" + $taskName)
+    }
+} catch {
+    Write-Line ("TASK_ERR " + $_.Exception.Message)
+}
+
+try {
+    $cfLog = Join-Path $logDir "cloudflared_access.log"
+    if (Test-Path $cfLog) {
+        $tail = Get-Content $cfLog -Tail 20
+        foreach ($ln in $tail) {
+            if (-not [string]::IsNullOrWhiteSpace($ln)) {
+                Write-Line ("CF_TUNNEL_ACCESS " + $ln)
+            }
+        }
+    } else {
+        Write-Line "CF_TUNNEL_ACCESS no_log_file"
+    }
+} catch {
+    Write-Line ("CF_TUNNEL_ACCESS ERR " + $_.Exception.Message)
+}
+
 Write-Line "=== SNAPSHOT_SAFE_END ==="
