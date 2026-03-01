@@ -71,3 +71,32 @@ python scripts/atlas_cortex_orchestrate_event.py --event-file C:\ruta\evento.jso
 - `ATLAS: Snapshot Safe Diagnostic`
 - `ATLAS: Cortex Bridge Dry Run`
 - `ATLAS: Cortex Queue Worker (Once)`
+- `ATLAS: Validate Cross-Repo Compatibility`
+- `ATLAS: Supervise Arms`
+- `ATLAS: Panaderia Change Gate`
+- `ATLAS: Watch Panaderia -> Validate Vision`
+
+## Aislamiento de brazos
+- Estado de brazos: `state/atlas_arm_state.json`
+- Supervisor central: `python scripts/atlas_supervise_arms.py`
+- Si Panaderia esta aislada (`isolated=true`), el orquestador no aplica cambios de inventario
+  y registra decision `isolate_panaderia` en:
+  - `logs/atlas_cortex_decisions.log`
+  - `logs/atlas_cortex_alerts.log`
+
+## Gate de compatibilidad Panaderia -> Vision
+- Script: `python scripts/atlas_validate_cross_repo_compat.py`
+- Evalua cambios de logica en `rauli-panaderia/backend/*` y verifica compatibilidad minima
+  del contrato Atlas.
+- Task compuesta: `ATLAS: Panaderia Change Gate` (secuencia):
+  1) compatibilidad cruzada
+  2) dry-run de orquestacion
+  3) snapshot seguro
+  4) supervision de brazos
+
+## Automatizacion continua
+- Watcher: `python scripts/atlas_watch_panaderia_changes.py --interval 20`
+- Task VS Code: `ATLAS: Watch Panaderia -> Validate Vision`
+- Cuando detecta cambios en logica de `rauli-panaderia/backend/*`, dispara
+  `atlas_validate_cross_repo_compat.py` y registra resultado en:
+  - `logs/atlas_watch_panaderia.log`

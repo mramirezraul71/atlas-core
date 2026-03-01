@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+from tools.atlas_arm_state import is_arm_isolated
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 LOG_DIR = BASE_DIR / "logs"
@@ -185,6 +186,30 @@ def process_vision_event(payload: Dict[str, Any], apply_changes: bool = False) -
 
     dispatch_results: List[Dict[str, Any]] = []
     if apply_changes:
+        if is_arm_isolated("panaderia"):
+            reason = "panaderia_isolated"
+            _log(
+                ALERT_LOG,
+                {
+                    "ts": _now_iso(),
+                    "event_id": payload.get("event_id"),
+                    "severity": "high",
+                    "reason": reason,
+                    "commands_blocked": commands,
+                },
+            )
+            _log(
+                DECISION_LOG,
+                {
+                    "ts": _now_iso(),
+                    "accepted": True,
+                    "action": "isolate_panaderia",
+                    "reason": reason,
+                    "event_id": payload.get("event_id"),
+                    "commands_count": len(commands),
+                },
+            )
+            return DecisionResult(True, "isolate_panaderia", reason, commands, [])
         dispatch_results = _dispatch_to_panaderia(commands)
 
     _log(
