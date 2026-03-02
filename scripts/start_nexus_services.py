@@ -11,10 +11,26 @@ NEXUS_DIR = Path(os.getenv("NEXUS_ATLAS_PATH") or r"C:\ATLAS_NEXUS\atlas_nexus")
 ROBOT_DIR = Path(
     os.getenv("NEXUS_ROBOT_PATH") or r"C:\ATLAS_NEXUS\atlas_nexus_robot\backend"
 )
-PYTHON = os.getenv("PYTHON", "python")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOG_DIR = REPO_ROOT / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _resolve_python() -> str:
+    env_py = (os.getenv("PYTHON") or "").strip()
+    if env_py and Path(env_py).exists():
+        return env_py
+    candidates = [
+        REPO_ROOT / ".venv" / "Scripts" / "python.exe",
+        REPO_ROOT / "venv" / "Scripts" / "python.exe",
+    ]
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return "python"
+
+
+PYTHON = _resolve_python()
 
 
 def _start(cmd: list, cwd: Path, name: str) -> bool:

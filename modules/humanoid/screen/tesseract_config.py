@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 
 
@@ -11,10 +12,16 @@ def set_tesseract_cmd() -> None:
     try:
         import pytesseract
 
-        path = (
-            os.getenv("TESSERACT_CMD")
-            or r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-        )
-        pytesseract.pytesseract.tesseract_cmd = path
+        env_path = (os.getenv("TESSERACT_CMD") or "").strip()
+        candidates = [
+            env_path,
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+            shutil.which("tesseract") or "",
+        ]
+        for path in candidates:
+            if path and os.path.exists(path):
+                pytesseract.pytesseract.tesseract_cmd = path
+                break
     except Exception:
         pass

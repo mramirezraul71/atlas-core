@@ -32,7 +32,20 @@ $ScriptsDir = Join-Path $RepoRoot "scripts"
 $FreePort   = Join-Path $ScriptsDir "free_port.ps1"
 $CleanPy    = Join-Path $ScriptsDir "atlas_clean_cache.py"
 $StartSvc   = Join-Path $ScriptsDir "start_nexus_services.py"
-$Python     = if ($env:PYTHON) { $env:PYTHON } else { "python" }
+
+function Resolve-Python([string]$Root) {
+    if ($env:PYTHON -and (Test-Path $env:PYTHON)) { return $env:PYTHON }
+    $candidates = @(
+        (Join-Path $Root ".venv\Scripts\python.exe"),
+        (Join-Path $Root "venv\Scripts\python.exe")
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path $c) { return $c }
+    }
+    return "python"
+}
+
+$Python = Resolve-Python -Root $RepoRoot
 
 $PUSH_URL   = "http://127.0.0.1:8791/health"
 $ROBOT_URL1 = "http://127.0.0.1:8002/api/health"

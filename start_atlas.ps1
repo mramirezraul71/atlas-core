@@ -1,6 +1,19 @@
 ﻿# ATLAS Startup Script
 cd C:\ATLAS_PUSH
 
+function Resolve-Python([string]$RepoRoot) {
+    if ($env:PYTHON -and (Test-Path $env:PYTHON)) { return $env:PYTHON }
+    $candidates = @(
+        (Join-Path $RepoRoot ".venv\Scripts\python.exe"),
+        (Join-Path $RepoRoot "venv\Scripts\python.exe")
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path $c) { return $c }
+    }
+    return "python"
+}
+
+$PY = Resolve-Python -RepoRoot "C:\ATLAS_PUSH"
 Write-Host "=== INICIANDO ATLAS ===" -ForegroundColor Cyan
 Write-Host ""
 
@@ -11,19 +24,19 @@ Write-Host "  OK" -ForegroundColor Green
 
 # 2. Evolution Daemon
 Write-Host "[2/4] Evolution Daemon..." -ForegroundColor Yellow
-Start-Process python -ArgumentList "evolution_daemon.py" -WindowStyle Hidden
+Start-Process $PY -ArgumentList "evolution_daemon.py" -WindowStyle Hidden
 Write-Host "  OK" -ForegroundColor Green
 
 # 3. NEXUS Services
 Write-Host "[3/4] NEXUS Services..." -ForegroundColor Yellow
-Start-Process python -ArgumentList "scripts/start_nexus_services.py" -WindowStyle Hidden
+Start-Process $PY -ArgumentList "scripts/start_nexus_services.py" -WindowStyle Hidden
 Write-Host "  OK" -ForegroundColor Green
 
 # 4. Dashboard
 Write-Host "[4/4] Dashboard (8791)..." -ForegroundColor Yellow
 $env:PYTHONPATH = "C:\ATLAS_PUSH"
 $env:SERVICE_PORT = "8791"
-Start-Process python -ArgumentList "tools/service_launcher.py" -WindowStyle Hidden
+Start-Process $PY -ArgumentList "tools/service_launcher.py" -WindowStyle Hidden
 Write-Host "  OK" -ForegroundColor Green
 
 Write-Host ""
@@ -33,3 +46,4 @@ Write-Host "WAHA: http://localhost:3000/dashboard" -ForegroundColor Cyan
 
 Start-Sleep -Seconds 3
 Start-Process "http://localhost:8791/ui"
+
