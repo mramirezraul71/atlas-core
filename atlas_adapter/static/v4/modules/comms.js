@@ -1,14 +1,16 @@
 /**
- * ATLAS v4 — Communications Module
- * WhatsApp/Telegram comms status, QR and test.
+ * ATLAS v4.2 — Communications Module
+ * Panel de comunicaciones: estado WAHA/WhatsApp, QR, restart, test.
  */
 import { poll, stop } from '../lib/polling.js';
 
 const POLL_ID = 'comms-module';
 
+function _esc(s) { const d = document.createElement('span'); d.textContent = s ?? ''; return d.innerHTML; }
+
 export default {
   id: 'comms',
-  label: 'Communications',
+  label: 'Comunicaciones',
   icon: 'message-circle',
   category: 'configuration',
 
@@ -18,32 +20,60 @@ export default {
         <div class="module-header">
           <button class="back-btn" onclick="location.hash='/'">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-            Home
+            Inicio
           </button>
-          <h2>Communications</h2>
+          <h2>Comunicaciones</h2>
+          <div style="margin-left:auto"><span class="live-badge">LIVE</span></div>
         </div>
         <div class="module-body">
-          <div class="config-section">
-            <div class="config-section-title">Status</div>
-            <pre class="codebox" id="comms-status">Loading...</pre>
+
+          <!-- Status -->
+          <div class="stat-row" style="margin-bottom:16px">
+            <div class="stat-card hero">
+              <div class="stat-card-label">Canal Principal</div>
+              <div class="stat-card-value" id="c-channel">--</div>
+              <div class="stat-card-sub" id="c-phone"></div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-label">Estado WAHA</div>
+              <div class="stat-card-value" id="c-state">--</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-label">Mensajes enviados</div>
+              <div class="stat-card-value accent" id="c-sent">--</div>
+            </div>
           </div>
 
-          <div class="config-section">
-            <div class="config-section-title">Actions</div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap">
-              <button class="chip-btn" id="btn-qr">Get WhatsApp QR</button>
-              <button class="chip-btn" id="btn-restart">Restart WAHA</button>
-              <button class="chip-btn" id="btn-test">Run comms test</button>
-            </div>
-            <div style="margin-top:10px" id="comms-action"></div>
+          <!-- Actions -->
+          <div class="section-title">Acciones</div>
+          <div class="action-bar">
+            <button class="action-btn primary" id="btn-qr">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3M17 14v.01M14 17v.01M17 17v.01"/></svg>
+              Ver QR WhatsApp
+            </button>
+            <button class="action-btn" id="btn-restart">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+              Reiniciar WAHA
+            </button>
+            <button class="action-btn" id="btn-test">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+              Test de comms
+            </button>
           </div>
+
+          <!-- Action output -->
+          <div id="comms-action" style="margin-top:12px"></div>
+
+          <!-- Raw status -->
+          <div class="section-title" style="margin-top:20px">Diagnóstico</div>
+          <pre class="codebox" id="comms-raw" style="max-height:180px;overflow:auto">Cargando...</pre>
         </div>
       </div>
     `;
 
-    container.querySelector('#btn-qr')?.addEventListener('click', () => _qr(container));
-    container.querySelector('#btn-restart')?.addEventListener('click', () => _restart(container));
-    container.querySelector('#btn-test')?.addEventListener('click', () => _test(container));
+    container.querySelector('#btn-qr')?.addEventListener('click',      () => _qr(container));
+    container.querySelector('#btn-restart')?.addEventListener('click',  () => _restart(container));
+    container.querySelector('#btn-test')?.addEventListener('click',     () => _test(container));
 
     _refresh(container);
     poll(POLL_ID, '/ans/comms/status', 6000, (data) => { if (data) _renderStatus(container, data); });
@@ -54,19 +84,27 @@ export default {
 
 async function _refresh(container) {
   try {
-    const res = await fetch('/ans/comms/status');
-    const data = await res.json();
+    const r = await fetch('/ans/comms/status');
+    const data = await r.json();
     _renderStatus(container, data);
   } catch (e) {
-    const el = container.querySelector('#comms-status');
+    const el = container.querySelector('#comms-raw');
     if (el) el.textContent = `Error: ${e.message}`;
   }
 }
 
 function _renderStatus(container, data) {
-  const el = container.querySelector('#comms-status');
-  if (!el) return;
-  el.textContent = JSON.stringify(data, null, 2);
+  const p = data?.data ?? data;
+  const connected = p?.connected === true || p?.status === 'connected' || p?.state === 'connected';
+  const txt = (id, v) => { const e = container.querySelector(id); if (e) e.textContent = v; };
+  txt('#c-channel', p?.channel || p?.provider || 'WhatsApp');
+  txt('#c-phone',   p?.phone || p?.number || '');
+  txt('#c-state',   p?.state || p?.status || (connected ? 'Conectado' : 'Desconectado'));
+  const stEl = container.querySelector('#c-state');
+  if (stEl) stEl.style.color = connected ? 'var(--accent-green)' : 'var(--accent-orange)';
+  txt('#c-sent', p?.messages_sent ?? p?.sent ?? '--');
+  const raw = container.querySelector('#comms-raw');
+  if (raw) raw.textContent = JSON.stringify(p, null, 2);
 }
 
 function _setAction(container, html) {
@@ -75,54 +113,55 @@ function _setAction(container, html) {
 }
 
 async function _qr(container) {
-  _setAction(container, '<div class="spinner"></div> fetching QR...');
+  _setAction(container, '<div style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span style="font-size:12px;color:var(--text-muted)">Obteniendo QR...</span></div>');
   try {
-    const res = await fetch('/ans/comms/waha/qr');
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
-    // Try multiple known shapes: {data:{qr}} or {qr} or {data:{url}}
+    const r = await fetch('/ans/comms/waha/qr');
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || data.ok === false) throw new Error(data.error || `HTTP ${r.status}`);
     const qr = (data.data && (data.data.qr || data.data.url)) || data.qr || data.url || '';
-    if (!qr) {
+    if (qr) {
+      _setAction(container, `<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+        <img alt="WAHA QR" src="${_esc(qr)}" style="width:200px;height:200px;border-radius:12px;border:1px solid var(--border);background:white;object-fit:contain">
+        <div style="flex:1;min-width:200px">
+          <div class="stat-card-label" style="margin-bottom:6px">Escanea con WhatsApp</div>
+          <div class="codebox" style="word-break:break-all;font-size:10px">${_esc(qr.slice(0, 200))}${qr.length > 200 ? '...' : ''}</div>
+        </div>
+      </div>`);
+    } else {
       _setAction(container, `<pre class="codebox">${_esc(JSON.stringify(data, null, 2))}</pre>`);
-      return;
     }
-    _setAction(container, `<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
-      <img alt="WAHA QR" src="${qr}" style="width:220px;height:220px;border-radius:12px;border:1px solid var(--border);background:white">
-      <pre class="codebox" style="flex:1;min-width:260px">${_esc(qr)}</pre>
-    </div>`);
   } catch (e) {
-    _setAction(container, `<pre class="codebox">Error: ${_esc(e.message)}</pre>`);
+    _setAction(container, `<div style="color:var(--accent-red);font-size:12px">Error: ${_esc(e.message)}</div>`);
   }
 }
 
 async function _restart(container) {
-  _setAction(container, '<div class="spinner"></div> restarting...');
+  _setAction(container, '<div style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span style="font-size:12px;color:var(--text-muted)">Reiniciando WAHA...</span></div>');
   try {
-    const res = await fetch('/ans/comms/waha/restart', { method: 'POST' });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
-    window.AtlasToast?.show('WAHA restart: OK', 'success');
-    _setAction(container, `<pre class="codebox">${_esc(JSON.stringify(data, null, 2))}</pre>`);
+    const r = await fetch('/ans/comms/waha/restart', { method: 'POST' });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || data.ok === false) throw new Error(data.error || `HTTP ${r.status}`);
+    window.AtlasToast?.show('WAHA reiniciado', 'success');
+    _setAction(container, `<div class="chip green">WAHA reiniciado correctamente</div>`);
+    setTimeout(() => _refresh(container), 2000);
   } catch (e) {
-    window.AtlasToast?.show(`WAHA restart failed: ${e.message}`, 'error');
-    _setAction(container, `<pre class="codebox">Error: ${_esc(e.message)}</pre>`);
+    window.AtlasToast?.show(e.message, 'error');
+    _setAction(container, `<div style="color:var(--accent-red);font-size:12px">Error: ${_esc(e.message)}</div>`);
   }
 }
 
 async function _test(container) {
-  _setAction(container, '<div class="spinner"></div> testing...');
+  _setAction(container, '<div style="display:flex;gap:8px;align-items:center"><div class="spinner"></div><span style="font-size:12px;color:var(--text-muted)">Ejecutando test...</span></div>');
   try {
-    const res = await fetch('/ans/comms/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`);
-    window.AtlasToast?.show('Comms test: OK', 'success');
+    const r = await fetch('/ans/comms/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || data.ok === false) throw new Error(data.error || `HTTP ${r.status}`);
+    window.AtlasToast?.show('Test OK', 'success');
     _setAction(container, `<pre class="codebox">${_esc(JSON.stringify(data, null, 2))}</pre>`);
   } catch (e) {
-    window.AtlasToast?.show(`Comms test failed: ${e.message}`, 'error');
-    _setAction(container, `<pre class="codebox">Error: ${_esc(e.message)}</pre>`);
+    window.AtlasToast?.show(e.message, 'error');
+    _setAction(container, `<div style="color:var(--accent-red);font-size:12px">Error: ${_esc(e.message)}</div>`);
   }
 }
-
-function _esc(s) { const d = document.createElement('span'); d.textContent = s || ''; return d.innerHTML; }
 
 window.AtlasModuleComms = { id: 'comms' };

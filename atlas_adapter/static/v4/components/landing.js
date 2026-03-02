@@ -93,7 +93,7 @@ export function render(container) {
     <div class="landing-footer">
       <span id="footer-uptime">Uptime: --</span>
       <span id="footer-model">Model: --</span>
-      <span>v4.1.0</span>
+      <span>v4.2.0</span>
     </div>
   `;
 

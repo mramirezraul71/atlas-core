@@ -39,7 +39,7 @@ function _buildTopbar(app) {
     </div>
     <div class="topbar-center"></div>
     <div class="topbar-right">
-      <span class="topbar-version" id="topbar-version">v4.1.0</span>
+      <span class="topbar-version" id="topbar-version">v4.2.0</span>
       <button class="topbar-btn" id="btn-theme" title="Cambiar tema">${SVG.theme}</button>
       <button class="topbar-btn" id="btn-home" title="Inicio">${SVG.home}</button>
       <button class="topbar-btn" id="btn-menu" title="Menú" aria-label="Menú principal">${SVG.menu}</button>
@@ -269,14 +269,14 @@ async function _loadModules() {
   const MODULE_NAMES = [
     'health', 'config', 'bitacora', 'memory', 'learning',
     'autonomy', 'healing', 'approvals', 'audit', 'comms',
-    'events', 'api_explorer', 'voice',
+    'events', 'api_explorer', 'voice', 'trading',
   ];
   for (const name of MODULE_NAMES) {
     try {
       const mod = (await import(`/v4/static/modules/${name}.js`)).default;
       if (mod?.id) MODULE_REGISTRY[mod.id] = mod;
     } catch (e) {
-      console.warn(`[Atlas v4.1] Module "${name}" no cargado:`, e.message);
+      console.warn(`[Atlas v4.2] Module "${name}" no cargado:`, e.message);
     }
   }
 }

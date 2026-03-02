@@ -44,6 +44,7 @@ const MENU_ITEMS = [
     category: 'Apps',
     items: [
       { id: 'trading', label: 'Trading', desc: 'Panel de trading con IA (Grok)', icon: 'trending-up', route: '/trading', badge: 'Beta' },
+      { id: 'learning', label: 'Aprendizaje', desc: 'Motor de aprendizaje y patrones', icon: 'trending-up', route: '/learning' },
     ]
   },
   {
