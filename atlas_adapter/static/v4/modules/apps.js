@@ -1,277 +1,464 @@
 /**
  * ATLAS v4.2 — Mis Apps Module
- * Panel de Brazos Subordinados: Rauli Vision + Rauli Panadería.
- * Health en tiempo real, métricas clave y acceso directo a cada dashboard.
+ * Panel de Brazos Subordinados con vista embebida y gobierno desde ATLAS.
+ * Split-pane: sidebar de control (izq) + iframe del dashboard (der).
  */
 import { poll, stop } from '../lib/polling.js';
 
-const POLL_ID_VISION    = 'apps-rauli-vision';
-const POLL_ID_PANADERIA = 'apps-rauli-panaderia';
+const POLL_VISION    = 'apps-vision-health';
+const POLL_PANADERIA = 'apps-panaderia-health';
 
-const APPS = [
-  {
-    id:       'rauli-vision',
-    name:     'Rauli Vision',
-    role:     'Brazo Sensorial — Visión Artificial',
-    desc:     'Detección de objetos, tracking y análisis de imágenes en tiempo real.',
-    port:     3000,
-    health:   'http://127.0.0.1:3000/api/health',
-    dashboard:'http://127.0.0.1:3000',
-    icon:     '👁️',
-    color:    'var(--accent-primary)',
-    pollId:   POLL_ID_VISION,
-    metrics: [
-      { key: 'detections',  label: 'Detecciones hoy', path: ['detections_today', 'count'] },
-      { key: 'fps',         label: 'FPS activo',       path: ['fps', 'current'] },
-      { key: 'cameras',     label: 'Cámaras activas',  path: ['cameras_active', 'total'] },
+const APPS = {
+  vision: {
+    id:        'vision',
+    name:      'Rauli Vision',
+    shortName: 'Vision',
+    role:      'Brazo Sensorial',
+    icon:      '👁️',
+    color:     'var(--accent-primary)',
+    base:      'http://127.0.0.1:3000',
+    health:    'http://127.0.0.1:3000/api/health',
+    pollId:    POLL_VISION,
+    navLinks: [
+      { label: 'Inicio',          path: '/' },
+      { label: 'Búsqueda Web',    path: '/?tab=search' },
+      { label: 'Búsqueda Video',  path: '/?tab=video' },
+      { label: 'Chat IA',         path: '/?tab=chat' },
+    ],
+    govEndpoints: [
+      { label: 'Health / proxy',   url: 'http://127.0.0.1:3000/api/health',       method: 'GET', id: 'vision-health' },
+      { label: 'Historial chat',   url: 'http://127.0.0.1:3000/api/chat/history',  method: 'GET', id: 'vision-chat' },
     ],
   },
-  {
-    id:       'rauli-panaderia',
-    name:     'Rauli Panadería',
-    role:     'Brazo Operativo — Gestión de Negocio',
-    desc:     'Inventarios, ventas, producción y control operacional de la panadería.',
-    port:     3001,
-    health:   'http://127.0.0.1:3001/api/health',
-    dashboard:'http://127.0.0.1:3001',
-    icon:     '🥖',
-    color:    'var(--accent-green)',
-    pollId:   POLL_ID_PANADERIA,
-    metrics: [
-      { key: 'ventas',      label: 'Ventas hoy',       path: ['sales_today', 'total'] },
-      { key: 'inventario',  label: 'Items inventario',  path: ['inventory', 'items'] },
-      { key: 'alertas',     label: 'Alertas activas',   path: ['alerts', 'active'] },
+  panaderia: {
+    id:        'panaderia',
+    name:      'Rauli Panadería',
+    shortName: 'Panadería',
+    role:      'Brazo Operativo',
+    icon:      '🥖',
+    color:     'var(--accent-green)',
+    base:      'http://127.0.0.1:3001',
+    health:    'http://127.0.0.1:3001/api/health',
+    pollId:    POLL_PANADERIA,
+    navLinks: [
+      { label: 'Dashboard',    path: '/' },
+      { label: 'Inventario',   path: '/inventory' },
+      { label: 'Ventas',       path: '/sales' },
+      { label: 'Producción',   path: '/production' },
+      { label: 'Sentinel',     path: '/sentinel' },
+      { label: 'Reportes',     path: '/reports' },
+      { label: 'Empleados',    path: '/employees' },
+    ],
+    govEndpoints: [
+      { label: 'Sentinel status',   url: 'http://127.0.0.1:3001/api/sentinel/status',          method: 'GET', id: 'pan-sentinel' },
+      { label: 'Alertas activas',   url: 'http://127.0.0.1:3001/api/sentinel/alerts',           method: 'GET', id: 'pan-alerts' },
+      { label: 'Métricas',          url: 'http://127.0.0.1:3001/api/sentinel/metrics',          method: 'GET', id: 'pan-metrics' },
+      { label: 'Ventas hoy',        url: 'http://127.0.0.1:3001/api/sales/today',               method: 'GET', id: 'pan-sales' },
+      { label: 'Inventario resumen',url: 'http://127.0.0.1:3001/api/inventory/summary',         method: 'GET', id: 'pan-inv' },
+      { label: 'Lotes por vencer',  url: 'http://127.0.0.1:3001/api/inventory/lots/expiring',   method: 'GET', id: 'pan-exp' },
+      { label: 'Órdenes prod.',     url: 'http://127.0.0.1:3001/api/production/production-orders', method: 'GET', id: 'pan-prod' },
     ],
   },
-];
+};
 
 function _esc(s) { const d = document.createElement('span'); d.textContent = s ?? ''; return d.innerHTML; }
+
+let _activeApp   = 'panaderia';
+let _iframeReady = false;
 
 export default {
   id: 'apps',
   label: 'Mis Apps',
   icon: 'layers',
-  category: 'brazos',
 
   render(container) {
     container.innerHTML = `
-      <div class="module-view">
+      <div class="module-view" style="height:100%;display:flex;flex-direction:column">
+
+        <!-- HEADER -->
         <div class="module-header">
           <button class="back-btn" id="apps-back">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
             Dashboard
           </button>
-          <h2>Mis Apps — Brazos ATLAS</h2>
+          <h2>Mis Apps — Brazos</h2>
           <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+            <!-- Status pills -->
+            <div id="pill-vision"    class="live-badge" style="background:var(--surface-2);color:var(--text-muted);gap:5px;display:flex;align-items:center">
+              <div id="dot-vision"   style="width:7px;height:7px;border-radius:50%;background:var(--text-muted)"></div>Vision
+            </div>
+            <div id="pill-panaderia" class="live-badge" style="background:var(--surface-2);color:var(--text-muted);gap:5px;display:flex;align-items:center">
+              <div id="dot-panaderia" style="width:7px;height:7px;border-radius:50%;background:var(--text-muted)"></div>Panadería
+            </div>
             <span class="live-badge">LIVE</span>
           </div>
         </div>
 
-        <div class="module-body">
+        <!-- TABS SELECTORES -->
+        <div style="display:flex;gap:0;border-bottom:1px solid var(--border-subtle);flex-shrink:0;padding:0 20px">
+          ${Object.values(APPS).map(a => `
+            <button class="apps-tab" data-tab="${a.id}"
+              style="padding:10px 20px;border:none;background:none;color:var(--text-muted);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;gap:7px;transition:all .15s">
+              <span>${a.icon}</span> ${_esc(a.name)}
+              <span id="tab-status-${a.id}" style="font-size:10px;opacity:.6"></span>
+            </button>
+          `).join('')}
+        </div>
 
-          <!-- Intro -->
-          <div style="background:var(--surface-1);border:1px solid var(--border-subtle);border-radius:12px;padding:16px;margin-bottom:24px;display:flex;align-items:center;gap:14px">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/><path d="M2 12h3M19 12h3M12 2v3M12 19v3"/></svg>
-            <div>
-              <div style="font-size:13px;font-weight:600;color:var(--text-primary)">Brazos Subordinados</div>
-              <div style="font-size:12px;color:var(--text-muted);margin-top:2px">
-                Los brazos operan de forma independiente. ATLAS actúa como único intermediario — nunca se comunican entre sí directamente.
-              </div>
+        <!-- SPLIT PANE -->
+        <div style="flex:1;display:flex;overflow:hidden;min-height:0">
+
+          <!-- SIDEBAR DE GOBIERNO -->
+          <div id="apps-sidebar"
+               style="width:280px;flex-shrink:0;border-right:1px solid var(--border-subtle);overflow-y:auto;display:flex;flex-direction:column;background:var(--surface-0)">
+
+            <!-- Bloque de estado rápido -->
+            <div id="sidebar-status" style="padding:14px 16px;border-bottom:1px solid var(--border-subtle)">
+              <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-bottom:8px">ESTADO</div>
+              <div id="sidebar-health-row" style="font-size:12px;color:var(--text-muted)">Verificando...</div>
+              <div id="sidebar-latency"    style="font-size:10px;color:var(--text-muted);margin-top:3px"></div>
+              <div id="sidebar-uptime"     style="font-size:10px;color:var(--text-muted);margin-top:2px"></div>
+            </div>
+
+            <!-- Navegación dentro del iframe -->
+            <div style="padding:12px 16px;border-bottom:1px solid var(--border-subtle)">
+              <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-bottom:8px">NAVEGACIÓN</div>
+              <div id="sidebar-nav" style="display:flex;flex-direction:column;gap:4px"></div>
+            </div>
+
+            <!-- Panel de gobierno / datos -->
+            <div style="padding:12px 16px;flex:1">
+              <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-bottom:8px">GOBIERNO</div>
+              <div id="sidebar-gov" style="display:flex;flex-direction:column;gap:6px"></div>
+            </div>
+
+            <!-- Pie del sidebar -->
+            <div style="padding:12px 16px;border-top:1px solid var(--border-subtle);display:flex;flex-direction:column;gap:6px">
+              <button class="action-btn primary" id="btn-open-external" style="justify-content:center;width:100%">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                Abrir en pestaña
+              </button>
+              <button class="action-btn" id="btn-reload-iframe" style="justify-content:center;width:100%">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                Recargar frame
+              </button>
             </div>
           </div>
 
-          <!-- Tarjetas de apps -->
-          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));gap:20px">
-            ${APPS.map(app => `
-              <div class="apps-card" id="card-${app.id}" style="background:var(--surface-1);border:1px solid var(--border-subtle);border-radius:16px;overflow:hidden">
-
-                <!-- Header de la tarjeta -->
-                <div style="background:var(--surface-0);padding:18px 20px;border-bottom:1px solid var(--border-subtle);display:flex;align-items:center;gap:14px">
-                  <div style="font-size:36px;line-height:1">${app.icon}</div>
-                  <div style="flex:1;min-width:0">
-                    <div style="font-size:15px;font-weight:700;color:var(--text-primary)">${_esc(app.name)}</div>
-                    <div style="font-size:11px;color:${app.color};font-weight:500;margin-top:2px">${_esc(app.role)}</div>
-                    <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${_esc(app.desc)}</div>
-                  </div>
-                  <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
-                    <div id="status-dot-${app.id}" style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-muted)">
-                      <div style="width:8px;height:8px;border-radius:50%;background:var(--text-muted)"></div>
-                      Verificando...
-                    </div>
-                    <div id="latency-${app.id}" style="font-size:10px;color:var(--text-muted)"></div>
-                  </div>
-                </div>
-
-                <!-- KPIs -->
-                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border-subtle)">
-                  ${app.metrics.map(m => `
-                    <div style="background:var(--surface-1);padding:12px 14px">
-                      <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">${_esc(m.label)}</div>
-                      <div id="metric-${app.id}-${m.key}" style="font-size:18px;font-weight:700;color:var(--text-primary)">--</div>
-                    </div>
-                  `).join('')}
-                </div>
-
-                <!-- Info técnica -->
-                <div style="padding:12px 20px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border-subtle)">
-                  <div style="font-size:11px;color:var(--text-muted)">
-                    Puerto: <code style="color:${app.color};font-size:11px">:${app.port}</code>
-                    &nbsp;·&nbsp;
-                    Health: <code style="font-size:10px;opacity:.7">:${app.port}/api/health</code>
-                  </div>
-                  <div id="uptime-${app.id}" style="font-size:11px;color:var(--text-muted)"></div>
-                </div>
-
-                <!-- Acciones -->
-                <div style="padding:14px 20px 18px;display:flex;gap:8px;flex-wrap:wrap">
-                  <button class="action-btn primary" data-open="${app.dashboard}" style="flex:1;justify-content:center">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                    Abrir Dashboard
-                  </button>
-                  <button class="action-btn" data-refresh="${app.id}" style="min-width:36px;padding:0 10px" title="Actualizar estado">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-                  </button>
-                  <button class="action-btn" data-proxy="${app.id}" style="min-width:36px;padding:0 10px" title="Ver via proxy ATLAS">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>
-                  </button>
-                </div>
-
-                <!-- Raw JSON colapsable -->
-                <details style="border-top:1px solid var(--border-subtle)">
-                  <summary style="padding:10px 20px;font-size:11px;color:var(--text-muted);cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-                    Respuesta health raw
-                  </summary>
-                  <pre id="raw-${app.id}" style="margin:0;padding:12px 20px 16px;font-size:10px;color:var(--text-muted);overflow-x:auto;max-height:180px;overflow-y:auto;background:var(--surface-0)"></pre>
-                </details>
-              </div>
-            `).join('')}
-          </div>
-
-          <!-- Panel de comunicación ATLAS -->
-          <div style="margin-top:28px">
-            <div class="section-title">Comunicación vía ATLAS</div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-top:10px">
-              <div class="stat-card" style="cursor:pointer" onclick="location.hash='/vision'">
-                <div class="stat-card-label">Módulo Visión</div>
-                <div class="stat-card-value" style="font-size:13px">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                  → /vision
-                </div>
-              </div>
-              <div class="stat-card" style="cursor:pointer" onclick="location.hash='/autonomy'">
-                <div class="stat-card-label">Cortex Orchestrator</div>
-                <div class="stat-card-value" style="font-size:13px">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/></svg>
-                  → /autonomy
-                </div>
-              </div>
-              <div class="stat-card" style="cursor:pointer" onclick="location.hash='/modules'">
-                <div class="stat-card-label">Estado Brazos (Cuerpo)</div>
-                <div class="stat-card-value" style="font-size:13px">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                  → /modules
-                </div>
-              </div>
-              <div class="stat-card" style="cursor:pointer" onclick="location.hash='/chat'">
-                <div class="stat-card-label">Enviar comando al cerebro</div>
-                <div class="stat-card-value" style="font-size:13px">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-                  → /chat
-                </div>
-              </div>
+          <!-- IFRAME CONTAINER -->
+          <div style="flex:1;position:relative;background:var(--surface-0);display:flex;flex-direction:column;min-width:0">
+            <!-- URL bar -->
+            <div id="iframe-urlbar"
+                 style="padding:6px 12px;border-bottom:1px solid var(--border-subtle);font-size:11px;color:var(--text-muted);font-family:monospace;background:var(--surface-1);flex-shrink:0;display:flex;align-items:center;gap:8px;overflow:hidden">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+              <span id="iframe-url-text" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Cargando...</span>
             </div>
+            <!-- Aviso X-Frame-Options -->
+            <div id="iframe-blocked-msg"
+                 style="display:none;position:absolute;inset:40px 0 0 0;background:var(--surface-0);z-index:5;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;text-align:center;padding:32px">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--accent-yellow,#f59e0b)" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <div style="font-size:14px;font-weight:600;color:var(--text-primary)">Dashboard bloqueado por CORS / X-Frame-Options</div>
+              <div style="font-size:12px;color:var(--text-muted);max-width:400px">
+                El navegador impide mostrar esta app en un iframe desde otro origen.<br>
+                Usa <b>Abrir en pestaña</b> para acceder al dashboard directamente.
+              </div>
+              <button class="action-btn primary" id="blocked-open-btn" style="margin-top:8px">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                Abrir en pestaña nueva
+              </button>
+            </div>
+            <iframe id="apps-iframe"
+                    style="flex:1;border:none;width:100%;height:100%"
+                    title="Dashboard integrado"
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation">
+            </iframe>
           </div>
 
         </div>
       </div>
+
+      <style>
+        .apps-tab { transition: color .15s, border-color .15s; }
+        .apps-tab:hover { color: var(--text-primary); }
+        .apps-tab.active { color: var(--accent-primary); border-bottom-color: var(--accent-primary) !important; }
+        .apps-tab.active span:first-child { opacity:1; }
+        .sidebar-nav-btn {
+          width: 100%; text-align: left; padding: 7px 10px; border-radius: 7px;
+          border: none; background: none; color: var(--text-muted); font-size: 12px;
+          cursor: pointer; transition: background .12s, color .12s; display: flex; align-items: center; gap: 7px;
+        }
+        .sidebar-nav-btn:hover { background: var(--surface-2); color: var(--text-primary); }
+        .sidebar-nav-btn.active { background: rgba(var(--accent-primary-rgb,0,200,200),.12); color: var(--accent-primary); }
+        .gov-card {
+          background: var(--surface-1); border: 1px solid var(--border-subtle);
+          border-radius: 9px; padding: 10px 12px; cursor: pointer; transition: border-color .15s;
+        }
+        .gov-card:hover { border-color: var(--accent-primary); }
+        .gov-card-label { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
+        .gov-card-value { font-size: 13px; font-weight: 600; color: var(--text-primary); word-break:break-all }
+        .gov-card-value.ok    { color: var(--accent-green); }
+        .gov-card-value.error { color: var(--accent-red); }
+        .gov-card-value.warn  { color: #f59e0b; }
+      </style>
     `;
+
+    const iframe   = container.querySelector('#apps-iframe');
+    const urlText  = container.querySelector('#iframe-url-text');
+    const blockedMsg = container.querySelector('#iframe-blocked-msg');
 
     container.querySelector('#apps-back')?.addEventListener('click', () => { location.hash = '/'; });
 
-    // Botones abrir dashboard
-    container.querySelectorAll('[data-open]').forEach(btn => {
-      btn.addEventListener('click', () => window.open(btn.dataset.open, '_blank'));
+    // Detectar si el iframe fue bloqueado
+    iframe.addEventListener('load', () => {
+      try {
+        const url = iframe.contentWindow?.location?.href || '';
+        if (urlText) urlText.textContent = url || iframe.src;
+      } catch {
+        // cross-origin load — el brazo está vivo pero bloqueó iframe
+        if (urlText) urlText.textContent = iframe.src;
+      }
     });
 
-    // Botones refresh manual
-    container.querySelectorAll('[data-refresh]').forEach(btn => {
-      btn.addEventListener('click', () => _checkHealth(btn.dataset.refresh, container));
+    // Botones de pie del sidebar
+    container.querySelector('#btn-open-external')?.addEventListener('click', () => {
+      const app = APPS[_activeApp];
+      if (app) window.open(iframe.src || app.base, '_blank');
+    });
+    container.querySelector('#btn-reload-iframe')?.addEventListener('click', () => {
+      if (iframe.src) { const s = iframe.src; iframe.src = ''; iframe.src = s; }
+    });
+    container.querySelector('#blocked-open-btn')?.addEventListener('click', () => {
+      const app = APPS[_activeApp]; if (app) window.open(app.base, '_blank');
     });
 
-    // Botones proxy (abre ruta relativa del brazo via ATLAS si existe)
-    container.querySelectorAll('[data-proxy]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const id = btn.dataset.proxy;
-        const app = APPS.find(a => a.id === id);
-        if (app) window.open(app.dashboard, '_blank');
-      });
+    // Tabs
+    container.querySelectorAll('.apps-tab').forEach(tab => {
+      tab.addEventListener('click', () => _switchApp(tab.dataset.tab, container, iframe, urlText));
     });
 
-    // Carga inicial y polling para ambos brazos
-    APPS.forEach(app => {
-      _checkHealth(app.id, container);
-      poll(app.pollId, null, 20000, () => _checkHealth(app.id, container));
+    // Polling de health para los dos brazos
+    Object.values(APPS).forEach(app => {
+      _checkHealth(app, container);
+      poll(app.pollId, null, 20000, () => _checkHealth(app, container));
     });
+
+    // Cargar app activa por defecto
+    _switchApp(_activeApp, container, iframe, urlText);
   },
 
   destroy() {
-    APPS.forEach(app => stop(app.pollId));
+    Object.values(APPS).forEach(app => stop(app.pollId));
   },
 };
 
-/* ─── Health check ────────────────────────────────────────────────────── */
+/* ─── Cambiar app activa ─────────────────────────────────────────────── */
 
-async function _checkHealth(appId, container) {
-  const app = APPS.find(a => a.id === appId);
+function _switchApp(appId, container, iframe, urlText) {
+  const app = APPS[appId];
   if (!app) return;
+  _activeApp = appId;
 
-  const dotEl    = container.querySelector(`#status-dot-${appId}`);
-  const latEl    = container.querySelector(`#latency-${appId}`);
-  const rawEl    = container.querySelector(`#raw-${appId}`);
-  const uptimeEl = container.querySelector(`#uptime-${appId}`);
+  // Tabs UI
+  container.querySelectorAll('.apps-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === appId);
+  });
+
+  // Sidebar: Navegación
+  const navEl = container.querySelector('#sidebar-nav');
+  if (navEl) {
+    navEl.innerHTML = app.navLinks.map((l, i) => `
+      <button class="sidebar-nav-btn${i === 0 ? ' active' : ''}" data-nav-path="${_esc(l.path)}">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        ${_esc(l.label)}
+      </button>
+    `).join('');
+
+    navEl.querySelectorAll('.sidebar-nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        navEl.querySelectorAll('.sidebar-nav-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const url = app.base + btn.dataset.navPath;
+        iframe.src = url;
+        if (urlText) urlText.textContent = url;
+      });
+    });
+  }
+
+  // Sidebar: Gobierno (gov endpoints)
+  const govEl = container.querySelector('#sidebar-gov');
+  if (govEl) {
+    govEl.innerHTML = app.govEndpoints.map(ep => `
+      <div class="gov-card" data-ep-id="${ep.id}">
+        <div class="gov-card-label">${_esc(ep.label)}</div>
+        <div class="gov-card-value" id="gov-val-${ep.id}">
+          <span style="opacity:.5;font-size:11px">Cargando...</span>
+        </div>
+      </div>
+    `).join('');
+
+    // Click en gov card → navega el iframe a la sección correspondiente
+    govEl.querySelectorAll('.gov-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const ep = app.govEndpoints.find(e => e.id === card.dataset.epId);
+        if (!ep) return;
+        // Navegar iframe a la sección relevante
+        const sectionMap = {
+          'pan-sentinel': '/sentinel',
+          'pan-alerts':   '/sentinel',
+          'pan-metrics':  '/sentinel',
+          'pan-sales':    '/sales',
+          'pan-inv':      '/inventory',
+          'pan-exp':      '/inventory/lots',
+          'pan-prod':     '/production',
+          'vision-health':'/',
+          'vision-chat':  '/?tab=chat',
+        };
+        const path = sectionMap[ep.id] || '/';
+        const url  = app.base + path;
+        iframe.src = url;
+        if (urlText) urlText.textContent = url;
+        if (navEl) navEl.querySelectorAll('.sidebar-nav-btn').forEach(b => b.classList.remove('active'));
+      });
+    });
+
+    // Fetch gov endpoint data
+    app.govEndpoints.forEach(ep => _fetchGovEndpoint(ep, container));
+  }
+
+  // Cargar iframe
+  const url = app.base + '/';
+  iframe.src = url;
+  if (urlText) urlText.textContent = url;
+}
+
+/* ─── Fetch gobierno endpoint ────────────────────────────────────────── */
+
+async function _fetchGovEndpoint(ep, container) {
+  const el = container.querySelector(`#gov-val-${ep.id}`);
+  if (!el) return;
+  try {
+    const r = await fetch(ep.url, { method: ep.method, signal: AbortSignal.timeout(5000) });
+    const d = await r.json().catch(() => null);
+
+    if (r.status === 401 || r.status === 403) {
+      el.innerHTML = `<span style="font-size:11px;color:var(--accent-yellow,#f59e0b)">⚠ Iniciar sesión en el brazo</span>`;
+      return;
+    }
+
+    if (!r.ok) {
+      el.innerHTML = `<span class="gov-card-value error" style="font-size:11px">Error ${r.status}</span>`;
+      return;
+    }
+
+    const summary = _summarizeGovData(ep.id, d);
+    el.innerHTML = summary;
+
+  } catch (e) {
+    el.innerHTML = `<span style="font-size:10px;color:var(--text-muted)">Sin respuesta</span>`;
+  }
+}
+
+function _summarizeGovData(id, d) {
+  function esc(s) { const el = document.createElement('span'); el.textContent = String(s ?? ''); return el.innerHTML; }
+
+  if (!d) return '<span style="font-size:11px;color:var(--text-muted)">Sin datos</span>';
+
+  if (id === 'pan-sentinel') {
+    const st = d?.status || d?.data?.status || d?.data?.sentinel_status || 'unknown';
+    const cls = st === 'ok' ? 'ok' : st === 'warn' ? 'warn' : 'error';
+    return `<span class="gov-card-value ${cls}">${esc(st.toUpperCase())}</span>`;
+  }
+  if (id === 'pan-alerts') {
+    const arr = d?.alerts || d?.data?.alerts || d?.items || (Array.isArray(d) ? d : []);
+    const count = arr.length;
+    const cls = count === 0 ? 'ok' : count < 3 ? 'warn' : 'error';
+    return `<span class="gov-card-value ${cls}">${esc(count)} alerta${count !== 1 ? 's' : ''}</span>
+      ${arr.slice(0,2).map(a => `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">${esc(a.message || a.type || a.id || '')}</div>`).join('')}`;
+  }
+  if (id === 'pan-metrics') {
+    const data = d?.data || d;
+    const keys = Object.keys(data).slice(0, 3);
+    return keys.map(k => `<div style="font-size:10px;margin-top:1px"><span style="color:var(--text-muted)">${esc(k)}:</span> ${esc(data[k])}</div>`).join('') || '<span style="font-size:11px;color:var(--text-muted)">Sin métricas</span>';
+  }
+  if (id === 'pan-sales') {
+    const total = d?.total || d?.data?.total || d?.data?.amount || d?.amount;
+    const count = d?.count || d?.data?.count || d?.data?.orders;
+    return `<span class="gov-card-value ok">${total !== undefined ? `$${esc(total)}` : '--'}</span>
+      ${count !== undefined ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">${esc(count)} pedidos</div>` : ''}`;
+  }
+  if (id === 'pan-inv') {
+    const items = d?.items || d?.data?.items || d?.total_products;
+    const val   = d?.total_value || d?.data?.total_value;
+    return `<span class="gov-card-value">${items !== undefined ? `${esc(items)} items` : '--'}</span>
+      ${val !== undefined ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">Valor: $${esc(val)}</div>` : ''}`;
+  }
+  if (id === 'pan-exp') {
+    const arr = d?.lots || d?.data?.lots || d?.items || (Array.isArray(d) ? d : []);
+    const cls = arr.length === 0 ? 'ok' : 'warn';
+    return `<span class="gov-card-value ${cls}">${esc(arr.length)} lote${arr.length !== 1 ? 's' : ''}</span>
+      ${arr.slice(0,2).map(l => `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">${esc(l.product_name || l.name || l.id || '')}</div>`).join('')}`;
+  }
+  if (id === 'pan-prod') {
+    const arr = d?.orders || d?.data?.orders || d?.items || (Array.isArray(d) ? d : []);
+    const pending = arr.filter(o => o.status === 'pending' || o.status === 'in_progress').length;
+    return `<span class="gov-card-value">${esc(arr.length)} total</span>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:2px">${esc(pending)} en proceso</div>`;
+  }
+  if (id === 'vision-health') {
+    const proxy  = d?.proxy  || d?.status || 'ok';
+    const espejo = d?.espejo || 'unknown';
+    const cache  = d?.cache_entries ?? d?.cache ?? '--';
+    return `<span class="gov-card-value ok">Proxy: ${esc(proxy)}</span>
+      <div style="font-size:10px;color:var(--text-muted);margin-top:2px">Espejo: ${esc(espejo)}</div>
+      <div style="font-size:10px;color:var(--text-muted)">Caché: ${esc(cache)} entradas</div>`;
+  }
+  if (id === 'vision-chat') {
+    const arr = d?.items || d?.messages || (Array.isArray(d) ? d : []);
+    return `<span class="gov-card-value">${esc(arr.length)} mensajes</span>
+      ${arr.slice(0,2).map(m => `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">[${esc(m.role || '?')}] ${esc((m.preview || m.content || '').slice(0,40))}</div>`).join('')}`;
+  }
+  // fallback genérico
+  return `<span style="font-size:10px;color:var(--text-muted)">${JSON.stringify(d).slice(0,60)}</span>`;
+}
+
+/* ─── Health check (pills de header + sidebar status) ───────────────── */
+
+async function _checkHealth(app, container) {
+  const dot  = container.querySelector(`#dot-${app.id}`);
+  const pill = container.querySelector(`#pill-${app.id}`);
+  const tabSt= container.querySelector(`#tab-status-${app.id}`);
 
   const t0 = performance.now();
   try {
     const r  = await fetch(app.health, { signal: AbortSignal.timeout(5000) });
     const ms = Math.round(performance.now() - t0);
     const d  = await r.json().catch(() => ({}));
+    const ok = r.ok && (d.ok !== false) && (d.status !== 'error');
 
-    const ok = r.ok && (d.ok !== false);
+    const color = ok ? 'var(--accent-green)' : 'var(--accent-red)';
+    if (dot)  dot.style.background = color;
+    if (pill) { pill.style.background = ok ? 'rgba(0,200,100,.15)' : 'rgba(255,60,60,.15)'; pill.style.color = color; }
+    if (tabSt) tabSt.textContent = ok ? `${ms}ms` : 'Offline';
 
-    if (dotEl) dotEl.innerHTML = `
-      <div style="width:8px;height:8px;border-radius:50%;background:${ok ? 'var(--accent-green)' : 'var(--accent-red)'}"></div>
-      <span style="color:${ok ? 'var(--accent-green)' : 'var(--accent-red)'};font-weight:500">${ok ? 'Online' : 'Offline'}</span>`;
+    // Si es el brazo activo, actualizar sidebar status
+    if (app.id === _activeApp) {
+      const healthRow = container.querySelector('#sidebar-health-row');
+      const latRow    = container.querySelector('#sidebar-latency');
+      const uptRow    = container.querySelector('#sidebar-uptime');
+      if (healthRow) healthRow.innerHTML = `<span style="color:${color};font-weight:600">${ok ? '● Online' : '● Offline'}</span>`;
+      if (latRow)    latRow.textContent = `Latencia: ${ms} ms`;
+      if (uptRow)    uptRow.textContent = d.uptime ? `Uptime: ${d.uptime}` : '';
+    }
 
-    if (latEl) latEl.textContent = `${ms} ms`;
-
-    // Fill metrics
-    app.metrics.forEach(m => {
-      const el = container.querySelector(`#metric-${appId}-${m.key}`);
-      if (!el) return;
-      let val = d;
-      for (const p of m.path) { val = val?.[p]; if (val === undefined) break; }
-      el.textContent = val !== undefined && val !== null ? String(val) : '--';
-      el.style.color = val !== undefined && val !== null ? 'var(--text-primary)' : 'var(--text-muted)';
-    });
-
-    // Uptime
-    const up = d.uptime || d.data?.uptime;
-    if (uptimeEl && up) uptimeEl.textContent = `Uptime: ${up}`;
-
-    if (rawEl) rawEl.textContent = JSON.stringify(d, null, 2);
-
-  } catch (e) {
+  } catch {
     const ms = Math.round(performance.now() - t0);
-    if (dotEl) dotEl.innerHTML = `
-      <div style="width:8px;height:8px;border-radius:50%;background:var(--accent-red)"></div>
-      <span style="color:var(--accent-red);font-weight:500">Sin respuesta</span>`;
-    if (latEl) latEl.textContent = `${ms} ms`;
-    if (rawEl) rawEl.textContent = e.message;
-    app.metrics.forEach(m => {
-      const el = container.querySelector(`#metric-${appId}-${m.key}`);
-      if (el) { el.textContent = '--'; el.style.color = 'var(--text-muted)'; }
-    });
+    if (dot)  dot.style.background = 'var(--accent-red)';
+    if (pill) { pill.style.background = 'rgba(255,60,60,.15)'; pill.style.color = 'var(--accent-red)'; }
+    if (tabSt) tabSt.textContent = 'Sin respuesta';
+    if (app.id === _activeApp) {
+      const healthRow = container.querySelector('#sidebar-health-row');
+      if (healthRow) healthRow.innerHTML = `<span style="color:var(--accent-red);font-weight:600">● Sin respuesta</span>`;
+    }
   }
 }
 
