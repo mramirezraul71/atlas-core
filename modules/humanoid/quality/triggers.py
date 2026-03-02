@@ -515,8 +515,28 @@ class TriggerEngine:
         self._worker_thread.start()
         _log.info("Trigger Engine started")
 
-        # Disparar trigger de startup
-        self._fire_trigger(self._registry.get("session_startup"))
+        # Disparar trigger de startup con retraso para evitar auto-repair prematuro
+        # mientras la API aún termina de inicializar.
+        startup_enabled = _env_bool("QUALITY_STARTUP_TRIGGER_ENABLED", False)
+        if not startup_enabled:
+            _log.info(
+                "Startup trigger disabled (QUALITY_STARTUP_TRIGGER_ENABLED=false)"
+            )
+            return
+
+        startup_delay = int(
+            os.getenv("QUALITY_STARTUP_TRIGGER_DELAY_SEC", "25") or "25"
+        )
+        if startup_delay <= 0:
+            self._fire_trigger(self._registry.get("session_startup"))
+            return
+
+        def _fire_startup_later() -> None:
+            if self._running:
+                self._fire_trigger(self._registry.get("session_startup"))
+
+        threading.Timer(startup_delay, _fire_startup_later).start()
+        _log.info("Startup trigger scheduled in %ss", startup_delay)
 
     def stop(self) -> None:
         """Detiene el engine."""

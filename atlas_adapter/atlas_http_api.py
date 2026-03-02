@@ -3324,8 +3324,25 @@ def api_kernel_event_bus_reset_errors(body: dict):
 
 
 @app.get("/health", tags=["Health"])
-def health():
-    """Health verificable: ok, score 0-100, checks (api_up, memory_writable, audit_writable, scheduler_alive, llm_reachable, avg_latency_ms, error_rate, active_port, version, channel), ms, error."""
+async def health():
+    """Health cheap: respuesta inmediata sin depender de servicios externos."""
+    try:
+        return {
+            "ok": True,
+            "service": "atlas_push",
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "pid": os.getpid(),
+            "version": os.getenv("ATLAS_VERSION")
+            or os.getenv("APP_VERSION")
+            or "unknown",
+        }
+    except Exception as e:
+        return {"ok": False, "service": "atlas_push", "error": str(e)}
+
+
+@app.get("/health/deep", tags=["Health"])
+async def health_deep():
+    """Health verificable completo con checks y score (costoso)."""
     try:
         from modules.humanoid.deploy.healthcheck import run_health_verbose
         from modules.humanoid.deploy.ports import get_ports

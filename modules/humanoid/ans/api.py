@@ -848,7 +848,8 @@ def workshop_reports(limit: int = 20):
 
 
 @router.get("/comms/status")
-def ans_comms_status():
+async def ans_comms_status():
+    return _build_comms_status(deep=False)
     """Estado completo del sistema de comunicación: Telegram, WhatsApp (WAHA), Audio.
 
     Incluye:
@@ -950,6 +951,139 @@ def ans_comms_status():
             result["channels"] = hub_health.get("channels", {})
     except Exception:
         pass
+
+    return result
+
+
+@router.get("/comms/status/deep")
+async def ans_comms_status_deep():
+    """Estado profundo (puede tardar más que /comms/status)."""
+    return _build_comms_status(deep=True)
+
+
+def _build_comms_status(deep: bool = False) -> dict:
+    import importlib.util
+    import os
+    import socket
+    import urllib.parse
+    import urllib.request
+
+    timeout_env = os.getenv("COMMS_STATUS_TIMEOUT_SEC", "0.8")
+    try:
+        timeout_sec = float(timeout_env)
+    except Exception:
+        timeout_sec = 0.8
+    if deep:
+        timeout_sec = max(1.0, min(timeout_sec, 5.0))
+    else:
+        timeout_sec = max(0.2, min(timeout_sec, 1.2))
+
+    result = {
+        "ok": True,
+        "mode": "deep" if deep else "cheap",
+        "timeout_sec": timeout_sec,
+        "channels": {},
+        "waha": {
+            "url": None,
+            "dashboard_url": None,
+            "status": "unknown",
+            "authenticated": False,
+            "session_name": None,
+        },
+        "telegram": {
+            "enabled": False,
+            "token_configured": False,
+            "chat_id_configured": False,
+        },
+        "audio": {
+            "enabled": False,
+            "engine": None,
+        },
+        "whatsapp": {
+            "connected": False,
+            "session": "default",
+            "phone": None,
+        },
+    }
+
+    waha_url = os.getenv("WAHA_API_URL", "http://localhost:3010")
+    waha_key = os.getenv("WAHA_API_KEY", "atlas123")
+    result["waha"]["url"] = waha_url
+    result["waha"]["dashboard_url"] = waha_url
+
+    # Evita latencia inicial por resolución de localhost en Windows.
+    probe_url = waha_url.replace("://localhost", "://127.0.0.1", 1)
+    parsed = urllib.parse.urlparse(probe_url)
+    host = parsed.hostname or "localhost"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    tcp_open = False
+    try:
+        with socket.create_connection((host, port), timeout=min(0.35, timeout_sec)):
+            tcp_open = True
+    except Exception:
+        result["waha"]["status"] = "unreachable"
+
+    if tcp_open:
+        try:
+            headers = {"X-Api-Key": waha_key}
+            req = urllib.request.Request(
+                f"{probe_url}/api/sessions/default", headers=headers
+            )
+            with urllib.request.urlopen(req, timeout=timeout_sec) as r:
+                data = json.loads(r.read().decode())
+            status = data.get("status", "unknown")
+            result["waha"]["status"] = status
+            result["waha"]["authenticated"] = status == "WORKING"
+            result["waha"]["session_name"] = data.get("name", "default")
+            result["whatsapp"]["connected"] = status == "WORKING"
+            result["whatsapp"]["session"] = data.get("name", "default")
+            me = data.get("me", {}) or {}
+            if me:
+                phone = str(me.get("id", "")).split("@")[0]
+                result["waha"]["phone"] = phone
+                result["waha"]["name"] = me.get("pushName", "")
+                result["whatsapp"]["phone"] = phone
+        except Exception as e:
+            result["waha"]["status"] = "error"
+            result["waha"]["error"] = str(e)[:100]
+
+    telegram_token = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TG_BOT_TOKEN")
+    telegram_chat = os.getenv("TELEGRAM_CHAT_ID") or os.getenv("TG_CHAT_ID")
+    result["telegram"]["enabled"] = bool(telegram_token)
+    result["telegram"]["token_configured"] = bool(telegram_token)
+    result["telegram"]["chat_id_configured"] = bool(telegram_chat)
+    result["telegram"]["configured"] = bool(telegram_token)
+    result["telegram"]["has_token"] = bool(telegram_token)
+    result["telegram"]["chat_id"] = telegram_chat[:6] + "..." if telegram_chat else None
+
+    if deep:
+        try:
+            import pyttsx3
+
+            pyttsx3.init()
+            result["audio"]["enabled"] = True
+            result["audio"]["available"] = True
+            result["audio"]["engine"] = "pyttsx3"
+        except Exception:
+            result["audio"]["enabled"] = False
+            result["audio"]["available"] = False
+            result["audio"]["engine"] = None
+    else:
+        has_tts = importlib.util.find_spec("pyttsx3") is not None
+        result["audio"]["enabled"] = has_tts
+        result["audio"]["available"] = has_tts
+        result["audio"]["engine"] = "pyttsx3" if has_tts else None
+
+    if deep:
+        try:
+            from modules.humanoid.comms.hub import get_hub
+
+            hub = get_hub()
+            if hub:
+                hub_health = hub.health()
+                result["channels"] = hub_health.get("channels", {})
+        except Exception:
+            pass
 
     return result
 
