@@ -105,11 +105,18 @@ async function main() {
   const timeoutMs = Number(args.timeout || 15000);
   const headless = String(args.headless || "true").toLowerCase() !== "false";
   const coreToken = args["core-token"] ? String(args["core-token"]) : "";
+  const allowGoverned = String(args["allow-governed"] || "false").toLowerCase() === "true";
   const cdp = args.cdp ? String(args.cdp) : "";
 
   try {
-    authorize(coreToken);
-    audit("ACTUATOR_VISION_START", { mode, target: target || "desktop", output: outputPath });
+    const auth = authorize(coreToken, { allowGoverned });
+    audit("ACTUATOR_VISION_START", {
+      mode,
+      target: target || "desktop",
+      output: outputPath,
+      governance_mode: auth.governance.mode,
+      full_autonomy: auth.governance.full_autonomy ? 1 : 0
+    });
 
     if (mode === "playwright") {
       await captureWithPlaywright(target, outputPath, timeoutMs, headless);
@@ -121,9 +128,20 @@ async function main() {
       throw new Error(`Unsupported mode: ${mode}`);
     }
 
-    audit("ACTUATOR_VISION_OK", { mode, output: outputPath });
+    audit("ACTUATOR_VISION_OK", {
+      mode,
+      output: outputPath,
+      governance_mode: auth.governance.mode
+    });
     process.stdout.write(
-      `${JSON.stringify({ ok: true, mode, output: outputPath, ts: new Date().toISOString() })}\n`
+      `${JSON.stringify({
+        ok: true,
+        mode,
+        output: outputPath,
+        ts: new Date().toISOString(),
+        governance_mode: auth.governance.mode,
+        full_autonomy: auth.governance.full_autonomy
+      })}\n`
     );
   } catch (error) {
     audit("ACTUATOR_VISION_ERR", { mode, error: error.message || String(error) });

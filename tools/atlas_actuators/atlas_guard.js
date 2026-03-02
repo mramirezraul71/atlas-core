@@ -6,6 +6,8 @@ const { repoRoot, audit } = require("./atlas_logger");
 const stateDir = path.join(repoRoot, "state", "atlas_actuators");
 const statePath = path.join(stateDir, "loop_guard.json");
 const rootEnvPath = path.join(repoRoot, ".env");
+const configEnvPath = path.join(repoRoot, "config", "atlas.env");
+const configEnvExamplePath = path.join(repoRoot, "config", "atlas.env.example");
 
 function getEnvFromFile(envPath, key) {
   if (!fs.existsSync(envPath)) return "";
@@ -21,23 +23,93 @@ function getEnvFromFile(envPath, key) {
   return "";
 }
 
-function readCoreToken() {
-  return process.env.ATLAS_CENTRAL_CORE || getEnvFromFile(rootEnvPath, "ATLAS_CENTRAL_CORE");
+function getConfigValue(key, fallback = "") {
+  return (
+    process.env[key] ||
+    getEnvFromFile(rootEnvPath, key) ||
+    getEnvFromFile(configEnvPath, key) ||
+    getEnvFromFile(configEnvExamplePath, key) ||
+    fallback
+  );
 }
 
-function authorize(coreTokenArg) {
+function normalizeMode(value) {
+  const mode = String(value || "").trim().toLowerCase();
+  if (mode === "grow") return "growth";
+  if (mode === "growth") return "growth";
+  if (mode === "governed") return "governed";
+  return "governed";
+}
+
+function isTruthy(value) {
+  const v = String(value || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+function isPlaceholderSecret(value) {
+  const v = String(value || "").trim().toUpperCase();
+  return !v || v.startsWith("CHANGE_ME") || v === "YOUR_TOKEN_HERE";
+}
+
+function getGovernanceContext() {
+  const mode = normalizeMode(getConfigValue("GOVERNANCE_MODE", "governed"));
+  const bind = isTruthy(getConfigValue("ATLAS_ACTUATORS_BIND_GOVERNANCE", "true"));
+  const allowGoverned = isTruthy(getConfigValue("ATLAS_ACTUATOR_ALLOW_GOVERNED", "false"));
+  const forceFullAutonomy = getConfigValue("ATLAS_ACTUATOR_FULL_AUTONOMY", "");
+  const fullAutonomy = forceFullAutonomy
+    ? isTruthy(forceFullAutonomy)
+    : mode === "growth";
+  return {
+    mode,
+    bind_governance: bind,
+    full_autonomy: fullAutonomy,
+    allow_governed: allowGoverned
+  };
+}
+
+function readCoreToken() {
+  const direct = getConfigValue("ATLAS_CENTRAL_CORE", "");
+  if (!isPlaceholderSecret(direct)) return direct;
+  const governanceSecret = getConfigValue("APPROVALS_CHAIN_SECRET", "");
+  if (!isPlaceholderSecret(governanceSecret)) return governanceSecret;
+  return "";
+}
+
+function authorize(coreTokenArg, options = {}) {
+  const governance = getGovernanceContext();
+  const allowGoverned = Boolean(options.allowGoverned || governance.allow_governed);
+  if (governance.bind_governance && governance.mode !== "growth" && !allowGoverned) {
+    throw new Error(
+      `Actuators blocked by governance mode=${governance.mode}. Switch to growth/grow or use --allow-governed.`
+    );
+  }
+
   const expected = readCoreToken();
   if (!expected) {
-    throw new Error("ATLAS_CENTRAL_CORE is missing (env or .env).");
+    if (governance.full_autonomy) {
+      return {
+        ok: true,
+        governance,
+        auth_mode: "governance_full_autonomy_no_token"
+      };
+    }
+    throw new Error("ATLAS_CENTRAL_CORE/APPROVALS_CHAIN_SECRET missing or placeholder.");
   }
-  const provided = coreTokenArg || process.env.ATLAS_CENTRAL_CORE;
+  let provided = coreTokenArg || process.env.ATLAS_CENTRAL_CORE;
+  if (!provided && governance.full_autonomy) {
+    provided = expected;
+  }
   if (!provided) {
     throw new Error("Missing --core-token and env token not available.");
   }
   if (provided !== expected) {
     throw new Error("Invalid ATLAS_CENTRAL_CORE token.");
   }
-  return true;
+  return {
+    ok: true,
+    governance,
+    auth_mode: "token"
+  };
 }
 
 function loadState() {
@@ -101,5 +173,6 @@ module.exports = {
   authorize,
   createActionKey,
   enforceLoopGuard,
-  readCoreToken
+  readCoreToken,
+  getGovernanceContext
 };

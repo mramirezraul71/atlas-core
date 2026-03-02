@@ -4,7 +4,11 @@ const crypto = require("crypto");
 const { chromium } = require("playwright");
 const puppeteer = require("puppeteer");
 const { audit, repoRoot } = require("./atlas_logger");
-const { authorize, createActionKey, enforceLoopGuard } = require("./atlas_guard");
+const {
+  authorize,
+  createActionKey,
+  enforceLoopGuard
+} = require("./atlas_guard");
 
 const ALLOWED_ACTIONS = new Set([
   "navigate",
@@ -156,14 +160,23 @@ async function main() {
   const engine = String(args.engine || "playwright").toLowerCase();
   const timeoutMs = Number(args.timeout || 15000);
   const maxActions = Number(args["max-actions"] || 20);
-  const dryRun = toBoolean(args["dry-run"], false);
+  const allowGoverned = toBoolean(args["allow-governed"], false);
   if (!target) throw new Error("Missing --target URL.");
   if (engine !== "playwright" && engine !== "puppeteer") {
     throw new Error("Engine must be 'playwright' or 'puppeteer'.");
   }
 
   try {
-    authorize(coreToken);
+    const auth = authorize(coreToken, { allowGoverned });
+    const dryRun =
+      args["dry-run"] !== undefined
+        ? toBoolean(args["dry-run"], false)
+        : !auth.governance.full_autonomy;
+    if (!auth.governance.full_autonomy && !dryRun) {
+      throw new Error(
+        `Full autonomy disabled in governance mode=${auth.governance.mode}; use --dry-run true or switch to growth.`
+      );
+    }
     const actions = normalizeActions(parseActions(args), maxActions);
     const actionHash = crypto.createHash("sha1").update(JSON.stringify(actions)).digest("hex");
     const actionKey = createActionKey({ target, engine, actionHash });
@@ -177,7 +190,9 @@ async function main() {
       engine,
       target,
       actions: actions.length,
-      dry_run: dryRun ? 1 : 0
+      dry_run: dryRun ? 1 : 0,
+      governance_mode: auth.governance.mode,
+      full_autonomy: auth.governance.full_autonomy ? 1 : 0
     });
 
     if (engine === "playwright") {
@@ -199,9 +214,17 @@ async function main() {
       engine,
       target,
       actions: actions.length,
-      dry_run: dryRun ? 1 : 0
+      dry_run: dryRun ? 1 : 0,
+      governance_mode: auth.governance.mode,
+      full_autonomy: auth.governance.full_autonomy ? 1 : 0
     });
-    process.stdout.write(`${JSON.stringify(result)}\n`);
+    process.stdout.write(
+      `${JSON.stringify({
+        ...result,
+        governance_mode: auth.governance.mode,
+        full_autonomy: auth.governance.full_autonomy
+      })}\n`
+    );
   } catch (error) {
     const message = error.message || String(error);
     persistLastRun({

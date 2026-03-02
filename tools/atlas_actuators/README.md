@@ -5,6 +5,12 @@ Infraestructura base de actuadores para ATLAS:
 - `atlas_action_trigger.js`: ejecucion de acciones web controladas por disparadores.
 - `atlas_actuator_healthcheck.js`: sanidad de dependencias + validacion `TASK_OK`.
 
+Gobernanza:
+- Vinculado a `GOVERNANCE_MODE` (`grow`/`growth` => autonomia completa).
+- En `governed`, los actuadores bloquean acciones reales salvo `--dry-run true` o `--allow-governed true`.
+- Token: usa `ATLAS_CENTRAL_CORE` y fallback a `APPROVALS_CHAIN_SECRET` (configuracion de gobernanza).
+- Si no hay token pero el modo es `growth`, permite ejecucion local en `full autonomy` (sin exponer secreto).
+
 ## Requisitos
 - Node.js 18+
 - Variable de entorno `ATLAS_CENTRAL_CORE`

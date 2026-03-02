@@ -24,8 +24,10 @@ if ($CoreToken) {
     $env:ATLAS_CENTRAL_CORE = $CoreToken
 }
 
-if (-not $env:ATLAS_CENTRAL_CORE) {
-    throw "ATLAS_CENTRAL_CORE no disponible. Pasa -CoreToken o exporta variable de entorno."
+if ($env:ATLAS_CENTRAL_CORE) {
+    Write-Snapshot "TOKEN_SOURCE=env:ATLAS_CENTRAL_CORE"
+} else {
+    Write-Snapshot "TOKEN_SOURCE=governance_config_fallback"
 }
 
 Write-Snapshot "START dir=$actuatorDir"
