@@ -89,12 +89,24 @@ function _esc(s) { const d = document.createElement('span'); d.textContent = s ?
 let _activeApp   = 'panaderia';
 let _iframeReady = false;
 
+// Lee el brazo desde la ruta: #/apps/vision → 'vision', #/apps/panaderia → 'panaderia'
+function _armFromHash() {
+  const hash = window.location.hash.slice(1); // ej: '/apps/vision'
+  const parts = hash.split('/');              // ['', 'apps', 'vision']
+  const arm = parts[2];
+  return (arm && APPS[arm]) ? arm : null;
+}
+
 export default {
   id: 'apps',
   label: 'Mis Apps',
   icon: 'layers',
 
   render(container) {
+    // Pre-seleccionar brazo desde hash (#/apps/vision o #/apps/panaderia)
+    const hashArm = _armFromHash();
+    if (hashArm) _activeApp = hashArm;
+
     container.innerHTML = `
       <div class="module-view" style="height:100%;display:flex;flex-direction:column">
 
@@ -544,7 +556,7 @@ async function _startArmFromAtlas(app, url, container, iframe, urlText) {
     }
 
     const launched = d.data?.launched || [];
-    _showSpinner(`${launched.length} proceso(s) iniciados. Esperando que el dashboard levante...`);
+    _showSpinner(`${launched.length} proceso(s) iniciados. Compilando con Vite (30–60 s primera vez)...`);
     _pollUntilReachable(app, url, container, iframe, urlText, 40, 3000);
 
   } catch (err) {

@@ -73,9 +73,9 @@ const MENU_ITEMS = [
   {
     category: 'Brazos',
     items: [
-      { id: 'mis-apps',        label: 'Mis Apps',          desc: 'Panel de brazos subordinados ATLAS',    icon: 'layers', route: '/apps' },
-      { id: 'rauli-vision',    label: 'Rauli Vision',      desc: 'Dashboard Brazo Sensorial (:3000)',     icon: 'eye',    href: 'http://127.0.0.1:3000' },
-      { id: 'rauli-panaderia', label: 'Rauli Panadería',   desc: 'Dashboard Brazo Operativo (:3001)',     icon: 'package', href: 'http://127.0.0.1:3001' },
+      { id: 'mis-apps',        label: 'Mis Apps',          desc: 'Panel de brazos subordinados ATLAS',    icon: 'layers',  route: '/apps' },
+      { id: 'rauli-vision',    label: 'Rauli Vision',      desc: 'Abrir Brazo Sensorial en ATLAS',        icon: 'eye',     route: '/apps/vision' },
+      { id: 'rauli-panaderia', label: 'Rauli Panadería',   desc: 'Abrir Brazo Operativo en ATLAS',        icon: 'package', route: '/apps/panaderia' },
     ]
   },
   {
