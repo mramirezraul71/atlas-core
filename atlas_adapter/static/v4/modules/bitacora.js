@@ -42,23 +42,29 @@ export default {
   category: 'monitoring',
 
   render(container) {
-    _activeFilter = 'all';
+    // Lee filtro inicial desde URL param: #/bitacora?f=error
+    const urlParam = new URLSearchParams(location.hash.split('?')[1] || '');
+    _activeFilter = urlParam.get('f') || 'all';
+
     container.innerHTML = `
       <div class="module-view">
         <div class="module-header">
           <button class="back-btn" onclick="location.hash='/'">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-            Inicio
+            Dashboard
           </button>
           <h2>Bitácora ANS</h2>
-          <div style="margin-left:auto"><span class="live-badge">LIVE</span></div>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+            ${_activeFilter !== 'all' ? `<span class="chip orange">Filtro: ${_activeFilter}</span>` : ''}
+            <span class="live-badge">LIVE</span>
+          </div>
         </div>
         <div class="module-body">
           <div class="action-bar" style="padding-top:0;margin-bottom:8px">
-            <button class="action-btn primary" id="f-all"  onclick="window._bitFilter('all')">Todo</button>
-            <button class="action-btn" id="f-info"  onclick="window._bitFilter('info')">Info</button>
-            <button class="action-btn" id="f-warn"  onclick="window._bitFilter('warn')">Warn</button>
-            <button class="action-btn" id="f-error" onclick="window._bitFilter('error')">Error</button>
+            <button class="action-btn ${_activeFilter === 'all'   ? 'primary' : ''}" id="f-all"  >Todo</button>
+            <button class="action-btn ${_activeFilter === 'info'  ? 'primary' : ''}" id="f-info" >Info</button>
+            <button class="action-btn ${_activeFilter === 'warn'  ? 'primary' : ''}" id="f-warn" >Warn</button>
+            <button class="action-btn ${_activeFilter === 'error' ? 'primary' : ''}" id="f-error">Error</button>
             <span class="chip" style="margin-left:auto" id="bit-count">-- entradas</span>
           </div>
           <div class="section-title">Actividad del Sistema</div>
@@ -69,15 +75,12 @@ export default {
       </div>
     `;
 
-    window._bitFilter = (f) => {
-      _activeFilter = f;
-      ['all','info','warn','error'].forEach(k => {
-        const btn = container.querySelector(`#f-${k}`);
-        if (btn) btn.className = 'action-btn' + (k === f ? ' primary' : '');
-      });
-      const list = container.querySelector('#bit-list');
-      if (list && list._data) _renderEntries(container, list._data);
-    };
+    // Botones de filtro (sin onclick inline para evitar globals)
+    ['all','info','warn','error'].forEach(f => {
+      container.querySelector(`#f-${f}`)?.addEventListener('click', () => _setFilter(f, container));
+    });
+
+    window._bitFilter = (f) => _setFilter(f, container);
 
     _fetchAndRender(container);
     poll(POLL_ID, '/ans/bitacora?limit=80', 5000, (data) => {
@@ -88,6 +91,16 @@ export default {
   destroy() { stop(POLL_ID); delete window._bitFilter; },
   badge() { return null; },
 };
+
+function _setFilter(f, container) {
+  _activeFilter = f;
+  ['all','info','warn','error'].forEach(k => {
+    const btn = container.querySelector(`#f-${k}`);
+    if (btn) btn.className = 'action-btn' + (k === f ? ' primary' : '');
+  });
+  const list = container.querySelector('#bit-list');
+  if (list && list._data) _renderEntries(container, list._data);
+}
 
 async function _fetchAndRender(container) {
   try {

@@ -1,57 +1,65 @@
 /**
- * ATLAS v4 — Mega Menu
- * Slide-in navigation organized by category. Extensible via manifest.
+ * ATLAS v4.2 — Mega Menu
+ * Menú lateral con categorías, sub-items y acceso directo a filtros.
+ * Estructura reagrupada: Núcleo / Actividad / Control / Integraciones / Sistema
  */
 import { get, set, on } from '../lib/state.js';
 import { navigate } from '../lib/router.js';
 
+// Items con soporte de `children` para sub-navegación
 const MENU_ITEMS = [
   {
-    category: 'AI & Tools',
+    category: 'Núcleo',
     items: [
-      { id: 'assistant', label: 'AI Assistant', desc: 'Panel operacional v3.8', icon: 'brain', href: '/v3' },
-      { id: 'workspace', label: 'Workspace', desc: 'Agent IDE interface', icon: 'terminal', href: '/workspace' },
-      { id: 'api', label: 'API Explorer', desc: 'Explorar endpoints en vivo', icon: 'code', route: '/api_explorer' },
+      { id: 'health',      label: 'System Health',  desc: 'Score, checks y recursos del sistema', icon: 'activity',  route: '/health' },
+      { id: 'api',         label: 'API Explorer',   desc: 'Explorar y probar endpoints en vivo',   icon: 'code',      route: '/api_explorer' },
     ]
   },
   {
-    category: 'Monitoring',
+    category: 'Actividad',
     items: [
-      { id: 'health', label: 'System Health', desc: 'Estado del sistema en tiempo real', icon: 'activity', route: '/health' },
-      { id: 'bitacora', label: 'Bitácora', desc: 'Registro de eventos del sistema', icon: 'file-text', route: '/bitacora' },
-      { id: 'audit', label: 'Audit Log', desc: 'Historial de auditoría', icon: 'file-text', route: '/audit' },
-      { id: 'events', label: 'Event Bus', desc: 'Eventos del bus en tiempo real', icon: 'zap', route: '/events' },
-      { id: 'healing', label: 'Auto-Healing', desc: 'Estado de auto-reparación ANS', icon: 'activity', route: '/healing' },
-      { id: 'memory', label: 'Memoria Cognitiva', desc: 'Episódica, semántica y de trabajo', icon: 'brain', route: '/memory' },
+      {
+        id: 'bitacora', label: 'Bitácora ANS', desc: 'Registro de eventos del sistema', icon: 'file-text', route: '/bitacora',
+        children: [
+          { label: 'Todos los eventos',   route: '/bitacora' },
+          { label: 'Solo errores',        route: '/bitacora?f=error' },
+          { label: 'Advertencias',        route: '/bitacora?f=warn' },
+          { label: 'Informativos',        route: '/bitacora?f=info' },
+        ]
+      },
+      { id: 'audit',    label: 'Audit Trail',   desc: 'Historial de auditoría del sistema',    icon: 'shield',      route: '/audit' },
+      { id: 'events',   label: 'Event Bus',     desc: 'Eventos del bus del kernel en vivo',    icon: 'zap',         route: '/events' },
+      { id: 'healing',  label: 'Auto-Healing',  desc: 'Historial de auto-reparación ANS',      icon: 'activity',    route: '/healing' },
     ]
   },
   {
-    category: 'Control',
+    category: 'Control & Autonomía',
     items: [
-      { id: 'autonomy', label: 'Autonomy', desc: 'Nivel de autonomía del sistema', icon: 'cpu', route: '/autonomy' },
-      { id: 'approvals', label: 'Approvals', desc: 'Flujos de aprobación pendientes', icon: 'shield', route: '/approvals' },
+      { id: 'autonomy',  label: 'Autonomy',      desc: 'Daemon ANS, tareas y modo de gobierno', icon: 'cpu',     route: '/autonomy' },
+      { id: 'approvals', label: 'Aprobaciones',  desc: 'Flujos de aprobación pendientes',       icon: 'shield',  route: '/approvals' },
+      { id: 'learning',  label: 'Aprendizaje',   desc: 'Motor de aprendizaje y patrones',       icon: 'trending-up', route: '/learning' },
     ]
   },
   {
-    category: 'Configuración',
+    category: 'Memoria & Datos',
     items: [
-      { id: 'config', label: 'Modelos AI', desc: 'Proveedores y claves de API', icon: 'sliders', route: '/config' },
-      { id: 'comms', label: 'Comunicaciones', desc: 'Email, Slack, webhooks', icon: 'message-circle', route: '/comms' },
-      { id: 'voice', label: 'Voz', desc: 'Interfaz de voz y TTS', icon: 'message-circle', route: '/voice' },
+      { id: 'memory',  label: 'Memoria Cognitiva', desc: 'Lifelog, World Model y Autobiográfica', icon: 'brain',    route: '/memory' },
+      { id: 'config',  label: 'Modelos AI',         desc: 'Proveedores, modelos y configuración',  icon: 'sliders', route: '/config' },
     ]
   },
   {
-    category: 'Apps',
+    category: 'Integraciones',
     items: [
-      { id: 'trading', label: 'Trading', desc: 'Panel de trading con IA (Grok)', icon: 'trending-up', route: '/trading', badge: 'Beta' },
-      { id: 'learning', label: 'Aprendizaje', desc: 'Motor de aprendizaje y patrones', icon: 'trending-up', route: '/learning' },
+      { id: 'comms',   label: 'Comunicaciones', desc: 'WhatsApp/WAHA, webhooks',       icon: 'message-circle', route: '/comms' },
+      { id: 'voice',   label: 'Voz / TTS',      desc: 'Motor de voz y síntesis',       icon: 'mic',            route: '/voice' },
+      { id: 'trading', label: 'Trading AI',     desc: 'Análisis de mercados con Grok', icon: 'trending-up',    route: '/trading', badge: 'Beta' },
     ]
   },
   {
-    category: 'Legacy',
+    category: 'Sistema',
     items: [
-      { id: 'ui-v3', label: 'Dashboard v3.8', desc: 'Panel operacional completo', icon: 'layout', href: '/v3' },
-      { id: 'update', label: 'Actualizar ATLAS', desc: 'Comprobar y aplicar actualizaciones', icon: 'zap', route: '/__update' },
+      { id: 'ui-v3',  label: 'Dashboard v3.8',    desc: 'Panel operacional completo legado', icon: 'layout', href: '/v3' },
+      { id: 'update', label: 'Actualizar ATLAS',   desc: 'Comprobar y aplicar actualizaciones', icon: 'zap', route: '/__update' },
     ]
   },
 ];
@@ -70,6 +78,8 @@ const ICONS = {
   sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>',
   'message-circle': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>',
   'trending-up': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>',
+  mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/></svg>',
+  chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>',
 };
 
 let _overlay = null;
@@ -86,49 +96,133 @@ export function mount(parent) {
   _menu.innerHTML = _buildHTML();
   parent.appendChild(_menu);
 
-  _menu.querySelectorAll('.megamenu-item').forEach(item => {
-    item.addEventListener('click', () => {
-      const route = item.dataset.route;
-      const href = item.dataset.href;
-      close();
-      if (href) window.open(href, '_blank');
-      else if (route) navigate(route);
-    });
+  _attachEvents();
+
+  on('menuOpen', isOpen => {
+    if (isOpen) { _overlay.classList.add('open'); _menu.classList.add('open'); }
+    else         { _overlay.classList.remove('open'); _menu.classList.remove('open'); }
   });
 
-  on('menuOpen', open => {
-    if (open) { _overlay.classList.add('open'); _menu.classList.add('open'); }
-    else { _overlay.classList.remove('open'); _menu.classList.remove('open'); }
-  });
+  // Marca el item activo en cada cambio de ruta
+  on('route', _updateActive);
+  _updateActive(get('route') || '/');
 }
 
 function _buildHTML() {
-  return MENU_ITEMS.map(cat => `
-    <div class="megamenu-category">
-      <div class="megamenu-category-label">${cat.category}</div>
-      ${cat.items.map(it => `
-        <div class="megamenu-item" data-id="${it.id}" ${it.route ? `data-route="${it.route}"` : ''} ${it.href ? `data-href="${it.href}"` : ''}>
+  return MENU_ITEMS.map(cat => {
+    const items = cat.items.map(it => {
+      const hasChildren = it.children?.length > 0;
+      return `
+        <div class="megamenu-item" data-id="${it.id}"
+          ${it.route ? `data-route="${it.route}"` : ''}
+          ${it.href  ? `data-href="${it.href}"`   : ''}
+          ${hasChildren ? 'data-has-children="1"' : ''}>
           <div class="megamenu-item-icon">${ICONS[it.icon] || ''}</div>
           <div class="megamenu-item-text">
             <div class="label">${it.label}</div>
             <div class="desc">${it.desc}</div>
           </div>
           ${it.badge ? `<span class="megamenu-item-badge">${it.badge}</span>` : ''}
+          ${hasChildren ? `<svg class="megamenu-item-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>` : ''}
         </div>
-      `).join('')}
-    </div>
-  `).join('<div class="megamenu-divider"></div>');
+        ${hasChildren ? `
+          <div class="megamenu-subitems" id="sub-${it.id}">
+            ${it.children.map(c => `
+              <div class="megamenu-subitem" data-route="${c.route}">
+                ${c.label}
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+      `;
+    }).join('');
+
+    return `
+      <div class="megamenu-category">
+        <div class="megamenu-category-label">${cat.category}</div>
+        ${items}
+      </div>
+    `;
+  }).join('<div class="megamenu-divider"></div>');
 }
 
-export function open() { set('menuOpen', true); }
-export function close() { set('menuOpen', false); }
+function _attachEvents() {
+  if (!_menu) return;
+
+  // Items principales
+  _menu.querySelectorAll('.megamenu-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const route    = item.dataset.route;
+      const href     = item.dataset.href;
+      const hasChild = item.dataset.hasChildren === '1';
+
+      if (hasChild) {
+        // Toggle sub-items
+        const id  = item.dataset.id;
+        const sub = document.getElementById(`sub-${id}`);
+        const expanded = item.classList.toggle('expanded');
+        if (sub) sub.classList.toggle('open', expanded);
+        return; // No navegar al hacer expand
+      }
+
+      close();
+      if (href)   window.open(href, '_blank');
+      else if (route) navigate(route);
+    });
+  });
+
+  // Sub-items
+  _menu.querySelectorAll('.megamenu-subitem').forEach(sub => {
+    sub.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const route = sub.dataset.route;
+      close();
+      if (route) navigate(route);
+    });
+  });
+}
+
+function _updateActive(currentRoute) {
+  if (!_menu) return;
+  const clean = (currentRoute || '/').split('?')[0];
+
+  _menu.querySelectorAll('.megamenu-item').forEach(item => {
+    const r = item.dataset.route;
+    const match = r && (r === clean || r === `/${clean.replace(/^\//, '')}`);
+    item.classList.toggle('active', !!match);
+  });
+
+  _menu.querySelectorAll('.megamenu-subitem').forEach(sub => {
+    // Activo si la ruta base coincide (ignora params)
+    const r = (sub.dataset.route || '').split('?')[0];
+    sub.classList.toggle('active', r === clean);
+  });
+
+  // Auto-expand el bloque padre si hay un sub-item activo
+  _menu.querySelectorAll('.megamenu-subitems').forEach(block => {
+    const hasActive = block.querySelector('.megamenu-subitem.active');
+    if (hasActive) {
+      block.classList.add('open');
+      const parentItem = block.previousElementSibling;
+      if (parentItem?.classList.contains('megamenu-item')) {
+        parentItem.classList.add('expanded');
+      }
+    }
+  });
+}
+
+export function open()   { set('menuOpen', true); }
+export function close()  { set('menuOpen', false); }
 export function toggle() { set('menuOpen', !get('menuOpen')); }
 
 export function addItem(category, item) {
   const cat = MENU_ITEMS.find(c => c.category === category);
   if (cat) cat.items.push(item);
   else MENU_ITEMS.push({ category, items: [item] });
-  if (_menu) _menu.innerHTML = _buildHTML();
+  if (_menu) {
+    _menu.innerHTML = _buildHTML();
+    _attachEvents();
+  }
 }
 
 window.AtlasMegaMenu = { mount, open, close, toggle, addItem };

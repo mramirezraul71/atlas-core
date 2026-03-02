@@ -248,8 +248,16 @@ function _handleRoute() {
         if (typeof cleanup === 'function') try { cleanup(); } catch {}
         try { mod.destroy?.(); } catch {}
       };
+      // Estandariza texto del botón back en todos los módulos
+      v.querySelectorAll('.back-btn').forEach(btn => {
+        const txt = btn.textContent.trim();
+        if (txt === 'Inicio' || txt === 'Home' || txt === '← Home') {
+          const svg = btn.querySelector('svg');
+          btn.innerHTML = (svg ? svg.outerHTML : '') + ' Dashboard';
+        }
+      });
     } catch (e) {
-      v.innerHTML = `<div class="module-view"><div class="module-header"><button class="back-btn" onclick="location.hash='/'">← Home</button><h2>Error</h2></div><div class="module-body"><p style="color:var(--accent-red)">${e.message}</p></div></div>`;
+      v.innerHTML = `<div class="module-view"><div class="module-header"><button class="back-btn" onclick="location.hash='/'">← Dashboard</button><h2>Error</h2></div><div class="module-body"><p style="color:var(--accent-red)">${_esc(e.message)}</p></div></div>`;
     }
     return;
   }
