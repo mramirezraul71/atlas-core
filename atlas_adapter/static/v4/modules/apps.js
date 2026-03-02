@@ -556,7 +556,7 @@ async function _startArmFromAtlas(app, url, container, iframe, urlText) {
     }
 
     const launched = d.data?.launched || [];
-    _showSpinner(`${launched.length} proceso(s) iniciados. Compilando con Vite (30–60 s primera vez)...`);
+    _showSpinner(`${launched.length} proceso(s) iniciados. Esperando que el servidor levante...`);
     _pollUntilReachable(app, url, container, iframe, urlText, 40, 3000);
 
   } catch (err) {

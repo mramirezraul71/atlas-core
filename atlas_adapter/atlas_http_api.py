@@ -13283,9 +13283,9 @@ _ARM_DEFS: dict = {
                 "cmd": "node server.js",
             },
             {
-                "label": "Frontend Vite",
+                "label": "Frontend",
                 "cwd": "_external/rauli-panaderia/frontend",
-                "cmd": "npm run dev -- --host --port 5173",
+                "cmd": "npm run preview -- --host --port 5173",
             },
         ],
     },
@@ -13300,7 +13300,7 @@ _ARM_DEFS: dict = {
             {
                 "label": "Dashboard",
                 "cwd": "_external/RAULI-VISION/dashboard",
-                "cmd": "npm run dev -- --host --port 5174",
+                "cmd": "npm run preview -- --host --port 5174",
             },
         ],
     },
