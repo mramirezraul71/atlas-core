@@ -288,7 +288,7 @@ async function _loadModules() {
     'health', 'modules', 'config', 'bitacora', 'memory', 'learning',
     'autonomy', 'healing', 'approvals', 'audit', 'comms',
     'events', 'api_explorer', 'voice', 'trading', 'body_module',
-    'tutorias', 'cognitive', 'vision', 'chat',
+    'tutorias', 'cognitive', 'vision', 'chat', 'apps',
   ];
   for (const name of MODULE_NAMES) {
     try {

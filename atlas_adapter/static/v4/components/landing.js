@@ -13,6 +13,7 @@ const SVG = {
   bitacora: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>',
   config: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>',
   trading: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>',
+  apps: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>',
   governance: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
   brain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 017 7c0 3-2 5-4 6v3h-6v-3c-2-1-4-3-4-6a7 7 0 017-7z"/><path d="M9 18h6M10 21h4"/></svg>',
 };
@@ -79,9 +80,9 @@ export function render(container) {
           <div class="app-tile-icon">${SVG.monitor}</div>
           <div class="app-tile-label">Monitor</div>
         </div>
-        <div class="app-tile" data-app="trading">
-          <div class="app-tile-icon">${SVG.trading}</div>
-          <div class="app-tile-label">Trading</div>
+        <div class="app-tile" data-app="mis-apps">
+          <div class="app-tile-icon">${SVG.apps}</div>
+          <div class="app-tile-label">Mis Apps</div>
         </div>
         <div class="app-tile" data-app="config-tile">
           <div class="app-tile-icon">${SVG.config}</div>
@@ -134,7 +135,7 @@ export function render(container) {
     'governance':   { hash: '/autonomy' },
     'approvals':    { hash: '/approvals' },
     'monitor':      { hash: '/health' },
-    'trading':      { hash: '/trading' },
+    'mis-apps':     { hash: '/apps' },
     'config-tile':  { hash: '/config' },
   };
 
