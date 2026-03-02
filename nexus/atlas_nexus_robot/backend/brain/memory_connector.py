@@ -1,6 +1,6 @@
-"""
-Workspace Memory Connector - Conexión entre Atlas Nexus y Unified Memory Cortex
-Permite que el workspace acceda y persista información en los sistemas de memoria de Atlas
+﻿"""
+Workspace Memory Connector - ConexiÃ³n entre Atlas Nexus y Unified Memory Cortex
+Permite que el workspace acceda y persista informaciÃ³n en los sistemas de memoria de Atlas
 """
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ class WorkspaceMemoryConnector:
     Conector entre Workspace y Unified Memory Cortex.
 
     Provee:
-    - Búsqueda unificada en memoria
+    - BÃºsqueda unificada en memoria
     - Almacenamiento de conversaciones
     - Contexto para acciones
     - Persistencia de resultados
@@ -50,8 +50,10 @@ class WorkspaceMemoryConnector:
     def __init__(self):
         self.memory_enabled = True
         self.chat_sessions: Dict[str, List[Dict]] = {}
-
-        print("✅ Workspace Memory Connector iniciado")
+        try:
+            print("Workspace Memory Connector iniciado")
+        except Exception:
+            pass
 
     def search_memory(
         self,
@@ -64,13 +66,13 @@ class WorkspaceMemoryConnector:
         Buscar en Unified Memory Cortex.
 
         Args:
-            query: Query de búsqueda
+            query: Query de bÃºsqueda
             memory_types: Tipos de memoria a consultar
-            limit: Límite de resultados
-            min_relevance: Relevancia mínima
+            limit: LÃ­mite de resultados
+            min_relevance: Relevancia mÃ­nima
 
         Returns:
-            Resultados de búsqueda
+            Resultados de bÃºsqueda
         """
         try:
             from modules.humanoid.cortex.unified_memory import \
@@ -141,7 +143,7 @@ class WorkspaceMemoryConnector:
         Args:
             message: Mensaje
             role: Rol (user/assistant/system)
-            session_id: ID de sesión
+            session_id: ID de sesiÃ³n
             context: Contexto adicional
 
         Returns:
@@ -162,7 +164,7 @@ class WorkspaceMemoryConnector:
             },
         )
 
-        # Mantener en memoria local para sesión activa
+        # Mantener en memoria local para sesiÃ³n activa
         if session_id not in self.chat_sessions:
             self.chat_sessions[session_id] = []
 
@@ -188,8 +190,8 @@ class WorkspaceMemoryConnector:
         Obtener historial de chat.
 
         Args:
-            session_id: ID de sesión
-            limit: Límite de mensajes
+            session_id: ID de sesiÃ³n
+            limit: LÃ­mite de mensajes
 
         Returns:
             Historial de chat
@@ -237,10 +239,10 @@ class WorkspaceMemoryConnector:
 
     def get_context_for_action(self, action: str, goal: str = "") -> Dict[str, Any]:
         """
-        Obtener contexto relevante para una acción.
+        Obtener contexto relevante para una acciÃ³n.
 
         Args:
-            action: Acción a realizar
+            action: AcciÃ³n a realizar
             goal: Objetivo principal
 
         Returns:
@@ -269,7 +271,7 @@ class WorkspaceMemoryConnector:
             context: Contexto adicional
 
         Returns:
-            Información de la cadena creada
+            InformaciÃ³n de la cadena creada
         """
         try:
             from modules.humanoid.orchestrator.langflow_orchestrator import \
@@ -300,7 +302,7 @@ class WorkspaceMemoryConnector:
             inputs: Inputs adicionales
 
         Returns:
-            Resultados de ejecución
+            Resultados de ejecuciÃ³n
         """
         try:
             from modules.humanoid.orchestrator.langflow_orchestrator import \
@@ -326,7 +328,7 @@ class WorkspaceMemoryConnector:
             }
 
     def get_memory_statistics(self) -> Dict[str, Any]:
-        """Obtener estadísticas de todos los sistemas de memoria."""
+        """Obtener estadÃ­sticas de todos los sistemas de memoria."""
         try:
             from modules.humanoid.cortex.unified_memory import \
                 get_unified_memory
@@ -335,15 +337,15 @@ class WorkspaceMemoryConnector:
             from modules.humanoid.orchestrator.langflow_orchestrator import \
                 get_langflow_orchestrator
 
-            # Estadísticas Unified Memory
+            # EstadÃ­sticas Unified Memory
             unified_memory = get_unified_memory()
             unified_stats = unified_memory.get_all_stats()
 
-            # Estadísticas ChromaDB
+            # EstadÃ­sticas ChromaDB
             chroma = get_chroma_memory()
             chroma_stats = chroma.get_statistics()
 
-            # Estadísticas LangFlow
+            # EstadÃ­sticas LangFlow
             orchestrator = get_langflow_orchestrator()
             langflow_stats = orchestrator.get_statistics()
 
@@ -423,7 +425,7 @@ async def get_chat_history(session_id: str, limit: int = 50):
 
 @memory_router.post("/context")
 async def get_context_for_action(action: str, goal: str = ""):
-    """Obtener contexto para acción."""
+    """Obtener contexto para acciÃ³n."""
     result = memory_connector.get_context_for_action(action, goal)
 
     if not result["success"]:
@@ -458,7 +460,7 @@ async def execute_task_chain(task_id: str, inputs: Dict[str, Any] = None):
 
 @memory_router.get("/statistics")
 async def get_memory_statistics():
-    """Obtener estadísticas de memoria."""
+    """Obtener estadÃ­sticas de memoria."""
     result = memory_connector.get_memory_statistics()
 
     if not result["success"]:
@@ -469,3 +471,5 @@ async def get_memory_statistics():
 
 # Exportar para uso en main.py
 __all__ = ["memory_router", "memory_connector"]
+
+

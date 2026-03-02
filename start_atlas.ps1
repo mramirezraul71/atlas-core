@@ -2,7 +2,7 @@
 cd C:\ATLAS_PUSH
 
 function Resolve-Python([string]$RepoRoot) {
-    if ($env:PYTHON -and (Test-Path $env:PYTHON)) { return $env:PYTHON }
+    if ($env:ATLAS_PYTHON -and (Test-Path $env:ATLAS_PYTHON)) { return $env:ATLAS_PYTHON }
     $candidates = @(
         (Join-Path $RepoRoot ".venv\Scripts\python.exe"),
         (Join-Path $RepoRoot "venv\Scripts\python.exe")
@@ -10,10 +10,16 @@ function Resolve-Python([string]$RepoRoot) {
     foreach ($c in $candidates) {
         if (Test-Path $c) { return $c }
     }
+    if ($env:PYTHON -and (Test-Path $env:PYTHON)) { return $env:PYTHON }
     return "python"
 }
 
 $PY = Resolve-Python -RepoRoot "C:\ATLAS_PUSH"
+$env:ATLAS_PYTHON = $PY
+$env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUTF8 = "1"
+$env:NEXUS_ATLAS_PATH = "C:\ATLAS_PUSH\nexus\atlas_nexus"
+$env:NEXUS_ROBOT_PATH = "C:\ATLAS_PUSH\nexus\atlas_nexus_robot\backend"
 Write-Host "=== INICIANDO ATLAS ===" -ForegroundColor Cyan
 Write-Host ""
 
@@ -29,7 +35,7 @@ Write-Host "  OK" -ForegroundColor Green
 
 # 3. NEXUS Services
 Write-Host "[3/4] NEXUS Services..." -ForegroundColor Yellow
-Start-Process $PY -ArgumentList "scripts/start_nexus_services.py" -WindowStyle Hidden
+Start-Process $PY -ArgumentList "scripts/start_nexus_services.py","--include-nexus" -WindowStyle Hidden
 Write-Host "  OK" -ForegroundColor Green
 
 # 4. Dashboard

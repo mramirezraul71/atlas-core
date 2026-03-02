@@ -35,11 +35,14 @@ from api.vision_routes import router as vision_router
 # Import YOLO detector
 from yolo_detector import YOLODetector, get_detector
 
+# Boot logger used before full logging setup.
+boot_logger = logging.getLogger("ATLAS_ROBOT_BOOT")
+
 # Import memory connector routes
 try:
     from brain.memory_connector import memory_router
 except Exception as e:
-    logger.warning("Memory connector disabled: %s", e)
+    boot_logger.warning("Memory connector disabled: %s", e)
     memory_router = None
 
 # Configurar logging

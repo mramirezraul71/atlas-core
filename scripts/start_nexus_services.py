@@ -7,19 +7,29 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-NEXUS_DIR = Path(os.getenv("NEXUS_ATLAS_PATH") or r"C:\ATLAS_NEXUS\atlas_nexus")
-ROBOT_DIR = Path(
-    os.getenv("NEXUS_ROBOT_PATH") or r"C:\ATLAS_NEXUS\atlas_nexus_robot\backend"
-)
 REPO_ROOT = Path(__file__).resolve().parent.parent
+_LOCAL_NEXUS = REPO_ROOT / "nexus" / "atlas_nexus"
+_LOCAL_ROBOT = REPO_ROOT / "nexus" / "atlas_nexus_robot" / "backend"
+NEXUS_DIR = Path(
+    os.getenv("NEXUS_ATLAS_PATH")
+    or (str(_LOCAL_NEXUS) if _LOCAL_NEXUS.exists() else r"C:\ATLAS_NEXUS\atlas_nexus")
+)
+ROBOT_DIR = Path(
+    os.getenv("NEXUS_ROBOT_PATH")
+    or (
+        str(_LOCAL_ROBOT)
+        if _LOCAL_ROBOT.exists()
+        else r"C:\ATLAS_NEXUS\atlas_nexus_robot\backend"
+    )
+)
 LOG_DIR = REPO_ROOT / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _resolve_python() -> str:
-    env_py = (os.getenv("PYTHON") or "").strip()
-    if env_py and Path(env_py).exists():
-        return env_py
+    atlas_py = (os.getenv("ATLAS_PYTHON") or "").strip()
+    if atlas_py and Path(atlas_py).exists():
+        return atlas_py
     candidates = [
         REPO_ROOT / ".venv" / "Scripts" / "python.exe",
         REPO_ROOT / "venv" / "Scripts" / "python.exe",
@@ -27,6 +37,9 @@ def _resolve_python() -> str:
     for c in candidates:
         if c.exists():
             return str(c)
+    env_py = (os.getenv("PYTHON") or "").strip()
+    if env_py and Path(env_py).exists():
+        return env_py
     return "python"
 
 
@@ -55,6 +68,10 @@ def _start(cmd: list, cwd: Path, name: str) -> bool:
             "stderr": log_f,
             "stdin": subprocess.DEVNULL,
         }
+        env = os.environ.copy()
+        env.setdefault("PYTHONIOENCODING", "utf-8")
+        env.setdefault("PYTHONUTF8", "1")
+        kwargs["env"] = env
         if sys.platform == "win32":
             # Detach so the child keeps running when this script exits (e.g. when called from API)
             CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
