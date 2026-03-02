@@ -14,4 +14,7 @@ if (Test-Path $FreePortScript) {
     Start-Sleep -Milliseconds 800
 }
 
-Start-Process python -ArgumentList "-m", "uvicorn", "atlas_adapter.atlas_http_api:app", "--host", "0.0.0.0", "--port", "8791" -WorkingDirectory $RepoRoot -WindowStyle Normal
+# Preferir Python 3.11 (el que tiene todos los paquetes de ATLAS); fallback a python del PATH
+$Py311 = "C:\Users\r6957\AppData\Local\Programs\Python\Python311\python.exe"
+$PyExe = if (Test-Path $Py311) { $Py311 } else { "python" }
+Start-Process $PyExe -ArgumentList "-m", "uvicorn", "atlas_adapter.atlas_http_api:app", "--host", "0.0.0.0", "--port", "8791" -WorkingDirectory $RepoRoot -WindowStyle Normal
