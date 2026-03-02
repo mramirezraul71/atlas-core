@@ -70,7 +70,7 @@ from typing import List, Optional
 
 from fastapi import FastAPI, File, Header, Request, UploadFile, WebSocket
 from fastapi.responses import FileResponse, HTMLResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 ATLAS_ROOT = Path(r"C:\ATLAS")
 ROUTER_PATH = ATLAS_ROOT / "modules" / "command_router.py"
