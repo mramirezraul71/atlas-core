@@ -2862,6 +2862,24 @@ const PROVIDER_ICONS = {
   xai: 'X', deepseek: 'D', groq: 'Q', mistral: 'M', perplexity: 'P', ollama: '🏠', bedrock: 'B'
 };
 
+function ensureCodexModelVisible() {
+  const already = modelCatalog.find(m => m && m.id === 'openai:codex-auto');
+  if (already) return;
+  const openaiAvailable = modelCatalog.some(m => m && m.provider === 'openai' && m.available !== false);
+  modelCatalog.unshift({
+    id: 'openai:codex-auto',
+    name: 'Codex (OpenAI)',
+    provider: 'openai',
+    desc: 'Coding agent de OpenAI (fallback UI)',
+    category: 'code',
+    available: openaiAvailable,
+    provider_label: 'OpenAI',
+    status_code: openaiAvailable ? 'ok' : 'missing_key',
+    status_message: openaiAvailable ? 'Codex ready (fallback UI)' : 'OPENAI_API_KEY missing for Codex',
+    runtime_state: openaiAvailable ? 'ok' : 'warn'
+  });
+}
+
 async function initModelSelector() {
   const saved = localStorage.getItem('cascade-ws-model');
   if (saved) selectedModel = saved;
@@ -2873,6 +2891,7 @@ async function initModelSelector() {
       providerRuntime = d.provider_runtime || {};
     }
   } catch { modelCatalog = [{id:'auto',name:'Auto',provider:'atlas',desc:'Seleccion inteligente',available:true,provider_label:'ATLAS',category:'auto'}]; }
+  ensureCodexModelVisible();
 
   // Si el modelo guardado ya no existe en catálogo, volver a auto.
   if (!modelCatalog.find(m => m.id === selectedModel)) {

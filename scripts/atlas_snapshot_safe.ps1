@@ -42,6 +42,18 @@ try {
 }
 
 try {
+    $actuatorHealthScript = Join-Path $RepoRoot "tools/atlas_actuators/atlas_actuator_healthcheck.js"
+    if (Test-Path $actuatorHealthScript) {
+        $actuator = & node $actuatorHealthScript 2>&1
+        foreach ($line in $actuator) { Write-Line ("ACTUATOR " + $line) }
+    } else {
+        Write-Line "ACTUATOR WARN missing_healthcheck_script"
+    }
+} catch {
+    Write-Line ("ACTUATOR ERR " + $_.Exception.Message)
+}
+
+try {
     $listeners = Get-NetTCPConnection -State Listen |
         Where-Object { $_.LocalPort -in 8791, 8000, 8002 } |
         Select-Object LocalPort, OwningProcess

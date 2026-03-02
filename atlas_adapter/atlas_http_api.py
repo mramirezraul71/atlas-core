@@ -13276,6 +13276,8 @@ _ARM_PROCS: dict = {}  # arm_id → list[subprocess.Popen]
 _ARM_DEFS: dict = {
     "panaderia": {
         "name": "Rauli Panadería",
+        "frontend_port": 5173,
+        "api_port": 3001,
         "processes": [
             {
                 "label": "API backend",
@@ -13291,6 +13293,8 @@ _ARM_DEFS: dict = {
     },
     "vision": {
         "name": "Rauli Vision",
+        "frontend_port": 5174,
+        "api_port": 3000,
         "processes": [
             {
                 "label": "Proxy API",
@@ -13430,6 +13434,41 @@ async def arms_stop(arm_id: str):
     return _std_resp(
         True,
         {"arm_id": arm_id, "stopped": stopped, "failed": failed},
+        ms,
+        None,
+    )
+
+
+@app.get("/arms/{arm_id}/ping", tags=["Brazos v4"])
+async def arms_ping(arm_id: str):
+    """Verifica si el frontend del brazo responde (check de puerto server-side, sin ambigüedad IPv4/IPv6)."""
+    import socket
+
+    t0 = time.perf_counter()
+    if arm_id not in _ARM_DEFS:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, f"Brazo desconocido: {arm_id}")
+
+    defn = _ARM_DEFS[arm_id]
+    port = defn.get("frontend_port")
+    if not port:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, "Sin frontend_port configurado")
+
+    reachable = False
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(2.0)
+        result = s.connect_ex(("127.0.0.1", port))
+        s.close()
+        reachable = result == 0
+    except Exception:
+        reachable = False
+
+    ms = int((time.perf_counter() - t0) * 1000)
+    return _std_resp(
+        True,
+        {"arm_id": arm_id, "port": port, "reachable": reachable},
         ms,
         None,
     )

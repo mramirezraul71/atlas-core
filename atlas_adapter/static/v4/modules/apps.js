@@ -451,17 +451,19 @@ async function _preCheckAndLoad(app, url, container, iframe, urlText) {
            style="animation:spin 1s linear infinite">
         <path d="M21 12a9 9 0 11-6.219-8.56"/>
       </svg>
-      <div style="font-size:13px;color:var(--text-muted)">Conectando con ${_esc(app.name)}...</div>
+      <div style="font-size:13px;color:var(--text-muted)">Verificando estado de ${_esc(app.name)}...</div>
       <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
   }
 
-  let reachable = false;
+  // Ping server-side (Python socket, sin ambigüedad IPv4/IPv6 del browser)
+  let armReady = false;
   try {
-    await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(4000), mode: 'no-cors' });
-    reachable = true;
-  } catch { reachable = false; }
+    const r = await fetch(`/arms/${app.id}/ping`, { signal: AbortSignal.timeout(5000) });
+    const d = await r.json().catch(() => null);
+    armReady = d?.ok === true && d?.data?.reachable === true;
+  } catch { armReady = false; }
 
-  if (reachable) {
+  if (armReady) {
     if (overlay) overlay.style.display = 'none';
     iframe.src = url;
     if (urlText) urlText.textContent = url;
@@ -579,10 +581,12 @@ function _pollUntilReachable(app, url, container, iframe, urlText, maxTries, int
     tries++;
     _updateMsg(`Esperando respuesta del dashboard... (${tries}/${maxTries})`);
 
+    // Ping server-side (Python socket en 127.0.0.1, sin ambigüedad IPv6)
     let reachable = false;
     try {
-      await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(3000), mode: 'no-cors' });
-      reachable = true;
+      const r = await fetch(`/arms/${app.id}/ping`, { signal: AbortSignal.timeout(4000) });
+      const d = await r.json().catch(() => null);
+      reachable = d?.ok === true && d?.data?.reachable === true;
     } catch { /* aún no responde */ }
 
     if (reachable) {

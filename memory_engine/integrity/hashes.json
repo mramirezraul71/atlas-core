@@ -1,11 +1,11 @@
 {
-  "updated_at": "2026-03-02T05:05:37",
+  "updated_at": "2026-03-02T07:57:21",
   "files": {
     "versioned_state\\current_state.json": "976d92e7cbec062e10a943ad1f4879643daa403f454ac7bd5ad1dd57210a3279",
     "versioned_state\\state_index.json": "66a474177dc4152ebe2512c36a20a2dc117f4a1dfd77a6584f793f991a569bac",
     "strategic_memory\\learned_patterns.json": "8eac37202a60e5caaf049762f8ecfd65964cb186410dc7a7fd6a70a03d6d7f81",
     "checkpoints\\checkpoint_index.json": "45ffea158e745fc9dfdafaaa4e9b598b9d1eef533ea005ebdfc14d138c033679",
     "recovery\\corruption_log.json": "89fa9b50f9631c9a42eb5d1c0028daf53a16a0a64cac0ea4a115644cf2e728be",
-    "integrity\\last_integrity_scan.json": "c720da320fada913ab471e1aa81a52af5f7da9f9a92dc44404c3a2ddd7256782"
+    "integrity\\last_integrity_scan.json": "4df5f6229a0ac5b50826d253c9a4669f7421a8d0c6f4228c4a3613bd671757e3"
   }
 }
