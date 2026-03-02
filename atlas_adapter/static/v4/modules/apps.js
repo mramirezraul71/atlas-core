@@ -165,6 +165,10 @@ export default {
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
                 Recargar frame
               </button>
+              <button class="action-btn" id="btn-stop-arm" style="justify-content:center;width:100%;color:var(--accent-red,#f87171)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                Detener app
+              </button>
               <!-- Config de URLs -->
               <details style="margin-top:4px">
                 <summary style="font-size:10px;color:var(--text-muted);cursor:pointer;padding:4px 0;list-style:none;display:flex;align-items:center;gap:5px">
@@ -276,6 +280,22 @@ export default {
     });
     container.querySelector('#btn-reload-iframe')?.addEventListener('click', () => {
       if (iframe.src) { const s = iframe.src; iframe.src = ''; iframe.src = s; }
+    });
+    container.querySelector('#btn-stop-arm')?.addEventListener('click', async () => {
+      const app = APPS[_activeApp];
+      if (!app) return;
+      if (!confirm(`¿Detener ${app.name}?`)) return;
+      try {
+        const r = await fetch(`/arms/${app.id}/stop`, { method: 'POST', signal: AbortSignal.timeout(8000) });
+        const d = await r.json().catch(() => null);
+        window.AtlasToast?.show(d?.ok ? `${app.name} detenida` : 'Error al detener', d?.ok ? 'info' : 'error');
+        if (d?.ok) {
+          iframe.src = 'about:blank';
+          const overlay = container.querySelector('#iframe-not-running');
+          if (overlay) { overlay.style.display = 'none'; }
+          _preCheckAndLoad(app, app.base + '/', container, iframe, urlText);
+        }
+      } catch { window.AtlasToast?.show('Error de conexión con ATLAS', 'error'); }
     });
     container.querySelector('#blocked-open-btn')?.addEventListener('click', () => {
       const app = APPS[_activeApp]; if (app) window.open(app.base, '_blank');
@@ -407,12 +427,11 @@ function _switchApp(appId, container, iframe, urlText) {
   _preCheckAndLoad(app, url, container, iframe, urlText);
 }
 
-/* ─── Pre-check iframe + overlay de instrucciones ───────────────────── */
+/* ─── Pre-check iframe + overlay de inicio automático ───────────────── */
 
 async function _preCheckAndLoad(app, url, container, iframe, urlText) {
   const overlay = container.querySelector('#iframe-not-running');
 
-  // Mostrar spinner mientras verificamos
   if (overlay) {
     overlay.style.display = 'flex';
     overlay.innerHTML = `
@@ -426,52 +445,44 @@ async function _preCheckAndLoad(app, url, container, iframe, urlText) {
 
   let reachable = false;
   try {
-    const r = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(4000), mode: 'no-cors' });
-    reachable = true; // no-cors: si no lanza excepción, el servidor respondió
-  } catch {
-    reachable = false;
-  }
+    await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(4000), mode: 'no-cors' });
+    reachable = true;
+  } catch { reachable = false; }
 
   if (reachable) {
-    // Ocultar overlay y cargar iframe
     if (overlay) overlay.style.display = 'none';
     iframe.src = url;
     if (urlText) urlText.textContent = url;
   } else {
-    // Mostrar overlay con instrucciones de inicio
     if (overlay) {
-      const steps = (app.startInstructions || []).map(s => `
-        <div style="margin-bottom:10px">
-          <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">${_esc(s.label)}</div>
-          <code style="display:block;background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:6px;padding:8px 10px;font-size:11px;color:var(--accent-primary);word-break:break-all">${_esc(s.cmd)}</code>
-        </div>`).join('');
-
       overlay.innerHTML = `
-        <div style="text-align:center;max-width:480px;padding:16px">
-          <div style="font-size:32px;margin-bottom:12px">${app.icon}</div>
-          <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:6px">
-            ${_esc(app.name)} no está iniciado
+        <div style="text-align:center;max-width:400px;padding:28px">
+          <div style="font-size:44px;margin-bottom:14px">${app.icon}</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:8px">
+            ${_esc(app.name)} no está corriendo
           </div>
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">
-            El dashboard no responde en <code style="color:var(--accent-primary)">${_esc(url)}</code><br>
-            Inicia la app y luego recarga el frame, o ajusta el URL en "Configurar URLs".
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:24px">
+            ATLAS puede iniciar esta app automáticamente.
           </div>
-          ${steps ? `
-            <div style="text-align:left;margin-bottom:16px">
-              <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-bottom:10px">CÓMO INICIAR</div>
-              ${steps}
-            </div>` : ''}
+          <button class="action-btn primary" id="overlay-start-btn"
+                  style="font-size:13px;padding:10px 24px;gap:9px;margin-bottom:10px;width:100%;justify-content:center">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Iniciar desde ATLAS
+          </button>
           <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-            <button class="action-btn primary" id="overlay-retry-btn">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+            <button class="action-btn" id="overlay-retry-btn" style="font-size:11px">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
               Reintentar
             </button>
-            <button class="action-btn" id="overlay-force-btn">
+            <button class="action-btn" id="overlay-force-btn" style="font-size:11px">
               Cargar de todos modos
             </button>
           </div>
         </div>`;
 
+      overlay.querySelector('#overlay-start-btn')?.addEventListener('click', () => {
+        _startArmFromAtlas(app, url, container, iframe, urlText);
+      });
       overlay.querySelector('#overlay-retry-btn')?.addEventListener('click', () => {
         _preCheckAndLoad(app, url, container, iframe, urlText);
       });
@@ -481,9 +492,130 @@ async function _preCheckAndLoad(app, url, container, iframe, urlText) {
         if (urlText) urlText.textContent = url;
       });
     }
-    // No cargar el iframe (evita la página fea del navegador)
     iframe.src = 'about:blank';
   }
+}
+
+/* ─── Inicio del brazo desde ATLAS ──────────────────────────────────── */
+
+async function _startArmFromAtlas(app, url, container, iframe, urlText) {
+  const overlay = container.querySelector('#iframe-not-running');
+
+  function _showSpinner(msg) {
+    if (!overlay) return;
+    overlay.innerHTML = `
+      <div style="text-align:center;max-width:380px;padding:28px">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" stroke-width="1.5"
+             style="animation:spin 1s linear infinite;margin-bottom:16px">
+          <path d="M21 12a9 9 0 11-6.219-8.56"/>
+        </svg>
+        <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:8px">${_esc(app.name)}</div>
+        <div id="start-status-msg" style="font-size:12px;color:var(--text-muted)">${_esc(msg)}</div>
+        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+      </div>`;
+  }
+
+  function _showError(msg) {
+    if (!overlay) return;
+    overlay.innerHTML = `
+      <div style="text-align:center;max-width:380px;padding:28px">
+        <div style="font-size:36px;margin-bottom:14px">⚠️</div>
+        <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:8px">No se pudo iniciar</div>
+        <div style="font-size:11px;color:var(--accent-red,#f87171);margin-bottom:18px;word-break:break-word">${_esc(msg)}</div>
+        <button class="action-btn" id="overlay-retry-btn">Reintentar verificación</button>
+      </div>`;
+    overlay.querySelector('#overlay-retry-btn')?.addEventListener('click', () => {
+      _preCheckAndLoad(app, url, container, iframe, urlText);
+    });
+  }
+
+  _showSpinner('Enviando orden de inicio a ATLAS...');
+
+  try {
+    const r = await fetch(`/arms/${app.id}/start`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(10000),
+    });
+    const d = await r.json().catch(() => null);
+
+    if (!r.ok || !d?.ok) {
+      _showError(d?.error || `HTTP ${r.status}`);
+      return;
+    }
+
+    const launched = d.data?.launched || [];
+    _showSpinner(`${launched.length} proceso(s) iniciados. Esperando que el dashboard levante...`);
+    _pollUntilReachable(app, url, container, iframe, urlText, 24, 2500);
+
+  } catch (err) {
+    _showError(String(err));
+  }
+}
+
+/* ─── Polling hasta que el frontend sea alcanzable ──────────────────── */
+
+function _pollUntilReachable(app, url, container, iframe, urlText, maxTries, intervalMs) {
+  const overlay = container.querySelector('#iframe-not-running');
+  let tries = 0;
+
+  function _updateMsg(msg) {
+    const el = overlay?.querySelector('#start-status-msg');
+    if (el) el.textContent = msg;
+  }
+
+  async function _attempt() {
+    tries++;
+    _updateMsg(`Esperando respuesta del dashboard... (${tries}/${maxTries})`);
+
+    let reachable = false;
+    try {
+      await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(3000), mode: 'no-cors' });
+      reachable = true;
+    } catch { /* aún no responde */ }
+
+    if (reachable) {
+      if (overlay) overlay.style.display = 'none';
+      iframe.src = url;
+      if (urlText) urlText.textContent = url;
+      window.AtlasToast?.show(`${app.name} iniciado`, 'success');
+      return;
+    }
+
+    if (tries >= maxTries) {
+      if (overlay) {
+        overlay.innerHTML = `
+          <div style="text-align:center;max-width:380px;padding:28px">
+            <div style="font-size:36px;margin-bottom:14px">⏱️</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:8px">Tiempo de espera agotado</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:18px">
+              El proceso se inició pero el dashboard no respondió a tiempo.<br>
+              Puede tardar unos segundos más (primera compilación de Vite).
+            </div>
+            <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+              <button class="action-btn primary" id="overlay-retry-btn">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                Reintentar
+              </button>
+              <button class="action-btn" id="overlay-force-btn">Cargar de todos modos</button>
+            </div>
+          </div>`;
+        overlay.querySelector('#overlay-retry-btn')?.addEventListener('click', () => {
+          _preCheckAndLoad(app, url, container, iframe, urlText);
+        });
+        overlay.querySelector('#overlay-force-btn')?.addEventListener('click', () => {
+          overlay.style.display = 'none';
+          iframe.src = url;
+          if (urlText) urlText.textContent = url;
+        });
+      }
+      return;
+    }
+
+    setTimeout(_attempt, intervalMs);
+  }
+
+  // Dar 2 s iniciales para que el proceso se levante
+  setTimeout(_attempt, 2000);
 }
 
 /* ─── Fetch gobierno endpoint ────────────────────────────────────────── */

@@ -7,7 +7,7 @@ const _store = {
   model: null,
   provider: null,
   theme: localStorage.getItem('atlas-theme') || 'cyan',
-  version: '4.2.0',
+  version: '4.3.0',
   uptime: null,
   lastActivity: null,
   route: '/',

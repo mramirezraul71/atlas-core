@@ -5463,12 +5463,17 @@ def agent_models():
     models = []
     for m in _MODEL_CATALOG:
         is_bedrock_model = str(m.get("id", "")).startswith("bedrock:")
+        is_codex_model = str(m.get("id", "")) == "openai:codex-auto"
         available = (
             status.get("bedrock", False)
             if is_bedrock_model
             else status.get(m["provider"], False)
         )
         rt = _PROVIDER_RUNTIME_STATUS.get(m["provider"], {})
+        codex_model = (
+            (os.getenv("OPENAI_CODEX_MODEL") or "gpt-4.1-mini").strip()
+            or "gpt-4.1-mini"
+        )
         models.append(
             {
                 **m,
@@ -5476,10 +5481,25 @@ def agent_models():
                 "provider_label": "Anthropic (Bedrock)"
                 if is_bedrock_model
                 else _PROVIDER_LABELS.get(m["provider"], m["provider"]),
-                "status_code": rt.get("code"),
-                "status_message": rt.get("message"),
-                "runtime_state": rt.get("level", "ok"),
+                "status_code": (
+                    "ok"
+                    if is_codex_model and available
+                    else ("missing_key" if is_codex_model else rt.get("code"))
+                ),
+                "status_message": (
+                    f"Codex ready ({codex_model})"
+                    if is_codex_model and available
+                    else (
+                        "OPENAI_API_KEY missing for Codex"
+                        if is_codex_model
+                        else rt.get("message")
+                    )
+                ),
+                "runtime_state": (
+                    "ok" if is_codex_model and available else ("warn" if is_codex_model else rt.get("level", "ok"))
+                ),
                 "runtime_error": rt.get("raw"),
+                "codex_model": codex_model if is_codex_model else None,
             }
         )
     ms = int((time.perf_counter() - t0) * 1000)
@@ -5983,6 +6003,119 @@ def ai_route(body: AIRouteBody):
         }
     except Exception as e:
         return {"ok": False, "decision": None, "error": str(e)}
+
+
+class FeedbackDecideBody(BaseModel):
+    source_app: str = "unknown"
+    feedback: Dict[str, Any] = Field(default_factory=dict)
+    analysis: Optional[Dict[str, Any]] = None
+
+
+def _feedback_structural_major(feedback: Dict[str, Any]) -> bool:
+    sev = str((feedback or {}).get("severity", "")).strip().lower()
+    category = str((feedback or {}).get("category", "")).strip().lower()
+    title = str((feedback or {}).get("title", "")).strip().lower()
+    desc = str((feedback or {}).get("description", "")).strip().lower()
+    text = f"{title} {desc}"
+    if sev in ("critical", "high"):
+        return True
+    if category in ("architecture", "estructura", "infra", "security", "database", "schema"):
+        return True
+    structural_hints = (
+        "arquitectura",
+        "estructura",
+        "breaking",
+        "migracion",
+        "migración",
+        "refactor grande",
+        "core",
+        "kernel",
+        "schema",
+        "db",
+        "seguridad",
+        "security",
+    )
+    return any(h in text for h in structural_hints)
+
+
+@app.post("/api/feedback/decide", tags=["Feedback"])
+def feedback_decide(body: FeedbackDecideBody):
+    """Decisión central Atlas para feedback cross-app: auto_fix_now vs wait_owner_approval."""
+    source = (body.source_app or "unknown").strip() or "unknown"
+    feedback = body.feedback or {}
+    major = _feedback_structural_major(feedback)
+    severity = str(feedback.get("severity", "medium")).strip().lower() or "medium"
+    title = str(feedback.get("title", "feedback")).strip() or "feedback"
+    category = str(feedback.get("category", "general")).strip() or "general"
+
+    approval_id = None
+    decision = "auto_fix_now"
+    auto_execute = True
+    requires_owner_approval = False
+    status = "auto_resolved"
+
+    if major:
+        decision = "wait_owner_approval"
+        auto_execute = False
+        requires_owner_approval = True
+        status = "pending_owner_approval"
+        try:
+            from modules.humanoid.approvals import create_approval
+
+            out = create_approval(
+                action="feedback_structure_apply",
+                risk="high" if severity in ("high", "critical") else "medium",
+                description=f"[{source}] {title}",
+                payload={
+                    "source_app": source,
+                    "feedback": feedback,
+                    "analysis": body.analysis or {},
+                    "category": category,
+                    "severity": severity,
+                },
+            )
+            approval_id = out.get("id") if out.get("ok") else None
+        except Exception:
+            approval_id = None
+
+    user_message = (
+        "ATLAS aplicó una corrección inmediata de bajo riesgo y dejó registro del caso."
+        if auto_execute
+        else "ATLAS detectó impacto estructural. El caso quedó en aprobación del Owner antes de ejecutar cambios."
+    )
+    if approval_id:
+        user_message = f"{user_message} ID aprobación: {approval_id}"
+
+    try:
+        from modules.humanoid.comms import emit as comms_emit
+
+        comms_emit(
+            "feedback",
+            f"[{source}] {title} => {decision}",
+            level="high" if major else "medium",
+            data={
+                "source_app": source,
+                "severity": severity,
+                "category": category,
+                "decision": decision,
+                "status": status,
+                "approval_id": approval_id,
+            },
+        )
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "source_app": source,
+        "decision": decision,
+        "status": status,
+        "auto_execute": auto_execute,
+        "requires_owner_approval": requires_owner_approval,
+        "approval_id": approval_id,
+        "user_message": user_message,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
 
 
 @app.get("/mode/capabilities", tags=["Mode"])
@@ -13134,3 +13267,169 @@ def memory_snapshot():
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))
+
+
+# ── Brazos subordinados: gestor de procesos ───────────────────────────────────
+
+_ARM_PROCS: dict = {}  # arm_id → list[subprocess.Popen]
+
+_ARM_DEFS: dict = {
+    "panaderia": {
+        "name": "Rauli Panadería",
+        "processes": [
+            {
+                "label": "API backend",
+                "cwd": "_external/rauli-panaderia/backend",
+                "cmd": "node server.js",
+            },
+            {
+                "label": "Frontend Vite",
+                "cwd": "_external/rauli-panaderia/frontend",
+                "cmd": "npm run dev",
+            },
+        ],
+    },
+    "vision": {
+        "name": "Rauli Vision",
+        "processes": [
+            {
+                "label": "Proxy API",
+                "cwd": "_external/RAULI-VISION/cliente-local",
+                "cmd": "python simple-server.py",
+            },
+            {
+                "label": "Dashboard",
+                "cwd": "_external/RAULI-VISION/dashboard",
+                "cmd": "npm run dev",
+            },
+        ],
+    },
+}
+
+
+@app.post("/arms/{arm_id}/start", tags=["Brazos v4"])
+async def arms_start(arm_id: str):
+    """Inicia los procesos del brazo subordinado (backend + frontend)."""
+    import subprocess
+
+    t0 = time.perf_counter()
+    if arm_id not in _ARM_DEFS:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, f"Brazo desconocido: {arm_id}")
+
+    defn = _ARM_DEFS[arm_id]
+    existing = _ARM_PROCS.get(arm_id, [])
+    alive = [p for p in existing if p.poll() is None]
+
+    flags = 0
+    if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+        flags |= subprocess.CREATE_NEW_PROCESS_GROUP
+    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+        flags |= subprocess.CREATE_NO_WINDOW
+
+    launched: list = []
+    errors: list = []
+
+    for proc_def in defn["processes"]:
+        cwd = BASE_DIR / proc_def["cwd"]
+        if not cwd.exists():
+            errors.append(f"{proc_def['label']}: directorio no existe ({cwd})")
+            continue
+        try:
+            p = subprocess.Popen(
+                proc_def["cmd"],
+                cwd=str(cwd),
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=flags,
+            )
+            alive.append(p)
+            launched.append({"label": proc_def["label"], "pid": p.pid})
+        except Exception as exc:
+            errors.append(f"{proc_def['label']}: {exc}")
+
+    _ARM_PROCS[arm_id] = alive
+    ms = int((time.perf_counter() - t0) * 1000)
+    ok = len(launched) > 0
+    return _std_resp(
+        ok,
+        {"arm_id": arm_id, "launched": launched, "errors": errors},
+        ms,
+        errors[0] if errors and not ok else None,
+    )
+
+
+@app.get("/arms/{arm_id}/status", tags=["Brazos v4"])
+async def arms_status(arm_id: str):
+    """Estado de los procesos del brazo subordinado."""
+    t0 = time.perf_counter()
+    if arm_id not in _ARM_DEFS:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, f"Brazo desconocido: {arm_id}")
+
+    defn = _ARM_DEFS[arm_id]
+    procs = _ARM_PROCS.get(arm_id, [])
+    proc_info = [{"pid": p.pid, "alive": p.poll() is None} for p in procs]
+    alive_count = sum(1 for r in proc_info if r["alive"])
+    expected = len(defn["processes"])
+    ms = int((time.perf_counter() - t0) * 1000)
+    return _std_resp(
+        True,
+        {
+            "arm_id": arm_id,
+            "name": defn["name"],
+            "running": alive_count,
+            "expected": expected,
+            "ready": alive_count > 0,
+            "procs": proc_info,
+        },
+        ms,
+        None,
+    )
+
+
+@app.post("/arms/{arm_id}/stop", tags=["Brazos v4"])
+async def arms_stop(arm_id: str):
+    """Detiene los procesos del brazo subordinado."""
+    t0 = time.perf_counter()
+    if arm_id not in _ARM_DEFS:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, f"Brazo desconocido: {arm_id}")
+
+    procs = _ARM_PROCS.pop(arm_id, [])
+    stopped: list = []
+    failed: list = []
+
+    for p in procs:
+        try:
+            if p.poll() is None:
+                if os.name == "nt":
+                    import subprocess as _sp
+
+                    _sp.run(
+                        ["taskkill", "/F", "/T", "/PID", str(p.pid)],
+                        capture_output=True,
+                        creationflags=getattr(_sp, "CREATE_NO_WINDOW", 0),
+                    )
+                else:
+                    p.terminate()
+                try:
+                    p.wait(timeout=5)
+                except Exception:
+                    p.kill()
+            stopped.append(p.pid)
+        except Exception as exc:
+            failed.append({"pid": p.pid, "error": str(exc)})
+            try:
+                p.kill()
+            except Exception:
+                pass
+
+    ms = int((time.perf_counter() - t0) * 1000)
+    return _std_resp(
+        True,
+        {"arm_id": arm_id, "stopped": stopped, "failed": failed},
+        ms,
+        None,
+    )

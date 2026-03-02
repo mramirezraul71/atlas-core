@@ -39,7 +39,7 @@ function _buildTopbar(app) {
     </div>
     <div class="topbar-center"></div>
     <div class="topbar-right">
-      <span class="topbar-version" id="topbar-version">v4.2.0</span>
+      <span class="topbar-version" id="topbar-version">v4.3.0</span>
       <button class="topbar-btn" id="btn-theme" title="Cambiar tema">${SVG.theme}</button>
       <button class="topbar-btn" id="btn-home" title="Inicio">${SVG.home}</button>
       <button class="topbar-btn" id="btn-menu" title="Menú" aria-label="Menú principal">${SVG.menu}</button>
