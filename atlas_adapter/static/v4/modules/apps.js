@@ -30,6 +30,11 @@ function _buildApps() {
       id: 'vision', name: 'Rauli Vision', shortName: 'Vision',
       role: 'Brazo Sensorial', icon: '👁️', color: 'var(--accent-primary)',
       base: v.frontendBase, health: `${v.apiBase}/api/health`, pollId: POLL_VISION,
+      startInstructions: [
+        { label: 'Paso 1 — Iniciar proxy API', cmd: 'cd _external/RAULI-VISION/cliente-local && python simple-server.py' },
+        { label: 'Paso 2 — Iniciar dashboard', cmd: 'cd _external/RAULI-VISION/dashboard && npm run dev' },
+        { label: 'Resultado', cmd: `Frontend → ${v.frontendBase} · API → ${v.apiBase}` },
+      ],
       navLinks: [
         { label: 'Inicio',         path: '/' },
         { label: 'Búsqueda Web',   path: '/?tab=search' },
@@ -45,6 +50,11 @@ function _buildApps() {
       id: 'panaderia', name: 'Rauli Panadería', shortName: 'Panadería',
       role: 'Brazo Operativo', icon: '🥖', color: 'var(--accent-green)',
       base: p.frontendBase, health: `${p.apiBase}/api/health`, pollId: POLL_PANADERIA,
+      startInstructions: [
+        { label: 'Paso 1 — Iniciar API backend', cmd: 'cd _external/rauli-panaderia/backend && node server.js' },
+        { label: 'Paso 2 — Iniciar frontend',    cmd: 'cd _external/rauli-panaderia/frontend && npm run dev' },
+        { label: 'Resultado', cmd: `Frontend → ${p.frontendBase} · API → ${p.apiBase}` },
+      ],
       navLinks: [
         { label: 'Dashboard',    path: '/' },
         { label: 'POS / Caja',   path: '/pos' },
@@ -188,6 +198,11 @@ export default {
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
               <span id="iframe-url-text" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Cargando...</span>
             </div>
+            <!-- Overlay "app no iniciada" -->
+            <div id="iframe-not-running"
+                 style="display:none;position:absolute;inset:36px 0 0 0;background:var(--surface-0);z-index:10;align-items:center;justify-content:center;flex-direction:column;gap:12px;overflow-y:auto">
+            </div>
+
             <!-- Aviso X-Frame-Options -->
             <div id="iframe-blocked-msg"
                  style="display:none;position:absolute;inset:40px 0 0 0;background:var(--surface-0);z-index:5;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;text-align:center;padding:32px">
@@ -386,10 +401,89 @@ function _switchApp(appId, container, iframe, urlText) {
     app.govEndpoints.forEach(ep => _fetchGovEndpoint(ep, container));
   }
 
-  // Cargar iframe
+  // Pre-check: verificar que el frontend responde antes de cargar iframe
   const url = app.base + '/';
-  iframe.src = url;
   if (urlText) urlText.textContent = url;
+  _preCheckAndLoad(app, url, container, iframe, urlText);
+}
+
+/* ─── Pre-check iframe + overlay de instrucciones ───────────────────── */
+
+async function _preCheckAndLoad(app, url, container, iframe, urlText) {
+  const overlay = container.querySelector('#iframe-not-running');
+
+  // Mostrar spinner mientras verificamos
+  if (overlay) {
+    overlay.style.display = 'flex';
+    overlay.innerHTML = `
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5"
+           style="animation:spin 1s linear infinite">
+        <path d="M21 12a9 9 0 11-6.219-8.56"/>
+      </svg>
+      <div style="font-size:13px;color:var(--text-muted)">Conectando con ${_esc(app.name)}...</div>
+      <style>@keyframes spin{to{transform:rotate(360deg)}}</style>`;
+  }
+
+  let reachable = false;
+  try {
+    const r = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(4000), mode: 'no-cors' });
+    reachable = true; // no-cors: si no lanza excepción, el servidor respondió
+  } catch {
+    reachable = false;
+  }
+
+  if (reachable) {
+    // Ocultar overlay y cargar iframe
+    if (overlay) overlay.style.display = 'none';
+    iframe.src = url;
+    if (urlText) urlText.textContent = url;
+  } else {
+    // Mostrar overlay con instrucciones de inicio
+    if (overlay) {
+      const steps = (app.startInstructions || []).map(s => `
+        <div style="margin-bottom:10px">
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">${_esc(s.label)}</div>
+          <code style="display:block;background:var(--surface-0);border:1px solid var(--border-subtle);border-radius:6px;padding:8px 10px;font-size:11px;color:var(--accent-primary);word-break:break-all">${_esc(s.cmd)}</code>
+        </div>`).join('');
+
+      overlay.innerHTML = `
+        <div style="text-align:center;max-width:480px;padding:16px">
+          <div style="font-size:32px;margin-bottom:12px">${app.icon}</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text-primary);margin-bottom:6px">
+            ${_esc(app.name)} no está iniciado
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px">
+            El dashboard no responde en <code style="color:var(--accent-primary)">${_esc(url)}</code><br>
+            Inicia la app y luego recarga el frame, o ajusta el URL en "Configurar URLs".
+          </div>
+          ${steps ? `
+            <div style="text-align:left;margin-bottom:16px">
+              <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-bottom:10px">CÓMO INICIAR</div>
+              ${steps}
+            </div>` : ''}
+          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+            <button class="action-btn primary" id="overlay-retry-btn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+              Reintentar
+            </button>
+            <button class="action-btn" id="overlay-force-btn">
+              Cargar de todos modos
+            </button>
+          </div>
+        </div>`;
+
+      overlay.querySelector('#overlay-retry-btn')?.addEventListener('click', () => {
+        _preCheckAndLoad(app, url, container, iframe, urlText);
+      });
+      overlay.querySelector('#overlay-force-btn')?.addEventListener('click', () => {
+        overlay.style.display = 'none';
+        iframe.src = url;
+        if (urlText) urlText.textContent = url;
+      });
+    }
+    // No cargar el iframe (evita la página fea del navegador)
+    iframe.src = 'about:blank';
+  }
 }
 
 /* ─── Fetch gobierno endpoint ────────────────────────────────────────── */
