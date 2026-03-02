@@ -13285,7 +13285,7 @@ _ARM_DEFS: dict = {
             {
                 "label": "Frontend Vite",
                 "cwd": "_external/rauli-panaderia/frontend",
-                "cmd": "npm run dev",
+                "cmd": "npm run dev -- --host --port 5173",
             },
         ],
     },
@@ -13300,7 +13300,7 @@ _ARM_DEFS: dict = {
             {
                 "label": "Dashboard",
                 "cwd": "_external/RAULI-VISION/dashboard",
-                "cmd": "npm run dev",
+                "cmd": "npm run dev -- --host --port 5174",
             },
         ],
     },
