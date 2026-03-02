@@ -13304,7 +13304,7 @@ _ARM_DEFS: dict = {
             {
                 "label": "Frontend",
                 "cwd": "_external/rauli-panaderia/frontend",
-                "cmd": "npm run preview -- --host --port 5173",
+                "cmd": "npm run preview -- --host --strictPort --port 5173",
             },
         ],
     },
@@ -13321,11 +13321,35 @@ _ARM_DEFS: dict = {
             {
                 "label": "Dashboard",
                 "cwd": "_external/RAULI-VISION/dashboard",
-                "cmd": "npm run preview -- --host --port 5174",
+                "cmd": "npm run preview -- --host --strictPort --port 5174",
             },
         ],
     },
 }
+
+
+def _is_local_port_open(port: Optional[int], host: str = "127.0.0.1") -> bool:
+    if not port:
+        return False
+    import socket
+
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(1.0)
+        result = s.connect_ex((host, int(port)))
+        s.close()
+        return result == 0
+    except Exception:
+        return False
+
+
+def _arm_process_port(defn: dict, proc_label: str) -> Optional[int]:
+    label = (proc_label or "").strip().lower()
+    if ("frontend" in label) or ("dashboard" in label):
+        return defn.get("frontend_port")
+    if ("api" in label) or ("proxy" in label):
+        return defn.get("api_port")
+    return None
 
 
 @app.post("/arms/{arm_id}/start", tags=["Brazos v4"])
@@ -13349,9 +13373,21 @@ async def arms_start(arm_id: str):
         flags |= subprocess.CREATE_NO_WINDOW
 
     launched: list = []
+    skipped: list = []
     errors: list = []
 
     for proc_def in defn["processes"]:
+        expected_port = _arm_process_port(defn, proc_def.get("label", ""))
+        if _is_local_port_open(expected_port):
+            skipped.append(
+                {
+                    "label": proc_def["label"],
+                    "port": expected_port,
+                    "reason": "already-listening",
+                }
+            )
+            continue
+
         cwd = BASE_DIR / proc_def["cwd"]
         if not cwd.exists():
             errors.append(f"{proc_def['label']}: directorio no existe ({cwd})")
@@ -13372,10 +13408,15 @@ async def arms_start(arm_id: str):
 
     _ARM_PROCS[arm_id] = alive
     ms = int((time.perf_counter() - t0) * 1000)
-    ok = len(launched) > 0
+    ok = bool((len(launched) + len(skipped)) > 0 and len(errors) == 0)
     return _std_resp(
         ok,
-        {"arm_id": arm_id, "launched": launched, "errors": errors},
+        {
+            "arm_id": arm_id,
+            "launched": launched,
+            "skipped": skipped,
+            "errors": errors,
+        },
         ms,
         errors[0] if errors and not ok else None,
     )
@@ -13394,6 +13435,8 @@ async def arms_status(arm_id: str):
     proc_info = [{"pid": p.pid, "alive": p.poll() is None} for p in procs]
     alive_count = sum(1 for r in proc_info if r["alive"])
     expected = len(defn["processes"])
+    frontend_up = _is_local_port_open(defn.get("frontend_port"))
+    api_up = _is_local_port_open(defn.get("api_port"))
     ms = int((time.perf_counter() - t0) * 1000)
     return _std_resp(
         True,
@@ -13402,7 +13445,13 @@ async def arms_status(arm_id: str):
             "name": defn["name"],
             "running": alive_count,
             "expected": expected,
-            "ready": alive_count > 0,
+            "ready": bool(frontend_up and api_up),
+            "ports": {
+                "frontend_port": defn.get("frontend_port"),
+                "frontend_up": frontend_up,
+                "api_port": defn.get("api_port"),
+                "api_up": api_up,
+            },
             "procs": proc_info,
         },
         ms,

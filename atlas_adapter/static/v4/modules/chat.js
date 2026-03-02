@@ -97,7 +97,7 @@ export default {
                 style="flex:1;resize:vertical;min-height:52px;max-height:120px;padding:12px 14px;background:var(--surface-1);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:13px;font-family:inherit;line-height:1.4;outline:none;transition:border-color .2s"
                 rows="2"></textarea>
               <button id="chat-mic-btn" title="Hablar (micrófono)"
-                style="height:52px;width:48px;background:var(--surface-2,var(--surface-1));color:var(--text-muted);border:1px solid var(--border-subtle);border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:color .2s,background .2s">
+                style="height:52px;width:48px;background:transparent;color:var(--accent-primary);border:2px solid var(--accent-primary);border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:color .2s,background .2s,border-color .2s;opacity:.85">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/></svg>
               </button>
               <button id="chat-send-btn"
@@ -218,8 +218,9 @@ export default {
       rec.onend = () => {
         _listening = false;
         if (micBtn) {
-          micBtn.style.color = '';
-          micBtn.style.borderColor = '';
+          micBtn.style.color = 'var(--accent-primary)';
+          micBtn.style.borderColor = 'var(--accent-primary)';
+          micBtn.style.opacity = '.85';
           micBtn.title = 'Hablar (micrófono)';
         }
       };
@@ -232,7 +233,7 @@ export default {
       };
       rec.onerror = (e) => {
         _listening = false;
-        if (micBtn) { micBtn.style.color = ''; micBtn.style.borderColor = ''; }
+        if (micBtn) { micBtn.style.color = 'var(--accent-primary)'; micBtn.style.borderColor = 'var(--accent-primary)'; micBtn.style.opacity = '.85'; }
         const msg = e.error === 'not-allowed'
           ? 'Permiso de micrófono denegado'
           : 'Error de micrófono: ' + e.error;
