@@ -8,58 +8,71 @@ import { poll, stop } from '../lib/polling.js';
 const POLL_VISION    = 'apps-vision-health';
 const POLL_PANADERIA = 'apps-panaderia-health';
 
-const APPS = {
-  vision: {
-    id:        'vision',
-    name:      'Rauli Vision',
-    shortName: 'Vision',
-    role:      'Brazo Sensorial',
-    icon:      '👁️',
-    color:     'var(--accent-primary)',
-    base:      'http://127.0.0.1:3000',
-    health:    'http://127.0.0.1:3000/api/health',
-    pollId:    POLL_VISION,
-    navLinks: [
-      { label: 'Inicio',          path: '/' },
-      { label: 'Búsqueda Web',    path: '/?tab=search' },
-      { label: 'Búsqueda Video',  path: '/?tab=video' },
-      { label: 'Chat IA',         path: '/?tab=chat' },
-    ],
-    govEndpoints: [
-      { label: 'Health / proxy',   url: 'http://127.0.0.1:3000/api/health',       method: 'GET', id: 'vision-health' },
-      { label: 'Historial chat',   url: 'http://127.0.0.1:3000/api/chat/history',  method: 'GET', id: 'vision-chat' },
-    ],
-  },
-  panaderia: {
-    id:        'panaderia',
-    name:      'Rauli Panadería',
-    shortName: 'Panadería',
-    role:      'Brazo Operativo',
-    icon:      '🥖',
-    color:     'var(--accent-green)',
-    base:      'http://127.0.0.1:3001',
-    health:    'http://127.0.0.1:3001/api/health',
-    pollId:    POLL_PANADERIA,
-    navLinks: [
-      { label: 'Dashboard',    path: '/' },
-      { label: 'Inventario',   path: '/inventory' },
-      { label: 'Ventas',       path: '/sales' },
-      { label: 'Producción',   path: '/production' },
-      { label: 'Sentinel',     path: '/sentinel' },
-      { label: 'Reportes',     path: '/reports' },
-      { label: 'Empleados',    path: '/employees' },
-    ],
-    govEndpoints: [
-      { label: 'Sentinel status',   url: 'http://127.0.0.1:3001/api/sentinel/status',          method: 'GET', id: 'pan-sentinel' },
-      { label: 'Alertas activas',   url: 'http://127.0.0.1:3001/api/sentinel/alerts',           method: 'GET', id: 'pan-alerts' },
-      { label: 'Métricas',          url: 'http://127.0.0.1:3001/api/sentinel/metrics',          method: 'GET', id: 'pan-metrics' },
-      { label: 'Ventas hoy',        url: 'http://127.0.0.1:3001/api/sales/today',               method: 'GET', id: 'pan-sales' },
-      { label: 'Inventario resumen',url: 'http://127.0.0.1:3001/api/inventory/summary',         method: 'GET', id: 'pan-inv' },
-      { label: 'Lotes por vencer',  url: 'http://127.0.0.1:3001/api/inventory/lots/expiring',   method: 'GET', id: 'pan-exp' },
-      { label: 'Órdenes prod.',     url: 'http://127.0.0.1:3001/api/production/production-orders', method: 'GET', id: 'pan-prod' },
-    ],
-  },
+// URLs configurables — frontend (React/Vite) y API backend son puertos distintos
+// Panadería: frontend en :5173 (Vite dev), API en :3001
+// Vision:    frontend en :5173/:5174 (Vite dev) o :3000 (cliente-local con static)
+const APP_DEFAULTS = {
+  vision:    { frontendBase: 'http://127.0.0.1:5174', apiBase: 'http://127.0.0.1:3000' },
+  panaderia: { frontendBase: 'http://127.0.0.1:5173', apiBase: 'http://127.0.0.1:3001' },
 };
+
+// Carga URLs guardadas en localStorage
+function _loadSavedUrls(appId) {
+  try { return JSON.parse(localStorage.getItem(`atlas-apps-url-${appId}`) || 'null') || APP_DEFAULTS[appId]; }
+  catch { return APP_DEFAULTS[appId]; }
+}
+
+function _buildApps() {
+  const v = _loadSavedUrls('vision');
+  const p = _loadSavedUrls('panaderia');
+  return {
+    vision: {
+      id: 'vision', name: 'Rauli Vision', shortName: 'Vision',
+      role: 'Brazo Sensorial', icon: '👁️', color: 'var(--accent-primary)',
+      base: v.frontendBase, health: `${v.apiBase}/api/health`, pollId: POLL_VISION,
+      navLinks: [
+        { label: 'Inicio',         path: '/' },
+        { label: 'Búsqueda Web',   path: '/?tab=search' },
+        { label: 'Búsqueda Video', path: '/?tab=video' },
+        { label: 'Chat IA',        path: '/?tab=chat' },
+      ],
+      govEndpoints: [
+        { label: 'Health / proxy',  url: `${v.apiBase}/api/health`,       method: 'GET', id: 'vision-health' },
+        { label: 'Historial chat',  url: `${v.apiBase}/api/chat/history`,  method: 'GET', id: 'vision-chat' },
+      ],
+    },
+    panaderia: {
+      id: 'panaderia', name: 'Rauli Panadería', shortName: 'Panadería',
+      role: 'Brazo Operativo', icon: '🥖', color: 'var(--accent-green)',
+      base: p.frontendBase, health: `${p.apiBase}/api/health`, pollId: POLL_PANADERIA,
+      navLinks: [
+        { label: 'Dashboard',    path: '/' },
+        { label: 'POS / Caja',   path: '/pos' },
+        { label: 'Ventas',       path: '/sales' },
+        { label: 'Inventario',   path: '/inventory' },
+        { label: 'Producción',   path: '/produccion' },
+        { label: 'Caja',         path: '/cash' },
+        { label: 'Reportes',     path: '/reports' },
+        { label: 'Empleados',    path: '/employees' },
+        { label: 'Contabilidad', path: '/accounting' },
+        { label: 'Gerencia',     path: '/gerencia' },
+        { label: 'Gastos',       path: '/expenses' },
+        { label: 'Configuración',path: '/settings' },
+      ],
+      govEndpoints: [
+        { label: 'Sentinel status',    url: `${p.apiBase}/api/sentinel/status`,                    method: 'GET', id: 'pan-sentinel' },
+        { label: 'Alertas activas',    url: `${p.apiBase}/api/sentinel/alerts`,                    method: 'GET', id: 'pan-alerts' },
+        { label: 'Métricas sentinel',  url: `${p.apiBase}/api/sentinel/metrics`,                   method: 'GET', id: 'pan-metrics' },
+        { label: 'Ventas hoy',         url: `${p.apiBase}/api/sales/today`,                        method: 'GET', id: 'pan-sales' },
+        { label: 'Inventario resumen', url: `${p.apiBase}/api/inventory/summary`,                  method: 'GET', id: 'pan-inv' },
+        { label: 'Lotes por vencer',   url: `${p.apiBase}/api/inventory/lots/expiring`,            method: 'GET', id: 'pan-exp' },
+        { label: 'Órdenes prod.',      url: `${p.apiBase}/api/production/production-orders`,       method: 'GET', id: 'pan-prod' },
+      ],
+    },
+  };
+}
+
+let APPS = _buildApps();
 
 function _esc(s) { const d = document.createElement('span'); d.textContent = s ?? ''; return d.innerHTML; }
 
@@ -142,6 +155,28 @@ export default {
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
                 Recargar frame
               </button>
+              <!-- Config de URLs -->
+              <details style="margin-top:4px">
+                <summary style="font-size:10px;color:var(--text-muted);cursor:pointer;padding:4px 0;list-style:none;display:flex;align-items:center;gap:5px">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+                  Configurar URLs
+                </summary>
+                <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+                  <div>
+                    <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">Frontend (iframe)</div>
+                    <input id="cfg-frontend-url" type="text" placeholder="http://127.0.0.1:5173"
+                      style="width:100%;box-sizing:border-box;padding:6px 8px;font-size:11px;background:var(--surface-2);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);font-family:monospace">
+                  </div>
+                  <div>
+                    <div style="font-size:10px;color:var(--text-muted);margin-bottom:3px">API backend (gobierno)</div>
+                    <input id="cfg-api-url" type="text" placeholder="http://127.0.0.1:3001"
+                      style="width:100%;box-sizing:border-box;padding:6px 8px;font-size:11px;background:var(--surface-2);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);font-family:monospace">
+                  </div>
+                  <button class="action-btn success" id="btn-save-urls" style="justify-content:center;width:100%;font-size:11px">
+                    Guardar y aplicar
+                  </button>
+                </div>
+              </details>
             </div>
           </div>
 
@@ -231,9 +266,35 @@ export default {
       const app = APPS[_activeApp]; if (app) window.open(app.base, '_blank');
     });
 
+    // Config de URLs — poblar inputs y guardar
+    function _updateCfgInputs() {
+      const app = APPS[_activeApp];
+      if (!app) return;
+      const saved = _loadSavedUrls(_activeApp);
+      const fe = container.querySelector('#cfg-frontend-url');
+      const api = container.querySelector('#cfg-api-url');
+      if (fe)  fe.value  = saved.frontendBase;
+      if (api) api.value = saved.apiBase;
+    }
+    _updateCfgInputs();
+
+    container.querySelector('#btn-save-urls')?.addEventListener('click', () => {
+      const fe  = container.querySelector('#cfg-frontend-url')?.value?.trim();
+      const api = container.querySelector('#cfg-api-url')?.value?.trim();
+      if (!fe || !api) return;
+      localStorage.setItem(`atlas-apps-url-${_activeApp}`, JSON.stringify({ frontendBase: fe, apiBase: api }));
+      APPS = _buildApps();
+      _switchApp(_activeApp, container, iframe, urlText);
+      window.AtlasToast?.show('URLs guardadas', 'success');
+    });
+
     // Tabs
     container.querySelectorAll('.apps-tab').forEach(tab => {
-      tab.addEventListener('click', () => _switchApp(tab.dataset.tab, container, iframe, urlText));
+      tab.addEventListener('click', () => {
+        _switchApp(tab.dataset.tab, container, iframe, urlText);
+        // Actualizar inputs de config para el nuevo brazo
+        setTimeout(_updateCfgInputs, 0);
+      });
     });
 
     // Polling de health para los dos brazos
