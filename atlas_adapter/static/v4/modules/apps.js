@@ -12,8 +12,8 @@ const POLL_PANADERIA = 'apps-panaderia-health';
 // Panadería: frontend en :5173 (Vite dev), API en :3001
 // Vision:    frontend en :5173/:5174 (Vite dev) o :3000 (cliente-local con static)
 const APP_DEFAULTS = {
-  vision:    { frontendBase: 'http://127.0.0.1:5174', apiBase: 'http://127.0.0.1:3000' },
-  panaderia: { frontendBase: 'http://127.0.0.1:5173', apiBase: 'http://127.0.0.1:3001' },
+  vision:    { frontendBase: 'http://localhost:5174', apiBase: 'http://localhost:3000' },
+  panaderia: { frontendBase: 'http://localhost:5173', apiBase: 'http://localhost:3001' },
 };
 
 // Carga URLs guardadas en localStorage
