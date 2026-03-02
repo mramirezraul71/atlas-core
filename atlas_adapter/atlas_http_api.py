@@ -13304,7 +13304,7 @@ _ARM_DEFS: dict = {
             {
                 "label": "Frontend",
                 "cwd": "_external/rauli-panaderia/frontend",
-                "cmd": "npm run preview -- --host --strictPort --port 5173",
+                "cmd": "npm run dev -- --host --strictPort --port 5173",
             },
         ],
     },
@@ -13321,7 +13321,7 @@ _ARM_DEFS: dict = {
             {
                 "label": "Dashboard",
                 "cwd": "_external/RAULI-VISION/dashboard",
-                "cmd": "npm run preview -- --host --strictPort --port 5174",
+                "cmd": "npm run dev -- --host --strictPort --port 5174",
             },
         ],
     },

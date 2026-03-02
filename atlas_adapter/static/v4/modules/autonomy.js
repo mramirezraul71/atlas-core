@@ -10,6 +10,25 @@ const POLL_ID = 'autonomy-module';
 
 function _esc(s) { const d = document.createElement('span'); d.textContent = s ?? ''; return d.innerHTML; }
 function _time(ts) { if (!ts) return '--'; try { return new Date(ts).toLocaleTimeString(); } catch { return String(ts); } }
+function _payload(data) { return data?.data ?? data ?? {}; }
+
+function _daemonRunning(payload) {
+  const bySubsystem = payload?.subsystems?.daemon;
+  if (typeof bySubsystem?.active === 'boolean') return bySubsystem.active;
+
+  const daemon = payload?.daemon || payload?.daemon_status || {};
+  if (typeof daemon === 'string') {
+    const value = daemon.toLowerCase();
+    return value === 'running' || value === 'active' || value === 'on';
+  }
+  return daemon.running === true || daemon.active === true || daemon.status === 'running';
+}
+
+function _aggrConfig(data) {
+  const p = _payload(data);
+  if (p && typeof p === 'object' && p.config && typeof p.config === 'object') return p.config;
+  return p || {};
+}
 
 function _modeBadge(mode) {
   const m = (mode + '').toLowerCase();
@@ -175,7 +194,7 @@ export default {
     // Governance mode
     container.querySelector('#btn-gov-growth')?.addEventListener('click',    () => _setMode('growth', container));
     container.querySelector('#btn-gov-governed')?.addEventListener('click',  () => _setMode('governed', container));
-    container.querySelector('#btn-gov-learning')?.addEventListener('click',  () => _setMode('learning', container));
+    container.querySelector('#btn-gov-learning')?.addEventListener('click',  () => _setMode('governed', container, { uiLabel: 'learning', reason: 'learning profile from panel v4' }));
     container.querySelector('#btn-emergency')?.addEventListener('click',     () => _emergency(container));
 
     // Daemon
@@ -228,18 +247,43 @@ async function _refresh(container) {
 /* ─── Renderizadores de estado ──────────────────────────────────────── */
 
 function _renderAutonomy(container, data) {
-  const p = data?.data ?? data;
-  const daemon = p?.daemon || p?.daemon_status || {};
-  const running = typeof daemon === 'string'
-    ? daemon === 'running'
-    : (daemon.running === true || daemon.status === 'running');
+  const p = _payload(data);
+  const running = _daemonRunning(p);
+
   const stateEl = container.querySelector('#daemon-state');
   if (stateEl) {
     stateEl.textContent = running ? 'Activo' : 'Detenido';
     stateEl.style.color = running ? 'var(--accent-green)' : 'var(--accent-red)';
   }
+
   const upEl = container.querySelector('#daemon-uptime');
-  if (upEl) upEl.textContent = p?.uptime ? `Uptime: ${p.uptime}` : '';
+  if (upEl) {
+    const uptimeHours = Number(p?.kpis?.uptime_hours);
+    if (Number.isFinite(uptimeHours) && uptimeHours >= 0) {
+      upEl.textContent = `Uptime: ${uptimeHours.toFixed(1)}h`;
+    } else if (p?.uptime) {
+      upEl.textContent = `Uptime: ${p.uptime}`;
+    } else {
+      upEl.textContent = '';
+    }
+  }
+
+  const queueCount = Number(p?.kpis?.pending_queue_count);
+  const taskCountEl = container.querySelector('#task-count');
+  if (taskCountEl && Number.isFinite(queueCount) && queueCount >= 0) {
+    taskCountEl.textContent = String(queueCount);
+  }
+
+  const startBtn = container.querySelector('#btn-start');
+  const stopBtn = container.querySelector('#btn-stop');
+  if (startBtn) startBtn.disabled = running;
+  if (stopBtn) stopBtn.disabled = !running;
+
+  const msg = container.querySelector('#au-msg');
+  if (msg && /^Daemon (start|stop): OK$/i.test((msg.textContent || '').trim())) {
+    msg.textContent = '';
+  }
+
   set('lastActivity', `Autonomy: ${running ? 'running' : 'stopped'}`);
 }
 
@@ -254,12 +298,16 @@ function _renderGovernance(container, data) {
 }
 
 function _renderTasks(container, data) {
-  const p = data?.data ?? data;
+  const p = _payload(data);
   const items = p?.tasks || p?.items || (Array.isArray(p) ? p : []);
-  const countEl = container.querySelector('#task-count');
   const countLbl = container.querySelector('#task-count-lbl');
-  if (countEl) countEl.textContent = items.length;
-  if (countLbl) countLbl.textContent = `${items.length} tareas`;
+  if (countLbl) {
+    const queueCount = items.reduce((acc, t) => {
+      const st = _taskStatus(t?.status || t?.state);
+      return acc + (st === 'pending' || st === 'running' ? 1 : 0);
+    }, 0);
+    countLbl.textContent = `${queueCount} en cola / ${items.length} total`;
+  }
 
   const el = container.querySelector('#autonomy-tasks');
   if (!el) return;
@@ -300,7 +348,7 @@ async function _loadAggrConfig(container) {
 }
 
 function _renderAggrConfig(container, data) {
-  const p = data?.data ?? data;
+  const p = _aggrConfig(data);
   const enabled = p?.enabled === true || p?.active === true;
   const idle = p?.idle_sec ?? p?.idle_seconds ?? 120;
   const interval = p?.interval_sec ?? p?.check_interval ?? 30;
@@ -377,7 +425,7 @@ async function _toggleAggr(container) {
     // Get current state first
     const r0 = await fetch('/api/autonomy/aggressive/config');
     const d0 = await r0.json().catch(() => ({}));
-    const p0 = d0?.data ?? d0;
+    const p0 = _aggrConfig(d0);
     const wasEnabled = p0?.enabled === true || p0?.active === true;
 
     const r = await fetch('/api/autonomy/aggressive/config', {
@@ -399,20 +447,21 @@ async function _toggleAggr(container) {
 
 /* ─── Governance actions ────────────────────────────────────────────── */
 
-async function _setMode(mode, container) {
-  if (!confirm(`¿Cambiar modo de gobierno a ${mode.toUpperCase()}?`)) return;
+async function _setMode(mode, container, opts = {}) {
+  const displayMode = (opts?.uiLabel || mode || '').toUpperCase();
+  if (!confirm(`¿Cambiar modo de gobierno a ${displayMode}?`)) return;
   const msg = container.querySelector('#gov-msg');
-  if (msg) msg.textContent = `Cambiando a ${mode}...`;
+  if (msg) msg.textContent = `Cambiando a ${displayMode}...`;
   try {
     const r = await fetch('/governance/mode', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode }),
+      body: JSON.stringify({ mode, reason: opts?.reason || '' }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || d.ok === false) throw new Error(d.error || `HTTP ${r.status}`);
-    window.AtlasToast?.show(`Modo → ${mode.toUpperCase()}`, 'success');
-    if (msg) msg.textContent = `✓ Modo cambiado a ${mode.toUpperCase()}`;
+    window.AtlasToast?.show(`Modo → ${displayMode}`, 'success');
+    if (msg) msg.textContent = `✓ Modo cambiado a ${displayMode}`;
     setTimeout(() => _refresh(container), 1000);
   } catch (e) {
     window.AtlasToast?.show(e.message, 'error');
@@ -429,7 +478,7 @@ async function _emergency(container) {
     const r = await fetch('/governance/emergency', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason: 'Manual emergency stop desde panel v4' }),
+      body: JSON.stringify({ enable: true, reason: 'Manual emergency stop desde panel v4' }),
     });
     const d = await r.json().catch(() => ({}));
     if (!r.ok || d.ok === false) throw new Error(d.error || `HTTP ${r.status}`);
@@ -457,6 +506,10 @@ async function _daemon(action, container) {
     window.AtlasToast?.show(`Daemon ${action}: OK`, 'success');
     if (msg) msg.textContent = `Daemon ${action}: OK`;
     setTimeout(() => _refresh(container), 1500);
+    setTimeout(() => {
+      const m = container.querySelector('#au-msg');
+      if (m && /^Daemon (start|stop): OK$/i.test((m.textContent || '').trim())) m.textContent = '';
+    }, 5000);
   } catch (e) {
     window.AtlasToast?.show(e.message, 'error');
     if (msg) msg.textContent = `Error: ${e.message}`;
@@ -494,12 +547,15 @@ async function _loadGovLog(container) {
   try {
     const r = await fetch('/governance/log');
     const d = await r.json().catch(() => null);
-    const p = d?.data ?? d ?? {};
-    const items = Array.isArray(p) ? p : (p?.items || p?.entries || []);
+    const p = _payload(d);
+    const items = Array.isArray(p) ? p : (p?.log || p?.items || p?.entries || []);
     if (!items.length) { el.innerHTML = `<div class="empty-state"><div class="empty-title">Sin entradas de log</div></div>`; return; }
     el.innerHTML = [...items].reverse().slice(0, 30).map(entry => {
-      const msg = entry.message || entry.msg || entry.text || JSON.stringify(entry);
-      const ts  = _time(entry.timestamp || entry.ts);
+      const msg = entry.message
+        || entry.msg
+        || entry.text
+        || (entry.action ? `${entry.action}: ${entry.from_val ?? '--'} -> ${entry.to_val ?? '--'}` : JSON.stringify(entry));
+      const ts  = _time(entry.timestamp || entry.ts || entry.created_ts || entry.created_at);
       const lvl = (entry.level || entry.type || 'info').toLowerCase();
       const cls = lvl.includes('error') ? 'error' : lvl.includes('warn') ? 'warn' : 'info';
       return `<div class="tl-entry ${cls}">

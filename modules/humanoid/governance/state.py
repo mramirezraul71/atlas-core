@@ -86,7 +86,8 @@ def _ensure() -> Optional[sqlite3.Connection]:
     try:
         parent = Path(_DB_PATH).resolve().parent
         parent.mkdir(parents=True, exist_ok=True)
-        _conn = sqlite3.connect(_DB_PATH, timeout=5)
+        # Shared across FastAPI worker threads; keep one connection with thread checks disabled.
+        _conn = sqlite3.connect(_DB_PATH, timeout=5, check_same_thread=False)
         _conn.executescript(_SCHEMA)
         _conn.commit()
         _load_from_db(_conn)
