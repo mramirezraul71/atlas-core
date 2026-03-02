@@ -190,7 +190,9 @@ function _updateActive(currentRoute) {
 
   _menu.querySelectorAll('.megamenu-item').forEach(item => {
     const r = item.dataset.route;
-    const match = r && (r === clean || r === `/${clean.replace(/^\//, '')}`);
+    // Highlight /modules también cuando se navega a sub-rutas de body-module
+    const parentMatch = r === '/modules' && clean.startsWith('/body-module/');
+    const match = r && (r === clean || r === `/${clean.replace(/^\//, '')}` || parentMatch);
     item.classList.toggle('active', !!match);
   });
 

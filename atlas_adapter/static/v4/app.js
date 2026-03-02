@@ -240,8 +240,8 @@ function _handleRoute() {
 
   // Dispatch to registered module
   const moduleId = hash.replace(/^\//, '');
-  const mod = MODULE_REGISTRY[moduleId];
-  if (mod) {
+
+  function _mountMod(mod, v) {
     try {
       const cleanup = mod.render(v);
       _currentCleanup = () => {
@@ -259,7 +259,17 @@ function _handleRoute() {
     } catch (e) {
       v.innerHTML = `<div class="module-view"><div class="module-header"><button class="back-btn" onclick="location.hash='/'">← Dashboard</button><h2>Error</h2></div><div class="module-body"><p style="color:var(--accent-red)">${_esc(e.message)}</p></div></div>`;
     }
-    return;
+  }
+
+  const mod = MODULE_REGISTRY[moduleId];
+  if (mod) { _mountMod(mod, v); return; }
+
+  // Prefix routing para sub-rutas (ej: body-module/ans → MODULE_REGISTRY['body-module'])
+  const slashIdx = moduleId.indexOf('/');
+  if (slashIdx >= 0) {
+    const prefixId  = moduleId.slice(0, slashIdx);
+    const prefixMod = MODULE_REGISTRY[prefixId];
+    if (prefixMod) { _mountMod(prefixMod, v); return; }
   }
 
   // Special routes
@@ -277,7 +287,7 @@ async function _loadModules() {
   const MODULE_NAMES = [
     'health', 'modules', 'config', 'bitacora', 'memory', 'learning',
     'autonomy', 'healing', 'approvals', 'audit', 'comms',
-    'events', 'api_explorer', 'voice', 'trading',
+    'events', 'api_explorer', 'voice', 'trading', 'body_module',
   ];
   for (const name of MODULE_NAMES) {
     try {

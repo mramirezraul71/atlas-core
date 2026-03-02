@@ -172,7 +172,7 @@ function _render(container, data) {
     const ok   = m.status === 'connected';
     const meta = MODULE_META[m.name] || { label: m.name, icon: '⚙️', desc: m.module || '' };
     const errTip = m.error ? `title="${_esc(m.error)}"` : '';
-    return `<div class="provider-card ${ok ? 'active' : 'down'}" ${errTip}>
+    return `<div class="provider-card ${ok ? 'active' : 'down'}" data-module="${_esc(m.name)}" style="cursor:pointer;position:relative" ${errTip}>
       <div style="font-size:22px;margin-bottom:6px">${meta.icon}</div>
       <div class="provider-name">${_esc(meta.label)}</div>
       <div class="provider-role">${_esc(meta.desc)}</div>
@@ -181,25 +181,39 @@ function _render(container, data) {
         ${ok ? 'Conectado' : 'Error'}
       </div>
       ${!ok ? `<button class="action-btn" style="margin-top:10px;width:100%;font-size:11px;padding:6px 8px"
-        onclick="window._reconnectModule('${_esc(m.name)}', this)">
+        data-reconnect="${_esc(m.name)}">
         ↻ Reconectar
       </button>` : ''}
       ${m.error ? `<div style="font-size:10px;color:var(--accent-red);margin-top:6px;word-break:break-word;max-height:40px;overflow:hidden">${_esc(m.error.slice(0, 80))}</div>` : ''}
+      <div style="font-size:10px;color:var(--text-muted);margin-top:10px;opacity:0.7">Ver detalles →</div>
     </div>`;
   }).join('');
 
-  window._reconnectModule = async (moduleId, btn) => {
-    if (btn) btn.disabled = true;
-    try {
-      const r = await fetch(`/modules/reconnect/${encodeURIComponent(moduleId)}`, { method: 'POST' });
-      const d = await r.json().catch(() => ({}));
-      window.AtlasToast?.show(d.ok !== false ? `Reconectado: ${moduleId}` : (d.error || 'Error'), d.ok !== false ? 'success' : 'error');
-      setTimeout(() => _checkAll(container), 800);
-    } catch (e) {
-      window.AtlasToast?.show(e.message, 'error');
-      if (btn) btn.disabled = false;
+  // Event delegation: click en tarjeta → detalle, click en botón reconectar → reconectar
+  grid.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-reconnect]');
+    if (btn) {
+      e.stopPropagation();
+      const moduleId = btn.dataset.reconnect;
+      btn.disabled = true;
+      try {
+        const r = await fetch(`/modules/reconnect/${encodeURIComponent(moduleId)}`, { method: 'POST' });
+        const d = await r.json().catch(() => ({}));
+        window.AtlasToast?.show(d.ok !== false ? `Reconectado: ${moduleId}` : (d.error || 'Error'), d.ok !== false ? 'success' : 'error');
+        setTimeout(() => _checkAll(container), 800);
+      } catch (e2) {
+        window.AtlasToast?.show(e2.message, 'error');
+        btn.disabled = false;
+      }
+      return;
     }
-  };
+
+    // Click en la tarjeta → navegar al detalle
+    const card = e.target.closest('[data-module]');
+    if (card) {
+      location.hash = `/body-module/${card.dataset.module}`;
+    }
+  });
 }
 
 window.AtlasModuleModules = { id: 'modules' };
