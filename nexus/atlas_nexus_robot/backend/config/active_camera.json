@@ -1,9 +1,9 @@
 {
-  "index": 2,
+  "index": 0,
   "model": "Webcam est\u00e1ndar",
   "resolution": [
-    640,
-    480
+    1280,
+    720
   ],
   "capabilities": [
     "video"

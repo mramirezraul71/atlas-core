@@ -96,7 +96,19 @@ FAILOVER_CHAINS = {
 _PROVIDER_ALIAS = {
     "xai": "grok",
     "google": "gemini",
+    "codex": "openai",
 }
+
+
+def _resolve_openai_model_alias(model: str) -> str:
+    """Map local aliases to concrete OpenAI models."""
+    m = (model or "").strip().lower()
+    if m in ("codex-auto", "codex", "code"):
+        return (
+            (os.getenv("OPENAI_CODEX_MODEL") or "gpt-4.1-mini").strip()
+            or "gpt-4.1-mini"
+        )
+    return model
 
 # ──────────────────────────────────────────────
 #  Complexity classification
@@ -883,6 +895,7 @@ def _openai_compatible_call(
 ):
     """Call OpenAI-compatible API (OpenAI, Grok, DeepSeek, Groq). Returns Anthropic-like response."""
     import httpx
+    model = _resolve_openai_model_alias(model)
 
     oai_messages = [{"role": "system", "content": system}]
     for msg in messages:

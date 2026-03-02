@@ -5099,6 +5099,13 @@ _MODEL_CATALOG = [
     },
     # ── API DE PAGO ──
     {
+        "id": "openai:codex-auto",
+        "name": "Codex (OpenAI)",
+        "provider": "openai",
+        "desc": "Coding agent de OpenAI (OPENAI_CODEX_MODEL o fallback)",
+        "category": "code",
+    },
+    {
         "id": "openai:gpt-4.1",
         "name": "GPT-4.1",
         "provider": "openai",
@@ -10589,6 +10596,10 @@ def _try_single_call(
     enrich: bool = True,
 ) -> dict:
     """Intenta una llamada a un modelo. Retorna dict con ok, output, ms, model_used."""
+    if provider_id == "openai" and model_name in ("codex-auto", "codex", "code"):
+        model_name = (
+            os.getenv("OPENAI_CODEX_MODEL") or "gpt-4.1-mini"
+        ).strip() or "gpt-4.1-mini"
     spec = "%s:%s" % (provider_id, model_name)
     sys_prompt = _get_system_prompt(use_config)
     if enrich:

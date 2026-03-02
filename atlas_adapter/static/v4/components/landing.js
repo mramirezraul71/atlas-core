@@ -93,7 +93,7 @@ export function render(container) {
     <div class="landing-footer">
       <span id="footer-uptime">Uptime: --</span>
       <span id="footer-model">Model: --</span>
-      <span>v4.0.0</span>
+      <span>v4.1.0</span>
     </div>
   `;
 
@@ -103,32 +103,49 @@ export function render(container) {
   function submitSearch() {
     const q = searchInput.value.trim();
     if (!q) return;
-    // v4 is presentation-only. Send users to the operational dashboard (v3).
-    window.location.href = `/v3`;
+    location.hash = `/bitacora?q=${encodeURIComponent(q)}`;
   }
 
   searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitSearch(); });
   submitBtn.addEventListener('click', submitSearch);
 
+  const CHIP_ROUTES = {
+    health:    { hash: '/health' },
+    workspace: { href: '/workspace', newTab: true },
+    bitacora:  { hash: '/bitacora' },
+    config:    { hash: '/config' },
+    autonomy:  { hash: '/autonomy' },
+  };
+
   container.querySelectorAll('.quick-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       window.AtlasSounds?.click();
-      const action = chip.dataset.action;
-      if (action === 'workspace') {
-        window.open('/workspace', '_blank');
-      } else {
-        window.location.href = '/v3';
-      }
+      const r = CHIP_ROUTES[chip.dataset.action];
+      if (!r) return;
+      if (r.hash) location.hash = r.hash;
+      else if (r.newTab) window.open(r.href, '_blank');
+      else window.location.href = r.href;
     });
   });
+
+  const TILE_ROUTES = {
+    'assistant':    { href: '/v3' },
+    'workspace-ext':{ href: '/workspace', newTab: true },
+    'governance':   { hash: '/autonomy' },
+    'approvals':    { hash: '/approvals' },
+    'monitor':      { hash: '/health' },
+    'trading':      { hash: '/trading' },
+    'config-tile':  { hash: '/config' },
+  };
 
   container.querySelectorAll('.app-tile').forEach(tile => {
     tile.addEventListener('click', () => {
       window.AtlasSounds?.click();
-      const app = tile.dataset.app;
-      if (app === 'assistant') window.location.href = '/v3';
-      else if (app === 'workspace-ext') window.open('/workspace', '_blank');
-      else window.location.href = '/v3';
+      const r = TILE_ROUTES[tile.dataset.app];
+      if (!r) return;
+      if (r.hash) location.hash = r.hash;
+      else if (r.newTab) window.open(r.href, '_blank');
+      else window.location.href = r.href;
     });
   });
 

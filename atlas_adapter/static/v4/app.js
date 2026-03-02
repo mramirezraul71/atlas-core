@@ -39,47 +39,18 @@ function _buildTopbar(app) {
     </div>
     <div class="topbar-center"></div>
     <div class="topbar-right">
-      <span class="topbar-version" id="topbar-version">v4.0</span>
+      <span class="topbar-version" id="topbar-version">v4.1.0</span>
       <button class="topbar-btn" id="btn-theme" title="Cambiar tema">${SVG.theme}</button>
       <button class="topbar-btn" id="btn-home" title="Inicio">${SVG.home}</button>
-      <div class="topbar-menu-wrap">
-        <button class="topbar-btn" id="btn-menu" title="Menú">${SVG.menu}</button>
-        <div class="topbar-menu" id="topbar-menu" role="menu" aria-label="Navegación">
-          <a class="topbar-menu-item" href="/v3" role="menuitem">📊 Dashboard</a>
-          <a class="topbar-menu-item" href="/workspace" role="menuitem">⚡ Workspace</a>
-          <div class="topbar-menu-divider"></div>
-          <button type="button" class="topbar-menu-item" id="btn-actualizar" role="menuitem">🔄 Actualizar ATLAS</button>
-        </div>
-      </div>
+      <button class="topbar-btn" id="btn-menu" title="Menú" aria-label="Menú principal">${SVG.menu}</button>
     </div>
   `;
   app.appendChild(bar);
 
-  const menuEl = bar.querySelector('#topbar-menu');
   const btnMenu = bar.querySelector('#btn-menu');
-  const btnActualizar = bar.querySelector('#btn-actualizar');
-
-  function closeMenu() {
-    menuEl.classList.remove('open');
-    btnMenu.setAttribute('aria-expanded', 'false');
-    document.removeEventListener('click', _closeOnOutside);
-  }
-  function _closeOnOutside(e) {
-    if (!bar.contains(e.target)) closeMenu();
-  }
   btnMenu.addEventListener('click', (e) => {
     e.stopPropagation();
-    const open = menuEl.classList.toggle('open');
-    btnMenu.setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open) setTimeout(() => document.addEventListener('click', _closeOnOutside), 0);
-    else document.removeEventListener('click', _closeOnOutside);
-  });
-  bar.querySelectorAll('.topbar-menu-item[href]').forEach((a) => {
-    a.addEventListener('click', () => closeMenu());
-  });
-  btnActualizar.addEventListener('click', () => {
-    closeMenu();
-    window.AtlasUpdatePanel?.open?.() || _openUpdatePanel();
+    window.AtlasMegaMenu?.toggle?.();
   });
 
   bar.querySelector('#btn-home').addEventListener('click', () => { location.hash = '/'; });
@@ -255,28 +226,79 @@ function _clearView() {
 function _handleRoute() {
   const hash = (location.hash.slice(1) || '/').split('?')[0];
   window.AtlasCompanion?.onNavigate?.(hash);
+  window.AtlasState?.set('menuOpen', false);
 
-  // Landing-only: any deep link should go to the operational dashboard (v3).
-  if (hash && hash !== '/' && hash !== '') {
-    window.location.href = '/v3';
-    return;
-  }
   const v = _clearView();
   if (!v) return;
 
-  const cleanup = window.AtlasLanding?.render(v);
-  if (typeof cleanup === 'function') _currentCleanup = cleanup;
+  // Landing
+  if (!hash || hash === '/') {
+    const cleanup = window.AtlasLanding?.render(v);
+    if (typeof cleanup === 'function') _currentCleanup = cleanup;
+    return;
+  }
+
+  // Dispatch to registered module
+  const moduleId = hash.replace(/^\//, '');
+  const mod = MODULE_REGISTRY[moduleId];
+  if (mod) {
+    try {
+      const cleanup = mod.render(v);
+      _currentCleanup = () => {
+        if (typeof cleanup === 'function') try { cleanup(); } catch {}
+        try { mod.destroy?.(); } catch {}
+      };
+    } catch (e) {
+      v.innerHTML = `<div class="module-view"><div class="module-header"><button class="back-btn" onclick="location.hash='/'">← Home</button><h2>Error</h2></div><div class="module-body"><p style="color:var(--accent-red)">${e.message}</p></div></div>`;
+    }
+    return;
+  }
+
+  // Special routes
+  if (moduleId === '_update' || moduleId === '__update') {
+    location.hash = '/';
+    setTimeout(() => window.AtlasUpdatePanel?.open?.(), 50);
+    return;
+  }
+
+  // Unknown route → landing
+  location.hash = '/';
 }
 
 async function _loadModules() {
-  // Landing-only.
-  return;
+  const MODULE_NAMES = [
+    'health', 'config', 'bitacora', 'memory', 'learning',
+    'autonomy', 'healing', 'approvals', 'audit', 'comms',
+    'events', 'api_explorer', 'voice',
+  ];
+  for (const name of MODULE_NAMES) {
+    try {
+      const mod = (await import(`/v4/static/modules/${name}.js`)).default;
+      if (mod?.id) MODULE_REGISTRY[mod.id] = mod;
+    } catch (e) {
+      console.warn(`[Atlas v4.1] Module "${name}" no cargado:`, e.message);
+    }
+  }
 }
 
 function _startHealthPolling() {
-  // Landing-only: keep dot green without polling.
-  const dot = document.getElementById('topbar-dot');
-  if (dot) dot.className = 'topbar-health-dot';
+  async function _poll() {
+    try {
+      const r = await fetch('/health');
+      const d = await r.json();
+      const uptime = d.checks?.active_port ? 'online' : '--';
+      const version = d.checks?.version || d.version || '--';
+      window.AtlasState?.set('health', { uptime, ok: d.ok, score: d.score });
+      window.AtlasState?.set('model', version);
+      const dot = document.getElementById('topbar-dot');
+      if (dot) dot.className = `topbar-health-dot${d.ok ? '' : ' error'}`;
+    } catch {
+      const dot = document.getElementById('topbar-dot');
+      if (dot) dot.className = 'topbar-health-dot error';
+    }
+  }
+  _poll();
+  setInterval(_poll, 12000);
 }
 
 async function main() {
@@ -291,7 +313,8 @@ async function main() {
   app.innerHTML = '';
 
   _buildTopbar(app);
-  // No mega menu on landing-only.
+  window.AtlasUpdatePanel = { open: _openUpdatePanel };
+  window.AtlasMegaMenu?.mount?.(app);
 
   const viewContainer = document.createElement('main');
   viewContainer.id = 'app-view';

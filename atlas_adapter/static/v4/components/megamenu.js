@@ -9,56 +9,48 @@ const MENU_ITEMS = [
   {
     category: 'AI & Tools',
     items: [
-      { id: 'assistant', label: 'AI Assistant', desc: 'Open operational dashboard', icon: 'brain', href: '/ui' },
+      { id: 'assistant', label: 'AI Assistant', desc: 'Panel operacional v3.8', icon: 'brain', href: '/v3' },
       { id: 'workspace', label: 'Workspace', desc: 'Agent IDE interface', icon: 'terminal', href: '/workspace' },
-      { id: 'interpreter', label: 'Interpreter', desc: 'Open operational dashboard', icon: 'code', href: '/ui' },
-    ]
-  },
-  {
-    category: 'Legacy',
-    items: [
-      { id: 'ui-v3', label: 'Dashboard', desc: 'Operational UI (/ui)', icon: 'layout', href: '/ui' },
+      { id: 'api', label: 'API Explorer', desc: 'Explorar endpoints en vivo', icon: 'code', route: '/api_explorer' },
     ]
   },
   {
     category: 'Monitoring',
     items: [
-      { id: 'health', label: 'System Health', desc: 'Open operational dashboard', icon: 'activity', href: '/ui' },
-      { id: 'bitacora', label: 'Bitacora', desc: 'Open operational dashboard', icon: 'file-text', href: '/ui' },
-      { id: 'monitor', label: 'Monitor', desc: 'Open operational dashboard', icon: 'monitor', href: '/ui' },
-      { id: 'nervous', label: 'Nervous System', desc: 'Open operational dashboard', icon: 'zap', href: '/ui' },
-      { id: 'audit', label: 'Audit Tail', desc: 'Open operational dashboard', icon: 'file-text', href: '/ui' },
-      { id: 'events', label: 'Event Bus', desc: 'Open operational dashboard', icon: 'zap', href: '/ui' },
-      { id: 'healing', label: 'Healing', desc: 'Open operational dashboard', icon: 'activity', href: '/ui' },
-      { id: 'memory', label: 'Cognitive Memory', desc: 'Open operational dashboard', icon: 'brain', href: '/ui' },
+      { id: 'health', label: 'System Health', desc: 'Estado del sistema en tiempo real', icon: 'activity', route: '/health' },
+      { id: 'bitacora', label: 'Bitácora', desc: 'Registro de eventos del sistema', icon: 'file-text', route: '/bitacora' },
+      { id: 'audit', label: 'Audit Log', desc: 'Historial de auditoría', icon: 'file-text', route: '/audit' },
+      { id: 'events', label: 'Event Bus', desc: 'Eventos del bus en tiempo real', icon: 'zap', route: '/events' },
+      { id: 'healing', label: 'Auto-Healing', desc: 'Estado de auto-reparación ANS', icon: 'activity', route: '/healing' },
+      { id: 'memory', label: 'Memoria Cognitiva', desc: 'Episódica, semántica y de trabajo', icon: 'brain', route: '/memory' },
     ]
   },
   {
     category: 'Control',
     items: [
-      { id: 'governance', label: 'Governance', desc: 'Open operational dashboard', icon: 'shield', href: '/ui' },
-      { id: 'autonomy', label: 'Autonomy', desc: 'Open operational dashboard', icon: 'cpu', href: '/ui' },
-      { id: 'approvals', label: 'Approvals', desc: 'Open operational dashboard', icon: 'shield', href: '/ui' },
+      { id: 'autonomy', label: 'Autonomy', desc: 'Nivel de autonomía del sistema', icon: 'cpu', route: '/autonomy' },
+      { id: 'approvals', label: 'Approvals', desc: 'Flujos de aprobación pendientes', icon: 'shield', route: '/approvals' },
     ]
   },
   {
-    category: 'Configuration',
+    category: 'Configuración',
     items: [
-      { id: 'config', label: 'AI Models', desc: 'Open operational dashboard', icon: 'sliders', href: '/ui' },
-      { id: 'comms', label: 'Communications', desc: 'Open operational dashboard', icon: 'message-circle', href: '/ui' },
-      { id: 'voice', label: 'Voice', desc: 'Open operational dashboard', icon: 'message-circle', href: '/ui' },
-    ]
-  },
-  {
-    category: 'Tools',
-    items: [
-      { id: 'api', label: 'API Explorer', desc: 'Open operational dashboard', icon: 'code', href: '/ui' },
+      { id: 'config', label: 'Modelos AI', desc: 'Proveedores y claves de API', icon: 'sliders', route: '/config' },
+      { id: 'comms', label: 'Comunicaciones', desc: 'Email, Slack, webhooks', icon: 'message-circle', route: '/comms' },
+      { id: 'voice', label: 'Voz', desc: 'Interfaz de voz y TTS', icon: 'message-circle', route: '/voice' },
     ]
   },
   {
     category: 'Apps',
     items: [
-      { id: 'trading', label: 'Trading', desc: 'Open operational dashboard', icon: 'trending-up', href: '/ui', badge: 'Soon' },
+      { id: 'trading', label: 'Trading', desc: 'Panel de trading con IA (Grok)', icon: 'trending-up', route: '/trading', badge: 'Beta' },
+    ]
+  },
+  {
+    category: 'Legacy',
+    items: [
+      { id: 'ui-v3', label: 'Dashboard v3.8', desc: 'Panel operacional completo', icon: 'layout', href: '/v3' },
+      { id: 'update', label: 'Actualizar ATLAS', desc: 'Comprobar y aplicar actualizaciones', icon: 'zap', route: '/__update' },
     ]
   },
 ];

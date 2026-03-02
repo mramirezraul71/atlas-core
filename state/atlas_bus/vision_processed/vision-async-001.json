@@ -1,0 +1,12 @@
+﻿{
+  "event_id": "vision-async-001",
+  "source": "rauli-vision",
+  "timestamp_iso": "2026-03-01T01:00:00Z",
+  "camera_id": "cam-01",
+  "store_id": "panaderia-central",
+  "anomaly": {"detected": false, "severity": "low"},
+  "detections": [
+    {"product_id": "prod-pan-001", "count": 2, "quality_score": 0.95, "confidence": 0.92, "action_hint": "entrada"},
+    {"product_id": "prod-pan-002", "count": 1, "quality_score": 0.90, "confidence": 0.88, "action_hint": "merma"}
+  ]
+}
