@@ -275,7 +275,7 @@ function _handleRoute() {
 
 async function _loadModules() {
   const MODULE_NAMES = [
-    'health', 'config', 'bitacora', 'memory', 'learning',
+    'health', 'modules', 'config', 'bitacora', 'memory', 'learning',
     'autonomy', 'healing', 'approvals', 'audit', 'comms',
     'events', 'api_explorer', 'voice', 'trading',
   ];

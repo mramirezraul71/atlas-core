@@ -11,8 +11,9 @@ const MENU_ITEMS = [
   {
     category: 'Núcleo',
     items: [
-      { id: 'health',      label: 'System Health',  desc: 'Score, checks y recursos del sistema', icon: 'activity',  route: '/health' },
-      { id: 'api',         label: 'API Explorer',   desc: 'Explorar y probar endpoints en vivo',   icon: 'code',      route: '/api_explorer' },
+      { id: 'health',   label: 'System Health',      desc: 'Score, checks y recursos del sistema',     icon: 'activity', route: '/health' },
+      { id: 'modules',  label: 'Módulos del Cuerpo', desc: 'Estado de los 16 subsistemas de Atlas',    icon: 'grid',     route: '/modules' },
+      { id: 'api',      label: 'API Explorer',        desc: 'Explorar y probar endpoints en vivo',      icon: 'code',     route: '/api_explorer' },
     ]
   },
   {
@@ -80,6 +81,7 @@ const ICONS = {
   'trending-up': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>',
   mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/></svg>',
   chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>',
+  grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>',
 };
 
 let _overlay = null;
