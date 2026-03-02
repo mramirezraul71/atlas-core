@@ -35,6 +35,14 @@ _log = logging.getLogger("humanoid.quality.autonomy_daemon")
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 
+def _env_components(name: str, default_csv: str) -> set[str]:
+    raw = (os.getenv(name, default_csv) or default_csv).strip()
+    comps = {c.strip().lower() for c in raw.split(",") if c.strip()}
+    if comps:
+        return comps
+    return {c.strip().lower() for c in default_csv.split(",") if c.strip()}
+
+
 # ============================================================================
 # CONFIGURACIÓN
 # ============================================================================
@@ -54,6 +62,15 @@ class AutonomyConfig:
     # Thresholds
     max_consecutive_failures: int = 2  # Era 3, ahora 2 (reaccionar más rápido)
     auto_restart_on_failure: bool = True
+    auto_repair_cooldown_sec: int = int(
+        os.getenv("QUALITY_AUTO_REPAIR_COOLDOWN_SEC", "120") or "120"
+    )
+    auto_repair_components: set[str] = field(
+        default_factory=lambda: _env_components(
+            "QUALITY_AUTO_REPAIR_COMPONENTS",
+            "dispatcher,triggers,services,camera",
+        )
+    )
 
     # Features - ALL ON
     enable_auto_commit: bool = True
@@ -98,6 +115,7 @@ class HealthMonitor:
         self.config = config
         self._checks: Dict[str, Callable[[], bool]] = {}
         self._status: Dict[str, HealthStatus] = {}
+        self._last_repair_ts: Dict[str, float] = {}
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
@@ -203,6 +221,28 @@ class HealthMonitor:
         if not self.config.enable_auto_repair:
             _log.warning("Auto-repair disabled, skipping repair for %s", component)
             return
+        component_norm = (component or "").strip().lower()
+        allowed = set(getattr(self.config, "auto_repair_components", set()) or set())
+        if allowed and component_norm not in allowed:
+            _log.info(
+                "Skipping auto-repair for %s (not allowed by QUALITY_AUTO_REPAIR_COMPONENTS)",
+                component,
+            )
+            return
+        cooldown = max(
+            0, int(getattr(self.config, "auto_repair_cooldown_sec", 0) or 0)
+        )
+        now_ts = time.time()
+        last_ts = float(self._last_repair_ts.get(component, 0) or 0)
+        if cooldown > 0 and (now_ts - last_ts) < cooldown:
+            remaining = int(cooldown - (now_ts - last_ts))
+            _log.info(
+                "Skipping auto-repair for %s (cooldown active, %ss remaining)",
+                component,
+                max(0, remaining),
+            )
+            return
+        self._last_repair_ts[component] = now_ts
 
         _log.warning("Triggering auto-repair for %s", component)
 

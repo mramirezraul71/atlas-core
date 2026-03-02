@@ -28,6 +28,14 @@ def _env_bool(name: str, default: bool) -> bool:
     return v in ("1", "true", "yes", "y", "on")
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = (os.getenv(name, str(default)) or str(default)).strip()
+    try:
+        return int(raw)
+    except Exception:
+        return default
+
+
 class TriggerCondition(str, Enum):
     """Tipos de condiciones que pueden disparar POTs."""
 
@@ -135,10 +143,10 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         name="Reparar API con errores",
         condition=TriggerCondition.API_ERROR,
         pot_id="api_repair",
-        enabled=True,
+        enabled=_env_bool("QUALITY_API_ERROR_TRIGGER_ENABLED", True),
         priority=2,
-        cooldown_seconds=30,  # TURBO: Era 180s, ahora 30s
-        check_interval_seconds=5,
+        cooldown_seconds=_env_int("QUALITY_API_ERROR_TRIGGER_COOLDOWN_SEC", 120),
+        check_interval_seconds=_env_int("QUALITY_API_ERROR_TRIGGER_INTERVAL_SEC", 15),
     ),
     # System Health Triggers - TURBO
     TriggerRule(

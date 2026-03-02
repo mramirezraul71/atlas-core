@@ -127,7 +127,10 @@ Lo ejecutamos primero para aprovechar los heals existentes.
                 step_type=StepType.COMMAND,
                 command="powershell -ExecutionPolicy Bypass -File scripts/restart_service_clean.ps1 -Service push",
                 timeout_seconds=90,
-                condition="context.get('restart_required', False)",
+                condition=(
+                    "context.get('restart_required', False) and "
+                    "context.get('allow_push_restart', False)"
+                ),
                 tutorial_notes="Solo reiniciar si los pasos anteriores no resolvieron.",
             ),
             POTStep(
