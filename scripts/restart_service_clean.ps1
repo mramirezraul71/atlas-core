@@ -13,20 +13,14 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $FreePortScript = Join-Path $PSScriptRoot "free_port.ps1"
 $StartNexusScript = Join-Path $PSScriptRoot "start_nexus.ps1"
+$RuntimeHelpers = Join-Path $PSScriptRoot "atlas_runtime.ps1"
 
-function Resolve-Python([string]$Root) {
-    if ($env:PYTHON -and (Test-Path $env:PYTHON)) { return $env:PYTHON }
-    $candidates = @(
-        (Join-Path $Root ".venv\Scripts\python.exe"),
-        (Join-Path $Root "venv\Scripts\python.exe")
-    )
-    foreach ($c in $candidates) {
-        if (Test-Path $c) { return $c }
-    }
-    return "python"
+if (-not (Test-Path $RuntimeHelpers)) {
+    throw "Runtime helpers not found: $RuntimeHelpers"
 }
+. $RuntimeHelpers
 
-$Python = Resolve-Python -Root $RepoRoot
+$Python = Resolve-AtlasPython -RepoRoot $RepoRoot
 
 function Free-Port {
     param([int]$Port)
@@ -82,10 +76,11 @@ function Start-RobotService {
 }
 
 function Start-PushService {
+    $pushPython = Resolve-AtlasPython -RepoRoot $RepoRoot -RequirePreflight
     Free-Port -Port 8791
     Set-Location $RepoRoot
     Write-Host "Iniciando PUSH (8791) en primer plano. Cierra con Ctrl+C." -ForegroundColor Yellow
-    & $Python -m uvicorn atlas_adapter.atlas_http_api:app --host 0.0.0.0 --port 8791
+    & $pushPython -m uvicorn atlas_adapter.atlas_http_api:app --host 0.0.0.0 --port 8791
 }
 
 # ----- Main -----

@@ -98,6 +98,17 @@ def _ensure() -> Optional[sqlite3.Connection]:
         return None
 
 
+def _reset_connection() -> None:
+    global _conn, _db_failed
+    try:
+        if _conn is not None:
+            _conn.close()
+    except Exception:
+        pass
+    _conn = None
+    _db_failed = False
+
+
 def _load_from_db(c: sqlite3.Connection) -> None:
     global _cache
     try:
@@ -216,21 +227,37 @@ def set_emergency_stop(enable: bool, reason: str = "", actor: str = "api") -> bo
 
 
 def get_log(limit: int = 20) -> list:
+    safe_limit = max(1, min(int(limit or 20), 100))
+
+    def _query(c: sqlite3.Connection) -> list:
+        rows = c.execute(
+            "SELECT action, from_val, to_val, reason, actor, created_ts FROM governance_log ORDER BY id DESC LIMIT ?",
+            (safe_limit,),
+        ).fetchall()
+        return [
+            {
+                "action": r[0],
+                "from_val": r[1],
+                "to_val": r[2],
+                "reason": r[3],
+                "actor": r[4],
+                "created_ts": r[5],
+            }
+            for r in rows
+        ]
+
     c = _ensure()
     if c is None:
         return []
-    rows = c.execute(
-        "SELECT action, from_val, to_val, reason, actor, created_ts FROM governance_log ORDER BY id DESC LIMIT ?",
-        (limit,),
-    ).fetchall()
-    return [
-        {
-            "action": r[0],
-            "from_val": r[1],
-            "to_val": r[2],
-            "reason": r[3],
-            "actor": r[4],
-            "created_ts": r[5],
-        }
-        for r in rows
-    ]
+    try:
+        return _query(c)
+    except sqlite3.Error as e:
+        logger.warning("Governance get_log retry after sqlite error: %s", e)
+        _reset_connection()
+        c = _ensure()
+        if c is None:
+            return []
+        try:
+            return _query(c)
+        except Exception:
+            return []

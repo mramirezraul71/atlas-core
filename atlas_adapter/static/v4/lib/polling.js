@@ -12,6 +12,7 @@ export function poll(id, url, intervalMs, callback) {
     timer: null,
     paused: false,
     errorCount: 0,
+    tick: null,
   };
 
   async function tick() {
@@ -31,6 +32,7 @@ export function poll(id, url, intervalMs, callback) {
     state.timer = setTimeout(tick, backoff);
   }
 
+  state.tick = tick;
   state.timer = setTimeout(tick, 100);
   _polls.set(id, state);
 
@@ -62,17 +64,12 @@ export function resume(id) {
 document.addEventListener('visibilitychange', () => {
   const hidden = document.hidden;
   for (const [, state] of _polls) {
+    clearTimeout(state.timer);
     if (hidden) {
-      clearTimeout(state.timer);
+      state.timer = null;
     } else if (!state.paused) {
-      state.timer = setTimeout(async () => {
-        try {
-          const res = await fetch(state.url);
-          const data = await res.json();
-          state.callback(data, null);
-        } catch (e) { state.callback(null, e); }
-        state.timer = setTimeout(() => {}, state.intervalMs);
-      }, 200);
+      // Resume the real polling loop after tab returns to foreground.
+      state.timer = setTimeout(state.tick, 200);
     }
   }
 });

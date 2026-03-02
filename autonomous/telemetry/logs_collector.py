@@ -155,6 +155,12 @@ class LogsCollector:
             if not rows:
                 return "ts,level,service,module,message\n"
             head = ",".join(rows[0].keys())
-            lines = [head] + [",".join(str(v).replace(",", ";") for v in r.values() for r in rows]
+            lines = [head] + [
+                ",".join(
+                    str(v).replace(",", ";").replace("\r", " ").replace("\n", " ")
+                    for v in r.values()
+                )
+                for r in rows
+            ]
             return "\n".join(lines)
         return json.dumps(rows, default=str, indent=0)

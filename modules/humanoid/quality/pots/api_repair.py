@@ -86,6 +86,7 @@ pruebas de carga básicas.
                 http_method="GET",
                 http_url="http://127.0.0.1:8791/health",
                 timeout_seconds=10,
+                continue_on_failure=True,
                 tutorial_notes="Si /health falla, el problema es más grave que un endpoint específico.",
             ),
             POTStep(
@@ -119,19 +120,18 @@ Lo ejecutamos primero para aprovechar los heals existentes.
                 http_url="http://127.0.0.1:8791/ans/incidents?status=open&limit=5",
                 timeout_seconds=10,
                 capture_output=True,
+                continue_on_failure=True,
             ),
             POTStep(
                 id="restart_push_if_needed",
                 name="Reiniciar Push si necesario",
                 description="Reiniciar el servicio Push para limpiar estado",
                 step_type=StepType.COMMAND,
-                command="powershell -ExecutionPolicy Bypass -File scripts/restart_service_clean.ps1 -Service push",
+                command="powershell -ExecutionPolicy Bypass -File scripts/restart_push_from_api.ps1 -DelaySeconds 1",
                 timeout_seconds=90,
-                condition=(
-                    "context.get('restart_required', False) and "
-                    "context.get('allow_push_restart', False)"
-                ),
-                tutorial_notes="Solo reiniciar si los pasos anteriores no resolvieron.",
+                continue_on_failure=True,
+                condition="not context.get('check_base_health_ok', True)",
+                tutorial_notes="Reinicia automáticamente si /health falla.",
             ),
             POTStep(
                 id="verify_endpoints",

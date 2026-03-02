@@ -423,6 +423,7 @@ async def _lifespan(app):
         from autonomous.learning.learning_orchestrator import \
             LearningOrchestrator
         from autonomous.telemetry.alert_manager import AlertManager
+        from autonomous.telemetry.metrics_aggregator import MetricsAggregator
 
         _log = logging.getLogger(__name__)
         _log.info("Iniciando background tasks de ATLAS AUTONOMOUS...")
@@ -445,6 +446,109 @@ async def _lifespan(app):
 
         asyncio.create_task(_learning_loop())
         _log.info("✓ Learning Engine activo")
+
+        metrics_agg = MetricsAggregator()
+
+        def _load_telemetry_interval() -> float:
+            interval = 60.0
+            try:
+                cfg_path = BASE_DIR / "config" / "autonomous.yaml"
+                if cfg_path.exists():
+                    import yaml
+
+                    cfg = yaml.safe_load(
+                        cfg_path.read_text(encoding="utf-8", errors="replace")
+                    ) or {}
+                    interval = float(
+                        (((cfg.get("telemetry") or {}).get("metrics") or {}).get(
+                            "aggregation_interval"
+                        ))
+                        or interval
+                    )
+            except Exception:
+                pass
+            return max(5.0, interval)
+
+        telemetry_interval_sec = _load_telemetry_interval()
+
+        def _probe_service(url: str) -> tuple[float, float]:
+            import urllib.request
+
+            t0_probe = time.perf_counter()
+            try:
+                req = urllib.request.Request(
+                    url, method="GET", headers={"Accept": "application/json"}
+                )
+                with urllib.request.urlopen(req, timeout=2) as resp:
+                    if 200 <= int(resp.status) < 400:
+                        return (1.0, (time.perf_counter() - t0_probe) * 1000.0)
+            except Exception:
+                pass
+            return (0.0, 0.0)
+
+        async def _telemetry_loop():
+            while True:
+                try:
+                    import psutil
+
+                    disk_root = (os.getenv("SystemDrive") or "C:") + "\\"
+                    metrics_agg.collect_metric(
+                        "system", "cpu_percent", float(psutil.cpu_percent(interval=0))
+                    )
+                    metrics_agg.collect_metric(
+                        "system", "ram_percent", float(psutil.virtual_memory().percent)
+                    )
+                    metrics_agg.collect_metric(
+                        "system",
+                        "disk_usage_percent",
+                        float(psutil.disk_usage(disk_root).percent),
+                    )
+                except Exception:
+                    pass
+                await asyncio.sleep(telemetry_interval_sec)
+                try:
+                    from modules.observability.metrics import MetricsCollector
+
+                    summary = MetricsCollector.get_metrics_summary() or {}
+                    metrics_agg.collect_metric(
+                        "observability",
+                        "total_requests",
+                        float(summary.get("total_requests", 0) or 0),
+                    )
+                    metrics_agg.collect_metric(
+                        "observability",
+                        "active_requests",
+                        float(summary.get("active_requests", 0) or 0),
+                    )
+                    metrics_agg.collect_metric(
+                        "observability",
+                        "memory_mb",
+                        float(summary.get("memory_mb", 0) or 0),
+                    )
+                except Exception:
+                    pass
+                try:
+                    services = {
+                        "push": "http://127.0.0.1:8791/health",
+                        "nexus": "http://127.0.0.1:8000/health",
+                        "robot": "http://127.0.0.1:8002/api/health",
+                    }
+                    for service_name, service_url in services.items():
+                        online, latency_ms = _probe_service(service_url)
+                        metrics_agg.collect_metric(
+                            "services", f"{service_name}_online", online
+                        )
+                        if latency_ms > 0:
+                            metrics_agg.collect_metric(
+                                "services",
+                                f"{service_name}_latency_ms",
+                                float(latency_ms),
+                            )
+                except Exception:
+                    pass
+
+        asyncio.create_task(_telemetry_loop())
+        _log.info("✓ Telemetry Metrics activo (intervalo %ss)", telemetry_interval_sec)
     except Exception as e:
         import logging
 
@@ -541,9 +645,12 @@ app = FastAPI(
 )
 
 # Metrics middleware: request count + latency per path
-# Temporalmente comentado para evitar error de importación
-# from modules.humanoid.metrics import MetricsMiddleware
-# app.add_middleware(MetricsMiddleware)
+try:
+    from modules.humanoid.metrics import MetricsMiddleware
+
+    app.add_middleware(MetricsMiddleware)
+except Exception:
+    pass
 # Observabilidad Prometheus (request count, duration, active)
 try:
     from modules.observability.middleware import ObservabilityMiddleware
@@ -9278,54 +9385,35 @@ def update_restart_endpoint():
     try:
         repo_root = os.getenv("REPO_ROOT", str(BASE_DIR))
         script_path = (BASE_DIR / "scripts" / "restart_push_from_api.ps1").resolve()
-        use_script = script_path.is_file()
+        if not script_path.is_file():
+            return _std_resp(
+                False,
+                None,
+                0,
+                f"restart script not found: {script_path}",
+            )
         import subprocess
 
         CREATE_NEW_PROCESS_GROUP = 0x00000200
         DETACHED_PROCESS = 0x00000008
         flags = CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS if os.name == "nt" else 0
-        if use_script:
-            subprocess.Popen(
-                [
-                    "powershell",
-                    "-NoProfile",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    str(script_path),
-                    "-DelaySeconds",
-                    "3",
-                ],
-                cwd=repo_root,
-                creationflags=flags,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        else:
-            # Inline: no depender del .ps1 por si no está en la ruta esperada
-            repo_esc = repo_root.replace("'", "''")
-            cmd = (
-                "Start-Sleep 3; "
-                "Get-NetTCPConnection -LocalPort 8791 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; "
-                "Start-Sleep -Milliseconds 500; "
-                "Set-Location '%s'; "
-                "Start-Process python -ArgumentList '-m','uvicorn','atlas_adapter.atlas_http_api:app','--host','0.0.0.0','--port','8791' -WorkingDirectory '%s' -WindowStyle Normal"
-            ) % (repo_esc, repo_esc)
-            subprocess.Popen(
-                [
-                    "powershell",
-                    "-NoProfile",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-Command",
-                    cmd,
-                ],
-                creationflags=flags,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+        subprocess.Popen(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script_path),
+                "-DelaySeconds",
+                "3",
+            ],
+            cwd=repo_root,
+            creationflags=flags,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         return _std_resp(
             True,
             {
@@ -11008,6 +11096,41 @@ def brain_process_endpoint(payload: dict):
         "error": result.get("error", "Sin respuesta"),
         "source": "brain",
     }
+
+
+class TradingProxyBody(BaseModel):
+    prompt: str
+    max_tokens: int | None = 1024
+    model: str | None = None
+
+
+@app.post("/api/trading/proxy", tags=["Trading"])
+def api_trading_proxy(body: TradingProxyBody):
+    """Proxy estable para el módulo Trading v4."""
+    try:
+        prompt = (getattr(body, "prompt", "") or "").strip()
+        if not prompt:
+            return {"ok": False, "error": "prompt_required"}
+        model_spec = (getattr(body, "model", "auto") or "auto").strip() or "auto"
+        result = _direct_model_call(
+            model_spec,
+            prompt,
+            use_config=True,
+            prefer_fast=False,
+            strict_model=False,
+        )
+        if not result.get("ok"):
+            return {"ok": False, "error": result.get("error", "Sin respuesta")}
+        return {
+            "ok": True,
+            "data": {
+                "content": str(result.get("output") or ""),
+                "model": result.get("model_used") or model_spec,
+                "source": "brain",
+            },
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @app.post("/agent/goal")

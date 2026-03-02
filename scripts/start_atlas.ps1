@@ -3,21 +3,14 @@
 
 $NEXUS = if ($env:NEXUS_ATLAS_PATH) { $env:NEXUS_ATLAS_PATH } else { "C:\ATLAS_NEXUS\atlas_nexus" }
 $ROBOT = if ($env:NEXUS_ROBOT_PATH) { $env:NEXUS_ROBOT_PATH } else { "C:\ATLAS_NEXUS\atlas_nexus_robot\backend" }
-$PUSH  = $PSScriptRoot + "\.."
-
-function Resolve-Python([string]$RepoRoot) {
-    if ($env:PYTHON -and (Test-Path $env:PYTHON)) { return $env:PYTHON }
-    $candidates = @(
-        (Join-Path $RepoRoot ".venv\Scripts\python.exe"),
-        (Join-Path $RepoRoot "venv\Scripts\python.exe")
-    )
-    foreach ($c in $candidates) {
-        if (Test-Path $c) { return $c }
-    }
-    return "python"
+$PUSH  = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$RuntimeHelpers = Join-Path $PSScriptRoot "atlas_runtime.ps1"
+if (-not (Test-Path $RuntimeHelpers)) {
+    throw "Runtime helpers not found: $RuntimeHelpers"
 }
+. $RuntimeHelpers
 
-$PY = Resolve-Python -RepoRoot $PUSH
+$PY = Resolve-AtlasPython -RepoRoot $PUSH -RequirePreflight
 
 Write-Host "ATLAS - Arranque unificado" -ForegroundColor Cyan
 Write-Host "NEXUS=$NEXUS | Robot=$ROBOT" -ForegroundColor Gray

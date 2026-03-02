@@ -16,8 +16,11 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         path = request.scope.get("path") or "/"
         store = get_metrics_store()
         key = f"request:{path}"
-        store.inc(key)
         t0 = time.perf_counter()
-        response = await call_next(request)
-        store.record_latency(key, (time.perf_counter() - t0) * 1000)
-        return response
+        store.inc(key)
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            # Record latency even when downstream raises.
+            store.record_latency(key, (time.perf_counter() - t0) * 1000)

@@ -32,20 +32,13 @@ $ScriptsDir = Join-Path $RepoRoot "scripts"
 $FreePort   = Join-Path $ScriptsDir "free_port.ps1"
 $CleanPy    = Join-Path $ScriptsDir "atlas_clean_cache.py"
 $StartSvc   = Join-Path $ScriptsDir "start_nexus_services.py"
-
-function Resolve-Python([string]$Root) {
-    if ($env:PYTHON -and (Test-Path $env:PYTHON)) { return $env:PYTHON }
-    $candidates = @(
-        (Join-Path $Root ".venv\Scripts\python.exe"),
-        (Join-Path $Root "venv\Scripts\python.exe")
-    )
-    foreach ($c in $candidates) {
-        if (Test-Path $c) { return $c }
-    }
-    return "python"
+$RuntimeHelpers = Join-Path $ScriptsDir "atlas_runtime.ps1"
+if (-not (Test-Path $RuntimeHelpers)) {
+    throw "Runtime helpers not found: $RuntimeHelpers"
 }
+. $RuntimeHelpers
 
-$Python = Resolve-Python -Root $RepoRoot
+$Python = Resolve-AtlasPython -RepoRoot $RepoRoot
 
 $PUSH_URL   = "http://127.0.0.1:8791/health"
 $ROBOT_URL1 = "http://127.0.0.1:8002/api/health"
@@ -223,12 +216,13 @@ if (-not $initial.push -or $Force) {
     } else {
         # Force: arrancar en background (solo para testing, no recomendado en produccion)
         Write-Warn "Forzando arranque de PUSH en segundo plano..."
+        $pushPython = Resolve-AtlasPython -RepoRoot $RepoRoot -RequirePreflight
         if (Test-Path $FreePort) {
             & $FreePort -Port 8791 -Kill | Out-Null
             Start-Sleep -Milliseconds 800
         }
         $pushArgs = "-m uvicorn atlas_adapter.atlas_http_api:app --host 0.0.0.0 --port 8791"
-        Start-Process $Python -ArgumentList $pushArgs -WorkingDirectory $RepoRoot -WindowStyle Hidden
+        Start-Process $pushPython -ArgumentList $pushArgs -WorkingDirectory $RepoRoot -WindowStyle Hidden
         $pushOk = Wait-Endpoint -Urls @($PUSH_URL) -MaxWaitSec 30 -Label "PUSH :8791"
         if ($pushOk) {
             Write-Ok "PUSH Dashboard ONLINE :8791"

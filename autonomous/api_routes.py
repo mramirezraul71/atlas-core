@@ -4,6 +4,7 @@ Rutas API para ATLAS AUTONOMOUS. Montar en PUSH con prefix /api.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -227,9 +228,38 @@ def get_evolution_history():
 @router.get("/telemetry/metrics")
 def get_telemetry_metrics(source: str | None = None, time_range: int = 3600):
     ma = _get_metrics()
+    range_sec = max(1.0, float(time_range or 3600))
     if not ma:
-        return {"metrics": []}
-    return {"metrics": ma.get_metrics(source=source, time_range_sec=float(time_range))}
+        return {
+            "metrics": [],
+            "meta": {
+                "count": 0,
+                "source": source,
+                "time_range_sec": range_sec,
+                "latest_ts": None,
+                "stale": True,
+            },
+        }
+    metrics = ma.get_metrics(source=source, time_range_sec=range_sec)
+    latest_ts = None
+    if metrics:
+        try:
+            latest_ts = max(float(m.get("ts", 0) or 0) for m in metrics)
+        except Exception:
+            latest_ts = None
+    stale = True
+    if latest_ts:
+        stale = (time.time() - latest_ts) > min(range_sec, 300.0)
+    return {
+        "metrics": metrics,
+        "meta": {
+            "count": len(metrics),
+            "source": source,
+            "time_range_sec": range_sec,
+            "latest_ts": latest_ts,
+            "stale": stale,
+        },
+    }
 
 
 @router.get("/telemetry/dashboards")
