@@ -93,9 +93,13 @@ export default {
           <div style="flex-shrink:0;padding-bottom:16px">
             <div style="display:flex;gap:8px;align-items:flex-end">
               <textarea id="chat-input"
-                placeholder="Escribe un mensaje al cerebro ATLAS..."
+                placeholder="Escribe o habla con el cerebro ATLAS..."
                 style="flex:1;resize:vertical;min-height:52px;max-height:120px;padding:12px 14px;background:var(--surface-1);border:1px solid var(--border-subtle);border-radius:10px;color:var(--text-primary);font-size:13px;font-family:inherit;line-height:1.4;outline:none;transition:border-color .2s"
                 rows="2"></textarea>
+              <button id="chat-mic-btn" title="Hablar (micrófono)"
+                style="height:52px;width:48px;background:var(--surface-2,var(--surface-1));color:var(--text-muted);border:1px solid var(--border-subtle);border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:color .2s,background .2s">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/></svg>
+              </button>
               <button id="chat-send-btn"
                 style="height:52px;padding:0 20px;background:var(--accent-primary);color:#000;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap;transition:opacity .2s">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
@@ -103,7 +107,7 @@ export default {
               </button>
             </div>
             <div id="chat-hint" style="font-size:11px;color:var(--text-muted);margin-top:6px;text-align:right">
-              Enter para nueva línea · Ctrl+Enter para enviar
+              Enter para nueva línea · Ctrl+Enter para enviar · 🎤 clic en micrófono para dictar
             </div>
           </div>
 
@@ -191,6 +195,56 @@ export default {
 
     container.querySelector('#chat-back')?.addEventListener('click', () => { location.hash = '/'; });
 
+    // ── Micrófono ────────────────────────────────────────────────────────────
+    const micBtn = container.querySelector('#chat-mic-btn');
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRec) {
+      if (micBtn) micBtn.style.display = 'none';
+    } else {
+      const rec = new SpeechRec();
+      rec.lang = 'es-ES';
+      rec.interimResults = true;
+      rec.maxAlternatives = 1;
+      let _listening = false;
+
+      rec.onstart = () => {
+        _listening = true;
+        if (micBtn) {
+          micBtn.style.color = 'var(--accent-red, #ff4444)';
+          micBtn.style.borderColor = 'var(--accent-red, #ff4444)';
+          micBtn.title = 'Escuchando… clic para detener';
+        }
+      };
+      rec.onend = () => {
+        _listening = false;
+        if (micBtn) {
+          micBtn.style.color = '';
+          micBtn.style.borderColor = '';
+          micBtn.title = 'Hablar (micrófono)';
+        }
+      };
+      rec.onresult = (e) => {
+        const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
+        if (inputEl) inputEl.value = transcript;
+        if (e.results[e.results.length - 1].isFinal && transcript.trim()) {
+          _sendMessage();
+        }
+      };
+      rec.onerror = (e) => {
+        _listening = false;
+        if (micBtn) { micBtn.style.color = ''; micBtn.style.borderColor = ''; }
+        const msg = e.error === 'not-allowed'
+          ? 'Permiso de micrófono denegado'
+          : 'Error de micrófono: ' + e.error;
+        window.AtlasToast?.show(msg, 'error');
+      };
+      micBtn?.addEventListener('click', () => {
+        if (_listening) { rec.stop(); return; }
+        rec.start();
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // Session timer
     const sessionTimer = setInterval(() => {
       const secs = Math.floor((Date.now() - sessionStart) / 1000);
@@ -258,7 +312,7 @@ export default {
         const r = await fetch('/brain/process', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ input: text, context: 'chat_v4' }),
+          body: JSON.stringify({ text: text, context: 'chat_v4' }),
         });
         const d = await r.json().catch(() => ({}));
         const ms = Math.round(performance.now() - t0);
@@ -338,7 +392,15 @@ export default {
       if (windowEl) windowEl.scrollTop = windowEl.scrollHeight;
     }
 
-    if (inputEl) inputEl.focus();
+    // Auto-enviar si viene de consulta de voz desde el landing
+    const pendingVoice = sessionStorage.getItem('atlas-voice-query');
+    if (pendingVoice) {
+      sessionStorage.removeItem('atlas-voice-query');
+      if (inputEl) inputEl.value = pendingVoice;
+      setTimeout(() => _sendMessage(), 350);
+    } else {
+      if (inputEl) inputEl.focus();
+    }
   },
 
   destroy() {

@@ -83,8 +83,84 @@ function _buildApps() {
 }
 
 let APPS = _buildApps();
+const _RUNTIME_BASE = { vision: null, panaderia: null };
 
 function _esc(s) { const d = document.createElement('span'); d.textContent = s ?? ''; return d.innerHTML; }
+
+function _fallbackBases(appId) {
+  if (appId === 'vision') return ['http://localhost:5174', 'http://localhost:3000'];
+  if (appId === 'panaderia') return ['http://localhost:5173', 'http://localhost:3001'];
+  return [];
+}
+
+function _safeUrl(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
+    return u.origin;
+  } catch {
+    return '';
+  }
+}
+
+function _currentBase(app) {
+  return _RUNTIME_BASE[app.id] || _safeUrl(app.base) || _fallbackBases(app.id)[0] || '';
+}
+
+async function _probeReachable(url, timeoutMs = 1200) {
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), timeoutMs);
+    await fetch(url, { method: 'GET', mode: 'no-cors', cache: 'no-store', signal: ctl.signal });
+    clearTimeout(t);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function _resolveBestBase(app) {
+  const candidates = [];
+  const seen = new Set();
+  function _add(url) {
+    const s = _safeUrl(url);
+    if (!s || seen.has(s)) return;
+    seen.add(s);
+    candidates.push(s);
+  }
+
+  // Prioriza puerto validado por backend (socket server-side)
+  try {
+    const r = await fetch(`/arms/${app.id}/ping`, { signal: AbortSignal.timeout(2500) });
+    const d = await r.json().catch(() => null);
+    const port = d?.data?.port;
+    const reachable = d?.data?.reachable === true;
+    if (reachable && Number.isInteger(port)) _add(`http://localhost:${port}`);
+  } catch {}
+
+  _add(app.base);
+  _fallbackBases(app.id).forEach(_add);
+
+  for (const c of candidates) {
+    if (await _probeReachable(c)) {
+      _RUNTIME_BASE[app.id] = c;
+      return c;
+    }
+  }
+
+  const fallback = candidates[0] || _fallbackBases(app.id)[0] || '';
+  _RUNTIME_BASE[app.id] = fallback;
+  return fallback;
+}
+
+async function _openAppDashboard(appId) {
+  const app = APPS[appId];
+  if (!app) return;
+  const base = await _resolveBestBase(app);
+  if (!base) return;
+  window.open(base, '_blank');
+}
 
 let _activeApp   = 'panaderia';
 let _iframeReady = false;
@@ -126,6 +202,12 @@ export default {
               <div id="dot-panaderia" style="width:7px;height:7px;border-radius:50%;background:var(--text-muted)"></div>Panadería
             </div>
             <span class="live-badge">LIVE</span>
+            <button class="action-btn" id="open-vision-direct" style="font-size:11px;padding:6px 10px">
+              Abrir Vision
+            </button>
+            <button class="action-btn" id="open-panaderia-direct" style="font-size:11px;padding:6px 10px">
+              Abrir Panaderia
+            </button>
           </div>
         </div>
 
@@ -153,6 +235,14 @@ export default {
               <div id="sidebar-health-row" style="font-size:12px;color:var(--text-muted)">Verificando...</div>
               <div id="sidebar-latency"    style="font-size:10px;color:var(--text-muted);margin-top:3px"></div>
               <div id="sidebar-uptime"     style="font-size:10px;color:var(--text-muted);margin-top:2px"></div>
+            </div>
+
+            <div style="padding:12px 16px;border-bottom:1px solid var(--border-subtle)">
+              <div style="font-size:10px;color:var(--text-muted);letter-spacing:.05em;margin-bottom:8px">ACCESO DIRECTO</div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <button class="action-btn" id="sidebar-open-vision" style="justify-content:center;width:100%">Dashboard Vision</button>
+                <button class="action-btn" id="sidebar-open-panaderia" style="justify-content:center;width:100%">Dashboard Panaderia</button>
+              </div>
             </div>
 
             <!-- Navegación dentro del iframe -->
@@ -272,6 +362,18 @@ export default {
     const blockedMsg = container.querySelector('#iframe-blocked-msg');
 
     container.querySelector('#apps-back')?.addEventListener('click', () => { location.hash = '/'; });
+    container.querySelector('#open-vision-direct')?.addEventListener('click', async () => {
+      await _openAppDashboard('vision');
+    });
+    container.querySelector('#open-panaderia-direct')?.addEventListener('click', async () => {
+      await _openAppDashboard('panaderia');
+    });
+    container.querySelector('#sidebar-open-vision')?.addEventListener('click', async () => {
+      await _openAppDashboard('vision');
+    });
+    container.querySelector('#sidebar-open-panaderia')?.addEventListener('click', async () => {
+      await _openAppDashboard('panaderia');
+    });
 
     // Detectar si el iframe fue bloqueado
     iframe.addEventListener('load', () => {
@@ -285,9 +387,15 @@ export default {
     });
 
     // Botones de pie del sidebar
-    container.querySelector('#btn-open-external')?.addEventListener('click', () => {
+    container.querySelector('#btn-open-external')?.addEventListener('click', async () => {
       const app = APPS[_activeApp];
-      if (app) window.open(iframe.src || app.base, '_blank');
+      if (!app) return;
+      const iframeUrl = _safeUrl(iframe.src);
+      if (iframeUrl && iframeUrl !== 'about:blank') {
+        window.open(iframeUrl, '_blank');
+        return;
+      }
+      await _openAppDashboard(app.id);
     });
     container.querySelector('#btn-reload-iframe')?.addEventListener('click', () => {
       if (iframe.src) { const s = iframe.src; iframe.src = ''; iframe.src = s; }
@@ -308,8 +416,9 @@ export default {
         }
       } catch { window.AtlasToast?.show('Error de conexión con ATLAS', 'error'); }
     });
-    container.querySelector('#blocked-open-btn')?.addEventListener('click', () => {
-      const app = APPS[_activeApp]; if (app) window.open(app.base, '_blank');
+    container.querySelector('#blocked-open-btn')?.addEventListener('click', async () => {
+      const app = APPS[_activeApp];
+      if (app) await _openAppDashboard(app.id);
     });
 
     // Config de URLs — poblar inputs y guardar
@@ -360,10 +469,11 @@ export default {
 
 /* ─── Cambiar app activa ─────────────────────────────────────────────── */
 
-function _switchApp(appId, container, iframe, urlText) {
+async function _switchApp(appId, container, iframe, urlText) {
   const app = APPS[appId];
   if (!app) return;
   _activeApp = appId;
+  const resolvedBase = await _resolveBestBase(app);
 
   // Tabs UI
   container.querySelectorAll('.apps-tab').forEach(t => {
@@ -384,7 +494,7 @@ function _switchApp(appId, container, iframe, urlText) {
       btn.addEventListener('click', () => {
         navEl.querySelectorAll('.sidebar-nav-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        const url = app.base + btn.dataset.navPath;
+        const url = resolvedBase + btn.dataset.navPath;
         iframe.src = url;
         if (urlText) urlText.textContent = url;
       });
@@ -421,7 +531,7 @@ function _switchApp(appId, container, iframe, urlText) {
           'vision-chat':  '/?tab=chat',
         };
         const path = sectionMap[ep.id] || '/';
-        const url  = app.base + path;
+        const url  = resolvedBase + path;
         iframe.src = url;
         if (urlText) urlText.textContent = url;
         if (navEl) navEl.querySelectorAll('.sidebar-nav-btn').forEach(b => b.classList.remove('active'));
@@ -433,7 +543,7 @@ function _switchApp(appId, container, iframe, urlText) {
   }
 
   // Pre-check: verificar que el frontend responde antes de cargar iframe
-  const url = app.base + '/';
+  const url = resolvedBase + '/';
   if (urlText) urlText.textContent = url;
   _preCheckAndLoad(app, url, container, iframe, urlText);
 }

@@ -6,6 +6,7 @@ import { get, on } from '../lib/state.js';
 import { navigate } from '../lib/router.js';
 
 const SVG = {
+  mic: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/></svg>',
   arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>',
   health: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
   workspace: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
@@ -14,6 +15,8 @@ const SVG = {
   config: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>',
   trading: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>',
   apps: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+  package: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
   governance: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
   brain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 017 7c0 3-2 5-4 6v3h-6v-3c-2-1-4-3-4-6a7 7 0 017-7z"/><path d="M9 18h6M10 21h4"/></svg>',
 };
@@ -46,15 +49,46 @@ export function render(container) {
         <input class="search-bar" id="landing-search"
                placeholder="Pregunta, busca o da un comando a Atlas..."
                autocomplete="off" autofocus>
+        <button class="search-mic" id="landing-mic" title="Hablar con Atlas">
+          ${SVG.mic}
+        </button>
         <button class="search-submit" id="landing-submit">
           ${SVG.arrow}
         </button>
       </div>
 
+      <style>
+        .search-mic {
+          position: absolute;
+          right: 52px;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 36px; height: 36px;
+          display: flex; align-items: center; justify-content: center;
+          background: none; border: none; cursor: pointer;
+          color: var(--text-muted);
+          border-radius: 50%;
+          transition: color .2s, background .2s;
+        }
+        .search-mic svg { width: 18px; height: 18px; }
+        .search-mic:hover { color: var(--accent-primary); background: rgba(255,255,255,.06); }
+        .search-mic.listening {
+          color: var(--accent-red, #ff4444);
+          animation: mic-pulse 1s ease-in-out infinite;
+        }
+        @keyframes mic-pulse {
+          0%, 100% { opacity: 1; transform: translateY(-50%) scale(1); }
+          50%       { opacity: .6; transform: translateY(-50%) scale(1.15); }
+        }
+        .search-container { position: relative; }
+      </style>
+
       <div class="quick-actions">
         <div class="quick-chip" data-action="health">${SVG.health} System Health</div>
         <div class="quick-chip" data-action="workspace">${SVG.workspace} Workspace</div>
         <div class="quick-chip" data-action="bitacora">${SVG.bitacora} Bitacora</div>
+        <div class="quick-chip" data-action="rauli-vision">${SVG.eye} Rauli Vision</div>
+        <div class="quick-chip" data-action="rauli-panaderia">${SVG.package} Rauli Panaderia</div>
         <div class="quick-chip" data-action="config">${SVG.config} AI Config</div>
         <div class="quick-chip" data-action="autonomy">${SVG.governance} Autonomy</div>
       </div>
@@ -84,6 +118,14 @@ export function render(container) {
           <div class="app-tile-icon">${SVG.apps}</div>
           <div class="app-tile-label">Mis Apps</div>
         </div>
+        <div class="app-tile" data-app="rauli-vision">
+          <div class="app-tile-icon">${SVG.eye}</div>
+          <div class="app-tile-label">Rauli Vision</div>
+        </div>
+        <div class="app-tile" data-app="rauli-panaderia">
+          <div class="app-tile-icon">${SVG.package}</div>
+          <div class="app-tile-label">Rauli Panaderia</div>
+        </div>
         <div class="app-tile" data-app="config-tile">
           <div class="app-tile-icon">${SVG.config}</div>
           <div class="app-tile-label">Settings</div>
@@ -110,10 +152,58 @@ export function render(container) {
   searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitSearch(); });
   submitBtn.addEventListener('click', submitSearch);
 
+  // ── Micrófono (Web Speech API) ──────────────────────────────────────────────
+  const micBtn = container.querySelector('#landing-mic');
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) {
+    if (micBtn) micBtn.style.display = 'none';
+  } else {
+    const rec = new SpeechRec();
+    rec.lang = 'es-ES';
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
+    let _recognizing = false;
+
+    rec.onstart = () => {
+      _recognizing = true;
+      micBtn.classList.add('listening');
+      micBtn.title = 'Escuchando… (clic para detener)';
+    };
+    rec.onend = () => {
+      _recognizing = false;
+      micBtn.classList.remove('listening');
+      micBtn.title = 'Hablar con Atlas';
+    };
+    rec.onresult = (e) => {
+      const transcript = Array.from(e.results).map(r => r[0].transcript).join('');
+      searchInput.value = transcript;
+      if (e.results[e.results.length - 1].isFinal && transcript.trim()) {
+        sessionStorage.setItem('atlas-voice-query', transcript.trim());
+        location.hash = '/chat';
+      }
+    };
+    rec.onerror = (e) => {
+      _recognizing = false;
+      micBtn.classList.remove('listening');
+      const msg = e.error === 'not-allowed'
+        ? 'Permiso de micrófono denegado'
+        : 'Error de micrófono: ' + e.error;
+      window.AtlasToast?.show(msg, 'error');
+    };
+
+    micBtn.addEventListener('click', () => {
+      if (_recognizing) { rec.stop(); return; }
+      rec.start();
+    });
+  }
+  // ───────────────────────────────────────────────────────────────────────────
+
   const CHIP_ROUTES = {
     health:    { hash: '/health' },
     workspace: { href: '/workspace', newTab: true },
     bitacora:  { hash: '/bitacora' },
+    'rauli-vision': { hash: '/apps/vision' },
+    'rauli-panaderia': { hash: '/apps/panaderia' },
     config:    { hash: '/config' },
     autonomy:  { hash: '/autonomy' },
   };
@@ -130,12 +220,14 @@ export function render(container) {
   });
 
   const TILE_ROUTES = {
-    'assistant':    { href: '/v3' },
+    'assistant':    { hash: '/chat' },
     'workspace-ext':{ href: '/workspace', newTab: true },
     'governance':   { hash: '/autonomy' },
     'approvals':    { hash: '/approvals' },
     'monitor':      { hash: '/health' },
     'mis-apps':     { hash: '/apps' },
+    'rauli-vision': { hash: '/apps/vision' },
+    'rauli-panaderia': { hash: '/apps/panaderia' },
     'config-tile':  { hash: '/config' },
   };
 
