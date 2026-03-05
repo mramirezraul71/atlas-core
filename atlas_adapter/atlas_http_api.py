@@ -9760,12 +9760,14 @@ _tools_discovery_refresh_running = False
 def _read_json_dict(path: Path) -> Optional[dict]:
     if not path.exists():
         return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8-sig", errors="replace"))
-        if isinstance(data, dict):
-            return data
-    except Exception:
-        return None
+    for _ in range(3):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig", errors="replace"))
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            # Tolerate transient partial writes and retry quickly.
+            time.sleep(0.08)
     return None
 
 
@@ -11502,6 +11504,590 @@ def tools_job_retry(job_id: str):
         )
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+# --- Software Hub ---
+class SoftwareWatchdogBody(BaseModel):
+    force: Optional[bool] = False
+
+
+class SoftwareApplyAllBody(BaseModel):
+    background: Optional[bool] = True
+    include_optional: Optional[bool] = True
+
+
+class SoftwareMaintenanceBody(BaseModel):
+    background: Optional[bool] = True
+    apply_repo: Optional[bool] = False
+
+
+_SOFTWARE_HUB_DIR = (BASE_DIR / "software_hub").resolve()
+_SOFTWARE_REGISTRY_FILE = (_SOFTWARE_HUB_DIR / "software_registry.json").resolve()
+_SOFTWARE_MAINT_LATEST_FILE = (BASE_DIR / "logs" / "software_maintenance" / "latest_cycle.json").resolve()
+_SOFTWARE_MENU_CACHE_TTL_SEC = _env_int("ATLAS_SOFTWARE_MENU_CACHE_TTL_SEC", 30, 8)
+_SOFTWARE_MENU_STALE_SEC = _env_int(
+    "ATLAS_SOFTWARE_MENU_STALE_SEC", 300, _SOFTWARE_MENU_CACHE_TTL_SEC
+)
+_software_watchdog_refresh_lock = threading.Lock()
+_software_watchdog_refresh_running = False
+
+
+def _run_software_watchdog_scan(force: bool = False, timeout: int = 180) -> tuple[bool, dict]:
+    script = (BASE_DIR / "scripts" / "atlas_software_watchdog.py").resolve()
+    if not script.exists():
+        return False, {"error": f"software watchdog script missing: {script}"}
+    cmd = [sys.executable, str(script)]
+    if force:
+        cmd.append("--force")
+    ok, payload, _tail = _run_local_json_cmd(cmd, timeout=timeout)
+    if not isinstance(payload, dict):
+        payload = {"ok": bool(ok), "error": "software_watchdog_invalid_payload"}
+    return bool(ok), payload
+
+
+def _spawn_software_watchdog_refresh(force: bool = False) -> bool:
+    global _software_watchdog_refresh_running
+    with _software_watchdog_refresh_lock:
+        if _software_watchdog_refresh_running:
+            return False
+        _software_watchdog_refresh_running = True
+
+    def _job() -> None:
+        global _software_watchdog_refresh_running
+        try:
+            _run_software_watchdog_scan(force=force, timeout=240)
+        except Exception:
+            pass
+        finally:
+            with _software_watchdog_refresh_lock:
+                _software_watchdog_refresh_running = False
+
+    threading.Thread(target=_job, name="atlas-software-watchdog-refresh", daemon=True).start()
+    return True
+
+
+@app.get("/api/software/menu", tags=["Software"])
+def software_menu_inventory(refresh: bool = False):
+    """Inventario extendido de software (instalado + red + drivers + stack dev)."""
+    t0 = time.perf_counter()
+    now_ts = time.time()
+    payload = _read_json_dict(_SOFTWARE_REGISTRY_FILE)
+    file_age = None
+    if _SOFTWARE_REGISTRY_FILE.exists():
+        try:
+            file_age = max(0.0, now_ts - _SOFTWARE_REGISTRY_FILE.stat().st_mtime)
+        except Exception:
+            file_age = None
+
+    if payload and not refresh:
+        age_sec = int(file_age or 0)
+        stale = age_sec > _SOFTWARE_MENU_CACHE_TTL_SEC
+        if stale:
+            _spawn_software_watchdog_refresh(force=False)
+        out = dict(payload)
+        out["cache"] = {
+            "stale": stale,
+            "age_sec": age_sec,
+            "refreshing": bool(_software_watchdog_refresh_running),
+            "ttl_sec": _SOFTWARE_MENU_CACHE_TTL_SEC,
+        }
+        return _std_resp(True, out, int((time.perf_counter() - t0) * 1000), None)
+
+    ok, fresh = _run_software_watchdog_scan(force=bool(refresh), timeout=240)
+    if ok:
+        out = dict(fresh)
+        out["cache"] = {
+            "stale": False,
+            "age_sec": 0,
+            "refreshing": False,
+            "ttl_sec": _SOFTWARE_MENU_CACHE_TTL_SEC,
+        }
+        return _std_resp(True, out, int((time.perf_counter() - t0) * 1000), None)
+
+    if payload:
+        age_sec = int(file_age or 0)
+        if age_sec > _SOFTWARE_MENU_STALE_SEC:
+            _spawn_software_watchdog_refresh(force=True)
+        out = dict(payload)
+        out["cache"] = {
+            "stale": True,
+            "age_sec": age_sec,
+            "refreshing": bool(_software_watchdog_refresh_running),
+            "ttl_sec": _SOFTWARE_MENU_CACHE_TTL_SEC,
+            "warning": fresh.get("error") or "software_watchdog_failed_using_cache",
+        }
+        return _std_resp(True, out, int((time.perf_counter() - t0) * 1000), None)
+
+    return _std_resp(
+        False,
+        None,
+        int((time.perf_counter() - t0) * 1000),
+        fresh.get("error") or "software_watchdog_failed",
+    )
+
+
+@app.post("/api/software/watchdog/scan", tags=["Software"])
+def software_watchdog_scan(body: Optional[SoftwareWatchdogBody] = None):
+    t0 = time.perf_counter()
+    force = bool(body.force) if body else False
+    ok, payload = _run_software_watchdog_scan(force=force, timeout=240)
+    return _std_resp(ok, payload, int((time.perf_counter() - t0) * 1000), None if ok else payload.get("error"))
+
+
+@app.get("/api/software/discovery/search", tags=["Software"])
+def software_discovery_search(force: bool = False):
+    """Lista de software detectado en red para instalar/activar."""
+    t0 = time.perf_counter()
+    payload = _read_json_dict(_SOFTWARE_REGISTRY_FILE)
+    if force or not payload:
+        ok, payload = _run_software_watchdog_scan(force=force, timeout=240)
+        if not ok:
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                payload.get("error") or "software_watchdog_failed",
+            )
+    rows = payload.get("network_candidates") if isinstance(payload, dict) else []
+    rows = rows if isinstance(rows, list) else []
+    summary = payload.get("summary") if isinstance(payload, dict) else {}
+    data = {
+        "ok": True,
+        "generated_at": payload.get("generated_at"),
+        "summary": {
+            "total": len(rows),
+            "available": sum(1 for r in rows if isinstance(r, dict) and r.get("network_available")),
+            "unreachable": sum(1 for r in rows if isinstance(r, dict) and not r.get("network_available")),
+            "software_update_ready": int((summary or {}).get("software_update_ready") or 0),
+        },
+        "candidates": rows,
+    }
+    return _std_resp(True, data, int((time.perf_counter() - t0) * 1000), None)
+
+
+@app.post("/api/software/apply-all", tags=["Software"])
+def software_apply_all(body: Optional[SoftwareApplyAllBody] = None):
+    """Instala/actualiza software en lote con barra de progreso por item."""
+    t0 = time.perf_counter()
+    if not (bool(body.background) if body else True):
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "software_apply_all_requires_background")
+
+    bg_script = (BASE_DIR / "scripts" / "atlas_software_apply_all_background.ps1").resolve()
+    if not bg_script.exists():
+        return _std_resp(
+            False,
+            None,
+            int((time.perf_counter() - t0) * 1000),
+            f"missing script: {bg_script}",
+        )
+
+    payload = _read_json_dict(_SOFTWARE_REGISTRY_FILE)
+    if not payload:
+        ok, payload = _run_software_watchdog_scan(force=True, timeout=240)
+        if not ok:
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                payload.get("error") or "software_watchdog_failed",
+            )
+
+    include_optional = True if body is None else bool(body.include_optional)
+    software_rows = payload.get("software") if isinstance(payload, dict) else []
+    software_rows = software_rows if isinstance(software_rows, list) else []
+    candidates_rows = payload.get("network_candidates") if isinstance(payload, dict) else []
+    candidates_rows = candidates_rows if isinstance(candidates_rows, list) else []
+
+    targets: list[dict] = []
+    seen = set()
+
+    for row in software_rows:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("id") or "").strip()
+        if not sid or sid in seen:
+            continue
+        method = str(row.get("install_method") or "").strip().lower()
+        target = str(row.get("install_target") or "").strip()
+        if not method or not target:
+            continue
+        critical = bool(row.get("critical"))
+        needs = (not bool(row.get("installed"))) or bool(row.get("update_ready"))
+        if not needs:
+            continue
+        if (not include_optional) and (not critical):
+            continue
+        targets.append(
+            {
+                "id": sid,
+                "name": str(row.get("name") or sid),
+                "critical": critical,
+                "install_method": method,
+                "install_target": target,
+                "source": "software",
+            }
+        )
+        seen.add(sid)
+
+    for row in candidates_rows:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("id") or "").strip()
+        if not sid or sid in seen:
+            continue
+        if not bool(row.get("network_available")):
+            continue
+        method = str(row.get("install_method") or "").strip().lower()
+        target = str(row.get("install_target") or "").strip()
+        if not method or not target:
+            continue
+        critical = bool(row.get("critical"))
+        if (not include_optional) and (not critical):
+            continue
+        targets.append(
+            {
+                "id": sid,
+                "name": str(row.get("name") or sid),
+                "critical": critical,
+                "install_method": method,
+                "install_target": target,
+                "source": "network",
+            }
+        )
+        seen.add(sid)
+
+    if not targets:
+        return _std_resp(
+            True,
+            {"ok": True, "queued": False, "status": "noop", "message": "No hay software pendiente por actualizar/instalar", "items": []},
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+
+    try:
+        jobs_dir = (BASE_DIR / "logs" / "software_update_jobs").resolve()
+        jobs_dir.mkdir(parents=True, exist_ok=True)
+        job_id = uuid.uuid4().hex[:12]
+        status_file = jobs_dir / f"{job_id}.json"
+        runner_log = jobs_dir / f"{job_id}.runner.log"
+        manifest_file = jobs_dir / f"{job_id}.manifest.json"
+        manifest_file.write_text(json.dumps({"items": targets}, ensure_ascii=False), encoding="utf-8")
+        status_file.write_text(
+            json.dumps(
+                {
+                    "ok": True,
+                    "job_id": job_id,
+                    "scope": "software",
+                    "source": "software_apply_all",
+                    "status": "queued",
+                    "queued_at": datetime.now(timezone.utc).isoformat(),
+                    "items": [str(t.get("id") or "") for t in targets],
+                    "total": len(targets),
+                    "done": 0,
+                    "failed": 0,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        powershell_exe = str(
+            (
+                Path(os.environ.get("SystemRoot", r"C:\Windows"))
+                / "System32"
+                / "WindowsPowerShell"
+                / "v1.0"
+                / "powershell.exe"
+            ).resolve()
+        )
+        cmd_bg = [
+            powershell_exe,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(bg_script),
+            "-RepoRoot",
+            str(BASE_DIR),
+            "-JobFile",
+            str(status_file),
+            "-ManifestFile",
+            str(manifest_file),
+        ]
+        _spawn_detached_job(cmd_bg, cwd=BASE_DIR, runner_log=runner_log)
+        return _std_resp(
+            True,
+            {
+                "ok": True,
+                "queued": True,
+                "job_id": job_id,
+                "scope": "software",
+                "status": "queued",
+                "items": [str(t.get("id") or "") for t in targets],
+                "total": len(targets),
+                "status_url": f"/api/software/job/status/{job_id}",
+                "runner_log": str(runner_log),
+            },
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+def _software_job_process_alive(job_id: str) -> bool:
+    try:
+        needle = f"{job_id}.json".lower()
+        script_markers = (
+            "atlas_software_apply_all_background.ps1",
+            "atlas_software_apply_item_background.ps1",
+        )
+        for proc in psutil.process_iter(["cmdline"]):
+            try:
+                cmd = " ".join(str(x) for x in (proc.info.get("cmdline") or [])).lower()
+            except Exception:
+                continue
+            if not cmd:
+                continue
+            if needle in cmd and any(m in cmd for m in script_markers):
+                return True
+        return False
+    except Exception:
+        return True
+
+
+@app.get("/api/software/job/status/{job_id}", tags=["Software"])
+def software_job_status(job_id: str):
+    t0 = time.perf_counter()
+    safe_job_id = "".join(ch for ch in (job_id or "") if ch.isalnum() or ch in ("-", "_"))
+    if not safe_job_id:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "invalid_job_id")
+    status_file = (BASE_DIR / "logs" / "software_update_jobs" / f"{safe_job_id}.json").resolve()
+    if not status_file.exists():
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "job_not_found")
+    try:
+        payload = json.loads(status_file.read_text(encoding="utf-8-sig", errors="replace"))
+        if isinstance(payload, dict) and not str(payload.get("job_id") or "").strip():
+            payload["job_id"] = safe_job_id
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+    try:
+        changed = False
+        status = str(payload.get("status") or "").lower()
+        total = int(payload.get("total") or 0)
+        done = int(payload.get("done") or 0)
+        failed = int(payload.get("failed") or 0)
+
+        if done < 0:
+            payload["done"] = 0
+            done = 0
+            changed = True
+        if total > 0 and done > total:
+            payload["done"] = total
+            done = total
+            changed = True
+        if failed < 0:
+            payload["failed"] = 0
+            failed = 0
+            changed = True
+        if done > 0 and failed > done:
+            payload["failed"] = done
+            failed = done
+            changed = True
+
+        if status in ("queued", "running", "failed", "done_with_errors") and total > 0 and done >= total:
+            terminal_failed = failed > 0
+            payload["status"] = "done_with_errors" if terminal_failed else "done"
+            payload["ok"] = not terminal_failed
+            if terminal_failed and not str(payload.get("error") or "").strip():
+                payload["error"] = "one_or_more_software_applies_failed"
+            if not str(payload.get("finished_at") or "").strip():
+                payload["finished_at"] = datetime.now(timezone.utc).isoformat()
+            changed = True
+
+        status = str(payload.get("status") or "").lower()
+        if status == "running":
+            try:
+                now_ts = time.time()
+                status_mtime = status_file.stat().st_mtime
+                runner_log = (BASE_DIR / "logs" / "software_update_jobs" / f"{safe_job_id}.runner.log").resolve()
+                runner_mtime = runner_log.stat().st_mtime if runner_log.exists() else status_mtime
+                stale_for = now_ts - max(status_mtime, runner_mtime)
+                if stale_for > 120 and (not _software_job_process_alive(safe_job_id)):
+                    payload["ok"] = False
+                    payload["status"] = "failed"
+                    payload["error"] = payload.get("error") or "job_runner_not_alive"
+                    payload["failed_at"] = datetime.now(timezone.utc).isoformat()
+                    changed = True
+            except Exception:
+                pass
+        if status == "queued":
+            q_at = payload.get("queued_at")
+            if q_at:
+                dt_q = datetime.fromisoformat(str(q_at).replace("Z", "+00:00"))
+                now = datetime.now(dt_q.tzinfo) if dt_q.tzinfo else datetime.now()
+                if (now - dt_q).total_seconds() > 120:
+                    payload["ok"] = False
+                    payload["status"] = "failed"
+                    payload["error"] = payload.get("error") or "job_stale_in_queue"
+                    payload["failed_at"] = datetime.now(timezone.utc).isoformat()
+                    changed = True
+
+        if changed:
+            status_file.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+    return _std_resp(True, payload, int((time.perf_counter() - t0) * 1000), None)
+
+
+@app.get("/api/software/job/latest", tags=["Software"])
+def software_job_latest():
+    t0 = time.perf_counter()
+    jobs_dir = (BASE_DIR / "logs" / "software_update_jobs").resolve()
+    if not jobs_dir.exists():
+        return _std_resp(True, {"ok": True, "found": False}, int((time.perf_counter() - t0) * 1000), None)
+    try:
+        files = sorted(jobs_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:40]
+        for f in files:
+            try:
+                payload = json.loads(f.read_text(encoding="utf-8-sig", errors="replace"))
+            except Exception:
+                continue
+            status = str(payload.get("status") or "").lower()
+            if status in ("queued", "running"):
+                payload["job_id"] = payload.get("job_id") or f.stem
+                payload["status_url"] = f"/api/software/job/status/{payload['job_id']}"
+                return _std_resp(
+                    True,
+                    {"ok": True, "found": True, "job": payload},
+                    int((time.perf_counter() - t0) * 1000),
+                    None,
+                )
+        return _std_resp(True, {"ok": True, "found": False}, int((time.perf_counter() - t0) * 1000), None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/api/software/job/runner-log/{job_id}", tags=["Software"])
+def software_job_runner_log(job_id: str, tail_lines: int = 120):
+    t0 = time.perf_counter()
+    safe_job_id = "".join(ch for ch in (job_id or "") if ch.isalnum() or ch in ("-", "_"))
+    if not safe_job_id:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "invalid_job_id")
+    jobs_dir = (BASE_DIR / "logs" / "software_update_jobs").resolve()
+    log_path = (jobs_dir / f"{safe_job_id}.runner.log").resolve()
+    if not log_path.exists():
+        return _std_resp(
+            True,
+            {"ok": True, "found": False, "job_id": safe_job_id, "tail": ""},
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    try:
+        lines = log_path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
+        n = max(10, min(500, int(tail_lines or 120)))
+        tail = "\n".join(lines[-n:])
+        return _std_resp(
+            True,
+            {"ok": True, "found": True, "job_id": safe_job_id, "log_path": str(log_path), "tail": tail},
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.post("/api/software/maintenance/cycle", tags=["Software"])
+def software_maintenance_cycle(body: Optional[SoftwareMaintenanceBody] = None):
+    """Ejecuta ciclo de mantenimiento: triada + makeplay + repo + refresh inventarios."""
+    t0 = time.perf_counter()
+    script = (BASE_DIR / "scripts" / "atlas_software_maintenance_cycle.py").resolve()
+    if not script.exists():
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), f"missing script: {script}")
+
+    apply_repo = bool(body.apply_repo) if body else False
+    background = bool(body.background) if body else True
+
+    if not background:
+        cmd = [sys.executable, str(script)]
+        if apply_repo:
+            cmd.append("--apply-repo")
+        ok, payload, _tail = _run_local_json_cmd(cmd, timeout=2400, cwd=BASE_DIR)
+        return _std_resp(ok, payload, int((time.perf_counter() - t0) * 1000), None if ok else payload.get("error"))
+
+    try:
+        jobs_dir = (BASE_DIR / "logs" / "software_maintenance_jobs").resolve()
+        jobs_dir.mkdir(parents=True, exist_ok=True)
+        job_id = uuid.uuid4().hex[:12]
+        status_file = jobs_dir / f"{job_id}.json"
+        runner_log = jobs_dir / f"{job_id}.runner.log"
+        status_file.write_text(
+            json.dumps(
+                {
+                    "ok": True,
+                    "job_id": job_id,
+                    "status": "queued",
+                    "queued_at": datetime.now(timezone.utc).isoformat(),
+                    "total": 8,
+                    "done": 0,
+                    "failed": 0,
+                    "apply_repo": apply_repo,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        cmd = [sys.executable, str(script), "--job-file", str(status_file)]
+        if apply_repo:
+            cmd.append("--apply-repo")
+        _spawn_detached_job(cmd, cwd=BASE_DIR, runner_log=runner_log)
+        return _std_resp(
+            True,
+            {
+                "ok": True,
+                "queued": True,
+                "job_id": job_id,
+                "status": "queued",
+                "status_url": f"/api/software/maintenance/status/{job_id}",
+                "runner_log": str(runner_log),
+            },
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/api/software/maintenance/status/{job_id}", tags=["Software"])
+def software_maintenance_status(job_id: str):
+    t0 = time.perf_counter()
+    safe_job_id = "".join(ch for ch in (job_id or "") if ch.isalnum() or ch in ("-", "_"))
+    if not safe_job_id:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "invalid_job_id")
+    status_file = (BASE_DIR / "logs" / "software_maintenance_jobs" / f"{safe_job_id}.json").resolve()
+    if not status_file.exists():
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "job_not_found")
+    try:
+        payload = json.loads(status_file.read_text(encoding="utf-8-sig", errors="replace"))
+        return _std_resp(True, payload, int((time.perf_counter() - t0) * 1000), None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/api/software/maintenance/latest", tags=["Software"])
+def software_maintenance_latest():
+    t0 = time.perf_counter()
+    payload = _read_json_dict(_SOFTWARE_MAINT_LATEST_FILE)
+    if not payload:
+        return _std_resp(
+            True,
+            {"ok": True, "found": False, "message": "No maintenance cycle report yet"},
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    return _std_resp(True, {"ok": True, "found": True, "report": payload}, int((time.perf_counter() - t0) * 1000), None)
 
 
 @app.get("/cluster/nodes", tags=["Cluster"])

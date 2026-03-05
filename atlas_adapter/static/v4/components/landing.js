@@ -94,6 +94,7 @@ export function render(container) {
         <div class="quick-chip" data-action="clawd-direct">${SVG.brain} Clawd Directo</div>
         <div class="quick-chip" data-action="codex-supervisor">${SVG.governance} Codex Supervisor</div>
         <div class="quick-chip" data-action="tools-menu">${SVG.monitor} Tools Menu</div>
+        <div class="quick-chip" data-action="software-center">${SVG.package} Software Center</div>
         <div class="quick-chip" data-action="live-diagnostic">${SVG.health} Diagnostico Live</div>
       </div>
 
@@ -137,6 +138,10 @@ export function render(container) {
         <div class="app-tile" data-app="tools-menu">
           <div class="app-tile-icon">${SVG.monitor}</div>
           <div class="app-tile-label">Tools Menu</div>
+        </div>
+        <div class="app-tile" data-app="software-center">
+          <div class="app-tile-icon">${SVG.package}</div>
+          <div class="app-tile-label">Software Center</div>
         </div>
         <div class="app-tile" data-app="clawd-direct">
           <div class="app-tile-icon">${SVG.brain}</div>
@@ -229,6 +234,7 @@ export function render(container) {
     'clawd-direct': { hash: '/clawd-direct' },
     'codex-supervisor': { hash: '/codex-supervisor' },
     'tools-menu': { hash: '/tools-menu' },
+    'software-center': { hash: '/software-center' },
     'live-diagnostic': { hash: '/live-diagnostic' },
   };
 
@@ -254,6 +260,7 @@ export function render(container) {
     'rauli-panaderia': { hash: '/apps/panaderia' },
     'config-tile':  { hash: '/config' },
     'tools-menu':   { hash: '/tools-menu' },
+    'software-center': { hash: '/software-center' },
     'clawd-direct': { hash: '/clawd-direct' },
     'codex-supervisor': { hash: '/codex-supervisor' },
     'live-diagnostic': { hash: '/live-diagnostic' },

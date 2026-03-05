@@ -1,0 +1,66 @@
+{
+  "version": "1.0",
+  "components": [
+    {
+      "id": "push_api",
+      "name": "ATLAS PUSH API",
+      "type": "service",
+      "critical": true,
+      "url": "http://127.0.0.1:8791/health"
+    },
+    {
+      "id": "nexus_api",
+      "name": "ATLAS NEXUS API",
+      "type": "service",
+      "critical": false,
+      "url": "http://127.0.0.1:8000/health"
+    },
+    {
+      "id": "robot_api",
+      "name": "ATLAS Robot API",
+      "type": "service",
+      "critical": false,
+      "url": "http://127.0.0.1:8002/health"
+    },
+    {
+      "id": "ans_scheduler",
+      "name": "ANS Scheduler Job",
+      "type": "scheduler_job",
+      "critical": true,
+      "job_name": "ans_cycle"
+    },
+    {
+      "id": "makeplay_scheduler",
+      "name": "MakePlay Scheduler Job",
+      "type": "scheduler_job",
+      "critical": true,
+      "job_name": "makeplay_scanner"
+    },
+    {
+      "id": "repo_monitor_scheduler",
+      "name": "Repo Monitor Scheduler Job",
+      "type": "scheduler_job",
+      "critical": true,
+      "job_name": "repo_monitor_cycle"
+    },
+    {
+      "id": "triada_last_cycle",
+      "name": "Triada Last Cycle",
+      "type": "log_file",
+      "critical": true,
+      "path": "logs/evolution_last_cycle.json"
+    },
+    {
+      "id": "makeplay_last_scan",
+      "name": "MakePlay Last Scan",
+      "type": "makeplay_last_scan",
+      "critical": true
+    },
+    {
+      "id": "repo_update_status",
+      "name": "Repo Update Status",
+      "type": "repo_update",
+      "critical": true
+    }
+  ]
+}

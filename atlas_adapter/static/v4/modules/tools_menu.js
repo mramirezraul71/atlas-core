@@ -7,6 +7,7 @@ import { poll, stop } from '../lib/polling.js';
 const POLL_ID = 'tools-menu-module';
 const MENU_ENDPOINT = '/api/tools/menu';
 const JOB_KEY = 'atlas-tools-menu-active-job';
+const AUTO_RECONCILE_COOLDOWN_MS = 15000;
 
 function _esc(s) {
   const d = document.createElement('span');
@@ -95,6 +96,9 @@ export default {
             <button class="action-btn" id="tm-btn-discovery">
               Buscar Herramientas Nuevas
             </button>
+            <button class="action-btn" id="tm-btn-software-center">
+              Software Center
+            </button>
             <button class="action-btn" id="tm-btn-reconcile">
               Reconciliar estados
             </button>
@@ -161,6 +165,7 @@ export default {
     container.querySelector('#tm-btn-bootstrap')?.addEventListener('click', () => _bootstrap(container));
     container.querySelector('#tm-btn-update-all')?.addEventListener('click', () => _updateAll(container));
     container.querySelector('#tm-btn-discovery')?.addEventListener('click', () => _runDiscovery(container));
+    container.querySelector('#tm-btn-software-center')?.addEventListener('click', () => { location.hash = '/software-center'; });
     container.querySelector('#tm-btn-reconcile')?.addEventListener('click', () => _reconcileStates(container));
     container.querySelector('#tm-filter')?.addEventListener('change', () => _renderTools(container));
     container.querySelector('#tm-detail-close')?.addEventListener('click', () => _closeDetail(container));
@@ -464,6 +469,7 @@ async function _watchJob(container, jobId, label, opts = {}) {
         _setAction(container, `<div class="codebox" style="font-size:11px">Proceso completado: ${_esc(label)} (job ${_esc(jobId)})</div>`);
         window.AtlasToast?.show(`Completado: ${label}`, 'success');
         if (scanOnDone) await _scanNow(container);
+        await _autoReconcileAfterJob(container, 'done');
         return;
       }
       if (p.status === 'done_with_errors') {
@@ -479,6 +485,7 @@ async function _watchJob(container, jobId, label, opts = {}) {
         const msg = p.error || (p.result && p.result.error) || 'Completado con errores';
         _setAction(container, `<div style="color:var(--accent-orange);font-size:12px">Proceso completado con errores (${_esc(String(label))}): ${_esc(String(msg))}</div>`);
         window.AtlasToast?.show('Completado con errores', 'warning');
+        await _autoReconcileAfterJob(container, 'done_with_errors');
         return;
       }
       if (p.status === 'failed') {
@@ -494,6 +501,7 @@ async function _watchJob(container, jobId, label, opts = {}) {
         const msg = p.error || (p.result && p.result.error) || 'tools_update_failed';
         _setAction(container, `<div style="color:var(--accent-red);font-size:12px">Error update (${_esc(String(label))}): ${_esc(msg)}</div>`);
         window.AtlasToast?.show(String(msg), 'error');
+        await _autoReconcileAfterJob(container, 'failed');
         return;
       }
       const msg = p.error || (p.result && p.result.error) || 'tools_update_failed';
@@ -1041,6 +1049,28 @@ function _txt(container, selector, value) {
 function _setAction(container, html) {
   const el = container.querySelector('#tm-action');
   if (el) el.innerHTML = html || '';
+}
+
+async function _autoReconcileAfterJob(container, reason = '') {
+  const now = Date.now();
+  const lastAt = Number(container.__lastAutoReconcileAt || 0);
+  if (now - lastAt < AUTO_RECONCILE_COOLDOWN_MS) return;
+  container.__lastAutoReconcileAt = now;
+  try {
+    _setAction(container, `<div class="codebox" style="font-size:11px">Sincronizando estado automático (${_esc(reason || 'job terminal')})...</div>`);
+    await _refresh(container);
+    await _runDiscovery(container);
+    const r = await fetch('/api/tools/job/latest');
+    const d = await r.json().catch(() => ({}));
+    const p = _payload(d) || {};
+    if (!r.ok || d.ok === false || !p.found) {
+      container.__jobState = null;
+      _renderProgress(container);
+      _renderTools(container);
+    }
+  } catch (e) {
+    _setAction(container, `<div style="color:var(--accent-orange);font-size:12px">Sincronización automática parcial: ${_esc(String(e.message || e))}</div>`);
+  }
 }
 
 window.AtlasModuleToolsMenu = { id: 'tools-menu' };

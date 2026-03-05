@@ -1,14 +1,14 @@
 {
   "ok": true,
-  "generated_at": "2026-03-05T03:20:58.047372+00:00",
+  "generated_at": "2026-03-05T05:13:29.157235+00:00",
   "workspace": "C:\\ATLAS_PUSH",
   "scan_source": "atlas_tools_watchdog.py",
   "summary": {
     "total": 18,
-    "ok": 11,
-    "warn": 6,
+    "ok": 12,
+    "warn": 5,
     "error": 1,
-    "upgrade_ready": 4
+    "upgrade_ready": 3
   },
   "offline_queue": {
     "pending": 0,
@@ -225,13 +225,13 @@
       "name": "Ollama Runtime",
       "category": "runtime",
       "critical": true,
-      "version": "0.17.5",
-      "status": "warn",
-      "health": "upgrade_ready",
+      "version": "0.17.6",
+      "status": "ok",
+      "health": "online",
       "details": "",
       "update_script": "scripts\\atlas_tool_update.ps1 -Tool ollama",
       "latest_version": "0.17.6",
-      "update_ready": true
+      "update_ready": false
     },
     {
       "id": "uv",

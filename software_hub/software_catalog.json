@@ -1,0 +1,203 @@
+{
+  "version": "1.0",
+  "items": [
+    {
+      "id": "git",
+      "name": "Git CLI",
+      "category": "devops",
+      "critical": true,
+      "install_method": "winget",
+      "install_target": "Git.Git",
+      "check_command": ["git", "--version"],
+      "network_probe": "https://api.github.com/repos/git-for-windows/git/releases/latest",
+      "latest": { "type": "github", "owner": "git-for-windows", "repo": "git" }
+    },
+    {
+      "id": "python",
+      "name": "Python Runtime",
+      "category": "runtime",
+      "critical": true,
+      "install_method": "winget",
+      "install_target": "Python.Python.3.12",
+      "check_command": ["python", "--version"],
+      "network_probe": "https://pypi.org/pypi/pip/json",
+      "latest": { "type": "none" }
+    },
+    {
+      "id": "pip",
+      "name": "pip",
+      "category": "runtime",
+      "critical": true,
+      "install_method": "pip",
+      "install_target": "pip",
+      "check_command": ["python", "-m", "pip", "--version"],
+      "network_probe": "https://pypi.org/pypi/pip/json",
+      "latest": { "type": "pypi", "package": "pip" }
+    },
+    {
+      "id": "node",
+      "name": "Node.js",
+      "category": "runtime",
+      "critical": true,
+      "install_method": "winget",
+      "install_target": "OpenJS.NodeJS",
+      "check_command": ["node", "--version"],
+      "network_probe": "https://nodejs.org/dist/index.json",
+      "latest": { "type": "nodejs" }
+    },
+    {
+      "id": "uv",
+      "name": "uv",
+      "category": "runtime",
+      "critical": false,
+      "install_method": "winget",
+      "install_target": "astral-sh.uv",
+      "check_command": ["uv", "--version"],
+      "network_probe": "https://pypi.org/pypi/uv/json",
+      "latest": { "type": "pypi", "package": "uv" }
+    },
+    {
+      "id": "ruff",
+      "name": "ruff",
+      "category": "quality",
+      "critical": false,
+      "install_method": "pip",
+      "install_target": "ruff",
+      "check_command": ["ruff", "--version"],
+      "network_probe": "https://pypi.org/pypi/ruff/json",
+      "latest": { "type": "pypi", "package": "ruff" }
+    },
+    {
+      "id": "jq",
+      "name": "jq",
+      "category": "data",
+      "critical": false,
+      "install_method": "winget",
+      "install_target": "jqlang.jq",
+      "check_command": ["jq", "--version"],
+      "network_probe": "https://jqlang.github.io/jq/",
+      "latest": { "type": "none" }
+    },
+    {
+      "id": "httpie",
+      "name": "HTTPie",
+      "category": "network",
+      "critical": false,
+      "install_method": "winget",
+      "install_target": "HTTPie.HTTPie",
+      "check_command": ["http", "--version"],
+      "network_probe": "https://httpie.io",
+      "latest": { "type": "none" }
+    },
+    {
+      "id": "nmap",
+      "name": "Nmap",
+      "category": "network",
+      "critical": false,
+      "install_method": "winget",
+      "install_target": "Insecure.Nmap",
+      "check_command": ["nmap", "--version"],
+      "network_probe": "https://nmap.org",
+      "latest": { "type": "none" }
+    },
+    {
+      "id": "taskwarrior",
+      "name": "Taskwarrior",
+      "category": "orchestration",
+      "critical": false,
+      "install_method": "winget",
+      "install_target": "Task.Task",
+      "check_command": ["task", "--version"],
+      "network_probe": "https://taskwarrior.org",
+      "latest": { "type": "none" }
+    },
+    {
+      "id": "tmux",
+      "name": "tmux",
+      "category": "terminal",
+      "critical": false,
+      "install_method": "winget",
+      "install_target": "arndawg.tmux-windows",
+      "check_command": ["tmux", "-V"],
+      "network_probe": "https://github.com/tmux/tmux",
+      "latest": { "type": "none" }
+    },
+    {
+      "id": "cloudflared",
+      "name": "Cloudflare Tunnel",
+      "category": "network",
+      "critical": true,
+      "install_method": "winget",
+      "install_target": "Cloudflare.cloudflared",
+      "check_command": ["cloudflared", "--version"],
+      "network_probe": "https://api.github.com/repos/cloudflare/cloudflared/releases/latest",
+      "latest": { "type": "github", "owner": "cloudflare", "repo": "cloudflared" }
+    },
+    {
+      "id": "tailscale",
+      "name": "Tailscale",
+      "category": "network",
+      "critical": true,
+      "install_method": "winget",
+      "install_target": "Tailscale.Tailscale",
+      "check_command": ["tailscale", "version"],
+      "network_probe": "https://api.github.com/repos/tailscale/tailscale/releases/latest",
+      "latest": { "type": "github", "owner": "tailscale", "repo": "tailscale" }
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "category": "runtime",
+      "critical": true,
+      "install_method": "winget",
+      "install_target": "Ollama.Ollama",
+      "check_command": ["ollama", "--version"],
+      "network_probe": "https://api.github.com/repos/ollama/ollama/releases/latest",
+      "latest": { "type": "github", "owner": "ollama", "repo": "ollama" }
+    },
+    {
+      "id": "playwright_py",
+      "name": "Playwright Python",
+      "category": "dependency",
+      "critical": false,
+      "install_method": "pip",
+      "install_target": "playwright",
+      "check_command": ["python", "-m", "playwright", "--version"],
+      "network_probe": "https://pypi.org/pypi/playwright/json",
+      "latest": { "type": "pypi", "package": "playwright" }
+    },
+    {
+      "id": "ccxt",
+      "name": "CCXT",
+      "category": "dependency",
+      "critical": false,
+      "install_method": "pip",
+      "install_target": "ccxt",
+      "check_command": ["python", "-c", "import importlib.metadata as m; print(m.version('ccxt'))"],
+      "network_probe": "https://pypi.org/pypi/ccxt/json",
+      "latest": { "type": "pypi", "package": "ccxt" }
+    },
+    {
+      "id": "docker",
+      "name": "Docker Desktop",
+      "category": "containers",
+      "critical": false,
+      "install_method": "winget",
+      "install_target": "Docker.DockerDesktop",
+      "check_command": ["docker", "--version"],
+      "network_probe": "https://docs.docker.com/desktop/",
+      "latest": { "type": "none" }
+    },
+    {
+      "id": "ytdlp",
+      "name": "yt-dlp",
+      "category": "media",
+      "critical": false,
+      "install_method": "pip",
+      "install_target": "yt-dlp",
+      "check_command": ["yt-dlp", "--version"],
+      "network_probe": "https://pypi.org/pypi/yt-dlp/json",
+      "latest": { "type": "pypi", "package": "yt-dlp" }
+    }
+  ]
+}

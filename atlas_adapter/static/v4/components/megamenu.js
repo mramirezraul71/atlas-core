@@ -84,6 +84,7 @@ const MENU_ITEMS = [
     category: 'Sistema',
     items: [
       { id: 'tools-menu', label: 'Tools Menu',        desc: 'Inventario, salud y upgrades de herramientas', icon: 'grid', route: '/tools-menu' },
+      { id: 'software-center', label: 'Software Center', desc: 'Software instalado, drivers y ciclo de mantenimiento', icon: 'package', route: '/software-center' },
       { id: 'ui-v3',  label: 'Dashboard v3.8',    desc: 'Panel operacional completo legado', icon: 'layout', href: '/v3' },
       { id: 'update', label: 'Actualizar ATLAS',   desc: 'Comprobar y aplicar actualizaciones', icon: 'zap', route: '/__update' },
     ]

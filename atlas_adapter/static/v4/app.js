@@ -327,7 +327,7 @@ async function _loadModules() {
   const MODULE_NAMES = [
     'health', 'modules', 'config', 'bitacora', 'memory', 'learning',
     'autonomy', 'healing', 'approvals', 'audit', 'comms',
-    'events', 'api_explorer', 'tools_menu', 'voice', 'trading', 'body_module',
+    'events', 'api_explorer', 'tools_menu', 'software_center', 'voice', 'trading', 'body_module',
     'tutorias', 'cognitive', 'vision', 'chat', 'apps', 'clawd_direct', 'codex_supervisor', 'live_diagnostic',
   ];
   for (const name of MODULE_NAMES) {
