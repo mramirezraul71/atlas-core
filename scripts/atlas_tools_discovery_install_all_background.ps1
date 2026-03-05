@@ -48,7 +48,7 @@ foreach ($it in $items) {
   Write-Host ("[discovery-install-all] begin tool={0} method={1} target={2}" -f $id, $method, $target)
 
   _WriteJob @{
-    ok = $true; source = "discovery-bulk"; tool = "discovery_all"; status = "running"
+    ok = ($failed -eq 0); source = "discovery-bulk"; tool = "discovery_all"; status = "running"
     started_at = (Get-Date).ToString("o")
     current_tool = $id
     tools = $toolIds; total = $total; done = $done; failed = $failed; results = $results
@@ -67,7 +67,7 @@ foreach ($it in $items) {
   Write-Host ("[discovery-install-all] end tool={0} ok={1} done={2} failed={3}" -f $id, [bool]$child.ok, $done, $failed)
 
   _WriteJob @{
-    ok = $true; source = "discovery-bulk"; tool = "discovery_all"; status = "running"
+    ok = ($failed -eq 0); source = "discovery-bulk"; tool = "discovery_all"; status = "running"
     started_at = (Get-Date).ToString("o")
     current_tool = $id
     tools = $toolIds; total = $total; done = $done; failed = $failed; results = $results

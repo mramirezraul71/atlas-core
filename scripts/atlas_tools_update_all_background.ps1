@@ -45,7 +45,7 @@ try {
   foreach ($t in $tools) {
     Write-Host ("[tools-update-all] begin tool={0} done={1} failed={2}" -f $t, $done, $failed)
     _WriteJob @{
-      ok = $true
+      ok = ($failed -eq 0)
       tool = "all"
       status = "running"
       started_at = (Get-Date).ToString("o")
@@ -77,7 +77,7 @@ try {
     Write-Host ("[tools-update-all] end tool={0} ok={1} done={2} failed={3}" -f $t, [bool]$parsed.ok, $done, $failed)
 
     _WriteJob @{
-      ok = $true
+      ok = ($failed -eq 0)
       tool = "all"
       status = "running"
       started_at = (Get-Date).ToString("o")

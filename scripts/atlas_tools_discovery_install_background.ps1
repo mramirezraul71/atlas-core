@@ -18,6 +18,46 @@ function _WriteJob([hashtable]$obj) {
   ($obj | ConvertTo-Json -Depth 12) | Set-Content -Path $JobFile -Encoding UTF8
 }
 
+function Invoke-CapturedProcess {
+  param(
+    [Parameter(Mandatory = $true)][string]$Exe,
+    [string[]]$Args = @(),
+    [int]$TimeoutMs = 120000
+  )
+  $tmpOut = [System.IO.Path]::GetTempFileName()
+  $tmpErr = [System.IO.Path]::GetTempFileName()
+  $exitCode = -1
+  $timedOut = $false
+  $output = ""
+  try {
+    $p = Start-Process -FilePath $Exe -ArgumentList $Args -NoNewWindow -PassThru -RedirectStandardOutput $tmpOut -RedirectStandardError $tmpErr
+    $finished = $p.WaitForExit($TimeoutMs)
+    if (-not $finished) {
+      $timedOut = $true
+      try { $p.Kill() } catch {}
+      $exitCode = 124
+    } else {
+      $exitCode = [int]$p.ExitCode
+    }
+    if (Test-Path $tmpOut) {
+      $outText = Get-Content -Path $tmpOut -Raw -ErrorAction SilentlyContinue
+      if ($outText) { $output = ($output + "`n" + $outText).Trim() }
+    }
+    if (Test-Path $tmpErr) {
+      $errText = Get-Content -Path $tmpErr -Raw -ErrorAction SilentlyContinue
+      if ($errText) { $output = ($output + "`n" + $errText).Trim() }
+    }
+  } finally {
+    Remove-Item -Path $tmpOut -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path $tmpErr -Force -ErrorAction SilentlyContinue
+  }
+  return @{
+    exit_code = $exitCode
+    timed_out = $timedOut
+    output = $output
+  }
+}
+
 _WriteJob @{
   ok = $true
   tool = $ToolId
@@ -59,7 +99,7 @@ try {
   # Step 3: install
   $installCmd = @()
   if ($InstallMethod -eq "winget") {
-    $installCmd = @("winget","install","--id",$InstallTarget,"-e","--silent","--accept-package-agreements","--accept-source-agreements")
+    $installCmd = @("winget","install","--id",$InstallTarget,"-e","--disable-interactivity","--silent","--accept-package-agreements","--accept-source-agreements")
   } elseif ($InstallMethod -eq "pip") {
     $installCmd = @($PyExe,"-m","pip","install","-U",$InstallTarget)
   } elseif ($InstallMethod -eq "npm") {
@@ -68,8 +108,13 @@ try {
     throw "unsupported_install_method:$InstallMethod"
   }
 
-  $raw = & $installCmd[0] $installCmd[1..($installCmd.Length-1)] 2>&1 | Out-String
-  $installOk = $LASTEXITCODE -eq 0
+  $exec = Invoke-CapturedProcess -Exe $installCmd[0] -Args $installCmd[1..($installCmd.Length-1)] -TimeoutMs 180000
+  $raw = [string]($exec.output | Out-String)
+  $installOk = ([int]$exec.exit_code -eq 0)
+  if ($exec.timed_out) {
+    $installOk = $false
+    $raw = (($raw + "`ninstall_timeout_180s") | Out-String)
+  }
   if ((-not $installOk) -and ($InstallMethod -eq "winget")) {
     $rawNorm = ($raw | Out-String).ToLowerInvariant()
     $noUpdate = $rawNorm.Contains("no hay versiones") -or
@@ -91,8 +136,13 @@ try {
   $depOk = $true
   $depTail = ""
   try {
-    $depOut = & $PyExe -m pip check 2>&1 | Out-String
+    $dep = Invoke-CapturedProcess -Exe $PyExe -Args @("-m","pip","check") -TimeoutMs 60000
+    $depOut = [string]($dep.output | Out-String)
     $depTail = ($depOut -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 1)
+    if ([bool]$dep.timed_out) {
+      $depOk = $false
+      $depTail = "dependency_sync_timeout_60s"
+    }
   } catch {
     $depOk = $false
     $depTail = $_.Exception.Message
@@ -137,22 +187,30 @@ try {
   $verifyTail = ""
   if ($InstallMethod -eq "winget") {
     try {
-      $vraw = & winget list --id $InstallTarget --source winget 2>&1 | Out-String
+      $v = Invoke-CapturedProcess -Exe "winget" -Args @("list","--id",$InstallTarget,"--source","winget","--disable-interactivity") -TimeoutMs 90000
+      $vraw = [string]($v.output | Out-String)
       $verifyTail = ($vraw -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 1)
       $low = ($vraw | Out-String).ToLowerInvariant()
       $targetNorm = ([string]$InstallTarget).ToLowerInvariant()
-      $verifyOk = ($LASTEXITCODE -eq 0) -and (($low -match [regex]::Escape($targetNorm)) -or ($low.Contains(([string]$ToolId).ToLowerInvariant())))
+      $verifyOk = (([int]$v.exit_code -eq 0) -and (-not [bool]$v.timed_out)) -and (($low -match [regex]::Escape($targetNorm)) -or ($low.Contains(([string]$ToolId).ToLowerInvariant())))
+      if ([bool]$v.timed_out) {
+        $verifyTail = "verify_timeout_90s"
+      }
     } catch {
       $verifyOk = $false
       $verifyTail = $_.Exception.Message
     }
-    $verifyCmd = @("winget","list","--id",$InstallTarget,"--source","winget")
+    $verifyCmd = @("winget","list","--id",$InstallTarget,"--source","winget","--disable-interactivity")
   } elseif ($InstallMethod -eq "pip") {
     try {
-      $vraw = & $PyExe -m pip show $InstallTarget 2>&1 | Out-String
+      $v = Invoke-CapturedProcess -Exe $PyExe -Args @("-m","pip","show",$InstallTarget) -TimeoutMs 60000
+      $vraw = [string]($v.output | Out-String)
       $verifyTail = ($vraw -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 1)
       $low = ($vraw | Out-String).ToLowerInvariant()
-      $verifyOk = ($LASTEXITCODE -eq 0) -and $low.Contains("name:")
+      $verifyOk = (([int]$v.exit_code -eq 0) -and (-not [bool]$v.timed_out)) -and $low.Contains("name:")
+      if ([bool]$v.timed_out) {
+        $verifyTail = "verify_timeout_60s"
+      }
     } catch {
       $verifyOk = $false
       $verifyTail = $_.Exception.Message
@@ -160,10 +218,14 @@ try {
     $verifyCmd = @($PyExe,"-m","pip","show",$InstallTarget)
   } elseif ($InstallMethod -eq "npm") {
     try {
-      $vraw = & npm list -g $InstallTarget --depth=0 2>&1 | Out-String
+      $v = Invoke-CapturedProcess -Exe "npm" -Args @("list","-g",$InstallTarget,"--depth=0") -TimeoutMs 90000
+      $vraw = [string]($v.output | Out-String)
       $verifyTail = ($vraw -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 1)
       $low = ($vraw | Out-String).ToLowerInvariant()
-      $verifyOk = ($LASTEXITCODE -eq 0) -and $low.Contains(([string]$InstallTarget).ToLowerInvariant())
+      $verifyOk = (([int]$v.exit_code -eq 0) -and (-not [bool]$v.timed_out)) -and $low.Contains(([string]$InstallTarget).ToLowerInvariant())
+      if ([bool]$v.timed_out) {
+        $verifyTail = "verify_timeout_90s"
+      }
     } catch {
       $verifyOk = $false
       $verifyTail = $_.Exception.Message

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 from __future__ import annotations
 
 import json
@@ -22,15 +22,15 @@ class Candidate:
 
 
 CATALOG: list[Candidate] = [
-    Candidate("task", "Taskwarrior", "orchestration", "cola local de tareas para automatización", "winget", "Taskwarrior.Taskwarrior", "https://taskwarrior.org", "https://taskwarrior.org/docs/"),
-    Candidate("tmux", "tmux", "terminal", "multiplexación de sesiones para ejecución concurrente", "winget", "tmux.tmux", "https://github.com/tmux/tmux", "https://github.com/tmux/tmux/wiki"),
+    Candidate("task", "Taskwarrior", "orchestration", "cola local de tareas para automatizaciÃ³n", "winget", "Task.Task", "https://taskwarrior.org", "https://taskwarrior.org/docs/"),
+    Candidate("tmux", "tmux", "terminal", "multiplexaciÃ³n de sesiones para ejecuciÃ³n concurrente", "winget", "arndawg.tmux-windows", "https://github.com/tmux/tmux", "https://github.com/tmux/tmux/wiki"),
     Candidate("yt-dlp", "yt-dlp", "media", "captura de fuentes multimedia para pipelines", "pip", "yt-dlp", "https://pypi.org/pypi/yt-dlp/json", "https://github.com/yt-dlp/yt-dlp"),
-    Candidate("httpie", "HTTPie", "network", "validación rápida de APIs y flujos externos", "winget", "HTTPie.HTTPie", "https://httpie.io", "https://httpie.io/docs"),
+    Candidate("httpie", "HTTPie", "network", "validaciÃ³n rÃ¡pida de APIs y flujos externos", "winget", "HTTPie.HTTPie", "https://httpie.io", "https://httpie.io/docs"),
     Candidate("nmap", "Nmap", "network", "mapeo de disponibilidad de red para agentes", "winget", "Insecure.Nmap", "https://nmap.org", "https://nmap.org/book/man.html"),
     Candidate("jq", "jq", "data", "procesamiento JSON para cadenas multitarea", "winget", "jqlang.jq", "https://jqlang.github.io/jq/", "https://jqlang.github.io/jq/manual/"),
-    Candidate("ruff", "ruff", "quality", "lint/format ultrarrápido para automatizaciones de código", "pip", "ruff", "https://pypi.org/pypi/ruff/json", "https://docs.astral.sh/ruff/"),
-    Candidate("uv", "uv", "runtime", "gestión rápida de entornos y dependencias Python", "winget", "astral-sh.uv", "https://astral.sh", "https://docs.astral.sh/uv/"),
-    Candidate("playwright", "Playwright", "browser", "automatización web robusta para agentes", "npm", "playwright", "https://registry.npmjs.org/playwright", "https://playwright.dev/"),
+    Candidate("ruff", "ruff", "quality", "lint/format ultrarrÃ¡pido para automatizaciones de cÃ³digo", "pip", "ruff", "https://pypi.org/pypi/ruff/json", "https://docs.astral.sh/ruff/"),
+    Candidate("uv", "uv", "runtime", "gestiÃ³n rÃ¡pida de entornos y dependencias Python", "winget", "astral-sh.uv", "https://astral.sh", "https://docs.astral.sh/uv/"),
+    Candidate("playwright", "Playwright", "browser", "automatizaciÃ³n web robusta para agentes", "npm", "playwright", "https://registry.npmjs.org/playwright", "https://playwright.dev/"),
 ]
 
 
@@ -122,4 +122,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
 

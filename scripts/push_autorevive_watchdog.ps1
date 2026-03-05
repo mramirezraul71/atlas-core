@@ -2,7 +2,8 @@ param(
   [string]$HealthUrl = "http://127.0.0.1:8791/health",
   [int]$IntervalSec = 15,
   [int]$FailThreshold = 3,
-  [int]$RestartCooldownSec = 180
+  [int]$RestartCooldownSec = 180,
+  [int]$HealthTimeoutSec = 35
 )
 
 $ErrorActionPreference = "Continue"
@@ -35,9 +36,9 @@ function Acquire-WatchdogLock {
 function Acquire-WatchdogMutex {
   try {
     $name = "Global\\ATLAS_PUSH_AUTOREVIVE_WATCHDOG"
-    $created = $false
-    $script:WatchdogMutex = New-Object System.Threading.Mutex($true, $name, [ref]$created)
-    if (-not $created) {
+    $script:WatchdogMutex = New-Object System.Threading.Mutex($false, $name)
+    $acquired = $script:WatchdogMutex.WaitOne(0, $false)
+    if (-not $acquired) {
       $script:WatchdogMutexOwner = $false
       return $false
     }
@@ -114,14 +115,14 @@ if (-not (Test-Path $RestartScript)) {
   exit 1
 }
 
-if (-not (Acquire-WatchdogMutex)) {
-  Write-Log "watchdog_duplicate_mutex_detected -> exiting"
-  exit 0
+$mutexAcquired = Acquire-WatchdogMutex
+if (-not $mutexAcquired) {
+  Write-Log "watchdog_mutex_busy -> continuing_with_file_lock_guard"
 }
 
 if (-not (Acquire-WatchdogLock)) {
   Write-Log "watchdog_duplicate_instance_detected -> exiting"
-  Release-WatchdogMutex
+  if ($mutexAcquired) { Release-WatchdogMutex }
   exit 0
 }
 
@@ -134,7 +135,7 @@ while ($true) {
   $ok = $false
   $errMsg = ""
   try {
-    $resp = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+    $resp = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec $HealthTimeoutSec -ErrorAction Stop
     if ($resp.StatusCode -eq 200) { $ok = $true }
     else { $errMsg = "status_$($resp.StatusCode)" }
   } catch {

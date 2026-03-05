@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import json
@@ -222,8 +222,8 @@ def _local_inventory() -> Dict[str, Dict[str, Any]]:
     ok_uv, out_uv = _run_cmd(["uv", "--version"])
     wg_httpie_ok, wg_httpie_out = _winget_installed("HTTPie.HTTPie")
     wg_nmap_ok, wg_nmap_out = _winget_installed("Insecure.Nmap")
-    wg_task_ok, wg_task_out = _winget_installed("Taskwarrior.Taskwarrior")
-    wg_tmux_ok, wg_tmux_out = _winget_installed("tmux.tmux")
+    wg_task_ok, wg_task_out = _winget_installed("Task.Task")
+    wg_tmux_ok, wg_tmux_out = _winget_installed("arndawg.tmux-windows")
 
     cloudflared_proc = False
     try:
@@ -370,7 +370,11 @@ def _local_inventory() -> Dict[str, Dict[str, Any]]:
             "version": _extract_version(out_httpie if ok_httpie else wg_httpie_out),
             "status": _tool_status(ok_httpie or wg_httpie_ok, warning=(wg_httpie_ok and not ok_httpie)),
             "health": "ready" if ok_httpie else ("installed_no_path" if wg_httpie_ok else "not_detected"),
-            "details": out_httpie if out_httpie else wg_httpie_out,
+            "details": (
+                out_httpie
+                if ok_httpie and out_httpie
+                else ("installed via winget (PATH pendiente)" if wg_httpie_ok else (out_httpie if out_httpie else ""))
+            ),
             "update_script": "",
         },
         "nmap": {
@@ -389,10 +393,14 @@ def _local_inventory() -> Dict[str, Dict[str, Any]]:
             "name": "Taskwarrior",
             "category": "orchestration",
             "critical": False,
-            "version": _extract_version(out_task if ok_task else wg_task_out),
+            "version": (_extract_version(out_task) if ok_task else (_extract_version(wg_task_out) if wg_task_ok else "")),
             "status": _tool_status(ok_task or wg_task_ok, warning=(wg_task_ok and not ok_task)),
             "health": "ready" if ok_task else ("installed_no_path" if wg_task_ok else "not_detected"),
-            "details": out_task if out_task else wg_task_out,
+            "details": (
+                out_task
+                if ok_task and out_task
+                else ("installed via winget (PATH pendiente)" if wg_task_ok else (out_task if out_task else ""))
+            ),
             "update_script": "",
         },
         "ruff": {
@@ -403,7 +411,11 @@ def _local_inventory() -> Dict[str, Dict[str, Any]]:
             "version": ruff_ver or (_extract_version(out_ruff) if ok_ruff else ""),
             "status": _tool_status(bool(ruff_ver or ok_ruff)),
             "health": "ready" if (ruff_ver or ok_ruff) else "not_detected",
-            "details": out_ruff if out_ruff else "",
+            "details": (
+                (f"venv_package={ruff_ver}" + (f"; cmd={out_ruff.strip()}" if ok_ruff and out_ruff else ""))
+                if ruff_ver
+                else (out_ruff if out_ruff else "")
+            ),
             "update_script": "",
         },
         "yt-dlp": {
@@ -414,7 +426,11 @@ def _local_inventory() -> Dict[str, Dict[str, Any]]:
             "version": ytdlp_ver or (_extract_version(out_ytdlp) if ok_ytdlp else ""),
             "status": _tool_status(bool(ytdlp_ver or ok_ytdlp)),
             "health": "ready" if (ytdlp_ver or ok_ytdlp) else "not_detected",
-            "details": out_ytdlp if out_ytdlp else "",
+            "details": (
+                (f"venv_package={ytdlp_ver}" + (f"; cmd={out_ytdlp.strip()}" if ok_ytdlp and out_ytdlp else ""))
+                if ytdlp_ver
+                else (out_ytdlp if out_ytdlp else "")
+            ),
             "update_script": "",
         },
         "jq": {
@@ -433,10 +449,14 @@ def _local_inventory() -> Dict[str, Dict[str, Any]]:
             "name": "tmux",
             "category": "terminal",
             "critical": False,
-            "version": _extract_version(out_tmux if ok_tmux else wg_tmux_out),
+            "version": (_extract_version(out_tmux) if ok_tmux else (_extract_version(wg_tmux_out) if wg_tmux_ok else "")),
             "status": _tool_status(ok_tmux or wg_tmux_ok, warning=(wg_tmux_ok and not ok_tmux)),
             "health": "ready" if ok_tmux else ("installed_no_path" if wg_tmux_ok else "not_detected"),
-            "details": out_tmux if out_tmux else wg_tmux_out,
+            "details": (
+                out_tmux
+                if ok_tmux and out_tmux
+                else ("installed via winget (PATH pendiente)" if wg_tmux_ok else (out_tmux if out_tmux else ""))
+            ),
             "update_script": "",
         },
         "uv": {
@@ -627,3 +647,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

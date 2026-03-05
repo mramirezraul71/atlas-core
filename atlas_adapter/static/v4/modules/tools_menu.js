@@ -190,7 +190,9 @@ function _applyData(container, data) {
   const summary = data.summary || {};
   const total = Number(summary.total || 0);
   const ok = Number(summary.ok || 0);
-  const warn = Number(summary.warn || 0);
+  const warnOnly = Number(summary.warn || 0);
+  const err = Number(summary.error || 0);
+  const warn = warnOnly + err;
   const upgrades = Number(summary.upgrade_ready || 0);
   const scanAt = data.generated_at ? new Date(data.generated_at).toLocaleTimeString() : '--';
   const queue = Number((data.offline_queue || {}).pending || 0);
@@ -208,6 +210,7 @@ function _applyData(container, data) {
   if (alerts) {
     const bits = [];
     if (upgrades > 0) bits.push(`<span class="chip orange">UPGRADE_READY: ${upgrades}</span>`);
+    if (err > 0) bits.push(`<span class="chip red">ERROR: ${err}</span>`);
     if (queue > 0) bits.push(`<span class="chip red">Offline Queue: ${queue}</span>`);
     if (git.branch) bits.push(`<span class="chip blue">Branch: ${_esc(git.branch)}</span>`);
     if (protectedBlock) bits.push('<span class="chip red">Bloqueado en rama protegida</span>');
@@ -260,7 +263,7 @@ function _renderTools(container) {
   grid.innerHTML = filtered.map((t) => {
     const cls = t.status === 'ok' ? 'active' : t.status === 'warn' ? 'degraded' : 'down';
     const dot = _statusDot(t.status);
-    const canUpdate = !!(t.update_script || t.id);
+    const canUpdate = !!(t.update_script && String(t.update_script).trim());
     const blocked = protectedBlock && canUpdate;
     const upgradeChip = t.update_ready ? '<span class="chip orange">UPGRADE_READY</span>' : '';
     const criticalChip = t.critical ? '<span class="chip red">CRITICA</span>' : '';
@@ -579,8 +582,11 @@ function _renderDiscovery(container) {
   const invRows = Array.isArray((container.__toolsMenuData || {}).tools) ? (container.__toolsMenuData || {}).tools : [];
   const discoveryAliases = {
     playwright: ['playwright', 'playwright_py'],
+    playwright_py: ['playwright_py', 'playwright'],
     task: ['task', 'taskwarrior'],
+    taskwarrior: ['taskwarrior', 'task'],
     'yt-dlp': ['yt-dlp', 'ytdlp'],
+    ytdlp: ['ytdlp', 'yt-dlp'],
   };
   const installedIds = new Set(
     invRows
@@ -673,19 +679,20 @@ function _renderDiscoveryProgress(el, job) {
   const done = Number(job.done || (Array.isArray(job.results) ? job.results.length : 0) || 0);
   const failed = Number(job.failed || 0);
   const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0;
+  const success = Math.max(0, done - failed);
   const status = String(job.status || 'queued').toUpperCase();
   const terminalWithFailures = status === 'FAILED' && pct >= 100 && failed > 0;
   const statusLabel = terminalWithFailures ? 'DONE_WITH_ERRORS' : status;
   const current = String(job.current_tool || '').trim();
   const color = status === 'DONE'
     ? 'var(--accent-green)'
-    : (terminalWithFailures ? 'var(--accent-orange)' : (status === 'FAILED' ? 'var(--accent-red)' : 'var(--accent-primary)'));
+    : (terminalWithFailures ? 'var(--accent-orange)' : (status === 'FAILED' ? 'var(--accent-red)' : (failed > 0 ? 'var(--accent-orange)' : 'var(--accent-primary)')));
   el.innerHTML = `
     <div class="codebox" style="margin:10px 0;padding:10px;">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
         <span class="chip blue">DISCOVERY JOB ${_esc(String(job.job_id || '--'))}</span>
         <span class="chip ${status === 'DONE' ? 'green' : (terminalWithFailures ? 'orange' : (status === 'FAILED' ? 'red' : 'orange'))}">${_esc(statusLabel)}</span>
-        <span style="font-size:12px;color:var(--text-muted)">Progreso: ${done}/${total} · Fallos: ${failed}</span>
+        <span style="font-size:12px;color:var(--text-muted)">Lote: ${done}/${total} · Exitosas: ${success} · Fallos: ${failed}</span>
         ${current ? `<span style="font-size:12px;color:var(--text-muted)">Actual: ${_esc(current)}</span>` : ''}
       </div>
       <div style="height:10px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;">
@@ -913,19 +920,20 @@ function _renderProgress(container) {
   const done = Number(job.done || (Array.isArray(job.results) ? job.results.length : 0) || 0);
   const failed = Number(job.failed || 0);
   const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0;
+  const success = Math.max(0, done - failed);
   const status = String(job.status || 'queued').toUpperCase();
   const terminalWithFailures = status === 'FAILED' && pct >= 100 && failed > 0;
   const statusLabel = terminalWithFailures ? 'DONE_WITH_ERRORS' : status;
   const current = String(job.current_tool || '').trim();
   const stateColor = status === 'DONE'
     ? 'var(--accent-green)'
-    : (terminalWithFailures ? 'var(--accent-orange)' : (status === 'FAILED' ? 'var(--accent-red)' : 'var(--accent-primary)'));
+    : (terminalWithFailures ? 'var(--accent-orange)' : (status === 'FAILED' ? 'var(--accent-red)' : (failed > 0 ? 'var(--accent-orange)' : 'var(--accent-primary)')));
   el.innerHTML = `
     <div class="codebox" style="margin:10px 0;padding:10px;">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
         <span class="chip blue">JOB ${_esc(String(job.job_id || '--'))}</span>
         <span class="chip ${status === 'DONE' ? 'green' : (terminalWithFailures ? 'orange' : (status === 'FAILED' ? 'red' : 'orange'))}">${_esc(statusLabel)}</span>
-        <span style="font-size:12px;color:var(--text-muted)">Progreso real: ${done}/${total} · Fallos: ${failed}</span>
+        <span style="font-size:12px;color:var(--text-muted)">Lote: ${done}/${total} · Exitosas: ${success} · Fallos: ${failed}</span>
         ${current ? `<span style="font-size:12px;color:var(--text-muted)">Actual: ${_esc(current)}</span>` : ''}
         ${status === 'FAILED' && !terminalWithFailures ? `<button class="action-btn" id="tm-progress-retry">Reintentar job atascado</button>` : ''}
         <button class="action-btn" id="tm-progress-export" style="margin-left:auto;">Exportar reporte</button>

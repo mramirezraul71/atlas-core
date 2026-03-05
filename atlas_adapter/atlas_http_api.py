@@ -10396,8 +10396,54 @@ def tools_update_status(job_id: str):
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
     try:
-        # Guardrail: queued jobs that never started are reported as failed (stale).
+        changed = False
         status = str(payload.get("status") or "").lower()
+        tools = payload.get("tools") if isinstance(payload.get("tools"), list) else []
+        results = payload.get("results") if isinstance(payload.get("results"), list) else []
+        total = int(payload.get("total") or (len(tools) if tools else len(results) if results else 0))
+        done = int(payload.get("done") or (len(results) if results else 0))
+        failed = int(payload.get("failed") or 0)
+
+        if done < 0:
+            done = 0
+            payload["done"] = 0
+            changed = True
+        if total > 0 and done > total:
+            done = total
+            payload["done"] = total
+            changed = True
+        if failed < 0:
+            failed = 0
+            payload["failed"] = 0
+            changed = True
+        if done > 0 and failed > done:
+            failed = done
+            payload["failed"] = done
+            changed = True
+
+        # Normalize terminal state when all tools are already processed.
+        if status in ("queued", "running") and total > 0 and done >= total:
+            src = str(payload.get("source") or "").lower()
+            terminal_failed = failed > 0
+            payload["status"] = "failed" if terminal_failed else "done"
+            payload["ok"] = not terminal_failed
+            if terminal_failed and not str(payload.get("error") or "").strip():
+                payload["error"] = (
+                    "one_or_more_discovery_installs_failed"
+                    if "discovery" in src
+                    else "one_or_more_updates_failed"
+                )
+            if not str(payload.get("finished_at") or "").strip():
+                payload["finished_at"] = datetime.now(timezone.utc).isoformat()
+            changed = True
+
+        # running + partial failures should not be reported as ok=true
+        if status == "running" and failed > 0 and payload.get("ok") is not False:
+            payload["ok"] = False
+            changed = True
+
+        status = str(payload.get("status") or "").lower()
+        # Guardrail: queued jobs that never started are reported as failed (stale).
         if status == "queued":
             q_at = payload.get("queued_at")
             if q_at:
@@ -10408,10 +10454,7 @@ def tools_update_status(job_id: str):
                     payload["status"] = "failed"
                     payload["error"] = payload.get("error") or "job_stale_in_queue"
                     payload["failed_at"] = datetime.now(timezone.utc).isoformat()
-                    status_file.write_text(
-                        json.dumps(payload, ensure_ascii=False),
-                        encoding="utf-8",
-                    )
+                    changed = True
         # Guardrail: running jobs stale for too long are marked failed.
         if status == "running":
             s_at = payload.get("started_at") or payload.get("queued_at")
@@ -10424,10 +10467,12 @@ def tools_update_status(job_id: str):
                     payload["status"] = "failed"
                     payload["error"] = payload.get("error") or "job_stale_running_timeout"
                     payload["failed_at"] = datetime.now(timezone.utc).isoformat()
-                    status_file.write_text(
-                        json.dumps(payload, ensure_ascii=False),
-                        encoding="utf-8",
-                    )
+                    changed = True
+        if changed:
+            status_file.write_text(
+                json.dumps(payload, ensure_ascii=False),
+                encoding="utf-8",
+            )
     except Exception:
         pass
     return _std_resp(True, payload, int((time.perf_counter() - t0) * 1000), None)
