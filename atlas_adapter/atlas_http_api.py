@@ -72,6 +72,7 @@ from typing import List, Optional
 from fastapi import FastAPI, File, Header, Request, UploadFile, WebSocket
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field, field_validator
+import psutil
 
 ATLAS_ROOT = Path(r"C:\ATLAS")
 ROUTER_PATH = ATLAS_ROOT / "modules" / "command_router.py"
@@ -9734,39 +9735,223 @@ def _tools_update_error(payload: dict) -> str:
     return "tools_update_failed"
 
 
-@app.get("/api/tools/menu", tags=["Tools"])
-def tools_menu_inventory():
-    """Inventario de herramientas local + comparaciÃ³n de versiÃ³n + salud."""
-    t0 = time.perf_counter()
+_TOOLS_REGISTRY_FILE = (BASE_DIR / "atlas_master_registry.json").resolve()
+_TOOLS_DISCOVERY_CACHE_FILE = (BASE_DIR / "logs" / "atlas_tools_discovery_cache.json").resolve()
+
+
+def _env_int(name: str, default: int, min_value: int = 1) -> int:
+    try:
+        value = int(str(os.getenv(name) or default).strip())
+    except Exception:
+        value = int(default)
+    return max(min_value, value)
+
+
+_TOOLS_MENU_CACHE_TTL_SEC = _env_int("ATLAS_TOOLS_MENU_CACHE_TTL_SEC", 25, 5)
+_TOOLS_MENU_STALE_SEC = _env_int("ATLAS_TOOLS_MENU_STALE_SEC", 240, _TOOLS_MENU_CACHE_TTL_SEC)
+_TOOLS_DISCOVERY_CACHE_TTL_SEC = _env_int("ATLAS_TOOLS_DISCOVERY_CACHE_TTL_SEC", 300, 15)
+
+_tools_watchdog_refresh_lock = threading.Lock()
+_tools_watchdog_refresh_running = False
+_tools_discovery_refresh_lock = threading.Lock()
+_tools_discovery_refresh_running = False
+
+
+def _read_json_dict(path: Path) -> Optional[dict]:
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig", errors="replace"))
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        return None
+    return None
+
+
+def _write_json_dict(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
+def _run_tools_watchdog_scan(force: bool = False, timeout: int = 120) -> tuple[bool, dict]:
     script = (BASE_DIR / "scripts" / "atlas_tools_watchdog.py").resolve()
     if not script.exists():
-        return _std_resp(
-            False,
-            None,
-            int((time.perf_counter() - t0) * 1000),
-            f"watchdog script missing: {script}",
-        )
+        return False, {"error": f"watchdog script missing: {script}"}
     cmd = [sys.executable, str(script)]
-    ok, payload, _tail = _run_local_json_cmd(cmd, timeout=120)
-    ms = int((time.perf_counter() - t0) * 1000)
-    return _std_resp(ok, payload, ms, None if ok else payload.get("error"))
+    if force:
+        cmd.append("--force")
+    ok, payload, _tail = _run_local_json_cmd(cmd, timeout=timeout)
+    if not isinstance(payload, dict):
+        payload = {"ok": bool(ok), "error": "watchdog_invalid_payload"}
+    return bool(ok), payload
+
+
+def _spawn_tools_watchdog_refresh(force: bool = False) -> bool:
+    global _tools_watchdog_refresh_running
+    with _tools_watchdog_refresh_lock:
+        if _tools_watchdog_refresh_running:
+            return False
+        _tools_watchdog_refresh_running = True
+
+    def _job() -> None:
+        global _tools_watchdog_refresh_running
+        try:
+            _run_tools_watchdog_scan(force=force, timeout=180)
+        except Exception:
+            pass
+        finally:
+            with _tools_watchdog_refresh_lock:
+                _tools_watchdog_refresh_running = False
+
+    threading.Thread(target=_job, name="atlas-tools-watchdog-refresh", daemon=True).start()
+    return True
+
+
+def _run_tools_discovery_scan(timeout: int = 180) -> tuple[bool, dict]:
+    script = (BASE_DIR / "scripts" / "atlas_tools_discovery.py").resolve()
+    if not script.exists():
+        return False, {"error": f"discovery script missing: {script}"}
+    ok, payload, _tail = _run_local_json_cmd([sys.executable, str(script)], timeout=timeout)
+    if not isinstance(payload, dict):
+        payload = {"ok": bool(ok), "error": "discovery_invalid_payload"}
+    return bool(ok), payload
+
+
+def _spawn_tools_discovery_refresh() -> bool:
+    global _tools_discovery_refresh_running
+    with _tools_discovery_refresh_lock:
+        if _tools_discovery_refresh_running:
+            return False
+        _tools_discovery_refresh_running = True
+
+    def _job() -> None:
+        global _tools_discovery_refresh_running
+        try:
+            ok, payload = _run_tools_discovery_scan(timeout=180)
+            if ok and isinstance(payload, dict):
+                payload["_cached_at"] = datetime.now(timezone.utc).isoformat()
+                _write_json_dict(_TOOLS_DISCOVERY_CACHE_FILE, payload)
+        except Exception:
+            pass
+        finally:
+            with _tools_discovery_refresh_lock:
+                _tools_discovery_refresh_running = False
+
+    threading.Thread(target=_job, name="atlas-tools-discovery-refresh", daemon=True).start()
+    return True
+
+
+@app.get("/api/tools/menu", tags=["Tools"])
+def tools_menu_inventory(refresh: bool = False):
+    """Inventario de herramientas (rápido): usa cache local y refresca en background."""
+    t0 = time.perf_counter()
+    now_ts = time.time()
+    payload = _read_json_dict(_TOOLS_REGISTRY_FILE)
+    file_age = None
+    if _TOOLS_REGISTRY_FILE.exists():
+        try:
+            file_age = max(0.0, now_ts - _TOOLS_REGISTRY_FILE.stat().st_mtime)
+        except Exception:
+            file_age = None
+
+    if payload and not refresh:
+        age_sec = int(file_age or 0)
+        stale = age_sec > _TOOLS_MENU_CACHE_TTL_SEC
+        if stale:
+            _spawn_tools_watchdog_refresh(force=False)
+        out = dict(payload)
+        out["cache"] = {
+            "stale": stale,
+            "age_sec": age_sec,
+            "refreshing": bool(_tools_watchdog_refresh_running),
+            "ttl_sec": _TOOLS_MENU_CACHE_TTL_SEC,
+        }
+        return _std_resp(True, out, int((time.perf_counter() - t0) * 1000), None)
+
+    ok, fresh = _run_tools_watchdog_scan(force=bool(refresh), timeout=120)
+    if ok:
+        out = dict(fresh)
+        out["cache"] = {
+            "stale": False,
+            "age_sec": 0,
+            "refreshing": False,
+            "ttl_sec": _TOOLS_MENU_CACHE_TTL_SEC,
+        }
+        return _std_resp(True, out, int((time.perf_counter() - t0) * 1000), None)
+
+    # Fallback resiliente: devolver último registry conocido aunque esté viejo.
+    if payload:
+        age_sec = int(file_age or 0)
+        if age_sec > _TOOLS_MENU_STALE_SEC:
+            _spawn_tools_watchdog_refresh(force=True)
+        out = dict(payload)
+        out["cache"] = {
+            "stale": True,
+            "age_sec": age_sec,
+            "refreshing": bool(_tools_watchdog_refresh_running),
+            "ttl_sec": _TOOLS_MENU_CACHE_TTL_SEC,
+            "warning": fresh.get("error") or "watchdog_refresh_failed_using_cache",
+        }
+        return _std_resp(True, out, int((time.perf_counter() - t0) * 1000), None)
+
+    return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), fresh.get("error") or "watchdog_failed")
 
 
 @app.get("/api/tools/discovery/search", tags=["Tools"])
-def tools_discovery_search():
-    """Busca herramientas nuevas recomendadas para ATLAS y su disponibilidad en red."""
+def tools_discovery_search(force: bool = False):
+    """Discovery rápido: entrega cache y refresca en background si está vencido."""
     t0 = time.perf_counter()
-    script = (BASE_DIR / "scripts" / "atlas_tools_discovery.py").resolve()
-    if not script.exists():
-        return _std_resp(
-            False,
-            None,
-            int((time.perf_counter() - t0) * 1000),
-            f"discovery script missing: {script}",
-        )
-    ok, payload, _tail = _run_local_json_cmd([sys.executable, str(script)], timeout=180)
-    ms = int((time.perf_counter() - t0) * 1000)
-    return _std_resp(ok, payload, ms, None if ok else payload.get("error"))
+    now_ts = time.time()
+    cached = _read_json_dict(_TOOLS_DISCOVERY_CACHE_FILE)
+    if cached and not force:
+        cached_at = 0.0
+        try:
+            ts_raw = cached.get("_cached_at")
+            if ts_raw:
+                cached_at = _ts_to_epoch(str(ts_raw))
+            if not cached_at and _TOOLS_DISCOVERY_CACHE_FILE.exists():
+                cached_at = _TOOLS_DISCOVERY_CACHE_FILE.stat().st_mtime
+        except Exception:
+            cached_at = 0.0
+        age_sec = int(max(0.0, now_ts - cached_at)) if cached_at > 0 else 999999
+        stale = age_sec > _TOOLS_DISCOVERY_CACHE_TTL_SEC
+        if stale:
+            _spawn_tools_discovery_refresh()
+        out = dict(cached)
+        out["cache"] = {
+            "stale": stale,
+            "age_sec": age_sec,
+            "refreshing": bool(_tools_discovery_refresh_running),
+            "ttl_sec": _TOOLS_DISCOVERY_CACHE_TTL_SEC,
+        }
+        return _std_resp(True, out, int((time.perf_counter() - t0) * 1000), None)
+
+    ok, payload = _run_tools_discovery_scan(timeout=180)
+    if ok:
+        out = dict(payload)
+        out["_cached_at"] = datetime.now(timezone.utc).isoformat()
+        _write_json_dict(_TOOLS_DISCOVERY_CACHE_FILE, out)
+        out["cache"] = {
+            "stale": False,
+            "age_sec": 0,
+            "refreshing": False,
+            "ttl_sec": _TOOLS_DISCOVERY_CACHE_TTL_SEC,
+        }
+        return _std_resp(True, out, int((time.perf_counter() - t0) * 1000), None)
+
+    if cached:
+        out = dict(cached)
+        out["cache"] = {
+            "stale": True,
+            "age_sec": 999999,
+            "refreshing": bool(_tools_discovery_refresh_running),
+            "ttl_sec": _TOOLS_DISCOVERY_CACHE_TTL_SEC,
+            "warning": payload.get("error") or "discovery_refresh_failed_using_cache",
+        }
+        return _std_resp(True, out, int((time.perf_counter() - t0) * 1000), None)
+
+    return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), payload.get("error") or "discovery_failed")
 
 
 @app.post("/api/tools/discovery/install", tags=["Tools"])
@@ -10396,6 +10581,31 @@ def tools_update_status(job_id: str):
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
     try:
+        def _is_job_process_alive(_job_id: str) -> bool:
+            try:
+                needle = f"{_job_id}.json".lower()
+                script_markers = (
+                    "atlas_tools_update_all_background.ps1",
+                    "atlas_tool_update_background.ps1",
+                    "atlas_tools_discovery_install_all_background.ps1",
+                    "atlas_tools_discovery_install_background.ps1",
+                    "atlas_tools_bootstrap_background.ps1",
+                )
+                for proc in psutil.process_iter(["cmdline"]):
+                    try:
+                        cmd_parts = proc.info.get("cmdline") or []
+                        cmd = " ".join(str(x) for x in cmd_parts).lower()
+                    except Exception:
+                        continue
+                    if not cmd:
+                        continue
+                    if needle in cmd and any(m in cmd for m in script_markers):
+                        return True
+                return False
+            except Exception:
+                # If we cannot inspect processes reliably, avoid false fail.
+                return True
+
         changed = False
         status = str(payload.get("status") or "").lower()
         tools = payload.get("tools") if isinstance(payload.get("tools"), list) else []
@@ -10422,10 +10632,10 @@ def tools_update_status(job_id: str):
             changed = True
 
         # Normalize terminal state when all tools are already processed.
-        if status in ("queued", "running") and total > 0 and done >= total:
+        if status in ("queued", "running", "failed", "done_with_errors") and total > 0 and done >= total:
             src = str(payload.get("source") or "").lower()
             terminal_failed = failed > 0
-            payload["status"] = "failed" if terminal_failed else "done"
+            payload["status"] = "done_with_errors" if terminal_failed else "done"
             payload["ok"] = not terminal_failed
             if terminal_failed and not str(payload.get("error") or "").strip():
                 payload["error"] = (
@@ -10443,6 +10653,22 @@ def tools_update_status(job_id: str):
             changed = True
 
         status = str(payload.get("status") or "").lower()
+        # Guardrail: running job without live runner process (stuck/orphan).
+        if status == "running":
+            try:
+                now_ts = time.time()
+                status_mtime = status_file.stat().st_mtime
+                runner_log = (BASE_DIR / "logs" / "tools_update_jobs" / f"{safe_job_id}.runner.log").resolve()
+                runner_mtime = runner_log.stat().st_mtime if runner_log.exists() else status_mtime
+                stale_for = now_ts - max(status_mtime, runner_mtime)
+                if stale_for > 90 and (not _is_job_process_alive(safe_job_id)):
+                    payload["ok"] = False
+                    payload["status"] = "failed"
+                    payload["error"] = payload.get("error") or "job_runner_not_alive"
+                    payload["failed_at"] = datetime.now(timezone.utc).isoformat()
+                    changed = True
+            except Exception:
+                pass
         # Guardrail: queued jobs that never started are reported as failed (stale).
         if status == "queued":
             q_at = payload.get("queued_at")

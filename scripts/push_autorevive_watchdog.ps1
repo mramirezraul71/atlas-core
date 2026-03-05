@@ -3,7 +3,7 @@ param(
   [int]$IntervalSec = 15,
   [int]$FailThreshold = 3,
   [int]$RestartCooldownSec = 180,
-  [int]$HealthTimeoutSec = 35
+  [int]$HealthTimeoutSec = 60
 )
 
 $ErrorActionPreference = "Continue"

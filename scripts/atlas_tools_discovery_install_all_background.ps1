@@ -25,13 +25,14 @@ $total = $toolIds.Count
 $done = 0
 $failed = 0
 $results = @()
+$jobStartedAt = (Get-Date).ToString("o")
 
 _WriteJob @{
   ok = $true
   source = "discovery-bulk"
   tool = "discovery_all"
   status = "running"
-  started_at = (Get-Date).ToString("o")
+  started_at = $jobStartedAt
   tools = $toolIds
   total = $total
   done = 0
@@ -49,7 +50,7 @@ foreach ($it in $items) {
 
   _WriteJob @{
     ok = ($failed -eq 0); source = "discovery-bulk"; tool = "discovery_all"; status = "running"
-    started_at = (Get-Date).ToString("o")
+    started_at = $jobStartedAt
     current_tool = $id
     tools = $toolIds; total = $total; done = $done; failed = $failed; results = $results
   }
@@ -68,7 +69,7 @@ foreach ($it in $items) {
 
   _WriteJob @{
     ok = ($failed -eq 0); source = "discovery-bulk"; tool = "discovery_all"; status = "running"
-    started_at = (Get-Date).ToString("o")
+    started_at = $jobStartedAt
     current_tool = $id
     tools = $toolIds; total = $total; done = $done; failed = $failed; results = $results
   }

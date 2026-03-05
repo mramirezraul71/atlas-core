@@ -35,6 +35,15 @@ function _isProtectedBlock(data) {
   return Boolean(git.is_protected) && !Boolean(git.allow_protected_updates);
 }
 
+function _normalizeJobStatus(job) {
+  const raw = String(job?.status || 'queued').toLowerCase().trim().replace(/\s+/g, '_');
+  if (raw === 'done_with_errors') return 'done_with_errors';
+  if (raw === 'done' || raw === 'completed' || raw === 'ok') return 'done';
+  if (raw === 'failed' || raw === 'error') return 'failed';
+  if (raw === 'running' || raw === 'in_progress') return 'running';
+  return 'queued';
+}
+
 export default {
   id: 'tools-menu',
   label: 'Tools Menu',
@@ -266,7 +275,7 @@ function _renderTools(container) {
     const canUpdate = !!(t.update_script && String(t.update_script).trim());
     const blocked = protectedBlock && canUpdate;
     const upgradeChip = t.update_ready ? '<span class="chip orange">UPGRADE_READY</span>' : '';
-    const criticalChip = t.critical ? '<span class="chip red">CRITICA</span>' : '';
+    const criticalChip = t.critical ? '<span class="chip blue">ESENCIAL</span>' : '';
     const toolProgress = _toolProgressState(js, t.id);
     const progressChip = toolProgress ? `<span class="chip ${toolProgress.cls}">${_esc(toolProgress.label)}</span>` : '';
     const latest = t.latest_version ? `<div class="provider-role">Latest: ${_esc(t.latest_version)}</div>` : '';
@@ -437,6 +446,7 @@ async function _watchJob(container, jobId, label, opts = {}) {
       const p = _payload(d) || {};
       if (!r.ok || d.ok === false) continue;
       if (!p.job_id) p.job_id = String(jobId);
+      p.status = _normalizeJobStatus(p);
       _updateJobState(container, p);
       if (p.status === 'running' || p.status === 'queued') {
         _setAction(container, `<div class="codebox" style="font-size:11px">Ejecutando ${_esc(label)} (job ${_esc(String(jobId))})...</div>`);
@@ -454,6 +464,21 @@ async function _watchJob(container, jobId, label, opts = {}) {
         _setAction(container, `<div class="codebox" style="font-size:11px">Proceso completado: ${_esc(label)} (job ${_esc(jobId)})</div>`);
         window.AtlasToast?.show(`Completado: ${label}`, 'success');
         if (scanOnDone) await _scanNow(container);
+        return;
+      }
+      if (p.status === 'done_with_errors') {
+        try { localStorage.removeItem(JOB_KEY); } catch (_) {}
+        container.__jobState = p;
+        _renderProgress(container);
+        _renderTools(container);
+        if (String(p.source || '').toLowerCase().includes('discovery')) {
+          container.__discoveryJobState = p;
+          _renderDiscovery(container);
+        }
+        if (scanOnDone) await _scanNow(container);
+        const msg = p.error || (p.result && p.result.error) || 'Completado con errores';
+        _setAction(container, `<div style="color:var(--accent-orange);font-size:12px">Proceso completado con errores (${_esc(String(label))}): ${_esc(String(msg))}</div>`);
+        window.AtlasToast?.show('Completado con errores', 'warning');
         return;
       }
       if (p.status === 'failed') {
@@ -680,18 +705,19 @@ function _renderDiscoveryProgress(el, job) {
   const failed = Number(job.failed || 0);
   const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0;
   const success = Math.max(0, done - failed);
-  const status = String(job.status || 'queued').toUpperCase();
-  const terminalWithFailures = status === 'FAILED' && pct >= 100 && failed > 0;
+  const st = _normalizeJobStatus(job);
+  const status = st.toUpperCase();
+  const terminalWithFailures = st === 'done_with_errors' || (st === 'failed' && total > 0 && done >= total && failed > 0);
   const statusLabel = terminalWithFailures ? 'DONE_WITH_ERRORS' : status;
   const current = String(job.current_tool || '').trim();
-  const color = status === 'DONE'
+  const color = (st === 'done' && !terminalWithFailures)
     ? 'var(--accent-green)'
-    : (terminalWithFailures ? 'var(--accent-orange)' : (status === 'FAILED' ? 'var(--accent-red)' : (failed > 0 ? 'var(--accent-orange)' : 'var(--accent-primary)')));
+    : (terminalWithFailures ? 'var(--accent-orange)' : (st === 'failed' ? 'var(--accent-red)' : (failed > 0 ? 'var(--accent-orange)' : 'var(--accent-primary)')));
   el.innerHTML = `
     <div class="codebox" style="margin:10px 0;padding:10px;">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
         <span class="chip blue">DISCOVERY JOB ${_esc(String(job.job_id || '--'))}</span>
-        <span class="chip ${status === 'DONE' ? 'green' : (terminalWithFailures ? 'orange' : (status === 'FAILED' ? 'red' : 'orange'))}">${_esc(statusLabel)}</span>
+        <span class="chip ${(st === 'done' && !terminalWithFailures) ? 'green' : (terminalWithFailures ? 'orange' : (st === 'failed' ? 'red' : 'orange'))}">${_esc(statusLabel)}</span>
         <span style="font-size:12px;color:var(--text-muted)">Lote: ${done}/${total} · Exitosas: ${success} · Fallos: ${failed}</span>
         ${current ? `<span style="font-size:12px;color:var(--text-muted)">Actual: ${_esc(current)}</span>` : ''}
       </div>
@@ -706,7 +732,7 @@ function _renderDiscoveryProgress(el, job) {
 function _discoveryToolProgressState(job, toolId) {
   if (!job || !toolId) return null;
   const tid = String(toolId).toLowerCase();
-  const status = String(job.status || '').toLowerCase();
+  const status = _normalizeJobStatus(job);
   const current = String(job.current_tool || '').toLowerCase();
   const listed = Array.isArray(job.tools) ? job.tools.map(x => String(x).toLowerCase()) : [];
   const rs = Array.isArray(job.results) ? job.results : [];
@@ -798,7 +824,7 @@ async function _installAllDiscoveredTools(container) {
 
 function _toolProgressState(job, toolId) {
   if (!job || !toolId) return null;
-  const status = String(job.status || '').toLowerCase();
+  const status = _normalizeJobStatus(job);
   const current = String(job.current_tool || '').toLowerCase();
   const doneSet = new Set();
   const failSet = new Set();
@@ -899,9 +925,10 @@ function _closeDetail(container) {
 
 function _updateJobState(container, job) {
   if (!container) return;
-  container.__jobState = job || null;
-  if (job && String(job.source || '').toLowerCase().includes('discovery')) {
-    container.__discoveryJobState = job;
+  const normalized = job ? { ...job, status: _normalizeJobStatus(job) } : null;
+  container.__jobState = normalized;
+  if (normalized && String(normalized.source || '').toLowerCase().includes('discovery')) {
+    container.__discoveryJobState = normalized;
     _renderDiscovery(container);
   }
   _renderProgress(container);
@@ -921,21 +948,22 @@ function _renderProgress(container) {
   const failed = Number(job.failed || 0);
   const pct = total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0;
   const success = Math.max(0, done - failed);
-  const status = String(job.status || 'queued').toUpperCase();
-  const terminalWithFailures = status === 'FAILED' && pct >= 100 && failed > 0;
+  const st = _normalizeJobStatus(job);
+  const status = st.toUpperCase();
+  const terminalWithFailures = st === 'done_with_errors' || (st === 'failed' && total > 0 && done >= total && failed > 0);
   const statusLabel = terminalWithFailures ? 'DONE_WITH_ERRORS' : status;
   const current = String(job.current_tool || '').trim();
-  const stateColor = status === 'DONE'
+  const stateColor = (st === 'done' && !terminalWithFailures)
     ? 'var(--accent-green)'
-    : (terminalWithFailures ? 'var(--accent-orange)' : (status === 'FAILED' ? 'var(--accent-red)' : (failed > 0 ? 'var(--accent-orange)' : 'var(--accent-primary)')));
+    : (terminalWithFailures ? 'var(--accent-orange)' : (st === 'failed' ? 'var(--accent-red)' : (failed > 0 ? 'var(--accent-orange)' : 'var(--accent-primary)')));
   el.innerHTML = `
     <div class="codebox" style="margin:10px 0;padding:10px;">
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
         <span class="chip blue">JOB ${_esc(String(job.job_id || '--'))}</span>
-        <span class="chip ${status === 'DONE' ? 'green' : (terminalWithFailures ? 'orange' : (status === 'FAILED' ? 'red' : 'orange'))}">${_esc(statusLabel)}</span>
+        <span class="chip ${(st === 'done' && !terminalWithFailures) ? 'green' : (terminalWithFailures ? 'orange' : (st === 'failed' ? 'red' : 'orange'))}">${_esc(statusLabel)}</span>
         <span style="font-size:12px;color:var(--text-muted)">Lote: ${done}/${total} · Exitosas: ${success} · Fallos: ${failed}</span>
         ${current ? `<span style="font-size:12px;color:var(--text-muted)">Actual: ${_esc(current)}</span>` : ''}
-        ${status === 'FAILED' && !terminalWithFailures ? `<button class="action-btn" id="tm-progress-retry">Reintentar job atascado</button>` : ''}
+        ${(st === 'failed') && !terminalWithFailures ? `<button class="action-btn" id="tm-progress-retry">Reintentar job atascado</button>` : ''}
         <button class="action-btn" id="tm-progress-export" style="margin-left:auto;">Exportar reporte</button>
       </div>
       <div style="height:10px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;">
@@ -943,7 +971,7 @@ function _renderProgress(container) {
       </div>
       <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">
         ${pct}% completado
-        ${pct === 0 && (status === 'RUNNING' || status === 'QUEUED') ? ' · iniciando primer tool (sin completar aún)' : ''}
+        ${pct === 0 && (st === 'running' || st === 'queued') ? ' · iniciando primer tool (sin completar aún)' : ''}
       </div>
     </div>
   `;
