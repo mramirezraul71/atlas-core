@@ -4,8 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from .git_manager import (checkout_branch, delete_branch, get_head_commit,
-                          get_remote_commit, reset_hard)
+from .git_manager import (checkout_branch, delete_branch, get_remote_commit, reset_hard)
 
 _log = logging.getLogger("humanoid.update.rollback")
 

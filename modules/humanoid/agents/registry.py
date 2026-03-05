@@ -1,7 +1,7 @@
 """Registry of agents. Executive uses this to delegate."""
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Type
+from typing import Dict, Optional
 
 from .base import BaseAgent
 

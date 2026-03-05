@@ -4,7 +4,6 @@ Servidor Atlas con Proxy a NEXUS
 Conecta el dashboard de NEXUS a través del puerto 8000
 """
 
-import os
 import time
 
 import requests

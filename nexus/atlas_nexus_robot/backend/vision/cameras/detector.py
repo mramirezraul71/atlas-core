@@ -11,7 +11,6 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import cv2
 
 logger = logging.getLogger(__name__)
 

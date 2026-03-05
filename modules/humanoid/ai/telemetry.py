@@ -1,9 +1,8 @@
 """Metrics per provider/model: latency, error, success, cost_est."""
 from __future__ import annotations
 
-import time
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List
 
 

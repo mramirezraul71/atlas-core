@@ -1,0 +1,238 @@
+# ATLAS Supervisor Report — 20260304-103119
+
+**Evento:** fs_event
+**Workspace:** `C:\ATLAS_PUSH`
+**Hora:** `2026-03-04T10:31:19`
+
+## Archivos tocados (último evento)
+- `C:\ATLAS_PUSH\.atlas_backups\20260304-102427\snapshots\ga\GA_REPORT_20260304_152415.md`
+
+## Git
+- Branch: `dev`
+- Cambios pendientes: **310**
+
+```
+M .gitignore
+ M _external/RAULI-VISION
+ M _external/rauli-panaderia
+ M _generated/smoke_fastapi_minimal/main.py
+ M atlas.py
+ M atlas_adapter/agent_cycle_analysis.py
+ M atlas_adapter/agent_cycle_prevention.py
+ M atlas_adapter/atlas_http_api.py
+ M atlas_adapter/llm/supervisor.py
+ M atlas_adapter/supervisor_daemon.py
+ M atlas_con_nexus.py
+ M atlas_evolution.py
+ M atlas_runtime.py
+ M autonomous/api_routes.py
+ M autonomous/evolution/backup_manager.py
+ M autonomous/evolution/evolution_orchestrator_v2.py
+ M autonomous/evolution/regression_tester.py
+ M autonomous/health_monitor/anomaly_detector.py
+ M autonomous/health_monitor/health_aggregator.py
+ M autonomous/health_monitor/service_health.py
+ M autonomous/learning/knowledge_graph.py
+ M autonomous/learning/route_optimizer.py
+ M autonomous/resilience/disaster_recovery.py
+ M autonomous/resilience/priority_queue.py
+ M autonomous/resilience/survival_mode.py
+ M autonomous/self_healing/circuit_breaker.py
+ M autonomous/self_healing/healing_orchestrator.py
+ M autonomous/self_healing/recovery_strategies.py
+ M autonomous/telemetry/alert_manager.py
+ M autonomous/telemetry/tracing_system.py
+ M brain/learning/knowledge_consolidator.py
+ M bridge/atlas_api_min.py
+ M chat_api_router.py
+ M chat_thread_manager.py
+ M config/ai_config.json
+ M config/atlas.env
+ M config/atlas.env.example
+ M generar_audio.py
+ M inspect_db.py
+ M memory/autoprogrammer_daemon.py
+ M memory/conversation_api.py
+ M memory/conversation_thread_manager.py
+ M memory_engine/checkpoints/checkpoint_index.json
+ M memory_engine/recovery/corruption_log.json
+ M memory_engine/strategic_memory/learned_patterns.json
+ M memory_engine/versioned_state/current_state.json
+ M memory_engine/versioned_state/state_index.json
+ M modules/atlas_architect/ans_logger.py
+ M modules/atlas_architect/atomic_patcher.py
+ M modules/atlas_architect/governance.py
+ M modules/atlas_architect/model_orchestrator.py
+ M modules/atlas_gui.py
+ M modules/atlas_telegram.py
+ M modules/atlas_telegram_bot.py
+ M modules/brain/dashboard_client.py
+ M modules/brain_registry.py
+ M modules/evolution/credentials.py
+ M modules/finanzas/primitives.py
+ M modules/global_vision/primitives.py
+ M modules/humanoid/agents/base.py
+ M modules/humanoid/agents/registry.py
+ M modules/humanoid/ai/auto_router.py
+ M modules/humanoid/ai/dynamic_router.py
+ M modules/humanoid/ai/external_llm.py
+ M modules/humanoid/ai/fallback.py
+ M modules/humanoid/ai/models.py
+ M modules/humanoid/ai/router.py
+ M modules/humanoid/ai/status.py
+ M modules/humanoid/ai/telemetry.py
+ M modules/humanoid/ans/api.py
+ M modules/humanoid/ans/brain_link.py
+ M modules/humanoid/ans/checks/base.py
+ M modules/humanoid/ans/engine.py
+ M modules/humanoid/ans/evidence.py
+ M modules/humanoid/ans/heals/restart_scheduler.py
+ M modules/humanoid/ans/incident.py
+ M modules/humanoid/ans/live_stream.py
+ M modules/humanoid/ans/mttr.py
+ M modules/humanoid/ans/reactor.py
+ M modules/humanoid/ans/registry.py
+ M modules/humanoid/approvals/chain.py
+ M modules/humanoid/approvals/executor.py
+ M modules/humanoid/approvals/models.py
+ M modules/humanoid/approvals/scheduler_jobs.py
+ M modules/humanoid/approvals/service.py
+ M modules/humanoid/basal/inhibitor.py
+ M modules/humanoid/brain/experience_planner.py
+ M modules/humanoid/brain/libro_vida_planner.py
+ M modules/humanoid/brain_report/engine.py
+ M modules/humanoid/brainstem/global_state.py
+ M modules/humanoid/brainstem/watchdog.py
+ M modules/humanoid/ci/planner.py
+ M modules/humanoid/ci/policy_gate.py
+ M modules/humanoid/cluster/models.py
+ M modules/humanoid/cluster/remote_client.py
+ M modules/humanoid/cluster/router.py
+ M modules/humanoid/cognitive/api.py
+ M modules/humanoid/comms/makeplay_scheduler.py
+ M modules/humanoid/comms/telegram_poller.py
+ M modules/humanoid/comms/whatsapp_bridge.py
+ M modules/humanoid/cortex/frontal/decision_maker.py
+ M modules/humanoid/cortex/frontal/resource_arbiter.py
+ M modules/humanoid/cortex/frontal/task_planner.py
+ M modules/humanoid/cortex/occipital/depth_estimation.py
+ M modules/humanoid/cortex/occipital/object_recognition.py
+ M modules/humanoid/cortex/parietal/body_schema.py
+ M modules/humanoid/cortex/parietal/sensory_fusion.py
+ M modules/humanoid/cortex/temporal/audio_processor.py
+ M modules/humanoid/cortex/temporal/episodic_recall.py
+ M modules/humanoid/cortex/unified_memory.py
+ M modules/humanoid/cursor/executor.py
+ M modules/humanoid/deploy/models.py
+ M modules/humanoid/directives/manager.py
+ M modules/humanoid/dispatch/policies.py
+ M modules/humanoid/face/detector.py
+ M modules/humanoid/ga/approvals_bridge.py
+ M modules/humanoid/ga/executor.py
+ M modules/humanoid/ga/planner.py
+ M modules/humanoid/ga/reporter.py
+ M modules/humanoid/ga/scorer.py
+ M modules/humanoid/ga/signals.py
+ M modules/humanoid/gateway/bootstrap.py
+ M modules/humanoid/gateway/health.py
+ M modules/humanoid/gateway/store.py
+ M modules/humanoid/governance/api.py
+ M modules/humanoid/governance/gates.py
+ M modules/humanoid/hands/process_manager.py
+ M modules/humanoid/hands_eyes/engine.py
+ M modules/humanoid/healing/engine.py
+ M modules/humanoid/hippo/api.py
+ M modules/humanoid/hippo/consolidator.py
+ M modules/humanoid/hippo/episodic_memory.py
+ M modules/humanoid/hippo/schemas.py
+ M modules/humanoid/hippo/semantic_memory.py
+ M modules/humanoid/hri/dialog_manager.py
+ M modules/humanoid/hri/hri_system.py
+ M modules/humanoid/hri/intent_parser.py
+ M modules/humanoid/hri/safety_monitor.py
+ M modules/humanoid/kernel/event_bus.py
+ M modules/humanoid/kernel/health.py
+ M modules/humanoid/learning/api.py
+ M modules/humanoid/learning/reinforcement.py
+ M modules/humanoid/limbic/reward_engine.py
+ M modules/humanoid/limbic/state_regulator.py
+ M modules/humanoid/manipulation/grasp_planner.py
+ M modules/humanoid/manipulation/object_pose.py
+ M modules/humanoid/medulla/bus.py
+ M modules/humanoid/memory_engine/autobiographical.py
+ M modules/humanoid/memory_engine/chat_memory.py
+ M modules/humanoid/memory_engine/chroma_memory.py
+ M modules/humanoid/memory_engine/db.py
+ M modules/humanoid/memory_engine/export.py
+ M modules/humanoid/memory_engine/libro_vida.py
+ M modules/humanoid/memory_engine/libro_vida_api.py
+ M modules/humanoid/memory_engine/lifelog.py
+ M modules/humanoid/memory_engine/recall.py
+ M modules/humanoid/metalearn/cycle.py
+ M modules/humanoid/metalearn/features.py
+ M modules/humanoid/metalearn/models.py
+ M modules/humanoid/metalearn/reporter.py
+ M modules/humanoid/metalearn/trainer.py
+ M modules/humanoid/metalearn/tuner.py
+ M modules/humanoid/motor/motor_controller.py
+ M modules/humanoid/motor/motor_interface.py
+ M modules/humanoid/motor/trajectory_planner.py
+ M modules/humanoid/navigation/controller.py
+ M modules/humanoid/navigation/navigation_system.py
+ M modules/humanoid/navigation/planner.py
+ M modules/humanoid/navigation/slam.py
+ M modules/humanoid/nervous/sensors.py
+ M modules/humanoid/orchestrator/critic.py
+ M modules/humanoid/orchestrator/orchestrator.py
+ M modules/humanoid/owner/gate.py
+ M modules/humanoid/owner/models.py
+ M modules/humanoid/owner/voice_approval.py
+ M modules/humanoid/plugin_expansion/engine.py
+ M modules/humanoid/quality/api.py
+ M modules/humanoid/quality/autonomy_daemon.py
+ M modules/humanoid/quality/cerebro_connector.py
+ M modules/humanoid/quality/dispatcher.py
+ M modules/humanoid/quality/executor.py
+ M modules/humanoid/quality/robotics_bridge.py
+ M modules/humanoid/quality/scripts/git_safe_sync.py
+ M modules/humanoid/quality/triggers.py
+ M modules/humanoid/quality/turbo_executor.py
+ M modules/humanoid/quality/tutorias/api.py
+ M modules/humanoid/quality/tutorias/chat_models.py
+ M modules/humanoid/quality/tutorias/ejemplos.py
+ M modules/humanoid/quality/tutorias/manager.py
+ M modules/humanoid/quality/tutorias/reports.py
+ M modules/humanoid/scaffolder/generator.py
+ M modules/humanoid/scaffolder/runbook.py
+ M modules/humanoid/scaffolder/templates.py
+ M modules/humanoid/scheduler/engine.py
+ M modules/humanoid/scheduler/models.py
+ M modules/humanoid/scheduler/repo_monitor_jobs.py
+ M modules/humanoid/scheduler/runner.py
+ M modules/humanoid/screen/capture.py
+ M modules/humanoid/screen/window_focus.py
+ M modules/humanoid/self_model/manifest.py
+```
+
+## Hallazgos rápidos
+- Sin hallazgos críticos en chequeo rápido.
+
+## Smoke tests
+- Ejecutado: `True`
+- Trigger: `fs_event`
+- Resultado: **SKIP**
+
+```
+[SKIP] Evento 'fs_event' no incluido en SMOKE_ON_EVENTS.
+```
+
+## Recomendaciones inmediatas (Supervisor)
+- Si hay errores repetidos, priorizar: imports/rutas -> scripts PS1 -> dependencias -> runtime/puertos.
+- Mantener cambios pequeños y auditables (1 tema por commit).
+
+## AutoFix Executor
+- Ejecutado: `True` (rc=0)
+
+```text
+[AUTOFIX] Report: C:\ATLAS_PUSH\reports\autofix_20260304-103230.md
+```

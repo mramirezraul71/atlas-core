@@ -7,9 +7,8 @@ import time
 from typing import Any, Dict, List, Optional
 
 from .critic import (suggest_fix_for_failed_step, validate_no_destructive,
-                     validate_plan_structure, validate_step_result)
+                     validate_plan_structure)
 from .memory import load_task, new_task_id, save_task
-from .models import Plan, Result, Step, Task
 
 _log = logging.getLogger("humanoid.orchestrator")
 

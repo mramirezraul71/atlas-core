@@ -3,7 +3,6 @@
 Inicio manual de Home Assistant para Atlas
 """
 
-import os
 import subprocess
 import sys
 from pathlib import Path

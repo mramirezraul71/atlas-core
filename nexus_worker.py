@@ -6,7 +6,6 @@ import asyncio
 import logging
 import os
 import sys
-import time
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent

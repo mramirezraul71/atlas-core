@@ -3,8 +3,7 @@ API REST para el sistema de Tutorías y Visitas
 Integración con FastAPI
 """
 
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -173,8 +172,7 @@ def finalizar_visita(visita_id: str, informe_data: InformeCreate):
     """Finaliza una visita y registra el informe firmado"""
     manager = get_manager()
 
-    from .models import (Evaluacion, Informe, NivelEvaluacion,
-                         PrioridadRecomendacion, Recomendacion)
+    from .models import (Evaluacion, Informe, Recomendacion)
 
     # Crear evaluaciones
     evaluaciones = []

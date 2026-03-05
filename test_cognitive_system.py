@@ -23,7 +23,7 @@ def test_imports():
 
     # Test Medulla
     try:
-        from modules.humanoid.medulla import MedullaAtlas, SharedState
+        from modules.humanoid.medulla import MedullaAtlas
 
         medulla = MedullaAtlas(use_zmq=False)
         results["Medulla"] = "OK"
@@ -34,9 +34,7 @@ def test_imports():
 
     # Test Cortex Frontal
     try:
-        from modules.humanoid.cortex.frontal import (DecisionMaker,
-                                                     InhibitoryControl,
-                                                     TaskPlanner)
+        from modules.humanoid.cortex.frontal import (TaskPlanner)
 
         planner = TaskPlanner()
         results["Cortex.Frontal"] = "OK"
@@ -47,9 +45,7 @@ def test_imports():
 
     # Test Cortex Parietal
     try:
-        from modules.humanoid.cortex.parietal import (BodySchema,
-                                                      SensoryFusion,
-                                                      SpatialMap)
+        from modules.humanoid.cortex.parietal import (SensoryFusion)
 
         fusion = SensoryFusion()
         results["Cortex.Parietal"] = "OK"
@@ -60,9 +56,7 @@ def test_imports():
 
     # Test Cortex Temporal
     try:
-        from modules.humanoid.cortex.temporal import (AudioProcessor,
-                                                      EpisodicRecall,
-                                                      LanguageUnderstanding)
+        from modules.humanoid.cortex.temporal import (LanguageUnderstanding)
 
         nlu = LanguageUnderstanding()
         results["Cortex.Temporal"] = "OK"
@@ -74,7 +68,6 @@ def test_imports():
     # Test Cortex Occipital
     try:
         from modules.humanoid.cortex.occipital import (DepthEstimation,
-                                                       ObjectRecognition,
                                                        VisionPipeline)
 
         vision = VisionPipeline()
@@ -87,8 +80,7 @@ def test_imports():
 
     # Test Limbic
     try:
-        from modules.humanoid.limbic import (GoalManager, RewardEngine,
-                                             StateRegulator)
+        from modules.humanoid.limbic import (GoalManager)
 
         goals = GoalManager()
         results["Limbic"] = "OK"
@@ -99,8 +91,7 @@ def test_imports():
 
     # Test Hippo
     try:
-        from modules.humanoid.hippo import (EpisodicMemory, HippoAPI,
-                                            SemanticMemory)
+        from modules.humanoid.hippo import (HippoAPI)
 
         hippo = HippoAPI()
         results["Hippo"] = "OK"
@@ -111,8 +102,7 @@ def test_imports():
 
     # Test Brainstem
     try:
-        from modules.humanoid.brainstem import (GlobalState, SafetyPolicy,
-                                                VitalsMonitor, Watchdog)
+        from modules.humanoid.brainstem import (VitalsMonitor)
 
         vitals = VitalsMonitor()
         results["Brainstem"] = "OK"
@@ -135,8 +125,7 @@ def test_imports():
 
     # Test Motor
     try:
-        from modules.humanoid.motor import (MotorController, MotorInterface,
-                                            TrajectoryPlanner)
+        from modules.humanoid.motor import (TrajectoryPlanner)
 
         traj = TrajectoryPlanner()
         results["Motor"] = "OK"
@@ -147,9 +136,7 @@ def test_imports():
 
     # Test Learning
     try:
-        from modules.humanoid.learning import (DemonstrationLearning,
-                                               LearningAPI,
-                                               ReinforcementLearning)
+        from modules.humanoid.learning import (LearningAPI)
 
         learning = LearningAPI()
         results["Learning"] = "OK"

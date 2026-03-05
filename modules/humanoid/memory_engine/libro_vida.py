@@ -10,7 +10,6 @@ por similitud textual y por tipo de tarea.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -443,7 +442,7 @@ class LibroDeVida:
         terms = query.lower().split()[:10]
         if not terms:
             return []
-        conditions = [f"search_text LIKE ?" for _ in terms]
+        conditions = ["search_text LIKE ?" for _ in terms]
         params = [f"%{t}%" for t in terms]
         sql = f"""
             SELECT * FROM episodios

@@ -1,7 +1,7 @@
 """Plugin registry: checks + heals."""
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict
 
 _checks: Dict[str, Callable[[], Any]] = {}
 _heals: Dict[str, Callable[..., Any]] = {}

@@ -66,8 +66,7 @@ def _validate_pypi(creds: dict) -> tuple[bool, str]:
         import base64
         import urllib.request
 
-        from modules.evolution.credentials import (ensure_pypi_password,
-                                                   get_pypi_auth)
+        from modules.evolution.credentials import (get_pypi_auth)
 
         pypi_user, pypi_pass = get_pypi_auth(creds)
         req = urllib.request.Request(

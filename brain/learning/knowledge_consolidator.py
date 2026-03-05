@@ -1,7 +1,6 @@
 """Consolida experiencias en conocimiento generalizado (aprendizaje progresivo ATLAS)."""
 from __future__ import annotations
 
-import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Tuple

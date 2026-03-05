@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .anomaly_detector import AnomalyDetector, AnomalyReport
-from .service_health import ServiceHealth, ServiceStatus
+from .service_health import ServiceHealth
 from .system_metrics import SystemMetrics
 
 logger = logging.getLogger(__name__)

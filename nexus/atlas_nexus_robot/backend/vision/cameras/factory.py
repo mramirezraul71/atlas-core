@@ -3,9 +3,8 @@ Factory de cámaras: obtiene la cámara activa según config o auto-detecta.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-import cv2
 
 from .backend import preferred_backends
 from .detector import detect_cameras, load_active_config, save_active_config

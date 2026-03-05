@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-from typing import Any, Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 _PENDING: Dict[str, str] = {}  # approval_id -> "await_confirm"
 

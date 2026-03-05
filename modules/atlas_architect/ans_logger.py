@@ -4,7 +4,6 @@ import difflib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 
 def _now_stamp() -> str:

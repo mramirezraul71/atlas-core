@@ -7,7 +7,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 # python-telegram-bot v20+
 from telegram import Update
-from telegram.constants import ParseMode
 from telegram.ext import (Application, CommandHandler, ContextTypes,
                           MessageHandler, filters)
 

@@ -6,9 +6,8 @@ Endpoints para gestionar hilos de conversación
 """
 
 import sys
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel

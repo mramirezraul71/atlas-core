@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .circuit_breaker import CircuitBreaker, CircuitBreakerError
-from .error_classifier import (ClassificationResult, ErrorClassifier,
+from .error_classifier import (ErrorClassifier,
                                RecoveryStrategy)
 from .failure_memory import FailureMemory
 from .recovery_strategies import RecoveryStrategies

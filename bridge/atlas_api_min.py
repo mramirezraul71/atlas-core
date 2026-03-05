@@ -1,7 +1,7 @@
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -10,8 +10,7 @@ if str(ROOT) not in sys.path:
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
-from pydantic import BaseModel
+from fastapi.responses import HTMLResponse
 
 from atlas_runtime import doctor, handle, modules_report, status
 

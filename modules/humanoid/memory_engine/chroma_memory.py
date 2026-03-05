@@ -4,14 +4,12 @@ Integrado con Unified Memory Cortex de ATLAS
 """
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import chromadb
-from chromadb.config import Settings
 from chromadb.utils import embedding_functions
 
 

@@ -8,8 +8,7 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import datetime
 from typing import Any, Callable, Dict, List
 
 from conversation_thread_manager import (AutoProgrammer,

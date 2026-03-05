@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any, Optional, Tuple
+from typing import Optional, Tuple
 
 from . import policies
 from .budgets import can_spend, max_cost_per_task_usd
 from .fallback import fallback_chain, propose_paid_upgrade
 from .models import RouteDecision, TaskProfile
-from .registry import list_providers, resolve_model_for_route
+from .registry import resolve_model_for_route
 from .telemetry import record as telemetry_record
 
 

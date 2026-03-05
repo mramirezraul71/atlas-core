@@ -4,7 +4,6 @@ Safety: No agent executes shell/update/memory write directly; only Executive aut
 via orchestrator. Reviewer is mandatory before write/execute at depth>=4. Optimizer suggests only."""
 from __future__ import annotations
 
-import logging
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional

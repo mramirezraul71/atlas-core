@@ -3,7 +3,6 @@ Ejemplos de Workflows de Automatización para Atlas
 Usando las 5 herramientas gratuitas: Ollama, n8n, Home Assistant, Appsmith, Composio
 """
 
-import json
 
 from tools_integration import tools
 
@@ -251,13 +250,13 @@ def main():
     print("\n📊 RESUMEN DE WORKFLOWS")
     print("=" * 30)
     print(f"🤖 Análisis IA: {len(trading_results['analysis'])} caracteres")
-    print(f"📈 Dashboards creados: 3")
-    print(f"⚙️ Workflows n8n: 3")
+    print("📈 Dashboards creados: 3")
+    print("⚙️ Workflows n8n: 3")
     print(f"🏠 Dispositivos IoT: {len(iot_results['devices'].get('devices', []))}")
-    print(f"🔗 Conexiones: Gmail configurado")
+    print("🔗 Conexiones: Gmail configurado")
 
     # Estado general del sistema
-    print(f"\n🎯 Estado General del Sistema:")
+    print("\n🎯 Estado General del Sistema:")
     status = tools.get_all_status()
     for key, value in status.items():
         if isinstance(value, dict):
@@ -265,11 +264,11 @@ def main():
         else:
             print(f"  {key}: {value}")
 
-    print(f"\n✅ Todos los workflows ejecutados exitosamente!")
-    print(f"🌐 Acceso a herramientas:")
-    print(f"  - n8n: http://localhost:5678")
-    print(f"  - Appsmith: http://localhost")
-    print(f"  - Home Assistant: http://localhost:8123")
+    print("\n✅ Todos los workflows ejecutados exitosamente!")
+    print("🌐 Acceso a herramientas:")
+    print("  - n8n: http://localhost:5678")
+    print("  - Appsmith: http://localhost")
+    print("  - Home Assistant: http://localhost:8123")
 
 
 if __name__ == "__main__":

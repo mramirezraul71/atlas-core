@@ -6,13 +6,10 @@ Cuerpo + Cerebro + Memoria + Automatizacion
 """
 
 import os
-import threading
-import time
 from datetime import datetime
 
 import psutil
 import pyttsx3
-import requests
 
 # =========================
 # VOZ

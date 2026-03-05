@@ -102,7 +102,6 @@ def test_knowledge_consolidator_consolidate_returns_report(real_kb_temp):
 @pytest.fixture
 def learning_loop_components(mock_semantic_memory, mock_episodic_memory, real_kb_temp):
     from brain.knowledge.initial_knowledge import InitialKnowledgeBase
-    from brain.learning.ai_consultant import AIConsultant
     from brain.learning.continual_learning_loop import ContinualLearningLoop
     from brain.learning.knowledge_consolidator import KnowledgeConsolidator
     from brain.learning.uncertainty_detector import UncertaintyDetector
@@ -219,7 +218,6 @@ def learning_loop_with_tutor(
 ):
     """Loop con AITutor inyectado (mock con curriculum de fallback)."""
     from brain.knowledge.initial_knowledge import InitialKnowledgeBase
-    from brain.learning.ai_consultant import AIConsultant
     from brain.learning.continual_learning_loop import ContinualLearningLoop
     from brain.learning.knowledge_consolidator import KnowledgeConsolidator
     from brain.learning.uncertainty_detector import UncertaintyDetector

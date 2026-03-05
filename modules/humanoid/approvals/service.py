@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from .gate import requires_2fa_for_risk, requires_approval, risk_level
@@ -116,7 +115,7 @@ def _approval_human_message(item: Dict[str, Any]) -> Tuple[str, str]:
     lines = [
         "<b>ATLAS</b> — <b>APROBACIÓN PENDIENTE</b>",
         "",
-        f"<b>Qué se quiere hacer</b>",
+        "<b>Qué se quiere hacer</b>",
         summary,
         "",
         f"<b>Riesgo</b>: <b>{risk}</b>",

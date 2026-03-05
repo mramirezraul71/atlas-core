@@ -3,7 +3,6 @@ Métricas Prometheus para ATLAS: requests, latencia, salud autónoma.
 """
 from __future__ import annotations
 
-import time
 from typing import Any, Dict
 
 from prometheus_client import (REGISTRY, Counter, Gauge, Histogram,

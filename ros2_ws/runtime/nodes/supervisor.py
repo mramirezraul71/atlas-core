@@ -11,7 +11,6 @@ import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-import atlas_ros2_lite as rclpy
 from atlas_ros2_lite import Node, make_string
 
 

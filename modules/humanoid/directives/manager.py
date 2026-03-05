@@ -4,13 +4,11 @@ ATLAS NEXUS - Directives Manager
 Sistema de gestión de directivas globales y por proyecto
 """
 
-import hashlib
 import json
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 

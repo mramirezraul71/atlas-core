@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .models import POT, POTResult
-from .policy import (GitPolicy, filter_paths_for_commit, get_git_policy,
+from .policy import (filter_paths_for_commit, get_git_policy,
                      repo_root)
 
 

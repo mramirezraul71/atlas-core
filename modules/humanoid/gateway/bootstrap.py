@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Optional
 
 from . import audit as gateway_audit
 from . import health, selector, store
-from .models import GatewayStatus
 
 HQ_BASE_URL = os.getenv(
     "ATLAS_HQ_URL", ""

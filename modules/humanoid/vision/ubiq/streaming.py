@@ -5,10 +5,8 @@ import os
 import secrets
 import subprocess
 import threading
-import time
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 from .registry import get_camera, get_setting, set_setting
 

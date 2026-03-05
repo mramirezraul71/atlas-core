@@ -17,14 +17,11 @@ Features:
 """
 from __future__ import annotations
 
-import copy
-import json
 import logging
 import threading
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List
 
 log = logging.getLogger("atlas_ros2_lite")
 

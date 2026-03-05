@@ -22,7 +22,6 @@ import atexit
 import logging
 import os
 import signal
-import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -64,6 +63,9 @@ class AutonomyConfig:
     auto_restart_on_failure: bool = True
     auto_repair_cooldown_sec: int = int(
         os.getenv("QUALITY_AUTO_REPAIR_COOLDOWN_SEC", "120") or "120"
+    )
+    auto_repair_startup_grace_sec: int = int(
+        os.getenv("QUALITY_AUTO_REPAIR_STARTUP_GRACE_SEC", "120") or "120"
     )
     auto_repair_components: set[str] = field(
         default_factory=lambda: _env_components(
@@ -116,6 +118,7 @@ class HealthMonitor:
         self._checks: Dict[str, Callable[[], bool]] = {}
         self._status: Dict[str, HealthStatus] = {}
         self._last_repair_ts: Dict[str, float] = {}
+        self._started_monotonic: float = time.monotonic()
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
@@ -222,6 +225,21 @@ class HealthMonitor:
             _log.warning("Auto-repair disabled, skipping repair for %s", component)
             return
         component_norm = (component or "").strip().lower()
+        if component_norm == "api":
+            grace = max(
+                0,
+                int(
+                    getattr(self.config, "auto_repair_startup_grace_sec", 0)
+                    or 0
+                ),
+            )
+            elapsed = time.monotonic() - self._started_monotonic
+            if grace > 0 and elapsed < grace:
+                _log.info(
+                    "Skipping auto-repair for api during startup grace (%ss remaining)",
+                    int(grace - elapsed),
+                )
+                return
         allowed = set(getattr(self.config, "auto_repair_components", set()) or set())
         if allowed and component_norm not in allowed:
             _log.info(
@@ -540,7 +558,7 @@ class AtlasAutonomyDaemon:
 
         # 1. Iniciar Dispatcher
         try:
-            from .dispatcher import get_dispatcher, start_dispatcher
+            from .dispatcher import start_dispatcher
 
             self._dispatcher = start_dispatcher()
             results["dispatcher"] = {
@@ -554,7 +572,7 @@ class AtlasAutonomyDaemon:
 
         # 2. Iniciar Triggers
         try:
-            from .triggers import get_trigger_engine, start_triggers
+            from .triggers import start_triggers
 
             self._trigger_engine = start_triggers()
             results["triggers"] = {
@@ -690,13 +708,18 @@ class AtlasAutonomyDaemon:
         # Check API (si existe)
         def check_api():
             try:
-                import urllib.request
+                import psutil
 
-                req = urllib.request.Request(
-                    "http://127.0.0.1:8791/health", method="GET"
-                )
-                with urllib.request.urlopen(req, timeout=5) as r:
-                    return r.status == 200
+                pid = os.getpid()
+                for c in psutil.net_connections(kind="inet"):
+                    if (
+                        c.status == psutil.CONN_LISTEN
+                        and c.laddr
+                        and c.laddr.port == 8791
+                        and c.pid == pid
+                    ):
+                        return True
+                return False
             except:
                 return False
 

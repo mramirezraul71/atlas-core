@@ -9,9 +9,9 @@ import json
 import logging
 import time
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 

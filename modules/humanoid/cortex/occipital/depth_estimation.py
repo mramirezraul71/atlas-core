@@ -223,7 +223,6 @@ class MiDaSModel(DepthModel):
             return mock.predict(image)
 
         try:
-            import cv2
             import torch
 
             # Asegurar formato correcto

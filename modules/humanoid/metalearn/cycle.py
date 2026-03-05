@@ -6,7 +6,7 @@ import time
 from typing import Any, Dict, Optional
 
 from . import db
-from .reporter import build_insights, export_markdown, get_latest_report_path
+from .reporter import build_insights, export_markdown
 from .trainer import run_train
 from .tuner import apply_tuning, get_current_params
 

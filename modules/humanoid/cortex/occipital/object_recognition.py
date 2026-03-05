@@ -124,7 +124,7 @@ class EmbeddingExtractor:
         try:
             import torch
 
-            logger.info(f"Loading CLIP model...")
+            logger.info("Loading CLIP model...")
 
             self._device = "cuda" if torch.cuda.is_available() else "cpu"
 

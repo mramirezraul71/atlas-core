@@ -11,7 +11,6 @@ try:
 except Exception:  # pragma: no cover
     YOLO = None
 import logging
-from pathlib import Path
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections import deque
 from typing import Any, Dict, List, Optional
 
 _INCIDENTS: Dict[str, Dict[str, Any]] = {}

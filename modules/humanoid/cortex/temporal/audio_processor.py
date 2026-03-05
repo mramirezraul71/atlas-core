@@ -311,8 +311,6 @@ class AudioProcessor:
             )
 
         try:
-            import os
-            import tempfile
 
             import numpy as np
 

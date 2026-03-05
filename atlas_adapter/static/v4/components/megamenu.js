@@ -45,6 +45,8 @@ const MENU_ITEMS = [
     category: 'Inteligencia',
     items: [
       { id: 'chat',      label: 'Chat Cerebro',      desc: 'Conversación directa con el cerebro',    icon: 'message-square', route: '/chat' },
+      { id: 'clawd-direct', label: 'Clawd Directo',  desc: 'Canal directo con ClawdBOT + bridge',    icon: 'message-square', route: '/clawd-direct' },
+      { id: 'codex-supervisor', label: 'Codex Supervisor', desc: 'Supervisor para asignar tareas y seguimiento', icon: 'cpu', route: '/codex-supervisor' },
       { id: 'cognitive', label: 'Sistema Nervioso',  desc: 'Nodos cerebrales, goals y memoria',      icon: 'brain',          route: '/cognitive' },
       { id: 'tutorias',  label: 'Tutorías',          desc: 'Especialistas, visitas y recomendaciones', icon: 'users',         route: '/tutorias' },
     ]
@@ -81,6 +83,7 @@ const MENU_ITEMS = [
   {
     category: 'Sistema',
     items: [
+      { id: 'tools-menu', label: 'Tools Menu',        desc: 'Inventario, salud y upgrades de herramientas', icon: 'grid', route: '/tools-menu' },
       { id: 'ui-v3',  label: 'Dashboard v3.8',    desc: 'Panel operacional completo legado', icon: 'layout', href: '/v3' },
       { id: 'update', label: 'Actualizar ATLAS',   desc: 'Comprobar y aplicar actualizaciones', icon: 'zap', route: '/__update' },
     ]

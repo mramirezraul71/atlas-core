@@ -19,14 +19,10 @@ Uso:
 from __future__ import annotations
 
 import logging
-import os
-import queue
-import sys
 import threading
-import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, Optional
+from typing import Callable, Optional
 
 # Configurar logging
 logging.basicConfig(
@@ -438,9 +434,9 @@ class VoiceAssistant:
         print("\n" + "=" * 60)
         print("ATLAS Voice Assistant - Iniciado")
         print("=" * 60)
-        print(f"   Wake word: 'Atlas'")
+        print("   Wake word: 'Atlas'")
         print(f"   Idioma: {self.config.language}")
-        print(f"   Para salir: Ctrl+C o di 'Atlas, apagate'")
+        print("   Para salir: Ctrl+C o di 'Atlas, apagate'")
         print("=" * 60 + "\n")
 
         # Saludo inicial

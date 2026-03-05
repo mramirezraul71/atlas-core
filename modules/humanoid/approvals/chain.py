@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 def _secret() -> bytes:

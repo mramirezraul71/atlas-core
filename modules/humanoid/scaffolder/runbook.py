@@ -1,7 +1,6 @@
 """Generate RUNBOOK.md with execution steps and smoke tests."""
 from __future__ import annotations
 
-from typing import Any, Dict, List
 
 
 def runbook_fastapi(name: str, base_path: str) -> str:

@@ -3,12 +3,11 @@ Generador de reportes para el sistema de Tutorías
 """
 
 import json
-import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from .models import (Especialista, Informe, Recomendacion, SeguimientoMejora,
+from .models import (Recomendacion, SeguimientoMejora,
                      Visita)
 
 
@@ -91,7 +90,7 @@ class ReportGenerator:
             inf = visita.informe
             lines.append("---")
             lines.append(f"## 📝 {inf.titulo}")
-            lines.append(f"### Resumen")
+            lines.append("### Resumen")
             lines.append(inf.resumen)
             lines.append("")
 

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List
+from typing import Dict, List
 
 
 def _env_int(name: str, default: int) -> int:
@@ -14,7 +14,7 @@ def _env_int(name: str, default: int) -> int:
 
 def generate_summary(incidents: List[Dict], actions: List[Dict]) -> str:
     max_bullets = _env_int("ANS_BRAIN_SUMMARY_MAX", 12)
-    if not os.getenv("ANS_BRAIN_FEEDBACK", "true").strip().lower() in (
+    if os.getenv("ANS_BRAIN_FEEDBACK", "true").strip().lower() not in (
         "1",
         "true",
         "yes",

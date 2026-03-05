@@ -14,8 +14,46 @@ const SVG = {
 const MODULE_REGISTRY = {};
 let _themeIdx = 0;
 let _currentCleanup = null;
+let _uiSafeMode = false;
 
 function _esc(s) { const d = document.createElement('span'); d.textContent = s || ''; return d.innerHTML; }
+function _moduleIdFromName(name) { return String(name || '').replace(/_/g, '-'); }
+function _setUiSafeMode(on) {
+  _uiSafeMode = !!on;
+  const el = document.getElementById('topbar-safe-mode');
+  if (!el) return;
+  el.style.display = _uiSafeMode ? 'inline-flex' : 'none';
+}
+
+function _renderModuleError(v, moduleId, errMsg) {
+  _setUiSafeMode(true);
+  v.innerHTML = `<div class="module-view">
+    <div class="module-header">
+      <button class="back-btn" id="moderr-home">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Dashboard
+      </button>
+      <h2>Error de módulo</h2>
+    </div>
+    <div class="module-body">
+      <div class="codebox" style="margin-bottom:12px;color:var(--accent-red)">
+        No se pudo cargar el módulo <strong>${_esc(moduleId || 'unknown')}</strong>.
+      </div>
+      <div class="codebox" style="margin-bottom:12px;font-size:12px">${_esc(errMsg || 'Error desconocido')}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="action-btn primary" id="moderr-retry">Reintentar módulo</button>
+        <button class="action-btn" id="moderr-reload">Recargar UI</button>
+      </div>
+    </div>
+  </div>`;
+  v.querySelector('#moderr-home')?.addEventListener('click', () => { location.hash = '/'; });
+  v.querySelector('#moderr-retry')?.addEventListener('click', () => {
+    const h = location.hash || '/';
+    location.hash = '/';
+    setTimeout(() => { location.hash = h; }, 60);
+  });
+  v.querySelector('#moderr-reload')?.addEventListener('click', () => location.reload());
+}
 
 function _applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -40,6 +78,7 @@ function _buildTopbar(app) {
     <div class="topbar-center"></div>
     <div class="topbar-right">
       <span class="topbar-version" id="topbar-version">v4.3.0</span>
+      <span id="topbar-safe-mode" style="display:none;padding:3px 8px;border-radius:999px;border:1px solid rgba(248,81,73,.45);color:#f85149;font-size:11px;font-weight:700;">UI Safe Mode</span>
       <button class="topbar-btn" id="btn-theme" title="Cambiar tema">${SVG.theme}</button>
       <button class="topbar-btn" id="btn-home" title="Inicio">${SVG.home}</button>
       <button class="topbar-btn" id="btn-menu" title="Menú" aria-label="Menú principal">${SVG.menu}</button>
@@ -243,6 +282,7 @@ function _handleRoute() {
 
   function _mountMod(mod, v) {
     try {
+      _setUiSafeMode(false);
       const cleanup = mod.render(v);
       _currentCleanup = () => {
         if (typeof cleanup === 'function') try { cleanup(); } catch {}
@@ -257,7 +297,7 @@ function _handleRoute() {
         }
       });
     } catch (e) {
-      v.innerHTML = `<div class="module-view"><div class="module-header"><button class="back-btn" onclick="location.hash='/'">← Dashboard</button><h2>Error</h2></div><div class="module-body"><p style="color:var(--accent-red)">${_esc(e.message)}</p></div></div>`;
+      _renderModuleError(v, mod?.id || 'unknown', e?.message || String(e));
     }
   }
 
@@ -287,8 +327,8 @@ async function _loadModules() {
   const MODULE_NAMES = [
     'health', 'modules', 'config', 'bitacora', 'memory', 'learning',
     'autonomy', 'healing', 'approvals', 'audit', 'comms',
-    'events', 'api_explorer', 'voice', 'trading', 'body_module',
-    'tutorias', 'cognitive', 'vision', 'chat', 'apps',
+    'events', 'api_explorer', 'tools_menu', 'voice', 'trading', 'body_module',
+    'tutorias', 'cognitive', 'vision', 'chat', 'apps', 'clawd_direct', 'codex_supervisor', 'live_diagnostic',
   ];
   for (const name of MODULE_NAMES) {
     try {
@@ -296,6 +336,15 @@ async function _loadModules() {
       if (mod?.id) MODULE_REGISTRY[mod.id] = mod;
     } catch (e) {
       console.warn(`[Atlas v4.2] Module "${name}" no cargado:`, e.message);
+      const fallbackId = _moduleIdFromName(name);
+      if (!MODULE_REGISTRY[fallbackId]) {
+        MODULE_REGISTRY[fallbackId] = {
+          id: fallbackId,
+          render(v) {
+            _renderModuleError(v, fallbackId, e?.message || String(e));
+          },
+        };
+      }
     }
   }
 }

@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from .consolidator import ConsolidationResult, Consolidator
 from .episodic_memory import EpisodicMemory
-from .schemas import ActionRecord, Concept, Episode, Outcome, Relation
+from .schemas import ActionRecord, Concept, Episode, Outcome
 from .semantic_memory import SemanticMemory
 
 logger = logging.getLogger(__name__)

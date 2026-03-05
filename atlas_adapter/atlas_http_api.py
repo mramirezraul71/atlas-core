@@ -1,10 +1,11 @@
-r"""ATLAS HTTP API adapter
+﻿r"""ATLAS HTTP API adapter
 Expone /status /tools /execute usando el command_router.handle de C:\ATLAS\modules\command_router.py
 """
 import asyncio
 import json
 import logging
 import os
+import sys
 import tempfile
 import threading
 import time
@@ -24,7 +25,7 @@ def _ts_to_epoch(ts_str: str) -> float:
         return 0.0
 
 
-# Cargar config ANTES de importar módulos que usan os.getenv (audit, policy, etc.)
+# Cargar config ANTES de importar mÃ³dulos que usan os.getenv (audit, policy, etc.)
 BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_PATH = BASE_DIR / "config" / "atlas.env"
 if ENV_PATH.exists():
@@ -105,7 +106,7 @@ async def _lifespan(app):
         _set_app_start_time()
     except Exception:
         pass
-    # Cargar Bóveda al arranque (tokens Telegram/WhatsApp, etc.) sin pedir .env.
+    # Cargar BÃ³veda al arranque (tokens Telegram/WhatsApp, etc.) sin pedir .env.
     try:
         from pathlib import Path
 
@@ -164,7 +165,7 @@ async def _lifespan(app):
         _executor = ThreadPoolExecutor(max_workers=2)
         start_scheduler(executor=_executor)
         start_watchdog()
-        # Visión Ubicua: preparar DB y watchdog de movimiento (best-effort, no bloquea arranque)
+        # VisiÃ³n Ubicua: preparar DB y watchdog de movimiento (best-effort, no bloquea arranque)
         try:
             if os.getenv("VISION_UBIQ_ENABLED", "true").strip().lower() in (
                 "1",
@@ -204,7 +205,7 @@ async def _lifespan(app):
                 from modules.humanoid.ans.scheduler_jobs import ensure_ans_jobs
 
                 ensure_ans_jobs()
-                # Ejecutar triada ANS al arranque (una vez) para que la bitácora tenga acción desde el inicio
+                # Ejecutar triada ANS al arranque (una vez) para que la bitÃ¡cora tenga acciÃ³n desde el inicio
                 if (
                     (not safe_startup)
                     and os.getenv("ANS_ENABLED", "true").strip().lower()
@@ -231,7 +232,7 @@ async def _lifespan(app):
             except Exception:
                 pass
             try:
-                # Sistema Nervioso: sensores -> score -> bitácora/incidentes (scheduler job)
+                # Sistema Nervioso: sensores -> score -> bitÃ¡cora/incidentes (scheduler job)
                 from modules.humanoid.nervous.scheduler_jobs import \
                     ensure_nervous_jobs
 
@@ -239,7 +240,7 @@ async def _lifespan(app):
             except Exception:
                 pass
             try:
-                # WorldState: visión+OCR periódicos (representación mínima del entorno)
+                # WorldState: visiÃ³n+OCR periÃ³dicos (representaciÃ³n mÃ­nima del entorno)
                 from modules.humanoid.vision.world_state_jobs import \
                     ensure_world_state_jobs
 
@@ -247,7 +248,7 @@ async def _lifespan(app):
             except Exception:
                 pass
             # === Sistema de Comunicaciones Unificado ===
-            # Bootstrap centralizado de todos los servicios de comunicación
+            # Bootstrap centralizado de todos los servicios de comunicaciÃ³n
             # (reemplaza las inicializaciones individuales de makeplay y telegram_poller)
             try:
                 if not safe_startup:
@@ -269,7 +270,7 @@ async def _lifespan(app):
                 )
 
             # === Quality / POT Autonomy ===
-            # Activa dispatcher+triggers para ejecución autónoma de POTs.
+            # Activa dispatcher+triggers para ejecuciÃ³n autÃ³noma de POTs.
             # Control: QUALITY_AUTONOMY_ENABLED=true|false (default true)
             try:
                 if (not safe_startup) and os.getenv(
@@ -297,7 +298,7 @@ async def _lifespan(app):
                             append_evolution_log
 
                         append_evolution_log(
-                            message="[QUALITY] Autonomía POT iniciada (dispatcher+triggers).",
+                            message="[QUALITY] AutonomÃ­a POT iniciada (dispatcher+triggers).",
                             ok=bool(q.get("all_ok", False)),
                             source="quality",
                         )
@@ -348,7 +349,7 @@ async def _lifespan(app):
                 ensure_post_commit_hook()
             except Exception:
                 pass
-        # Heartbeat NEXUS: ping 8000/health, auto-reactivación con start_all.ps1, registro en Bitácora
+        # Heartbeat NEXUS: ping 8000/health, auto-reactivaciÃ³n con start_all.ps1, registro en BitÃ¡cora
         try:
             from modules.nexus_heartbeat import (register_status_callback,
                                                  start_heartbeat)
@@ -359,12 +360,12 @@ async def _lifespan(app):
 
             def _on_nexus_change(connected: bool, message: str) -> None:
                 if connected:
-                    text = "[CONEXIÓN] Buscando NEXUS en puerto 8000... OK."
+                    text = "[CONEXIÃ“N] Buscando NEXUS en puerto 8000... OK."
                 else:
                     extra = (message or "").strip()
                     extra = (": " + extra[:120]) if extra else ""
                     text = (
-                        "[CONEXIÓN] Buscando NEXUS en puerto 8000... Desconectado"
+                        "[CONEXIÃ“N] Buscando NEXUS en puerto 8000... Desconectado"
                         + extra
                     )
                 try:
@@ -386,7 +387,7 @@ async def _lifespan(app):
             register_status_callback(_on_nexus_change)
             start_heartbeat()
 
-            # Prueba de Nervios: autodiagnóstico de motores, mouse, cámara; actualiza Dashboard a CONECTADO | ACTIVO
+            # Prueba de Nervios: autodiagnÃ³stico de motores, mouse, cÃ¡mara; actualiza Dashboard a CONECTADO | ACTIVO
             def _run_nerve_test_background():
                 try:
                     import sys
@@ -429,10 +430,10 @@ async def _lifespan(app):
         _log.info("Iniciando background tasks de ATLAS AUTONOMOUS...")
         health_agg = HealthAggregator()
         health_agg.start_monitoring()
-        _log.info("✓ Health Monitoring activo")
+        _log.info("âœ“ Health Monitoring activo")
         alert_mgr = AlertManager()
         asyncio.create_task(alert_mgr.start_evaluation_loop(60))
-        _log.info("✓ Alert Manager activo")
+        _log.info("âœ“ Alert Manager activo")
         learning = LearningOrchestrator()
 
         async def _learning_loop():
@@ -440,12 +441,12 @@ async def _lifespan(app):
                 await asyncio.sleep(3600)
                 try:
                     learning.run_learning_cycle()
-                    _log.info("✓ Learning cycle ejecutado")
+                    _log.info("âœ“ Learning cycle ejecutado")
                 except Exception as e:
                     _log.error("Error en learning cycle: %s", e)
 
         asyncio.create_task(_learning_loop())
-        _log.info("✓ Learning Engine activo")
+        _log.info("âœ“ Learning Engine activo")
 
         metrics_agg = MetricsAggregator()
 
@@ -486,76 +487,86 @@ async def _lifespan(app):
                 pass
             return (0.0, 0.0)
 
+        def _collect_telemetry_once() -> None:
+            try:
+                import psutil
+
+                disk_root = (os.getenv("SystemDrive") or "C:") + "\\"
+                metrics_agg.collect_metric(
+                    "system", "cpu_percent", float(psutil.cpu_percent(interval=0))
+                )
+                metrics_agg.collect_metric(
+                    "system", "ram_percent", float(psutil.virtual_memory().percent)
+                )
+                metrics_agg.collect_metric(
+                    "system",
+                    "disk_usage_percent",
+                    float(psutil.disk_usage(disk_root).percent),
+                )
+            except Exception:
+                pass
+            try:
+                from modules.observability.metrics import MetricsCollector
+
+                summary = MetricsCollector.get_metrics_summary() or {}
+                metrics_agg.collect_metric(
+                    "observability",
+                    "total_requests",
+                    float(summary.get("total_requests", 0) or 0),
+                )
+                metrics_agg.collect_metric(
+                    "observability",
+                    "active_requests",
+                    float(summary.get("active_requests", 0) or 0),
+                )
+                metrics_agg.collect_metric(
+                    "observability",
+                    "memory_mb",
+                    float(summary.get("memory_mb", 0) or 0),
+                )
+            except Exception:
+                pass
+            try:
+                services = {
+                    "push": "http://127.0.0.1:8791/health",
+                    "nexus": "http://127.0.0.1:8000/health",
+                    "robot": "http://127.0.0.1:8002/api/health",
+                }
+                for service_name, service_url in services.items():
+                    if service_name == "push":
+                        # The telemetry loop runs inside PUSH itself; mark local
+                        # service online without generating self-HTTP load.
+                        metrics_agg.collect_metric("services", "push_online", 1.0)
+                        continue
+                    online, latency_ms = _probe_service(service_url)
+                    metrics_agg.collect_metric("services", f"{service_name}_online", online)
+                    if latency_ms > 0:
+                        metrics_agg.collect_metric(
+                            "services",
+                            f"{service_name}_latency_ms",
+                            float(latency_ms),
+                        )
+            except Exception:
+                pass
+
         async def _telemetry_loop():
             while True:
                 try:
-                    import psutil
-
-                    disk_root = (os.getenv("SystemDrive") or "C:") + "\\"
-                    metrics_agg.collect_metric(
-                        "system", "cpu_percent", float(psutil.cpu_percent(interval=0))
-                    )
-                    metrics_agg.collect_metric(
-                        "system", "ram_percent", float(psutil.virtual_memory().percent)
-                    )
-                    metrics_agg.collect_metric(
-                        "system",
-                        "disk_usage_percent",
-                        float(psutil.disk_usage(disk_root).percent),
-                    )
+                    # Execute blocking telemetry collection off the event loop.
+                    await asyncio.to_thread(_collect_telemetry_once)
                 except Exception:
                     pass
                 await asyncio.sleep(telemetry_interval_sec)
-                try:
-                    from modules.observability.metrics import MetricsCollector
-
-                    summary = MetricsCollector.get_metrics_summary() or {}
-                    metrics_agg.collect_metric(
-                        "observability",
-                        "total_requests",
-                        float(summary.get("total_requests", 0) or 0),
-                    )
-                    metrics_agg.collect_metric(
-                        "observability",
-                        "active_requests",
-                        float(summary.get("active_requests", 0) or 0),
-                    )
-                    metrics_agg.collect_metric(
-                        "observability",
-                        "memory_mb",
-                        float(summary.get("memory_mb", 0) or 0),
-                    )
-                except Exception:
-                    pass
-                try:
-                    services = {
-                        "push": "http://127.0.0.1:8791/health",
-                        "nexus": "http://127.0.0.1:8000/health",
-                        "robot": "http://127.0.0.1:8002/api/health",
-                    }
-                    for service_name, service_url in services.items():
-                        online, latency_ms = _probe_service(service_url)
-                        metrics_agg.collect_metric(
-                            "services", f"{service_name}_online", online
-                        )
-                        if latency_ms > 0:
-                            metrics_agg.collect_metric(
-                                "services",
-                                f"{service_name}_latency_ms",
-                                float(latency_ms),
-                            )
-                except Exception:
-                    pass
 
         asyncio.create_task(_telemetry_loop())
-        _log.info("✓ Telemetry Metrics activo (intervalo %ss)", telemetry_interval_sec)
+        _log.info("âœ“ Telemetry Metrics activo (intervalo %ss)", telemetry_interval_sec)
     except Exception as e:
         import logging
 
         logging.getLogger(__name__).debug(
             "ATLAS AUTONOMOUS background tasks no iniciados: %s", e
         )
-    # Actualización periódica de métricas Prometheus (memoria, etc.)
+    # ActualizaciÃ³n periÃ³dica de mÃ©tricas Prometheus (memoria, etc.)
     try:
         from modules.observability.metrics import update_system_metrics
 
@@ -571,7 +582,7 @@ async def _lifespan(app):
     except Exception:
         pass
     # Failsafe: asegurar Autonomy Daemon activo al finalizar startup.
-    # Esto cubre escenarios donde QUALITY_AUTONOMY_ENABLED no inició el daemon.
+    # Esto cubre escenarios donde QUALITY_AUTONOMY_ENABLED no iniciÃ³ el daemon.
     try:
         if os.getenv("AUTONOMY_DAEMON_AUTOSTART", "true").strip().lower() in (
             "1",
@@ -585,20 +596,20 @@ async def _lifespan(app):
 
             if not is_autonomy_running():
                 try:
-                    # Reuse same startup logic used by POST /api/autonomy/daemon/start.
-                    autonomy_daemon_start()
+                    # Do not block API startup with heavy autonomy bootstrap.
+                    asyncio.create_task(asyncio.to_thread(autonomy_daemon_start))
                 except Exception:
                     pass
             # Second chance after a brief pause if still down.
             if not is_autonomy_running():
                 await asyncio.sleep(0.5)
                 try:
-                    autonomy_daemon_start()
+                    asyncio.create_task(asyncio.to_thread(autonomy_daemon_start))
                 except Exception:
                     pass
     except Exception:
         pass
-    # Supervisor residente: monitoreo continuo + directivas internas + notificación a Owner
+    # Supervisor residente: monitoreo continuo + directivas internas + notificaciÃ³n a Owner
     try:
         if not safe_startup:
             from atlas_adapter.supervisor_daemon import start_supervisor_daemon
@@ -631,7 +642,7 @@ app = FastAPI(
         },
         {
             "name": "Cluster",
-            "description": "Atlas Cluster: nodos, heartbeat, routing, ejecución remota (hands/web/vision/voice).",
+            "description": "Atlas Cluster: nodos, heartbeat, routing, ejecuciÃ³n remota (hands/web/vision/voice).",
         },
         {
             "name": "Gateway",
@@ -639,7 +650,7 @@ app = FastAPI(
         },
         {
             "name": "Learning",
-            "description": "Aprendizaje continuo: procesar situaciones, consolidar conocimiento, rutina diaria (lección del tutor), base de conocimiento, incertidumbre y métricas de crecimiento.",
+            "description": "Aprendizaje continuo: procesar situaciones, consolidar conocimiento, rutina diaria (lecciÃ³n del tutor), base de conocimiento, incertidumbre y mÃ©tricas de crecimiento.",
         },
     ],
 )
@@ -764,7 +775,7 @@ def status():
 
 @app.get("/api/nexus/connection", tags=["NEXUS"])
 def get_nexus_connection():
-    """CEREBRO — CUERPO (NEXUS): estado de conexión (consolidado en PUSH)."""
+    """CEREBRO â€” CUERPO (NEXUS): estado de conexiÃ³n (consolidado en PUSH)."""
     return {
         "ok": True,
         "connected": True,
@@ -782,7 +793,7 @@ class NexusConnectionBody(BaseModel):
 
 @app.post("/api/nexus/connection", tags=["NEXUS"])
 def post_nexus_connection(body: NexusConnectionBody):
-    """Actualiza estado de conexión NEXUS (heartbeat o Prueba de Nervios). active=True → CONECTADO | ACTIVO."""
+    """Actualiza estado de conexiÃ³n NEXUS (heartbeat o Prueba de Nervios). active=True â†’ CONECTADO | ACTIVO."""
     try:
         from modules.nexus_heartbeat import (set_nexus_active,
                                              set_nexus_connected)
@@ -821,7 +832,7 @@ def nexus_reconnect(clear_cache: bool = False):
 
 @app.post("/api/cache/clear", tags=["NEXUS"])
 def cache_clear():
-    """Limpia cache del servidor (__pycache__, temp_models_cache). Para uso con botón Limpiar caché en navegador."""
+    """Limpia cache del servidor (__pycache__, temp_models_cache). Para uso con botÃ³n Limpiar cachÃ© en navegador."""
     try:
         from modules.nexus_heartbeat import clear_nexus_cache
 
@@ -831,7 +842,7 @@ def cache_clear():
         return {"ok": False, "error": str(e)}
 
 
-# ---------- Semantic Memory (Fase 1 - Fundación Cognitiva) ----------
+# ---------- Semantic Memory (Fase 1 - FundaciÃ³n Cognitiva) ----------
 @app.post("/api/memory/add", tags=["Memory"])
 def api_memory_add(
     description: str,
@@ -839,7 +850,7 @@ def api_memory_add(
     outcome: Optional[str] = None,
     tags: Optional[List[str]] = None,
 ):
-    """Añade una experiencia a la memoria semántica."""
+    """AÃ±ade una experiencia a la memoria semÃ¡ntica."""
     try:
         from modules.humanoid.memory_engine.semantic_memory import \
             get_semantic_memory
@@ -861,7 +872,7 @@ def api_memory_search(
     top_k: int = 5,
     min_similarity: float = 0.6,
 ):
-    """Búsqueda por similaridad en memoria semántica."""
+    """BÃºsqueda por similaridad en memoria semÃ¡ntica."""
     try:
         from modules.humanoid.memory_engine.semantic_memory import \
             get_semantic_memory
@@ -876,7 +887,7 @@ def api_memory_search(
 
 @app.get("/api/memory/stats", tags=["Memory"])
 def api_memory_stats():
-    """Estadísticas de la memoria semántica."""
+    """EstadÃ­sticas de la memoria semÃ¡ntica."""
     try:
         from modules.humanoid.memory_engine.semantic_memory import \
             get_semantic_memory
@@ -899,7 +910,7 @@ class BrainStateBody(BaseModel):
 
 class ProviderCredentialBody(BaseModel):
     provider_id: str  # openai | anthropic | gemini | perplexity
-    api_key: Optional[str] = None  # null o vacío = borrar clave
+    api_key: Optional[str] = None  # null o vacÃ­o = borrar clave
 
 
 def _brain_ollama_available() -> bool:
@@ -1011,9 +1022,9 @@ def api_brain_state():
                 "Multi-IA (auto): el router elige el especialista por tarea"
             )
             if connected_names:
-                dominant_display += " · " + ", ".join(connected_names) + " conectado(s)"
+                dominant_display += " Â· " + ", ".join(connected_names) + " conectado(s)"
         else:
-            dominant_display = override or "— Selecciona una IA —"
+            dominant_display = override or "â€” Selecciona una IA â€”"
             if override and ":" in override:
                 prov_id = override.split(":", 1)[0].strip().lower()
                 model_part = override.split(":", 1)[1].strip()
@@ -1120,7 +1131,7 @@ def brain_status_alias():
 
         return {
             "ok": True,
-            "online": ollama_online,  # Brain está online si Ollama responde
+            "online": ollama_online,  # Brain estÃ¡ online si Ollama responde
             "active_goals": active_goals,
             "memory_entries": memory_entries,
             "uptime_hours": uptime_hours,
@@ -1191,7 +1202,7 @@ def api_nervous_status():
 
 @app.get("/ans/status", tags=["ANS"])
 def api_ans_status():
-    """Estado del Sistema Nervioso Autónomo."""
+    """Estado del Sistema Nervioso AutÃ³nomo."""
     try:
         from modules.humanoid.quality.dispatcher import get_dispatcher
 
@@ -1222,7 +1233,7 @@ def api_ans_status():
             "ok": True,
             "cycles_completed": stats.get("total_dispatches", 0),
             "active_monitors": stats.get("active_count", 0),
-            "health_score": 95,  # Score calculado basado en éxito de dispatches
+            "health_score": 95,  # Score calculado basado en Ã©xito de dispatches
             "incidents_resolved": incidents_resolved,
             "uptime_hours": uptime_hours,
         }
@@ -1245,9 +1256,9 @@ def api_brain_state_post(body: BrainStateBody):
 @app.post("/supervisor/advise", tags=["LLM Supervisor"])
 def supervisor_advise(payload: dict):
     """
-    Supervisor LLM - Genera recomendaciones y prompts para el Owner (Raúl).
+    Supervisor LLM - Genera recomendaciones y prompts para el Owner (RaÃºl).
 
-    Usa arquitectura híbrida: Ollama (local) + OpenAI (cloud) con fallback automático.
+    Usa arquitectura hÃ­brida: Ollama (local) + OpenAI (cloud) con fallback automÃ¡tico.
     """
     try:
         from atlas_adapter.llm.supervisor import Supervisor
@@ -1281,7 +1292,7 @@ def supervisor_advise(payload: dict):
                     "ok": bool(saved.get("ok", True)),
                     "result": {
                         "ok": bool(saved.get("ok", True)),
-                        "analysis": "OK: Política residente del Supervisor guardada. A partir de ahora se aplica automáticamente.",
+                        "analysis": "OK: PolÃ­tica residente del Supervisor guardada. A partir de ahora se aplica automÃ¡ticamente.",
                         "snapshot": {},
                         "diagnosis": {
                             "severity": "healthy",
@@ -1311,7 +1322,7 @@ def supervisor_advise(payload: dict):
                 )
             except Exception:
                 pass
-            # Enrich context with thread memory (resumen + últimos mensajes)
+            # Enrich context with thread memory (resumen + Ãºltimos mensajes)
             try:
                 context = dict(context or {})
                 context["_thread_id"] = thread_id
@@ -1361,7 +1372,7 @@ def supervisor_advise(payload: dict):
 
 @app.get("/supervisor/policy", tags=["LLM Supervisor"])
 def supervisor_policy_get():
-    """Política residente del Supervisor (persistida localmente en logs/)."""
+    """PolÃ­tica residente del Supervisor (persistida localmente en logs/)."""
     try:
         from atlas_adapter.supervisor_policy import get_supervisor_policy
 
@@ -1372,7 +1383,7 @@ def supervisor_policy_get():
 
 @app.post("/supervisor/policy", tags=["LLM Supervisor"])
 def supervisor_policy_post(payload: dict):
-    """Guarda política residente del Supervisor (persistida localmente en logs/)."""
+    """Guarda polÃ­tica residente del Supervisor (persistida localmente en logs/)."""
     try:
         from atlas_adapter.supervisor_policy import set_supervisor_policy
 
@@ -1423,7 +1434,7 @@ def supervisor_investigate(payload: dict):
                     yield f"event: thread\ndata: {json.dumps({'thread_id': thread_id}, ensure_ascii=False)}\n\n"
                 yield "event: text\ndata: " + json.dumps(
                     {
-                        "content": "OK: Política residente del Supervisor guardada. Se aplicará automáticamente."
+                        "content": "OK: PolÃ­tica residente del Supervisor guardada. Se aplicarÃ¡ automÃ¡ticamente."
                     },
                     ensure_ascii=False,
                 ) + "\n\n"
@@ -1548,10 +1559,10 @@ def api_brain_credentials_status():
 
 @app.post("/api/brain/credentials/load-vault", tags=["Cerebro"])
 def api_brain_credentials_load_vault():
-    """Carga credenciales desde la Bóveda (credenciales.txt) y las persiste.
+    """Carga credenciales desde la BÃ³veda (credenciales.txt) y las persiste.
 
     - No devuelve claves en claro.
-    - Usa ruta por directiva (o ATLAS_VAULT_PATH si está definida).
+    - Usa ruta por directiva (o ATLAS_VAULT_PATH si estÃ¡ definida).
     """
     try:
         from pathlib import Path
@@ -1626,7 +1637,7 @@ def api_brain_credentials_post(body: ProviderCredentialBody):
 
 @app.get("/api/brain/models", tags=["Cerebro"])
 def api_brain_models():
-    """Lista de modelos disponibles (free + suscripción/API) para el selector del cerebro."""
+    """Lista de modelos disponibles (free + suscripciÃ³n/API) para el selector del cerebro."""
     try:
         from modules.humanoid.ai.registry import get_model_specs
 
@@ -1695,7 +1706,7 @@ async def api_vision_depth_estimate(
 async def api_vision_scene_describe(
     file: UploadFile = File(..., description="Image file"), detail_level: str = "medium"
 ):
-    """Descripción de escena desde imagen. detail_level: brief | medium | detailed."""
+    """DescripciÃ³n de escena desde imagen. detail_level: brief | medium | detailed."""
     try:
         import cv2
         import numpy as np
@@ -1716,7 +1727,7 @@ async def api_vision_scene_describe(
 # ---------- Fase 1: World model (stub) ----------
 @app.post("/api/world-model/simulate", tags=["WorldModel"])
 def api_world_model_simulate():
-    """Simulación de acción en world model (stub). Fase 1.2 completo: PyBullet + MCTS."""
+    """SimulaciÃ³n de acciÃ³n en world model (stub). Fase 1.2 completo: PyBullet + MCTS."""
     try:
         # TODO: integrar physics_simulator.load_scene + simulate_action
         return {
@@ -1763,12 +1774,11 @@ def _get_maml():
 
 @app.post("/api/meta-learning/train", tags=["MetaLearning"])
 def api_meta_learning_train(num_tasks: int = 8, num_steps: int = 100):
-    """Meta-entrenar MAML sobre distribución de tareas."""
+    """Meta-entrenar MAML sobre distribuciÃ³n de tareas."""
     maml = _get_maml()
     if maml is None:
         return {"status": "error", "error": "MAML no disponible (PyTorch requerido)"}
     try:
-        import numpy as np
 
         results = []
         for step in range(num_steps):
@@ -1835,7 +1845,7 @@ def api_meta_learning_adapt(body: MetaAdaptBody):
 
 @app.get("/api/meta-learning/stats", tags=["MetaLearning"])
 def api_meta_learning_stats():
-    """Estadísticas de meta-learning."""
+    """EstadÃ­sticas de meta-learning."""
     maml = _get_maml()
     if maml is None:
         return {"num_tasks_in_buffer": 0, "error": "MAML no disponible"}
@@ -1851,7 +1861,7 @@ def api_meta_learning_stats():
 def api_meta_learning_generate_tasks(
     task_type: str = "navigation", num_tasks: int = 50
 ):
-    """Generar tareas sintéticas para meta-entrenamiento."""
+    """Generar tareas sintÃ©ticas para meta-entrenamiento."""
     maml = _get_maml()
     if maml is None:
         return {"status": "error", "error": "MAML no disponible (PyTorch requerido)"}
@@ -1914,7 +1924,7 @@ def api_causal_create_domain(domain_name: str, structure: dict):
 
 @app.post("/api/causal/reason", tags=["Causal"])
 def api_causal_reason(domain: str, action: str, current_state: dict):
-    """Razonar consecuencias de una acción."""
+    """Razonar consecuencias de una acciÃ³n."""
     reasoner = _get_causal_reasoner()
     if reasoner is None:
         return {"error": "CausalReasoner no disponible"}
@@ -1923,7 +1933,7 @@ def api_causal_reason(domain: str, action: str, current_state: dict):
 
 @app.post("/api/causal/explain", tags=["Causal"])
 def api_causal_explain(domain: str, effect: str, potential_causes: List[str]):
-    """Explicar por qué ocurrió effect dados potential_causes."""
+    """Explicar por quÃ© ocurriÃ³ effect dados potential_causes."""
     reasoner = _get_causal_reasoner()
     if reasoner is None:
         return {"error": "CausalReasoner no disponible", "explanation": ""}
@@ -1933,7 +1943,7 @@ def api_causal_explain(domain: str, effect: str, potential_causes: List[str]):
 
 @app.post("/api/causal/counterfactual", tags=["Causal"])
 def api_causal_counterfactual(domain: str, variable: str, value: float, reality: dict):
-    """Razonamiento contrafáctico: qué si variable hubiera sido value."""
+    """Razonamiento contrafÃ¡ctico: quÃ© si variable hubiera sido value."""
     reasoner = _get_causal_reasoner()
     if reasoner is None:
         return {"error": "CausalReasoner no disponible"}
@@ -2003,7 +2013,7 @@ def api_self_programming_validate(body: SelfProgramValidateBody):
 
 @app.post("/api/self-programming/optimize", tags=["SelfProgramming"])
 def api_self_programming_optimize(body: SelfProgramOptimizeBody):
-    """Optimiza código generado (errores, type hints, docstrings)."""
+    """Optimiza cÃ³digo generado (errores, type hints, docstrings)."""
     optimizer = _get_skill_optimizer()
     if optimizer is None:
         return {"error": "SkillOptimizer no disponible"}
@@ -2012,7 +2022,7 @@ def api_self_programming_optimize(body: SelfProgramOptimizeBody):
 
 @app.post("/api/self-programming/execute-sandbox", tags=["SelfProgramming"])
 def api_self_programming_execute_sandbox(body: SelfProgramExecuteBody):
-    """Ejecuta código en sandbox Docker."""
+    """Ejecuta cÃ³digo en sandbox Docker."""
     try:
         from brain.self_programming.skill_sandbox import SkillSandbox
 
@@ -2028,11 +2038,11 @@ def api_self_programming_execute_sandbox(body: SelfProgramExecuteBody):
 
 @app.get("/api/robot/status", tags=["NEXUS"])
 def robot_status():
-    """Estado del Robot (cámaras, visión).
+    """Estado del Robot (cÃ¡maras, visiÃ³n).
 
-    Orden de detección:
+    Orden de detecciÃ³n:
     1) Backend Robot/NEXUS (8002 / NEXUS_ROBOT_URL)
-    2) Fallback local USB (si hay cámara local disponible)
+    2) Fallback local USB (si hay cÃ¡mara local disponible)
     """
     import os
     import urllib.request
@@ -2081,9 +2091,8 @@ def robot_status():
 
 @app.post("/api/robot/reconnect", tags=["NEXUS"])
 def robot_reconnect():
-    """Arranca el backend del Robot (cámaras). Devuelve enseguida; el usuario debe pulsar Actualizar cámaras en 10-15 s."""
+    """Arranca el backend del Robot (cÃ¡maras). Devuelve enseguida; el usuario debe pulsar Actualizar cÃ¡maras en 10-15 s."""
     import subprocess
-    import urllib.request
     from pathlib import Path
 
     if ENV_PATH.exists():
@@ -2143,15 +2152,15 @@ def robot_reconnect():
                 "ok": True,
                 "connected": False,
                 "robot_url": base_api,
-                "message": "Robot arrancando. Espera 10-15 s y pulsa «Actualizar cámaras».",
+                "message": "Robot arrancando. Espera 10-15 s y pulsa Â«Actualizar cÃ¡marasÂ».",
                 "robot_path": str(robot_path),
             }
         return {
             "ok": False,
             "connected": False,
             "robot_url": base_api,
-            "message": "No arrancó (salida: %s). Comprueba que en %s exista main.py."
-            % (out or "vacío", robot_path),
+            "message": "No arrancÃ³ (salida: %s). Comprueba que en %s exista main.py."
+            % (out or "vacÃ­o", robot_path),
             "robot_path": str(robot_path),
         }
     except subprocess.TimeoutExpired:
@@ -2159,7 +2168,7 @@ def robot_reconnect():
             "ok": False,
             "connected": False,
             "robot_url": base_api,
-            "message": "Script tardó demasiado.",
+            "message": "Script tardÃ³ demasiado.",
             "robot_path": str(robot_path),
         }
     except Exception as e:
@@ -2174,7 +2183,7 @@ def robot_reconnect():
 
 @app.post("/api/cuerpo/reconnect", tags=["NEXUS"])
 def cuerpo_reconnect():
-    """Arranca Cuerpo completo (NEXUS 8000 + Robot 8002). Responde rápido (no-bloqueante)."""
+    """Arranca Cuerpo completo (NEXUS 8000 + Robot 8002). Responde rÃ¡pido (no-bloqueante)."""
     import subprocess
     from pathlib import Path
 
@@ -2304,7 +2313,7 @@ def _tail_text_file(path: Path, max_bytes: int = 65536, lines: int = 200) -> str
 
 @app.get("/api/robot/log/tail", tags=["NEXUS"])
 def robot_log_tail(lines: int = 200):
-    """Últimas líneas del log del backend Robot (arranque/errores)."""
+    """Ãšltimas lÃ­neas del log del backend Robot (arranque/errores)."""
     p = BASE_DIR / "logs" / "robot_backend.log"
     return {
         "ok": True,
@@ -2316,7 +2325,7 @@ def robot_log_tail(lines: int = 200):
 
 @app.get("/api/nexus/log/tail", tags=["NEXUS"])
 def nexus_log_tail(lines: int = 200):
-    """Últimas líneas del log de NEXUS (si se arrancó con script start_nexus_services)."""
+    """Ãšltimas lÃ­neas del log de NEXUS (si se arrancÃ³ con script start_nexus_services)."""
     p = BASE_DIR / "logs" / "nexus_api.log"
     return {
         "ok": True,
@@ -2334,7 +2343,7 @@ def nervous_services():
 
 @app.get("/api/nerve/status", tags=["NEXUS"])
 def nerve_status():
-    """Estado del nervio: ojos (Nexus disponible, snapshot_url), manos (local). Cerebro → Nexus/manos."""
+    """Estado del nervio: ojos (Nexus disponible, snapshot_url), manos (local). Cerebro â†’ Nexus/manos."""
     try:
         from modules.humanoid.nerve import feet_status, nerve_eyes_status
 
@@ -2383,7 +2392,7 @@ class WorkspaceTerminalBody(BaseModel):
 
 @app.get("/api/workspace/capabilities", tags=["Workspace"])
 def api_workspace_capabilities():
-    """Capacidades operativas del workspace (terminal real + navegación digital)."""
+    """Capacidades operativas del workspace (terminal real + navegaciÃ³n digital)."""
     try:
         from modules.humanoid import get_humanoid_kernel
         from modules.humanoid.nerve import feet_status
@@ -2410,7 +2419,7 @@ def api_workspace_capabilities():
 
 @app.post("/api/workspace/terminal/execute", tags=["Workspace"])
 def api_workspace_terminal_execute(body: WorkspaceTerminalBody):
-    """Ejecución real de comandos en terminal desde Workspace UI (con policy/audit)."""
+    """EjecuciÃ³n real de comandos en terminal desde Workspace UI (con policy/audit)."""
     t0 = time.perf_counter()
     cmd = (body.command or "").strip()
     if not cmd:
@@ -2534,7 +2543,7 @@ async def api_workspace_chat_upload_image(file: UploadFile = File(...)):
 
 @app.post("/api/workspace/navigate", tags=["Workspace"])
 def api_workspace_navigate(body: WorkspaceNavigateBody):
-    """Navegación web digital desde Workspace usando feet driver digital (Playwright)."""
+    """NavegaciÃ³n web digital desde Workspace usando feet driver digital (Playwright)."""
     t0 = time.perf_counter()
     try:
         from modules.humanoid.nerve import feet_execute
@@ -2550,7 +2559,7 @@ def api_workspace_navigate(body: WorkspaceNavigateBody):
 
 
 # -----------------------------------------------------------------------------
-# Open Interpreter — Motor de ejecucion autonoma del Workspace
+# Open Interpreter â€” Motor de ejecucion autonoma del Workspace
 # -----------------------------------------------------------------------------
 
 
@@ -2657,7 +2666,7 @@ async def api_workspace_interpreter_quick(body: InterpreterExecuteBody):
 
 
 # -----------------------------------------------------------------------------
-# Primitivas (API) — wrappers explícitos por dominio (sin ejecutor genérico)
+# Primitivas (API) â€” wrappers explÃ­citos por dominio (sin ejecutor genÃ©rico)
 # -----------------------------------------------------------------------------
 
 
@@ -2920,7 +2929,7 @@ def api_prim_fin_hedge_position(body: dict):
 
 @app.get("/api/comms/status", tags=["Comms"])
 def api_comms_status():
-    """Estado del sistema de comunicación permanente (audio/telegram/whatsapp)."""
+    """Estado del sistema de comunicaciÃ³n permanente (audio/telegram/whatsapp)."""
     try:
         from modules.humanoid.comms.ops_bus import status as ops_status
 
@@ -2931,7 +2940,7 @@ def api_comms_status():
 
 @app.get("/api/comms/recent", tags=["Comms"])
 def api_comms_recent(limit: int = 50):
-    """Últimos eventos OPS emitidos."""
+    """Ãšltimos eventos OPS emitidos."""
     try:
         from modules.humanoid.comms.ops_bus import recent as ops_recent
 
@@ -2942,11 +2951,11 @@ def api_comms_recent(limit: int = 50):
 
 @app.post("/api/comms/test", tags=["Comms"])
 def api_comms_test(body: dict):
-    """Emite un evento de prueba (audio+telegram+whatsapp según configuración)."""
+    """Emite un evento de prueba (audio+telegram+whatsapp segÃºn configuraciÃ³n)."""
     try:
         from modules.humanoid.comms.ops_bus import emit as ops_emit
 
-        msg = (body or {}).get("message") or "Test OPS: sistema de comunicación activo."
+        msg = (body or {}).get("message") or "Test OPS: sistema de comunicaciÃ³n activo."
         subsystem = (body or {}).get("subsystem") or "ops"
         level = (body or {}).get("level") or "info"
         ops_emit(str(subsystem), str(msg), level=str(level))
@@ -2957,7 +2966,7 @@ def api_comms_test(body: dict):
 
 @app.post("/api/comms/telegram/selftest", tags=["Comms"])
 def api_comms_telegram_selftest(body: dict):
-    """Descubre chat_id (si falta) y envía un mensaje de prueba. Retorna detalles."""
+    """Descubre chat_id (si falta) y envÃ­a un mensaje de prueba. Retorna detalles."""
     try:
         from modules.humanoid.comms.ops_bus import \
             _telegram_chat_id  # type: ignore
@@ -2972,7 +2981,7 @@ def api_comms_telegram_selftest(body: dict):
         if not chat_id:
             return {
                 "ok": False,
-                "error": "no_chat_id_available. Envía un mensaje al bot primero.",
+                "error": "no_chat_id_available. EnvÃ­a un mensaje al bot primero.",
                 "chat_id": "",
             }
         text = (body or {}).get("text") or "[ATLAS] Test Telegram: canal operativo."
@@ -3004,7 +3013,7 @@ def api_comms_speak(body: dict):
 
 @app.get("/api/comms/whatsapp/status", tags=["Comms", "WhatsApp"])
 def api_whatsapp_status():
-    """Estado del servicio WhatsApp (proveedor, autenticación, configuración)."""
+    """Estado del servicio WhatsApp (proveedor, autenticaciÃ³n, configuraciÃ³n)."""
     try:
         from modules.humanoid.comms.whatsapp_bridge import health_check, status
 
@@ -3017,7 +3026,7 @@ def api_whatsapp_status():
 
 @app.post("/api/comms/whatsapp/send", tags=["Comms", "WhatsApp"])
 def api_whatsapp_send(body: dict):
-    """Envía un mensaje de WhatsApp.
+    """EnvÃ­a un mensaje de WhatsApp.
 
     Body: {"text": "mensaje", "to": "+34612345678" (opcional)}
     """
@@ -3037,16 +3046,16 @@ def api_whatsapp_send(body: dict):
 
 @app.post("/api/comms/whatsapp/test", tags=["Comms", "WhatsApp"])
 def api_whatsapp_test():
-    """Envía un mensaje de prueba a WhatsApp."""
+    """EnvÃ­a un mensaje de prueba a WhatsApp."""
     try:
         from modules.humanoid.comms.whatsapp_bridge import send_text, status
 
         st = status()
         if not st.get("enabled"):
-            return {"ok": False, "error": "WhatsApp no está habilitado", "details": st}
+            return {"ok": False, "error": "WhatsApp no estÃ¡ habilitado", "details": st}
 
         result = send_text(
-            "[ATLAS] Prueba de WhatsApp - Sistema de comunicación activo."
+            "[ATLAS] Prueba de WhatsApp - Sistema de comunicaciÃ³n activo."
         )
         return result
     except Exception as e:
@@ -3055,7 +3064,7 @@ def api_whatsapp_test():
 
 @app.get("/api/comms/whatsapp/qr", tags=["Comms", "WhatsApp"])
 def api_whatsapp_qr():
-    """Obtiene el código QR para autenticar WAHA.
+    """Obtiene el cÃ³digo QR para autenticar WAHA.
 
     Solo disponible con proveedor WAHA.
     Escanea este QR con tu WhatsApp para vincular.
@@ -3074,10 +3083,10 @@ def api_whatsapp_qr():
 
 @app.post("/api/comms/whatsapp/start-session", tags=["Comms", "WhatsApp"])
 def api_whatsapp_start_session():
-    """Inicia la sesión WAHA (genera QR para autenticar).
+    """Inicia la sesiÃ³n WAHA (genera QR para autenticar).
 
     Solo disponible con proveedor WAHA.
-    Después de llamar esto, obtén el QR con GET /api/comms/whatsapp/qr
+    DespuÃ©s de llamar esto, obtÃ©n el QR con GET /api/comms/whatsapp/qr
     """
     try:
         from modules.humanoid.comms.whatsapp_bridge import (start_session,
@@ -3097,7 +3106,7 @@ def api_whatsapp_start_session():
 
 @app.get("/api/comms/whatsapp/setup-guide", tags=["Comms", "WhatsApp"])
 def api_whatsapp_setup_guide():
-    """Guía de configuración de WhatsApp con WAHA (gratuito)."""
+    """GuÃ­a de configuraciÃ³n de WhatsApp con WAHA (gratuito)."""
     return {
         "provider": "WAHA (WhatsApp HTTP API)",
         "description": "Servidor gratuito que expone WhatsApp Web como API REST",
@@ -3120,27 +3129,27 @@ def api_whatsapp_setup_guide():
                 "variables": {
                     "WHATSAPP_ENABLED": "true",
                     "WHATSAPP_PROVIDER": "waha",
-                    "WHATSAPP_TO": "+34612345678  # Tu número personal",
+                    "WHATSAPP_TO": "+34612345678  # Tu nÃºmero personal",
                     "WAHA_API_URL": "http://localhost:3000",
                 },
-                "note": "Añade estas variables a tu archivo .env o credenciales.txt",
+                "note": "AÃ±ade estas variables a tu archivo .env o credenciales.txt",
             },
             {
                 "step": 4,
-                "title": "Escanear código QR",
+                "title": "Escanear cÃ³digo QR",
                 "url": "http://localhost:3000",
                 "note": "Abre esta URL en el navegador y escanea el QR con tu WhatsApp",
             },
             {
                 "step": 5,
-                "title": "Probar envío",
+                "title": "Probar envÃ­o",
                 "endpoint": "POST /api/comms/whatsapp/test",
-                "note": "Deberías recibir un mensaje de prueba",
+                "note": "DeberÃ­as recibir un mensaje de prueba",
             },
         ],
         "troubleshooting": [
             "Si el QR no aparece, llama POST /api/comms/whatsapp/start-session primero",
-            "Si el contenedor no inicia, verifica que Docker esté corriendo",
+            "Si el contenedor no inicia, verifica que Docker estÃ© corriendo",
             "El QR expira en ~60 segundos, refresca si es necesario",
         ],
     }
@@ -3153,7 +3162,7 @@ _COMMS_ALERT_LAST: dict = {}  # key -> ts
 @app.post("/api/comms/alert", tags=["Comms"])
 def api_comms_alert(body: dict):
     """
-    Alerta multiciclo (Audio PC + Telegram/WhatsApp via OPS Bus) + Bitácora ANS.
+    Alerta multiciclo (Audio PC + Telegram/WhatsApp via OPS Bus) + BitÃ¡cora ANS.
     Body sugerido:
       { kind, message_human, action_human, level, technical }
     """
@@ -3168,13 +3177,13 @@ def api_comms_alert(body: dict):
         technical = (body or {}).get("technical")
 
         if not msg:
-            msg = "Alerta: el panel tuvo un error o perdió conexión."
+            msg = "Alerta: el panel tuvo un error o perdiÃ³ conexiÃ³n."
         if action:
-            msg2 = f"{msg} Acción: {action}"
+            msg2 = f"{msg} AcciÃ³n: {action}"
         else:
             msg2 = msg
 
-        # Throttle por kind+msg (evitar spam por reconexión / loops JS)
+        # Throttle por kind+msg (evitar spam por reconexiÃ³n / loops JS)
         key = f"{kind}:{msg2[:120]}"
         now = _time.time()
         last = float(_COMMS_ALERT_LAST.get(key) or 0.0)
@@ -3183,7 +3192,7 @@ def api_comms_alert(body: dict):
             return {"ok": True, "skipped": "throttled", "ms": ms}
         _COMMS_ALERT_LAST[key] = now
 
-        # Bitácora ANS (humano)
+        # BitÃ¡cora ANS (humano)
         try:
             from modules.humanoid.ans.evolution_bitacora import \
                 append_evolution_log
@@ -3212,12 +3221,12 @@ def api_comms_alert(body: dict):
         return {"ok": False, "error": str(e), "ms": ms}
 
 
-# === Nuevos endpoints del Sistema de Comunicación Unificado ===
+# === Nuevos endpoints del Sistema de ComunicaciÃ³n Unificado ===
 
 
 @app.get("/api/comms/hub/health", tags=["Comms"])
 def api_comms_hub_health():
-    """Estado de salud del CommsHub central (canales, circuit breakers, métricas)."""
+    """Estado de salud del CommsHub central (canales, circuit breakers, mÃ©tricas)."""
     try:
         from modules.humanoid.comms import get_hub
 
@@ -3241,7 +3250,7 @@ def api_comms_hub_messages(limit: int = 50):
 
 @app.post("/api/comms/hub/emit", tags=["Comms"])
 def api_comms_hub_emit(body: dict):
-    """Emite un mensaje a través del CommsHub (multicanal con retry/circuit breaker).
+    """Emite un mensaje a travÃ©s del CommsHub (multicanal con retry/circuit breaker).
 
     Body:
     {
@@ -3288,7 +3297,7 @@ def api_comms_hub_emit(body: dict):
 
 @app.post("/api/comms/hub/reset-channel", tags=["Comms"])
 def api_comms_hub_reset_channel(body: dict):
-    """Resetea el estado de un canal (útil después de arreglar un problema).
+    """Resetea el estado de un canal (Ãºtil despuÃ©s de arreglar un problema).
 
     Body: {"channel": "telegram"}
     """
@@ -3348,7 +3357,7 @@ def api_comms_hub_enable_channel(body: dict):
 
 @app.get("/api/comms/bootstrap/status", tags=["Comms"])
 def api_comms_bootstrap_status():
-    """Estado de todos los servicios de comunicación inicializados por bootstrap."""
+    """Estado de todos los servicios de comunicaciÃ³n inicializados por bootstrap."""
     try:
         from modules.humanoid.comms.bootstrap import get_status
 
@@ -3359,7 +3368,7 @@ def api_comms_bootstrap_status():
 
 @app.get("/api/comms/bootstrap/health", tags=["Comms"])
 def api_comms_bootstrap_health():
-    """Health check completo de todos los servicios de comunicación."""
+    """Health check completo de todos los servicios de comunicaciÃ³n."""
     try:
         from modules.humanoid.comms.bootstrap import health_check
 
@@ -3370,7 +3379,7 @@ def api_comms_bootstrap_health():
 
 @app.post("/api/comms/bootstrap/restart-service", tags=["Comms"])
 def api_comms_bootstrap_restart_service(body: dict):
-    """Reinicia un servicio de comunicación específico.
+    """Reinicia un servicio de comunicaciÃ³n especÃ­fico.
 
     Body: {"service": "telegram_poller"}
     Servicios reiniciables: hub, telegram_poller, makeplay
@@ -3387,9 +3396,108 @@ def api_comms_bootstrap_restart_service(body: dict):
         return {"ok": False, "error": str(e)}
 
 
+class AtlasCommsMessageBody(BaseModel):
+    user_id: str = "guest"
+    channel: str = "app"
+    message: str
+    context: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, value: str) -> str:
+        msg = (value or "").strip()
+        if not msg:
+            raise ValueError("message cannot be empty")
+        return msg
+
+
+class AtlasCommsResyncBody(BaseModel):
+    limit: int = Field(default=200, ge=1, le=400)
+
+
+class AtlasCommsInventoryAdjustBody(BaseModel):
+    payload: Dict[str, Any]
+    confirmed: bool = False
+    requested_by: str = "atlas_comms_api"
+
+
+@app.get("/api/comms/atlas/status", tags=["Comms"])
+def api_comms_atlas_status():
+    """ATLAS comms bridge status (offline mode, queue, encryption source)."""
+    try:
+        from modules.humanoid.comms.atlas_comms_hub import get_atlas_comms_hub
+
+        hub = get_atlas_comms_hub()
+        return hub.get_status()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/comms/atlas/history", tags=["Comms"])
+def api_comms_atlas_history(limit: int = 30):
+    """Recent user interactions processed by atlas_comms_hub."""
+    try:
+        from modules.humanoid.comms.atlas_comms_hub import get_atlas_comms_hub
+
+        hub = get_atlas_comms_hub()
+        return hub.get_history(limit=limit, decrypt=True)
+    except Exception as e:
+        return {"ok": False, "error": str(e), "items": []}
+
+
+@app.post("/api/comms/atlas/message", tags=["Comms"])
+def api_comms_atlas_message(body: AtlasCommsMessageBody):
+    """Process user message with hybrid AI + inventory/camera probes + offline queue."""
+    try:
+        from modules.humanoid.comms.atlas_comms_hub import get_atlas_comms_hub
+
+        hub = get_atlas_comms_hub()
+        return hub.process_user_interaction(
+            user_id=body.user_id,
+            channel=body.channel,
+            message=body.message,
+            context=body.context,
+        )
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/atlas/resync", tags=["Comms"])
+def api_comms_atlas_resync(body: Optional[AtlasCommsResyncBody] = None):
+    """Manual trigger to process pending offline queue."""
+    try:
+        from modules.humanoid.comms.atlas_comms_hub import get_atlas_comms_hub
+
+        hub = get_atlas_comms_hub()
+        lim = int(body.limit) if body else 200
+        return hub.resync_pending(limit=lim)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/atlas/inventory/adjust", tags=["Comms"])
+def api_comms_atlas_inventory_adjust(body: AtlasCommsInventoryAdjustBody):
+    """
+    Guarded inventory adjustment:
+    - requires explicit confirmed=true
+    - requires snapshot validation (atlas_snapshot_safe.ps1)
+    """
+    try:
+        from modules.humanoid.comms.atlas_comms_hub import get_atlas_comms_hub
+
+        hub = get_atlas_comms_hub()
+        return hub.adjust_inventory(
+            payload=body.payload,
+            confirmed=bool(body.confirmed),
+            requested_by=(body.requested_by or "atlas_comms_api"),
+        )
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.get("/api/kernel/event-bus/stats", tags=["Kernel"])
 def api_kernel_event_bus_stats():
-    """Estadísticas del Event Bus interno (handlers, eventos, métricas)."""
+    """EstadÃ­sticas del Event Bus interno (handlers, eventos, mÃ©tricas)."""
     try:
         from modules.humanoid import get_humanoid_kernel
 
@@ -3462,7 +3570,7 @@ async def health_deep():
 
 @app.get("/health/debug", tags=["Health"])
 def health_debug():
-    """Raw check results con mensajes de error para diagnóstico."""
+    """Raw check results con mensajes de error para diagnÃ³stico."""
     try:
         from modules.humanoid.deploy.healthcheck import (
             _check_audit_writable, _check_memory_writable,
@@ -3564,9 +3672,9 @@ def modules_reconnect(module_id: str):
         return {"ok": False, "module": module_id, "error": str(e)[:200]}
 
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # AUTONOMY SYSTEM API
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 import sqlite3 as _auto_sqlite
 
@@ -3610,7 +3718,7 @@ def _auto_log(event, kind="info", result="ok"):
         pass
 
 
-# Worker autónomo agresivo (vinculado a daemon + modo growth)
+# Worker autÃ³nomo agresivo (vinculado a daemon + modo growth)
 _AGGR_LOCK = threading.RLock()
 _aggr_thread = None
 _aggr_stop = threading.Event()
@@ -3683,7 +3791,7 @@ def _aggr_enabled() -> bool:
 
 
 def _user_idle_seconds() -> float:
-    """Segundos desde la última interacción local (mouse/teclado)."""
+    """Segundos desde la Ãºltima interacciÃ³n local (mouse/teclado)."""
     try:
         import ctypes
 
@@ -3734,7 +3842,7 @@ def _run_aggressive_cycle() -> Dict[str, Any]:
     except Exception as e:
         out["error"] = str(e)[:200]
 
-    # 2) Ojos/Pies digitales: navegar por paneles internos y extraer señal.
+    # 2) Ojos/Pies digitales: navegar por paneles internos y extraer seÃ±al.
     try:
         from modules.humanoid.nerve import feet_execute
 
@@ -3757,7 +3865,7 @@ def _run_aggressive_cycle() -> Dict[str, Any]:
         )
         ok_open = bool((r_open or {}).get("ok"))
 
-        # Regla general: verificación visual ANTES y DESPUÉS.
+        # Regla general: verificaciÃ³n visual ANTES y DESPUÃ‰S.
         r_pre = feet_execute("screenshot", {"driver": "digital"})
         out["visual_pre_ok"] = bool((r_pre or {}).get("ok"))
 
@@ -3971,7 +4079,6 @@ def autonomy_status():
     gov_emergency = False
     gov_policies_count = 0
     try:
-        from modules.humanoid.governance.api import governance_router
         from modules.humanoid.governance.state import get_governance_state
 
         gs = get_governance_state()
@@ -4049,7 +4156,7 @@ def autonomy_status():
 
     # --- Cola de tareas (autonomia_tasks) ---
     # IMPORTANTE: contar sobre la misma "ventana operativa" que ve el dashboard
-    # (top 50 por prioridad/created_at), para evitar inflar cola con históricos viejos.
+    # (top 50 por prioridad/created_at), para evitar inflar cola con histÃ³ricos viejos.
     task_pending = 0
     task_in_progress = 0
     task_done = 0
@@ -4110,7 +4217,7 @@ def autonomy_status():
                 except:
                     pass
 
-        # Ventana 24h para tasa de éxito más representativa en tiempo real.
+        # Ventana 24h para tasa de Ã©xito mÃ¡s representativa en tiempo real.
         try:
             rows24 = c.execute(
                 """
@@ -4141,7 +4248,7 @@ def autonomy_status():
 
     pending_queue_count = approvals_pending + task_pending + task_in_progress
 
-    # KPI de éxito: usar lifelog si existe; fallback a resultados de tareas cuando no hay muestras de lifelog.
+    # KPI de Ã©xito: usar lifelog si existe; fallback a resultados de tareas cuando no hay muestras de lifelog.
     success_rate = round(lifelog_rate * 100, 1)
     if lifelog_total <= 0:
         denom = task_done + task_failed
@@ -4322,7 +4429,7 @@ def autonomy_status():
 
 @app.post("/api/autonomy/daemon/start", tags=["Autonomia"])
 def autonomy_daemon_start():
-    """Inicia el daemon de autonomía en el proceso actual de la API."""
+    """Inicia el daemon de autonomÃ­a en el proceso actual de la API."""
     t0 = time.perf_counter()
     try:
         from modules.humanoid.quality.autonomy_daemon import (
@@ -4364,7 +4471,7 @@ def autonomy_daemon_start():
 
 @app.post("/api/autonomy/daemon/stop", tags=["Autonomia"])
 def autonomy_daemon_stop():
-    """Detiene el daemon de autonomía en el proceso actual de la API."""
+    """Detiene el daemon de autonomÃ­a en el proceso actual de la API."""
     t0 = time.perf_counter()
     try:
         from modules.humanoid.quality.autonomy_daemon import (
@@ -4391,7 +4498,7 @@ def autonomy_daemon_stop():
 
 @app.post("/api/autonomy/scanner/run-once", tags=["Autonomia"])
 def autonomy_scanner_run_once():
-    """Ejecuta un ciclo único de autodiagnóstico para refrescar estado del scanner."""
+    """Ejecuta un ciclo Ãºnico de autodiagnÃ³stico para refrescar estado del scanner."""
     t0 = time.perf_counter()
     try:
         _run_autodiag_once_async()
@@ -4411,7 +4518,7 @@ def autonomy_scanner_run_once():
 
 @app.get("/api/autonomy/aggressive/config", tags=["Autonomia"])
 def autonomy_aggressive_config_get():
-    """Obtiene configuración runtime del modo agresivo."""
+    """Obtiene configuraciÃ³n runtime del modo agresivo."""
     t0 = time.perf_counter()
     try:
         cfg = _get_aggr_config()
@@ -4426,7 +4533,7 @@ def autonomy_aggressive_config_get():
 
 @app.post("/api/autonomy/aggressive/config", tags=["Autonomia"])
 def autonomy_aggressive_config_set(body: dict):
-    """Actualiza configuración runtime del modo agresivo (enabled, idle_sec, interval_sec, pages)."""
+    """Actualiza configuraciÃ³n runtime del modo agresivo (enabled, idle_sec, interval_sec, pages)."""
     t0 = time.perf_counter()
     try:
         cfg = _set_aggr_config(body if isinstance(body, dict) else {})
@@ -4496,7 +4603,7 @@ def autonomy_tasks():
                 )
         except:
             pass
-        # Reaper: limpiar tareas 'in_progress' atascadas por más de 1h
+        # Reaper: limpiar tareas 'in_progress' atascadas por mÃ¡s de 1h
         try:
             c.execute(
                 """
@@ -4648,7 +4755,7 @@ def version():
 
 
 def _camera_stream_generator(stream_url: str):
-    """Generador que mantiene la conexión HTTP abierta para MJPEG streaming."""
+    """Generador que mantiene la conexiÃ³n HTTP abierta para MJPEG streaming."""
     import urllib.request
 
     resp = None
@@ -4717,7 +4824,7 @@ def _local_camera_stream_generator(index: int = 0):
 
 @app.get("/cuerpo/camera/stream")
 def camera_stream_proxy(index: int = 0):
-    """Proxy para stream de cámara del robot (puerto 8002). index: 0, 1, 2... para cada cámara."""
+    """Proxy para stream de cÃ¡mara del robot (puerto 8002). index: 0, 1, 2... para cada cÃ¡mara."""
     import urllib.request
 
     base_url = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
@@ -4750,7 +4857,7 @@ def camera_stream_proxy(index: int = 0):
         except Exception:
             pass
 
-    # Último fallback: placeholder
+    # Ãšltimo fallback: placeholder
     try:
         import cv2
         import numpy as np
@@ -4793,7 +4900,7 @@ def cuerpo_vision_snapshot(
     """Proxy de snapshot (JPEG) del robot: evita CORS y centraliza la ruta.
 
     Params:
-    - index: cámara
+    - index: cÃ¡mara
     - enhance: auto|sharp|max|ocr
     - jpeg_quality: 50-98
     - focus_x/focus_y: 0..1 (pan digital)
@@ -4851,7 +4958,7 @@ def cuerpo_vision_snapshot(
 def api_evidence_image(path: str):
     """Sirve una imagen (png/jpg/webp) desde snapshots/ de forma segura.
 
-    Acepta path absoluto o relativo a la raíz del repo. Solo permite archivos
+    Acepta path absoluto o relativo a la raÃ­z del repo. Solo permite archivos
     bajo `snapshots/` para evitar lectura arbitraria.
     """
     from pathlib import Path
@@ -4975,7 +5082,7 @@ def root_redirect():
 
 @app.get("/ui")
 def serve_ui():
-    """Dashboard: estado, versión, salud, métricas, programador, actualización, despliegue, aprobaciones e interacción con el robot."""
+    """Dashboard: estado, versiÃ³n, salud, mÃ©tricas, programador, actualizaciÃ³n, despliegue, aprobaciones e interacciÃ³n con el robot."""
     # v4 landing is canonical at /ui (presentation)
     path = STATIC_DIR / "v4" / "index.html"
     if path.exists():
@@ -5056,7 +5163,7 @@ def serve_ui_static(file_path: str):
 
 @app.get("/workspace")
 def serve_workspace():
-    """ATLAS Agent Workspace — IDE-style interface para comandar ATLAS en tiempo real."""
+    """ATLAS Agent Workspace â€” IDE-style interface para comandar ATLAS en tiempo real."""
     path = STATIC_DIR / "workspace.html"
     if path.exists():
         return FileResponse(
@@ -5103,7 +5210,7 @@ def serve_v4_static(file_path: str):
 
 @app.get("/nexus")
 def serve_nexus():
-    """Panel de Control ATLAS — vista consolidada del sistema (antes en puerto 8000)."""
+    """Panel de Control ATLAS â€” vista consolidada del sistema (antes en puerto 8000)."""
     path = STATIC_DIR / "nexus.html"
     if path.exists():
         return FileResponse(
@@ -5117,13 +5224,13 @@ def serve_nexus():
 
 
 # ----------------------------------------------------------------------------
-# Agent Models — Catálogo de modelos IA disponibles
+# Agent Models â€” CatÃ¡logo de modelos IA disponibles
 # ----------------------------------------------------------------------------
 
 _MODEL_CATALOG = [
     {
         "id": "auto",
-        "name": "Auto (Inteligente→Gratis→Local)",
+        "name": "Auto (Inteligenteâ†’Gratisâ†’Local)",
         "provider": "atlas",
         "desc": "Cascada: API gratis (Gemini/Groq), luego pago (GPT-4.1/Claude), luego local",
         "category": "auto",
@@ -5132,10 +5239,10 @@ _MODEL_CATALOG = [
         "id": "cascade:ide-agent",
         "name": "Cascade (IDE Agent)",
         "provider": "atlas",
-        "desc": "Asistente del IDE; usa enrutamiento ATLAS auto para ejecución interna",
+        "desc": "Asistente del IDE; usa enrutamiento ATLAS auto para ejecuciÃ³n interna",
         "category": "assistant",
     },
-    # ── Ollama LOCAL (gratis, tu PC) ──
+    # â”€â”€ Ollama LOCAL (gratis, tu PC) â”€â”€
     {
         "id": "ollama:deepseek-r1:14b",
         "name": "DeepSeek R1 14B",
@@ -5178,7 +5285,7 @@ _MODEL_CATALOG = [
         "desc": "Vision local (gratis)",
         "category": "local",
     },
-    # ── API GRATIS (tier gratuito) ──
+    # â”€â”€ API GRATIS (tier gratuito) â”€â”€
     {
         "id": "groq:llama-3.3-70b-versatile",
         "name": "Llama 3.3 70B (Groq)",
@@ -5221,7 +5328,7 @@ _MODEL_CATALOG = [
         "desc": "Google flagship, tier gratis limitado",
         "category": "free",
     },
-    # ── API DE PAGO ──
+    # â”€â”€ API DE PAGO â”€â”€
     {
         "id": "openai:codex-auto",
         "name": "Codex (OpenAI)",
@@ -5296,7 +5403,7 @@ _MODEL_CATALOG = [
         "id": "openai:gpt-4.5-preview",
         "name": "GPT-4.5 Preview",
         "provider": "openai",
-        "desc": "Generación más reciente (preview)",
+        "desc": "GeneraciÃ³n mÃ¡s reciente (preview)",
         "category": "premium",
     },
     {
@@ -5317,7 +5424,7 @@ _MODEL_CATALOG = [
         "id": "anthropic:claude-sonnet-4-5",
         "name": "Claude Sonnet 4.5",
         "provider": "anthropic",
-        "desc": "Sonnet avanzado (última generación)",
+        "desc": "Sonnet avanzado (Ãºltima generaciÃ³n)",
         "category": "premium",
     },
     {
@@ -5345,7 +5452,7 @@ _MODEL_CATALOG = [
         "id": "anthropic:claude-haiku-4-latest",
         "name": "Claude Haiku 4",
         "provider": "anthropic",
-        "desc": "Baja latencia, última generación",
+        "desc": "Baja latencia, Ãºltima generaciÃ³n",
         "category": "fast",
     },
     {
@@ -5387,7 +5494,7 @@ _MODEL_CATALOG = [
         "id": "deepseek:deepseek-v3.1",
         "name": "DeepSeek V3.1",
         "provider": "deepseek",
-        "desc": "Iteración reciente de alto rendimiento",
+        "desc": "IteraciÃ³n reciente de alto rendimiento",
         "category": "premium",
     },
     {
@@ -5429,14 +5536,14 @@ _MODEL_CATALOG = [
         "id": "xai:grok-4",
         "name": "Grok 4",
         "provider": "xai",
-        "desc": "Siguiente generación xAI",
+        "desc": "Siguiente generaciÃ³n xAI",
         "category": "premium",
     },
     {
         "id": "xai:grok-4-fast",
         "name": "Grok 4 Fast",
         "provider": "xai",
-        "desc": "Generación reciente con baja latencia",
+        "desc": "GeneraciÃ³n reciente con baja latencia",
         "category": "fast",
     },
     {
@@ -5490,7 +5597,7 @@ _PROVIDER_LABELS = {
     "bedrock": "AWS Bedrock",
 }
 
-# Estado runtime por proveedor (último error conocido para UI de Workspace)
+# Estado runtime por proveedor (Ãºltimo error conocido para UI de Workspace)
 _PROVIDER_RUNTIME_STATUS: Dict[str, Dict[str, Any]] = {}
 
 
@@ -5509,7 +5616,7 @@ def _classify_provider_error(error_text: str) -> Dict[str, Any]:
         return {
             "code": "quota_exhausted",
             "level": "warn",
-            "message": "Saldo API agotado; se aplicará fallback automático",
+            "message": "Saldo API agotado; se aplicarÃ¡ fallback automÃ¡tico",
         }
     if (
         "authentication" in e
@@ -5522,18 +5629,18 @@ def _classify_provider_error(error_text: str) -> Dict[str, Any]:
         return {
             "code": "auth_error",
             "level": "err",
-            "message": "API key inválida o no autorizada",
+            "message": "API key invÃ¡lida o no autorizada",
         }
     if "rate limit" in e or "429" in e:
         return {
             "code": "rate_limited",
             "level": "warn",
-            "message": "Rate limit del proveedor; se aplicará fallback",
+            "message": "Rate limit del proveedor; se aplicarÃ¡ fallback",
         }
     return {
         "code": "provider_error",
         "level": "warn",
-        "message": "Error temporal del proveedor; se aplicará fallback",
+        "message": "Error temporal del proveedor; se aplicarÃ¡ fallback",
     }
 
 
@@ -5636,7 +5743,7 @@ def agent_models():
 
 
 # ----------------------------------------------------------------------------
-# Bitácora Central (UI -> servidor)
+# BitÃ¡cora Central (UI -> servidor)
 # ----------------------------------------------------------------------------
 
 
@@ -5650,8 +5757,8 @@ class BitacoraLogBody(BaseModel):
 @app.post("/bitacora/log")
 def bitacora_log(body: BitacoraLogBody):
     """
-    Endpoint de sincronización desde el Dashboard v3.8.0.
-    La UI llama este endpoint para persistir entradas locales en la Bitácora.
+    Endpoint de sincronizaciÃ³n desde el Dashboard v3.8.0.
+    La UI llama este endpoint para persistir entradas locales en la BitÃ¡cora.
     """
     try:
         msg = (body.message or "").strip()
@@ -5659,7 +5766,7 @@ def bitacora_log(body: BitacoraLogBody):
             return {"ok": True, "skipped": "empty"}
         src = (body.source or "ui").strip()[:40] or "ui"
         lvl = (body.level or "info").strip().lower()
-        # Mapear nivel UI → ok boolean (para evolution_bitacora)
+        # Mapear nivel UI â†’ ok boolean (para evolution_bitacora)
         ok = lvl not in ("error", "critical", "high", "fail", "failed")
         try:
             from modules.humanoid.ans.evolution_bitacora import \
@@ -5776,7 +5883,7 @@ def execute(step: Step):
     elif t == "atlas.inbox":
         cmd = a.get("text", "")
     else:
-        return {"ok": False, "error": f"Tool no soportada aún: {t}"}
+        return {"ok": False, "error": f"Tool no soportada aÃºn: {t}"}
     out = handle(cmd)
     return {"ok": True, "tool": t, "output": out}
 
@@ -5794,7 +5901,6 @@ def modules():
     }
 
 
-import time
 from typing import Any, List, Optional
 
 from pydantic import BaseModel
@@ -5808,7 +5914,7 @@ class IntentIn(BaseModel):
 
 @app.post("/intent")
 def intent(payload: IntentIn):
-    # Respuesta mínima (v1): eco + timestamp.
+    # Respuesta mÃ­nima (v1): eco + timestamp.
     # Luego conectamos command_router/agent_router.
     return {
         "ok": True,
@@ -5820,13 +5926,12 @@ def intent(payload: IntentIn):
     }
 
 
-import time
 from typing import Any, List, Optional
 
 # --- Canonical Intent API (v1) ---
 from pydantic import BaseModel
 
-# Temporalmente comentado para evitar error de importación
+# Temporalmente comentado para evitar error de importaciÃ³n
 # from modules.command_router import handle as route_command
 
 
@@ -5866,14 +5971,14 @@ def intent(payload: IntentIn):
 # --- Push Dashboard (ATLAS_PUSH -> Dashboard -> ATLAS_NEXUS) ---
 _push_state: dict = {"last_command": None, "last_ack": None, "updated_at": None}
 
-# --- Evolution (ATLAS_EVOLUTION): gobernanza y pendientes de aprobación ---
+# --- Evolution (ATLAS_EVOLUTION): gobernanza y pendientes de aprobaciÃ³n ---
 _evolution_pending: list = []  # [{ package, old_version, new_version, ts, worker }]
 _evolution_governed: bool = os.environ.get(
     "EVOLUTION_GOVERNED", ""
 ).strip().upper() in ("1", "TRUE", "GOVERNED")
 _evolution_last_report: dict = (
     {}
-)  # Último reporte del daemon: { state, message, asimilacion_exitosa, ts }
+)  # Ãšltimo reporte del daemon: { state, message, asimilacion_exitosa, ts }
 
 
 class PushCommandBody(BaseModel):
@@ -5884,7 +5989,7 @@ class PushCommandBody(BaseModel):
 
 @app.post("/api/push/command", tags=["Push"])
 def push_command(body: PushCommandBody):
-    """Recibe comando del Cerebro; NEXUS lee el estado y ejecuta. Si target=EVOLUTION_REPORT, registra pendientes y último reporte (Asimilación Exitosa)."""
+    """Recibe comando del Cerebro; NEXUS lee el estado y ejecuta. Si target=EVOLUTION_REPORT, registra pendientes y Ãºltimo reporte (AsimilaciÃ³n Exitosa)."""
     global _push_state, _evolution_pending, _evolution_last_report
     cmd = {
         "target": body.target,
@@ -5945,7 +6050,7 @@ def push_state():
 
 @app.post("/api/push/ack", tags=["Push"])
 def push_ack(body: dict):
-    """NEXUS confirma recepción/ejecución."""
+    """NEXUS confirma recepciÃ³n/ejecuciÃ³n."""
     global _push_state
     _push_state["last_ack"] = body
     _push_state["updated_at"] = time.time()
@@ -5954,7 +6059,7 @@ def push_ack(body: dict):
 
 @app.get("/api/evolution/status", tags=["Evolution"])
 def evolution_status():
-    """Estado de gobernanza, pendientes de aprobación y último reporte del daemon (Asimilación Exitosa)."""
+    """Estado de gobernanza, pendientes de aprobaciÃ³n y Ãºltimo reporte del daemon (AsimilaciÃ³n Exitosa)."""
     return {
         "governed": _evolution_governed,
         "pending": list(_evolution_pending),
@@ -5970,7 +6075,7 @@ class EvolutionApproveBody(BaseModel):
 
 @app.post("/api/evolution/approve", tags=["Evolution"])
 def evolution_approve(body: EvolutionApproveBody):
-    """Confirma y aplica un cambio pendiente al requirements.txt del proyecto (núcleo)."""
+    """Confirma y aplica un cambio pendiente al requirements.txt del proyecto (nÃºcleo)."""
     global _evolution_pending
     req_txt = Path(os.environ.get("ATLAS_BASE", BASE_DIR)) / "requirements.txt"
     if not req_txt.exists():
@@ -6007,7 +6112,7 @@ def evolution_approve(body: EvolutionApproveBody):
 
 @app.post("/api/evolution/trigger", tags=["Evolution"])
 def evolution_trigger():
-    """Fuerza la ejecución de un ciclo de la Tríada (PyPI | GitHub | Hugging Face) en segundo plano. No espera a que termine."""
+    """Fuerza la ejecuciÃ³n de un ciclo de la TrÃ­ada (PyPI | GitHub | Hugging Face) en segundo plano. No espera a que termine."""
     import subprocess
     import sys
 
@@ -6033,13 +6138,13 @@ def evolution_trigger():
         return {
             "ok": True,
             "triggered": True,
-            "message": "Ciclo Tríada (PyPI/GitHub/HF) iniciado en segundo plano. Ver /api/evolution/status y logs/evolution_last_cycle.json",
+            "message": "Ciclo TrÃ­ada (PyPI/GitHub/HF) iniciado en segundo plano. Ver /api/evolution/status y logs/evolution_last_cycle.json",
         }
     except Exception as e:
         return {"ok": False, "error": str(e), "triggered": False}
 
 
-# --- LLM híbrido (router + Ollama) ---
+# --- LLM hÃ­brido (router + Ollama) ---
 from modules.llm.schemas import LLMRequest, LLMResponse
 from modules.llm.service import LLMService
 
@@ -6150,7 +6255,7 @@ def _feedback_structural_major(feedback: Dict[str, Any]) -> bool:
         "estructura",
         "breaking",
         "migracion",
-        "migración",
+        "migraciÃ³n",
         "refactor grande",
         "core",
         "kernel",
@@ -6164,7 +6269,7 @@ def _feedback_structural_major(feedback: Dict[str, Any]) -> bool:
 
 @app.post("/api/feedback/decide", tags=["Feedback"])
 def feedback_decide(body: FeedbackDecideBody):
-    """Decisión central Atlas para feedback cross-app: auto_fix_now vs wait_owner_approval."""
+    """DecisiÃ³n central Atlas para feedback cross-app: auto_fix_now vs wait_owner_approval."""
     source = (body.source_app or "unknown").strip() or "unknown"
     feedback = body.feedback or {}
     major = _feedback_structural_major(feedback)
@@ -6203,12 +6308,12 @@ def feedback_decide(body: FeedbackDecideBody):
             approval_id = None
 
     user_message = (
-        "ATLAS aplicó una corrección inmediata de bajo riesgo y dejó registro del caso."
+        "ATLAS aplicÃ³ una correcciÃ³n inmediata de bajo riesgo y dejÃ³ registro del caso."
         if auto_execute
-        else "ATLAS detectó impacto estructural. El caso quedó en aprobación del Owner antes de ejecutar cambios."
+        else "ATLAS detectÃ³ impacto estructural. El caso quedÃ³ en aprobaciÃ³n del Owner antes de ejecutar cambios."
     )
     if approval_id:
-        user_message = f"{user_message} ID aprobación: {approval_id}"
+        user_message = f"{user_message} ID aprobaciÃ³n: {approval_id}"
 
     try:
         from modules.humanoid.comms import emit as comms_emit
@@ -6337,7 +6442,7 @@ def cursor_step_execute(body: CursorStepBody):
                 auto = ex.execute_steps([], goal=data.get("goal", "cursor_run"))
                 artifacts = auto.get("artifacts", {})
                 data["artifacts"] = artifacts
-            # Crear wrapper RunArtifacts desde artifacts path (mínimo necesario)
+            # Crear wrapper RunArtifacts desde artifacts path (mÃ­nimo necesario)
             from modules.humanoid.cursor.executor import RunArtifacts
 
             run_dir = Path(
@@ -6434,7 +6539,7 @@ def api_pc_status():
 
 @app.post("/api/pc/walk", tags=["PC"])
 def api_pc_walk(body: PcWalkBody):
-    """Ejecuta navegación Windows (pies-PC) con evidencia y OPS.
+    """Ejecuta navegaciÃ³n Windows (pies-PC) con evidencia y OPS.
 
     Body:
     - command: workflow|open_app|open_path|screenshot|ocr|alt_tab
@@ -6522,7 +6627,7 @@ def api_repo_push(body: RepoPushBody):
     """Sube el repo de esta app o de otra (app_id o repo_path). Usado por Cursor y por chat."""
     t0 = time.perf_counter()
     try:
-        from modules.repo_push import list_known_apps, push_repo, resolve_path
+        from modules.repo_push import push_repo, resolve_path
 
         repo = resolve_path(app_id=body.app_id, repo_path=body.repo_path)
         msg = (body.message or "").strip() or "chore: sync (solicitado por Cursor/chat)"
@@ -6585,7 +6690,7 @@ def _get_semantic_memory_safe():
 
 
 def _get_learning_components():
-    """Inicialización perezosa del sistema de aprendizaje continuo."""
+    """InicializaciÃ³n perezosa del sistema de aprendizaje continuo."""
     global _learning_components
     if _learning_components is not None:
         return _learning_components
@@ -6622,7 +6727,7 @@ def _get_learning_components():
         ai_tutor = None
         try:
             # Siempre crear tutor (offline-first). Si no hay API key o tutor_type=disabled,
-            # `AITutor.design_curriculum` caerá al fallback local.
+            # `AITutor.design_curriculum` caerÃ¡ al fallback local.
             ai_tutor = AITutor(
                 tutor_type=tutor_type,
                 api_key=os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPENAI_API_KEY"),
@@ -6678,7 +6783,7 @@ def _learning_snapshot_dir() -> Path:
 
 
 def _atomic_write_json(path: Path, payload: dict) -> None:
-    """Escritura atómica (Windows-safe) para JSON UTF-8."""
+    """Escritura atÃ³mica (Windows-safe) para JSON UTF-8."""
     path.parent.mkdir(parents=True, exist_ok=True)
     content = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
     tmp_name = None
@@ -6765,7 +6870,7 @@ class ProcessSituationBody(BaseModel):
 
 @app.post("/api/learning/process-situation", tags=["Learning"])
 async def process_situation_with_learning(body: ProcessSituationBody):
-    """Procesar situación con aprendizaje continuo: persiste episodio y responde rápido; procesamiento pesado en background."""
+    """Procesar situaciÃ³n con aprendizaje continuo: persiste episodio y responde rÃ¡pido; procesamiento pesado en background."""
     comp = _get_learning_components()
     if "error" in comp:
         return {"ok": False, "error": comp["error"]}
@@ -6773,7 +6878,7 @@ async def process_situation_with_learning(body: ProcessSituationBody):
     if not situation.get("description"):
         situation["description"] = body.description or (body.goal or "unknown")
 
-    # 1) Persistencia inmediata (memoria episódica) + snapshot ordenado
+    # 1) Persistencia inmediata (memoria episÃ³dica) + snapshot ordenado
     episode_id = None
     try:
         ep = comp.get("episodic_memory")
@@ -6941,7 +7046,7 @@ def get_learning_knowledge_base():
 
 @app.post("/api/learning/consolidate", tags=["Learning"])
 async def trigger_learning_consolidation():
-    """Forzar consolidación de conocimiento."""
+    """Forzar consolidaciÃ³n de conocimiento."""
     comp = _get_learning_components()
     if "error" in comp:
         return {"ok": False, "error": comp["error"]}
@@ -6962,7 +7067,7 @@ async def trigger_learning_consolidation():
 
 @app.get("/api/learning/uncertainty-status", tags=["Learning"])
 def get_learning_uncertainty_status():
-    """Estado del detector de incertidumbre (umbral, fallos, estadísticas)."""
+    """Estado del detector de incertidumbre (umbral, fallos, estadÃ­sticas)."""
     comp = _get_learning_components()
     if "error" in comp:
         return {"ok": False, "error": comp["error"]}
@@ -6990,7 +7095,7 @@ class TeachConceptBody(BaseModel):
 
 @app.post("/api/learning/teach-concept", tags=["Learning"])
 async def teach_new_concept(body: TeachConceptBody):
-    """Enseñar nuevo concepto al robot (humano en el loop)."""
+    """EnseÃ±ar nuevo concepto al robot (humano en el loop)."""
     comp = _get_learning_components()
     if "error" in comp:
         return {"ok": False, "error": comp["error"]}
@@ -7024,7 +7129,7 @@ async def teach_new_concept(body: TeachConceptBody):
 
 @app.get("/api/learning/growth-metrics", tags=["Learning"])
 def get_learning_growth_metrics():
-    """Métricas de crecimiento del conocimiento (inteligencia creciente)."""
+    """MÃ©tricas de crecimiento del conocimiento (inteligencia creciente)."""
     comp = _get_learning_components()
     if "error" in comp:
         return {"ok": False, "error": comp["error"]}
@@ -7066,11 +7171,11 @@ def get_learning_growth_metrics():
 @app.get(
     "/api/learning/consolidator/stats",
     tags=["Learning"],
-    summary="Estadísticas del consolidador",
+    summary="EstadÃ­sticas del consolidador",
     response_description="total_consolidations, patterns_found_total, concepts_created_total, rules_updated_total, contradictions_resolved_total, last_consolidation, hours_since_last",
 )
 def get_learning_consolidator_stats():
-    """Estadísticas del consolidador de conocimiento (patrones, conceptos, reglas, contradicciones)."""
+    """EstadÃ­sticas del consolidador de conocimiento (patrones, conceptos, reglas, contradicciones)."""
     comp = _get_learning_components()
     if "error" in comp:
         return {"ok": False, "error": comp["error"]}
@@ -7091,7 +7196,7 @@ def get_learning_consolidator_stats():
     response_description="ok, status=started, current_lesson, lesson_start_time (ISO)",
 )
 async def start_learning_daily_routine():
-    """Iniciar rutina diaria: lección del tutor (si existe) y tareas en background (consolidación periódica)."""
+    """Iniciar rutina diaria: lecciÃ³n del tutor (si existe) y tareas en background (consolidaciÃ³n periÃ³dica)."""
     comp = _get_learning_components()
     if "error" in comp:
         return {"ok": False, "error": comp["error"]}
@@ -7131,11 +7236,11 @@ async def start_learning_daily_routine():
 @app.post(
     "/api/learning/daily-routine/end-report",
     tags=["Learning"],
-    summary="Reporte fin de día",
+    summary="Reporte fin de dÃ­a",
     response_description="ok, status=no_lesson|evaluated, message|evaluation",
 )
 async def end_learning_daily_report():
-    """Generar reporte fin de día y obtener evaluación del tutor (si hay lección activa)."""
+    """Generar reporte fin de dÃ­a y obtener evaluaciÃ³n del tutor (si hay lecciÃ³n activa)."""
     comp = _get_learning_components()
     if "error" in comp:
         return {"ok": False, "error": comp["error"]}
@@ -7155,7 +7260,7 @@ async def end_learning_daily_report():
             return {
                 "ok": True,
                 "status": "no_lesson",
-                "message": "No hay lección activa o tutor configurado",
+                "message": "No hay lecciÃ³n activa o tutor configurado",
             }
         snap = ""
         try:
@@ -7177,11 +7282,11 @@ async def end_learning_daily_report():
 @app.get(
     "/api/learning/tutor/stats",
     tags=["Learning"],
-    summary="Estadísticas del IA Tutor",
+    summary="EstadÃ­sticas del IA Tutor",
     response_description="tutor_type, curriculum, completed/failed, robot_level, api_calls, cost",
 )
 def get_learning_tutor_stats():
-    """Estadísticas del IA Tutor (si está configurado): curriculum, lecciones completadas, nivel del robot, coste API."""
+    """EstadÃ­sticas del IA Tutor (si estÃ¡ configurado): curriculum, lecciones completadas, nivel del robot, coste API."""
     comp = _get_learning_components()
     if "error" in comp:
         return {"ok": False, "error": comp["error"]}
@@ -7212,11 +7317,11 @@ class DesignCurriculumBody(BaseModel):
 @app.post(
     "/api/learning/tutor/design-curriculum",
     tags=["Learning"],
-    summary="Diseñar currículum (offline-first)",
+    summary="DiseÃ±ar currÃ­culum (offline-first)",
     response_description="ok, data={count, curriculum}",
 )
 def design_learning_curriculum(body: DesignCurriculumBody):
-    """Diseña/actualiza el currículum del tutor (sin requerir API externa)."""
+    """DiseÃ±a/actualiza el currÃ­culum del tutor (sin requerir API externa)."""
     comp = _get_learning_components()
     if "error" in comp:
         return {"ok": False, "error": comp["error"]}
@@ -7250,7 +7355,7 @@ def design_learning_curriculum(body: DesignCurriculumBody):
     response_description="ok, data={count, current_lesson?}",
 )
 def bootstrap_python_mastery():
-    """Inicializa el currículum de dominio Python para ATLAS.
+    """Inicializa el currÃ­culum de dominio Python para ATLAS.
 
     Uso: llamar una vez y luego usar /api/learning/daily-routine/start.
     """
@@ -7280,7 +7385,7 @@ def bootstrap_python_mastery():
         time_horizon_days=int(os.getenv("PYTHON_MASTERY_HORIZON_DAYS", "30") or 30),
         difficulty_level=os.getenv("PYTHON_MASTERY_DIFFICULTY", "progressive"),
     )
-    # Preasignación opcional (para confirmar que hay lección elegible).
+    # PreasignaciÃ³n opcional (para confirmar que hay lecciÃ³n elegible).
     current = None
     try:
         current = tutor.assign_daily_lesson()
@@ -7300,11 +7405,11 @@ class PythonMasteryEvaluateBody(BaseModel):
 @app.post(
     "/api/learning/python-mastery/evaluate",
     tags=["Learning"],
-    summary="Evaluar una lección Python Mastery (offline)",
+    summary="Evaluar una lecciÃ³n Python Mastery (offline)",
     response_description="ok, evaluation{score, passed, evidence}",
 )
 def evaluate_python_mastery(body: PythonMasteryEvaluateBody):
-    """Ejecuta evaluación determinista (archivos + pytest) para una lección PYxxx."""
+    """Ejecuta evaluaciÃ³n determinista (archivos + pytest) para una lecciÃ³n PYxxx."""
     comp = _get_learning_components()
     if "error" in comp:
         return {"ok": False, "error": comp["error"]}
@@ -7354,7 +7459,7 @@ class PythonMasteryCampaignStartBody(BaseModel):
 @app.post(
     "/api/learning/python-mastery/campaign/start",
     tags=["Learning"],
-    summary="Iniciar/reanudar campaña Python Mastery",
+    summary="Iniciar/reanudar campaÃ±a Python Mastery",
     response_description="ok, status, current_lesson, state",
 )
 async def python_mastery_campaign_start(body: PythonMasteryCampaignStartBody):
@@ -7404,7 +7509,7 @@ class PythonMasteryCampaignStepBody(BaseModel):
 @app.post(
     "/api/learning/python-mastery/campaign/step",
     tags=["Learning"],
-    summary="Ejecutar un paso de campaña (evalúa y avanza)",
+    summary="Ejecutar un paso de campaÃ±a (evalÃºa y avanza)",
     response_description="ok, status, evaluation, next_lesson, state",
 )
 def python_mastery_campaign_step(body: PythonMasteryCampaignStepBody):
@@ -7450,7 +7555,7 @@ def python_mastery_campaign_step(body: PythonMasteryCampaignStepBody):
 @app.get(
     "/api/learning/python-mastery/campaign/state",
     tags=["Learning"],
-    summary="Estado persistido de la campaña Python Mastery",
+    summary="Estado persistido de la campaÃ±a Python Mastery",
     response_description="ok, state",
 )
 def python_mastery_campaign_state():
@@ -7480,7 +7585,7 @@ class PythonMasteryCampaignRunBody(BaseModel):
 @app.post(
     "/api/learning/python-mastery/campaign/run",
     tags=["Learning"],
-    summary="Correr campaña en una sola orden (loop de steps)",
+    summary="Correr campaÃ±a en una sola orden (loop de steps)",
     response_description="ok, status, steps_run, seconds, steps[]",
 )
 def python_mastery_campaign_run(body: PythonMasteryCampaignRunBody):
@@ -7560,7 +7665,7 @@ class ArchitectPytestBody(BaseModel):
 
 @app.post("/api/architect/pytest", tags=["Architect"])
 def architect_pytest(body: ArchitectPytestBody):
-    """Ejecuta pytest (real) y devuelve análisis de errores."""
+    """Ejecuta pytest (real) y devuelve anÃ¡lisis de errores."""
     t0 = time.perf_counter()
     try:
         arch = _get_architect()
@@ -7620,7 +7725,7 @@ class ArchitectAgenticBody(BaseModel):
 
 @app.post("/api/architect/agentic/execute", tags=["Architect"])
 def architect_agentic_execute(body: ArchitectAgenticBody):
-    """Ejecución agentic: modelo decide tool_calls (FS/terminal) y se ejecutan realmente."""
+    """EjecuciÃ³n agentic: modelo decide tool_calls (FS/terminal) y se ejecutan realmente."""
     t0 = time.perf_counter()
     try:
         arch = _get_architect()
@@ -7653,7 +7758,7 @@ class ArchitectOrderBody(BaseModel):
 
 @app.post("/api/architect/order", tags=["Architect"])
 def architect_order(body: ArchitectOrderBody):
-    """Orden de alto nivel: diseña/crea una app y ejecuta diagnóstico/autocorrección según modo."""
+    """Orden de alto nivel: diseÃ±a/crea una app y ejecuta diagnÃ³stico/autocorrecciÃ³n segÃºn modo."""
     t0 = time.perf_counter()
     try:
         arch = _get_architect()
@@ -7810,12 +7915,12 @@ async def autonomous_dashboard():
     return HTMLResponse(html_file.read_text(encoding="utf-8"))
 
 
-# --- /actions/log — log de acciones (antes proxy a NEXUS, ahora local) ---
+# --- /actions/log â€” log de acciones (antes proxy a NEXUS, ahora local) ---
 
 
 @app.get("/actions/log")
 def actions_log_endpoint(limit: int = 50):
-    """Log de acciones del sistema — datos locales de la bitacora."""
+    """Log de acciones del sistema â€” datos locales de la bitacora."""
     try:
         from modules.humanoid.ans.evolution_bitacora import \
             get_evolution_entries
@@ -7889,11 +7994,10 @@ async def proxy_websocket(websocket: WebSocket):
 
 
 # --- Cuerpo (NEXUS+Robot): proxies bajo el puerto de PUSH ---
-from fastapi import Request
 from fastapi.responses import Response
 
 # IMPORTANTE (orden de rutas):
-# - /cuerpo/{path:path} es catch-all y debe ir DESPUÉS de rutas más específicas como /cuerpo/nexus/*
+# - /cuerpo/{path:path} es catch-all y debe ir DESPUÃ‰S de rutas mÃ¡s especÃ­ficas como /cuerpo/nexus/*
 from modules.nexus_proxy import proxy_to_nexus
 
 
@@ -7915,7 +8019,7 @@ from modules.cuerpo_proxy import proxy_to_cuerpo
     "/cuerpo/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 )
 async def cuerpo_proxy_route(request: Request, path: str = "") -> Response:
-    """Proxy a Robot (cámaras, visión) en NEXUS_ROBOT_URL/NEXUS_ROBOT_API_URL. Panel de cámaras integrado."""
+    """Proxy a Robot (cÃ¡maras, visiÃ³n) en NEXUS_ROBOT_URL/NEXUS_ROBOT_API_URL. Panel de cÃ¡maras integrado."""
     return await proxy_to_cuerpo(request, path)
 
 
@@ -7934,7 +8038,7 @@ def metrics():
 # Prometheus scrape endpoint (text/plain)
 @app.get("/metrics/prometheus", include_in_schema=False)
 def prometheus_metrics():
-    """Métricas en formato Prometheus para scraping."""
+    """MÃ©tricas en formato Prometheus para scraping."""
     try:
         from fastapi.responses import Response
 
@@ -7954,7 +8058,7 @@ def prometheus_metrics():
 
 @app.get("/api/observability/metrics", tags=["Observability"])
 def api_observability_metrics():
-    """Resumen de métricas (requests, memoria, health score)."""
+    """Resumen de mÃ©tricas (requests, memoria, health score)."""
     try:
         from modules.observability.metrics import MetricsCollector
 
@@ -7997,14 +8101,14 @@ def audit_tail(n: int = 50, module: Optional[str] = None):
     return {"ok": True, "entries": entries, "error": None}
 
 
-# ────────────────────────────────────────────────────────────
-# Monitor Autónomo — SSE stream + snapshot
-# ────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Monitor AutÃ³nomo â€” SSE stream + snapshot
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @app.get("/api/monitor/snapshot", tags=["Monitor"])
 def monitor_snapshot():
-    """Snapshot completo del estado actual del sistema para el Monitor autónomo."""
+    """Snapshot completo del estado actual del sistema para el Monitor autÃ³nomo."""
     t0 = time.perf_counter()
     result = {
         "ts": datetime.now(timezone.utc).isoformat(),
@@ -8118,6 +8222,8 @@ async def monitor_stream():
     async def _generate():
         last_audit_count = 0
         last_task_ts = ""
+        # Emit immediate event so SSE clients always receive data quickly.
+        yield f"data: {json.dumps([{'type': 'heartbeat', 'data': {'ts': datetime.now(timezone.utc).isoformat()}}], default=str)}\n\n"
         while True:
             events = []
             try:
@@ -8398,7 +8504,7 @@ def approvals_pending(limit: int = 50):
             "count": len(items),
             "ms": ms,
         }
-    except Exception as e:
+    except Exception:
         ms = int((time.perf_counter() - t0) * 1000)
         return {"ok": True, "data": [], "count": 0, "ms": ms}
 
@@ -8469,6 +8575,92 @@ def approvals_approve(
         }
     except Exception as e:
         return {"ok": False, "id": aid, "status": "error", "error": str(e)}
+
+
+@app.post("/approvals/reject")
+def approvals_reject(body: ApprovalActionBody):
+    """Reject item by id. Body: {id|approval_id}."""
+    aid = body.id or body.approval_id
+    if not aid:
+        return {
+            "ok": False,
+            "id": None,
+            "status": "missing_id",
+            "error": "id or approval_id required",
+        }
+    try:
+        from modules.humanoid.approvals import reject as approval_reject
+
+        out = approval_reject(aid, resolved_by="api")
+        return {
+            "ok": out.get("ok"),
+            "id": aid,
+            "status": out.get("status"),
+            "error": out.get("error"),
+        }
+    except Exception as e:
+        return {"ok": False, "id": aid, "status": "error", "error": str(e)}
+
+
+@app.post("/approvals/{approval_id}/approve")
+def approvals_approve_compat(
+    approval_id: str,
+    x_owner_session: Optional[str] = Header(None, alias="X-Owner-Session"),
+):
+    """Compat route for legacy UI clients: POST /approvals/{id}/approve."""
+    body = ApprovalActionBody(id=approval_id)
+    return approvals_approve(body=body, x_owner_session=x_owner_session)
+
+
+@app.post("/approvals/{approval_id}/reject")
+def approvals_reject_compat(approval_id: str):
+    """Compat route for legacy UI clients: POST /approvals/{id}/reject."""
+    body = ApprovalActionBody(id=approval_id)
+    return approvals_reject(body=body)
+
+
+@app.get("/api/approvals/queue")
+def approvals_queue_legacy(limit: int = 50):
+    """Legacy alias for old dashboard builds."""
+    return approvals_pending(limit=limit)
+
+
+@app.get("/api/approvals/pending")
+def approvals_pending_legacy(limit: int = 50):
+    """Legacy alias for old dashboard builds."""
+    return approvals_pending(limit=limit)
+
+
+@app.post("/api/approvals/approve")
+def approvals_approve_legacy(
+    body: ApprovalActionBody,
+    x_owner_session: Optional[str] = Header(None, alias="X-Owner-Session"),
+):
+    """Legacy alias for old dashboard builds."""
+    return approvals_approve(body=body, x_owner_session=x_owner_session)
+
+
+@app.post("/api/approvals/reject")
+def approvals_reject_legacy(body: ApprovalActionBody):
+    """Legacy alias for old dashboard builds."""
+    return approvals_reject(body=body)
+
+
+@app.post("/api/approvals/{approval_id}/approve")
+def approvals_approve_compat_legacy(
+    approval_id: str,
+    x_owner_session: Optional[str] = Header(None, alias="X-Owner-Session"),
+):
+    """Legacy alias for old dashboard builds."""
+    return approvals_approve_compat(
+        approval_id=approval_id, x_owner_session=x_owner_session
+    )
+
+
+@app.post("/api/approvals/{approval_id}/reject")
+def approvals_reject_compat_legacy(approval_id: str):
+    """Legacy alias for old dashboard builds."""
+    return approvals_reject_compat(approval_id=approval_id)
 
 
 @app.get("/approvals/chain/verify")
@@ -8551,7 +8743,7 @@ class OwnerSessionStartWithFaceBody(BaseModel):
 
 @app.post("/owner/session/start-with-face")
 def owner_session_start_with_face(body: OwnerSessionStartWithFaceBody):
-    """Inicia sesión owner si se detecta rostro en la imagen."""
+    """Inicia sesiÃ³n owner si se detecta rostro en la imagen."""
     t0 = time.perf_counter()
     try:
         import base64
@@ -8573,7 +8765,7 @@ def owner_session_start_with_face(body: OwnerSessionStartWithFaceBody):
             return {
                 "ok": False,
                 "session_token": None,
-                "error": "No se detectó rostro",
+                "error": "No se detectÃ³ rostro",
                 "ms": int((time.perf_counter() - t0) * 1000),
             }
         out = owner_start(actor="face", method="ui")
@@ -8599,7 +8791,7 @@ class OwnerSessionStartWithWindowsBody(BaseModel):
 
 @app.post("/owner/session/start-with-windows")
 def owner_session_start_with_windows(body: OwnerSessionStartWithWindowsBody):
-    """Inicia sesión owner si la contraseña de usuario Windows es correcta."""
+    """Inicia sesiÃ³n owner si la contraseÃ±a de usuario Windows es correcta."""
     t0 = time.perf_counter()
     try:
         from modules.humanoid.owner.session import start as owner_start
@@ -8912,31 +9104,6 @@ def owner_telegram_callback(body: OwnerTelegramCallbackBody):
         return {"ok": False, "action": None, "id": None, "ms": ms, "error": str(e)}
 
 
-@app.post("/approvals/reject")
-def approvals_reject(body: ApprovalActionBody):
-    """Reject item by id. Body: {id} or {approval_id}. Audited."""
-    aid = body.id or body.approval_id
-    if not aid:
-        return {
-            "ok": False,
-            "id": None,
-            "status": "missing_id",
-            "error": "id or approval_id required",
-        }
-    try:
-        from modules.humanoid.approvals import reject as approval_reject
-
-        out = approval_reject(aid, resolved_by="api")
-        return {
-            "ok": out.get("ok"),
-            "id": aid,
-            "status": out.get("status"),
-            "error": None,
-        }
-    except Exception as e:
-        return {"ok": False, "id": aid, "status": "error", "error": str(e)}
-
-
 # --- Scheduler / Watchdog / Healing ---
 def _std_resp(
     ok: bool, data: Any = None, ms: int = 0, error: Optional[str] = None
@@ -8987,7 +9154,7 @@ def _ensure_thread_id(
 
 
 def _extract_memory_lines(text: str, limit: int = 12) -> List[str]:
-    """Heurística extractiva: conserva líneas accionables para 'resumen'."""
+    """HeurÃ­stica extractiva: conserva lÃ­neas accionables para 'resumen'."""
     if not text:
         return []
     lines = []
@@ -9005,9 +9172,9 @@ def _extract_memory_lines(text: str, limit: int = 12) -> List[str]:
                 "ACTION:",
                 "RISK:",
                 "EXECUTE:",
-                "✅",
-                "⚠",
-                "⛔",
+                "âœ…",
+                "âš ",
+                "â›”",
                 "OK:",
                 "PROBLEMA:",
                 "ADVERTENCIA:",
@@ -9369,7 +9536,7 @@ def update_apply_endpoint():
 
 @app.get("/api/v4/update/prereqs")
 def update_prereqs_endpoint():
-    """Verificación de software para actualizar repo: Git, Python, pip, estado del repo."""
+    """VerificaciÃ³n de software para actualizar repo: Git, Python, pip, estado del repo."""
     return _update_prereqs_impl()
 
 
@@ -9381,7 +9548,7 @@ def update_prereqs_short():
 
 @app.post("/update/restart")
 def update_restart_endpoint():
-    """Reinicia el servidor PUSH (8791): programa un reinicio en 3s y responde de inmediato. Recargar la página tras unos segundos."""
+    """Reinicia el servidor PUSH (8791): programa un reinicio en 3s y responde de inmediato. Recargar la pÃ¡gina tras unos segundos."""
     try:
         repo_root = os.getenv("REPO_ROOT", str(BASE_DIR))
         script_path = (BASE_DIR / "scripts" / "restart_push_from_api.ps1").resolve()
@@ -9417,13 +9584,943 @@ def update_restart_endpoint():
         return _std_resp(
             True,
             {
-                "message": "Reinicio programado en 3 segundos. Recarga la página en unos segundos."
+                "message": "Reinicio programado en 3 segundos. Recarga la pÃ¡gina en unos segundos."
             },
             0,
             None,
         )
     except Exception as e:
         return _std_resp(False, None, 0, str(e))
+
+
+def _extract_json_from_output(raw: str) -> Optional[dict]:
+    text = (raw or "").strip()
+    if not text:
+        return None
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    for idx in range(len(lines) - 1, -1, -1):
+        ln = lines[idx]
+        try:
+            parsed = json.loads(ln)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            continue
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        return None
+    return None
+
+
+def _run_local_json_cmd(
+    cmd: list[str], timeout: int = 900, cwd: Optional[Path] = None
+) -> tuple[bool, dict, str]:
+    import subprocess
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(cwd or BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+        )
+        out = (proc.stdout or "").strip()
+        err = (proc.stderr or "").strip()
+        merged = "\n".join(x for x in [out, err] if x)
+        payload = _extract_json_from_output(merged) or {}
+        ok = proc.returncode == 0 and bool(payload.get("ok", True))
+        if not payload:
+            payload = {
+                "ok": proc.returncode == 0,
+                "stdout": out[-4000:],
+                "stderr": err[-2000:],
+                "returncode": proc.returncode,
+            }
+        return ok, payload, merged[-4000:]
+    except Exception as e:
+        return False, {"ok": False, "error": str(e)}, str(e)
+
+
+def _spawn_detached_job(
+    cmd: list[str],
+    cwd: Path,
+    runner_log: Path,
+) -> None:
+    """Spawn detached command and persist stdout/stderr for post-mortem diagnostics."""
+    import subprocess
+
+    runner_log.parent.mkdir(parents=True, exist_ok=True)
+    fh = runner_log.open("a", encoding="utf-8", errors="replace")
+    try:
+        fh.write(f"{datetime.now(timezone.utc).isoformat()} RUNNER_START cmd={cmd!r}\n")
+        fh.flush()
+        flags = 0
+        if os.name == "nt":
+            CREATE_NEW_PROCESS_GROUP = 0x00000200
+            CREATE_NO_WINDOW = 0x08000000
+            flags = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+        subprocess.Popen(
+            cmd,
+            cwd=str(cwd),
+            creationflags=flags,
+            stdin=subprocess.DEVNULL,
+            stdout=fh,
+            stderr=fh,
+        )
+    except Exception:
+        fh.close()
+        raise
+
+
+class ToolsWatchdogBody(BaseModel):
+    force: Optional[bool] = False
+
+
+class ToolsUpdateBody(BaseModel):
+    tool_id: str = Field(..., min_length=2, max_length=80)
+    background: Optional[bool] = True
+
+
+class ToolsBootstrapBody(BaseModel):
+    background: Optional[bool] = True
+
+
+class ToolsUpdateAllBody(BaseModel):
+    background: Optional[bool] = True
+    include_critical: Optional[bool] = True
+
+
+class ToolsDiscoverySearchBody(BaseModel):
+    force: Optional[bool] = False
+
+
+class ToolsDiscoveryInstallBody(BaseModel):
+    tool_id: str = Field(..., min_length=2, max_length=80)
+    install_method: str = Field(..., min_length=2, max_length=20)
+    install_target: str = Field(..., min_length=2, max_length=140)
+    background: Optional[bool] = True
+
+
+class ToolsDiscoveryInstallAllBody(BaseModel):
+    # Acepta formato nuevo [{id, install_method, install_target}] y legado ["tool_id"].
+    tools: Optional[list[Any]] = None
+    background: Optional[bool] = True
+
+
+def _tools_update_error(payload: dict) -> str:
+    if not isinstance(payload, dict):
+        return "tools_update_failed"
+    direct = (payload.get("error") or "").strip()
+    if direct:
+        return direct
+    nested = payload.get("data")
+    if isinstance(nested, dict):
+        nested_err = (nested.get("error") or "").strip()
+        if nested_err:
+            return nested_err
+    steps = payload.get("steps")
+    if isinstance(steps, list):
+        for s in steps:
+            if isinstance(s, dict) and s.get("ok") is False and s.get("error"):
+                return str(s.get("error"))
+    if payload.get("blocked_protected_branch"):
+        branch = payload.get("branch") or "unknown"
+        return f"updates_blocked_on_protected_branch ({branch})"
+    return "tools_update_failed"
+
+
+@app.get("/api/tools/menu", tags=["Tools"])
+def tools_menu_inventory():
+    """Inventario de herramientas local + comparaciÃ³n de versiÃ³n + salud."""
+    t0 = time.perf_counter()
+    script = (BASE_DIR / "scripts" / "atlas_tools_watchdog.py").resolve()
+    if not script.exists():
+        return _std_resp(
+            False,
+            None,
+            int((time.perf_counter() - t0) * 1000),
+            f"watchdog script missing: {script}",
+        )
+    cmd = [sys.executable, str(script)]
+    ok, payload, _tail = _run_local_json_cmd(cmd, timeout=120)
+    ms = int((time.perf_counter() - t0) * 1000)
+    return _std_resp(ok, payload, ms, None if ok else payload.get("error"))
+
+
+@app.get("/api/tools/discovery/search", tags=["Tools"])
+def tools_discovery_search():
+    """Busca herramientas nuevas recomendadas para ATLAS y su disponibilidad en red."""
+    t0 = time.perf_counter()
+    script = (BASE_DIR / "scripts" / "atlas_tools_discovery.py").resolve()
+    if not script.exists():
+        return _std_resp(
+            False,
+            None,
+            int((time.perf_counter() - t0) * 1000),
+            f"discovery script missing: {script}",
+        )
+    ok, payload, _tail = _run_local_json_cmd([sys.executable, str(script)], timeout=180)
+    ms = int((time.perf_counter() - t0) * 1000)
+    return _std_resp(ok, payload, ms, None if ok else payload.get("error"))
+
+
+@app.post("/api/tools/discovery/install", tags=["Tools"])
+def tools_discovery_install(body: ToolsDiscoveryInstallBody):
+    """Instala una herramienta descubierta (job en background con seguimiento)."""
+    t0 = time.perf_counter()
+    if not bool(body.background):
+        return _std_resp(
+            False,
+            None,
+            int((time.perf_counter() - t0) * 1000),
+            "discovery_install_requires_background",
+        )
+
+    bg_script = (BASE_DIR / "scripts" / "atlas_tools_discovery_install_background.ps1").resolve()
+    if not bg_script.exists():
+        return _std_resp(
+            False,
+            None,
+            int((time.perf_counter() - t0) * 1000),
+            f"background discovery install script missing: {bg_script}",
+        )
+
+    try:
+        jobs_dir = (BASE_DIR / "logs" / "tools_update_jobs").resolve()
+        jobs_dir.mkdir(parents=True, exist_ok=True)
+        job_id = uuid.uuid4().hex[:12]
+        status_file = jobs_dir / f"{job_id}.json"
+        runner_log = jobs_dir / f"{job_id}.runner.log"
+        status_file.write_text(
+            json.dumps(
+                {
+                    "ok": True,
+                    "job_id": job_id,
+                    "tool": body.tool_id,
+                    "status": "queued",
+                    "queued_at": datetime.now(timezone.utc).isoformat(),
+                    "install_method": body.install_method,
+                    "install_target": body.install_target,
+                    "source": "discovery",
+                    "total": 4,
+                    "done": 0,
+                    "failed": 0,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        powershell_exe = str(
+            (
+                Path(os.environ.get("SystemRoot", r"C:\Windows"))
+                / "System32"
+                / "WindowsPowerShell"
+                / "v1.0"
+                / "powershell.exe"
+            ).resolve()
+        )
+        cmd_bg = [
+            powershell_exe,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(bg_script),
+            "-RepoRoot",
+            str(BASE_DIR),
+            "-JobFile",
+            str(status_file),
+            "-ToolId",
+            body.tool_id,
+            "-InstallMethod",
+            body.install_method,
+            "-InstallTarget",
+            body.install_target,
+        ]
+        _spawn_detached_job(
+            cmd_bg,
+            cwd=str(BASE_DIR),
+            runner_log=runner_log,
+        )
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(
+            True,
+            {
+                "ok": True,
+                "queued": True,
+                "job_id": job_id,
+                "tool": body.tool_id,
+                "status": "queued",
+                "status_url": f"/api/tools/job/status/{job_id}",
+                "install_method": body.install_method,
+                "install_target": body.install_target,
+                "runner_log": str(runner_log),
+            },
+            ms,
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.post("/api/tools/discovery/install-all", tags=["Tools"])
+def tools_discovery_install_all(body: Optional[ToolsDiscoveryInstallAllBody] = None):
+    """Instala en lote herramientas descubiertas con progreso por herramienta."""
+    t0 = time.perf_counter()
+    if not (bool(body.background) if body else True):
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "discovery_install_all_requires_background")
+
+    bg_script = (BASE_DIR / "scripts" / "atlas_tools_discovery_install_all_background.ps1").resolve()
+    discover_script = (BASE_DIR / "scripts" / "atlas_tools_discovery.py").resolve()
+    if not bg_script.exists():
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), f"missing script: {bg_script}")
+    if not discover_script.exists():
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), f"missing script: {discover_script}")
+
+    requested_tools = body.tools if (body and isinstance(body.tools, list)) else None
+    tools: Optional[list[dict]] = None
+    if isinstance(requested_tools, list):
+        tools = []
+        for item in requested_tools:
+            if isinstance(item, dict):
+                tid = str(item.get("id") or "").strip()
+                m = str(item.get("install_method") or "").strip()
+                tgt = str(item.get("install_target") or "").strip()
+                if tid and m and tgt:
+                    tools.append({"id": tid, "install_method": m, "install_target": tgt})
+                continue
+            tid = str(item or "").strip()
+            if tid:
+                tools.append({"id": tid})
+    if tools is None:
+        ok, payload, _tail = _run_local_json_cmd([sys.executable, str(discover_script)], timeout=180)
+        if not ok:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), payload.get("error") or "discovery_failed")
+        rows = payload.get("candidates") if isinstance(payload, dict) else []
+        if not isinstance(rows, list):
+            rows = []
+        tools = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            if not bool(r.get("network_available")):
+                continue
+            tid = str(r.get("id") or "").strip()
+            m = str(r.get("install_method") or "").strip()
+            tgt = str(r.get("install_target") or "").strip()
+            if tid and m and tgt:
+                tools.append({"id": tid, "install_method": m, "install_target": tgt})
+    else:
+        # Completa metadatos faltantes cuando llega payload legado con solo IDs.
+        missing_meta = [str(t.get("id") or "").strip() for t in tools if isinstance(t, dict) and (not t.get("install_method") or not t.get("install_target"))]
+        if missing_meta:
+            ok, payload, _tail = _run_local_json_cmd([sys.executable, str(discover_script)], timeout=180)
+            rows = payload.get("candidates") if (ok and isinstance(payload, dict)) else []
+            idx = {}
+            if isinstance(rows, list):
+                for r in rows:
+                    if not isinstance(r, dict):
+                        continue
+                    tid = str(r.get("id") or "").strip().lower()
+                    if tid:
+                        idx[tid] = r
+            normalized = []
+            for t in tools:
+                if not isinstance(t, dict):
+                    continue
+                tid = str(t.get("id") or "").strip()
+                if not tid:
+                    continue
+                m = str(t.get("install_method") or "").strip()
+                tgt = str(t.get("install_target") or "").strip()
+                if (not m or not tgt) and tid.lower() in idx:
+                    r = idx[tid.lower()]
+                    m = m or str(r.get("install_method") or "").strip()
+                    tgt = tgt or str(r.get("install_target") or "").strip()
+                if m and tgt:
+                    normalized.append({"id": tid, "install_method": m, "install_target": tgt})
+            tools = normalized
+
+    if not tools:
+        return _std_resp(
+            True,
+            {"ok": True, "queued": False, "status": "noop", "message": "No hay herramientas discovery disponibles para instalar", "tools": []},
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+
+    try:
+        jobs_dir = (BASE_DIR / "logs" / "tools_update_jobs").resolve()
+        jobs_dir.mkdir(parents=True, exist_ok=True)
+        job_id = uuid.uuid4().hex[:12]
+        status_file = jobs_dir / f"{job_id}.json"
+        runner_log = jobs_dir / f"{job_id}.runner.log"
+        manifest_file = jobs_dir / f"{job_id}.manifest.json"
+        manifest_file.write_text(json.dumps({"tools": tools}, ensure_ascii=False), encoding="utf-8")
+        status_file.write_text(
+            json.dumps(
+                {
+                    "ok": True,
+                    "job_id": job_id,
+                    "tool": "discovery_all",
+                    "source": "discovery-bulk",
+                    "status": "queued",
+                    "queued_at": datetime.now(timezone.utc).isoformat(),
+                    "tools": [str(t.get("id") or "") for t in tools],
+                    "total": len(tools),
+                    "done": 0,
+                    "failed": 0,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        powershell_exe = str((Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe").resolve())
+        cmd_bg = [
+            powershell_exe, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(bg_script),
+            "-RepoRoot", str(BASE_DIR), "-JobFile", str(status_file), "-ManifestFile", str(manifest_file),
+        ]
+        _spawn_detached_job(cmd_bg, cwd=BASE_DIR, runner_log=runner_log)
+        return _std_resp(
+            True,
+            {
+                "ok": True,
+                "queued": True,
+                "job_id": job_id,
+                "tool": "discovery_all",
+                "source": "discovery-bulk",
+                "status": "queued",
+                "tools": [str(t.get("id") or "") for t in tools],
+                "total": len(tools),
+                "status_url": f"/api/tools/job/status/{job_id}",
+                "runner_log": str(runner_log),
+            },
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.post("/api/tools/watchdog/scan", tags=["Tools"])
+def tools_watchdog_scan(body: Optional[ToolsWatchdogBody] = None):
+    """Escaneo forzado para detectar upgrades y refrescar atlas_master_registry.json."""
+    t0 = time.perf_counter()
+    script = (BASE_DIR / "scripts" / "atlas_tools_watchdog.py").resolve()
+    if not script.exists():
+        return _std_resp(
+            False,
+            None,
+            int((time.perf_counter() - t0) * 1000),
+            f"watchdog script missing: {script}",
+        )
+    force = bool(body.force) if body else False
+    cmd = [sys.executable, str(script)]
+    if force:
+        cmd.append("--force")
+    ok, payload, _tail = _run_local_json_cmd(cmd, timeout=180)
+    ms = int((time.perf_counter() - t0) * 1000)
+    return _std_resp(ok, payload, ms, None if ok else payload.get("error"))
+
+
+@app.post("/api/tools/bootstrap", tags=["Tools"])
+def tools_bootstrap_install(body: Optional[ToolsBootstrapBody] = None):
+    """Instala dependencias base del stack de herramientas con snapshot previo obligatorio."""
+    t0 = time.perf_counter()
+    script = (BASE_DIR / "scripts" / "atlas_tools_bootstrap.ps1").resolve()
+    bg_script = (BASE_DIR / "scripts" / "atlas_tools_bootstrap_background.ps1").resolve()
+    if not script.exists():
+        return _std_resp(
+            False,
+            None,
+            int((time.perf_counter() - t0) * 1000),
+            f"bootstrap script missing: {script}",
+        )
+    if bool(body.background) if body else True:
+        if not bg_script.exists():
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                f"background bootstrap script missing: {bg_script}",
+            )
+        try:
+            jobs_dir = (BASE_DIR / "logs" / "tools_update_jobs").resolve()
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+            job_id = uuid.uuid4().hex[:12]
+            status_file = jobs_dir / f"{job_id}.json"
+            runner_log = jobs_dir / f"{job_id}.runner.log"
+            status_file.write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "job_id": job_id,
+                        "tool": "bootstrap",
+                        "status": "queued",
+                        "queued_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            powershell_exe = str(
+                (
+                    Path(os.environ.get("SystemRoot", r"C:\Windows"))
+                    / "System32"
+                    / "WindowsPowerShell"
+                    / "v1.0"
+                    / "powershell.exe"
+                ).resolve()
+            )
+            cmd = [
+                powershell_exe,
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(bg_script),
+                "-RepoRoot",
+                str(BASE_DIR),
+                "-JobFile",
+                str(status_file),
+            ]
+            _spawn_detached_job(
+                cmd,
+                cwd=BASE_DIR,
+                runner_log=runner_log,
+            )
+            ms = int((time.perf_counter() - t0) * 1000)
+            return _std_resp(
+                True,
+                {
+                    "ok": True,
+                    "queued": True,
+                    "job_id": job_id,
+                    "tool": "bootstrap",
+                    "status": "queued",
+                    "status_url": f"/api/tools/job/status/{job_id}",
+                    "runner_log": str(runner_log),
+                },
+                ms,
+                None,
+            )
+        except Exception as e:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+    cmd = [
+        "powershell",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(script),
+        "-RepoRoot",
+        str(BASE_DIR),
+    ]
+    ok, payload, tail = _run_local_json_cmd(cmd, timeout=1800)
+    if tail:
+        try:
+            logf = BASE_DIR / "logs" / "snapshot_safe_diagnostic.log"
+            with logf.open("a", encoding="utf-8") as f:
+                f.write(f"{datetime.now(timezone.utc).isoformat()} TOOLS_BOOTSTRAP_API tail={tail!r}\n")
+        except Exception:
+            pass
+    ms = int((time.perf_counter() - t0) * 1000)
+    return _std_resp(ok, payload, ms, None if ok else payload.get("error"))
+
+
+@app.post("/api/tools/update", tags=["Tools"])
+def tools_update_single(body: ToolsUpdateBody):
+    """Actualiza una herramienta especÃ­fica con snapshot previo obligatorio."""
+    t0 = time.perf_counter()
+    script = (BASE_DIR / "scripts" / "atlas_tool_update.ps1").resolve()
+    bg_script = (BASE_DIR / "scripts" / "atlas_tool_update_background.ps1").resolve()
+    if not script.exists():
+        return _std_resp(
+            False,
+            None,
+            int((time.perf_counter() - t0) * 1000),
+            f"update script missing: {script}",
+        )
+    if bool(body.background):
+        if not bg_script.exists():
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                f"background update script missing: {bg_script}",
+            )
+        try:
+            jobs_dir = (BASE_DIR / "logs" / "tools_update_jobs").resolve()
+            jobs_dir.mkdir(parents=True, exist_ok=True)
+            job_id = uuid.uuid4().hex[:12]
+            status_file = jobs_dir / f"{job_id}.json"
+            runner_log = jobs_dir / f"{job_id}.runner.log"
+            status_file.write_text(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "job_id": job_id,
+                        "tool": body.tool_id,
+                        "status": "queued",
+                        "queued_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            powershell_exe = str(
+                (
+                    Path(os.environ.get("SystemRoot", r"C:\Windows"))
+                    / "System32"
+                    / "WindowsPowerShell"
+                    / "v1.0"
+                    / "powershell.exe"
+                ).resolve()
+            )
+            cmd = [
+                powershell_exe,
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(bg_script),
+                "-Tool",
+                body.tool_id,
+                "-RepoRoot",
+                str(BASE_DIR),
+                "-JobFile",
+                str(status_file),
+            ]
+            _spawn_detached_job(
+                cmd,
+                cwd=BASE_DIR,
+                runner_log=runner_log,
+            )
+            ms = int((time.perf_counter() - t0) * 1000)
+            return _std_resp(
+                True,
+                {
+                    "ok": True,
+                    "queued": True,
+                    "job_id": job_id,
+                    "tool": body.tool_id,
+                    "status": "queued",
+                    "status_url": f"/api/tools/update/status/{job_id}",
+                    "runner_log": str(runner_log),
+                },
+                ms,
+                None,
+            )
+        except Exception as e:
+            return _std_resp(
+                False,
+                None,
+                int((time.perf_counter() - t0) * 1000),
+                str(e),
+            )
+    cmd = [
+        "powershell",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(script),
+        "-Tool",
+        body.tool_id,
+        "-RepoRoot",
+        str(BASE_DIR),
+    ]
+    ok, payload, _tail = _run_local_json_cmd(cmd, timeout=1800)
+    ms = int((time.perf_counter() - t0) * 1000)
+    return _std_resp(ok, payload, ms, None if ok else _tools_update_error(payload))
+
+
+@app.post("/api/tools/update-all", tags=["Tools"])
+def tools_update_all(body: Optional[ToolsUpdateAllBody] = None):
+    """Actualiza todas las herramientas con upgrade_ready en un job Ãºnico de background."""
+    t0 = time.perf_counter()
+    bg_script = (BASE_DIR / "scripts" / "atlas_tools_update_all_background.ps1").resolve()
+    watchdog_script = (BASE_DIR / "scripts" / "atlas_tools_watchdog.py").resolve()
+    if not bg_script.exists():
+        return _std_resp(
+            False,
+            None,
+            int((time.perf_counter() - t0) * 1000),
+            f"background update-all script missing: {bg_script}",
+        )
+    if not watchdog_script.exists():
+        return _std_resp(
+            False,
+            None,
+            int((time.perf_counter() - t0) * 1000),
+            f"watchdog script missing: {watchdog_script}",
+        )
+
+    include_critical = True if body is None else bool(body.include_critical)
+    ok_inv, payload_inv, _tail = _run_local_json_cmd(
+        [sys.executable, str(watchdog_script)], timeout=180
+    )
+    if not ok_inv:
+        return _std_resp(
+            False,
+            None,
+            int((time.perf_counter() - t0) * 1000),
+            payload_inv.get("error") or "watchdog_failed",
+        )
+
+    tools = payload_inv.get("tools") if isinstance(payload_inv, dict) else []
+    if not isinstance(tools, list):
+        tools = []
+    target_tools: list[str] = []
+    for t in tools:
+        if not isinstance(t, dict):
+            continue
+        if not bool(t.get("update_ready")):
+            continue
+        if not t.get("update_script"):
+            continue
+        if (not include_critical) and bool(t.get("critical")):
+            continue
+        tid = str(t.get("id") or "").strip()
+        if tid:
+            target_tools.append(tid)
+    target_tools = sorted(set(target_tools))
+    if not target_tools:
+        return _std_resp(
+            True,
+            {
+                "ok": True,
+                "queued": False,
+                "tool": "all",
+                "status": "noop",
+                "message": "No hay herramientas con upgrade_ready",
+                "tools": [],
+            },
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+
+    if not (bool(body.background) if body else True):
+        return _std_resp(
+            False,
+            None,
+            int((time.perf_counter() - t0) * 1000),
+            "update_all_requires_background",
+        )
+
+    try:
+        jobs_dir = (BASE_DIR / "logs" / "tools_update_jobs").resolve()
+        jobs_dir.mkdir(parents=True, exist_ok=True)
+        job_id = uuid.uuid4().hex[:12]
+        status_file = jobs_dir / f"{job_id}.json"
+        runner_log = jobs_dir / f"{job_id}.runner.log"
+        status_file.write_text(
+            json.dumps(
+                {
+                    "ok": True,
+                    "job_id": job_id,
+                    "tool": "all",
+                    "status": "queued",
+                    "queued_at": datetime.now(timezone.utc).isoformat(),
+                    "tools": target_tools,
+                    "total": len(target_tools),
+                    "done": 0,
+                    "failed": 0,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        powershell_exe = str((Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe").resolve())
+        cmd_bg = [
+            powershell_exe,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(bg_script),
+            "-RepoRoot",
+            str(BASE_DIR),
+            "-JobFile",
+            str(status_file),
+            "-ToolsCsv",
+            ",".join(target_tools),
+        ]
+        _spawn_detached_job(
+            cmd_bg,
+            cwd=BASE_DIR,
+            runner_log=runner_log,
+        )
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(
+            True,
+            {
+                "ok": True,
+                "queued": True,
+                "job_id": job_id,
+                "tool": "all",
+                "status": "queued",
+                "tools": target_tools,
+                "total": len(target_tools),
+                "status_url": f"/api/tools/job/status/{job_id}",
+                "runner_log": str(runner_log),
+            },
+            ms,
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/api/tools/update/status/{job_id}", tags=["Tools"])
+def tools_update_status(job_id: str):
+    """Estado de un update de herramienta ejecutado en segundo plano."""
+    t0 = time.perf_counter()
+    safe_job_id = "".join(ch for ch in (job_id or "") if ch.isalnum() or ch in ("-", "_"))
+    if not safe_job_id:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "invalid_job_id")
+    status_file = (BASE_DIR / "logs" / "tools_update_jobs" / f"{safe_job_id}.json").resolve()
+    if not status_file.exists():
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "job_not_found")
+    try:
+        payload = json.loads(status_file.read_text(encoding="utf-8-sig", errors="replace"))
+        if isinstance(payload, dict) and not str(payload.get("job_id") or "").strip():
+            payload["job_id"] = safe_job_id
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+    try:
+        # Guardrail: queued jobs that never started are reported as failed (stale).
+        status = str(payload.get("status") or "").lower()
+        if status == "queued":
+            q_at = payload.get("queued_at")
+            if q_at:
+                dt_q = datetime.fromisoformat(str(q_at).replace("Z", "+00:00"))
+                now = datetime.now(dt_q.tzinfo) if dt_q.tzinfo else datetime.now()
+                if (now - dt_q).total_seconds() > 90:
+                    payload["ok"] = False
+                    payload["status"] = "failed"
+                    payload["error"] = payload.get("error") or "job_stale_in_queue"
+                    payload["failed_at"] = datetime.now(timezone.utc).isoformat()
+                    status_file.write_text(
+                        json.dumps(payload, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+        # Guardrail: running jobs stale for too long are marked failed.
+        if status == "running":
+            s_at = payload.get("started_at") or payload.get("queued_at")
+            if s_at:
+                dt_s = datetime.fromisoformat(str(s_at).replace("Z", "+00:00"))
+                now = datetime.now(dt_s.tzinfo) if dt_s.tzinfo else datetime.now()
+                # 20 min without terminal status => stale running
+                if (now - dt_s).total_seconds() > 20 * 60:
+                    payload["ok"] = False
+                    payload["status"] = "failed"
+                    payload["error"] = payload.get("error") or "job_stale_running_timeout"
+                    payload["failed_at"] = datetime.now(timezone.utc).isoformat()
+                    status_file.write_text(
+                        json.dumps(payload, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+    except Exception:
+        pass
+    return _std_resp(True, payload, int((time.perf_counter() - t0) * 1000), None)
+
+
+
+@app.get("/api/tools/job/latest", tags=["Tools"])
+def tools_job_latest():
+    """Último job de tools en estado queued/running para reanudar seguimiento desde UI."""
+    t0 = time.perf_counter()
+    jobs_dir = (BASE_DIR / "logs" / "tools_update_jobs").resolve()
+    if not jobs_dir.exists():
+        return _std_resp(
+            True,
+            {"ok": True, "found": False},
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    try:
+        files = sorted(
+            jobs_dir.glob("*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )[:40]
+        for f in files:
+            try:
+                payload = json.loads(f.read_text(encoding="utf-8-sig", errors="replace"))
+            except Exception:
+                continue
+            status = str(payload.get("status") or "").lower()
+            if status == "queued":
+                try:
+                    q_at = payload.get("queued_at")
+                    if q_at:
+                        dt_q = datetime.fromisoformat(str(q_at).replace("Z", "+00:00"))
+                        now = datetime.now(dt_q.tzinfo) if dt_q.tzinfo else datetime.now()
+                        if (now - dt_q).total_seconds() > 90:
+                            continue
+                except Exception:
+                    pass
+            if status in ("queued", "running"):
+                payload["job_id"] = payload.get("job_id") or f.stem
+                payload["status_url"] = f"/api/tools/job/status/{payload['job_id']}"
+                return _std_resp(
+                    True,
+                    {"ok": True, "found": True, "job": payload},
+                    int((time.perf_counter() - t0) * 1000),
+                    None,
+                )
+        return _std_resp(
+            True,
+            {"ok": True, "found": False},
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/api/tools/job/status/{job_id}", tags=["Tools"])
+def tools_job_status(job_id: str):
+    """Alias genÃ©rico para estado de jobs de tools (update/bootstrap)."""
+    return tools_update_status(job_id)
+
+
+@app.get("/api/tools/job/runner-log/{job_id}", tags=["Tools"])
+def tools_job_runner_log(job_id: str, tail_lines: int = 120):
+    """Devuelve tail del runner log del job para diagnóstico rápido en UI."""
+    t0 = time.perf_counter()
+    safe_job_id = "".join(ch for ch in (job_id or "") if ch.isalnum() or ch in ("-", "_"))
+    if not safe_job_id:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "invalid_job_id")
+    jobs_dir = (BASE_DIR / "logs" / "tools_update_jobs").resolve()
+    log_path = (jobs_dir / f"{safe_job_id}.runner.log").resolve()
+    if not log_path.exists():
+        return _std_resp(
+            True,
+            {"ok": True, "found": False, "job_id": safe_job_id, "tail": ""},
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    try:
+        lines = log_path.read_text(encoding="utf-8-sig", errors="replace").splitlines()
+        n = max(10, min(500, int(tail_lines or 120)))
+        tail = "\n".join(lines[-n:])
+        return _std_resp(
+            True,
+            {"ok": True, "found": True, "job_id": safe_job_id, "log_path": str(log_path), "tail": tail},
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
 
 def _update_prereqs_impl():
@@ -9447,11 +10544,11 @@ def _update_prereqs_impl():
     )
     use_shell = os.name == "nt"
 
-    # Python: el proceso actual es Python, así que siempre OK
+    # Python: el proceso actual es Python, asÃ­ que siempre OK
     out["python_ok"] = True
     out["python_version"] = (sys.version or "").split("\n")[0].strip()[:80]
 
-    # pip: mismo intérprete
+    # pip: mismo intÃ©rprete
     try:
         r = subprocess.run(
             [sys.executable, "-m", "pip", "--version"],
@@ -9529,7 +10626,7 @@ def _update_prereqs_impl():
         out["repo_has_changes"] = bool((r.stdout or "").strip())
         if r2.returncode == 0 and r2.stdout:
             out["branch"] = r2.stdout.strip()
-        # Si tenemos rama pero git_ok era False, Git sí está (p. ej. status desde otro proceso)
+        # Si tenemos rama pero git_ok era False, Git sÃ­ estÃ¡ (p. ej. status desde otro proceso)
         if out["branch"] and not out["git_ok"]:
             out["git_ok"] = True
             out["git_version"] = out["git_version"] or "OK (detectado por repo)"
@@ -9685,7 +10782,7 @@ class CanaryConfigBody(BaseModel):
     features: Optional[List[str]] = None
 
 
-# ── Config IA centralizada (sync Dashboard ↔ Workspace) ──
+# â”€â”€ Config IA centralizada (sync Dashboard â†” Workspace) â”€â”€
 
 _ai_config = {
     "mode": "auto",
@@ -9894,6 +10991,244 @@ def cluster_status():
             "count": len(nodes),
         }
         return _std_resp(True, data, int((time.perf_counter() - t0) * 1000), None)
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.post("/api/tools/job/export/{job_id}", tags=["Tools"])
+def tools_job_export(job_id: str):
+    """Exporta reporte markdown de un job de actualización de tools."""
+    t0 = time.perf_counter()
+    safe_job_id = "".join(ch for ch in (job_id or "") if ch.isalnum() or ch in ("-", "_"))
+    if not safe_job_id:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "invalid_job_id")
+    status_file = (BASE_DIR / "logs" / "tools_update_jobs" / f"{safe_job_id}.json").resolve()
+    if not status_file.exists():
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "job_not_found")
+    try:
+        payload = json.loads(status_file.read_text(encoding="utf-8-sig", errors="replace"))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+    reports_dir = (BASE_DIR / "reports").resolve()
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    report_name = f"tools_update_job_{safe_job_id}_{ts}.md"
+    report_path = reports_dir / report_name
+
+    tool = str(payload.get("tool") or "tools")
+    status = str(payload.get("status") or "unknown")
+    total = int(payload.get("total") or 0)
+    done = int(payload.get("done") or 0)
+    failed = int(payload.get("failed") or 0)
+    started_at = str(payload.get("started_at") or payload.get("queued_at") or "")
+    finished_at = str(payload.get("finished_at") or "")
+    current_tool = str(payload.get("current_tool") or "")
+    err = str(payload.get("error") or "")
+    tools = payload.get("tools") if isinstance(payload.get("tools"), list) else []
+    results = payload.get("results") if isinstance(payload.get("results"), list) else []
+
+    lines = []
+    lines.append(f"# Tools Update Job Report — {safe_job_id}")
+    lines.append("")
+    lines.append(f"- Tool scope: `{tool}`")
+    lines.append(f"- Status: `{status}`")
+    lines.append(f"- Progress: `{done}/{total}`")
+    lines.append(f"- Failed: `{failed}`")
+    if started_at:
+        lines.append(f"- Started at: `{started_at}`")
+    if finished_at:
+        lines.append(f"- Finished at: `{finished_at}`")
+    if current_tool:
+        lines.append(f"- Current tool: `{current_tool}`")
+    if err:
+        lines.append(f"- Error: `{err}`")
+
+    if tools:
+        lines.append("")
+        lines.append("## Target Tools")
+        for t in tools:
+            lines.append(f"- `{str(t)}`")
+
+    lines.append("")
+    lines.append("## Results")
+    if not results:
+        lines.append("_No tool results recorded yet._")
+    else:
+        for r in results:
+            if not isinstance(r, dict):
+                continue
+            rid = str(r.get("tool") or r.get("target_repo") or "unknown")
+            rok = bool(r.get("ok"))
+            lines.append("")
+            lines.append(f"### {rid} — {'OK' if rok else 'FAIL'}")
+            rerr = str(r.get("error") or "")
+            if rerr:
+                lines.append(f"- Error: `{rerr}`")
+            steps = r.get("steps")
+            if isinstance(steps, list) and steps:
+                lines.append("- Steps:")
+                for s in steps:
+                    if isinstance(s, dict):
+                        s_name = str(s.get("step") or "step")
+                        s_ok = bool(s.get("ok"))
+                        s_err = str(s.get("error") or "")
+                        lines.append(f"  - `{s_name}`: {'ok' if s_ok else 'fail'}{(' — ' + s_err) if s_err else ''}")
+            lines.append("")
+            lines.append("```json")
+            lines.append(json.dumps(r, ensure_ascii=False, indent=2))
+            lines.append("```")
+
+    lines.append("")
+    lines.append("## Raw Job Payload")
+    lines.append("```json")
+    lines.append(json.dumps(payload, ensure_ascii=False, indent=2))
+    lines.append("```")
+
+    report_path.write_text("\n".join(lines), encoding="utf-8")
+
+    return _std_resp(
+        True,
+        {
+            "ok": True,
+            "job_id": safe_job_id,
+            "report_path": str(report_path),
+            "report_name": report_name,
+            "report_url": f"/reports/{report_name}",
+        },
+        int((time.perf_counter() - t0) * 1000),
+        None,
+    )
+
+
+@app.post("/api/tools/job/retry/{job_id}", tags=["Tools"])
+def tools_job_retry(job_id: str):
+    """Reintenta un job de tools relanzando solo herramientas pendientes/fallidas."""
+    t0 = time.perf_counter()
+    safe_job_id = "".join(ch for ch in (job_id or "") if ch.isalnum() or ch in ("-", "_"))
+    if not safe_job_id:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "invalid_job_id")
+
+    jobs_dir = (BASE_DIR / "logs" / "tools_update_jobs").resolve()
+    status_file = (jobs_dir / f"{safe_job_id}.json").resolve()
+    if not status_file.exists():
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "job_not_found")
+
+    try:
+        payload = json.loads(status_file.read_text(encoding="utf-8-sig", errors="replace"))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+    tools_all = payload.get("tools") if isinstance(payload.get("tools"), list) else []
+    results = payload.get("results") if isinstance(payload.get("results"), list) else []
+    ok_set = set()
+    fail_set = set()
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        tid = str(r.get("tool") or "").strip()
+        if not tid:
+            continue
+        if r.get("ok") is True:
+            ok_set.add(tid)
+        elif r.get("ok") is False:
+            fail_set.add(tid)
+
+    pending = [str(t).strip() for t in tools_all if str(t).strip() and str(t).strip() not in ok_set]
+    if not pending and fail_set:
+        pending = sorted(fail_set)
+    pending = sorted(set(pending))
+    if not pending:
+        return _std_resp(
+            True,
+            {
+                "ok": True,
+                "queued": False,
+                "status": "noop",
+                "message": "No hay herramientas pendientes para reintentar",
+                "source_job_id": safe_job_id,
+            },
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+
+    bg_script = (BASE_DIR / "scripts" / "atlas_tools_update_all_background.ps1").resolve()
+    if not bg_script.exists():
+        return _std_resp(
+            False,
+            None,
+            int((time.perf_counter() - t0) * 1000),
+            f"background update-all script missing: {bg_script}",
+        )
+
+    try:
+        new_job_id = uuid.uuid4().hex[:12]
+        new_status_file = jobs_dir / f"{new_job_id}.json"
+        runner_log = jobs_dir / f"{new_job_id}.runner.log"
+        new_status_file.write_text(
+            json.dumps(
+                {
+                    "ok": True,
+                    "job_id": new_job_id,
+                    "tool": "all",
+                    "status": "queued",
+                    "queued_at": datetime.now(timezone.utc).isoformat(),
+                    "tools": pending,
+                    "total": len(pending),
+                    "done": 0,
+                    "failed": 0,
+                    "retry_of_job_id": safe_job_id,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        powershell_exe = str(
+            (
+                Path(os.environ.get("SystemRoot", r"C:\Windows"))
+                / "System32"
+                / "WindowsPowerShell"
+                / "v1.0"
+                / "powershell.exe"
+            ).resolve()
+        )
+        cmd_bg = [
+            powershell_exe,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(bg_script),
+            "-RepoRoot",
+            str(BASE_DIR),
+            "-JobFile",
+            str(new_status_file),
+            "-ToolsCsv",
+            ",".join(pending),
+        ]
+        _spawn_detached_job(
+            cmd_bg,
+            cwd=str(BASE_DIR),
+            runner_log=runner_log,
+        )
+        return _std_resp(
+            True,
+            {
+                "ok": True,
+                "queued": True,
+                "job_id": new_job_id,
+                "tool": "all",
+                "status": "queued",
+                "tools": pending,
+                "total": len(pending),
+                "retry_of_job_id": safe_job_id,
+                "status_url": f"/api/tools/job/status/{new_job_id}",
+                "runner_log": str(runner_log),
+            },
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
@@ -10284,6 +11619,142 @@ def healing_status_endpoint():
         return _std_resp(False, None, ms, str(e))
 
 
+@app.get("/api/push/autorevive/status", tags=["Health"])
+def push_autorevive_status_endpoint():
+    """Estado del watchdog de auto-revive de PUSH (script externo)."""
+    t0 = time.perf_counter()
+    try:
+        log_dir = BASE_DIR / "logs"
+        state_file = log_dir / "push_autorevive_state.json"
+        log_file = log_dir / "push_autorevive_watchdog.log"
+        state = {}
+        if state_file.exists():
+            try:
+                state = json.loads(state_file.read_text(encoding="utf-8", errors="replace"))
+            except Exception:
+                state = {}
+
+        # Keep this endpoint fast and non-blocking; avoid expensive process scans.
+        running = False
+        pids: list[int] = []
+        try:
+            last_ok_iso = state.get("last_ok_at")
+            if last_ok_iso:
+                dt_last_ok = datetime.fromisoformat(str(last_ok_iso).replace("Z", "+00:00"))
+                now = datetime.now(dt_last_ok.tzinfo) if dt_last_ok.tzinfo else datetime.now()
+                running = (now - dt_last_ok).total_seconds() <= 120
+        except Exception:
+            running = False
+
+        last_log = ""
+        if log_file.exists():
+            try:
+                lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+                if lines:
+                    last_log = lines[-1][-400:]
+            except Exception:
+                last_log = ""
+
+        payload = {
+            "running": running,
+            "pids": [x for x in pids if x > 0][:10],
+            "state_file": str(state_file),
+            "log_file": str(log_file),
+            "state": state,
+            "last_restart_at": state.get("last_restart_at"),
+            "last_error": state.get("last_error"),
+            "fail_streak": state.get("fail_streak"),
+            "restarts": state.get("restarts"),
+            "last_ok_at": state.get("last_ok_at"),
+            "last_log_line": last_log,
+        }
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, payload, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/api/diagnostic/live", tags=["Health"])
+def diagnostic_live_endpoint():
+    """Diagnostico rapido consolidado: health + autorevive + ultimo job de tools."""
+    t0 = time.perf_counter()
+    try:
+        logs_dir = (BASE_DIR / "logs").resolve()
+        tools_jobs_dir = (logs_dir / "tools_update_jobs").resolve()
+        state_file = (logs_dir / "push_autorevive_state.json").resolve()
+
+        health_ok = False
+        health_payload = {}
+        try:
+            import urllib.request
+
+            req = urllib.request.Request(
+                "http://127.0.0.1:8791/health",
+                method="GET",
+                headers={"Accept": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=2.5) as resp:
+                if 200 <= int(resp.status) < 300:
+                    raw = resp.read().decode("utf-8", errors="replace")
+                    health_payload = json.loads(raw) if raw else {}
+                    health_ok = True
+        except Exception:
+            health_ok = False
+            health_payload = {}
+
+        autorevive_state = {}
+        if state_file.exists():
+            try:
+                autorevive_state = json.loads(state_file.read_text(encoding="utf-8", errors="replace"))
+            except Exception:
+                autorevive_state = {}
+
+        last_job = None
+        if tools_jobs_dir.exists():
+            try:
+                files = sorted(
+                    [f for f in tools_jobs_dir.glob("*.json") if f.is_file()],
+                    key=lambda x: x.stat().st_mtime,
+                    reverse=True,
+                )
+                if files:
+                    payload = json.loads(files[0].read_text(encoding="utf-8-sig", errors="replace"))
+                    last_job = {
+                        "job_id": payload.get("job_id") or files[0].stem,
+                        "status": payload.get("status") or "unknown",
+                        "tool": payload.get("tool") or payload.get("target") or "all",
+                        "progress_pct": payload.get("progress_pct"),
+                        "updated_at": payload.get("updated_at") or payload.get("finished_at") or payload.get("started_at"),
+                    }
+            except Exception:
+                last_job = None
+
+        result = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "push": {
+                "alive": bool(health_ok),
+                "pid": health_payload.get("pid"),
+                "score": health_payload.get("score"),
+                "uptime_human": health_payload.get("uptime_human"),
+            },
+            "autorevive": {
+                "running_recently": bool(autorevive_state.get("last_ok_at")),
+                "last_ok_at": autorevive_state.get("last_ok_at"),
+                "last_restart_at": autorevive_state.get("last_restart_at"),
+                "fail_streak": autorevive_state.get("fail_streak"),
+                "restarts": autorevive_state.get("restarts"),
+                "last_error": autorevive_state.get("last_error"),
+            },
+            "tools": {"last_job": last_job},
+        }
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, result, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
 # --- Concurrent Goal Engine (CGE) ---
 
 
@@ -10443,7 +11914,7 @@ class AgentGoalBody(BaseModel):
     ] = None  # auto | provider:model (e.g. "openai:gpt-4.1", "xai:grok-3")
     strict_model: Optional[
         bool
-    ] = True  # True = modelo explícito sin fallback automático
+    ] = True  # True = modelo explÃ­cito sin fallback automÃ¡tico
     sync_config: Optional[bool] = False  # True = usar system prompt/temp de Config IA
     thread_id: Optional[str] = None  # Para persistir hilo conversacional (Agent UI)
     user_id: Optional[str] = None  # Opcional: identificador de usuario/owner
@@ -10457,7 +11928,7 @@ def _agent_goal_mode(mode: str) -> str:
     return "plan_only"
 
 
-# ── Cascada inteligente: Local gratis → API gratis → API paga ──
+# â”€â”€ Cascada inteligente: Local gratis â†’ API gratis â†’ API paga â”€â”€
 # Cada entrada: (provider, model, tier)  tier: "local"=Ollama, "free_api"=tier gratis, "paid_api"=paga
 
 _TASK_PROFILES = {
@@ -10536,13 +12007,13 @@ _TASK_PROFILES = {
 }
 
 _CASCADE_ORDER = [
-    # Tier 0: BEDROCK — configured and available (AWS credentials)
+    # Tier 0: BEDROCK â€” configured and available (AWS credentials)
     ("bedrock", "us.anthropic.claude-haiku-4-5-20251001-v1:0", "paid_api"),
     ("bedrock", "us.anthropic.claude-opus-4-6-v1:0", "paid_api"),
-    # Tier 1: API GRATIS — modelos potentes sin costo
+    # Tier 1: API GRATIS â€” modelos potentes sin costo
     ("gemini", "gemini-2.5-flash", "free_api"),
     ("groq", "llama-3.3-70b-versatile", "free_api"),
-    # Tier 2: API DE PAGO — maxima inteligencia disponible
+    # Tier 2: API DE PAGO â€” maxima inteligencia disponible
     ("openai", "gpt-4.1", "paid_api"),
     ("openai", "gpt-4.1-mini", "paid_api"),
     ("anthropic", "claude-sonnet-4-20250514", "paid_api"),
@@ -10550,12 +12021,12 @@ _CASCADE_ORDER = [
     ("xai", "grok-3", "paid_api"),
     ("mistral", "mistral-large-latest", "paid_api"),
     ("perplexity", "sonar-pro", "paid_api"),
-    # Tier 3: LOCAL — fallback offline (sin internet)
+    # Tier 3: LOCAL â€” fallback offline (sin internet)
     ("ollama", "{local_model}", "local"),
 ]
 
-# Prioridad de especialistas API-first para modo rápido.
-# Se usa solo en auto-route + specialist_routing, sin romper sincronía con Brain.
+# Prioridad de especialistas API-first para modo rÃ¡pido.
+# Se usa solo en auto-route + specialist_routing, sin romper sincronÃ­a con Brain.
 _FAST_SPECIALIST_PRIORITY = {
     "code": [
         "bedrock:us.anthropic.claude-haiku-4-5-20251001-v1:0",
@@ -10732,7 +12203,7 @@ def _get_system_prompt(use_config: bool = False) -> str:
 
 
 def _enrich_with_self_knowledge(goal: str) -> str:
-    """Si la pregunta es sobre ATLAS mismo o requiere planificación, inyecta datos reales."""
+    """Si la pregunta es sobre ATLAS mismo o requiere planificaciÃ³n, inyecta datos reales."""
     keywords = (
         "autodiagnostico",
         "diagnostico",
@@ -10925,7 +12396,7 @@ def _try_single_call(
         if ok and output and output.strip():
             _set_provider_runtime_status(provider_id, None)
             return {"ok": True, "output": output, "ms": ms, "model_used": spec}
-        # Conservar detalle original del proveedor para diagnóstico (auth, quota, modelo inválido, etc.)
+        # Conservar detalle original del proveedor para diagnÃ³stico (auth, quota, modelo invÃ¡lido, etc.)
         err_detail = (output or "").strip() or "%s:%s respuesta vacia o error" % (
             provider_id,
             model_name,
@@ -10950,7 +12421,7 @@ def _direct_model_call(
     enrich: bool = True,
     strict_model: bool = True,
 ) -> dict:
-    """Llamada con cascada inteligente: local → free API → paid API. Si un modelo falla, salta al siguiente."""
+    """Llamada con cascada inteligente: local â†’ free API â†’ paid API. Si un modelo falla, salta al siguiente."""
     if (model_spec or "").strip().lower() in (
         "cascade:ide-agent",
         "cascade",
@@ -11006,7 +12477,7 @@ def _direct_model_call(
                 result["routing_trace"] = trace
                 return result
             skip_reason = result.get("error", "unknown")
-            errors.append("%s:%s → %s" % (provider_id, model_name, skip_reason[:80]))
+            errors.append("%s:%s â†’ %s" % (provider_id, model_name, skip_reason[:80]))
             trace.append(
                 {
                     "event": "fail",
@@ -11106,7 +12577,7 @@ class TradingProxyBody(BaseModel):
 
 @app.post("/api/trading/proxy", tags=["Trading"])
 def api_trading_proxy(body: TradingProxyBody):
-    """Proxy estable para el módulo Trading v4."""
+    """Proxy estable para el mÃ³dulo Trading v4."""
     try:
         prompt = (getattr(body, "prompt", "") or "").strip()
         if not prompt:
@@ -11129,6 +12600,256 @@ def api_trading_proxy(body: TradingProxyBody):
                 "source": "brain",
             },
         }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/kernel/event-bus/publish", tags=["Kernel"])
+def api_kernel_event_bus_publish(body: dict):
+    """Publica un evento en el Event Bus interno.
+
+    Body:
+        {
+            "topic": "memory_update|git_change|api_error|task_complete|...",
+            "payload": {...}  # opcional, se pasa como kwargs
+        }
+    """
+    try:
+        from modules.humanoid import get_humanoid_kernel
+
+        topic = str((body or {}).get("topic") or "").strip()
+        payload = (body or {}).get("payload") or {}
+        if not topic:
+            return {"ok": False, "error": "topic is required"}
+        if not isinstance(payload, dict):
+            return {"ok": False, "error": "payload must be an object"}
+
+        kernel = get_humanoid_kernel()
+        result = kernel.events.publish(topic, payload=payload)
+        return {"ok": True, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+class AtlasAgentRunBody(BaseModel):
+    goal: str
+    model: Optional[str] = None
+    max_steps: Optional[int] = Field(default=None, ge=1, le=100)
+    mode: Optional[str] = None
+    workspace: Optional[str] = None
+    disable_shell: Optional[bool] = None
+    dry_run_tools: Optional[bool] = None
+    approved_tools: List[str] = Field(default_factory=list)
+    approval_overrides: Dict[str, bool] = Field(default_factory=dict)
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if normalized not in ("safe", "aggressive"):
+            raise ValueError("mode must be safe or aggressive")
+        return normalized
+
+
+def _load_atlas_agent_modules():
+    import sys
+
+    agent_dir = BASE_DIR / "tools" / "atlas_agent"
+    if not agent_dir.exists():
+        raise RuntimeError(f"atlas_agent module not found at: {agent_dir}")
+    if str(BASE_DIR) not in sys.path:
+        sys.path.insert(0, str(BASE_DIR))
+
+    from tools.atlas_agent.agent import AtlasAutonomousAgent
+    from tools.atlas_agent.config import AgentConfig
+    from tools.atlas_agent.memory import get_session_summary, list_recent_summaries
+
+    return AtlasAutonomousAgent, AgentConfig, list_recent_summaries, get_session_summary
+
+
+@app.post("/api/agent/autonomous/run", tags=["Agent"])
+def api_agent_autonomous_run(body: AtlasAgentRunBody):
+    """Ejecuta una sesiÃ³n autÃ³noma de atlas_agent y retorna resumen final."""
+    t0 = time.perf_counter()
+    try:
+        goal = (body.goal or "").strip()
+        if not goal:
+            return {"ok": False, "error": "goal_required"}
+
+        AtlasAutonomousAgent, AgentConfig, _, _ = _load_atlas_agent_modules()
+        config = AgentConfig.from_env()
+
+        workspace = Path(body.workspace).resolve() if body.workspace else None
+        if body.disable_shell is None:
+            allow_shell = None
+        else:
+            allow_shell = not bool(body.disable_shell)
+        config = config.with_overrides(
+            model=body.model,
+            max_steps=body.max_steps,
+            workspace=workspace,
+            allow_shell=allow_shell,
+            dry_run_tools=body.dry_run_tools,
+            mode=body.mode,
+        )
+        agent = AtlasAutonomousAgent(
+            config,
+            approval_overrides=body.approval_overrides,
+            approved_tools=body.approved_tools,
+        )
+        result = agent.run(goal)
+        result["api_elapsed_ms"] = int((time.perf_counter() - t0) * 1000)
+        return result
+    except Exception as e:
+        return {
+            "ok": False,
+            "status": "agent_run_error",
+            "error": str(e),
+            "api_elapsed_ms": int((time.perf_counter() - t0) * 1000),
+        }
+
+
+@app.get("/api/agent/autonomous/runs/recent", tags=["Agent"])
+def api_agent_autonomous_runs_recent(limit: int = 20):
+    """Lista sesiones recientes de atlas_agent."""
+    try:
+        _, AgentConfig, list_recent_summaries, _ = _load_atlas_agent_modules()
+        config = AgentConfig.from_env()
+        bounded_limit = max(1, min(int(limit), 100))
+        runs = list_recent_summaries(config.runs_dir, limit=bounded_limit)
+        return {"ok": True, "count": len(runs), "runs": runs}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/agent/autonomous/runs/{session_id}", tags=["Agent"])
+def api_agent_autonomous_run_detail(session_id: str):
+    """Obtiene detalle de una sesiÃ³n de atlas_agent por id."""
+    try:
+        _, AgentConfig, _, get_session_summary = _load_atlas_agent_modules()
+        config = AgentConfig.from_env()
+        summary = get_session_summary(config.runs_dir, session_id)
+        if summary is None:
+            return {"ok": False, "error": "session_not_found", "session_id": session_id}
+        events_path = (config.runs_dir / session_id / "events.jsonl").resolve()
+        return {
+            "ok": True,
+            "session_id": session_id,
+            "summary": summary,
+            "events_path": str(events_path),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e), "session_id": session_id}
+
+
+class ClawdEvidenceBody(BaseModel):
+    source: str = "clawdbot-ai"
+    evidence_type: str = "runtime"
+    message: str
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    token: Optional[str] = None
+
+
+class ClawdActionBody(BaseModel):
+    action_id: str
+    target_repo: str
+    command: str
+    run_snapshot: bool = True
+    timeout_sec: int = Field(default=180, ge=5, le=1800)
+    token: Optional[str] = None
+
+    @field_validator("target_repo")
+    @classmethod
+    def validate_target_repo(cls, value: str) -> str:
+        v = (value or "").strip().lower()
+        if v not in ("panaderia", "vision"):
+            raise ValueError("target_repo must be panaderia or vision")
+        return v
+
+
+def _load_clawd_bridge_module():
+    import sys
+
+    bridge_dir = BASE_DIR / "tools" / "atlas_clawd_bridge"
+    if not bridge_dir.exists():
+        raise RuntimeError(f"atlas_clawd_bridge module not found at: {bridge_dir}")
+    if str(BASE_DIR) not in sys.path:
+        sys.path.insert(0, str(BASE_DIR))
+
+    from tools.atlas_clawd_bridge.bridge import get_bridge
+
+    return get_bridge
+
+
+@app.get("/api/clawd/bridge/status", tags=["Clawd"])
+def api_clawd_bridge_status(
+    run_snapshot: bool = False,
+    x_atlas_core: Optional[str] = Header(default=None, alias="X-Atlas-Core"),
+):
+    """Estado del bridge ClawdBOT + estabilidad de snapshot safe."""
+    try:
+        get_bridge = _load_clawd_bridge_module()
+        bridge = get_bridge()
+        stability = bridge.ensure_stable(
+            run_snapshot=bool(run_snapshot),
+            raise_on_unstable=False,
+        )
+        repos = bridge.repo_access(token=x_atlas_core)
+        return {
+            "ok": True,
+            "stable": bool((stability.get("status") or {}).get("stable")),
+            "stability": stability,
+            "repo_access": repos,
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/clawd/bridge/evidence", tags=["Clawd"])
+def api_clawd_bridge_evidence(
+    body: ClawdEvidenceBody,
+    x_atlas_core: Optional[str] = Header(default=None, alias="X-Atlas-Core"),
+):
+    """Escribe evidencia de ClawdBOT en snapshot_safe_diagnostic.log."""
+    try:
+        get_bridge = _load_clawd_bridge_module()
+        bridge = get_bridge()
+        token = body.token or x_atlas_core
+        result = bridge.write_evidence(
+            source=body.source,
+            evidence_type=body.evidence_type,
+            message=body.message,
+            payload=body.payload,
+            token=token,
+        )
+        return {"ok": True, "data": result}
+    except PermissionError as e:
+        return {"ok": False, "error": "unauthorized", "detail": str(e)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/clawd/bridge/action", tags=["Clawd"])
+def api_clawd_bridge_action(
+    body: ClawdActionBody,
+    x_atlas_core: Optional[str] = Header(default=None, alias="X-Atlas-Core"),
+):
+    """Ejecuta acciÃ³n en panaderÃ­a/visiÃ³n solo si snapshot safe confirma estabilidad."""
+    try:
+        get_bridge = _load_clawd_bridge_module()
+        bridge = get_bridge()
+        token = body.token or x_atlas_core
+        result = bridge.execute_action(
+            action_id=body.action_id,
+            target_repo=body.target_repo,
+            command=body.command,
+            token=token,
+            run_snapshot=bool(body.run_snapshot),
+            timeout_sec=body.timeout_sec,
+        )
+        return result
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -11175,7 +12896,7 @@ def agent_goal(body: AgentGoalBody):
     strict_model = bool(body.strict_model) if body.strict_model is not None else True
     mode = _agent_goal_mode(body.mode or "plan_only")
     prefer_fast = bool(body.fast) if body.fast is not None else True
-    # Respuesta directa de LLM solo en plan_only con provider:model explícito.
+    # Respuesta directa de LLM solo en plan_only con provider:model explÃ­cito.
     # En modos auto/controlled SIEMPRE usamos orquestador para decidir y ejecutar.
     if (
         mode == "plan_only"
@@ -11241,8 +12962,8 @@ def agent_goal(body: AgentGoalBody):
             return _attach_thread(resp)
         err_detail = result.get("error") or result.get("output") or "Error desconocido"
         err_l = str(err_detail).lower()
-        # No ocultar credenciales inválidas detrás de fallback automático.
-        # Si el modelo explícito falla por auth/API key, devolvemos error directo y accionable.
+        # No ocultar credenciales invÃ¡lidas detrÃ¡s de fallback automÃ¡tico.
+        # Si el modelo explÃ­cito falla por auth/API key, devolvemos error directo y accionable.
         auth_tokens = (
             "authentication",
             "unauthorized",
@@ -11264,7 +12985,7 @@ def agent_goal(body: AgentGoalBody):
                     err_detail,
                     resumen=err_detail,
                     siguientes_pasos=[
-                        "Credencial inválida o no autorizada para el proveedor seleccionado. Actualiza /api/brain/credentials y reintenta."
+                        "Credencial invÃ¡lida o no autorizada para el proveedor seleccionado. Actualiza /api/brain/credentials y reintenta."
                     ],
                 )
             )
@@ -11281,12 +13002,12 @@ def agent_goal(body: AgentGoalBody):
                     err_detail,
                     resumen=err_detail,
                     siguientes_pasos=[
-                        "Strict model activo: desactívalo para permitir fallback automático entre proveedores."
+                        "Strict model activo: desactÃ­valo para permitir fallback automÃ¡tico entre proveedores."
                     ],
                 )
             )
 
-        # Fallback resiliente: si modelo explícito falla y strict_model=False, intentar cascada auto.
+        # Fallback resiliente: si modelo explÃ­cito falla y strict_model=False, intentar cascada auto.
         fallback = _direct_model_call(
             "auto",
             goal_text,
@@ -11295,7 +13016,7 @@ def agent_goal(body: AgentGoalBody):
         )
         if fallback.get("ok"):
             ms2 = int((time.perf_counter() - t0) * 1000)
-            note = "Fallback automático activado: modelo seleccionado falló, se usó cascada."
+            note = "Fallback automÃ¡tico activado: modelo seleccionado fallÃ³, se usÃ³ cascada."
             short_err = str(err_detail)[:140]
             data = {
                 "output": fallback.get("output"),
@@ -11422,7 +13143,7 @@ def agent_goal(body: AgentGoalBody):
                 data,
                 ms,
                 None,
-                resumen="Reviewer rechazó; replan sugerido",
+                resumen="Reviewer rechazÃ³; replan sugerido",
                 siguientes_pasos=["Ajuste objetivo o replan"],
             )
         ms = int((time.perf_counter() - t0) * 1000)
@@ -11490,7 +13211,7 @@ def agent_goal(body: AgentGoalBody):
                     step_descs.append(d[:80])
                 resumen = "Plan (%d pasos):\n%s" % (
                     len(steps_raw),
-                    "\n".join("• " + d for d in step_descs),
+                    "\n".join("â€¢ " + d for d in step_descs),
                 )
             else:
                 resumen = result.get("plan") or "Objetivo procesado"
@@ -11503,7 +13224,7 @@ def agent_goal(body: AgentGoalBody):
         siguientes = []
         if mode == "execute_controlled":
             siguientes = [
-                "Ejecute cada paso vía POST /agent/step/execute con approve=true"
+                "Ejecute cada paso vÃ­a POST /agent/step/execute con approve=true"
             ]
         elif result.get("message"):
             siguientes = [result.get("message")]
@@ -11879,7 +13600,7 @@ def agent_benchmark():
         ]
         weaknesses = []
         if not latencies:
-            weaknesses.append("Pocas métricas de latencia registradas")
+            weaknesses.append("Pocas mÃ©tricas de latencia registradas")
         gaps = [
             "Embeddings opcional pendiente",
             "Adaptive routing por modelo en refinamiento",
@@ -11936,7 +13657,7 @@ def agent_system_intel():
                 bottlenecks.append({"path": name, "avg_ms": round(avg, 0)})
         suggestions = []
         if repeated:
-            suggestions.append("Revisar errores repetidos y añadir fallback o retry")
+            suggestions.append("Revisar errores repetidos y aÃ±adir fallback o retry")
         if bottlenecks:
             suggestions.append(
                 "Revisar endpoints con latencia >5s para optimizar o cache"
@@ -12301,7 +14022,7 @@ class FaceCheckBody(BaseModel):
 
 @app.post("/face/check")
 def face_check_endpoint(body: FaceCheckBody):
-    """Detección de rostro en imagen (PNG/JPEG en base64). Devuelve { ok, data: { faces_detected, message }, ms, error }."""
+    """DetecciÃ³n de rostro en imagen (PNG/JPEG en base64). Devuelve { ok, data: { faces_detected, message }, ms, error }."""
     t0 = time.perf_counter()
     try:
         import base64
@@ -12331,7 +14052,7 @@ def face_check_endpoint(body: FaceCheckBody):
 
 @app.get("/face/status")
 def face_status_endpoint():
-    """Estado del módulo de reconocimiento facial."""
+    """Estado del mÃ³dulo de reconocimiento facial."""
     t0 = time.perf_counter()
     try:
         from modules.humanoid.face.detector import _check_deps, is_available
@@ -12390,7 +14111,7 @@ def _professional_resp(
     archivos: Optional[list] = None,
     siguientes_pasos: Optional[list] = None,
 ) -> dict:
-    """Respuesta profesional: resumen, resultado técnico, evidencia, siguientes pasos."""
+    """Respuesta profesional: resumen, resultado tÃ©cnico, evidencia, siguientes pasos."""
     out = _std_resp(ok, data, ms, error)
     if resumen:
         out["resumen"] = resumen
@@ -12421,7 +14142,7 @@ def vision_analyze(body: VisionAnalyzeBody):
         resumen = (
             f"Imagen analizada: {len(result.get('extracted_text', ''))} chars texto, {len(result.get('entities', []))} entidades"
             if ok
-            else "Análisis fallido"
+            else "AnÃ¡lisis fallido"
         )
         siguientes = (
             result.get("acciones_sugeridas") or result.get("suggested_actions") or []
@@ -12519,7 +14240,7 @@ def api_vision_ubiq_discover(body: Optional[VisionUbiqDiscoverBody] = None):
 
 @app.get("/api/vision/ubiq/cameras", tags=["Vision"])
 def api_vision_ubiq_cameras(limit: int = 200):
-    """Lista cámaras descubiertas/registradas."""
+    """Lista cÃ¡maras descubiertas/registradas."""
     t0 = time.perf_counter()
     try:
         from modules.humanoid.vision.ubiq import ensure_db, list_cameras
@@ -13360,7 +15081,7 @@ def memory_summarize(body: MemorySummarizeBody):
                         )
             except Exception:
                 pass
-        text = f"Resumen: {len(tasks)} tareas, {len(summaries)} resúmenes previos."
+        text = f"Resumen: {len(tasks)} tareas, {len(summaries)} resÃºmenes previos."
         add_summary(body.thread_id, text)
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, {"summary_preview": text}, ms, None)
@@ -13409,13 +15130,13 @@ def memory_snapshot():
         return _std_resp(False, None, ms, str(e))
 
 
-# ── Brazos subordinados: gestor de procesos ───────────────────────────────────
+# â”€â”€ Brazos subordinados: gestor de procesos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-_ARM_PROCS: dict = {}  # arm_id → list[subprocess.Popen]
+_ARM_PROCS: dict = {}  # arm_id â†’ list[subprocess.Popen]
 
 _ARM_DEFS: dict = {
     "panaderia": {
-        "name": "Rauli Panadería",
+        "name": "Rauli PanaderÃ­a",
         "frontend_port": 5173,
         "api_port": 3001,
         "processes": [
@@ -13630,7 +15351,7 @@ async def arms_stop(arm_id: str):
 
 @app.get("/arms/{arm_id}/ping", tags=["Brazos v4"])
 async def arms_ping(arm_id: str):
-    """Verifica si el frontend del brazo responde (check de puerto server-side, sin ambigüedad IPv4/IPv6)."""
+    """Verifica si el frontend del brazo responde (check de puerto server-side, sin ambigÃ¼edad IPv4/IPv6)."""
     import socket
 
     t0 = time.perf_counter()
@@ -13661,3 +15382,58 @@ async def arms_ping(arm_id: str):
         ms,
         None,
     )
+
+
+def _dedupe_http_routes() -> None:
+    """
+    Keep only the first registered HTTP route for each (path, methods).
+    This prevents ambiguous contracts when legacy local endpoints and
+    included routers expose the same path/method.
+    """
+    log = logging.getLogger("atlas.http_api.routes")
+    seen: set[tuple[str, tuple[str, ...]]] = set()
+    deduped = []
+    removed = []
+    for route in app.router.routes:
+        methods = getattr(route, "methods", None)
+        if not methods:
+            deduped.append(route)
+            continue
+        method_key = tuple(sorted(m for m in methods if m not in {"HEAD", "OPTIONS"}))
+        if not method_key:
+            deduped.append(route)
+            continue
+        key = (str(getattr(route, "path", "")), method_key)
+        if key in seen:
+            removed.append(
+                {
+                    "path": key[0],
+                    "methods": list(method_key),
+                    "endpoint": getattr(getattr(route, "endpoint", None), "__name__", "?"),
+                    "module": getattr(getattr(route, "endpoint", None), "__module__", "?"),
+                }
+            )
+            continue
+        seen.add(key)
+        deduped.append(route)
+
+    if removed:
+        log.warning(
+            "Deduplicated %d HTTP routes to preserve canonical contracts.",
+            len(removed),
+        )
+        for item in removed[:20]:
+            log.warning(
+                "route dedup: %s %s -> %s (%s)",
+                ",".join(item["methods"]),
+                item["path"],
+                item["endpoint"],
+                item["module"],
+            )
+    app.router.routes = deduped
+
+
+_dedupe_http_routes()
+
+
+

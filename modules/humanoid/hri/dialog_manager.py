@@ -207,7 +207,6 @@ class DialogManager:
 
     def _get_response(self, intent_type: IntentType) -> str:
         """Obtiene una respuesta variada."""
-        import random
 
         responses = self.RESPONSES.get(intent_type, self.RESPONSES[IntentType.UNKNOWN])
 

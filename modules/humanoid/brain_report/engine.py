@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 REPORT_DIR = Path(os.getenv("BRAIN_REPORT_DIR", "C:\\ATLAS_PUSH\\snapshots\\brain"))
 

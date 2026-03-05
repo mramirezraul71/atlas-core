@@ -19,7 +19,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/libro-vida", tags=["Libro de Vida"])
 

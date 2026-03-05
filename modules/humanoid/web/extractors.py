@@ -1,7 +1,7 @@
 """Extractors: text from page, links, etc. (used with navigator)."""
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Dict, List
 
 
 def extract_links_from_html(html: str, base_url: str = "") -> List[Dict[str, str]]:

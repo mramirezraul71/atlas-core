@@ -4,7 +4,7 @@ Brain API Routes - IA y Razonamiento
 
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from database.models import create_tables
 from fastapi import APIRouter, HTTPException

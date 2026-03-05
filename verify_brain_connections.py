@@ -8,7 +8,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from typing import Any, Dict, List, Tuple
+from typing import Tuple
 
 
 def test_module(name: str, test_fn) -> Tuple[bool, str]:
@@ -41,7 +41,7 @@ def verify_all():
         state = SharedState()
         state.write("test_key", "test_value")
         assert state.read("test_key") == "test_value"
-        return f"Threading bus OK, SharedState OK"
+        return "Threading bus OK, SharedState OK"
 
     ok, msg = test_module("medulla", test_medulla)
     print(f"  {'✅' if ok else '❌'} MedullaAtlas + SharedState: {msg}")
@@ -57,19 +57,19 @@ def verify_all():
         from modules.humanoid.cortex.frontal import TaskPlanner
 
         tp = TaskPlanner()
-        return f"TaskPlanner initialized"
+        return "TaskPlanner initialized"
 
     def test_decision_maker():
         from modules.humanoid.cortex.frontal import DecisionMaker
 
         dm = DecisionMaker()
-        return f"DecisionMaker initialized"
+        return "DecisionMaker initialized"
 
     def test_inhibitory_control():
         from modules.humanoid.cortex.frontal import InhibitoryControl
 
         ic = InhibitoryControl()
-        return f"InhibitoryControl initialized"
+        return "InhibitoryControl initialized"
 
     for name, fn in [
         ("TaskPlanner", test_task_planner),
@@ -90,19 +90,19 @@ def verify_all():
         from modules.humanoid.cortex.parietal import SensoryFusion
 
         sf = SensoryFusion()
-        return f"SensoryFusion initialized"
+        return "SensoryFusion initialized"
 
     def test_spatial_map():
         from modules.humanoid.cortex.parietal import SpatialMap
 
         sm = SpatialMap()
-        return f"SpatialMap initialized"
+        return "SpatialMap initialized"
 
     def test_body_schema():
         from modules.humanoid.cortex.parietal import BodySchema
 
         bs = BodySchema()
-        return f"BodySchema initialized"
+        return "BodySchema initialized"
 
     for name, fn in [
         ("SensoryFusion", test_sensory_fusion),
@@ -123,13 +123,13 @@ def verify_all():
         from modules.humanoid.cortex.temporal import AudioProcessor
 
         ap = AudioProcessor()
-        return f"AudioProcessor initialized"
+        return "AudioProcessor initialized"
 
     def test_language_understanding():
         from modules.humanoid.cortex.temporal import LanguageUnderstanding
 
         lu = LanguageUnderstanding()
-        return f"LanguageUnderstanding initialized"
+        return "LanguageUnderstanding initialized"
 
     def test_episodic_recall():
         from modules.humanoid.cortex.temporal import EpisodicRecall
@@ -137,7 +137,7 @@ def verify_all():
 
         hippo = HippoAPI()
         er = EpisodicRecall(hippo_api=hippo)
-        return f"EpisodicRecall connected to HippoAPI"
+        return "EpisodicRecall connected to HippoAPI"
 
     for name, fn in [
         ("AudioProcessor", test_audio_processor),
@@ -158,19 +158,19 @@ def verify_all():
         from modules.humanoid.cortex.occipital import VisionPipeline
 
         vp = VisionPipeline()
-        return f"VisionPipeline initialized"
+        return "VisionPipeline initialized"
 
     def test_depth_estimation():
         from modules.humanoid.cortex.occipital import DepthEstimation
 
         de = DepthEstimation()
-        return f"DepthEstimation initialized"
+        return "DepthEstimation initialized"
 
     def test_object_recognition():
         from modules.humanoid.cortex.occipital import ObjectRecognition
 
         orec = ObjectRecognition()
-        return f"ObjectRecognition initialized"
+        return "ObjectRecognition initialized"
 
     for name, fn in [
         ("VisionPipeline", test_vision_pipeline),
@@ -191,19 +191,19 @@ def verify_all():
         from modules.humanoid.limbic import GoalManager
 
         gm = GoalManager()
-        return f"GoalManager initialized"
+        return "GoalManager initialized"
 
     def test_reward_engine():
         from modules.humanoid.limbic import RewardEngine
 
         re = RewardEngine()
-        return f"RewardEngine initialized"
+        return "RewardEngine initialized"
 
     def test_state_regulator():
         from modules.humanoid.limbic import StateRegulator
 
         sr = StateRegulator()
-        return f"StateRegulator initialized"
+        return "StateRegulator initialized"
 
     for name, fn in [
         ("GoalManager", test_goal_manager),
@@ -228,7 +228,7 @@ def verify_all():
         em = EpisodicMemory()
         sm = SemanticMemory()
         c = Consolidator(em, sm)
-        return f"HippoAPI + EpisodicMemory + SemanticMemory + Consolidator"
+        return "HippoAPI + EpisodicMemory + SemanticMemory + Consolidator"
 
     ok, msg = test_module("hippo", test_hippo_api)
     print(f"  {'✅' if ok else '❌'} HippoAPI: {msg}")
@@ -244,25 +244,25 @@ def verify_all():
         from modules.humanoid.brainstem import VitalsMonitor
 
         vm = VitalsMonitor()
-        return f"VitalsMonitor initialized"
+        return "VitalsMonitor initialized"
 
     def test_safety_policy():
         from modules.humanoid.brainstem import SafetyPolicy
 
         sp = SafetyPolicy()
-        return f"SafetyPolicy initialized"
+        return "SafetyPolicy initialized"
 
     def test_global_state():
         from modules.humanoid.brainstem import GlobalState
 
         gs = GlobalState()
-        return f"GlobalState initialized"
+        return "GlobalState initialized"
 
     def test_watchdog():
         from modules.humanoid.brainstem import Watchdog
 
         wd = Watchdog()
-        return f"Watchdog initialized"
+        return "Watchdog initialized"
 
     for name, fn in [
         ("VitalsMonitor", test_vitals_monitor),
@@ -284,13 +284,13 @@ def verify_all():
         from modules.humanoid.basal import ActionSelector
 
         asel = ActionSelector()
-        return f"ActionSelector initialized"
+        return "ActionSelector initialized"
 
     def test_inhibitor():
         from modules.humanoid.basal import Inhibitor
 
         inh = Inhibitor()
-        return f"Inhibitor initialized"
+        return "Inhibitor initialized"
 
     for name, fn in [
         ("ActionSelector", test_action_selector),
@@ -310,13 +310,13 @@ def verify_all():
         from modules.humanoid.motor import TrajectoryPlanner
 
         tp = TrajectoryPlanner()
-        return f"TrajectoryPlanner initialized"
+        return "TrajectoryPlanner initialized"
 
     def test_motor_controller():
         from modules.humanoid.motor import MotorController
 
         mc = MotorController()
-        return f"MotorController initialized"
+        return "MotorController initialized"
 
     def test_motor_interface():
         from modules.humanoid.motor import (MotorController, MotorInterface,
@@ -325,7 +325,7 @@ def verify_all():
         tp = TrajectoryPlanner()
         mc = MotorController()
         mi = MotorInterface(tp, mc)
-        return f"MotorInterface connected to Planner+Controller"
+        return "MotorInterface connected to Planner+Controller"
 
     for name, fn in [
         ("TrajectoryPlanner", test_trajectory_planner),
@@ -352,7 +352,7 @@ def verify_all():
         rl = ReinforcementLearning()
         nlf = NaturalLanguageFeedback()
         api = LearningAPI()
-        return f"LearningAPI + Demonstration + RL + NLFeedback"
+        return "LearningAPI + Demonstration + RL + NLFeedback"
 
     ok, msg = test_module("learning", test_learning_api)
     print(f"  {'✅' if ok else '❌'} LearningAPI: {msg}")
@@ -365,10 +365,10 @@ def verify_all():
     print("-" * 50)
 
     def test_cognitive_api():
-        from modules.humanoid.cognitive.api import cognitive_status, router
+        from modules.humanoid.cognitive.api import cognitive_status
 
         status = cognitive_status()
-        return f"API router + status endpoint OK"
+        return "API router + status endpoint OK"
 
     ok, msg = test_module("cognitive_api", test_cognitive_api)
     print(f"  {'✅' if ok else '❌'} Cognitive API: {msg}")

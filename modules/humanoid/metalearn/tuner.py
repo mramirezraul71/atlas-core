@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
-from . import db
 
 
 def _allow_autotune() -> bool:

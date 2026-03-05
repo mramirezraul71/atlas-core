@@ -81,6 +81,21 @@ export default {
               <div class="stat-card-value accent" id="h-pid">--</div>
               <div class="stat-card-sub">Proceso Atlas</div>
             </div>
+            <div class="stat-card">
+              <div class="stat-card-label">AutoRevive</div>
+              <div class="stat-card-value" id="h-ar-running">--</div>
+              <div class="stat-card-sub" id="h-ar-pids">--</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-label">Último Reinicio</div>
+              <div class="stat-card-value" id="h-ar-restart">--</div>
+              <div class="stat-card-sub" id="h-ar-count">--</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-label">Último Error</div>
+              <div class="stat-card-value" id="h-ar-error">--</div>
+              <div class="stat-card-sub" id="h-ar-streak">--</div>
+            </div>
           </div>
 
           <div class="section-title">
@@ -98,8 +113,17 @@ export default {
     `;
 
     _fetchAndRender(container);
-    poll(POLL_ID, '/health', 6000, (data, err) => {
-      if (data) _render(container, data);
+    poll(POLL_ID, '/health', 6000, async (data, err) => {
+      if (data) {
+        _render(container, data);
+        try {
+          const rAuto = await fetch('/api/push/autorevive/status');
+          const ar = await rAuto.json().catch(() => null);
+          _renderAutoRevive(container, ar);
+        } catch (_) {
+          _renderAutoRevive(container, null);
+        }
+      }
     });
   },
 
@@ -109,9 +133,17 @@ export default {
 
 async function _fetchAndRender(container) {
   try {
-    const r = await fetch('/health');
-    const data = await r.json();
+    const [rHealth, rAuto] = await Promise.all([
+      fetch('/health'),
+      fetch('/api/push/autorevive/status').catch(() => null),
+    ]);
+    const data = await rHealth.json();
+    let ar = null;
+    if (rAuto && rAuto.ok) {
+      ar = await rAuto.json().catch(() => null);
+    }
     _render(container, data);
+    _renderAutoRevive(container, ar);
   } catch (e) {
     const grid = container.querySelector('#checks-grid');
     if (grid) grid.innerHTML = `<div class="check-item error" style="grid-column:1/-1"><span style="color:var(--accent-red);font-size:12px">Error: ${_esc(e.message)}</span></div>`;
@@ -181,6 +213,34 @@ function _render(container, data) {
   }).join('');
 
   set('health', { score, ok: data.ok });
+}
+
+function _renderAutoRevive(container, autoData) {
+  const d = autoData && (autoData.data || autoData);
+  if (!d) {
+    _txt(container, '#h-ar-running', '--');
+    _txt(container, '#h-ar-pids', '--');
+    _txt(container, '#h-ar-restart', '--');
+    _txt(container, '#h-ar-count', '--');
+    _txt(container, '#h-ar-error', '--');
+    _txt(container, '#h-ar-streak', '--');
+    return;
+  }
+  const running = !!d.running;
+  const pids = Array.isArray(d.pids) ? d.pids.join(', ') : '--';
+  const lastRestart = d.last_restart_at ? new Date(d.last_restart_at).toLocaleString() : 'nunca';
+  const restarts = d.restarts !== undefined && d.restarts !== null ? String(d.restarts) : '--';
+  const lastError = d.last_error ? String(d.last_error).slice(0, 40) : 'sin error';
+  const failStreak = d.fail_streak !== undefined && d.fail_streak !== null ? String(d.fail_streak) : '--';
+
+  _txt(container, '#h-ar-running', running ? 'ACTIVO' : 'INACTIVO');
+  const runEl = container.querySelector('#h-ar-running');
+  if (runEl) runEl.style.color = running ? 'var(--accent-green)' : 'var(--accent-red)';
+  _txt(container, '#h-ar-pids', pids || '--');
+  _txt(container, '#h-ar-restart', lastRestart);
+  _txt(container, '#h-ar-count', `reinicios: ${restarts}`);
+  _txt(container, '#h-ar-error', lastError);
+  _txt(container, '#h-ar-streak', `fail_streak: ${failStreak}`);
 }
 
 function _checkOk(val) {

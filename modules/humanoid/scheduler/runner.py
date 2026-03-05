@@ -7,9 +7,8 @@ import logging
 import os
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 RUNNER_TIMEOUT_SEC = 20
 _scheduler_actor = "scheduler"

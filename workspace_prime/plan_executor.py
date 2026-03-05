@@ -147,7 +147,7 @@ class PlanExecutor:
                         break
                     attempts += 1
                     if attempts < max_attempts:
-                        print(f"   ↻ Reintentando...")
+                        print("   ↻ Reintentando...")
                         await asyncio.sleep(1)
                 except Exception as e:
                     result = {"success": False, "error": str(e)}

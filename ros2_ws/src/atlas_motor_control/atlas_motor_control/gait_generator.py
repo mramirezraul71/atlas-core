@@ -9,7 +9,6 @@ Architecture references:
 - RoboParty / Roboto Origin full-stack bipedal locomotion
 """
 import math
-import time
 
 import rclpy
 from rclpy.node import Node

@@ -126,9 +126,7 @@ def analyze_scene(
     }
 
     try:
-        import io
 
-        from PIL import Image
 
         from modules.humanoid.screen.ocr import run_ocr
 

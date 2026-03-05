@@ -5,10 +5,8 @@ Vision, Object Detection (YOLO bridge), SLAM placeholder.
 import json
 import os
 import sys
-import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-import atlas_ros2_lite as rclpy
 from atlas_ros2_lite import (Node, make_bool, make_header, make_pose_stamped,
                              make_string)
 

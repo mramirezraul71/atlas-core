@@ -4,8 +4,7 @@ from __future__ import annotations
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 # Backoff por tipo de heal: evita repetición agresiva cuando el servicio tarda en recuperarse.
 # Configurable via env sin tocar código: ANS_HEAL_BACKOFF_SEC=0 desactiva el backoff.
@@ -139,7 +138,6 @@ def _run_full(timeout_sec: int) -> Dict[str, Any]:
     from modules.humanoid.ans.checks import _register_all
 
     _register_all()
-    import modules.humanoid.ans.heals  # ensure heals registered
     from modules.humanoid.ans.brain_link import generate_summary
     from modules.humanoid.ans.evidence import capture_evidence
     from modules.humanoid.ans.incident import (add_action, create_incident,

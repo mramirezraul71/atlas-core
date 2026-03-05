@@ -15,7 +15,6 @@ Comandos de voz:
 """
 
 import os
-import subprocess
 import sys
 
 # Asegurar que el path está configurado

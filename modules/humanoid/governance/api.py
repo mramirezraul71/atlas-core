@@ -134,8 +134,7 @@ def governance_emergency(
         from modules.humanoid.governance.audit import audit_emergency_change
         from modules.humanoid.governance.notifier import \
             notify_emergency_change
-        from modules.humanoid.governance.state import (get_emergency_stop,
-                                                       set_emergency_stop)
+        from modules.humanoid.governance.state import (set_emergency_stop)
 
         success = set_emergency_stop(body.enable, reason=body.reason or "", actor="api")
         audit_emergency_change(body.enable, body.reason or "", "api", success)

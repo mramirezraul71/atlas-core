@@ -25,7 +25,6 @@ Seguridad:
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import sys
 import time
@@ -318,7 +317,7 @@ def main() -> int:
         print(
             f"  [DRY RUN] Se liberarían {_fmt(result['freed_bytes'])} en {result['removed']} elementos."
         )
-        print(f"  → Ejecuta con --execute para aplicar.\n")
+        print("  → Ejecuta con --execute para aplicar.\n")
     else:
         icon = "✅" if result["errors"] == 0 else "⚠️ "
         print(

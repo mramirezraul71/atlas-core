@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -14,6 +15,7 @@ _playwright = None
 _pw = None
 _browser = None
 _page = None
+_owner_thread_id = None
 _missing_deps: List[str] = []
 
 
@@ -74,14 +76,21 @@ def _ensure_session(headless: bool = True) -> Dict[str, Any]:
             "error": "playwright not installed",
             "missing_deps": _missing_deps,
         }
-    global _pw, _browser, _page
-    if _page is not None:
-        return {"ok": True}
+    global _pw, _browser, _page, _owner_thread_id
+    current_tid = threading.get_ident()
+    # Always recreate a fresh session per operation.
+    # Playwright sync objects are thread-affine and the API runs threaded workers.
+    if _page is not None or _browser is not None or _pw is not None:
+        try:
+            close()
+        except Exception:
+            pass
     try:
         # sync_playwright().start() -> Playwright (con .stop()).
         _pw = _playwright().start()  # type: ignore[union-attr]
         _browser = _pw.chromium.launch(headless=headless)
         _page = _browser.new_page()
+        _owner_thread_id = current_tid
         return {"ok": True}
     except Exception as e:
         try:
@@ -134,8 +143,11 @@ def open_url(
 
 
 def click(selector: str, timeout_ms: int = 5000) -> Dict[str, Any]:
-    if not is_available() or _page is None:
-        return {"ok": False, "error": "no session or playwright missing"}
+    if not is_available():
+        return {"ok": False, "error": "playwright not installed"}
+    s = _ensure_session()
+    if not s.get("ok") or _page is None:
+        return {"ok": False, "error": s.get("error") or "no session"}
     try:
         _page.click(selector, timeout=timeout_ms)
         _audit("click", True, {"selector": selector})
@@ -146,8 +158,11 @@ def click(selector: str, timeout_ms: int = 5000) -> Dict[str, Any]:
 
 
 def fill(selector: str, value: str, timeout_ms: int = 5000) -> Dict[str, Any]:
-    if not is_available() or _page is None:
-        return {"ok": False, "error": "no session or playwright missing"}
+    if not is_available():
+        return {"ok": False, "error": "playwright not installed"}
+    s = _ensure_session()
+    if not s.get("ok") or _page is None:
+        return {"ok": False, "error": s.get("error") or "no session"}
     try:
         _page.fill(selector, value, timeout=timeout_ms)
         _audit("fill", True, {"selector": selector})
@@ -158,8 +173,11 @@ def fill(selector: str, value: str, timeout_ms: int = 5000) -> Dict[str, Any]:
 
 
 def extract_text() -> Dict[str, Any]:
-    if not is_available() or _page is None:
-        return {"ok": False, "text": "", "error": "no session"}
+    if not is_available():
+        return {"ok": False, "text": "", "error": "playwright not installed"}
+    s = _ensure_session()
+    if not s.get("ok") or _page is None:
+        return {"ok": False, "text": "", "error": s.get("error") or "no session"}
     try:
         from .extractors import extract_text_from_html
 
@@ -172,8 +190,11 @@ def extract_text() -> Dict[str, Any]:
 
 
 def screenshot(path: Optional[str] = None) -> Dict[str, Any]:
-    if not is_available() or _page is None:
-        return {"ok": False, "path": "", "error": "no session"}
+    if not is_available():
+        return {"ok": False, "path": "", "error": "playwright not installed"}
+    s = _ensure_session()
+    if not s.get("ok") or _page is None:
+        return {"ok": False, "path": "", "error": s.get("error") or "no session"}
     try:
         if path is None:
             path = str(Path(os.getenv("TEMP", ".")) / "atlas_web_screenshot.png")
@@ -189,8 +210,11 @@ def configure_page(
     viewport: Optional[Dict[str, int]] = None, user_agent: Optional[str] = None
 ) -> Dict[str, Any]:
     """Configure current page: viewport size and/or user agent. Spec: configure page."""
-    if not is_available() or _page is None:
-        return {"ok": False, "error": "no session"}
+    if not is_available():
+        return {"ok": False, "error": "playwright not installed"}
+    s = _ensure_session()
+    if not s.get("ok") or _page is None:
+        return {"ok": False, "error": s.get("error") or "no session"}
     try:
         if viewport:
             _page.set_viewport_size(viewport)
@@ -208,7 +232,7 @@ def configure_page(
 
 
 def close() -> None:
-    global _pw, _browser, _page
+    global _pw, _browser, _page, _owner_thread_id
     if _browser:
         try:
             _browser.close()
@@ -222,6 +246,7 @@ def close() -> None:
         except Exception:
             pass
     _pw = None
+    _owner_thread_id = None
 
 
 def run_steps(

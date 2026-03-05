@@ -4,12 +4,11 @@ Identifica patrones que causan que el agente no termine las tareas
 """
 from __future__ import annotations
 
-import json
 import logging
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 _log = logging.getLogger("atlas.cycle_analysis")
 
@@ -415,7 +414,7 @@ if __name__ == "__main__":
 
     # Obtener resumen
     summary = detector.get_cycle_summary()
-    print(f"\nResumen del análisis:")
+    print("\nResumen del análisis:")
     print(f"Iteraciones totales: {summary['total_iterations']}")
     print(f"Ciclos detectados: {summary['detected_cycles']}")
     print(f"Indicadores comunes: {summary['most_common_indicators']}")

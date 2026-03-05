@@ -1,4 +1,3 @@
-import asyncio
 import json
 
 from browser_hands import BrowserHands

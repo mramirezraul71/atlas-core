@@ -4,9 +4,8 @@ para uso desde el agente workspace de Atlas
 """
 
 import json
-import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import requests
 
@@ -263,7 +262,7 @@ class WorkspaceToolsIntegration:
 
             # Obtener workflows via API (requiere autenticación)
             response = requests.get(
-                f"http://localhost:5678/api/v1/workflows", timeout=5
+                "http://localhost:5678/api/v1/workflows", timeout=5
             )
             if response.status_code == 200:
                 workflows = response.json().get("data", [])
@@ -303,7 +302,7 @@ class WorkspaceToolsIntegration:
             }
 
             response = requests.post(
-                f"http://localhost:5678/api/v1/workflows", json=workflow_data, timeout=5
+                "http://localhost:5678/api/v1/workflows", json=workflow_data, timeout=5
             )
             if response.status_code == 201:
                 workflow = response.json().get("data", {})

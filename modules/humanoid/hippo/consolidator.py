@@ -8,7 +8,6 @@ Analogo biologico: Proceso de consolidacion durante el sueno
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from collections import defaultdict
@@ -16,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
 from .episodic_memory import EpisodicMemory
-from .schemas import Concept, Episode, Outcome, Relation
+from .schemas import Episode, Outcome
 from .semantic_memory import SemanticMemory
 
 logger = logging.getLogger(__name__)

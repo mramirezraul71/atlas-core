@@ -5,7 +5,7 @@ import os
 import uuid
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 from . import db
 

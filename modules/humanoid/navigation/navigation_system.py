@@ -15,8 +15,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from .controller import ControlCommand, ControllerConfig, PathController
 from .costmap import Costmap2D, CostmapConfig
 from .localization import Localizer, Odometry, PoseEstimate
-from .planner import Path, PathPlanner, Waypoint
-from .recovery import RecoveryBehavior, RecoveryManager
+from .planner import Path, PathPlanner
+from .recovery import RecoveryManager
 from .slam import ScanData, SLAMConfig, SLAMEngine, SLAMMode
 
 _log = logging.getLogger("humanoid.navigation.navigation_system")

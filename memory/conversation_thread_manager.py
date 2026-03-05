@@ -6,7 +6,6 @@ Sistema de autoprogramación para llevar el hilo de todas las conversaciones
 
 import hashlib
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional

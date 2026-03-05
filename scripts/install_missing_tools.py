@@ -5,9 +5,7 @@ Instalación de herramientas faltantes para Atlas
 - Appsmith (Interfaz visual)
 """
 
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 
@@ -210,9 +208,9 @@ def main():
     create_integration_script()
 
     print("\n📊 Resumen:")
-    print(f"✅ Mem0: Ya instalado")
-    print(f"✅ Composio: Ya instalado")
-    print(f"✅ Ollama: Ya instalado")
+    print("✅ Mem0: Ya instalado")
+    print("✅ Composio: Ya instalado")
+    print("✅ Ollama: Ya instalado")
     print(
         f"{'✅' if ha_success else '❌'} Home Assistant: {'Instalado' if ha_success else 'Falló'}"
     )

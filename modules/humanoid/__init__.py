@@ -219,6 +219,14 @@ def get_humanoid_kernel() -> Kernel:
     global _humanoid_kernel
     if _humanoid_kernel is None:
         _humanoid_kernel = create_humanoid_kernel()
+        try:
+            from modules.humanoid.kernel.autonomy_event_flow import \
+                bootstrap_autonomy_event_flow
+
+            bootstrap_autonomy_event_flow(_humanoid_kernel.events)
+        except Exception:
+            # Event flow bootstrap must never block kernel startup.
+            pass
     return _humanoid_kernel
 
 

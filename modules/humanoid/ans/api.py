@@ -1201,7 +1201,6 @@ _voice_process = None
 def ans_voice_status():
     """Estado del asistente de voz interactivo."""
     global _voice_process
-    import subprocess
 
     running = False
     if _voice_process is not None:

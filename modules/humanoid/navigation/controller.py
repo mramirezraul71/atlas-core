@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 _log = logging.getLogger("humanoid.navigation.controller")
 

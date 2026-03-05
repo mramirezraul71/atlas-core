@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -120,8 +119,7 @@ class EpisodicMemory:
     def _deserialize_episode(self, data: Dict) -> Optional[Episode]:
         """Deserializa episodio desde diccionario."""
         try:
-            from .schemas import (ActionRecord, InternalStateSnapshot,
-                                  WorldStateSnapshot)
+            from .schemas import (ActionRecord)
 
             actions = []
             for a_data in data.get("actions", []):

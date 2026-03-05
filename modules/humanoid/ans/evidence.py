@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 
 def capture_evidence(check_id: str, details: Dict[str, Any] = None) -> Dict[str, Any]:

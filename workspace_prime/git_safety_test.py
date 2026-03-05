@@ -4,7 +4,6 @@ Verificación de todas las mejoras de seguridad implementadas
 """
 
 import os
-import tempfile
 
 from git_automation import git_automation
 
@@ -84,7 +83,7 @@ def test_file_size_limits():
     size_check = git_automation._check_file_sizes([large_file])
 
     print(f"📊 Tamaño límite: {git_automation.max_file_size_mb}MB")
-    print(f"📁 Archivo creado: 15MB")
+    print("📁 Archivo creado: 15MB")
     print(f"❌ Detectado como grande: {not size_check.get('ok')}")
 
     # Limpiar
@@ -153,9 +152,9 @@ def test_backup_before_force():
     # Simular push con force (solo prueba de lógica)
     # No ejecutamos push real, solo verificamos la lógica de backup
 
-    print(f"🔄 Backup automático habilitado: True")
-    print(f"⚠️ Force push requiere backup: Sí")
-    print(f"📋 Tags de backup creados: backup/before-force-YYYYMMDD-HHMMSS")
+    print("🔄 Backup automático habilitado: True")
+    print("⚠️ Force push requiere backup: Sí")
+    print("📋 Tags de backup creados: backup/before-force-YYYYMMDD-HHMMSS")
 
     # Verificar que la lógica existe en el código
     has_backup_logic = hasattr(git_automation, "smart_push")

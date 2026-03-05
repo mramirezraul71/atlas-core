@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 
 @dataclass(frozen=True)

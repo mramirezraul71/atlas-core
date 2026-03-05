@@ -6,7 +6,6 @@ from .base import heal_result
 
 def run(**kwargs) -> dict:
     try:
-        from modules.humanoid.scheduler.runner import run_job_sync
 
         # Trigger a no-op cycle; scheduler loop is managed externally
         return heal_result(

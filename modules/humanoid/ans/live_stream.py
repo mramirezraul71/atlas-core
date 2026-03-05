@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections import deque
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import AsyncIterator, Dict, List, Optional
 
 _MAX_EVENTS = 500
 _events: deque = deque(maxlen=_MAX_EVENTS)

@@ -8,7 +8,7 @@ import os
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 

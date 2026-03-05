@@ -3,7 +3,6 @@ Ejemplos de Integración Git Automation con Atlas Agent
 Uso avanzado de control de versiones automatizado
 """
 
-import json
 
 from tools_integration import tools
 
@@ -107,7 +106,7 @@ def git_trading_workflow():
         # 4. Push de branch
         push_result = tools.git_smart_push(strategy_branch)
 
-        print(f"   ✅ Trading workflow completado")
+        print("   ✅ Trading workflow completado")
         return {
             "files": trading_files,
             "commit": commit_result,
@@ -172,7 +171,7 @@ def git_deployment_workflow():
     # 4. Push de branch de deploy
     push_result = tools.git_smart_push(deploy_branch)
 
-    print(f"   ✅ Deployment workflow completado")
+    print("   ✅ Deployment workflow completado")
     return {
         "deploy_branch": deploy_branch,
         "commit": commit_result,
@@ -208,15 +207,15 @@ def main():
 
     # Estado final del repo
     final_status = tools.git_get_status()
-    print(f"\n🎯 Estado Final:")
+    print("\n🎯 Estado Final:")
     print(f"   📁 Branch: {final_status.get('branch', 'N/A')}")
     print(f"   🧹 Limpio: {final_status.get('is_clean', 'N/A')}")
     print(
         f"   📝 Último commit: {final_status.get('last_commit', {}).get('hash', 'N/A')[:8]}"
     )
 
-    print(f"\n✅ Todos los workflows Git ejecutados exitosamente!")
-    print(f"🔧 Atlas Git Automation está completamente integrado")
+    print("\n✅ Todos los workflows Git ejecutados exitosamente!")
+    print("🔧 Atlas Git Automation está completamente integrado")
 
 
 if __name__ == "__main__":

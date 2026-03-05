@@ -6,11 +6,10 @@ Este archivo muestra cómo usar el sistema completo de tutorías,
 incluyendo el registro de especialistas, visitas, informes y seguimientos.
 """
 
-from datetime import datetime, timedelta
 
 from .manager import TutoriasManager
 from .models import (Especialista, Evaluacion, Informe, NivelEvaluacion,
-                     PrioridadRecomendacion, Recomendacion, TipoVisita, Visita)
+                     PrioridadRecomendacion, Recomendacion, TipoVisita)
 from .reports import ReportGenerator
 
 
@@ -209,7 +208,7 @@ específicas para alcanzar nivel de producción enterprise.
     # Finalizar visita (esto firma el informe automáticamente)
     visita_final = manager.finalizar_visita(informe)
 
-    print(f"✓ Visita finalizada")
+    print("✓ Visita finalizada")
     print(f"  Duración: {visita_final.duracion_minutos} minutos")
     print(f"  Informe firmado: {informe.firmado}")
     print(f"  Firma: {informe.firma_especialista}")
@@ -277,7 +276,7 @@ def ejemplo_consultas():
 
     # Listar visitas recientes
     visitas = manager.listar_visitas(limite=5)
-    print(f"\nÚltimas 5 visitas:")
+    print("\nÚltimas 5 visitas:")
     for v in visitas:
         print(f"  - [{v.tipo.value}] {v.motivo} - {'✓' if v.completada else '⏳'}")
 

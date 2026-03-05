@@ -4,8 +4,6 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from .emergency import is_action_blocked
-from .session import validate as session_validate
 
 
 def owner_enabled() -> bool:

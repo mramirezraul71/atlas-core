@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, List, Optional
 
-from .models import ModelSpec, RouteDecision
-from .registry import get_model_specs, resolve_model_for_route
+from .models import ModelSpec
+from .registry import get_model_specs
 
 # Optional: create approval item (high, owner session). Caller can inject.
 _create_approval_for_paid: Optional[Callable[[str, str, float], Any]] = None

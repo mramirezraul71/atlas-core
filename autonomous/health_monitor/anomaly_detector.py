@@ -7,7 +7,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +152,6 @@ class AnomalyDetector:
         if len(current_trend) < 5:
             return None
         # Simplificación: si CPU/RAM suben linealmente, extrapolar cuándo cruzan 95%
-        import statistics
 
         cpu = [
             t.get("cpu_percent") or 0

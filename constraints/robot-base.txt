@@ -1,0 +1,12 @@
+# ATLAS ROBOT baseline constraints (service-local venv)
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
+python-multipart==0.0.6
+numpy==1.24.3
+torch==2.1.1
+torchvision==0.16.1
+tensorflow==2.15.0
+httpx==0.25.2
+aiohttp==3.9.1
+watchdog==3.0.0

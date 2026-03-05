@@ -5,7 +5,6 @@ Camera driver and image publisher for Atlas head and chest cameras.
 Bridges to existing Atlas vision modules (modules/humanoid/vision/).
 In simulation, publishes synthetic images or reads from webcam.
 """
-import time
 
 import numpy as np
 import rclpy
@@ -101,7 +100,6 @@ class VisionNode(Node):
         self._frame_count += 1
 
         if self._cap is not None:
-            import cv2
 
             ret, frame = self._cap.read()
             if ret:

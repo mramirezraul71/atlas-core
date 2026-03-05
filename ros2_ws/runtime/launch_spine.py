@@ -214,7 +214,7 @@ def main():
                 print(f"    ! {node_name} FAILED: {e}")
 
     print(f"\n  Total: {len(nodes)} nodes running")
-    print(f"  Press Ctrl+C to stop\n")
+    print("  Press Ctrl+C to stop\n")
 
     if args.monitor:
         monitor_thread = threading.Thread(target=topic_monitor, daemon=True)

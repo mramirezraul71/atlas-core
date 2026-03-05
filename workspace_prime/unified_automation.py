@@ -11,11 +11,10 @@ Unifica todos los sistemas automáticos existentes:
 import asyncio
 import logging
 import os
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 # Importar sistemas existentes
 try:

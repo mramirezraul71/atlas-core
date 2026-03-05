@@ -4,7 +4,6 @@ from __future__ import annotations
 import time
 from typing import Any, Dict
 
-from .base import BaseModule
 from .registry import ModuleRegistry
 
 

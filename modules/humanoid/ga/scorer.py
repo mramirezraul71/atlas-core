@@ -1,7 +1,6 @@
 """Risk + ROI scoring for action candidates."""
 from __future__ import annotations
 
-from typing import List
 
 from .models import ActionCandidate, Finding
 

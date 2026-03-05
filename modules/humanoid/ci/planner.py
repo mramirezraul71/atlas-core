@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from .policy_gate import SAFE_AUTOFIX_KINDS, _ci_autofix_limit, can_autofix
+from .policy_gate import _ci_autofix_limit, can_autofix
 from .scorer import score_findings
 
 

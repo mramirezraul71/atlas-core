@@ -4,7 +4,6 @@ Script de integracion Atlas - Herramientas
 """
 
 import os
-from pathlib import Path
 
 
 def main():

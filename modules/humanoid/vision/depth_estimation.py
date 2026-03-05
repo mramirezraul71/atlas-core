@@ -5,7 +5,7 @@ Salida: depth map relativo; opcional calibración métrica.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List
 
 import numpy as np
 

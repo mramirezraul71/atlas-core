@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import sys
 
 import cv2
 
@@ -30,7 +29,7 @@ for name, backend in backends:
         if ret and frame is not None:
             print(f"  ✓ Frame captured: {frame.shape}")
         else:
-            print(f"  ✗ Failed to capture frame")
+            print("  ✗ Failed to capture frame")
 
         cap.release()
     else:

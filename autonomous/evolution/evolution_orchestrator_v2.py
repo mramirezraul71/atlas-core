@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any
 
 from .backup_manager import BackupManager
-from .metrics_comparator import ComparisonReport, MetricsComparator
-from .regression_tester import RegressionTester, TestResults
-from .staged_rollout import RolloutPhase, StagedRollout
+from .metrics_comparator import MetricsComparator
+from .regression_tester import RegressionTester
+from .staged_rollout import StagedRollout
 
 logger = logging.getLogger(__name__)
 

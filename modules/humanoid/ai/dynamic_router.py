@@ -1,13 +1,11 @@
 """Dynamic AI Router: monitorea latencia, error rate, calidad; adapta routing; fallback + memoria."""
 from __future__ import annotations
 
-import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from .models import ModelSpec
 from .registry import get_model_specs, resolve_model_for_route
-from .telemetry import (aggregate_by_provider, get_recent,
-                        quality_insufficient_count)
+from .telemetry import (aggregate_by_provider, quality_insufficient_count)
 
 
 def _ollama_available() -> bool:

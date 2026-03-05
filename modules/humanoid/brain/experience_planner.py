@@ -12,7 +12,6 @@ Genera un plan enriquecido con evidencia historica.
 """
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from typing import List, Optional
+from typing import List
 
 from .models import ActionCandidate, ActionPlan
 from .scorer import score_finding

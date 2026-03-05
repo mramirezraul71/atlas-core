@@ -3,7 +3,6 @@ ATLAS Autodiagnostic Scanner
 Escaneo periódico de todos los sistemas con acción correctiva automática.
 Generado para ATLAS Cognitive Brain Architecture.
 """
-import json
 import logging
 import sys
 import time
@@ -302,7 +301,7 @@ def run_scan():
 
 def main():
     _safe_print(f"\n{'#'*70}")
-    _safe_print(f"  ATLAS AUTODIAGNOSTIC SCANNER")
+    _safe_print("  ATLAS AUTODIAGNOSTIC SCANNER")
     _safe_print(
         f"  Intervalo: {SCAN_INTERVAL}s | Log: {LOG_DIR / 'autodiagnostic.log'}"
     )

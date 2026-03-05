@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 @dataclass
@@ -19,7 +19,6 @@ class Node:
     updated_ts: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        import json
 
         return {
             "node_id": self.node_id,

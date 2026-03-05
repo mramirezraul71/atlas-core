@@ -5,8 +5,6 @@ Desactiva tareas no esenciales; mantiene health checks y API core.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 

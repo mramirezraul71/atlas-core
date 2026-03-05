@@ -9,7 +9,6 @@ Architecture reference: IHMC Open Robotics Software
 - Center of Pressure (CoP) tracking
 - Zero Moment Point (ZMP) regulation
 """
-import math
 
 import rclpy
 from geometry_msgs.msg import Vector3Stamped, WrenchStamped

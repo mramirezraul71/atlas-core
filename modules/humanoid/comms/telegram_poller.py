@@ -140,7 +140,7 @@ def _format_status_message(
 
     if st in ("approved", "already_approved"):
         lines = [
-            f"<b>ATLAS</b>",
+            "<b>ATLAS</b>",
             "Aprobación: <b>APROBADA</b>",
             f"ID: <code>{eid}</code>",
         ]

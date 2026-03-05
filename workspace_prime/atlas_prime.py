@@ -4,7 +4,6 @@ import sys
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 import json
-from datetime import datetime
 
 import load_credentials  # noqa: F401 — carga credenciales antes de boto3
 from desktop_hands import DesktopHands

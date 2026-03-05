@@ -3,13 +3,12 @@ Atlas Git Automation - Herramientas especializadas para gestión de repositorios
 Integración con GitPython, pre-commit y automatización avanzada
 """
 
-import json
 import logging
 import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 class AtlasGitAutomation:
@@ -221,7 +220,6 @@ class AtlasGitAutomation:
     ) -> Dict[str, Any]:
         """Commit inteligente con análisis automático y seguridad mejorada"""
         try:
-            import git
 
             # SEGURIDAD: Obtener lista de archivos
             if files:
@@ -370,7 +368,6 @@ class AtlasGitAutomation:
     ) -> Dict[str, Any]:
         """Push inteligente con verificación y backup automático"""
         try:
-            import git
 
             # Determinar branch
             if not branch:
@@ -439,7 +436,6 @@ class AtlasGitAutomation:
     ) -> Dict[str, Any]:
         """Crea nueva branch con configuración automática"""
         try:
-            import git
 
             # Determinar branch base
             if from_branch:
@@ -474,7 +470,6 @@ class AtlasGitAutomation:
     ) -> Dict[str, Any]:
         """Merge inteligente con resolución de conflictos"""
         try:
-            import git
 
             # Determinar branch target
             if not target_branch:
@@ -504,7 +499,6 @@ class AtlasGitAutomation:
     def get_repo_status(self) -> Dict[str, Any]:
         """Obtiene estado completo del repositorio"""
         try:
-            import git
 
             status = {
                 "branch": self.repo.active_branch.name,
@@ -574,7 +568,6 @@ class AtlasGitAutomation:
     def _workflow_update_sync(self, **kwargs):
         """Workflow: Actualizar y sincronizar con remote"""
         try:
-            import git
 
             # 1. Pull latest changes
             origin = self.repo.remote(name="origin")
@@ -596,7 +589,6 @@ class AtlasGitAutomation:
     def _workflow_cleanup_branch(self, branch_name: str, **kwargs):
         """Workflow: Limpieza de branch"""
         try:
-            import git
 
             # Eliminar branch local
             if branch_name in self.repo.heads:

@@ -2,9 +2,8 @@
 Modelos de datos para el sistema de chats de ATLAS
 """
 
-import json
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional

@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import threading
 import time
 from dataclasses import dataclass, field
@@ -24,7 +23,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from queue import Empty, Queue
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional
 
 _log = logging.getLogger("humanoid.quality.dispatcher")
 

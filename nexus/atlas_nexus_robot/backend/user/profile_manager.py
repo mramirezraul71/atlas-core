@@ -4,11 +4,10 @@ Handles user profile data, preferences, and interaction history
 """
 
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any, Dict, Optional
 
 from database.models import Interaction, UserPreference, UserProfile, get_db
-from sqlalchemy.orm import Session
 
 logger = logging.getLogger("ATLAS_PROFILE_MANAGER")
 

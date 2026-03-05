@@ -20,7 +20,6 @@ de todos los sistemas con su fuente, relevancia y tipo.
 """
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -112,7 +111,6 @@ class UnifiedMemoryCortex:
         }
 
         try:
-            from modules.humanoid.world_model import WorldModel
             from modules.humanoid.world_model.engine import get_world_model
 
             wm = get_world_model()
@@ -420,7 +418,6 @@ class UnifiedMemoryCortex:
         return _stats_chromadb()
 
     def _stats_memory_engine(self) -> Dict:
-        from modules.humanoid.memory_engine import recall
 
         return {"available": True}
 

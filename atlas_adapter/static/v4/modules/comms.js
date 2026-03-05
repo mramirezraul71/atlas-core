@@ -42,6 +42,10 @@ export default {
               <div class="stat-card-label">Mensajes enviados</div>
               <div class="stat-card-value accent" id="c-sent">--</div>
             </div>
+            <div class="stat-card">
+              <div class="stat-card-label">Cola offline</div>
+              <div class="stat-card-value" id="c-offline">--</div>
+            </div>
           </div>
 
           <!-- Actions -->
@@ -67,6 +71,11 @@ export default {
           <!-- Raw status -->
           <div class="section-title" style="margin-top:20px">Diagnóstico</div>
           <pre class="codebox" id="comms-raw" style="max-height:180px;overflow:auto">Cargando...</pre>
+
+          <div class="section-title" style="margin-top:16px">Historial ATLAS (movil)</div>
+          <div id="c-history" style="display:flex;flex-direction:column;gap:8px">
+            <div class="codebox" style="font-size:11px">Cargando historial...</div>
+          </div>
         </div>
       </div>
     `;
@@ -76,7 +85,7 @@ export default {
     container.querySelector('#btn-test')?.addEventListener('click',     () => _test(container));
 
     _refresh(container);
-    poll(POLL_ID, '/ans/comms/status', 6000, (data) => { if (data) _renderStatus(container, data); });
+    poll(POLL_ID, '/ans/comms/status', 6000, () => _refresh(container));
   },
 
   destroy() { stop(POLL_ID); },
@@ -84,16 +93,23 @@ export default {
 
 async function _refresh(container) {
   try {
-    const r = await fetch('/ans/comms/status');
-    const data = await r.json();
-    _renderStatus(container, data);
+    const [ansResp, atlasResp, histResp] = await Promise.all([
+      fetch('/ans/comms/status'),
+      fetch('/api/comms/atlas/status'),
+      fetch('/api/comms/atlas/history?limit=12'),
+    ]);
+    const ansData = await ansResp.json().catch(() => ({}));
+    const atlasData = await atlasResp.json().catch(() => ({}));
+    const histData = await histResp.json().catch(() => ({}));
+    _renderStatus(container, ansData, atlasData);
+    _renderHistory(container, histData?.items || []);
   } catch (e) {
     const el = container.querySelector('#comms-raw');
     if (el) el.textContent = `Error: ${e.message}`;
   }
 }
 
-function _renderStatus(container, data) {
+function _renderStatus(container, data, atlasData = {}) {
   const p = data?.data ?? data;
   const connected = p?.connected === true || p?.status === 'connected' || p?.state === 'connected';
   const txt = (id, v) => { const e = container.querySelector(id); if (e) e.textContent = v; };
@@ -103,8 +119,45 @@ function _renderStatus(container, data) {
   const stEl = container.querySelector('#c-state');
   if (stEl) stEl.style.color = connected ? 'var(--accent-green)' : 'var(--accent-orange)';
   txt('#c-sent', p?.messages_sent ?? p?.sent ?? '--');
+  txt('#c-offline', atlasData?.queue_pending ?? '--');
+  const qEl = container.querySelector('#c-offline');
+  if (qEl && typeof atlasData?.queue_pending === 'number') {
+    qEl.style.color = atlasData.queue_pending > 0 ? 'var(--accent-orange)' : 'var(--accent-green)';
+  }
   const raw = container.querySelector('#comms-raw');
-  if (raw) raw.textContent = JSON.stringify(p, null, 2);
+  if (raw) {
+    raw.textContent = JSON.stringify({
+      ans: p,
+      atlas_bridge: atlasData,
+    }, null, 2);
+  }
+}
+
+function _renderHistory(container, items) {
+  const el = container.querySelector('#c-history');
+  if (!el) return;
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) {
+    el.innerHTML = `<div class="codebox" style="font-size:11px">Sin interacciones registradas.</div>`;
+    return;
+  }
+  el.innerHTML = rows.slice(0, 12).map((it) => {
+    const when = it?.created_at ? new Date(it.created_at).toLocaleTimeString() : '--';
+    const user = _esc(it?.user_id || 'guest');
+    const req = _esc(it?.request || it?.request_summary || '');
+    const rsp = _esc(it?.response || it?.response_summary || '');
+    const urgency = _esc(it?.urgency || 'normal');
+    const off = it?.offline_mode ? '<span class="chip orange">offline</span>' : '<span class="chip green">online</span>';
+    return `<div class="codebox" style="font-size:11px;line-height:1.45">
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px">
+        <strong>${user}</strong>
+        <span>${when} · ${urgency}</span>
+      </div>
+      <div><strong>Cliente:</strong> ${req}</div>
+      <div style="margin-top:2px"><strong>ATLAS:</strong> ${rsp}</div>
+      <div style="margin-top:4px">${off}</div>
+    </div>`;
+  }).join('');
 }
 
 function _setAction(container, html) {

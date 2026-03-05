@@ -1,0 +1,129 @@
+# ============================================================
+# ATLAS_PUSH — CODEX CONFIG (CURSOR + SUPERVISOR) — FULL
+# USO:
+# 1) Reemplaza COMPLETO este archivo: C:\ATLAS_PUSH\.codex\config.toml
+# 2) VS Code -> Ctrl+Shift+P -> Developer: Reload Window
+#
+# OBJETIVO:
+# - Mantener TODAS las funcionalidades (habilidades, IDE context, acceso, etc.)
+# - Ser "Cursor-like" para desarrollar rápido
+# - Ser "Supervisor" para auditoría, arquitectura, riesgos y fixes
+# - Permitir cambiar de modo sin perder nada
+# ============================================================
+
+# ----------------------------
+# DEFAULT (arranca como CURSOR DEV: rápido/productivo)
+# ----------------------------
+model = "gpt-5.3-codex"
+
+# Niveles: "low" | "medium" | "high"
+# Default cursor-like: medium (rápido y bueno sin auditar de más)
+model_reasoning = "medium"
+
+# Verbosidad: "low" | "medium" | "high"
+# Cursor-like: medium (directo, pero útil)
+model_verbosity = "medium"
+
+# Autonomía:
+# - "auto" = ejecuta más sin preguntar (más autónomo)
+# - "on-request" = pide para acciones sensibles (más seguro)
+# Si "auto" te falla, cambia a "on-request".
+approval_policy = "auto"
+
+# Sandbox de trabajo:
+# - "workspace-write" = puede modificar tu repo (RECOMENDADO)
+sandbox_mode = "workspace-write"
+
+# Web search (si tu build lo soporta)
+web_search = "enabled"
+
+# Auditoría / trazas (por defecto, liviano para modo cursor)
+show_raw_agent_reasoning = false
+show_raw_agent_messages = false
+
+# ----------------------------
+# WINDOWS
+# ----------------------------
+[windows]
+# elevated te ayuda a correr scripts/puertos si tu entorno lo usa así.
+# Si prefieres menos privilegios: "standard"
+sandbox = "elevated"
+
+# ----------------------------
+# FEATURES
+# ----------------------------
+[features]
+# Snapshot de terminal (útil para auditoría y reproducibilidad)
+shell_snapshot = true
+
+# ============================================================
+# PERFILES (MODOS) — SOLO CAMBIA "CEREBRO", NO PIERDE FUNCIONES
+# ============================================================
+
+# 🟢 CURSOR SOFT — súper rápido (snippets, cambios puntuales)
+[profiles.cursor_soft]
+model = "gpt-5.3-codex"
+model_reasoning = "low"
+model_verbosity = "low"
+approval_policy = "auto"
+sandbox_mode = "workspace-write"
+web_search = "enabled"
+show_raw_agent_reasoning = false
+show_raw_agent_messages = false
+
+# 🟡 CURSOR DEV — desarrollo diario (equilibrado)
+[profiles.cursor_dev]
+model = "gpt-5.3-codex"
+model_reasoning = "medium"
+model_verbosity = "medium"
+approval_policy = "auto"
+sandbox_mode = "workspace-write"
+web_search = "enabled"
+show_raw_agent_reasoning = false
+show_raw_agent_messages = false
+
+# 🔴 SUPERVISOR DEEP — auditoría, arquitectura, riesgos, plan antes de tocar
+[profiles.atlas_supervisor_deep]
+model = "gpt-5.3-codex"
+model_reasoning = "high"
+model_verbosity = "high"
+approval_policy = "auto"
+sandbox_mode = "workspace-write"
+web_search = "enabled"
+show_raw_agent_reasoning = true
+show_raw_agent_messages = true
+
+# 🔶 SUPERVISOR MED — diagnóstico + fixes moderados (menos “largo” que deep)
+[profiles.atlas_supervisor_med]
+model = "gpt-5.3-codex"
+model_reasoning = "medium"
+model_verbosity = "high"
+approval_policy = "auto"
+sandbox_mode = "workspace-write"
+web_search = "enabled"
+show_raw_agent_reasoning = true
+show_raw_agent_messages = false
+
+# ⚡ FAST FALLBACK — por si 5.3 se pone pesado
+[profiles.fast_fallback]
+model = "gpt-5.2-codex"
+model_reasoning = "low"
+model_verbosity = "low"
+approval_policy = "auto"
+sandbox_mode = "workspace-write"
+web_search = "limited"
+show_raw_agent_reasoning = false
+show_raw_agent_messages = false
+
+# ============================================================
+# MCP SERVERS (si los usas; reemplaza URLs por las reales)
+# Si no usas MCP, puedes borrar esta sección completa.
+# ============================================================
+[mcp-servers.figma]
+url = "https://mcp.example/figma"
+
+[mcp-servers.cloud]
+url = "https://mcp.example/cloud"
+
+[mcp-servers.dev]
+url = "https://mcp.example/dev"

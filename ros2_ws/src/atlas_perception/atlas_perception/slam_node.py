@@ -8,10 +8,9 @@ Replace with real SLAM (ORB-SLAM3, rtabmap, etc.) when ready.
 Bridges to: modules/humanoid/navigation/
 """
 import math
-import time
 
 import rclpy
-from geometry_msgs.msg import PoseStamped, TransformStamped
+from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import OccupancyGrid
 from rclpy.node import Node
 from std_msgs.msg import Bool

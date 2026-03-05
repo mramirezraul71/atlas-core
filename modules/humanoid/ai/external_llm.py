@@ -14,7 +14,6 @@ def call_external(
     timeout_s: int = 60,
 ) -> Tuple[bool, str, float]:
     """Llama al proveedor externo. Devuelve (ok, output_text, latency_ms)."""
-    import httpx
 
     t0 = time.perf_counter()
     try:

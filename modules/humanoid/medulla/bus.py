@@ -8,17 +8,16 @@ Implementación con:
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import threading
 import time
 from collections import defaultdict
 from dataclasses import asdict
-from queue import Empty, Queue
-from typing import Any, Callable, Dict, List, Optional, Set
+from queue import Queue
+from typing import Any, Callable, Dict, List, Optional
 
-from .schemas import (ActionDecision, GoalUpdate, MessageType, MotorCommand,
+from .schemas import (ActionDecision, GoalUpdate, MotorCommand,
                       SensorReading, SystemAlert, VitalsStatus, WorldState)
 
 logger = logging.getLogger(__name__)

@@ -9,11 +9,10 @@ Análogo biológico: Corteza parietal posterior (áreas 5 y 7)
 from __future__ import annotations
 
 import logging
-import math
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 

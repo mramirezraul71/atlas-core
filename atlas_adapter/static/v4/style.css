@@ -1053,6 +1053,33 @@ button { cursor: pointer; font-family: inherit; }
 .chip.red     { background: rgba(248,81,73,0.12);  color: var(--accent-red); border-color: transparent; }
 .chip.blue    { background: rgba(88,166,255,0.12); color: var(--accent-blue); border-color: transparent; }
 
+.tools-filter-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+.tools-filter-select {
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.tools-filter-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.tools-alert-box {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 12px;
+}
+
 /* ── Live badge (pulse) ── */
 .live-badge {
   display: inline-flex; align-items: center; gap: 5px;

@@ -3,7 +3,6 @@ DisasterRecovery - Backup completo periódico; incremental; restore_from_disaste
 """
 from __future__ import annotations
 
-import hashlib
 import logging
 import shutil
 import subprocess

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Iterable, List, Sequence, TypeVar
+from typing import Awaitable, Callable, List, Sequence, TypeVar
 
 T = TypeVar("T")
 R = TypeVar("R")

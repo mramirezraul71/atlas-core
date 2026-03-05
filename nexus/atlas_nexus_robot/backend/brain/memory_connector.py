@@ -4,7 +4,6 @@ Permite que el workspace acceda y persista informaciÃ³n en los sistemas de mem
 """
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional

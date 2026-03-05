@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from typing import List, Set
+from typing import Set
 
 
 def allowed_remote_actions(node_id: str) -> Set[str]:

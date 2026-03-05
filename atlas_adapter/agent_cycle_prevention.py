@@ -4,11 +4,10 @@ Implementa interruptores automáticos y lógica de escape
 """
 from __future__ import annotations
 
-import json
 import logging
 import time
 from collections import defaultdict, deque
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Optional
 
 _log = logging.getLogger("atlas.cycle_prevention")
 

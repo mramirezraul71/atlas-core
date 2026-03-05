@@ -11,10 +11,10 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
 from .dialog_manager import DialogManager, DialogState
-from .emotion_recognition import Emotion, EmotionRecognizer
+from .emotion_recognition import EmotionRecognizer
 from .gesture_recognition import Gesture, GestureRecognizer
-from .intent_parser import Intent, IntentParser
-from .safety_monitor import SafetyLevel, SafetyMonitor
+from .intent_parser import IntentParser
+from .safety_monitor import SafetyMonitor
 from .voice_interface import VoiceConfig, VoiceInterface
 
 _log = logging.getLogger("humanoid.hri.system")

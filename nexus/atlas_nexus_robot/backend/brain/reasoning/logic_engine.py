@@ -8,7 +8,6 @@ import os
 from typing import Dict, List, Optional
 
 from langchain.chat_models import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
 
 logger = logging.getLogger(__name__)

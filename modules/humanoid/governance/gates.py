@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import os
-from typing import Optional, Tuple
+from typing import Optional
 
-from .models import ActionKind, Decision
+from .models import Decision
 from .state import get_emergency_stop, get_mode
 
 _EMERGENCY_BLOCKED = frozenset(

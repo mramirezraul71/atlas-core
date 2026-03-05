@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from collections import deque
-from typing import Deque, Dict, List, Optional
+from typing import Deque, Dict, Optional
 
 _log = logging.getLogger("humanoid.healing")
 

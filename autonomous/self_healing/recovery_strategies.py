@@ -10,7 +10,6 @@ import time
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
-from .error_classifier import RecoveryStrategy
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")

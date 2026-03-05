@@ -9,7 +9,7 @@ def test_campaign_start_picks_first_pending_lesson_and_persists(
 ):
     from brain.learning.ai_tutor import AITutor
     from brain.learning.python_mastery_campaign import (
-        campaign_state_path, start_or_resume_campaign)
+        start_or_resume_campaign)
 
     # Fijar repo_root al tmp para no tocar snapshots reales
     monkeypatch.setattr(

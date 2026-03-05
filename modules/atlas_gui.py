@@ -1,5 +1,4 @@
-﻿import os
-import subprocess
+﻿import subprocess
 import threading
 import tkinter as tk
 from datetime import datetime

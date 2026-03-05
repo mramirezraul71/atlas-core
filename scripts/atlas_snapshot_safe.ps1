@@ -91,6 +91,32 @@ try {
 }
 
 try {
+    $resyncScript = Join-Path $RepoRoot "scripts\atlas_resync_flow.ps1"
+    if (Test-Path $resyncScript) {
+        $internetUp = $false
+        $probeA = HttpCode "http://1.1.1.1/cdn-cgi/trace"
+        $probeB = HttpCode "https://www.cloudflare.com/cdn-cgi/trace"
+        if ($probeA -eq "200" -or $probeB -eq "200") {
+            $internetUp = $true
+        }
+
+        if ($internetUp) {
+            $resyncOut = & powershell -NoProfile -ExecutionPolicy Bypass -File $resyncScript -Workspace $RepoRoot 2>&1
+            foreach ($line in $resyncOut) {
+                if (-not [string]::IsNullOrWhiteSpace($line)) {
+                    Write-Line ("RESYNC " + $line)
+                }
+            }
+            Write-Line "TASK_OK name=ATLAS_Comms_Resync trigger=snapshot_safe"
+        } else {
+            Write-Line "NETWORK_OFFLINE_MODE source=snapshot_safe reason=internet_unreachable"
+        }
+    }
+} catch {
+    Write-Line ("RESYNC_ERR " + $_.Exception.Message)
+}
+
+try {
     $cfLog = Join-Path $logDir "cloudflared_access.log"
     if (Test-Path $cfLog) {
         $tail = Get-Content $cfLog -Tail 20

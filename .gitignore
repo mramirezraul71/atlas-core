@@ -39,6 +39,7 @@ __pycache__/
 
 # Python venv
 .venv/
+.venv_*/
 venv/
 ENV/
 env/
@@ -136,3 +137,9 @@ nexus/**/__pycache__/
 
 # Junction atlas_nexus -> nexus (evitar duplicar en repo)
 atlas_nexus/
+# atlas_agent runtime artifacts
+tools/atlas_agent/runs/
+
+# Local Codex/backup artifacts
+.atlas_backups/
+.codex/tmp/

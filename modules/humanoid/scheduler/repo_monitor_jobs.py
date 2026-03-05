@@ -1,7 +1,6 @@
 """Registra el job de ciclo del monitor de repo (actualización automática) si está habilitado."""
 from __future__ import annotations
 
-import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path

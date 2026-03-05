@@ -10,14 +10,13 @@ import logging
 import os
 import sys
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import cv2
 import numpy as np
 import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # Asegurar imports locales (brain/, api/, vision/, etc.) aunque se ejecute desde otro cwd
@@ -33,7 +32,7 @@ from api.camera_service_routes import router as camera_router
 # Import vision routes
 from api.vision_routes import router as vision_router
 # Import YOLO detector
-from yolo_detector import YOLODetector, get_detector
+from yolo_detector import get_detector
 
 # Boot logger used before full logging setup.
 boot_logger = logging.getLogger("ATLAS_ROBOT_BOOT")
@@ -545,7 +544,6 @@ async def detect_objects(request: DetectionRequest):
     """Detect objects in image using YOLO"""
     import base64
     import time
-    from io import BytesIO
 
     try:
         # Get detector

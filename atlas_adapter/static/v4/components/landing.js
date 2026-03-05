@@ -91,6 +91,10 @@ export function render(container) {
         <div class="quick-chip" data-action="rauli-panaderia">${SVG.package} Rauli Panaderia</div>
         <div class="quick-chip" data-action="config">${SVG.config} AI Config</div>
         <div class="quick-chip" data-action="autonomy">${SVG.governance} Autonomy</div>
+        <div class="quick-chip" data-action="clawd-direct">${SVG.brain} Clawd Directo</div>
+        <div class="quick-chip" data-action="codex-supervisor">${SVG.governance} Codex Supervisor</div>
+        <div class="quick-chip" data-action="tools-menu">${SVG.monitor} Tools Menu</div>
+        <div class="quick-chip" data-action="live-diagnostic">${SVG.health} Diagnostico Live</div>
       </div>
 
       <div class="apps-grid">
@@ -129,6 +133,22 @@ export function render(container) {
         <div class="app-tile" data-app="config-tile">
           <div class="app-tile-icon">${SVG.config}</div>
           <div class="app-tile-label">Settings</div>
+        </div>
+        <div class="app-tile" data-app="tools-menu">
+          <div class="app-tile-icon">${SVG.monitor}</div>
+          <div class="app-tile-label">Tools Menu</div>
+        </div>
+        <div class="app-tile" data-app="clawd-direct">
+          <div class="app-tile-icon">${SVG.brain}</div>
+          <div class="app-tile-label">Clawd Directo</div>
+        </div>
+        <div class="app-tile" data-app="codex-supervisor">
+          <div class="app-tile-icon">${SVG.governance}</div>
+          <div class="app-tile-label">Codex Supervisor</div>
+        </div>
+        <div class="app-tile" data-app="live-diagnostic">
+          <div class="app-tile-icon">${SVG.health}</div>
+          <div class="app-tile-label">Diagnostico Live</div>
         </div>
       </div>
     </div>
@@ -206,6 +226,10 @@ export function render(container) {
     'rauli-panaderia': { hash: '/apps/panaderia' },
     config:    { hash: '/config' },
     autonomy:  { hash: '/autonomy' },
+    'clawd-direct': { hash: '/clawd-direct' },
+    'codex-supervisor': { hash: '/codex-supervisor' },
+    'tools-menu': { hash: '/tools-menu' },
+    'live-diagnostic': { hash: '/live-diagnostic' },
   };
 
   container.querySelectorAll('.quick-chip').forEach(chip => {
@@ -229,6 +253,10 @@ export function render(container) {
     'rauli-vision': { hash: '/apps/vision' },
     'rauli-panaderia': { hash: '/apps/panaderia' },
     'config-tile':  { hash: '/config' },
+    'tools-menu':   { hash: '/tools-menu' },
+    'clawd-direct': { hash: '/clawd-direct' },
+    'codex-supervisor': { hash: '/codex-supervisor' },
+    'live-diagnostic': { hash: '/live-diagnostic' },
   };
 
   container.querySelectorAll('.app-tile').forEach(tile => {

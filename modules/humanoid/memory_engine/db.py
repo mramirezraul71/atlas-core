@@ -1,13 +1,12 @@
 """Persistent memory SQLite: threads, tasks, runs, artifacts, decisions, summaries. FTS or LIKE fallback."""
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 MEMORY_DB_PATH = os.getenv(
     "ATLAS_MEMORY_DB_PATH", "C:\\ATLAS_PUSH\\logs\\atlas_memory.sqlite"

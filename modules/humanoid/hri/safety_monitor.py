@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 
 _log = logging.getLogger("humanoid.hri.safety")
 

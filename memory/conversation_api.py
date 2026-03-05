@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from autoprogrammer_daemon import get_daemon, start_daemon, stop_daemon
 from conversation_thread_manager import get_autoprogrammer, get_thread_manager
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 # Configurar logging

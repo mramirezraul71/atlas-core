@@ -4,17 +4,15 @@ Handles voice registration, speaker identification, and voice analysis using lib
 """
 
 import base64
-import io
 import logging
 import os
 import pickle
 import tempfile
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import librosa
 import numpy as np
-import soundfile as sf
 
 logger = logging.getLogger("ATLAS_VOICE_RECOGNITION")
 

@@ -16,7 +16,7 @@ import sqlite3
 import threading
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 _DB_PATH = os.path.join(
     os.environ.get(

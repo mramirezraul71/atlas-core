@@ -8,8 +8,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from modules.humanoid.ai import (TaskType, auto_route, get_auto_router,
-                                 get_brain_state, set_full_auto_mode)
+from modules.humanoid.ai import (auto_route, get_auto_router,
+                                 set_full_auto_mode)
 
 
 def main():
@@ -30,7 +30,7 @@ def main():
         print(f"    - {task}: {model}")
 
     features = state.get("features", {})
-    print(f"  Features habilitadas:")
+    print("  Features habilitadas:")
     for feat, val in features.items():
         print(f"    - {feat}: {val}")
 

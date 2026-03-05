@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .models import ActionCandidate, ExecutionResult, Finding
+from .models import ExecutionResult, Finding
 
 
 def _report_dir() -> Path:

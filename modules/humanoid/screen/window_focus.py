@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import os
-import sys
-from typing import Optional
 
 
 def get_active_window_title() -> str:
@@ -14,7 +12,6 @@ def get_active_window_title() -> str:
         return ""
     try:
         import ctypes
-        from ctypes import wintypes
 
         user32 = ctypes.WinDLL("user32", use_last_error=True)
         GetForegroundWindow = user32.GetForegroundWindow

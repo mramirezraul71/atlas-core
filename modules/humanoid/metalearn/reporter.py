@@ -6,8 +6,6 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import db
-from .tuner import get_current_params
 
 
 def _report_dir() -> Path:

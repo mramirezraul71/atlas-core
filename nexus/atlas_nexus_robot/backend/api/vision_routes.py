@@ -5,12 +5,10 @@ Vision API Routes
 import logging
 import os
 import time
-from typing import Dict, List
 
 import cv2
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response, StreamingResponse
-from pydantic import BaseModel
 from vision.object_detection import get_detector
 
 logger = logging.getLogger(__name__)

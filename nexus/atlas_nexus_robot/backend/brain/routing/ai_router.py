@@ -3,12 +3,11 @@ ATLAS NEXUS - AI Router
 Sistema de routing automático para múltiples proveedores de IA
 """
 
-import json
 import logging
 import os
 import time
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import requests
 import yaml

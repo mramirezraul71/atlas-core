@@ -6,7 +6,7 @@ import os
 import time
 import urllib.error
 import urllib.request
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 PROBE_TIMEOUT_SEC = 10
 

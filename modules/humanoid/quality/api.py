@@ -4,7 +4,7 @@ Quality API: Endpoints para gestión de POTs.
 from __future__ import annotations
 
 import json
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel
