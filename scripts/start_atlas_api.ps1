@@ -19,4 +19,4 @@ function Resolve-AtlasPython {
 }
 
 $Python = Resolve-AtlasPython -RepoRoot $Root
-& $Python -m uvicorn atlas_adapter.atlas_http_api:app --host :: --port 8791
+& $Python -m uvicorn atlas_adapter.atlas_http_api:app --host 127.0.0.1 --port 8791

@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generated_at": "2026-03-05T01:22:28.348461+00:00",
+  "generated_at": "2026-03-05T01:31:44.804894+00:00",
   "workspace": "C:\\ATLAS_PUSH",
   "scan_source": "atlas_tools_watchdog.py",
   "summary": {
@@ -173,7 +173,7 @@
       "name": "Taskwarrior",
       "category": "orchestration",
       "critical": false,
-      "version": "- \n                                                                                                                        \n\n   - \n   \\ \n                                                                                                                        \nNo se encontrÃ³ ningÃºn paquete que coincida con los criterios de entrada.",
+      "version": "- \n                                                                                                                        \n\n   - \n   \\ \n   | \n   / \n                                                                                                                        \nNo se encontrÃ³ ningÃºn paquete que coincida con los criterios de entrada.",
       "status": "error",
       "health": "not_detected",
       "details": "[WinError 2] El sistema no puede encontrar el archivo especificado",
@@ -264,7 +264,7 @@
       "name": "tmux",
       "category": "terminal",
       "critical": false,
-      "version": "- \n                                                                                                                        \n\n   - \n   \\ \n                                                                                                                        \nNo se encontrÃ³ ningÃºn paquete que coincida con los criterios de entrada.",
+      "version": "- \n                                                                                                                        \n\n   - \n   \\ \n   | \n                                                                                                                        \nNo se encontrÃ³ ningÃºn paquete que coincida con los criterios de entrada.",
       "status": "error",
       "health": "not_detected",
       "details": "[WinError 2] El sistema no puede encontrar el archivo especificado",

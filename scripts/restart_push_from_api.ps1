@@ -2,14 +2,14 @@
 # Espera unos segundos, mata el proceso en 8791 y arranca uvicorn de nuevo.
 param(
     [int]$DelaySeconds = 3,
-    [int]$HealthTimeoutSec = 45
+    [int]$HealthTimeoutSec = 120
 )
 
 $ErrorActionPreference = "Continue"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $FreePortScript = Join-Path $PSScriptRoot "free_port.ps1"
 $RuntimeHelpers = Join-Path $PSScriptRoot "atlas_runtime.ps1"
-$HealthUrl = "http://localhost:8791/health"
+$HealthUrl = "http://127.0.0.1:8791/health"
 $LogDir = Join-Path $RepoRoot "logs"
 $LockFile = Join-Path $LogDir "push_restart.lock"
 $script:LockHandle = $null
@@ -80,7 +80,7 @@ if (Test-Path $FreePortScript) {
     Start-Sleep -Milliseconds 800
 }
 
-$args = @("-m", "uvicorn", "atlas_adapter.atlas_http_api:app", "--host", "::", "--port", "8791")
+$args = @("-m", "uvicorn", "atlas_adapter.atlas_http_api:app", "--host", "127.0.0.1", "--port", "8791")
 Start-Process $PyExe -ArgumentList $args -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
 
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
