@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generated_at": "2026-03-05T05:13:29.157235+00:00",
+  "generated_at": "2026-03-05T10:48:30.955432+00:00",
   "workspace": "C:\\ATLAS_PUSH",
   "scan_source": "atlas_tools_watchdog.py",
   "summary": {
@@ -56,12 +56,12 @@
       "name": "CCXT (Trading)",
       "category": "dependency",
       "critical": false,
-      "version": "4.5.40",
+      "version": "4.5.41",
       "status": "ok",
       "health": "ready",
       "details": "",
       "update_script": "scripts\\atlas_tool_update.ps1 -Tool ccxt",
-      "latest_version": "4.5.40",
+      "latest_version": "4.5.41",
       "update_ready": false
     },
     {
