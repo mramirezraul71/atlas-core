@@ -46,7 +46,7 @@ git:
 
 # Ciclos de monitoreo (fetch + status + opcional pull)
 cycle:
-  enabled: true
+  enabled: false
   interval_seconds: 600   # 10 min (balance: no saturar remoto, detectar cambios a tiempo)
   fetch_on_cycle: true
   pull_on_cycle: false    # true = pull automático si hay actualización remota
@@ -54,9 +54,9 @@ cycle:
 
 # Modo "después de arreglos" (--after-fix): commit + push de cambios filtrados
 after_fix:
-  enabled: true
+  enabled: false
   # Programar after-fix en el scheduler cada N segundos (0 = no programar; solo manual o API)
-  auto_schedule_interval_seconds: 900
+  auto_schedule_interval_seconds: 0
   default_message: "chore: auto-sync repo (monitor)"
   allow_empty_commit: false
 

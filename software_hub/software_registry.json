@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generated_at": "2026-03-05T11:00:54.086313+00:00",
+  "generated_at": "2026-03-05T11:31:14.875747+00:00",
   "workspace": "C:\\ATLAS_PUSH",
   "scan_source": "atlas_software_watchdog.py",
   "catalog_version": "1.0",
@@ -17,9 +17,9 @@
     "drivers_warn": 0,
     "drivers_error": 0,
     "dev_total": 9,
-    "dev_ok": 6,
+    "dev_ok": 5,
     "dev_warn": 1,
-    "dev_error": 2
+    "dev_error": 3
   },
   "software": [
     {
@@ -38,7 +38,7 @@
       "details": "Docker version 29.0.1, build eedd969",
       "network_probe": "https://docs.docker.com/desktop/",
       "network_available": true,
-      "latency_ms": 195,
+      "latency_ms": 224,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -58,7 +58,7 @@
       "details": "jq-1.8.1",
       "network_probe": "https://jqlang.github.io/jq/",
       "network_available": true,
-      "latency_ms": 214,
+      "latency_ms": 203,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -78,7 +78,7 @@
       "details": "Version 1.46.0",
       "network_probe": "https://pypi.org/pypi/playwright/json",
       "network_available": true,
-      "latency_ms": 106,
+      "latency_ms": 95,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -98,7 +98,7 @@
       "details": "git version 2.53.0.windows.1",
       "network_probe": "https://api.github.com/repos/git-for-windows/git/releases/latest",
       "network_available": true,
-      "latency_ms": 1016,
+      "latency_ms": 254,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -118,7 +118,7 @@
       "details": "cloudflared version 2025.11.1 (built 2025-11-07T16:30 UTC)",
       "network_probe": "https://api.github.com/repos/cloudflare/cloudflared/releases/latest",
       "network_available": true,
-      "latency_ms": 203,
+      "latency_ms": 175,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -135,10 +135,10 @@
       "update_ready": false,
       "status": "warn",
       "health": "installed_no_path",
-      "details": "- \n                                                                                                                        \n\n   - \n   \\ \n   | \n                                                                                                                        \nNombre          Id            VersiÃ³n\n--------------------------------------\nHTTPie 2025.2.0 HTTPie.HTTPie 2025.2.0",
+      "details": "- \n                                                                                                                        \n\n   - \n   \\ \n                                                                                                                        \nNombre          Id            VersiÃ³n\n--------------------------------------\nHTTPie 2025.2.0 HTTPie.HTTPie 2025.2.0",
       "network_probe": "https://httpie.io",
       "network_available": true,
-      "latency_ms": 150,
+      "latency_ms": 148,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -155,10 +155,10 @@
       "update_ready": false,
       "status": "warn",
       "health": "installed_no_path",
-      "details": "- \n                                                                                                                        \n\n   - \n   \\ \n   | \n                                                                                                                        \nNombre    Id            VersiÃ³n\n-------------------------------\nNmap 7.80 Insecure.Nmap 7.80",
+      "details": "- \n                                                                                                                        \n\n   - \n   \\ \n                                                                                                                        \nNombre    Id            VersiÃ³n\n-------------------------------\nNmap 7.80 Insecure.Nmap 7.80",
       "network_probe": "https://nmap.org",
       "network_available": true,
-      "latency_ms": 360,
+      "latency_ms": 403,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -175,10 +175,10 @@
       "update_ready": false,
       "status": "warn",
       "health": "installed_no_path",
-      "details": "- \n                                                                                                                        \n\n   - \n   \\ \n   | \n                                                                                                                        \nNombre    Id                  VersiÃ³n\n-------------------------------------\nTailscale Tailscale.Tailscale 1.94.2",
+      "details": "- \n                                                                                                                        \n\n   - \n   \\ \n                                                                                                                        \nNombre    Id                  VersiÃ³n\n-------------------------------------\nTailscale Tailscale.Tailscale 1.94.2",
       "network_probe": "https://api.github.com/repos/tailscale/tailscale/releases/latest",
       "network_available": true,
-      "latency_ms": 158,
+      "latency_ms": 164,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -198,7 +198,7 @@
       "details": "3.48.0",
       "network_probe": "https://taskwarrior.org",
       "network_available": true,
-      "latency_ms": 107,
+      "latency_ms": 116,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -218,7 +218,7 @@
       "details": "ruff 0.15.2",
       "network_probe": "https://pypi.org/pypi/ruff/json",
       "network_available": true,
-      "latency_ms": 122,
+      "latency_ms": 106,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -238,7 +238,7 @@
       "details": "v20.19.0",
       "network_probe": "https://nodejs.org/dist/index.json",
       "network_available": true,
-      "latency_ms": 143,
+      "latency_ms": 124,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -258,7 +258,7 @@
       "details": "ollama version is 0.17.6",
       "network_probe": "https://api.github.com/repos/ollama/ollama/releases/latest",
       "network_available": true,
-      "latency_ms": 191,
+      "latency_ms": 237,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -278,7 +278,7 @@
       "details": "Python 3.11.9",
       "network_probe": "https://pypi.org/pypi/pip/json",
       "network_available": true,
-      "latency_ms": 102,
+      "latency_ms": 121,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -298,7 +298,7 @@
       "details": "pip 25.3 from C:\\Users\\r6957\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\pip (python 3.11)",
       "network_probe": "https://pypi.org/pypi/pip/json",
       "network_available": true,
-      "latency_ms": 98,
+      "latency_ms": 93,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -318,7 +318,7 @@
       "details": "uv 0.7.20 (251420396 2025-07-09)",
       "network_probe": "https://pypi.org/pypi/uv/json",
       "network_available": true,
-      "latency_ms": 91,
+      "latency_ms": 120,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -338,7 +338,7 @@
       "details": "tmux 3.6a-win32",
       "network_probe": "https://github.com/tmux/tmux",
       "network_available": true,
-      "latency_ms": 482,
+      "latency_ms": 562,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -358,7 +358,7 @@
       "details": "",
       "network_probe": "https://pypi.org/pypi/ccxt/json",
       "network_available": true,
-      "latency_ms": 111,
+      "latency_ms": 124,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -378,7 +378,7 @@
       "details": "",
       "network_probe": "https://pypi.org/pypi/yt-dlp/json",
       "network_available": true,
-      "latency_ms": 102,
+      "latency_ms": 96,
       "network_status": "network_ok",
       "network_error": null
     }
@@ -392,7 +392,7 @@
       "install_method": "pip",
       "install_target": "ccxt",
       "network_available": true,
-      "latency_ms": 111,
+      "latency_ms": 124,
       "network_error": null,
       "latest_version": "4.5.41",
       "score": 90,
@@ -406,7 +406,7 @@
       "install_method": "pip",
       "install_target": "yt-dlp",
       "network_available": true,
-      "latency_ms": 102,
+      "latency_ms": 96,
       "network_error": null,
       "latest_version": "2026.3.3",
       "score": 90,
@@ -423,12 +423,6 @@
       "detected": true,
       "version": "10.0.26100.1",
       "matches": [
-        {
-          "name": "Microsoft Streaming Quality Manager Proxy",
-          "version": "10.0.26100.1",
-          "provider": "Microsoft",
-          "class": "MEDIA"
-        },
         {
           "name": "Microsoft Streaming Service Proxy",
           "version": "10.0.26100.1",
@@ -452,9 +446,15 @@
           "version": "10.0.26100.7920",
           "provider": "Microsoft",
           "class": "MEDIA"
+        },
+        {
+          "name": "Microsoft Bluetooth Hands-Free Audio device",
+          "version": "10.0.26100.7920",
+          "provider": "Microsoft",
+          "class": "MEDIA"
         }
       ],
-      "count": 11
+      "count": 10
     },
     {
       "id": "bluetooth_driver",
@@ -600,16 +600,6 @@
       "details": ""
     },
     {
-      "id": "repo_monitor_scheduler",
-      "name": "Repo Monitor Scheduler Job",
-      "type": "scheduler_job",
-      "critical": true,
-      "status": "ok",
-      "health": "queued",
-      "version": "",
-      "details": "job=repo_monitor_cycle"
-    },
-    {
       "id": "triada_last_cycle",
       "name": "Triada Last Cycle",
       "type": "log_file",
@@ -640,6 +630,16 @@
       "details": "job=makeplay_scanner"
     },
     {
+      "id": "repo_monitor_scheduler",
+      "name": "Repo Monitor Scheduler Job",
+      "type": "scheduler_job",
+      "critical": true,
+      "status": "error",
+      "health": "paused",
+      "version": "",
+      "details": "job=repo_monitor_cycle"
+    },
+    {
       "id": "repo_update_status",
       "name": "Repo Update Status",
       "type": "repo_update",
@@ -647,7 +647,7 @@
       "status": "warn",
       "health": "update_ready",
       "version": "dev",
-      "details": "head=7305c43c remote=eb6525bd"
+      "details": "head=5e09b327 remote=eb6525bd"
     }
   ]
 }

@@ -42,6 +42,11 @@ def _env_components(name: str, default_csv: str) -> set[str]:
     return {c.strip().lower() for c in default_csv.split(",") if c.strip()}
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "true" if default else "false")
+    return (raw or "").strip().lower() in ("1", "true", "yes", "y", "on")
+
+
 # ============================================================================
 # CONFIGURACIÓN
 # ============================================================================
@@ -75,7 +80,9 @@ class AutonomyConfig:
     )
 
     # Features - ALL ON
-    enable_auto_commit: bool = True
+    enable_auto_commit: bool = field(
+        default_factory=lambda: _env_bool("QUALITY_AUTO_COMMIT_ENABLED", False)
+    )
     enable_auto_repair: bool = True
     enable_scheduled_maintenance: bool = True
     enable_incident_response: bool = True

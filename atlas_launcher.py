@@ -97,7 +97,7 @@ def init_autonomy() -> bool:
                 AutonomyConfig, start_autonomy)
 
             config = AutonomyConfig(
-                enable_auto_commit=True,
+                enable_auto_commit=(os.getenv("QUALITY_AUTO_COMMIT_ENABLED", "false").strip().lower() in ("1", "true", "yes", "y", "on")),
                 enable_auto_repair=True,
                 enable_scheduled_maintenance=True,
                 enable_incident_response=True,

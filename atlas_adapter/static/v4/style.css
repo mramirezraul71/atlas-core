@@ -1350,7 +1350,11 @@ button { cursor: pointer; font-family: inherit; }
 }
 .sc-runtime-block {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+.sc-runtime-block #sc-action {
+  grid-column: 1 / -1;
 }
 .sc-action-log {
   min-height: 38px;
@@ -1363,9 +1367,37 @@ button { cursor: pointer; font-family: inherit; }
 }
 .sc-section {
   margin-top: 2px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+.sc-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.sc-section .section-title {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: block;
+  letter-spacing: 0.8px;
+}
+.sc-section-head .count {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+  font-family: var(--font-mono);
+}
+.sc-section-sub {
+  margin: 6px 0 12px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 .software-center-view .provider-grid {
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(265px, 1fr));
   gap: 14px;
 }
 
@@ -1377,6 +1409,7 @@ button { cursor: pointer; font-family: inherit; }
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 14px;
+  min-height: 100%;
   transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
 }
 .tool-card:hover {
@@ -1435,6 +1468,7 @@ button { cursor: pointer; font-family: inherit; }
   color: var(--text);
   font-weight: 600;
   font-family: var(--font-mono);
+  line-height: 1.35;
   overflow-wrap: anywhere;
 }
 .tool-status-line {
@@ -1537,6 +1571,9 @@ button { cursor: pointer; font-family: inherit; }
   .software-center-view .provider-grid {
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   }
+  .sc-runtime-block {
+    grid-template-columns: 1fr;
+  }
   .tool-kv-grid {
     grid-template-columns: 1fr;
   }
@@ -1555,6 +1592,9 @@ button { cursor: pointer; font-family: inherit; }
     gap: 14px;
   }
   .sc-actions-block {
+    padding: 12px;
+  }
+  .sc-section {
     padding: 12px;
   }
   .sc-action-bar .action-btn {

@@ -185,7 +185,7 @@ DEFAULT_TRIGGER_RULES: List[TriggerRule] = [
         name="Cierre de sesión",
         condition=TriggerCondition.SHUTDOWN,
         pot_id="session_shutdown",
-        enabled=True,
+        enabled=_env_bool("QUALITY_SHUTDOWN_TRIGGER_ENABLED", False),
         priority=1,
         cooldown_seconds=0,
     ),
@@ -550,8 +550,14 @@ class TriggerEngine:
         if not self._running:
             return
 
-        # Disparar trigger de shutdown
-        self._fire_trigger(self._registry.get("session_shutdown"))
+        # Disparar trigger de shutdown solo si está habilitado explícitamente.
+        shutdown_enabled = _env_bool("QUALITY_SHUTDOWN_TRIGGER_ENABLED", False)
+        if shutdown_enabled:
+            self._fire_trigger(self._registry.get("session_shutdown"))
+        else:
+            _log.info(
+                "Shutdown trigger disabled (QUALITY_SHUTDOWN_TRIGGER_ENABLED=false)"
+            )
 
         self._running = False
         if self._worker_thread:

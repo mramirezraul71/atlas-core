@@ -33,6 +33,19 @@ def _load_repo_monitor_config() -> dict:
         return {"cycle": {"enabled": True, "interval_seconds": 600}}
 
 
+def _find_job_by_name(db, name: str):
+    """Busca un job por nombre sin depender de limits en list_jobs()."""
+    try:
+        conn = db._ensure()
+        row = conn.execute(
+            "SELECT * FROM jobs WHERE name = ? ORDER BY updated_ts DESC LIMIT 1",
+            (name,),
+        ).fetchone()
+        return db._row_to_job(row) if row else None
+    except Exception:
+        return None
+
+
 def ensure_repo_monitor_jobs() -> None:
     """Crea/actualiza jobs repo_monitor_cycle y repo_monitor_after_fix segun config."""
     if not _sched_enabled():
@@ -43,17 +56,15 @@ def ensure_repo_monitor_jobs() -> None:
 
         cfg = _load_repo_monitor_config()
         db = get_scheduler_db()
-        jobs = db.list_jobs(limit=100) or []
         now = datetime.now(timezone.utc).isoformat()
 
         # Job 1: ciclo (fetch + status) cada N segundos
         cycle = cfg.get("cycle") or {}
-        if cycle.get("enabled", True):
+        cycle_enabled = bool(cycle.get("enabled", True))
+        if cycle_enabled:
             interval_sec = int(cycle.get("interval_seconds", 600) or 600)
             interval_sec = max(60, min(interval_sec, 86400))
-            repo_job = next(
-                (j for j in jobs if j.get("name") == "repo_monitor_cycle"), None
-            )
+            repo_job = _find_job_by_name(db, "repo_monitor_cycle")
             if repo_job:
                 conn = db._ensure()
                 conn.execute(
@@ -79,15 +90,23 @@ def ensure_repo_monitor_jobs() -> None:
                         interval_seconds=interval_sec,
                     )
                 )
+        else:
+            repo_job = _find_job_by_name(db, "repo_monitor_cycle")
+            if repo_job:
+                conn = db._ensure()
+                conn.execute(
+                    "UPDATE jobs SET enabled = 0, status = 'paused', updated_ts = ? WHERE id = ?",
+                    (now, repo_job.get("id")),
+                )
+                conn.commit()
 
         # Job 2: after-fix (commit + push) cada N segundos si esta habilitado
         af = cfg.get("after_fix") or {}
         auto_interval = int(af.get("auto_schedule_interval_seconds", 0) or 0)
-        if af.get("enabled", True) and auto_interval > 0:
+        af_enabled = bool(af.get("enabled", True)) and auto_interval > 0
+        if af_enabled:
             auto_interval = max(300, min(auto_interval, 86400))  # entre 5 min y 24 h
-            after_job = next(
-                (j for j in jobs if j.get("name") == "repo_monitor_after_fix"), None
-            )
+            after_job = _find_job_by_name(db, "repo_monitor_after_fix")
             if after_job:
                 conn = db._ensure()
                 conn.execute(
@@ -112,5 +131,14 @@ def ensure_repo_monitor_jobs() -> None:
                         interval_seconds=auto_interval,
                     )
                 )
+        else:
+            after_job = _find_job_by_name(db, "repo_monitor_after_fix")
+            if after_job:
+                conn = db._ensure()
+                conn.execute(
+                    "UPDATE jobs SET enabled = 0, status = 'paused', updated_ts = ? WHERE id = ?",
+                    (now, after_job.get("id")),
+                )
+                conn.commit()
     except Exception:
         pass

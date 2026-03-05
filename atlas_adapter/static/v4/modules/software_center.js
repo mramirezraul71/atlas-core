@@ -74,12 +74,14 @@ function _cardClass(status) {
 function _detailLines(value, maxLines = 3) {
   const text = _cleanText(value);
   if (!text || text === '--') return [];
+  const seen = new Set();
   return text
     .split('\n')
     .map((line) => line.trim().replace(/\s+/g, ' '))
-    .map((line) => line.replace(/\b([A-Za-z0-9_-]+)\.\1\b/g, '$1'))
+    .map((line) => line.replace(/\b([A-Za-z0-9_-]+)\.\1\b/gi, '$1'))
+    .map((line) => line.replace(/([A-Za-z0-9_-]+)\s+\1\b/gi, '$1'))
     .map((line) => line.replace(/^[-\\|\s]+|[-\\|\s]+$/g, '').trim())
-    .map((line) => line.replace(/^(Nombre\s+Id\s+Versi[oó]n)$/i, ''))
+    .map((line) => line.replace(/^(Nombre\s+Id\s+Version|Nombre\s+Id\s+Versiones?)$/i, ''))
     .map((line) => line.replace(/^(Name\s+Id\s+Version)$/i, ''))
     .map((line) => line.replace(/^Version\s+Source$/i, ''))
     .map((line) => line.replace(/^(-\s*)+/, '').trim())
@@ -87,6 +89,12 @@ function _detailLines(value, maxLines = 3) {
     .filter((line) => !/^[-=]{4,}$/.test(line))
     .filter((line) => !/^[-\s\\|]+$/.test(line))
     .filter((line) => !/^red\s+\d+ms$/i.test(line))
+    .filter((line) => {
+      const key = line.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .slice(0, maxLines);
 }
 
@@ -141,7 +149,7 @@ export default {
               <button class="action-btn primary" id="sc-btn-scan">Escanear Software</button>
               <button class="action-btn" id="sc-btn-discovery">Buscar en Red</button>
               <button class="action-btn" id="sc-btn-apply-all">Actualizar / Instalar Todo</button>
-              <button class="action-btn" id="sc-btn-maintenance">Ciclo Mantenimiento</button>
+              <button class="action-btn" id="sc-btn-maintenance">Ciclo de Mantenimiento</button>
               <button class="action-btn" id="sc-btn-open-tools">Ir a Tools Menu</button>
             </div>
             <div id="sc-alerts"></div>
@@ -153,22 +161,38 @@ export default {
           </section>
 
           <section class="sc-section">
-            <div class="section-title">Software Instalado y Versionado <span class="count" id="sc-software-count">--</span></div>
+            <div class="sc-section-head">
+              <div class="section-title">Software Instalado y Versionado</div>
+              <span class="count" id="sc-software-count">--</span>
+            </div>
+            <p class="sc-section-sub">Inventario local auditado y normalizado por el sistema.</p>
             <div class="provider-grid" id="sc-software-grid"></div>
           </section>
 
           <section class="sc-section">
-            <div class="section-title">Drivers Requeridos <span class="count" id="sc-driver-count">--</span></div>
+            <div class="sc-section-head">
+              <div class="section-title">Drivers Requeridos</div>
+              <span class="count" id="sc-driver-count">--</span>
+            </div>
+            <p class="sc-section-sub">Drivers criticos y opcionales pendientes de validacion.</p>
             <div class="provider-grid" id="sc-driver-grid"></div>
           </section>
 
           <section class="sc-section">
-            <div class="section-title">Expansion Network <span class="count" id="sc-candidate-count">--</span></div>
+            <div class="sc-section-head">
+              <div class="section-title">Expansion en Red</div>
+              <span class="count" id="sc-candidate-count">--</span>
+            </div>
+            <p class="sc-section-sub">Herramientas detectadas en red para instalacion o upgrade.</p>
             <div class="provider-grid" id="sc-candidate-grid"></div>
           </section>
 
           <section class="sc-section">
-            <div class="section-title">Stack de Desarrollo ATLAS <span class="count" id="sc-dev-count">--</span></div>
+            <div class="sc-section-head">
+              <div class="section-title">Stack de Desarrollo ATLAS</div>
+              <span class="count" id="sc-dev-count">--</span>
+            </div>
+            <p class="sc-section-sub">Base tecnica de herramientas para build, QA y operaciones.</p>
             <div class="provider-grid" id="sc-dev-grid"></div>
           </section>
         </div>
@@ -220,7 +244,7 @@ function _applyData(container, data) {
   _txt(container, '#sc-update-ready', summary.software_update_ready ?? '--');
   _txt(container, '#sc-drivers-critical', summary.drivers_error ?? 0);
   _txt(container, '#sc-candidates-available', summary.candidates_available ?? 0);
-  _txt(container, '#sc-scan-time', `ultimo escaneo: ${scanAt}`);
+  _txt(container, '#sc-scan-time', `Ultimo escaneo: ${scanAt}`);
 
   _renderAlerts(container, data);
   _renderSoftware(container);
@@ -249,7 +273,7 @@ function _cardForSoftware(row) {
   const latest = row.latest_version || '--';
   const details = row.details || '--';
   const installed = !!row.installed;
-  const net = row.network_available ? `red ${row.latency_ms || '--'}ms` : 'sin red';
+  const net = row.network_available ? `latencia ${row.latency_ms || '--'}ms` : 'sin red';
   const cardClass = _cardClass(status);
   return `
     <article class="tool-card ${cardClass}">
@@ -263,7 +287,7 @@ function _cardForSoftware(row) {
           <strong>${_esc(version)}</strong>
         </div>
         <div class="tool-kv-item">
-          <span class="tool-kv-label">Latest</span>
+          <span class="tool-kv-label">Version objetivo</span>
           <strong>${_esc(latest)}</strong>
         </div>
       </div>
@@ -356,7 +380,7 @@ function _cardForDev(row) {
           <strong>${_esc(row.version || '--')}</strong>
         </div>
         <div class="tool-kv-item">
-          <span class="tool-kv-label">Health</span>
+          <span class="tool-kv-label">Estado</span>
           <strong>${_esc(row.health || '--')}</strong>
         </div>
       </div>
@@ -370,7 +394,7 @@ function _cardForDev(row) {
 
 function _renderSoftware(container) {
   const rows = Array.isArray(container.__softwareData?.software) ? container.__softwareData.software : [];
-  _txt(container, '#sc-software-count', `${rows.length} items`);
+  _txt(container, '#sc-software-count', `${rows.length} elementos`);
   const grid = container.querySelector('#sc-software-grid');
   if (!rows.length) {
     grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-title">Sin software detectado</div></div>`;
