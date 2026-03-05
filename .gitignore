@@ -81,6 +81,10 @@ logs/repo_monitor.log*
 # Task/orchestrator local state
 atlas_task_memory.sqlite
 
+# Runtime artifacts (generated/cache) that should not be versioned
+software_hub/software_registry.json
+tools/atlas_agent/memory/episodes.sqlite
+
 # Emergency dashboards/servers (local recovery tools)
 dashboard_emergency.py
 emergency_server.py
