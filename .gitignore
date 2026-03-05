@@ -82,6 +82,7 @@ logs/repo_monitor.log*
 atlas_task_memory.sqlite
 
 # Runtime artifacts (generated/cache) that should not be versioned
+atlas_master_registry.json
 software_hub/software_registry.json
 tools/atlas_agent/memory/episodes.sqlite
 
