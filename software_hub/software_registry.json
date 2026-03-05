@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generated_at": "2026-03-05T05:12:39.974678+00:00",
+  "generated_at": "2026-03-05T05:23:52.811788+00:00",
   "workspace": "C:\\ATLAS_PUSH",
   "scan_source": "atlas_software_watchdog.py",
   "catalog_version": "1.0",
@@ -18,8 +18,8 @@
     "drivers_error": 0,
     "dev_total": 9,
     "dev_ok": 4,
-    "dev_warn": 2,
-    "dev_error": 3
+    "dev_warn": 1,
+    "dev_error": 4
   },
   "software": [
     {
@@ -38,7 +38,7 @@
       "details": "Docker version 29.0.1, build eedd969",
       "network_probe": "https://docs.docker.com/desktop/",
       "network_available": true,
-      "latency_ms": 227,
+      "latency_ms": 358,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -58,7 +58,7 @@
       "details": "jq-1.8.1",
       "network_probe": "https://jqlang.github.io/jq/",
       "network_available": true,
-      "latency_ms": 211,
+      "latency_ms": 308,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -78,7 +78,7 @@
       "details": "Version 1.46.0",
       "network_probe": "https://pypi.org/pypi/playwright/json",
       "network_available": true,
-      "latency_ms": 94,
+      "latency_ms": 111,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -98,7 +98,7 @@
       "details": "git version 2.53.0.windows.1",
       "network_probe": "https://api.github.com/repos/git-for-windows/git/releases/latest",
       "network_available": true,
-      "latency_ms": 169,
+      "latency_ms": 246,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -118,7 +118,7 @@
       "details": "cloudflared version 2025.11.1 (built 2025-11-07T16:30 UTC)",
       "network_probe": "https://api.github.com/repos/cloudflare/cloudflared/releases/latest",
       "network_available": true,
-      "latency_ms": 181,
+      "latency_ms": 169,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -135,10 +135,10 @@
       "update_ready": false,
       "status": "warn",
       "health": "installed_no_path",
-      "details": "- \n                                                                                                                        \n\n   - \n   \\ \n                                                                                                                        \nNombre          Id            VersiÃ³n\n--------------------------------------\nHTTPie 2025.2.0 HTTPie.HTTPie 2025.2.0",
+      "details": "- \n   \\ \n                                                                                                                        \n\n  â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–’â–’â–’â–’â–’â–’â–’â–’â–’â–’â–’â–’â–’â–’â–’â–’â–’â–’â–’  1024 KB / 2.68 MB\n  â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–’â–’â–’â–’â–’â–’â–’â–’  2.00 MB / 2.68 MB\n  â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ  2.68 MB / 2.68 MB\n                                 ",
       "network_probe": "https://httpie.io",
       "network_available": true,
-      "latency_ms": 196,
+      "latency_ms": 351,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -158,7 +158,7 @@
       "details": "Nmap version 7.80 ( https://nmap.org )\nPlatform: i686-pc-windows-windows\nCompiled with: nmap-liblua-5.3.5 openssl-1.0.2s nmap-libssh2-1.8.2 nmap-libz-1.2.11 nmap-libpcre-7.6 Npcap-0.9982 nmap-libdnet-1.12 ipv6\nCompiled without:\nAvailable nsock engines: iocp poll select",
       "network_probe": "https://nmap.org",
       "network_available": true,
-      "latency_ms": 377,
+      "latency_ms": 365,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -175,10 +175,10 @@
       "update_ready": false,
       "status": "warn",
       "health": "installed_no_path",
-      "details": "- \n                                                                                                                        \n\n   - \n   \\ \n                                                                                                                        \nNombre    Id                  VersiÃ³n\n-------------------------------------\nTailscale Tailscale.Tailscale 1.94.2",
+      "details": "- \n                                                                                                                        \n\n   - \n   \\ \n   | \n                                                                                                                        \nNombre    Id                  VersiÃ³n\n-------------------------------------\nTailscale Tailscale.Tailscale 1.94.2",
       "network_probe": "https://api.github.com/repos/tailscale/tailscale/releases/latest",
       "network_available": true,
-      "latency_ms": 175,
+      "latency_ms": 163,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -198,7 +198,7 @@
       "details": "3.48.0",
       "network_probe": "https://taskwarrior.org",
       "network_available": true,
-      "latency_ms": 121,
+      "latency_ms": 136,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -238,7 +238,7 @@
       "details": "v25.8.0",
       "network_probe": "https://nodejs.org/dist/index.json",
       "network_available": true,
-      "latency_ms": 138,
+      "latency_ms": 259,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -258,7 +258,7 @@
       "details": "ollama version is 0.17.6",
       "network_probe": "https://api.github.com/repos/ollama/ollama/releases/latest",
       "network_available": true,
-      "latency_ms": 201,
+      "latency_ms": 155,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -278,7 +278,7 @@
       "details": "Python 3.11.9",
       "network_probe": "https://pypi.org/pypi/pip/json",
       "network_available": true,
-      "latency_ms": 120,
+      "latency_ms": 85,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -298,7 +298,7 @@
       "details": "pip 25.3 from C:\\Users\\r6957\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\pip (python 3.11)",
       "network_probe": "https://pypi.org/pypi/pip/json",
       "network_available": true,
-      "latency_ms": 100,
+      "latency_ms": 110,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -318,7 +318,7 @@
       "details": "uv 0.7.20 (251420396 2025-07-09)",
       "network_probe": "https://pypi.org/pypi/uv/json",
       "network_available": true,
-      "latency_ms": 118,
+      "latency_ms": 89,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -338,7 +338,7 @@
       "details": "tmux 3.6a-win32",
       "network_probe": "https://github.com/tmux/tmux",
       "network_available": true,
-      "latency_ms": 429,
+      "latency_ms": 597,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -358,7 +358,7 @@
       "details": "",
       "network_probe": "https://pypi.org/pypi/ccxt/json",
       "network_available": true,
-      "latency_ms": 111,
+      "latency_ms": 91,
       "network_status": "network_ok",
       "network_error": null
     },
@@ -378,7 +378,7 @@
       "details": "",
       "network_probe": "https://pypi.org/pypi/yt-dlp/json",
       "network_available": true,
-      "latency_ms": 107,
+      "latency_ms": 232,
       "network_status": "network_ok",
       "network_error": null
     }
@@ -392,7 +392,7 @@
       "install_method": "pip",
       "install_target": "ccxt",
       "network_available": true,
-      "latency_ms": 111,
+      "latency_ms": 91,
       "network_error": null,
       "latest_version": "4.5.40",
       "score": 90,
@@ -406,7 +406,7 @@
       "install_method": "pip",
       "install_target": "yt-dlp",
       "network_available": true,
-      "latency_ms": 107,
+      "latency_ms": 232,
       "network_error": null,
       "latest_version": "2026.3.3",
       "score": 90,
@@ -644,10 +644,10 @@
       "name": "Repo Update Status",
       "type": "repo_update",
       "critical": true,
-      "status": "warn",
-      "health": "update_ready",
-      "version": "dev",
-      "details": "head=696ee980 remote=eb6525bd"
+      "status": "error",
+      "health": "unknown",
+      "version": "",
+      "details": "head= remote="
     }
   ]
 }
