@@ -106,6 +106,49 @@ function Ensure-DnsCname {
     }
 }
 
+function Test-CloudflareDelegation {
+    param(
+        [string]$ZoneName,
+        [string[]]$ExpectedNameServers
+    )
+
+    $expected = @($ExpectedNameServers | Where-Object { $_ } | ForEach-Object { $_.TrimEnd(".").ToLower() } | Sort-Object -Unique)
+    if (-not $expected -or $expected.Count -eq 0) {
+        Write-WarnMsg "Cloudflare no devolvió nameservers esperados para la zona. No se pudo validar delegación NS."
+        return $null
+    }
+
+    $public = @()
+    try {
+        $public = @(
+            Resolve-DnsName -Type NS $ZoneName -ErrorAction Stop |
+                Select-Object -ExpandProperty NameHost |
+                ForEach-Object { $_.TrimEnd(".").ToLower() } |
+                Sort-Object -Unique
+        )
+    } catch {
+        Write-WarnMsg "No se pudieron resolver NS públicos para ${ZoneName}: $($_.Exception.Message)"
+        return $null
+    }
+
+    if (-not $public -or $public.Count -eq 0) {
+        Write-WarnMsg "No hay respuesta de NS públicos para $ZoneName."
+        return $null
+    }
+
+    $publicJoined = ($public -join ",")
+    $expectedJoined = ($expected -join ",")
+    if ($publicJoined -eq $expectedJoined) {
+        Write-Ok "Delegación NS correcta: $($public -join ', ')"
+        return $true
+    }
+
+    Write-WarnMsg "Delegación NS pendiente o incorrecta para $ZoneName."
+    Write-WarnMsg "NS públicos actuales: $($public -join ', ')"
+    Write-WarnMsg "NS esperados en Cloudflare: $($expected -join ', ')"
+    return $false
+}
+
 function Upsert-CredValue {
     param(
         [string]$Key,
@@ -151,11 +194,23 @@ if ($accountIdCandidate) {
 } else {
     $accountsResp = Invoke-CfApi -Method "GET" -Path "/accounts"
     if (-not $accountsResp.result -or $accountsResp.result.Count -eq 0) {
-        throw "El token no expone ninguna cuenta Cloudflare. Pasa -AccountId o define CLOUDFLARE_ACCOUNT_ID en env/credenciales."
+        Write-WarnMsg "El token no lista cuentas en /accounts. Intentando inferir account_id desde la zona."
+        $zonePath = "/zones?per_page=1"
+        if ($ZoneName) {
+            $zonePath = "/zones?name=$([System.Uri]::EscapeDataString($ZoneName))&per_page=1"
+        }
+        $zoneProbe = Invoke-CfApi -Method "GET" -Path $zonePath
+        if ($zoneProbe.result -and $zoneProbe.result.Count -gt 0 -and $zoneProbe.result[0].account.id) {
+            $accountId = [string]$zoneProbe.result[0].account.id
+            Write-Info "Cuenta inferida desde zona: $accountId"
+        } else {
+            throw "El token no expone ninguna cuenta Cloudflare y no fue posible inferir account_id desde zonas. Pasa -AccountId o define CLOUDFLARE_ACCOUNT_ID."
+        }
+    } else {
+        $account = $accountsResp.result[0]
+        $accountId = [string]$account.id
+        Write-Info "Cuenta seleccionada: $($account.name) ($accountId)"
     }
-    $account = $accountsResp.result[0]
-    $accountId = [string]$account.id
-    Write-Info "Cuenta seleccionada: $($account.name) ($accountId)"
 }
 
 Write-Info "Comprobando permisos de Tunnel API..."
@@ -183,6 +238,10 @@ if (-not $zones -or $zones.Count -eq 0) {
 $zone = $zones[0]
 $zoneId = [string]$zone.id
 $zoneNameFinal = [string]$zone.name
+$zoneNameServers = @($zone.name_servers)
+if (-not $zoneNameServers -or $zoneNameServers.Count -eq 0) {
+    $zoneNameServers = @($zone.original_name_servers)
+}
 Write-Info "Zona seleccionada: $zoneNameFinal ($zoneId)"
 
 $listTunnel = Invoke-CfApi -Method "GET" -Path "/accounts/$accountId/cfd_tunnel?name=$([System.Uri]::EscapeDataString($TunnelName))"
@@ -220,6 +279,7 @@ $fqdnDash = "$DashboardHost.$zoneNameFinal"
 Ensure-DnsCname -ZoneId $zoneId -Name $fqdnPan -Target $target
 Ensure-DnsCname -ZoneId $zoneId -Name $fqdnPanApi -Target $target
 Ensure-DnsCname -ZoneId $zoneId -Name $fqdnDash -Target $target
+$delegationOk = Test-CloudflareDelegation -ZoneName $zoneNameFinal -ExpectedNameServers $zoneNameServers
 
 $tokenResp = Invoke-CfApi -Method "GET" -Path "/accounts/$accountId/cfd_tunnel/$tunnelId/token"
 $tunnelRunToken = [string]$tokenResp.result
@@ -254,6 +314,12 @@ Set-Content -Path $cfgPath -Value $yaml -Encoding Ascii
 Write-Ok "Config actualizada: $cfgPath"
 
 if (-not $SkipCredWrite) {
+    Upsert-CredValue -Key "CLOUDFLARE_ACCOUNT_ID" -Value $accountId
+    Upsert-CredValue -Key "CLOUDFLARE_ZONE_ID" -Value $zoneId
+    Upsert-CredValue -Key "CLOUDFLARE_TUNNEL_ID" -Value $tunnelId
+    Upsert-CredValue -Key "CLOUDFLARE_TUNNEL_NAME" -Value $fqdnDash
+    Upsert-CredValue -Key "CLOUDFLARE_TUNNEL_URL" -Value ("https://$fqdnDash")
+    Upsert-CredValue -Key "CLOUDFLARE_TOKEN" -Value $tunnelRunToken
     Upsert-CredValue -Key "ATLAS_PANADERIA_APP_URL" -Value ("https://$fqdnPan")
     Upsert-CredValue -Key "ATLAS_PANADERIA_PUBLIC_URL" -Value ("https://$fqdnPan")
     Upsert-CredValue -Key "ATLAS_PANADERIA_PUBLIC_API_URL" -Value ("https://$fqdnPanApi")
@@ -267,6 +333,12 @@ Write-Host "Tunnel ID: $tunnelId"
 Write-Host "Panaderia: https://$fqdnPan"
 Write-Host "Panaderia API: https://$fqdnPanApi"
 Write-Host "Dashboard: https://$fqdnDash"
+if ($delegationOk -eq $false) {
+    Write-WarnMsg "DNS del túnel configurado, pero el dominio todavía NO delega en NS de Cloudflare."
+    Write-WarnMsg "Actualiza NS en tu registrador y espera propagación antes de validar URLs públicas."
+} elseif ($delegationOk -eq $null) {
+    Write-WarnMsg "No se pudo confirmar delegación NS automáticamente. Verifica manualmente en el registrador."
+}
 Write-Host ""
 Write-Host "Para correr túnel nombrado:"
 Write-Host "cloudflared tunnel run --token <TOKEN_OCULTO>"
