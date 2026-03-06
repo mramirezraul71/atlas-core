@@ -4,6 +4,7 @@ param(
     [string]$ZoneName = "",
     [string]$PanaderiaHost = "panaderia",
     [string]$PanaderiaApiHost = "panaderia-api",
+    [string]$VisionHost = "vision",
     [string]$DashboardHost = "atlas-dashboard",
     [string]$CredFile = "C:\dev\credenciales.txt",
     [switch]$SkipCredWrite
@@ -274,10 +275,12 @@ $target = "$tunnelId.cfargotunnel.com"
 
 $fqdnPan = "$PanaderiaHost.$zoneNameFinal"
 $fqdnPanApi = "$PanaderiaApiHost.$zoneNameFinal"
+$fqdnVision = "$VisionHost.$zoneNameFinal"
 $fqdnDash = "$DashboardHost.$zoneNameFinal"
 
 Ensure-DnsCname -ZoneId $zoneId -Name $fqdnPan -Target $target
 Ensure-DnsCname -ZoneId $zoneId -Name $fqdnPanApi -Target $target
+Ensure-DnsCname -ZoneId $zoneId -Name $fqdnVision -Target $target
 Ensure-DnsCname -ZoneId $zoneId -Name $fqdnDash -Target $target
 $delegationOk = Test-CloudflareDelegation -ZoneName $zoneNameFinal -ExpectedNameServers $zoneNameServers
 
@@ -306,6 +309,8 @@ ingress:
     service: "http://127.0.0.1:5173"
   - hostname: "$fqdnPanApi"
     service: "http://127.0.0.1:3001"
+  - hostname: "$fqdnVision"
+    service: "http://127.0.0.1:3000"
   - hostname: "$fqdnDash"
     service: "http://127.0.0.1:8791"
   - service: "http_status:404"
@@ -320,9 +325,13 @@ if (-not $SkipCredWrite) {
     Upsert-CredValue -Key "CLOUDFLARE_TUNNEL_NAME" -Value $fqdnDash
     Upsert-CredValue -Key "CLOUDFLARE_TUNNEL_URL" -Value ("https://$fqdnDash")
     Upsert-CredValue -Key "CLOUDFLARE_TOKEN" -Value $tunnelRunToken
+    Upsert-CredValue -Key "CLOUDFLARE_VISION_TUNNEL_NAME" -Value $fqdnVision
     Upsert-CredValue -Key "ATLAS_PANADERIA_APP_URL" -Value ("https://$fqdnPan")
     Upsert-CredValue -Key "ATLAS_PANADERIA_PUBLIC_URL" -Value ("https://$fqdnPan")
     Upsert-CredValue -Key "ATLAS_PANADERIA_PUBLIC_API_URL" -Value ("https://$fqdnPanApi")
+    Upsert-CredValue -Key "ATLAS_VISION_APP_URL" -Value ("https://$fqdnVision")
+    Upsert-CredValue -Key "ATLAS_VISION_PUBLIC_URL" -Value ("https://$fqdnVision")
+    Upsert-CredValue -Key "ATLAS_VISION_PUBLIC_API_URL" -Value ("https://$fqdnVision")
     Upsert-CredValue -Key "ATLAS_DASHBOARD_PUBLIC_URL" -Value ("https://$fqdnDash")
     Write-Ok "Credenciales públicas actualizadas en $CredFile"
 }
@@ -332,6 +341,7 @@ Write-Ok "Cloudflare finalizado."
 Write-Host "Tunnel ID: $tunnelId"
 Write-Host "Panaderia: https://$fqdnPan"
 Write-Host "Panaderia API: https://$fqdnPanApi"
+Write-Host "Vision: https://$fqdnVision"
 Write-Host "Dashboard: https://$fqdnDash"
 if ($delegationOk -eq $false) {
     Write-WarnMsg "DNS del túnel configurado, pero el dominio todavía NO delega en NS de Cloudflare."
