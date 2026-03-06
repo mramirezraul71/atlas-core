@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 import tempfile
 import threading
@@ -3045,6 +3046,73 @@ def api_whatsapp_send(body: dict):
         return {"ok": False, "error": str(e)}
 
 
+@app.post("/api/comms/whatsapp/inbound", tags=["Comms", "WhatsApp"])
+def api_whatsapp_inbound(body: dict):
+    """
+    Webhook inbound de WhatsApp (WAHA/Twilio/Meta) -> supervisor conversacional.
+
+    Flujo:
+    inbound payload -> parse -> atlas_comms_hub.process_user_interaction -> send_text al remitente
+    """
+    try:
+        from modules.humanoid.comms.atlas_comms_hub import get_atlas_comms_hub
+        from modules.humanoid.comms.whatsapp_bridge import (parse_inbound_payload,
+                                                            send_text)
+
+        parsed = parse_inbound_payload(body or {})
+        if not parsed.get("ok"):
+            return {
+                "ok": True,
+                "ignored": True,
+                "reason": parsed.get("reason") or "unparsed_payload",
+                "provider_hint": parsed.get("provider_hint"),
+            }
+
+        sender = str(parsed.get("from") or "").strip()
+        text = str(parsed.get("text") or "").strip()
+        if not sender or not text:
+            return {"ok": True, "ignored": True, "reason": "missing_sender_or_text"}
+
+        hub = get_atlas_comms_hub()
+        resolved_user = hub.resolve_external_user_by_whatsapp(sender)
+        effective_user_id = (
+            str(resolved_user.get("user_id"))
+            if resolved_user.get("ok")
+            else str(parsed.get("user_id") or f"whatsapp:{sender}")
+        )
+        out = hub.process_user_interaction(
+            user_id=effective_user_id,
+            channel="whatsapp",
+            message=text,
+            context={
+                "source": "whatsapp_inbound",
+                "provider_hint": parsed.get("provider_hint"),
+                "sender": sender,
+                "external_user": resolved_user if resolved_user.get("ok") else None,
+            },
+        )
+
+        reply_text = str(out.get("reply") or "").strip()
+        send_result = {"ok": False, "skipped": True}
+        if reply_text:
+            send_result = send_text(reply_text, to=sender)
+
+        return {
+            "ok": bool(out.get("ok")),
+            "inbound": parsed,
+            "interaction": {
+                "message_id": out.get("message_id"),
+                "provider": out.get("provider"),
+                "offline_mode": out.get("offline_mode"),
+                "urgency": out.get("urgency"),
+                "resolved_user": resolved_user if resolved_user.get("ok") else None,
+            },
+            "send_result": send_result,
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.post("/api/comms/whatsapp/test", tags=["Comms", "WhatsApp"])
 def api_whatsapp_test():
     """EnvÃ­a un mensaje de prueba a WhatsApp."""
@@ -3422,6 +3490,78 @@ class AtlasCommsInventoryAdjustBody(BaseModel):
     requested_by: str = "atlas_comms_api"
 
 
+class AtlasCommsUsersResyncBody(BaseModel):
+    targets: List[str] = Field(default_factory=lambda: ["panaderia", "vision"])
+
+
+class AtlasCommsWhatsappLinkBody(BaseModel):
+    source: str
+    external_user_id: str
+    whatsapp_number: str
+    updated_by: str = "atlas_comms_api"
+
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, value: str) -> str:
+        v = (value or "").strip().lower()
+        if v not in ("panaderia", "vision"):
+            raise ValueError("source must be panaderia or vision")
+        return v
+
+
+class AtlasCommsWhatsappRequestBody(BaseModel):
+    source: str = ""
+    requested_by: str = "atlas_comms_api"
+    note: str = "Solicitud de número WhatsApp"
+    limit: int = Field(default=100, ge=1, le=500)
+
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, value: str) -> str:
+        v = (value or "").strip().lower()
+        if v and v not in ("panaderia", "vision"):
+            raise ValueError("source must be empty, panaderia or vision")
+        return v
+
+
+class AtlasCommsSendExternalBody(BaseModel):
+    source: str
+    external_user_id: str
+    message: str
+
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, value: str) -> str:
+        v = (value or "").strip().lower()
+        if v not in ("panaderia", "vision"):
+            raise ValueError("source must be panaderia or vision")
+        return v
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, value: str) -> str:
+        msg = (value or "").strip()
+        if not msg:
+            raise ValueError("message cannot be empty")
+        return msg
+
+
+class AtlasCommsWhatsappBatchConfigureBody(BaseModel):
+    source: str = "panaderia"
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+    send_welcome: bool = True
+    app_link: str = ""
+    updated_by: str = "atlas_comms_api"
+
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, value: str) -> str:
+        v = (value or "").strip().lower()
+        if v not in ("panaderia", "vision"):
+            raise ValueError("source must be panaderia or vision")
+        return v
+
+
 @app.get("/api/comms/atlas/status", tags=["Comms"])
 def api_comms_atlas_status():
     """ATLAS comms bridge status (offline mode, queue, encryption source)."""
@@ -3474,6 +3614,117 @@ def api_comms_atlas_resync(body: Optional[AtlasCommsResyncBody] = None):
         return hub.resync_pending(limit=lim)
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/atlas/users/resync", tags=["Comms"])
+def api_comms_atlas_users_resync(body: Optional[AtlasCommsUsersResyncBody] = None):
+    """Sync external users from RAULI-PANADERIA and RAULI-VISION."""
+    try:
+        from modules.humanoid.comms.atlas_comms_hub import get_atlas_comms_hub
+
+        hub = get_atlas_comms_hub()
+        targets = list(body.targets) if body and body.targets else ["panaderia", "vision"]
+        return hub.sync_external_users(targets=targets)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/comms/atlas/users/whatsapp", tags=["Comms"])
+def api_comms_atlas_users_whatsapp(
+    source: str = "",
+    state: str = "",
+    limit: int = 300,
+):
+    """List external users with WhatsApp linkage state."""
+    try:
+        from modules.humanoid.comms.atlas_comms_hub import get_atlas_comms_hub
+
+        hub = get_atlas_comms_hub()
+        return hub.list_external_users(source=source, whatsapp_state=state, limit=limit)
+    except Exception as e:
+        return {"ok": False, "error": str(e), "items": []}
+
+
+@app.post("/api/comms/atlas/users/whatsapp/link", tags=["Comms"])
+def api_comms_atlas_users_whatsapp_link(body: AtlasCommsWhatsappLinkBody):
+    """Link WhatsApp number to one external user."""
+    try:
+        from modules.humanoid.comms.atlas_comms_hub import get_atlas_comms_hub
+
+        hub = get_atlas_comms_hub()
+        return hub.link_external_user_whatsapp(
+            source=body.source,
+            external_user_id=body.external_user_id,
+            whatsapp_number=body.whatsapp_number,
+            updated_by=body.updated_by or "atlas_comms_api",
+        )
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/atlas/users/whatsapp/request-missing", tags=["Comms"])
+def api_comms_atlas_users_whatsapp_request_missing(body: Optional[AtlasCommsWhatsappRequestBody] = None):
+    """
+    Mark users without WhatsApp as requested and return request templates.
+    Includes download URL so supervisor can send install link when needed.
+    """
+    try:
+        from modules.humanoid.comms.atlas_comms_hub import get_atlas_comms_hub
+
+        hub = get_atlas_comms_hub()
+        source = body.source if body else ""
+        requested_by = body.requested_by if body else "atlas_comms_api"
+        note = body.note if body else "Solicitud de número WhatsApp"
+        limit = int(body.limit) if body else 100
+        return hub.request_numbers_for_missing_users(
+            source=source,
+            requested_by=requested_by,
+            note=note,
+            limit=limit,
+        )
+    except Exception as e:
+        return {"ok": False, "error": str(e), "items": []}
+
+
+@app.post("/api/comms/atlas/users/whatsapp/send", tags=["Comms"])
+def api_comms_atlas_users_whatsapp_send(body: AtlasCommsSendExternalBody):
+    """Send WhatsApp message to a linked external user."""
+    try:
+        from modules.humanoid.comms.atlas_comms_hub import get_atlas_comms_hub
+
+        hub = get_atlas_comms_hub()
+        return hub.send_whatsapp_to_external_user(
+            source=body.source,
+            external_user_id=body.external_user_id,
+            text=body.message,
+        )
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/atlas/users/whatsapp/configure-batch", tags=["Comms"])
+def api_comms_atlas_users_whatsapp_configure_batch(body: AtlasCommsWhatsappBatchConfigureBody):
+    """
+    Batch link WhatsApp numbers and optionally send first welcome message.
+    Each item can include:
+      - external_user_id (preferred)
+      - or match/username/full_name/name/email
+      - whatsapp_number (or phone)
+      - welcome_name (optional override for greeting)
+    """
+    try:
+        from modules.humanoid.comms.atlas_comms_hub import get_atlas_comms_hub
+
+        hub = get_atlas_comms_hub()
+        return hub.configure_whatsapp_batch(
+            source=body.source,
+            items=body.items or [],
+            updated_by=body.updated_by or "atlas_comms_api",
+            send_welcome=bool(body.send_welcome),
+            app_link=(body.app_link or ""),
+        )
+    except Exception as e:
+        return {"ok": False, "error": str(e), "results": []}
 
 
 @app.post("/api/comms/atlas/inventory/adjust", tags=["Comms"])
@@ -11528,6 +11779,7 @@ _SOFTWARE_MENU_CACHE_TTL_SEC = _env_int("ATLAS_SOFTWARE_MENU_CACHE_TTL_SEC", 30,
 _SOFTWARE_MENU_STALE_SEC = _env_int(
     "ATLAS_SOFTWARE_MENU_STALE_SEC", 300, _SOFTWARE_MENU_CACHE_TTL_SEC
 )
+_SOFTWARE_JOB_STALE_SEC = _env_int("ATLAS_SOFTWARE_JOB_STALE_SEC", 900, 120)
 _software_watchdog_refresh_lock = threading.Lock()
 _software_watchdog_refresh_running = False
 
@@ -11914,7 +12166,7 @@ def software_job_status(job_id: str):
                 runner_log = (BASE_DIR / "logs" / "software_update_jobs" / f"{safe_job_id}.runner.log").resolve()
                 runner_mtime = runner_log.stat().st_mtime if runner_log.exists() else status_mtime
                 stale_for = now_ts - max(status_mtime, runner_mtime)
-                if stale_for > 120 and (not _software_job_process_alive(safe_job_id)):
+                if stale_for > _SOFTWARE_JOB_STALE_SEC and (not _software_job_process_alive(safe_job_id)):
                     payload["ok"] = False
                     payload["status"] = "failed"
                     payload["error"] = payload.get("error") or "job_runner_not_alive"
@@ -16051,6 +16303,88 @@ def _arm_process_port(defn: dict, proc_label: str) -> Optional[int]:
     if ("api" in label) or ("proxy" in label):
         return defn.get("api_port")
     return None
+
+
+def _extract_trycloudflare_url(log_path: Path) -> str:
+    """Best-effort: obtain last quick tunnel URL from a cloudflared log file."""
+    try:
+        if not log_path.exists():
+            return ""
+        # Read only the tail to keep endpoint latency low even with large logs.
+        max_bytes = 256 * 1024
+        with log_path.open("rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            start = max(0, size - max_bytes)
+            fh.seek(start)
+            content = fh.read().decode("utf-8", errors="ignore")
+        matches = re.findall(r"https://[a-z0-9-]+\.trycloudflare\.com", content, flags=re.IGNORECASE)
+        if not matches:
+            return ""
+        return str(matches[-1]).rstrip("/")
+    except Exception:
+        return ""
+
+
+def _normalize_public_base(raw: str) -> str:
+    s = (raw or "").strip()
+    if not s:
+        return ""
+    if not (s.startswith("http://") or s.startswith("https://")):
+        return ""
+    return s.rstrip("/")
+
+
+def _public_arm_urls() -> Dict[str, Any]:
+    """
+    Resolve public URLs for remote clients.
+    Priority: explicit env vars -> app vars -> quick tunnel logs.
+    """
+    pan_front = _normalize_public_base(
+        os.getenv("ATLAS_PANADERIA_PUBLIC_URL")
+        or os.getenv("ATLAS_PANADERIA_APP_URL")
+        or ""
+    )
+    pan_api = _normalize_public_base(os.getenv("ATLAS_PANADERIA_PUBLIC_API_URL") or "")
+
+    vis_front = _normalize_public_base(
+        os.getenv("ATLAS_VISION_PUBLIC_URL")
+        or os.getenv("ATLAS_VISION_APP_URL")
+        or ""
+    )
+    vis_api = _normalize_public_base(os.getenv("ATLAS_VISION_PUBLIC_API_URL") or "")
+
+    if not pan_front:
+        pan_front = _extract_trycloudflare_url(BASE_DIR / "logs" / "cloudflared_panaderia.log")
+    if not pan_api and pan_front:
+        # Common setup for Vite dev + proxy: same origin, /api proxied to backend.
+        pan_api = pan_front
+
+    return {
+        "panaderia": {
+            "frontendBase": pan_front,
+            "apiBase": pan_api,
+            "source": "env_or_quick_tunnel",
+        },
+        "vision": {
+            "frontendBase": vis_front,
+            "apiBase": vis_api,
+            "source": "env",
+        },
+    }
+
+
+@app.get("/api/apps/public-urls", tags=["Brazos v4"])
+async def apps_public_urls():
+    """Expose public URLs for remote clients (never localhost)."""
+    t0 = time.perf_counter()
+    try:
+        data = _public_arm_urls()
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(True, data, ms, None)
+    except Exception as exc:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(exc))
 
 
 @app.post("/arms/{arm_id}/start", tags=["Brazos v4"])

@@ -433,6 +433,11 @@ def send_text(text: str, to: Optional[str] = None) -> Dict[str, Any]:
     to_number = to or _get("WHATSAPP_TO") or _get("TWILIO_WHATSAPP_TO")
     if not to_number:
         return {"ok": False, "error": "no_destination_number", "details": st}
+    to_number = str(to_number).strip()
+    if to_number.startswith("whatsapp:"):
+        to_number = to_number.split(":", 1)[1].strip()
+    if "@c.us" in to_number:
+        to_number = to_number.split("@", 1)[0].strip()
 
     provider = _get_provider()
     if not provider:
@@ -507,6 +512,107 @@ def health_check() -> Dict[str, Any]:
         "provider": st.get("provider"),
         "authenticated": st.get("provider_status", {}).get("authenticated", False),
         "to_configured": bool(_get("WHATSAPP_TO")),
+    }
+
+
+def _pick_first_text(payload: Dict[str, Any]) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    candidates = [
+        payload.get("text"),
+        payload.get("body"),
+        payload.get("message"),
+        ((payload.get("text") or {}).get("body") if isinstance(payload.get("text"), dict) else None),
+        ((payload.get("message") or {}).get("text") if isinstance(payload.get("message"), dict) else None),
+        ((payload.get("data") or {}).get("text") if isinstance(payload.get("data"), dict) else None),
+        ((payload.get("data") or {}).get("body") if isinstance(payload.get("data"), dict) else None),
+    ]
+    for item in candidates:
+        if isinstance(item, str) and item.strip():
+            return item.strip()
+    # Buscar 1 nivel dentro de payload comunes
+    for key in ("data", "message", "event", "payload"):
+        sub = payload.get(key)
+        if isinstance(sub, dict):
+            text = _pick_first_text(sub)
+            if text:
+                return text
+    return ""
+
+
+def _normalize_sender(raw: str) -> str:
+    s = (raw or "").strip()
+    if not s:
+        return ""
+    if s.startswith("whatsapp:"):
+        s = s.split(":", 1)[1].strip()
+    if "@c.us" in s:
+        s = s.split("@", 1)[0].strip()
+    # WA IDs pueden venir con ":" o etiquetas
+    s = s.replace(" ", "").replace("-", "")
+    return s
+
+
+def _pick_sender(payload: Dict[str, Any]) -> str:
+    candidates = [
+        payload.get("from"),
+        payload.get("sender"),
+        payload.get("author"),
+        payload.get("chatId"),
+        payload.get("wa_id"),
+        ((payload.get("message") or {}).get("from") if isinstance(payload.get("message"), dict) else None),
+        ((payload.get("data") or {}).get("from") if isinstance(payload.get("data"), dict) else None),
+        ((payload.get("data") or {}).get("chatId") if isinstance(payload.get("data"), dict) else None),
+        ((payload.get("payload") or {}).get("from") if isinstance(payload.get("payload"), dict) else None),
+        ((payload.get("payload") or {}).get("chatId") if isinstance(payload.get("payload"), dict) else None),
+    ]
+    for item in candidates:
+        if isinstance(item, str) and item.strip():
+            sender = _normalize_sender(item)
+            if sender:
+                return sender
+    return ""
+
+
+def parse_inbound_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Parsea webhooks entrantes de WhatsApp (WAHA/Twilio/Meta) en formato unificado.
+    Retorna:
+      {ok, from, user_id, text, provider_hint, from_me, reason}
+    """
+    if not isinstance(payload, dict):
+        return {"ok": False, "reason": "invalid_payload"}
+
+    from_me = bool(
+        payload.get("fromMe")
+        or payload.get("from_me")
+        or ((payload.get("data") or {}).get("fromMe") if isinstance(payload.get("data"), dict) else False)
+        or ((payload.get("payload") or {}).get("fromMe") if isinstance(payload.get("payload"), dict) else False)
+    )
+    text = _pick_first_text(payload)
+    sender = _pick_sender(payload)
+    provider_hint = str(
+        payload.get("provider")
+        or payload.get("source")
+        or payload.get("event")
+        or ((payload.get("data") or {}).get("provider") if isinstance(payload.get("data"), dict) else "")
+        or "unknown"
+    ).strip()
+
+    if from_me:
+        return {"ok": False, "reason": "from_me", "from_me": True, "provider_hint": provider_hint}
+    if not text:
+        return {"ok": False, "reason": "missing_text", "from_me": False, "provider_hint": provider_hint}
+    if not sender:
+        return {"ok": False, "reason": "missing_sender", "from_me": False, "provider_hint": provider_hint}
+
+    return {
+        "ok": True,
+        "from": sender,
+        "user_id": f"whatsapp:{sender}",
+        "text": text,
+        "provider_hint": provider_hint or "unknown",
+        "from_me": False,
     }
 
 

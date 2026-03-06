@@ -35,6 +35,11 @@ PANADERIA_BASE = (os.getenv("ATLAS_PANADERIA_BASE_URL") or "http://127.0.0.1:300
 )
 VISION_BASE = (os.getenv("ATLAS_VISION_BASE_URL") or "http://127.0.0.1:3000").rstrip("/")
 PUSH_BASE = (os.getenv("ATLAS_PUSH_BASE_URL") or "http://127.0.0.1:8791").rstrip("/")
+WHATSAPP_DOWNLOAD_URL = "https://www.whatsapp.com/download"
+PANADERIA_APP_URL = (
+    os.getenv("ATLAS_PANADERIA_APP_URL") or ""
+).strip()
+VISION_APP_URL = (os.getenv("ATLAS_VISION_APP_URL") or "").strip()
 
 DEFAULT_SCHEDULE = "Lun-Dom 07:00-20:00"
 DEFAULT_ORDER_GUIDE = "Puedes indicar producto, cantidad y hora deseada para preparar el pedido."
@@ -47,6 +52,9 @@ _RE_URGENT = re.compile(
 _RE_ORDER = re.compile(r"(pedido|orden|encargo|comprar|precio|delivery|envio)", re.IGNORECASE)
 _RE_HOURS = re.compile(r"(horario|abren|abierto|cierran|hora)", re.IGNORECASE)
 _RE_STOCK = re.compile(r"(stock|disponible|inventario|hay|agotado|existencia)", re.IGNORECASE)
+_RE_DIGITS = re.compile(r"\D+")
+_VAULT_ENV_LOADED = False
+_VAULT_ENV_LOCK = threading.Lock()
 
 _DB_SCHEMA = """
 CREATE TABLE IF NOT EXISTS comms_messages (
@@ -83,6 +91,31 @@ CREATE TABLE IF NOT EXISTS comms_offline_queue (
 CREATE INDEX IF NOT EXISTS idx_comms_messages_created_at ON comms_messages(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_comms_messages_synced ON comms_messages(synced, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_comms_queue_status ON comms_offline_queue(status, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS comms_external_users (
+    source TEXT NOT NULL,
+    external_user_id TEXT NOT NULL,
+    username TEXT,
+    full_name TEXT,
+    email TEXT,
+    role TEXT,
+    status TEXT,
+    whatsapp_number TEXT,
+    whatsapp_number_norm TEXT,
+    whatsapp_state TEXT NOT NULL DEFAULT 'missing',
+    requested_at TEXT,
+    linked_at TEXT,
+    updated_at TEXT NOT NULL,
+    requested_by TEXT,
+    request_note TEXT,
+    meta_json TEXT,
+    PRIMARY KEY(source, external_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_comms_external_users_state
+ON comms_external_users(whatsapp_state, source, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_comms_external_users_phone
+ON comms_external_users(whatsapp_number_norm);
 """
 
 
@@ -97,8 +130,42 @@ def _truncate(text: str, max_len: int = 220) -> str:
     return t[: max(0, max_len - 3)] + "..."
 
 
+def _normalize_phone(raw_phone: str) -> Tuple[str, str]:
+    raw = (raw_phone or "").strip()
+    if not raw:
+        return "", ""
+    if raw.lower().startswith("whatsapp:"):
+        raw = raw.split(":", 1)[1].strip()
+    if "@c.us" in raw:
+        raw = raw.split("@", 1)[0].strip()
+    normalized_digits = _RE_DIGITS.sub("", raw)
+    if not normalized_digits:
+        return "", ""
+    if raw.startswith("+"):
+        display = f"+{normalized_digits}"
+    else:
+        display = normalized_digits
+    return display, normalized_digits
+
+
 def _json_dump(data: Any) -> str:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+
+def _load_vault_env_once() -> None:
+    global _VAULT_ENV_LOADED
+    if _VAULT_ENV_LOADED:
+        return
+    with _VAULT_ENV_LOCK:
+        if _VAULT_ENV_LOADED:
+            return
+        try:
+            from modules.humanoid.config.vault import load_vault_env
+
+            load_vault_env(override=False)
+        except Exception:
+            pass
+        _VAULT_ENV_LOADED = True
 
 
 def _http_json(
@@ -138,12 +205,14 @@ def _http_json(
 
 class AtlasCommsHub:
     def __init__(self) -> None:
+        _load_vault_env_once()
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         DB_FILE.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._init_db()
 
     def _encryption_secret(self) -> Tuple[str, str]:
+        _load_vault_env_once()
         core = (os.getenv("ATLAS_CENTRAL_CORE") or "").strip()
         if core:
             return core, "ATLAS_CENTRAL_CORE"
@@ -248,6 +317,691 @@ class AtlasCommsHub:
         status["cameras"] = {"ok": c_ok, "code": c_code, "data": c_data, "error": c_err}
         return status
 
+    def _resolve_target_sources(self, targets: Optional[Iterable[str]] = None) -> list[str]:
+        if not targets:
+            return ["panaderia", "vision"]
+        out: list[str] = []
+        for t in targets:
+            v = (str(t or "").strip().lower())
+            if v in ("panaderia", "vision") and v not in out:
+                out.append(v)
+        return out or ["panaderia", "vision"]
+
+    def _panaderia_auth_headers(self) -> Tuple[Dict[str, str], str]:
+        _load_vault_env_once()
+        bearer = (
+            os.getenv("ATLAS_PANADERIA_AUTH_BEARER")
+            or os.getenv("PANADERIA_AUTH_BEARER")
+            or ""
+        ).strip()
+        if bearer:
+            return {"Authorization": f"Bearer {bearer}"}, "bearer_env"
+
+        username = (
+            os.getenv("ATLAS_PANADERIA_AUTH_USER")
+            or os.getenv("PANADERIA_AUTH_USER")
+            or ""
+        ).strip()
+        password = (
+            os.getenv("ATLAS_PANADERIA_AUTH_PASSWORD")
+            or os.getenv("PANADERIA_AUTH_PASSWORD")
+            or ""
+        ).strip()
+        if not username or not password:
+            return {}, "missing_credentials"
+
+        ok, code, data, err = _http_json(
+            "POST",
+            f"{PANADERIA_BASE}/api/auth/login",
+            payload={"username": username, "password": password},
+            timeout=7.0,
+        )
+        token = str((data or {}).get("token") or "").strip()
+        if ok and token:
+            return {"Authorization": f"Bearer {token}"}, "login_token"
+        return {}, f"login_failed:{err or code}"
+
+    def _fetch_panaderia_users(self) -> Dict[str, Any]:
+        headers, auth_source = self._panaderia_auth_headers()
+        if not headers:
+            return {"ok": False, "error": "panaderia_auth_missing", "auth_source": auth_source}
+        ok, code, data, err = _http_json(
+            "GET",
+            f"{PANADERIA_BASE}/api/auth/users",
+            headers=headers,
+            timeout=8.0,
+        )
+        if not ok:
+            return {
+                "ok": False,
+                "error": f"panaderia_users_fail:{err or code}",
+                "http_code": code,
+                "auth_source": auth_source,
+            }
+        users = (data or {}).get("users")
+        if not isinstance(users, list):
+            users = (data or {}).get("items")
+        if not isinstance(users, list):
+            users = []
+        return {"ok": True, "items": users, "count": len(users), "auth_source": auth_source}
+
+    def _fetch_vision_users(self) -> Dict[str, Any]:
+        _load_vault_env_once()
+        admin_token = (
+            os.getenv("ATLAS_VISION_ADMIN_TOKEN")
+            or os.getenv("VISION_ADMIN_TOKEN")
+            or os.getenv("RAULI_VISION_ADMIN_TOKEN")
+            or ""
+        ).strip()
+        if not admin_token:
+            return {"ok": False, "error": "vision_admin_token_missing"}
+        ok, code, data, err = _http_json(
+            "GET",
+            f"{VISION_BASE}/api/access/users",
+            headers={"X-Admin-Token": admin_token},
+            timeout=8.0,
+        )
+        if not ok:
+            return {
+                "ok": False,
+                "error": f"vision_users_fail:{err or code}",
+                "http_code": code,
+            }
+        users = (data or {}).get("items")
+        if not isinstance(users, list):
+            users = (data or {}).get("users")
+        if not isinstance(users, list):
+            users = []
+        return {"ok": True, "items": users, "count": len(users)}
+
+    def _normalize_external_user(self, source: str, raw: Dict[str, Any]) -> Dict[str, Any]:
+        src = (source or "").strip().lower()
+        item = raw if isinstance(raw, dict) else {}
+        ext_id = str(item.get("id") or "").strip()
+        if not ext_id:
+            return {}
+        if src == "panaderia":
+            active = item.get("active")
+            status = "active" if str(active).strip() in ("1", "true", "True") else "inactive"
+            return {
+                "source": src,
+                "external_user_id": ext_id,
+                "username": str(item.get("username") or "").strip(),
+                "full_name": str(item.get("name") or item.get("username") or "").strip(),
+                "email": str(item.get("email") or "").strip(),
+                "role": str(item.get("role") or "").strip(),
+                "status": status,
+                "meta_json": _json_dump(item),
+            }
+        return {
+            "source": src,
+            "external_user_id": ext_id,
+            "username": str(item.get("username") or "").strip(),
+            "full_name": str(item.get("name") or item.get("email") or ext_id).strip(),
+            "email": str(item.get("email") or "").strip(),
+            "role": str(item.get("role") or "").strip(),
+            "status": str(item.get("status") or "").strip(),
+            "meta_json": _json_dump(item),
+        }
+
+    def _upsert_external_users(self, source: str, raw_items: list[Dict[str, Any]]) -> Dict[str, Any]:
+        now = _utc_now()
+        normalized = []
+        for raw in raw_items:
+            item = self._normalize_external_user(source, raw)
+            if item:
+                normalized.append(item)
+        conn = self._db_conn()
+        try:
+            for item in normalized:
+                conn.execute(
+                    """
+                    INSERT INTO comms_external_users (
+                        source, external_user_id, username, full_name, email, role, status,
+                        whatsapp_number, whatsapp_number_norm, whatsapp_state, requested_at, linked_at,
+                        updated_at, requested_by, request_note, meta_json
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(source, external_user_id) DO UPDATE SET
+                        username=excluded.username,
+                        full_name=excluded.full_name,
+                        email=excluded.email,
+                        role=excluded.role,
+                        status=excluded.status,
+                        updated_at=excluded.updated_at,
+                        meta_json=excluded.meta_json
+                    """,
+                    (
+                        item["source"],
+                        item["external_user_id"],
+                        item["username"],
+                        item["full_name"],
+                        item["email"],
+                        item["role"],
+                        item["status"],
+                        None,
+                        None,
+                        "missing",
+                        None,
+                        None,
+                        now,
+                        None,
+                        None,
+                        item["meta_json"],
+                    ),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        return {"ok": True, "source": source, "upserted": len(normalized)}
+
+    def sync_external_users(self, targets: Optional[Iterable[str]] = None) -> Dict[str, Any]:
+        sources = self._resolve_target_sources(targets)
+        result: Dict[str, Any] = {"ok": True, "targets": sources, "results": []}
+        for source in sources:
+            if source == "panaderia":
+                fetched = self._fetch_panaderia_users()
+            else:
+                fetched = self._fetch_vision_users()
+            if not fetched.get("ok"):
+                result["ok"] = False
+                result["results"].append({"source": source, **fetched})
+                continue
+            up = self._upsert_external_users(source, fetched.get("items") or [])
+            result["results"].append(
+                {
+                    "source": source,
+                    "fetched": int(fetched.get("count") or 0),
+                    "upserted": int(up.get("upserted") or 0),
+                    "auth_source": fetched.get("auth_source"),
+                    "ok": True,
+                }
+            )
+        return result
+
+    def _request_message_template(self, display_name: str, source: str) -> str:
+        who = display_name or "equipo"
+        app_name = "RAULI-PANADERIA" if source == "panaderia" else "RAULI-VISION"
+        return (
+            f"Hola {who}, para activar el canal principal de soporte en WhatsApp para {app_name} "
+            "necesitamos tu número en formato internacional (ejemplo: +34123456789). "
+            f"Si no tienes WhatsApp instalado puedes descargarlo aquí: {WHATSAPP_DOWNLOAD_URL}"
+        )
+
+    def _app_link_for_source(self, source: str, override: str = "") -> str:
+        custom = (override or "").strip()
+        if custom:
+            return custom
+        tunnel_url = (os.getenv("CLOUDFLARE_TUNNEL_URL") or "").strip()
+        if tunnel_url:
+            return tunnel_url
+        if source == "panaderia":
+            return PANADERIA_APP_URL
+        if source == "vision":
+            return VISION_APP_URL
+        return ""
+
+    def build_welcome_message(
+        self,
+        *,
+        source: str,
+        display_name: str,
+        app_link: str = "",
+    ) -> str:
+        src = (source or "").strip().lower()
+        app_name = "RAULI Panaderia" if src == "panaderia" else "RAULI Vision"
+        name = (display_name or "equipo").strip() or "equipo"
+        link = self._app_link_for_source(src, override=app_link)
+        lines = [
+            f"Hola {name}, te da la bienvenida ATLAS Robot de Rauli.",
+            f"Quedaste habilitado para comunicación directa por WhatsApp en {app_name}.",
+        ]
+        if link:
+            lines.append(f"Descarga o abre la app aquí: {link}")
+        lines.append("Cuando quieras, escríbeme por este canal y te respondo de inmediato.")
+        return " ".join(lines)
+
+    def _resolve_external_user_id(self, source: str, match: str) -> Tuple[bool, str, str]:
+        src = (source or "").strip().lower()
+        needle = (match or "").strip()
+        if src not in ("panaderia", "vision"):
+            return False, "", "invalid_source"
+        if not needle:
+            return False, "", "match_required"
+        lowered = needle.lower()
+        conn = self._db_conn()
+        try:
+            rows = conn.execute(
+                """
+                SELECT external_user_id
+                FROM comms_external_users
+                WHERE source=?
+                  AND (
+                      lower(external_user_id)=?
+                      OR lower(username)=?
+                      OR lower(full_name)=?
+                      OR lower(email)=?
+                  )
+                ORDER BY updated_at DESC
+                LIMIT 2
+                """,
+                (src, lowered, lowered, lowered, lowered),
+            ).fetchall()
+        finally:
+            conn.close()
+        if not rows:
+            return False, "", "external_user_not_found"
+        if len(rows) > 1:
+            return False, "", "ambiguous_match"
+        return True, str(rows[0]["external_user_id"]), "ok"
+
+    def list_external_users(
+        self,
+        *,
+        source: str = "",
+        whatsapp_state: str = "",
+        limit: int = 300,
+    ) -> Dict[str, Any]:
+        lim = max(1, min(int(limit or 300), 1000))
+        src = (source or "").strip().lower()
+        st = (whatsapp_state or "").strip().lower()
+        where = ["1=1"]
+        params: list[Any] = []
+        if src in ("panaderia", "vision"):
+            where.append("source=?")
+            params.append(src)
+        if st in ("missing", "requested", "linked"):
+            where.append("whatsapp_state=?")
+            params.append(st)
+        conn = self._db_conn()
+        try:
+            rows = conn.execute(
+                f"""
+                SELECT source, external_user_id, username, full_name, email, role, status,
+                       whatsapp_number, whatsapp_state, requested_at, linked_at, updated_at,
+                       requested_by, request_note
+                FROM comms_external_users
+                WHERE {' AND '.join(where)}
+                ORDER BY source ASC, updated_at DESC
+                LIMIT ?
+                """,
+                (*params, lim),
+            ).fetchall()
+        finally:
+            conn.close()
+
+        items = []
+        summary: Dict[str, int] = {"total": 0, "missing": 0, "requested": 0, "linked": 0}
+        for r in rows:
+            state = str(r["whatsapp_state"] or "missing")
+            summary["total"] += 1
+            summary[state] = summary.get(state, 0) + 1
+            name = str(r["full_name"] or r["username"] or r["email"] or r["external_user_id"])
+            items.append(
+                {
+                    "source": r["source"],
+                    "external_user_id": r["external_user_id"],
+                    "username": r["username"],
+                    "full_name": r["full_name"],
+                    "email": r["email"],
+                    "role": r["role"],
+                    "status": r["status"],
+                    "whatsapp_number": r["whatsapp_number"],
+                    "whatsapp_state": state,
+                    "requested_at": r["requested_at"],
+                    "linked_at": r["linked_at"],
+                    "updated_at": r["updated_at"],
+                    "requested_by": r["requested_by"],
+                    "request_note": r["request_note"],
+                    "request_message_template": (
+                        self._request_message_template(name, str(r["source"] or ""))
+                        if state != "linked"
+                        else ""
+                    ),
+                }
+            )
+        return {"ok": True, "summary": summary, "items": items}
+
+    def link_external_user_whatsapp(
+        self,
+        *,
+        source: str,
+        external_user_id: str,
+        whatsapp_number: str,
+        updated_by: str = "atlas_supervisor",
+    ) -> Dict[str, Any]:
+        src = (source or "").strip().lower()
+        ext_id = (external_user_id or "").strip()
+        phone_display, phone_norm = _normalize_phone(whatsapp_number)
+        if src not in ("panaderia", "vision"):
+            return {"ok": False, "error": "invalid_source"}
+        if not ext_id:
+            return {"ok": False, "error": "external_user_id_required"}
+        if not phone_norm:
+            return {"ok": False, "error": "invalid_whatsapp_number"}
+
+        now = _utc_now()
+        conn = self._db_conn()
+        try:
+            cur = conn.execute(
+                """
+                UPDATE comms_external_users
+                SET whatsapp_number=?,
+                    whatsapp_number_norm=?,
+                    whatsapp_state='linked',
+                    linked_at=?,
+                    updated_at=?,
+                    requested_by=?,
+                    request_note=NULL
+                WHERE source=? AND external_user_id=?
+                """,
+                (phone_display, phone_norm, now, now, (updated_by or "atlas_supervisor"), src, ext_id),
+            )
+            conn.commit()
+            if int(cur.rowcount or 0) <= 0:
+                exists = conn.execute(
+                    """
+                    SELECT 1
+                    FROM comms_external_users
+                    WHERE source=? AND external_user_id=?
+                    LIMIT 1
+                    """,
+                    (src, ext_id),
+                ).fetchone()
+                if not exists:
+                    return {
+                        "ok": False,
+                        "error": "external_user_not_found",
+                        "source": src,
+                        "external_user_id": ext_id,
+                    }
+        finally:
+            conn.close()
+        return {
+            "ok": True,
+            "source": src,
+            "external_user_id": ext_id,
+            "whatsapp_number": phone_display,
+            "whatsapp_number_norm": phone_norm,
+            "state": "linked",
+        }
+
+    def configure_external_user_whatsapp(
+        self,
+        *,
+        source: str,
+        external_user_id: str,
+        whatsapp_number: str,
+        updated_by: str = "atlas_supervisor",
+        send_welcome: bool = True,
+        welcome_name: str = "",
+        app_link: str = "",
+    ) -> Dict[str, Any]:
+        linked = self.link_external_user_whatsapp(
+            source=source,
+            external_user_id=external_user_id,
+            whatsapp_number=whatsapp_number,
+            updated_by=updated_by,
+        )
+        if not linked.get("ok"):
+            return linked
+        if not send_welcome:
+            return {**linked, "welcome_sent": False}
+        conn = self._db_conn()
+        try:
+            row = conn.execute(
+                """
+                SELECT full_name, username, email
+                FROM comms_external_users
+                WHERE source=? AND external_user_id=?
+                LIMIT 1
+                """,
+                ((source or "").strip().lower(), (external_user_id or "").strip()),
+            ).fetchone()
+        finally:
+            conn.close()
+        display_name = (
+            (welcome_name or "").strip()
+            or str((row["full_name"] if row else "") or (row["username"] if row else "") or (row["email"] if row else "") or external_user_id)
+        )
+        msg = self.build_welcome_message(
+            source=source,
+            display_name=display_name,
+            app_link=app_link,
+        )
+        sent = self.send_whatsapp_to_external_user(
+            source=source,
+            external_user_id=external_user_id,
+            text=msg,
+        )
+        return {
+            **linked,
+            "welcome_sent": bool(sent.get("ok")),
+            "welcome_message": msg,
+            "welcome_result": sent,
+        }
+
+    def configure_whatsapp_batch(
+        self,
+        *,
+        source: str,
+        items: list[Dict[str, Any]],
+        updated_by: str = "atlas_supervisor",
+        send_welcome: bool = True,
+        app_link: str = "",
+    ) -> Dict[str, Any]:
+        src = (source or "").strip().lower()
+        if src not in ("panaderia", "vision"):
+            return {"ok": False, "error": "invalid_source", "results": []}
+        rows = items if isinstance(items, list) else []
+        out = []
+        ok_count = 0
+        for it in rows:
+            entry = it if isinstance(it, dict) else {}
+            ext_id = str(entry.get("external_user_id") or "").strip()
+            match = str(
+                entry.get("match")
+                or entry.get("username")
+                or entry.get("full_name")
+                or entry.get("name")
+                or entry.get("email")
+                or ""
+            ).strip()
+            number = str(entry.get("whatsapp_number") or entry.get("phone") or "").strip()
+            welcome_name = str(entry.get("welcome_name") or entry.get("name") or "").strip()
+
+            if not ext_id:
+                found, resolved_id, reason = self._resolve_external_user_id(src, match)
+                if not found:
+                    out.append(
+                        {
+                            "ok": False,
+                            "source": src,
+                            "match": match,
+                            "error": reason,
+                            "whatsapp_number": number,
+                        }
+                    )
+                    continue
+                ext_id = resolved_id
+
+            result = self.configure_external_user_whatsapp(
+                source=src,
+                external_user_id=ext_id,
+                whatsapp_number=number,
+                updated_by=updated_by,
+                send_welcome=send_welcome,
+                welcome_name=welcome_name,
+                app_link=app_link,
+            )
+            out.append(result)
+            if result.get("ok"):
+                ok_count += 1
+        return {
+            "ok": ok_count == len(rows) if rows else True,
+            "source": src,
+            "total": len(rows),
+            "configured": ok_count,
+            "failed": len(rows) - ok_count,
+            "results": out,
+        }
+
+    def request_numbers_for_missing_users(
+        self,
+        *,
+        source: str = "",
+        requested_by: str = "atlas_supervisor",
+        note: str = "",
+        limit: int = 100,
+    ) -> Dict[str, Any]:
+        src = (source or "").strip().lower()
+        lim = max(1, min(int(limit or 100), 500))
+        where = ["whatsapp_state <> 'linked'"]
+        params: list[Any] = []
+        if src in ("panaderia", "vision"):
+            where.append("source=?")
+            params.append(src)
+
+        conn = self._db_conn()
+        try:
+            rows = conn.execute(
+                f"""
+                SELECT source, external_user_id, full_name, username, email
+                FROM comms_external_users
+                WHERE {' AND '.join(where)}
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (*params, lim),
+            ).fetchall()
+            now = _utc_now()
+            for r in rows:
+                conn.execute(
+                    """
+                    UPDATE comms_external_users
+                    SET whatsapp_state='requested',
+                        requested_at=?,
+                        updated_at=?,
+                        requested_by=?,
+                        request_note=?
+                    WHERE source=? AND external_user_id=?
+                    """,
+                    (
+                        now,
+                        now,
+                        (requested_by or "atlas_supervisor"),
+                        (note or "Solicitud de número WhatsApp"),
+                        str(r["source"]),
+                        str(r["external_user_id"]),
+                    ),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        requests = []
+        for r in rows:
+            display_name = str(
+                r["full_name"] or r["username"] or r["email"] or r["external_user_id"] or "equipo"
+            ).strip()
+            requests.append(
+                {
+                    "source": r["source"],
+                    "external_user_id": r["external_user_id"],
+                    "display_name": display_name,
+                    "request_message": self._request_message_template(display_name, str(r["source"])),
+                    "download_link": WHATSAPP_DOWNLOAD_URL,
+                }
+            )
+        return {"ok": True, "requested": len(requests), "items": requests}
+
+    def resolve_external_user_by_whatsapp(self, sender: str) -> Dict[str, Any]:
+        _display, phone_norm = _normalize_phone(sender)
+        if not phone_norm:
+            return {"ok": False, "error": "invalid_sender"}
+        conn = self._db_conn()
+        try:
+            row = conn.execute(
+                """
+                SELECT source, external_user_id, username, full_name, email, role, status, whatsapp_number
+                FROM comms_external_users
+                WHERE whatsapp_number_norm=?
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                (phone_norm,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return {"ok": False, "error": "not_linked", "phone_norm": phone_norm}
+        display_name = str(row["full_name"] or row["username"] or row["email"] or row["external_user_id"])
+        return {
+            "ok": True,
+            "source": row["source"],
+            "external_user_id": row["external_user_id"],
+            "user_id": f"{row['source']}:{row['external_user_id']}",
+            "display_name": display_name,
+            "role": row["role"],
+            "status": row["status"],
+            "whatsapp_number": row["whatsapp_number"],
+            "phone_norm": phone_norm,
+        }
+
+    def send_whatsapp_to_external_user(
+        self,
+        *,
+        source: str,
+        external_user_id: str,
+        text: str,
+    ) -> Dict[str, Any]:
+        src = (source or "").strip().lower()
+        ext_id = (external_user_id or "").strip()
+        msg = (text or "").strip()
+        if src not in ("panaderia", "vision"):
+            return {"ok": False, "error": "invalid_source"}
+        if not ext_id:
+            return {"ok": False, "error": "external_user_id_required"}
+        if not msg:
+            return {"ok": False, "error": "text_required"}
+        conn = self._db_conn()
+        try:
+            row = conn.execute(
+                """
+                SELECT full_name, username, email, whatsapp_number, whatsapp_state
+                FROM comms_external_users
+                WHERE source=? AND external_user_id=?
+                LIMIT 1
+                """,
+                (src, ext_id),
+            ).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return {"ok": False, "error": "external_user_not_found"}
+        number = str(row["whatsapp_number"] or "").strip()
+        if not number:
+            display_name = str(row["full_name"] or row["username"] or row["email"] or ext_id).strip()
+            return {
+                "ok": False,
+                "error": "whatsapp_number_missing",
+                "action_required": "request_number",
+                "request_message": self._request_message_template(display_name, src),
+                "download_link": WHATSAPP_DOWNLOAD_URL,
+            }
+        try:
+            from modules.humanoid.comms.whatsapp_bridge import send_text
+
+            result = send_text(msg, to=number)
+        except Exception as e:
+            return {"ok": False, "error": f"whatsapp_send_failed:{e}"}
+        return {
+            "ok": bool(result.get("ok")),
+            "source": src,
+            "external_user_id": ext_id,
+            "to": number,
+            "provider_result": result,
+        }
+
     def _cloudflare_tunnel_up(self) -> Tuple[bool, str]:
         health_url = (os.getenv("ATLAS_CLOUDFLARE_TUNNEL_HEALTH_URL") or "").strip()
         if health_url:
@@ -320,8 +1074,38 @@ class AtlasCommsHub:
             "offline_mode": bool(offline_mode),
         }
 
+    def _recent_user_history(self, user_id: str, limit: int = 4) -> list[Dict[str, str]]:
+        uid = (user_id or "").strip()
+        if not uid:
+            return []
+        lim = max(1, min(int(limit or 4), 8))
+        conn = self._db_conn()
+        try:
+            rows = conn.execute(
+                """
+                SELECT request_summary, response_summary
+                FROM comms_messages
+                WHERE user_id=?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (uid, lim),
+            ).fetchall()
+        finally:
+            conn.close()
+        out: list[Dict[str, str]] = []
+        for r in reversed(rows):
+            req = str(r["request_summary"] or "").strip()
+            rsp = str(r["response_summary"] or "").strip()
+            if req or rsp:
+                out.append({"user": req, "assistant": rsp})
+        return out
+
     def _call_clawd_subscription(
-        self, message: str, context_summary: Dict[str, Any]
+        self,
+        message: str,
+        context_summary: Dict[str, Any],
+        conversation_history: Optional[list[Dict[str, str]]] = None,
     ) -> Tuple[bool, str, str]:
         api_url = (os.getenv("ATLAS_CLAWD_API_URL") or "").strip()
         if not api_url:
@@ -337,6 +1121,7 @@ class AtlasCommsHub:
             "message": message,
             "context": context_summary,
             "persona": "friendly_precise_assistant",
+            "history": conversation_history or [],
         }
         ok, code, data, err = _http_json(
             "POST", api_url, payload=payload, headers=headers, timeout=12.0
@@ -360,32 +1145,60 @@ class AtlasCommsHub:
         cam_count = int(context_summary.get("camera_count") or 0)
         offline = bool(context_summary.get("offline_mode"))
         if _RE_HOURS.search(msg):
-            base = f"Horario estimado: {os.getenv('ATLAS_STORE_SCHEDULE') or DEFAULT_SCHEDULE}."
+            base = f"Claro. El horario estimado es {os.getenv('ATLAS_STORE_SCHEDULE') or DEFAULT_SCHEDULE}."
             if offline:
-                base += " Estoy en modo offline y confirmare cambios cuando vuelva el tunel."
+                base += " Ahora estoy en modo offline; cuando vuelva el tunel te confirmo cualquier cambio."
+            base += " Si quieres, te confirmo una franja exacta."
             return base
         if _RE_STOCK.search(msg):
-            return f"Estado de inventario: {inv_state}. Camaras activas detectadas: {cam_count}."
+            return (
+                f"Te confirmo el estado actual: inventario {inv_state} y {cam_count} camaras activas. "
+                "Si me dices producto y cantidad, te respondo puntual."
+            )
         if _RE_ORDER.search(msg):
             return (
-                "Puedo ayudarte con el pedido. "
+                "Perfecto, te ayudo con el pedido. "
                 + DEFAULT_ORDER_GUIDE
                 + f" Inventario: {inv_state}. Camaras activas: {cam_count}."
             )
         return (
-            "Recibi tu mensaje y consulte inventario/camaras antes de responder. "
-            f"Inventario={inv_state}, camaras_activas={cam_count}."
+            "Te leo. Ya revise inventario y camaras antes de responderte. "
+            f"Inventario: {inv_state}. Camaras activas: {cam_count}. "
+            "Si quieres, dime el siguiente paso y lo hacemos."
         )
 
+    def _naturalize_reply(self, text: str) -> str:
+        t = (text or "").strip()
+        if not t:
+            return "Te leo. Dame un momento y te respondo."
+        t = re.sub(r"\s+", " ", t).strip()
+        if len(t) > 900:
+            t = t[:897].rstrip() + "..."
+        if not re.search(r"[.!?]$", t):
+            t += "."
+        return t
+
     def _generate_reply(
-        self, message: str, context_summary: Dict[str, Any], offline_mode: bool
+        self,
+        message: str,
+        context_summary: Dict[str, Any],
+        offline_mode: bool,
+        conversation_history: Optional[list[Dict[str, str]]] = None,
     ) -> Dict[str, Any]:
         if not offline_mode:
-            ok, text, provider = self._call_clawd_subscription(message, context_summary)
+            ok, text, provider = self._call_clawd_subscription(
+                message, context_summary, conversation_history=conversation_history
+            )
             if ok:
-                return {"text": text, "provider": provider, "offline": False}
+                return {
+                    "text": self._naturalize_reply(text),
+                    "provider": provider,
+                    "offline": False,
+                }
         return {
-            "text": self._offline_fallback_reply(message, context_summary),
+            "text": self._naturalize_reply(
+                self._offline_fallback_reply(message, context_summary)
+            ),
             "provider": "offline_fallback",
             "offline": True,
         }
@@ -519,13 +1332,20 @@ class AtlasCommsHub:
             return {"ok": False, "error": "message_empty"}
 
         with self._lock:
+            normalized_user = (user_id or "guest").strip() or "guest"
             message_id = f"atlas-comms-{uuid.uuid4().hex[:12]}"
             inv = self._probe_panaderia()
             cam = self._probe_vision()
             offline_mode, offline_diag = self._is_offline_mode()
             urgency = self._detect_urgency(msg, context=context)
             context_summary = self._build_context_summary(inv, cam, offline_mode=offline_mode)
-            reply = self._generate_reply(msg, context_summary=context_summary, offline_mode=offline_mode)
+            history = self._recent_user_history(normalized_user, limit=4)
+            reply = self._generate_reply(
+                msg,
+                context_summary=context_summary,
+                offline_mode=offline_mode,
+                conversation_history=history,
+            )
 
             inventory_state = str(context_summary.get("inventory_state") or "unknown")
             camera_state = "ok" if bool(context_summary.get("camera_count")) else "unknown"
@@ -537,7 +1357,7 @@ class AtlasCommsHub:
             synced = not offline_mode
             self._store_message(
                 message_id=message_id,
-                user_id=(user_id or "guest").strip() or "guest",
+                user_id=normalized_user,
                 channel=(channel or "app").strip() or "app",
                 urgency=urgency.get("level", "normal"),
                 request_text=msg,
@@ -652,11 +1472,23 @@ class AtlasCommsHub:
                 ).fetchone()[0]
             )
             total = int(conn.execute("SELECT COUNT(*) FROM comms_messages").fetchone()[0])
+            ext_total = int(conn.execute("SELECT COUNT(*) FROM comms_external_users").fetchone()[0])
+            ext_rows = conn.execute(
+                """
+                SELECT whatsapp_state, COUNT(*) AS total
+                FROM comms_external_users
+                GROUP BY whatsapp_state
+                """
+            ).fetchall()
             row = conn.execute(
                 "SELECT created_at FROM comms_messages ORDER BY created_at DESC LIMIT 1"
             ).fetchone()
         finally:
             conn.close()
+        ext_summary: Dict[str, int] = {"total": ext_total, "missing": 0, "requested": 0, "linked": 0}
+        for r in ext_rows:
+            key = str(r["whatsapp_state"] or "missing")
+            ext_summary[key] = int(r["total"] or 0)
         offline_mode, offline_diag = self._is_offline_mode()
         _secret, source = self._encryption_secret()
         return {
@@ -670,6 +1502,8 @@ class AtlasCommsHub:
             "encryption_source": source,
             "panaderia_base": PANADERIA_BASE,
             "vision_base": VISION_BASE,
+            "primary_channel": "whatsapp",
+            "external_users": ext_summary,
         }
 
     def _send_sync_payload(self, payload: Dict[str, Any]) -> Tuple[bool, str]:

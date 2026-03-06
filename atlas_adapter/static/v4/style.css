@@ -1581,6 +1581,20 @@ button { cursor: pointer; font-family: inherit; }
 
 /* RESPONSIVE */
 @media (max-width: 768px) {
+  .module-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 14px 12px;
+  }
+  .module-header > * {
+    min-width: 0;
+  }
+  .module-header h2 {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 16px;
+  }
   .landing-logo h1 { font-size: 36px; }
   .search-bar { font-size: 14px; padding: 14px 50px 14px 16px; }
   .megamenu { width: 100%; border-radius: 0; }

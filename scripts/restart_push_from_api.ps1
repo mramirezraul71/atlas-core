@@ -42,7 +42,7 @@ function Release-RestartLock {
 
 if (-not (Acquire-RestartLock)) {
     Write-Host "Restart lock active. Skipping duplicate restart request."
-    exit 0
+    exit 2
 }
 
 if (-not (Test-Path $RuntimeHelpers)) {
@@ -81,7 +81,13 @@ if (Test-Path $FreePortScript) {
 }
 
 $args = @("-m", "uvicorn", "atlas_adapter.atlas_http_api:app", "--host", "127.0.0.1", "--port", "8791")
-Start-Process $PyExe -ArgumentList $args -WorkingDirectory $RepoRoot -WindowStyle Hidden | Out-Null
+$pushProc = Start-Process $PyExe -ArgumentList $args -WorkingDirectory $RepoRoot -WindowStyle Hidden -PassThru
+Start-Sleep -Milliseconds 400
+if ($pushProc.HasExited) {
+    Release-RestartLock
+    Write-Error "PUSH process exited immediately after start (exit=$($pushProc.ExitCode))."
+    exit 1
+}
 
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $healthy = $false

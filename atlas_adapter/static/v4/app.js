@@ -350,19 +350,39 @@ async function _loadModules() {
 }
 
 function _startHealthPolling() {
+  let failStreak = 0;
+
+  async function _fetchHealthPayload() {
+    const timeoutMs = 10000;
+    const _json = async (url) => {
+      const r = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+      if (!r.ok) throw new Error(`http_${r.status}`);
+      return r.json();
+    };
+    try {
+      return await _json('/health');
+    } catch {
+      return await _json('/status');
+    }
+  }
+
   async function _poll() {
     try {
-      const r = await fetch('/health');
-      const d = await r.json();
+      const d = await _fetchHealthPayload();
+      failStreak = 0;
+      const ok = d?.ok !== false;
       const uptime = d.checks?.active_port ? 'online' : '--';
       const version = d.checks?.version || d.version || '--';
-      window.AtlasState?.set('health', { uptime, ok: d.ok, score: d.score });
+      window.AtlasState?.set('health', { uptime, ok, score: d.score });
       window.AtlasState?.set('model', version);
       const dot = document.getElementById('topbar-dot');
-      if (dot) dot.className = `topbar-health-dot${d.ok ? '' : ' error'}`;
+      if (dot) dot.className = `topbar-health-dot${ok ? '' : ' error'}`;
     } catch {
-      const dot = document.getElementById('topbar-dot');
-      if (dot) dot.className = 'topbar-health-dot error';
+      failStreak += 1;
+      if (failStreak >= 2) {
+        const dot = document.getElementById('topbar-dot');
+        if (dot) dot.className = 'topbar-health-dot error';
+      }
     }
   }
   _poll();

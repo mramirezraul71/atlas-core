@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Arranca NEXUS (8000) y Robot backend (8002) en segundo plano. Usado por heal restart_nexus_services."""
+"""Arranca NEXUS (8000) y Robot backend (8002) en segundo plano.
+Usado por heal restart_nexus_services.
+"""
+
 import os
 import subprocess
 import sys
 import time
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -24,6 +28,8 @@ ROBOT_DIR = Path(
 )
 LOG_DIR = REPO_ROOT / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
+NEXUS_HEALTH_URLS = ("http://127.0.0.1:8000/health", "http://127.0.0.1:8000/status")
+ROBOT_HEALTH_URLS = ("http://127.0.0.1:8002/api/health", "http://127.0.0.1:8002/status")
 
 
 def _resolve_python() -> str:
@@ -46,7 +52,7 @@ def _resolve_python() -> str:
 PYTHON = _resolve_python()
 
 
-def _start(cmd: list, cwd: Path, name: str) -> bool:
+def _start(cmd: list[str], cwd: Path, name: str) -> bool:
     try:
         log_path = LOG_DIR / (
             ("robot_backend.log" if name.lower() == "robot" else "nexus_api.log")
@@ -73,13 +79,13 @@ def _start(cmd: list, cwd: Path, name: str) -> bool:
         env.setdefault("PYTHONUTF8", "1")
         kwargs["env"] = env
         if sys.platform == "win32":
-            # Detach so the child keeps running when this script exits (e.g. when called from API)
-            CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            DETACHED_PROCESS = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
-            kwargs["creationflags"] = CREATE_NO_WINDOW | DETACHED_PROCESS
+            # Detach so the child keeps running when this script exits.
+            create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            detached_process = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+            kwargs["creationflags"] = create_no_window | detached_process
         else:
             kwargs["start_new_session"] = True
-        p = subprocess.Popen(cmd, **kwargs)
+        subprocess.Popen(cmd, **kwargs)
         try:
             log_f.close()
         except Exception:
@@ -90,10 +96,27 @@ def _start(cmd: list, cwd: Path, name: str) -> bool:
         return False
 
 
+def _http_ok(url: str, timeout: float = 2.5) -> bool:
+    try:
+        req = urllib.request.Request(
+            url, method="GET", headers={"Accept": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return 200 <= int(resp.status) < 300
+    except Exception:
+        return False
+
+
+def _service_is_healthy(urls: tuple[str, ...]) -> bool:
+    return any(_http_ok(url) for url in urls)
+
+
 def start_robot_only() -> str:
-    """Arranca solo el backend del Robot (cámaras, visión). Devuelve 'Robot' o 'none'."""
+    """Arranca solo el backend del Robot. Devuelve 'Robot' o 'none'."""
     if not ROBOT_DIR.exists():
         return "none"
+    if _service_is_healthy(ROBOT_HEALTH_URLS):
+        return "Robot(already)"
     main_py = ROBOT_DIR / "main.py"
     if main_py.exists():
         return "Robot" if _start([PYTHON, "main.py"], ROBOT_DIR, "Robot") else "none"
@@ -118,33 +141,39 @@ def start_robot_only() -> str:
 
 
 def main(robot_only: bool = False, include_nexus: bool = False):
-    started = []
+    started: list[str] = []
     if robot_only:
         return start_robot_only()
     if include_nexus and NEXUS_DIR.exists():
-        if _start([PYTHON, "nexus.py", "--mode", "api"], NEXUS_DIR, "NEXUS"):
+        if _service_is_healthy(NEXUS_HEALTH_URLS):
+            started.append("NEXUS(already)")
+        elif _start([PYTHON, "nexus.py", "--mode", "api"], NEXUS_DIR, "NEXUS"):
             started.append("NEXUS")
+
     if ROBOT_DIR.exists():
-        main_py = ROBOT_DIR / "main.py"
-        if main_py.exists():
-            if _start([PYTHON, "main.py"], ROBOT_DIR, "Robot"):
-                started.append("Robot")
+        if _service_is_healthy(ROBOT_HEALTH_URLS):
+            started.append("Robot(already)")
         else:
-            if _start(
-                [
-                    PYTHON,
-                    "-m",
-                    "uvicorn",
-                    "main:app",
-                    "--host",
-                    "0.0.0.0",
-                    "--port",
-                    "8002",
-                ],
-                ROBOT_DIR,
-                "Robot",
-            ):
-                started.append("Robot")
+            main_py = ROBOT_DIR / "main.py"
+            if main_py.exists():
+                if _start([PYTHON, "main.py"], ROBOT_DIR, "Robot"):
+                    started.append("Robot")
+            else:
+                if _start(
+                    [
+                        PYTHON,
+                        "-m",
+                        "uvicorn",
+                        "main:app",
+                        "--host",
+                        "0.0.0.0",
+                        "--port",
+                        "8002",
+                    ],
+                    ROBOT_DIR,
+                    "Robot",
+                ):
+                    started.append("Robot")
     return ",".join(started) if started else "none"
 
 

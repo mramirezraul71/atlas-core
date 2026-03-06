@@ -191,8 +191,9 @@ class CommsHub:
         MessageLevel.DEBUG: ["log"],
         MessageLevel.INFO: ["log", "ops", "audio"],
         MessageLevel.LOW: ["log", "ops", "audio"],
-        MessageLevel.MEDIUM: ["log", "ops", "audio", "bitacora"],
-        MessageLevel.HIGH: ["log", "ops", "audio", "bitacora", "telegram"],
+        # WhatsApp se mantiene como canal primario de mensajeria operativa.
+        MessageLevel.MEDIUM: ["log", "ops", "audio", "bitacora", "whatsapp"],
+        MessageLevel.HIGH: ["log", "ops", "audio", "bitacora", "whatsapp", "telegram"],
         MessageLevel.CRITICAL: [
             "log",
             "ops",

@@ -54,7 +54,7 @@ def _token() -> Optional[str]:
 class TelegramBridge:
     """Bridge to Telegram bot: send, approval inline keyboard, allowlist, rate limit."""
 
-    def send(self, chat_id: str, text: str) -> Dict[str, Any]:
+    def send(self, chat_id: str, text: str, parse_html: bool = True) -> Dict[str, Any]:
         token = _token()
         if not token:
             return {"ok": False, "error": "TELEGRAM_BOT_TOKEN not set"}
@@ -68,7 +68,13 @@ class TelegramBridge:
             import urllib.request
 
             url = f"{TELEGRAM_API}{token}/sendMessage"
-            body = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+            body = {
+                "chat_id": chat_id,
+                "text": (text or "")[:4096],
+                "disable_web_page_preview": True,
+            }
+            if parse_html:
+                body["parse_mode"] = "HTML"
             data = json.dumps(body).encode("utf-8")
             req = urllib.request.Request(
                 url,

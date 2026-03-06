@@ -8,13 +8,27 @@ import { poll, stop } from '../lib/polling.js';
 const POLL_VISION    = 'apps-vision-health';
 const POLL_PANADERIA = 'apps-panaderia-health';
 
+function _isLocalHostName(host) {
+  const h = String(host || '').trim().toLowerCase();
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '[::1]';
+}
+
+const _CLIENT_HOST = (window.location && window.location.hostname) || '';
+const IS_LOCAL_CLIENT = _isLocalHostName(_CLIENT_HOST);
+
 // URLs configurables — frontend (React/Vite) y API backend son puertos distintos
 // Panadería: frontend en :5173 (Vite dev), API en :3001
 // Vision:    frontend en :5173/:5174 (Vite dev) o :3000 (cliente-local con static)
-const APP_DEFAULTS = {
-  vision:    { frontendBase: 'http://localhost:5174', apiBase: 'http://localhost:3000' },
-  panaderia: { frontendBase: 'http://localhost:5173', apiBase: 'http://localhost:3001' },
-};
+const APP_DEFAULTS = IS_LOCAL_CLIENT
+  ? {
+      vision:    { frontendBase: 'http://localhost:5174', apiBase: 'http://localhost:3000' },
+      panaderia: { frontendBase: 'http://localhost:5173', apiBase: 'http://localhost:3001' },
+    }
+  : {
+      // Cliente remoto: nunca exponer localhost del servidor ATLAS al navegador externo.
+      vision:    { frontendBase: '', apiBase: '' },
+      panaderia: { frontendBase: '', apiBase: '' },
+    };
 
 // Carga URLs guardadas en localStorage
 function _loadSavedUrls(appId) {
@@ -88,6 +102,7 @@ const _RUNTIME_BASE = { vision: null, panaderia: null };
 function _esc(s) { const d = document.createElement('span'); d.textContent = s ?? ''; return d.innerHTML; }
 
 function _fallbackBases(appId) {
+  if (!IS_LOCAL_CLIENT) return [];
   if (appId === 'vision') return ['http://localhost:5174', 'http://localhost:3000'];
   if (appId === 'panaderia') return ['http://localhost:5173', 'http://localhost:3001'];
   return [];
@@ -96,11 +111,65 @@ function _fallbackBases(appId) {
 function _safeUrl(raw) {
   if (!raw || typeof raw !== 'string') return '';
   try {
-    const u = new URL(raw);
+    const u = new URL(raw, window.location.origin);
     if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
     return u.origin;
   } catch {
     return '';
+  }
+}
+
+const _IFRAME_CACHE_BUSTER = Date.now().toString(36);
+
+function _withIframeCacheBuster(raw) {
+  try {
+    const u = new URL(String(raw || ''), window.location.origin);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return String(raw || '');
+    u.searchParams.set('_atlasv', _IFRAME_CACHE_BUSTER);
+    return u.toString();
+  } catch {
+    return String(raw || '');
+  }
+}
+
+function _setIframeSrc(iframe, url, urlText) {
+  const freshUrl = _withIframeCacheBuster(url);
+  iframe.src = freshUrl;
+  if (urlText) urlText.textContent = freshUrl;
+}
+
+function _isLoopbackUrl(raw) {
+  try {
+    const u = new URL(raw, window.location.origin);
+    return _isLocalHostName(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
+async function _bootstrapRemotePublicUrls() {
+  try {
+    const r = await fetch('/api/apps/public-urls', { signal: AbortSignal.timeout(12000) });
+    const d = await r.json().catch(() => null);
+    const payload = d?.ok ? (d.data || {}) : {};
+    const pan = payload.panaderia || {};
+    const vis = payload.vision || {};
+
+    if (_safeUrl(pan.frontendBase)) {
+      localStorage.setItem('atlas-apps-url-panaderia', JSON.stringify({
+        frontendBase: pan.frontendBase,
+        apiBase: _safeUrl(pan.apiBase) || pan.frontendBase,
+      }));
+    }
+    if (_safeUrl(vis.frontendBase)) {
+      localStorage.setItem('atlas-apps-url-vision', JSON.stringify({
+        frontendBase: vis.frontendBase,
+        apiBase: _safeUrl(vis.apiBase) || vis.frontendBase,
+      }));
+    }
+    APPS = _buildApps();
+  } catch {
+    // Best effort only.
   }
 }
 
@@ -126,20 +195,27 @@ async function _resolveBestBase(app) {
   function _add(url) {
     const s = _safeUrl(url);
     if (!s || seen.has(s)) return;
+    if (!IS_LOCAL_CLIENT && _isLoopbackUrl(s)) return;
     seen.add(s);
     candidates.push(s);
   }
 
-  // Prioriza puerto validado por backend (socket server-side)
-  try {
-    const r = await fetch(`/arms/${app.id}/ping`, { signal: AbortSignal.timeout(2500) });
-    const d = await r.json().catch(() => null);
-    const port = d?.data?.port;
-    const reachable = d?.data?.reachable === true;
-    if (reachable && Number.isInteger(port)) _add(`http://localhost:${port}`);
-  } catch {}
-
   _add(app.base);
+
+  const appBase = _safeUrl(app.base);
+  const appBaseIsLoopback = _isLoopbackUrl(appBase);
+
+  if (IS_LOCAL_CLIENT && (!appBase || appBaseIsLoopback)) {
+    // Solo priorizar localhost cuando no haya URL publica configurada.
+    try {
+      const r = await fetch(`/arms/${app.id}/ping`, { signal: AbortSignal.timeout(2500) });
+      const d = await r.json().catch(() => null);
+      const port = d?.data?.port;
+      const reachable = d?.data?.reachable === true;
+      if (reachable && Number.isInteger(port)) _add(`http://localhost:${port}`);
+    } catch {}
+  }
+
   _fallbackBases(app.id).forEach(_add);
 
   for (const c of candidates) {
@@ -158,7 +234,12 @@ async function _openAppDashboard(appId) {
   const app = APPS[appId];
   if (!app) return;
   const base = await _resolveBestBase(app);
-  if (!base) return;
+  if (!base) {
+    if (!IS_LOCAL_CLIENT) {
+      alert('Configura una URL pública para este brazo (Cloudflare/Render) en "Configurar URLs".');
+    }
+    return;
+  }
   window.open(base, '_blank');
 }
 
@@ -193,7 +274,7 @@ export default {
             Dashboard
           </button>
           <h2>Mis Apps — Brazos</h2>
-          <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <div id="apps-header-right" style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
             <!-- Status pills -->
             <div id="pill-vision"    class="live-badge" style="background:var(--surface-2);color:var(--text-muted);gap:5px;display:flex;align-items:center">
               <div id="dot-vision"   style="width:7px;height:7px;border-radius:50%;background:var(--text-muted)"></div>Vision
@@ -223,7 +304,7 @@ export default {
         </div>
 
         <!-- SPLIT PANE -->
-        <div style="flex:1;display:flex;overflow:hidden;min-height:0">
+        <div id="apps-split" style="flex:1;display:flex;overflow:hidden;min-height:0">
 
           <!-- SIDEBAR DE GOBIERNO -->
           <div id="apps-sidebar"
@@ -297,7 +378,7 @@ export default {
           </div>
 
           <!-- IFRAME CONTAINER -->
-          <div style="flex:1;position:relative;background:var(--surface-0);display:flex;flex-direction:column;min-width:0">
+          <div id="apps-iframe-pane" style="flex:1;position:relative;background:var(--surface-0);display:flex;flex-direction:column;min-width:0">
             <!-- URL bar -->
             <div id="iframe-urlbar"
                  style="padding:6px 12px;border-bottom:1px solid var(--border-subtle);font-size:11px;color:var(--text-muted);font-family:monospace;background:var(--surface-1);flex-shrink:0;display:flex;align-items:center;gap:8px;overflow:hidden">
@@ -354,6 +435,30 @@ export default {
         .gov-card-value.ok    { color: var(--accent-green); }
         .gov-card-value.error { color: var(--accent-red); }
         .gov-card-value.warn  { color: #f59e0b; }
+        @media (max-width: 920px) {
+          #apps-header-right {
+            width: 100%;
+            margin-left: 0 !important;
+            justify-content: flex-start !important;
+            padding-top: 8px;
+          }
+          #apps-split {
+            flex-direction: column !important;
+            overflow-x: hidden !important;
+          }
+          #apps-sidebar {
+            width: 100% !important;
+            max-width: 100% !important;
+            border-right: none !important;
+            border-bottom: 1px solid var(--border-subtle) !important;
+            max-height: 44vh;
+            min-height: 240px;
+          }
+          #apps-iframe-pane {
+            width: 100% !important;
+            min-width: 0 !important;
+          }
+        }
       </style>
     `;
 
@@ -428,16 +533,19 @@ export default {
       const saved = _loadSavedUrls(_activeApp);
       const fe = container.querySelector('#cfg-frontend-url');
       const api = container.querySelector('#cfg-api-url');
-      if (fe)  fe.value  = saved.frontendBase;
-      if (api) api.value = saved.apiBase;
+      if (fe)  fe.value  = saved.frontendBase || app.base || '';
+      if (api) api.value = saved.apiBase || ((app.health || '').replace(/\/api\/health$/, '')) || '';
     }
     _updateCfgInputs();
 
     container.querySelector('#btn-save-urls')?.addEventListener('click', () => {
       const fe  = container.querySelector('#cfg-frontend-url')?.value?.trim();
       const api = container.querySelector('#cfg-api-url')?.value?.trim();
-      if (!fe || !api) return;
-      localStorage.setItem(`atlas-apps-url-${_activeApp}`, JSON.stringify({ frontendBase: fe, apiBase: api }));
+      if (!fe) return;
+      localStorage.setItem(`atlas-apps-url-${_activeApp}`, JSON.stringify({
+        frontendBase: fe,
+        apiBase: api || fe,
+      }));
       APPS = _buildApps();
       _switchApp(_activeApp, container, iframe, urlText);
       window.AtlasToast?.show('URLs guardadas', 'success');
@@ -452,14 +560,17 @@ export default {
       });
     });
 
-    // Polling de health para los dos brazos
-    Object.values(APPS).forEach(app => {
-      _checkHealth(app, container);
-      poll(app.pollId, null, 20000, () => _checkHealth(app, container));
-    });
-
-    // Cargar app activa por defecto
-    _switchApp(_activeApp, container, iframe, urlText);
+    (async () => {
+      await _bootstrapRemotePublicUrls();
+      _updateCfgInputs();
+      // Polling de health para los dos brazos
+      Object.values(APPS).forEach(app => {
+        _checkHealth(app, container);
+        poll(app.pollId, null, 20000, () => _checkHealth(app, container));
+      });
+      // Cargar app activa por defecto
+      _switchApp(_activeApp, container, iframe, urlText);
+    })();
   },
 
   destroy() {
@@ -474,6 +585,7 @@ async function _switchApp(appId, container, iframe, urlText) {
   if (!app) return;
   _activeApp = appId;
   const resolvedBase = await _resolveBestBase(app);
+  const hasBase = Boolean(resolvedBase);
 
   // Tabs UI
   container.querySelectorAll('.apps-tab').forEach(t => {
@@ -492,11 +604,11 @@ async function _switchApp(appId, container, iframe, urlText) {
 
     navEl.querySelectorAll('.sidebar-nav-btn').forEach(btn => {
       btn.addEventListener('click', () => {
+        if (!hasBase) return;
         navEl.querySelectorAll('.sidebar-nav-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         const url = resolvedBase + btn.dataset.navPath;
-        iframe.src = url;
-        if (urlText) urlText.textContent = url;
+        _setIframeSrc(iframe, url, urlText);
       });
     });
   }
@@ -516,6 +628,7 @@ async function _switchApp(appId, container, iframe, urlText) {
     // Click en gov card → navega el iframe a la sección correspondiente
     govEl.querySelectorAll('.gov-card').forEach(card => {
       card.addEventListener('click', () => {
+        if (!hasBase) return;
         const ep = app.govEndpoints.find(e => e.id === card.dataset.epId);
         if (!ep) return;
         // Navegar iframe a la sección relevante
@@ -532,14 +645,36 @@ async function _switchApp(appId, container, iframe, urlText) {
         };
         const path = sectionMap[ep.id] || '/';
         const url  = resolvedBase + path;
-        iframe.src = url;
-        if (urlText) urlText.textContent = url;
+        _setIframeSrc(iframe, url, urlText);
         if (navEl) navEl.querySelectorAll('.sidebar-nav-btn').forEach(b => b.classList.remove('active'));
       });
     });
 
     // Fetch gov endpoint data
     app.govEndpoints.forEach(ep => _fetchGovEndpoint(ep, container));
+  }
+
+  if (!hasBase) {
+    if (urlText) urlText.textContent = 'Sin URL pública configurada';
+    const overlay = container.querySelector('#iframe-not-running');
+    if (overlay) {
+      overlay.style.display = 'flex';
+      overlay.innerHTML = `
+        <div style="text-align:center;max-width:420px;padding:28px">
+          <div style="font-size:36px;margin-bottom:14px">🌐</div>
+          <div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:10px">
+            ${_esc(app.name)} sin URL pública
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">
+            Este cliente no es local y no puede abrir localhost del servidor.
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:18px">
+            Configura Cloudflare/Render en "Configurar URLs".
+          </div>
+        </div>`;
+    }
+    iframe.src = 'about:blank';
+    return;
   }
 
   // Pre-check: verificar que el frontend responde antes de cargar iframe
@@ -574,8 +709,7 @@ async function _preCheckAndLoad(app, url, container, iframe, urlText) {
 
   if (armReady) {
     if (overlay) overlay.style.display = 'none';
-    iframe.src = url;
-    if (urlText) urlText.textContent = url;
+    _setIframeSrc(iframe, url, urlText);
   } else {
     if (overlay) {
       overlay.innerHTML = `
@@ -611,8 +745,7 @@ async function _preCheckAndLoad(app, url, container, iframe, urlText) {
       });
       overlay.querySelector('#overlay-force-btn')?.addEventListener('click', () => {
         overlay.style.display = 'none';
-        iframe.src = url;
-        if (urlText) urlText.textContent = url;
+        _setIframeSrc(iframe, url, urlText);
       });
     }
     iframe.src = 'about:blank';
@@ -700,8 +833,7 @@ function _pollUntilReachable(app, url, container, iframe, urlText, maxTries, int
 
     if (reachable) {
       if (overlay) overlay.style.display = 'none';
-      iframe.src = url;
-      if (urlText) urlText.textContent = url;
+      _setIframeSrc(iframe, url, urlText);
       window.AtlasToast?.show(`${app.name} iniciado`, 'success');
       return;
     }
@@ -729,8 +861,7 @@ function _pollUntilReachable(app, url, container, iframe, urlText, maxTries, int
         });
         overlay.querySelector('#overlay-force-btn')?.addEventListener('click', () => {
           overlay.style.display = 'none';
-          iframe.src = url;
-          if (urlText) urlText.textContent = url;
+          _setIframeSrc(iframe, url, urlText);
         });
       }
       return;
@@ -839,6 +970,20 @@ async function _checkHealth(app, container) {
   const dot  = container.querySelector(`#dot-${app.id}`);
   const pill = container.querySelector(`#pill-${app.id}`);
   const tabSt= container.querySelector(`#tab-status-${app.id}`);
+
+  if (!IS_LOCAL_CLIENT) {
+    const base = _safeUrl(app.base);
+    if (!base || _isLoopbackUrl(base)) {
+      if (dot)  dot.style.background = 'var(--accent-red)';
+      if (pill) { pill.style.background = 'rgba(255,60,60,.15)'; pill.style.color = 'var(--accent-red)'; }
+      if (tabSt) tabSt.textContent = 'Sin URL pública';
+      if (app.id === _activeApp) {
+        const healthRow = container.querySelector('#sidebar-health-row');
+        if (healthRow) healthRow.innerHTML = `<span style="color:var(--accent-red);font-weight:600">● Sin URL pública</span>`;
+      }
+      return;
+    }
+  }
 
   const t0 = performance.now();
   try {

@@ -15,7 +15,20 @@ function _WriteJob([hashtable]$obj) {
   if (-not (Test-Path $dir)) {
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
   }
-  ($obj | ConvertTo-Json -Depth 14) | Set-Content -Path $JobFile -Encoding UTF8
+  $json = ($obj | ConvertTo-Json -Depth 14)
+  $attempts = 10
+  for ($i = 1; $i -le $attempts; $i++) {
+    try {
+      $json | Set-Content -Path $JobFile -Encoding UTF8 -ErrorAction Stop
+      return
+    } catch {
+      if ($i -ge $attempts) {
+        Write-Warning ("[software-apply-item] write-status-failed attempts={0} file={1} err={2}" -f $attempts, $JobFile, $_.Exception.Message)
+        return
+      }
+      Start-Sleep -Milliseconds (80 + (40 * $i))
+    }
+  }
 }
 
 function Invoke-CapturedProcess {

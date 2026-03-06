@@ -1,9 +1,11 @@
 param(
-  [string]$HealthUrl = "http://127.0.0.1:8791/health",
+  [string]$HealthUrl = "http://127.0.0.1:8791/status",
   [int]$IntervalSec = 15,
   [int]$FailThreshold = 3,
   [int]$RestartCooldownSec = 180,
-  [int]$HealthTimeoutSec = 60
+  [int]$HealthTimeoutSec = 60,
+  [int]$ProbeTimeoutSec = 6,
+  [bool]$RequirePortDownForRestart = $true
 )
 
 $ErrorActionPreference = "Continue"
@@ -110,6 +112,26 @@ function Load-State() {
   }
 }
 
+function Test-HealthNow([int]$TimeoutSec) {
+  try {
+    $resp = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec $TimeoutSec -ErrorAction Stop
+    if ($resp.StatusCode -eq 200) {
+      return @{ ok = $true; error = $null }
+    }
+    return @{ ok = $false; error = "status_$($resp.StatusCode)" }
+  } catch {
+    return @{ ok = $false; error = $_.Exception.Message }
+  }
+}
+
+function Get-HealthPort {
+  try {
+    $uri = [System.Uri]$HealthUrl
+    if ($uri.Port -gt 0) { return [int]$uri.Port }
+  } catch {}
+  return 8791
+}
+
 if (-not (Test-Path $RestartScript)) {
   Write-Log "FATAL restart script missing: $RestartScript"
   exit 1
@@ -129,17 +151,19 @@ if (-not (Acquire-WatchdogLock)) {
 $state = Load-State
 Write-Log "watchdog_started interval=${IntervalSec}s threshold=$FailThreshold cooldown=${RestartCooldownSec}s"
 Save-State $state
+$healthPort = Get-HealthPort
 
 while ($true) {
   $state.checks = [int]$state.checks + 1
-  $ok = $false
-  $errMsg = ""
-  try {
-    $resp = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec $HealthTimeoutSec -ErrorAction Stop
-    if ($resp.StatusCode -eq 200) { $ok = $true }
-    else { $errMsg = "status_$($resp.StatusCode)" }
-  } catch {
-    $errMsg = $_.Exception.Message
+  $probe = Test-HealthNow -TimeoutSec $HealthTimeoutSec
+  $ok = [bool]$probe.ok
+  $errMsg = [string]($probe.error)
+  if (-not $ok) {
+    Start-Sleep -Milliseconds 500
+    $retryTimeout = [Math]::Max(2, [Math]::Min($ProbeTimeoutSec, $HealthTimeoutSec))
+    $probeRetry = Test-HealthNow -TimeoutSec $retryTimeout
+    $ok = [bool]$probeRetry.ok
+    $errMsg = [string]($probeRetry.error)
   }
 
   if ($ok) {
@@ -157,6 +181,18 @@ while ($true) {
   Write-Log "health_fail streak=$($state.fail_streak) error=$errMsg"
 
   if ([int]$state.fail_streak -ge $FailThreshold) {
+    if ($RequirePortDownForRestart) {
+      try {
+        $listener = Get-NetTCPConnection -State Listen -LocalPort $healthPort -ErrorAction SilentlyContinue |
+          Select-Object -First 1
+        if ($listener) {
+          Write-Log "restart_skipped port_still_listening=1 port=$healthPort"
+          Start-Sleep -Seconds $IntervalSec
+          continue
+        }
+      } catch {}
+    }
+
     $canRestart = $true
     if ($state.last_restart_at) {
       try {

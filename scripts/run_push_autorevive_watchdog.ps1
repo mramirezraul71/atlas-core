@@ -1,5 +1,5 @@
 param(
-    [string]$HealthUrl = "http://127.0.0.1:8791/health",
+    [string]$HealthUrl = "http://127.0.0.1:8791/status",
     [int]$IntervalSec = 15,
     [int]$FailThreshold = 3,
     [int]$RestartCooldownSec = 180

@@ -87,6 +87,23 @@ def _api_answer_callback(callback_query_id: str, text: str = "") -> None:
         pass
 
 
+def _api_send_chat_action(chat_id: str, action: str = "typing") -> None:
+    token = _token()
+    if not token or not chat_id:
+        return
+    url = f"{TELEGRAM_API}{token}/sendChatAction"
+    body = json.dumps(
+        {"chat_id": str(chat_id), "action": str(action or "typing")}
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=body, method="POST", headers={"Content-Type": "application/json"}
+    )
+    try:
+        urllib.request.urlopen(req, timeout=10).read()
+    except Exception:
+        pass
+
+
 def _api_edit_message_text(
     chat_id: str, message_id: int, text: str, *, remove_keyboard: bool = True
 ) -> None:
@@ -187,6 +204,96 @@ def _format_status_message(
     return "<b>ATLAS</b>\nNo se pudo completar la acción."
 
 
+def _handle_text_message(
+    bridge: TelegramBridge, chat_id: str, text: str, msg: Dict[str, Any]
+) -> None:
+    lower = (text or "").strip().lower()
+
+    # Comandos de aprobaciones (compatibilidad legacy)
+    if lower.startswith("/approve ") or lower.startswith("aprobar "):
+        aid = text.split(maxsplit=1)[1].strip() if len(text.split(maxsplit=1)) > 1 else ""
+        r = bridge.handle_callback_data(f"approve:{aid}", chat_id, resolved_by="telegram")
+        bridge.send(
+            chat_id,
+            _format_status_message(
+                "approve",
+                aid,
+                str(r.get("status") or ""),
+                str(r.get("error") or ""),
+                r.get("execution"),
+            ),
+        )
+        return
+
+    if lower.startswith("/reject ") or lower.startswith("rechazar "):
+        aid = text.split(maxsplit=1)[1].strip() if len(text.split(maxsplit=1)) > 1 else ""
+        r = bridge.handle_callback_data(f"reject:{aid}", chat_id, resolved_by="telegram")
+        bridge.send(
+            chat_id,
+            _format_status_message(
+                "reject",
+                aid,
+                str(r.get("status") or ""),
+                str(r.get("error") or ""),
+            ),
+        )
+        return
+
+    # Comandos de ayuda / inicio para UX conversacional
+    if lower in ("/start", "/help", "help", "ayuda"):
+        bridge.send(
+            chat_id,
+            (
+                "<b>ATLAS Supervisor</b>\n"
+                "Estoy activo y puedo conversar contigo desde Telegram.\n"
+                "Comandos:\n"
+                "- /approve <ID>\n"
+                "- /reject <ID>\n"
+                "Tambien puedes escribirme en lenguaje natural."
+            ),
+        )
+        return
+
+    # Conversación natural (bidireccional)
+    try:
+        from modules.humanoid.comms.atlas_comms_hub import get_atlas_comms_hub
+
+        from_user = msg.get("from") or {}
+        display_name = (
+            from_user.get("username")
+            or from_user.get("first_name")
+            or from_user.get("last_name")
+            or ""
+        )
+        _api_send_chat_action(chat_id, "typing")
+        hub = get_atlas_comms_hub()
+        out = hub.process_user_interaction(
+            user_id=f"telegram:{chat_id}",
+            channel="telegram",
+            message=text,
+            context={
+                "source": "telegram_poller",
+                "display_name": str(display_name or "").strip(),
+                "chat_id": str(chat_id),
+            },
+        )
+        if out.get("ok") and out.get("reply"):
+            # parse_html=False para evitar errores por caracteres reservados en texto libre.
+            bridge.send(chat_id, str(out.get("reply")), parse_html=False)
+            return
+        bridge.send(
+            chat_id,
+            "Te lei, pero no pude completar la respuesta ahora. Intenta de nuevo en unos segundos.",
+            parse_html=False,
+        )
+    except Exception:
+        bridge.send(
+            chat_id,
+            "Recibido. Estoy ajustando el canal de comunicacion; vuelve a intentar en unos segundos.",
+            parse_html=False,
+        )
+
+
 def _loop() -> None:
     bridge = TelegramBridge()
     offset = 0
@@ -248,43 +355,6 @@ def _loop() -> None:
                 text = (msg.get("text") or "").strip()
                 chat_id = str(((msg.get("chat") or {}).get("id") or ""))
                 if text and chat_id:
-                    lower = text.lower()
-                    if lower.startswith("/approve ") or lower.startswith("aprobar "):
-                        aid = (
-                            text.split(maxsplit=1)[1].strip()
-                            if len(text.split(maxsplit=1)) > 1
-                            else ""
-                        )
-                        r = bridge.handle_callback_data(
-                            f"approve:{aid}", chat_id, resolved_by="telegram"
-                        )
-                        bridge.send(
-                            chat_id,
-                            _format_status_message(
-                                "approve",
-                                aid,
-                                str(r.get("status") or ""),
-                                str(r.get("error") or ""),
-                                r.get("execution"),
-                            ),
-                        )
-                    elif lower.startswith("/reject ") or lower.startswith("rechazar "):
-                        aid = (
-                            text.split(maxsplit=1)[1].strip()
-                            if len(text.split(maxsplit=1)) > 1
-                            else ""
-                        )
-                        r = bridge.handle_callback_data(
-                            f"reject:{aid}", chat_id, resolved_by="telegram"
-                        )
-                        bridge.send(
-                            chat_id,
-                            _format_status_message(
-                                "reject",
-                                aid,
-                                str(r.get("status") or ""),
-                                str(r.get("error") or ""),
-                            ),
-                        )
+                    _handle_text_message(bridge, chat_id, text, msg)
         except Exception:
             time.sleep(2)
