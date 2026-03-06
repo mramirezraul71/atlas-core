@@ -29,7 +29,11 @@ ROBOT_DIR = Path(
 LOG_DIR = REPO_ROOT / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 NEXUS_HEALTH_URLS = ("http://127.0.0.1:8000/health", "http://127.0.0.1:8000/status")
-ROBOT_HEALTH_URLS = ("http://127.0.0.1:8002/api/health", "http://127.0.0.1:8002/status")
+ROBOT_HEALTH_URLS = (
+    "http://127.0.0.1:8002/health",
+    "http://127.0.0.1:8002/api/health",
+    "http://127.0.0.1:8002/status",
+)
 
 
 def _resolve_python() -> str:
@@ -111,11 +115,22 @@ def _service_is_healthy(urls: tuple[str, ...]) -> bool:
     return any(_http_ok(url) for url in urls)
 
 
+def _port_listening(port: int) -> bool:
+    """Fast local port guard to avoid duplicate launches."""
+    try:
+        import socket
+
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=0.8):
+            return True
+    except Exception:
+        return False
+
+
 def start_robot_only() -> str:
     """Arranca solo el backend del Robot. Devuelve 'Robot' o 'none'."""
     if not ROBOT_DIR.exists():
         return "none"
-    if _service_is_healthy(ROBOT_HEALTH_URLS):
+    if _port_listening(8002) or _service_is_healthy(ROBOT_HEALTH_URLS):
         return "Robot(already)"
     main_py = ROBOT_DIR / "main.py"
     if main_py.exists():
@@ -145,13 +160,13 @@ def main(robot_only: bool = False, include_nexus: bool = False):
     if robot_only:
         return start_robot_only()
     if include_nexus and NEXUS_DIR.exists():
-        if _service_is_healthy(NEXUS_HEALTH_URLS):
+        if _port_listening(8000) or _service_is_healthy(NEXUS_HEALTH_URLS):
             started.append("NEXUS(already)")
         elif _start([PYTHON, "nexus.py", "--mode", "api"], NEXUS_DIR, "NEXUS"):
             started.append("NEXUS")
 
     if ROBOT_DIR.exists():
-        if _service_is_healthy(ROBOT_HEALTH_URLS):
+        if _port_listening(8002) or _service_is_healthy(ROBOT_HEALTH_URLS):
             started.append("Robot(already)")
         else:
             main_py = ROBOT_DIR / "main.py"

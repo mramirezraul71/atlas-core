@@ -10,6 +10,8 @@ Set-Location $RepoPath
 $venv = Join-Path $RepoPath ".venv\Scripts\Activate.ps1"
 if (!(Test-Path $venv)) { Write-Host "Ejecuta 01_setup_venv.ps1 primero." -ForegroundColor Red; pause; exit 1 }
 & $venv
+$py = Join-Path $RepoPath ".venv\Scripts\python.exe"
+if (!(Test-Path $py)) { Write-Host "No se encontró $py" -ForegroundColor Red; pause; exit 1 }
 
 # Liberar puerto (matar todos los procesos que lo usen)
 $cons = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
@@ -26,5 +28,5 @@ if ($cons) {
 
 Write-Host "ATLAS API en http://127.0.0.1:$Port/ui" -ForegroundColor Green
 Start-Process "http://127.0.0.1:$Port/ui"
-
-python -m uvicorn atlas_adapter.atlas_http_api:app --host 127.0.0.1 --port $Port
+# Arranque unificado y singleton (evita dobles instancias)
+& $py "tools\service_launcher.py"

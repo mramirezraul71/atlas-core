@@ -1,6 +1,7 @@
 """Launcher for ATLAS as Windows service: load venv, run uvicorn, rotating log."""
 from __future__ import annotations
 
+import atexit
 import logging
 import os
 import sys
@@ -33,6 +34,8 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger("atlas.service")
+_LOCK_PATH: Path | None = None
+_LOCK_FD: int | None = None
 
 
 def _api_already_up(host: str, port: int) -> bool:
@@ -42,6 +45,75 @@ def _api_already_up(host: str, port: int) -> bool:
         with urllib.request.urlopen(url, timeout=3) as r:
             return r.status == 200
     except Exception:
+        return False
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        if pid <= 0:
+            return False
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
+
+def _read_lock_pid(path: Path) -> int | None:
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+        if not raw:
+            return None
+        return int(raw.splitlines()[0].strip())
+    except Exception:
+        return None
+
+
+def _release_singleton_lock() -> None:
+    global _LOCK_FD, _LOCK_PATH
+    try:
+        if _LOCK_FD is not None:
+            os.close(_LOCK_FD)
+            _LOCK_FD = None
+    except Exception:
+        pass
+    try:
+        if _LOCK_PATH and _LOCK_PATH.exists():
+            _LOCK_PATH.unlink()
+    except Exception:
+        pass
+    _LOCK_PATH = None
+
+
+def _acquire_singleton_lock(port: int) -> bool:
+    """Acquire singleton lock for this launcher instance."""
+    global _LOCK_FD, _LOCK_PATH
+    lock_path = REPO_ROOT / "logs" / f"service_launcher_{port}.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if lock_path.exists():
+        existing_pid = _read_lock_pid(lock_path)
+        if existing_pid and _pid_alive(existing_pid):
+            log.info("Launcher lock busy: pid=%s (port=%s).", existing_pid, port)
+            return False
+        try:
+            lock_path.unlink()
+            log.warning("Removed stale launcher lock: %s", lock_path)
+        except Exception as e:
+            log.error("Cannot remove stale lock %s: %s", lock_path, e)
+            return False
+
+    try:
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        fd = os.open(str(lock_path), flags)
+        os.write(fd, str(os.getpid()).encode("utf-8"))
+        _LOCK_FD = fd
+        _LOCK_PATH = lock_path
+        atexit.register(_release_singleton_lock)
+        return True
+    except FileExistsError:
+        return False
+    except Exception as e:
+        log.error("Unable to create launcher lock: %s", e)
         return False
 
 
@@ -60,6 +132,9 @@ def main():
                 pass
     if _api_already_up(host, port):
         log.info("API ya activa en %s:%s. service_launcher saliendo sin duplicar.", host, port)
+        return 0
+    if not _acquire_singleton_lock(port):
+        log.info("No lock acquired for %s:%s. service_launcher exiting.", host, port)
         return 0
 
     app_import = os.getenv("SERVICE_APP_IMPORT", "atlas_adapter.atlas_http_api:app")

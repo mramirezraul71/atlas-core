@@ -1,9 +1,9 @@
 """
-ChromaDB Memory Engine - Vector database para memoria semántica y episódica
-Integrado con Unified Memory Cortex de ATLAS
+ChromaDB Memory Engine - vector memory backend for ATLAS.
 """
 from __future__ import annotations
 
+import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -15,13 +15,12 @@ from chromadb.utils import embedding_functions
 
 class ChromaMemoryEngine:
     """
-    Motor de memoria vectorial usando ChromaDB.
+    Vector memory engine using ChromaDB with auto-recovery on common DB corruption.
 
-    Características:
-    - Almacenamiento vectorial de embeddings
-    - Búsqueda semántica por similaridad
-    - Metadatos flexibles para episodios y conceptos
-    - Integración con Unified Memory Cortex
+    Recovery strategy:
+    - Detect known SQLite/metadata-segment corruption errors.
+    - Backup current store to logs/chroma_db_corrupt_<timestamp>.
+    - Recreate clean persistent store and continue service.
     """
 
     def __init__(
@@ -36,36 +35,77 @@ class ChromaMemoryEngine:
         self.persist_directory = Path(persist_directory)
         self.persist_directory.mkdir(parents=True, exist_ok=True)
 
-        # Cliente ChromaDB con persistencia
-        self.client = chromadb.PersistentClient(path=str(self.persist_directory))
-
-        # Función de embeddings (sentence-transformers)
         self.embedding_function = (
             embedding_functions.SentenceTransformerEmbeddingFunction(
                 model_name="all-MiniLM-L6-v2"
             )
         )
 
-        # Colección principal
         self.collection_name = collection_name
-        self.collection = self._get_or_create_collection()
+        self.client = None
+        self.collection = None
+        self.recovered_from_corruption = False
+        self.recovery_backup_path: Optional[str] = None
 
-        # Avoid unicode/emoji prints on Windows console encodings
+        self._initialize_client_and_collection()
         print(f"ChromaDB Memory Engine iniciado en {self.persist_directory}")
 
-    def _get_or_create_collection(self):
-        """Obtener o crear colección con configuración."""
+    @staticmethod
+    def _is_recoverable_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        markers = (
+            "mismatched types",
+            "metadata segment",
+            "error reading from metadata segment reader",
+            "compaction",
+            "sqlite",
+            "decode",
+            "backfill request",
+        )
+        return any(marker in msg for marker in markers)
+
+    def _backup_and_reset_store(self) -> None:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup = self.persist_directory.parent / f"chroma_db_corrupt_{ts}"
+        if self.persist_directory.exists():
+            shutil.move(str(self.persist_directory), str(backup))
+        self.persist_directory.mkdir(parents=True, exist_ok=True)
+        self.recovered_from_corruption = True
+        self.recovery_backup_path = str(backup)
+        print(f"ChromaDB recovery aplicado. Backup en: {backup}")
+
+    def _initialize_client_and_collection(self) -> None:
         try:
-            collection = self.client.get_collection(
-                name=self.collection_name, embedding_function=self.embedding_function
+            self.client = chromadb.PersistentClient(path=str(self.persist_directory))
+            self.collection = self._get_or_create_collection()
+        except Exception as e:
+            if not self._is_recoverable_error(e):
+                raise
+            self._backup_and_reset_store()
+            self.client = chromadb.PersistentClient(path=str(self.persist_directory))
+            self.collection = self._get_or_create_collection()
+
+    def _recover_and_retry(self, exc: Exception) -> bool:
+        if not self._is_recoverable_error(exc):
+            return False
+        self._backup_and_reset_store()
+        self.client = chromadb.PersistentClient(path=str(self.persist_directory))
+        self.collection = self._get_or_create_collection()
+        return True
+
+    def _get_or_create_collection(self):
+        """Get or create memory collection."""
+        try:
+            return self.client.get_collection(
+                name=self.collection_name,
+                embedding_function=self.embedding_function,
             )
         except Exception:
-            collection = self.client.create_collection(
+            return self.client.create_collection(
                 name=self.collection_name,
                 embedding_function=self.embedding_function,
                 metadata={"description": "Atlas Unified Memory"},
             )
-        return collection
 
     def add_memory(
         self,
@@ -74,35 +114,24 @@ class ChromaMemoryEngine:
         metadata: Optional[Dict[str, Any]] = None,
         ids: Optional[str] = None,
     ) -> str:
-        """
-        Añadir memoria a ChromaDB.
-
-        Args:
-            content: Contenido textual de la memoria
-            memory_type: episodic, semantic, procedural, etc
-            metadata: Metadatos adicionales
-            ids: ID único (opcional, se genera si no se proporciona)
-
-        Returns:
-            ID de la memoria añadida
-        """
+        """Add memory item to ChromaDB."""
         if ids is None:
             ids = str(uuid.uuid4())
 
-        # Metadatos base
         base_metadata = {
             "memory_type": memory_type,
             "timestamp": datetime.now().isoformat(),
             "created_at": datetime.now().timestamp(),
         }
-
-        # Combinar metadatos
         if metadata:
             base_metadata.update(metadata)
 
-        # Añadir a ChromaDB
-        self.collection.add(documents=[content], metadatas=[base_metadata], ids=[ids])
-
+        try:
+            self.collection.add(documents=[content], metadatas=[base_metadata], ids=[ids])
+        except Exception as e:
+            if not self._recover_and_retry(e):
+                raise
+            self.collection.add(documents=[content], metadatas=[base_metadata], ids=[ids])
         return ids
 
     def search_memories(
@@ -112,63 +141,66 @@ class ChromaMemoryEngine:
         limit: int = 10,
         min_score: float = 0.0,
     ) -> List[Dict[str, Any]]:
-        """
-        Buscar memorias por similaridad semántica.
-
-        Args:
-            query: Query de búsqueda
-            memory_types: Tipos de memoria a filtrar
-            limit: Límite de resultados
-            min_score: Puntuación mínima de similaridad
-
-        Returns:
-            Lista de memorias encontradas
-        """
-        # Construir where clause para filtrar tipos
+        """Search memories by semantic similarity."""
         where_clause = {}
         if memory_types:
             where_clause["memory_type"] = {"$in": memory_types}
 
-        # Búsqueda en ChromaDB
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=limit,
-            where=where_clause if where_clause else None,
-        )
+        try:
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=limit,
+                where=where_clause if where_clause else None,
+            )
+        except Exception as e:
+            if not self._recover_and_retry(e):
+                raise
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=limit,
+                where=where_clause if where_clause else None,
+            )
 
-        # Procesar resultados
         memories = []
-        for i, doc_id in enumerate(results["ids"][0]):
+        for i, doc_id in enumerate(results.get("ids", [[]])[0]):
             distance = results["distances"][0][i]
-            score = 1 - distance  # Convertir distance a similarity score
-
+            score = 1 - distance
             if score >= min_score:
-                memory = {
-                    "id": doc_id,
-                    "content": results["documents"][0][i],
-                    "metadata": results["metadatas"][0][i],
-                    "score": score,
-                    "source": "chromadb",
-                }
-                memories.append(memory)
-
+                memories.append(
+                    {
+                        "id": doc_id,
+                        "content": results["documents"][0][i],
+                        "metadata": results["metadatas"][0][i],
+                        "score": score,
+                        "source": "chromadb",
+                    }
+                )
         return memories
 
     def get_memory_by_id(self, memory_id: str) -> Optional[Dict[str, Any]]:
-        """Obtener memoria específica por ID."""
+        """Get memory by ID."""
         try:
             results = self.collection.get(ids=[memory_id])
-
-            if results["ids"]:
+            if results.get("ids"):
                 return {
                     "id": results["ids"][0],
                     "content": results["documents"][0],
                     "metadata": results["metadatas"][0],
                     "source": "chromadb",
                 }
-        except Exception:
-            pass
-
+        except Exception as e:
+            if self._recover_and_retry(e):
+                try:
+                    results = self.collection.get(ids=[memory_id])
+                    if results.get("ids"):
+                        return {
+                            "id": results["ids"][0],
+                            "content": results["documents"][0],
+                            "metadata": results["metadatas"][0],
+                            "source": "chromadb",
+                        }
+                except Exception:
+                    pass
         return None
 
     def update_memory(
@@ -177,29 +209,25 @@ class ChromaMemoryEngine:
         content: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """Actualizar memoria existente."""
+        """Update existing memory."""
         try:
-            # Obtener memoria actual
             current = self.get_memory_by_id(memory_id)
             if not current:
                 return False
-
-            # Preparar actualización
             new_content = content if content is not None else current["content"]
             new_metadata = metadata if metadata is not None else current["metadata"]
             new_metadata["updated_at"] = datetime.now().timestamp()
-
-            # Actualizar en ChromaDB
             self.collection.update(
-                ids=[memory_id], documents=[new_content], metadatas=[new_metadata]
+                ids=[memory_id],
+                documents=[new_content],
+                metadatas=[new_metadata],
             )
-
             return True
         except Exception:
             return False
 
     def delete_memory(self, memory_id: str) -> bool:
-        """Eliminar memoria."""
+        """Delete memory."""
         try:
             self.collection.delete(ids=[memory_id])
             return True
@@ -207,18 +235,14 @@ class ChromaMemoryEngine:
             return False
 
     def get_statistics(self) -> Dict[str, Any]:
-        """Obtener estadísticas del motor de memoria."""
+        """Get memory engine statistics."""
         try:
             count = self.collection.count()
-
-            # Obtener distribución por tipos
             all_results = self.collection.get()
-            type_counts = {}
-
-            for metadata in all_results["metadatas"]:
+            type_counts: Dict[str, int] = {}
+            for metadata in all_results.get("metadatas", []):
                 memory_type = metadata.get("memory_type", "unknown")
                 type_counts[memory_type] = type_counts.get(memory_type, 0) + 1
-
             return {
                 "total_memories": count,
                 "collection_name": self.collection_name,
@@ -226,12 +250,14 @@ class ChromaMemoryEngine:
                 "type_distribution": type_counts,
                 "embedding_model": "all-MiniLM-L6-v2",
                 "status": "active",
+                "recovered_from_corruption": self.recovered_from_corruption,
+                "recovery_backup_path": self.recovery_backup_path,
             }
         except Exception as e:
             return {"status": "error", "error": str(e), "total_memories": 0}
 
     def clear_all(self) -> bool:
-        """Eliminar todas las memorias (cuidado!)."""
+        """Delete all memories."""
         try:
             self.client.delete_collection(self.collection_name)
             self.collection = self._get_or_create_collection()
@@ -240,56 +266,25 @@ class ChromaMemoryEngine:
             return False
 
 
-# Instancia global para compatibilidad con Unified Memory Cortex
 _instance: Optional[ChromaMemoryEngine] = None
 
 
 def get_chroma_memory() -> ChromaMemoryEngine:
-    """Obtener instancia global del motor ChromaDB."""
+    """Get global Chroma memory engine instance."""
     global _instance
     if _instance is None:
         _instance = ChromaMemoryEngine()
     return _instance
 
 
-# Funciones de compatibilidad para Unified Memory Cortex
 def _search_chromadb(query: str, limit: int = 10) -> List[Dict[str, Any]]:
-    """Función de búsqueda para integración con Unified Memory Cortex."""
+    """Search adapter for Unified Memory Cortex."""
     chroma = get_chroma_memory()
     return chroma.search_memories(query, limit=limit)
 
 
 def _stats_chromadb() -> Dict[str, Any]:
-    """Función de estadísticas para Unified Memory Cortex."""
+    """Stats adapter for Unified Memory Cortex."""
     chroma = get_chroma_memory()
     return chroma.get_statistics()
 
-
-if __name__ == "__main__":
-    # Test básico
-    engine = ChromaMemoryEngine()
-
-    # Añadir memorias de prueba
-    engine.add_memory(
-        content="El usuario solicitó implementar ChromaDB en Atlas para mejorar la memoria semántica",
-        memory_type="episodic",
-        metadata={"context": "development", "priority": "high"},
-    )
-
-    engine.add_memory(
-        content="ChromaDB es una base de datos vectorial optimizada para embeddings",
-        memory_type="semantic",
-        metadata={"domain": "technology", "confidence": 0.9},
-    )
-
-    # Buscar
-    results = engine.search_memories("memoria vectorial", limit=5)
-    print("Resultados búsqueda:")
-    for r in results:
-        print(
-            f"  [{r['metadata']['memory_type']}] {r['content'][:80]}... (score: {r['score']:.3f})"
-        )
-
-    # Estadísticas
-    stats = engine.get_statistics()
-    print(f"\nEstadísticas: {stats}")

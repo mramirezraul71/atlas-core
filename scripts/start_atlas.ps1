@@ -41,7 +41,7 @@ if ($nexusAlive) {
 }
 
 # 2. Robot
-$robotAlive = Test-EndpointOk -Urls @("http://127.0.0.1:8002/api/health", "http://127.0.0.1:8002/status")
+$robotAlive = Test-EndpointOk -Urls @("http://127.0.0.1:8002/health", "http://127.0.0.1:8002/api/health", "http://127.0.0.1:8002/status")
 if ($robotAlive) {
     Write-Host "Robot ya activo en 8002. Saltando arranque." -ForegroundColor Yellow
 } elseif (Test-Path "$ROBOT\main.py") {
@@ -57,5 +57,7 @@ if ($pushAlive) {
     Write-Host "PUSH ya activo en 8791 (instancia detectada). Saltando arranque." -ForegroundColor Yellow
 } else {
     Write-Host "Iniciando PUSH en http://localhost:8791" -ForegroundColor Green
-    & $PY_PUSH -m uvicorn atlas_adapter.atlas_http_api:app --host 0.0.0.0 --port 8791
+    $env:SERVICE_BIND = "127.0.0.1"
+    $env:SERVICE_PORT = "8791"
+    & $PY_PUSH "tools\service_launcher.py"
 }
