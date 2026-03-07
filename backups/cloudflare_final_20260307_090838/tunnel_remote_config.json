@@ -1,0 +1,53 @@
+﻿{
+    "success":  true,
+    "errors":  [
+
+               ],
+    "messages":  [
+
+                 ],
+    "result":  {
+                   "tunnel_id":  "957fc56a-1883-4b31-9d87-e0c6d0986f94",
+                   "version":  1,
+                   "config":  {
+                                  "ingress":  [
+                                                  {
+                                                      "service":  "http://127.0.0.1:5173",
+                                                      "hostname":  "panaderia.rauliatlasapp.com",
+                                                      "originRequest":  {
+
+                                                                        }
+                                                  },
+                                                  {
+                                                      "service":  "http://127.0.0.1:3001",
+                                                      "hostname":  "panaderia-api.rauliatlasapp.com",
+                                                      "originRequest":  {
+
+                                                                        }
+                                                  },
+                                                  {
+                                                      "service":  "http://127.0.0.1:3000",
+                                                      "hostname":  "vision.rauliatlasapp.com",
+                                                      "originRequest":  {
+
+                                                                        }
+                                                  },
+                                                  {
+                                                      "service":  "http://127.0.0.1:8791",
+                                                      "hostname":  "atlas-dashboard.rauliatlasapp.com",
+                                                      "originRequest":  {
+
+                                                                        }
+                                                  },
+                                                  {
+                                                      "service":  "http_status:404"
+                                                  }
+                                              ],
+                                  "warp-routing":  {
+                                                       "enabled":  false
+                                                   }
+                              },
+                   "source":  "cloudflare",
+                   "created_at":  "2026-03-07T13:54:33.080727Z"
+               }
+}
