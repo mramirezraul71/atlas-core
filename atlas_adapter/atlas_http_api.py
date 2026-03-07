@@ -5143,8 +5143,8 @@ def camera_stream_proxy(index: int = 0):
 @app.get("/cuerpo/vision/snapshot")
 def cuerpo_vision_snapshot(
     index: int = 0,
-    enhance: str = "max",
-    jpeg_quality: int = 92,
+    enhance: str = "auto",
+    jpeg_quality: int = 80,
     focus_x: float = 0.5,
     focus_y: float = 0.5,
     zoom: float = 1.0,
@@ -5159,7 +5159,6 @@ def cuerpo_vision_snapshot(
     - zoom: 1..3
     """
     import urllib.parse
-    import urllib.request
 
     base_url = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
     url = (
@@ -5172,9 +5171,19 @@ def cuerpo_vision_snapshot(
         f"&zoom={float(zoom)}"
     )
     try:
-        req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=10) as r:
-            img = r.read()
+        import concurrent.futures
+        import httpx
+
+        def _fetch() -> bytes:
+            timeout = httpx.Timeout(connect=1.5, read=3.0, write=3.0, pool=1.5)
+            with httpx.Client(timeout=timeout) as client:
+                r = client.get(url)
+                r.raise_for_status()
+                return r.content
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            fut = ex.submit(_fetch)
+            img = fut.result(timeout=4.0)
         from fastapi.responses import Response
 
         return Response(content=img, media_type="image/jpeg")

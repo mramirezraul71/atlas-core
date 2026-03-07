@@ -30,7 +30,7 @@ class ChatMemoryEngine:
         self.max_messages_per_session = 100
         self.summary_threshold = 20  # Mensajes antes de resumir
 
-        print("✅ Chat Memory Engine iniciado")
+        print("Chat Memory Engine iniciado")
 
     def create_session(
         self, user_id: str = None, context: Dict[str, Any] = None
@@ -462,11 +462,11 @@ class ChatMemoryEngine:
             )
 
             print(
-                f"✅ Resumen creado para sesión {session_id} ({len(messages)} mensajes)"
+                f"Resumen creado para sesion {session_id} ({len(messages)} mensajes)"
             )
 
         except Exception as e:
-            print(f"❌ Error creando resumen: {e}")
+            print(f"Error creando resumen: {e}")
 
     def _generate_simple_summary(self, messages: List[Dict]) -> str:
         """Generar resumen simple de conversación."""

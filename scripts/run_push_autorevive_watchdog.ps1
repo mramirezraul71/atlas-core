@@ -1,8 +1,8 @@
 param(
-    [string]$HealthUrl = "http://127.0.0.1:8791/status",
-    [int]$IntervalSec = 15,
-    [int]$FailThreshold = 3,
-    [int]$RestartCooldownSec = 180
+    [string]$HealthUrl = "http://127.0.0.1:8791/health",
+    [int]$IntervalSec = 30,
+    [int]$FailThreshold = 8,
+    [int]$RestartCooldownSec = 300
 )
 
 $ErrorActionPreference = "Continue"

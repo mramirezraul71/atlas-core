@@ -1,4 +1,6 @@
 import json
+import re
+from typing import Any, Dict, Optional
 
 from browser_hands import BrowserHands
 from desktop_hands import DesktopHands
@@ -90,6 +92,104 @@ class VisualAgent:
                 "code_exec": "✅ PowerShell",
             },
         }
+
+    async def web_task(self, url: str, instructions: str) -> Dict[str, Any]:
+        """
+        Ejecuta una tarea web E2E mínima:
+        1) Navega a URL
+        2) Analiza visualmente
+        3) Si la instrucción sugiere click en un elemento, intenta localizar y click
+        4) Re-analiza y retorna evidencia
+        """
+        if not self._browser_active:
+            await self.start_browser()
+
+        nav = await self.browser.navigate(url)
+        before = await self.see_browser(
+            f"Contexto inicial. Objetivo del operador: {instructions}"
+        )
+
+        action_result: Optional[Dict[str, Any]] = None
+        lower = (instructions or "").lower()
+        wants_click = any(
+            kw in lower for kw in ("click", "clic", "presiona", "pulsa", "botón", "boton")
+        )
+        if wants_click:
+            target = self._extract_click_target(instructions) or "Continuar"
+            action_result = await self.find_and_click_visual(target)
+
+        after = await self.see_browser(
+            f"Verifica si se cumplió el objetivo: {instructions}. Resume estado final."
+        )
+        screenshot_after = await self.browser.screenshot(name="web_task_after")
+
+        ok = bool(nav.get("success")) and (
+            action_result is None or bool(action_result.get("success"))
+        )
+        out = {
+            "success": ok,
+            "url": nav.get("url"),
+            "title": nav.get("title"),
+            "instructions": instructions,
+            "before_analysis": before.get("analysis", ""),
+            "action_result": action_result,
+            "after_analysis": after.get("analysis", ""),
+            "evidence": {
+                "before_screenshot": nav.get("screenshot_path"),
+                "after_screenshot": screenshot_after,
+            },
+        }
+        self.memory.save_episode(
+            task=f"web_task:{instructions[:120]}",
+            result=out.get("title", ""),
+            success=ok,
+        )
+        return out
+
+    def desktop_task(self, instructions: str) -> Dict[str, Any]:
+        """
+        Ejecuta una tarea de escritorio local:
+        1) screenshot + análisis
+        2) retorno de coordenadas sugeridas por visión para asistencia operativa
+
+        Nota: no hace clicks destructivos automáticos aquí; se mantiene seguro y auditable.
+        """
+        shot = self.desktop.screenshot()
+        analysis = self.see_desktop(
+            f"Analiza la pantalla para ejecutar esta instrucción de escritorio: {instructions}"
+        )
+        coords = self.eyes.find_element_coordinates(
+            self.desktop.screenshot_bytes(),
+            f"Elemento principal para: {instructions}",
+        )
+        out = {
+            "success": True,
+            "instructions": instructions,
+            "analysis": analysis.get("analysis", ""),
+            "suggested_coordinates": coords,
+            "evidence": {"screenshot": shot},
+        }
+        self.memory.save_episode(
+            task=f"desktop_task:{instructions[:120]}",
+            result=str(coords),
+            success=True,
+        )
+        return out
+
+    @staticmethod
+    def _extract_click_target(text: str) -> Optional[str]:
+        t = (text or "").strip()
+        if not t:
+            return None
+        # Extrae target básico: "click en X", "clic en X", "presiona X"
+        m = re.search(
+            r"(?:click|clic|presiona|pulsa)\s+(?:en\s+)?['\"]?([^'\".,;\n]{2,80})",
+            t,
+            flags=re.IGNORECASE,
+        )
+        if m:
+            return m.group(1).strip()
+        return None
 
 
 if __name__ == "__main__":
