@@ -412,11 +412,22 @@ class SupervisorDaemon:
         elapsed_notice = now - self._last_notice_ts
         due_heartbeat = elapsed_notice >= float(self.notice_every_sec)
         can_emit_change = elapsed_notice >= float(self.min_change_notice_sec)
+        notice_core = _normalize_text_for_signature(signature)
+        notice_sig = f"{severity}|{notice_core}".strip("|") or "unknown|fallback"
+        notice_event_key = f"supervisor_notice:{notice_sig}"
+        recent_notice = _timeline_seen_recent(
+            notice_event_key, self.min_change_notice_sec
+        )
 
-        if (changed and can_emit_change) or due_heartbeat:
+        if ((changed and can_emit_change) or due_heartbeat) and not recent_notice:
             self._last_signature = signature
             self._last_severity = severity
             self._last_notice_ts = now
+            _timeline_mark(
+                notice_event_key,
+                kind="status",
+                result=severity[:40] or "unknown",
+            )
 
             if severity == "healthy":
                 _bitacora_log(
