@@ -412,7 +412,12 @@ class SupervisorDaemon:
         elapsed_notice = now - self._last_notice_ts
         due_heartbeat = elapsed_notice >= float(self.notice_every_sec)
         can_emit_change = elapsed_notice >= float(self.min_change_notice_sec)
-        notice_core = _normalize_text_for_signature(signature)
+        notice_items: List[str] = []
+        if isinstance(issues, list):
+            notice_items.extend(str(x)[:140] for x in issues[:4])
+        if isinstance(warnings, list):
+            notice_items.extend(str(x)[:140] for x in warnings[:3])
+        notice_core = _normalize_text_for_signature(" | ".join(notice_items))
         notice_sig = f"{severity}|{notice_core}".strip("|") or "unknown|fallback"
         notice_event_key = f"supervisor_notice:{notice_sig}"
         recent_notice = _timeline_seen_recent(
