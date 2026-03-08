@@ -59,6 +59,21 @@ _RE_CAMERA = re.compile(
     re.IGNORECASE,
 )
 _RE_DIGITS = re.compile(r"\D+")
+_RE_PROVIDER_LATENCY = re.compile(r":(?P<ms>\d{1,6})ms$", re.IGNORECASE)
+_CONTACT_TONE_PROFILES: Dict[str, Dict[str, str]] = {
+    "VISION:CAMI": {
+        "name": "Cami",
+        "tone": "muy cercano, amable, directo y breve; hablar de tu",
+    },
+    "VISION:RULITIN": {
+        "name": "Rulitin",
+        "tone": "cercano, dinamico y muy accionable; lenguaje simple",
+    },
+    "VISION:IVIS": {
+        "name": "Ivis",
+        "tone": "cercano, claro y tranquilo; sin tecnicismos innecesarios",
+    },
+}
 _VAULT_ENV_LOADED = False
 _VAULT_ENV_LOCK = threading.Lock()
 
@@ -156,6 +171,16 @@ def _normalize_phone(raw_phone: str) -> Tuple[str, str]:
 
 def _json_dump(data: Any) -> str:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
+
+def _percentile_int(values: Iterable[int], percentile: int) -> Optional[int]:
+    vals = sorted(int(v) for v in values if isinstance(v, (int, float)))
+    if not vals:
+        return None
+    p = max(1, min(int(percentile or 50), 99))
+    rank = int((p / 100.0) * len(vals) + 0.999999)
+    idx = max(0, min(len(vals) - 1, rank - 1))
+    return int(vals[idx])
 
 
 def _load_vault_env_once() -> None:
@@ -1218,6 +1243,83 @@ class AtlasCommsHub:
                 out.append({"user": req, "assistant": rsp})
         return out
 
+    def _resolve_contact_profile(
+        self, user_id: str, context: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, str]]:
+        keys: list[str] = []
+        uid = (user_id or "").strip().upper()
+        if uid:
+            keys.append(uid)
+            if ":" not in uid:
+                keys.append(f"VISION:{uid}")
+        ctx = context if isinstance(context, dict) else {}
+        ext = ctx.get("external_user")
+        if isinstance(ext, dict):
+            src = str(ext.get("source") or "").strip().upper()
+            ext_id = str(ext.get("external_user_id") or "").strip().upper()
+            if src and ext_id:
+                keys.insert(0, f"{src}:{ext_id}")
+            elif ext_id:
+                keys.insert(0, f"VISION:{ext_id}")
+        for k in keys:
+            prof = _CONTACT_TONE_PROFILES.get(k)
+            if prof:
+                return {
+                    "key": k,
+                    "name": str(prof.get("name") or "").strip(),
+                    "tone": str(prof.get("tone") or "").strip(),
+                }
+        return None
+
+    def _contact_prompt_hint(self, user_id: str, context: Optional[Dict[str, Any]]) -> str:
+        prof = self._resolve_contact_profile(user_id, context)
+        if not prof:
+            return ""
+        name = prof.get("name") or "Cliente"
+        tone = prof.get("tone") or "cercano y claro"
+        return f"Contacto: {name}. Preferencia: {tone}. Usar su nombre en la respuesta."
+
+    def _apply_contact_style(
+        self, text: str, user_id: str, context: Optional[Dict[str, Any]]
+    ) -> str:
+        t = (text or "").strip()
+        if not t:
+            return t
+        prof = self._resolve_contact_profile(user_id, context)
+        if not prof:
+            return t
+        name = str(prof.get("name") or "").strip()
+        has_name_greeting = bool(
+            name
+            and re.match(
+                rf"^(hola|buenas|hey|ey)\s+{re.escape(name)}\b",
+                t,
+                re.IGNORECASE,
+            )
+        )
+        if name and not has_name_greeting and not re.match(rf"^{re.escape(name)}[,:]", t, re.IGNORECASE):
+            t = f"{name}, {t}"
+        if "paso a paso" not in t.lower() and len(t) < 320:
+            if not re.search(r"[.!?]$", t):
+                t += "."
+            t += " Si quieres, te guio paso a paso."
+        return t
+
+    def _extract_latency_ms(self, provider: str) -> Optional[int]:
+        p = (provider or "").strip()
+        if not p:
+            return None
+        m = _RE_PROVIDER_LATENCY.search(p)
+        if not m:
+            return None
+        try:
+            v = int(m.group("ms"))
+        except Exception:
+            return None
+        if v < 0 or v > 120000:
+            return None
+        return v
+
     def _call_clawd_subscription(
         self,
         message: str,
@@ -1285,6 +1387,7 @@ class AtlasCommsHub:
         message: str,
         context_summary: Dict[str, Any],
         conversation_history: Optional[list[Dict[str, str]]] = None,
+        contact_hint: str = "",
     ) -> str:
         history_lines = []
         for idx, item in enumerate((conversation_history or [])[-4:], start=1):
@@ -1293,6 +1396,7 @@ class AtlasCommsHub:
             if u or a:
                 history_lines.append(f"{idx}. Usuario: {u}\n   ATLAS: {a}")
         history_text = "\n".join(history_lines) if history_lines else "Sin historial reciente."
+        contact_block = f"\nPerfil del contacto:\n- {contact_hint}\n" if contact_hint else ""
         return (
             "Contexto operativo actual:\n"
             f"- inventario_state: {context_summary.get('inventory_state')}\n"
@@ -1300,7 +1404,8 @@ class AtlasCommsHub:
             f"- panaderia_reachable: {bool(context_summary.get('panaderia_reachable'))}\n"
             f"- vision_reachable: {bool(context_summary.get('vision_reachable'))}\n"
             f"- offline_mode: {bool(context_summary.get('offline_mode'))}\n\n"
-            f"Historial reciente:\n{history_text}\n\n"
+            f"Historial reciente:\n{history_text}\n"
+            f"{contact_block}\n"
             f"Mensaje actual del usuario:\n{(message or '').strip()}\n\n"
             "Responde en espanol natural y cercano, con precision operativa.\n"
             "No inventes datos: si falta informacion, dilo y pide un dato puntual.\n"
@@ -1312,6 +1417,8 @@ class AtlasCommsHub:
         message: str,
         context_summary: Dict[str, Any],
         conversation_history: Optional[list[Dict[str, str]]] = None,
+        user_id: str = "",
+        context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[bool, str, str]:
         try:
             from modules.humanoid.ai.external_llm import call_external
@@ -1341,10 +1448,12 @@ class AtlasCommsHub:
             "Responde en espanol claro, humano y profesional. "
             "Prioriza acciones concretas y velocidad."
         )
+        contact_hint = self._contact_prompt_hint(user_id, context)
         prompt = self._build_ai_prompt(
             message=message,
             context_summary=context_summary,
             conversation_history=conversation_history,
+            contact_hint=contact_hint,
         )
         ok, text, latency_ms = call_external(
             "openai",
@@ -1359,6 +1468,7 @@ class AtlasCommsHub:
         final = str(text or "").strip()
         if not final:
             return False, "", "openai_empty_reply"
+        final = self._apply_contact_style(final, user_id, context)
         return True, final, f"openai:{model}:{int(latency_ms)}ms"
 
     def _offline_fallback_reply(self, message: str, context_summary: Dict[str, Any]) -> str:
@@ -1406,6 +1516,8 @@ class AtlasCommsHub:
         context_summary: Dict[str, Any],
         offline_mode: bool,
         conversation_history: Optional[list[Dict[str, str]]] = None,
+        user_id: str = "",
+        context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         if not offline_mode:
             ok, text, provider = self._call_clawd_subscription(
@@ -1413,22 +1525,34 @@ class AtlasCommsHub:
             )
             if ok:
                 return {
-                    "text": self._naturalize_reply(text),
+                    "text": self._apply_contact_style(
+                        self._naturalize_reply(text), user_id, context
+                    ),
                     "provider": provider,
                     "offline": False,
                 }
             ok, text, provider = self._call_openai_fallback(
-                message, context_summary, conversation_history=conversation_history
+                message,
+                context_summary,
+                conversation_history=conversation_history,
+                user_id=user_id,
+                context=context,
             )
             if ok:
                 return {
-                    "text": self._naturalize_reply(text),
+                    "text": self._apply_contact_style(
+                        self._naturalize_reply(text), user_id, context
+                    ),
                     "provider": provider,
                     "offline": False,
                 }
         return {
-            "text": self._naturalize_reply(
-                self._offline_fallback_reply(message, context_summary)
+            "text": self._apply_contact_style(
+                self._naturalize_reply(
+                    self._offline_fallback_reply(message, context_summary)
+                ),
+                user_id,
+                context,
             ),
             "provider": "offline_fallback",
             "offline": True,
@@ -1598,6 +1722,8 @@ class AtlasCommsHub:
                 context_summary=context_summary,
                 offline_mode=offline_mode,
                 conversation_history=history,
+                user_id=normalized_user,
+                context=context,
             )
 
             inventory_state = str(context_summary.get("inventory_state") or "unknown")
@@ -1606,6 +1732,7 @@ class AtlasCommsHub:
                 "context": context or {},
                 "provider": reply.get("provider"),
                 "offline_diag": offline_diag,
+                "contact_profile": self._resolve_contact_profile(normalized_user, context),
             }
             synced = not offline_mode
             self._store_message(
@@ -1676,7 +1803,7 @@ class AtlasCommsHub:
                        request_summary, request_encrypted,
                        response_summary, response_encrypted,
                        inventory_status, camera_status,
-                       offline_mode, synced
+                       offline_mode, synced, metadata_json
                 FROM comms_messages
                 ORDER BY created_at DESC
                 LIMIT ?
@@ -1690,6 +1817,21 @@ class AtlasCommsHub:
         for r in rows:
             req_preview = r["request_summary"] or ""
             rsp_preview = r["response_summary"] or ""
+            metadata: Dict[str, Any] = {}
+            try:
+                raw_meta = r["metadata_json"]
+                if raw_meta:
+                    parsed = json.loads(raw_meta)
+                    if isinstance(parsed, dict):
+                        metadata = parsed
+            except Exception:
+                metadata = {}
+            provider = str(metadata.get("provider") or "").strip()
+            latency_ms = self._extract_latency_ms(provider)
+            contact_profile = metadata.get("contact_profile")
+            contact_name = ""
+            if isinstance(contact_profile, dict):
+                contact_name = str(contact_profile.get("name") or "").strip()
             if decrypt:
                 try:
                     req_preview = _truncate(self._decrypt_text(r["request_encrypted"]), 260)
@@ -1712,9 +1854,19 @@ class AtlasCommsHub:
                     "camera_status": r["camera_status"],
                     "offline_mode": bool(r["offline_mode"]),
                     "synced": bool(r["synced"]),
+                    "provider": provider,
+                    "latency_ms": latency_ms,
+                    "contact_name": contact_name,
                 }
             )
-        return {"ok": True, "items": items, "count": len(items)}
+        latencies = [int(it["latency_ms"]) for it in items if isinstance(it.get("latency_ms"), int)]
+        metrics = {
+            "latency_count": len(latencies),
+            "avg_ms": round((sum(latencies) / len(latencies)), 1) if latencies else None,
+            "p95_ms": _percentile_int(latencies, 95),
+            "p99_ms": _percentile_int(latencies, 99),
+        }
+        return {"ok": True, "items": items, "count": len(items), "metrics": metrics}
 
     def get_status(self) -> Dict[str, Any]:
         conn = self._db_conn()

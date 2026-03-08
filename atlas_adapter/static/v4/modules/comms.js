@@ -1,5 +1,5 @@
-/**
- * ATLAS v4.2 — Communications Module
+﻿/**
+ * ATLAS v4.2 â€” Communications Module
  * Panel de comunicaciones: estado WAHA/WhatsApp, QR, restart, test.
  */
 import { poll, stop } from '../lib/polling.js';
@@ -46,6 +46,14 @@ export default {
               <div class="stat-card-label">Cola offline</div>
               <div class="stat-card-value" id="c-offline">--</div>
             </div>
+            <div class="stat-card">
+              <div class="stat-card-label">IA p95</div>
+              <div class="stat-card-value" id="c-p95">--</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-label">IA p99</div>
+              <div class="stat-card-value" id="c-p99">--</div>
+            </div>
           </div>
 
           <!-- Actions -->
@@ -69,7 +77,7 @@ export default {
           <div id="comms-action" style="margin-top:12px"></div>
 
           <!-- Raw status -->
-          <div class="section-title" style="margin-top:20px">Diagnóstico</div>
+          <div class="section-title" style="margin-top:20px">DiagnÃ³stico</div>
           <pre class="codebox" id="comms-raw" style="max-height:180px;overflow:auto">Cargando...</pre>
 
           <div class="section-title" style="margin-top:16px">Historial ATLAS (movil)</div>
@@ -101,7 +109,7 @@ async function _refresh(container) {
     const ansData = await ansResp.json().catch(() => ({}));
     const atlasData = await atlasResp.json().catch(() => ({}));
     const histData = await histResp.json().catch(() => ({}));
-    _renderStatus(container, ansData, atlasData);
+    _renderStatus(container, ansData, atlasData, histData);
     _renderHistory(container, histData?.items || []);
   } catch (e) {
     const el = container.querySelector('#comms-raw');
@@ -109,7 +117,7 @@ async function _refresh(container) {
   }
 }
 
-function _renderStatus(container, data, atlasData = {}) {
+function _renderStatus(container, data, atlasData = {}, histData = {}) {
   const p = data?.data ?? data;
   const connected = p?.connected === true || p?.status === 'connected' || p?.state === 'connected';
   const txt = (id, v) => { const e = container.querySelector(id); if (e) e.textContent = v; };
@@ -120,15 +128,27 @@ function _renderStatus(container, data, atlasData = {}) {
   if (stEl) stEl.style.color = connected ? 'var(--accent-green)' : 'var(--accent-orange)';
   txt('#c-sent', p?.messages_sent ?? p?.sent ?? '--');
   txt('#c-offline', atlasData?.queue_pending ?? '--');
+  const metrics = histData?.metrics || {};
+  txt('#c-p95', typeof metrics?.p95_ms === 'number' ? `${metrics.p95_ms}ms` : '--');
+  txt('#c-p99', typeof metrics?.p99_ms === 'number' ? `${metrics.p99_ms}ms` : '--');
   const qEl = container.querySelector('#c-offline');
   if (qEl && typeof atlasData?.queue_pending === 'number') {
     qEl.style.color = atlasData.queue_pending > 0 ? 'var(--accent-orange)' : 'var(--accent-green)';
+  }
+  const p95El = container.querySelector('#c-p95');
+  if (p95El && typeof metrics?.p95_ms === 'number') {
+    p95El.style.color = metrics.p95_ms > 2500 ? 'var(--accent-orange)' : 'var(--accent-green)';
+  }
+  const p99El = container.querySelector('#c-p99');
+  if (p99El && typeof metrics?.p99_ms === 'number') {
+    p99El.style.color = metrics.p99_ms > 3500 ? 'var(--accent-orange)' : 'var(--accent-green)';
   }
   const raw = container.querySelector('#comms-raw');
   if (raw) {
     raw.textContent = JSON.stringify({
       ans: p,
       atlas_bridge: atlasData,
+      history_metrics: metrics,
     }, null, 2);
   }
 }
@@ -144,15 +164,19 @@ function _renderHistory(container, items) {
   el.innerHTML = rows.slice(0, 12).map((it) => {
     const when = it?.created_at ? new Date(it.created_at).toLocaleTimeString() : '--';
     const user = _esc(it?.user_id || 'guest');
+    const contact = _esc(it?.contact_name || '');
     const req = _esc(it?.request || it?.request_summary || '');
     const rsp = _esc(it?.response || it?.response_summary || '');
     const urgency = _esc(it?.urgency || 'normal');
+    const provider = _esc(it?.provider || '--');
+    const latency = typeof it?.latency_ms === 'number' ? `${it.latency_ms}ms` : '--';
     const off = it?.offline_mode ? '<span class="chip orange">offline</span>' : '<span class="chip green">online</span>';
     return `<div class="codebox" style="font-size:11px;line-height:1.45">
       <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px">
         <strong>${user}</strong>
-        <span>${when} · ${urgency}</span>
+        <span>${when} Â· ${urgency}</span>
       </div>
+      <div style="opacity:.86"><strong>Perfil:</strong> ${contact || '--'} · <strong>IA:</strong> ${provider} · <strong>Latencia:</strong> ${latency}</div>
       <div><strong>Cliente:</strong> ${req}</div>
       <div style="margin-top:2px"><strong>ATLAS:</strong> ${rsp}</div>
       <div style="margin-top:4px">${off}</div>
@@ -218,3 +242,4 @@ async function _test(container) {
 }
 
 window.AtlasModuleComms = { id: 'comms' };
+
