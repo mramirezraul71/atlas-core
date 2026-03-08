@@ -2,8 +2,8 @@
   "index": 0,
   "model": "Webcam est\u00e1ndar",
   "resolution": [
-    1280,
-    720
+    640,
+    480
   ],
   "capabilities": [
     "video"
