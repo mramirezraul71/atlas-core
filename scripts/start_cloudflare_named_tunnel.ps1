@@ -234,4 +234,13 @@ if ($enableQuickFallback) {
 
 Get-CimInstance Win32_Process | Where-Object {
     $_.Name -match "cloudflared"
-} | Select-Object ProcessId, Name, CommandLine | Format-Table -AutoSize
+} | ForEach-Object {
+    $mode = "other"
+    if ($_.CommandLine -match "tunnel.*run.*--token") { $mode = "named" }
+    elseif ($_.CommandLine -match "\s--url\s+http://127\.0\.0\.1:") { $mode = "quick" }
+    [PSCustomObject]@{
+        ProcessId = $_.ProcessId
+        Name      = $_.Name
+        Mode      = $mode
+    }
+} | Format-Table -AutoSize

@@ -1328,11 +1328,25 @@ class AtlasCommsHub:
     ) -> Tuple[bool, str, str]:
         api_url = (os.getenv("ATLAS_CLAWD_API_URL") or "").strip()
         if (not api_url) or api_url.lower().startswith("internal://anthropic"):
-            return self._call_clawd_anthropic_internal(
+            ok, text, provider = self._call_clawd_anthropic_internal(
                 message=message,
                 context_summary=context_summary,
                 conversation_history=conversation_history,
             )
+            if ok:
+                with self._clawd_state_lock:
+                    self._clawd_fail_streak = 0
+                    self._clawd_backoff_until = 0.0
+                    self._clawd_last_error = ""
+                return True, text, provider
+            reason = provider or "clawd_internal_fail"
+            base = self._clawd_backoff_base_s()
+            with self._clawd_state_lock:
+                self._clawd_fail_streak = min(self._clawd_fail_streak + 1, 6)
+                factor = min(self._clawd_fail_streak, 3)
+                self._clawd_backoff_until = time.time() + (base * factor)
+                self._clawd_last_error = reason
+            return False, "", reason
         now = time.time()
         with self._clawd_state_lock:
             if now < self._clawd_backoff_until:
