@@ -2,16 +2,18 @@
 Expone /status /tools /execute usando el command_router.handle de C:\ATLAS\modules\command_router.py
 """
 import asyncio
+import hashlib
 import json
 import logging
 import os
 import re
+import shutil
 import sys
 import tempfile
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 
@@ -5358,6 +5360,335 @@ def api_evidence_image(path: str):
         raise HTTPException(status_code=415, detail="unsupported file type")
 
     return FileResponse(str(resolved))
+
+
+BETY_TEMPLATE_SOURCE = (
+    BASE_DIR / "plantillas" / "Plantilla_Base_Eventos_Panaderia.xlsx"
+)
+BETY_STORAGE_ROOT = BASE_DIR / "data" / "bety_eventos"
+BETY_UPLOADS_DIR = BETY_STORAGE_ROOT / "uploads"
+BETY_BACKUPS_DIR = BETY_STORAGE_ROOT / "backups"
+BETY_SUMMARY_DIR = BETY_STORAGE_ROOT / "summary"
+BETY_LATEST_FILE = BETY_STORAGE_ROOT / "Bety_Eventos_Panaderia_latest.xlsx"
+BETY_LEDGER_FILE = BETY_STORAGE_ROOT / "ledger.jsonl"
+BETY_LATEST_SUMMARY_FILE = BETY_SUMMARY_DIR / "latest_summary.json"
+BETY_PUBLIC_DOWNLOADS_DIR = BASE_DIR / "atlas_adapter" / "static" / "v4" / "downloads"
+BETY_PUBLIC_TEMPLATE_NAME = "Bety_Eventos_Panaderia_Diario.xlsx"
+
+
+def _ensure_bety_dirs() -> None:
+    for p in (
+        BETY_STORAGE_ROOT,
+        BETY_UPLOADS_DIR,
+        BETY_BACKUPS_DIR,
+        BETY_SUMMARY_DIR,
+        BETY_PUBLIC_DOWNLOADS_DIR,
+    ):
+        p.mkdir(parents=True, exist_ok=True)
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _to_json_safe(value):
+    if value is None:
+        return None
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
+
+
+def _as_float(value) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    raw = str(value).strip().replace("$", "").replace(",", "")
+    if not raw:
+        return 0.0
+    try:
+        return float(raw)
+    except Exception:
+        return 0.0
+
+
+def _read_sheet_records(workbook, sheet_name: str) -> list[dict]:
+    if sheet_name not in workbook.sheetnames:
+        return []
+    ws = workbook[sheet_name]
+    header_row = 3
+    headers = []
+    for col in range(1, ws.max_column + 1):
+        hv = ws.cell(row=header_row, column=col).value
+        hs = str(hv).strip() if hv else ""
+        headers.append(hs)
+    rows = []
+    for ridx in range(header_row + 1, ws.max_row + 1):
+        vals = [ws.cell(row=ridx, column=c).value for c in range(1, ws.max_column + 1)]
+        if not any(v not in (None, "") for v in vals):
+            continue
+        rec = {"_fila": ridx}
+        for k, v in zip(headers, vals):
+            if not k:
+                continue
+            rec[k] = _to_json_safe(v)
+        rows.append(rec)
+    return rows
+
+
+def _build_bety_summary(xlsx_path: Path) -> dict:
+    try:
+        from openpyxl import load_workbook
+    except Exception:
+        return {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "totals": {
+                "entrada_almacen": {"registros": 0, "cantidad_total": 0.0, "importe_total": 0.0},
+                "salida_produccion": {"registros": 0, "cantidad_total": 0.0, "importe_total": 0.0},
+                "produccion": {"registros": 0, "cantidad_total": 0.0, "importe_total": 0.0},
+                "ventas": {"registros": 0, "cantidad_total": 0.0, "importe_total": 0.0},
+            },
+            "by_day": {},
+            "parse_warning": "openpyxl no disponible en runtime PUSH; archivo guardado y respaldado.",
+        }
+
+    wb = load_workbook(xlsx_path, data_only=True)
+    entries = _read_sheet_records(wb, "02_Entrada_Almacen")
+    to_production = _read_sheet_records(wb, "03_Salida_Produccion")
+    production = _read_sheet_records(wb, "04_Produccion")
+    sales = _read_sheet_records(wb, "05_Ventas")
+
+    def _sum_field(rows: list[dict], key: str) -> float:
+        return round(sum(_as_float(r.get(key)) for r in rows), 2)
+
+    totals = {
+        "entrada_almacen": {
+            "registros": len(entries),
+            "cantidad_total": _sum_field(entries, "Cantidad"),
+            "importe_total": _sum_field(entries, "Importe"),
+        },
+        "salida_produccion": {
+            "registros": len(to_production),
+            "cantidad_total": _sum_field(to_production, "Cantidad"),
+            "importe_total": _sum_field(to_production, "Importe"),
+        },
+        "produccion": {
+            "registros": len(production),
+            "cantidad_total": _sum_field(production, "Cantidad"),
+            "importe_total": _sum_field(production, "Importe"),
+        },
+        "ventas": {
+            "registros": len(sales),
+            "cantidad_total": _sum_field(sales, "Cantidad"),
+            "importe_total": _sum_field(sales, "Importe"),
+        },
+    }
+
+    by_day: dict[str, dict[str, float]] = {}
+    sections = {
+        "entrada_almacen": entries,
+        "salida_produccion": to_production,
+        "produccion": production,
+        "ventas": sales,
+    }
+    for sec_name, rows in sections.items():
+        for row in rows:
+            day = str(row.get("Fecha") or "").strip() or "SIN_FECHA"
+            d = by_day.setdefault(
+                day,
+                {
+                    "entrada_almacen_importe": 0.0,
+                    "salida_produccion_importe": 0.0,
+                    "produccion_importe": 0.0,
+                    "ventas_importe": 0.0,
+                    "entrada_almacen_cantidad": 0.0,
+                    "salida_produccion_cantidad": 0.0,
+                    "produccion_cantidad": 0.0,
+                    "ventas_cantidad": 0.0,
+                },
+            )
+            d[f"{sec_name}_importe"] = round(
+                d[f"{sec_name}_importe"] + _as_float(row.get("Importe")), 2
+            )
+            d[f"{sec_name}_cantidad"] = round(
+                d[f"{sec_name}_cantidad"] + _as_float(row.get("Cantidad")), 2
+            )
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "totals": totals,
+        "by_day": by_day,
+    }
+
+
+def _ensure_bety_public_template() -> Path:
+    _ensure_bety_dirs()
+    if not BETY_TEMPLATE_SOURCE.exists():
+        raise FileNotFoundError(f"Plantilla base no encontrada: {BETY_TEMPLATE_SOURCE}")
+    dst = BETY_PUBLIC_DOWNLOADS_DIR / BETY_PUBLIC_TEMPLATE_NAME
+    shutil.copy2(BETY_TEMPLATE_SOURCE, dst)
+    return dst
+
+
+def _read_last_ledger(limit: int = 20) -> list[dict]:
+    if not BETY_LEDGER_FILE.exists():
+        return []
+    lines = BETY_LEDGER_FILE.read_text(encoding="utf-8").splitlines()
+    out = []
+    for line in lines[-max(1, int(limit)) :]:
+        try:
+            out.append(json.loads(line))
+        except Exception:
+            continue
+    return out
+
+
+@app.get("/api/panaderia/bety/template", tags=["Panaderia Bety"])
+def api_panaderia_bety_template(request: Request):
+    t0 = time.perf_counter()
+    try:
+        path = _ensure_bety_public_template()
+        rel = f"/v4/static/downloads/{path.name}"
+        return _std_resp(
+            True,
+            {
+                "file_name": path.name,
+                "file_size_bytes": path.stat().st_size,
+                "download_path": rel,
+                "download_url": f"{str(request.base_url).rstrip('/')}{rel}",
+            },
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.post("/api/panaderia/bety/upload", tags=["Panaderia Bety"])
+async def api_panaderia_bety_upload(file: UploadFile = File(...)):
+    t0 = time.perf_counter()
+    from fastapi import HTTPException
+
+    try:
+        _ensure_bety_dirs()
+        name = Path(file.filename or "bety_eventos.xlsx").name
+        suffix = name.lower()
+        if not suffix.endswith(".xlsx"):
+            raise HTTPException(status_code=400, detail="Solo se permite .xlsx")
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        stored_name = f"{ts}_{name}"
+        upload_path = BETY_UPLOADS_DIR / stored_name
+
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="Archivo vacio")
+        if len(content) > 20 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Archivo demasiado grande (>20MB)")
+        upload_path.write_bytes(content)
+        shutil.copy2(upload_path, BETY_LATEST_FILE)
+
+        summary = _build_bety_summary(upload_path)
+        summary["file"] = {
+            "name": stored_name,
+            "size_bytes": len(content),
+            "sha256": _sha256_file(upload_path),
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        }
+        BETY_LATEST_SUMMARY_FILE.write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+        backup_name = f"{ts}__{name}"
+        backup_path = BETY_BACKUPS_DIR / backup_name
+        shutil.copy2(upload_path, backup_path)
+
+        ledger_entry = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "file_name": stored_name,
+            "size_bytes": len(content),
+            "sha256": summary["file"]["sha256"],
+            "totals": summary["totals"],
+            "backup_file": backup_name,
+        }
+        with BETY_LEDGER_FILE.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(ledger_entry, ensure_ascii=False) + "\n")
+
+        return _std_resp(
+            True,
+            {
+                "message": "Archivo recibido y consolidado para ATLAS.",
+                "latest_file": str(BETY_LATEST_FILE),
+                "backup_file": str(backup_path),
+                "summary_file": str(BETY_LATEST_SUMMARY_FILE),
+                "summary": summary,
+            },
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/api/panaderia/bety/status", tags=["Panaderia Bety"])
+def api_panaderia_bety_status():
+    t0 = time.perf_counter()
+    try:
+        _ensure_bety_dirs()
+        latest_summary = {}
+        if BETY_LATEST_SUMMARY_FILE.exists():
+            latest_summary = json.loads(BETY_LATEST_SUMMARY_FILE.read_text(encoding="utf-8"))
+        uploads = _read_last_ledger(limit=12)
+        return _std_resp(
+            True,
+            {
+                "template_exists": BETY_TEMPLATE_SOURCE.exists(),
+                "latest_file_exists": BETY_LATEST_FILE.exists(),
+                "latest_summary": latest_summary,
+                "uploads": uploads,
+                "storage_root": str(BETY_STORAGE_ROOT),
+            },
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/api/panaderia/bety/uploads", tags=["Panaderia Bety"])
+def api_panaderia_bety_uploads(limit: int = 20):
+    t0 = time.perf_counter()
+    try:
+        _ensure_bety_dirs()
+        uploads = _read_last_ledger(limit=min(max(limit, 1), 200))
+        return _std_resp(
+            True,
+            {"items": uploads, "count": len(uploads)},
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/api/panaderia/bety/download/latest", tags=["Panaderia Bety"])
+def api_panaderia_bety_download_latest():
+    from fastapi import HTTPException
+
+    if not BETY_LATEST_FILE.exists():
+        raise HTTPException(status_code=404, detail="No hay archivo diario cargado aun.")
+    return FileResponse(
+        str(BETY_LATEST_FILE),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=BETY_LATEST_FILE.name,
+    )
 
 
 @app.get("/product/status")

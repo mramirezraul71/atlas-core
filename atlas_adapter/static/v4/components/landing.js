@@ -89,6 +89,7 @@ export function render(container) {
         <div class="quick-chip" data-action="bitacora">${SVG.bitacora} Bitacora</div>
         <div class="quick-chip" data-action="rauli-vision">${SVG.eye} Rauli Vision</div>
         <div class="quick-chip" data-action="rauli-panaderia">${SVG.package} Rauli Panaderia</div>
+        <div class="quick-chip" data-action="bety-eventos">${SVG.bitacora} Bety Eventos</div>
         <div class="quick-chip" data-action="config">${SVG.config} AI Config</div>
         <div class="quick-chip" data-action="autonomy">${SVG.governance} Autonomy</div>
         <div class="quick-chip" data-action="clawd-direct">${SVG.brain} Clawd Directo</div>
@@ -130,6 +131,10 @@ export function render(container) {
         <div class="app-tile" data-app="rauli-panaderia">
           <div class="app-tile-icon">${SVG.package}</div>
           <div class="app-tile-label">Rauli Panaderia</div>
+        </div>
+        <div class="app-tile" data-app="bety-eventos">
+          <div class="app-tile-icon">${SVG.bitacora}</div>
+          <div class="app-tile-label">Bety Eventos</div>
         </div>
         <div class="app-tile" data-app="config-tile">
           <div class="app-tile-icon">${SVG.config}</div>
@@ -229,6 +234,7 @@ export function render(container) {
     bitacora:  { hash: '/bitacora' },
     'rauli-vision': { hash: '/apps/vision' },
     'rauli-panaderia': { hash: '/apps/panaderia' },
+    'bety-eventos': { hash: '/bety-eventos' },
     config:    { hash: '/config' },
     autonomy:  { hash: '/autonomy' },
     'clawd-direct': { hash: '/clawd-direct' },
@@ -258,6 +264,7 @@ export function render(container) {
     'mis-apps':     { hash: '/apps' },
     'rauli-vision': { hash: '/apps/vision' },
     'rauli-panaderia': { hash: '/apps/panaderia' },
+    'bety-eventos': { hash: '/bety-eventos' },
     'config-tile':  { hash: '/config' },
     'tools-menu':   { hash: '/tools-menu' },
     'software-center': { hash: '/software-center' },
