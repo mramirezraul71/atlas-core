@@ -1327,8 +1327,12 @@ class AtlasCommsHub:
         conversation_history: Optional[list[Dict[str, str]]] = None,
     ) -> Tuple[bool, str, str]:
         api_url = (os.getenv("ATLAS_CLAWD_API_URL") or "").strip()
-        if not api_url:
-            return False, "", "clawd_api_url_missing"
+        if (not api_url) or api_url.lower().startswith("internal://anthropic"):
+            return self._call_clawd_anthropic_internal(
+                message=message,
+                context_summary=context_summary,
+                conversation_history=conversation_history,
+            )
         now = time.time()
         with self._clawd_state_lock:
             if now < self._clawd_backoff_until:
@@ -1381,6 +1385,64 @@ class AtlasCommsHub:
             self._clawd_backoff_until = 0.0
             self._clawd_last_error = ""
         return True, str(text).strip(), "clawd_api"
+
+    def _call_clawd_anthropic_internal(
+        self,
+        message: str,
+        context_summary: Dict[str, Any],
+        conversation_history: Optional[list[Dict[str, str]]] = None,
+    ) -> Tuple[bool, str, str]:
+        try:
+            from modules.humanoid.ai.external_llm import call_external
+        except Exception as e:
+            return False, "", f"clawd_internal_module_missing:{e}"
+
+        api_key = (
+            os.getenv("ATLAS_CLAWD_API_KEY")
+            or os.getenv("ANTHROPIC_API_KEY")
+            or os.getenv("ANTHROPIC_API_KEY_CEREBRO")
+            or ""
+        ).strip()
+        if not api_key:
+            try:
+                from modules.humanoid.ai.provider_credentials import get_provider_api_key
+
+                api_key = (get_provider_api_key("anthropic") or "").strip()
+            except Exception:
+                api_key = ""
+        if not api_key:
+            return False, "", "clawd_internal_anthropic_key_missing"
+
+        model = (
+            os.getenv("ATLAS_CLAWD_MODEL")
+            or os.getenv("ANTHROPIC_MODEL")
+            or "claude-sonnet-4-latest"
+        ).strip()
+        timeout_s = self._clawd_timeout_s()
+        system = (
+            "Eres ATLAS, asistente operativo de RAULI. "
+            "Responde en espanol natural, breve y accionable."
+        )
+        prompt = self._build_ai_prompt(
+            message=message,
+            context_summary=context_summary,
+            conversation_history=conversation_history,
+            contact_hint="",
+        )
+        ok, text, latency_ms = call_external(
+            "anthropic",
+            model,
+            prompt,
+            system,
+            api_key,
+            timeout_s=timeout_s,
+        )
+        if not ok:
+            return False, "", f"clawd_internal_anthropic_fail:{_truncate(str(text), 160)}"
+        out = str(text or "").strip()
+        if not out:
+            return False, "", "clawd_internal_anthropic_empty_reply"
+        return True, out, f"clawd_api:anthropic:{model}:{int(latency_ms)}ms"
 
     def _build_ai_prompt(
         self,
