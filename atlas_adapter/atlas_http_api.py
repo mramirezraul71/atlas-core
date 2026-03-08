@@ -3061,6 +3061,28 @@ def api_whatsapp_inbound(body: dict):
         from modules.humanoid.comms.whatsapp_bridge import (parse_inbound_payload,
                                                             send_text)
 
+        require_known = os.getenv("ATLAS_WHATSAPP_REQUIRE_KNOWN", "true").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        )
+        require_atlas_question = os.getenv(
+            "ATLAS_WHATSAPP_REQUIRE_ATLAS_QUESTION", "true"
+        ).strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        )
+        re_atlas = re.compile(r"\batlas\b", re.IGNORECASE)
+        re_question_hint = re.compile(
+            r"[?¿]|\b(que|qué|como|cómo|puedes|puede|ayuda|ayudame|ayúdame|dime|necesito|sabes)\b",
+            re.IGNORECASE,
+        )
+
         parsed = parse_inbound_payload(body or {})
         if not parsed.get("ok"):
             return {
@@ -3077,6 +3099,36 @@ def api_whatsapp_inbound(body: dict):
 
         hub = get_atlas_comms_hub()
         resolved_user = hub.resolve_external_user_by_whatsapp(sender)
+        is_known = bool(resolved_user.get("ok"))
+        atlas_mentioned = bool(re_atlas.search(text or ""))
+        looks_like_question = bool(re_question_hint.search(text or ""))
+
+        if require_known and not is_known:
+            return {
+                "ok": True,
+                "ignored": True,
+                "reason": "sender_not_linked",
+                "sender": sender,
+                "rules": {
+                    "require_known": require_known,
+                    "require_atlas_question": require_atlas_question,
+                },
+            }
+
+        if require_atlas_question and not (atlas_mentioned and looks_like_question):
+            return {
+                "ok": True,
+                "ignored": True,
+                "reason": "atlas_question_required",
+                "sender": sender,
+                "rules": {
+                    "require_known": require_known,
+                    "require_atlas_question": require_atlas_question,
+                    "atlas_mentioned": atlas_mentioned,
+                    "looks_like_question": looks_like_question,
+                },
+            }
+
         effective_user_id = (
             str(resolved_user.get("user_id"))
             if resolved_user.get("ok")
