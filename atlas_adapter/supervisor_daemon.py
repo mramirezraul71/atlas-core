@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -72,11 +73,66 @@ def _normalize_text_for_signature(text: str) -> str:
     return t[:240]
 
 
-def _insert_directive_task(title: str, detail: str, severity: str) -> str:
-    tid = f"sup_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
-    prio = _task_priority_for_severity(severity)
+def _timeline_seen_recent(event_key: str, within_sec: int) -> bool:
     c = _auto_db()
     try:
+        row = c.execute(
+            """SELECT 1 FROM autonomy_timeline
+               WHERE event=? AND ts >= datetime('now', ?)
+               ORDER BY id DESC LIMIT 1""",
+            (event_key, f"-{max(10, int(within_sec or 0))} seconds"),
+        ).fetchone()
+        return bool(row)
+    finally:
+        c.close()
+
+
+def _timeline_mark(event_key: str, kind: str = "info", result: str = "ok") -> None:
+    c = _auto_db()
+    try:
+        c.execute(
+            "INSERT INTO autonomy_timeline(event, kind, result) VALUES(?,?,?)",
+            (event_key[:500], kind[:40], result[:40]),
+        )
+        c.commit()
+    finally:
+        c.close()
+
+
+def _insert_directive_task(
+    title: str,
+    detail: str,
+    severity: str,
+    signature: str = "",
+    dedupe_seconds: int = 900,
+) -> str:
+    tid = f"sup_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+    prio = _task_priority_for_severity(severity)
+    raw_sig = (signature or "").strip()
+    if not raw_sig:
+        raw_sig = _normalize_text_for_signature(title + "|" + detail)
+    if not raw_sig:
+        # Fallback deterministic signature so dedupe never runs with an empty key.
+        raw = f"{title}|{detail}|{severity}"
+        raw_sig = "sha1:" + hashlib.sha1(
+            raw.encode("utf-8", errors="ignore")
+        ).hexdigest()[:28]
+    sig = raw_sig[:240]
+    c = _auto_db()
+    try:
+        existing = c.execute(
+            """SELECT id FROM autonomy_tasks
+               WHERE source='supervisor'
+                 AND status IN ('pending','in_progress')
+                 AND action_taken=?
+                 AND created_at >= datetime('now', ?)
+               ORDER BY created_at DESC
+               LIMIT 1""",
+            (sig, f"-{max(60, int(dedupe_seconds or 0))} seconds"),
+        ).fetchone()
+        if existing:
+            return str(existing["id"])
+
         c.execute(
             """INSERT OR REPLACE INTO autonomy_tasks
                (id,title,status,priority,source,detail,action_taken,updated_at)
@@ -88,7 +144,7 @@ def _insert_directive_task(title: str, detail: str, severity: str) -> str:
                 prio,
                 "supervisor",
                 detail[:1200],
-                "",
+                sig,
             ),
         )
         c.commit()
@@ -440,32 +496,56 @@ class SupervisorDaemon:
                 except Exception:
                     pass
 
-            task_sig = f"{severity}|{_normalize_text_for_signature(top_txt)}"
+            sig_parts: List[str] = []
+            if isinstance(issues, list):
+                sig_parts.extend(str(x)[:160] for x in issues[:6])
+            if isinstance(warnings, list):
+                sig_parts.extend(str(x)[:160] for x in warnings[:4])
+            core = _normalize_text_for_signature(" | ".join(sig_parts) or top_txt)
+            task_sig = f"{severity}|{core}".strip("|")
+            if not task_sig:
+                task_sig = f"{severity}|fallback"
             can_emit_task = (
                 (now - self._last_task_ts) >= float(self.min_task_interval_sec)
             )
             if can_emit_task and task_sig != self._last_task_signature:
                 title = f"Supervisor: {severity} ({len(issues) if isinstance(issues, list) else 0} issues)"
                 self._last_task_id = _insert_directive_task(
-                    title=title, detail=detail, severity=severity
+                    title=title,
+                    detail=detail,
+                    severity=severity,
+                    signature=task_sig,
+                    dedupe_seconds=self.min_task_interval_sec,
                 )
                 self._last_task_ts = now
                 self._last_task_signature = task_sig
 
             # Optional Telegram for critical only (best-effort)
             if self.telegram_enabled and severity == "critical":
-                tg_sig = f"{severity}|{_normalize_text_for_signature(top_txt)}"
+                tg_core = _normalize_text_for_signature(top_txt)
+                tg_sig = f"{severity}|{tg_core}".strip("|")
+                if not tg_sig:
+                    tg_sig = "critical|fallback"
                 can_emit_tg = (
                     (now - self._last_telegram_ts)
                     >= float(self.min_telegram_interval_sec)
                 )
-                if can_emit_tg and tg_sig != self._last_telegram_signature:
+                event_key = f"supervisor_telegram:{tg_sig}"
+                recently_sent = _timeline_seen_recent(
+                    event_key, self.min_telegram_interval_sec
+                )
+                if can_emit_tg and tg_sig != self._last_telegram_signature and not recently_sent:
                     try:
                         from modules.humanoid.notify import send_telegram
 
                         await send_telegram(f"ATLAS SUPERVISOR CRITICAL\n{top_txt}")
                         self._last_telegram_ts = now
                         self._last_telegram_signature = tg_sig
+                        _timeline_mark(
+                            event_key,
+                            kind="notify",
+                            result="sent",
+                        )
                     except Exception:
                         pass
 
