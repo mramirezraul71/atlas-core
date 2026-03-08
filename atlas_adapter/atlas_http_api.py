@@ -3562,6 +3562,21 @@ class AtlasCommsWhatsappBatchConfigureBody(BaseModel):
         return v
 
 
+class AtlasClawdSubscriptionBody(BaseModel):
+    message: str
+    context: Dict[str, Any] = Field(default_factory=dict)
+    persona: str = "friendly_precise_assistant"
+    history: List[Dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, value: str) -> str:
+        msg = (value or "").strip()
+        if not msg:
+            raise ValueError("message cannot be empty")
+        return msg
+
+
 @app.get("/api/comms/atlas/status", tags=["Comms"])
 def api_comms_atlas_status():
     """ATLAS comms bridge status (offline mode, queue, encryption source)."""
@@ -3601,6 +3616,96 @@ def api_comms_atlas_message(body: AtlasCommsMessageBody):
         )
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/atlas/clawd-subscription", tags=["Comms"])
+def api_comms_atlas_clawd_subscription(body: AtlasClawdSubscriptionBody):
+    """Endpoint interno para suscripción Claude usada por atlas_comms_hub."""
+    try:
+        from modules.humanoid.ai.external_llm import call_external
+    except Exception as e:
+        return {"ok": False, "error": f"anthropic_module_missing:{e}", "reply": ""}
+
+    api_key = (
+        os.getenv("ATLAS_CLAWD_API_KEY")
+        or os.getenv("ANTHROPIC_API_KEY")
+        or os.getenv("ANTHROPIC_API_KEY_CEREBRO")
+        or ""
+    ).strip()
+    if not api_key:
+        try:
+            from modules.humanoid.ai.provider_credentials import get_provider_api_key
+
+            api_key = (get_provider_api_key("anthropic") or "").strip()
+        except Exception:
+            api_key = ""
+    if not api_key:
+        return {"ok": False, "error": "anthropic_api_key_missing", "reply": ""}
+
+    model = (
+        os.getenv("ATLAS_CLAWD_MODEL")
+        or os.getenv("ANTHROPIC_MODEL")
+        or "claude-sonnet-4-latest"
+    ).strip()
+    try:
+        timeout_s = int((os.getenv("ATLAS_COMMS_CLAWD_TIMEOUT_S") or "8").strip() or "8")
+    except Exception:
+        timeout_s = 8
+    timeout_s = max(4, min(timeout_s, 45))
+
+    ctx = body.context or {}
+    history = list(body.history or [])[-4:]
+    history_lines = []
+    for idx, item in enumerate(history, start=1):
+        if not isinstance(item, dict):
+            continue
+        u = str(item.get("user") or "").strip()
+        a = str(item.get("assistant") or "").strip()
+        if u or a:
+            history_lines.append(f"{idx}. Usuario: {u}\n   ATLAS: {a}")
+    history_text = "\n".join(history_lines) if history_lines else "Sin historial reciente."
+
+    prompt = (
+        "Contexto operativo actual:\n"
+        f"- inventario_state: {ctx.get('inventory_state')}\n"
+        f"- camaras_activas: {ctx.get('camera_count')}\n"
+        f"- panaderia_reachable: {ctx.get('panaderia_reachable')}\n"
+        f"- vision_reachable: {ctx.get('vision_reachable')}\n"
+        f"- offline_mode: {ctx.get('offline_mode')}\n\n"
+        f"Historial reciente:\n{history_text}\n\n"
+        f"Mensaje actual del usuario:\n{body.message}\n\n"
+        "Responde en espanol natural, breve (max 5 lineas), con tono cercano y accionable."
+    )
+    system = (
+        "Eres ATLAS, asistente operativo de RAULI. "
+        "Prioriza claridad, rapidez y acciones concretas."
+    )
+
+    ok, text, latency_ms = call_external(
+        "anthropic",
+        model,
+        prompt,
+        system,
+        api_key,
+        timeout_s=timeout_s,
+    )
+    if not ok:
+        return {
+            "ok": False,
+            "error": str(text or "anthropic_error")[:240],
+            "reply": "",
+        }
+
+    reply = str(text or "").strip()
+    if not reply:
+        return {"ok": False, "error": "anthropic_empty_reply", "reply": ""}
+
+    return {
+        "ok": True,
+        "reply": reply,
+        "provider": f"anthropic:{model}:{int(latency_ms)}ms",
+        "persona": body.persona,
+    }
 
 
 @app.post("/api/comms/atlas/resync", tags=["Comms"])
