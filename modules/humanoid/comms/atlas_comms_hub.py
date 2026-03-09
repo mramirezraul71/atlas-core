@@ -2059,24 +2059,45 @@ class AtlasCommsHub:
         finally:
             conn.close()
 
-    def _mark_queue_error(self, queue_id: int, attempts: int, error: str) -> None:
+    def _mark_queue_error(
+        self,
+        queue_id: int,
+        attempts: int,
+        error: str,
+        *,
+        terminal: bool = False,
+    ) -> None:
+        max_attempts = max(1, int((os.getenv("ATLAS_COMMS_RESYNC_MAX_ATTEMPTS") or "5").strip() or "5"))
+        should_fail = bool(terminal) or int(attempts) >= max_attempts
         conn = self._db_conn()
         try:
             conn.execute(
                 """
                 UPDATE comms_offline_queue
-                SET attempts=?, last_error=?
+                SET attempts=?,
+                    last_error=?,
+                    status=CASE WHEN ? THEN 'failed' ELSE status END,
+                    dequeued_at=CASE WHEN ? THEN ? ELSE dequeued_at END
                 WHERE id=?
                 """,
-                (int(attempts), _truncate(error, 400), int(queue_id)),
+                (
+                    int(attempts),
+                    _truncate(error, 400),
+                    1 if should_fail else 0,
+                    1 if should_fail else 0,
+                    _utc_now() if should_fail else None,
+                    int(queue_id),
+                ),
             )
             conn.execute(
                 """
                 UPDATE comms_messages
-                SET sync_attempts=sync_attempts+1, last_error=?
+                SET sync_attempts=sync_attempts+1,
+                    last_error=?,
+                    synced=CASE WHEN ? THEN 1 ELSE synced END
                 WHERE message_id=(SELECT message_id FROM comms_offline_queue WHERE id=?)
                 """,
-                (_truncate(error, 400), int(queue_id)),
+                (_truncate(error, 400), 1 if should_fail else 0, int(queue_id)),
             )
             conn.commit()
         finally:
@@ -2119,7 +2140,7 @@ class AtlasCommsHub:
             try:
                 payload = json.loads(self._decrypt_text(row["payload_encrypted"]) or "{}")
             except Exception as e:
-                self._mark_queue_error(qid, attempts + 1, f"decrypt_fail:{e}")
+                self._mark_queue_error(qid, attempts + 1, f"decrypt_fail:{e}", terminal=True)
                 errors.append({"id": qid, "error": f"decrypt_fail:{e}"})
                 continue
             ok, reason = self._send_sync_payload(payload)
