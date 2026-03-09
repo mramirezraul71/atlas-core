@@ -39,6 +39,46 @@ def _auto_db() -> sqlite3.Connection:
             event TEXT, kind TEXT DEFAULT 'info', result TEXT DEFAULT 'ok'
         )"""
     )
+    # Legacy guard: if any producer inserts supervisor rows without action_taken,
+    # derive a deterministic signature so dedupe still works.
+    conn.execute(
+        """CREATE TRIGGER IF NOT EXISTS trg_supervisor_autosig_insert
+           AFTER INSERT ON autonomy_tasks
+           WHEN NEW.source='supervisor' AND (NEW.action_taken IS NULL OR trim(NEW.action_taken)='')
+           BEGIN
+             UPDATE autonomy_tasks
+                SET action_taken = substr(
+                      lower(
+                        replace(
+                          replace(coalesce(NEW.title,'') || '|' || coalesce(NEW.detail,''), char(10), ' '),
+                          char(13),
+                          ' '
+                        )
+                      ),
+                      1,
+                      240
+                    ),
+                    updated_at = datetime('now')
+              WHERE id = NEW.id;
+           END"""
+    )
+    conn.execute(
+        """UPDATE autonomy_tasks
+              SET action_taken = substr(
+                    lower(
+                      replace(
+                        replace(coalesce(title,'') || '|' || coalesce(detail,''), char(10), ' '),
+                        char(13),
+                        ' '
+                      )
+                    ),
+                    1,
+                    240
+                  ),
+                  updated_at = datetime('now')
+            WHERE source='supervisor'
+              AND (action_taken IS NULL OR trim(action_taken)='')"""
+    )
     conn.commit()
     return conn
 
@@ -524,7 +564,11 @@ class SupervisorDaemon:
             can_emit_task = (
                 (now - self._last_task_ts) >= float(self.min_task_interval_sec)
             )
-            if can_emit_task and task_sig != self._last_task_signature:
+            task_event_key = f"supervisor_task:{task_sig}"
+            recent_task = _timeline_seen_recent(
+                task_event_key, self.min_task_interval_sec
+            )
+            if can_emit_task and task_sig != self._last_task_signature and not recent_task:
                 title = f"Supervisor: {severity} ({len(issues) if isinstance(issues, list) else 0} issues)"
                 self._last_task_id = _insert_directive_task(
                     title=title,
@@ -535,6 +579,11 @@ class SupervisorDaemon:
                 )
                 self._last_task_ts = now
                 self._last_task_signature = task_sig
+                _timeline_mark(
+                    task_event_key,
+                    kind="task",
+                    result=(self._last_task_id or "created")[:40],
+                )
 
             # Optional Telegram for critical only (best-effort)
             if self.telegram_enabled and severity == "critical":

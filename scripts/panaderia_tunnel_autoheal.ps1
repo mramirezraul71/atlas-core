@@ -7,7 +7,9 @@ param(
     [string]$PushHealthUrl = "http://127.0.0.1:8791/health",
     [string]$ArmsStartUrl = "http://127.0.0.1:8791/arms/panaderia/start",
     [int]$TimeoutSec = 10,
+    [int]$PushTimeoutSec = 20,
     [int]$FailThreshold = 2,
+    [int]$PushFailThreshold = 3,
     [int]$HealCooldownSec = 120,
     [switch]$ForceHeal
 )
@@ -52,6 +54,7 @@ function Read-State {
     if (-not (Test-Path $stateFile)) {
         return @{
             public_fail_streak = 0
+            push_fail_streak = 0
             last_heal_utc = ""
         }
     }
@@ -60,11 +63,13 @@ function Read-State {
         $obj = $raw | ConvertFrom-Json
         return @{
             public_fail_streak = [int]($obj.public_fail_streak)
+            push_fail_streak = [int]($obj.push_fail_streak)
             last_heal_utc = [string]($obj.last_heal_utc)
         }
     } catch {
         return @{
             public_fail_streak = 0
+            push_fail_streak = 0
             last_heal_utc = ""
         }
     }
@@ -74,6 +79,7 @@ function Write-State {
     param([hashtable]$State)
     $payload = @{
         public_fail_streak = [int]($State.public_fail_streak)
+        push_fail_streak = [int]($State.push_fail_streak)
         last_heal_utc = [string]($State.last_heal_utc)
         updated_utc = (Get-Date).ToUniversalTime().ToString("o")
     }
@@ -210,7 +216,7 @@ try {
     $tsUtc = (Get-Date).ToUniversalTime().ToString("o")
     $actions = New-Object System.Collections.Generic.List[object]
 
-    $push = Test-Http -Url $PushHealthUrl -Timeout $TimeoutSec
+    $push = Test-Http -Url $PushHealthUrl -Timeout $PushTimeoutSec
     $localFront = Test-Http -Url $LocalFrontendUrl -Timeout $TimeoutSec
     $localApi = Test-Http -Url $LocalApiUrl -Timeout $TimeoutSec
     $publicFront = Test-Http -Url $PanaderiaUrl -Timeout $TimeoutSec
@@ -224,16 +230,41 @@ try {
     } else {
         $state.public_fail_streak = [int]$state.public_fail_streak + 1
     }
+    if ($push.ok) {
+        $state.push_fail_streak = 0
+    } else {
+        $state.push_fail_streak = [int]$state.push_fail_streak + 1
+    }
 
-    if (-not $push.ok) {
+    $pushShouldRestart = [bool](
+        (-not $push.ok) -and
+        (
+            $ForceHeal.IsPresent -or
+            (
+                [int]$state.push_fail_streak -ge $PushFailThreshold -and
+                (-not $localReady -or -not $publicReady)
+            )
+        )
+    )
+
+    if ($pushShouldRestart) {
         $pushFix = Restart-PushIfNeeded -PushCheck $push
         $actions.Add(@{
             step = "restart_push_if_needed"
             attempted = $pushFix.attempted
             ok = $pushFix.ok
             error = $pushFix.error
+            fail_streak = [int]$state.push_fail_streak
         })
-        $push = Test-Http -Url $PushHealthUrl -Timeout $TimeoutSec
+        $push = Test-Http -Url $PushHealthUrl -Timeout $PushTimeoutSec
+    } elseif (-not $push.ok) {
+        $actions.Add(@{
+            step = "restart_push_skipped"
+            attempted = $false
+            ok = $true
+            reason = "push_fail_below_threshold_or_frontends_healthy"
+            fail_streak = [int]$state.push_fail_streak
+        })
     }
 
     if (-not $localReady -and $push.ok) {

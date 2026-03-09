@@ -4112,6 +4112,44 @@ def _auto_db():
         event TEXT, kind TEXT DEFAULT 'info', result TEXT DEFAULT 'ok'
     )"""
     )
+    conn.execute(
+        """CREATE TRIGGER IF NOT EXISTS trg_supervisor_autosig_insert
+           AFTER INSERT ON autonomy_tasks
+           WHEN NEW.source='supervisor' AND (NEW.action_taken IS NULL OR trim(NEW.action_taken)='')
+           BEGIN
+             UPDATE autonomy_tasks
+                SET action_taken = substr(
+                      lower(
+                        replace(
+                          replace(coalesce(NEW.title,'') || '|' || coalesce(NEW.detail,''), char(10), ' '),
+                          char(13),
+                          ' '
+                        )
+                      ),
+                      1,
+                      240
+                    ),
+                    updated_at = datetime('now')
+              WHERE id = NEW.id;
+           END"""
+    )
+    conn.execute(
+        """UPDATE autonomy_tasks
+              SET action_taken = substr(
+                    lower(
+                      replace(
+                        replace(coalesce(title,'') || '|' || coalesce(detail,''), char(10), ' '),
+                        char(13),
+                        ' '
+                      )
+                    ),
+                    1,
+                    240
+                  ),
+                  updated_at = datetime('now')
+            WHERE source='supervisor'
+              AND (action_taken IS NULL OR trim(action_taken)='')"""
+    )
     conn.commit()
     return conn
 
