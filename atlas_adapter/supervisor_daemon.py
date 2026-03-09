@@ -173,6 +173,21 @@ def _insert_directive_task(
         if existing:
             return str(existing["id"])
 
+        # Fallback dedupe: evita tormenta de tareas del mismo nivel si ya
+        # existe una pendiente reciente del supervisor.
+        existing_same_priority = c.execute(
+            """SELECT id FROM autonomy_tasks
+               WHERE source='supervisor'
+                 AND status IN ('pending','in_progress')
+                 AND priority=?
+                 AND created_at >= datetime('now', ?)
+               ORDER BY created_at DESC
+               LIMIT 1""",
+            (prio, f"-{max(120, int(dedupe_seconds or 0))} seconds"),
+        ).fetchone()
+        if existing_same_priority:
+            return str(existing_same_priority["id"])
+
         c.execute(
             """INSERT OR REPLACE INTO autonomy_tasks
                (id,title,status,priority,source,detail,action_taken,updated_at)

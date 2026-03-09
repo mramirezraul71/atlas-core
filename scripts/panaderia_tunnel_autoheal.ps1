@@ -10,6 +10,7 @@ param(
     [int]$PushTimeoutSec = 20,
     [int]$FailThreshold = 2,
     [int]$PushFailThreshold = 3,
+    [int]$PushForceRestartThreshold = 6,
     [int]$HealCooldownSec = 120,
     [switch]$ForceHeal
 )
@@ -236,13 +237,20 @@ try {
         $state.push_fail_streak = [int]$state.push_fail_streak + 1
     }
 
+    $pushHealthyButStuck = [bool](
+        [int]$state.push_fail_streak -ge $PushForceRestartThreshold
+    )
     $pushShouldRestart = [bool](
         (-not $push.ok) -and
         (
             $ForceHeal.IsPresent -or
             (
                 [int]$state.push_fail_streak -ge $PushFailThreshold -and
-                (-not $localReady -or -not $publicReady)
+                (
+                    (-not $localReady) -or
+                    (-not $publicReady) -or
+                    $pushHealthyButStuck
+                )
             )
         )
     )
@@ -262,7 +270,7 @@ try {
             step = "restart_push_skipped"
             attempted = $false
             ok = $true
-            reason = "push_fail_below_threshold_or_frontends_healthy"
+            reason = "push_fail_below_threshold"
             fail_streak = [int]$state.push_fail_streak
         })
     }
