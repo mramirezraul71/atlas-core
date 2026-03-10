@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -3616,6 +3617,62 @@ class AtlasCommsWhatsappBatchConfigureBody(BaseModel):
         return v
 
 
+def _call_claude_cli(prompt: str, system: str, timeout_s: int) -> tuple[bool, str, str]:
+    cli_bin = (os.getenv("ATLAS_CLAWD_CLAUDE_CLI_BIN") or "").strip()
+    if not cli_bin:
+        cli_bin = shutil.which("claude") or ""
+    if not cli_bin:
+        appdata = (os.getenv("APPDATA") or "").strip()
+        userprofile = (os.getenv("USERPROFILE") or "").strip()
+        candidates = []
+        if appdata:
+            candidates.append(Path(appdata) / "npm" / "claude.cmd")
+        if userprofile:
+            candidates.append(Path(userprofile) / "AppData" / "Roaming" / "npm" / "claude.cmd")
+        for candidate in candidates:
+            if candidate.exists():
+                cli_bin = str(candidate)
+                break
+    if not cli_bin:
+        cli_bin = "claude"
+    if not cli_bin:
+        return False, "", "clawd_cli_missing"
+    cmd = [
+        cli_bin,
+        "--print",
+        "--input-format",
+        "text",
+        "--output-format",
+        "text",
+        "--system-prompt",
+        system,
+    ]
+    suffix = Path(cli_bin).suffix.lower()
+    if suffix in {".cmd", ".bat"}:
+        cmd = ["cmd.exe", "/c", *cmd]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            input=prompt,
+            timeout=timeout_s,
+        )
+    except FileNotFoundError:
+        return False, "", "clawd_cli_missing"
+    except subprocess.TimeoutExpired:
+        return False, "", "clawd_cli_timeout"
+    except Exception as exc:
+        return False, "", f"clawd_cli_error:{str(exc)[:160]}"
+    if proc.returncode != 0:
+        err = (proc.stderr or "").strip() or "clawd_cli_failed"
+        return False, "", f"clawd_cli_fail:{err[:160]}"
+    out = (proc.stdout or "").strip()
+    if not out:
+        return False, "", "clawd_cli_empty_reply"
+    return True, out, "clawd_cli"
+
+
 class AtlasClawdSubscriptionBody(BaseModel):
     message: str
     context: Dict[str, Any] = Field(default_factory=dict)
@@ -3734,6 +3791,24 @@ def api_comms_atlas_clawd_subscription(body: AtlasClawdSubscriptionBody):
         "Eres ATLAS, asistente operativo de RAULI. "
         "Prioriza claridad, rapidez y acciones concretas."
     )
+
+    mode = (os.getenv("ATLAS_CLAWD_SUBSCRIPTION_MODE") or "").strip().lower()
+    use_cli = mode in ("claude-cli", "claude_cli", "claude-code", "claude_code", "cli")
+    use_cli = use_cli or (os.getenv("ATLAS_CLAWD_CLAUDE_CLI") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    )
+    if use_cli:
+        ok, text, provider = _call_claude_cli(prompt, system, timeout_s)
+        if not ok:
+            return {"ok": False, "error": provider or "clawd_cli_fail", "reply": ""}
+        reply = str(text or "").strip()
+        if not reply:
+            return {"ok": False, "error": "clawd_cli_empty_reply", "reply": ""}
+        return {"ok": True, "reply": reply, "provider": provider}
 
     ok, text, latency_ms = call_external(
         "anthropic",

@@ -2,16 +2,17 @@ param(
     [string]$RepoPath = "C:\ATLAS_PUSH",
     [string]$PanaderiaUrl = "https://panaderia.rauliatlasapp.com",
     [string]$PanaderiaApiUrl = "https://panaderia-api.rauliatlasapp.com/api/health",
+    [string]$PanaderiaPosUrl = "https://panaderia.rauliatlasapp.com/pos",
     [string]$LocalFrontendUrl = "http://127.0.0.1:5173",
     [string]$LocalApiUrl = "http://127.0.0.1:3001/api/health",
     [string]$PushHealthUrl = "http://127.0.0.1:8791/health",
     [string]$ArmsStartUrl = "http://127.0.0.1:8791/arms/panaderia/start",
     [int]$TimeoutSec = 10,
     [int]$PushTimeoutSec = 20,
-    [int]$FailThreshold = 2,
-    [int]$PushFailThreshold = 3,
-    [int]$PushForceRestartThreshold = 6,
-    [int]$HealCooldownSec = 120,
+    [int]$FailThreshold = 1,
+    [int]$PushFailThreshold = 2,
+    [int]$PushForceRestartThreshold = 4,
+    [int]$HealCooldownSec = 45,
     [switch]$ForceHeal
 )
 
@@ -221,10 +222,11 @@ try {
     $localFront = Test-Http -Url $LocalFrontendUrl -Timeout $TimeoutSec
     $localApi = Test-Http -Url $LocalApiUrl -Timeout $TimeoutSec
     $publicFront = Test-Http -Url $PanaderiaUrl -Timeout $TimeoutSec
+    $publicPos = Test-Http -Url $PanaderiaPosUrl -Timeout $TimeoutSec
     $publicApi = Test-Http -Url $PanaderiaApiUrl -Timeout $TimeoutSec
 
     $localReady = [bool]($localFront.ok -and $localApi.ok)
-    $publicReady = [bool]($publicFront.ok -and $publicApi.ok)
+    $publicReady = [bool]($publicFront.ok -and $publicApi.ok -and $publicPos.ok)
 
     if ($publicReady) {
         $state.public_fail_streak = 0
@@ -309,8 +311,9 @@ try {
 
             Start-Sleep -Seconds 3
             $publicFront = Test-Http -Url $PanaderiaUrl -Timeout $TimeoutSec
+            $publicPos = Test-Http -Url $PanaderiaPosUrl -Timeout $TimeoutSec
             $publicApi = Test-Http -Url $PanaderiaApiUrl -Timeout $TimeoutSec
-            $publicReady = [bool]($publicFront.ok -and $publicApi.ok)
+            $publicReady = [bool]($publicFront.ok -and $publicApi.ok -and $publicPos.ok)
             if ($publicReady) {
                 $state.public_fail_streak = 0
             }
@@ -337,6 +340,7 @@ try {
         }
         public = @{
             frontend = $publicFront
+            pos = $publicPos
             api = $publicApi
             ready = $publicReady
         }

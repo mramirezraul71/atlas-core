@@ -10,6 +10,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import shutil
 import threading
 import time
 import urllib.error
@@ -60,6 +61,26 @@ _RE_CAMERA = re.compile(
 )
 _RE_DIGITS = re.compile(r"\D+")
 _RE_PROVIDER_LATENCY = re.compile(r":(?P<ms>\d{1,6})ms$", re.IGNORECASE)
+_RE_PANADERIA_TOOLS = re.compile(
+    r"(venta|vender|cobrar|precio|cantidad|importe|gasto|compra|almacen|almac[eé]n|"
+    r"inventario|stock|existencia|entrada|salida|produccion|producci[oó]n|resumen|"
+    r"cier(re|ra)|cuadre|efectivo|tarjeta|producto)",
+    re.IGNORECASE,
+)
+_RE_REASONING = re.compile(
+    r"(analiza|analisis|diagnostico|diagn[oó]stico|resumen|explica|por qu[eé]|"
+    r"comparar|comparaci[oó]n|plan|estrategia|contabilidad|tendencia|acumulado)",
+    re.IGNORECASE,
+)
+_RE_FAST_UI = re.compile(
+    r"^(abrir|ir a|ve a|mostrar|muestra|entra|abre|ventas de hoy|resumen del dia|stock harina)\b",
+    re.IGNORECASE,
+)
+_RE_VISION_LOCAL = re.compile(
+    r"(buscar|busqueda|b[uú]squeda|resumir|resumen|internet|video|tv|canal|canales|"
+    r"tiktok|youtube|noticia|noticias|url|enlace)",
+    re.IGNORECASE,
+)
 _CONTACT_TONE_PROFILES: Dict[str, Dict[str, str]] = {
     "VISION:CAMI": {
         "name": "Cami",
@@ -181,6 +202,26 @@ def _percentile_int(values: Iterable[int], percentile: int) -> Optional[int]:
     rank = int((p / 100.0) * len(vals) + 0.999999)
     idx = max(0, min(len(vals) - 1, rank - 1))
     return int(vals[idx])
+
+
+def _resolve_claude_cli_bin() -> str:
+    explicit = (os.getenv("ATLAS_CLAWD_CLAUDE_CLI_BIN") or "").strip()
+    candidates = []
+    if explicit:
+        candidates.append(explicit)
+    found = shutil.which("claude")
+    if found:
+        candidates.append(found)
+    appdata = (os.getenv("APPDATA") or "").strip()
+    if appdata:
+        candidates.append(str(Path(appdata) / "npm" / "claude.cmd"))
+    userprofile = (os.getenv("USERPROFILE") or "").strip()
+    if userprofile:
+        candidates.append(str(Path(userprofile) / "AppData" / "Roaming" / "npm" / "claude.cmd"))
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return candidate
+    return explicit or "claude"
 
 
 def _load_vault_env_once() -> None:
@@ -1327,6 +1368,26 @@ class AtlasCommsHub:
         conversation_history: Optional[list[Dict[str, str]]] = None,
     ) -> Tuple[bool, str, str]:
         api_url = (os.getenv("ATLAS_CLAWD_API_URL") or "").strip()
+        if api_url.lower().startswith("internal://claude-cli"):
+            ok, text, provider = self._call_clawd_claude_cli_internal(
+                message=message,
+                context_summary=context_summary,
+                conversation_history=conversation_history,
+            )
+            if ok:
+                with self._clawd_state_lock:
+                    self._clawd_fail_streak = 0
+                    self._clawd_backoff_until = 0.0
+                    self._clawd_last_error = ""
+                return True, text, provider
+            reason = provider or "clawd_cli_fail"
+            base = self._clawd_backoff_base_s()
+            with self._clawd_state_lock:
+                self._clawd_fail_streak = min(self._clawd_fail_streak + 1, 6)
+                factor = min(self._clawd_fail_streak, 3)
+                self._clawd_backoff_until = time.time() + (base * factor)
+                self._clawd_last_error = reason
+            return False, "", reason
         if (not api_url) or api_url.lower().startswith("internal://anthropic"):
             ok, text, provider = self._call_clawd_anthropic_internal(
                 message=message,
@@ -1458,6 +1519,61 @@ class AtlasCommsHub:
             return False, "", "clawd_internal_anthropic_empty_reply"
         return True, out, f"clawd_api:anthropic:{model}:{int(latency_ms)}ms"
 
+    def _call_clawd_claude_cli_internal(
+        self,
+        message: str,
+        context_summary: Dict[str, Any],
+        conversation_history: Optional[list[Dict[str, str]]] = None,
+    ) -> Tuple[bool, str, str]:
+        cli_bin = _resolve_claude_cli_bin()
+        if not cli_bin:
+            return False, "", "clawd_cli_missing"
+        timeout_s = self._clawd_timeout_s()
+        system = (
+            "Eres ATLAS, asistente operativo de RAULI. "
+            "Responde en espanol natural, breve y accionable."
+        )
+        prompt = self._build_ai_prompt(
+            message=message,
+            context_summary=context_summary,
+            conversation_history=conversation_history,
+            contact_hint="",
+        )
+        cmd = [
+            cli_bin,
+            "--print",
+            "--input-format",
+            "text",
+            "--output-format",
+            "text",
+            "--system-prompt",
+            system,
+        ]
+        suffix = Path(cli_bin).suffix.lower()
+        if suffix in {".cmd", ".bat"}:
+            cmd = ["cmd.exe", "/c", *cmd]
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                input=prompt,
+                timeout=timeout_s,
+            )
+        except FileNotFoundError:
+            return False, "", "clawd_cli_missing"
+        except subprocess.TimeoutExpired:
+            return False, "", "clawd_cli_timeout"
+        except Exception as exc:
+            return False, "", f"clawd_cli_error:{_truncate(str(exc), 120)}"
+        if proc.returncode != 0:
+            err = (proc.stderr or "").strip() or "clawd_cli_failed"
+            return False, "", f"clawd_cli_fail:{_truncate(err, 160)}"
+        out = (proc.stdout or "").strip()
+        if not out:
+            return False, "", "clawd_cli_empty_reply"
+        return True, out, "clawd_cli"
+
     def _build_ai_prompt(
         self,
         message: str,
@@ -1487,6 +1603,96 @@ class AtlasCommsHub:
             "No inventes datos: si falta informacion, dilo y pide un dato puntual.\n"
             "Se breve (maximo 5 lineas) y accionable."
         )
+
+    def _local_auto_enabled(self) -> bool:
+        raw = (os.getenv("ATLAS_COMMS_LOCAL_AUTO_ENABLED") or "true").strip().lower()
+        return raw in ("1", "true", "yes", "y", "on")
+
+    def _classify_local_route(
+        self,
+        message: str,
+        context: Optional[Dict[str, Any]] = None,
+        offline_mode: bool = False,
+    ) -> Tuple[bool, str, str]:
+        msg = (message or "").strip()
+        ctx = context if isinstance(context, dict) else {}
+        source = str(
+            ctx.get("source_app") or ctx.get("source") or ctx.get("channel") or ""
+        ).strip().lower()
+        if offline_mode:
+            return True, "FAST", "offline_local"
+        if source.startswith("rauli-panaderia") or "panaderia" in source:
+            if _RE_FAST_UI.search(msg):
+                return True, "FAST", "panaderia_ui"
+            if _RE_PANADERIA_TOOLS.search(msg):
+                if _RE_REASONING.search(msg):
+                    return True, "REASON", "panaderia_ops_reason"
+                return True, "TOOLS", "panaderia_ops"
+            return False, "CHAT", "panaderia_general"
+        if source.startswith("rauli-vision") or "vision" in source:
+            if str(ctx.get("context_url") or "").strip():
+                return True, "REASON", "vision_url"
+            if _RE_VISION_LOCAL.search(msg):
+                if _RE_REASONING.search(msg):
+                    return True, "REASON", "vision_reason"
+                return True, "CHAT", "vision_chat"
+            return False, "CHAT", "vision_general"
+        if _RE_FAST_UI.search(msg):
+            return True, "FAST", "fast_ui"
+        if _RE_REASONING.search(msg):
+            return True, "REASON", "reasoning"
+        return False, "CHAT", "general"
+
+    def _call_local_auto(
+        self,
+        message: str,
+        context_summary: Dict[str, Any],
+        conversation_history: Optional[list[Dict[str, str]]] = None,
+        *,
+        route_hint: str = "CHAT",
+        user_id: str = "",
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[bool, str, str]:
+        try:
+            from modules.humanoid.ai.router import (
+                _call_ollama,
+                decide_route,
+                infer_task_profile,
+            )
+        except Exception as e:
+            return False, "", f"local_auto_module_missing:{_truncate(str(e), 120)}"
+
+        try:
+            timeout_s = int((os.getenv("ATLAS_COMMS_LOCAL_TIMEOUT_S") or "35").strip() or "35")
+        except Exception:
+            timeout_s = 35
+        timeout_s = max(8, min(timeout_s, 120))
+        contact_hint = self._contact_prompt_hint(user_id, context)
+        prompt = self._build_ai_prompt(
+            message=message,
+            context_summary=context_summary,
+            conversation_history=conversation_history,
+            contact_hint=contact_hint,
+        )
+        profile = infer_task_profile(prompt, intent_hint=route_hint, modality="text")
+        decision = decide_route(profile, prefer_free=True)
+        model_key = str(decision.model_key or "").strip()
+        provider_id = str(decision.provider_id or "").strip().lower()
+        if provider_id != "ollama" or ":" not in model_key:
+            return False, "", f"local_auto_unavailable:{decision.reason}"
+        model_name = model_key.split(":", 1)[1].strip()
+        system = (
+            "Eres ATLAS, asistente operativo de RAULI. "
+            "Responde en espanol natural, breve, preciso y accionable. "
+            "Si el usuario esta registrando eventos operativos, pide solo el siguiente dato necesario."
+        )
+        ok, out, latency_ms = _call_ollama(model_name, prompt, system, timeout_s)
+        if not ok:
+            return False, "", f"local_auto_fail:{model_name}:{_truncate(out, 140)}"
+        final = self._apply_contact_style(str(out or "").strip(), user_id, context)
+        if not final:
+            return False, "", f"local_auto_empty:{model_name}"
+        return True, final, f"local_auto:{model_name}:{route_hint}:{int(latency_ms)}ms"
 
     def _call_openai_fallback(
         self,
@@ -1547,6 +1753,79 @@ class AtlasCommsHub:
         final = self._apply_contact_style(final, user_id, context)
         return True, final, f"openai:{model}:{int(latency_ms)}ms"
 
+    def _call_bedrock_fallback(
+        self,
+        message: str,
+        context_summary: Dict[str, Any],
+        conversation_history: Optional[list[Dict[str, str]]] = None,
+        user_id: str = "",
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[bool, str, str]:
+        region = (
+            os.getenv("ATLAS_BEDROCK_REGION")
+            or os.getenv("AWS_REGION")
+            or os.getenv("AWS_DEFAULT_REGION")
+            or "us-east-1"
+        ).strip()
+        model = (
+            os.getenv("ATLAS_COMMS_BEDROCK_MODEL")
+            or os.getenv("ATLAS_BEDROCK_BALANCED_MODEL")
+            or os.getenv("ATLAS_MODEL_FAST")
+            or "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+        ).strip()
+        try:
+            timeout_s = int((os.getenv("ATLAS_COMMS_BEDROCK_TIMEOUT_S") or "12").strip() or "12")
+        except Exception:
+            timeout_s = 12
+        timeout_s = max(4, min(timeout_s, 45))
+        system = (
+            "Eres ATLAS, asistente operativo de RAULI. "
+            "Responde en espanol claro, humano y accionable. "
+            "Si falta un dato para operar, pide solo el siguiente dato necesario."
+        )
+        contact_hint = self._contact_prompt_hint(user_id, context)
+        prompt = self._build_ai_prompt(
+            message=message,
+            context_summary=context_summary,
+            conversation_history=conversation_history,
+            contact_hint=contact_hint,
+        )
+        try:
+            import boto3
+            from botocore.config import Config as BotoConfig
+        except Exception as e:
+            return False, "", f"bedrock_module_missing:{_truncate(str(e), 120)}"
+        try:
+            client = boto3.client(
+                "bedrock-runtime",
+                region_name=region,
+                config=BotoConfig(connect_timeout=timeout_s, read_timeout=timeout_s),
+            )
+            body = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 512,
+                "system": system,
+                "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}]}],
+            }
+            t0 = time.perf_counter()
+            response = client.invoke_model(
+                modelId=model,
+                body=json.dumps(body).encode("utf-8"),
+                contentType="application/json",
+                accept="application/json",
+            )
+            latency_ms = (time.perf_counter() - t0) * 1000
+            payload = json.loads(response["body"].read())
+            content = payload.get("content") or []
+            chunks = [str(block.get("text") or "").strip() for block in content if isinstance(block, dict)]
+            final = "\n".join([part for part in chunks if part]).strip()
+            if not final:
+                return False, "", "bedrock_empty_reply"
+            final = self._apply_contact_style(final, user_id, context)
+            return True, final, f"bedrock:{model}:{int(latency_ms)}ms"
+        except Exception as e:
+            return False, "", f"bedrock_http_fail:{_truncate(str(e), 160)}"
+
     def _offline_fallback_reply(self, message: str, context_summary: Dict[str, Any]) -> str:
         msg = (message or "").strip()
         inv_state = context_summary.get("inventory_state") or "unknown"
@@ -1595,9 +1874,65 @@ class AtlasCommsHub:
         user_id: str = "",
         context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        local_preferred, local_route, _local_reason = self._classify_local_route(
+            message,
+            context=context,
+            offline_mode=offline_mode,
+        )
+        local_tried = False
+        if self._local_auto_enabled() and (offline_mode or local_preferred):
+            local_tried = True
+            ok, text, provider = self._call_local_auto(
+                message,
+                context_summary,
+                conversation_history=conversation_history,
+                route_hint=local_route,
+                user_id=user_id,
+                context=context,
+            )
+            if ok:
+                return {
+                    "text": self._apply_contact_style(
+                        self._naturalize_reply(text), user_id, context
+                    ),
+                    "provider": provider,
+                    "offline": bool(offline_mode),
+                }
         if not offline_mode:
             ok, text, provider = self._call_clawd_subscription(
                 message, context_summary, conversation_history=conversation_history
+            )
+            if ok:
+                return {
+                    "text": self._apply_contact_style(
+                        self._naturalize_reply(text), user_id, context
+                    ),
+                    "provider": provider,
+                    "offline": False,
+                }
+            if self._local_auto_enabled() and not local_tried:
+                ok, text, provider = self._call_local_auto(
+                    message,
+                    context_summary,
+                    conversation_history=conversation_history,
+                    route_hint=local_route,
+                    user_id=user_id,
+                    context=context,
+                )
+                if ok:
+                    return {
+                        "text": self._apply_contact_style(
+                            self._naturalize_reply(text), user_id, context
+                        ),
+                        "provider": provider,
+                        "offline": False,
+                    }
+            ok, text, provider = self._call_bedrock_fallback(
+                message,
+                context_summary,
+                conversation_history=conversation_history,
+                user_id=user_id,
+                context=context,
             )
             if ok:
                 return {
@@ -1996,6 +2331,7 @@ class AtlasCommsHub:
             "external_users": ext_summary,
             "clawd_subscription": {
                 "api_url_configured": bool((os.getenv("ATLAS_CLAWD_API_URL") or "").strip()),
+                "api_url": (os.getenv("ATLAS_CLAWD_API_URL") or "").strip(),
                 "fail_streak": int(clawd_fail_streak),
                 "backoff_until_utc": clawd_backoff_utc,
                 "last_error": _truncate(clawd_last_error, 160),
