@@ -8,7 +8,7 @@ metrics: "127.0.0.1:50333"
 
 ingress:
   - hostname: "panaderia.rauliatlasapp.com"
-    service: "http://127.0.0.1:5173"
+    service: "http://127.0.0.1:3001"
   - hostname: "panaderia-api.rauliatlasapp.com"
     service: "http://127.0.0.1:3001"
   - hostname: "vision.rauliatlasapp.com"
