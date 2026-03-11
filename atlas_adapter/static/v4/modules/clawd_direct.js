@@ -799,15 +799,16 @@ export default {
       const typing = addTyping();
 
       try {
-        const r = await fetch('/api/comms/atlas/message', {
+        const r = await fetch('/brain/process', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: 'owner', channel: 'workspace', message, context: { source: 'v4-clawd-direct' } }),
+          body: JSON.stringify({ text: message }),
         });
         const d = await r.json();
         removeTyping();
+        if (!d.ok) throw new Error(d.error || 'Sin respuesta del cerebro');
         const reply = _pickReply(d) || '(sin respuesta)';
-        addMsg('clawd', reply, d.provider || '');
+        addMsg('clawd', reply, d.model_used || d.provider || '');
       } catch (e) {
         removeTyping();
         addMsg('system', `Error de conexión: ${e.message}`);

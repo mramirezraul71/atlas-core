@@ -217,9 +217,9 @@ export default {
     _refresh(container);
     _loadAggrConfig(container);
 
-    poll(POLL_ID,          '/api/autonomy/status',              5000, (d) => { if (d) _renderAutonomy(container, d); });
-    poll(POLL_ID + ':gov', '/governance/status',                5000, (d) => { if (d) _renderGovernance(container, d); });
-    poll(POLL_ID + ':t',   '/api/autonomy/tasks',               7000, (d) => { if (d) _renderTasks(container, d); });
+    poll(POLL_ID,          '/api/autonomy/status',              20000, (d) => { if (d) _renderAutonomy(container, d); });
+    poll(POLL_ID + ':gov', '/governance/status',                8000, (d) => { if (d) _renderGovernance(container, d); });
+    poll(POLL_ID + ':t',   '/api/autonomy/tasks',               10000, (d) => { if (d) _renderTasks(container, d); });
     poll(POLL_ID + ':ag',  '/api/autonomy/aggressive/config',   10000,(d) => { if (d) _renderAggrConfig(container, d); });
   },
 

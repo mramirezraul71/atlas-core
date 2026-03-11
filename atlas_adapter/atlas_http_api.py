@@ -3105,11 +3105,17 @@ def api_whatsapp_inbound(body: dict):
         looks_like_question = bool(re_question_hint.search(text or ""))
 
         if require_known and not is_known:
+            unauthorized_text = os.getenv(
+                "ATLAS_WHATSAPP_UNAUTHORIZED_TEXT",
+                "Usuario no autorizado",
+            ).strip() or "Usuario no autorizado"
+            send_result = send_text(unauthorized_text, to=sender)
             return {
                 "ok": True,
                 "ignored": True,
                 "reason": "sender_not_linked",
                 "sender": sender,
+                "send_result": send_result,
                 "rules": {
                     "require_known": require_known,
                     "require_atlas_question": require_atlas_question,
@@ -4033,9 +4039,11 @@ async def health():
             "service": "atlas_push",
             "ts": datetime.now(timezone.utc).isoformat(),
             "pid": os.getpid(),
-            "version": os.getenv("ATLAS_VERSION")
-            or os.getenv("APP_VERSION")
-            or "unknown",
+            "version": (
+                os.getenv("ATLAS_VERSION")
+                or os.getenv("APP_VERSION")
+                or ((BASE_DIR / "VERSION").read_text(encoding="utf-8").strip() if (BASE_DIR / "VERSION").exists() else "unknown")
+            ),
         }
     except Exception as e:
         return {"ok": False, "service": "atlas_push", "error": str(e)}

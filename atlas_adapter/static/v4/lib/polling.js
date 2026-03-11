@@ -17,14 +17,18 @@ export function poll(id, url, intervalMs, callback) {
 
   async function tick() {
     if (state.paused || document.hidden) return;
+    const ctrl = new AbortController();
+    const toid = setTimeout(() => ctrl.abort(), 12000);
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: ctrl.signal });
       const data = await res.json();
       state.errorCount = 0;
       callback(data, null);
     } catch (e) {
       state.errorCount++;
       callback(null, e);
+    } finally {
+      clearTimeout(toid);
     }
     const backoff = state.errorCount > 0
       ? Math.min(intervalMs * Math.pow(2, state.errorCount), 60000)
