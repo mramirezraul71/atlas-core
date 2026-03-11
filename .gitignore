@@ -148,3 +148,4 @@ tools/atlas_agent/runs/
 # Local Codex/backup artifacts
 .atlas_backups/
 .codex/tmp/
+config/atlas.env

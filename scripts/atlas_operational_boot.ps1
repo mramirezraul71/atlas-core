@@ -3,7 +3,7 @@ param(
   [switch]$EnsureAutoStart,
   [switch]$EnsureCloudflareTunnel,
   [switch]$EnsureSentinel,
-  [int]$SentinelCameraIndex = 2
+  [int]$SentinelCameraIndex = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -73,10 +73,10 @@ function Test-RunKeyValue([string]$Name) {
 
 Write-Host "== ATLAS Operational Boot ==" -ForegroundColor Cyan
 
-# 1) NEXUS + ROBOT
+# 1) ROBOT only (NEXUS body en 8000 desactivado - dashboard integrado en 8791/nexus)
 $py = Join-Path $RepoPath ".venv\Scripts\python.exe"
 if (!(Test-Path $py)) { throw "No existe python en .venv: $py" }
-& $py (Join-Path $RepoPath "scripts\start_nexus_services.py") --include-nexus | Out-Host
+& $py (Join-Path $RepoPath "scripts\start_nexus_services.py") --robot-only | Out-Host
 
 # 2) PUSH
 if (-not (Test-HttpOkWithRetry "http://127.0.0.1:8791/health" 8 2 2)) {

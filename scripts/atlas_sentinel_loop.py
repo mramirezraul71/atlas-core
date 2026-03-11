@@ -609,7 +609,23 @@ class AtlasSentinel:
         stats["camera_bytes"] = cam.get("bytes")
         if not cam.get("ok"):
             self._camera_fail_streak += 1
-            cam_sev = "critical" if self._camera_fail_streak >= 2 else "warning"
+            cam_error = str(cam.get("error") or "").lower()
+            cam_source = str(cam.get("source") or "none").lower()
+            # Si la cámara no está disponible (503/no source), degradar a warning
+            # para evitar falsos críticos en entornos sin feed activo.
+            optional_camera_unavailable = (
+                cam_source in {"", "none"}
+                and (
+                    "http_503" in cam_error
+                    or "winerror 10061" in cam_error
+                    or "failed to establish a new connection" in cam_error
+                    or "no camera" in cam_error
+                )
+            )
+            if optional_camera_unavailable:
+                cam_sev = "warning"
+            else:
+                cam_sev = "critical" if self._camera_fail_streak >= 2 else "warning"
             issues.append(
                 SentinelIssue(
                     issue_id="camera_probe_fail",

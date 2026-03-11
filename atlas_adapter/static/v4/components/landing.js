@@ -97,6 +97,8 @@ export function render(container) {
         <div class="quick-chip" data-action="tools-menu">${SVG.monitor} Tools Menu</div>
         <div class="quick-chip" data-action="software-center">${SVG.package} Software Center</div>
         <div class="quick-chip" data-action="live-diagnostic">${SVG.health} Diagnostico Live</div>
+        <div class="quick-chip" data-action="atlas-nexus">⬡ Atlas Nexus</div>
+        <div class="quick-chip" data-action="robot-3d">🤖 Robot 3D</div>
       </div>
 
       <div class="apps-grid">
@@ -159,6 +161,14 @@ export function render(container) {
         <div class="app-tile" data-app="live-diagnostic">
           <div class="app-tile-icon">${SVG.health}</div>
           <div class="app-tile-label">Diagnostico Live</div>
+        </div>
+        <div class="app-tile" data-app="atlas-nexus">
+          <div class="app-tile-icon">⬡</div>
+          <div class="app-tile-label">Atlas Nexus</div>
+        </div>
+        <div class="app-tile" data-app="robot-3d">
+          <div class="app-tile-icon">🤖</div>
+          <div class="app-tile-label">Robot 3D</div>
         </div>
       </div>
     </div>
@@ -242,6 +252,8 @@ export function render(container) {
     'tools-menu': { hash: '/tools-menu' },
     'software-center': { hash: '/software-center' },
     'live-diagnostic': { hash: '/live-diagnostic' },
+    'atlas-nexus': { href: '/nexus', newTab: false },
+    'robot-3d':    { href: 'http://127.0.0.1:8002/dashboard', newTab: true },
   };
 
   container.querySelectorAll('.quick-chip').forEach(chip => {
@@ -271,6 +283,8 @@ export function render(container) {
     'clawd-direct': { hash: '/clawd-direct' },
     'codex-supervisor': { hash: '/codex-supervisor' },
     'live-diagnostic': { hash: '/live-diagnostic' },
+    'atlas-nexus': { href: '/nexus', newTab: false },
+    'robot-3d':    { href: 'http://127.0.0.1:8002/dashboard', newTab: true },
   };
 
   container.querySelectorAll('.app-tile').forEach(tile => {
