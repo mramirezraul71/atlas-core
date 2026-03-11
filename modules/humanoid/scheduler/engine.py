@@ -5,8 +5,10 @@ import asyncio
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
+from modules.humanoid.core.event_bus import publish_event
+from modules.humanoid.core.event_handlers import register_default_event_handlers
 from .db import SchedulerDB
 from .locking import recover_stale_locks, try_acquire_lease
 from .runner import run_job_sync
@@ -18,6 +20,8 @@ _loop_task: Optional[asyncio.Task] = None
 _running = 0
 _cancel_requested: Dict[str, bool] = {}
 _executor: Optional[Any] = None
+_known_job_ids: Set[str] = set()
+_last_job_statuses: Dict[str, str] = {}
 
 
 def _sched_enabled() -> bool:
@@ -26,7 +30,7 @@ def _sched_enabled() -> bool:
 
 
 def _tick_seconds() -> float:
-    return float(os.getenv("SCHED_TICK_SECONDS", "2") or 2)
+    return float(os.getenv("SCHED_TICK_SECONDS", "1") or 1)
 
 
 def _max_concurrency() -> int:
@@ -66,6 +70,83 @@ def _audit(
         pass
 
 
+def _normalize_status(value: Any) -> str:
+    return str(value or "").strip().lower() or "unknown"
+
+
+def _track_job_snapshot(job: Dict[str, Any]) -> None:
+    jid = str(job.get("id") or "")
+    if not jid:
+        return
+    _known_job_ids.add(jid)
+    _last_job_statuses[jid] = _normalize_status(job.get("status"))
+
+
+def _emit_scheduler_event(topic: str, job: Dict[str, Any], **extra: Any) -> None:
+    payload = {
+        "job_id": job.get("id"),
+        "name": job.get("name"),
+        "kind": job.get("kind"),
+        "status": job.get("status"),
+        "retries": job.get("retries"),
+        "next_run_ts": job.get("next_run_ts"),
+        "last_run_ts": job.get("last_run_ts"),
+    }
+    payload.update(extra)
+    publish_event(topic, payload)
+
+
+def _prime_scheduler_event_state(db: SchedulerDB) -> None:
+    global _known_job_ids, _last_job_statuses
+    jobs = db.list_jobs(limit=1000) or []
+    _known_job_ids = {str(job.get("id") or "") for job in jobs if job.get("id")}
+    _last_job_statuses = {
+        str(job.get("id")): _normalize_status(job.get("status"))
+        for job in jobs
+        if job.get("id")
+    }
+
+
+def _reconcile_scheduler_event_state(db: SchedulerDB) -> None:
+    """Polling fallback: detect jobs created/changed outside this engine."""
+    global _known_job_ids, _last_job_statuses
+
+    jobs = db.list_jobs(limit=1000) or []
+    current_ids: Set[str] = set()
+    current_statuses: Dict[str, str] = {}
+
+    for job in jobs:
+        jid = str(job.get("id") or "")
+        if not jid:
+            continue
+        status = _normalize_status(job.get("status"))
+        current_ids.add(jid)
+        current_statuses[jid] = status
+
+        if jid not in _known_job_ids:
+            _emit_scheduler_event("scheduler.job.new", job, source="poll_fallback")
+
+        previous_status = _last_job_statuses.get(jid)
+        if previous_status and previous_status != status:
+            _emit_scheduler_event(
+                "scheduler.job.state_changed",
+                job,
+                old_status=previous_status,
+                new_status=status,
+                source="poll_fallback",
+            )
+            if status == "success":
+                _emit_scheduler_event(
+                    "scheduler.job.completed",
+                    job,
+                    ok=True,
+                    source="poll_fallback",
+                )
+
+    _known_job_ids = current_ids
+    _last_job_statuses = current_statuses
+
+
 async def _run_one_job(job: Dict[str, Any]) -> None:
     global _running
     jid = job.get("id", "")
@@ -103,8 +184,40 @@ async def _run_one_job(job: Dict[str, Any]) -> None:
             )
             next_ts = next_dt.isoformat()
         db.set_finished(jid, True, None, next_ts, retries)
+        finished_job = db.get_job(jid) or dict(job, status="success", next_run_ts=next_ts)
+        _emit_scheduler_event(
+            "scheduler.job.state_changed",
+            finished_job,
+            old_status="running",
+            new_status="success",
+            ok=True,
+            ms=ms,
+            source="event_first",
+        )
+        _emit_scheduler_event(
+            "scheduler.job.completed",
+            finished_job,
+            ok=True,
+            ms=ms,
+            source="event_first",
+        )
+        _track_job_snapshot(finished_job)
         if interval and next_ts:
             db.set_queued(jid, next_ts)
+            requeued_job = db.get_job(jid) or dict(
+                finished_job,
+                status="queued",
+                next_run_ts=next_ts,
+            )
+            _emit_scheduler_event(
+                "scheduler.job.state_changed",
+                requeued_job,
+                old_status="success",
+                new_status="queued",
+                recurring=True,
+                source="event_first",
+            )
+            _track_job_snapshot(requeued_job)
         _running -= 1
         return
 
@@ -112,6 +225,23 @@ async def _run_one_job(job: Dict[str, Any]) -> None:
     if retries >= max_retries:
         next_ts = None
         db.set_finished(jid, False, err, next_ts, retries)
+        failed_job = db.get_job(jid) or dict(
+            job,
+            status="failed",
+            last_error=err,
+            retries=retries,
+            next_run_ts=next_ts,
+        )
+        _emit_scheduler_event(
+            "scheduler.job.state_changed",
+            failed_job,
+            old_status="running",
+            new_status="failed",
+            ok=False,
+            error=err,
+            source="event_first",
+        )
+        _track_job_snapshot(failed_job)
         _audit(
             "scheduler", "job_failed", False, {"job_id": jid, "retries": retries}, err
         )
@@ -125,7 +255,38 @@ async def _run_one_job(job: Dict[str, Any]) -> None:
         )
         next_ts = next_dt.isoformat()
         db.set_finished(jid, False, err, next_ts, retries)
+        failed_job = db.get_job(jid) or dict(
+            job,
+            status="failed",
+            last_error=err,
+            retries=retries,
+            next_run_ts=next_ts,
+        )
+        _emit_scheduler_event(
+            "scheduler.job.state_changed",
+            failed_job,
+            old_status="running",
+            new_status="failed",
+            ok=False,
+            error=err,
+            source="event_first",
+        )
+        _track_job_snapshot(failed_job)
         db.set_queued(jid, next_ts)
+        requeued_job = db.get_job(jid) or dict(
+            failed_job,
+            status="queued",
+            next_run_ts=next_ts,
+        )
+        _emit_scheduler_event(
+            "scheduler.job.state_changed",
+            requeued_job,
+            old_status="failed",
+            new_status="queued",
+            retry=retries,
+            source="event_first",
+        )
+        _track_job_snapshot(requeued_job)
         _audit(
             "scheduler",
             "job_retry",
@@ -145,6 +306,7 @@ async def _tick() -> None:
     db = get_scheduler_db()
     now = datetime.now(timezone.utc).isoformat()
     recover_stale_locks(db)
+    _reconcile_scheduler_event_state(db)
     limit = max(1, _max_concurrency() - _running)
     if limit <= 0:
         return
@@ -153,10 +315,28 @@ async def _tick() -> None:
         jid = job.get("id", "")
         if _cancel_requested.pop(jid, False):
             db.set_paused(jid)
+            paused_job = db.get_job(jid) or dict(job, status="paused")
+            _emit_scheduler_event(
+                "scheduler.job.state_changed",
+                paused_job,
+                old_status=_normalize_status(job.get("status")),
+                new_status="paused",
+                source="event_first",
+            )
+            _track_job_snapshot(paused_job)
             continue
         if not try_acquire_lease(db, jid):
             continue
         _running += 1
+        running_job = db.get_job(jid) or dict(job, status="running")
+        _emit_scheduler_event(
+            "scheduler.job.state_changed",
+            running_job,
+            old_status=_normalize_status(job.get("status")),
+            new_status="running",
+            source="event_first",
+        )
+        _track_job_snapshot(running_job)
         _audit(
             "scheduler", "job_run_start", True, {"job_id": jid, "kind": job.get("kind")}
         )
@@ -179,6 +359,8 @@ def start_scheduler(executor: Optional[Any] = None) -> Optional[asyncio.Task]:
     if not _sched_enabled():
         _log.info("Scheduler disabled (SCHED_ENABLED=false)")
         return None
+    register_default_event_handlers()
+    _prime_scheduler_event_state(get_scheduler_db())
     _executor = executor
     if _loop_task is not None and not _loop_task.done():
         return _loop_task
