@@ -6053,7 +6053,7 @@ def root_redirect():
 
 
 @app.get("/ui")
-def serve_ui():
+async def serve_ui():
     """Dashboard: estado, versiÃ³n, salud, mÃ©tricas, programador, actualizaciÃ³n, despliegue, aprobaciones e interacciÃ³n con el robot."""
     # v4 landing is canonical at /ui (presentation)
     path = STATIC_DIR / "v4" / "index.html"
@@ -6069,7 +6069,7 @@ def serve_ui():
 
 
 @app.get("/v3")
-def serve_v3():
+async def serve_v3():
     """Redirects legacy v3.8 to the active v4 dashboard."""
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/ui", status_code=301)
@@ -6102,7 +6102,7 @@ def serve_ui_legacy():
 
 
 @app.get("/ui/static/{file_path:path}")
-def serve_ui_static(file_path: str):
+async def serve_ui_static(file_path: str):
     """Serve v4 static assets under /ui/static/* (kept for compatibility)."""
     from fastapi import HTTPException
 
@@ -6149,7 +6149,7 @@ def serve_v4():
 
 
 @app.get("/v4/static/{file_path:path}")
-def serve_v4_static(file_path: str):
+async def serve_v4_static(file_path: str):
     """Serve v4 static assets (JS, CSS) for the landing."""
     from fastapi import HTTPException
 
@@ -6173,7 +6173,7 @@ def serve_v4_static(file_path: str):
 
 
 @app.get("/nexus")
-def serve_nexus():
+async def serve_nexus():
     """Panel de Control ATLAS â€” vista consolidada del sistema (antes en puerto 8000)."""
     path = STATIC_DIR / "nexus.html"
     if path.exists():
