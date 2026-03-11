@@ -17189,6 +17189,11 @@ async def arms_ping(arm_id: str):
 # Claude-Atlas Memory Bridge — Endpoints v1.0
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _ms() -> int:
+    """Current monotonic time in milliseconds for lightweight API timing."""
+    return int(time.perf_counter() * 1000)
+
+
 def _get_claude_bridge():
     """Importación lazy del ClaudeMemoryBridge para no bloquear el arranque."""
     try:
