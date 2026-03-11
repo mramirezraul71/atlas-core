@@ -154,7 +154,7 @@ function Restart-PushIfNeeded {
         }
     }
     try {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $restartPushScript | Out-Null
+        & powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $restartPushScript | Out-Null
         $recheck = Test-Http -Url $PushHealthUrl -Timeout 20
         return @{
             attempted = $true
@@ -183,7 +183,7 @@ function Restart-Tunnel {
             try { Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop } catch {}
         }
         Start-Sleep -Seconds 1
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $startTunnelScript -StopQuickTunnels -ConfigureAutoStart | Out-Null
+        & powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $startTunnelScript -StopQuickTunnels -ConfigureAutoStart | Out-Null
         Start-Sleep -Seconds 2
         return @{
             ok = $true

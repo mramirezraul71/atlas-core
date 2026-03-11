@@ -17185,6 +17185,119 @@ async def arms_ping(arm_id: str):
     )
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Claude-Atlas Memory Bridge — Endpoints v1.0
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _get_claude_bridge():
+    """Importación lazy del ClaudeMemoryBridge para no bloquear el arranque."""
+    try:
+        import sys
+        sys.path.insert(0, str(BASE_DIR))
+        from brain.claude_memory_bridge import get_bridge
+        return get_bridge()
+    except Exception as e:
+        return None, str(e)
+
+
+@app.post("/api/claude/memory/sync", tags=["Claude Bridge"])
+async def claude_memory_sync_both():
+    """Sincronización bidireccional: MEMORY.md → Atlas brain + Atlas brain → atlas_brain_context.json"""
+    t0 = _ms()
+    try:
+        from brain.claude_memory_bridge import ClaudeMemoryBridge
+        bridge = ClaudeMemoryBridge()
+        result = bridge.bidirectional_sync()
+        return _std_resp(result["ok"], result, _ms() - t0)
+    except Exception as e:
+        return _std_resp(False, None, _ms() - t0, str(e))
+
+
+@app.post("/api/claude/memory/push", tags=["Claude Bridge"])
+async def claude_memory_push():
+    """Claude → Atlas: sincroniza MEMORY.md hacia el brain de Atlas (EpisodicMemory + patrones)."""
+    t0 = _ms()
+    try:
+        from brain.claude_memory_bridge import ClaudeMemoryBridge
+        bridge = ClaudeMemoryBridge()
+        result = bridge.sync_claude_to_atlas()
+        return _std_resp(result["ok"], result, _ms() - t0)
+    except Exception as e:
+        return _std_resp(False, None, _ms() - t0, str(e))
+
+
+@app.post("/api/claude/memory/pull", tags=["Claude Bridge"])
+async def claude_memory_pull():
+    """Atlas → Claude: exporta brain de Atlas a atlas_brain_context.json para que Claude lo lea."""
+    t0 = _ms()
+    try:
+        from brain.claude_memory_bridge import ClaudeMemoryBridge
+        bridge = ClaudeMemoryBridge()
+        result = bridge.sync_atlas_to_claude()
+        return _std_resp(result["ok"], result, _ms() - t0)
+    except Exception as e:
+        return _std_resp(False, None, _ms() - t0, str(e))
+
+
+class _InsightPayload(BaseModel):
+    insight: str
+    category: str = "general"
+    importance: float = 0.8
+    tags: list = []
+    context: dict = {}
+
+
+@app.post("/api/claude/memory/insight", tags=["Claude Bridge"])
+async def claude_memory_insight(payload: _InsightPayload):
+    """Escribe un insight puntual de la sesión Claude directamente al brain de Atlas."""
+    t0 = _ms()
+    try:
+        from brain.claude_memory_bridge import ClaudeMemoryBridge
+        bridge = ClaudeMemoryBridge()
+        result = bridge.write_insight(
+            insight=payload.insight,
+            category=payload.category,
+            importance=payload.importance,
+            tags=payload.tags or [],
+            context=payload.context or {},
+        )
+        return _std_resp(True, result, _ms() - t0)
+    except Exception as e:
+        return _std_resp(False, None, _ms() - t0, str(e))
+
+
+@app.get("/api/claude/memory/stats", tags=["Claude Bridge"])
+async def claude_memory_stats():
+    """Estado y estadísticas del puente Claude-Atlas Memory Bridge."""
+    t0 = _ms()
+    try:
+        from brain.claude_memory_bridge import ClaudeMemoryBridge
+        bridge = ClaudeMemoryBridge()
+        stats = bridge.get_bridge_stats()
+        return _std_resp(True, stats, _ms() - t0)
+    except Exception as e:
+        return _std_resp(False, None, _ms() - t0, str(e))
+
+
+@app.get("/api/claude/memory/context", tags=["Claude Bridge"])
+async def claude_memory_context():
+    """Lee el atlas_brain_context.json exportado hacia Claude (lo que Claude ve del brain de Atlas)."""
+    t0 = _ms()
+    try:
+        import json
+        ctx_path = BASE_DIR.parent / "Users" / "r6957" / ".claude" / "projects" / "c--ATLAS-PUSH" / "memory" / "atlas_brain_context.json"
+        # Ruta alternativa vía variable de entorno
+        env_dir = os.environ.get("CLAUDE_MEMORY_DIR")
+        if env_dir:
+            ctx_path = Path(env_dir) / "atlas_brain_context.json"
+        if not ctx_path.exists():
+            return _std_resp(False, None, _ms() - t0, "atlas_brain_context.json no generado. Ejecuta /api/claude/memory/pull primero.")
+        data = json.loads(ctx_path.read_text(encoding="utf-8"))
+        return _std_resp(True, data, _ms() - t0)
+    except Exception as e:
+        return _std_resp(False, None, _ms() - t0, str(e))
+
+
 def _dedupe_http_routes() -> None:
     """
     Keep only the first registered HTTP route for each (path, methods).

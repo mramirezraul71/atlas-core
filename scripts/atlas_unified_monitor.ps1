@@ -154,7 +154,7 @@ function Maybe-AutoHeal {
         }
     }
     try {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $HealScriptPath -ForceHeal -PushFailThreshold 1 -PushForceRestartThreshold 1 | Out-Null
+        & powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $HealScriptPath -ForceHeal -PushFailThreshold 1 -PushForceRestartThreshold 1 | Out-Null
         $script:lastHealUtc = $now
         return [ordered]@{ attempted = $true; ok = $true; reason = "heal_invoked" }
     } catch {

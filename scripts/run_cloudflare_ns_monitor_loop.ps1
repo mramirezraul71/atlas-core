@@ -15,7 +15,7 @@ while ($true) {
     try {
         $stamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         Add-Content -Path $logPath -Encoding UTF8 -Value "[$stamp] monitor tick"
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $runner | ForEach-Object {
+        & powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $runner | ForEach-Object {
             Add-Content -Path $logPath -Encoding UTF8 -Value "[$stamp] $_"
         }
     } catch {

@@ -7,8 +7,10 @@ points for more autonomous reactions.
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
@@ -19,6 +21,8 @@ from modules.humanoid.kernel.event_bus import EventBus
 _log = logging.getLogger("atlas.core.event_handlers")
 _BOOTSTRAPPED = False
 _OBS_LOCK = Lock()
+_DEDUP_LOCK = Lock()
+_EVENT_DEDUP_CACHE: Dict[str, float] = {}
 
 
 def _repo_root() -> Path:
@@ -85,6 +89,86 @@ def _record_handler_result(
     }
     _append_jsonl(record)
     return record
+
+
+def _dedupe_window_seconds() -> float:
+    try:
+        return max(1.0, float(os.getenv("HYBRID_EVENT_DEDUP_SEC", "8") or "8"))
+    except (TypeError, ValueError):
+        return 8.0
+
+
+def _event_fingerprint(event_type: str, payload: Dict[str, Any]) -> str:
+    data = {
+        "event_type": event_type,
+        "rule": payload.get("rule"),
+        "component": payload.get("component"),
+        "change_type": payload.get("change_type"),
+        "source": payload.get("source"),
+        "error": str(payload.get("error") or "")[:120],
+    }
+    raw = json.dumps(data, sort_keys=True, ensure_ascii=True, default=str)
+    return hashlib.sha1(raw.encode("utf-8", "ignore")).hexdigest()
+
+
+def _is_duplicated_watchdog_event(event_type: str, payload: Dict[str, Any]) -> tuple[bool, str]:
+    fingerprint = _event_fingerprint(event_type, payload)
+    now = time.time()
+    dedupe_window = _dedupe_window_seconds()
+    with _DEDUP_LOCK:
+        for key, ts in list(_EVENT_DEDUP_CACHE.items()):
+            if now - ts > dedupe_window:
+                _EVENT_DEDUP_CACHE.pop(key, None)
+        last_seen = _EVENT_DEDUP_CACHE.get(fingerprint)
+        if last_seen and (now - last_seen) < dedupe_window:
+            return True, fingerprint
+        _EVENT_DEDUP_CACHE[fingerprint] = now
+    return False, fingerprint
+
+
+def _queue_supervisor_review(
+    event_type: str,
+    payload: Dict[str, Any],
+    *,
+    recommended_action: str,
+    source: str,
+    details: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    duplicated, fingerprint = _is_duplicated_watchdog_event(event_type, payload)
+    if duplicated:
+        return {
+            "ok": True,
+            "queued": False,
+            "deduped": True,
+            "fingerprint": fingerprint,
+            "reason": "duplicate_in_dedupe_window",
+        }
+
+    try:
+        from modules.humanoid.supervisor.autoprogrammer import queue_supervisor_review
+
+        queued = queue_supervisor_review(
+            event_type,
+            payload=payload,
+            recommended_action=recommended_action,
+            source=source,
+            details=details or {},
+        )
+        return {
+            "ok": bool(queued.get("ok", True)),
+            "queued": bool(queued.get("queued", True)),
+            "deduped": False,
+            "fingerprint": fingerprint,
+            "result": queued,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "queued": False,
+            "deduped": False,
+            "fingerprint": fingerprint,
+            "error": str(exc),
+        }
 
 
 def _future_memory_integration(payload: Dict[str, Any]) -> None:
@@ -206,6 +290,7 @@ def _on_watchdog_logs_error(payload: Optional[Dict[str, Any]] = None, **kwargs: 
     data = _merge_payload(payload, kwargs)
     source = str(data.get("source") or "unknown")
     rule = str(data.get("rule") or "unknown")
+    recommended_action = "investigate_error_and_prepare_patch"
     _log.warning(
         "Event watchdog.logs.error rule=%s source=%s",
         rule,
@@ -216,13 +301,26 @@ def _on_watchdog_logs_error(payload: Optional[Dict[str, Any]] = None, **kwargs: 
         ok=False,
         source="event_bus",
     )
+    supervisor = _queue_supervisor_review(
+        "watchdog.logs.error",
+        data,
+        recommended_action=recommended_action,
+        source=source,
+        details={"rule": rule},
+    )
     _record_handler_result(
         "watchdog.logs.error",
         data,
-        action="record_structured_error_log",
-        ok=True,
+        action="queue_supervisor_review",
+        ok=bool(supervisor.get("ok", False)),
         source=source,
-        details={"rule": rule},
+        details={
+            "handler_action": "queue_supervisor_review",
+            "recommended_action": recommended_action,
+            "rule": rule,
+            "deduped": bool(supervisor.get("deduped", False)),
+            "supervisor": supervisor,
+        },
     )
     _future_memory_integration(data)
 
@@ -231,6 +329,7 @@ def _on_watchdog_process_down(payload: Optional[Dict[str, Any]] = None, **kwargs
     data = _merge_payload(payload, kwargs)
     source = str(data.get("source") or "unknown")
     component = str(data.get("component") or "unknown")
+    recommended_action = "stabilize_process_and_queue_supervisor_review"
     diagnostic: Dict[str, Any] = {"component": component, "rule": data.get("rule")}
 
     if component == "scheduler":
@@ -266,13 +365,26 @@ def _on_watchdog_process_down(payload: Optional[Dict[str, Any]] = None, **kwargs
         level="high",
         data={"event": "watchdog.process.down", **diagnostic},
     )
+    supervisor = _queue_supervisor_review(
+        "watchdog.process.down",
+        data,
+        recommended_action=recommended_action,
+        source=source,
+        details=diagnostic,
+    )
     _record_handler_result(
         "watchdog.process.down",
         data,
-        action="run_safe_diagnostic_snapshot",
-        ok=True,
+        action="queue_supervisor_review",
+        ok=bool(supervisor.get("ok", False)),
         source=source,
-        details=diagnostic,
+        details={
+            **diagnostic,
+            "handler_action": "queue_supervisor_review",
+            "recommended_action": recommended_action,
+            "deduped": bool(supervisor.get("deduped", False)),
+            "supervisor": supervisor,
+        },
     )
     _future_supervisor_autofix(data)
 
@@ -282,8 +394,9 @@ def _on_watchdog_change_detected(
 ) -> None:
     data = _merge_payload(payload, kwargs)
     source = str(data.get("source") or "unknown")
+    recommended_action = "queue_supervisor_review_for_change"
     hint = {
-        "recommended_action": "queue_supervisor_review",
+        "recommended_action": recommended_action,
         "change_type": data.get("change_type"),
         "rule": data.get("rule"),
         "component": data.get("component"),
@@ -293,13 +406,25 @@ def _on_watchdog_change_detected(
         data.get("change_type"),
         data.get("rule"),
     )
+    supervisor = _queue_supervisor_review(
+        "watchdog.change.detected",
+        data,
+        recommended_action=recommended_action,
+        source=source,
+        details=hint,
+    )
     _record_handler_result(
         "watchdog.change.detected",
         data,
-        action="prepare_supervisor_autofix_integration",
-        ok=True,
+        action="queue_supervisor_review",
+        ok=bool(supervisor.get("ok", False)),
         source=source,
-        details=hint,
+        details={
+            **hint,
+            "handler_action": "queue_supervisor_review",
+            "deduped": bool(supervisor.get("deduped", False)),
+            "supervisor": supervisor,
+        },
     )
     _emit_ops_message(
         f"Watchdog change detectado: {data.get('rule')}",

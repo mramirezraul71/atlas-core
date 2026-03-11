@@ -14,7 +14,7 @@ $WatchdogScript = Join-Path $PSScriptRoot "push_autorevive_watchdog.ps1"
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
 try {
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $WatchdogScript `
+    & powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $WatchdogScript `
       -HealthUrl $HealthUrl `
       -IntervalSec $IntervalSec `
       -FailThreshold $FailThreshold `

@@ -229,7 +229,7 @@ while ($true) {
     if ($canRestart) {
       Write-Log "restart_triggered"
       try {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $RestartScript 2>&1 | Out-File -FilePath $LogFile -Append -Encoding utf8
+        & powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $RestartScript 2>&1 | Out-File -FilePath $LogFile -Append -Encoding utf8
         $rc = $LASTEXITCODE
         if ($rc -ne 0) {
           throw "restart_script_exit_code_$rc"

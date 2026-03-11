@@ -662,6 +662,8 @@ class AtlasSentinel:
             "-NoProfile",
             "-ExecutionPolicy",
             "Bypass",
+            "-WindowStyle",
+            "Hidden",
             "-File",
             str(script_path),
         ] + (args or [])
