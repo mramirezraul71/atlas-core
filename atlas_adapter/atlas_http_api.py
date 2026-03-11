@@ -3081,6 +3081,24 @@ def _append_whatsapp_inbound_trace(entry: Dict[str, Any]) -> None:
         pass
 
 
+@app.get("/api/comms/whatsapp/inbound", tags=["Comms", "WhatsApp"])
+async def api_whatsapp_inbound_verify(request: Request):
+    """Verificación de webhook de Meta WhatsApp Business API (GET challenge).
+
+    Meta llama GET con hub.mode=subscribe, hub.challenge y hub.verify_token.
+    Respondemos con hub.challenge si el verify_token coincide.
+    """
+    params = dict(request.query_params)
+    mode = params.get("hub.mode", "")
+    token = params.get("hub.verify_token", "")
+    challenge = params.get("hub.challenge", "")
+    expected = os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "")
+    if mode == "subscribe" and token == expected and expected:
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(challenge)
+    return {"ok": False, "error": "invalid_verify_token"}
+
+
 @app.post("/api/comms/whatsapp/inbound", tags=["Comms", "WhatsApp"])
 def api_whatsapp_inbound(body: dict, request: Request = None):
     """
@@ -3334,6 +3352,205 @@ def api_whatsapp_start_session():
         return start_session()
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/whatsapp/pairing-code", tags=["Comms", "WhatsApp"])
+async def api_whatsapp_pairing_code(body: dict):
+    """Vincula WhatsApp mediante código de emparejamiento (sin QR).
+
+    Flujo:
+    1. Llama POST /api/comms/whatsapp/start-session  (si la sesión no existe)
+    2. Llama este endpoint con {"phone": "+34612345678"}
+    3. WAHA devuelve un código de 8 dígitos (ej: ABCD-EFGH)
+    4. En tu WhatsApp → Dispositivos vinculados → Vincular con número de teléfono
+       e introduce el código.
+
+    Solo disponible con proveedor WAHA.
+    """
+    try:
+        from modules.humanoid.comms.whatsapp_bridge import (
+            start_session, request_pairing_code, status
+        )
+
+        st = status()
+        if st.get("provider") != "waha":
+            return {"ok": False, "error": "pairing_code solo disponible para proveedor WAHA"}
+
+        phone = (body.get("phone") or "").strip()
+        if not phone:
+            return {"ok": False, "error": "Campo 'phone' requerido (ej: +34612345678)"}
+
+        # Auto-arrancar sesión si no está iniciada
+        waha_st = st.get("provider_status", {})
+        if not waha_st.get("authenticated") and waha_st.get("status") not in ("SCAN_QR_CODE",):
+            start_result = start_session()
+            if not start_result.get("ok") and not start_result.get("already_started"):
+                return {
+                    "ok": False,
+                    "error": "No se pudo iniciar la sesión WAHA",
+                    "details": start_result,
+                }
+
+        result = request_pairing_code(phone)
+        return result
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ── Meta WhatsApp Business API — Setup Wizard ─────────────────────────────────
+
+_META_WEBHOOK_BASE = "https://atlas-dashboard.rauliatlasapp.com"
+
+
+def _ensure_verify_token() -> str:
+    """Genera y persiste WHATSAPP_WEBHOOK_VERIFY_TOKEN si no existe."""
+    token = os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "")
+    if token:
+        return token
+    import secrets
+    token = secrets.token_hex(24)
+    # Persistir en .env
+    env_path = BASE_DIR / ".env"
+    try:
+        content = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+        if "WHATSAPP_WEBHOOK_VERIFY_TOKEN" not in content:
+            with env_path.open("a", encoding="utf-8") as f:
+                f.write(f'\nWHATSAPP_WEBHOOK_VERIFY_TOKEN="{token}"\n')
+        os.environ["WHATSAPP_WEBHOOK_VERIFY_TOKEN"] = token
+    except Exception:
+        os.environ["WHATSAPP_WEBHOOK_VERIFY_TOKEN"] = token
+    return token
+
+
+@app.get("/api/comms/meta-whatsapp/setup-info", tags=["Comms", "WhatsApp"])
+async def api_meta_whatsapp_setup_info():
+    """Devuelve la información necesaria para configurar Meta WhatsApp Business API.
+
+    Genera automáticamente el verify_token si no existe y muestra la URL del webhook
+    pública a través del túnel Cloudflare.
+    """
+    verify_token = _ensure_verify_token()
+    webhook_url = f"{_META_WEBHOOK_BASE}/api/comms/whatsapp/inbound"
+    token_configured = bool(os.getenv("META_WHATSAPP_TOKEN"))
+    phone_id_configured = bool(os.getenv("META_PHONE_NUMBER_ID"))
+    return {
+        "ok": True,
+        "webhook_url": webhook_url,
+        "verify_token": verify_token,
+        "provider_ready": token_configured and phone_id_configured,
+        "meta_token_set": token_configured,
+        "phone_number_id_set": phone_id_configured,
+        "steps": [
+            {"step": 1, "done": True,  "desc": "Webhook URL generada",
+             "value": webhook_url},
+            {"step": 2, "done": True,  "desc": "Verify token generado",
+             "value": verify_token},
+            {"step": 3, "done": token_configured,
+             "desc": "META_WHATSAPP_TOKEN configurado"},
+            {"step": 4, "done": phone_id_configured,
+             "desc": "META_PHONE_NUMBER_ID configurado"},
+        ],
+    }
+
+
+@app.post("/api/comms/meta-whatsapp/save-credentials", tags=["Comms", "WhatsApp"])
+async def api_meta_whatsapp_save_credentials(body: dict):
+    """Guarda META_WHATSAPP_TOKEN y META_PHONE_NUMBER_ID en .env y activa el proveedor.
+
+    Body: {
+      "meta_token": "EAAxxxxxx",
+      "phone_number_id": "123456789",
+      "whatsapp_to": "+34612345678"   // opcional: número destino para notificaciones Atlas
+    }
+    """
+    meta_token = (body.get("meta_token") or "").strip()
+    phone_id = (body.get("phone_number_id") or "").strip()
+    whatsapp_to = (body.get("whatsapp_to") or "").strip()
+
+    if not meta_token or not phone_id:
+        return {"ok": False, "error": "meta_token y phone_number_id son requeridos"}
+
+    env_path = BASE_DIR / ".env"
+    try:
+        content = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+        updates = {
+            "WHATSAPP_PROVIDER": '"meta"',
+            "WHATSAPP_ENABLED": '"true"',
+            "META_WHATSAPP_TOKEN": f'"{meta_token}"',
+            "META_PHONE_NUMBER_ID": f'"{phone_id}"',
+        }
+        if whatsapp_to:
+            updates["WHATSAPP_TO"] = f'"{whatsapp_to}"'
+
+        for key, val in updates.items():
+            import re
+            pattern = rf'^{re.escape(key)}\s*=.*$'
+            if re.search(pattern, content, re.MULTILINE):
+                content = re.sub(pattern, f'{key}={val}', content, flags=re.MULTILINE)
+            else:
+                content += f'\n{key}={val}'
+
+        env_path.write_text(content, encoding="utf-8")
+
+        # Aplicar en proceso actual
+        os.environ["WHATSAPP_PROVIDER"] = "meta"
+        os.environ["WHATSAPP_ENABLED"] = "true"
+        os.environ["META_WHATSAPP_TOKEN"] = meta_token
+        os.environ["META_PHONE_NUMBER_ID"] = phone_id
+        if whatsapp_to:
+            os.environ["WHATSAPP_TO"] = whatsapp_to
+
+        # Resetear singleton del proveedor para que tome el nuevo
+        try:
+            import modules.humanoid.comms.whatsapp_bridge as _wb
+            _wb._provider_instance = None
+        except Exception:
+            pass
+
+        return {
+            "ok": True,
+            "provider": "meta",
+            "webhook_url": f"{_META_WEBHOOK_BASE}/api/comms/whatsapp/inbound",
+            "message": "Credenciales guardadas. Proveedor Meta activo.",
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/meta-whatsapp/open-browser", tags=["Comms", "WhatsApp"])
+async def api_meta_whatsapp_open_browser():
+    """Usa los 'ojos y manos' de Atlas (Playwright) para abrir Meta Developers.
+
+    Navega directamente a la página de creación de apps de WhatsApp Business.
+    """
+    try:
+        from modules.humanoid.nerve import feet_execute
+
+        result = feet_execute("open_url", {
+            "driver": "digital",
+            "url": "https://developers.facebook.com/apps/",
+            "show_browser": True,
+        })
+        if result.get("ok"):
+            return {
+                "ok": True,
+                "message": "Navegador abierto en Meta Developers",
+                "next": "Inicia sesión con tu cuenta de Meta/Facebook, luego: "
+                        "Create App → Business → WhatsApp → Add Product",
+            }
+        # Playwright no disponible — dar URL directa
+        return {
+            "ok": False,
+            "error": result.get("error", "playwright_not_available"),
+            "manual_url": "https://developers.facebook.com/apps/",
+            "hint": "Abre la URL manualmente. Necesitas FEET_DRIVER=digital en .env",
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": str(e),
+            "manual_url": "https://developers.facebook.com/apps/",
+        }
 
 
 @app.get("/api/comms/whatsapp/setup-guide", tags=["Comms", "WhatsApp"])

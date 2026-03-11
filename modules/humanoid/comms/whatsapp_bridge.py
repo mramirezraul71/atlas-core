@@ -221,6 +221,51 @@ class WAHAProvider:
                 continue
         return {"ok": False, "error": "qr_not_available", "attempted": attempted}
 
+    def request_pairing_code(self, phone: str) -> Dict[str, Any]:
+        """Solicita un código de emparejamiento (alternativa al QR).
+
+        El teléfono debe estar en formato internacional sin '+':  34612345678
+        WAHA debe tener la sesión en estado SCAN_QR_CODE (recién iniciada).
+        Retorna {"ok": True, "code": "ABCD-EFGH"} o error.
+        """
+        phone_clean = phone.replace("+", "").replace(" ", "").replace("-", "")
+        attempts = [
+            f"{self.api_url}/api/sessions/{self.session}/auth/request-code",
+            f"{self.api_url}/api/{self.session}/auth/request-code",
+        ]
+        last_error = "unknown"
+        for url in attempts:
+            try:
+                payload = json.dumps({"phoneNumber": phone_clean}).encode()
+                req = urllib.request.Request(
+                    url,
+                    data=payload,
+                    method="POST",
+                    headers=self._headers(),
+                )
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    data = json.loads(r.read().decode(errors="replace") or "{}")
+                code = data.get("code") or data.get("pairingCode") or data.get("pairing_code")
+                if code:
+                    return {"ok": True, "code": str(code), "phone": phone_clean, "endpoint": url}
+                return {"ok": False, "error": "no_code_in_response", "raw": data, "endpoint": url}
+            except urllib.error.HTTPError as e:
+                body = ""
+                try:
+                    body = e.read().decode(errors="replace")
+                except Exception:
+                    pass
+                if e.code == 401:
+                    return {"ok": False, "error": "unauthorized", "hint": "Configura WAHA_API_KEY"}
+                if e.code in (404, 405):
+                    last_error = f"HTTP {e.code}"
+                    continue
+                return {"ok": False, "error": f"HTTP {e.code}", "details": body[:220]}
+            except Exception as ex:
+                last_error = str(ex)
+                continue
+        return {"ok": False, "error": last_error}
+
     def send_message(self, to: str, text: str) -> Dict[str, Any]:
         """Envía un mensaje de texto."""
         # Formatear número (debe ser chatId: número@c.us)
@@ -554,6 +599,14 @@ def start_session() -> Dict[str, Any]:
         return {"ok": False, "error": "Sessions only available for WAHA provider"}
 
     return provider.start_session()
+
+
+def request_pairing_code(phone: str) -> Dict[str, Any]:
+    """Solicita código de emparejamiento WAHA para el número dado."""
+    provider = _get_provider()
+    if not isinstance(provider, WAHAProvider):
+        return {"ok": False, "error": "pairing_code only available for WAHA provider"}
+    return provider.request_pairing_code(phone)
 
 
 def health_check() -> Dict[str, Any]:
