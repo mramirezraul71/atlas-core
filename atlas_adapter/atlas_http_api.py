@@ -3049,8 +3049,40 @@ def api_whatsapp_send(body: dict):
         return {"ok": False, "error": str(e)}
 
 
+_WHATSAPP_INBOUND_TRACE_LOG = Path(_logs) / "whatsapp_inbound_trace.jsonl"
+
+
+def _collect_request_origin(request: Request = None) -> Dict[str, Any]:
+    if request is None:
+        return {}
+    headers = request.headers or {}
+    client_ip = ""
+    try:
+        client_ip = str((request.client.host if request.client else "") or "")
+    except Exception:
+        client_ip = ""
+    return {
+        "client_ip": client_ip,
+        "x_forwarded_for": str(headers.get("x-forwarded-for") or ""),
+        "x_real_ip": str(headers.get("x-real-ip") or ""),
+        "cf_connecting_ip": str(headers.get("cf-connecting-ip") or ""),
+        "user_agent": str(headers.get("user-agent") or ""),
+        "host": str(headers.get("host") or ""),
+        "method": str(getattr(request, "method", "") or ""),
+    }
+
+
+def _append_whatsapp_inbound_trace(entry: Dict[str, Any]) -> None:
+    try:
+        _WHATSAPP_INBOUND_TRACE_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _WHATSAPP_INBOUND_TRACE_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 @app.post("/api/comms/whatsapp/inbound", tags=["Comms", "WhatsApp"])
-def api_whatsapp_inbound(body: dict):
+def api_whatsapp_inbound(body: dict, request: Request = None):
     """
     Webhook inbound de WhatsApp (WAHA/Twilio/Meta) -> supervisor conversacional.
 
@@ -3061,6 +3093,12 @@ def api_whatsapp_inbound(body: dict):
         from modules.humanoid.comms.atlas_comms_hub import get_atlas_comms_hub
         from modules.humanoid.comms.whatsapp_bridge import (parse_inbound_payload,
                                                             send_text)
+
+        trace_base = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "route": "/api/comms/whatsapp/inbound",
+            "origin": _collect_request_origin(request),
+        }
 
         require_known = os.getenv("ATLAS_WHATSAPP_REQUIRE_KNOWN", "true").strip().lower() in (
             "1",
@@ -3086,6 +3124,14 @@ def api_whatsapp_inbound(body: dict):
 
         parsed = parse_inbound_payload(body or {})
         if not parsed.get("ok"):
+            _append_whatsapp_inbound_trace(
+                {
+                    **trace_base,
+                    "status": "ignored",
+                    "reason": parsed.get("reason") or "unparsed_payload",
+                    "provider_hint": parsed.get("provider_hint"),
+                }
+            )
             return {
                 "ok": True,
                 "ignored": True,
@@ -3096,6 +3142,16 @@ def api_whatsapp_inbound(body: dict):
         sender = str(parsed.get("from") or "").strip()
         text = str(parsed.get("text") or "").strip()
         if not sender or not text:
+            _append_whatsapp_inbound_trace(
+                {
+                    **trace_base,
+                    "status": "ignored",
+                    "reason": "missing_sender_or_text",
+                    "sender": sender,
+                    "text_len": len(text),
+                    "provider_hint": parsed.get("provider_hint"),
+                }
+            )
             return {"ok": True, "ignored": True, "reason": "missing_sender_or_text"}
 
         hub = get_atlas_comms_hub()
@@ -3110,6 +3166,17 @@ def api_whatsapp_inbound(body: dict):
                 "Usuario no autorizado",
             ).strip() or "Usuario no autorizado"
             send_result = send_text(unauthorized_text, to=sender)
+            _append_whatsapp_inbound_trace(
+                {
+                    **trace_base,
+                    "status": "blocked",
+                    "reason": "sender_not_linked",
+                    "sender": sender,
+                    "text_len": len(text),
+                    "provider_hint": parsed.get("provider_hint"),
+                    "send_result_ok": bool(send_result.get("ok")),
+                }
+            )
             return {
                 "ok": True,
                 "ignored": True,
@@ -3123,6 +3190,18 @@ def api_whatsapp_inbound(body: dict):
             }
 
         if require_atlas_question and not (atlas_mentioned and looks_like_question):
+            _append_whatsapp_inbound_trace(
+                {
+                    **trace_base,
+                    "status": "ignored",
+                    "reason": "atlas_question_required",
+                    "sender": sender,
+                    "text_len": len(text),
+                    "provider_hint": parsed.get("provider_hint"),
+                    "atlas_mentioned": atlas_mentioned,
+                    "looks_like_question": looks_like_question,
+                }
+            )
             return {
                 "ok": True,
                 "ignored": True,
@@ -3158,6 +3237,20 @@ def api_whatsapp_inbound(body: dict):
         if reply_text:
             send_result = send_text(reply_text, to=sender)
 
+        _append_whatsapp_inbound_trace(
+            {
+                **trace_base,
+                "status": "accepted",
+                "sender": sender,
+                "text_len": len(text),
+                "provider_hint": parsed.get("provider_hint"),
+                "effective_user_id": effective_user_id,
+                "message_id": out.get("message_id"),
+                "interaction_ok": bool(out.get("ok")),
+                "send_result_ok": bool(send_result.get("ok")),
+            }
+        )
+
         return {
             "ok": bool(out.get("ok")),
             "inbound": parsed,
@@ -3171,6 +3264,15 @@ def api_whatsapp_inbound(body: dict):
             "send_result": send_result,
         }
     except Exception as e:
+        _append_whatsapp_inbound_trace(
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "route": "/api/comms/whatsapp/inbound",
+                "origin": _collect_request_origin(request),
+                "status": "error",
+                "error": str(e)[:300],
+            }
+        )
         return {"ok": False, "error": str(e)}
 
 
@@ -5968,17 +6070,9 @@ def serve_ui():
 
 @app.get("/v3")
 def serve_v3():
-    """Legacy dashboard v3.8.0 (operational UI)."""
-    path = STATIC_DIR / "dashboard.html"
-    if path.exists():
-        return FileResponse(
-            path,
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-            },
-        )
-    return {"ok": False, "error": "dashboard.html not found"}
+    """Redirects legacy v3.8 to the active v4 dashboard."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/ui", status_code=301)
 
 
 @app.get("/ui-legacy")
