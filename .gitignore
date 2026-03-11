@@ -149,3 +149,7 @@ tools/atlas_agent/runs/
 .atlas_backups/
 .codex/tmp/
 config/atlas.env
+
+# Playwright CLI recordings / temp scripts
+.playwright-cli/
+tmp_pwcode*.js
