@@ -1,31 +1,38 @@
-# ATLAS Sentinel Watchdog v1.0
+# ATLAS Sentinel Watchdog v1.1
 # Scanner permanente de todos los servicios criticos con autocorreccion.
 # Cubre: panaderia (3001/5173), espejo (3000/8080), atlas (8791), tunel cloudflare.
-# Se registra como tarea programada de Windows para sobrevivir reinicios.
+# Autoarranque via HKCU Run (sin necesidad de Admin).
 
 param(
-    [switch]$Register   # Ejecutar con -Register para instalar la tarea en Windows
+    [switch]$Register,    # Instalar autoarranque en HKCU Run (sin Admin)
+    [switch]$Unregister   # Eliminar autoarranque
 )
 
-# ── Registro como tarea programada (ejecutar como Admin una vez) ───────────
+# ── Autoarranque via registro HKCU (sin permisos de Admin) ───────────────
+$RUN_KEY  = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+$RUN_NAME = "ATLAS_Sentinel_Watchdog"
+$RUN_VAL  = "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+
+if ($Unregister) {
+    Remove-ItemProperty -Path $RUN_KEY -Name $RUN_NAME -ErrorAction SilentlyContinue
+    Write-Host "[OK] Autoarranque eliminado."
+    exit 0
+}
+
 if ($Register) {
-    $exe  = "powershell.exe"
-    $args = "-NoProfile -WindowStyle Hidden -File `"$PSCommandPath`""
-    $action   = New-ScheduledTaskAction -Execute $exe -Argument $args
-    $trigger  = New-ScheduledTaskTrigger -AtStartup
-    $settings = New-ScheduledTaskSettingsSet `
-        -RestartCount 99 `
-        -RestartInterval (New-TimeSpan -Minutes 1) `
-        -ExecutionTimeLimit ([TimeSpan]::Zero) `
-        -MultipleInstances IgnoreNew
-    Register-ScheduledTask `
-        -TaskName  "ATLAS_Sentinel_Watchdog" `
-        -Action    $action `
-        -Trigger   $trigger `
-        -Settings  $settings `
-        -RunLevel  Highest `
-        -Force | Out-Null
-    Write-Host "[OK] Tarea ATLAS_Sentinel_Watchdog registrada. Se inicia automaticamente en cada arranque."
+    if (-not (Test-Path $RUN_KEY)) { New-Item -Path $RUN_KEY | Out-Null }
+    New-ItemProperty -Path $RUN_KEY -Name $RUN_NAME -PropertyType String -Value $RUN_VAL -Force | Out-Null
+    Write-Host "[OK] ATLAS_Sentinel_Watchdog registrado en HKCU Run. Se iniciara automaticamente al iniciar sesion."
+    exit 0
+}
+
+# Evitar instancias duplicadas del loop
+$self = $MyInvocation.MyCommand.Path
+$duplicates = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.Name -match "powershell" -and $_.CommandLine -match [regex]::Escape($self) -and $_.ProcessId -ne $PID
+})
+if ($duplicates.Count -gt 0) {
+    Write-Host "[SKIP] Watchdog ya en ejecucion (PID $($duplicates[0].ProcessId)). Saliendo."
     exit 0
 }
 
