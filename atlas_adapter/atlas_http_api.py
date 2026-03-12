@@ -3553,6 +3553,86 @@ async def api_meta_whatsapp_open_browser():
         }
 
 
+_META_AUTOSETUP_PROC = None  # subprocess handle
+_META_AUTOSETUP_STATUS_FILE = BASE_DIR / "logs" / "meta_autosetup_status.json"
+
+
+@app.post("/api/comms/meta-whatsapp/autosetup", tags=["Comms", "WhatsApp"])
+async def api_meta_whatsapp_autosetup():
+    """Lanza el agente autónomo de Atlas para configurar Meta WhatsApp.
+
+    Abre Chromium visible, espera login del usuario, luego automatiza
+    la creación del app, configuración del webhook y extracción de credenciales.
+    """
+    global _META_AUTOSETUP_PROC
+    import subprocess
+
+    # Matar proceso previo si existe
+    if _META_AUTOSETUP_PROC and _META_AUTOSETUP_PROC.poll() is None:
+        _META_AUTOSETUP_PROC.terminate()
+
+    verify_token = _ensure_verify_token()
+    webhook_url = f"{_META_WEBHOOK_BASE}/api/comms/whatsapp/inbound"
+
+    # Limpiar status anterior
+    if _META_AUTOSETUP_STATUS_FILE.exists():
+        _META_AUTOSETUP_STATUS_FILE.unlink()
+
+    script = BASE_DIR / "scripts" / "atlas_meta_whatsapp_autosetup.py"
+    python = BASE_DIR / "venv" / "Scripts" / "python.exe"
+    if not python.exists():
+        python = Path(sys.executable)
+
+    try:
+        _META_AUTOSETUP_PROC = subprocess.Popen(
+            [
+                str(python), str(script),
+                "--webhook-url", webhook_url,
+                "--verify-token", verify_token,
+                "--status-file", "logs/meta_autosetup_status.json",
+            ],
+            cwd=str(BASE_DIR),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        return {
+            "ok": True,
+            "pid": _META_AUTOSETUP_PROC.pid,
+            "message": "Agente autónomo iniciado. Chromium se abrirá en tu pantalla. Inicia sesión en Meta cuando aparezca.",
+            "poll_url": "/api/comms/meta-whatsapp/autosetup/status",
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/comms/meta-whatsapp/autosetup/status", tags=["Comms", "WhatsApp"])
+async def api_meta_whatsapp_autosetup_status():
+    """Devuelve el estado del agente autónomo de configuración Meta."""
+    global _META_AUTOSETUP_PROC
+
+    running = _META_AUTOSETUP_PROC is not None and _META_AUTOSETUP_PROC.poll() is None
+    exit_code = None if running else (
+        _META_AUTOSETUP_PROC.returncode if _META_AUTOSETUP_PROC else None
+    )
+
+    status_data = {}
+    if _META_AUTOSETUP_STATUS_FILE.exists():
+        try:
+            status_data = json.loads(_META_AUTOSETUP_STATUS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    return {
+        "ok": True,
+        "running": running,
+        "exit_code": exit_code,
+        "finished": not running and _META_AUTOSETUP_PROC is not None,
+        "success": exit_code == 0,
+        **status_data,
+    }
+
+
 @app.get("/api/comms/whatsapp/setup-guide", tags=["Comms", "WhatsApp"])
 def api_whatsapp_setup_guide():
     """GuÃ­a de configuraciÃ³n de WhatsApp con WAHA (gratuito)."""

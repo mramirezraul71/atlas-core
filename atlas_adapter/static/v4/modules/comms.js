@@ -307,6 +307,52 @@ async function _test(container) {
   }
 }
 
+function _addProgressLine(el, msg, isError = false) {
+  if (!el) return;
+  const line = document.createElement('div');
+  line.style.cssText = `color:${isError ? 'var(--accent-red)' : 'var(--text-secondary)'};padding:1px 0`;
+  line.textContent = msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+let _autosetupPollTimer = null;
+function _pollAutosetup(container, progress, btn) {
+  if (_autosetupPollTimer) clearInterval(_autosetupPollTimer);
+  let lastLogCount = 0;
+  _autosetupPollTimer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/comms/meta-whatsapp/autosetup/status');
+      const d = await r.json().catch(() => ({}));
+      // Añadir nuevos logs
+      const logs = d.logs || [];
+      for (let i = lastLogCount; i < logs.length; i++) {
+        _addProgressLine(progress, `[${logs[i].ts}] ${logs[i].msg}`);
+      }
+      lastLogCount = logs.length;
+      // Detectar fin
+      if (d.finished || (!d.running && d.exit_code !== null && d.exit_code !== undefined)) {
+        clearInterval(_autosetupPollTimer);
+        _autosetupPollTimer = null;
+        if (d.success || d.meta_token_saved || d.phone_id_saved) {
+          _addProgressLine(progress, '[Atlas] ✓ Configuración completada. Recargando wizard...');
+          window.AtlasToast?.show('Meta WhatsApp configurado por Atlas', 'success');
+          setTimeout(() => _metaWizard(container), 1000);
+        } else {
+          _addProgressLine(progress, '[Atlas] Proceso terminado. Revisa logs y completa manualmente si falta token.', false);
+          window.AtlasToast?.show('Proceso terminado — revisa el wizard', 'warn');
+        }
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Que lo haga Atlas (autónomo)';
+        }
+      }
+    } catch (e) {
+      _addProgressLine(progress, `[poll error] ${e.message}`, true);
+    }
+  }, 2000);
+}
+
 async function _metaWizard(container) {
   const el = container.querySelector('#meta-wizard');
   const chip = container.querySelector('#meta-status-chip');
@@ -358,14 +404,20 @@ async function _metaWizard(container) {
         </div>
       </div>
 
-      <!-- Open browser button -->
+      <!-- Autosetup button -->
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button class="action-btn primary" id="btn-meta-browser">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/></svg>
-          Abrir Meta Developers (Atlas)
+        <button class="action-btn primary" id="btn-meta-autosetup" style="font-size:12px;padding:7px 14px">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Que lo haga Atlas (autónomo)
         </button>
-        <span style="font-size:11px;color:var(--text-muted)">Atlas abre el navegador por ti</span>
+        <button class="action-btn" id="btn-meta-browser" style="font-size:11px">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 010 20"/></svg>
+          Solo abrir navegador
+        </button>
       </div>
+
+      <!-- Progress live -->
+      <div id="meta-autosetup-progress" style="display:none;flex-direction:column;gap:4px;padding:10px;background:var(--bg-elevated);border-radius:8px;border:1px solid var(--border);max-height:200px;overflow-y:auto;font-size:11px;font-family:var(--font-mono)"></div>
 
       <!-- Credentials form -->
       ${!ready ? `
@@ -387,6 +439,26 @@ async function _metaWizard(container) {
       <div class="chip green" style="width:fit-content">Meta WhatsApp Business API activo</div>`}
     </div>
   `;
+
+  container.querySelector('#btn-meta-autosetup')?.addEventListener('click', async () => {
+    const btn = container.querySelector('#btn-meta-autosetup');
+    const progress = container.querySelector('#meta-autosetup-progress');
+    if (btn) { btn.disabled = true; btn.textContent = '⟳ Iniciando agente...'; }
+    if (progress) { progress.style.display = 'flex'; progress.innerHTML = ''; }
+    try {
+      const r = await fetch('/api/comms/meta-whatsapp/autosetup', { method: 'POST' });
+      const d = await r.json().catch(() => ({}));
+      if (!d.ok) throw new Error(d.error || 'Error al lanzar agente');
+      _addProgressLine(progress, `[Atlas] Agente iniciado (PID ${d.pid})`);
+      _addProgressLine(progress, '[Atlas] Chromium se abrirá en tu pantalla');
+      _addProgressLine(progress, '[Atlas] Inicia sesión en Meta cuando aparezca el navegador...');
+      if (btn) btn.textContent = '⟳ Agente corriendo...';
+      _pollAutosetup(container, progress, btn);
+    } catch (e) {
+      if (progress) _addProgressLine(progress, `[ERROR] ${e.message}`, true);
+      if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Que lo haga Atlas (autónomo)'; }
+    }
+  });
 
   container.querySelector('#btn-meta-browser')?.addEventListener('click', async () => {
     const btn = container.querySelector('#btn-meta-browser');
