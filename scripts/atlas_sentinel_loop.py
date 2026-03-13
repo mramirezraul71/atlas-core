@@ -37,6 +37,14 @@ _LOCK_HANDLE = None
 _MUTEX_HANDLE = None
 
 
+def _subprocess_no_window_kwargs() -> Dict[str, Any]:
+    """Best-effort flags to prevent console windows for child processes on Windows."""
+    kwargs: Dict[str, Any] = {}
+    if os.name == "nt":
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    return kwargs
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -690,6 +698,7 @@ class AtlasSentinel:
                 capture_output=True,
                 text=True,
                 timeout=180,
+                **_subprocess_no_window_kwargs(),
             )
             return {
                 "ok": p.returncode == 0,
@@ -733,6 +742,7 @@ class AtlasSentinel:
                             capture_output=True,
                             text=True,
                             timeout=240,
+                            **_subprocess_no_window_kwargs(),
                         )
                         r = {
                             "ok": p.returncode == 0,

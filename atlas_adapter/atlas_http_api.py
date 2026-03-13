@@ -17855,7 +17855,8 @@ _rauli_db_init()
 
 
 class _RauliUserCreate(BaseModel):
-    name: str
+    name:  str
+    token: Optional[str] = None   # token externo (ej. access_code del espejo)
 
 
 class _RauliMemoryUpdate(BaseModel):
@@ -17877,7 +17878,9 @@ async def rauli_create_user(body: _RauliUserCreate):
     name = (body.name or "").strip()
     if not name:
         return _std_resp(False, None, 0, "name_required")
-    token = _rauli_gen_token()
+    # Usar token externo si se provee (bridge con espejo access_code), si no generar uno
+    raw_token = (body.token or "").strip()
+    token = raw_token if raw_token else _rauli_gen_token()
     now = datetime.now(timezone.utc).isoformat()
     try:
         with _rauli_db_conn() as c:

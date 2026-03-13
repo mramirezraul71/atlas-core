@@ -48,8 +48,30 @@ if ($WithRestart.IsPresent) {
 }
 
 try {
-    & $PythonExe @args 2>&1 | Out-File -FilePath $TaskLog -Append -Encoding utf8
-    exit $LASTEXITCODE
+    $tmpOut = [System.IO.Path]::GetTempFileName()
+    $tmpErr = [System.IO.Path]::GetTempFileName()
+    $proc = Start-Process -FilePath $PythonExe `
+        -ArgumentList $args `
+        -WorkingDirectory $RepoRoot `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $tmpOut `
+        -RedirectStandardError $tmpErr `
+        -PassThru `
+        -Wait
+
+    if (Test-Path $tmpOut) {
+        Get-Content $tmpOut -Raw -ErrorAction SilentlyContinue | Out-File -FilePath $TaskLog -Append -Encoding utf8
+        Remove-Item $tmpOut -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $tmpErr) {
+        $errText = Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue
+        if (-not [string]::IsNullOrWhiteSpace($errText)) {
+            $errText | Out-File -FilePath $TaskLog -Append -Encoding utf8
+        }
+        Remove-Item $tmpErr -Force -ErrorAction SilentlyContinue
+    }
+
+    exit ([int]$proc.ExitCode)
 } catch {
     $stamp = (Get-Date).ToString("o")
     "$stamp TASK_WRAPPER_ERROR $($_.Exception.Message)" | Out-File -FilePath $TaskLog -Append -Encoding utf8

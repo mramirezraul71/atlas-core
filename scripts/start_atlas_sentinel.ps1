@@ -14,8 +14,17 @@ $ErrorActionPreference = "Stop"
 
 function Resolve-AtlasPython([string]$Root) {
   $venvPy = Join-Path $Root ".venv\Scripts\python.exe"
-  if (Test-Path $venvPy) { return $venvPy }
-  return "python"
+  $venvPyw = Join-Path $Root ".venv\Scripts\pythonw.exe"
+  if (Test-Path $venvPy) {
+    return @{
+      python = $venvPy
+      pythonw = if (Test-Path $venvPyw) { $venvPyw } else { $venvPy }
+    }
+  }
+  return @{
+    python = "python"
+    pythonw = "pythonw"
+  }
 }
 
 function Upsert-RunKey {
@@ -35,7 +44,9 @@ if (-not (Test-Path $sentinelScript)) {
   throw "No existe script Sentinel: $sentinelScript"
 }
 
-$py = Resolve-AtlasPython -Root $RepoPath
+$pyInfo = Resolve-AtlasPython -Root $RepoPath
+$py = [string]$pyInfo.python
+$pyBg = [string]$pyInfo.pythonw
 $running = $false
 try {
   $running = @(
@@ -81,7 +92,7 @@ if ($running) {
   exit 0
 }
 
-Start-Process -FilePath $py -ArgumentList $args -WorkingDirectory $RepoPath -WindowStyle Hidden | Out-Null
+Start-Process -FilePath $pyBg -ArgumentList $args -WorkingDirectory $RepoPath -WindowStyle Hidden | Out-Null
 Write-Host "ATLAS Sentinel iniciado en segundo plano."
 Write-Host "Logs: $RepoPath\logs\sentinel"
 if ($ConfigureAutoStart.IsPresent) {

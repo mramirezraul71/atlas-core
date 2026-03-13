@@ -36,9 +36,8 @@ if (-not (Test-PortListening $ESPEJO_PORT)) {
         go build -o espejo.exe ./cmd/server/ 2>&1 | Out-Null
         Pop-Location
     }
-    $env:PORT       = $ESPEJO_PORT
-    $env:JWT_SECRET = "rauli-vision-2026"
-    Start-Process -FilePath $ESPEJO_BIN -WorkingDirectory "$VISION_ROOT\espejo" `
+    # Usar batch wrapper para que ADMIN_TOKEN sea heredado correctamente por espejo.exe
+    Start-Process -FilePath "$VISION_ROOT\espejo\run_espejo.bat" -WorkingDirectory "$VISION_ROOT\espejo" `
         -RedirectStandardOutput "$LOG_DIR\vision_espejo.log" `
         -RedirectStandardError  "$LOG_DIR\vision_espejo.err" `
         -WindowStyle Hidden -NoNewWindow:$false
