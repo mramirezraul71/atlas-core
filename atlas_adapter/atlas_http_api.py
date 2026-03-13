@@ -74,6 +74,7 @@ import importlib.util
 from typing import List, Optional
 
 from fastapi import FastAPI, File, Header, Request, UploadFile, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field, field_validator
 import psutil
@@ -658,6 +659,13 @@ app = FastAPI(
             "description": "Aprendizaje continuo: procesar situaciones, consolidar conocimiento, rutina diaria (lecciÃ³n del tutor), base de conocimiento, incertidumbre y mÃ©tricas de crecimiento.",
         },
     ],
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Metrics middleware: request count + latency per path
@@ -4093,6 +4101,17 @@ class AtlasClawdSubscriptionBody(BaseModel):
         return msg
 
 
+class AvatarRunwayLineBody(BaseModel):
+    topic: str = ""
+    source: str = "api"
+    requested_line: str = ""
+
+    @field_validator("topic", "source", "requested_line")
+    @classmethod
+    def _trim_fields(cls, value: str) -> str:
+        return (value or "").strip()
+
+
 @app.get("/api/comms/atlas/status", tags=["Comms"])
 def api_comms_atlas_status():
     """ATLAS comms bridge status (offline mode, queue, encryption source)."""
@@ -4101,6 +4120,32 @@ def api_comms_atlas_status():
 
         hub = get_atlas_comms_hub()
         return hub.get_status()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/avatar/runway/context", tags=["Avatar", "Runway"])
+def api_avatar_runway_context():
+    """Runtime payload to drive ATLAS avatar behavior in Runway Characters."""
+    try:
+        from modules.humanoid.avatar import build_runway_character_context
+
+        return build_runway_character_context()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/avatar/runway/line", tags=["Avatar", "Runway"])
+def api_avatar_runway_line(body: AvatarRunwayLineBody):
+    """Low-latency short line payload for Runway Characters scene driving."""
+    try:
+        from modules.humanoid.avatar import build_runway_line
+
+        return build_runway_line(
+            topic=body.topic,
+            source=body.source,
+            requested_line=body.requested_line,
+        )
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -17750,6 +17795,222 @@ def _dedupe_http_routes() -> None:
             )
     app.router.routes = deduped
 
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# § RAULI USERS — Memoria persistente y personalización por usuario  (v1.0)
+#
+#  Cada usuario recibe un token único que se incluye en su enlace:
+#    http://<host>:3000/?u=<TOKEN>
+#
+#  El avatar Atlas Companion lee ese token, carga el perfil y personaliza
+#  el saludo. Cada visita y mensaje queda registrado en SQLite local.
+#
+#  Endpoints:
+#    POST   /api/rauli/users                   → crear usuario (name → token + link)
+#    GET    /api/rauli/users                   → listar todos (panel admin)
+#    GET    /api/rauli/users/{token}           → perfil completo + memoria
+#    PATCH  /api/rauli/users/{token}/visit     → registrar visita
+#    POST   /api/rauli/users/{token}/memory    → actualizar memoria
+#    DELETE /api/rauli/users/{token}           → eliminar usuario
+# ═══════════════════════════════════════════════════════════════════════════════
+
+import sqlite3 as _sqlite3
+import secrets as _secrets_mod
+
+_RAULI_USERS_DB = BASE_DIR / "data" / "rauli_users.db"
+_RAULI_USERS_DB.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _rauli_db_conn() -> _sqlite3.Connection:
+    conn = _sqlite3.connect(str(_RAULI_USERS_DB), check_same_thread=False)
+    conn.row_factory = _sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    return conn
+
+
+def _rauli_db_init() -> None:
+    with _rauli_db_conn() as c:
+        c.executescript("""
+            CREATE TABLE IF NOT EXISTS rauli_users (
+                token       TEXT PRIMARY KEY,
+                name        TEXT NOT NULL,
+                created_at  TEXT NOT NULL,
+                last_seen   TEXT,
+                visit_count INTEGER DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS rauli_memory (
+                token       TEXT PRIMARY KEY,
+                searches    TEXT DEFAULT '[]',
+                preferences TEXT DEFAULT '{}',
+                topics      TEXT DEFAULT '[]',
+                last_msg    TEXT DEFAULT '',
+                FOREIGN KEY (token) REFERENCES rauli_users(token) ON DELETE CASCADE
+            );
+        """)
+
+
+_rauli_db_init()
+
+
+class _RauliUserCreate(BaseModel):
+    name: str
+
+
+class _RauliMemoryUpdate(BaseModel):
+    searches:    Optional[list] = None
+    preferences: Optional[dict] = None
+    topics:      Optional[list] = None
+    last_msg:    Optional[str]  = None
+
+
+def _rauli_gen_token() -> str:
+    """Token URL-safe de ~11 caracteres (64 bits de entropía)."""
+    return _secrets_mod.token_urlsafe(8)
+
+
+@app.post("/api/rauli/users", tags=["Rauli Users"])
+async def rauli_create_user(body: _RauliUserCreate):
+    """Crea un nuevo usuario y devuelve su token y enlace personalizado."""
+    t0 = time.perf_counter()
+    name = (body.name or "").strip()
+    if not name:
+        return _std_resp(False, None, 0, "name_required")
+    token = _rauli_gen_token()
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        with _rauli_db_conn() as c:
+            c.execute(
+                "INSERT INTO rauli_users (token,name,created_at,last_seen,visit_count) VALUES(?,?,?,?,0)",
+                (token, name, now, now),
+            )
+            c.execute("INSERT INTO rauli_memory (token) VALUES(?)", (token,))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+    return _std_resp(
+        True,
+        {"token": token, "name": name, "link": f"/?u={token}", "created_at": now},
+        int((time.perf_counter() - t0) * 1000),
+    )
+
+
+@app.get("/api/rauli/users", tags=["Rauli Users"])
+async def rauli_list_users():
+    """Lista todos los usuarios registrados (panel de administración)."""
+    t0 = time.perf_counter()
+    try:
+        with _rauli_db_conn() as c:
+            rows = c.execute(
+                "SELECT token,name,created_at,last_seen,visit_count FROM rauli_users ORDER BY created_at DESC"
+            ).fetchall()
+        users = [dict(r) for r in rows]
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+    return _std_resp(True, users, int((time.perf_counter() - t0) * 1000))
+
+
+@app.get("/api/rauli/users/{token}", tags=["Rauli Users"])
+async def rauli_get_user(token: str):
+    """Devuelve perfil completo + memoria del usuario identificado por token."""
+    t0 = time.perf_counter()
+    try:
+        with _rauli_db_conn() as c:
+            u = c.execute(
+                "SELECT token,name,created_at,last_seen,visit_count FROM rauli_users WHERE token=?",
+                (token,),
+            ).fetchone()
+            if not u:
+                return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "user_not_found")
+            m = c.execute(
+                "SELECT searches,preferences,topics,last_msg FROM rauli_memory WHERE token=?",
+                (token,),
+            ).fetchone()
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+    profile = dict(u)
+    profile["memory"] = {
+        "searches":    json.loads(m["searches"]    or "[]") if m else [],
+        "preferences": json.loads(m["preferences"] or "{}") if m else {},
+        "topics":      json.loads(m["topics"]      or "[]") if m else [],
+        "last_msg":    (m["last_msg"] or "") if m else "",
+    }
+    return _std_resp(True, profile, int((time.perf_counter() - t0) * 1000))
+
+
+@app.patch("/api/rauli/users/{token}/visit", tags=["Rauli Users"])
+async def rauli_record_visit(token: str):
+    """Incrementa el contador de visitas y actualiza last_seen."""
+    t0 = time.perf_counter()
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        with _rauli_db_conn() as c:
+            r = c.execute(
+                "UPDATE rauli_users SET last_seen=?, visit_count=visit_count+1 WHERE token=?",
+                (now, token),
+            )
+            if r.rowcount == 0:
+                return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "user_not_found")
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+    return _std_resp(True, {"last_seen": now}, int((time.perf_counter() - t0) * 1000))
+
+
+@app.post("/api/rauli/users/{token}/memory", tags=["Rauli Users"])
+async def rauli_update_memory(token: str, body: _RauliMemoryUpdate):
+    """Actualiza la memoria del usuario: búsquedas recientes, preferencias, temas, último mensaje."""
+    t0 = time.perf_counter()
+    try:
+        with _rauli_db_conn() as c:
+            row = c.execute(
+                "SELECT searches,preferences,topics FROM rauli_memory WHERE token=?",
+                (token,),
+            ).fetchone()
+            if not row:
+                return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "user_not_found")
+            searches    = json.loads(row["searches"]    or "[]")
+            preferences = json.loads(row["preferences"] or "{}")
+            topics      = json.loads(row["topics"]      or "[]")
+            if body.searches is not None:
+                # Deduplicar y mantener solo las últimas 50
+                searches = list(dict.fromkeys(searches + body.searches))[-50:]
+            if body.preferences is not None:
+                preferences.update(body.preferences)
+            if body.topics is not None:
+                topics = list(dict.fromkeys(topics + body.topics))[-30:]
+            c.execute(
+                """UPDATE rauli_memory
+                   SET searches=?, preferences=?, topics=?, last_msg=COALESCE(?, last_msg)
+                   WHERE token=?""",
+                (
+                    json.dumps(searches,    ensure_ascii=False),
+                    json.dumps(preferences, ensure_ascii=False),
+                    json.dumps(topics,      ensure_ascii=False),
+                    body.last_msg,
+                    token,
+                ),
+            )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+    return _std_resp(True, {"ok": True}, int((time.perf_counter() - t0) * 1000))
+
+
+@app.delete("/api/rauli/users/{token}", tags=["Rauli Users"])
+async def rauli_delete_user(token: str):
+    """Elimina un usuario y toda su memoria asociada."""
+    t0 = time.perf_counter()
+    try:
+        with _rauli_db_conn() as c:
+            r = c.execute("DELETE FROM rauli_users WHERE token=?", (token,))
+            if r.rowcount == 0:
+                return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "user_not_found")
+            c.execute("DELETE FROM rauli_memory WHERE token=?", (token,))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+    return _std_resp(True, {"deleted": token}, int((time.perf_counter() - t0) * 1000))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 _dedupe_http_routes()
 
