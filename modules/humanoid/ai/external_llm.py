@@ -88,7 +88,7 @@ def _call_gemini(
 ) -> Tuple[bool, str, float]:
     import httpx
 
-    model_id = (model or "gemini-1.5-flash").replace("/", "-").strip()
+    model_id = (model or os.getenv("ATLAS_GEMINI_MODEL", "gemini-2.5-flash")).replace("/", "-").strip()
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent"
         % model_id
