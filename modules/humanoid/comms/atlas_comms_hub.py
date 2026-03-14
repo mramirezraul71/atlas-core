@@ -1525,6 +1525,10 @@ class AtlasCommsHub:
         context_summary: Dict[str, Any],
         conversation_history: Optional[list[Dict[str, str]]] = None,
     ) -> Tuple[bool, str, str]:
+        # Respeta ATLAS_CLAWD_CLAUDE_CLI=false para deshabilitar invocación de CLI
+        cli_enabled = (os.getenv("ATLAS_CLAWD_CLAUDE_CLI") or "true").strip().lower()
+        if cli_enabled in ("0", "false", "no", "off"):
+            return False, "", "clawd_cli_disabled"
         cli_bin = _resolve_claude_cli_bin()
         if not cli_bin:
             return False, "", "clawd_cli_missing"
@@ -1899,8 +1903,13 @@ class AtlasCommsHub:
                     "offline": bool(offline_mode),
                 }
         if not offline_mode:
-            ok, text, provider = self._call_clawd_subscription(
-                message, context_summary, conversation_history=conversation_history
+            # Bedrock primero — usa AWS, no consume suscripción Claude.ai
+            ok, text, provider = self._call_bedrock_fallback(
+                message,
+                context_summary,
+                conversation_history=conversation_history,
+                user_id=user_id,
+                context=context,
             )
             if ok:
                 return {
@@ -1927,12 +1936,9 @@ class AtlasCommsHub:
                         "provider": provider,
                         "offline": False,
                     }
-            ok, text, provider = self._call_bedrock_fallback(
-                message,
-                context_summary,
-                conversation_history=conversation_history,
-                user_id=user_id,
-                context=context,
+            # clawd-subscription último recurso — solo si Bedrock y local fallan
+            ok, text, provider = self._call_clawd_subscription(
+                message, context_summary, conversation_history=conversation_history
             )
             if ok:
                 return {
