@@ -86,6 +86,10 @@ $SERVICES = @(
             wlog "HEAL" "Espejo Go (8080) caido - reiniciando proceso..."
             $exe = (Get-ChildItem "C:/ATLAS_PUSH/_external/RAULI-VISION/espejo/*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1)
             if ($exe) {
+                $env:PORT         = "8080"
+                $env:JWT_SECRET   = "rauli-vision-espejo-secret"
+                $env:ADMIN_TOKEN  = "rauli-admin-local"
+                $env:ACCESS_STORE = "data\access-store.json"
                 Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.DirectoryName -WindowStyle Hidden -ErrorAction SilentlyContinue
             }
         }

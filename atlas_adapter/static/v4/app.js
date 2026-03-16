@@ -329,6 +329,7 @@ async function _loadModules() {
     'autonomy', 'healing', 'approvals', 'audit', 'comms',
     'events', 'api_explorer', 'tools_menu', 'software_center', 'voice', 'trading', 'body_module', 'bety_eventos',
     'tutorias', 'cognitive', 'vision', 'chat', 'apps', 'clawd_direct', 'codex_supervisor', 'live_diagnostic',
+    'atlas_quant', 'access_control',
   ];
   for (const name of MODULE_NAMES) {
     try {
