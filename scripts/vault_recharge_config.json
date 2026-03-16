@@ -1,0 +1,97 @@
+{
+  "_comment": "Configuración del recargador automático diario de RAULI Bóveda",
+  "vault_url": "http://127.0.0.1:3000",
+  "admin_token_env": "ATLAS_VISION_ADMIN_TOKEN",
+  "max_items_per_slot": 3,
+  "max_total_size_mb": 4096,
+  "min_free_disk_mb": 2048,
+  "download_timeout_secs": 300,
+  "schedule_hour": 3,
+  "schedule_minute": 30,
+  "slots": [
+    {
+      "channel": "cami",
+      "category": "musica",
+      "genre": "Cristiana",
+      "audio_only": true,
+      "max_duration_secs": 600,
+      "queries": [
+        "música cristiana 2025 adoración",
+        "alabanzas y adoración español",
+        "música gospel cristiano latino",
+        "coros y alabanzas iglesia",
+        "canciones de fe y esperanza"
+      ]
+    },
+    {
+      "channel": "cami",
+      "category": "musicvideo",
+      "genre": "Cristiana",
+      "audio_only": false,
+      "max_duration_secs": 600,
+      "queries": [
+        "video musical cristiano 2025",
+        "worship music video español",
+        "videoclip cristiano latino",
+        "alabanza video oficial",
+        "música cristiana video HD"
+      ]
+    },
+    {
+      "channel": "cami",
+      "category": "pelicula",
+      "genre": "Drama Cristiano",
+      "audio_only": false,
+      "max_duration_secs": 9000,
+      "queries": [
+        "película cristiana completa español",
+        "cine cristiano película completa",
+        "drama cristiano película completa gratis",
+        "película de fe completa español",
+        "historia bíblica película completa"
+      ]
+    },
+    {
+      "channel": "variado",
+      "category": "musica",
+      "genre": "Latin Pop",
+      "audio_only": true,
+      "max_duration_secs": 600,
+      "queries": [
+        "música latina popular 2025",
+        "bachata romantica 2025",
+        "salsa 2025 nueva",
+        "pop en español éxitos 2025",
+        "boleros romanticos clasicos"
+      ]
+    },
+    {
+      "channel": "variado",
+      "category": "musicvideo",
+      "genre": "Latin Pop",
+      "audio_only": false,
+      "max_duration_secs": 600,
+      "queries": [
+        "video musical latino 2025 oficial",
+        "reggaeton video clip 2025",
+        "cumbia video oficial 2025",
+        "pop español videoclip HD",
+        "salsa romantica video 2025"
+      ]
+    },
+    {
+      "channel": "variado",
+      "category": "pelicula",
+      "genre": "Entretenimiento",
+      "audio_only": false,
+      "max_duration_secs": 9000,
+      "queries": [
+        "película comedia completa español gratis",
+        "película familiar completa español",
+        "cine latinoamericano película completa",
+        "aventura película completa gratis español",
+        "película de acción completa gratis español"
+      ]
+    }
+  ]
+}
