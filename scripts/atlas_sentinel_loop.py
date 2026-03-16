@@ -941,6 +941,22 @@ def main() -> int:
         dry_run=bool(args.dry_run),
     )
 
+    # Lanzar notificador de códigos de acceso en background
+    _notifier_proc = None
+    if not args.once:
+        _notifier_script = Path(__file__).resolve().parent / "access_code_notifier.py"
+        if _notifier_script.exists():
+            try:
+                _notifier_proc = subprocess.Popen(
+                    [sys.executable, str(_notifier_script)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    **_subprocess_no_window_kwargs(),
+                )
+                _safe_print(f"Access Code Notifier arrancado (pid={_notifier_proc.pid})")
+            except Exception as _e:
+                _safe_print(f"No se pudo arrancar access_code_notifier: {_e}")
+
     try:
         if args.once:
             _safe_print("Protocolo Sentinel iniciado. ATLAS está vigilando su propia estructura.")
@@ -949,6 +965,9 @@ def main() -> int:
     except KeyboardInterrupt:
         _safe_print("Sentinel detenido por usuario.")
         return 130
+    finally:
+        if _notifier_proc and _notifier_proc.poll() is None:
+            _notifier_proc.terminate()
 
 
 if __name__ == "__main__":
