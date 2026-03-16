@@ -95,6 +95,24 @@ $SERVICES = @(
         }
     },
     @{
+        id      = "atlas_quant"
+        label   = "Atlas Code-Quant :8792"
+        check   = {
+            try {
+                $r = Invoke-WebRequest -Uri "http://127.0.0.1:8792/health" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop
+                return ($r.StatusCode -lt 500)
+            } catch { return $false }
+        }
+        heal    = {
+            wlog "HEAL" "Atlas Code-Quant (8792) caido - relanzando..."
+            $bat = "C:/ATLAS_PUSH/atlas_code_quant/start_quant.bat"
+            if (Test-Path $bat) {
+                Start-Process -FilePath "cmd.exe" -ArgumentList "/c start /min `"Atlas Code-Quant`" `"$bat`"" -WindowStyle Hidden -ErrorAction SilentlyContinue
+                wlog "HEAL" "Code-Quant relanzado via start_quant.bat"
+            }
+        }
+    },
+    @{
         id      = "atlas_api"
         label   = "Atlas API"
         check   = {
