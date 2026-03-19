@@ -262,16 +262,79 @@ def _infer_groups(positions: list[NormalizedPosition]) -> list[dict[str, Any]]:
                 if a.signed_qty > 0 and b.signed_qty > 0:
                     groups.append({"group_id": f"long_strangle:{underlying}", "underlying": underlying, "strategy_type": "long_strangle", "positions": [a, b]})
                     continue
-            if a.option_type == b.option_type == "call" and a.expiration != b.expiration and math.isclose(a.strike or 0.0, b.strike or 0.0, abs_tol=1e-6):
+            if a.option_type == b.option_type and a.expiration != b.expiration:
                 long_leg = a if a.signed_qty > 0 else b
                 short_leg = b if long_leg is a else a
                 if long_leg.signed_qty > 0 and short_leg.signed_qty < 0:
-                    groups.append({"group_id": f"calendar_spread:{underlying}", "underlying": underlying, "strategy_type": "calendar_spread", "positions": [long_leg, short_leg]})
-                    continue
+                    same_strike = math.isclose(a.strike or 0.0, b.strike or 0.0, abs_tol=1e-6)
+                    option_type = a.option_type or "call"
+                    if same_strike:
+                        strategy_type = "call_calendar_spread" if option_type == "call" else "put_calendar_spread"
+                        groups.append({"group_id": f"{strategy_type}:{underlying}", "underlying": underlying, "strategy_type": strategy_type, "positions": [long_leg, short_leg]})
+                        continue
+                    if option_type == "call" and (long_leg.strike or 0.0) < (short_leg.strike or 0.0):
+                        groups.append({"group_id": f"call_diagonal_debit_spread:{underlying}", "underlying": underlying, "strategy_type": "call_diagonal_debit_spread", "positions": [long_leg, short_leg]})
+                        continue
+                    if option_type == "put" and (long_leg.strike or 0.0) > (short_leg.strike or 0.0):
+                        groups.append({"group_id": f"put_diagonal_debit_spread:{underlying}", "underlying": underlying, "strategy_type": "put_diagonal_debit_spread", "positions": [long_leg, short_leg]})
+                        continue
+
+        if len(options) == 3:
+            trio = sorted(options, key=lambda item: (item.expiration or "", item.option_type or "", item.strike or 0.0))
+            expirations = {position.expiration for position in trio}
+            option_types = {position.option_type for position in trio}
+            if len(expirations) == 1 and len(option_types) == 1:
+                low, mid, high = trio
+                if (
+                    math.isclose(mid.quantity_abs, 2.0, abs_tol=1e-6)
+                    and math.isclose(low.quantity_abs, 1.0, abs_tol=1e-6)
+                    and math.isclose(high.quantity_abs, 1.0, abs_tol=1e-6)
+                ):
+                    option_type = low.option_type or "call"
+                    if low.signed_qty > 0 and mid.signed_qty < 0 and high.signed_qty > 0:
+                        strategy_type = "call_debit_butterfly" if option_type == "call" else "put_debit_butterfly"
+                        groups.append({"group_id": f"{strategy_type}:{underlying}", "underlying": underlying, "strategy_type": strategy_type, "positions": trio})
+                        continue
+                    if low.signed_qty < 0 and mid.signed_qty > 0 and high.signed_qty < 0:
+                        strategy_type = "call_credit_butterfly" if option_type == "call" else "put_credit_butterfly"
+                        groups.append({"group_id": f"{strategy_type}:{underlying}", "underlying": underlying, "strategy_type": strategy_type, "positions": trio})
+                        continue
 
         if len(options) == 4:
             calls = sorted([position for position in options if position.option_type == "call"], key=lambda item: item.strike or 0.0)
             puts = sorted([position for position in options if position.option_type == "put"], key=lambda item: item.strike or 0.0)
+            if len(calls) == 4 and len({position.expiration for position in calls}) == 1:
+                signs = [1 if position.signed_qty > 0 else -1 for position in calls]
+                strikes = [position.strike or 0.0 for position in calls]
+                unique_strikes = len({round(strike, 6) for strike in strikes})
+                if unique_strikes == 3 and signs == [1, -1, -1, 1]:
+                    groups.append({"group_id": f"call_debit_butterfly:{underlying}", "underlying": underlying, "strategy_type": "call_debit_butterfly", "positions": calls})
+                    continue
+                if unique_strikes == 3 and signs == [-1, 1, 1, -1]:
+                    groups.append({"group_id": f"call_credit_butterfly:{underlying}", "underlying": underlying, "strategy_type": "call_credit_butterfly", "positions": calls})
+                    continue
+                if unique_strikes == 4 and signs == [1, -1, -1, 1]:
+                    groups.append({"group_id": f"call_debit_condor:{underlying}", "underlying": underlying, "strategy_type": "call_debit_condor", "positions": calls})
+                    continue
+                if unique_strikes == 4 and signs == [-1, 1, 1, -1]:
+                    groups.append({"group_id": f"call_credit_condor:{underlying}", "underlying": underlying, "strategy_type": "call_credit_condor", "positions": calls})
+                    continue
+            if len(puts) == 4 and len({position.expiration for position in puts}) == 1:
+                signs = [1 if position.signed_qty > 0 else -1 for position in puts]
+                strikes = [position.strike or 0.0 for position in puts]
+                unique_strikes = len({round(strike, 6) for strike in strikes})
+                if unique_strikes == 3 and signs == [1, -1, -1, 1]:
+                    groups.append({"group_id": f"put_debit_butterfly:{underlying}", "underlying": underlying, "strategy_type": "put_debit_butterfly", "positions": puts})
+                    continue
+                if unique_strikes == 3 and signs == [-1, 1, 1, -1]:
+                    groups.append({"group_id": f"put_credit_butterfly:{underlying}", "underlying": underlying, "strategy_type": "put_credit_butterfly", "positions": puts})
+                    continue
+                if unique_strikes == 4 and signs == [1, -1, -1, 1]:
+                    groups.append({"group_id": f"put_debit_condor:{underlying}", "underlying": underlying, "strategy_type": "put_debit_condor", "positions": puts})
+                    continue
+                if unique_strikes == 4 and signs == [-1, 1, 1, -1]:
+                    groups.append({"group_id": f"put_credit_condor:{underlying}", "underlying": underlying, "strategy_type": "put_credit_condor", "positions": puts})
+                    continue
             if len(calls) == 2 and len(puts) == 2:
                 short_calls = [position for position in calls if position.signed_qty < 0]
                 short_puts = [position for position in puts if position.signed_qty < 0]
@@ -292,22 +355,24 @@ def _to_probability_legs(group: dict[str, Any]) -> list[StrategyLeg]:
     for position in group["positions"]:
         if position.asset_class != "option":
             continue
-        legs.append(
-            StrategyLeg(
-                side="short" if position.signed_qty < 0 else "long",
-                option_type=position.option_type or "call",
-                strike=float(position.strike or 0.0),
-                premium_mid=position.entry_price,
-                expiration=position.expiration,
-                dte=position.dte,
-                symbol=position.symbol,
-                bid=position.current_price,
-                ask=position.current_price,
-                volume=0.0,
-                open_interest=0.0,
-                implied_volatility=position.greeks.get("iv") or None,
+        quantity = max(int(round(abs(position.signed_qty))), 1)
+        for _ in range(quantity):
+            legs.append(
+                StrategyLeg(
+                    side="short" if position.signed_qty < 0 else "long",
+                    option_type=position.option_type or "call",
+                    strike=float(position.strike or 0.0),
+                    premium_mid=position.entry_price,
+                    expiration=position.expiration,
+                    dte=position.dte,
+                    symbol=position.symbol,
+                    bid=position.current_price,
+                    ask=position.current_price,
+                    volume=0.0,
+                    open_interest=0.0,
+                    implied_volatility=position.greeks.get("iv") or None,
+                )
             )
-        )
     return legs
 
 

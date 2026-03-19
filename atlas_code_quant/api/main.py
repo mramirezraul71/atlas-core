@@ -16,31 +16,40 @@ Puerto por defecto: 8792
 """
 from __future__ import annotations
 
+import asyncio
 import time
 import logging
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.decorators import require_live_confirmation
 from api.schemas import (
     EvalSignalRequest, ActivateStrategyRequest, OrderRequest, WinningProbabilityRequest,
-    SignalResponse, PortfolioResponse, HealthResponse, StdResponse,
+    SignalResponse, PortfolioResponse, HealthResponse, StdResponse, QuantStatusPayload,
+    JournalStatsPayload,
     StatusEnum, SignalEnum,
 )
 from backtesting.winning_probability import SUPPORTED_STRATEGIES, get_winning_probability
 from config.settings import settings
-from execution.tradier_controls import check_pdt_status, resolve_account_session
+from execution.account_manager import AccountManager
 from execution.tradier_execution import (
     TradierOrderBlocked,
     is_opening_order as tradier_is_opening_order,
     route_order_to_tradier,
     should_route_to_tradier,
 )
-from monitoring.advanced_monitor import build_monitor_summary
+from journal.service import TradingJournalService
+from journal.sync import JournalSyncService
+from monitoring.strategy_tracker import StrategyTracker
 
 logger = logging.getLogger("quant.api")
 _START_TIME = time.time()
+_ACCOUNT_MANAGER = AccountManager()
+_STRATEGY_TRACKER = StrategyTracker()
+_JOURNAL = TradingJournalService(_STRATEGY_TRACKER)
+_JOURNAL_SYNC = JournalSyncService(_JOURNAL)
 
 app = FastAPI(
     title="Atlas Code-Quant API",
@@ -60,14 +69,21 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def preload_tradier_sessions() -> None:
+    _JOURNAL.init_db()
     for scope, token in (("paper", settings.tradier_paper_token), ("live", settings.tradier_live_token)):
         if not token:
             continue
         try:
-            resolve_account_session(account_scope=scope)  # type: ignore[arg-type]
+            _ACCOUNT_MANAGER.resolve(account_scope=scope)  # type: ignore[arg-type]
             logger.info("Tradier %s session preloaded", scope)
         except Exception:
             logger.exception("Unable to preload Tradier %s session", scope)
+    await _JOURNAL_SYNC.start()
+
+
+@app.on_event("shutdown")
+async def stop_background_services() -> None:
+    await _JOURNAL_SYNC.stop()
 
 # ── Registry global (se popula al iniciar el motor) ──────────────────────────
 _strategies: dict = {}
@@ -105,7 +121,7 @@ def _resolve_request_session(
     tradier_base_url: str | None = None,
 ) -> dict | None:
     try:
-        _, session = resolve_account_session(
+        _, session = _ACCOUNT_MANAGER.resolve(
             account_scope=account_scope,  # type: ignore[arg-type]
             account_id=account_id,
             tradier_token=tradier_token,
@@ -137,6 +153,31 @@ def _inherit_probability_context(
     return body.model_copy(update=updates) if updates else body
 
 
+def _active_strategy_ids() -> list[str]:
+    return [k for k, v in _strategies.items() if getattr(v, "active", False)]
+
+
+def _build_status_payload(
+    *,
+    account_scope: str | None,
+    account_id: str | None,
+) -> QuantStatusPayload:
+    account_status = _ACCOUNT_MANAGER.status(
+        account_scope=account_scope,  # type: ignore[arg-type]
+        account_id=account_id,
+    )
+    return QuantStatusPayload(
+        generated_at=datetime.utcnow().isoformat(),
+        service_status="ok",
+        uptime_sec=round(time.time() - _START_TIME, 1),
+        account_session=account_status.session.to_dict(),
+        pdt_status=account_status.pdt_status,
+        days_trades_used=min(int(account_status.pdt_status.get("day_trades_last_window") or 0), 3),
+        active_strategies=_active_strategy_ids(),
+        open_positions=len(_portfolio.positions) if _portfolio else 0,
+    )
+
+
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthResponse, tags=["Sistema"])
@@ -149,6 +190,23 @@ async def health():
         open_positions=len(_portfolio.positions) if _portfolio else 0,
         timestamp=datetime.now(),
     )
+
+
+@app.get("/status", response_model=StdResponse, tags=["Sistema"])
+async def status(
+    x_api_key: str | None = Header(None),
+    account_scope: str | None = None,
+    account_id: str | None = None,
+):
+    """Estado operativo del motor + control PDT de la cuenta activa."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = _build_status_payload(account_scope=account_scope, account_id=account_id)
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error building quant status")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
 @app.post("/signal", response_model=StdResponse, tags=["Trading"])
@@ -226,6 +284,7 @@ async def probability_options(body: WinningProbabilityRequest, x_api_key: str | 
 
 
 @app.post("/order", response_model=StdResponse, tags=["Trading"])
+@require_live_confirmation
 async def place_order(body: OrderRequest, x_api_key: str | None = Header(None)):
     """Coloca una orden de trading (paper o live segun configuracion)."""
     _auth(x_api_key)
@@ -308,6 +367,8 @@ async def place_order(body: OrderRequest, x_api_key: str | None = Header(None)):
         return StdResponse(ok=pos is not None, data=payload)
     pnl = _portfolio.close_position(body.symbol, body.price or 0)
     return StdResponse(ok=True, data={"pnl": pnl, "account_session": account_session_payload, "pdt_status": pdt_status})
+
+
 @app.get("/positions", response_model=StdResponse, tags=["Trading"])
 async def get_positions(x_api_key: str | None = Header(None)):
     """Retorna posiciones abiertas y resumen del portfolio."""
@@ -327,11 +388,175 @@ async def monitor_summary(
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
-        data = build_monitor_summary(account_scope=account_scope, account_id=account_id)  # type: ignore[arg-type]
+        data = _STRATEGY_TRACKER.build_summary(account_scope=account_scope, account_id=account_id)  # type: ignore[arg-type]
         return StdResponse(ok=True, data=data, ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as e:
         logger.exception("Error building advanced monitor summary")
         return StdResponse(ok=False, error=str(e), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/monitor/payoff/{strategy_id}", response_model=StdResponse, tags=["Monitor"])
+async def monitor_payoff(
+    strategy_id: str,
+    x_api_key: str | None = Header(None),
+    account_scope: str | None = None,
+    account_id: str | None = None,
+):
+    """Curva de riesgo detallada para una estrategia activa."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = _STRATEGY_TRACKER.payoff(
+            strategy_id,
+            account_scope=account_scope,  # type: ignore[arg-type]
+            account_id=account_id,
+        )
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error building payoff curve")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/journal/stats", response_model=StdResponse, tags=["Journal"])
+async def journal_stats(x_api_key: str | None = Header(None)):
+    """Resumen comparativo del diario Live vs Paper."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = JournalStatsPayload.model_validate(_JOURNAL.stats())
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error building journal stats")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/journal/sync/refresh", response_model=StdResponse, tags=["Journal"])
+async def journal_refresh(x_api_key: str | None = Header(None)):
+    """Ejecuta una sincronización inmediata del diario contra Tradier."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = await _JOURNAL_SYNC.run_once()
+        return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error running journal refresh")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/api/v2/quant/health", response_model=HealthResponse, tags=["V2"])
+async def health_v2():
+    return await health()
+
+
+@app.get("/api/v2/quant/status", response_model=StdResponse, tags=["V2"])
+async def status_v2(
+    x_api_key: str | None = Header(None),
+    account_scope: str | None = None,
+    account_id: str | None = None,
+):
+    return await status(x_api_key=x_api_key, account_scope=account_scope, account_id=account_id)
+
+
+@app.post("/api/v2/quant/signal", response_model=StdResponse, tags=["V2"])
+async def eval_signal_v2(body: EvalSignalRequest, x_api_key: str | None = Header(None)):
+    return await eval_signal(body=body, x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/probability/options", response_model=StdResponse, tags=["V2"])
+async def probability_options_v2(body: WinningProbabilityRequest, x_api_key: str | None = Header(None)):
+    return await probability_options(body=body, x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/order", response_model=StdResponse, tags=["V2"])
+async def place_order_v2(body: OrderRequest, x_api_key: str | None = Header(None)):
+    return await place_order(body=body, x_api_key=x_api_key)
+
+
+@app.get("/api/v2/quant/positions", response_model=StdResponse, tags=["V2"])
+async def get_positions_v2(x_api_key: str | None = Header(None)):
+    return await get_positions(x_api_key=x_api_key)
+
+
+@app.get("/api/v2/quant/monitor/summary", response_model=StdResponse, tags=["V2"])
+async def monitor_summary_v2(
+    x_api_key: str | None = Header(None),
+    account_scope: str | None = None,
+    account_id: str | None = None,
+):
+    return await monitor_summary(x_api_key=x_api_key, account_scope=account_scope, account_id=account_id)
+
+
+@app.get("/api/v2/quant/monitor/payoff/{strategy_id}", response_model=StdResponse, tags=["V2"])
+async def monitor_payoff_v2(
+    strategy_id: str,
+    x_api_key: str | None = Header(None),
+    account_scope: str | None = None,
+    account_id: str | None = None,
+):
+    return await monitor_payoff(
+        strategy_id=strategy_id,
+        x_api_key=x_api_key,
+        account_scope=account_scope,
+        account_id=account_id,
+    )
+
+
+@app.get("/api/v2/quant/journal/stats", response_model=StdResponse, tags=["V2"])
+async def journal_stats_v2(x_api_key: str | None = Header(None)):
+    return await journal_stats(x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/journal/sync/refresh", response_model=StdResponse, tags=["V2"])
+async def journal_refresh_v2(x_api_key: str | None = Header(None)):
+    return await journal_refresh(x_api_key=x_api_key)
+
+
+async def _quant_live_updates_socket(websocket: WebSocket) -> None:
+    api_key = websocket.query_params.get("api_key") or websocket.headers.get("x-api-key")
+    if api_key != settings.api_key:
+        await websocket.close(code=4401, reason="Invalid API key")
+        return
+    account_scope = websocket.query_params.get("account_scope")
+    account_id = websocket.query_params.get("account_id")
+    await websocket.accept()
+    try:
+        while True:
+            try:
+                monitor_summary_payload = await _STRATEGY_TRACKER.live_update(
+                    account_scope=account_scope,  # type: ignore[arg-type]
+                    account_id=account_id,
+                )
+                status_payload = _build_status_payload(account_scope=account_scope, account_id=account_id)
+                await websocket.send_json(
+                    {
+                        "type": "quant.live_update",
+                        "generated_at": datetime.utcnow().isoformat(),
+                        "status": status_payload.model_dump(),
+                        "monitor_summary": monitor_summary_payload["monitor_summary"],
+                    }
+                )
+            except Exception as exc:
+                logger.exception("Error producing live update payload")
+                await websocket.send_json(
+                    {
+                        "type": "quant.live_error",
+                        "generated_at": datetime.utcnow().isoformat(),
+                        "error": str(exc),
+                    }
+                )
+            await asyncio.sleep(max(settings.tradier_live_update_interval_sec, 2))
+    except WebSocketDisconnect:
+        return
+
+
+@app.websocket("/ws/live-updates")
+async def ws_live_updates(websocket: WebSocket):
+    await _quant_live_updates_socket(websocket)
+
+
+@app.websocket("/api/v2/quant/ws/live-updates")
+async def ws_live_updates_v2(websocket: WebSocket):
+    await _quant_live_updates_socket(websocket)
 
 
 @app.post("/strategy/activate", response_model=StdResponse, tags=["Estrategias"])
@@ -466,4 +691,14 @@ async def list_reports(x_api_key: str | None = Header(None)):
          "mtime": datetime.fromtimestamp(f.stat().st_mtime).isoformat()}
         for f in files[:20]
     ])
+
+
+@app.post("/api/v2/quant/backtest", response_model=StdResponse, tags=["V2"])
+async def run_backtest_v2(body: BacktestRunRequest, x_api_key: str | None = Header(None)):
+    return await run_backtest(body=body, x_api_key=x_api_key)
+
+
+@app.get("/api/v2/quant/backtest/reports", response_model=StdResponse, tags=["V2"])
+async def list_reports_v2(x_api_key: str | None = Header(None)):
+    return await list_reports(x_api_key=x_api_key)
 

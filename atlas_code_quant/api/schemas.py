@@ -74,6 +74,7 @@ class OrderRequest(BaseModel):
     account_id: str | None = None
     position_effect: Literal["auto", "open", "close"] = "auto"
     strategy_type: StrategyType | None = None
+    live_confirmed: bool = False
 
 
 class WinningProbabilityRequest(BaseModel):
@@ -148,6 +149,68 @@ class StdResponse(BaseModel):
     data: Any = None
     error: str | None = None
     ms: float = 0.0
+
+
+class QuantStatusPayload(BaseModel):
+    generated_at: str
+    service_status: str
+    uptime_sec: float
+    account_session: dict[str, Any] | None = None
+    pdt_status: dict[str, Any] | None = None
+    days_trades_used: int = 0
+    active_strategies: list[str] = Field(default_factory=list)
+    open_positions: int = 0
+
+
+class PayoffPoint(BaseModel):
+    underlying_price: float
+    pnl_at_expiration: float
+    pnl_theoretical_today: float
+
+
+class QuantPayoffPayload(BaseModel):
+    generated_at: str
+    strategy_id: str
+    strategy_type: str
+    underlying: str
+    spot: float
+    points: list[PayoffPoint] = Field(default_factory=list)
+    break_even_points: list[float] = Field(default_factory=list)
+
+
+class JournalHeatmapCell(BaseModel):
+    weekday: int
+    hour: int
+    trades: int
+    wins: int
+    success_rate_pct: float
+
+
+class JournalEquityPoint(BaseModel):
+    timestamp: str
+    equity: float
+    pnl: float
+
+
+class JournalAccountStats(BaseModel):
+    trades_closed: int = 0
+    trades_open: int = 0
+    win_rate_pct: float = 0.0
+    profit_factor: float | None = None
+    sharpe_ratio: float | None = None
+    expectancy: float = 0.0
+    gross_wins: float = 0.0
+    gross_losses: float = 0.0
+    realized_pnl: float = 0.0
+    unrealized_pnl: float = 0.0
+    equity_curve: list[JournalEquityPoint] = Field(default_factory=list)
+    heatmap: list[JournalHeatmapCell] = Field(default_factory=list)
+
+
+class JournalStatsPayload(BaseModel):
+    generated_at: str
+    accounts: dict[str, JournalAccountStats] = Field(default_factory=dict)
+    comparison: dict[str, float] = Field(default_factory=dict)
 
 
 EvalSignalRequest.model_rebuild()

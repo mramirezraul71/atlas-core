@@ -6,6 +6,8 @@ from typing import Any, Literal
 from api.schemas import OrderRequest, TradierOrderLeg
 from config.settings import settings
 from execution.tradier_controls import check_pdt_status, resolve_account_session
+from execution.tradier_pdt_ledger import record_live_order_intent
+from backtesting.winning_probability import _safe_float
 
 
 TradierOrderClass = Literal["equity", "option", "multileg", "combo"]
@@ -20,6 +22,13 @@ class TradierOrderBlocked(Exception):
     def __init__(self, message: str, *, payload: dict[str, Any] | None = None) -> None:
         super().__init__(message)
         self.payload = payload or {}
+
+
+def _extract_preview_day_trades(preview_response: dict[str, Any]) -> int | None:
+    value = _safe_float((preview_response or {}).get("day_trades"), float("nan"))
+    if value == value and value >= 0:
+        return int(value)
+    return None
 
 
 def should_route_to_tradier(body: OrderRequest) -> bool:
@@ -178,6 +187,7 @@ def route_order_to_tradier(body: OrderRequest) -> dict[str, Any]:
     order_class, position_effect, payload = build_tradier_order_payload(body)
 
     pdt_status = None
+    preview_probe = None
     if position_effect == "open" and session.classification == "live":
         pdt_status = check_pdt_status(client, session)
         if pdt_status.get("blocked_opening"):
@@ -189,8 +199,36 @@ def route_order_to_tradier(body: OrderRequest) -> dict[str, Any]:
                     "pdt_status": pdt_status,
                 },
             )
+        if not body.preview and session.total_equity is not None and session.total_equity < settings.tradier_pdt_min_equity:
+            preview_probe = client.place_order(session.account_id, {**payload, "preview": "true"})
+            broker_day_trades = _extract_preview_day_trades(preview_probe)
+            if broker_day_trades is not None:
+                pdt_status = {
+                    **(pdt_status or {}),
+                    "broker_preview_day_trades": broker_day_trades,
+                }
+                if broker_day_trades >= settings.tradier_pdt_max_day_trades:
+                    raise TradierOrderBlocked(
+                        (
+                            f"Tradier preview reports {broker_day_trades} day trades "
+                            f"for a live account below {settings.tradier_pdt_min_equity:.0f}"
+                        ),
+                        payload={
+                            "account_session": session.to_dict(),
+                            "pdt_status": pdt_status,
+                            "tradier_preview": preview_probe,
+                        },
+                    )
 
     response = client.place_order(session.account_id, payload)
+    ledger_entry = record_live_order_intent(
+        account_id=session.account_id,
+        scope=session.scope,
+        body=body,
+        order_class=order_class,
+        position_effect=position_effect,
+        broker_response=response,
+    )
     return {
         "provider": "tradier",
         "route": "tradier",
@@ -201,5 +239,7 @@ def route_order_to_tradier(body: OrderRequest) -> dict[str, Any]:
         "account_session": session.to_dict(),
         "pdt_status": pdt_status,
         "request_payload": payload,
+        "tradier_preview": preview_probe,
+        "pdt_ledger_entry": ledger_entry,
         "tradier_response": response,
     }

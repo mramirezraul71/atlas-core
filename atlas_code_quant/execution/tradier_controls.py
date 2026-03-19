@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from backtesting.winning_probability import TradierClient, TradierScope, _safe_float
 from config.settings import settings
+from execution.tradier_pdt_ledger import count_intraday_day_trades
 
 
 logger = logging.getLogger("quant.execution.tradier_controls")
@@ -137,24 +138,29 @@ def _last_business_days(end_day: date, count: int) -> set[date]:
     return set(days)
 
 
-def _event_date(item: dict[str, Any]) -> date | None:
+def _event_timestamp(item: dict[str, Any]) -> datetime | None:
     for key in ("date", "transaction_date", "trade_date", "created_at", "executed_at"):
         value = item.get(key)
         if not value:
             continue
         text = str(value)
         try:
-            return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+            return datetime.fromisoformat(text.replace("Z", "+00:00"))
         except ValueError:
             try:
-                return datetime.strptime(text[:10], "%Y-%m-%d").date()
+                return datetime.strptime(text[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
             except ValueError:
                 continue
     return None
 
 
+def _event_date(item: dict[str, Any]) -> date | None:
+    timestamp = _event_timestamp(item)
+    return timestamp.date() if timestamp else None
+
+
 def _event_symbol(item: dict[str, Any]) -> str:
-    for key in ("symbol", "option_symbol", "occ_symbol", "description"):
+    for key in ("option_symbol", "occ_symbol", "symbol", "description"):
         value = str(item.get(key) or "").strip()
         if value:
             return value
@@ -169,12 +175,67 @@ def _event_action(item: dict[str, Any]) -> str:
     return ""
 
 
+def _event_status(item: dict[str, Any]) -> str:
+    for key in ("status", "order_status", "exec_status"):
+        value = str(item.get(key) or "").strip().lower()
+        if value:
+            return value
+    return ""
+
+
+def _event_exec_quantity(item: dict[str, Any]) -> float:
+    for key in ("exec_quantity", "executed_quantity", "filled_quantity", "filled_qty"):
+        value = _safe_float(item.get(key), float("nan"))
+        if value == value and value > 0:
+            return value
+    return 0.0
+
+
+def _is_executed_event(item: dict[str, Any]) -> bool:
+    if str(item.get("type") or "").strip().lower() == "trade":
+        return True
+    status = _event_status(item)
+    if status in {"filled", "partially_filled", "executed"}:
+        return True
+    return _event_exec_quantity(item) > 0
+
+
 def _is_buy_action(action: str) -> bool:
     return any(token in action for token in ("BUY", "BTO", "BTC"))
 
 
 def _is_sell_action(action: str) -> bool:
     return any(token in action for token in ("SELL", "STO", "STC"))
+
+
+def _action_bucket(action: str) -> str | None:
+    normalized = action.strip().upper()
+    if "BUY_TO_OPEN" in normalized or "BTO" in normalized:
+        return "open_long"
+    if "SELL_TO_CLOSE" in normalized or "STC" in normalized:
+        return "close_long"
+    if "SELL_TO_OPEN" in normalized or "STO" in normalized or "SELL_SHORT" in normalized:
+        return "open_short"
+    if "BUY_TO_CLOSE" in normalized or "BTC" in normalized or "BUY_TO_COVER" in normalized:
+        return "close_short"
+    if normalized == "BUY":
+        return "buy"
+    if normalized == "SELL":
+        return "sell"
+    return None
+
+
+def _recent_filled_events(events: list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:
+    eligible: list[tuple[datetime, dict[str, Any]]] = []
+    for event in events:
+        if not _is_executed_event(event):
+            continue
+        timestamp = _event_timestamp(event)
+        if timestamp is None:
+            continue
+        eligible.append((timestamp, event))
+    eligible.sort(key=lambda item: item[0], reverse=True)
+    return [item[1] for item in eligible[:limit]]
 
 
 def _count_day_trades(events: list[dict[str, Any]], *, reference_day: date) -> tuple[int, list[dict[str, Any]], bool]:
@@ -188,19 +249,21 @@ def _count_day_trades(events: list[dict[str, Any]], *, reference_day: date) -> t
         action = _event_action(event)
         if not action:
             continue
-        if not (_is_buy_action(action) or _is_sell_action(action)):
+        bucket = _action_bucket(action)
+        if bucket is None:
             continue
         parse_ok = True
         key = (trade_day, _event_symbol(event))
         sides = tracker.setdefault(key, set())
-        if _is_buy_action(action):
-            sides.add("buy")
-        if _is_sell_action(action):
-            sides.add("sell")
+        sides.add(bucket)
     details = [
-        {"date": trade_day.isoformat(), "symbol": symbol, "sides": sorted(list(sides))}
+        {"date": trade_day.isoformat(), "symbol": symbol, "actions": sorted(list(sides))}
         for (trade_day, symbol), sides in sorted(tracker.items(), key=lambda item: item[0])
-        if {"buy", "sell"}.issubset(sides)
+        if (
+            {"open_long", "close_long"}.issubset(sides)
+            or {"open_short", "close_short"}.issubset(sides)
+            or {"buy", "sell"}.issubset(sides)
+        )
     ]
     return len(details), details, parse_ok
 
@@ -221,8 +284,16 @@ def check_pdt_status(
         "max_day_trades_before_block": settings.tradier_pdt_max_day_trades,
         "window_business_days": settings.tradier_pdt_window_days,
         "day_trades_last_window": 0,
+        "day_trades_remaining": settings.tradier_pdt_max_day_trades,
         "day_trade_details": [],
+        "broker_day_trades_last_window": 0,
+        "broker_day_trade_details": [],
+        "filled_events_analyzed": 0,
+        "ledger_day_trades_today": 0,
+        "ledger_day_trade_details": [],
+        "combined_day_trades_last_window": 0,
         "blocked_opening": False,
+        "can_open": True,
         "reason": None,
         "fail_closed": settings.tradier_pdt_fail_closed,
     }
@@ -233,6 +304,7 @@ def check_pdt_status(
     if session.total_equity is None:
         if settings.tradier_pdt_fail_closed:
             result["blocked_opening"] = True
+            result["can_open"] = False
             result["reason"] = "Unable to determine live account equity"
         else:
             result["reason"] = "Unable to determine live account equity"
@@ -242,7 +314,7 @@ def check_pdt_status(
         result["reason"] = "Account equity is above PDT minimum"
         return result
 
-    start_day = today - timedelta(days=14)
+    start_day = today - timedelta(days=max(60, settings.tradier_pdt_window_days * 4))
     try:
         history_events = client.account_history(
             session.account_id,
@@ -255,23 +327,48 @@ def check_pdt_status(
         logger.exception("Unable to evaluate PDT status for %s", session.account_id)
         if settings.tradier_pdt_fail_closed:
             result["blocked_opening"] = True
+            result["can_open"] = False
         result["reason"] = f"PDT evaluation failed: {exc}"
         return result
 
-    day_trade_count, day_trade_details, parse_ok = _count_day_trades(history_events + current_orders, reference_day=today)
-    result["day_trades_last_window"] = day_trade_count
-    result["day_trade_details"] = day_trade_details
+    recent_filled_events = _recent_filled_events(
+        history_events + current_orders,
+        limit=settings.tradier_pdt_history_fill_limit,
+    )
+    broker_day_trade_count, broker_day_trade_details, parse_ok = _count_day_trades(
+        recent_filled_events,
+        reference_day=today,
+    )
+    ledger_day_trade_count, ledger_day_trade_details = count_intraday_day_trades(
+        account_id=session.account_id,
+        reference_day=today,
+    )
+    broker_prior_days = sum(1 for item in broker_day_trade_details if str(item.get("date") or "") != today.isoformat())
+    broker_today = sum(1 for item in broker_day_trade_details if str(item.get("date") or "") == today.isoformat())
+    combined_day_trade_count = broker_prior_days + max(broker_today, ledger_day_trade_count)
+
+    result["broker_day_trades_last_window"] = broker_day_trade_count
+    result["broker_day_trade_details"] = broker_day_trade_details
+    result["filled_events_analyzed"] = len(recent_filled_events)
+    result["ledger_day_trades_today"] = ledger_day_trade_count
+    result["ledger_day_trade_details"] = ledger_day_trade_details
+    result["combined_day_trades_last_window"] = combined_day_trade_count
+    result["day_trades_last_window"] = combined_day_trade_count
+    result["day_trades_remaining"] = max(0, settings.tradier_pdt_max_day_trades - combined_day_trade_count)
+    result["day_trade_details"] = broker_day_trade_details + ledger_day_trade_details
 
     if not parse_ok and settings.tradier_pdt_fail_closed:
         result["blocked_opening"] = True
+        result["can_open"] = False
         result["reason"] = "Unable to parse Tradier trade history safely"
         return result
 
-    if day_trade_count >= settings.tradier_pdt_max_day_trades:
+    if combined_day_trade_count >= settings.tradier_pdt_max_day_trades:
         result["blocked_opening"] = True
+        result["can_open"] = False
         result["reason"] = (
             f"Live account below {settings.tradier_pdt_min_equity:.0f} with "
-            f"{day_trade_count} day trades in the last {settings.tradier_pdt_window_days} business days"
+            f"{combined_day_trade_count} day trades in the last {settings.tradier_pdt_window_days} business days"
         )
         return result
 

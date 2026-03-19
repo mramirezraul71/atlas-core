@@ -31,11 +31,23 @@ SUPPORTED_STRATEGIES = (
     "bear_put_debit_spread",
     "bear_call_credit_spread",
     "bull_put_credit_spread",
+    "call_debit_butterfly",
+    "put_debit_butterfly",
+    "call_credit_butterfly",
+    "put_credit_butterfly",
+    "call_debit_condor",
+    "put_debit_condor",
+    "call_credit_condor",
+    "put_credit_condor",
     "long_straddle",
     "long_strangle",
     "iron_condor",
     "iron_butterfly",
     "calendar_spread",
+    "call_calendar_spread",
+    "put_calendar_spread",
+    "call_diagonal_debit_spread",
+    "put_diagonal_debit_spread",
 )
 
 
@@ -48,11 +60,23 @@ StrategyType = Literal[
     "bear_put_debit_spread",
     "bear_call_credit_spread",
     "bull_put_credit_spread",
+    "call_debit_butterfly",
+    "put_debit_butterfly",
+    "call_credit_butterfly",
+    "put_credit_butterfly",
+    "call_debit_condor",
+    "put_debit_condor",
+    "call_credit_condor",
+    "put_credit_condor",
     "long_straddle",
     "long_strangle",
     "iron_condor",
     "iron_butterfly",
     "calendar_spread",
+    "call_calendar_spread",
+    "put_calendar_spread",
+    "call_diagonal_debit_spread",
+    "put_diagonal_debit_spread",
 ]
 
 TradierScope = Literal["live", "paper"]
@@ -172,9 +196,21 @@ class TradierClient:
     def _as_list(value: Any) -> list[Any]:
         if value is None:
             return []
+        if isinstance(value, str) and value.strip().lower() in {"null", "none", ""}:
+            return []
         if isinstance(value, list):
             return value
         return [value]
+
+    @staticmethod
+    def _as_dict(value: Any) -> dict[str, Any]:
+        if value is None:
+            return {}
+        if isinstance(value, str) and value.strip().lower() in {"null", "none", ""}:
+            return {}
+        if isinstance(value, dict):
+            return value
+        return {}
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         response = self.session.get(
@@ -218,26 +254,26 @@ class TradierClient:
 
     def balances(self, account_id: str) -> dict[str, Any]:
         payload = self._get(f"/accounts/{account_id}/balances")
-        return (payload.get("balances") or {})
+        return self._as_dict(payload.get("balances"))
 
     def historical_balances(self, account_id: str) -> list[dict[str, Any]]:
         payload = self._get(f"/accounts/{account_id}/historical-balances")
-        history = ((payload.get("history") or {}).get("day")) or ((payload.get("historical_balances") or {}).get("day")) or []
+        history = self._as_dict(payload.get("history")).get("day") or self._as_dict(payload.get("historical_balances")).get("day") or []
         return self._as_list(history)
 
     def positions(self, account_id: str) -> list[dict[str, Any]]:
         payload = self._get(f"/accounts/{account_id}/positions")
-        positions = ((payload.get("positions") or {}).get("position")) or []
+        positions = self._as_dict(payload.get("positions")).get("position") or []
         return self._as_list(positions)
 
     def orders(self, account_id: str) -> list[dict[str, Any]]:
         payload = self._get(f"/accounts/{account_id}/orders")
-        orders = ((payload.get("orders") or {}).get("order")) or []
+        orders = self._as_dict(payload.get("orders")).get("order") or []
         return self._as_list(orders)
 
     def order(self, account_id: str, order_id: str) -> dict[str, Any]:
         payload = self._get(f"/accounts/{account_id}/orders/{order_id}")
-        return (payload.get("order") or {})
+        return self._as_dict(payload.get("order"))
 
     def place_order(self, account_id: str, data: dict[str, Any]) -> dict[str, Any]:
         payload = self._post(f"/accounts/{account_id}/orders", data)
@@ -245,7 +281,7 @@ class TradierClient:
 
     def gainloss(self, account_id: str) -> dict[str, Any]:
         payload = self._get(f"/accounts/{account_id}/gainloss")
-        return (payload.get("gainloss") or {})
+        return self._as_dict(payload.get("gainloss"))
 
     def account_history(
         self,
@@ -263,19 +299,19 @@ class TradierClient:
         if end:
             params["end"] = end.isoformat()
         payload = self._get(f"/accounts/{account_id}/history", params)
-        history = ((payload.get("history") or {}).get("event")) or ((payload.get("events") or {}).get("event")) or []
+        history = self._as_dict(payload.get("history")).get("event") or self._as_dict(payload.get("events")).get("event") or []
         return self._as_list(history)
 
     def quote(self, symbol: str) -> dict[str, Any]:
         payload = self._get("/markets/quotes", {"symbols": symbol, "greeks": "false"})
-        quote = ((payload.get("quotes") or {}).get("quote")) or {}
+        quote = self._as_dict(payload.get("quotes")).get("quote") or {}
         if isinstance(quote, list):
             return quote[0] if quote else {}
         return quote
 
     def quotes(self, symbols: list[str], *, greeks: bool = False) -> list[dict[str, Any]]:
         payload = self._get("/markets/quotes", {"symbols": ",".join(symbols), "greeks": str(greeks).lower()})
-        quotes = ((payload.get("quotes") or {}).get("quote")) or []
+        quotes = self._as_dict(payload.get("quotes")).get("quote") or []
         return self._as_list(quotes)
 
     def history(
@@ -294,12 +330,12 @@ class TradierClient:
                 "end": end.isoformat(),
             },
         )
-        history = ((payload.get("history") or {}).get("day")) or []
+        history = self._as_dict(payload.get("history")).get("day") or []
         return history if isinstance(history, list) else [history]
 
     def expirations(self, symbol: str) -> list[str]:
         payload = self._get("/markets/options/expirations", {"symbol": symbol, "includeAllRoots": "true"})
-        dates = ((payload.get("expirations") or {}).get("date")) or []
+        dates = self._as_dict(payload.get("expirations")).get("date") or []
         return dates if isinstance(dates, list) else [dates]
 
     def chain(self, symbol: str, expiration: str) -> list[dict[str, Any]]:
@@ -311,7 +347,7 @@ class TradierClient:
                 "greeks": "true",
             },
         )
-        options = ((payload.get("options") or {}).get("option")) or []
+        options = self._as_dict(payload.get("options")).get("option") or []
         return options if isinstance(options, list) else [options]
 
 
@@ -535,6 +571,59 @@ def _contract_by_strike(contracts: list[dict[str, Any]], strike: float) -> dict[
     raise ValueError(f"No contract found at strike {strike}")
 
 
+def _consecutive_slice(
+    contracts: list[dict[str, Any]],
+    *,
+    spot: float,
+    width: int,
+) -> list[dict[str, Any]]:
+    if len(contracts) < width:
+        raise ValueError(f"Need at least {width} strikes")
+    anchor = _first_index_ge(contracts, spot)
+    start = max(min(anchor - (width // 2), len(contracts) - width), 0)
+    return contracts[start:start + width]
+
+
+def _build_butterfly_legs(
+    contracts: list[dict[str, Any]],
+    *,
+    spot: float,
+    expiration: str,
+    dte: int,
+    credit: bool,
+) -> list[StrategyLeg]:
+    body_idx = _nearest_index(contracts, spot)
+    low_idx = max(body_idx - 1, 0)
+    high_idx = min(body_idx + 1, len(contracts) - 1)
+    if low_idx == body_idx or high_idx == body_idx:
+        raise ValueError("Insufficient strikes for butterfly")
+    wing_side: Literal["long", "short"] = "short" if credit else "long"
+    body_side: Literal["long", "short"] = "long" if credit else "short"
+    low = _contract_to_leg(contracts[low_idx], wing_side, expiration=expiration, dte=dte)
+    body = _contract_to_leg(contracts[body_idx], body_side, expiration=expiration, dte=dte)
+    high = _contract_to_leg(contracts[high_idx], wing_side, expiration=expiration, dte=dte)
+    return [low, body, _contract_to_leg(contracts[body_idx], body_side, expiration=expiration, dte=dte), high]
+
+
+def _build_condor_legs(
+    contracts: list[dict[str, Any]],
+    *,
+    spot: float,
+    expiration: str,
+    dte: int,
+    credit: bool,
+) -> list[StrategyLeg]:
+    window = _consecutive_slice(contracts, spot=spot, width=4)
+    wing_side: Literal["long", "short"] = "short" if credit else "long"
+    body_side: Literal["long", "short"] = "long" if credit else "short"
+    return [
+        _contract_to_leg(window[0], wing_side, expiration=expiration, dte=dte),
+        _contract_to_leg(window[1], body_side, expiration=expiration, dte=dte),
+        _contract_to_leg(window[2], body_side, expiration=expiration, dte=dte),
+        _contract_to_leg(window[3], wing_side, expiration=expiration, dte=dte),
+    ]
+
+
 def _build_strategy_legs(
     chain: list[dict[str, Any]],
     spot: float,
@@ -601,6 +690,30 @@ def _build_strategy_legs(
             _contract_to_leg(puts[long_idx], "long", expiration=expiration, dte=dte),
         ]
 
+    if strategy_type == "call_debit_butterfly":
+        return _build_butterfly_legs(calls, spot=spot, expiration=expiration, dte=dte, credit=False)
+
+    if strategy_type == "put_debit_butterfly":
+        return _build_butterfly_legs(puts, spot=spot, expiration=expiration, dte=dte, credit=False)
+
+    if strategy_type == "call_credit_butterfly":
+        return _build_butterfly_legs(calls, spot=spot, expiration=expiration, dte=dte, credit=True)
+
+    if strategy_type == "put_credit_butterfly":
+        return _build_butterfly_legs(puts, spot=spot, expiration=expiration, dte=dte, credit=True)
+
+    if strategy_type == "call_debit_condor":
+        return _build_condor_legs(calls, spot=spot, expiration=expiration, dte=dte, credit=False)
+
+    if strategy_type == "put_debit_condor":
+        return _build_condor_legs(puts, spot=spot, expiration=expiration, dte=dte, credit=False)
+
+    if strategy_type == "call_credit_condor":
+        return _build_condor_legs(calls, spot=spot, expiration=expiration, dte=dte, credit=True)
+
+    if strategy_type == "put_credit_condor":
+        return _build_condor_legs(puts, spot=spot, expiration=expiration, dte=dte, credit=True)
+
     if strategy_type == "long_straddle":
         strike = min(_common_strikes(calls, puts), key=lambda value: abs(value - spot))
         return [
@@ -656,18 +769,53 @@ def _build_calendar_spread_legs(
     front_dte: int,
     back_expiration: str,
     back_dte: int,
+    *,
+    option_type: Literal["call", "put"] = "call",
 ) -> list[StrategyLeg]:
-    front_calls = _normalize_contracts(front_chain, "call")
-    back_calls = _normalize_contracts(back_chain, "call")
-    front_strikes = {_safe_float(contract.get("strike")) for contract in front_calls}
-    back_strikes = {_safe_float(contract.get("strike")) for contract in back_calls}
+    front_contracts = _normalize_contracts(front_chain, option_type)
+    back_contracts = _normalize_contracts(back_chain, option_type)
+    front_strikes = {_safe_float(contract.get("strike")) for contract in front_contracts}
+    back_strikes = {_safe_float(contract.get("strike")) for contract in back_contracts}
     common = sorted(strike for strike in front_strikes.intersection(back_strikes) if strike > 0)
     if not common:
-        raise ValueError("No common call strikes found across calendar expirations")
+        raise ValueError(f"No common {option_type} strikes found across calendar expirations")
     strike = min(common, key=lambda value: abs(value - spot))
     return [
-        _contract_to_leg(_contract_by_strike(back_calls, strike), "long", expiration=back_expiration, dte=back_dte),
-        _contract_to_leg(_contract_by_strike(front_calls, strike), "short", expiration=front_expiration, dte=front_dte),
+        _contract_to_leg(_contract_by_strike(back_contracts, strike), "long", expiration=back_expiration, dte=back_dte),
+        _contract_to_leg(_contract_by_strike(front_contracts, strike), "short", expiration=front_expiration, dte=front_dte),
+    ]
+
+
+def _build_diagonal_spread_legs(
+    front_chain: list[dict[str, Any]],
+    back_chain: list[dict[str, Any]],
+    spot: float,
+    front_expiration: str,
+    front_dte: int,
+    back_expiration: str,
+    back_dte: int,
+    *,
+    option_type: Literal["call", "put"],
+) -> list[StrategyLeg]:
+    front_contracts = _normalize_contracts(front_chain, option_type)
+    back_contracts = _normalize_contracts(back_chain, option_type)
+    if option_type == "call":
+        short_idx = _first_index_ge(front_contracts, spot)
+        short_strike = _safe_float(front_contracts[short_idx].get("strike"))
+        candidate_indices = [idx for idx, contract in enumerate(back_contracts) if _safe_float(contract.get("strike")) < short_strike]
+        if not candidate_indices:
+            raise ValueError("Insufficient strikes for call_diagonal_debit_spread")
+        long_idx = candidate_indices[-1]
+    else:
+        short_idx = _last_index_le(front_contracts, spot)
+        short_strike = _safe_float(front_contracts[short_idx].get("strike"))
+        candidate_indices = [idx for idx, contract in enumerate(back_contracts) if _safe_float(contract.get("strike")) > short_strike]
+        if not candidate_indices:
+            raise ValueError("Insufficient strikes for put_diagonal_debit_spread")
+        long_idx = candidate_indices[0]
+    return [
+        _contract_to_leg(back_contracts[long_idx], "long", expiration=back_expiration, dte=back_dte),
+        _contract_to_leg(front_contracts[short_idx], "short", expiration=front_expiration, dte=front_dte),
     ]
 
 
@@ -743,7 +891,13 @@ def _net_premium(legs: list[StrategyLeg]) -> float:
 
 
 def _strategy_payoff(strategy_type: StrategyType, terminal_price: float, legs: list[StrategyLeg], spot: float) -> float:
-    if strategy_type == "calendar_spread":
+    if strategy_type in {
+        "calendar_spread",
+        "call_calendar_spread",
+        "put_calendar_spread",
+        "call_diagonal_debit_spread",
+        "put_diagonal_debit_spread",
+    }:
         long_leg = next(leg for leg in legs if leg.side == "long")
         short_leg = next(leg for leg in legs if leg.side == "short")
         remaining_dte = max((long_leg.dte or 0) - (short_leg.dte or 0), 0)
@@ -764,6 +918,13 @@ def _strategy_payoff(strategy_type: StrategyType, terminal_price: float, legs: l
     return pnl
 
 
+def _max_adjacent_width(legs: list[StrategyLeg]) -> float:
+    strikes = sorted({_safe_float(leg.strike) for leg in legs if _safe_float(leg.strike) > 0})
+    if len(strikes) < 2:
+        return 0.0
+    return max(b - a for a, b in zip(strikes[:-1], strikes[1:]))
+
+
 def _capital_at_risk(strategy_type: StrategyType, legs: list[StrategyLeg], spot: float) -> float:
     net_debit = _net_premium(legs)
     if strategy_type in {
@@ -771,9 +932,17 @@ def _capital_at_risk(strategy_type: StrategyType, legs: list[StrategyLeg], spot:
         "long_put",
         "bull_call_debit_spread",
         "bear_put_debit_spread",
+        "call_debit_butterfly",
+        "put_debit_butterfly",
+        "call_debit_condor",
+        "put_debit_condor",
         "long_straddle",
         "long_strangle",
         "calendar_spread",
+        "call_calendar_spread",
+        "put_calendar_spread",
+        "call_diagonal_debit_spread",
+        "put_diagonal_debit_spread",
     }:
         return max(net_debit, 1e-6)
     if strategy_type == "covered_call":
@@ -781,8 +950,15 @@ def _capital_at_risk(strategy_type: StrategyType, legs: list[StrategyLeg], spot:
     if strategy_type == "cash_secured_put":
         short_put = next(leg for leg in legs if leg.option_type == "put" and leg.side == "short")
         return max(short_put.strike + min(net_debit, 0.0), 1e-6)
-    if strategy_type in {"bear_call_credit_spread", "bull_put_credit_spread"}:
-        width = max(leg.strike for leg in legs) - min(leg.strike for leg in legs)
+    if strategy_type in {
+        "bear_call_credit_spread",
+        "bull_put_credit_spread",
+        "call_credit_butterfly",
+        "put_credit_butterfly",
+        "call_credit_condor",
+        "put_credit_condor",
+    }:
+        width = _max_adjacent_width(legs)
         return max(width + min(net_debit, 0.0), 1e-6)
     if strategy_type in {"iron_condor", "iron_butterfly"}:
         call_legs = sorted((leg for leg in legs if leg.option_type == "call"), key=lambda leg: leg.strike)
@@ -890,7 +1066,13 @@ def _evaluate_probability(
             ),
             "calendar_spread_model": (
                 "front-expiry payoff with back-leg mark-to-model"
-                if strategy_type == "calendar_spread"
+                if strategy_type in {
+                    "calendar_spread",
+                    "call_calendar_spread",
+                    "put_calendar_spread",
+                    "call_diagonal_debit_spread",
+                    "put_diagonal_debit_spread",
+                }
                 else None
             ),
             "supported_strategies": list(SUPPORTED_STRATEGIES),
@@ -934,7 +1116,13 @@ def get_winning_probability(
     spot = _pick_spot_price(quote)
 
     expirations = client.expirations(symbol)
-    if strategy_type == "calendar_spread":
+    if strategy_type in {
+        "calendar_spread",
+        "call_calendar_spread",
+        "put_calendar_spread",
+        "call_diagonal_debit_spread",
+        "put_diagonal_debit_spread",
+    }:
         (front_expiration, front_dte), (back_expiration, back_dte) = _calendar_expirations(
             expirations,
             min_dte=min_dte,
@@ -942,15 +1130,50 @@ def get_winning_probability(
         )
         front_chain = client.chain(symbol, front_expiration)
         back_chain = client.chain(symbol, back_expiration)
-        legs = _build_calendar_spread_legs(
-            front_chain=front_chain,
-            back_chain=back_chain,
-            spot=spot,
-            front_expiration=front_expiration,
-            front_dte=front_dte,
-            back_expiration=back_expiration,
-            back_dte=back_dte,
-        )
+        if strategy_type in {"calendar_spread", "call_calendar_spread"}:
+            legs = _build_calendar_spread_legs(
+                front_chain=front_chain,
+                back_chain=back_chain,
+                spot=spot,
+                front_expiration=front_expiration,
+                front_dte=front_dte,
+                back_expiration=back_expiration,
+                back_dte=back_dte,
+                option_type="call",
+            )
+        elif strategy_type == "put_calendar_spread":
+            legs = _build_calendar_spread_legs(
+                front_chain=front_chain,
+                back_chain=back_chain,
+                spot=spot,
+                front_expiration=front_expiration,
+                front_dte=front_dte,
+                back_expiration=back_expiration,
+                back_dte=back_dte,
+                option_type="put",
+            )
+        elif strategy_type == "call_diagonal_debit_spread":
+            legs = _build_diagonal_spread_legs(
+                front_chain=front_chain,
+                back_chain=back_chain,
+                spot=spot,
+                front_expiration=front_expiration,
+                front_dte=front_dte,
+                back_expiration=back_expiration,
+                back_dte=back_dte,
+                option_type="call",
+            )
+        else:
+            legs = _build_diagonal_spread_legs(
+                front_chain=front_chain,
+                back_chain=back_chain,
+                spot=spot,
+                front_expiration=front_expiration,
+                front_dte=front_dte,
+                back_expiration=back_expiration,
+                back_dte=back_dte,
+                option_type="put",
+            )
         expiration = front_expiration
         dte = front_dte
     else:
