@@ -28,6 +28,11 @@ from atlas_adapter.bootstrap.settings import (
     initialize_runtime_paths,
     load_handle,
 )
+from atlas_adapter.bootstrap.service_urls import (
+    get_nexus_ws_url,
+    get_robot_api_base,
+    get_robot_ui_base,
+)
 
 
 def _ts_to_epoch(ts_str: str) -> float:
@@ -643,11 +648,10 @@ class Step(BaseModel):
 
 def _robot_connected() -> bool:
     """Ping Robot: prueba backend (8002) y luego UI (NEXUS_ROBOT_URL)."""
-    import os
     import urllib.request
 
-    base_api = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
-    base_ui = (os.getenv("NEXUS_ROBOT_URL") or base_api).rstrip("/")
+    base_api = get_robot_api_base()
+    base_ui = get_robot_ui_base(default_to_api=True)
     for base in (base_api, base_ui):
         try:
             req = urllib.request.Request(base + "/", method="GET")
@@ -2012,8 +2016,8 @@ def robot_status():
     import os
     import urllib.request
 
-    base_api = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
-    base_ui = (os.getenv("NEXUS_ROBOT_URL") or base_api).rstrip("/")
+    base_api = get_robot_api_base()
+    base_ui = get_robot_ui_base(default_to_api=True)
     for base in (base_api, base_ui):
         try:
             req = urllib.request.Request(base + "/", method="GET")
@@ -2071,7 +2075,7 @@ def robot_reconnect():
         os.getenv("NEXUS_ROBOT_PATH")
         or str(BASE_DIR / "nexus" / "atlas_nexus_robot" / "backend")
     )
-    base_api = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
+    base_api = get_robot_api_base()
     repo_root = BASE_DIR
     script = repo_root / "scripts" / "start_nexus_services.py"
     if not script.exists():
@@ -5755,7 +5759,7 @@ def camera_stream_proxy(index: int = 0):
     """Proxy para stream de cÃ¡mara del robot (puerto 8002). index: 0, 1, 2... para cada cÃ¡mara."""
     import urllib.request
 
-    base_url = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
+    base_url = get_robot_api_base()
     stream_url = f"{base_url}/api/vision/camera/stream?index={index}"
     try:
         test_req = urllib.request.Request(base_url + "/status", method="GET")
@@ -5836,7 +5840,7 @@ def cuerpo_vision_snapshot(
     """
     import urllib.parse
 
-    base_url = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
+    base_url = get_robot_api_base()
     url = (
         f"{base_url}/api/vision/snapshot"
         f"?index={int(index)}"
@@ -9196,9 +9200,7 @@ async def proxy_websocket(websocket: WebSocket):
     import logging
 
     log = logging.getLogger(__name__)
-    ws_nexus_url = (
-        NEXUS_BASE.replace("http://", "ws://").replace("https://", "wss://") + "/ws"
-    )
+    ws_nexus_url = get_nexus_ws_url()
     try:
         import websockets
     except ImportError:
