@@ -14,8 +14,20 @@ import tempfile
 import threading
 import time
 import uuid
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from atlas_adapter.bootstrap.env import load_project_env
+from atlas_adapter.bootstrap.lifespan import app_lifespan
+from atlas_adapter.bootstrap.settings import (
+    BASE_DIR,
+    ENV_PATH,
+    LOGS_DIR,
+    initialize_runtime_paths,
+    load_handle,
+)
 
 
 def _ts_to_epoch(ts_str: str) -> float:
@@ -30,48 +42,10 @@ def _ts_to_epoch(ts_str: str) -> float:
 
 
 # Cargar config ANTES de importar mÃ³dulos que usan os.getenv (audit, policy, etc.)
-BASE_DIR = Path(__file__).resolve().parent.parent
-ENV_PATH = BASE_DIR / "config" / "atlas.env"
-if ENV_PATH.exists():
-    # Reduce noisy dotenv parse warnings (e.g. malformed lines in vault/env).
-    logging.getLogger("dotenv").setLevel(logging.ERROR)
-    from dotenv import load_dotenv
+load_project_env(ENV_PATH)
+initialize_runtime_paths()
 
-    load_dotenv(ENV_PATH, override=True)
-else:
-    logging.warning("atlas.env not found at %s", ENV_PATH)
-
-_logs = str(BASE_DIR / "logs")
-
-
-def _ensure_db_path(env_var: str, filename: str) -> None:
-    """Force env var to writable path under project logs."""
-    p = Path(os.getenv(env_var) or str(Path(_logs) / filename))
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.touch()
-    except Exception:
-        p = Path(_logs) / filename
-        p.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            p.touch()
-        except Exception:
-            pass
-    os.environ[env_var] = str(p)
-
-
-Path(_logs).mkdir(parents=True, exist_ok=True)
-_ensure_db_path("SCHED_DB_PATH", "atlas_sched.sqlite")
-_ensure_db_path("ATLAS_MEMORY_DB_PATH", "atlas_memory.sqlite")
-_ensure_db_path("MEMORY_DB_PATH", "atlas_memory.sqlite")
-_ensure_db_path("AUDIT_DB_PATH", "atlas_audit.sqlite")
-_ensure_db_path("LEARNING_EPISODIC_DB_PATH", "learning_episodic.sqlite")
-_ensure_db_path("NERVOUS_DB_PATH", "atlas_nervous.sqlite")
-_ensure_db_path("NERVOUS_DB_PATH", "nervous_system.sqlite")
-_ensure_db_path("NERVOUS_DB_PATH", "nervous_system.sqlite")
-
-import importlib.util
-from typing import List, Optional
+_logs = str(LOGS_DIR)
 
 from fastapi import FastAPI, File, Header, Request, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -79,29 +53,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field, field_validator
 import psutil
 
-ATLAS_ROOT = Path(r"C:\ATLAS")
-ROUTER_PATH = ATLAS_ROOT / "modules" / "command_router.py"
-LOCAL_ROUTER = BASE_DIR / "modules" / "command_router.py"
-
-
-def load_handle():
-    if ROUTER_PATH.exists():
-        spec = importlib.util.spec_from_file_location(
-            "command_router", str(ROUTER_PATH)
-        )
-    else:
-        spec = importlib.util.spec_from_file_location(
-            "command_router", str(LOCAL_ROUTER)
-        )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore
-    return mod.handle  # type: ignore
-
-
 handle = load_handle()
-
-from contextlib import asynccontextmanager
-from typing import Any, Dict
 
 
 @asynccontextmanager
@@ -636,7 +588,7 @@ async def _lifespan(app):
 app = FastAPI(
     title="ATLAS Adapter",
     version="1.0.0",
-    lifespan=_lifespan,
+    lifespan=app_lifespan,
     openapi_tags=[
         {
             "name": "Health",
