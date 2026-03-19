@@ -4,11 +4,11 @@
  */
 const _polls = new Map();
 
-export function poll(id, url, intervalMs, callback) {
+export function poll(id, url, intervalMs, callback, fetchInit = null) {
   if (_polls.has(id)) stop(id);
 
   const state = {
-    url, intervalMs, callback,
+    url, intervalMs, callback, fetchInit,
     timer: null,
     paused: false,
     errorCount: 0,
@@ -17,14 +17,21 @@ export function poll(id, url, intervalMs, callback) {
 
   async function tick() {
     if (state.paused || document.hidden) return;
+    const ctrl = new AbortController();
+    const toid = setTimeout(() => ctrl.abort(), 12000);
     try {
-      const res = await fetch(url);
-      const data = await res.json();
+      let data = null;
+      if (url) {
+        const res = await fetch(url, { ...(state.fetchInit || {}), signal: ctrl.signal });
+        data = await res.json();
+      }
       state.errorCount = 0;
-      callback(data, null);
+      await callback(data, null);
     } catch (e) {
       state.errorCount++;
-      callback(null, e);
+      await callback(null, e);
+    } finally {
+      clearTimeout(toid);
     }
     const backoff = state.errorCount > 0
       ? Math.min(intervalMs * Math.pow(2, state.errorCount), 60000)

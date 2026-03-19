@@ -1,5 +1,20 @@
 {
   "version": 1,
-  "updated_at": "2026-02-27T17:20:04",
-  "patterns": []
+  "updated_at": "2026-03-11T12:23:52",
+  "patterns": [
+    {
+      "name": "claude_memory:arquitectura_general",
+      "source": "claude_memory_bridge",
+      "section": "Arquitectura General",
+      "learned_at": "2026-03-11T08:54:29",
+      "confidence": 0.9
+    },
+    {
+      "name": "claude_memory:componentes_críticos",
+      "source": "claude_memory_bridge",
+      "section": "Componentes Críticos",
+      "learned_at": "2026-03-11T08:54:29",
+      "confidence": 0.9
+    }
+  ]
 }

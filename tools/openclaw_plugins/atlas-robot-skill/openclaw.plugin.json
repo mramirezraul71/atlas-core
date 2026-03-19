@@ -1,0 +1,41 @@
+{
+  "id": "atlas-robot-skill",
+  "kind": "tool",
+  "skills": [
+    "skills"
+  ],
+  "uiHints": {
+    "pythonPath": {
+      "label": "Python executable",
+      "help": "Python dentro del venv aislado que ejecuta el skill de ATLAS."
+    },
+    "skillConfig": {
+      "label": "ATLAS skill config",
+      "help": "Ruta absoluta al config.json del modulo OpenClaw de ATLAS."
+    },
+    "workspace": {
+      "label": "Workspace",
+      "help": "Workspace donde se ejecuta el skill y desde donde resuelve imports."
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "pythonPath": {
+        "type": "string"
+      },
+      "skillConfig": {
+        "type": "string"
+      },
+      "workspace": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "pythonPath",
+      "skillConfig",
+      "workspace"
+    ]
+  }
+}

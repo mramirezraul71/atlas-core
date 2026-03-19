@@ -1,0 +1,10 @@
+﻿
+host                              cname
+----                              -----
+atlas-dashboard.rauliatlasapp.com      
+panaderia.rauliatlasapp.com            
+panaderia-api.rauliatlasapp.com        
+vision.rauliatlasapp.com               
+
+
+

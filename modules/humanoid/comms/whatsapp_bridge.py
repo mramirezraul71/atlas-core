@@ -25,6 +25,7 @@ Para Meta:
 """
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -128,46 +129,142 @@ class WAHAProvider:
 
     def start_session(self) -> Dict[str, Any]:
         """Inicia una sesión WAHA (genera QR si es necesario)."""
-        try:
-            url = f"{self.api_url}/api/sessions/{self.session}/start"
-            req = urllib.request.Request(
-                url,
-                data=json.dumps({}).encode(),
-                method="POST",
-                headers=self._headers(),
-            )
-            with urllib.request.urlopen(req, timeout=10) as r:
-                data = json.loads(r.read().decode())
-            return {"ok": True, "data": data}
-        except urllib.error.HTTPError as e:
-            if e.code == 401:
-                return {
-                    "ok": False,
-                    "error": "unauthorized",
-                    "hint": "Configura WAHA_API_KEY",
-                }
-            return {"ok": False, "error": f"HTTP {e.code}"}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+        attempts = [
+            (f"{self.api_url}/api/sessions/start", {"name": self.session}),
+            (f"{self.api_url}/api/sessions/{self.session}/start", {}),
+        ]
+        last_error = "unknown_error"
+        for url, payload in attempts:
+            try:
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode(),
+                    method="POST",
+                    headers=self._headers(),
+                )
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    body = r.read().decode(errors="replace")
+                    data = json.loads(body) if body else {}
+                return {"ok": True, "data": data, "endpoint": url}
+            except urllib.error.HTTPError as e:
+                body = ""
+                try:
+                    body = e.read().decode(errors="replace")
+                except Exception:
+                    pass
+                if e.code == 401:
+                    return {
+                        "ok": False,
+                        "error": "unauthorized",
+                        "hint": "Configura WAHA_API_KEY",
+                    }
+                # WAHA moderno: 422 cuando la sesión ya está iniciada.
+                if e.code == 422 and "already started" in body.lower():
+                    return {
+                        "ok": True,
+                        "already_started": True,
+                        "endpoint": url,
+                    }
+                if e.code in (404, 405):
+                    last_error = f"HTTP {e.code}"
+                    continue
+                return {"ok": False, "error": f"HTTP {e.code}", "details": body[:220]}
+            except Exception as e:
+                last_error = str(e)
+                continue
+        return {"ok": False, "error": last_error}
 
     def get_qr(self) -> Dict[str, Any]:
         """Obtiene el código QR para autenticar."""
-        try:
-            url = f"{self.api_url}/api/sessions/{self.session}/auth/qr"
-            req = urllib.request.Request(url, method="GET", headers=self._headers())
-            with urllib.request.urlopen(req, timeout=10) as r:
-                data = json.loads(r.read().decode())
-            return {
-                "ok": True,
-                "qr": data.get("value"),
-                "format": data.get("format", "image"),
-            }
-        except urllib.error.HTTPError as e:
-            if e.code == 401:
-                return {"ok": False, "error": "unauthorized"}
-            return {"ok": False, "error": f"HTTP {e.code}"}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+        attempts = [
+            f"{self.api_url}/api/sessions/{self.session}/auth/qr",
+            f"{self.api_url}/api/{self.session}/auth/qr",
+            f"{self.api_url}/api/sessions/{self.session}/auth/qr?format=image",
+        ]
+        attempted = []
+        for url in attempts:
+            attempted.append(url)
+            try:
+                req = urllib.request.Request(url, method="GET", headers=self._headers())
+                with urllib.request.urlopen(req, timeout=12) as r:
+                    content_type = str(r.headers.get("Content-Type") or "").lower()
+                    payload = r.read()
+
+                if "application/json" in content_type:
+                    data = json.loads(payload.decode(errors="replace") or "{}")
+                    value = data.get("value") or data.get("qr") or data.get("data")
+                    if value:
+                        return {
+                            "ok": True,
+                            "qr": value,
+                            "format": str(data.get("format") or "text"),
+                            "endpoint": url,
+                        }
+                    continue
+
+                if "image/" in content_type and payload:
+                    b64 = base64.b64encode(payload).decode("ascii")
+                    return {
+                        "ok": True,
+                        "format": "image/png",
+                        "png_base64": b64,
+                        "data_url": f"data:image/png;base64,{b64}",
+                        "endpoint": url,
+                    }
+            except urllib.error.HTTPError as e:
+                if e.code == 401:
+                    return {"ok": False, "error": "unauthorized"}
+                if e.code in (404, 405):
+                    continue
+                return {"ok": False, "error": f"HTTP {e.code}"}
+            except Exception:
+                continue
+        return {"ok": False, "error": "qr_not_available", "attempted": attempted}
+
+    def request_pairing_code(self, phone: str) -> Dict[str, Any]:
+        """Solicita un código de emparejamiento (alternativa al QR).
+
+        El teléfono debe estar en formato internacional sin '+':  34612345678
+        WAHA debe tener la sesión en estado SCAN_QR_CODE (recién iniciada).
+        Retorna {"ok": True, "code": "ABCD-EFGH"} o error.
+        """
+        phone_clean = phone.replace("+", "").replace(" ", "").replace("-", "")
+        attempts = [
+            f"{self.api_url}/api/sessions/{self.session}/auth/request-code",
+            f"{self.api_url}/api/{self.session}/auth/request-code",
+        ]
+        last_error = "unknown"
+        for url in attempts:
+            try:
+                payload = json.dumps({"phoneNumber": phone_clean}).encode()
+                req = urllib.request.Request(
+                    url,
+                    data=payload,
+                    method="POST",
+                    headers=self._headers(),
+                )
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    data = json.loads(r.read().decode(errors="replace") or "{}")
+                code = data.get("code") or data.get("pairingCode") or data.get("pairing_code")
+                if code:
+                    return {"ok": True, "code": str(code), "phone": phone_clean, "endpoint": url}
+                return {"ok": False, "error": "no_code_in_response", "raw": data, "endpoint": url}
+            except urllib.error.HTTPError as e:
+                body = ""
+                try:
+                    body = e.read().decode(errors="replace")
+                except Exception:
+                    pass
+                if e.code == 401:
+                    return {"ok": False, "error": "unauthorized", "hint": "Configura WAHA_API_KEY"}
+                if e.code in (404, 405):
+                    last_error = f"HTTP {e.code}"
+                    continue
+                return {"ok": False, "error": f"HTTP {e.code}", "details": body[:220]}
+            except Exception as ex:
+                last_error = str(ex)
+                continue
+        return {"ok": False, "error": last_error}
 
     def send_message(self, to: str, text: str) -> Dict[str, Any]:
         """Envía un mensaje de texto."""
@@ -394,7 +491,7 @@ def status() -> Dict[str, Any]:
         missing.append("WHATSAPP_TO")
     if not provider.is_configured():
         if provider_name == "waha":
-            missing.append("WAHA_API_URL (opcional, default: localhost:3000)")
+            missing.append("WAHA_API_URL (opcional, default: localhost:3010)")
         elif provider_name == "twilio":
             missing.extend(
                 ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_WHATSAPP_FROM"]
@@ -450,10 +547,11 @@ def send_text(text: str, to: Optional[str] = None) -> Dict[str, Any]:
     if isinstance(provider, WAHAProvider):
         pst = provider.get_status()
         if not pst.get("authenticated"):
+            waha_url = _get("WAHA_API_URL", "http://localhost:3010")
             return {
                 "ok": False,
                 "error": "waha_not_authenticated",
-                "hint": "Visita http://localhost:3000 para escanear el QR",
+                "hint": f"Escanea QR en {waha_url}/api/{provider.session}/auth/qr o vía GET /api/comms/whatsapp/qr",
                 "details": pst,
             }
 
@@ -501,6 +599,14 @@ def start_session() -> Dict[str, Any]:
         return {"ok": False, "error": "Sessions only available for WAHA provider"}
 
     return provider.start_session()
+
+
+def request_pairing_code(phone: str) -> Dict[str, Any]:
+    """Solicita código de emparejamiento WAHA para el número dado."""
+    provider = _get_provider()
+    if not isinstance(provider, WAHAProvider):
+        return {"ok": False, "error": "pairing_code only available for WAHA provider"}
+    return provider.request_pairing_code(phone)
 
 
 def health_check() -> Dict[str, Any]:

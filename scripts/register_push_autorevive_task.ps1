@@ -1,9 +1,11 @@
 param(
     [string]$TaskName = "ATLAS_PUSH_Autorevive_Watchdog",
-    [string]$HealthUrl = "http://127.0.0.1:8791/status",
-    [int]$IntervalSec = 15,
-    [int]$FailThreshold = 3,
-    [int]$RestartCooldownSec = 180,
+    [string]$HealthUrl = "http://127.0.0.1:8791/health",
+    [int]$IntervalSec = 30,
+    [int]$FailThreshold = 8,
+    [int]$RestartCooldownSec = 300,
+    [ValidateSet("LIMITED","HIGHEST")][string]$RunLevel = "LIMITED",
+    [switch]$SkipRunKeyFallback,
     [switch]$RunNow
 )
 
@@ -28,17 +30,56 @@ $create = @(
     "/TN", $TaskName,
     "/SC", "ONLOGON",
     "/TR", $taskCmd,
-    "/RL", "HIGHEST",
+    "/RL", $RunLevel,
     "/F"
 )
 
 Write-Host "Creating/updating task: $TaskName (ONLOGON)"
-schtasks $create | Out-Host
+$taskCreated = $false
+try {
+    schtasks $create | Out-Host
+    if ($LASTEXITCODE -eq 0) {
+        $taskCreated = $true
+    } else {
+        Write-Warning "schtasks /Create falló con código $LASTEXITCODE"
+    }
+} catch {
+    Write-Warning "No se pudo crear tarea programada: $($_.Exception.Message)"
+}
 
-if ($RunNow.IsPresent) {
+if ($taskCreated -and $RunNow.IsPresent) {
     Write-Host "Running task immediately: $TaskName"
     schtasks /Run /TN $TaskName | Out-Host
 }
 
-Write-Host "Task configured."
-schtasks /Query /TN $TaskName /V /FO LIST | Out-Host
+if ($taskCreated) {
+    Write-Host "Task configured."
+    schtasks /Query /TN $TaskName /V /FO LIST | Out-Host
+    exit 0
+}
+
+if (-not $SkipRunKeyFallback.IsPresent) {
+    $runKeyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+    $runValueName = $TaskName
+    $runValueCmd = "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$RunnerScript`" -HealthUrl `"$HealthUrl`" -IntervalSec $IntervalSec -FailThreshold $FailThreshold -RestartCooldownSec $RestartCooldownSec"
+    if (-not (Test-Path $runKeyPath)) {
+        New-Item -Path $runKeyPath | Out-Null
+    }
+    New-ItemProperty -Path $runKeyPath -Name $runValueName -PropertyType String -Value $runValueCmd -Force | Out-Null
+    Write-Warning "No se pudo crear tarea programada. Fallback aplicado en HKCU Run: $runValueName"
+    if ($RunNow.IsPresent) {
+        Start-Process -FilePath "powershell.exe" -ArgumentList @(
+            "-NoProfile",
+            "-ExecutionPolicy", "Bypass",
+            "-WindowStyle", "Hidden",
+            "-File", $RunnerScript,
+            "-HealthUrl", $HealthUrl,
+            "-IntervalSec", $IntervalSec,
+            "-FailThreshold", $FailThreshold,
+            "-RestartCooldownSec", $RestartCooldownSec
+        ) | Out-Null
+    }
+    exit 0
+}
+
+throw "No se pudo registrar la tarea programada y se omitió fallback por -SkipRunKeyFallback."

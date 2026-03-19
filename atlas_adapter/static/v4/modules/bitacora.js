@@ -10,7 +10,11 @@ let _activeFilter = 'all';
 function _esc(s) { const d = document.createElement('span'); d.textContent = s ?? ''; return d.innerHTML; }
 
 function _level(entry) {
-  return ((entry.level || entry.type || entry.severity || 'info') + '').toLowerCase();
+  const explicit = ((entry.level || entry.type || entry.severity) + '').toLowerCase();
+  if (explicit && explicit !== 'undefined') return explicit;
+  // Audit entries: ok=false → error, warn en error field
+  if (entry.ok === false || entry.error) return 'error';
+  return 'info';
 }
 
 function _tlClass(lvl) {
@@ -83,7 +87,7 @@ export default {
     window._bitFilter = (f) => _setFilter(f, container);
 
     _fetchAndRender(container);
-    poll(POLL_ID, '/ans/bitacora?limit=80', 5000, (data) => {
+    poll(POLL_ID, '/audit/tail?n=80', 7000, (data) => {
       if (data) _renderEntries(container, data);
     });
   },
@@ -104,7 +108,7 @@ function _setFilter(f, container) {
 
 async function _fetchAndRender(container) {
   try {
-    const r = await fetch('/ans/bitacora?limit=80');
+    const r = await fetch('/audit/tail?n=80');
     const data = await r.json();
     _renderEntries(container, data);
   } catch (e) {
@@ -144,15 +148,17 @@ function _renderEntries(container, data) {
 
   list.innerHTML = [...entries].reverse().map(e => {
     const cls = _tlClass(_level(e));
-    const msg = _esc(e.message || e.msg || e.text || e.event || JSON.stringify(e));
+    // Audit entries have action+actor; generic entries have message/text
+    const msg = _esc(e.action ? `[${e.actor || e.role || 'sys'}] ${e.action}${e.error ? ' — ' + e.error : ''}` : (e.message || e.msg || e.text || e.event || JSON.stringify(e)));
     const ts   = _shortTime(e.timestamp || e.ts || e.time);
-    const sub  = e.subsystem || e.source || e.module || '';
+    const sub  = e.module || e.subsystem || e.source || '';
+    const meta = e.ms != null ? `${e.ms}ms` : '';
     return `<div class="tl-entry ${cls}">
       <div class="tl-time">${_esc(ts)}</div>
       <div class="tl-icon">${_icon(cls)}</div>
       <div class="tl-body">
         <div class="tl-msg">${msg}</div>
-        ${sub ? `<div class="tl-meta">${_esc(sub)}</div>` : ''}
+        ${sub || meta ? `<div class="tl-meta">${_esc([sub, meta].filter(Boolean).join(' · '))}</div>` : ''}
       </div>
     </div>`;
   }).join('');

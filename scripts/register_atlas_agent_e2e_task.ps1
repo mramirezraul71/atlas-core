@@ -38,19 +38,24 @@ if ($EveryMinutes -lt 5) {
 
 $PyExe = Resolve-Python -Root $RepoRoot
 $AuditScript = (Resolve-Path (Join-Path $RepoRoot "scripts\atlas_agent_e2e_audit.py")).Path
+$TaskRunner = (Resolve-Path (Join-Path $RepoRoot "scripts\run_atlas_agent_e2e_task.ps1")).Path
 $TaskLog = Join-Path $RepoRoot "logs\atlas_agent_e2e_task.log"
 
-$qualityFlag = "false"
-if ($RunQualityGates.IsPresent) {
-    $qualityFlag = "true"
-}
-$args = @("`"$AuditScript`"", "--run-quality-gates", $qualityFlag)
+$qualityFlag = if ($RunQualityGates.IsPresent) { "true" } else { "false" }
+$taskParts = @(
+    "powershell.exe",
+    "-NoProfile",
+    "-ExecutionPolicy", "Bypass",
+    "-WindowStyle", "Hidden",
+    "-File", "`"$TaskRunner`"",
+    "-RepoRoot", "`"$RepoRoot`"",
+    "-PythonExe", "`"$PyExe`"",
+    "-RunQualityGates", $qualityFlag
+)
 if ($WithRestart.IsPresent) {
-    $args += "--restart-push"
+    $taskParts += "-WithRestart"
 }
-$argString = $args -join " "
-
-$taskCmd = "cmd /c cd /d `"$RepoRoot`" && `"$PyExe`" $argString >> `"$TaskLog`" 2>&1"
+$taskCmd = $taskParts -join " "
 
 $create = @(
     "/Create",

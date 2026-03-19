@@ -14,9 +14,9 @@ function _shortTime(ts) {
 }
 
 const ENDPOINTS = [
-  { id: 'status',   url: '/api/learning/status',   label: 'Estado del Motor' },
-  { id: 'patterns', url: '/api/learning/patterns',  label: 'Patrones' },
-  { id: 'cycles',   url: '/api/learning/cycles',    label: 'Ciclos recientes' },
+  { id: 'status',   url: '/api/learning/growth-metrics',  label: 'Métricas de Crecimiento' },
+  { id: 'patterns', url: '/api/learning/knowledge-base',  label: 'Base de Conocimiento' },
+  { id: 'cycles',   url: null,                            label: 'Historial de Ciclos' },
 ];
 
 export default {
@@ -77,61 +77,67 @@ export default {
     `;
 
     _refresh(container);
-    poll(POLL_ID, ENDPOINTS[0].url, 8000, () => _refresh(container));
+    poll(POLL_ID, ENDPOINTS[0].url, 10000, () => _refresh(container));
   },
 
   destroy() { stop(POLL_ID); },
 };
 
 async function _refresh(container) {
-  const [status, patterns, cycles] = await Promise.all(
-    ENDPOINTS.map(e => fetch(e.url).then(r => r.json()).catch(() => null))
+  const [status, patterns] = await Promise.all(
+    ENDPOINTS.filter(e => e.url).map(e => fetch(e.url).then(r => r.json()).catch(() => null))
   );
   _renderStatus(container, status);
   _renderPatterns(container, patterns);
-  _renderCycles(container, cycles);
+  _renderCycles(container, null);
 }
 
 function _renderStatus(container, data) {
   if (!data) return;
   const p = data?.data ?? data;
-  const active = p?.active === true || p?.status === 'running' || p?.enabled === true;
+  // growth-metrics format: {knowledge_base:{concepts,skills,rules}, episodic_memory:{total_episodes,...}, learning:{...}}
+  const kb = p?.knowledge_base || {};
+  const ep = p?.episodic_memory || {};
+  const active = (ep.total_episodes ?? 0) > 0 || (kb.concepts ?? 0) > 0;
   const txt = (id, v) => { const e = container.querySelector(id); if (e) e.textContent = v; };
-  txt('#l-state', active ? 'Activo' : 'Inactivo');
+  txt('#l-state', active ? 'Activo' : 'Inicializando');
   const stEl = container.querySelector('#l-state');
   if (stEl) stEl.style.color = active ? 'var(--accent-green)' : 'var(--text-muted)';
-  txt('#l-mode', p?.mode || p?.learning_mode || '');
-  txt('#l-cycles', p?.total_cycles ?? p?.cycles ?? '--');
-  txt('#l-last', _shortTime(p?.last_cycle || p?.last_run));
+  const totalPatterns = (kb.concepts ?? 0) + (kb.skills ?? 0) + (kb.rules ?? 0);
+  txt('#l-patterns', totalPatterns || '--');
+  txt('#l-mode', ep.overall_success_rate !== undefined ? `Éxito: ${Math.round(ep.overall_success_rate * 100)}%` : '');
+  txt('#l-cycles', ep.total_episodes ?? '--');
+  txt('#l-last', ep.top_task_types?.[0]?.task ? `Tarea: ${ep.top_task_types[0].task}` : '--');
 }
 
 function _renderPatterns(container, data) {
   const el = container.querySelector('#l-pattern-list');
   if (!el) return;
   const p = data?.data ?? data;
-  const items = p?.patterns || p?.items || (Array.isArray(p) ? p : []);
-  const countEl = container.querySelector('#l-patterns');
+  // knowledge-base format: {concepts: {name: {...}}, skills: {name: {...}}, rules: {name: {...}}, total_concepts, total_skills}
   const pcountEl = container.querySelector('#l-pcount');
-  if (countEl) countEl.textContent = items.length;
-  if (pcountEl) pcountEl.textContent = `${items.length} patrones`;
 
-  if (items.length === 0) {
+  if (!p || (!p.concepts && !p.skills)) {
     el.innerHTML = `<div class="empty-state">
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      <div class="empty-title">Sin patrones registrados</div>
-      <div class="empty-sub">El motor no ha aprendido patrones aún</div>
+      <div class="empty-title">Sin conocimiento registrado</div>
+      <div class="empty-sub">La base de conocimiento está vacía</div>
     </div>`;
     return;
   }
 
-  el.innerHTML = `<table class="data-tbl"><thead><tr><th>Patrón</th><th>Confianza</th><th>Usos</th><th>Actualizado</th></tr></thead><tbody>
-    ${items.slice(0, 30).map(p => {
-      const name  = _esc(p.name || p.pattern || p.id || '--');
-      const conf  = p.confidence !== undefined ? `${Math.round(p.confidence * 100)}%` : '--';
-      const uses  = p.uses ?? p.count ?? '--';
-      const ts    = _shortTime(p.updated_at || p.ts);
-      return `<tr><td>${name}</td><td class="accent">${_esc(conf)}</td><td>${_esc(String(uses))}</td><td class="mono">${_esc(ts)}</td></tr>`;
-    }).join('')}
+  // Flatten concepts + skills + rules into rows
+  const rows = [];
+  for (const [name, v] of Object.entries(p.concepts || {})) rows.push({ cat: 'concepto', name, def: v?.definition || v?.type || '' });
+  for (const [name, v] of Object.entries(p.skills || {})) rows.push({ cat: 'habilidad', name, def: v?.description || '' });
+  for (const [name, v] of Object.entries(p.rules || {})) rows.push({ cat: 'regla', name, def: v?.name || v?.explanation || '' });
+
+  if (pcountEl) pcountEl.textContent = `${rows.length} entradas`;
+
+  el.innerHTML = `<table class="data-tbl"><thead><tr><th>Categoría</th><th>Nombre</th><th>Definición</th></tr></thead><tbody>
+    ${rows.slice(0, 40).map(r =>
+      `<tr><td><span class="chip" style="font-size:10px">${_esc(r.cat)}</span></td><td class="accent">${_esc(r.name)}</td><td style="font-size:12px;color:var(--text-secondary)">${_esc(r.def)}</td></tr>`
+    ).join('')}
   </tbody></table>`;
 }
 

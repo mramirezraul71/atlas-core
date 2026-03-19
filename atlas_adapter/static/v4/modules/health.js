@@ -44,7 +44,13 @@ export default {
             Inicio
           </button>
           <h2>System Health</h2>
-          <div style="margin-left:auto"><span class="live-badge">LIVE</span></div>
+          <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+            <button class="action-btn" id="btn-deep-check" style="font-size:11px;padding:4px 10px">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              Diagnóstico
+            </button>
+            <span class="live-badge">LIVE</span>
+          </div>
         </div>
         <div class="module-body" id="health-body">
           <div class="stat-row">
@@ -111,6 +117,8 @@ export default {
         </div>
       </div>
     `;
+
+    container.querySelector('#btn-deep-check')?.addEventListener('click', () => _deepCheck(container));
 
     _fetchAndRender(container);
     poll(POLL_ID, '/health', 6000, async (data, err) => {
@@ -254,6 +262,21 @@ function _checkOk(val) {
 function _txt(container, sel, text) {
   const el = container.querySelector(sel);
   if (el) el.textContent = text;
+}
+
+async function _deepCheck(container) {
+  const btn = container.querySelector('#btn-deep-check');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Analizando...'; }
+  try {
+    const r = await fetch('/health/deep');
+    const data = await r.json();
+    _render(container, data);
+    window.AtlasToast?.show('Diagnóstico completo cargado', 'success');
+  } catch (e) {
+    window.AtlasToast?.show(`Diagnóstico fallido: ${e.message}`, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg> Diagnóstico'; }
+  }
 }
 
 window.AtlasModuleHealth = { id: 'health' };

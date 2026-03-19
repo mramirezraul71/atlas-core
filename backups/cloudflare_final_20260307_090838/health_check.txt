@@ -1,0 +1,10 @@
+﻿
+url                                              status   ok
+---                                              ------   --
+https://atlas-dashboard.rauliatlasapp.com/health    200 True
+https://panaderia.rauliatlasapp.com                 200 True
+https://panaderia-api.rauliatlasapp.com             200 True
+https://vision.rauliatlasapp.com/api/health         200 True
+
+
+

@@ -3,13 +3,16 @@ from __future__ import annotations
 
 import argparse
 import base64
+import concurrent.futures
 import hashlib
 import json
 import os
 import re
 import sqlite3
 import subprocess
+import shutil
 import threading
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -45,14 +48,53 @@ DEFAULT_SCHEDULE = "Lun-Dom 07:00-20:00"
 DEFAULT_ORDER_GUIDE = "Puedes indicar producto, cantidad y hora deseada para preparar el pedido."
 
 _RE_URGENT = re.compile(
-    r"(urgente|emergencia|incendio|robo|asalto|grave|critico|critical|ayuda|auxilio|"
+    r"(urgente|emergencia|incendio|robo|asalto|grave|critico|critical|"
     r"no funciona|caido|caida|fuga|accidente|sangre|peligro)",
     re.IGNORECASE,
 )
 _RE_ORDER = re.compile(r"(pedido|orden|encargo|comprar|precio|delivery|envio)", re.IGNORECASE)
 _RE_HOURS = re.compile(r"(horario|abren|abierto|cierran|hora)", re.IGNORECASE)
 _RE_STOCK = re.compile(r"(stock|disponible|inventario|hay|agotado|existencia)", re.IGNORECASE)
+_RE_CAMERA = re.compile(
+    r"(camara|camaras|camera|cctv|stream|snapshot|vision|monitoreo|online|estado)",
+    re.IGNORECASE,
+)
 _RE_DIGITS = re.compile(r"\D+")
+_RE_PROVIDER_LATENCY = re.compile(r":(?P<ms>\d{1,6})ms$", re.IGNORECASE)
+_RE_PANADERIA_TOOLS = re.compile(
+    r"(venta|vender|cobrar|precio|cantidad|importe|gasto|compra|almacen|almac[eé]n|"
+    r"inventario|stock|existencia|entrada|salida|produccion|producci[oó]n|resumen|"
+    r"cier(re|ra)|cuadre|efectivo|tarjeta|producto)",
+    re.IGNORECASE,
+)
+_RE_REASONING = re.compile(
+    r"(analiza|analisis|diagnostico|diagn[oó]stico|resumen|explica|por qu[eé]|"
+    r"comparar|comparaci[oó]n|plan|estrategia|contabilidad|tendencia|acumulado)",
+    re.IGNORECASE,
+)
+_RE_FAST_UI = re.compile(
+    r"^(abrir|ir a|ve a|mostrar|muestra|entra|abre|ventas de hoy|resumen del dia|stock harina)\b",
+    re.IGNORECASE,
+)
+_RE_VISION_LOCAL = re.compile(
+    r"(buscar|busqueda|b[uú]squeda|resumir|resumen|internet|video|tv|canal|canales|"
+    r"tiktok|youtube|noticia|noticias|url|enlace)",
+    re.IGNORECASE,
+)
+_CONTACT_TONE_PROFILES: Dict[str, Dict[str, str]] = {
+    "VISION:CAMI": {
+        "name": "Cami",
+        "tone": "muy cercano, amable, directo y breve; hablar de tu",
+    },
+    "VISION:RULITIN": {
+        "name": "Rulitin",
+        "tone": "cercano, dinamico y muy accionable; lenguaje simple",
+    },
+    "VISION:IVIS": {
+        "name": "Ivis",
+        "tone": "cercano, claro y tranquilo; sin tecnicismos innecesarios",
+    },
+}
 _VAULT_ENV_LOADED = False
 _VAULT_ENV_LOCK = threading.Lock()
 
@@ -152,6 +194,36 @@ def _json_dump(data: Any) -> str:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
 
 
+def _percentile_int(values: Iterable[int], percentile: int) -> Optional[int]:
+    vals = sorted(int(v) for v in values if isinstance(v, (int, float)))
+    if not vals:
+        return None
+    p = max(1, min(int(percentile or 50), 99))
+    rank = int((p / 100.0) * len(vals) + 0.999999)
+    idx = max(0, min(len(vals) - 1, rank - 1))
+    return int(vals[idx])
+
+
+def _resolve_claude_cli_bin() -> str:
+    explicit = (os.getenv("ATLAS_CLAWD_CLAUDE_CLI_BIN") or "").strip()
+    candidates = []
+    if explicit:
+        candidates.append(explicit)
+    found = shutil.which("claude")
+    if found:
+        candidates.append(found)
+    appdata = (os.getenv("APPDATA") or "").strip()
+    if appdata:
+        candidates.append(str(Path(appdata) / "npm" / "claude.cmd"))
+    userprofile = (os.getenv("USERPROFILE") or "").strip()
+    if userprofile:
+        candidates.append(str(Path(userprofile) / "AppData" / "Roaming" / "npm" / "claude.cmd"))
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return candidate
+    return explicit or "claude"
+
+
 def _load_vault_env_once() -> None:
     global _VAULT_ENV_LOADED
     if _VAULT_ENV_LOADED:
@@ -209,6 +281,18 @@ class AtlasCommsHub:
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         DB_FILE.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self._probe_cache_lock = threading.Lock()
+        self._probe_cache_ts = 0.0
+        self._probe_cache_inv: Dict[str, Any] = {}
+        self._probe_cache_cam: Dict[str, Any] = {}
+        self._net_cache_lock = threading.Lock()
+        self._net_cache_ts = 0.0
+        self._net_cache_offline = False
+        self._net_cache_diag: Dict[str, Any] = {}
+        self._clawd_state_lock = threading.Lock()
+        self._clawd_backoff_until = 0.0
+        self._clawd_fail_streak = 0
+        self._clawd_last_error = ""
         self._init_db()
 
     def _encryption_secret(self) -> Tuple[str, str]:
@@ -275,14 +359,36 @@ class AtlasCommsHub:
         with LOG_FILE.open("a", encoding="utf-8") as f:
             f.write(f"{_utc_now()} {tag} {_json_dump(payload)}\n")
 
+    def _probe_timeout_s(self) -> float:
+        try:
+            v = float((os.getenv("ATLAS_COMMS_PROBE_TIMEOUT_S") or "2.0").strip() or "2.0")
+        except Exception:
+            v = 2.0
+        return max(0.8, min(v, 8.0))
+
+    def _clawd_timeout_s(self) -> float:
+        try:
+            v = float((os.getenv("ATLAS_COMMS_CLAWD_TIMEOUT_S") or "2.5").strip() or "2.5")
+        except Exception:
+            v = 2.5
+        return max(1.0, min(v, 12.0))
+
+    def _clawd_backoff_base_s(self) -> float:
+        try:
+            v = float((os.getenv("ATLAS_COMMS_CLAWD_BACKOFF_S") or "20").strip() or "20")
+        except Exception:
+            v = 20.0
+        return max(5.0, min(v, 180.0))
+
     def _probe_panaderia(self) -> Dict[str, Any]:
         status: Dict[str, Any] = {"reachable": False, "health": {}, "inventory": {}}
-        ok, code, data, err = _http_json("GET", f"{PANADERIA_BASE}/api/health", timeout=4.0)
+        timeout_s = self._probe_timeout_s()
+        ok, code, data, err = _http_json("GET", f"{PANADERIA_BASE}/api/health", timeout=timeout_s)
         status["health"] = {"ok": ok, "code": code, "data": data, "error": err}
         status["reachable"] = bool(ok)
 
         s_ok, s_code, s_data, s_err = _http_json(
-            "GET", f"{PANADERIA_BASE}/api/sentinel/health", timeout=4.0
+            "GET", f"{PANADERIA_BASE}/api/sentinel/health", timeout=timeout_s
         )
         status["inventory"]["sentinel"] = {
             "ok": s_ok,
@@ -296,7 +402,7 @@ class AtlasCommsHub:
         i_ok, i_code, i_data, i_err = _http_json(
             "GET",
             f"{PANADERIA_BASE}/api/inventory/summary",
-            timeout=4.0,
+            timeout=timeout_s,
             headers=headers if headers else None,
         )
         status["inventory"]["summary"] = {
@@ -310,10 +416,11 @@ class AtlasCommsHub:
 
     def _probe_vision(self) -> Dict[str, Any]:
         status: Dict[str, Any] = {"reachable": False, "health": {}, "cameras": {}}
-        ok, code, data, err = _http_json("GET", f"{VISION_BASE}/api/health", timeout=4.0)
+        timeout_s = self._probe_timeout_s()
+        ok, code, data, err = _http_json("GET", f"{VISION_BASE}/api/health", timeout=timeout_s)
         status["health"] = {"ok": ok, "code": code, "data": data, "error": err}
         status["reachable"] = bool(ok)
-        c_ok, c_code, c_data, c_err = _http_json("GET", f"{PUSH_BASE}/vision/cameras", timeout=4.0)
+        c_ok, c_code, c_data, c_err = _http_json("GET", f"{PUSH_BASE}/vision/cameras", timeout=timeout_s)
         status["cameras"] = {"ok": c_ok, "code": c_code, "data": c_data, "error": c_err}
         return status
 
@@ -1023,16 +1130,35 @@ class AtlasCommsHub:
             return False, f"process_check_error:{e}"
 
     def _internet_up(self) -> Tuple[bool, str]:
+        try:
+            timeout_s = float((os.getenv("ATLAS_COMMS_NET_TIMEOUT_S") or "1.2").strip() or "1.2")
+        except Exception:
+            timeout_s = 1.2
+        timeout_s = max(0.8, min(timeout_s, 6.0))
         checks = ["http://1.1.1.1/cdn-cgi/trace", "https://www.cloudflare.com/cdn-cgi/trace"]
         last_err = "unknown"
         for url in checks:
-            ok, code, _data, err = _http_json("GET", url, timeout=4.0)
+            ok, code, _data, err = _http_json("GET", url, timeout=timeout_s)
             if ok and 200 <= code < 400:
                 return True, f"ok:{url}"
             last_err = err or str(code)
         return False, f"offline:{last_err}"
 
     def _is_offline_mode(self) -> Tuple[bool, Dict[str, Any]]:
+        try:
+            cache_ttl = float((os.getenv("ATLAS_COMMS_NETWORK_CACHE_S") or "12").strip() or "12")
+        except Exception:
+            cache_ttl = 12.0
+        cache_ttl = max(0.0, min(cache_ttl, 120.0))
+        now = time.time()
+        with self._net_cache_lock:
+            if (
+                self._net_cache_ts > 0
+                and (now - self._net_cache_ts) <= cache_ttl
+                and self._net_cache_diag
+            ):
+                return bool(self._net_cache_offline), dict(self._net_cache_diag)
+
         tunnel_up, tunnel_reason = self._cloudflare_tunnel_up()
         net_up, net_reason = self._internet_up()
         offline = not (tunnel_up and net_up)
@@ -1044,6 +1170,10 @@ class AtlasCommsHub:
         }
         if offline:
             self._append_snapshot("NETWORK_OFFLINE_MODE", diag)
+        with self._net_cache_lock:
+            self._net_cache_ts = time.time()
+            self._net_cache_offline = bool(offline)
+            self._net_cache_diag = dict(diag)
         return offline, diag
 
     def _detect_urgency(self, message: str, context: Optional[dict] = None) -> Dict[str, Any]:
@@ -1074,6 +1204,59 @@ class AtlasCommsHub:
             "offline_mode": bool(offline_mode),
         }
 
+    def _probe_services_cached(self, max_age_s: float = 4.0) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        ttl = max(0.0, float(max_age_s))
+        now = time.time()
+        with self._probe_cache_lock:
+            if (
+                self._probe_cache_ts > 0
+                and (now - self._probe_cache_ts) <= ttl
+                and self._probe_cache_inv
+                and self._probe_cache_cam
+            ):
+                return dict(self._probe_cache_inv), dict(self._probe_cache_cam)
+
+        def _safe_probe(fn, fallback_err: str) -> Dict[str, Any]:
+            try:
+                data = fn()
+                return data if isinstance(data, dict) else {"reachable": False, "error": fallback_err}
+            except Exception as e:
+                return {"reachable": False, "error": f"{fallback_err}:{e}"}
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+            f_inv = ex.submit(_safe_probe, self._probe_panaderia, "probe_panaderia_failed")
+            f_cam = ex.submit(_safe_probe, self._probe_vision, "probe_vision_failed")
+            try:
+                inv = f_inv.result(timeout=8.0)
+            except Exception as e:
+                inv = {"reachable": False, "error": f"probe_panaderia_timeout:{e}"}
+            try:
+                cam = f_cam.result(timeout=8.0)
+            except Exception as e:
+                cam = {"reachable": False, "error": f"probe_vision_timeout:{e}"}
+
+        with self._probe_cache_lock:
+            self._probe_cache_ts = time.time()
+            self._probe_cache_inv = inv
+            self._probe_cache_cam = cam
+        return inv, cam
+
+    def _cached_services_or_default(self) -> Tuple[Dict[str, Any], Dict[str, Any], bool]:
+        with self._probe_cache_lock:
+            if self._probe_cache_inv and self._probe_cache_cam:
+                return dict(self._probe_cache_inv), dict(self._probe_cache_cam), True
+        inv = {
+            "reachable": False,
+            "health": {"ok": False, "error": "not_probed_yet"},
+            "inventory": {"sentinel": {"data": {"status": "unknown"}}},
+        }
+        cam = {
+            "reachable": False,
+            "health": {"ok": False, "error": "not_probed_yet"},
+            "cameras": {"data": {"count": 0}},
+        }
+        return inv, cam, False
+
     def _recent_user_history(self, user_id: str, limit: int = 4) -> list[Dict[str, str]]:
         uid = (user_id or "").strip()
         if not uid:
@@ -1101,6 +1284,83 @@ class AtlasCommsHub:
                 out.append({"user": req, "assistant": rsp})
         return out
 
+    def _resolve_contact_profile(
+        self, user_id: str, context: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, str]]:
+        keys: list[str] = []
+        uid = (user_id or "").strip().upper()
+        if uid:
+            keys.append(uid)
+            if ":" not in uid:
+                keys.append(f"VISION:{uid}")
+        ctx = context if isinstance(context, dict) else {}
+        ext = ctx.get("external_user")
+        if isinstance(ext, dict):
+            src = str(ext.get("source") or "").strip().upper()
+            ext_id = str(ext.get("external_user_id") or "").strip().upper()
+            if src and ext_id:
+                keys.insert(0, f"{src}:{ext_id}")
+            elif ext_id:
+                keys.insert(0, f"VISION:{ext_id}")
+        for k in keys:
+            prof = _CONTACT_TONE_PROFILES.get(k)
+            if prof:
+                return {
+                    "key": k,
+                    "name": str(prof.get("name") or "").strip(),
+                    "tone": str(prof.get("tone") or "").strip(),
+                }
+        return None
+
+    def _contact_prompt_hint(self, user_id: str, context: Optional[Dict[str, Any]]) -> str:
+        prof = self._resolve_contact_profile(user_id, context)
+        if not prof:
+            return ""
+        name = prof.get("name") or "Cliente"
+        tone = prof.get("tone") or "cercano y claro"
+        return f"Contacto: {name}. Preferencia: {tone}. Usar su nombre en la respuesta."
+
+    def _apply_contact_style(
+        self, text: str, user_id: str, context: Optional[Dict[str, Any]]
+    ) -> str:
+        t = (text or "").strip()
+        if not t:
+            return t
+        prof = self._resolve_contact_profile(user_id, context)
+        if not prof:
+            return t
+        name = str(prof.get("name") or "").strip()
+        has_name_greeting = bool(
+            name
+            and re.match(
+                rf"^(hola|buenas|hey|ey)\s+{re.escape(name)}\b",
+                t,
+                re.IGNORECASE,
+            )
+        )
+        if name and not has_name_greeting and not re.match(rf"^{re.escape(name)}[,:]", t, re.IGNORECASE):
+            t = f"{name}, {t}"
+        if "paso a paso" not in t.lower() and len(t) < 320:
+            if not re.search(r"[.!?]$", t):
+                t += "."
+            t += " Si quieres, te guio paso a paso."
+        return t
+
+    def _extract_latency_ms(self, provider: str) -> Optional[int]:
+        p = (provider or "").strip()
+        if not p:
+            return None
+        m = _RE_PROVIDER_LATENCY.search(p)
+        if not m:
+            return None
+        try:
+            v = int(m.group("ms"))
+        except Exception:
+            return None
+        if v < 0 or v > 120000:
+            return None
+        return v
+
     def _call_clawd_subscription(
         self,
         message: str,
@@ -1108,8 +1368,51 @@ class AtlasCommsHub:
         conversation_history: Optional[list[Dict[str, str]]] = None,
     ) -> Tuple[bool, str, str]:
         api_url = (os.getenv("ATLAS_CLAWD_API_URL") or "").strip()
-        if not api_url:
-            return False, "", "clawd_api_url_missing"
+        if api_url.lower().startswith("internal://claude-cli"):
+            ok, text, provider = self._call_clawd_claude_cli_internal(
+                message=message,
+                context_summary=context_summary,
+                conversation_history=conversation_history,
+            )
+            if ok:
+                with self._clawd_state_lock:
+                    self._clawd_fail_streak = 0
+                    self._clawd_backoff_until = 0.0
+                    self._clawd_last_error = ""
+                return True, text, provider
+            reason = provider or "clawd_cli_fail"
+            base = self._clawd_backoff_base_s()
+            with self._clawd_state_lock:
+                self._clawd_fail_streak = min(self._clawd_fail_streak + 1, 6)
+                factor = min(self._clawd_fail_streak, 3)
+                self._clawd_backoff_until = time.time() + (base * factor)
+                self._clawd_last_error = reason
+            return False, "", reason
+        if (not api_url) or api_url.lower().startswith("internal://anthropic"):
+            ok, text, provider = self._call_clawd_anthropic_internal(
+                message=message,
+                context_summary=context_summary,
+                conversation_history=conversation_history,
+            )
+            if ok:
+                with self._clawd_state_lock:
+                    self._clawd_fail_streak = 0
+                    self._clawd_backoff_until = 0.0
+                    self._clawd_last_error = ""
+                return True, text, provider
+            reason = provider or "clawd_internal_fail"
+            base = self._clawd_backoff_base_s()
+            with self._clawd_state_lock:
+                self._clawd_fail_streak = min(self._clawd_fail_streak + 1, 6)
+                factor = min(self._clawd_fail_streak, 3)
+                self._clawd_backoff_until = time.time() + (base * factor)
+                self._clawd_last_error = reason
+            return False, "", reason
+        now = time.time()
+        with self._clawd_state_lock:
+            if now < self._clawd_backoff_until:
+                remaining = max(0.0, self._clawd_backoff_until - now)
+                return False, "", f"clawd_backoff:{remaining:.1f}s"
         token = (
             os.getenv("ATLAS_CLAWD_API_KEY")
             or os.getenv("ATLAS_CENTRAL_CORE")
@@ -1123,10 +1426,18 @@ class AtlasCommsHub:
             "persona": "friendly_precise_assistant",
             "history": conversation_history or [],
         }
+        timeout_s = self._clawd_timeout_s()
         ok, code, data, err = _http_json(
-            "POST", api_url, payload=payload, headers=headers, timeout=12.0
+            "POST", api_url, payload=payload, headers=headers, timeout=timeout_s
         )
         if not ok:
+            reason = f"clawd_http_fail:{err or code}"
+            base = self._clawd_backoff_base_s()
+            with self._clawd_state_lock:
+                self._clawd_fail_streak = min(self._clawd_fail_streak + 1, 6)
+                factor = min(self._clawd_fail_streak, 3)
+                self._clawd_backoff_until = time.time() + (base * factor)
+                self._clawd_last_error = reason
             return False, "", f"clawd_http_fail:{err or code}"
         text = (
             data.get("reply")
@@ -1136,8 +1447,388 @@ class AtlasCommsHub:
             or ""
         )
         if not text:
+            reason = "clawd_empty_reply"
+            base = self._clawd_backoff_base_s()
+            with self._clawd_state_lock:
+                self._clawd_fail_streak = min(self._clawd_fail_streak + 1, 6)
+                factor = min(self._clawd_fail_streak, 3)
+                self._clawd_backoff_until = time.time() + (base * factor)
+                self._clawd_last_error = reason
             return False, "", "clawd_empty_reply"
+        with self._clawd_state_lock:
+            self._clawd_fail_streak = 0
+            self._clawd_backoff_until = 0.0
+            self._clawd_last_error = ""
         return True, str(text).strip(), "clawd_api"
+
+    def _call_clawd_anthropic_internal(
+        self,
+        message: str,
+        context_summary: Dict[str, Any],
+        conversation_history: Optional[list[Dict[str, str]]] = None,
+    ) -> Tuple[bool, str, str]:
+        try:
+            from modules.humanoid.ai.external_llm import call_external
+        except Exception as e:
+            return False, "", f"clawd_internal_module_missing:{e}"
+
+        api_key = (
+            os.getenv("ATLAS_CLAWD_API_KEY")
+            or os.getenv("ANTHROPIC_API_KEY")
+            or os.getenv("ANTHROPIC_API_KEY_CEREBRO")
+            or ""
+        ).strip()
+        if not api_key:
+            try:
+                from modules.humanoid.ai.provider_credentials import get_provider_api_key
+
+                api_key = (get_provider_api_key("anthropic") or "").strip()
+            except Exception:
+                api_key = ""
+        if not api_key:
+            return False, "", "clawd_internal_anthropic_key_missing"
+
+        model = (
+            os.getenv("ATLAS_CLAWD_MODEL")
+            or os.getenv("ANTHROPIC_MODEL")
+            or "claude-sonnet-4-latest"
+        ).strip()
+        timeout_s = self._clawd_timeout_s()
+        system = (
+            "Eres ATLAS, asistente operativo de RAULI. "
+            "Responde en espanol natural, breve y accionable."
+        )
+        prompt = self._build_ai_prompt(
+            message=message,
+            context_summary=context_summary,
+            conversation_history=conversation_history,
+            contact_hint="",
+        )
+        ok, text, latency_ms = call_external(
+            "anthropic",
+            model,
+            prompt,
+            system,
+            api_key,
+            timeout_s=timeout_s,
+        )
+        if not ok:
+            return False, "", f"clawd_internal_anthropic_fail:{_truncate(str(text), 160)}"
+        out = str(text or "").strip()
+        if not out:
+            return False, "", "clawd_internal_anthropic_empty_reply"
+        return True, out, f"clawd_api:anthropic:{model}:{int(latency_ms)}ms"
+
+    def _call_clawd_claude_cli_internal(
+        self,
+        message: str,
+        context_summary: Dict[str, Any],
+        conversation_history: Optional[list[Dict[str, str]]] = None,
+    ) -> Tuple[bool, str, str]:
+        # Respeta ATLAS_CLAWD_CLAUDE_CLI=false para deshabilitar invocación de CLI
+        cli_enabled = (os.getenv("ATLAS_CLAWD_CLAUDE_CLI") or "true").strip().lower()
+        if cli_enabled in ("0", "false", "no", "off"):
+            return False, "", "clawd_cli_disabled"
+        cli_bin = _resolve_claude_cli_bin()
+        if not cli_bin:
+            return False, "", "clawd_cli_missing"
+        timeout_s = self._clawd_timeout_s()
+        system = (
+            "Eres ATLAS, asistente operativo de RAULI. "
+            "Responde en espanol natural, breve y accionable."
+        )
+        prompt = self._build_ai_prompt(
+            message=message,
+            context_summary=context_summary,
+            conversation_history=conversation_history,
+            contact_hint="",
+        )
+        cmd = [
+            cli_bin,
+            "--print",
+            "--input-format",
+            "text",
+            "--output-format",
+            "text",
+            "--system-prompt",
+            system,
+        ]
+        suffix = Path(cli_bin).suffix.lower()
+        if suffix in {".cmd", ".bat"}:
+            cmd = ["cmd.exe", "/c", *cmd]
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                input=prompt,
+                timeout=timeout_s,
+            )
+        except FileNotFoundError:
+            return False, "", "clawd_cli_missing"
+        except subprocess.TimeoutExpired:
+            return False, "", "clawd_cli_timeout"
+        except Exception as exc:
+            return False, "", f"clawd_cli_error:{_truncate(str(exc), 120)}"
+        if proc.returncode != 0:
+            err = (proc.stderr or "").strip() or "clawd_cli_failed"
+            return False, "", f"clawd_cli_fail:{_truncate(err, 160)}"
+        out = (proc.stdout or "").strip()
+        if not out:
+            return False, "", "clawd_cli_empty_reply"
+        return True, out, "clawd_cli"
+
+    def _build_ai_prompt(
+        self,
+        message: str,
+        context_summary: Dict[str, Any],
+        conversation_history: Optional[list[Dict[str, str]]] = None,
+        contact_hint: str = "",
+    ) -> str:
+        history_lines = []
+        for idx, item in enumerate((conversation_history or [])[-4:], start=1):
+            u = _truncate(str((item or {}).get("user") or ""), 140)
+            a = _truncate(str((item or {}).get("assistant") or ""), 180)
+            if u or a:
+                history_lines.append(f"{idx}. Usuario: {u}\n   ATLAS: {a}")
+        history_text = "\n".join(history_lines) if history_lines else "Sin historial reciente."
+        contact_block = f"\nPerfil del contacto:\n- {contact_hint}\n" if contact_hint else ""
+        return (
+            "Contexto operativo actual:\n"
+            f"- inventario_state: {context_summary.get('inventory_state')}\n"
+            f"- camaras_activas: {int(context_summary.get('camera_count') or 0)}\n"
+            f"- panaderia_reachable: {bool(context_summary.get('panaderia_reachable'))}\n"
+            f"- vision_reachable: {bool(context_summary.get('vision_reachable'))}\n"
+            f"- offline_mode: {bool(context_summary.get('offline_mode'))}\n\n"
+            f"Historial reciente:\n{history_text}\n"
+            f"{contact_block}\n"
+            f"Mensaje actual del usuario:\n{(message or '').strip()}\n\n"
+            "Responde en espanol natural y cercano, con precision operativa.\n"
+            "No inventes datos: si falta informacion, dilo y pide un dato puntual.\n"
+            "Se breve (maximo 5 lineas) y accionable."
+        )
+
+    def _local_auto_enabled(self) -> bool:
+        raw = (os.getenv("ATLAS_COMMS_LOCAL_AUTO_ENABLED") or "true").strip().lower()
+        return raw in ("1", "true", "yes", "y", "on")
+
+    def _classify_local_route(
+        self,
+        message: str,
+        context: Optional[Dict[str, Any]] = None,
+        offline_mode: bool = False,
+    ) -> Tuple[bool, str, str]:
+        msg = (message or "").strip()
+        ctx = context if isinstance(context, dict) else {}
+        source = str(
+            ctx.get("source_app") or ctx.get("source") or ctx.get("channel") or ""
+        ).strip().lower()
+        if offline_mode:
+            return True, "FAST", "offline_local"
+        if source.startswith("rauli-panaderia") or "panaderia" in source:
+            if _RE_FAST_UI.search(msg):
+                return True, "FAST", "panaderia_ui"
+            if _RE_PANADERIA_TOOLS.search(msg):
+                if _RE_REASONING.search(msg):
+                    return True, "REASON", "panaderia_ops_reason"
+                return True, "TOOLS", "panaderia_ops"
+            return False, "CHAT", "panaderia_general"
+        if source.startswith("rauli-vision") or "vision" in source:
+            if str(ctx.get("context_url") or "").strip():
+                return True, "REASON", "vision_url"
+            if _RE_VISION_LOCAL.search(msg):
+                if _RE_REASONING.search(msg):
+                    return True, "REASON", "vision_reason"
+                return True, "CHAT", "vision_chat"
+            return False, "CHAT", "vision_general"
+        if _RE_FAST_UI.search(msg):
+            return True, "FAST", "fast_ui"
+        if _RE_REASONING.search(msg):
+            return True, "REASON", "reasoning"
+        return False, "CHAT", "general"
+
+    def _call_local_auto(
+        self,
+        message: str,
+        context_summary: Dict[str, Any],
+        conversation_history: Optional[list[Dict[str, str]]] = None,
+        *,
+        route_hint: str = "CHAT",
+        user_id: str = "",
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[bool, str, str]:
+        try:
+            from modules.humanoid.ai.router import (
+                _call_ollama,
+                decide_route,
+                infer_task_profile,
+            )
+        except Exception as e:
+            return False, "", f"local_auto_module_missing:{_truncate(str(e), 120)}"
+
+        try:
+            timeout_s = int((os.getenv("ATLAS_COMMS_LOCAL_TIMEOUT_S") or "35").strip() or "35")
+        except Exception:
+            timeout_s = 35
+        timeout_s = max(8, min(timeout_s, 120))
+        contact_hint = self._contact_prompt_hint(user_id, context)
+        prompt = self._build_ai_prompt(
+            message=message,
+            context_summary=context_summary,
+            conversation_history=conversation_history,
+            contact_hint=contact_hint,
+        )
+        profile = infer_task_profile(prompt, intent_hint=route_hint, modality="text")
+        decision = decide_route(profile, prefer_free=True)
+        model_key = str(decision.model_key or "").strip()
+        provider_id = str(decision.provider_id or "").strip().lower()
+        if provider_id != "ollama" or ":" not in model_key:
+            return False, "", f"local_auto_unavailable:{decision.reason}"
+        model_name = model_key.split(":", 1)[1].strip()
+        system = (
+            "Eres ATLAS, asistente operativo de RAULI. "
+            "Responde en espanol natural, breve, preciso y accionable. "
+            "Si el usuario esta registrando eventos operativos, pide solo el siguiente dato necesario."
+        )
+        ok, out, latency_ms = _call_ollama(model_name, prompt, system, timeout_s)
+        if not ok:
+            return False, "", f"local_auto_fail:{model_name}:{_truncate(out, 140)}"
+        final = self._apply_contact_style(str(out or "").strip(), user_id, context)
+        if not final:
+            return False, "", f"local_auto_empty:{model_name}"
+        return True, final, f"local_auto:{model_name}:{route_hint}:{int(latency_ms)}ms"
+
+    def _call_openai_fallback(
+        self,
+        message: str,
+        context_summary: Dict[str, Any],
+        conversation_history: Optional[list[Dict[str, str]]] = None,
+        user_id: str = "",
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[bool, str, str]:
+        try:
+            from modules.humanoid.ai.external_llm import call_external
+        except Exception as e:
+            return False, "", f"openai_module_missing:{e}"
+
+        api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        if not api_key:
+            try:
+                from modules.humanoid.ai.provider_credentials import get_provider_api_key
+
+                api_key = (get_provider_api_key("openai") or "").strip()
+            except Exception:
+                api_key = ""
+        if not api_key:
+            return False, "", "openai_api_key_missing"
+
+        model = (os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip()
+        try:
+            timeout_s = int((os.getenv("ATLAS_COMMS_OPENAI_TIMEOUT_S") or "10").strip() or "10")
+        except Exception:
+            timeout_s = 10
+        timeout_s = max(4, min(timeout_s, 45))
+
+        system = (
+            "Eres ATLAS, asistente operativo de RAULI. "
+            "Responde en espanol claro, humano y profesional. "
+            "Prioriza acciones concretas y velocidad."
+        )
+        contact_hint = self._contact_prompt_hint(user_id, context)
+        prompt = self._build_ai_prompt(
+            message=message,
+            context_summary=context_summary,
+            conversation_history=conversation_history,
+            contact_hint=contact_hint,
+        )
+        ok, text, latency_ms = call_external(
+            "openai",
+            model,
+            prompt,
+            system,
+            api_key,
+            timeout_s=timeout_s,
+        )
+        if not ok:
+            return False, "", f"openai_http_fail:{_truncate(text or 'unknown', 160)}"
+        final = str(text or "").strip()
+        if not final:
+            return False, "", "openai_empty_reply"
+        final = self._apply_contact_style(final, user_id, context)
+        return True, final, f"openai:{model}:{int(latency_ms)}ms"
+
+    def _call_bedrock_fallback(
+        self,
+        message: str,
+        context_summary: Dict[str, Any],
+        conversation_history: Optional[list[Dict[str, str]]] = None,
+        user_id: str = "",
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[bool, str, str]:
+        region = (
+            os.getenv("ATLAS_BEDROCK_REGION")
+            or os.getenv("AWS_REGION")
+            or os.getenv("AWS_DEFAULT_REGION")
+            or "us-east-1"
+        ).strip()
+        model = (
+            os.getenv("ATLAS_COMMS_BEDROCK_MODEL")
+            or os.getenv("ATLAS_BEDROCK_BALANCED_MODEL")
+            or os.getenv("ATLAS_MODEL_FAST")
+            or "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+        ).strip()
+        try:
+            timeout_s = int((os.getenv("ATLAS_COMMS_BEDROCK_TIMEOUT_S") or "12").strip() or "12")
+        except Exception:
+            timeout_s = 12
+        timeout_s = max(4, min(timeout_s, 45))
+        system = (
+            "Eres ATLAS, asistente operativo de RAULI. "
+            "Responde en espanol claro, humano y accionable. "
+            "Si falta un dato para operar, pide solo el siguiente dato necesario."
+        )
+        contact_hint = self._contact_prompt_hint(user_id, context)
+        prompt = self._build_ai_prompt(
+            message=message,
+            context_summary=context_summary,
+            conversation_history=conversation_history,
+            contact_hint=contact_hint,
+        )
+        try:
+            import boto3
+            from botocore.config import Config as BotoConfig
+        except Exception as e:
+            return False, "", f"bedrock_module_missing:{_truncate(str(e), 120)}"
+        try:
+            client = boto3.client(
+                "bedrock-runtime",
+                region_name=region,
+                config=BotoConfig(connect_timeout=timeout_s, read_timeout=timeout_s),
+            )
+            body = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 512,
+                "system": system,
+                "messages": [{"role": "user", "content": [{"type": "text", "text": prompt}]}],
+            }
+            t0 = time.perf_counter()
+            response = client.invoke_model(
+                modelId=model,
+                body=json.dumps(body).encode("utf-8"),
+                contentType="application/json",
+                accept="application/json",
+            )
+            latency_ms = (time.perf_counter() - t0) * 1000
+            payload = json.loads(response["body"].read())
+            content = payload.get("content") or []
+            chunks = [str(block.get("text") or "").strip() for block in content if isinstance(block, dict)]
+            final = "\n".join([part for part in chunks if part]).strip()
+            if not final:
+                return False, "", "bedrock_empty_reply"
+            final = self._apply_contact_style(final, user_id, context)
+            return True, final, f"bedrock:{model}:{int(latency_ms)}ms"
+        except Exception as e:
+            return False, "", f"bedrock_http_fail:{_truncate(str(e), 160)}"
 
     def _offline_fallback_reply(self, message: str, context_summary: Dict[str, Any]) -> str:
         msg = (message or "").strip()
@@ -1184,20 +1875,101 @@ class AtlasCommsHub:
         context_summary: Dict[str, Any],
         offline_mode: bool,
         conversation_history: Optional[list[Dict[str, str]]] = None,
+        user_id: str = "",
+        context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        local_preferred, local_route, _local_reason = self._classify_local_route(
+            message,
+            context=context,
+            offline_mode=offline_mode,
+        )
+        local_tried = False
+        if self._local_auto_enabled() and (offline_mode or local_preferred):
+            local_tried = True
+            ok, text, provider = self._call_local_auto(
+                message,
+                context_summary,
+                conversation_history=conversation_history,
+                route_hint=local_route,
+                user_id=user_id,
+                context=context,
+            )
+            if ok:
+                return {
+                    "text": self._apply_contact_style(
+                        self._naturalize_reply(text), user_id, context
+                    ),
+                    "provider": provider,
+                    "offline": bool(offline_mode),
+                }
         if not offline_mode:
+            # Bedrock primero — usa AWS, no consume suscripción Claude.ai
+            ok, text, provider = self._call_bedrock_fallback(
+                message,
+                context_summary,
+                conversation_history=conversation_history,
+                user_id=user_id,
+                context=context,
+            )
+            if ok:
+                return {
+                    "text": self._apply_contact_style(
+                        self._naturalize_reply(text), user_id, context
+                    ),
+                    "provider": provider,
+                    "offline": False,
+                }
+            if self._local_auto_enabled() and not local_tried:
+                ok, text, provider = self._call_local_auto(
+                    message,
+                    context_summary,
+                    conversation_history=conversation_history,
+                    route_hint=local_route,
+                    user_id=user_id,
+                    context=context,
+                )
+                if ok:
+                    return {
+                        "text": self._apply_contact_style(
+                            self._naturalize_reply(text), user_id, context
+                        ),
+                        "provider": provider,
+                        "offline": False,
+                    }
+            # clawd-subscription último recurso — solo si Bedrock y local fallan
             ok, text, provider = self._call_clawd_subscription(
                 message, context_summary, conversation_history=conversation_history
             )
             if ok:
                 return {
-                    "text": self._naturalize_reply(text),
+                    "text": self._apply_contact_style(
+                        self._naturalize_reply(text), user_id, context
+                    ),
+                    "provider": provider,
+                    "offline": False,
+                }
+            ok, text, provider = self._call_openai_fallback(
+                message,
+                context_summary,
+                conversation_history=conversation_history,
+                user_id=user_id,
+                context=context,
+            )
+            if ok:
+                return {
+                    "text": self._apply_contact_style(
+                        self._naturalize_reply(text), user_id, context
+                    ),
                     "provider": provider,
                     "offline": False,
                 }
         return {
-            "text": self._naturalize_reply(
-                self._offline_fallback_reply(message, context_summary)
+            "text": self._apply_contact_style(
+                self._naturalize_reply(
+                    self._offline_fallback_reply(message, context_summary)
+                ),
+                user_id,
+                context,
             ),
             "provider": "offline_fallback",
             "offline": True,
@@ -1334,8 +2106,30 @@ class AtlasCommsHub:
         with self._lock:
             normalized_user = (user_id or "guest").strip() or "guest"
             message_id = f"atlas-comms-{uuid.uuid4().hex[:12]}"
-            inv = self._probe_panaderia()
-            cam = self._probe_vision()
+            try:
+                probe_ttl = float((os.getenv("ATLAS_COMMS_PROBE_CACHE_S") or "12").strip() or "12")
+            except Exception:
+                probe_ttl = 12.0
+            needs_live_context = bool(
+                _RE_STOCK.search(msg)
+                or _RE_ORDER.search(msg)
+                or _RE_HOURS.search(msg)
+                or _RE_CAMERA.search(msg)
+                or bool((context or {}).get("force_live_probe"))
+            )
+            if needs_live_context:
+                inv, cam = self._probe_services_cached(max_age_s=probe_ttl)
+            else:
+                inv, cam, from_cache = self._cached_services_or_default()
+                if not from_cache:
+                    # Warm up probes in background for next interactions, without blocking this reply.
+                    try:
+                        threading.Thread(
+                            target=lambda: self._probe_services_cached(max_age_s=0.0),
+                            daemon=True,
+                        ).start()
+                    except Exception:
+                        pass
             offline_mode, offline_diag = self._is_offline_mode()
             urgency = self._detect_urgency(msg, context=context)
             context_summary = self._build_context_summary(inv, cam, offline_mode=offline_mode)
@@ -1345,6 +2139,8 @@ class AtlasCommsHub:
                 context_summary=context_summary,
                 offline_mode=offline_mode,
                 conversation_history=history,
+                user_id=normalized_user,
+                context=context,
             )
 
             inventory_state = str(context_summary.get("inventory_state") or "unknown")
@@ -1353,6 +2149,7 @@ class AtlasCommsHub:
                 "context": context or {},
                 "provider": reply.get("provider"),
                 "offline_diag": offline_diag,
+                "contact_profile": self._resolve_contact_profile(normalized_user, context),
             }
             synced = not offline_mode
             self._store_message(
@@ -1423,7 +2220,7 @@ class AtlasCommsHub:
                        request_summary, request_encrypted,
                        response_summary, response_encrypted,
                        inventory_status, camera_status,
-                       offline_mode, synced
+                       offline_mode, synced, metadata_json
                 FROM comms_messages
                 ORDER BY created_at DESC
                 LIMIT ?
@@ -1437,6 +2234,21 @@ class AtlasCommsHub:
         for r in rows:
             req_preview = r["request_summary"] or ""
             rsp_preview = r["response_summary"] or ""
+            metadata: Dict[str, Any] = {}
+            try:
+                raw_meta = r["metadata_json"]
+                if raw_meta:
+                    parsed = json.loads(raw_meta)
+                    if isinstance(parsed, dict):
+                        metadata = parsed
+            except Exception:
+                metadata = {}
+            provider = str(metadata.get("provider") or "").strip()
+            latency_ms = self._extract_latency_ms(provider)
+            contact_profile = metadata.get("contact_profile")
+            contact_name = ""
+            if isinstance(contact_profile, dict):
+                contact_name = str(contact_profile.get("name") or "").strip()
             if decrypt:
                 try:
                     req_preview = _truncate(self._decrypt_text(r["request_encrypted"]), 260)
@@ -1459,9 +2271,19 @@ class AtlasCommsHub:
                     "camera_status": r["camera_status"],
                     "offline_mode": bool(r["offline_mode"]),
                     "synced": bool(r["synced"]),
+                    "provider": provider,
+                    "latency_ms": latency_ms,
+                    "contact_name": contact_name,
                 }
             )
-        return {"ok": True, "items": items, "count": len(items)}
+        latencies = [int(it["latency_ms"]) for it in items if isinstance(it.get("latency_ms"), int)]
+        metrics = {
+            "latency_count": len(latencies),
+            "avg_ms": round((sum(latencies) / len(latencies)), 1) if latencies else None,
+            "p95_ms": _percentile_int(latencies, 95),
+            "p99_ms": _percentile_int(latencies, 99),
+        }
+        return {"ok": True, "items": items, "count": len(items), "metrics": metrics}
 
     def get_status(self) -> Dict[str, Any]:
         conn = self._db_conn()
@@ -1490,7 +2312,16 @@ class AtlasCommsHub:
             key = str(r["whatsapp_state"] or "missing")
             ext_summary[key] = int(r["total"] or 0)
         offline_mode, offline_diag = self._is_offline_mode()
+        with self._clawd_state_lock:
+            clawd_backoff_until = self._clawd_backoff_until
+            clawd_fail_streak = self._clawd_fail_streak
+            clawd_last_error = self._clawd_last_error
         _secret, source = self._encryption_secret()
+        clawd_backoff_utc = (
+            datetime.fromtimestamp(clawd_backoff_until, tz=timezone.utc).isoformat()
+            if clawd_backoff_until > 0
+            else None
+        )
         return {
             "ok": True,
             "db_path": str(DB_FILE),
@@ -1504,6 +2335,13 @@ class AtlasCommsHub:
             "vision_base": VISION_BASE,
             "primary_channel": "whatsapp",
             "external_users": ext_summary,
+            "clawd_subscription": {
+                "api_url_configured": bool((os.getenv("ATLAS_CLAWD_API_URL") or "").strip()),
+                "api_url": (os.getenv("ATLAS_CLAWD_API_URL") or "").strip(),
+                "fail_streak": int(clawd_fail_streak),
+                "backoff_until_utc": clawd_backoff_utc,
+                "last_error": _truncate(clawd_last_error, 160),
+            },
         }
 
     def _send_sync_payload(self, payload: Dict[str, Any]) -> Tuple[bool, str]:
@@ -1563,24 +2401,45 @@ class AtlasCommsHub:
         finally:
             conn.close()
 
-    def _mark_queue_error(self, queue_id: int, attempts: int, error: str) -> None:
+    def _mark_queue_error(
+        self,
+        queue_id: int,
+        attempts: int,
+        error: str,
+        *,
+        terminal: bool = False,
+    ) -> None:
+        max_attempts = max(1, int((os.getenv("ATLAS_COMMS_RESYNC_MAX_ATTEMPTS") or "5").strip() or "5"))
+        should_fail = bool(terminal) or int(attempts) >= max_attempts
         conn = self._db_conn()
         try:
             conn.execute(
                 """
                 UPDATE comms_offline_queue
-                SET attempts=?, last_error=?
+                SET attempts=?,
+                    last_error=?,
+                    status=CASE WHEN ? THEN 'failed' ELSE status END,
+                    dequeued_at=CASE WHEN ? THEN ? ELSE dequeued_at END
                 WHERE id=?
                 """,
-                (int(attempts), _truncate(error, 400), int(queue_id)),
+                (
+                    int(attempts),
+                    _truncate(error, 400),
+                    1 if should_fail else 0,
+                    1 if should_fail else 0,
+                    _utc_now() if should_fail else None,
+                    int(queue_id),
+                ),
             )
             conn.execute(
                 """
                 UPDATE comms_messages
-                SET sync_attempts=sync_attempts+1, last_error=?
+                SET sync_attempts=sync_attempts+1,
+                    last_error=?,
+                    synced=CASE WHEN ? THEN 1 ELSE synced END
                 WHERE message_id=(SELECT message_id FROM comms_offline_queue WHERE id=?)
                 """,
-                (_truncate(error, 400), int(queue_id)),
+                (_truncate(error, 400), 1 if should_fail else 0, int(queue_id)),
             )
             conn.commit()
         finally:
@@ -1623,7 +2482,7 @@ class AtlasCommsHub:
             try:
                 payload = json.loads(self._decrypt_text(row["payload_encrypted"]) or "{}")
             except Exception as e:
-                self._mark_queue_error(qid, attempts + 1, f"decrypt_fail:{e}")
+                self._mark_queue_error(qid, attempts + 1, f"decrypt_fail:{e}", terminal=True)
                 errors.append({"id": qid, "error": f"decrypt_fail:{e}"})
                 continue
             ok, reason = self._send_sync_payload(payload)

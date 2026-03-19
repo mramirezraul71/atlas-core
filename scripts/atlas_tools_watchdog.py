@@ -375,7 +375,7 @@ def _local_inventory() -> Dict[str, Dict[str, Any]]:
                 if ok_httpie and out_httpie
                 else ("installed via winget (PATH pendiente)" if wg_httpie_ok else (out_httpie if out_httpie else ""))
             ),
-            "update_script": "",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool httpie",
         },
         "nmap": {
             "id": "nmap",
@@ -386,7 +386,7 @@ def _local_inventory() -> Dict[str, Dict[str, Any]]:
             "status": _tool_status(ok_nmap or wg_nmap_ok, warning=(wg_nmap_ok and not ok_nmap)),
             "health": "ready" if ok_nmap else ("installed_no_path" if wg_nmap_ok else "not_detected"),
             "details": out_nmap if out_nmap else wg_nmap_out,
-            "update_script": "",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool nmap",
         },
         "task": {
             "id": "task",
@@ -401,7 +401,7 @@ def _local_inventory() -> Dict[str, Dict[str, Any]]:
                 if ok_task and out_task
                 else ("installed via winget (PATH pendiente)" if wg_task_ok else (out_task if out_task else ""))
             ),
-            "update_script": "",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool task",
         },
         "ruff": {
             "id": "ruff",
@@ -442,7 +442,7 @@ def _local_inventory() -> Dict[str, Dict[str, Any]]:
             "status": _tool_status(ok_jq),
             "health": "ready" if ok_jq else "not_detected",
             "details": out_jq if out_jq else "",
-            "update_script": "",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool jq",
         },
         "tmux": {
             "id": "tmux",
@@ -457,7 +457,7 @@ def _local_inventory() -> Dict[str, Dict[str, Any]]:
                 if ok_tmux and out_tmux
                 else ("installed via winget (PATH pendiente)" if wg_tmux_ok else (out_tmux if out_tmux else ""))
             ),
-            "update_script": "",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool tmux",
         },
         "uv": {
             "id": "uv",
@@ -487,6 +487,10 @@ def _latest_fetchers() -> Dict[str, Any]:
         "ruff": lambda: _pypi_latest("ruff"),
         "yt-dlp": lambda: _pypi_latest("yt-dlp"),
         "uv": lambda: _pypi_latest("uv"),
+        "jq": lambda: _github_release_latest("stedolan", "jq"),
+        "httpie": lambda: _pypi_latest("httpie"),
+        "task": lambda: _github_release_latest("GothenburgBitFactory", "taskwarrior"),
+        "tmux": lambda: _github_release_latest("tmux", "tmux"),
     }
 
 
@@ -525,6 +529,25 @@ def _node_latest() -> str:
         return ""
     except Exception:
         return ""
+
+
+def _nmap_latest() -> str:
+    """Fetch latest Nmap version from GitHub API or fallback to empty."""
+    # Try releases endpoint (most projects use this)
+    ok, data, _err = _http_json("https://api.github.com/repos/nmap/nmap/releases/latest")
+    if ok and data:
+        version = _extract_version(str(data.get("tag_name") or data.get("name") or ""))
+        if version:
+            return version
+    
+    # Fallback: try to get from tags
+    ok2, data2, _err2 = _http_json("https://api.github.com/repos/nmap/nmap/tags?per_page=1")
+    if ok2 and isinstance(data2, list) and data2:
+        version = _extract_version(str(data2[0].get("name") or ""))
+        if version:
+            return version
+    
+    return ""
 
 
 def _resolve_latest_versions(

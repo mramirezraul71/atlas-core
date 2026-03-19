@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
+import re
 import sqlite3
 import time
 import uuid
@@ -17,6 +19,7 @@ def _repo_root() -> Path:
 
 _AUTO_DB = (_repo_root() / "data" / "autonomy_tasks.db").resolve()
 _AUTO_DB.parent.mkdir(parents=True, exist_ok=True)
+_LOCK_PATH = (_repo_root() / "logs" / "supervisor_daemon.lock").resolve()
 
 
 def _auto_db() -> sqlite3.Connection:
@@ -35,6 +38,46 @@ def _auto_db() -> sqlite3.Connection:
             id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT DEFAULT (datetime('now')),
             event TEXT, kind TEXT DEFAULT 'info', result TEXT DEFAULT 'ok'
         )"""
+    )
+    # Legacy guard: if any producer inserts supervisor rows without action_taken,
+    # derive a deterministic signature so dedupe still works.
+    conn.execute(
+        """CREATE TRIGGER IF NOT EXISTS trg_supervisor_autosig_insert
+           AFTER INSERT ON autonomy_tasks
+           WHEN NEW.source='supervisor' AND (NEW.action_taken IS NULL OR trim(NEW.action_taken)='')
+           BEGIN
+             UPDATE autonomy_tasks
+                SET action_taken = substr(
+                      lower(
+                        replace(
+                          replace(coalesce(NEW.title,'') || '|' || coalesce(NEW.detail,''), char(10), ' '),
+                          char(13),
+                          ' '
+                        )
+                      ),
+                      1,
+                      240
+                    ),
+                    updated_at = datetime('now')
+              WHERE id = NEW.id;
+           END"""
+    )
+    conn.execute(
+        """UPDATE autonomy_tasks
+              SET action_taken = substr(
+                    lower(
+                      replace(
+                        replace(coalesce(title,'') || '|' || coalesce(detail,''), char(10), ' '),
+                        char(13),
+                        ' '
+                      )
+                    ),
+                    1,
+                    240
+                  ),
+                  updated_at = datetime('now')
+            WHERE source='supervisor'
+              AND (action_taken IS NULL OR trim(action_taken)='')"""
     )
     conn.commit()
     return conn
@@ -59,11 +102,92 @@ def _bitacora_log(message: str, ok: bool, source: str = "supervisor") -> None:
         pass
 
 
-def _insert_directive_task(title: str, detail: str, severity: str) -> str:
-    tid = f"sup_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
-    prio = _task_priority_for_severity(severity)
+def _normalize_text_for_signature(text: str) -> str:
+    """Reduce ruido dinámico para evitar spam por cambios triviales."""
+    t = (text or "").strip().lower()
+    if not t:
+        return ""
+    t = re.sub(r"0x[0-9a-f]+", "<hex>", t)
+    t = re.sub(r"\b\d+\b", "<n>", t)
+    t = re.sub(r"\s+", " ", t)
+    return t[:240]
+
+
+def _timeline_seen_recent(event_key: str, within_sec: int) -> bool:
     c = _auto_db()
     try:
+        row = c.execute(
+            """SELECT 1 FROM autonomy_timeline
+               WHERE event=? AND ts >= datetime('now', ?)
+               ORDER BY id DESC LIMIT 1""",
+            (event_key, f"-{max(10, int(within_sec or 0))} seconds"),
+        ).fetchone()
+        return bool(row)
+    finally:
+        c.close()
+
+
+def _timeline_mark(event_key: str, kind: str = "info", result: str = "ok") -> None:
+    c = _auto_db()
+    try:
+        c.execute(
+            "INSERT INTO autonomy_timeline(event, kind, result) VALUES(?,?,?)",
+            (event_key[:500], kind[:40], result[:40]),
+        )
+        c.commit()
+    finally:
+        c.close()
+
+
+def _insert_directive_task(
+    title: str,
+    detail: str,
+    severity: str,
+    signature: str = "",
+    dedupe_seconds: int = 900,
+) -> str:
+    tid = f"sup_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+    prio = _task_priority_for_severity(severity)
+    raw_sig = (signature or "").strip()
+    if not raw_sig:
+        raw_sig = _normalize_text_for_signature(title + "|" + detail)
+    if not raw_sig:
+        # Fallback deterministic signature so dedupe never runs with an empty key.
+        raw = f"{title}|{detail}|{severity}"
+        raw_sig = "sha1:" + hashlib.sha1(
+            raw.encode("utf-8", errors="ignore")
+        ).hexdigest()[:28]
+    sig = raw_sig[:240]
+    c = _auto_db()
+    try:
+        existing = c.execute(
+            """SELECT id FROM autonomy_tasks
+               WHERE source='supervisor'
+                 AND status IN ('pending','in_progress')
+                 AND action_taken=?
+                 AND created_at >= datetime('now', ?)
+               ORDER BY created_at DESC
+               LIMIT 1""",
+            (sig, f"-{max(60, int(dedupe_seconds or 0))} seconds"),
+        ).fetchone()
+        if existing:
+            return str(existing["id"])
+
+        # Fallback dedupe: evita tormenta de tareas del mismo nivel si ya
+        # existe una pendiente reciente del supervisor.
+        existing_same_priority = c.execute(
+            """SELECT id FROM autonomy_tasks
+               WHERE source='supervisor'
+                 AND status IN ('pending','in_progress')
+                 AND priority=?
+                 AND created_at >= datetime('now', ?)
+               ORDER BY created_at DESC
+               LIMIT 1""",
+            (prio, f"-{max(120, int(dedupe_seconds or 0))} seconds"),
+        ).fetchone()
+        if existing_same_priority:
+            return str(existing_same_priority["id"])
+
         c.execute(
             """INSERT OR REPLACE INTO autonomy_tasks
                (id,title,status,priority,source,detail,action_taken,updated_at)
@@ -75,7 +199,7 @@ def _insert_directive_task(title: str, detail: str, severity: str) -> str:
                 prio,
                 "supervisor",
                 detail[:1200],
-                "",
+                sig,
             ),
         )
         c.commit()
@@ -143,6 +267,15 @@ class SupervisorDaemon:
         self.notice_every_sec: int = max(
             30, int(os.getenv("SUPERVISOR_DAEMON_NOTICE_EVERY_SEC", "600") or "600")
         )
+        self.min_change_notice_sec: int = max(
+            30,
+            int(
+                os.getenv(
+                    "SUPERVISOR_DAEMON_MIN_CHANGE_NOTICE_SEC", "120"
+                )
+                or "120"
+            ),
+        )
         self.llm_enabled: bool = os.getenv(
             "SUPERVISOR_DAEMON_LLM_ENABLED", "true"
         ).strip().lower() in (
@@ -164,10 +297,29 @@ class SupervisorDaemon:
             "y",
             "on",
         )
+        self.min_task_interval_sec: int = max(
+            60,
+            int(
+                os.getenv(
+                    "SUPERVISOR_DAEMON_MIN_TASK_INTERVAL_SEC", "900"
+                )
+                or "900"
+            ),
+        )
+        self.min_telegram_interval_sec: int = max(
+            60,
+            int(
+                os.getenv(
+                    "SUPERVISOR_DAEMON_MIN_TELEGRAM_INTERVAL_SEC", "900"
+                )
+                or "900"
+            ),
+        )
 
         self._task: Optional[asyncio.Task] = None
         self._stop: Optional[asyncio.Event] = None
         self._running: bool = False
+        self._lock_handle = None
 
         self._last_tick_ts: float = 0.0
         self._last_severity: str = "unknown"
@@ -175,8 +327,62 @@ class SupervisorDaemon:
         self._last_notice_ts: float = 0.0
         self._last_task_id: str = ""
         self._last_llm_ts: float = 0.0
+        self._last_task_ts: float = 0.0
+        self._last_task_signature: str = ""
+        self._last_telegram_ts: float = 0.0
+        self._last_telegram_signature: str = ""
 
         self._sup = None
+
+    def _acquire_singleton_lock(self) -> bool:
+        """Evita múltiples daemons en procesos distintos (causa de spam)."""
+        _LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        fh = open(_LOCK_PATH, "a+", encoding="utf-8")
+        try:
+            fh.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fh.seek(0)
+            fh.truncate()
+            fh.write(str(os.getpid()))
+            fh.flush()
+            self._lock_handle = fh
+            return True
+        except Exception:
+            try:
+                fh.close()
+            except Exception:
+                pass
+            return False
+
+    def _release_singleton_lock(self) -> None:
+        fh = self._lock_handle
+        self._lock_handle = None
+        if not fh:
+            return
+        try:
+            fh.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        except Exception:
+            pass
+        finally:
+            try:
+                fh.close()
+            except Exception:
+                pass
 
     def status(self) -> Dict[str, Any]:
         st = SupervisorDaemonStatus(
@@ -194,6 +400,13 @@ class SupervisorDaemon:
     async def start(self) -> None:
         if self._running:
             return
+        if not self._acquire_singleton_lock():
+            _bitacora_log(
+                "[SUPERVISOR] Daemon omitido: otro proceso ya mantiene el lock.",
+                ok=True,
+                source="supervisor",
+            )
+            return
         self._stop = asyncio.Event()
         self._task = asyncio.create_task(self._run(), name="atlas-supervisor-daemon")
         self._running = True
@@ -209,6 +422,7 @@ class SupervisorDaemon:
             except Exception:
                 pass
         self._running = False
+        self._release_singleton_lock()
         _bitacora_log("[SUPERVISOR] Daemon detenido.", ok=True, source="supervisor")
 
     async def _run(self) -> None:
@@ -250,12 +464,30 @@ class SupervisorDaemon:
         signature = json.dumps(sig_obj, ensure_ascii=False, sort_keys=True)
 
         changed = signature != self._last_signature
-        due_heartbeat = (now - self._last_notice_ts) >= float(self.notice_every_sec)
+        elapsed_notice = now - self._last_notice_ts
+        due_heartbeat = elapsed_notice >= float(self.notice_every_sec)
+        can_emit_change = elapsed_notice >= float(self.min_change_notice_sec)
+        notice_items: List[str] = []
+        if isinstance(issues, list):
+            notice_items.extend(str(x)[:140] for x in issues[:4])
+        if isinstance(warnings, list):
+            notice_items.extend(str(x)[:140] for x in warnings[:3])
+        notice_core = _normalize_text_for_signature(" | ".join(notice_items))
+        notice_sig = f"{severity}|{notice_core}".strip("|") or "unknown|fallback"
+        notice_event_key = f"supervisor_notice:{notice_sig}"
+        recent_notice = _timeline_seen_recent(
+            notice_event_key, self.min_change_notice_sec
+        )
 
-        if changed or due_heartbeat:
+        if ((changed and can_emit_change) or due_heartbeat) and not recent_notice:
             self._last_signature = signature
             self._last_severity = severity
             self._last_notice_ts = now
+            _timeline_mark(
+                notice_event_key,
+                kind="status",
+                result=severity[:40] or "unknown",
+            )
 
             if severity == "healthy":
                 _bitacora_log(
@@ -335,19 +567,67 @@ class SupervisorDaemon:
                 except Exception:
                     pass
 
-            title = f"Supervisor: {severity} ({len(issues) if isinstance(issues, list) else 0} issues)"
-            self._last_task_id = _insert_directive_task(
-                title=title, detail=detail, severity=severity
+            sig_parts: List[str] = []
+            if isinstance(issues, list):
+                sig_parts.extend(str(x)[:160] for x in issues[:6])
+            if isinstance(warnings, list):
+                sig_parts.extend(str(x)[:160] for x in warnings[:4])
+            core = _normalize_text_for_signature(" | ".join(sig_parts) or top_txt)
+            task_sig = f"{severity}|{core}".strip("|")
+            if not task_sig:
+                task_sig = f"{severity}|fallback"
+            can_emit_task = (
+                (now - self._last_task_ts) >= float(self.min_task_interval_sec)
             )
+            task_event_key = f"supervisor_task:{task_sig}"
+            recent_task = _timeline_seen_recent(
+                task_event_key, self.min_task_interval_sec
+            )
+            if can_emit_task and task_sig != self._last_task_signature and not recent_task:
+                title = f"Supervisor: {severity} ({len(issues) if isinstance(issues, list) else 0} issues)"
+                self._last_task_id = _insert_directive_task(
+                    title=title,
+                    detail=detail,
+                    severity=severity,
+                    signature=task_sig,
+                    dedupe_seconds=self.min_task_interval_sec,
+                )
+                self._last_task_ts = now
+                self._last_task_signature = task_sig
+                _timeline_mark(
+                    task_event_key,
+                    kind="task",
+                    result=(self._last_task_id or "created")[:40],
+                )
 
             # Optional Telegram for critical only (best-effort)
             if self.telegram_enabled and severity == "critical":
-                try:
-                    from modules.humanoid.notify import send_telegram
+                tg_core = _normalize_text_for_signature(top_txt)
+                tg_sig = f"{severity}|{tg_core}".strip("|")
+                if not tg_sig:
+                    tg_sig = "critical|fallback"
+                can_emit_tg = (
+                    (now - self._last_telegram_ts)
+                    >= float(self.min_telegram_interval_sec)
+                )
+                event_key = f"supervisor_telegram:{tg_sig}"
+                recently_sent = _timeline_seen_recent(
+                    event_key, self.min_telegram_interval_sec
+                )
+                if can_emit_tg and tg_sig != self._last_telegram_signature and not recently_sent:
+                    try:
+                        from modules.humanoid.notify import send_telegram
 
-                    await send_telegram(f"ATLAS SUPERVISOR CRITICAL\n{top_txt}")
-                except Exception:
-                    pass
+                        await send_telegram(f"ATLAS SUPERVISOR CRITICAL\n{top_txt}")
+                        self._last_telegram_ts = now
+                        self._last_telegram_signature = tg_sig
+                        _timeline_mark(
+                            event_key,
+                            kind="notify",
+                            result="sent",
+                        )
+                    except Exception:
+                        pass
 
 
 _SINGLETON: Optional[SupervisorDaemon] = None

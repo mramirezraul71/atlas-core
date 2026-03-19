@@ -1,0 +1,9 @@
+﻿Backup final creado en: C:\ATLAS_PUSH\backups\cloudflare_final_20260307_090838
+
+Archivos:
+- credenciales.txt.bak
+- cloudflare_atlas_config.yaml.bak
+- run_keys.reg
+- tunnel_remote_config.json
+- health_check.txt
+- dns_check.txt

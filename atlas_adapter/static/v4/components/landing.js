@@ -84,18 +84,22 @@ export function render(container) {
       </style>
 
       <div class="quick-actions">
-        <div class="quick-chip" data-action="health">${SVG.health} System Health</div>
+        <div class="quick-chip" data-action="health">${SVG.health} Salud del sistema</div>
         <div class="quick-chip" data-action="workspace">${SVG.workspace} Workspace</div>
         <div class="quick-chip" data-action="bitacora">${SVG.bitacora} Bitacora</div>
         <div class="quick-chip" data-action="rauli-vision">${SVG.eye} Rauli Vision</div>
         <div class="quick-chip" data-action="rauli-panaderia">${SVG.package} Rauli Panaderia</div>
+        <div class="quick-chip" data-action="bety-eventos">${SVG.bitacora} Bety Eventos</div>
         <div class="quick-chip" data-action="config">${SVG.config} AI Config</div>
-        <div class="quick-chip" data-action="autonomy">${SVG.governance} Autonomy</div>
-        <div class="quick-chip" data-action="clawd-direct">${SVG.brain} Clawd Directo</div>
+        <div class="quick-chip" data-action="autonomy">${SVG.governance} Autonomia</div>
+        <div class="quick-chip" data-action="clawd-direct">${SVG.brain} ATLAS Directo</div>
         <div class="quick-chip" data-action="codex-supervisor">${SVG.governance} Codex Supervisor</div>
-        <div class="quick-chip" data-action="tools-menu">${SVG.monitor} Tools Menu</div>
-        <div class="quick-chip" data-action="software-center">${SVG.package} Software Center</div>
+        <div class="quick-chip" data-action="tools-menu">${SVG.monitor} Menu de herramientas</div>
+        <div class="quick-chip" data-action="software-center">${SVG.package} Centro de software</div>
         <div class="quick-chip" data-action="live-diagnostic">${SVG.health} Diagnostico Live</div>
+        <div class="quick-chip" data-action="atlas-quant-scanner">${SVG.trading} Escaner Quant</div>
+        <div class="quick-chip" data-action="atlas-nexus">⬡ Atlas Nexus</div>
+        <div class="quick-chip" data-action="robot-3d">🤖 Robot 3D</div>
       </div>
 
       <div class="apps-grid">
@@ -131,21 +135,29 @@ export function render(container) {
           <div class="app-tile-icon">${SVG.package}</div>
           <div class="app-tile-label">Rauli Panaderia</div>
         </div>
+        <div class="app-tile" data-app="bety-eventos">
+          <div class="app-tile-icon">${SVG.bitacora}</div>
+          <div class="app-tile-label">Bety Eventos</div>
+        </div>
         <div class="app-tile" data-app="config-tile">
           <div class="app-tile-icon">${SVG.config}</div>
           <div class="app-tile-label">Settings</div>
         </div>
         <div class="app-tile" data-app="tools-menu">
           <div class="app-tile-icon">${SVG.monitor}</div>
-          <div class="app-tile-label">Tools Menu</div>
+          <div class="app-tile-label">Menu de herramientas</div>
         </div>
         <div class="app-tile" data-app="software-center">
           <div class="app-tile-icon">${SVG.package}</div>
-          <div class="app-tile-label">Software Center</div>
+          <div class="app-tile-label">Centro de software</div>
+        </div>
+        <div class="app-tile" data-app="atlas-quant-scanner">
+          <div class="app-tile-icon">${SVG.trading}</div>
+          <div class="app-tile-label">Escaner Quant</div>
         </div>
         <div class="app-tile" data-app="clawd-direct">
           <div class="app-tile-icon">${SVG.brain}</div>
-          <div class="app-tile-label">Clawd Directo</div>
+          <div class="app-tile-label">ATLAS Directo</div>
         </div>
         <div class="app-tile" data-app="codex-supervisor">
           <div class="app-tile-icon">${SVG.governance}</div>
@@ -154,6 +166,14 @@ export function render(container) {
         <div class="app-tile" data-app="live-diagnostic">
           <div class="app-tile-icon">${SVG.health}</div>
           <div class="app-tile-label">Diagnostico Live</div>
+        </div>
+        <div class="app-tile" data-app="atlas-nexus">
+          <div class="app-tile-icon">⬡</div>
+          <div class="app-tile-label">Atlas Nexus</div>
+        </div>
+        <div class="app-tile" data-app="robot-3d">
+          <div class="app-tile-icon">🤖</div>
+          <div class="app-tile-label">Robot 3D</div>
         </div>
       </div>
     </div>
@@ -229,6 +249,7 @@ export function render(container) {
     bitacora:  { hash: '/bitacora' },
     'rauli-vision': { hash: '/apps/vision' },
     'rauli-panaderia': { hash: '/apps/panaderia' },
+    'bety-eventos': { hash: '/bety-eventos' },
     config:    { hash: '/config' },
     autonomy:  { hash: '/autonomy' },
     'clawd-direct': { hash: '/clawd-direct' },
@@ -236,6 +257,9 @@ export function render(container) {
     'tools-menu': { hash: '/tools-menu' },
     'software-center': { hash: '/software-center' },
     'live-diagnostic': { hash: '/live-diagnostic' },
+    'atlas-quant-scanner': { hash: '/atlas-quant' },
+    'atlas-nexus': { href: '/nexus', newTab: false },
+    'robot-3d':    { href: 'http://127.0.0.1:8002/dashboard', newTab: true },
   };
 
   container.querySelectorAll('.quick-chip').forEach(chip => {
@@ -258,12 +282,16 @@ export function render(container) {
     'mis-apps':     { hash: '/apps' },
     'rauli-vision': { hash: '/apps/vision' },
     'rauli-panaderia': { hash: '/apps/panaderia' },
+    'bety-eventos': { hash: '/bety-eventos' },
     'config-tile':  { hash: '/config' },
     'tools-menu':   { hash: '/tools-menu' },
     'software-center': { hash: '/software-center' },
+    'atlas-quant-scanner': { hash: '/atlas-quant' },
     'clawd-direct': { hash: '/clawd-direct' },
     'codex-supervisor': { hash: '/codex-supervisor' },
     'live-diagnostic': { hash: '/live-diagnostic' },
+    'atlas-nexus': { href: '/nexus', newTab: false },
+    'robot-3d':    { href: 'http://127.0.0.1:8002/dashboard', newTab: true },
   };
 
   container.querySelectorAll('.app-tile').forEach(tile => {

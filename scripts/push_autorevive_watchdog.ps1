@@ -1,10 +1,11 @@
 param(
-  [string]$HealthUrl = "http://127.0.0.1:8791/status",
-  [int]$IntervalSec = 15,
-  [int]$FailThreshold = 3,
-  [int]$RestartCooldownSec = 180,
-  [int]$HealthTimeoutSec = 60,
-  [int]$ProbeTimeoutSec = 6,
+  [string]$HealthUrl = "http://127.0.0.1:8791/health",
+  [int]$IntervalSec = 30,
+  [int]$FailThreshold = 8,
+  [int]$RestartCooldownSec = 300,
+  [int]$HealthTimeoutSec = 45,
+  [int]$ProbeTimeoutSec = 12,
+  [int]$StartupGraceSec = 180,
   [bool]$RequirePortDownForRestart = $true
 )
 
@@ -180,6 +181,26 @@ while ($true) {
   Save-State $state
   Write-Log "health_fail streak=$($state.fail_streak) error=$errMsg"
 
+  # Grace period after startup/restart to avoid false positives during warm-up.
+  try {
+    $now = Get-Date
+    $anchor = $null
+    if ($state.last_restart_at) {
+      $anchor = [DateTime]::Parse($state.last_restart_at)
+    } elseif ($state.started_at) {
+      $anchor = [DateTime]::Parse($state.started_at)
+    }
+    if ($anchor) {
+      $since = ($now - $anchor).TotalSeconds
+      if ($since -lt $StartupGraceSec) {
+        $remain = [int]($StartupGraceSec - $since)
+        Write-Log "restart_grace_active remaining=${remain}s"
+        Start-Sleep -Seconds $IntervalSec
+        continue
+      }
+    }
+  } catch {}
+
   if ([int]$state.fail_streak -ge $FailThreshold) {
     if ($RequirePortDownForRestart) {
       try {
@@ -208,7 +229,7 @@ while ($true) {
     if ($canRestart) {
       Write-Log "restart_triggered"
       try {
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $RestartScript 2>&1 | Out-File -FilePath $LogFile -Append -Encoding utf8
+        & powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File $RestartScript 2>&1 | Out-File -FilePath $LogFile -Append -Encoding utf8
         $rc = $LASTEXITCODE
         if ($rc -ne 0) {
           throw "restart_script_exit_code_$rc"

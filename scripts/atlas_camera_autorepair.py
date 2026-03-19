@@ -73,7 +73,15 @@ def _req_status(url: str, timeout: int = 10) -> int:
 
 
 def _run_ps(args: list[str]) -> Tuple[bool, str]:
-    cmd = ["powershell", "-ExecutionPolicy", "Bypass", "-File"] + args
+    cmd = [
+        "powershell",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-WindowStyle",
+        "Hidden",
+        "-File",
+    ] + args
     try:
         p = subprocess.run(
             cmd,
@@ -192,9 +200,11 @@ def main() -> int:
     if not push_ok:
         ok, out = _run_ps(
             [
-                str(REPO_ROOT / "scripts" / "restart_service_clean.ps1"),
-                "-Service",
-                "push",
+                str(REPO_ROOT / "scripts" / "restart_push_from_api.ps1"),
+                "-DelaySeconds",
+                "1",
+                "-HealthTimeoutSec",
+                "120",
             ]
         )
         report["actions"].append({"step": "restart_push", "ok": ok, "output": out})

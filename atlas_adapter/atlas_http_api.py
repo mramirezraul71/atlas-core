@@ -2,17 +2,42 @@
 Expone /status /tools /execute usando el command_router.handle de C:\ATLAS\modules\command_router.py
 """
 import asyncio
+import hashlib
 import json
 import logging
 import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from atlas_adapter.bootstrap.env import load_project_env
+from atlas_adapter.bootstrap.lifespan import app_lifespan
+from atlas_adapter.bootstrap.settings import (
+    BASE_DIR,
+    ENV_PATH,
+    LOGS_DIR,
+    initialize_runtime_paths,
+    load_handle,
+)
+from atlas_adapter.bootstrap.service_urls import (
+    get_nexus_ws_url,
+)
+from atlas_adapter.routes.nexus_runtime import build_router as build_nexus_runtime_router
+from atlas_adapter.routes.status_observability import (
+    build_router as build_status_observability_router,
+)
+from atlas_adapter.routes.trading_quant import build_router as build_trading_quant_router
+from atlas_adapter.services.nexus_robot_runtime import (
+    get_robot_status,
+)
 
 
 def _ts_to_epoch(ts_str: str) -> float:
@@ -27,612 +52,24 @@ def _ts_to_epoch(ts_str: str) -> float:
 
 
 # Cargar config ANTES de importar mÃ³dulos que usan os.getenv (audit, policy, etc.)
-BASE_DIR = Path(__file__).resolve().parent.parent
-ENV_PATH = BASE_DIR / "config" / "atlas.env"
-if ENV_PATH.exists():
-    # Reduce noisy dotenv parse warnings (e.g. malformed lines in vault/env).
-    logging.getLogger("dotenv").setLevel(logging.ERROR)
-    from dotenv import load_dotenv
+load_project_env(ENV_PATH)
+initialize_runtime_paths()
 
-    load_dotenv(ENV_PATH, override=True)
-else:
-    logging.warning("atlas.env not found at %s", ENV_PATH)
-
-_logs = str(BASE_DIR / "logs")
-
-
-def _ensure_db_path(env_var: str, filename: str) -> None:
-    """Force env var to writable path under project logs."""
-    p = Path(os.getenv(env_var) or str(Path(_logs) / filename))
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.touch()
-    except Exception:
-        p = Path(_logs) / filename
-        p.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            p.touch()
-        except Exception:
-            pass
-    os.environ[env_var] = str(p)
-
-
-Path(_logs).mkdir(parents=True, exist_ok=True)
-_ensure_db_path("SCHED_DB_PATH", "atlas_sched.sqlite")
-_ensure_db_path("ATLAS_MEMORY_DB_PATH", "atlas_memory.sqlite")
-_ensure_db_path("MEMORY_DB_PATH", "atlas_memory.sqlite")
-_ensure_db_path("AUDIT_DB_PATH", "atlas_audit.sqlite")
-_ensure_db_path("LEARNING_EPISODIC_DB_PATH", "learning_episodic.sqlite")
-_ensure_db_path("NERVOUS_DB_PATH", "atlas_nervous.sqlite")
-_ensure_db_path("NERVOUS_DB_PATH", "nervous_system.sqlite")
-_ensure_db_path("NERVOUS_DB_PATH", "nervous_system.sqlite")
-
-import importlib.util
-from typing import List, Optional
+_logs = str(LOGS_DIR)
 
 from fastapi import FastAPI, File, Header, Request, UploadFile, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field, field_validator
 import psutil
 
-ATLAS_ROOT = Path(r"C:\ATLAS")
-ROUTER_PATH = ATLAS_ROOT / "modules" / "command_router.py"
-LOCAL_ROUTER = BASE_DIR / "modules" / "command_router.py"
-
-
-def load_handle():
-    if ROUTER_PATH.exists():
-        spec = importlib.util.spec_from_file_location(
-            "command_router", str(ROUTER_PATH)
-        )
-    else:
-        spec = importlib.util.spec_from_file_location(
-            "command_router", str(LOCAL_ROUTER)
-        )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore
-    return mod.handle  # type: ignore
-
-
 handle = load_handle()
-
-from contextlib import asynccontextmanager
-from typing import Any, Dict
-
-
-@asynccontextmanager
-async def _lifespan(app):
-    try:
-        from modules.humanoid.deploy.healthcheck import _set_app_start_time
-
-        _set_app_start_time()
-    except Exception:
-        pass
-    # Cargar BÃ³veda al arranque (tokens Telegram/WhatsApp, etc.) sin pedir .env.
-    try:
-        from pathlib import Path
-
-        from dotenv import load_dotenv
-
-        vault_path = (
-            os.getenv("ATLAS_VAULT_PATH")
-            or r"C:\Users\Raul\OneDrive\RAUL - Personal\Escritorio\credenciales.txt"
-        ).strip()
-        candidates = [vault_path, r"C:\dev\credenciales.txt"]
-        for c in candidates:
-            p = Path(c)
-            if p.is_file():
-                load_dotenv(str(p), override=True)
-                break
-    except Exception:
-        pass
-    try:
-        from modules.humanoid.owner.emergency import set_emergency_from_env
-
-        set_emergency_from_env()
-    except Exception:
-        pass
-    humanoid = os.getenv("HUMANOID_ENABLED", "true").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "y",
-        "on",
-    )
-    sched = os.getenv("SCHED_ENABLED", "true").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "y",
-        "on",
-    )
-    worker_only = os.getenv("WORKER_ONLY", "false").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
-    safe_startup = os.getenv("ATLAS_SAFE_STARTUP", "false").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "y",
-        "on",
-    )
-    if humanoid and sched:
-        from concurrent.futures import ThreadPoolExecutor
-
-        from modules.humanoid.scheduler import start_scheduler
-        from modules.humanoid.watchdog import start_watchdog
-
-        _executor = ThreadPoolExecutor(max_workers=2)
-        start_scheduler(executor=_executor)
-        start_watchdog()
-        # VisiÃ³n Ubicua: preparar DB y watchdog de movimiento (best-effort, no bloquea arranque)
-        try:
-            if os.getenv("VISION_UBIQ_ENABLED", "true").strip().lower() in (
-                "1",
-                "true",
-                "yes",
-                "y",
-                "on",
-            ):
-                from modules.humanoid.vision.ubiq import (
-                    ensure_db, start_motion_watchdog)
-
-                ensure_db()
-                start_motion_watchdog()
-        except Exception:
-            pass
-        if not worker_only:
-            try:
-                from modules.humanoid.ci import ensure_ci_jobs
-
-                ensure_ci_jobs()
-            except Exception:
-                pass
-            try:
-                from modules.humanoid.ga.scheduler_jobs import ensure_ga_jobs
-
-                ensure_ga_jobs()
-            except Exception:
-                pass
-            try:
-                from modules.humanoid.metalearn.scheduler_jobs import \
-                    ensure_metalearn_jobs
-
-                ensure_metalearn_jobs()
-            except Exception:
-                pass
-            try:
-                from modules.humanoid.ans.scheduler_jobs import ensure_ans_jobs
-
-                ensure_ans_jobs()
-                # Ejecutar triada ANS al arranque (una vez) para que la bitÃ¡cora tenga acciÃ³n desde el inicio
-                if (
-                    (not safe_startup)
-                    and os.getenv("ANS_ENABLED", "true").strip().lower()
-                    in ("1", "true", "yes")
-                    and os.getenv("ANS_RUN_AT_STARTUP", "true").strip().lower()
-                    in ("1", "true", "yes")
-                ):
-
-                    def _run_triada_at_startup():
-                        try:
-                            from modules.humanoid.ans.engine import \
-                                run_ans_cycle
-
-                            run_ans_cycle(
-                                mode=os.getenv("ANS_MODE", "auto"), timeout_sec=60
-                            )
-                        except Exception:
-                            pass
-
-                    import threading
-
-                    t = threading.Thread(target=_run_triada_at_startup, daemon=True)
-                    t.start()
-            except Exception:
-                pass
-            try:
-                # Sistema Nervioso: sensores -> score -> bitÃ¡cora/incidentes (scheduler job)
-                from modules.humanoid.nervous.scheduler_jobs import \
-                    ensure_nervous_jobs
-
-                ensure_nervous_jobs()
-            except Exception:
-                pass
-            try:
-                # WorldState: visiÃ³n+OCR periÃ³dicos (representaciÃ³n mÃ­nima del entorno)
-                from modules.humanoid.vision.world_state_jobs import \
-                    ensure_world_state_jobs
-
-                ensure_world_state_jobs()
-            except Exception:
-                pass
-            # === Sistema de Comunicaciones Unificado ===
-            # Bootstrap centralizado de todos los servicios de comunicaciÃ³n
-            # (reemplaza las inicializaciones individuales de makeplay y telegram_poller)
-            try:
-                if not safe_startup:
-                    from modules.humanoid.comms.bootstrap import \
-                        bootstrap_comms
-
-                    comms_result = bootstrap_comms(skip_tests=True)
-                    if not comms_result.get("ok"):
-                        import logging
-
-                        _comms_logger = logging.getLogger("atlas.comms.startup")
-                        for warning in comms_result.get("warnings", []):
-                            _comms_logger.warning(f"Comms bootstrap: {warning}")
-            except Exception as _comms_err:
-                import logging
-
-                logging.getLogger("atlas.comms.startup").error(
-                    f"Comms bootstrap failed: {_comms_err}"
-                )
-
-            # === Quality / POT Autonomy ===
-            # Activa dispatcher+triggers para ejecuciÃ³n autÃ³noma de POTs.
-            # Control: QUALITY_AUTONOMY_ENABLED=true|false (default true)
-            try:
-                if (not safe_startup) and os.getenv(
-                    "QUALITY_AUTONOMY_ENABLED", "true"
-                ).strip().lower() in ("1", "true", "yes", "y", "on"):
-                    from modules.humanoid.quality import \
-                        start_autonomous_system
-
-                    q = start_autonomous_system()
-                    # Autostart del Autonomy Daemon (evita estado CRITICAL post-restart)
-                    # Control: AUTONOMY_DAEMON_AUTOSTART=true|false (default true)
-                    try:
-                        if os.getenv(
-                            "AUTONOMY_DAEMON_AUTOSTART", "true"
-                        ).strip().lower() in ("1", "true", "yes", "y", "on"):
-                            from modules.humanoid.quality.autonomy_daemon import (
-                                is_autonomy_running, start_autonomy)
-
-                            if not is_autonomy_running():
-                                start_autonomy()
-                    except Exception:
-                        pass
-                    try:
-                        from modules.humanoid.ans.evolution_bitacora import \
-                            append_evolution_log
-
-                        append_evolution_log(
-                            message="[QUALITY] AutonomÃ­a POT iniciada (dispatcher+triggers).",
-                            ok=bool(q.get("all_ok", False)),
-                            source="quality",
-                        )
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            try:
-                from modules.humanoid.scheduler.repo_monitor_jobs import \
-                    ensure_repo_monitor_jobs
-
-                ensure_repo_monitor_jobs()
-            except Exception:
-                pass
-            try:
-                # MakePlay Scanner: snapshot local + (opcional) webhook externo
-                from modules.humanoid.comms.makeplay_scheduler import \
-                    ensure_makeplay_jobs
-
-                ensure_makeplay_jobs()
-            except Exception:
-                pass
-            try:
-                from modules.humanoid.scheduler.repo_hygiene_jobs import \
-                    ensure_repo_hygiene_jobs
-
-                ensure_repo_hygiene_jobs()
-            except Exception:
-                pass
-            try:
-                from modules.humanoid.approvals.scheduler_jobs import \
-                    ensure_approvals_jobs
-
-                ensure_approvals_jobs()
-            except Exception:
-                pass
-            try:
-                from modules.humanoid.scheduler.workshop_jobs import \
-                    ensure_workshop_jobs
-
-                ensure_workshop_jobs()
-            except Exception:
-                pass
-            try:
-                from modules.humanoid.repo.git_hooks import \
-                    ensure_post_commit_hook
-
-                ensure_post_commit_hook()
-            except Exception:
-                pass
-        # Heartbeat NEXUS: ping 8000/health, auto-reactivaciÃ³n con start_all.ps1, registro en BitÃ¡cora
-        try:
-            from modules.nexus_heartbeat import (register_status_callback,
-                                                 start_heartbeat)
-
-            _dashboard_base = (
-                os.getenv("ATLAS_DASHBOARD_URL") or "http://127.0.0.1:8791"
-            ).rstrip("/")
-
-            def _on_nexus_change(connected: bool, message: str) -> None:
-                if connected:
-                    text = "[CONEXIÃ“N] Buscando NEXUS en puerto 8000... OK."
-                else:
-                    extra = (message or "").strip()
-                    extra = (": " + extra[:120]) if extra else ""
-                    text = (
-                        "[CONEXIÃ“N] Buscando NEXUS en puerto 8000... Desconectado"
-                        + extra
-                    )
-                try:
-                    import json
-                    import urllib.request
-
-                    req = urllib.request.Request(
-                        _dashboard_base + "/ans/evolution-log",
-                        data=json.dumps({"message": text, "ok": connected}).encode(
-                            "utf-8"
-                        ),
-                        headers={"Content-Type": "application/json"},
-                        method="POST",
-                    )
-                    urllib.request.urlopen(req, timeout=3)
-                except Exception:
-                    pass
-
-            register_status_callback(_on_nexus_change)
-            start_heartbeat()
-
-            # Prueba de Nervios: autodiagnÃ³stico de motores, mouse, cÃ¡mara; actualiza Dashboard a CONECTADO | ACTIVO
-            def _run_nerve_test_background():
-                try:
-                    import sys
-                    from pathlib import Path
-
-                    push_base = Path(__file__).resolve().parent.parent
-                    if str(push_base) not in sys.path:
-                        sys.path.insert(0, str(push_base))
-                    import nexus_actions
-
-                    nexus_actions.run_nerve_test()
-                except Exception:
-                    pass
-
-            import threading
-
-            _nerve_thread = threading.Thread(
-                target=_run_nerve_test_background, daemon=True
-            )
-            _nerve_thread.start()
-        except Exception:
-            pass
-    # ATLAS AUTONOMOUS: background tasks (Health, Alert, Learning)
-    try:
-        import asyncio
-        import sys
-
-        if str(BASE_DIR) not in sys.path:
-            sys.path.insert(0, str(BASE_DIR))
-        import logging
-
-        from autonomous.health_monitor.health_aggregator import \
-            HealthAggregator
-        from autonomous.learning.learning_orchestrator import \
-            LearningOrchestrator
-        from autonomous.telemetry.alert_manager import AlertManager
-        from autonomous.telemetry.metrics_aggregator import MetricsAggregator
-
-        _log = logging.getLogger(__name__)
-        _log.info("Iniciando background tasks de ATLAS AUTONOMOUS...")
-        health_agg = HealthAggregator()
-        health_agg.start_monitoring()
-        _log.info("âœ“ Health Monitoring activo")
-        alert_mgr = AlertManager()
-        asyncio.create_task(alert_mgr.start_evaluation_loop(60))
-        _log.info("âœ“ Alert Manager activo")
-        learning = LearningOrchestrator()
-
-        async def _learning_loop():
-            while True:
-                await asyncio.sleep(3600)
-                try:
-                    learning.run_learning_cycle()
-                    _log.info("âœ“ Learning cycle ejecutado")
-                except Exception as e:
-                    _log.error("Error en learning cycle: %s", e)
-
-        asyncio.create_task(_learning_loop())
-        _log.info("âœ“ Learning Engine activo")
-
-        metrics_agg = MetricsAggregator()
-
-        def _load_telemetry_interval() -> float:
-            interval = 60.0
-            try:
-                cfg_path = BASE_DIR / "config" / "autonomous.yaml"
-                if cfg_path.exists():
-                    import yaml
-
-                    cfg = yaml.safe_load(
-                        cfg_path.read_text(encoding="utf-8", errors="replace")
-                    ) or {}
-                    interval = float(
-                        (((cfg.get("telemetry") or {}).get("metrics") or {}).get(
-                            "aggregation_interval"
-                        ))
-                        or interval
-                    )
-            except Exception:
-                pass
-            return max(5.0, interval)
-
-        telemetry_interval_sec = _load_telemetry_interval()
-
-        def _probe_service(url: str) -> tuple[float, float]:
-            import urllib.request
-
-            t0_probe = time.perf_counter()
-            try:
-                req = urllib.request.Request(
-                    url, method="GET", headers={"Accept": "application/json"}
-                )
-                with urllib.request.urlopen(req, timeout=2) as resp:
-                    if 200 <= int(resp.status) < 400:
-                        return (1.0, (time.perf_counter() - t0_probe) * 1000.0)
-            except Exception:
-                pass
-            return (0.0, 0.0)
-
-        def _collect_telemetry_once() -> None:
-            try:
-                import psutil
-
-                disk_root = (os.getenv("SystemDrive") or "C:") + "\\"
-                metrics_agg.collect_metric(
-                    "system", "cpu_percent", float(psutil.cpu_percent(interval=0))
-                )
-                metrics_agg.collect_metric(
-                    "system", "ram_percent", float(psutil.virtual_memory().percent)
-                )
-                metrics_agg.collect_metric(
-                    "system",
-                    "disk_usage_percent",
-                    float(psutil.disk_usage(disk_root).percent),
-                )
-            except Exception:
-                pass
-            try:
-                from modules.observability.metrics import MetricsCollector
-
-                summary = MetricsCollector.get_metrics_summary() or {}
-                metrics_agg.collect_metric(
-                    "observability",
-                    "total_requests",
-                    float(summary.get("total_requests", 0) or 0),
-                )
-                metrics_agg.collect_metric(
-                    "observability",
-                    "active_requests",
-                    float(summary.get("active_requests", 0) or 0),
-                )
-                metrics_agg.collect_metric(
-                    "observability",
-                    "memory_mb",
-                    float(summary.get("memory_mb", 0) or 0),
-                )
-            except Exception:
-                pass
-            try:
-                services = {
-                    "push": "http://127.0.0.1:8791/health",
-                    "nexus": "http://127.0.0.1:8000/health",
-                    "robot": "http://127.0.0.1:8002/api/health",
-                }
-                for service_name, service_url in services.items():
-                    if service_name == "push":
-                        # The telemetry loop runs inside PUSH itself; mark local
-                        # service online without generating self-HTTP load.
-                        metrics_agg.collect_metric("services", "push_online", 1.0)
-                        continue
-                    online, latency_ms = _probe_service(service_url)
-                    metrics_agg.collect_metric("services", f"{service_name}_online", online)
-                    if latency_ms > 0:
-                        metrics_agg.collect_metric(
-                            "services",
-                            f"{service_name}_latency_ms",
-                            float(latency_ms),
-                        )
-            except Exception:
-                pass
-
-        async def _telemetry_loop():
-            while True:
-                try:
-                    # Execute blocking telemetry collection off the event loop.
-                    await asyncio.to_thread(_collect_telemetry_once)
-                except Exception:
-                    pass
-                await asyncio.sleep(telemetry_interval_sec)
-
-        asyncio.create_task(_telemetry_loop())
-        _log.info("âœ“ Telemetry Metrics activo (intervalo %ss)", telemetry_interval_sec)
-    except Exception as e:
-        import logging
-
-        logging.getLogger(__name__).debug(
-            "ATLAS AUTONOMOUS background tasks no iniciados: %s", e
-        )
-    # ActualizaciÃ³n periÃ³dica de mÃ©tricas Prometheus (memoria, etc.)
-    try:
-        from modules.observability.metrics import update_system_metrics
-
-        async def _metrics_loop():
-            while True:
-                await asyncio.sleep(10)
-                try:
-                    update_system_metrics()
-                except Exception:
-                    pass
-
-        asyncio.create_task(_metrics_loop())
-    except Exception:
-        pass
-    # Failsafe: asegurar Autonomy Daemon activo al finalizar startup.
-    # Esto cubre escenarios donde QUALITY_AUTONOMY_ENABLED no iniciÃ³ el daemon.
-    try:
-        if os.getenv("AUTONOMY_DAEMON_AUTOSTART", "true").strip().lower() in (
-            "1",
-            "true",
-            "yes",
-            "y",
-            "on",
-        ):
-            from modules.humanoid.quality.autonomy_daemon import \
-                is_autonomy_running
-
-            if not is_autonomy_running():
-                try:
-                    # Do not block API startup with heavy autonomy bootstrap.
-                    asyncio.create_task(asyncio.to_thread(autonomy_daemon_start))
-                except Exception:
-                    pass
-            # Second chance after a brief pause if still down.
-            if not is_autonomy_running():
-                await asyncio.sleep(0.5)
-                try:
-                    asyncio.create_task(asyncio.to_thread(autonomy_daemon_start))
-                except Exception:
-                    pass
-    except Exception:
-        pass
-    # Supervisor residente: monitoreo continuo + directivas internas + notificaciÃ³n a Owner
-    try:
-        if not safe_startup:
-            from atlas_adapter.supervisor_daemon import start_supervisor_daemon
-
-            await start_supervisor_daemon()
-    except Exception:
-        pass
-    yield
-    # Shutdown: detener supervisor residente (best-effort)
-    try:
-        from atlas_adapter.supervisor_daemon import stop_supervisor_daemon
-
-        await stop_supervisor_daemon()
-    except Exception:
-        pass
 
 
 app = FastAPI(
     title="ATLAS Adapter",
     version="1.0.0",
-    lifespan=_lifespan,
+    lifespan=app_lifespan,
     openapi_tags=[
         {
             "name": "Health",
@@ -656,6 +93,22 @@ app = FastAPI(
         },
     ],
 )
+app.include_router(
+    build_status_observability_router(
+        base_dir=BASE_DIR,
+        status_provider=lambda: handle("/status"),
+        robot_status_provider=get_robot_status,
+    )
+)
+app.include_router(build_nexus_runtime_router(repo_root=BASE_DIR, env_path=ENV_PATH))
+app.include_router(build_trading_quant_router())
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Metrics middleware: request count + latency per path
 try:
@@ -676,160 +129,6 @@ except Exception:
 class Step(BaseModel):
     tool: str
     args: dict = {}
-
-
-def _robot_connected() -> bool:
-    """Ping Robot: prueba backend (8002) y luego UI (NEXUS_ROBOT_URL)."""
-    import os
-    import urllib.request
-
-    base_api = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
-    base_ui = (os.getenv("NEXUS_ROBOT_URL") or base_api).rstrip("/")
-    for base in (base_api, base_ui):
-        try:
-            req = urllib.request.Request(base + "/", method="GET")
-            with urllib.request.urlopen(req, timeout=2) as r:
-                if r.status == 200:
-                    return True
-        except Exception:
-            pass
-    return False
-
-
-_ATLAS_STATUS_CACHE_TTL_SEC = float(os.getenv("ATLAS_STATUS_CACHE_TTL_SEC") or 12.0)
-_ATLAS_STATUS_CACHE = {"value": "[degraded] initializing", "ts": 0.0}
-_ATLAS_STATUS_INFLIGHT = False
-_ATLAS_STATUS_LOCK = threading.Lock()
-
-
-def _refresh_atlas_status_cache() -> None:
-    """Compute heavy atlas status once, update shared cache."""
-    global _ATLAS_STATUS_INFLIGHT
-    try:
-        value = handle("/status")
-    except Exception as e:
-        value = f"[degraded] /status error: {e}"
-    with _ATLAS_STATUS_LOCK:
-        _ATLAS_STATUS_CACHE["value"] = value
-        _ATLAS_STATUS_CACHE["ts"] = time.time()
-        _ATLAS_STATUS_INFLIGHT = False
-
-
-def _atlas_status_safe_cached() -> str:
-    """Never block request path; return cached value and refresh in background."""
-    global _ATLAS_STATUS_INFLIGHT
-    now = time.time()
-    with _ATLAS_STATUS_LOCK:
-        cached = _ATLAS_STATUS_CACHE.get("value", "[degraded] initializing")
-        ts = float(_ATLAS_STATUS_CACHE.get("ts") or 0.0)
-        is_fresh = (now - ts) <= _ATLAS_STATUS_CACHE_TTL_SEC
-        if is_fresh:
-            return str(cached)
-        if not _ATLAS_STATUS_INFLIGHT:
-            _ATLAS_STATUS_INFLIGHT = True
-            threading.Thread(target=_refresh_atlas_status_cache, daemon=True).start()
-        return str(cached)
-
-
-_STATUS_CACHE: Dict[str, Any] = {"nexus": {}, "robot": False, "ts": 0.0}
-_STATUS_CACHE_TTL = 15.0
-_STATUS_BG_STARTED = False
-
-
-def _status_bg_loop():
-    """Background thread that refreshes connectivity every 15s."""
-    while True:
-        try:
-            robot_ok = _robot_connected()
-        except Exception:
-            robot_ok = False
-        _STATUS_CACHE["nexus"] = {
-            "connected": True,
-            "active": True,
-            "last_check_ts": time.time(),
-            "last_error": "",
-        }
-        _STATUS_CACHE["robot"] = robot_ok
-        _STATUS_CACHE["ts"] = time.time()
-        time.sleep(_STATUS_CACHE_TTL)
-
-
-@app.get("/status")
-def status():
-    global _STATUS_BG_STARTED
-    if not _STATUS_BG_STARTED:
-        _STATUS_BG_STARTED = True
-        threading.Thread(target=_status_bg_loop, daemon=True).start()
-
-    nexus = _STATUS_CACHE.get("nexus", {})
-    robot_ok = _STATUS_CACHE.get("robot", False)
-    return {
-        "ok": True,
-        "atlas": _atlas_status_safe_cached(),
-        "nexus_connected": nexus.get("connected", False),
-        "nexus_active": nexus.get("active", False),
-        "nexus_last_check_ts": nexus.get("last_check_ts", 0),
-        "nexus_last_error": nexus.get("last_error", ""),
-        "nexus_dashboard_url": "/nexus",
-        "robot_connected": robot_ok,
-    }
-
-
-@app.get("/api/nexus/connection", tags=["NEXUS"])
-def get_nexus_connection():
-    """CEREBRO â€” CUERPO (NEXUS): estado de conexiÃ³n (consolidado en PUSH)."""
-    return {
-        "ok": True,
-        "connected": True,
-        "active": True,
-        "last_check_ts": time.time(),
-        "last_error": "",
-    }
-
-
-class NexusConnectionBody(BaseModel):
-    connected: bool = False
-    message: str = ""
-    active: Optional[bool] = None
-
-
-@app.post("/api/nexus/connection", tags=["NEXUS"])
-def post_nexus_connection(body: NexusConnectionBody):
-    """Actualiza estado de conexiÃ³n NEXUS (heartbeat o Prueba de Nervios). active=True â†’ CONECTADO | ACTIVO."""
-    try:
-        from modules.nexus_heartbeat import (set_nexus_active,
-                                             set_nexus_connected)
-
-        set_nexus_connected(body.connected, body.message or "")
-        if body.active is not None:
-            set_nexus_active(body.active)
-        return {"ok": True, "connected": body.connected, "active": body.active}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
-@app.post("/api/nexus/reconnect", tags=["NEXUS"])
-def nexus_reconnect(clear_cache: bool = False):
-    """Reconectar NEXUS (no-bloqueante): opcionalmente limpia cache, lanza arranque y devuelve de inmediato."""
-    try:
-        if clear_cache:
-            from modules.nexus_heartbeat import clear_nexus_cache
-
-            clear_nexus_cache()
-        from modules.nexus_heartbeat import (get_nexus_connection_state,
-                                             restart_nexus)
-
-        started = restart_nexus()
-        state = get_nexus_connection_state()
-        return {
-            "ok": True,
-            "started": bool(started),
-            "connected": state.get("connected", False),
-            **state,
-            "message": "NEXUS arrancando en segundo plano. Espera 10-20s y pulsa Actualizar/Estado.",
-        }
-    except Exception as e:
-        return {"ok": False, "connected": False, "error": str(e)}
 
 
 @app.post("/api/cache/clear", tags=["NEXUS"])
@@ -2038,352 +1337,6 @@ def api_self_programming_execute_sandbox(body: SelfProgramExecuteBody):
         return {"success": False, "error": str(e)}
 
 
-@app.get("/api/robot/status", tags=["NEXUS"])
-def robot_status():
-    """Estado del Robot (cÃ¡maras, visiÃ³n).
-
-    Orden de detecciÃ³n:
-    1) Backend Robot/NEXUS (8002 / NEXUS_ROBOT_URL)
-    2) Fallback local USB (si hay cÃ¡mara local disponible)
-    """
-    import os
-    import urllib.request
-
-    base_api = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
-    base_ui = (os.getenv("NEXUS_ROBOT_URL") or base_api).rstrip("/")
-    for base in (base_api, base_ui):
-        try:
-            req = urllib.request.Request(base + "/", method="GET")
-            with urllib.request.urlopen(req, timeout=3) as r:
-                if r.status == 200:
-                    return {
-                        "ok": True,
-                        "connected": True,
-                        "robot_url": base,
-                        "source": "robot",
-                        "local_fallback": False,
-                    }
-        except Exception:
-            pass
-        try:
-            req = urllib.request.Request(
-                base + "/api/camera/service/status",
-                method="GET",
-                headers={"Accept": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=3) as r:
-                if r.status == 200:
-                    return {
-                        "ok": True,
-                        "connected": True,
-                        "robot_url": base,
-                        "source": "robot",
-                        "local_fallback": False,
-                    }
-        except Exception:
-            pass
-    return {
-        "ok": False,
-        "connected": False,
-        "robot_url": base_ui or base_api,
-        "source": "none",
-        "local_fallback": False,
-    }
-
-
-@app.post("/api/robot/reconnect", tags=["NEXUS"])
-def robot_reconnect():
-    """Arranca el backend del Robot (cÃ¡maras). Devuelve enseguida; el usuario debe pulsar Actualizar cÃ¡maras en 10-15 s."""
-    import subprocess
-    from pathlib import Path
-
-    if ENV_PATH.exists():
-        try:
-            from dotenv import load_dotenv
-
-            load_dotenv(ENV_PATH, override=True)
-        except Exception:
-            pass
-    robot_path = Path(
-        os.getenv("NEXUS_ROBOT_PATH")
-        or str(BASE_DIR / "nexus" / "atlas_nexus_robot" / "backend")
-    )
-    base_api = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
-    repo_root = BASE_DIR
-    script = repo_root / "scripts" / "start_nexus_services.py"
-    if not script.exists():
-        return {
-            "ok": False,
-            "connected": False,
-            "robot_url": base_api,
-            "message": "Script no encontrado.",
-            "robot_path": str(robot_path),
-        }
-    if not robot_path.exists():
-        return {
-            "ok": False,
-            "connected": False,
-            "robot_url": base_api,
-            "message": "Carpeta del Robot no existe: " + str(robot_path),
-            "robot_path": str(robot_path),
-        }
-    try:
-        py = os.getenv("PYTHON", "python")
-        flags = (
-            subprocess.CREATE_NO_WINDOW
-            if hasattr(subprocess, "CREATE_NO_WINDOW")
-            else 0
-        )
-        env = os.environ.copy()
-        env["NEXUS_ROBOT_PATH"] = str(robot_path)
-        env["NEXUS_ATLAS_PATH"] = os.getenv("NEXUS_ATLAS_PATH") or str(
-            repo_root / "nexus" / "atlas_nexus"
-        )
-        r = subprocess.run(
-            [py, str(script), "--robot-only"],
-            cwd=str(repo_root),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            creationflags=flags if os.name == "nt" else 0,
-        )
-        out = (r.stdout or "").strip() or (r.stderr or "")[:200]
-        if "Robot" in out:
-            return {
-                "ok": True,
-                "connected": False,
-                "robot_url": base_api,
-                "message": "Robot arrancando. Espera 10-15 s y pulsa Â«Actualizar cÃ¡marasÂ».",
-                "robot_path": str(robot_path),
-            }
-        return {
-            "ok": False,
-            "connected": False,
-            "robot_url": base_api,
-            "message": "No arrancÃ³ (salida: %s). Comprueba que en %s exista main.py."
-            % (out or "vacÃ­o", robot_path),
-            "robot_path": str(robot_path),
-        }
-    except subprocess.TimeoutExpired:
-        return {
-            "ok": False,
-            "connected": False,
-            "robot_url": base_api,
-            "message": "Script tardÃ³ demasiado.",
-            "robot_path": str(robot_path),
-        }
-    except Exception as e:
-        return {
-            "ok": False,
-            "connected": False,
-            "robot_url": base_api,
-            "message": str(e),
-            "robot_path": str(robot_path),
-        }
-
-
-@app.post("/api/cuerpo/reconnect", tags=["NEXUS"])
-def cuerpo_reconnect():
-    """Arranca Cuerpo completo (NEXUS 8000 + Robot 8002). Responde rÃ¡pido (no-bloqueante)."""
-    import subprocess
-    from pathlib import Path
-
-    if ENV_PATH.exists():
-        try:
-            from dotenv import load_dotenv
-
-            load_dotenv(ENV_PATH, override=True)
-        except Exception:
-            pass
-    repo_root = BASE_DIR
-    script = repo_root / "scripts" / "start_nexus_services.py"
-    nexus_path = Path(
-        os.getenv("NEXUS_ATLAS_PATH") or str(repo_root / "nexus" / "atlas_nexus")
-    )
-    robot_path = Path(
-        os.getenv("NEXUS_ROBOT_PATH")
-        or str(repo_root / "nexus" / "atlas_nexus_robot" / "backend")
-    )
-    if not script.exists():
-        return {
-            "ok": False,
-            "started": False,
-            "message": "Script no encontrado: scripts/start_nexus_services.py",
-        }
-    if not nexus_path.exists():
-        return {
-            "ok": False,
-            "started": False,
-            "message": "Carpeta NEXUS no existe: " + str(nexus_path),
-        }
-    if not robot_path.exists():
-        return {
-            "ok": False,
-            "started": False,
-            "message": "Carpeta Robot no existe: " + str(robot_path),
-        }
-    try:
-        py = os.getenv("PYTHON", "python")
-        flags = (
-            subprocess.CREATE_NO_WINDOW
-            if hasattr(subprocess, "CREATE_NO_WINDOW")
-            else 0
-        )
-        env = os.environ.copy()
-        env["NEXUS_ATLAS_PATH"] = str(nexus_path)
-        env["NEXUS_ROBOT_PATH"] = str(robot_path)
-        r = subprocess.run(
-            [py, str(script)],
-            cwd=str(repo_root),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            creationflags=flags if os.name == "nt" else 0,
-        )
-        out = (r.stdout or "").strip() or (r.stderr or "")[:200]
-        started = ("NEXUS" in out) or ("Robot" in out)
-        return {
-            "ok": True,
-            "started": bool(started),
-            "message": "Cuerpo arrancando (NEXUS+Robot). Espera 10-20s y revisa Estado.",
-            "output": out,
-        }
-    except subprocess.TimeoutExpired:
-        return {
-            "ok": True,
-            "started": True,
-            "message": "Cuerpo lanzado (timeout corto). Espera 10-20s y revisa Estado.",
-        }
-    except Exception as e:
-        return {"ok": False, "started": False, "message": str(e)}
-
-
-@app.get("/api/robot/start-commands", tags=["NEXUS"])
-def robot_start_commands():
-    """Devuelve los comandos para arrancar NEXUS y Robot a mano (por si Reconectar no da resultado)."""
-    if ENV_PATH.exists():
-        try:
-            from dotenv import load_dotenv
-
-            load_dotenv(ENV_PATH, override=True)
-        except Exception:
-            pass
-    robot_path = Path(
-        os.getenv("NEXUS_ROBOT_PATH")
-        or str(BASE_DIR / "nexus" / "atlas_nexus_robot" / "backend")
-    )
-    nexus_path = Path(
-        os.getenv("NEXUS_ATLAS_PATH") or str(BASE_DIR / "nexus" / "atlas_nexus")
-    )
-    py = os.getenv("PYTHON", "python")
-    return {
-        "ok": True,
-        "robot_path": str(robot_path),
-        "nexus_path": str(nexus_path),
-        "commands": {
-            "robot": 'cd /d "%s" && %s main.py' % (robot_path, py)
-            if os.name == "nt"
-            else 'cd "%s" && %s main.py' % (robot_path, py),
-            "nexus": 'cd /d "%s" && %s nexus.py --mode api' % (nexus_path, py)
-            if os.name == "nt"
-            else 'cd "%s" && %s nexus.py --mode api' % (nexus_path, py),
-        },
-        "hint": "Abre dos terminales, ejecuta uno en cada una. Robot usa puerto 8002, NEXUS 8000.",
-    }
-
-
-def _tail_text_file(path: Path, max_bytes: int = 65536, lines: int = 200) -> str:
-    try:
-        if not path.exists():
-            return ""
-        with open(path, "rb") as f:
-            try:
-                f.seek(0, os.SEEK_END)
-                size = f.tell()
-                f.seek(max(0, size - max_bytes))
-            except Exception:
-                pass
-            data = f.read()
-        text = data.decode("utf-8", errors="replace")
-        parts = text.splitlines()
-        return "\n".join(parts[-max(1, int(lines)) :])
-    except Exception:
-        return ""
-
-
-@app.get("/api/robot/log/tail", tags=["NEXUS"])
-def robot_log_tail(lines: int = 200):
-    """Ãšltimas lÃ­neas del log del backend Robot (arranque/errores)."""
-    p = BASE_DIR / "logs" / "robot_backend.log"
-    return {
-        "ok": True,
-        "path": str(p),
-        "lines": int(lines),
-        "text": _tail_text_file(p, lines=int(lines)),
-    }
-
-
-@app.get("/api/nexus/log/tail", tags=["NEXUS"])
-def nexus_log_tail(lines: int = 200):
-    """Ãšltimas lÃ­neas del log de NEXUS (si se arrancÃ³ con script start_nexus_services)."""
-    p = BASE_DIR / "logs" / "nexus_api.log"
-    return {
-        "ok": True,
-        "path": str(p),
-        "lines": int(lines),
-        "text": _tail_text_file(p, lines=int(lines)),
-    }
-
-
-@app.get("/nervous/services", tags=["NEXUS"])
-def nervous_services():
-    """Alias compacto del estado del sistema nervioso para compatibilidad."""
-    return nerve_status()
-
-
-@app.get("/api/nerve/status", tags=["NEXUS"])
-def nerve_status():
-    """Estado del nervio: ojos (Nexus disponible, snapshot_url), manos (local). Cerebro â†’ Nexus/manos."""
-    try:
-        from modules.humanoid.nerve import feet_status, nerve_eyes_status
-
-        eyes = nerve_eyes_status()
-        hands_deps_ok = None
-        try:
-            from modules.humanoid.screen.status import _screen_deps_ok as _ok
-
-            hands_deps_ok = bool(_ok())
-        except Exception:
-            hands_deps_ok = None
-        feet = feet_status()
-        return {
-            "ok": True,
-            "eyes": eyes,
-            "hands": {"local": True, "deps_ok": hands_deps_ok},
-            "feet": feet,
-        }
-    except Exception as e:
-        return {"ok": False, "eyes": {}, "hands": {}, "feet": {}, "error": str(e)}
-
-
-@app.post("/api/feet/execute", tags=["NEXUS"])
-def api_feet_execute(body: dict):
-    """Ejecuta 'pies' (incluye pies internos digitales si FEET_DRIVER=digital).
-
-    Body: {command: str, payload: dict}
-    """
-    try:
-        from modules.humanoid.nerve import feet_execute
-
-        cmd = (body or {}).get("command") or ""
-        payload = (body or {}).get("payload") or {}
-        return feet_execute(str(cmd), payload if isinstance(payload, dict) else {})
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
 class WorkspaceTerminalBody(BaseModel):
     command: str
     cwd: Optional[str] = None
@@ -2725,6 +1678,22 @@ def api_prim_nexus_reach_pose(body: dict):
         return {"ok": False, "error": str(e)}
 
 
+@app.post("/api/primitives/nexus/look-at-screen", tags=["Primitives"])
+def api_prim_nexus_look_at_screen(body: dict):
+    try:
+        from modules.nexus_core.primitives import look_at_screen
+
+        x = float((body or {}).get("x", 0.0) or 0.0)
+        y = float((body or {}).get("y", 0.0) or 0.0)
+        zoom_value = (body or {}).get("zoom")
+        zoom = float(zoom_value) if zoom_value is not None else None
+        source = str((body or {}).get("source") or "camera")
+        calib_path = str((body or {}).get("calib_path") or "").strip() or None
+        return look_at_screen(x, y, zoom=zoom, calib_path=calib_path, source=source)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.post("/api/primitives/nexus/grasp", tags=["Primitives"])
 def api_prim_nexus_grasp(body: dict):
     try:
@@ -3046,8 +2015,58 @@ def api_whatsapp_send(body: dict):
         return {"ok": False, "error": str(e)}
 
 
+_WHATSAPP_INBOUND_TRACE_LOG = Path(_logs) / "whatsapp_inbound_trace.jsonl"
+
+
+def _collect_request_origin(request: Request = None) -> Dict[str, Any]:
+    if request is None:
+        return {}
+    headers = request.headers or {}
+    client_ip = ""
+    try:
+        client_ip = str((request.client.host if request.client else "") or "")
+    except Exception:
+        client_ip = ""
+    return {
+        "client_ip": client_ip,
+        "x_forwarded_for": str(headers.get("x-forwarded-for") or ""),
+        "x_real_ip": str(headers.get("x-real-ip") or ""),
+        "cf_connecting_ip": str(headers.get("cf-connecting-ip") or ""),
+        "user_agent": str(headers.get("user-agent") or ""),
+        "host": str(headers.get("host") or ""),
+        "method": str(getattr(request, "method", "") or ""),
+    }
+
+
+def _append_whatsapp_inbound_trace(entry: Dict[str, Any]) -> None:
+    try:
+        _WHATSAPP_INBOUND_TRACE_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _WHATSAPP_INBOUND_TRACE_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+@app.get("/api/comms/whatsapp/inbound", tags=["Comms", "WhatsApp"])
+async def api_whatsapp_inbound_verify(request: Request):
+    """Verificación de webhook de Meta WhatsApp Business API (GET challenge).
+
+    Meta llama GET con hub.mode=subscribe, hub.challenge y hub.verify_token.
+    Respondemos con hub.challenge si el verify_token coincide.
+    """
+    params = dict(request.query_params)
+    mode = params.get("hub.mode", "")
+    token = params.get("hub.verify_token", "")
+    challenge = params.get("hub.challenge", "")
+    expected = os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "")
+    if mode == "subscribe" and token == expected and expected:
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(challenge)
+    return {"ok": False, "error": "invalid_verify_token"}
+
+
 @app.post("/api/comms/whatsapp/inbound", tags=["Comms", "WhatsApp"])
-def api_whatsapp_inbound(body: dict):
+def api_whatsapp_inbound(body: dict, request: Request = None):
     """
     Webhook inbound de WhatsApp (WAHA/Twilio/Meta) -> supervisor conversacional.
 
@@ -3059,8 +2078,44 @@ def api_whatsapp_inbound(body: dict):
         from modules.humanoid.comms.whatsapp_bridge import (parse_inbound_payload,
                                                             send_text)
 
+        trace_base = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "route": "/api/comms/whatsapp/inbound",
+            "origin": _collect_request_origin(request),
+        }
+
+        require_known = os.getenv("ATLAS_WHATSAPP_REQUIRE_KNOWN", "true").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        )
+        require_atlas_question = os.getenv(
+            "ATLAS_WHATSAPP_REQUIRE_ATLAS_QUESTION", "true"
+        ).strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        )
+        re_atlas = re.compile(r"\batlas\b", re.IGNORECASE)
+        re_question_hint = re.compile(
+            r"[?¿]|\b(que|qué|como|cómo|puedes|puede|ayuda|ayudame|ayúdame|dime|necesito|sabes)\b",
+            re.IGNORECASE,
+        )
+
         parsed = parse_inbound_payload(body or {})
         if not parsed.get("ok"):
+            _append_whatsapp_inbound_trace(
+                {
+                    **trace_base,
+                    "status": "ignored",
+                    "reason": parsed.get("reason") or "unparsed_payload",
+                    "provider_hint": parsed.get("provider_hint"),
+                }
+            )
             return {
                 "ok": True,
                 "ignored": True,
@@ -3071,10 +2126,79 @@ def api_whatsapp_inbound(body: dict):
         sender = str(parsed.get("from") or "").strip()
         text = str(parsed.get("text") or "").strip()
         if not sender or not text:
+            _append_whatsapp_inbound_trace(
+                {
+                    **trace_base,
+                    "status": "ignored",
+                    "reason": "missing_sender_or_text",
+                    "sender": sender,
+                    "text_len": len(text),
+                    "provider_hint": parsed.get("provider_hint"),
+                }
+            )
             return {"ok": True, "ignored": True, "reason": "missing_sender_or_text"}
 
         hub = get_atlas_comms_hub()
         resolved_user = hub.resolve_external_user_by_whatsapp(sender)
+        is_known = bool(resolved_user.get("ok"))
+        atlas_mentioned = bool(re_atlas.search(text or ""))
+        looks_like_question = bool(re_question_hint.search(text or ""))
+
+        if require_known and not is_known:
+            unauthorized_text = os.getenv(
+                "ATLAS_WHATSAPP_UNAUTHORIZED_TEXT",
+                "Usuario no autorizado",
+            ).strip() or "Usuario no autorizado"
+            send_result = send_text(unauthorized_text, to=sender)
+            _append_whatsapp_inbound_trace(
+                {
+                    **trace_base,
+                    "status": "blocked",
+                    "reason": "sender_not_linked",
+                    "sender": sender,
+                    "text_len": len(text),
+                    "provider_hint": parsed.get("provider_hint"),
+                    "send_result_ok": bool(send_result.get("ok")),
+                }
+            )
+            return {
+                "ok": True,
+                "ignored": True,
+                "reason": "sender_not_linked",
+                "sender": sender,
+                "send_result": send_result,
+                "rules": {
+                    "require_known": require_known,
+                    "require_atlas_question": require_atlas_question,
+                },
+            }
+
+        if require_atlas_question and not (atlas_mentioned and looks_like_question):
+            _append_whatsapp_inbound_trace(
+                {
+                    **trace_base,
+                    "status": "ignored",
+                    "reason": "atlas_question_required",
+                    "sender": sender,
+                    "text_len": len(text),
+                    "provider_hint": parsed.get("provider_hint"),
+                    "atlas_mentioned": atlas_mentioned,
+                    "looks_like_question": looks_like_question,
+                }
+            )
+            return {
+                "ok": True,
+                "ignored": True,
+                "reason": "atlas_question_required",
+                "sender": sender,
+                "rules": {
+                    "require_known": require_known,
+                    "require_atlas_question": require_atlas_question,
+                    "atlas_mentioned": atlas_mentioned,
+                    "looks_like_question": looks_like_question,
+                },
+            }
+
         effective_user_id = (
             str(resolved_user.get("user_id"))
             if resolved_user.get("ok")
@@ -3097,6 +2221,20 @@ def api_whatsapp_inbound(body: dict):
         if reply_text:
             send_result = send_text(reply_text, to=sender)
 
+        _append_whatsapp_inbound_trace(
+            {
+                **trace_base,
+                "status": "accepted",
+                "sender": sender,
+                "text_len": len(text),
+                "provider_hint": parsed.get("provider_hint"),
+                "effective_user_id": effective_user_id,
+                "message_id": out.get("message_id"),
+                "interaction_ok": bool(out.get("ok")),
+                "send_result_ok": bool(send_result.get("ok")),
+            }
+        )
+
         return {
             "ok": bool(out.get("ok")),
             "inbound": parsed,
@@ -3110,6 +2248,15 @@ def api_whatsapp_inbound(body: dict):
             "send_result": send_result,
         }
     except Exception as e:
+        _append_whatsapp_inbound_trace(
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "route": "/api/comms/whatsapp/inbound",
+                "origin": _collect_request_origin(request),
+                "status": "error",
+                "error": str(e)[:300],
+            }
+        )
         return {"ok": False, "error": str(e)}
 
 
@@ -3171,6 +2318,285 @@ def api_whatsapp_start_session():
         return start_session()
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/whatsapp/pairing-code", tags=["Comms", "WhatsApp"])
+async def api_whatsapp_pairing_code(body: dict):
+    """Vincula WhatsApp mediante código de emparejamiento (sin QR).
+
+    Flujo:
+    1. Llama POST /api/comms/whatsapp/start-session  (si la sesión no existe)
+    2. Llama este endpoint con {"phone": "+34612345678"}
+    3. WAHA devuelve un código de 8 dígitos (ej: ABCD-EFGH)
+    4. En tu WhatsApp → Dispositivos vinculados → Vincular con número de teléfono
+       e introduce el código.
+
+    Solo disponible con proveedor WAHA.
+    """
+    try:
+        from modules.humanoid.comms.whatsapp_bridge import (
+            start_session, request_pairing_code, status
+        )
+
+        st = status()
+        if st.get("provider") != "waha":
+            return {"ok": False, "error": "pairing_code solo disponible para proveedor WAHA"}
+
+        phone = (body.get("phone") or "").strip()
+        if not phone:
+            return {"ok": False, "error": "Campo 'phone' requerido (ej: +34612345678)"}
+
+        # Auto-arrancar sesión si no está iniciada
+        waha_st = st.get("provider_status", {})
+        if not waha_st.get("authenticated") and waha_st.get("status") not in ("SCAN_QR_CODE",):
+            start_result = start_session()
+            if not start_result.get("ok") and not start_result.get("already_started"):
+                return {
+                    "ok": False,
+                    "error": "No se pudo iniciar la sesión WAHA",
+                    "details": start_result,
+                }
+
+        result = request_pairing_code(phone)
+        return result
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ── Meta WhatsApp Business API — Setup Wizard ─────────────────────────────────
+
+_META_WEBHOOK_BASE = "https://atlas-dashboard.rauliatlasapp.com"
+
+
+def _ensure_verify_token() -> str:
+    """Genera y persiste WHATSAPP_WEBHOOK_VERIFY_TOKEN si no existe."""
+    token = os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "")
+    if token:
+        return token
+    import secrets
+    token = secrets.token_hex(24)
+    # Persistir en .env
+    env_path = BASE_DIR / ".env"
+    try:
+        content = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+        if "WHATSAPP_WEBHOOK_VERIFY_TOKEN" not in content:
+            with env_path.open("a", encoding="utf-8") as f:
+                f.write(f'\nWHATSAPP_WEBHOOK_VERIFY_TOKEN="{token}"\n')
+        os.environ["WHATSAPP_WEBHOOK_VERIFY_TOKEN"] = token
+    except Exception:
+        os.environ["WHATSAPP_WEBHOOK_VERIFY_TOKEN"] = token
+    return token
+
+
+@app.get("/api/comms/meta-whatsapp/setup-info", tags=["Comms", "WhatsApp"])
+async def api_meta_whatsapp_setup_info():
+    """Devuelve la información necesaria para configurar Meta WhatsApp Business API.
+
+    Genera automáticamente el verify_token si no existe y muestra la URL del webhook
+    pública a través del túnel Cloudflare.
+    """
+    verify_token = _ensure_verify_token()
+    webhook_url = f"{_META_WEBHOOK_BASE}/api/comms/whatsapp/inbound"
+    token_configured = bool(os.getenv("META_WHATSAPP_TOKEN"))
+    phone_id_configured = bool(os.getenv("META_PHONE_NUMBER_ID"))
+    return {
+        "ok": True,
+        "webhook_url": webhook_url,
+        "verify_token": verify_token,
+        "provider_ready": token_configured and phone_id_configured,
+        "meta_token_set": token_configured,
+        "phone_number_id_set": phone_id_configured,
+        "steps": [
+            {"step": 1, "done": True,  "desc": "Webhook URL generada",
+             "value": webhook_url},
+            {"step": 2, "done": True,  "desc": "Verify token generado",
+             "value": verify_token},
+            {"step": 3, "done": token_configured,
+             "desc": "META_WHATSAPP_TOKEN configurado"},
+            {"step": 4, "done": phone_id_configured,
+             "desc": "META_PHONE_NUMBER_ID configurado"},
+        ],
+    }
+
+
+@app.post("/api/comms/meta-whatsapp/save-credentials", tags=["Comms", "WhatsApp"])
+async def api_meta_whatsapp_save_credentials(body: dict):
+    """Guarda META_WHATSAPP_TOKEN y META_PHONE_NUMBER_ID en .env y activa el proveedor.
+
+    Body: {
+      "meta_token": "EAAxxxxxx",
+      "phone_number_id": "123456789",
+      "whatsapp_to": "+34612345678"   // opcional: número destino para notificaciones Atlas
+    }
+    """
+    meta_token = (body.get("meta_token") or "").strip()
+    phone_id = (body.get("phone_number_id") or "").strip()
+    whatsapp_to = (body.get("whatsapp_to") or "").strip()
+
+    if not meta_token or not phone_id:
+        return {"ok": False, "error": "meta_token y phone_number_id son requeridos"}
+
+    env_path = BASE_DIR / ".env"
+    try:
+        content = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+        updates = {
+            "WHATSAPP_PROVIDER": '"meta"',
+            "WHATSAPP_ENABLED": '"true"',
+            "META_WHATSAPP_TOKEN": f'"{meta_token}"',
+            "META_PHONE_NUMBER_ID": f'"{phone_id}"',
+        }
+        if whatsapp_to:
+            updates["WHATSAPP_TO"] = f'"{whatsapp_to}"'
+
+        for key, val in updates.items():
+            import re
+            pattern = rf'^{re.escape(key)}\s*=.*$'
+            if re.search(pattern, content, re.MULTILINE):
+                content = re.sub(pattern, f'{key}={val}', content, flags=re.MULTILINE)
+            else:
+                content += f'\n{key}={val}'
+
+        env_path.write_text(content, encoding="utf-8")
+
+        # Aplicar en proceso actual
+        os.environ["WHATSAPP_PROVIDER"] = "meta"
+        os.environ["WHATSAPP_ENABLED"] = "true"
+        os.environ["META_WHATSAPP_TOKEN"] = meta_token
+        os.environ["META_PHONE_NUMBER_ID"] = phone_id
+        if whatsapp_to:
+            os.environ["WHATSAPP_TO"] = whatsapp_to
+
+        # Resetear singleton del proveedor para que tome el nuevo
+        try:
+            import modules.humanoid.comms.whatsapp_bridge as _wb
+            _wb._provider_instance = None
+        except Exception:
+            pass
+
+        return {
+            "ok": True,
+            "provider": "meta",
+            "webhook_url": f"{_META_WEBHOOK_BASE}/api/comms/whatsapp/inbound",
+            "message": "Credenciales guardadas. Proveedor Meta activo.",
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/meta-whatsapp/open-browser", tags=["Comms", "WhatsApp"])
+async def api_meta_whatsapp_open_browser():
+    """Usa los 'ojos y manos' de Atlas (Playwright) para abrir Meta Developers.
+
+    Navega directamente a la página de creación de apps de WhatsApp Business.
+    """
+    try:
+        from modules.humanoid.nerve import feet_execute
+
+        result = feet_execute("open_url", {
+            "driver": "digital",
+            "url": "https://developers.facebook.com/apps/",
+            "show_browser": True,
+        })
+        if result.get("ok"):
+            return {
+                "ok": True,
+                "message": "Navegador abierto en Meta Developers",
+                "next": "Inicia sesión con tu cuenta de Meta/Facebook, luego: "
+                        "Create App → Business → WhatsApp → Add Product",
+            }
+        # Playwright no disponible — dar URL directa
+        return {
+            "ok": False,
+            "error": result.get("error", "playwright_not_available"),
+            "manual_url": "https://developers.facebook.com/apps/",
+            "hint": "Abre la URL manualmente. Necesitas FEET_DRIVER=digital en .env",
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": str(e),
+            "manual_url": "https://developers.facebook.com/apps/",
+        }
+
+
+_META_AUTOSETUP_PROC = None  # subprocess handle
+_META_AUTOSETUP_STATUS_FILE = BASE_DIR / "logs" / "meta_autosetup_status.json"
+
+
+@app.post("/api/comms/meta-whatsapp/autosetup", tags=["Comms", "WhatsApp"])
+async def api_meta_whatsapp_autosetup():
+    """Lanza el agente autónomo de Atlas para configurar Meta WhatsApp.
+
+    Abre Chromium visible, espera login del usuario, luego automatiza
+    la creación del app, configuración del webhook y extracción de credenciales.
+    """
+    global _META_AUTOSETUP_PROC
+    import subprocess
+
+    # Matar proceso previo si existe
+    if _META_AUTOSETUP_PROC and _META_AUTOSETUP_PROC.poll() is None:
+        _META_AUTOSETUP_PROC.terminate()
+
+    verify_token = _ensure_verify_token()
+    webhook_url = f"{_META_WEBHOOK_BASE}/api/comms/whatsapp/inbound"
+
+    # Limpiar status anterior
+    if _META_AUTOSETUP_STATUS_FILE.exists():
+        _META_AUTOSETUP_STATUS_FILE.unlink()
+
+    script = BASE_DIR / "scripts" / "atlas_meta_whatsapp_autosetup.py"
+    python = BASE_DIR / "venv" / "Scripts" / "python.exe"
+    if not python.exists():
+        python = Path(sys.executable)
+
+    try:
+        _META_AUTOSETUP_PROC = subprocess.Popen(
+            [
+                str(python), str(script),
+                "--webhook-url", webhook_url,
+                "--verify-token", verify_token,
+                "--status-file", "logs/meta_autosetup_status.json",
+            ],
+            cwd=str(BASE_DIR),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        return {
+            "ok": True,
+            "pid": _META_AUTOSETUP_PROC.pid,
+            "message": "Agente autónomo iniciado. Chromium se abrirá en tu pantalla. Inicia sesión en Meta cuando aparezca.",
+            "poll_url": "/api/comms/meta-whatsapp/autosetup/status",
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/comms/meta-whatsapp/autosetup/status", tags=["Comms", "WhatsApp"])
+async def api_meta_whatsapp_autosetup_status():
+    """Devuelve el estado del agente autónomo de configuración Meta."""
+    global _META_AUTOSETUP_PROC
+
+    running = _META_AUTOSETUP_PROC is not None and _META_AUTOSETUP_PROC.poll() is None
+    exit_code = None if running else (
+        _META_AUTOSETUP_PROC.returncode if _META_AUTOSETUP_PROC else None
+    )
+
+    status_data = {}
+    if _META_AUTOSETUP_STATUS_FILE.exists():
+        try:
+            status_data = json.loads(_META_AUTOSETUP_STATUS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    return {
+        "ok": True,
+        "running": running,
+        "exit_code": exit_code,
+        "finished": not running and _META_AUTOSETUP_PROC is not None,
+        "success": exit_code == 0,
+        **status_data,
+    }
 
 
 @app.get("/api/comms/whatsapp/setup-guide", tags=["Comms", "WhatsApp"])
@@ -3562,6 +2988,88 @@ class AtlasCommsWhatsappBatchConfigureBody(BaseModel):
         return v
 
 
+def _call_claude_cli(prompt: str, system: str, timeout_s: int) -> tuple[bool, str, str]:
+    cli_bin = (os.getenv("ATLAS_CLAWD_CLAUDE_CLI_BIN") or "").strip()
+    if not cli_bin:
+        cli_bin = shutil.which("claude") or ""
+    if not cli_bin:
+        appdata = (os.getenv("APPDATA") or "").strip()
+        userprofile = (os.getenv("USERPROFILE") or "").strip()
+        candidates = []
+        if appdata:
+            candidates.append(Path(appdata) / "npm" / "claude.cmd")
+        if userprofile:
+            candidates.append(Path(userprofile) / "AppData" / "Roaming" / "npm" / "claude.cmd")
+        for candidate in candidates:
+            if candidate.exists():
+                cli_bin = str(candidate)
+                break
+    if not cli_bin:
+        cli_bin = "claude"
+    if not cli_bin:
+        return False, "", "clawd_cli_missing"
+    cmd = [
+        cli_bin,
+        "--print",
+        "--input-format",
+        "text",
+        "--output-format",
+        "text",
+        "--system-prompt",
+        system,
+    ]
+    suffix = Path(cli_bin).suffix.lower()
+    if suffix in {".cmd", ".bat"}:
+        cmd = ["cmd.exe", "/c", *cmd]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            input=prompt,
+            timeout=timeout_s,
+        )
+    except FileNotFoundError:
+        return False, "", "clawd_cli_missing"
+    except subprocess.TimeoutExpired:
+        return False, "", "clawd_cli_timeout"
+    except Exception as exc:
+        return False, "", f"clawd_cli_error:{str(exc)[:160]}"
+    if proc.returncode != 0:
+        err = (proc.stderr or "").strip() or "clawd_cli_failed"
+        return False, "", f"clawd_cli_fail:{err[:160]}"
+    out = (proc.stdout or "").strip()
+    if not out:
+        return False, "", "clawd_cli_empty_reply"
+    return True, out, "clawd_cli"
+
+
+class AtlasClawdSubscriptionBody(BaseModel):
+    message: str
+    context: Dict[str, Any] = Field(default_factory=dict)
+    persona: str = "friendly_precise_assistant"
+    history: List[Dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, value: str) -> str:
+        msg = (value or "").strip()
+        if not msg:
+            raise ValueError("message cannot be empty")
+        return msg
+
+
+class AvatarRunwayLineBody(BaseModel):
+    topic: str = ""
+    source: str = "api"
+    requested_line: str = ""
+
+    @field_validator("topic", "source", "requested_line")
+    @classmethod
+    def _trim_fields(cls, value: str) -> str:
+        return (value or "").strip()
+
+
 @app.get("/api/comms/atlas/status", tags=["Comms"])
 def api_comms_atlas_status():
     """ATLAS comms bridge status (offline mode, queue, encryption source)."""
@@ -3570,6 +3078,32 @@ def api_comms_atlas_status():
 
         hub = get_atlas_comms_hub()
         return hub.get_status()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.get("/api/avatar/runway/context", tags=["Avatar", "Runway"])
+def api_avatar_runway_context():
+    """Runtime payload to drive ATLAS avatar behavior in Runway Characters."""
+    try:
+        from modules.humanoid.avatar import build_runway_character_context
+
+        return build_runway_character_context()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/avatar/runway/line", tags=["Avatar", "Runway"])
+def api_avatar_runway_line(body: AvatarRunwayLineBody):
+    """Low-latency short line payload for Runway Characters scene driving."""
+    try:
+        from modules.humanoid.avatar import build_runway_line
+
+        return build_runway_line(
+            topic=body.topic,
+            source=body.source,
+            requested_line=body.requested_line,
+        )
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -3601,6 +3135,114 @@ def api_comms_atlas_message(body: AtlasCommsMessageBody):
         )
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+@app.post("/api/comms/atlas/clawd-subscription", tags=["Comms"])
+def api_comms_atlas_clawd_subscription(body: AtlasClawdSubscriptionBody):
+    """Endpoint interno para suscripción Claude usada por atlas_comms_hub."""
+    try:
+        from modules.humanoid.ai.external_llm import call_external
+    except Exception as e:
+        return {"ok": False, "error": f"anthropic_module_missing:{e}", "reply": ""}
+
+    api_key = (
+        os.getenv("ATLAS_CLAWD_API_KEY")
+        or os.getenv("ANTHROPIC_API_KEY")
+        or os.getenv("ANTHROPIC_API_KEY_CEREBRO")
+        or ""
+    ).strip()
+    if not api_key:
+        try:
+            from modules.humanoid.ai.provider_credentials import get_provider_api_key
+
+            api_key = (get_provider_api_key("anthropic") or "").strip()
+        except Exception:
+            api_key = ""
+    if not api_key:
+        return {"ok": False, "error": "anthropic_api_key_missing", "reply": ""}
+
+    model = (
+        os.getenv("ATLAS_CLAWD_MODEL")
+        or os.getenv("ANTHROPIC_MODEL")
+        or "claude-sonnet-4-latest"
+    ).strip()
+    try:
+        timeout_s = int((os.getenv("ATLAS_COMMS_CLAWD_TIMEOUT_S") or "8").strip() or "8")
+    except Exception:
+        timeout_s = 8
+    timeout_s = max(4, min(timeout_s, 45))
+
+    ctx = body.context or {}
+    history = list(body.history or [])[-4:]
+    history_lines = []
+    for idx, item in enumerate(history, start=1):
+        if not isinstance(item, dict):
+            continue
+        u = str(item.get("user") or "").strip()
+        a = str(item.get("assistant") or "").strip()
+        if u or a:
+            history_lines.append(f"{idx}. Usuario: {u}\n   ATLAS: {a}")
+    history_text = "\n".join(history_lines) if history_lines else "Sin historial reciente."
+
+    prompt = (
+        "Contexto operativo actual:\n"
+        f"- inventario_state: {ctx.get('inventory_state')}\n"
+        f"- camaras_activas: {ctx.get('camera_count')}\n"
+        f"- panaderia_reachable: {ctx.get('panaderia_reachable')}\n"
+        f"- vision_reachable: {ctx.get('vision_reachable')}\n"
+        f"- offline_mode: {ctx.get('offline_mode')}\n\n"
+        f"Historial reciente:\n{history_text}\n\n"
+        f"Mensaje actual del usuario:\n{body.message}\n\n"
+        "Responde en espanol natural, breve (max 5 lineas), con tono cercano y accionable."
+    )
+    system = (
+        "Eres ATLAS, asistente operativo de RAULI. "
+        "Prioriza claridad, rapidez y acciones concretas."
+    )
+
+    mode = (os.getenv("ATLAS_CLAWD_SUBSCRIPTION_MODE") or "").strip().lower()
+    use_cli = mode in ("claude-cli", "claude_cli", "claude-code", "claude_code", "cli")
+    use_cli = use_cli or (os.getenv("ATLAS_CLAWD_CLAUDE_CLI") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    )
+    if use_cli:
+        ok, text, provider = _call_claude_cli(prompt, system, timeout_s)
+        if not ok:
+            return {"ok": False, "error": provider or "clawd_cli_fail", "reply": ""}
+        reply = str(text or "").strip()
+        if not reply:
+            return {"ok": False, "error": "clawd_cli_empty_reply", "reply": ""}
+        return {"ok": True, "reply": reply, "provider": provider}
+
+    ok, text, latency_ms = call_external(
+        "anthropic",
+        model,
+        prompt,
+        system,
+        api_key,
+        timeout_s=timeout_s,
+    )
+    if not ok:
+        return {
+            "ok": False,
+            "error": str(text or "anthropic_error")[:240],
+            "reply": "",
+        }
+
+    reply = str(text or "").strip()
+    if not reply:
+        return {"ok": False, "error": "anthropic_empty_reply", "reply": ""}
+
+    return {
+        "ok": True,
+        "reply": reply,
+        "provider": f"anthropic:{model}:{int(latency_ms)}ms",
+        "persona": body.persona,
+    }
 
 
 @app.post("/api/comms/atlas/resync", tags=["Comms"])
@@ -3790,57 +3432,6 @@ def api_kernel_event_bus_reset_errors(body: dict):
         return {"ok": False, "error": str(e)}
 
 
-@app.get("/health", tags=["Health"])
-async def health():
-    """Health cheap: respuesta inmediata sin depender de servicios externos."""
-    try:
-        return {
-            "ok": True,
-            "service": "atlas_push",
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "pid": os.getpid(),
-            "version": os.getenv("ATLAS_VERSION")
-            or os.getenv("APP_VERSION")
-            or "unknown",
-        }
-    except Exception as e:
-        return {"ok": False, "service": "atlas_push", "error": str(e)}
-
-
-@app.get("/health/deep", tags=["Health"])
-async def health_deep():
-    """Health verificable completo con checks y score (costoso)."""
-    try:
-        from modules.humanoid.deploy.healthcheck import run_health_verbose
-        from modules.humanoid.deploy.ports import get_ports
-
-        active_port = get_ports()[0]
-        return run_health_verbose(base_url=None, active_port=active_port)
-    except Exception as e:
-        return {"ok": False, "score": 0, "checks": {}, "ms": 0, "error": str(e)}
-
-
-@app.get("/health/debug", tags=["Health"])
-def health_debug():
-    """Raw check results con mensajes de error para diagnÃ³stico."""
-    try:
-        from modules.humanoid.deploy.healthcheck import (
-            _check_audit_writable, _check_memory_writable,
-            _check_scheduler_running)
-
-        return {
-            "ok": True,
-            "AUDIT_DB_PATH": os.getenv("AUDIT_DB_PATH"),
-            "SCHED_DB_PATH": os.getenv("SCHED_DB_PATH"),
-            "ATLAS_MEMORY_DB_PATH": os.getenv("ATLAS_MEMORY_DB_PATH"),
-            "memory": _check_memory_writable(),
-            "audit": _check_audit_writable(),
-            "scheduler": _check_scheduler_running(),
-        }
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
 @app.get("/doctor")
 def doctor_endpoint():
     """Diagnostico rapido del sistema."""
@@ -3952,6 +3543,44 @@ def _auto_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT DEFAULT (datetime('now')),
         event TEXT, kind TEXT DEFAULT 'info', result TEXT DEFAULT 'ok'
     )"""
+    )
+    conn.execute(
+        """CREATE TRIGGER IF NOT EXISTS trg_supervisor_autosig_insert
+           AFTER INSERT ON autonomy_tasks
+           WHEN NEW.source='supervisor' AND (NEW.action_taken IS NULL OR trim(NEW.action_taken)='')
+           BEGIN
+             UPDATE autonomy_tasks
+                SET action_taken = substr(
+                      lower(
+                        replace(
+                          replace(coalesce(NEW.title,'') || '|' || coalesce(NEW.detail,''), char(10), ' '),
+                          char(13),
+                          ' '
+                        )
+                      ),
+                      1,
+                      240
+                    ),
+                    updated_at = datetime('now')
+              WHERE id = NEW.id;
+           END"""
+    )
+    conn.execute(
+        """UPDATE autonomy_tasks
+              SET action_taken = substr(
+                    lower(
+                      replace(
+                        replace(coalesce(title,'') || '|' || coalesce(detail,''), char(10), ' '),
+                        char(13),
+                        ' '
+                      )
+                    ),
+                    1,
+                    240
+                  ),
+                  updated_at = datetime('now')
+            WHERE source='supervisor'
+              AND (action_taken IS NULL OR trim(action_taken)='')"""
     )
     conn.commit()
     return conn
@@ -5079,7 +4708,7 @@ def camera_stream_proxy(index: int = 0):
     """Proxy para stream de cÃ¡mara del robot (puerto 8002). index: 0, 1, 2... para cada cÃ¡mara."""
     import urllib.request
 
-    base_url = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
+    base_url = get_robot_api_base()
     stream_url = f"{base_url}/api/vision/camera/stream?index={index}"
     try:
         test_req = urllib.request.Request(base_url + "/status", method="GET")
@@ -5143,8 +4772,8 @@ def camera_stream_proxy(index: int = 0):
 @app.get("/cuerpo/vision/snapshot")
 def cuerpo_vision_snapshot(
     index: int = 0,
-    enhance: str = "max",
-    jpeg_quality: int = 92,
+    enhance: str = "auto",
+    jpeg_quality: int = 80,
     focus_x: float = 0.5,
     focus_y: float = 0.5,
     zoom: float = 1.0,
@@ -5159,9 +4788,8 @@ def cuerpo_vision_snapshot(
     - zoom: 1..3
     """
     import urllib.parse
-    import urllib.request
 
-    base_url = (os.getenv("NEXUS_ROBOT_API_URL") or "http://127.0.0.1:8002").rstrip("/")
+    base_url = get_robot_api_base()
     url = (
         f"{base_url}/api/vision/snapshot"
         f"?index={int(index)}"
@@ -5172,9 +4800,19 @@ def cuerpo_vision_snapshot(
         f"&zoom={float(zoom)}"
     )
     try:
-        req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=10) as r:
-            img = r.read()
+        import concurrent.futures
+        import httpx
+
+        def _fetch() -> bytes:
+            timeout = httpx.Timeout(connect=1.5, read=3.0, write=3.0, pool=1.5)
+            with httpx.Client(timeout=timeout) as client:
+                r = client.get(url)
+                r.raise_for_status()
+                return r.content
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            fut = ex.submit(_fetch)
+            img = fut.result(timeout=4.0)
         from fastapi.responses import Response
 
         return Response(content=img, media_type="image/jpeg")
@@ -5244,6 +4882,335 @@ def api_evidence_image(path: str):
         raise HTTPException(status_code=415, detail="unsupported file type")
 
     return FileResponse(str(resolved))
+
+
+BETY_TEMPLATE_SOURCE = (
+    BASE_DIR / "plantillas" / "Plantilla_Base_Eventos_Panaderia.xlsx"
+)
+BETY_STORAGE_ROOT = BASE_DIR / "data" / "bety_eventos"
+BETY_UPLOADS_DIR = BETY_STORAGE_ROOT / "uploads"
+BETY_BACKUPS_DIR = BETY_STORAGE_ROOT / "backups"
+BETY_SUMMARY_DIR = BETY_STORAGE_ROOT / "summary"
+BETY_LATEST_FILE = BETY_STORAGE_ROOT / "Bety_Eventos_Panaderia_latest.xlsx"
+BETY_LEDGER_FILE = BETY_STORAGE_ROOT / "ledger.jsonl"
+BETY_LATEST_SUMMARY_FILE = BETY_SUMMARY_DIR / "latest_summary.json"
+BETY_PUBLIC_DOWNLOADS_DIR = BASE_DIR / "atlas_adapter" / "static" / "v4" / "downloads"
+BETY_PUBLIC_TEMPLATE_NAME = "Bety_Eventos_Panaderia_Diario.xlsx"
+
+
+def _ensure_bety_dirs() -> None:
+    for p in (
+        BETY_STORAGE_ROOT,
+        BETY_UPLOADS_DIR,
+        BETY_BACKUPS_DIR,
+        BETY_SUMMARY_DIR,
+        BETY_PUBLIC_DOWNLOADS_DIR,
+    ):
+        p.mkdir(parents=True, exist_ok=True)
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _to_json_safe(value):
+    if value is None:
+        return None
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
+
+
+def _as_float(value) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    raw = str(value).strip().replace("$", "").replace(",", "")
+    if not raw:
+        return 0.0
+    try:
+        return float(raw)
+    except Exception:
+        return 0.0
+
+
+def _read_sheet_records(workbook, sheet_name: str) -> list[dict]:
+    if sheet_name not in workbook.sheetnames:
+        return []
+    ws = workbook[sheet_name]
+    header_row = 3
+    headers = []
+    for col in range(1, ws.max_column + 1):
+        hv = ws.cell(row=header_row, column=col).value
+        hs = str(hv).strip() if hv else ""
+        headers.append(hs)
+    rows = []
+    for ridx in range(header_row + 1, ws.max_row + 1):
+        vals = [ws.cell(row=ridx, column=c).value for c in range(1, ws.max_column + 1)]
+        if not any(v not in (None, "") for v in vals):
+            continue
+        rec = {"_fila": ridx}
+        for k, v in zip(headers, vals):
+            if not k:
+                continue
+            rec[k] = _to_json_safe(v)
+        rows.append(rec)
+    return rows
+
+
+def _build_bety_summary(xlsx_path: Path) -> dict:
+    try:
+        from openpyxl import load_workbook
+    except Exception:
+        return {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "totals": {
+                "entrada_almacen": {"registros": 0, "cantidad_total": 0.0, "importe_total": 0.0},
+                "salida_produccion": {"registros": 0, "cantidad_total": 0.0, "importe_total": 0.0},
+                "produccion": {"registros": 0, "cantidad_total": 0.0, "importe_total": 0.0},
+                "ventas": {"registros": 0, "cantidad_total": 0.0, "importe_total": 0.0},
+            },
+            "by_day": {},
+            "parse_warning": "openpyxl no disponible en runtime PUSH; archivo guardado y respaldado.",
+        }
+
+    wb = load_workbook(xlsx_path, data_only=True)
+    entries = _read_sheet_records(wb, "02_Entrada_Almacen")
+    to_production = _read_sheet_records(wb, "03_Salida_Produccion")
+    production = _read_sheet_records(wb, "04_Produccion")
+    sales = _read_sheet_records(wb, "05_Ventas")
+
+    def _sum_field(rows: list[dict], key: str) -> float:
+        return round(sum(_as_float(r.get(key)) for r in rows), 2)
+
+    totals = {
+        "entrada_almacen": {
+            "registros": len(entries),
+            "cantidad_total": _sum_field(entries, "Cantidad"),
+            "importe_total": _sum_field(entries, "Importe"),
+        },
+        "salida_produccion": {
+            "registros": len(to_production),
+            "cantidad_total": _sum_field(to_production, "Cantidad"),
+            "importe_total": _sum_field(to_production, "Importe"),
+        },
+        "produccion": {
+            "registros": len(production),
+            "cantidad_total": _sum_field(production, "Cantidad"),
+            "importe_total": _sum_field(production, "Importe"),
+        },
+        "ventas": {
+            "registros": len(sales),
+            "cantidad_total": _sum_field(sales, "Cantidad"),
+            "importe_total": _sum_field(sales, "Importe"),
+        },
+    }
+
+    by_day: dict[str, dict[str, float]] = {}
+    sections = {
+        "entrada_almacen": entries,
+        "salida_produccion": to_production,
+        "produccion": production,
+        "ventas": sales,
+    }
+    for sec_name, rows in sections.items():
+        for row in rows:
+            day = str(row.get("Fecha") or "").strip() or "SIN_FECHA"
+            d = by_day.setdefault(
+                day,
+                {
+                    "entrada_almacen_importe": 0.0,
+                    "salida_produccion_importe": 0.0,
+                    "produccion_importe": 0.0,
+                    "ventas_importe": 0.0,
+                    "entrada_almacen_cantidad": 0.0,
+                    "salida_produccion_cantidad": 0.0,
+                    "produccion_cantidad": 0.0,
+                    "ventas_cantidad": 0.0,
+                },
+            )
+            d[f"{sec_name}_importe"] = round(
+                d[f"{sec_name}_importe"] + _as_float(row.get("Importe")), 2
+            )
+            d[f"{sec_name}_cantidad"] = round(
+                d[f"{sec_name}_cantidad"] + _as_float(row.get("Cantidad")), 2
+            )
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "totals": totals,
+        "by_day": by_day,
+    }
+
+
+def _ensure_bety_public_template() -> Path:
+    _ensure_bety_dirs()
+    if not BETY_TEMPLATE_SOURCE.exists():
+        raise FileNotFoundError(f"Plantilla base no encontrada: {BETY_TEMPLATE_SOURCE}")
+    dst = BETY_PUBLIC_DOWNLOADS_DIR / BETY_PUBLIC_TEMPLATE_NAME
+    shutil.copy2(BETY_TEMPLATE_SOURCE, dst)
+    return dst
+
+
+def _read_last_ledger(limit: int = 20) -> list[dict]:
+    if not BETY_LEDGER_FILE.exists():
+        return []
+    lines = BETY_LEDGER_FILE.read_text(encoding="utf-8").splitlines()
+    out = []
+    for line in lines[-max(1, int(limit)) :]:
+        try:
+            out.append(json.loads(line))
+        except Exception:
+            continue
+    return out
+
+
+@app.get("/api/panaderia/bety/template", tags=["Panaderia Bety"])
+def api_panaderia_bety_template(request: Request):
+    t0 = time.perf_counter()
+    try:
+        path = _ensure_bety_public_template()
+        rel = f"/v4/static/downloads/{path.name}"
+        return _std_resp(
+            True,
+            {
+                "file_name": path.name,
+                "file_size_bytes": path.stat().st_size,
+                "download_path": rel,
+                "download_url": f"{str(request.base_url).rstrip('/')}{rel}",
+            },
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.post("/api/panaderia/bety/upload", tags=["Panaderia Bety"])
+async def api_panaderia_bety_upload(file: UploadFile = File(...)):
+    t0 = time.perf_counter()
+    from fastapi import HTTPException
+
+    try:
+        _ensure_bety_dirs()
+        name = Path(file.filename or "bety_eventos.xlsx").name
+        suffix = name.lower()
+        if not suffix.endswith(".xlsx"):
+            raise HTTPException(status_code=400, detail="Solo se permite .xlsx")
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        stored_name = f"{ts}_{name}"
+        upload_path = BETY_UPLOADS_DIR / stored_name
+
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="Archivo vacio")
+        if len(content) > 20 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Archivo demasiado grande (>20MB)")
+        upload_path.write_bytes(content)
+        shutil.copy2(upload_path, BETY_LATEST_FILE)
+
+        summary = _build_bety_summary(upload_path)
+        summary["file"] = {
+            "name": stored_name,
+            "size_bytes": len(content),
+            "sha256": _sha256_file(upload_path),
+            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        }
+        BETY_LATEST_SUMMARY_FILE.write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+        backup_name = f"{ts}__{name}"
+        backup_path = BETY_BACKUPS_DIR / backup_name
+        shutil.copy2(upload_path, backup_path)
+
+        ledger_entry = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "file_name": stored_name,
+            "size_bytes": len(content),
+            "sha256": summary["file"]["sha256"],
+            "totals": summary["totals"],
+            "backup_file": backup_name,
+        }
+        with BETY_LEDGER_FILE.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(ledger_entry, ensure_ascii=False) + "\n")
+
+        return _std_resp(
+            True,
+            {
+                "message": "Archivo recibido y consolidado para ATLAS.",
+                "latest_file": str(BETY_LATEST_FILE),
+                "backup_file": str(backup_path),
+                "summary_file": str(BETY_LATEST_SUMMARY_FILE),
+                "summary": summary,
+            },
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/api/panaderia/bety/status", tags=["Panaderia Bety"])
+def api_panaderia_bety_status():
+    t0 = time.perf_counter()
+    try:
+        _ensure_bety_dirs()
+        latest_summary = {}
+        if BETY_LATEST_SUMMARY_FILE.exists():
+            latest_summary = json.loads(BETY_LATEST_SUMMARY_FILE.read_text(encoding="utf-8"))
+        uploads = _read_last_ledger(limit=12)
+        return _std_resp(
+            True,
+            {
+                "template_exists": BETY_TEMPLATE_SOURCE.exists(),
+                "latest_file_exists": BETY_LATEST_FILE.exists(),
+                "latest_summary": latest_summary,
+                "uploads": uploads,
+                "storage_root": str(BETY_STORAGE_ROOT),
+            },
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/api/panaderia/bety/uploads", tags=["Panaderia Bety"])
+def api_panaderia_bety_uploads(limit: int = 20):
+    t0 = time.perf_counter()
+    try:
+        _ensure_bety_dirs()
+        uploads = _read_last_ledger(limit=min(max(limit, 1), 200))
+        return _std_resp(
+            True,
+            {"items": uploads, "count": len(uploads)},
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+
+
+@app.get("/api/panaderia/bety/download/latest", tags=["Panaderia Bety"])
+def api_panaderia_bety_download_latest():
+    from fastapi import HTTPException
+
+    if not BETY_LATEST_FILE.exists():
+        raise HTTPException(status_code=404, detail="No hay archivo diario cargado aun.")
+    return FileResponse(
+        str(BETY_LATEST_FILE),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=BETY_LATEST_FILE.name,
+    )
 
 
 @app.get("/product/status")
@@ -5333,7 +5300,7 @@ def root_redirect():
 
 
 @app.get("/ui")
-def serve_ui():
+async def serve_ui():
     """Dashboard: estado, versiÃ³n, salud, mÃ©tricas, programador, actualizaciÃ³n, despliegue, aprobaciones e interacciÃ³n con el robot."""
     # v4 landing is canonical at /ui (presentation)
     path = STATIC_DIR / "v4" / "index.html"
@@ -5349,18 +5316,10 @@ def serve_ui():
 
 
 @app.get("/v3")
-def serve_v3():
-    """Legacy dashboard v3.8.0 (operational UI)."""
-    path = STATIC_DIR / "dashboard.html"
-    if path.exists():
-        return FileResponse(
-            path,
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-            },
-        )
-    return {"ok": False, "error": "dashboard.html not found"}
+async def serve_v3():
+    """Redirects legacy v3.8 to the active v4 dashboard."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/ui", status_code=301)
 
 
 @app.get("/ui-legacy")
@@ -5390,7 +5349,7 @@ def serve_ui_legacy():
 
 
 @app.get("/ui/static/{file_path:path}")
-def serve_ui_static(file_path: str):
+async def serve_ui_static(file_path: str):
     """Serve v4 static assets under /ui/static/* (kept for compatibility)."""
     from fastapi import HTTPException
 
@@ -5437,7 +5396,7 @@ def serve_v4():
 
 
 @app.get("/v4/static/{file_path:path}")
-def serve_v4_static(file_path: str):
+async def serve_v4_static(file_path: str):
     """Serve v4 static assets (JS, CSS) for the landing."""
     from fastapi import HTTPException
 
@@ -5461,7 +5420,7 @@ def serve_v4_static(file_path: str):
 
 
 @app.get("/nexus")
-def serve_nexus():
+async def serve_nexus():
     """Panel de Control ATLAS â€” vista consolidada del sistema (antes en puerto 8000)."""
     path = STATIC_DIR / "nexus.html"
     if path.exists():
@@ -8190,9 +8149,7 @@ async def proxy_websocket(websocket: WebSocket):
     import logging
 
     log = logging.getLogger(__name__)
-    ws_nexus_url = (
-        NEXUS_BASE.replace("http://", "ws://").replace("https://", "wss://") + "/ws"
-    )
+    ws_nexus_url = get_nexus_ws_url()
     try:
         import websockets
     except ImportError:
@@ -8279,49 +8236,6 @@ from modules.humanoid.audit import get_audit_logger
 # --- Metrics / Policy / Audit endpoints ---
 from modules.humanoid.metrics import get_metrics_store
 from modules.humanoid.policy import ActorContext, get_policy_engine
-
-
-@app.get("/metrics")
-def metrics():
-    """JSON metrics: counters and latencies per endpoint."""
-    return get_metrics_store().snapshot()
-
-
-# Prometheus scrape endpoint (text/plain)
-@app.get("/metrics/prometheus", include_in_schema=False)
-def prometheus_metrics():
-    """MÃ©tricas en formato Prometheus para scraping."""
-    try:
-        from fastapi.responses import Response
-
-        from modules.observability.metrics import MetricsCollector
-
-        return Response(
-            content=MetricsCollector.get_prometheus_text(),
-            media_type="text/plain; charset=utf-8",
-        )
-    except Exception as e:
-        from fastapi.responses import Response
-
-        return Response(
-            content=f"# error: {e}".encode(), media_type="text/plain", status_code=500
-        )
-
-
-@app.get("/api/observability/metrics", tags=["Observability"])
-def api_observability_metrics():
-    """Resumen de mÃ©tricas (requests, memoria, health score)."""
-    try:
-        from modules.observability.metrics import MetricsCollector
-
-        return MetricsCollector.get_metrics_summary()
-    except Exception as e:
-        return {
-            "error": str(e),
-            "total_requests": 0,
-            "active_requests": 0,
-            "memory_mb": 0,
-        }
 
 
 class PolicyTestBody(BaseModel):
@@ -16575,6 +16489,124 @@ async def arms_ping(arm_id: str):
     )
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Claude-Atlas Memory Bridge — Endpoints v1.0
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _ms() -> int:
+    """Current monotonic time in milliseconds for lightweight API timing."""
+    return int(time.perf_counter() * 1000)
+
+
+def _get_claude_bridge():
+    """Importación lazy del ClaudeMemoryBridge para no bloquear el arranque."""
+    try:
+        import sys
+        sys.path.insert(0, str(BASE_DIR))
+        from brain.claude_memory_bridge import get_bridge
+        return get_bridge()
+    except Exception as e:
+        return None, str(e)
+
+
+@app.post("/api/claude/memory/sync", tags=["Claude Bridge"])
+async def claude_memory_sync_both():
+    """Sincronización bidireccional: MEMORY.md → Atlas brain + Atlas brain → atlas_brain_context.json"""
+    t0 = _ms()
+    try:
+        from brain.claude_memory_bridge import ClaudeMemoryBridge
+        bridge = ClaudeMemoryBridge()
+        result = bridge.bidirectional_sync()
+        return _std_resp(result["ok"], result, _ms() - t0)
+    except Exception as e:
+        return _std_resp(False, None, _ms() - t0, str(e))
+
+
+@app.post("/api/claude/memory/push", tags=["Claude Bridge"])
+async def claude_memory_push():
+    """Claude → Atlas: sincroniza MEMORY.md hacia el brain de Atlas (EpisodicMemory + patrones)."""
+    t0 = _ms()
+    try:
+        from brain.claude_memory_bridge import ClaudeMemoryBridge
+        bridge = ClaudeMemoryBridge()
+        result = bridge.sync_claude_to_atlas()
+        return _std_resp(result["ok"], result, _ms() - t0)
+    except Exception as e:
+        return _std_resp(False, None, _ms() - t0, str(e))
+
+
+@app.post("/api/claude/memory/pull", tags=["Claude Bridge"])
+async def claude_memory_pull():
+    """Atlas → Claude: exporta brain de Atlas a atlas_brain_context.json para que Claude lo lea."""
+    t0 = _ms()
+    try:
+        from brain.claude_memory_bridge import ClaudeMemoryBridge
+        bridge = ClaudeMemoryBridge()
+        result = bridge.sync_atlas_to_claude()
+        return _std_resp(result["ok"], result, _ms() - t0)
+    except Exception as e:
+        return _std_resp(False, None, _ms() - t0, str(e))
+
+
+class _InsightPayload(BaseModel):
+    insight: str
+    category: str = "general"
+    importance: float = 0.8
+    tags: list = []
+    context: dict = {}
+
+
+@app.post("/api/claude/memory/insight", tags=["Claude Bridge"])
+async def claude_memory_insight(payload: _InsightPayload):
+    """Escribe un insight puntual de la sesión Claude directamente al brain de Atlas."""
+    t0 = _ms()
+    try:
+        from brain.claude_memory_bridge import ClaudeMemoryBridge
+        bridge = ClaudeMemoryBridge()
+        result = bridge.write_insight(
+            insight=payload.insight,
+            category=payload.category,
+            importance=payload.importance,
+            tags=payload.tags or [],
+            context=payload.context or {},
+        )
+        return _std_resp(True, result, _ms() - t0)
+    except Exception as e:
+        return _std_resp(False, None, _ms() - t0, str(e))
+
+
+@app.get("/api/claude/memory/stats", tags=["Claude Bridge"])
+async def claude_memory_stats():
+    """Estado y estadísticas del puente Claude-Atlas Memory Bridge."""
+    t0 = _ms()
+    try:
+        from brain.claude_memory_bridge import ClaudeMemoryBridge
+        bridge = ClaudeMemoryBridge()
+        stats = bridge.get_bridge_stats()
+        return _std_resp(True, stats, _ms() - t0)
+    except Exception as e:
+        return _std_resp(False, None, _ms() - t0, str(e))
+
+
+@app.get("/api/claude/memory/context", tags=["Claude Bridge"])
+async def claude_memory_context():
+    """Lee el atlas_brain_context.json exportado hacia Claude (lo que Claude ve del brain de Atlas)."""
+    t0 = _ms()
+    try:
+        import json
+        ctx_path = BASE_DIR.parent / "Users" / "r6957" / ".claude" / "projects" / "c--ATLAS-PUSH" / "memory" / "atlas_brain_context.json"
+        # Ruta alternativa vía variable de entorno
+        env_dir = os.environ.get("CLAUDE_MEMORY_DIR")
+        if env_dir:
+            ctx_path = Path(env_dir) / "atlas_brain_context.json"
+        if not ctx_path.exists():
+            return _std_resp(False, None, _ms() - t0, "atlas_brain_context.json no generado. Ejecuta /api/claude/memory/pull primero.")
+        data = json.loads(ctx_path.read_text(encoding="utf-8"))
+        return _std_resp(True, data, _ms() - t0)
+    except Exception as e:
+        return _std_resp(False, None, _ms() - t0, str(e))
+
+
 def _dedupe_http_routes() -> None:
     """
     Keep only the first registered HTTP route for each (path, methods).
@@ -16623,6 +16655,225 @@ def _dedupe_http_routes() -> None:
             )
     app.router.routes = deduped
 
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# § RAULI USERS — Memoria persistente y personalización por usuario  (v1.0)
+#
+#  Cada usuario recibe un token único que se incluye en su enlace:
+#    http://<host>:3000/?u=<TOKEN>
+#
+#  El avatar Atlas Companion lee ese token, carga el perfil y personaliza
+#  el saludo. Cada visita y mensaje queda registrado en SQLite local.
+#
+#  Endpoints:
+#    POST   /api/rauli/users                   → crear usuario (name → token + link)
+#    GET    /api/rauli/users                   → listar todos (panel admin)
+#    GET    /api/rauli/users/{token}           → perfil completo + memoria
+#    PATCH  /api/rauli/users/{token}/visit     → registrar visita
+#    POST   /api/rauli/users/{token}/memory    → actualizar memoria
+#    DELETE /api/rauli/users/{token}           → eliminar usuario
+# ═══════════════════════════════════════════════════════════════════════════════
+
+import sqlite3 as _sqlite3
+import secrets as _secrets_mod
+
+_RAULI_USERS_DB = BASE_DIR / "data" / "rauli_users.db"
+_RAULI_USERS_DB.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _rauli_db_conn() -> _sqlite3.Connection:
+    conn = _sqlite3.connect(str(_RAULI_USERS_DB), check_same_thread=False)
+    conn.row_factory = _sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    return conn
+
+
+def _rauli_db_init() -> None:
+    with _rauli_db_conn() as c:
+        c.executescript("""
+            CREATE TABLE IF NOT EXISTS rauli_users (
+                token       TEXT PRIMARY KEY,
+                name        TEXT NOT NULL,
+                created_at  TEXT NOT NULL,
+                last_seen   TEXT,
+                visit_count INTEGER DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS rauli_memory (
+                token       TEXT PRIMARY KEY,
+                searches    TEXT DEFAULT '[]',
+                preferences TEXT DEFAULT '{}',
+                topics      TEXT DEFAULT '[]',
+                last_msg    TEXT DEFAULT '',
+                FOREIGN KEY (token) REFERENCES rauli_users(token) ON DELETE CASCADE
+            );
+        """)
+
+
+_rauli_db_init()
+
+
+class _RauliUserCreate(BaseModel):
+    name:  str
+    token: Optional[str] = None   # token externo (ej. access_code del espejo)
+
+
+class _RauliMemoryUpdate(BaseModel):
+    searches:    Optional[list] = None
+    preferences: Optional[dict] = None
+    topics:      Optional[list] = None
+    last_msg:    Optional[str]  = None
+
+
+def _rauli_gen_token() -> str:
+    """Token URL-safe de ~11 caracteres (64 bits de entropía)."""
+    return _secrets_mod.token_urlsafe(8)
+
+
+@app.post("/api/rauli/users", tags=["Rauli Users"])
+async def rauli_create_user(body: _RauliUserCreate):
+    """Crea un nuevo usuario y devuelve su token y enlace personalizado."""
+    t0 = time.perf_counter()
+    name = (body.name or "").strip()
+    if not name:
+        return _std_resp(False, None, 0, "name_required")
+    # Usar token externo si se provee (bridge con espejo access_code), si no generar uno
+    raw_token = (body.token or "").strip()
+    token = raw_token if raw_token else _rauli_gen_token()
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        with _rauli_db_conn() as c:
+            c.execute(
+                "INSERT INTO rauli_users (token,name,created_at,last_seen,visit_count) VALUES(?,?,?,?,0)",
+                (token, name, now, now),
+            )
+            c.execute("INSERT INTO rauli_memory (token) VALUES(?)", (token,))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+    return _std_resp(
+        True,
+        {"token": token, "name": name, "link": f"/?u={token}", "created_at": now},
+        int((time.perf_counter() - t0) * 1000),
+    )
+
+
+@app.get("/api/rauli/users", tags=["Rauli Users"])
+async def rauli_list_users():
+    """Lista todos los usuarios registrados (panel de administración)."""
+    t0 = time.perf_counter()
+    try:
+        with _rauli_db_conn() as c:
+            rows = c.execute(
+                "SELECT token,name,created_at,last_seen,visit_count FROM rauli_users ORDER BY created_at DESC"
+            ).fetchall()
+        users = [dict(r) for r in rows]
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+    return _std_resp(True, users, int((time.perf_counter() - t0) * 1000))
+
+
+@app.get("/api/rauli/users/{token}", tags=["Rauli Users"])
+async def rauli_get_user(token: str):
+    """Devuelve perfil completo + memoria del usuario identificado por token."""
+    t0 = time.perf_counter()
+    try:
+        with _rauli_db_conn() as c:
+            u = c.execute(
+                "SELECT token,name,created_at,last_seen,visit_count FROM rauli_users WHERE token=?",
+                (token,),
+            ).fetchone()
+            if not u:
+                return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "user_not_found")
+            m = c.execute(
+                "SELECT searches,preferences,topics,last_msg FROM rauli_memory WHERE token=?",
+                (token,),
+            ).fetchone()
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+    profile = dict(u)
+    profile["memory"] = {
+        "searches":    json.loads(m["searches"]    or "[]") if m else [],
+        "preferences": json.loads(m["preferences"] or "{}") if m else {},
+        "topics":      json.loads(m["topics"]      or "[]") if m else [],
+        "last_msg":    (m["last_msg"] or "") if m else "",
+    }
+    return _std_resp(True, profile, int((time.perf_counter() - t0) * 1000))
+
+
+@app.patch("/api/rauli/users/{token}/visit", tags=["Rauli Users"])
+async def rauli_record_visit(token: str):
+    """Incrementa el contador de visitas y actualiza last_seen."""
+    t0 = time.perf_counter()
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        with _rauli_db_conn() as c:
+            r = c.execute(
+                "UPDATE rauli_users SET last_seen=?, visit_count=visit_count+1 WHERE token=?",
+                (now, token),
+            )
+            if r.rowcount == 0:
+                return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "user_not_found")
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+    return _std_resp(True, {"last_seen": now}, int((time.perf_counter() - t0) * 1000))
+
+
+@app.post("/api/rauli/users/{token}/memory", tags=["Rauli Users"])
+async def rauli_update_memory(token: str, body: _RauliMemoryUpdate):
+    """Actualiza la memoria del usuario: búsquedas recientes, preferencias, temas, último mensaje."""
+    t0 = time.perf_counter()
+    try:
+        with _rauli_db_conn() as c:
+            row = c.execute(
+                "SELECT searches,preferences,topics FROM rauli_memory WHERE token=?",
+                (token,),
+            ).fetchone()
+            if not row:
+                return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "user_not_found")
+            searches    = json.loads(row["searches"]    or "[]")
+            preferences = json.loads(row["preferences"] or "{}")
+            topics      = json.loads(row["topics"]      or "[]")
+            if body.searches is not None:
+                # Deduplicar y mantener solo las últimas 50
+                searches = list(dict.fromkeys(searches + body.searches))[-50:]
+            if body.preferences is not None:
+                preferences.update(body.preferences)
+            if body.topics is not None:
+                topics = list(dict.fromkeys(topics + body.topics))[-30:]
+            c.execute(
+                """UPDATE rauli_memory
+                   SET searches=?, preferences=?, topics=?, last_msg=COALESCE(?, last_msg)
+                   WHERE token=?""",
+                (
+                    json.dumps(searches,    ensure_ascii=False),
+                    json.dumps(preferences, ensure_ascii=False),
+                    json.dumps(topics,      ensure_ascii=False),
+                    body.last_msg,
+                    token,
+                ),
+            )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+    return _std_resp(True, {"ok": True}, int((time.perf_counter() - t0) * 1000))
+
+
+@app.delete("/api/rauli/users/{token}", tags=["Rauli Users"])
+async def rauli_delete_user(token: str):
+    """Elimina un usuario y toda su memoria asociada."""
+    t0 = time.perf_counter()
+    try:
+        with _rauli_db_conn() as c:
+            r = c.execute("DELETE FROM rauli_users WHERE token=?", (token,))
+            if r.rowcount == 0:
+                return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "user_not_found")
+            c.execute("DELETE FROM rauli_memory WHERE token=?", (token,))
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
+    return _std_resp(True, {"deleted": token}, int((time.perf_counter() - t0) * 1000))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 _dedupe_http_routes()
 
