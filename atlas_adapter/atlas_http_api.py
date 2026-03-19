@@ -30,14 +30,9 @@ from atlas_adapter.bootstrap.settings import (
 from atlas_adapter.bootstrap.service_urls import (
     get_nexus_ws_url,
 )
+from atlas_adapter.routes.nexus_runtime import build_router as build_nexus_runtime_router
 from atlas_adapter.services.nexus_robot_runtime import (
-    get_nexus_connection_payload,
-    get_robot_start_commands,
     get_robot_status,
-    reconnect_cuerpo,
-    reconnect_nexus,
-    reconnect_robot,
-    update_nexus_connection_state,
 )
 
 
@@ -94,6 +89,7 @@ app = FastAPI(
         },
     ],
 )
+app.include_router(build_nexus_runtime_router(repo_root=BASE_DIR, env_path=ENV_PATH))
 
 app.add_middleware(
     CORSMiddleware,
@@ -208,34 +204,6 @@ def status():
         "nexus_dashboard_url": "/nexus",
         "robot_connected": robot_ok,
     }
-
-
-@app.get("/api/nexus/connection", tags=["NEXUS"])
-def get_nexus_connection():
-    """CEREBRO â€” CUERPO (NEXUS): estado de conexiÃ³n (consolidado en PUSH)."""
-    return get_nexus_connection_payload()
-
-
-class NexusConnectionBody(BaseModel):
-    connected: bool = False
-    message: str = ""
-    active: Optional[bool] = None
-
-
-@app.post("/api/nexus/connection", tags=["NEXUS"])
-def post_nexus_connection(body: NexusConnectionBody):
-    """Actualiza estado de conexiÃ³n NEXUS (heartbeat o Prueba de Nervios). active=True â†’ CONECTADO | ACTIVO."""
-    return update_nexus_connection_state(
-        connected=body.connected,
-        message=body.message or "",
-        active=body.active,
-    )
-
-
-@app.post("/api/nexus/reconnect", tags=["NEXUS"])
-def nexus_reconnect(clear_cache: bool = False):
-    """Reconectar NEXUS (no-bloqueante): opcionalmente limpia cache, lanza arranque y devuelve de inmediato."""
-    return reconnect_nexus(clear_cache=clear_cache)
 
 
 @app.post("/api/cache/clear", tags=["NEXUS"])
@@ -1442,35 +1410,6 @@ def api_self_programming_execute_sandbox(body: SelfProgramExecuteBody):
         )
     except Exception as e:
         return {"success": False, "error": str(e)}
-
-
-@app.get("/api/robot/status", tags=["NEXUS"])
-def robot_status():
-    """Estado del Robot (cÃ¡maras, visiÃ³n).
-
-    Orden de detecciÃ³n:
-    1) Backend Robot/NEXUS (8002 / NEXUS_ROBOT_URL)
-    2) Fallback local USB (si hay cÃ¡mara local disponible)
-    """
-    return get_robot_status()
-
-
-@app.post("/api/robot/reconnect", tags=["NEXUS"])
-def robot_reconnect():
-    """Arranca el backend del Robot (cÃ¡maras). Devuelve enseguida; el usuario debe pulsar Actualizar cÃ¡maras en 10-15 s."""
-    return reconnect_robot(repo_root=BASE_DIR, env_path=ENV_PATH)
-
-
-@app.post("/api/cuerpo/reconnect", tags=["NEXUS"])
-def cuerpo_reconnect():
-    """Arranca Cuerpo completo (NEXUS 8000 + Robot 8002). Responde rÃ¡pido (no-bloqueante)."""
-    return reconnect_cuerpo(repo_root=BASE_DIR, env_path=ENV_PATH)
-
-
-@app.get("/api/robot/start-commands", tags=["NEXUS"])
-def robot_start_commands():
-    """Devuelve los comandos para arrancar NEXUS y Robot a mano (por si Reconectar no da resultado)."""
-    return get_robot_start_commands(repo_root=BASE_DIR, env_path=ENV_PATH)
 
 
 def _tail_text_file(path: Path, max_bytes: int = 65536, lines: int = 200) -> str:
