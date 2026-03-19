@@ -45,7 +45,7 @@ const MENU_ITEMS = [
     category: 'Inteligencia',
     items: [
       { id: 'chat',      label: 'Chat Cerebro',      desc: 'Conversación directa con el cerebro',    icon: 'message-square', route: '/chat' },
-      { id: 'clawd-direct', label: 'Clawd Directo',  desc: 'Canal directo con ClawdBOT + bridge',    icon: 'message-square', route: '/clawd-direct' },
+      { id: 'clawd-direct', label: 'ATLAS Directo',  desc: 'Canal directo con ATLAS + bridge operativo',    icon: 'message-square', route: '/clawd-direct' },
       { id: 'codex-supervisor', label: 'Codex Supervisor', desc: 'Supervisor para asignar tareas y seguimiento', icon: 'cpu', route: '/codex-supervisor' },
       { id: 'cognitive', label: 'Sistema Nervioso',  desc: 'Nodos cerebrales, goals y memoria',      icon: 'brain',          route: '/cognitive' },
       { id: 'tutorias',  label: 'Tutorías',          desc: 'Especialistas, visitas y recomendaciones', icon: 'users',         route: '/tutorias' },

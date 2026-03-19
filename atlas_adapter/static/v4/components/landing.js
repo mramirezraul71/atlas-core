@@ -92,7 +92,7 @@ export function render(container) {
         <div class="quick-chip" data-action="bety-eventos">${SVG.bitacora} Bety Eventos</div>
         <div class="quick-chip" data-action="config">${SVG.config} AI Config</div>
         <div class="quick-chip" data-action="autonomy">${SVG.governance} Autonomy</div>
-        <div class="quick-chip" data-action="clawd-direct">${SVG.brain} Clawd Directo</div>
+        <div class="quick-chip" data-action="clawd-direct">${SVG.brain} ATLAS Directo</div>
         <div class="quick-chip" data-action="codex-supervisor">${SVG.governance} Codex Supervisor</div>
         <div class="quick-chip" data-action="tools-menu">${SVG.monitor} Tools Menu</div>
         <div class="quick-chip" data-action="software-center">${SVG.package} Software Center</div>
@@ -152,7 +152,7 @@ export function render(container) {
         </div>
         <div class="app-tile" data-app="clawd-direct">
           <div class="app-tile-icon">${SVG.brain}</div>
-          <div class="app-tile-label">Clawd Directo</div>
+          <div class="app-tile-label">ATLAS Directo</div>
         </div>
         <div class="app-tile" data-app="codex-supervisor">
           <div class="app-tile-icon">${SVG.governance}</div>

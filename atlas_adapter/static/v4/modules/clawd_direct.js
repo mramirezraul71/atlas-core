@@ -1,4 +1,4 @@
-// ─── Clawd Directo — Cursor-style AI Interface ───────────────────────────────
+// ─── ATLAS Directo — Cursor-style AI Interface ───────────────────────────────
 
 function _esc(s) {
   const d = document.createElement('span');
@@ -481,7 +481,7 @@ const PROMPTS = [
 
 export default {
   id: 'clawd-direct',
-  label: 'Clawd Directo',
+  label: 'ATLAS Directo',
   icon: 'message-square',
   category: 'intelligence',
 
@@ -501,7 +501,7 @@ export default {
     </button>
     <div class="cd-title">
       <div class="cd-title-icon">⚡</div>
-      Clawd Directo
+      ATLAS Directo
     </div>
     <div class="cd-spacer"></div>
     <div class="cd-pills">
@@ -555,8 +555,8 @@ export default {
       <div class="cd-messages" id="cd-messages">
         <div class="cd-welcome" id="cd-welcome">
           <div class="cd-welcome-icon">⚡</div>
-          <h3>Clawd Directo</h3>
-          <p>Interfaz directa con Atlas IA. Haz preguntas sobre el negocio, ejecuta acciones o analiza datos en tiempo real.</p>
+          <h3>ATLAS Directo</h3>
+          <p>Interfaz directa con ATLAS. Puedes consultar, analizar, resumir actividad y ejecutar acciones controladas mediante el bridge operativo.</p>
           <div class="cd-welcome-chips" id="cd-welcome-chips"></div>
         </div>
       </div>
@@ -742,7 +742,7 @@ export default {
       if (provider && role === 'clawd') {
         const prov = document.createElement('div');
         prov.className = 'cd-msg-provider';
-        prov.textContent = provider.split(':').slice(0, 2).join(':');
+        prov.textContent = formatProvider(provider);
         meta.appendChild(prov);
         lastProvider = provider;
         updateModelPill(provider);
@@ -778,11 +778,21 @@ export default {
 
     function updateModelPill(provider) {
       const p = container.querySelector('#cd-p-model');
-      const name = provider.split(':').slice(0, 2).join(':').replace('local_auto', '🏠 local').replace('clawd_api', '⚡ clawd');
+      const name = formatProvider(provider);
       p.className = 'cd-pill ok';
       p.innerHTML = `<span class="cd-pill-dot"></span>${name}`;
       modelName.textContent = provider.includes('anthropic') ? 'claude' : provider.includes('local') ? 'ollama' : 'atlas-ai';
       ctxModel.textContent = modelName.textContent;
+    }
+
+    function formatProvider(provider) {
+      return provider
+        .split(':')
+        .slice(0, 2)
+        .join(':')
+        .replace('local_auto', '🏠 local')
+        .replace('clawd_api', '⚡ atlas')
+        .replace('clawd_cli', '⚡ atlas-cli');
     }
 
     // ── Send message ─────────────────────────────────────────────────────────

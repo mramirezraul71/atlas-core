@@ -150,6 +150,9 @@ tools/atlas_agent/runs/
 .codex/tmp/
 config/atlas.env
 
+# OpenClaw ATLAS runtime state
+state/openclaw_atlas/
+
 # Playwright CLI recordings / temp scripts
 .playwright-cli/
 tmp_pwcode*.js

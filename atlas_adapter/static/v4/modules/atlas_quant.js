@@ -6,6 +6,7 @@
 import { poll, stop } from '../lib/polling.js';
 
 const POLL_ID  = 'atlas-quant-module';
+const MONITOR_POLL_ID = 'atlas-quant-monitor';
 const QUANT_API = 'http://127.0.0.1:8792';
 const API_KEY   = 'atlas-quant-local';
 
@@ -15,6 +16,62 @@ function _esc(s) {
 
 function _headers() {
   return { 'X-Api-Key': API_KEY, 'Content-Type': 'application/json' };
+}
+
+function _fmtMoney(v) {
+  const n = Number(v || 0);
+  const sign = n > 0 ? '+' : '';
+  return `${sign}$${n.toFixed(2)}`;
+}
+
+function _fmtPct(v, digits = 1) {
+  if (v === null || v === undefined || Number.isNaN(Number(v))) return '—';
+  return `${Number(v).toFixed(digits)}%`;
+}
+
+function _fmtNum(v, digits = 2) {
+  if (v === null || v === undefined || Number.isNaN(Number(v))) return '—';
+  return Number(v).toFixed(digits);
+}
+
+function _moneyColor(v) {
+  const n = Number(v || 0);
+  return n >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+}
+
+function _monitorParams(container) {
+  const scope = container.querySelector('#aq-account-scope')?.value || 'paper';
+  const accountId = container.querySelector('#aq-account-id')?.value?.trim() || '';
+  const params = new URLSearchParams();
+  if (scope) params.set('account_scope', scope);
+  if (accountId) params.set('account_id', accountId);
+  return params.toString();
+}
+
+function _curveSvg(points = []) {
+  if (!Array.isArray(points) || points.length === 0) return '';
+  const width = 220;
+  const height = 84;
+  const prices = points.map(p => Number(p.price || 0));
+  const profits = points.map(p => Number(p.profit || 0));
+  const minX = Math.min(...prices);
+  const maxX = Math.max(...prices);
+  const minY = Math.min(...profits);
+  const maxY = Math.max(...profits);
+  const rangeX = Math.max(maxX - minX, 1e-6);
+  const rangeY = Math.max(maxY - minY, 1e-6);
+  const coords = points.map(p => {
+    const x = ((Number(p.price || 0) - minX) / rangeX) * width;
+    const y = height - (((Number(p.profit || 0) - minY) / rangeY) * height);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const zeroY = height - (((0 - minY) / rangeY) * height);
+  return `
+    <svg viewBox="0 0 ${width} ${height}" width="100%" height="84" style="display:block">
+      <line x1="0" y1="${zeroY.toFixed(1)}" x2="${width}" y2="${zeroY.toFixed(1)}" stroke="rgba(255,255,255,0.12)" stroke-dasharray="4 4"></line>
+      <polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${coords}"></polyline>
+    </svg>
+  `;
 }
 
 async function _fetchHealth(container) {
@@ -70,6 +127,117 @@ async function _fetchPositions(container) {
       </div>`;
     }).join('');
   } catch {}
+}
+
+async function _fetchMonitorSummary(container) {
+  const summaryEl = container.querySelector('#aq-monitor-summary');
+  const alertsEl = container.querySelector('#aq-monitor-alerts');
+  const listEl = container.querySelector('#aq-monitor-list');
+  if (!summaryEl || !alertsEl || !listEl) return;
+  const qs = _monitorParams(container);
+  try {
+    const r = await fetch(`${QUANT_API}/monitor/summary${qs ? `?${qs}` : ''}`, { headers: _headers() });
+    const d = await r.json();
+    if (!d?.ok || !d?.data) throw new Error(d?.error || 'No se pudo cargar monitor');
+    const m = d.data;
+    const acct = m.account_session || {};
+    const pdt = m.pdt_status || {};
+    const alerts = Array.isArray(m.alerts) ? m.alerts : [];
+    const strategies = Array.isArray(m.strategies) ? m.strategies : [];
+    const pdtChip = pdt.blocked_opening
+      ? '<span class="chip red">PDT bloqueando aperturas</span>'
+      : `<span class="chip ${acct.classification === 'live' ? 'orange' : 'green'}">${acct.classification === 'live' ? 'LIVE vigilado' : 'PAPER'}</span>`;
+    summaryEl.innerHTML = `
+      <div class="stat-row" style="margin-bottom:12px">
+        <div class="stat-card hero">
+          <div class="stat-card-label">Cuenta Tradier</div>
+          <div class="stat-card-value" style="font-size:16px">${_esc(acct.account_id || '—')}</div>
+          <div class="stat-card-sub">${_esc(acct.classification || 'sin sesión')} · ${_esc(acct.scope || '—')}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">Equity</div>
+          <div class="stat-card-value ${Number(acct.total_equity || 0) >= 25000 ? 'green' : 'orange'}">${acct.total_equity ? `$${Number(acct.total_equity).toFixed(2)}` : '—'}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">PDT</div>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+            ${pdtChip}
+            <div class="stat-card-sub">${_esc(pdt.reason || 'sin observaciones')}</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">Alertas</div>
+          <div class="stat-card-value ${alerts.length > 0 ? 'red' : 'green'}">${alerts.length}</div>
+          <div class="stat-card-sub">refresh ${Math.round((m.refresh_interval_sec || 300) / 60)} min</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <span class="chip blue">Posiciones: ${_esc(String(m?.totals?.positions ?? '0'))}</span>
+        <span class="chip accent">Estrategias: ${_esc(String(m?.totals?.strategies ?? '0'))}</span>
+        <span class="chip ${Number(m?.totals?.open_pnl || 0) >= 0 ? 'green' : 'red'}">PnL abierto: ${_esc(_fmtMoney(m?.totals?.open_pnl || 0))}</span>
+        <span class="chip ${pdt.blocked_opening ? 'red' : 'blue'}">Day trades 5d: ${_esc(String(pdt.day_trades_last_window ?? 0))}</span>
+      </div>
+    `;
+    alertsEl.innerHTML = alerts.length === 0
+      ? `<div class="chip green">Sin alertas de probabilidad</div>`
+      : alerts.map(a => `<span class="chip red">${_esc(a.underlying)} · ${_esc(a.strategy_type)} · ${_fmtPct(a.win_rate_pct)}</span>`).join(' ');
+    listEl.innerHTML = strategies.length === 0
+      ? `<div class="empty-state" style="padding:16px 0"><div class="empty-sub">Sin estrategias abiertas en Tradier</div></div>`
+      : strategies.map(s => `
+        <div class="approval-card" style="padding:14px;margin-bottom:10px">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span class="chip blue">${_esc(s.strategy_type || '—')}</span>
+                <span style="font-weight:700">${_esc(s.underlying || '—')}</span>
+                ${s.alert ? '<span class="chip red">Probabilidad < 50%</span>' : ''}
+              </div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:6px">
+                ${_esc(String((s.positions || []).length))} patas · actualizado ${_esc(s.probability_updated_at || '—')}
+              </div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:18px;font-weight:700;color:${_moneyColor(s.open_pnl)}">${_fmtMoney(s.open_pnl)}</div>
+              <div style="font-size:11px;color:var(--text-muted)">PnL abierto</div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px">
+            <div class="provider-card" style="padding:10px">
+              <div class="provider-role">Win Rate</div>
+              <div class="provider-name" style="font-size:18px;color:${Number(s.win_rate_pct || 0) >= 50 ? 'var(--accent-green)' : 'var(--accent-red)'}">${_fmtPct(s.win_rate_pct)}</div>
+            </div>
+            <div class="provider-card" style="padding:10px">
+              <div class="provider-role">Delta Neto</div>
+              <div class="provider-name" style="font-size:18px">${_fmtNum(s.net_delta, 2)}</div>
+            </div>
+            <div class="provider-card" style="padding:10px">
+              <div class="provider-role">Theta Diario</div>
+              <div class="provider-name" style="font-size:18px">${_fmtMoney(s.theta_daily)}</div>
+            </div>
+            <div class="provider-card" style="padding:10px">
+              <div class="provider-role">Driver</div>
+              <div class="provider-name" style="font-size:14px">${_esc(s?.attribution?.dominant_driver || '—')}</div>
+            </div>
+          </div>
+          <div style="margin-top:12px;padding:10px;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,0.02)">
+            <div style="display:flex;justify-content:space-between;gap:10px;font-size:11px;color:var(--text-muted);margin-bottom:6px">
+              <span>Curva de riesgo</span>
+              <span>Spot: ${_fmtNum(s.spot, 2)}</span>
+            </div>
+            ${_curveSvg(s.payoff_curve || [])}
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+            <span class="chip ${Number(s?.attribution?.delta_pnl_est || 0) >= 0 ? 'green' : 'red'}">Delta: ${_fmtMoney(s?.attribution?.delta_pnl_est || 0)}</span>
+            <span class="chip ${Number(s?.attribution?.theta_pnl_est || 0) >= 0 ? 'green' : 'red'}">Theta: ${_fmtMoney(s?.attribution?.theta_pnl_est || 0)}</span>
+            <span class="chip ${Number(s?.attribution?.vega_pnl_est || 0) >= 0 ? 'green' : 'red'}">Vega: ${_fmtMoney(s?.attribution?.vega_pnl_est || 0)}</span>
+          </div>
+        </div>
+      `).join('');
+  } catch (e) {
+    summaryEl.innerHTML = `<div class="empty-state" style="padding:12px 0"><div class="empty-title" style="color:var(--accent-red)">Monitor no disponible</div><div class="empty-sub">${_esc(e.message || 'Error')}</div></div>`;
+    alertsEl.innerHTML = '';
+    listEl.innerHTML = '';
+  }
 }
 
 export default {
@@ -129,10 +297,33 @@ export default {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
               Actualizar posiciones
             </button>
+            <button class="action-btn" id="aq-btn-monitor">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+              Actualizar monitor
+            </button>
             <a href="${QUANT_API}/docs" target="_blank" class="action-btn" style="text-decoration:none">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>
               API Docs
             </a>
+          </div>
+
+          <div class="section-title" style="margin-bottom:10px">
+            Monitor avanzado
+            <span class="chip accent" style="font-size:10px;margin-left:6px">Tradier</span>
+          </div>
+          <div class="approval-card" style="padding:14px;margin-bottom:20px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+              <select id="aq-account-scope" class="config-input" style="width:120px">
+                <option value="paper" selected>Paper</option>
+                <option value="live">Live</option>
+              </select>
+              <input id="aq-account-id" class="config-input" placeholder="Account ID (opcional)" style="width:220px">
+              <div id="aq-monitor-alerts" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+            </div>
+            <div id="aq-monitor-summary">
+              <div style="padding:16px;text-align:center"><div class="spinner" style="margin:0 auto"></div></div>
+            </div>
+            <div id="aq-monitor-list" style="margin-top:14px"></div>
           </div>
 
           <!-- Eval señal rápida -->
@@ -232,7 +423,21 @@ export default {
     // actualizar posiciones manual
     container.querySelector('#aq-btn-positions')?.addEventListener('click', () => {
       _fetchPositions(container);
+      _fetchMonitorSummary(container);
       window.AtlasToast?.show('Posiciones actualizadas', 'info');
+    });
+
+    container.querySelector('#aq-btn-monitor')?.addEventListener('click', () => {
+      _fetchMonitorSummary(container);
+      window.AtlasToast?.show('Monitor avanzado actualizado', 'info');
+    });
+
+    container.querySelector('#aq-account-scope')?.addEventListener('change', () => {
+      _fetchMonitorSummary(container);
+    });
+
+    container.querySelector('#aq-account-id')?.addEventListener('change', () => {
+      _fetchMonitorSummary(container);
     });
 
     // ejecutar señal rápida
@@ -333,12 +538,15 @@ export default {
 
     _fetchHealth(container);
     _fetchPositions(container);
+    _fetchMonitorSummary(container);
 
     poll(POLL_ID, `${QUANT_API}/health`, 15000, () => _fetchHealth(container));
+    poll(MONITOR_POLL_ID, `${QUANT_API}/health`, 60000, () => _fetchMonitorSummary(container));
   },
 
   destroy() {
     stop(POLL_ID);
+    stop(MONITOR_POLL_ID);
   },
 
   badge() { return null; },

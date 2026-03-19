@@ -24,11 +24,20 @@ from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.schemas import (
-    EvalSignalRequest, ActivateStrategyRequest, OrderRequest,
+    EvalSignalRequest, ActivateStrategyRequest, OrderRequest, WinningProbabilityRequest,
     SignalResponse, PortfolioResponse, HealthResponse, StdResponse,
     StatusEnum, SignalEnum,
 )
+from backtesting.winning_probability import SUPPORTED_STRATEGIES, get_winning_probability
 from config.settings import settings
+from execution.tradier_controls import check_pdt_status, resolve_account_session
+from execution.tradier_execution import (
+    TradierOrderBlocked,
+    is_opening_order as tradier_is_opening_order,
+    route_order_to_tradier,
+    should_route_to_tradier,
+)
+from monitoring.advanced_monitor import build_monitor_summary
 
 logger = logging.getLogger("quant.api")
 _START_TIME = time.time()
@@ -48,6 +57,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.on_event("startup")
+async def preload_tradier_sessions() -> None:
+    for scope, token in (("paper", settings.tradier_paper_token), ("live", settings.tradier_live_token)):
+        if not token:
+            continue
+        try:
+            resolve_account_session(account_scope=scope)  # type: ignore[arg-type]
+            logger.info("Tradier %s session preloaded", scope)
+        except Exception:
+            logger.exception("Unable to preload Tradier %s session", scope)
+
 # ── Registry global (se popula al iniciar el motor) ──────────────────────────
 _strategies: dict = {}
 _portfolio = None
@@ -56,6 +77,64 @@ _portfolio = None
 def _auth(x_api_key: str | None) -> None:
     if x_api_key != settings.api_key:
         raise HTTPException(status_code=401, detail="API key inválida")
+
+
+def _probability_payload(body: WinningProbabilityRequest) -> dict:
+    result = get_winning_probability(
+        symbol=body.symbol,
+        strategy_type=body.strategy_type,
+        account_scope=body.account_scope,
+        tradier_token=body.tradier_token,
+        tradier_base_url=body.tradier_base_url,
+        history_days=body.history_days,
+        min_dte=body.min_dte,
+        max_dte=body.max_dte,
+        n_paths=body.n_paths,
+        random_seed=body.random_seed,
+    )
+    payload = result.to_dict()
+    payload["supported_strategies"] = list(SUPPORTED_STRATEGIES)
+    return payload
+
+
+def _resolve_request_session(
+    *,
+    account_scope: str | None,
+    account_id: str | None,
+    tradier_token: str | None = None,
+    tradier_base_url: str | None = None,
+) -> dict | None:
+    try:
+        _, session = resolve_account_session(
+            account_scope=account_scope,  # type: ignore[arg-type]
+            account_id=account_id,
+            tradier_token=tradier_token,
+            tradier_base_url=tradier_base_url,
+        )
+        return session.to_dict()
+    except Exception:
+        logger.exception("Unable to resolve Tradier account session")
+        return None
+
+
+def _is_opening_request(body: OrderRequest) -> bool:
+    return tradier_is_opening_order(body)
+
+
+def _inherit_probability_context(
+    body: WinningProbabilityRequest | None,
+    *,
+    account_scope: str | None,
+    account_id: str | None,
+) -> WinningProbabilityRequest | None:
+    if body is None:
+        return None
+    updates = {}
+    if body.account_scope is None and account_scope is not None:
+        updates["account_scope"] = account_scope
+    if body.account_id is None and account_id is not None:
+        updates["account_id"] = account_id
+    return body.model_copy(update=updates) if updates else body
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
@@ -89,9 +168,24 @@ async def eval_signal(body: EvalSignalRequest, x_api_key: str | None = Header(No
         df = feed.ohlcv(body.symbol, body.timeframe, limit=200)
         signal = strategy.generate_signal(df, body.symbol)
         strategy.on_signal(signal)
+        signal_data = signal.to_dict()
+        if body.options_probability:
+            probability_request = _inherit_probability_context(
+                body.options_probability,
+                account_scope=body.options_probability.account_scope,
+                account_id=body.options_probability.account_id,
+            ) or body.options_probability
+            signal_data.setdefault("metadata", {})
+            signal_data["metadata"]["options_probability"] = _probability_payload(probability_request)
+            signal_data["metadata"]["account_session"] = _resolve_request_session(
+                account_scope=probability_request.account_scope,
+                account_id=probability_request.account_id,
+                tradier_token=probability_request.tradier_token,
+                tradier_base_url=probability_request.tradier_base_url,
+            )
         return StdResponse(
             ok=True,
-            data=signal.to_dict(),
+            data=signal_data,
             ms=round((time.perf_counter() - t0) * 1000, 2),
         )
     except Exception as e:
@@ -99,24 +193,121 @@ async def eval_signal(body: EvalSignalRequest, x_api_key: str | None = Header(No
         return StdResponse(ok=False, error=str(e))
 
 
+@app.post("/probability/options", response_model=StdResponse, tags=["Opciones"])
+async def probability_options(body: WinningProbabilityRequest, x_api_key: str | None = Header(None)):
+    """Calcula probabilidad de victoria para una estrategia de opciones."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = _probability_payload(body)
+        payload["account_session"] = _resolve_request_session(
+            account_scope=body.account_scope,
+            account_id=body.account_id,
+            tradier_token=body.tradier_token,
+            tradier_base_url=body.tradier_base_url,
+        )
+        return StdResponse(
+            ok=True,
+            data=payload,
+            ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+    except Exception as e:
+        logger.exception("Error calculando winning probability")
+        return StdResponse(
+            ok=False,
+            error=str(e),
+            data={
+                "symbol": body.symbol,
+                "strategy_type": body.strategy_type,
+                "supported_strategies": list(SUPPORTED_STRATEGIES),
+            },
+            ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+
+
 @app.post("/order", response_model=StdResponse, tags=["Trading"])
 async def place_order(body: OrderRequest, x_api_key: str | None = Header(None)):
-    """Coloca una orden de trading (paper o live según configuración)."""
+    """Coloca una orden de trading (paper o live segun configuracion)."""
     _auth(x_api_key)
+    opening_request = _is_opening_request(body)
+    effective_account_scope = body.account_scope or settings.tradier_default_scope
+    tradier_route = should_route_to_tradier(body)
+    account_session_payload = (
+        _resolve_request_session(
+            account_scope=effective_account_scope,
+            account_id=body.account_id,
+        )
+        if tradier_route or body.account_scope is not None or body.account_id is not None
+        else None
+    )
+    pdt_status = None
+    gate_payload = None
+
+    if opening_request and body.probability_gate and body.probability_gate.enabled:
+        gate_request = _inherit_probability_context(
+            body.probability_gate,
+            account_scope=effective_account_scope,
+            account_id=body.account_id,
+        ) or body.probability_gate
+        gate_payload = _probability_payload(gate_request)
+        win_rate_pct = float(gate_payload.get("win_rate_pct") or 0.0)
+        min_win_rate_pct = float(gate_request.min_win_rate_pct)
+        if win_rate_pct < min_win_rate_pct:
+            return StdResponse(
+                ok=False,
+                error=(
+                    f"Probability gate bloqueo la orden: {win_rate_pct:.2f}% < "
+                    f"minimo requerido {min_win_rate_pct:.2f}%"
+                ),
+                data={
+                    "probability_gate": gate_payload,
+                    "account_session": account_session_payload,
+                    "pdt_status": pdt_status,
+                },
+            )
+
+    if tradier_route:
+        try:
+            payload = route_order_to_tradier(body)
+            if gate_payload is not None:
+                payload["probability_gate"] = gate_payload
+            return StdResponse(ok=True, data=payload)
+        except TradierOrderBlocked as exc:
+            payload = {
+                "account_session": account_session_payload,
+                **exc.payload,
+                **({"probability_gate": gate_payload} if gate_payload is not None else {}),
+            }
+            return StdResponse(ok=False, error=str(exc), data=payload)
+        except Exception as exc:
+            logger.exception("Error routing order to Tradier")
+            payload = {
+                "account_session": account_session_payload,
+                **({"probability_gate": gate_payload} if gate_payload is not None else {}),
+            }
+            return StdResponse(ok=False, error=str(exc), data=payload)
+
     if not settings.paper_trading:
         raise HTTPException(status_code=403, detail="Live trading no habilitado")
     if not _portfolio:
         return StdResponse(ok=False, error="Portfolio no inicializado")
-    if body.side == "buy":
+
+    if opening_request:
         pos = _portfolio.open_position(
             body.symbol, "long", body.size, body.price or 0,
             body.stop_loss, body.take_profit,
         )
-        return StdResponse(ok=pos is not None, data=pos.to_dict() if pos else None)
+        payload = pos.to_dict() if pos else None
+        if payload is not None:
+            payload = {
+                **payload,
+                "account_session": account_session_payload,
+                "pdt_status": pdt_status,
+                **({"probability_gate": gate_payload} if gate_payload is not None else {}),
+            }
+        return StdResponse(ok=pos is not None, data=payload)
     pnl = _portfolio.close_position(body.symbol, body.price or 0)
-    return StdResponse(ok=True, data={"pnl": pnl})
-
-
+    return StdResponse(ok=True, data={"pnl": pnl, "account_session": account_session_payload, "pdt_status": pdt_status})
 @app.get("/positions", response_model=StdResponse, tags=["Trading"])
 async def get_positions(x_api_key: str | None = Header(None)):
     """Retorna posiciones abiertas y resumen del portfolio."""
@@ -124,6 +315,23 @@ async def get_positions(x_api_key: str | None = Header(None)):
     if not _portfolio:
         return StdResponse(ok=False, error="Portfolio no inicializado")
     return StdResponse(ok=True, data=_portfolio.summary())
+
+
+@app.get("/monitor/summary", response_model=StdResponse, tags=["Monitor"])
+async def monitor_summary(
+    x_api_key: str | None = Header(None),
+    account_scope: str | None = None,
+    account_id: str | None = None,
+):
+    """Entrega seguimiento avanzado numerico y grafico para posiciones Tradier."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        data = build_monitor_summary(account_scope=account_scope, account_id=account_id)  # type: ignore[arg-type]
+        return StdResponse(ok=True, data=data, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as e:
+        logger.exception("Error building advanced monitor summary")
+        return StdResponse(ok=False, error=str(e), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
 @app.post("/strategy/activate", response_model=StdResponse, tags=["Estrategias"])
@@ -258,3 +466,4 @@ async def list_reports(x_api_key: str | None = Header(None)):
          "mtime": datetime.fromtimestamp(f.stat().st_mtime).isoformat()}
         for f in files[:20]
     ])
+
