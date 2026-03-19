@@ -44,6 +44,12 @@ def get_quant_handoff_prompt_path(repo_root: Optional[Path] = None) -> Path:
     return base / "prompts" / "quant_native_camera_integration_handoff.md"
 
 
+def get_quant_env_example_path(repo_root: Optional[Path] = None) -> Path:
+    """Return the example env path used to wire the bridge safely."""
+    base = repo_root or Path(__file__).resolve().parents[2]
+    return base / "config" / "atlas_quant_bridge.env.example"
+
+
 def _json_post(
     url: str,
     payload: dict[str, Any],
@@ -202,6 +208,7 @@ def get_quant_bridge_status(repo_root: Optional[Path] = None) -> dict[str, Any]:
         "quant_api_base": get_quant_api_base(),
         "quant_api_key_present": bool(get_quant_api_key()),
         "screen_gaze_calibration_path": str(get_default_screen_calib_path()),
+        "env_example_path": str(get_quant_env_example_path(repo_root=repo_root)),
         "handoff_prompt_path": str(get_quant_handoff_prompt_path(repo_root=repo_root)),
         "bridge_endpoints": {
             "vision_cycle": "/api/trading/quant/vision-cycle",

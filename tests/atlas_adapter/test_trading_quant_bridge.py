@@ -106,4 +106,5 @@ def test_get_quant_bridge_status_exposes_prompt_path(tmp_path: Path):
 
     assert status["ok"] is True
     assert status["bridge_endpoints"]["vision_cycle"] == "/api/trading/quant/vision-cycle"
+    assert status["env_example_path"].endswith("config\\atlas_quant_bridge.env.example")
     assert status["handoff_prompt_path"].endswith("prompts\\quant_native_camera_integration_handoff.md")
