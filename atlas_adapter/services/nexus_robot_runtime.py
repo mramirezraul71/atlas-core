@@ -282,3 +282,73 @@ def get_robot_start_commands(repo_root: Path, env_path: Path) -> dict:
         },
         "hint": "Abre dos terminales, ejecuta uno en cada una. Robot usa puerto 8002, NEXUS 8000.",
     }
+
+
+def tail_text_file(path: Path, max_bytes: int = 65536, lines: int = 200) -> str:
+    """Read the last lines of a text log file without loading it fully in memory."""
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as handle:
+            handle.seek(max(0, size - max_bytes))
+            data = handle.read()
+        text = data.decode("utf-8", errors="replace")
+        parts = text.splitlines()
+        return "\n".join(parts[-max(1, int(lines)) :])
+    except Exception:
+        return ""
+
+
+def get_robot_log_tail(base_dir: Path, lines: int = 200) -> dict:
+    """Return the last Robot backend log lines used by operators."""
+    path = base_dir / "logs" / "robot_backend.log"
+    return {
+        "ok": True,
+        "path": str(path),
+        "lines": int(lines),
+        "text": tail_text_file(path, lines=int(lines)),
+    }
+
+
+def get_nexus_log_tail(base_dir: Path, lines: int = 200) -> dict:
+    """Return the last NEXUS API log lines used by operators."""
+    path = base_dir / "logs" / "nexus_api.log"
+    return {
+        "ok": True,
+        "path": str(path),
+        "lines": int(lines),
+        "text": tail_text_file(path, lines=int(lines)),
+    }
+
+
+def get_nerve_status() -> dict:
+    """Return consolidated nerve status for eyes, hands and feet."""
+    try:
+        from modules.humanoid.nerve import feet_status, nerve_eyes_status
+
+        eyes = nerve_eyes_status()
+        hands_deps_ok = None
+        try:
+            from modules.humanoid.screen.status import _screen_deps_ok as _ok
+
+            hands_deps_ok = bool(_ok())
+        except Exception:
+            hands_deps_ok = None
+        feet = feet_status()
+        return {
+            "ok": True,
+            "eyes": eyes,
+            "hands": {"local": True, "deps_ok": hands_deps_ok},
+            "feet": feet,
+        }
+    except Exception as exc:
+        return {"ok": False, "eyes": {}, "hands": {}, "feet": {}, "error": str(exc)}
+
+
+def execute_feet_command(command: str, payload: Optional[dict] = None) -> dict:
+    """Execute feet commands, including digital driver operations."""
+    try:
+        from modules.humanoid.nerve import feet_execute
+
+        return feet_execute(str(command or ""), payload if isinstance(payload, dict) else {})
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}

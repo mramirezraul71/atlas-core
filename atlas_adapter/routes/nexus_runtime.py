@@ -5,7 +5,11 @@ from pathlib import Path
 from typing import Optional
 
 from atlas_adapter.services.nexus_robot_runtime import (
+    execute_feet_command,
+    get_nerve_status,
     get_nexus_connection_payload,
+    get_nexus_log_tail,
+    get_robot_log_tail,
     get_robot_start_commands,
     get_robot_status,
     reconnect_cuerpo,
@@ -67,5 +71,34 @@ def build_router(repo_root: Path, env_path: Path) -> APIRouter:
     def robot_start_commands():
         """Devuelve comandos manuales para arrancar NEXUS y Robot."""
         return get_robot_start_commands(repo_root=repo_root, env_path=env_path)
+
+    @local_router.get("/api/robot/log/tail")
+    def robot_log_tail(lines: int = 200):
+        """Ultimas lineas del log del backend Robot."""
+        return get_robot_log_tail(base_dir=repo_root, lines=lines)
+
+    @local_router.get("/api/nexus/log/tail")
+    def nexus_log_tail(lines: int = 200):
+        """Ultimas lineas del log de NEXUS."""
+        return get_nexus_log_tail(base_dir=repo_root, lines=lines)
+
+    @local_router.get("/nervous/services")
+    def nervous_services():
+        """Alias compacto del estado del sistema nervioso para compatibilidad."""
+        return get_nerve_status()
+
+    @local_router.get("/api/nerve/status")
+    def nerve_status():
+        """Estado consolidado de ojos, manos y pies."""
+        return get_nerve_status()
+
+    @local_router.post("/api/feet/execute")
+    def api_feet_execute(body: dict):
+        """Ejecuta pies internos o digitales con el payload solicitado."""
+        payload = body if isinstance(body, dict) else {}
+        return execute_feet_command(
+            command=payload.get("command") or "",
+            payload=payload.get("payload") or {},
+        )
 
     return local_router
