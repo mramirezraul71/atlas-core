@@ -31,6 +31,9 @@ from atlas_adapter.bootstrap.service_urls import (
     get_nexus_ws_url,
 )
 from atlas_adapter.routes.nexus_runtime import build_router as build_nexus_runtime_router
+from atlas_adapter.routes.status_observability import (
+    build_router as build_status_observability_router,
+)
 from atlas_adapter.services.nexus_robot_runtime import (
     get_robot_status,
 )
@@ -89,6 +92,13 @@ app = FastAPI(
         },
     ],
 )
+app.include_router(
+    build_status_observability_router(
+        base_dir=BASE_DIR,
+        status_provider=lambda: handle("/status"),
+        robot_status_provider=get_robot_status,
+    )
+)
 app.include_router(build_nexus_runtime_router(repo_root=BASE_DIR, env_path=ENV_PATH))
 
 app.add_middleware(
@@ -117,93 +127,6 @@ except Exception:
 class Step(BaseModel):
     tool: str
     args: dict = {}
-
-
-def _robot_connected() -> bool:
-    """Ping Robot: prueba backend (8002) y luego UI (NEXUS_ROBOT_URL)."""
-    try:
-        return bool(get_robot_status().get("connected", False))
-    except Exception:
-        return False
-
-
-_ATLAS_STATUS_CACHE_TTL_SEC = float(os.getenv("ATLAS_STATUS_CACHE_TTL_SEC") or 12.0)
-_ATLAS_STATUS_CACHE = {"value": "[degraded] initializing", "ts": 0.0}
-_ATLAS_STATUS_INFLIGHT = False
-_ATLAS_STATUS_LOCK = threading.Lock()
-
-
-def _refresh_atlas_status_cache() -> None:
-    """Compute heavy atlas status once, update shared cache."""
-    global _ATLAS_STATUS_INFLIGHT
-    try:
-        value = handle("/status")
-    except Exception as e:
-        value = f"[degraded] /status error: {e}"
-    with _ATLAS_STATUS_LOCK:
-        _ATLAS_STATUS_CACHE["value"] = value
-        _ATLAS_STATUS_CACHE["ts"] = time.time()
-        _ATLAS_STATUS_INFLIGHT = False
-
-
-def _atlas_status_safe_cached() -> str:
-    """Never block request path; return cached value and refresh in background."""
-    global _ATLAS_STATUS_INFLIGHT
-    now = time.time()
-    with _ATLAS_STATUS_LOCK:
-        cached = _ATLAS_STATUS_CACHE.get("value", "[degraded] initializing")
-        ts = float(_ATLAS_STATUS_CACHE.get("ts") or 0.0)
-        is_fresh = (now - ts) <= _ATLAS_STATUS_CACHE_TTL_SEC
-        if is_fresh:
-            return str(cached)
-        if not _ATLAS_STATUS_INFLIGHT:
-            _ATLAS_STATUS_INFLIGHT = True
-            threading.Thread(target=_refresh_atlas_status_cache, daemon=True).start()
-        return str(cached)
-
-
-_STATUS_CACHE: Dict[str, Any] = {"nexus": {}, "robot": False, "ts": 0.0}
-_STATUS_CACHE_TTL = 15.0
-_STATUS_BG_STARTED = False
-
-
-def _status_bg_loop():
-    """Background thread that refreshes connectivity every 15s."""
-    while True:
-        try:
-            robot_ok = _robot_connected()
-        except Exception:
-            robot_ok = False
-        _STATUS_CACHE["nexus"] = {
-            "connected": True,
-            "active": True,
-            "last_check_ts": time.time(),
-            "last_error": "",
-        }
-        _STATUS_CACHE["robot"] = robot_ok
-        _STATUS_CACHE["ts"] = time.time()
-        time.sleep(_STATUS_CACHE_TTL)
-
-
-@app.get("/status")
-def status():
-    global _STATUS_BG_STARTED
-    if not _STATUS_BG_STARTED:
-        _STATUS_BG_STARTED = True
-        threading.Thread(target=_status_bg_loop, daemon=True).start()
-
-    nexus = _STATUS_CACHE.get("nexus", {})
-    robot_ok = _STATUS_CACHE.get("robot", False)
-    return {
-        "ok": True,
-        "atlas": _atlas_status_safe_cached(),
-        "nexus_connected": nexus.get("connected", False),
-        "nexus_active": nexus.get("active", False),
-        "nexus_last_check_ts": nexus.get("last_check_ts", 0),
-        "nexus_last_error": nexus.get("last_error", ""),
-        "nexus_dashboard_url": "/nexus",
-        "robot_connected": robot_ok,
-    }
 
 
 @app.post("/api/cache/clear", tags=["NEXUS"])
@@ -3577,59 +3500,6 @@ def api_kernel_event_bus_reset_errors(body: dict):
         rehabilitated = kernel.events.reset_handler_errors(topic=topic)
 
         return {"ok": True, "rehabilitated_handlers": rehabilitated}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
-@app.get("/health", tags=["Health"])
-async def health():
-    """Health cheap: respuesta inmediata sin depender de servicios externos."""
-    try:
-        return {
-            "ok": True,
-            "service": "atlas_push",
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "pid": os.getpid(),
-            "version": (
-                os.getenv("ATLAS_VERSION")
-                or os.getenv("APP_VERSION")
-                or ((BASE_DIR / "VERSION").read_text(encoding="utf-8").strip() if (BASE_DIR / "VERSION").exists() else "unknown")
-            ),
-        }
-    except Exception as e:
-        return {"ok": False, "service": "atlas_push", "error": str(e)}
-
-
-@app.get("/health/deep", tags=["Health"])
-async def health_deep():
-    """Health verificable completo con checks y score (costoso)."""
-    try:
-        from modules.humanoid.deploy.healthcheck import run_health_verbose
-        from modules.humanoid.deploy.ports import get_ports
-
-        active_port = get_ports()[0]
-        return run_health_verbose(base_url=None, active_port=active_port)
-    except Exception as e:
-        return {"ok": False, "score": 0, "checks": {}, "ms": 0, "error": str(e)}
-
-
-@app.get("/health/debug", tags=["Health"])
-def health_debug():
-    """Raw check results con mensajes de error para diagnÃ³stico."""
-    try:
-        from modules.humanoid.deploy.healthcheck import (
-            _check_audit_writable, _check_memory_writable,
-            _check_scheduler_running)
-
-        return {
-            "ok": True,
-            "AUDIT_DB_PATH": os.getenv("AUDIT_DB_PATH"),
-            "SCHED_DB_PATH": os.getenv("SCHED_DB_PATH"),
-            "ATLAS_MEMORY_DB_PATH": os.getenv("ATLAS_MEMORY_DB_PATH"),
-            "memory": _check_memory_writable(),
-            "audit": _check_audit_writable(),
-            "scheduler": _check_scheduler_running(),
-        }
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -8438,49 +8308,6 @@ from modules.humanoid.audit import get_audit_logger
 # --- Metrics / Policy / Audit endpoints ---
 from modules.humanoid.metrics import get_metrics_store
 from modules.humanoid.policy import ActorContext, get_policy_engine
-
-
-@app.get("/metrics")
-def metrics():
-    """JSON metrics: counters and latencies per endpoint."""
-    return get_metrics_store().snapshot()
-
-
-# Prometheus scrape endpoint (text/plain)
-@app.get("/metrics/prometheus", include_in_schema=False)
-def prometheus_metrics():
-    """MÃ©tricas en formato Prometheus para scraping."""
-    try:
-        from fastapi.responses import Response
-
-        from modules.observability.metrics import MetricsCollector
-
-        return Response(
-            content=MetricsCollector.get_prometheus_text(),
-            media_type="text/plain; charset=utf-8",
-        )
-    except Exception as e:
-        from fastapi.responses import Response
-
-        return Response(
-            content=f"# error: {e}".encode(), media_type="text/plain", status_code=500
-        )
-
-
-@app.get("/api/observability/metrics", tags=["Observability"])
-def api_observability_metrics():
-    """Resumen de mÃ©tricas (requests, memoria, health score)."""
-    try:
-        from modules.observability.metrics import MetricsCollector
-
-        return MetricsCollector.get_metrics_summary()
-    except Exception as e:
-        return {
-            "error": str(e),
-            "total_requests": 0,
-            "active_requests": 0,
-            "memory_mb": 0,
-        }
 
 
 class PolicyTestBody(BaseModel):
