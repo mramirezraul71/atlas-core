@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import time
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+
+from .screen_gaze import ScreenCalib, ScreenGazeController, load_calib
 
 
 def _repo_root() -> Path:
@@ -18,6 +21,43 @@ def _clamp(v: float, lo: float, hi: float) -> float:
     except Exception:
         x = 0.0
     return max(lo, min(hi, x))
+
+
+def _publish_neck_command(
+    yaw: float, pitch: float, zoom: float, *, source: str = "camera", mode: str = "pose"
+) -> None:
+    """Publish the latest neck target to Medulla for observability."""
+    payload = {
+        "neck_yaw": float(yaw),
+        "neck_pitch": float(pitch),
+        "zoom": float(zoom),
+        "source": str(source or "camera"),
+        "mode": str(mode or "pose"),
+        "ts": time.time(),
+    }
+    try:
+        from modules.humanoid.medulla.bus import get_medulla
+        from modules.humanoid.medulla.schemas import MotorCommand
+
+        medulla = get_medulla()
+        medulla.shared_state.write("actuator.neck.last", payload)
+        medulla.send_neck_command(
+            MotorCommand(
+                actuator_id="neck",
+                command_type=str(mode or "pose"),
+                command=payload,
+            )
+        )
+    except Exception:
+        pass
+
+
+def get_default_screen_calib_path() -> Path:
+    """Return the default calibration path for screen gaze."""
+    env_path = (os.getenv("ATLAS_SCREEN_GAZE_CALIB_PATH") or "").strip()
+    if env_path:
+        return Path(env_path)
+    return _repo_root() / "config" / "screen_gaze_calibration.json"
 
 
 def navigate_to(
@@ -57,6 +97,7 @@ def reach_pose(
     focus_x = _clamp(0.5 + (_clamp(pan, -1.0, 1.0) * 0.45), 0.0, 1.0)
     focus_y = _clamp(0.5 + (_clamp(tilt, -1.0, 1.0) * 0.45), 0.0, 1.0)
     z = _clamp(zoom, 1.0, 4.0)
+    _publish_neck_command(pan, tilt, z, source=source, mode="digital_ptz")
     base = (
         os.getenv("NEXUS_ROBOT_API_URL")
         or os.getenv("ROBOT_BASE_URL")
@@ -75,7 +116,18 @@ def reach_pose(
             pose_path = _repo_root() / "logs" / "nexus_pose.json"
             pose_path.parent.mkdir(parents=True, exist_ok=True)
             pose_path.write_text(
-                f'{{"pan":{float(pan):.3f},"tilt":{float(tilt):.3f},"zoom":{float(z):.3f},"focus_x":{focus_x:.3f},"focus_y":{focus_y:.3f},"ts":{time.time():.3f}}}',
+                json.dumps(
+                    {
+                        "pan": float(pan),
+                        "tilt": float(tilt),
+                        "zoom": float(z),
+                        "focus_x": focus_x,
+                        "focus_y": focus_y,
+                        "source": source,
+                        "ts": time.time(),
+                    },
+                    ensure_ascii=False,
+                ),
                 encoding="utf-8",
             )
         except Exception:
@@ -108,6 +160,50 @@ def reach_pose(
             },
             "error": str(e)[:200],
             "url": url,
+        }
+
+
+class DigitalPTZNeckController:
+    """Neck controller that reuses the existing digital PTZ primitive."""
+
+    def __init__(self, *, source: str = "camera"):
+        self.source = str(source or "camera")
+
+    def set_pose(self, *, yaw: float, pitch: float, zoom: float) -> Dict[str, Any]:
+        """Apply a pose through the existing reach_pose primitive."""
+        return reach_pose(yaw, pitch, zoom, source=self.source)
+
+
+def look_at_screen(
+    x: float,
+    y: float,
+    zoom: Optional[float] = None,
+    *,
+    calib: Optional[ScreenCalib] = None,
+    calib_path: Optional[str | Path] = None,
+    source: str = "camera",
+) -> Dict[str, Any]:
+    """
+    Map monitor pixels to a neck pose and apply it through digital PTZ.
+
+    x and y are pixel coordinates relative to the calibrated monitor resolution.
+    """
+    try:
+        calibration_path = Path(calib_path) if calib_path else get_default_screen_calib_path()
+        calibration = calib or load_calib(calibration_path)
+        controller = ScreenGazeController(
+            calib=calibration,
+            neck_controller=DigitalPTZNeckController(source=source),
+        )
+        result = controller.look_at_screen(x, y, zoom=zoom)
+        result.setdefault("calibration_path", str(calibration_path))
+        return result
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": str(exc)[:200],
+            "screen_target": {"x": float(x), "y": float(y)},
+            "calibration_path": str(calib_path or get_default_screen_calib_path()),
         }
 
 

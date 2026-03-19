@@ -2,14 +2,33 @@ from __future__ import annotations
 
 
 def test_nexus_core_primitives_import():
-    from modules.nexus_core import (grasp, navigate_to, pulse_check,
-                                    reach_pose, release)
+    from modules.nexus_core import (
+        ScreenCalib,
+        ScreenCalibSample,
+        ScreenGazeController,
+        get_default_screen_calib_path,
+        grasp,
+        load_calib,
+        look_at_screen,
+        navigate_to,
+        pulse_check,
+        reach_pose,
+        release,
+        save_calib,
+    )
 
     assert callable(navigate_to)
     assert callable(reach_pose)
+    assert callable(look_at_screen)
     assert callable(grasp)
     assert callable(release)
     assert callable(pulse_check)
+    assert callable(save_calib)
+    assert callable(load_calib)
+    assert callable(get_default_screen_calib_path)
+    assert ScreenCalib is not None
+    assert ScreenCalibSample is not None
+    assert ScreenGazeController is not None
 
 
 def test_global_vision_primitives_import():

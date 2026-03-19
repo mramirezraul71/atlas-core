@@ -1676,6 +1676,22 @@ def api_prim_nexus_reach_pose(body: dict):
         return {"ok": False, "error": str(e)}
 
 
+@app.post("/api/primitives/nexus/look-at-screen", tags=["Primitives"])
+def api_prim_nexus_look_at_screen(body: dict):
+    try:
+        from modules.nexus_core.primitives import look_at_screen
+
+        x = float((body or {}).get("x", 0.0) or 0.0)
+        y = float((body or {}).get("y", 0.0) or 0.0)
+        zoom_value = (body or {}).get("zoom")
+        zoom = float(zoom_value) if zoom_value is not None else None
+        source = str((body or {}).get("source") or "camera")
+        calib_path = str((body or {}).get("calib_path") or "").strip() or None
+        return look_at_screen(x, y, zoom=zoom, calib_path=calib_path, source=source)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.post("/api/primitives/nexus/grasp", tags=["Primitives"])
 def api_prim_nexus_grasp(body: dict):
     try:
