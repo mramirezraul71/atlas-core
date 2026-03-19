@@ -30,8 +30,15 @@ from atlas_adapter.bootstrap.settings import (
 )
 from atlas_adapter.bootstrap.service_urls import (
     get_nexus_ws_url,
-    get_robot_api_base,
-    get_robot_ui_base,
+)
+from atlas_adapter.services.nexus_robot_runtime import (
+    get_nexus_connection_payload,
+    get_robot_start_commands,
+    get_robot_status,
+    reconnect_cuerpo,
+    reconnect_nexus,
+    reconnect_robot,
+    update_nexus_connection_state,
 )
 
 
@@ -648,19 +655,10 @@ class Step(BaseModel):
 
 def _robot_connected() -> bool:
     """Ping Robot: prueba backend (8002) y luego UI (NEXUS_ROBOT_URL)."""
-    import urllib.request
-
-    base_api = get_robot_api_base()
-    base_ui = get_robot_ui_base(default_to_api=True)
-    for base in (base_api, base_ui):
-        try:
-            req = urllib.request.Request(base + "/", method="GET")
-            with urllib.request.urlopen(req, timeout=2) as r:
-                if r.status == 200:
-                    return True
-        except Exception:
-            pass
-    return False
+    try:
+        return bool(get_robot_status().get("connected", False))
+    except Exception:
+        return False
 
 
 _ATLAS_STATUS_CACHE_TTL_SEC = float(os.getenv("ATLAS_STATUS_CACHE_TTL_SEC") or 12.0)
@@ -745,13 +743,7 @@ def status():
 @app.get("/api/nexus/connection", tags=["NEXUS"])
 def get_nexus_connection():
     """CEREBRO â€” CUERPO (NEXUS): estado de conexiÃ³n (consolidado en PUSH)."""
-    return {
-        "ok": True,
-        "connected": True,
-        "active": True,
-        "last_check_ts": time.time(),
-        "last_error": "",
-    }
+    return get_nexus_connection_payload()
 
 
 class NexusConnectionBody(BaseModel):
@@ -763,40 +755,17 @@ class NexusConnectionBody(BaseModel):
 @app.post("/api/nexus/connection", tags=["NEXUS"])
 def post_nexus_connection(body: NexusConnectionBody):
     """Actualiza estado de conexiÃ³n NEXUS (heartbeat o Prueba de Nervios). active=True â†’ CONECTADO | ACTIVO."""
-    try:
-        from modules.nexus_heartbeat import (set_nexus_active,
-                                             set_nexus_connected)
-
-        set_nexus_connected(body.connected, body.message or "")
-        if body.active is not None:
-            set_nexus_active(body.active)
-        return {"ok": True, "connected": body.connected, "active": body.active}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    return update_nexus_connection_state(
+        connected=body.connected,
+        message=body.message or "",
+        active=body.active,
+    )
 
 
 @app.post("/api/nexus/reconnect", tags=["NEXUS"])
 def nexus_reconnect(clear_cache: bool = False):
     """Reconectar NEXUS (no-bloqueante): opcionalmente limpia cache, lanza arranque y devuelve de inmediato."""
-    try:
-        if clear_cache:
-            from modules.nexus_heartbeat import clear_nexus_cache
-
-            clear_nexus_cache()
-        from modules.nexus_heartbeat import (get_nexus_connection_state,
-                                             restart_nexus)
-
-        started = restart_nexus()
-        state = get_nexus_connection_state()
-        return {
-            "ok": True,
-            "started": bool(started),
-            "connected": state.get("connected", False),
-            **state,
-            "message": "NEXUS arrancando en segundo plano. Espera 10-20s y pulsa Actualizar/Estado.",
-        }
-    except Exception as e:
-        return {"ok": False, "connected": False, "error": str(e)}
+    return reconnect_nexus(clear_cache=clear_cache)
 
 
 @app.post("/api/cache/clear", tags=["NEXUS"])
@@ -2013,252 +1982,25 @@ def robot_status():
     1) Backend Robot/NEXUS (8002 / NEXUS_ROBOT_URL)
     2) Fallback local USB (si hay cÃ¡mara local disponible)
     """
-    import os
-    import urllib.request
-
-    base_api = get_robot_api_base()
-    base_ui = get_robot_ui_base(default_to_api=True)
-    for base in (base_api, base_ui):
-        try:
-            req = urllib.request.Request(base + "/", method="GET")
-            with urllib.request.urlopen(req, timeout=3) as r:
-                if r.status == 200:
-                    return {
-                        "ok": True,
-                        "connected": True,
-                        "robot_url": base,
-                        "source": "robot",
-                        "local_fallback": False,
-                    }
-        except Exception:
-            pass
-        try:
-            req = urllib.request.Request(
-                base + "/api/camera/service/status",
-                method="GET",
-                headers={"Accept": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=3) as r:
-                if r.status == 200:
-                    return {
-                        "ok": True,
-                        "connected": True,
-                        "robot_url": base,
-                        "source": "robot",
-                        "local_fallback": False,
-                    }
-        except Exception:
-            pass
-    return {
-        "ok": False,
-        "connected": False,
-        "robot_url": base_ui or base_api,
-        "source": "none",
-        "local_fallback": False,
-    }
+    return get_robot_status()
 
 
 @app.post("/api/robot/reconnect", tags=["NEXUS"])
 def robot_reconnect():
     """Arranca el backend del Robot (cÃ¡maras). Devuelve enseguida; el usuario debe pulsar Actualizar cÃ¡maras en 10-15 s."""
-    import subprocess
-    from pathlib import Path
-
-    if ENV_PATH.exists():
-        try:
-            from dotenv import load_dotenv
-
-            load_dotenv(ENV_PATH, override=True)
-        except Exception:
-            pass
-    robot_path = Path(
-        os.getenv("NEXUS_ROBOT_PATH")
-        or str(BASE_DIR / "nexus" / "atlas_nexus_robot" / "backend")
-    )
-    base_api = get_robot_api_base()
-    repo_root = BASE_DIR
-    script = repo_root / "scripts" / "start_nexus_services.py"
-    if not script.exists():
-        return {
-            "ok": False,
-            "connected": False,
-            "robot_url": base_api,
-            "message": "Script no encontrado.",
-            "robot_path": str(robot_path),
-        }
-    if not robot_path.exists():
-        return {
-            "ok": False,
-            "connected": False,
-            "robot_url": base_api,
-            "message": "Carpeta del Robot no existe: " + str(robot_path),
-            "robot_path": str(robot_path),
-        }
-    try:
-        py = os.getenv("PYTHON", "python")
-        flags = (
-            subprocess.CREATE_NO_WINDOW
-            if hasattr(subprocess, "CREATE_NO_WINDOW")
-            else 0
-        )
-        env = os.environ.copy()
-        env["NEXUS_ROBOT_PATH"] = str(robot_path)
-        env["NEXUS_ATLAS_PATH"] = os.getenv("NEXUS_ATLAS_PATH") or str(
-            repo_root / "nexus" / "atlas_nexus"
-        )
-        r = subprocess.run(
-            [py, str(script), "--robot-only"],
-            cwd=str(repo_root),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            creationflags=flags if os.name == "nt" else 0,
-        )
-        out = (r.stdout or "").strip() or (r.stderr or "")[:200]
-        if "Robot" in out:
-            return {
-                "ok": True,
-                "connected": False,
-                "robot_url": base_api,
-                "message": "Robot arrancando. Espera 10-15 s y pulsa Â«Actualizar cÃ¡marasÂ».",
-                "robot_path": str(robot_path),
-            }
-        return {
-            "ok": False,
-            "connected": False,
-            "robot_url": base_api,
-            "message": "No arrancÃ³ (salida: %s). Comprueba que en %s exista main.py."
-            % (out or "vacÃ­o", robot_path),
-            "robot_path": str(robot_path),
-        }
-    except subprocess.TimeoutExpired:
-        return {
-            "ok": False,
-            "connected": False,
-            "robot_url": base_api,
-            "message": "Script tardÃ³ demasiado.",
-            "robot_path": str(robot_path),
-        }
-    except Exception as e:
-        return {
-            "ok": False,
-            "connected": False,
-            "robot_url": base_api,
-            "message": str(e),
-            "robot_path": str(robot_path),
-        }
+    return reconnect_robot(repo_root=BASE_DIR, env_path=ENV_PATH)
 
 
 @app.post("/api/cuerpo/reconnect", tags=["NEXUS"])
 def cuerpo_reconnect():
     """Arranca Cuerpo completo (NEXUS 8000 + Robot 8002). Responde rÃ¡pido (no-bloqueante)."""
-    import subprocess
-    from pathlib import Path
-
-    if ENV_PATH.exists():
-        try:
-            from dotenv import load_dotenv
-
-            load_dotenv(ENV_PATH, override=True)
-        except Exception:
-            pass
-    repo_root = BASE_DIR
-    script = repo_root / "scripts" / "start_nexus_services.py"
-    nexus_path = Path(
-        os.getenv("NEXUS_ATLAS_PATH") or str(repo_root / "nexus" / "atlas_nexus")
-    )
-    robot_path = Path(
-        os.getenv("NEXUS_ROBOT_PATH")
-        or str(repo_root / "nexus" / "atlas_nexus_robot" / "backend")
-    )
-    if not script.exists():
-        return {
-            "ok": False,
-            "started": False,
-            "message": "Script no encontrado: scripts/start_nexus_services.py",
-        }
-    if not nexus_path.exists():
-        return {
-            "ok": False,
-            "started": False,
-            "message": "Carpeta NEXUS no existe: " + str(nexus_path),
-        }
-    if not robot_path.exists():
-        return {
-            "ok": False,
-            "started": False,
-            "message": "Carpeta Robot no existe: " + str(robot_path),
-        }
-    try:
-        py = os.getenv("PYTHON", "python")
-        flags = (
-            subprocess.CREATE_NO_WINDOW
-            if hasattr(subprocess, "CREATE_NO_WINDOW")
-            else 0
-        )
-        env = os.environ.copy()
-        env["NEXUS_ATLAS_PATH"] = str(nexus_path)
-        env["NEXUS_ROBOT_PATH"] = str(robot_path)
-        r = subprocess.run(
-            [py, str(script)],
-            cwd=str(repo_root),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            creationflags=flags if os.name == "nt" else 0,
-        )
-        out = (r.stdout or "").strip() or (r.stderr or "")[:200]
-        started = ("NEXUS" in out) or ("Robot" in out)
-        return {
-            "ok": True,
-            "started": bool(started),
-            "message": "Cuerpo arrancando (NEXUS+Robot). Espera 10-20s y revisa Estado.",
-            "output": out,
-        }
-    except subprocess.TimeoutExpired:
-        return {
-            "ok": True,
-            "started": True,
-            "message": "Cuerpo lanzado (timeout corto). Espera 10-20s y revisa Estado.",
-        }
-    except Exception as e:
-        return {"ok": False, "started": False, "message": str(e)}
+    return reconnect_cuerpo(repo_root=BASE_DIR, env_path=ENV_PATH)
 
 
 @app.get("/api/robot/start-commands", tags=["NEXUS"])
 def robot_start_commands():
     """Devuelve los comandos para arrancar NEXUS y Robot a mano (por si Reconectar no da resultado)."""
-    if ENV_PATH.exists():
-        try:
-            from dotenv import load_dotenv
-
-            load_dotenv(ENV_PATH, override=True)
-        except Exception:
-            pass
-    robot_path = Path(
-        os.getenv("NEXUS_ROBOT_PATH")
-        or str(BASE_DIR / "nexus" / "atlas_nexus_robot" / "backend")
-    )
-    nexus_path = Path(
-        os.getenv("NEXUS_ATLAS_PATH") or str(BASE_DIR / "nexus" / "atlas_nexus")
-    )
-    py = os.getenv("PYTHON", "python")
-    return {
-        "ok": True,
-        "robot_path": str(robot_path),
-        "nexus_path": str(nexus_path),
-        "commands": {
-            "robot": 'cd /d "%s" && %s main.py' % (robot_path, py)
-            if os.name == "nt"
-            else 'cd "%s" && %s main.py' % (robot_path, py),
-            "nexus": 'cd /d "%s" && %s nexus.py --mode api' % (nexus_path, py)
-            if os.name == "nt"
-            else 'cd "%s" && %s nexus.py --mode api' % (nexus_path, py),
-        },
-        "hint": "Abre dos terminales, ejecuta uno en cada una. Robot usa puerto 8002, NEXUS 8000.",
-    }
+    return get_robot_start_commands(repo_root=BASE_DIR, env_path=ENV_PATH)
 
 
 def _tail_text_file(path: Path, max_bytes: int = 65536, lines: int = 200) -> str:
