@@ -34,6 +34,7 @@ from atlas_adapter.routes.nexus_runtime import build_router as build_nexus_runti
 from atlas_adapter.routes.status_observability import (
     build_router as build_status_observability_router,
 )
+from atlas_adapter.routes.trading_quant import build_router as build_trading_quant_router
 from atlas_adapter.services.nexus_robot_runtime import (
     get_robot_status,
 )
@@ -100,6 +101,7 @@ app.include_router(
     )
 )
 app.include_router(build_nexus_runtime_router(repo_root=BASE_DIR, env_path=ENV_PATH))
+app.include_router(build_trading_quant_router())
 
 app.add_middleware(
     CORSMiddleware,
