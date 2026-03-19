@@ -84,19 +84,20 @@ export function render(container) {
       </style>
 
       <div class="quick-actions">
-        <div class="quick-chip" data-action="health">${SVG.health} System Health</div>
+        <div class="quick-chip" data-action="health">${SVG.health} Salud del sistema</div>
         <div class="quick-chip" data-action="workspace">${SVG.workspace} Workspace</div>
         <div class="quick-chip" data-action="bitacora">${SVG.bitacora} Bitacora</div>
         <div class="quick-chip" data-action="rauli-vision">${SVG.eye} Rauli Vision</div>
         <div class="quick-chip" data-action="rauli-panaderia">${SVG.package} Rauli Panaderia</div>
         <div class="quick-chip" data-action="bety-eventos">${SVG.bitacora} Bety Eventos</div>
         <div class="quick-chip" data-action="config">${SVG.config} AI Config</div>
-        <div class="quick-chip" data-action="autonomy">${SVG.governance} Autonomy</div>
+        <div class="quick-chip" data-action="autonomy">${SVG.governance} Autonomia</div>
         <div class="quick-chip" data-action="clawd-direct">${SVG.brain} ATLAS Directo</div>
         <div class="quick-chip" data-action="codex-supervisor">${SVG.governance} Codex Supervisor</div>
-        <div class="quick-chip" data-action="tools-menu">${SVG.monitor} Tools Menu</div>
-        <div class="quick-chip" data-action="software-center">${SVG.package} Software Center</div>
+        <div class="quick-chip" data-action="tools-menu">${SVG.monitor} Menu de herramientas</div>
+        <div class="quick-chip" data-action="software-center">${SVG.package} Centro de software</div>
         <div class="quick-chip" data-action="live-diagnostic">${SVG.health} Diagnostico Live</div>
+        <div class="quick-chip" data-action="atlas-quant-scanner">${SVG.trading} Escaner Quant</div>
         <div class="quick-chip" data-action="atlas-nexus">⬡ Atlas Nexus</div>
         <div class="quick-chip" data-action="robot-3d">🤖 Robot 3D</div>
       </div>
@@ -144,11 +145,15 @@ export function render(container) {
         </div>
         <div class="app-tile" data-app="tools-menu">
           <div class="app-tile-icon">${SVG.monitor}</div>
-          <div class="app-tile-label">Tools Menu</div>
+          <div class="app-tile-label">Menu de herramientas</div>
         </div>
         <div class="app-tile" data-app="software-center">
           <div class="app-tile-icon">${SVG.package}</div>
-          <div class="app-tile-label">Software Center</div>
+          <div class="app-tile-label">Centro de software</div>
+        </div>
+        <div class="app-tile" data-app="atlas-quant-scanner">
+          <div class="app-tile-icon">${SVG.trading}</div>
+          <div class="app-tile-label">Escaner Quant</div>
         </div>
         <div class="app-tile" data-app="clawd-direct">
           <div class="app-tile-icon">${SVG.brain}</div>
@@ -252,6 +257,7 @@ export function render(container) {
     'tools-menu': { hash: '/tools-menu' },
     'software-center': { hash: '/software-center' },
     'live-diagnostic': { hash: '/live-diagnostic' },
+    'atlas-quant-scanner': { hash: '/atlas-quant' },
     'atlas-nexus': { href: '/nexus', newTab: false },
     'robot-3d':    { href: 'http://127.0.0.1:8002/dashboard', newTab: true },
   };
@@ -280,6 +286,7 @@ export function render(container) {
     'config-tile':  { hash: '/config' },
     'tools-menu':   { hash: '/tools-menu' },
     'software-center': { hash: '/software-center' },
+    'atlas-quant-scanner': { hash: '/atlas-quant' },
     'clawd-direct': { hash: '/clawd-direct' },
     'codex-supervisor': { hash: '/codex-supervisor' },
     'live-diagnostic': { hash: '/live-diagnostic' },

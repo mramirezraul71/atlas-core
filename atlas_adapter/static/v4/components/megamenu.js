@@ -11,9 +11,9 @@ const MENU_ITEMS = [
   {
     category: 'Núcleo',
     items: [
-      { id: 'health',   label: 'System Health',      desc: 'Score, checks y recursos del sistema',     icon: 'activity', route: '/health' },
+      { id: 'health',   label: 'Salud del sistema',      desc: 'Score, checks y recursos del sistema',     icon: 'activity', route: '/health' },
       { id: 'modules',  label: 'Módulos del Cuerpo', desc: 'Estado de los 16 subsistemas de Atlas',    icon: 'grid',     route: '/modules' },
-      { id: 'api',      label: 'API Explorer',        desc: 'Explorar y probar endpoints en vivo',      icon: 'code',     route: '/api_explorer' },
+      { id: 'api',      label: 'Explorador API',        desc: 'Explorar y probar endpoints en vivo',      icon: 'code',     route: '/api_explorer' },
     ]
   },
   {
@@ -28,15 +28,15 @@ const MENU_ITEMS = [
           { label: 'Informativos',        route: '/bitacora?f=info' },
         ]
       },
-      { id: 'audit',    label: 'Audit Trail',   desc: 'Historial de auditoría del sistema',    icon: 'shield',      route: '/audit' },
-      { id: 'events',   label: 'Event Bus',     desc: 'Eventos del bus del kernel en vivo',    icon: 'zap',         route: '/events' },
-      { id: 'healing',  label: 'Auto-Healing',  desc: 'Historial de auto-reparación ANS',      icon: 'activity',    route: '/healing' },
+      { id: 'audit',    label: 'Rastro de auditoria',   desc: 'Historial de auditoria del sistema',    icon: 'shield',      route: '/audit' },
+      { id: 'events',   label: 'Bus de eventos',     desc: 'Eventos del bus del kernel en vivo',    icon: 'zap',         route: '/events' },
+      { id: 'healing',  label: 'Auto-reparacion',  desc: 'Historial de auto-reparacion ANS',      icon: 'activity',    route: '/healing' },
     ]
   },
   {
     category: 'Control & Autonomía',
     items: [
-      { id: 'autonomy',  label: 'Autonomy',      desc: 'Daemon ANS, tareas y modo de gobierno', icon: 'cpu',     route: '/autonomy' },
+      { id: 'autonomy',  label: 'Autonomia',      desc: 'Daemon ANS, tareas y modo de gobierno', icon: 'cpu',     route: '/autonomy' },
       { id: 'approvals', label: 'Aprobaciones',  desc: 'Flujos de aprobación pendientes',       icon: 'shield',  route: '/approvals' },
       { id: 'learning',  label: 'Aprendizaje',   desc: 'Motor de aprendizaje y patrones',       icon: 'trending-up', route: '/learning' },
     ]
@@ -69,24 +69,25 @@ const MENU_ITEMS = [
   {
     category: 'Integraciones',
     items: [
-      { id: 'trading',      label: 'Trading AI',        desc: 'Análisis de mercados con Grok',                    icon: 'trending-up', route: '/trading',      badge: 'Beta' },
-      { id: 'atlas-quant',  label: 'Atlas Code-Quant',  desc: 'Bot de trading algorítmico con IA — puerto 8792', icon: 'trending-up', route: '/atlas-quant',  badge: 'New'  },
+      { id: 'trading',      label: 'IA de trading',        desc: 'Analisis de mercados con Grok',                    icon: 'trending-up', route: '/trading',      badge: 'Beta' },
+      { id: 'atlas-quant',  label: 'Atlas Code-Quant',  desc: 'Bot de trading algoritmico con IA — puerto 8792', icon: 'trending-up', route: '/atlas-quant',  badge: 'Nuevo'  },
+      { id: 'atlas-quant-scanner', label: 'Escaner Quant', desc: 'Barrido permanente de oportunidades explicables', icon: 'trending-up', route: '/atlas-quant', badge: 'Live' },
       { id: 'access-control', label: 'Control de Acceso', desc: 'Usuarios, sesiones y permisos del sistema',      icon: 'lock',        route: '/access-control' },
     ]
   },
   {
     category: 'Brazos',
     items: [
-      { id: 'rauli-vision',    label: 'Rauli Vision Dashboard',    desc: 'Acceso directo al brazo sensorial', icon: 'eye',     route: '/apps/vision' },
-      { id: 'rauli-panaderia', label: 'Rauli Panaderia Dashboard', desc: 'Acceso directo al brazo operativo', icon: 'package', route: '/apps/panaderia' },
+      { id: 'rauli-vision',    label: 'Panel de Rauli Vision',    desc: 'Acceso directo al brazo sensorial', icon: 'eye',     route: '/apps/vision' },
+      { id: 'rauli-panaderia', label: 'Panel de Rauli Panaderia', desc: 'Acceso directo al brazo operativo', icon: 'package', route: '/apps/panaderia' },
       { id: 'mis-apps',        label: 'Mis Apps',                  desc: 'Panel completo de brazos ATLAS',    icon: 'layers',  route: '/apps' },
     ]
   },
   {
     category: 'Sistema',
     items: [
-      { id: 'tools-menu', label: 'Tools Menu',        desc: 'Inventario, salud y upgrades de herramientas', icon: 'grid', route: '/tools-menu' },
-      { id: 'software-center', label: 'Software Center', desc: 'Software instalado, drivers y ciclo de mantenimiento', icon: 'package', route: '/software-center' },
+      { id: 'tools-menu', label: 'Menu de herramientas',        desc: 'Inventario, salud y mejoras de herramientas', icon: 'grid', route: '/tools-menu' },
+      { id: 'software-center', label: 'Centro de software', desc: 'Software instalado, drivers y ciclo de mantenimiento', icon: 'package', route: '/software-center' },
       { id: 'update', label: 'Actualizar ATLAS',   desc: 'Comprobar y aplicar actualizaciones', icon: 'zap', route: '/__update' },
     ]
   },

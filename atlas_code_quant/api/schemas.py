@@ -213,5 +213,151 @@ class JournalStatsPayload(BaseModel):
     comparison: dict[str, float] = Field(default_factory=dict)
 
 
+class JournalEntryPayload(BaseModel):
+    id: int
+    journal_key: str
+    account_type: str
+    account_id: str
+    strategy_id: str
+    tracker_strategy_id: str | None = None
+    strategy_type: str
+    symbol: str
+    status: str
+    is_level4: bool = False
+    entry_time: str
+    exit_time: str | None = None
+    entry_price: float | None = None
+    exit_price: float | None = None
+    fees: float = 0.0
+    win_rate_at_entry: float | None = None
+    current_win_rate_pct: float | None = None
+    iv_rank: float | None = None
+    realized_pnl: float = 0.0
+    unrealized_pnl: float = 0.0
+    mark_price: float | None = None
+    spot_price: float | None = None
+    entry_notional: float | None = None
+    risk_at_entry: float | None = None
+    thesis_rich_text: str = ""
+    legs: list[dict[str, Any]] = Field(default_factory=list)
+    greeks: dict[str, Any] = Field(default_factory=dict)
+    attribution: dict[str, Any] = Field(default_factory=dict)
+    post_mortem: dict[str, Any] = Field(default_factory=dict)
+    post_mortem_text: str = ""
+    broker_order_ids: list[Any] = Field(default_factory=list)
+    raw_entry_payload: dict[str, Any] = Field(default_factory=dict)
+    raw_exit_payload: list[dict[str, Any]] = Field(default_factory=list)
+    updated_at: str | None = None
+    last_synced_at: str | None = None
+
+
+class JournalEntriesPayload(BaseModel):
+    generated_at: str
+    count: int = 0
+    items: list[JournalEntryPayload] = Field(default_factory=list)
+
+
+class OperationConfigPayload(BaseModel):
+    account_scope: Literal["paper", "live"] = "paper"
+    paper_only: bool = True
+    auton_mode: Literal["off", "paper_supervised", "paper_autonomous"] = "paper_supervised"
+    executor_mode: Literal["disabled", "paper_api", "desktop_dry_run"] = "paper_api"
+    vision_mode: Literal["off", "manual", "desktop_capture", "insta360_pending"] = "manual"
+    require_operator_present: bool = False
+    operator_present: bool = True
+    screen_integrity_ok: bool = True
+    sentiment_score: float = Field(0.0, ge=-1.0, le=1.0)
+    sentiment_source: str = "manual"
+    min_auton_win_rate_pct: float = Field(65.0, ge=0.0, le=100.0)
+    max_level4_bpr_pct: float = Field(20.0, ge=0.0, le=100.0)
+    notes: str = ""
+    kill_switch_active: bool = False
+
+
+class OperationCycleRequest(BaseModel):
+    order: OrderRequest
+    action: Literal["evaluate", "preview", "submit"] = "evaluate"
+    capture_context: bool = True
+
+
+class EmergencyStopRequest(BaseModel):
+    reason: str = "manual_stop"
+
+
+class OperationStatusPayload(BaseModel):
+    generated_at: str
+    config: dict[str, Any] = Field(default_factory=dict)
+    pdt_status: dict[str, Any] = Field(default_factory=dict)
+    win_rate_positions: list[dict[str, Any]] = Field(default_factory=list)
+    ai_sentiment: dict[str, Any] = Field(default_factory=dict)
+    vision: dict[str, Any] = Field(default_factory=dict)
+    executor: dict[str, Any] = Field(default_factory=dict)
+    journal: dict[str, Any] = Field(default_factory=dict)
+    monitor_summary: dict[str, Any] = Field(default_factory=dict)
+    auton_mode_active: bool = False
+    last_decision: dict[str, Any] | None = None
+    last_candidate: dict[str, Any] | None = None
+
+
+class OperationCyclePayload(BaseModel):
+    generated_at: str
+    decision: str
+    allowed: bool
+    action: Literal["evaluate", "preview", "submit"]
+    reasons: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    gates: dict[str, Any] = Field(default_factory=dict)
+    execution: dict[str, Any] | None = None
+    probability: dict[str, Any] | None = None
+    vision_snapshot: dict[str, Any] | None = None
+    monitor_summary: dict[str, Any] = Field(default_factory=dict)
+    sentiment: dict[str, Any] = Field(default_factory=dict)
+    operation_status: dict[str, Any] = Field(default_factory=dict)
+
+
+class ScannerConfigPayload(BaseModel):
+    enabled: bool = True
+    source: Literal["yfinance", "ccxt"] = "yfinance"
+    scan_interval_sec: int = Field(180, ge=15, le=3600)
+    min_signal_strength: float = Field(0.55, ge=0.0, le=1.0)
+    min_local_win_rate_pct: float = Field(53.0, ge=0.0, le=100.0)
+    min_selection_score: float = Field(62.0, ge=0.0, le=100.0)
+    max_candidates: int = Field(8, ge=1, le=50)
+    require_higher_tf_confirmation: bool = True
+    universe: list[str] = Field(default_factory=list)
+    timeframes: list[str] = Field(default_factory=list)
+    notes: str = ""
+
+
+class ScannerControlRequest(BaseModel):
+    action: Literal["start", "stop", "run_once"] = "run_once"
+
+
+class ScannerStatusPayload(BaseModel):
+    generated_at: str
+    running: bool
+    cycle_count: int = 0
+    last_cycle_at: str | None = None
+    last_cycle_ms: float | None = None
+    current_symbol: str | None = None
+    current_timeframe: str | None = None
+    current_step: str | None = None
+    last_error: str | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
+    summary: dict[str, Any] = Field(default_factory=dict)
+
+
+class ScannerReportPayload(BaseModel):
+    generated_at: str
+    status: dict[str, Any] = Field(default_factory=dict)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    criteria: list[dict[str, Any]] = Field(default_factory=list)
+    candidates: list[dict[str, Any]] = Field(default_factory=list)
+    rejections: list[dict[str, Any]] = Field(default_factory=list)
+    activity: list[dict[str, Any]] = Field(default_factory=list)
+    current_work: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+
+
 EvalSignalRequest.model_rebuild()
 OrderRequest.model_rebuild()

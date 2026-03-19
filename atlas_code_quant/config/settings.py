@@ -88,6 +88,26 @@ class TradingConfig:
     tradier_pdt_history_fill_limit: int = int(os.getenv("TRADIER_PDT_HISTORY_FILL_LIMIT", "200"))
     tradier_pdt_fail_closed: bool = os.getenv("TRADIER_PDT_FAIL_CLOSED", "true").strip().lower() not in {"0", "false", "no"}
 
+    # Opportunity scanner
+    scanner_auto_start: bool = os.getenv("QUANT_SCANNER_AUTO_START", "true").strip().lower() not in {"0", "false", "no"}
+    scanner_enabled: bool = os.getenv("QUANT_SCANNER_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+    scanner_source: str = _clean_setting(os.getenv("QUANT_SCANNER_SOURCE"), "yfinance").lower()
+    scanner_scan_interval_sec: int = int(os.getenv("QUANT_SCANNER_INTERVAL_SEC", "180"))
+    scanner_min_signal_strength: float = float(os.getenv("QUANT_SCANNER_MIN_SIGNAL_STRENGTH", "0.55"))
+    scanner_min_local_win_rate_pct: float = float(os.getenv("QUANT_SCANNER_MIN_LOCAL_WIN_RATE_PCT", "53"))
+    scanner_min_selection_score: float = float(os.getenv("QUANT_SCANNER_MIN_SELECTION_SCORE", "62"))
+    scanner_max_candidates: int = int(os.getenv("QUANT_SCANNER_MAX_CANDIDATES", "8"))
+    scanner_activity_limit: int = int(os.getenv("QUANT_SCANNER_ACTIVITY_LIMIT", "160"))
+    scanner_require_higher_tf_confirmation: bool = os.getenv("QUANT_SCANNER_REQUIRE_HIGHER_TF", "true").strip().lower() not in {"0", "false", "no"}
+    scanner_universe_raw: str = _clean_setting(
+        os.getenv("QUANT_SCANNER_UNIVERSE"),
+        "SPY,QQQ,IWM,AAPL,MSFT,NVDA,AMZN,META,AMD,TSLA",
+    )
+    scanner_timeframes_raw: str = _clean_setting(
+        os.getenv("QUANT_SCANNER_TIMEFRAMES"),
+        "5m,15m,1h,4h,1d",
+    )
+
     # Risk management
     max_position_pct: float = 0.05
     max_drawdown_pct: float = 0.15
@@ -113,6 +133,15 @@ class TradingConfig:
     def __post_init__(self) -> None:
         if self.tradier_default_scope not in {"live", "paper"}:
             self.tradier_default_scope = "paper" if self.paper_trading else "live"
+        self.scanner_source = self.scanner_source if self.scanner_source in {"yfinance", "ccxt"} else "yfinance"
+        self.scanner_scan_interval_sec = max(15, min(self.scanner_scan_interval_sec, 3600))
+        self.scanner_min_signal_strength = max(0.0, min(self.scanner_min_signal_strength, 1.0))
+        self.scanner_min_local_win_rate_pct = max(0.0, min(self.scanner_min_local_win_rate_pct, 100.0))
+        self.scanner_min_selection_score = max(0.0, min(self.scanner_min_selection_score, 100.0))
+        self.scanner_max_candidates = max(1, min(self.scanner_max_candidates, 50))
+        self.scanner_activity_limit = max(20, min(self.scanner_activity_limit, 1000))
+        self.scanner_universe = [item.strip().upper() for item in self.scanner_universe_raw.split(",") if item.strip()]
+        self.scanner_timeframes = [item.strip() for item in self.scanner_timeframes_raw.split(",") if item.strip()]
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.models_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)

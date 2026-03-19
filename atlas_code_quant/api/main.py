@@ -28,7 +28,9 @@ from api.decorators import require_live_confirmation
 from api.schemas import (
     EvalSignalRequest, ActivateStrategyRequest, OrderRequest, WinningProbabilityRequest,
     SignalResponse, PortfolioResponse, HealthResponse, StdResponse, QuantStatusPayload,
-    JournalStatsPayload,
+    EmergencyStopRequest, JournalEntriesPayload, JournalStatsPayload, OperationConfigPayload,
+    OperationCyclePayload, OperationCycleRequest, OperationStatusPayload,
+    ScannerConfigPayload, ScannerControlRequest, ScannerReportPayload, ScannerStatusPayload,
     StatusEnum, SignalEnum,
 )
 from backtesting.winning_probability import SUPPORTED_STRATEGIES, get_winning_probability
@@ -43,6 +45,11 @@ from execution.tradier_execution import (
 from journal.service import TradingJournalService
 from journal.sync import JournalSyncService
 from monitoring.strategy_tracker import StrategyTracker
+from operations.auton_executor import AutonExecutorService
+from operations.journal_pro import JournalProService
+from operations.operation_center import OperationCenter
+from operations.sensor_vision import SensorVisionService
+from scanner.opportunity_scanner import OpportunityScannerService
 
 logger = logging.getLogger("quant.api")
 _START_TIME = time.time()
@@ -50,6 +57,16 @@ _ACCOUNT_MANAGER = AccountManager()
 _STRATEGY_TRACKER = StrategyTracker()
 _JOURNAL = TradingJournalService(_STRATEGY_TRACKER)
 _JOURNAL_SYNC = JournalSyncService(_JOURNAL)
+_VISION = SensorVisionService()
+_AUTON_EXECUTOR = AutonExecutorService()
+_JOURNAL_PRO = JournalProService(_JOURNAL)
+_SCANNER = OpportunityScannerService()
+_OPERATION_CENTER = OperationCenter(
+    tracker=_STRATEGY_TRACKER,
+    journal=_JOURNAL_PRO,
+    vision=_VISION,
+    executor=_AUTON_EXECUTOR,
+)
 
 app = FastAPI(
     title="Atlas Code-Quant API",
@@ -79,11 +96,14 @@ async def preload_tradier_sessions() -> None:
         except Exception:
             logger.exception("Unable to preload Tradier %s session", scope)
     await _JOURNAL_SYNC.start()
+    if settings.scanner_auto_start and settings.scanner_enabled:
+        await _SCANNER.start()
 
 
 @app.on_event("shutdown")
 async def stop_background_services() -> None:
     await _JOURNAL_SYNC.stop()
+    await _SCANNER.stop()
 
 # ── Registry global (se popula al iniciar el motor) ──────────────────────────
 _strategies: dict = {}
@@ -430,6 +450,23 @@ async def journal_stats(x_api_key: str | None = Header(None)):
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
+@app.get("/journal/entries", response_model=StdResponse, tags=["Journal"])
+async def journal_entries(
+    x_api_key: str | None = Header(None),
+    limit: int = 24,
+    status: str | None = None,
+):
+    """Entradas recientes del diario con tesis, patas y post-mortem."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = JournalEntriesPayload.model_validate(_JOURNAL.entries(limit=limit, status=status))
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error building journal entries")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
 @app.post("/journal/sync/refresh", response_model=StdResponse, tags=["Journal"])
 async def journal_refresh(x_api_key: str | None = Header(None)):
     """Ejecuta una sincronización inmediata del diario contra Tradier."""
@@ -440,6 +477,153 @@ async def journal_refresh(x_api_key: str | None = Header(None)):
         return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as exc:
         logger.exception("Error running journal refresh")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/operation/status", response_model=StdResponse, tags=["Operation"])
+async def operation_status(x_api_key: str | None = Header(None)):
+    """Unified operational status for paper-first ATLAS tests."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = OperationStatusPayload.model_validate(_OPERATION_CENTER.status())
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error building operation status")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/operation/config", response_model=StdResponse, tags=["Operation"])
+async def operation_config(
+    body: OperationConfigPayload,
+    x_api_key: str | None = Header(None),
+):
+    """Update paper-first operational control-plane config."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        _OPERATION_CENTER.update_config(body.model_dump())
+        payload = OperationStatusPayload.model_validate(_OPERATION_CENTER.status())
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error updating operation config")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/operation/test-cycle", response_model=StdResponse, tags=["Operation"])
+async def operation_test_cycle(
+    body: OperationCycleRequest,
+    x_api_key: str | None = Header(None),
+):
+    """Evaluate, preview or submit a paper-first autonomous cycle."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = OperationCyclePayload.model_validate(
+            _OPERATION_CENTER.evaluate_candidate(
+                order=body.order,
+                action=body.action,
+                capture_context=body.capture_context,
+            )
+        )
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error running operation cycle")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/emergency/stop", response_model=StdResponse, tags=["Operation"])
+async def emergency_stop(
+    body: EmergencyStopRequest,
+    x_api_key: str | None = Header(None),
+):
+    """Immediate kill switch for autonomous execution."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = OperationStatusPayload.model_validate(_OPERATION_CENTER.emergency_stop(reason=body.reason))
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error triggering emergency stop")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/emergency/reset", response_model=StdResponse, tags=["Operation"])
+async def emergency_reset(x_api_key: str | None = Header(None)):
+    """Reset the autonomous execution kill switch."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = OperationStatusPayload.model_validate(_OPERATION_CENTER.clear_emergency_stop())
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error resetting emergency stop")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/scanner/status", response_model=StdResponse, tags=["Scanner"])
+async def scanner_status(x_api_key: str | None = Header(None)):
+    """Estado operativo del escáner permanente de oportunidades."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = ScannerStatusPayload.model_validate(_SCANNER.status())
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error reading scanner status")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/scanner/report", response_model=StdResponse, tags=["Scanner"])
+async def scanner_report(
+    x_api_key: str | None = Header(None),
+    activity_limit: int = 60,
+):
+    """Reporte completo del escáner: criterios, candidatos, rechazos y actividad."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = ScannerReportPayload.model_validate(_SCANNER.report(activity_limit=activity_limit))
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error reading scanner report")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/scanner/config", response_model=StdResponse, tags=["Scanner"])
+async def scanner_config(
+    body: ScannerConfigPayload,
+    x_api_key: str | None = Header(None),
+):
+    """Actualiza la configuración del escáner."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        _SCANNER.update_config(body.model_dump(exclude_none=True))
+        if body.enabled:
+            await _SCANNER.start()
+        else:
+            await _SCANNER.stop()
+        payload = ScannerReportPayload.model_validate(_SCANNER.report())
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error updating scanner config")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/scanner/control", response_model=StdResponse, tags=["Scanner"])
+async def scanner_control(
+    body: ScannerControlRequest,
+    x_api_key: str | None = Header(None),
+):
+    """Inicia, detiene o fuerza un ciclo del escáner."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = ScannerReportPayload.model_validate(await _SCANNER.control(body.action))
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error controlling scanner")
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
@@ -506,9 +690,81 @@ async def journal_stats_v2(x_api_key: str | None = Header(None)):
     return await journal_stats(x_api_key=x_api_key)
 
 
+@app.get("/api/v2/quant/journal/entries", response_model=StdResponse, tags=["V2"])
+async def journal_entries_v2(
+    x_api_key: str | None = Header(None),
+    limit: int = 24,
+    status: str | None = None,
+):
+    return await journal_entries(x_api_key=x_api_key, limit=limit, status=status)
+
+
 @app.post("/api/v2/quant/journal/sync/refresh", response_model=StdResponse, tags=["V2"])
 async def journal_refresh_v2(x_api_key: str | None = Header(None)):
     return await journal_refresh(x_api_key=x_api_key)
+
+
+@app.get("/api/v2/quant/operation/status", response_model=StdResponse, tags=["V2"])
+async def operation_status_v2(x_api_key: str | None = Header(None)):
+    return await operation_status(x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/operation/config", response_model=StdResponse, tags=["V2"])
+async def operation_config_v2(
+    body: OperationConfigPayload,
+    x_api_key: str | None = Header(None),
+):
+    return await operation_config(body=body, x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/operation/test-cycle", response_model=StdResponse, tags=["V2"])
+async def operation_test_cycle_v2(
+    body: OperationCycleRequest,
+    x_api_key: str | None = Header(None),
+):
+    return await operation_test_cycle(body=body, x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/emergency/stop", response_model=StdResponse, tags=["V2"])
+async def emergency_stop_v2(
+    body: EmergencyStopRequest,
+    x_api_key: str | None = Header(None),
+):
+    return await emergency_stop(body=body, x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/emergency/reset", response_model=StdResponse, tags=["V2"])
+async def emergency_reset_v2(x_api_key: str | None = Header(None)):
+    return await emergency_reset(x_api_key=x_api_key)
+
+
+@app.get("/api/v2/quant/scanner/status", response_model=StdResponse, tags=["V2"])
+async def scanner_status_v2(x_api_key: str | None = Header(None)):
+    return await scanner_status(x_api_key=x_api_key)
+
+
+@app.get("/api/v2/quant/scanner/report", response_model=StdResponse, tags=["V2"])
+async def scanner_report_v2(
+    x_api_key: str | None = Header(None),
+    activity_limit: int = 60,
+):
+    return await scanner_report(x_api_key=x_api_key, activity_limit=activity_limit)
+
+
+@app.post("/api/v2/quant/scanner/config", response_model=StdResponse, tags=["V2"])
+async def scanner_config_v2(
+    body: ScannerConfigPayload,
+    x_api_key: str | None = Header(None),
+):
+    return await scanner_config(body=body, x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/scanner/control", response_model=StdResponse, tags=["V2"])
+async def scanner_control_v2(
+    body: ScannerControlRequest,
+    x_api_key: str | None = Header(None),
+):
+    return await scanner_control(body=body, x_api_key=x_api_key)
 
 
 async def _quant_live_updates_socket(websocket: WebSocket) -> None:
@@ -527,12 +783,16 @@ async def _quant_live_updates_socket(websocket: WebSocket) -> None:
                     account_id=account_id,
                 )
                 status_payload = _build_status_payload(account_scope=account_scope, account_id=account_id)
+                operation_status_payload = await asyncio.to_thread(_OPERATION_CENTER.status)
+                scanner_report_payload = await asyncio.to_thread(_SCANNER.report, 24)
                 await websocket.send_json(
                     {
                         "type": "quant.live_update",
                         "generated_at": datetime.utcnow().isoformat(),
                         "status": status_payload.model_dump(),
                         "monitor_summary": monitor_summary_payload["monitor_summary"],
+                        "operation_status": operation_status_payload,
+                        "scanner_report": scanner_report_payload,
                     }
                 )
             except Exception as exc:
@@ -557,6 +817,43 @@ async def ws_live_updates(websocket: WebSocket):
 @app.websocket("/api/v2/quant/ws/live-updates")
 async def ws_live_updates_v2(websocket: WebSocket):
     await _quant_live_updates_socket(websocket)
+
+
+async def _operation_stream_socket(websocket: WebSocket) -> None:
+    api_key = websocket.query_params.get("api_key") or websocket.headers.get("x-api-key")
+    if api_key != settings.api_key:
+        await websocket.close(code=4401, reason="Invalid API key")
+        return
+    await websocket.accept()
+    try:
+        while True:
+            payload = await asyncio.to_thread(_OPERATION_CENTER.status)
+            await websocket.send_json(
+                {
+                    "type": "quant.operation_update",
+                    "generated_at": datetime.utcnow().isoformat(),
+                    "operation_status": payload,
+                }
+            )
+            await asyncio.sleep(max(settings.tradier_live_update_interval_sec, 2))
+    except WebSocketDisconnect:
+        return
+    except Exception:
+        logger.exception("Operation websocket loop failed")
+        try:
+            await websocket.close(code=1011, reason="Operation stream failure")
+        except RuntimeError:
+            pass
+
+
+@app.websocket("/ws/operation-stream")
+async def ws_operation_stream(websocket: WebSocket):
+    await _operation_stream_socket(websocket)
+
+
+@app.websocket("/api/v2/quant/ws/operation-stream")
+async def ws_operation_stream_v2(websocket: WebSocket):
+    await _operation_stream_socket(websocket)
 
 
 @app.post("/strategy/activate", response_model=StdResponse, tags=["Estrategias"])

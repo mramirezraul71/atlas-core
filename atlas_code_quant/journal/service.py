@@ -297,6 +297,46 @@ def _account_stats(entries: list[TradingJournal]) -> dict[str, Any]:
     }
 
 
+def _entry_payload(entry: TradingJournal) -> dict[str, Any]:
+    return {
+        "id": entry.id,
+        "journal_key": entry.journal_key,
+        "account_type": entry.account_type,
+        "account_id": entry.account_id,
+        "strategy_id": entry.strategy_id,
+        "tracker_strategy_id": entry.tracker_strategy_id,
+        "strategy_type": entry.strategy_type,
+        "symbol": entry.symbol,
+        "status": entry.status,
+        "is_level4": bool(entry.is_level4),
+        "entry_time": entry.entry_time.isoformat(),
+        "exit_time": entry.exit_time.isoformat() if entry.exit_time else None,
+        "entry_price": entry.entry_price,
+        "exit_price": entry.exit_price,
+        "fees": round(_safe_float(entry.fees, 0.0), 4),
+        "win_rate_at_entry": entry.win_rate_at_entry,
+        "current_win_rate_pct": entry.current_win_rate_pct,
+        "iv_rank": entry.iv_rank,
+        "realized_pnl": round(_safe_float(entry.realized_pnl, 0.0), 4),
+        "unrealized_pnl": round(_safe_float(entry.unrealized_pnl, 0.0), 4),
+        "mark_price": entry.mark_price,
+        "spot_price": entry.spot_price,
+        "entry_notional": entry.entry_notional,
+        "risk_at_entry": entry.risk_at_entry,
+        "thesis_rich_text": entry.thesis_rich_text or "",
+        "legs": _json_load(entry.legs_details, []),
+        "greeks": _json_load(entry.greeks_json, {}),
+        "attribution": _json_load(entry.attribution_json, {}),
+        "post_mortem": _json_load(entry.post_mortem_json, {}),
+        "post_mortem_text": entry.post_mortem_text or "",
+        "broker_order_ids": _json_load(entry.broker_order_ids_json, []),
+        "raw_entry_payload": _json_load(entry.raw_entry_payload_json, {}),
+        "raw_exit_payload": _json_load(entry.raw_exit_payload_json, []),
+        "updated_at": entry.updated_at.isoformat() if entry.updated_at else None,
+        "last_synced_at": entry.last_synced_at.isoformat() if entry.last_synced_at else None,
+    }
+
+
 class TradingJournalService:
     def __init__(self, tracker: StrategyTracker | None = None) -> None:
         self.tracker = tracker or StrategyTracker()
@@ -448,4 +488,19 @@ class TradingJournalService:
                 "win_rate_gap_pct": round(_safe_float(live_stats.get("win_rate_pct"), 0.0) - _safe_float(paper_stats.get("win_rate_pct"), 0.0), 4),
                 "expectancy_gap": round(_safe_float(live_stats.get("expectancy"), 0.0) - _safe_float(paper_stats.get("expectancy"), 0.0), 4),
             },
+        }
+
+    def entries(self, *, limit: int = 24, status: str | None = None) -> dict[str, Any]:
+        capped_limit = max(1, min(int(limit), 100))
+        with session_scope() as db:
+            query = select(TradingJournal)
+            if status in {"open", "closed"}:
+                query = query.where(TradingJournal.status == status)
+            rows = db.execute(
+                query.order_by(TradingJournal.updated_at.desc(), TradingJournal.id.desc()).limit(capped_limit)
+            ).scalars().all()
+        return {
+            "generated_at": datetime.utcnow().isoformat(),
+            "count": len(rows),
+            "items": [_entry_payload(entry) for entry in rows],
         }

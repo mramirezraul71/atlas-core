@@ -31,7 +31,7 @@ function _renderModuleError(v, moduleId, errMsg) {
     <div class="module-header">
       <button class="back-btn" id="moderr-home">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-        Dashboard
+        Inicio
       </button>
       <h2>Error de módulo</h2>
     </div>
@@ -293,7 +293,7 @@ function _handleRoute() {
         const txt = btn.textContent.trim();
         if (txt === 'Inicio' || txt === 'Home' || txt === '← Home') {
           const svg = btn.querySelector('svg');
-          btn.innerHTML = (svg ? svg.outerHTML : '') + ' Dashboard';
+          btn.innerHTML = (svg ? svg.outerHTML : '') + ' Inicio';
         }
       });
     } catch (e) {
@@ -324,6 +324,7 @@ function _handleRoute() {
 }
 
 async function _loadModules() {
+const MODULE_BUILD = '20260319-paper-phase1g-scanner-bridge';
   const MODULE_NAMES = [
     'health', 'modules', 'config', 'bitacora', 'memory', 'learning',
     'autonomy', 'healing', 'approvals', 'audit', 'comms',
@@ -333,7 +334,7 @@ async function _loadModules() {
   ];
   for (const name of MODULE_NAMES) {
     try {
-      const mod = (await import(`/v4/static/modules/${name}.js`)).default;
+      const mod = (await import(`/v4/static/modules/${name}.js?v=${MODULE_BUILD}`)).default;
       if (mod?.id) MODULE_REGISTRY[mod.id] = mod;
     } catch (e) {
       console.warn(`[Atlas v4.2] Module "${name}" no cargado:`, e.message);
