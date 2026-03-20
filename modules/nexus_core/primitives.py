@@ -60,6 +60,14 @@ def get_default_screen_calib_path() -> Path:
     return _repo_root() / "config" / "screen_gaze_calibration.json"
 
 
+def _nexus_robot_timeout_sec() -> int:
+    raw = (os.getenv("NEXUS_ROBOT_TIMEOUT_SEC") or os.getenv("NERVE_NEXUS_TIMEOUT") or "").strip()
+    try:
+        return max(5, min(int(raw), 120))
+    except Exception:
+        return 20
+
+
 def navigate_to(
     x: int,
     y: int,
@@ -107,7 +115,7 @@ def reach_pose(
     t0 = time.perf_counter()
     try:
         req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=6) as r:
+        with urllib.request.urlopen(req, timeout=_nexus_robot_timeout_sec()) as r:
             ok = r.status == 200
             data = r.read() if ok else b""
         ms = int((time.perf_counter() - t0) * 1000)

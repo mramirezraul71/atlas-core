@@ -10,8 +10,10 @@ from typing import Any, Literal
 from api.schemas import OrderRequest
 from backtesting.winning_probability import StrategyLeg, _capital_at_risk, _safe_float, get_winning_probability
 from config.settings import settings
+from learning.adaptive_policy import AdaptiveLearningService
 from monitoring.strategy_tracker import StrategyTracker
 from operations.auton_executor import AutonExecutorService
+from operations.brain_bridge import QuantBrainBridge
 from operations.journal_pro import JournalProService
 from operations.sensor_vision import SensorVisionService
 
@@ -43,7 +45,7 @@ _DEFAULT_STATE = {
     "paper_only": True,
     "auton_mode": "paper_supervised",
     "executor_mode": "paper_api",
-    "vision_mode": "manual",
+    "vision_mode": "direct_nexus",
     "require_operator_present": False,
     "operator_present": True,
     "screen_integrity_ok": True,
@@ -51,10 +53,21 @@ _DEFAULT_STATE = {
     "sentiment_source": "manual",
     "min_auton_win_rate_pct": 65.0,
     "max_level4_bpr_pct": 20.0,
-    "notes": "Plano de control orientado a simulada",
+    "auto_pause_on_operational_errors": True,
+    "operational_error_limit": 3,
+    "operational_error_count": 0,
+    "operational_error_day": None,
+    "fail_safe_active": False,
+    "fail_safe_reason": None,
+    "last_operational_error": None,
+    "notes": "Plano de control orientado a simulada con camara directa robot",
     "last_decision": None,
     "last_candidate": None,
 }
+
+
+def _utc_day() -> str:
+    return datetime.utcnow().date().isoformat()
 
 
 class OperationCenter:
@@ -65,6 +78,8 @@ class OperationCenter:
         journal: JournalProService | None = None,
         vision: SensorVisionService | None = None,
         executor: AutonExecutorService | None = None,
+        brain: QuantBrainBridge | None = None,
+        learning: AdaptiveLearningService | None = None,
         state_path: Path | None = None,
     ) -> None:
         base_dir = settings.data_dir.parent / "operation"
@@ -74,6 +89,8 @@ class OperationCenter:
         self.journal = journal or JournalProService()
         self.vision = vision or SensorVisionService()
         self.executor = executor or AutonExecutorService()
+        self.brain = brain or QuantBrainBridge()
+        self.learning = learning or AdaptiveLearningService()
         self._ensure_state()
 
     def _ensure_state(self) -> None:
@@ -87,16 +104,44 @@ class OperationCenter:
             if isinstance(data, dict):
                 merged = deepcopy(_DEFAULT_STATE)
                 merged.update(data)
-                return merged
+                return self._normalize_runtime_state(merged)
         except Exception:
             pass
-        return deepcopy(_DEFAULT_STATE)
+        return self._normalize_runtime_state(deepcopy(_DEFAULT_STATE))
+
+    def _normalize_runtime_state(self, state: dict[str, Any]) -> dict[str, Any]:
+        today = _utc_day()
+        if state.get("operational_error_day") != today:
+            state["operational_error_day"] = today
+            state["operational_error_count"] = 0
+            state["last_operational_error"] = None
+            if str(state.get("fail_safe_reason") or "").startswith("error_limit:"):
+                state["fail_safe_active"] = False
+                state["fail_safe_reason"] = None
+        state["operational_error_limit"] = max(1, int(state.get("operational_error_limit") or 3))
+        state["operational_error_count"] = max(0, int(state.get("operational_error_count") or 0))
+        return state
 
     def _save(self, payload: dict[str, Any]) -> dict[str, Any]:
         merged = deepcopy(_DEFAULT_STATE)
         merged.update(payload or {})
+        merged = self._normalize_runtime_state(merged)
         self.state_path.write_text(json.dumps(merged, ensure_ascii=True, indent=2), encoding="utf-8")
         return merged
+
+    def _register_operational_error(self, state: dict[str, Any], *, reason: str) -> dict[str, Any]:
+        state = self._normalize_runtime_state(state)
+        state["operational_error_count"] = int(state.get("operational_error_count") or 0) + 1
+        state["last_operational_error"] = {
+            "reason": reason,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        limit = int(state.get("operational_error_limit") or 3)
+        if bool(state.get("auto_pause_on_operational_errors", True)) and state["operational_error_count"] >= limit:
+            state["fail_safe_active"] = True
+            state["fail_safe_reason"] = f"error_limit:{state['operational_error_count']}/{limit}"
+            self.executor.emergency_stop(reason="operation_fail_safe")
+        return self._save(state)
 
     def get_config(self) -> dict[str, Any]:
         state = self._load()
@@ -117,6 +162,8 @@ class OperationCenter:
             "sentiment_source",
             "min_auton_win_rate_pct",
             "max_level4_bpr_pct",
+            "auto_pause_on_operational_errors",
+            "operational_error_limit",
             "notes",
         ):
             if key in payload and payload[key] is not None:
@@ -170,9 +217,20 @@ class OperationCenter:
             },
             "vision": vision_status,
             "executor": executor_status,
+            "brain": self.brain.status(),
+            "learning": self.learning.status(account_scope=scope),
             "journal": {
                 "recent_entries_count": journal_snapshot.get("recent_entries_count", 0),
                 "recent_entries": journal_snapshot.get("recent_entries", []),
+            },
+            "failsafe": {
+                "active": bool(config.get("fail_safe_active")),
+                "reason": config.get("fail_safe_reason"),
+                "operational_error_count": int(config.get("operational_error_count") or 0),
+                "operational_error_limit": int(config.get("operational_error_limit") or 3),
+                "auto_pause_on_operational_errors": bool(config.get("auto_pause_on_operational_errors", True)),
+                "last_operational_error": config.get("last_operational_error"),
+                "day": config.get("operational_error_day"),
             },
             "monitor_summary": {
                 "account_session": monitor.get("account_session"),
@@ -194,10 +252,38 @@ class OperationCenter:
             "timestamp": datetime.utcnow().isoformat(),
         }
         self._save(state)
+        try:
+            self.brain.emit(
+                kind="emergency_stop",
+                level="warning",
+                message=f"[QUANT][EMERGENCY] Parada total activada: {reason}",
+                tags=["quant", "operation", "emergency_stop"],
+                data={"reason": reason},
+                description="Parada total activada desde Quant",
+                context=json.dumps({"reason": reason}, ensure_ascii=False),
+                outcome="stopped",
+                memorize=False,
+            )
+        except Exception:
+            pass
         return self.status()
 
     def clear_emergency_stop(self) -> dict[str, Any]:
         self.executor.clear_emergency_stop()
+        try:
+            self.brain.emit(
+                kind="emergency_reset",
+                level="info",
+                message="[QUANT][EMERGENCY] Parada total desactivada",
+                tags=["quant", "operation", "emergency_reset"],
+                data={},
+                description="Parada total desactivada desde Quant",
+                context="{}",
+                outcome="resumed",
+                memorize=False,
+            )
+        except Exception:
+            pass
         return self.status()
 
     def evaluate_candidate(
@@ -226,6 +312,8 @@ class OperationCenter:
             reasons.append("El plano de control esta bloqueado en modo solo simulada.")
         if executor_status.get("kill_switch_active"):
             reasons.append("La parada de emergencia esta activa.")
+        if bool(config.get("fail_safe_active")) and action in {"preview", "submit"}:
+            reasons.append(f"Failsafe operativo activo: {config.get('fail_safe_reason') or 'error_limit'}.")
         if bool(config.get("require_operator_present")) and not vision_status.get("operator_present"):
             reasons.append("La politica actual exige presencia del operador.")
         if str(config.get("vision_mode") or "manual") != "off" and not vision_status.get("screen_integrity_ok"):
@@ -280,18 +368,48 @@ class OperationCenter:
             warnings.append("strategy_type is missing; autonomous gate is operating without Monte Carlo validation.")
 
         context_snapshot = self.vision.capture_context_snapshot(label=f"{scope}_{action}") if capture_context else None
+        if capture_context and isinstance(context_snapshot, dict) and context_snapshot.get("capture_ok") is False:
+            warnings.append("La captura visual no fue confirmada correctamente.")
         allowed = not reasons
         execution_result: dict[str, Any] | None = None
+        operational_failure_reason: str | None = None
         if allowed and action in {"preview", "submit"}:
             if scope != "paper" and bool(config.get("paper_only", True)):
                 allowed = False
                 reasons.append("La ejecucion real sigue deshabilitada mientras solo simulada este activa.")
             else:
                 order_copy.preview = action != "submit"
-                execution_result = self.executor.execute(order=order_copy, action=action, mode=str(config.get("executor_mode") or "disabled"))
-                if execution_result.get("decision") == "blocked":
+                try:
+                    execution_result = self.executor.execute(order=order_copy, action=action, mode=str(config.get("executor_mode") or "disabled"))
+                    if execution_result.get("decision") == "blocked":
+                        allowed = False
+                        block_reason = str(execution_result.get("reason") or "El ejecutor bloqueo la operacion.")
+                        reasons.append(block_reason)
+                        operational_failure_reason = block_reason
+                except Exception as exc:
                     allowed = False
-                    reasons.append(str(execution_result.get("reason") or "El ejecutor bloqueo la operacion."))
+                    operational_failure_reason = f"executor_exception:{exc}"
+                    reasons.append(f"Fallo operativo del ejecutor: {exc}")
+                    execution_result = {"decision": "error", "error": str(exc)}
+
+        projected_position_count = len(monitor.get("strategies") or []) + (1 if action in {"preview", "submit"} and allowed else 0)
+        option_bp = _safe_float(balances.get("option_buying_power"), 0.0)
+        cash = _safe_float(balances.get("cash"), 0.0)
+        equity = _safe_float(balances.get("equity"), 0.0)
+        bp_base = max(option_bp, cash, 0.0)
+        projected_bp = max(bp_base - _safe_float(risk_dollars, 0.0), 0.0)
+        projected_risk_usage_pct = round((_safe_float(risk_dollars, 0.0) / bp_base) * 100.0, 2) if bp_base > 0 else None
+        approval_lane = "ligero"
+        if projected_risk_usage_pct is not None:
+            if projected_risk_usage_pct >= 20:
+                approval_lane = "alto"
+            elif projected_risk_usage_pct >= 10:
+                approval_lane = "moderado"
+
+        if operational_failure_reason:
+            config = self._register_operational_error(config, reason=operational_failure_reason)
+        else:
+            config = self._save(config)
 
         decision = (
             "blocked"
@@ -314,6 +432,16 @@ class OperationCenter:
                 "level4_bpr_pct": bpr_pct,
                 "max_level4_bpr_pct": config.get("max_level4_bpr_pct"),
             },
+            "what_if": {
+                "current_equity": round(equity, 2),
+                "current_cash": round(cash, 2),
+                "current_buying_power": round(bp_base, 2),
+                "projected_buying_power": round(projected_bp, 2),
+                "projected_risk_usage_pct": projected_risk_usage_pct,
+                "projected_position_count": projected_position_count,
+                "approval_lane": approval_lane,
+                "capital_buffer_after_trade": round(projected_bp, 2),
+            },
             "execution": execution_result,
             "probability": probability_payload,
             "vision_snapshot": context_snapshot,
@@ -327,19 +455,31 @@ class OperationCenter:
                 "source": config.get("sentiment_source") or "manual",
             },
         }
-        state = self._load()
-        state["last_candidate"] = {
+        config["last_candidate"] = {
             "symbol": order_copy.symbol,
             "strategy_type": strategy_type,
             "scope": scope,
             "action": action,
         }
-        state["last_decision"] = {
+        config["last_decision"] = {
             "decision": decision,
             "allowed": allowed,
             "timestamp": payload["generated_at"],
             "reason": reasons[0] if reasons else "ok",
         }
-        self._save(state)
+        self._save(config)
         payload["operation_status"] = self.status()
+        try:
+            self.brain.record_operation_cycle(
+                payload,
+                order={
+                    "symbol": order_copy.symbol,
+                    "strategy_type": strategy_type,
+                    "account_scope": scope,
+                    "action": action,
+                    "size": float(order_copy.size),
+                },
+            )
+        except Exception:
+            pass
         return payload

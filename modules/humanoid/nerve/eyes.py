@@ -16,11 +16,18 @@ NEXUS_ENABLED = (os.getenv("NEXUS_ENABLED") or "").strip().lower() in (
     "y",
     "on",
 )
-NERVE_NEXUS_TIMEOUT = int(os.getenv("NERVE_NEXUS_TIMEOUT", "5"))
+NEXUS_AUTO_DETECT = (os.getenv("NEXUS_AUTO_DETECT") or "1").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+)
+NERVE_NEXUS_TIMEOUT = int(os.getenv("NERVE_NEXUS_TIMEOUT", "20"))
 
 
 def _nexus_eyes_available() -> bool:
-    if not NEXUS_ENABLED:
+    if not NEXUS_ENABLED and not NEXUS_AUTO_DETECT:
         return False
     try:
         req = urllib.request.Request(
@@ -244,7 +251,7 @@ def nerve_eyes_status() -> Dict[str, Any]:
     return {
         "nexus_available": nexus_ok,
         "nexus_snapshot_url": f"{NEXUS_ROBOT_API_URL}/api/vision/snapshot"
-        if NEXUS_ENABLED
+        if (NEXUS_ENABLED or nexus_ok)
         else None,
         "nexus_snapshot_supports": [
             "source",

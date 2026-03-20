@@ -24,6 +24,7 @@ from journal.db import init_db, session_scope
 from journal.models import TradingJournal
 from monitoring.strategy_tracker import StrategyTracker
 from config.settings import settings
+from operations.brain_bridge import QuantBrainBridge
 
 logger = logging.getLogger("quant.journal")
 
@@ -338,8 +339,9 @@ def _entry_payload(entry: TradingJournal) -> dict[str, Any]:
 
 
 class TradingJournalService:
-    def __init__(self, tracker: StrategyTracker | None = None) -> None:
+    def __init__(self, tracker: StrategyTracker | None = None, brain: QuantBrainBridge | None = None) -> None:
         self.tracker = tracker or StrategyTracker()
+        self.brain = brain or QuantBrainBridge()
 
     def init_db(self) -> None:
         init_db()
@@ -445,6 +447,7 @@ class TradingJournalService:
         updated = 0
         closed = 0
         seen_ids: set[str] = set()
+        closed_entries: list[dict[str, Any]] = []
 
         with session_scope() as db:
             for strategy in strategies:
@@ -468,7 +471,14 @@ class TradingJournalService:
                     continue
                 strategy_stub = {"underlying": entry.symbol, "positions": _json_load(entry.legs_details, [])}
                 self._close_entry(entry, _matching_events(trade_events, strategy_stub))
+                closed_entries.append(_entry_payload(entry))
                 closed += 1
+
+        for entry_payload in closed_entries:
+            try:
+                self.brain.record_journal_outcome(entry_payload)
+            except Exception:
+                logger.exception("Unable to publish journal outcome for %s", entry_payload.get("journal_key"))
 
         return {"scope": scope, "account_id": account.account_id, "created": created, "updated": updated, "closed": closed, "active_strategies": len(strategies), "trade_events_seen": len(trade_events)}
 
