@@ -262,7 +262,7 @@ class OperationConfigPayload(BaseModel):
     paper_only: bool = True
     auton_mode: Literal["off", "paper_supervised", "paper_autonomous"] = "paper_supervised"
     executor_mode: Literal["disabled", "paper_api", "desktop_dry_run"] = "paper_api"
-    vision_mode: Literal["off", "manual", "desktop_capture", "insta360_pending"] = "manual"
+    vision_mode: Literal["off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge", "insta360_pending"] = "direct_nexus"
     require_operator_present: bool = False
     operator_present: bool = True
     screen_integrity_ok: bool = True
@@ -270,6 +270,8 @@ class OperationConfigPayload(BaseModel):
     sentiment_source: str = "manual"
     min_auton_win_rate_pct: float = Field(65.0, ge=0.0, le=100.0)
     max_level4_bpr_pct: float = Field(20.0, ge=0.0, le=100.0)
+    auto_pause_on_operational_errors: bool = True
+    operational_error_limit: int = Field(3, ge=1, le=10)
     notes: str = ""
     kill_switch_active: bool = False
 
@@ -292,7 +294,10 @@ class OperationStatusPayload(BaseModel):
     ai_sentiment: dict[str, Any] = Field(default_factory=dict)
     vision: dict[str, Any] = Field(default_factory=dict)
     executor: dict[str, Any] = Field(default_factory=dict)
+    brain: dict[str, Any] = Field(default_factory=dict)
+    learning: dict[str, Any] = Field(default_factory=dict)
     journal: dict[str, Any] = Field(default_factory=dict)
+    failsafe: dict[str, Any] = Field(default_factory=dict)
     monitor_summary: dict[str, Any] = Field(default_factory=dict)
     auton_mode_active: bool = False
     last_decision: dict[str, Any] | None = None
@@ -312,7 +317,105 @@ class OperationCyclePayload(BaseModel):
     vision_snapshot: dict[str, Any] | None = None
     monitor_summary: dict[str, Any] = Field(default_factory=dict)
     sentiment: dict[str, Any] = Field(default_factory=dict)
+    what_if: dict[str, Any] = Field(default_factory=dict)
     operation_status: dict[str, Any] = Field(default_factory=dict)
+
+
+class VisionCalibrationStartPayload(BaseModel):
+    width: int = Field(1920, ge=1, le=16384)
+    height: int = Field(1080, ge=1, le=16384)
+    rows: int = Field(3, ge=1, le=9)
+    cols: int = Field(3, ge=1, le=9)
+    zoom_center: float = Field(1.0, ge=1.0, le=4.0)
+    label: str = "calibracion_principal"
+    save_path: str | None = None
+
+
+class VisionCalibrationSamplePayload(BaseModel):
+    point_id: str | None = None
+    use_current_pose: bool = True
+    yaw: float | None = None
+    pitch: float | None = None
+    zoom: float | None = None
+    note: str = ""
+
+
+class VisionCalibrationMovePosePayload(BaseModel):
+    yaw: float = Field(..., ge=-1.0, le=1.0)
+    pitch: float = Field(..., ge=-1.0, le=1.0)
+    zoom: float = Field(1.0, ge=1.0, le=4.0)
+    source: str = "camera"
+
+
+class VisionCalibrationResetPayload(BaseModel):
+    clear_active: bool = False
+
+
+class VisionCalibrationStatusPayload(BaseModel):
+    generated_at: str
+    active_calibration_path: str | None = None
+    calibration_exists: bool = False
+    calibration: dict[str, Any] | None = None
+    session_active: bool = False
+    label: str = ""
+    monitor: dict[str, Any] = Field(default_factory=dict)
+    points: list[dict[str, Any]] = Field(default_factory=list)
+    samples: list[dict[str, Any]] = Field(default_factory=list)
+    sample_count: int = 0
+    last_pose: dict[str, Any] | None = None
+    last_move: dict[str, Any] | None = None
+    last_fit: dict[str, Any] | None = None
+    notes: str = ""
+
+
+class StrategySelectorCandidatePayload(BaseModel):
+    symbol: str
+    timeframe: str
+    direction: str
+    price: float | None = None
+    strategy_key: str | None = None
+    strategy_label: str | None = None
+    selection_score: float = 0.0
+    local_win_rate_pct: float = 0.0
+    predicted_move_pct: float = 0.0
+    relative_strength_pct: float = 0.0
+    order_flow: dict[str, Any] = Field(default_factory=dict)
+    confirmation: dict[str, Any] = Field(default_factory=dict)
+    why_selected: list[str] = Field(default_factory=list)
+
+
+class StrategySelectorRequest(BaseModel):
+    candidate: StrategySelectorCandidatePayload
+    account_scope: Literal["paper", "live"] = "paper"
+    account_id: str | None = None
+    chart_provider: Literal["tradingview", "yahoo"] = "tradingview"
+    prefer_defined_risk: bool = True
+    allow_equity: bool = True
+    allow_credit: bool = True
+    risk_budget_pct: float = Field(0.75, ge=0.25, le=2.0)
+
+
+class StrategySelectorPayload(BaseModel):
+    generated_at: str
+    account_scope: str
+    account_session: dict[str, Any] = Field(default_factory=dict)
+    balances: dict[str, Any] = Field(default_factory=dict)
+    candidate: dict[str, Any] = Field(default_factory=dict)
+    selected: dict[str, Any] = Field(default_factory=dict)
+    alternatives: list[dict[str, Any]] = Field(default_factory=list)
+    probability: dict[str, Any] | None = None
+    size_plan: dict[str, Any] = Field(default_factory=dict)
+    chart_plan: dict[str, Any] = Field(default_factory=dict)
+    camera_plan: dict[str, Any] = Field(default_factory=dict)
+    entry_plan: dict[str, Any] = Field(default_factory=dict)
+    confidence_breakdown: dict[str, Any] = Field(default_factory=dict)
+    adaptive_context: dict[str, Any] = Field(default_factory=dict)
+    risk_profile: dict[str, Any] = Field(default_factory=dict)
+    automation_ready: dict[str, Any] = Field(default_factory=dict)
+    exit_plan: dict[str, Any] = Field(default_factory=dict)
+    playbook: dict[str, Any] = Field(default_factory=dict)
+    order_seed: dict[str, Any] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ScannerConfigPayload(BaseModel):
@@ -321,9 +424,12 @@ class ScannerConfigPayload(BaseModel):
     scan_interval_sec: int = Field(180, ge=15, le=3600)
     min_signal_strength: float = Field(0.55, ge=0.0, le=1.0)
     min_local_win_rate_pct: float = Field(53.0, ge=0.0, le=100.0)
-    min_selection_score: float = Field(62.0, ge=0.0, le=100.0)
+    min_selection_score: float = Field(75.0, ge=0.0, le=100.0)
     max_candidates: int = Field(8, ge=1, le=50)
     require_higher_tf_confirmation: bool = True
+    universe_mode: Literal["manual", "us_equities_rotating"] = "us_equities_rotating"
+    universe_batch_size: int = Field(80, ge=20, le=500)
+    prefilter_count: int = Field(20, ge=8, le=80)
     universe: list[str] = Field(default_factory=list)
     timeframes: list[str] = Field(default_factory=list)
     notes: str = ""
@@ -345,6 +451,7 @@ class ScannerStatusPayload(BaseModel):
     last_error: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
     summary: dict[str, Any] = Field(default_factory=dict)
+    learning: dict[str, Any] = Field(default_factory=dict)
 
 
 class ScannerReportPayload(BaseModel):
@@ -352,10 +459,12 @@ class ScannerReportPayload(BaseModel):
     status: dict[str, Any] = Field(default_factory=dict)
     summary: dict[str, Any] = Field(default_factory=dict)
     criteria: list[dict[str, Any]] = Field(default_factory=list)
+    universe: dict[str, Any] = Field(default_factory=dict)
     candidates: list[dict[str, Any]] = Field(default_factory=list)
     rejections: list[dict[str, Any]] = Field(default_factory=list)
     activity: list[dict[str, Any]] = Field(default_factory=list)
     current_work: dict[str, Any] = Field(default_factory=dict)
+    learning: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
 
 

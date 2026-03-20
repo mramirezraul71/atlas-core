@@ -30,6 +30,9 @@ from api.schemas import (
     SignalResponse, PortfolioResponse, HealthResponse, StdResponse, QuantStatusPayload,
     EmergencyStopRequest, JournalEntriesPayload, JournalStatsPayload, OperationConfigPayload,
     OperationCyclePayload, OperationCycleRequest, OperationStatusPayload,
+    VisionCalibrationMovePosePayload, VisionCalibrationResetPayload, VisionCalibrationSamplePayload,
+    VisionCalibrationStartPayload, VisionCalibrationStatusPayload,
+    StrategySelectorPayload, StrategySelectorRequest,
     ScannerConfigPayload, ScannerControlRequest, ScannerReportPayload, ScannerStatusPayload,
     StatusEnum, SignalEnum,
 )
@@ -44,28 +47,38 @@ from execution.tradier_execution import (
 )
 from journal.service import TradingJournalService
 from journal.sync import JournalSyncService
+from learning.adaptive_policy import AdaptiveLearningService
 from monitoring.strategy_tracker import StrategyTracker
 from operations.auton_executor import AutonExecutorService
+from operations.brain_bridge import QuantBrainBridge
 from operations.journal_pro import JournalProService
 from operations.operation_center import OperationCenter
 from operations.sensor_vision import SensorVisionService
+from operations.vision_calibration import VisionCalibrationService
 from scanner.opportunity_scanner import OpportunityScannerService
+from selector.strategy_selector import StrategySelectorService
 
 logger = logging.getLogger("quant.api")
 _START_TIME = time.time()
 _ACCOUNT_MANAGER = AccountManager()
+_BRAIN_BRIDGE = QuantBrainBridge()
+_ADAPTIVE_LEARNING = AdaptiveLearningService()
 _STRATEGY_TRACKER = StrategyTracker()
-_JOURNAL = TradingJournalService(_STRATEGY_TRACKER)
+_JOURNAL = TradingJournalService(_STRATEGY_TRACKER, _BRAIN_BRIDGE)
 _JOURNAL_SYNC = JournalSyncService(_JOURNAL)
 _VISION = SensorVisionService()
 _AUTON_EXECUTOR = AutonExecutorService()
 _JOURNAL_PRO = JournalProService(_JOURNAL)
-_SCANNER = OpportunityScannerService()
+_SCANNER = OpportunityScannerService(_ADAPTIVE_LEARNING)
+_VISION_CALIBRATION = VisionCalibrationService()
+_SELECTOR = StrategySelectorService(_STRATEGY_TRACKER, _ADAPTIVE_LEARNING)
 _OPERATION_CENTER = OperationCenter(
     tracker=_STRATEGY_TRACKER,
     journal=_JOURNAL_PRO,
     vision=_VISION,
     executor=_AUTON_EXECUTOR,
+    brain=_BRAIN_BRIDGE,
+    learning=_ADAPTIVE_LEARNING,
 )
 
 app = FastAPI(
@@ -532,6 +545,94 @@ async def operation_test_cycle(
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
+@app.get("/vision/calibration/status", response_model=StdResponse, tags=["Operation"])
+async def vision_calibration_status(x_api_key: str | None = Header(None)):
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = VisionCalibrationStatusPayload.model_validate(_VISION_CALIBRATION.status())
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error reading vision calibration status")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/vision/calibration/start", response_model=StdResponse, tags=["Operation"])
+async def vision_calibration_start(
+    body: VisionCalibrationStartPayload,
+    x_api_key: str | None = Header(None),
+):
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = VisionCalibrationStatusPayload.model_validate(_VISION_CALIBRATION.start_session(**body.model_dump()))
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error starting vision calibration")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/vision/calibration/move-pose", response_model=StdResponse, tags=["Operation"])
+async def vision_calibration_move_pose(
+    body: VisionCalibrationMovePosePayload,
+    x_api_key: str | None = Header(None),
+):
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = VisionCalibrationStatusPayload.model_validate(_VISION_CALIBRATION.move_pose(**body.model_dump()))
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error moving vision pose")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/vision/calibration/sample", response_model=StdResponse, tags=["Operation"])
+async def vision_calibration_sample(
+    body: VisionCalibrationSamplePayload,
+    x_api_key: str | None = Header(None),
+):
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = VisionCalibrationStatusPayload.model_validate(_VISION_CALIBRATION.record_sample(**body.model_dump()))
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error recording vision calibration sample")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/vision/calibration/fit", response_model=StdResponse, tags=["Operation"])
+async def vision_calibration_fit(
+    body: VisionCalibrationStartPayload | None = None,
+    x_api_key: str | None = Header(None),
+):
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        save_path = body.save_path if body else None
+        payload = VisionCalibrationStatusPayload.model_validate(_VISION_CALIBRATION.fit_and_save(save_path=save_path))
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error fitting vision calibration")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/vision/calibration/reset", response_model=StdResponse, tags=["Operation"])
+async def vision_calibration_reset(
+    body: VisionCalibrationResetPayload,
+    x_api_key: str | None = Header(None),
+):
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = VisionCalibrationStatusPayload.model_validate(_VISION_CALIBRATION.reset_session(**body.model_dump()))
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error resetting vision calibration")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
 @app.post("/emergency/stop", response_model=StdResponse, tags=["Operation"])
 async def emergency_stop(
     body: EmergencyStopRequest,
@@ -624,6 +725,41 @@ async def scanner_control(
         return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as exc:
         logger.exception("Error controlling scanner")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/selector/proposal", response_model=StdResponse, tags=["Selector"])
+async def selector_proposal(
+    body: StrategySelectorRequest,
+    x_api_key: str | None = Header(None),
+):
+    """Convierte una oportunidad del escaner en una propuesta operativa lista para validar."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = StrategySelectorPayload.model_validate(
+            _SELECTOR.proposal(
+                candidate=body.candidate.model_dump(),
+                account_scope=body.account_scope,
+                account_id=body.account_id,
+                chart_provider=body.chart_provider,
+                prefer_defined_risk=body.prefer_defined_risk,
+                allow_equity=body.allow_equity,
+                allow_credit=body.allow_credit,
+                risk_budget_pct=body.risk_budget_pct,
+            )
+        )
+        await asyncio.to_thread(_BRAIN_BRIDGE.record_selector_proposal, payload.model_dump())
+        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error building selector proposal")
+        await asyncio.to_thread(
+            _BRAIN_BRIDGE.record_error,
+            kind="selector_error",
+            source="selector_proposal",
+            error_text=str(exc),
+            context={"candidate": body.candidate.model_dump(), "account_scope": body.account_scope},
+        )
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
@@ -725,6 +861,51 @@ async def operation_test_cycle_v2(
     return await operation_test_cycle(body=body, x_api_key=x_api_key)
 
 
+@app.get("/api/v2/quant/vision/calibration/status", response_model=StdResponse, tags=["V2"])
+async def vision_calibration_status_v2(x_api_key: str | None = Header(None)):
+    return await vision_calibration_status(x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/vision/calibration/start", response_model=StdResponse, tags=["V2"])
+async def vision_calibration_start_v2(
+    body: VisionCalibrationStartPayload,
+    x_api_key: str | None = Header(None),
+):
+    return await vision_calibration_start(body=body, x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/vision/calibration/move-pose", response_model=StdResponse, tags=["V2"])
+async def vision_calibration_move_pose_v2(
+    body: VisionCalibrationMovePosePayload,
+    x_api_key: str | None = Header(None),
+):
+    return await vision_calibration_move_pose(body=body, x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/vision/calibration/sample", response_model=StdResponse, tags=["V2"])
+async def vision_calibration_sample_v2(
+    body: VisionCalibrationSamplePayload,
+    x_api_key: str | None = Header(None),
+):
+    return await vision_calibration_sample(body=body, x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/vision/calibration/fit", response_model=StdResponse, tags=["V2"])
+async def vision_calibration_fit_v2(
+    body: VisionCalibrationStartPayload | None = None,
+    x_api_key: str | None = Header(None),
+):
+    return await vision_calibration_fit(body=body, x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/vision/calibration/reset", response_model=StdResponse, tags=["V2"])
+async def vision_calibration_reset_v2(
+    body: VisionCalibrationResetPayload,
+    x_api_key: str | None = Header(None),
+):
+    return await vision_calibration_reset(body=body, x_api_key=x_api_key)
+
+
 @app.post("/api/v2/quant/emergency/stop", response_model=StdResponse, tags=["V2"])
 async def emergency_stop_v2(
     body: EmergencyStopRequest,
@@ -765,6 +946,14 @@ async def scanner_control_v2(
     x_api_key: str | None = Header(None),
 ):
     return await scanner_control(body=body, x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/selector/proposal", response_model=StdResponse, tags=["V2"])
+async def selector_proposal_v2(
+    body: StrategySelectorRequest,
+    x_api_key: str | None = Header(None),
+):
+    return await selector_proposal(body=body, x_api_key=x_api_key)
 
 
 async def _quant_live_updates_socket(websocket: WebSocket) -> None:

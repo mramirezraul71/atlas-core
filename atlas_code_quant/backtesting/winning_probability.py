@@ -15,6 +15,7 @@ import os
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import requests
@@ -314,6 +315,16 @@ class TradierClient:
         quotes = self._as_dict(payload.get("quotes")).get("quote") or []
         return self._as_list(quotes)
 
+    @staticmethod
+    def _dt_param(value: datetime | date | None) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            if value.tzinfo is not None:
+                value = value.astimezone(ZoneInfo("America/New_York")).replace(tzinfo=None)
+            return value.strftime("%Y-%m-%d %H:%M")
+        return value.isoformat()
+
     def history(
         self,
         symbol: str,
@@ -332,6 +343,32 @@ class TradierClient:
         )
         history = self._as_dict(payload.get("history")).get("day") or []
         return history if isinstance(history, list) else [history]
+
+    def timesales(
+        self,
+        symbol: str,
+        *,
+        interval: str = "1min",
+        start: datetime | date | None = None,
+        end: datetime | date | None = None,
+        session_filter: str = "open",
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {
+            "symbol": symbol,
+            "interval": interval,
+        }
+        start_param = self._dt_param(start)
+        end_param = self._dt_param(end)
+        if start_param:
+            params["start"] = start_param
+        if end_param:
+            params["end"] = end_param
+        if session_filter:
+            params["session_filter"] = session_filter
+        payload = self._get("/markets/timesales", params)
+        series = self._as_dict(payload.get("series"))
+        data = series.get("data") or payload.get("data") or []
+        return self._as_list(data)
 
     def expirations(self, symbol: str) -> list[str]:
         payload = self._get("/markets/options/expirations", {"symbol": symbol, "includeAllRoots": "true"})

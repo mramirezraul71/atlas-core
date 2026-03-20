@@ -6,14 +6,17 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from math import isfinite
 from typing import Any
 
 import pandas as pd
 
+from backtesting.winning_probability import TradierClient
 from config.settings import settings
 from data.feed import MarketFeed
+from learning.adaptive_policy import AdaptiveLearningService
+from scanner.universe_catalog import ScannerUniverseCatalog
 
 logger = logging.getLogger("quant.scanner")
 
@@ -118,6 +121,24 @@ EVIDENCE_LIBRARY: dict[str, dict[str, Any]] = {
             },
         ],
     },
+    "order_flow_proxy": {
+        "label": "Order flow intradía",
+        "family": "microestructura",
+        "evidence_score": 0.79,
+        "description": "Usa presión neta de volumen, precio vs VWAP y desequilibrio bid/ask como filtro microestructural.",
+        "sources": [
+            {
+                "title": "Get Time & Sales",
+                "url": "https://docs.tradier.com/reference/brokerage-api-markets-get-timesales",
+                "note": "Tradier expone time and sales para construir presión intradía y proxy de order flow.",
+            },
+            {
+                "title": "Order Flow and Exchange Rate Dynamics",
+                "url": "https://www.nber.org/papers/w12682.pdf",
+                "note": "Documenta poder predictivo del order flow sobre movimientos futuros de precios.",
+            },
+        ],
+    },
     "multi_timeframe_confirmation": {
         "label": "Confirmación de temporalidad superior",
         "family": "gobernanza ATLAS",
@@ -201,6 +222,9 @@ class ScannerConfig:
     min_selection_score: float
     max_candidates: int
     require_higher_tf_confirmation: bool
+    universe_mode: str
+    universe_batch_size: int
+    prefilter_count: int
     universe: list[str]
     timeframes: list[str]
     activity_limit: int
@@ -216,6 +240,9 @@ class ScannerConfig:
             "min_selection_score": self.min_selection_score,
             "max_candidates": self.max_candidates,
             "require_higher_tf_confirmation": self.require_higher_tf_confirmation,
+            "universe_mode": self.universe_mode,
+            "universe_batch_size": self.universe_batch_size,
+            "prefilter_count": self.prefilter_count,
             "universe": list(self.universe),
             "timeframes": list(self.timeframes),
             "activity_limit": self.activity_limit,
@@ -226,7 +253,7 @@ class ScannerConfig:
 class OpportunityScannerService:
     """Escáner continuo con explicación explícita y criterios gobernados."""
 
-    def __init__(self) -> None:
+    def __init__(self, learning: AdaptiveLearningService | None = None) -> None:
         self._config = ScannerConfig(
             enabled=settings.scanner_enabled,
             source=settings.scanner_source,
@@ -236,6 +263,9 @@ class OpportunityScannerService:
             min_selection_score=settings.scanner_min_selection_score,
             max_candidates=settings.scanner_max_candidates,
             require_higher_tf_confirmation=settings.scanner_require_higher_tf_confirmation,
+            universe_mode=settings.scanner_universe_mode,
+            universe_batch_size=settings.scanner_universe_batch_size,
+            prefilter_count=settings.scanner_prefilter_count,
             universe=list(settings.scanner_universe),
             timeframes=_timeframes_sorted(list(settings.scanner_timeframes)),
             activity_limit=settings.scanner_activity_limit,
@@ -243,6 +273,11 @@ class OpportunityScannerService:
         )
         self._feed: MarketFeed | None = None
         self._ml_strategy = None
+        self.learning = learning or AdaptiveLearningService()
+        self._catalog = ScannerUniverseCatalog(
+            cache_path=settings.scanner_universe_cache_path,
+            cache_ttl_sec=settings.scanner_universe_cache_ttl_sec,
+        )
         self._task: asyncio.Task | None = None
         self._loop_lock = asyncio.Lock()
         self._state_lock = threading.RLock()
@@ -257,8 +292,73 @@ class OpportunityScannerService:
         self._report: dict[str, Any] = self._empty_report()
         self._activity: list[dict[str, Any]] = []
         self._perf_cache: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        self._universe_cursor = 0
+        self._last_universe_meta: dict[str, Any] = {}
+        self._tradier_market_client: TradierClient | None = None
+        self._tradier_market_scope: str | None = None
+
+    def _base_universe_summary(self) -> tuple[dict[str, Any], dict[str, Any]]:
+        if self._config.source == "yfinance" and self._config.universe_mode == "us_equities_rotating":
+            catalog = self._catalog.get_us_equities(force_refresh=False)
+            total = int(catalog.get("total_symbols") or len(catalog.get("symbols") or []))
+            batch_size = min(self._config.universe_batch_size, total) if total else 0
+            selected = min(self._config.prefilter_count, batch_size) if batch_size else 0
+            universe_meta = {
+                "mode": "us_equities_rotating",
+                "universe_total": total,
+                "batch_size": batch_size,
+                "batch_start": 0,
+                "batch_end": batch_size,
+                "catalog_source": catalog.get("source") or "nasdaq_trader_symbol_directory",
+                "catalog_fetched_at": catalog.get("fetched_at"),
+                "prefilter_scored": 0,
+                "prefilter_selected": selected,
+                "selected_symbols": [],
+            }
+            summary = {
+                "universe_size": total,
+                "universe_mode": "us_equities_rotating",
+                "universe_total": total,
+                "batch_size": batch_size,
+                "batch_start": 0,
+                "batch_end": batch_size,
+                "prefilter_selected": selected,
+                "prefilter_scored": 0,
+                "deep_scan_symbols": selected,
+                "provisional_candidates": 0,
+                "dynamic_min_selection_score": max(75.0, float(self._config.min_selection_score)),
+            }
+            return summary, universe_meta
+
+        manual_count = len(self._config.universe)
+        summary = {
+            "universe_size": manual_count,
+            "universe_mode": self._config.universe_mode,
+            "universe_total": manual_count,
+            "batch_size": manual_count,
+            "batch_start": 0,
+            "batch_end": manual_count,
+            "prefilter_selected": manual_count,
+            "prefilter_scored": manual_count,
+            "deep_scan_symbols": manual_count,
+            "provisional_candidates": 0,
+            "dynamic_min_selection_score": max(75.0, float(self._config.min_selection_score)),
+        }
+        universe_meta = {
+            "mode": "manual",
+            "universe_total": manual_count,
+            "batch_size": manual_count,
+            "batch_start": 0,
+            "batch_end": manual_count,
+            "catalog_source": "manual",
+            "prefilter_scored": manual_count,
+            "prefilter_selected": manual_count,
+            "selected_symbols": list(self._config.universe),
+        }
+        return summary, universe_meta
 
     def _empty_report(self) -> dict[str, Any]:
+        summary_defaults, universe_defaults = self._base_universe_summary()
         return {
             "generated_at": _utcnow_iso(),
             "summary": {
@@ -266,23 +366,25 @@ class OpportunityScannerService:
                 "cycle_count": 0,
                 "accepted": 0,
                 "rejected": 0,
-                "universe_size": len(self._config.universe),
+                **summary_defaults,
                 "timeframes": list(self._config.timeframes),
             },
             "criteria": self.criteria_catalog(),
             "candidates": [],
             "rejections": [],
             "activity": [],
+            "universe": universe_defaults,
             "current_work": {
                 "symbol": None,
                 "timeframe": None,
                 "step": "inactivo",
             },
+            "learning": self.learning.status(account_scope=settings.tradier_default_scope),
         }
 
     def criteria_catalog(self) -> list[dict[str, Any]]:
         items = []
-        for key in METHOD_ORDER + ["relative_strength_overlay", "multi_timeframe_confirmation"]:
+        for key in METHOD_ORDER + ["relative_strength_overlay", "order_flow_proxy", "multi_timeframe_confirmation"]:
             raw = EVIDENCE_LIBRARY[key]
             items.append(
                 {
@@ -311,6 +413,24 @@ class OpportunityScannerService:
         if self._feed is None or self._feed.source != self._config.source:
             self._feed = MarketFeed(source=self._config.source)  # type: ignore[arg-type]
         return self._feed
+
+    def _market_data_scope(self) -> str:
+        if settings.tradier_live_token:
+            return "live"
+        return settings.tradier_default_scope if settings.tradier_default_scope in {"live", "paper"} else "paper"
+
+    def _tradier_client_for_market_data(self) -> TradierClient | None:
+        scope = self._market_data_scope()
+        if self._tradier_market_client is not None and self._tradier_market_scope == scope:
+            return self._tradier_market_client
+        try:
+            self._tradier_market_client = TradierClient(scope=scope)
+            self._tradier_market_scope = scope
+        except Exception:
+            logger.exception("No se pudo inicializar Tradier para order flow")
+            self._tradier_market_client = None
+            self._tradier_market_scope = None
+        return self._tradier_market_client
 
     def _ml_strategy_for(self):
         if self._ml_strategy is None:
@@ -393,6 +513,7 @@ class OpportunityScannerService:
                 "last_error": self._last_error,
                 "config": self._config.to_dict(),
                 "summary": dict(self._report.get("summary") or {}),
+                "learning": self.learning.status(account_scope=settings.tradier_default_scope),
             }
 
     def report(self, activity_limit: int = 60) -> dict[str, Any]:
@@ -417,11 +538,21 @@ class OpportunityScannerService:
             if "min_local_win_rate_pct" in payload:
                 self._config.min_local_win_rate_pct = max(0.0, min(float(payload["min_local_win_rate_pct"]), 100.0))
             if "min_selection_score" in payload:
-                self._config.min_selection_score = max(0.0, min(float(payload["min_selection_score"]), 100.0))
+                self._config.min_selection_score = max(75.0, min(float(payload["min_selection_score"]), 100.0))
             if "max_candidates" in payload:
                 self._config.max_candidates = max(1, min(int(payload["max_candidates"]), 50))
             if "require_higher_tf_confirmation" in payload:
                 self._config.require_higher_tf_confirmation = bool(payload["require_higher_tf_confirmation"])
+            if "universe_mode" in payload:
+                universe_mode = str(payload["universe_mode"] or "").strip().lower()
+                if universe_mode in {"manual", "us_equities_rotating"}:
+                    self._config.universe_mode = universe_mode
+                    self._universe_cursor = 0
+            if "universe_batch_size" in payload:
+                self._config.universe_batch_size = max(20, min(int(payload["universe_batch_size"]), 500))
+            if "prefilter_count" in payload:
+                self._config.prefilter_count = max(8, min(int(payload["prefilter_count"]), 80))
+            self._config.prefilter_count = min(self._config.prefilter_count, self._config.universe_batch_size)
             if "notes" in payload:
                 self._config.notes = str(payload["notes"] or "").strip()
             if "universe" in payload:
@@ -429,7 +560,7 @@ class OpportunityScannerService:
                 items = [item.strip().upper() for item in raw.split(",")] if isinstance(raw, str) else [str(item).strip().upper() for item in raw]
                 items = [item for item in items if item]
                 if items:
-                    self._config.universe = items[:50]
+                    self._config.universe = items[:500]
             if "timeframes" in payload:
                 raw = payload["timeframes"]
                 items = [item.strip() for item in raw.split(",")] if isinstance(raw, str) else [str(item).strip() for item in raw]
@@ -439,10 +570,144 @@ class OpportunityScannerService:
         self._log("info", "Configuración del escáner actualizada", config=self._config.to_dict())
         return self.report()
 
-    def _load_universe_frames(self) -> dict[str, dict[str, pd.DataFrame]]:
+    def _resolve_scan_batch(self) -> tuple[list[str], dict[str, Any]]:
+        if self._config.source != "yfinance" or self._config.universe_mode == "manual":
+            symbols = list(self._config.universe)
+            meta = {
+                "mode": "manual",
+                "universe_total": len(symbols),
+                "batch_size": len(symbols),
+                "batch_start": 0,
+                "batch_end": len(symbols),
+                "catalog_source": "manual",
+            }
+            self._last_universe_meta = meta
+            return symbols, meta
+
+        catalog = self._catalog.get_us_equities()
+        symbols = list(catalog.get("symbols") or [])
+        if not symbols:
+            fallback = list(self._config.universe)
+            meta = {
+                "mode": "manual_fallback",
+                "universe_total": len(fallback),
+                "batch_size": len(fallback),
+                "batch_start": 0,
+                "batch_end": len(fallback),
+                "catalog_source": "fallback_manual",
+                "catalog_error": "catalogo vacio",
+            }
+            self._last_universe_meta = meta
+            return fallback, meta
+
+        total = len(symbols)
+        batch_size = min(self._config.universe_batch_size, total)
+        start = self._universe_cursor % total
+        end = start + batch_size
+        if end <= total:
+            batch = symbols[start:end]
+        else:
+            batch = symbols[start:] + symbols[: end - total]
+        self._universe_cursor = (start + batch_size) % total
+        meta = {
+            "mode": "us_equities_rotating",
+            "universe_total": total,
+            "batch_size": len(batch),
+            "batch_start": start,
+            "batch_end": min(end, total),
+            "catalog_source": catalog.get("source"),
+            "catalog_fetched_at": catalog.get("fetched_at"),
+        }
+        self._last_universe_meta = meta
+        return batch, meta
+
+    def _prefilter_batch(self, symbols: list[str]) -> tuple[list[str], dict[str, Any]]:
+        symbols = [symbol for symbol in symbols if symbol]
+        if not symbols:
+            return [], {
+                "prefilter_source": "none",
+                "prefilter_scored": 0,
+                "prefilter_selected": 0,
+            }
+        if self._config.source != "yfinance":
+            selected = symbols[: self._config.prefilter_count]
+            return selected, {
+                "prefilter_source": "source_fallback",
+                "prefilter_scored": len(selected),
+                "prefilter_selected": len(selected),
+            }
+
+        self._current_symbol = None
+        self._current_timeframe = "1d"
+        self._current_step = "prefiltrando_universo"
+        feed = self._feed_for_config()
+        try:
+            frames = feed.ohlcv_many(symbols, timeframe="1d", limit=120)
+        except Exception as exc:
+            self._log("warn", "No se pudo descargar lote diario para prefiltrado", reason=str(exc))
+            selected = symbols[: self._config.prefilter_count]
+            return selected, {
+                "prefilter_source": "error_fallback",
+                "prefilter_scored": 0,
+                "prefilter_selected": len(selected),
+                "prefilter_error": str(exc),
+            }
+
+        scored: list[tuple[str, float, dict[str, Any]]] = []
+        min_dollar_volume = settings.scanner_prefilter_min_dollar_volume_millions * 1_000_000.0
+        for symbol, df in frames.items():
+            if df is None or df.empty or len(df) < 70:
+                continue
+            try:
+                close = df["close"].astype(float)
+                volume = df["volume"].astype(float)
+                price = float(close.iloc[-1])
+                if price < settings.scanner_prefilter_min_price:
+                    continue
+                avg_dollar_volume = float((close * volume).tail(20).mean())
+                if avg_dollar_volume < min_dollar_volume:
+                    continue
+                ret_21 = abs(_pct_change(float(close.iloc[-1]), float(close.iloc[-21])))
+                ret_63 = abs(_pct_change(float(close.iloc[-1]), float(close.iloc[-63])))
+                atr_pct = self._predicted_move_pct(df, 0.6)
+                trend_bonus = 5.0 if (float(close.iloc[-1]) > float(close.rolling(50).mean().iloc[-1])) else 0.0
+                liquidity_bonus = min(avg_dollar_volume / 100_000_000.0, 1.0) * 20.0
+                score = (ret_21 * 0.42) + (ret_63 * 0.28) + (atr_pct * 1.7) + liquidity_bonus + trend_bonus
+                scored.append(
+                    (
+                        symbol,
+                        round(score, 3),
+                        {
+                            "price": round(price, 3),
+                            "avg_dollar_volume": round(avg_dollar_volume, 2),
+                            "ret_21_pct": round(ret_21, 2),
+                            "ret_63_pct": round(ret_63, 2),
+                            "atr_pct": round(atr_pct, 2),
+                        },
+                    )
+                )
+            except Exception:
+                continue
+
+        ordered = sorted(scored, key=lambda item: item[1], reverse=True)
+        selected = [symbol for symbol, _, _ in ordered[: self._config.prefilter_count]]
+        if not selected:
+            selected = symbols[: self._config.prefilter_count]
+        meta = {
+            "prefilter_source": "daily_batch",
+            "prefilter_scored": len(scored),
+            "prefilter_selected": len(selected),
+            "prefilter_preview": [
+                {"symbol": symbol, "score": score, **details}
+                for symbol, score, details in ordered[: min(12, len(ordered))]
+            ],
+        }
+        return selected, meta
+
+    def _load_universe_frames(self, symbols: list[str]) -> dict[str, dict[str, pd.DataFrame]]:
         frames: dict[str, dict[str, pd.DataFrame]] = {}
         feed = self._feed_for_config()
-        for symbol in self._config.universe:
+        for symbol in symbols:
             frames[symbol] = {}
             for timeframe in self._config.timeframes:
                 self._current_symbol = symbol
@@ -482,6 +747,162 @@ class OpportunityScannerService:
         for symbol in frames:
             percentiles.setdefault(symbol, 50.0)
         return percentiles
+
+    def _order_flow_snapshot(self, symbol: str, price_hint: float = 0.0) -> dict[str, Any]:
+        scope = self._market_data_scope()
+        snapshot = {
+            "available": False,
+            "scope": scope,
+            "mode": "disabled",
+            "direction": "neutral",
+            "score_pct": 50.0,
+            "confidence_pct": 0.0,
+            "net_pressure_pct": 0.0,
+            "price_vs_vwap_pct": 0.0,
+            "spread_bps": 0.0,
+            "quote_imbalance_pct": 0.0,
+            "last_price": round(price_hint, 4) if price_hint > 0 else 0.0,
+            "vwap": None,
+            "reason": "sin_datos",
+        }
+        client = self._tradier_client_for_market_data()
+        if client is None:
+            snapshot["reason"] = "tradier_no_disponible"
+            return snapshot
+
+        try:
+            quote = client.quote(symbol)
+        except Exception as exc:
+            snapshot["reason"] = f"quote_error:{exc}"
+            return snapshot
+
+        bid = _safe_float(quote.get("bid"), 0.0)
+        ask = _safe_float(quote.get("ask"), 0.0)
+        bid_size = _safe_float(quote.get("bidsize"), _safe_float(quote.get("bid_size"), 0.0))
+        ask_size = _safe_float(quote.get("asksize"), _safe_float(quote.get("ask_size"), 0.0))
+        last_price = _safe_float(quote.get("last"), price_hint)
+        if last_price <= 0:
+            last_price = price_hint
+        if bid > 0 and ask > 0:
+            mid = (bid + ask) / 2.0
+            snapshot["spread_bps"] = round(((ask - bid) / max(mid, 1e-6)) * 10000.0, 2)
+        total_size = bid_size + ask_size
+        if total_size > 0:
+            snapshot["quote_imbalance_pct"] = round(((bid_size - ask_size) / total_size) * 100.0, 2)
+
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(minutes=45)
+        rows: list[dict[str, Any]] = []
+        interval_used = "1min"
+        for interval in ("1min", "5min"):
+            try:
+                rows = client.timesales(symbol, interval=interval, start=start, end=end, session_filter="all")
+                interval_used = interval
+                if rows:
+                    break
+            except Exception:
+                rows = []
+        if not rows:
+            snapshot["last_price"] = round(last_price, 4) if last_price > 0 else 0.0
+            snapshot["reason"] = "timesales_vacio"
+            return snapshot
+
+        df = pd.DataFrame(rows)
+        if df.empty:
+            snapshot["last_price"] = round(last_price, 4) if last_price > 0 else 0.0
+            snapshot["reason"] = "timesales_vacio"
+            return snapshot
+
+        for column in ("close", "open", "high", "low", "price", "volume", "vwap"):
+            if column in df.columns:
+                df[column] = pd.to_numeric(df[column], errors="coerce")
+        close_series = df["close"] if "close" in df.columns else df["price"] if "price" in df.columns else pd.Series(dtype=float)
+        if close_series.empty:
+            snapshot["last_price"] = round(last_price, 4) if last_price > 0 else 0.0
+            snapshot["reason"] = "timesales_sin_precio"
+            return snapshot
+        close_series = close_series.ffill().dropna()
+        if close_series.empty:
+            snapshot["last_price"] = round(last_price, 4) if last_price > 0 else 0.0
+            snapshot["reason"] = "timesales_sin_precio"
+            return snapshot
+
+        volume_series = pd.to_numeric(df.get("volume", pd.Series([0.0] * len(df))), errors="coerce").fillna(0.0)
+        if "open" in df.columns and not df["open"].dropna().empty:
+            open_series = pd.to_numeric(df["open"], errors="coerce").fillna(close_series.shift(1)).fillna(close_series)
+        else:
+            open_series = close_series.shift(1).fillna(close_series)
+        signed_volume = volume_series * (close_series - open_series).apply(lambda value: 1.0 if value > 0 else -1.0 if value < 0 else 0.0)
+        total_volume = max(float(volume_series.sum()), 1.0)
+        net_pressure_pct = float(signed_volume.sum()) / total_volume * 100.0
+        if "vwap" in df.columns and not df["vwap"].dropna().empty:
+            vwap = _safe_float(df["vwap"].dropna().iloc[-1], 0.0)
+        else:
+            weighted = float((close_series * volume_series).sum())
+            vwap = weighted / total_volume if total_volume > 0 else float(close_series.iloc[-1])
+        last_ts_price = _safe_float(close_series.iloc[-1], last_price)
+        price_vs_vwap_pct = _pct_change(last_ts_price, vwap) if vwap > 0 else 0.0
+
+        raw_score = 50.0
+        raw_score += max(min(net_pressure_pct * 0.55, 22.0), -22.0)
+        raw_score += max(min(price_vs_vwap_pct * 35.0, 18.0), -18.0)
+        raw_score += max(min(snapshot["quote_imbalance_pct"] * 0.18, 10.0), -10.0)
+        raw_score -= min(snapshot["spread_bps"] / 12.0, 8.0)
+        score_pct = max(0.0, min(raw_score, 100.0))
+        if score_pct >= 55.0:
+            direction = "alcista"
+        elif score_pct <= 45.0:
+            direction = "bajista"
+        else:
+            direction = "neutral"
+
+        snapshot.update(
+            {
+                "available": True,
+                "scope": scope,
+                "mode": "proxy_intradia",
+                "interval": interval_used,
+                "direction": direction,
+                "score_pct": round(score_pct, 2),
+                "confidence_pct": round(min(abs(score_pct - 50.0) * 2.0, 100.0), 2),
+                "net_pressure_pct": round(net_pressure_pct, 2),
+                "price_vs_vwap_pct": round(price_vs_vwap_pct, 3),
+                "last_price": round(last_ts_price, 4),
+                "vwap": round(vwap, 4) if vwap > 0 else None,
+                "reason": "order_flow_proxy_ok",
+            }
+        )
+        return snapshot
+
+    def _order_flow_batch(self, frames: dict[str, dict[str, pd.DataFrame]]) -> dict[str, dict[str, Any]]:
+        out: dict[str, dict[str, Any]] = {}
+        for symbol, tf_frames in frames.items():
+            price_hint = 0.0
+            for tf in ("1d", "4h", "1h", "15m", "5m"):
+                df = tf_frames.get(tf)
+                if df is not None and not df.empty:
+                    price_hint = _safe_float(df["close"].iloc[-1], 0.0)
+                    if price_hint > 0:
+                        break
+            try:
+                out[symbol] = self._order_flow_snapshot(symbol, price_hint=price_hint)
+            except Exception as exc:
+                out[symbol] = {
+                    "available": False,
+                    "scope": self._market_data_scope(),
+                    "mode": "proxy_intradia",
+                    "direction": "neutral",
+                    "score_pct": 50.0,
+                    "confidence_pct": 0.0,
+                    "net_pressure_pct": 0.0,
+                    "price_vs_vwap_pct": 0.0,
+                    "spread_bps": 0.0,
+                    "quote_imbalance_pct": 0.0,
+                    "last_price": round(price_hint, 4) if price_hint > 0 else 0.0,
+                    "vwap": None,
+                    "reason": f"order_flow_error:{exc}",
+                }
+        return out
 
     def _method_signal(self, method: str, df: pd.DataFrame, symbol: str, timeframe: str) -> dict[str, Any]:
         if len(df) < 60:
@@ -634,15 +1055,33 @@ class OpportunityScannerService:
         atr_pct = _safe_float((float(atr14.iloc[-1]) / max(float(df["close"].iloc[-1]), 1e-6)) * 100.0)
         return round(max(atr_pct * (0.8 + strength), 0.05), 2)
 
+    def _dynamic_selection_threshold(self, candidates: list[dict[str, Any]]) -> float:
+        base_floor = max(75.0, float(self._config.min_selection_score))
+        if not candidates:
+            return round(base_floor, 2)
+
+        ordered_scores = sorted((float(item.get("selection_score") or 0.0) for item in candidates), reverse=True)
+        if len(ordered_scores) <= self._config.max_candidates:
+            return round(base_floor, 2)
+
+        cutoff_index = min(len(ordered_scores) - 1, max(self._config.max_candidates - 1, 0))
+        rank_cutoff = ordered_scores[cutoff_index]
+        overload = max(len(ordered_scores) - self._config.max_candidates, 0)
+        density_bonus = min(overload * 0.35, 10.0)
+        threshold = max(base_floor, rank_cutoff, base_floor + density_bonus)
+        return round(min(threshold, 99.5), 2)
+
     def _evaluate_symbol_timeframes(
         self,
         symbol: str,
         tf_frames: dict[str, pd.DataFrame],
         relative_strength_pct: float,
+        order_flow: dict[str, Any] | None = None,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         accepted: list[dict[str, Any]] = []
         rejected: list[dict[str, Any]] = []
         consensus_map: dict[str, dict[str, Any]] = {}
+        order_flow = order_flow or {}
         for timeframe in _timeframes_sorted(list(tf_frames)):
             df = tf_frames.get(timeframe)
             if df is None or df.empty:
@@ -689,20 +1128,56 @@ class OpportunityScannerService:
                     rejection_reasons.append(f"{higher_tf} contradice la dirección {_direction_label(int(best['direction']))}")
             if float(best["local_win_rate_pct"]) < self._config.min_local_win_rate_pct:
                 rejection_reasons.append(f"win rate local {best['local_win_rate_pct']:.2f}% < mínimo {self._config.min_local_win_rate_pct:.2f}%")
+            adaptive_context = self.learning.context(
+                symbol=symbol,
+                direction=_direction_label(int(best.get("direction") or 0)),
+                account_scope=settings.tradier_default_scope,
+            )
+            adaptive_bias = _safe_float(adaptive_context.get("total_bias"), 0.0)
+            order_flow_score = _safe_float(order_flow.get("score_pct"), 50.0)
+            order_flow_direction = str(order_flow.get("direction") or "neutral").lower()
+            order_flow_confidence = _safe_float(order_flow.get("confidence_pct"), 0.0)
+            order_flow_alignment_score = 50.0
+            if bool(order_flow.get("available")):
+                if order_flow_direction == _direction_label(int(best["direction"])):
+                    order_flow_alignment_score = min(70.0 + (order_flow_confidence * 0.30), 100.0)
+                elif order_flow_direction == "neutral":
+                    order_flow_alignment_score = 48.0
+                else:
+                    order_flow_alignment_score = max(25.0 - (order_flow_confidence * 0.15), 0.0)
             selection_score = round(
-                (float(best["local_win_rate_pct"]) * 0.42)
-                + (float(relative_strength_pct) * 0.18)
-                + (float(best["strength"]) * 100.0 * 0.18)
-                + (alignment_score * 0.14)
-                + (float(best["evidence_score"]) * 100.0 * 0.08),
+                (float(best["local_win_rate_pct"]) * 0.38)
+                + (float(relative_strength_pct) * 0.16)
+                + (float(best["strength"]) * 100.0 * 0.16)
+                + (alignment_score * 0.12)
+                + (float(best["evidence_score"]) * 100.0 * 0.08)
+                + (order_flow_score * 0.10)
+                + (order_flow_alignment_score * 0.08)
+                + adaptive_bias,
                 2,
             )
+            if (
+                bool(order_flow.get("available"))
+                and timeframe in {"5m", "15m", "1h"}
+                and order_flow_direction in {"alcista", "bajista"}
+                and order_flow_direction != _direction_label(int(best["direction"]))
+                and order_flow_confidence >= 70.0
+            ):
+                rejection_reasons.append(f"order flow {order_flow_direction} contradice el setup con {order_flow_confidence:.1f}%")
             if selection_score < self._config.min_selection_score:
                 rejection_reasons.append(f"selection score {selection_score:.2f} < mínimo {self._config.min_selection_score:.2f}")
             reasons = list(best.get("reasons") or [])
             reasons.append(f"fuerza relativa {relative_strength_pct:.1f}% del universo")
             if higher_tf:
                 reasons.append(f"confirmación {higher_tf}: {higher_consensus.get('label', 'neutral')}")
+            if bool(order_flow.get("available")):
+                reasons.append(
+                    f"order flow {order_flow.get('direction', 'neutral')} {order_flow_score:.1f}% · presión {float(order_flow.get('net_pressure_pct') or 0.0):.1f}%"
+                )
+            if adaptive_bias >= 1.0:
+                reasons.append(f"aprendizaje reciente suma {adaptive_bias:.2f} pts a {symbol}")
+            elif adaptive_bias <= -1.0:
+                reasons.append(f"aprendizaje reciente resta {abs(adaptive_bias):.2f} pts y pide más cuidado")
             if rejection_reasons:
                 rejected.append({
                     "symbol": symbol,
@@ -712,6 +1187,8 @@ class OpportunityScannerService:
                     "method_label": best["method_label"],
                     "local_win_rate_pct": best["local_win_rate_pct"],
                     "selection_score": selection_score,
+                    "adaptive_context": adaptive_context,
+                    "order_flow": order_flow,
                     "reasons": rejection_reasons,
                     "why": reasons,
                     "stage": "gates",
@@ -727,6 +1204,7 @@ class OpportunityScannerService:
                 "strategy_label": best["method_label"],
                 "strategy_family": best["family"],
                 "selection_score": selection_score,
+                "adaptive_context": adaptive_context,
                 "signal_strength_pct": round(float(best["strength"]) * 100.0, 2),
                 "local_win_rate_pct": best["local_win_rate_pct"],
                 "local_profit_factor": best["local_profit_factor"],
@@ -734,6 +1212,7 @@ class OpportunityScannerService:
                 "predicted_move_pct": self._predicted_move_pct(df, float(best["strength"])),
                 "relative_strength_pct": round(float(relative_strength_pct), 2),
                 "alignment_score": alignment_score,
+                "order_flow": order_flow,
                 "confirmation": {
                     "higher_timeframe": higher_tf,
                     "direction": higher_consensus.get("label", "neutral"),
@@ -753,18 +1232,46 @@ class OpportunityScannerService:
             self._current_step = "iniciando"
             self._last_error = None
         try:
-            frames = self._load_universe_frames()
+            batch_symbols, universe_meta = self._resolve_scan_batch()
+            selected_symbols, prefilter_meta = self._prefilter_batch(batch_symbols)
+            frames = self._load_universe_frames(selected_symbols)
             relative_strength = self._relative_strength_percentiles(frames)
+            order_flow_batch = self._order_flow_batch(frames)
             accepted: list[dict[str, Any]] = []
             rejected: list[dict[str, Any]] = []
             for symbol, tf_frames in frames.items():
                 self._current_symbol = symbol
                 self._current_timeframe = None
                 self._current_step = "resolviendo_símbolo"
-                symbol_accept, symbol_reject = self._evaluate_symbol_timeframes(symbol, tf_frames, relative_strength.get(symbol, 50.0))
+                symbol_accept, symbol_reject = self._evaluate_symbol_timeframes(
+                    symbol,
+                    tf_frames,
+                    relative_strength.get(symbol, 50.0),
+                    order_flow_batch.get(symbol),
+                )
                 accepted.extend(symbol_accept)
                 rejected.extend(symbol_reject)
-            accepted = sorted(accepted, key=lambda item: float(item["selection_score"]), reverse=True)[: self._config.max_candidates]
+            provisional_count = len(accepted)
+            dynamic_min_selection_score = self._dynamic_selection_threshold(accepted)
+            dynamically_filtered: list[dict[str, Any]] = []
+            for item in accepted:
+                if float(item.get("selection_score") or 0.0) >= dynamic_min_selection_score:
+                    dynamically_filtered.append(item)
+                    continue
+                rejected.append({
+                    "symbol": item.get("symbol"),
+                    "timeframe": item.get("timeframe"),
+                    "direction": item.get("direction"),
+                    "method": item.get("strategy_key"),
+                    "method_label": item.get("strategy_label"),
+                    "local_win_rate_pct": item.get("local_win_rate_pct"),
+                    "selection_score": item.get("selection_score"),
+                    "adaptive_context": item.get("adaptive_context") or {},
+                    "reasons": [f"score {float(item.get('selection_score') or 0.0):.2f} < umbral dinámico {dynamic_min_selection_score:.2f}"],
+                    "why": item.get("why_selected") or [],
+                    "stage": "dynamic_threshold",
+                })
+            accepted = sorted(dynamically_filtered, key=lambda item: float(item["selection_score"]), reverse=True)[: self._config.max_candidates]
             cycle_ms = round((time.perf_counter() - start) * 1000.0, 2)
             with self._state_lock:
                 self._cycle_count += 1
@@ -778,12 +1285,28 @@ class OpportunityScannerService:
                         "cycle_count": self._cycle_count,
                         "accepted": len(accepted),
                         "rejected": len(rejected),
-                        "universe_size": len(self._config.universe),
+                        "universe_size": int(universe_meta.get("universe_total") or len(batch_symbols)),
+                        "universe_mode": universe_meta.get("mode", self._config.universe_mode),
+                        "universe_total": int(universe_meta.get("universe_total") or len(batch_symbols)),
+                        "batch_size": int(universe_meta.get("batch_size") or len(batch_symbols)),
+                        "batch_start": int(universe_meta.get("batch_start") or 0),
+                        "batch_end": int(universe_meta.get("batch_end") or len(batch_symbols)),
+                        "prefilter_selected": int(prefilter_meta.get("prefilter_selected") or len(selected_symbols)),
+                        "prefilter_scored": int(prefilter_meta.get("prefilter_scored") or len(selected_symbols)),
+                        "deep_scan_symbols": len(selected_symbols),
+                        "provisional_candidates": provisional_count,
+                        "dynamic_min_selection_score": dynamic_min_selection_score,
                         "timeframes": list(self._config.timeframes),
                         "scan_interval_sec": self._config.scan_interval_sec,
                         "last_cycle_ms": cycle_ms,
                     },
                     "criteria": self.criteria_catalog(),
+                    "learning": self.learning.status(account_scope=settings.tradier_default_scope),
+                    "universe": {
+                        **universe_meta,
+                        **prefilter_meta,
+                        "selected_symbols": list(selected_symbols),
+                    },
                     "candidates": accepted,
                     "rejections": rejected[:40],
                     "activity": list(self._activity[-20:]),

@@ -8,6 +8,7 @@
     "capture": "node atlas_vision_capture.js",
     "trigger": "node atlas_action_trigger.js",
     "health": "node atlas_actuator_healthcheck.js",
+    "quant:smoke": "node quant_ui_smoke.js",
     "install:browsers": "npx playwright install chromium"
   },
   "dependencies": {

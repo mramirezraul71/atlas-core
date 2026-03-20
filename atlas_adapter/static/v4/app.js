@@ -324,7 +324,7 @@ function _handleRoute() {
 }
 
 async function _loadModules() {
-const MODULE_BUILD = '20260319-paper-phase1g-scanner-bridge';
+const MODULE_BUILD = '20260320-paper-phase3d-order-flow';
   const MODULE_NAMES = [
     'health', 'modules', 'config', 'bitacora', 'memory', 'learning',
     'autonomy', 'healing', 'approvals', 'audit', 'comms',
