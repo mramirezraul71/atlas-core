@@ -130,11 +130,28 @@ class TradingConfig:
     adaptive_learning_min_strategy_samples: int = int(os.getenv("QUANT_ADAPTIVE_LEARNING_MIN_STRATEGY_SAMPLES", "4"))
     adaptive_learning_min_symbol_samples: int = int(os.getenv("QUANT_ADAPTIVE_LEARNING_MIN_SYMBOL_SAMPLES", "3"))
 
-    # Risk management
-    max_position_pct: float = 0.05
-    max_drawdown_pct: float = 0.15
+    # Risk management — v2 logarítmico (Grok/xAI criterio)
+    max_position_pct: float = 0.05             # Fallback si no hay Kelly
+    max_drawdown_pct: float = 0.20             # 20% recomendado Grok (antes 15%)
     default_stop_loss_pct: float = 0.02
     default_take_profit_pct: float = 0.04
+    # Kelly Criterion
+    kelly_enabled: bool = True
+    kelly_fraction: float = float(os.getenv("QUANT_KELLY_FRACTION", "0.25"))    # Quarter-Kelly
+    kelly_max_position_pct: float = float(os.getenv("QUANT_KELLY_MAX_PCT", "0.20"))
+    kelly_min_samples: int = int(os.getenv("QUANT_KELLY_MIN_SAMPLES", "6"))
+    # ATR stops dinámicos
+    atr_stops_enabled: bool = os.getenv("QUANT_ATR_STOPS_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+    atr_sl_multiplier: float = float(os.getenv("QUANT_ATR_SL_MULT", "1.5"))    # SL = entry - ATR*1.5
+    atr_tp_multiplier: float = float(os.getenv("QUANT_ATR_TP_MULT", "3.0"))    # TP = entry + ATR*3.0
+    atr_period: int = int(os.getenv("QUANT_ATR_PERIOD", "14"))
+    # Circuit breaker
+    circuit_breaker_consecutive_losses: int = int(os.getenv("QUANT_CB_CONSEC_LOSSES", "3"))
+    # Walk-forward validation
+    walk_forward_enabled: bool = os.getenv("QUANT_WALK_FORWARD_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+    walk_forward_folds: int = int(os.getenv("QUANT_WALK_FORWARD_FOLDS", "5"))
+    walk_forward_train_pct: float = float(os.getenv("QUANT_WF_TRAIN_PCT", "0.70"))
+    walk_forward_val_pct: float = float(os.getenv("QUANT_WF_VAL_PCT", "0.15"))
 
     # Timeframes
     primary_timeframe: str = "1h"
