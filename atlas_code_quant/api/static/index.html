@@ -137,12 +137,24 @@
             <div class="chart-body" id="chart-drawdown"></div>
           </div>
           <div class="chart-panel">
-            <div class="chart-header"><span class="chart-title">Monte Carlo (1k paths)</span></div>
+            <div class="chart-header"><span class="chart-title">Monte Carlo (200 paths)</span></div>
             <div class="chart-body"><canvas id="chart-mc"></canvas></div>
           </div>
           <div class="chart-panel">
             <div class="chart-header"><span class="chart-title">Win/Loss Streak</span></div>
             <div class="chart-body"><canvas id="chart-streak"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Third charts row -->
+        <div class="charts-row">
+          <div class="chart-panel wide">
+            <div class="chart-header"><span class="chart-title">Heatmap de Performance (día × hora)</span></div>
+            <div class="chart-body" style="min-height:200px"><canvas id="chart-heatmap"></canvas></div>
+          </div>
+          <div class="chart-panel">
+            <div class="chart-header"><span class="chart-title">Sharpe Rolling 20</span></div>
+            <div class="chart-body"><canvas id="chart-rolling-sharpe"></canvas></div>
           </div>
         </div>
 

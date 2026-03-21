@@ -84,56 +84,76 @@ let _equityChart = null, _ddChart = null;
 
 async function loadOverview() {
   try {
-    const [health, monitor] = await Promise.all([
+    const [health, ov] = await Promise.all([
       QuantAPI.health(),
-      QuantAPI.monitorSummary().catch(() => null),
+      QuantAPI.dashboardOverview().catch(() => null),
     ]);
 
-    // KPIs from monitor
-    const m = monitor?.data || {};
+    const m = ov?.data || {};
+
+    // ── KPIs ──
     setKPI('kpi-equity',  fmt.usd(m.equity));
     setKPI('kpi-sharpe',  fmt.num(m.sharpe_ratio, 2));
-    setKPI('kpi-dd',      fmt.pct(m.max_drawdown_pct ? m.max_drawdown_pct * 100 : null));
-    setKPI('kpi-wr',      fmt.pct(m.win_rate_pct));
-    setKPI('kpi-kelly',   fmt.pct(m.kelly_quarter_pct));
-    setKPI('kpi-calmar',  fmt.num(m.calmar_ratio, 2));
-    setKPI('kpi-trades',  `${m.total_trades || 0} trades`, 'kpi-trades');
+    // max_drawdown_pct ya viene en % (negativo)
+    const ddPct = m.max_drawdown_pct;
+    setKPI('kpi-dd', ddPct != null ? fmt.num(ddPct, 2) + '%' : '--');
+    document.getElementById('kpi-dd').className = 'kpi-value red';
+    setKPI('kpi-wr',     fmt.pct(m.win_rate_pct));
+    setKPI('kpi-kelly',  '--');   // Kelly viene del backtest, no del journal
+    setKPI('kpi-calmar', fmt.num(m.calmar_ratio, 2));
+    document.getElementById('kpi-trades').textContent = `${m.total_trades || 0} trades`;
 
-    // Equity delta color
-    const delta = m.daily_pnl_pct;
+    // PnL delta
+    const pnl = m.realized_pnl;
     const el = document.getElementById('kpi-equity-delta');
-    if (el && delta != null) {
-      el.textContent = `${delta >= 0 ? '+' : ''}${fmt.pct(delta)} hoy`;
-      el.style.color = delta >= 0 ? 'var(--green)' : 'var(--red)';
+    if (el && pnl != null) {
+      el.textContent = `${pnl >= 0 ? '+' : ''}${fmt.usd(pnl)} realizado`;
+      el.style.color = pnl >= 0 ? 'var(--green)' : 'var(--red)';
     }
 
-    // Equity curve chart
+    // Actualizar topbar equity
+    if (m.equity) document.getElementById('chip-equity').textContent = fmt.usd(m.equity);
+
+    // ── Equity curve (TradingView) ──
     const eq = m.equity_curve || [];
-    if (eq.length && !_equityChart) {
-      _equityChart = QuantCharts.renderEquityChart('chart-equity', eq);
-    } else if (eq.length && _equityChart) {
-      _equityChart.series.setData(eq);
+    if (eq.length) {
+      if (!_equityChart) {
+        _equityChart = QuantCharts.renderEquityChart('chart-equity', eq);
+      } else {
+        _equityChart.series.setData(eq);
+      }
     }
 
-    // Drawdown chart
+    // ── Drawdown ──
     const dd = m.drawdown_curve || [];
-    if (dd.length && !_ddChart) {
-      _ddChart = QuantCharts.renderDrawdownChart('chart-drawdown', dd);
-    } else if (dd.length && _ddChart) {
-      _ddChart.series.setData(dd);
+    if (dd.length) {
+      if (!_ddChart) {
+        _ddChart = QuantCharts.renderDrawdownChart('chart-drawdown', dd);
+      } else {
+        _ddChart.series.setData(dd);
+      }
     }
 
-    // PnL distribution
+    // ── PnL distribution ──
     const pnls = m.trade_pnls || [];
     if (pnls.length) QuantCharts.renderPnlDistChart('chart-pnl-dist', pnls);
 
-    // Monte Carlo
-    const mc = m.monte_carlo;
-    QuantCharts.renderMonteCarloChart('chart-mc', mc || null);
+    // ── Monte Carlo ──
+    QuantCharts.renderMonteCarloChart('chart-mc', m.monte_carlo || null);
 
-    // Streak
+    // ── Win/Loss streak ──
     const trades = m.recent_trades || [];
     if (trades.length) QuantCharts.renderStreakChart('chart-streak', trades);
+
+    // ── Heatmap de performance (día × hora) ──
+    if (m.heatmap?.length) {
+      QuantCharts.renderHeatmapChart('chart-heatmap', m.heatmap);
+    }
+
+    // ── Rolling Sharpe ──
+    if (eq.length > 22) {
+      QuantCharts.renderRollingSharpeChart('chart-rolling-sharpe', eq);
+    }
 
   } catch (e) {
     toast('Error cargando overview: ' + e.message, 'error');
@@ -422,9 +442,9 @@ document.getElementById('visual-capture')?.addEventListener('click', async () =>
     document.getElementById('vs-brightness').textContent = fmt.num(d.brightness, 1);
     document.getElementById('vs-sharpness').textContent  = fmt.num(d.sharpness, 1);
     document.getElementById('vs-screens').textContent    = d.screens_detected;
-    document.getElementById('vs-color').textContent      = d.dominant_color || '--';
-    document.getElementById('vs-prices').textContent     = (d.prices_detected || []).join(', ') || 'ninguno';
-    document.getElementById('vs-pattern').textContent    = d.pattern || 'ninguno';
+    document.getElementById('vs-color').textContent      = d.chart_color || '--';
+    document.getElementById('vs-prices').textContent     = (d.ocr_prices || []).join(', ') || 'ninguno';
+    document.getElementById('vs-pattern').textContent    = d.pattern_detected || 'ninguno';
 
     const badge = document.getElementById('visual-safety-badge');
     badge.textContent  = d.safe_mode ? 'SAFE MODE' : 'OK';

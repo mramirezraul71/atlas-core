@@ -302,6 +302,140 @@ function renderVisualFeaturesChart(canvasId, features = []) {
   });
 }
 
+// ── Performance Heatmap (día × hora) ─────────────────────────────
+function renderHeatmapChart(canvasId, heatmapData = []) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+
+  const days   = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  const hours  = Array.from({length: 24}, (_, i) => `${i}h`);
+  const matrix = Array.from({length: 7}, () => new Array(24).fill(null));
+
+  heatmapData.forEach(pt => {
+    const d = ((pt.weekday || 0) + 6) % 7; // 0=Mon
+    const h = pt.hour || 0;
+    if (matrix[d][h] === null) matrix[d][h] = 0;
+    matrix[d][h] += pt.success_rate_pct || 0;
+  });
+
+  const datasets = days.map((day, di) => ({
+    label: day,
+    data: hours.map((_, hi) => ({
+      x: hi,
+      y: di,
+      v: matrix[di][hi],
+    })),
+    backgroundColor: (ctx) => {
+      const v = ctx.raw?.v;
+      if (v === null || v === undefined) return 'rgba(255,255,255,0.03)';
+      const norm = Math.max(0, Math.min(1, v / 100));
+      return norm >= 0.5
+        ? `rgba(72,187,120,${0.1 + norm * 0.7})`
+        : `rgba(245,101,101,${0.1 + (1 - norm) * 0.7})`;
+    },
+    borderWidth: 1,
+    borderColor: '#1f2433',
+    borderRadius: 2,
+    width: ({chart}) => (chart.chartArea?.width || 400) / 24 - 2,
+    height: ({chart}) => (chart.chartArea?.height || 200) / 7 - 2,
+  }));
+
+  if (ctx._chartInstance) ctx._chartInstance.destroy();
+  ctx._chartInstance = new Chart(ctx, {
+    type: 'bubble',
+    data: { datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (item) => {
+              const v = item.raw.v;
+              return v !== null ? `${days[item.raw.y]} ${hours[item.raw.x]}: ${v?.toFixed(1)}% win` : 'Sin datos';
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'linear', min: -0.5, max: 23.5,
+          ticks: { stepSize: 1, callback: v => `${v}h`, maxTicksLimit: 12 },
+          grid: { color: COLORS.grid },
+        },
+        y: {
+          type: 'linear', min: -0.5, max: 6.5,
+          ticks: { stepSize: 1, callback: v => days[v] || '' },
+          grid: { color: COLORS.grid },
+          reverse: false,
+        },
+      },
+    },
+  });
+}
+
+// ── Rolling Sharpe chart ──────────────────────────────────────────
+function renderRollingSharpeChart(canvasId, equityCurve = []) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+
+  // Compute rolling log-returns and rolling Sharpe (20-period)
+  const WINDOW = 20;
+  if (equityCurve.length < WINDOW + 1) return;
+
+  const values = equityCurve.map(p => p.value);
+  const labels = equityCurve.map(p => {
+    const d = new Date(p.time * 1000);
+    return `${d.getMonth()+1}/${d.getDate()}`;
+  });
+
+  const logRets = [];
+  for (let i = 1; i < values.length; i++) {
+    logRets.push(values[i] > 0 && values[i-1] > 0 ? Math.log(values[i] / values[i-1]) : 0);
+  }
+
+  const sharpeRolling = [];
+  const sharpeLabels = [];
+  for (let i = WINDOW; i <= logRets.length; i++) {
+    const slice = logRets.slice(i - WINDOW, i);
+    const mean = slice.reduce((a,b) => a+b, 0) / WINDOW;
+    const std  = Math.sqrt(slice.reduce((s, x) => s + (x - mean) ** 2, 0) / (WINDOW - 1));
+    sharpeRolling.push(std > 1e-9 ? parseFloat((mean / std * Math.sqrt(252)).toFixed(3)) : 0);
+    sharpeLabels.push(labels[i] || '');
+  }
+
+  if (ctx._chartInstance) ctx._chartInstance.destroy();
+  ctx._chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: sharpeLabels,
+      datasets: [{
+        label: 'Sharpe Rolling 20',
+        data: sharpeRolling,
+        borderColor: COLORS.yellow,
+        backgroundColor: 'rgba(246,201,14,0.07)',
+        fill: true, borderWidth: 2, pointRadius: 0, tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        annotation: {
+          annotations: {
+            zeroline: { type: 'line', yMin: 0, yMax: 0, borderColor: COLORS.text, borderWidth: 1, borderDash: [4,4] },
+            sharpe1:  { type: 'line', yMin: 1, yMax: 1, borderColor: COLORS.green, borderWidth: 1, borderDash: [4,4] },
+          }
+        }
+      },
+      scales: {
+        x: { grid: { color: COLORS.grid }, ticks: { maxTicksLimit: 8 } },
+        y: { grid: { color: COLORS.grid } },
+      },
+    },
+  });
+}
+
 window.QuantCharts = {
   renderEquityChart,
   renderDrawdownChart,
@@ -311,4 +445,6 @@ window.QuantCharts = {
   renderJournalPnlChart,
   renderJournalStratChart,
   renderVisualFeaturesChart,
+  renderHeatmapChart,
+  renderRollingSharpeChart,
 };

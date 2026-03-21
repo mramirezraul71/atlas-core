@@ -1227,6 +1227,114 @@ async def list_reports_v2(x_api_key: str | None = Header(None)):
     return await list_reports(x_api_key=x_api_key)
 
 
+# ── Dashboard Overview (agregador para gráficos) ─────────────────────────────
+
+@app.get("/api/v2/quant/dashboard/overview", response_model=StdResponse, tags=["Dashboard"])
+async def dashboard_overview(
+    account_scope: str | None = None,
+    x_api_key: str | None = Header(None),
+):
+    """Agrega métricas de journal + posiciones para el dashboard de análisis gráfico."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    import math as _math
+    import statistics as _stats
+    try:
+        scope = account_scope or "paper"
+        # Estadísticas del journal — estructura: {accounts: {live: {...}, paper: {...}}}
+        j_stats = _JOURNAL.stats()
+        accounts = j_stats.get("accounts", {}) if isinstance(j_stats, dict) else {}
+        acct_stats = accounts.get(scope) or accounts.get("paper") or accounts.get("live") or {}
+
+        # Equity curve → formato {time: unix_sec, value}
+        raw_curve = acct_stats.get("equity_curve") or []
+        equity_curve = []
+        initial_capital = 10_000.0
+        for pt in raw_curve:
+            ts = pt.get("timestamp")
+            try:
+                import dateutil.parser as _dp
+                unix = int(_dp.parse(ts).timestamp()) if ts else None
+            except Exception:
+                unix = None
+            if unix:
+                equity_curve.append({"time": unix, "value": round(initial_capital + float(pt.get("equity", 0)), 2)})
+
+        # Drawdown desde equity curve
+        drawdown_curve = []
+        peak = initial_capital
+        for pt in equity_curve:
+            v = pt["value"]
+            if v > peak:
+                peak = v
+            dd_pct = ((v - peak) / peak * 100) if peak > 0 else 0
+            drawdown_curve.append({"time": pt["time"], "value": round(dd_pct, 4)})
+
+        # PnL list para histograma
+        trade_pnls = [float(pt.get("pnl", 0)) for pt in raw_curve if pt.get("pnl") is not None]
+
+        # Calmar ratio
+        realized_pnl = float(acct_stats.get("realized_pnl") or 0)
+        max_dd = min((pt["value"] for pt in drawdown_curve), default=0)
+        calmar = round(realized_pnl / abs(max_dd), 3) if max_dd < -0.001 else None
+
+        # Monte Carlo básico (bootstrap 200 paths de 50 steps)
+        mc_data = None
+        if len(trade_pnls) >= 5:
+            import random as _rand
+            _rand.seed(42)
+            n_paths, n_steps = 200, min(50, len(trade_pnls))
+            paths = []
+            for _ in range(n_paths):
+                sample = _rand.choices(trade_pnls, k=n_steps)
+                cum = 0.0
+                path = []
+                for pnl in sample:
+                    cum += pnl
+                    path.append(round(cum, 2))
+                paths.append(path)
+            transposed = list(zip(*paths))
+            labels = list(range(1, n_steps + 1))
+            median = [round(_stats.median(step), 2) for step in transposed]
+            p05 = [round(sorted(step)[int(len(step) * 0.05)], 2) for step in transposed]
+            p95 = [round(sorted(step)[int(len(step) * 0.95)], 2) for step in transposed]
+            mc_var_95 = p05[-1] if p05 else None
+            mc_cvar_95 = round(sum(p for p in [pt[-1] for pt in paths] if p <= (mc_var_95 or 0)) / max(1, sum(1 for p in [pt[-1] for pt in paths] if p <= (mc_var_95 or 0))), 2) if mc_var_95 else None
+            mc_prob_profit = round(sum(1 for pt in paths if pt[-1] > 0) / n_paths * 100, 1)
+            mc_data = {"labels": labels, "median": median, "p05": p05, "p95": p95,
+                       "var_95": mc_var_95, "cvar_95": mc_cvar_95, "prob_profit": mc_prob_profit}
+
+        # Trades recientes para streak chart
+        recent_trades = [{"pnl": pt.get("pnl", 0)} for pt in raw_curve[-30:]]
+
+        # Heatmap de performance
+        heatmap = acct_stats.get("heatmap") or []
+
+        payload = {
+            "equity": round(initial_capital + realized_pnl, 2),
+            "realized_pnl": round(realized_pnl, 2),
+            "unrealized_pnl": round(float(acct_stats.get("unrealized_pnl") or 0), 2),
+            "sharpe_ratio": acct_stats.get("sharpe_ratio"),
+            "win_rate_pct": acct_stats.get("win_rate_pct"),
+            "profit_factor": acct_stats.get("profit_factor"),
+            "expectancy": acct_stats.get("expectancy"),
+            "total_trades": acct_stats.get("trades_closed", 0),
+            "max_drawdown_pct": round(max_dd, 3) if drawdown_curve else None,
+            "calmar_ratio": calmar,
+            "equity_curve": equity_curve,
+            "drawdown_curve": drawdown_curve,
+            "trade_pnls": trade_pnls,
+            "monte_carlo": mc_data,
+            "recent_trades": recent_trades,
+            "heatmap": heatmap,
+            "daily_pnl_pct": None,
+        }
+        return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as e:
+        logger.exception("Error en dashboard/overview")
+        return StdResponse(ok=False, error=str(e), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
 # ── Fase 3: Alertas ───────────────────────────────────────────────────────────
 
 @app.get("/api/v2/quant/alerts/status", response_model=StdResponse, tags=["Alertas v3"])
@@ -1248,9 +1356,9 @@ async def alerts_test(
     dispatcher = get_alert_dispatcher()
     try:
         await dispatcher.system_error(
-            error_type="test",
-            details=message,
-            symbol=None,
+            component="dashboard_test",
+            error=message,
+            critical=False,
         )
         return StdResponse(
             ok=True,
@@ -1271,19 +1379,12 @@ async def visual_state(x_api_key: str | None = Header(None)):
     try:
         builder = get_visual_state_builder()
         state = await asyncio.get_event_loop().run_in_executor(None, builder.capture_and_build)
+        data = state.to_dict()
+        # Añadir feature_vector serializable
+        data["feature_vector"] = state.feature_vector.tolist() if state.feature_vector is not None else []
         return StdResponse(
             ok=True,
-            data={
-                "safe_mode": state.safe_mode,
-                "brightness": round(state.brightness, 2),
-                "sharpness": round(state.sharpness, 2),
-                "screens_detected": state.screens_detected,
-                "dominant_color": state.dominant_color,
-                "prices_detected": state.prices_detected,
-                "pattern": state.pattern,
-                "feature_vector": state.feature_vector.tolist() if state.feature_vector is not None else [],
-                "timestamp": state.timestamp,
-            },
+            data=data,
             ms=round((time.perf_counter() - t0) * 1000, 2),
         )
     except Exception as e:
@@ -1300,7 +1401,7 @@ async def retraining_status(
 ):
     """Estado del scheduler de retraining (Optuna + PPO) para un símbolo."""
     _auth(x_api_key)
-    scheduler = get_retraining_scheduler(symbol=symbol, brain_bridge=_BRAIN_BRIDGE)
+    scheduler = get_retraining_scheduler(symbol=symbol)
     return StdResponse(ok=True, data=scheduler.status())
 
 
@@ -1313,9 +1414,9 @@ async def retraining_trigger(
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
-        scheduler = get_retraining_scheduler(symbol=symbol, brain_bridge=_BRAIN_BRIDGE)
+        scheduler = get_retraining_scheduler(symbol=symbol)
         scheduler.force_retrain()
-        if not scheduler.running:
+        if not scheduler.status().get("running", False):
             asyncio.ensure_future(scheduler.start())
         return StdResponse(
             ok=True,
