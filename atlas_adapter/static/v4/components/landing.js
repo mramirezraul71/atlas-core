@@ -98,6 +98,7 @@ export function render(container) {
         <div class="quick-chip" data-action="software-center">${SVG.package} Centro de software</div>
         <div class="quick-chip" data-action="live-diagnostic">${SVG.health} Diagnostico Live</div>
         <div class="quick-chip" data-action="atlas-quant-scanner">${SVG.trading} Escaner Quant</div>
+        <div class="quick-chip" data-action="code-quant-dashboard" style="color:#00d4aa;border-color:rgba(0,212,170,0.35)">&#9636; Code Quant</div>
         <div class="quick-chip" data-action="atlas-nexus">⬡ Atlas Nexus</div>
         <div class="quick-chip" data-action="robot-3d">🤖 Robot 3D</div>
       </div>
@@ -154,6 +155,10 @@ export function render(container) {
         <div class="app-tile" data-app="atlas-quant-scanner">
           <div class="app-tile-icon">${SVG.trading}</div>
           <div class="app-tile-label">Escaner Quant</div>
+        </div>
+        <div class="app-tile" data-app="code-quant-dashboard" style="border-color:rgba(0,212,170,0.25)">
+          <div class="app-tile-icon" style="color:#00d4aa">&#9636;</div>
+          <div class="app-tile-label">Code Quant</div>
         </div>
         <div class="app-tile" data-app="clawd-direct">
           <div class="app-tile-icon">${SVG.brain}</div>
@@ -257,7 +262,8 @@ export function render(container) {
     'tools-menu': { hash: '/tools-menu' },
     'software-center': { hash: '/software-center' },
     'live-diagnostic': { hash: '/live-diagnostic' },
-    'atlas-quant-scanner': { hash: '/atlas-quant' },
+    'atlas-quant-scanner':  { hash: '/atlas-quant' },
+    'code-quant-dashboard': { href: 'http://127.0.0.1:8792/ui', newTab: true },
     'atlas-nexus': { href: '/nexus', newTab: false },
     'robot-3d':    { href: 'http://127.0.0.1:8002/dashboard', newTab: true },
   };
@@ -286,7 +292,8 @@ export function render(container) {
     'config-tile':  { hash: '/config' },
     'tools-menu':   { hash: '/tools-menu' },
     'software-center': { hash: '/software-center' },
-    'atlas-quant-scanner': { hash: '/atlas-quant' },
+    'atlas-quant-scanner':  { hash: '/atlas-quant' },
+    'code-quant-dashboard': { href: 'http://127.0.0.1:8792/ui', newTab: true },
     'clawd-direct': { hash: '/clawd-direct' },
     'codex-supervisor': { hash: '/codex-supervisor' },
     'live-diagnostic': { hash: '/live-diagnostic' },
