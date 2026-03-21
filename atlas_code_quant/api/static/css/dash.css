@@ -72,6 +72,33 @@ body {
   gap: 8px;
 }
 
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-panel-2);
+  transition: all 0.15s;
+}
+.back-btn:hover {
+  color: var(--accent);
+  border-color: rgba(0,212,170,0.4);
+  background: var(--accent-dim);
+}
+
+.topbar-sep {
+  color: var(--border-hi);
+  font-size: 14px;
+  user-select: none;
+}
+
 .brand-icon {
   color: var(--accent);
   font-size: 18px;
