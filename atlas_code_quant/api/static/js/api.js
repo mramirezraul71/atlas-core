@@ -36,6 +36,8 @@ const QuantAPI = {
 
   status: (scope = 'paper') => apiGet('/status', { account_scope: scope }),
 
+  dashboardOverview: (scope = 'paper') => apiGet('/api/v2/quant/dashboard/overview', { account_scope: scope }),
+
   positions: () => apiGet('/positions'),
 
   // Backtest
@@ -44,8 +46,8 @@ const QuantAPI = {
 
   // Scanner
   scannerStatus: () => apiGet('/api/v2/quant/scanner/status'),
-  scannerStart:  (cfg) => apiPost('/api/v2/quant/scanner/start', cfg),
-  scannerStop:   () => apiPost('/api/v2/quant/scanner/stop', {}),
+  scannerStart:  () => apiPost('/api/v2/quant/scanner/control', { action: 'start' }),
+  scannerStop:   () => apiPost('/api/v2/quant/scanner/control', { action: 'stop' }),
   scannerReport: () => apiGet('/api/v2/quant/scanner/report'),
 
   // Journal
