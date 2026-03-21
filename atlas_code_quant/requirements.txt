@@ -23,6 +23,12 @@ gymnasium>=0.29.0           # Entorno RL (sucesor de OpenAI Gym)
 stable-baselines3>=2.3.0    # PPO, DQN, A2C — algoritmos RL de producción
 # torch>=2.0.0             # PyTorch — instalado via stable-baselines3[extra]
 
+# ── Fase 3: Retraining + Visual ───────────────────────────────────────────────
+optuna>=3.6.0              # Hyperparameter search — retraining_scheduler
+easyocr>=1.7.0             # OCR de precios desde charts — visual_state_builder
+# opencv-python ya en stack (visual_state_builder, YOLOv8)
+# ultralytics (YOLOv8) ya en stack
+
 # ── Real-time data feed ───────────────────────────────────────────────────────
 # websockets ya instalado en venv (listado arriba)
 # Para Alpaca Market Data WebSocket (stocks US — gratis con API key):

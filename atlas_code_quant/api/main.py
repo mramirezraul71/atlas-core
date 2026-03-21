@@ -58,6 +58,11 @@ from operations.vision_calibration import VisionCalibrationService
 from scanner.opportunity_scanner import OpportunityScannerService
 from selector.strategy_selector import StrategySelectorService
 
+# ── Fase 3: alertas, visión, retraining ──────────────────────────────────────
+from operations.alert_dispatcher import get_alert_dispatcher
+from learning.visual_state_builder import get_visual_state_builder
+from learning.retraining_scheduler import get_retraining_scheduler
+
 logger = logging.getLogger("quant.api")
 _START_TIME = time.time()
 _ACCOUNT_MANAGER = AccountManager()
@@ -111,12 +116,28 @@ async def preload_tradier_sessions() -> None:
     await _JOURNAL_SYNC.start()
     if settings.scanner_auto_start and settings.scanner_enabled:
         await _SCANNER.start()
+    # Fase 3 — inicializar singletons
+    try:
+        await get_alert_dispatcher().start()
+        logger.info("AlertDispatcher iniciado")
+    except Exception:
+        logger.exception("AlertDispatcher: fallo en startup (no crítico)")
 
 
 @app.on_event("shutdown")
 async def stop_background_services() -> None:
     await _JOURNAL_SYNC.stop()
     await _SCANNER.stop()
+    # Fase 3 — apagar dispatcher
+    try:
+        await get_alert_dispatcher().stop()
+    except Exception:
+        pass
+    # Fase 3 — apagar retraining schedulers activos
+    try:
+        await get_retraining_scheduler().stop()
+    except Exception:
+        pass
 
 # ── Registry global (se popula al iniciar el motor) ──────────────────────────
 _strategies: dict = {}
@@ -1187,4 +1208,104 @@ async def run_backtest_v2(body: BacktestRunRequest, x_api_key: str | None = Head
 @app.get("/api/v2/quant/backtest/reports", response_model=StdResponse, tags=["V2"])
 async def list_reports_v2(x_api_key: str | None = Header(None)):
     return await list_reports(x_api_key=x_api_key)
+
+
+# ── Fase 3: Alertas ───────────────────────────────────────────────────────────
+
+@app.get("/api/v2/quant/alerts/status", response_model=StdResponse, tags=["Alertas v3"])
+async def alerts_status(x_api_key: str | None = Header(None)):
+    """Estado del despachador de alertas (Telegram + WhatsApp)."""
+    _auth(x_api_key)
+    dispatcher = get_alert_dispatcher()
+    return StdResponse(ok=True, data=dispatcher.status())
+
+
+@app.post("/api/v2/quant/alerts/test", response_model=StdResponse, tags=["Alertas v3"])
+async def alerts_test(
+    message: str = "Test desde Atlas Code-Quant",
+    x_api_key: str | None = Header(None),
+):
+    """Envía una alerta de prueba por Telegram y/o WhatsApp."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    dispatcher = get_alert_dispatcher()
+    try:
+        await dispatcher.system_error(
+            error_type="test",
+            details=message,
+            symbol=None,
+        )
+        return StdResponse(
+            ok=True,
+            data={"sent": True, "message": message},
+            ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+    except Exception as e:
+        return StdResponse(ok=False, error=str(e), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+# ── Fase 3: Visión ────────────────────────────────────────────────────────────
+
+@app.get("/api/v2/quant/visual/state", response_model=StdResponse, tags=["Visual v3"])
+async def visual_state(x_api_key: str | None = Header(None)):
+    """Captura frame actual y devuelve estado visual (features OCR, patrones, safety)."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        builder = get_visual_state_builder()
+        state = await asyncio.get_event_loop().run_in_executor(None, builder.capture_and_build)
+        return StdResponse(
+            ok=True,
+            data={
+                "safe_mode": state.safe_mode,
+                "brightness": round(state.brightness, 2),
+                "sharpness": round(state.sharpness, 2),
+                "screens_detected": state.screens_detected,
+                "dominant_color": state.dominant_color,
+                "prices_detected": state.prices_detected,
+                "pattern": state.pattern,
+                "feature_vector": state.feature_vector.tolist() if state.feature_vector is not None else [],
+                "timestamp": state.timestamp,
+            },
+            ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+    except Exception as e:
+        logger.exception("Error en visual/state")
+        return StdResponse(ok=False, error=str(e), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+# ── Fase 3: Retraining ────────────────────────────────────────────────────────
+
+@app.get("/api/v2/quant/retraining/status", response_model=StdResponse, tags=["Retraining v3"])
+async def retraining_status(
+    symbol: str = "BTC/USDT",
+    x_api_key: str | None = Header(None),
+):
+    """Estado del scheduler de retraining (Optuna + PPO) para un símbolo."""
+    _auth(x_api_key)
+    scheduler = get_retraining_scheduler(symbol=symbol, brain_bridge=_BRAIN_BRIDGE)
+    return StdResponse(ok=True, data=scheduler.status())
+
+
+@app.post("/api/v2/quant/retraining/trigger", response_model=StdResponse, tags=["Retraining v3"])
+async def retraining_trigger(
+    symbol: str = "BTC/USDT",
+    x_api_key: str | None = Header(None),
+):
+    """Fuerza un ciclo de retraining inmediato (ignora intervalo programado)."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        scheduler = get_retraining_scheduler(symbol=symbol, brain_bridge=_BRAIN_BRIDGE)
+        scheduler.force_retrain()
+        if not scheduler.running:
+            asyncio.ensure_future(scheduler.start())
+        return StdResponse(
+            ok=True,
+            data={"triggered": True, "symbol": symbol, "status": scheduler.status()},
+            ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+    except Exception as e:
+        logger.exception("Error al disparar retraining")
+        return StdResponse(ok=False, error=str(e), ms=round((time.perf_counter() - t0) * 1000, 2))
 
