@@ -3302,7 +3302,7 @@ export default {
               <button class="action-btn" data-quant-view-btn="diario">Diario</button>
               <button class="action-btn" data-quant-view-btn="real">Cuenta real</button>
               <button class="action-btn" data-quant-view-btn="ejecucion">Ejecucion</button>
-              <a href="http://127.0.0.1:8792/ui" target="_blank" class="action-btn" style="display:inline-flex;align-items:center;gap:5px;text-decoration:none;background:rgba(0,212,170,0.12);border-color:rgba(0,212,170,0.4);color:#00d4aa;margin-left:auto">
+              <a href="/quant-ui" target="_blank" class="action-btn" style="display:inline-flex;align-items:center;gap:5px;text-decoration:none;background:rgba(0,212,170,0.12);border-color:rgba(0,212,170,0.4);color:#00d4aa;margin-left:auto">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                 Dashboard Gr&#225;fico &#8599;
               </a>

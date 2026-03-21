@@ -16873,6 +16873,43 @@ async def rauli_delete_user(token: str):
     return _std_resp(True, {"deleted": token}, int((time.perf_counter() - t0) * 1000))
 
 
+# ── Atlas Code-Quant Dashboard (servido desde Atlas 8791) ────────────────────
+# Los archivos estáticos viven en atlas_code_quant/api/static/.
+# El JS detecta que viene de 8791 y envía las llamadas API a 8792.
+
+_QUANT_STATIC = BASE_DIR / "atlas_code_quant" / "api" / "static"
+
+@app.get("/quant-ui", include_in_schema=False)
+async def quant_ui_root():
+    """Atlas Code-Quant Dashboard — servido desde Atlas 8791."""
+    idx = _QUANT_STATIC / "index.html"
+    if idx.exists():
+        return FileResponse(str(idx), media_type="text/html",
+                            headers={"Cache-Control": "no-cache"})
+    from fastapi import HTTPException
+    raise HTTPException(status_code=404, detail="Code-Quant dashboard not built")
+
+
+@app.get("/quant-static/{file_path:path}", include_in_schema=False)
+async def quant_static(file_path: str):
+    """Sirve CSS/JS del dashboard Code-Quant desde Atlas 8791."""
+    from fastapi import HTTPException
+    safe = (file_path or "").replace("..", "").strip("/")
+    path = _QUANT_STATIC / safe
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail=f"quant asset not found: {safe}")
+    ct_map = {
+        ".js":   "application/javascript",
+        ".css":  "text/css",
+        ".html": "text/html",
+        ".json": "application/json",
+        ".svg":  "image/svg+xml",
+        ".ico":  "image/x-icon",
+    }
+    return FileResponse(str(path), media_type=ct_map.get(path.suffix, "application/octet-stream"),
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 
 _dedupe_http_routes()
