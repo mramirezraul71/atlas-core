@@ -263,7 +263,7 @@ export function render(container) {
     'software-center': { hash: '/software-center' },
     'live-diagnostic': { hash: '/live-diagnostic' },
     'atlas-quant-scanner':  { hash: '/atlas-quant' },
-    'code-quant-dashboard': { href: '/quant-ui', newTab: true },
+    'code-quant-dashboard': { href: '/v4/static/quant/index.html', newTab: true },
     'atlas-nexus': { href: '/nexus', newTab: false },
     'robot-3d':    { href: 'http://127.0.0.1:8002/dashboard', newTab: true },
   };
@@ -293,7 +293,7 @@ export function render(container) {
     'tools-menu':   { hash: '/tools-menu' },
     'software-center': { hash: '/software-center' },
     'atlas-quant-scanner':  { hash: '/atlas-quant' },
-    'code-quant-dashboard': { href: '/quant-ui', newTab: true },
+    'code-quant-dashboard': { href: '/v4/static/quant/index.html', newTab: true },
     'clawd-direct': { hash: '/clawd-direct' },
     'codex-supervisor': { hash: '/codex-supervisor' },
     'live-diagnostic': { hash: '/live-diagnostic' },
