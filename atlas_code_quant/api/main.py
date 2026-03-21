@@ -21,8 +21,12 @@ import time
 import logging
 from datetime import datetime
 
+from pathlib import Path as _PathLib
+
 from fastapi import FastAPI, HTTPException, Header, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from api.decorators import require_live_confirmation
 from api.schemas import (
@@ -100,6 +104,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Dashboard estático ────────────────────────────────────────────
+_STATIC_DIR = _PathLib(__file__).resolve().parent / "static"
+if _STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+@app.get("/ui", include_in_schema=False)
+async def dashboard_ui():
+    """Atlas Code-Quant Dashboard v1.0.0"""
+    idx = _STATIC_DIR / "index.html"
+    if idx.exists():
+        return FileResponse(str(idx))
+    raise HTTPException(status_code=404, detail="Dashboard not found")
 
 
 @app.on_event("startup")
