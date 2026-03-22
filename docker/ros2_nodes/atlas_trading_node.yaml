@@ -1,0 +1,23 @@
+# ROS2 Node Configuration — Atlas Trading Node
+# Launch: ros2 launch atlas_code_quant atlas_trading.launch.py
+
+atlas_trading_node:
+  ros__parameters:
+    # Tópicos de trading
+    signal_topic:  "/atlas/trading/signal"
+    status_topic:  "/atlas/trading/status"
+    ocr_topic:     "/atlas/camera/ocr_result"
+    robot_topic:   "/atlas/robot/state"
+    estop_topic:   "/atlas/emergency_stop"
+
+    # Frecuencia de publicación (Hz)
+    publish_rate_hz: 10.0
+
+    # Timeouts (s)
+    robot_state_timeout_s: 5.0
+    ws_timeout_s: 2.0
+
+    # QoS
+    qos_reliability: "reliable"
+    qos_history: "keep_last"
+    qos_depth: 10
