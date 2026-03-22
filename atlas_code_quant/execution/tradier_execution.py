@@ -1,6 +1,8 @@
 """Tradier order routing for Atlas Code-Quant."""
 from __future__ import annotations
 
+import logging
+import os
 from typing import Any, Literal
 
 from api.schemas import OrderRequest, TradierOrderLeg
@@ -8,6 +10,13 @@ from config.settings import settings
 from execution.tradier_controls import check_pdt_status, resolve_account_session
 from execution.tradier_pdt_ledger import record_live_order_intent
 from backtesting.winning_probability import _safe_float
+
+logger = logging.getLogger("atlas.execution.tradier")
+
+# ATLAS Safety: fuerza preview=True en live para validar la orden antes de ejecutar.
+# Según documentación Tradier 2026: preview obligatorio antes de cualquier orden real.
+# Desactivar solo con ATLAS_FORCE_LIVE_PREVIEW=false (no recomendado).
+_FORCE_LIVE_PREVIEW = os.getenv("ATLAS_FORCE_LIVE_PREVIEW", "true").lower() != "false"
 
 
 TradierOrderClass = Literal["equity", "option", "multileg", "combo"]
@@ -188,6 +197,23 @@ def route_order_to_tradier(body: OrderRequest) -> dict[str, Any]:
 
     pdt_status = None
     preview_probe = None
+
+    # ── ATLAS Safety: preview obligatorio en live antes de enviar orden real ──
+    if (
+        _FORCE_LIVE_PREVIEW
+        and session.classification == "live"
+        and not body.preview
+        and position_effect == "open"
+    ):
+        try:
+            preview_probe = client.place_order(session.account_id, {**payload, "preview": "true"})
+            logger.info(
+                "LIVE preview OK [%s] %s qty=%s",
+                body.symbol, body.side, payload.get("quantity", "?")
+            )
+        except Exception as exc:
+            logger.warning("Preview probe error (continuando): %s", exc)
+
     if position_effect == "open" and session.classification == "live":
         pdt_status = check_pdt_status(client, session)
         if pdt_status.get("blocked_opening"):

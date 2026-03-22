@@ -35,22 +35,22 @@
     <nav class="sidebar">
       <ul class="nav-list">
         <li class="nav-item active" data-view="overview">
-          <span class="nav-icon">&#9636;</span><span class="nav-label">Overview</span>
+          <span class="nav-icon">&#9636;</span><span class="nav-label">Resumen</span>
         </li>
         <li class="nav-item" data-view="positions">
           <span class="nav-icon">&#9670;</span><span class="nav-label">Posiciones</span>
         </li>
         <li class="nav-item" data-view="scanner">
-          <span class="nav-icon">&#9670;</span><span class="nav-label">Scanner</span>
+          <span class="nav-icon">&#9670;</span><span class="nav-label">Escáner</span>
         </li>
         <li class="nav-item" data-view="backtest">
           <span class="nav-icon">&#9670;</span><span class="nav-label">Backtest</span>
         </li>
         <li class="nav-item" data-view="journal">
-          <span class="nav-icon">&#9670;</span><span class="nav-label">Journal</span>
+          <span class="nav-icon">&#9670;</span><span class="nav-label">Historial</span>
         </li>
         <li class="nav-item" data-view="rl">
-          <span class="nav-icon">&#9670;</span><span class="nav-label">RL Engine</span>
+          <span class="nav-icon">&#9670;</span><span class="nav-label">Motor RL</span>
         </li>
         <li class="nav-item" data-view="visual">
           <span class="nav-icon">&#9670;</span><span class="nav-label">Visual</span>
@@ -70,14 +70,14 @@
       <!-- ── OVERVIEW ─────────────────────────────────────────────── -->
       <section class="view active" id="view-overview">
         <div class="view-header">
-          <h1 class="view-title">Overview</h1>
+          <h1 class="view-title">Resumen</h1>
           <div class="view-actions">
             <select class="select-sm" id="ov-symbol">
               <option>BTC/USDT</option>
               <option>ETH/USDT</option>
               <option>SOL/USDT</option>
             </select>
-            <button class="btn-sm" id="ov-refresh">&#8635; Refresh</button>
+            <button class="btn-sm" id="ov-refresh">&#8635; Actualizar</button>
           </div>
         </div>
 
@@ -119,18 +119,18 @@
         <div class="charts-row">
           <div class="chart-panel wide">
             <div class="chart-header">
-              <span class="chart-title">Equity Curve</span>
+              <span class="chart-title">Curva de Equidad</span>
               <div class="chart-controls">
                 <button class="btn-xs active" data-range="1D">1D</button>
-                <button class="btn-xs" data-range="1W">1W</button>
+                <button class="btn-xs" data-range="1W">1S</button>
                 <button class="btn-xs" data-range="1M">1M</button>
-                <button class="btn-xs" data-range="ALL">ALL</button>
+                <button class="btn-xs" data-range="ALL">TODO</button>
               </div>
             </div>
             <div class="chart-body" id="chart-equity"></div>
           </div>
           <div class="chart-panel">
-            <div class="chart-header"><span class="chart-title">PnL Distribución</span></div>
+            <div class="chart-header"><span class="chart-title">Distribución de PnL</span></div>
             <div class="chart-body"><canvas id="chart-pnl-dist"></canvas></div>
           </div>
         </div>
@@ -142,11 +142,11 @@
             <div class="chart-body" id="chart-drawdown"></div>
           </div>
           <div class="chart-panel">
-            <div class="chart-header"><span class="chart-title">Monte Carlo (200 paths)</span></div>
+            <div class="chart-header"><span class="chart-title">Monte Carlo (200 sim.)</span></div>
             <div class="chart-body"><canvas id="chart-mc"></canvas></div>
           </div>
           <div class="chart-panel">
-            <div class="chart-header"><span class="chart-title">Win/Loss Streak</span></div>
+            <div class="chart-header"><span class="chart-title">Racha Gan./Pérd.</span></div>
             <div class="chart-body"><canvas id="chart-streak"></canvas></div>
           </div>
         </div>
@@ -158,7 +158,7 @@
             <div class="chart-body" style="min-height:200px"><canvas id="chart-heatmap"></canvas></div>
           </div>
           <div class="chart-panel">
-            <div class="chart-header"><span class="chart-title">Sharpe Rolling 20</span></div>
+            <div class="chart-header"><span class="chart-title">Sharpe Móvil 20</span></div>
             <div class="chart-body"><canvas id="chart-rolling-sharpe"></canvas></div>
           </div>
         </div>
@@ -187,7 +187,7 @@
       <section class="view" id="view-positions">
         <div class="view-header">
           <h1 class="view-title">Posiciones Abiertas</h1>
-          <button class="btn-sm" id="pos-refresh">&#8635; Refresh</button>
+          <button class="btn-sm" id="pos-refresh">&#8635; Actualizar</button>
         </div>
         <div class="kpi-row" id="pos-kpi-row">
           <div class="kpi-card">
@@ -212,7 +212,7 @@
             <table class="data-tbl" id="positions-tbl">
               <thead><tr>
                 <th>Símbolo</th><th>Lado</th><th>Entrada</th><th>Actual</th>
-                <th>Unidades</th><th>PnL $</th><th>PnL %</th><th>Log Ret</th>
+                <th>Unidades</th><th>PnL $</th><th>PnL %</th><th>Ret. Log.</th>
                 <th>SL</th><th>TP</th><th>ATR</th>
               </tr></thead>
               <tbody id="positions-body">
@@ -226,10 +226,10 @@
       <!-- ── SCANNER ─────────────────────────────────────────────── -->
       <section class="view" id="view-scanner">
         <div class="view-header">
-          <h1 class="view-title">Opportunity Scanner</h1>
+          <h1 class="view-title">Escáner de Oportunidades</h1>
           <div class="view-actions">
-            <button class="btn-sm" id="scanner-start">&#9654; Start</button>
-            <button class="btn-sm red" id="scanner-stop">&#9632; Stop</button>
+            <button class="btn-sm" id="scanner-start">&#9654; Iniciar</button>
+            <button class="btn-sm red" id="scanner-stop">&#9632; Detener</button>
           </div>
         </div>
         <div class="panel">
@@ -264,7 +264,7 @@
               <label>Símbolo
                 <input class="input-sm" id="bt-symbol" value="BTC/USDT" />
               </label>
-              <label>Timeframe
+              <label>Marco temporal
                 <select class="select-sm" id="bt-tf">
                   <option>1h</option><option>4h</option><option>1d</option><option>15m</option>
                 </select>
@@ -283,17 +283,17 @@
               <label>Barras históricas
                 <input class="input-sm" id="bt-bars" value="500" type="number" />
               </label>
-              <label>Walk-forward folds
+              <label>Pliegues walk-forward
                 <input class="input-sm" id="bt-folds" value="5" type="number" />
               </label>
               <label class="full-col checkbox-label">
-                <input type="checkbox" id="bt-kelly" checked /> Kelly sizing
+                <input type="checkbox" id="bt-kelly" checked /> Dimensionamiento Kelly
               </label>
               <label class="full-col checkbox-label">
-                <input type="checkbox" id="bt-atr" checked /> ATR stops
+                <input type="checkbox" id="bt-atr" checked /> Stops ATR
               </label>
               <label class="full-col checkbox-label">
-                <input type="checkbox" id="bt-montecarlo" checked /> Monte Carlo (1000 paths)
+                <input type="checkbox" id="bt-montecarlo" checked /> Monte Carlo (1000 sim.)
               </label>
               <button class="btn-primary full-col" id="bt-run">&#9654; Ejecutar Backtest</button>
             </div>
@@ -303,19 +303,19 @@
           <div class="panel">
             <div class="panel-header">
               <span class="panel-title">Resultados</span>
-              <span class="stat-chip" id="bt-status">idle</span>
+              <span class="stat-chip" id="bt-status">inactivo</span>
             </div>
             <div class="panel-body">
               <div class="metrics-grid" id="bt-metrics">
-                <div class="metric-item"><span class="m-label">Total Return</span><span class="m-value" id="bm-total-ret">--</span></div>
-                <div class="metric-item"><span class="m-label">Log Return</span><span class="m-value" id="bm-log-ret">--</span></div>
+                <div class="metric-item"><span class="m-label">Retorno Total</span><span class="m-value" id="bm-total-ret">--</span></div>
+                <div class="metric-item"><span class="m-label">Retorno Log.</span><span class="m-value" id="bm-log-ret">--</span></div>
                 <div class="metric-item"><span class="m-label">Sharpe</span><span class="m-value" id="bm-sharpe">--</span></div>
                 <div class="metric-item"><span class="m-label">Sortino</span><span class="m-value" id="bm-sortino">--</span></div>
                 <div class="metric-item"><span class="m-label">Calmar</span><span class="m-value" id="bm-calmar">--</span></div>
-                <div class="metric-item"><span class="m-label">Max DD</span><span class="m-value red" id="bm-maxdd">--</span></div>
-                <div class="metric-item"><span class="m-label">Win Rate</span><span class="m-value" id="bm-wr">--</span></div>
-                <div class="metric-item"><span class="m-label">Profit Factor</span><span class="m-value" id="bm-pf">--</span></div>
-                <div class="metric-item"><span class="m-label">Trades</span><span class="m-value" id="bm-trades">--</span></div>
+                <div class="metric-item"><span class="m-label">DD Máximo</span><span class="m-value red" id="bm-maxdd">--</span></div>
+                <div class="metric-item"><span class="m-label">Tasa de Éxito</span><span class="m-value" id="bm-wr">--</span></div>
+                <div class="metric-item"><span class="m-label">Factor Beneficio</span><span class="m-value" id="bm-pf">--</span></div>
+                <div class="metric-item"><span class="m-label">Operaciones</span><span class="m-value" id="bm-trades">--</span></div>
                 <div class="metric-item"><span class="m-label">VaR 95%</span><span class="m-value red" id="bm-var">--</span></div>
                 <div class="metric-item"><span class="m-label">CVaR 95%</span><span class="m-value red" id="bm-cvar">--</span></div>
                 <div class="metric-item"><span class="m-label">Kelly ×0.25</span><span class="m-value accent" id="bm-kelly">--</span></div>
@@ -328,14 +328,14 @@
         <!-- Trades table -->
         <div class="panel mt-sm" id="bt-trades-panel" style="display:none">
           <div class="panel-header">
-            <span class="panel-title">Trades (últimos 50)</span>
-            <a class="btn-sm" id="bt-report-link" href="#" target="_blank">&#8599; HTML Report</a>
+            <span class="panel-title">Operaciones (últimas 50)</span>
+            <a class="btn-sm" id="bt-report-link" href="#" target="_blank">&#8599; Informe HTML</a>
           </div>
           <div class="panel-body">
             <table class="data-tbl">
               <thead><tr>
                 <th>#</th><th>Símbolo</th><th>Lado</th><th>Entrada</th><th>Salida</th>
-                <th>PnL $</th><th>PnL %</th><th>Log Ret</th><th>Razón</th>
+                <th>PnL $</th><th>PnL %</th><th>Ret. Log.</th><th>Razón</th>
               </tr></thead>
               <tbody id="bt-trades-body"></tbody>
             </table>
@@ -346,8 +346,8 @@
       <!-- ── JOURNAL ─────────────────────────────────────────────── -->
       <section class="view" id="view-journal">
         <div class="view-header">
-          <h1 class="view-title">Trading Journal</h1>
-          <button class="btn-sm" id="journal-refresh">&#8635; Refresh</button>
+          <h1 class="view-title">Diario de Operaciones</h1>
+          <button class="btn-sm" id="journal-refresh">&#8635; Actualizar</button>
         </div>
         <div class="kpi-row" id="journal-kpi"></div>
         <div class="charts-row">
@@ -382,7 +382,7 @@
         </div>
         <div class="two-col">
           <div class="panel">
-            <div class="panel-header"><span class="panel-title">Retraining Scheduler</span></div>
+            <div class="panel-header"><span class="panel-title">Planificador de Reentrenamiento</span></div>
             <div class="panel-body">
               <div class="metrics-grid" id="rl-status-grid">
                 <div class="metric-item"><span class="m-label">Símbolo</span><span class="m-value" id="rl-symbol">--</span></div>
@@ -396,7 +396,7 @@
                 <select class="select-sm" id="rl-symbol-sel">
                   <option>BTC/USDT</option><option>ETH/USDT</option><option>SOL/USDT</option>
                 </select>
-                <button class="btn-sm" id="rl-status-btn">&#8635; Status</button>
+                <button class="btn-sm" id="rl-status-btn">&#8635; Estado</button>
                 <button class="btn-primary" id="rl-trigger-btn">&#9654; Forzar Retrain</button>
               </div>
             </div>
@@ -411,7 +411,7 @@
           </div>
         </div>
         <div class="panel mt-sm">
-          <div class="panel-header"><span class="panel-title">Log de retraining</span></div>
+          <div class="panel-header"><span class="panel-title">Registro de Reentrenamiento</span></div>
           <div class="panel-body">
             <div class="log-box" id="rl-log-box">Esperando actividad…</div>
           </div>
@@ -421,7 +421,7 @@
       <!-- ── VISUAL ─────────────────────────────────────────────── -->
       <section class="view" id="view-visual">
         <div class="view-header">
-          <h1 class="view-title">Visual State</h1>
+          <h1 class="view-title">Estado Visual</h1>
           <button class="btn-sm" id="visual-capture">&#9654; Capturar</button>
         </div>
         <div class="two-col">
@@ -432,8 +432,8 @@
             </div>
             <div class="panel-body">
               <div class="metrics-grid">
-                <div class="metric-item"><span class="m-label">Brightness</span><span class="m-value" id="vs-brightness">--</span></div>
-                <div class="metric-item"><span class="m-label">Sharpness</span><span class="m-value" id="vs-sharpness">--</span></div>
+                <div class="metric-item"><span class="m-label">Brillo</span><span class="m-value" id="vs-brightness">--</span></div>
+                <div class="metric-item"><span class="m-label">Nitidez</span><span class="m-value" id="vs-sharpness">--</span></div>
                 <div class="metric-item"><span class="m-label">Pantallas detectadas</span><span class="m-value" id="vs-screens">--</span></div>
                 <div class="metric-item"><span class="m-label">Color dominante</span><span class="m-value" id="vs-color">--</span></div>
                 <div class="metric-item"><span class="m-label">Precios extraídos</span><span class="m-value accent" id="vs-prices">--</span></div>
@@ -442,7 +442,7 @@
             </div>
           </div>
           <div class="panel">
-            <div class="panel-header"><span class="panel-title">Feature Vector (20D)</span></div>
+            <div class="panel-header"><span class="panel-title">Vector de Características (20D)</span></div>
             <div class="panel-body">
               <canvas id="chart-visual-features"></canvas>
             </div>

@@ -146,7 +146,7 @@ function renderMonteCarloChart(canvasId, mcData = null) {
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: { legend: { display: false },
-          title: { display: true, text: 'Sin datos — ejecuta un backtest', color: COLORS.text } },
+          title: { display: true, text: 'Sin datos — ejecuta un backtest primero', color: COLORS.text } },
       },
     });
     return;
@@ -244,7 +244,7 @@ function renderJournalStratChart(canvasId, entries = []) {
   if (!ctx) return;
   const byStrat = {};
   entries.forEach(e => {
-    const k = e.strategy || 'unknown';
+    const k = e.strategy || 'desconocida';
     byStrat[k] = (byStrat[k] || 0) + (e.pnl || 0);
   });
   const labels = Object.keys(byStrat);
@@ -352,7 +352,7 @@ function renderHeatmapChart(canvasId, heatmapData = []) {
           callbacks: {
             label: (item) => {
               const v = item.raw.v;
-              return v !== null ? `${days[item.raw.y]} ${hours[item.raw.x]}: ${v?.toFixed(1)}% win` : 'Sin datos';
+              return v !== null ? `${days[item.raw.y]} ${hours[item.raw.x]}: ${v?.toFixed(1)}% éxito` : 'Sin datos';
             }
           }
         }
@@ -410,7 +410,7 @@ function renderRollingSharpeChart(canvasId, equityCurve = []) {
     data: {
       labels: sharpeLabels,
       datasets: [{
-        label: 'Sharpe Rolling 20',
+        label: 'Sharpe Móvil 20',
         data: sharpeRolling,
         borderColor: COLORS.yellow,
         backgroundColor: 'rgba(246,201,14,0.07)',
