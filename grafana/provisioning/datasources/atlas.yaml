@@ -3,8 +3,7 @@ datasources:
   - name: atlas-prometheus
     uid: atlas-prom
     type: prometheus
-    # Docker: http://prometheus:9090  |  Local Windows: http://localhost:9090
-    url: http://localhost:9090
+    url: http://localhost:9091
     access: proxy
     isDefault: true
     jsonData:
