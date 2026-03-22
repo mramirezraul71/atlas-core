@@ -272,7 +272,7 @@ document.getElementById('bt-run')?.addEventListener('click', async () => {
   const atr      = document.getElementById('bt-atr').checked;
   const mc       = document.getElementById('bt-montecarlo').checked;
 
-  document.getElementById('bt-status').textContent = 'running…';
+  document.getElementById('bt-status').textContent = 'ejecutando…';
   document.getElementById('bt-run').disabled = true;
 
   try {
@@ -283,7 +283,7 @@ document.getElementById('bt-run')?.addEventListener('click', async () => {
       generate_html: true,
     });
 
-    document.getElementById('bt-status').textContent = r.ok ? 'ok' : 'error';
+    document.getElementById('bt-status').textContent = r.ok ? 'completado' : 'error';
 
     if (r.ok && r.data) {
       const m = r.data.metrics || {};
@@ -359,13 +359,13 @@ async function loadJournal() {
     const s = stats?.data || {};
     const kpiRow = document.getElementById('journal-kpi');
     kpiRow.innerHTML = `
-      <div class="kpi-card"><span class="kpi-label">Total PnL</span>
+      <div class="kpi-card"><span class="kpi-label">PnL Total</span>
         <span class="kpi-value ${(s.total_pnl || 0) >= 0 ? 'green' : 'red'}">${fmt.usd(s.total_pnl)}</span></div>
-      <div class="kpi-card"><span class="kpi-label">Win Rate</span>
+      <div class="kpi-card"><span class="kpi-label">Tasa de Éxito</span>
         <span class="kpi-value">${fmt.pct(s.win_rate_pct)}</span></div>
-      <div class="kpi-card"><span class="kpi-label">Trades</span>
+      <div class="kpi-card"><span class="kpi-label">Operaciones</span>
         <span class="kpi-value">${s.total_trades || 0}</span></div>
-      <div class="kpi-card"><span class="kpi-label">Avg PnL</span>
+      <div class="kpi-card"><span class="kpi-label">PnL Promedio</span>
         <span class="kpi-value">${fmt.usd(s.avg_pnl)}</span></div>
     `;
 
@@ -447,7 +447,7 @@ document.getElementById('visual-capture')?.addEventListener('click', async () =>
     document.getElementById('vs-pattern').textContent    = d.pattern_detected || 'ninguno';
 
     const badge = document.getElementById('visual-safety-badge');
-    badge.textContent  = d.safe_mode ? 'SAFE MODE' : 'OK';
+    badge.textContent  = d.safe_mode ? 'MODO SEGURO' : 'OK';
     badge.className    = `mode-badge ${d.safe_mode ? 'safe' : 'ok'}`;
 
     if (d.feature_vector?.length) {
