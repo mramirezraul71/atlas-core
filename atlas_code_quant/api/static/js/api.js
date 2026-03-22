@@ -11,17 +11,26 @@ const API_BASE = (location.port === '8791' || location.port === '443')
 const API_KEY  = localStorage.getItem('quant_api_key') || '';
 
 // ── HTTP helper ────────────────────────────────────────────────────
+const _FETCH_TIMEOUT_MS = 5000;
+
+function _fetchWithTimeout(url, options = {}) {
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), _FETCH_TIMEOUT_MS);
+  return fetch(url, { ...options, signal: ctrl.signal })
+    .finally(() => clearTimeout(tid));
+}
+
 async function apiGet(path, params = {}) {
   const url = new URL(API_BASE + path, window.location.origin);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const r = await fetch(url, {
+  const r = await _fetchWithTimeout(url, {
     headers: { 'x-api-key': API_KEY, 'Accept': 'application/json' }
   });
   return r.json();
 }
 
 async function apiPost(path, body = {}) {
-  const r = await fetch(API_BASE + path, {
+  const r = await _fetchWithTimeout(API_BASE + path, {
     method: 'POST',
     headers: {
       'x-api-key': API_KEY,
@@ -109,10 +118,13 @@ class QuantWS {
     this._ws.onclose = () => {
       document.getElementById('ws-dot')?.classList.remove('connected');
       this._emit('disconnected');
-      setTimeout(() => {
-        this._reconnectDelay = Math.min(this._reconnectDelay * 1.5, this._maxDelay);
-        this.connect();
-      }, this._reconnectDelay);
+      // Si el backend está offline usa delay mayor para no saturar la consola
+      const backendDown = window._backendOnline === false;
+      this._reconnectDelay = Math.min(
+        this._reconnectDelay * (backendDown ? 2 : 1.5),
+        this._maxDelay
+      );
+      setTimeout(() => this.connect(), this._reconnectDelay);
     };
 
     this._ws.onerror = () => {

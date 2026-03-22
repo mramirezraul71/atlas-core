@@ -68,15 +68,50 @@ function colorClass(val) {
   return parseFloat(val) >= 0 ? 'green' : 'red';
 }
 
+// ── Backend online/offline state ─────────────────────────────────
+window._backendOnline = null;  // null=unknown, true=online, false=offline
+let _backendOnline = null;
+
+function _setBackendState(online) {
+  if (_backendOnline === online) return;
+  _backendOnline = online;
+  window._backendOnline = online;
+  let banner = document.getElementById('offline-banner');
+  if (!online) {
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'offline-banner';
+      banner.style.cssText = [
+        'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:9999',
+        'background:#ff3b5c', 'color:#fff', 'text-align:center',
+        'padding:6px 12px', 'font-size:13px', 'font-weight:600',
+        'letter-spacing:.5px',
+      ].join(';');
+      banner.textContent = '⚠ Backend offline — puerto 8792 no disponible. Reintentando…';
+      document.body.prepend(banner);
+    }
+    document.getElementById('chip-uptime')?.setAttribute('data-offline', '1');
+  } else {
+    banner?.remove();
+    document.getElementById('chip-uptime')?.removeAttribute('data-offline');
+    // Recargar overview al volver online
+    loadOverview();
+  }
+}
+
 // ── Health / topbar ───────────────────────────────────────────────
 async function pollHealth() {
+  window._lastHealthAt = Date.now();
   try {
     const r = await QuantAPI.health();
+    _setBackendState(true);
     document.getElementById('chip-uptime').textContent =
       `${Math.floor((r.uptime_sec || 0) / 60)}m up`;
     document.getElementById('chip-positions').textContent =
       `${r.open_positions || 0} pos`;
-  } catch (_) {}
+  } catch (_) {
+    _setBackendState(false);
+  }
 }
 
 // ── OVERVIEW ──────────────────────────────────────────────────────
@@ -84,10 +119,10 @@ let _equityChart = null, _ddChart = null;
 
 async function loadOverview() {
   try {
-    const [health, ov] = await Promise.all([
-      QuantAPI.health(),
-      QuantAPI.dashboardOverview().catch(() => null),
-    ]);
+    const health = await QuantAPI.health().catch(() => null);
+    if (!health) { _setBackendState(false); return; }
+    _setBackendState(true);
+    const ov = await QuantAPI.dashboardOverview().catch(() => null);
 
     const m = ov?.data || {};
 
@@ -550,6 +585,15 @@ document.addEventListener('DOMContentLoaded', () => {
   startClock();
   initWS();
   loadOverview();
+
+  // Primer health check inmediato, luego adaptativo
   pollHealth();
-  setInterval(pollHealth, 30_000);
+  // Cuando offline: sondear cada 5s. Cuando online: cada 30s.
+  setInterval(() => {
+    const interval = _backendOnline === false ? 5_000 : 30_000;
+    if (!window._lastHealthAt || Date.now() - window._lastHealthAt >= interval) {
+      window._lastHealthAt = Date.now();
+      pollHealth();
+    }
+  }, 5_000);
 });

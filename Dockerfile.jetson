@@ -1,0 +1,178 @@
+# ============================================================
+# ATLAS-Quant-Core — Dockerfile para NVIDIA Jetson Orin Nano
+# Base: nvcr.io/nvidia/l4t-pytorch (ARM64 + CUDA JetPack 6)
+# Build: docker build -f Dockerfile.jetson -t atlas-quant:jetson .
+# Run:   docker run --runtime nvidia --privileged --network host \
+#          -v /dev:/dev -v $(pwd):/workspace \
+#          -e TRADIER_PAPER_TOKEN=... \
+#          atlas-quant:jetson
+# ============================================================
+
+FROM nvcr.io/nvidia/l4t-pytorch:r35.4.1-pth2.1-py3
+
+# ── Metadata ──────────────────────────────────────────────────────────────────
+LABEL maintainer="ATLAS-Core"
+LABEL version="1.0.0"
+LABEL description="ATLAS Quantitative Trading Robot — Jetson Orin Nano"
+
+# ── Variables de entorno ──────────────────────────────────────────────────────
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV WORKSPACE=/workspace
+ENV ATLAS_ENV=production
+ENV ATLAS_LOG_LEVEL=INFO
+
+# Jetson optimizations
+ENV OPENBLAS_CORETYPE=ARMV8
+ENV OMP_NUM_THREADS=4
+ENV MALLOC_TRIM_THRESHOLD_=100000
+
+WORKDIR ${WORKSPACE}
+
+# ── Dependencias del sistema ───────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # OpenCV / video
+    libopencv-dev \
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-base1.0-dev \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-ugly \
+    gstreamer1.0-rtsp \
+    # HID control
+    libevdev-dev \
+    libxdo-dev \
+    xdotool \
+    xvfb \
+    # Audio / TTS
+    portaudio19-dev \
+    libsndfile1 \
+    espeak-ng \
+    espeak-ng-data \
+    libespeak-ng-dev \
+    alsa-utils \
+    pulseaudio \
+    # Base
+    curl wget git build-essential \
+    libssl-dev libffi-dev \
+    redis-server \
+    # ROS2 deps (si ROS2 Humble ya está en la imagen base)
+    python3-colcon-common-extensions \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Python — dependencias base ────────────────────────────────────────────────
+COPY requirements.txt /tmp/requirements.txt
+RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel
+
+# Instalar en orden para evitar conflictos de versión en ARM64
+RUN pip3 install --no-cache-dir \
+    numpy==1.24.4 \
+    pandas==2.0.3 \
+    scipy==1.11.4
+
+# FastAPI + servidor
+RUN pip3 install --no-cache-dir \
+    fastapi==0.115.0 \
+    uvicorn[standard]==0.30.6 \
+    aiofiles==23.2.1 \
+    websockets==12.0 \
+    websocket-client==1.8.0 \
+    requests==2.32.3 \
+    httpx==0.27.2
+
+# ML / AI
+RUN pip3 install --no-cache-dir \
+    xgboost==2.0.3 \
+    scikit-learn==1.3.2 \
+    optuna==3.6.1 \
+    yfinance==0.2.40
+
+# Vision + OCR
+RUN pip3 install --no-cache-dir \
+    opencv-python-headless==4.9.0.80 \
+    easyocr==1.7.1 \
+    # YOLOv8 — versión ARM64 compatible
+    ultralytics==8.2.50
+
+# Sentence Transformers (embedding para memoria episódica)
+RUN pip3 install --no-cache-dir \
+    sentence-transformers==3.0.1 \
+    chromadb==0.5.5
+
+# Control HID
+RUN pip3 install --no-cache-dir \
+    pyautogui==0.9.54 \
+    pynput==1.7.7 \
+    Pillow==10.4.0
+
+# Mensajería
+RUN pip3 install --no-cache-dir \
+    pyzmq==26.2.0 \
+    redis==5.0.8
+
+# Monitoring
+RUN pip3 install --no-cache-dir \
+    prometheus-client==0.20.0 \
+    psutil==6.0.0
+
+# TTS — síntesis de voz en español (espeak-ng ya instalado arriba)
+RUN pip3 install --no-cache-dir \
+    pyttsx3==2.90
+
+# Telegram alerts + HTTP client
+RUN pip3 install --no-cache-dir \
+    python-telegram-bot==21.5 \
+    twilio==9.3.0 \
+    requests==2.32.3
+
+# Resto de requirements del proyecto
+RUN pip3 install --no-cache-dir -r /tmp/requirements.txt || true
+
+# ── Transformers (Qwen2-VL) — opcional, pesado ────────────────────────────────
+# Comentar si la memoria del Jetson no lo soporta
+RUN pip3 install --no-cache-dir \
+    transformers==4.44.2 \
+    accelerate==0.33.0 \
+    einops==0.8.0 || true
+
+# ── Copiar proyecto ───────────────────────────────────────────────────────────
+COPY . ${WORKSPACE}/
+
+# ── Crear directorios de datos ────────────────────────────────────────────────
+RUN mkdir -p \
+    ${WORKSPACE}/data/cache \
+    ${WORKSPACE}/data/journal \
+    ${WORKSPACE}/data/operation \
+    ${WORKSPACE}/data/learning \
+    ${WORKSPACE}/data/scanner \
+    ${WORKSPACE}/data/chroma_errors \
+    ${WORKSPACE}/models/saved \
+    ${WORKSPACE}/logs \
+    ${WORKSPACE}/reports \
+    ${WORKSPACE}/grafana/dashboards \
+    ${WORKSPACE}/grafana/provisioning/dashboards \
+    ${WORKSPACE}/grafana/provisioning/datasources \
+    /calibration
+
+# ── Redis config (baja latencia para Jetson) ──────────────────────────────────
+RUN echo "maxmemory 256mb" >> /etc/redis/redis.conf && \
+    echo "maxmemory-policy allkeys-lru" >> /etc/redis/redis.conf && \
+    echo "save ''" >> /etc/redis/redis.conf
+
+# ── Script de arranque ────────────────────────────────────────────────────────
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# ── Puertos ───────────────────────────────────────────────────────────────────
+# 8792 = API Code-Quant, 9090 = Prometheus, 6379 = Redis (interna)
+EXPOSE 8792
+EXPOSE 9090
+EXPOSE 6379
+
+# ── Health check ──────────────────────────────────────────────────────────────
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD curl -f http://localhost:8792/health || exit 1
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["api"]

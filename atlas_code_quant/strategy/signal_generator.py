@@ -1,0 +1,384 @@
+"""Módulo 4 — Generador de Señales + Lógica de Entrada/Salida.
+
+Criterios de entrada (todos deben cumplirse):
+  1. Scanner: IV Rank >70 + IV/HV Ratio >1.2
+  2. Régimen: Bull/Bear/Sideways (confianza ≥65%)
+  3. RSI divergencia + MACD hist cruce + Volume spike >1.8×
+  4. CVD >+1σ (comprador) o <-1σ (vendedor)
+  5. Visual trigger: OCR confirma precio dentro del rango esperado
+
+Criterios de salida:
+  - TP: 2×ATR desde entrada
+  - SL: 2.5×ATR desde entrada
+  - Trailing: activo en régimen Trend
+  - Time exit: 5-20 días
+  - Divergencia opuesta: señal contraria cierra posición
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Optional
+
+logger = logging.getLogger("atlas.strategy.signals")
+
+
+class SignalType(str, Enum):
+    BUY  = "BUY"
+    SELL = "SELL"
+    FLAT = "FLAT"    # sin señal
+    EXIT = "EXIT"    # salir posición existente
+
+
+@dataclass
+class TradeSignal:
+    """Señal de trading generada por el motor de estrategia."""
+    symbol: str
+    signal_type: SignalType
+    timestamp: float
+    entry_price: float
+    take_profit: float
+    stop_loss: float
+    atr: float
+    confidence: float
+    regime: str = ""
+    strategy: str = ""
+    position_size: int = 0
+    kelly_fraction: float = 0.0
+    iv_rank: float = 0.0
+    cvd_delta: float = 0.0
+    rsi: float = 50.0
+    volume_ratio: float = 1.0
+    visual_confirmed: bool = False
+    exit_reason: str = ""
+    max_hold_days: int = 10
+    trailing_active: bool = False
+    metadata: dict = field(default_factory=dict)
+
+
+@dataclass
+class OpenPosition:
+    """Posición abierta con estado de trailing y time exit."""
+    symbol: str
+    side: SignalType
+    entry_price: float
+    current_price: float
+    take_profit: float
+    stop_loss: float
+    trailing_stop: float
+    atr: float
+    quantity: int
+    opened_at: float
+    max_hold_days: int
+    strategy: str
+    highest_price: float = 0.0   # para trailing long
+    lowest_price: float = 999999.0  # para trailing short
+
+
+class SignalGenerator:
+    """Motor central de señales de trading.
+
+    Integra régimen ML, indicadores técnicos, CVD y confirmación visual
+    para generar señales de alta probabilidad.
+
+    Uso::
+
+        gen = SignalGenerator()
+        signal = gen.evaluate(
+            symbol="AAPL",
+            regime=regime_output,
+            tech=tech_snapshot,
+            cvd=cvd_snapshot,
+            iv=iv_metrics,
+            entry_price=185.50,
+            ocr_price=185.48,    # precio confirmado por OCR
+        )
+    """
+
+    # ── Umbrales de entrada ───────────────────────────────────────────────────
+    MIN_IV_RANK           = 70.0     # IV Rank mínimo para considerar
+    MIN_IV_HV_RATIO       = 1.2      # IV/HV mínimo
+    MIN_VOLUME_SPIKE      = 1.8      # multiplicador de volumen
+    RSI_OVERBOUGHT        = 70.0
+    RSI_OVERSOLD          = 30.0
+    CVD_ZSCORE_THRESHOLD  = 1.0      # desviaciones estándar
+    VISUAL_PRICE_TOLERANCE = 0.005   # 0.5% tolerancia OCR vs API
+
+    # ── Parámetros de salida ──────────────────────────────────────────────────
+    TP_ATR_MULT = 2.0
+    SL_ATR_MULT = 2.5
+    MIN_HOLD_DAYS = 5
+    MAX_HOLD_DAYS = 20
+    TRAILING_ACTIVATION = 1.5  # activar trailing cuando ganancia ≥ 1.5×ATR
+
+    def __init__(self) -> None:
+        self._positions: dict[str, OpenPosition] = {}
+        self._signal_history: list[TradeSignal] = []
+        self._cvd_history: list[float] = []   # para z-score
+
+    # ── Evaluación de señal ───────────────────────────────────────────────────
+
+    def evaluate(
+        self,
+        symbol: str,
+        regime,
+        tech,
+        cvd,
+        iv,
+        entry_price: float,
+        ocr_price: float | None = None,
+        current_capital: float = 100_000.0,
+        position_size: int = 0,
+    ) -> TradeSignal:
+        """Evalúa condiciones y retorna señal de trading o FLAT."""
+
+        atr = tech.atr_20
+
+        # ── 1. Verificar posición abierta (gestión de salida) ──
+        if symbol in self._positions:
+            exit_signal = self._check_exit(
+                self._positions[symbol], entry_price
+            )
+            if exit_signal is not None:
+                return exit_signal
+
+        # ── 2. Scanner: IV Rank y IV/HV ──────────────────────────────────────
+        if iv.iv_rank_30d < self.MIN_IV_RANK:
+            return self._flat(symbol, entry_price, atr, "iv_rank_below_threshold",
+                              iv.iv_rank_30d)
+
+        if iv.iv_hv_ratio < self.MIN_IV_HV_RATIO:
+            return self._flat(symbol, entry_price, atr, "iv_hv_ratio_below_threshold",
+                              iv.iv_hv_ratio)
+
+        # ── 3. Régimen ML ─────────────────────────────────────────────────────
+        from atlas_code_quant.models.regime_classifier import MarketRegime
+
+        if regime.regime == MarketRegime.FLAT:
+            return self._flat(symbol, entry_price, atr, "regime_confidence_low",
+                              regime.confidence)
+
+        # ── 4. Señal técnica ──────────────────────────────────────────────────
+        signal_dir = self._get_technical_direction(tech, regime)
+        if signal_dir == SignalType.FLAT:
+            return self._flat(symbol, entry_price, atr, "no_technical_confluence", 0.0)
+
+        # ── 5. CVD z-score ────────────────────────────────────────────────────
+        self._cvd_history.append(cvd.delta_imbalance)
+        if len(self._cvd_history) > 200:
+            self._cvd_history.pop(0)
+
+        cvd_z = self._compute_zscore(cvd.delta_imbalance)
+
+        if signal_dir == SignalType.BUY and cvd_z < self.CVD_ZSCORE_THRESHOLD:
+            return self._flat(symbol, entry_price, atr, "cvd_not_confirming_buy", cvd_z)
+
+        if signal_dir == SignalType.SELL and cvd_z > -self.CVD_ZSCORE_THRESHOLD:
+            return self._flat(symbol, entry_price, atr, "cvd_not_confirming_sell", cvd_z)
+
+        # ── 6. Volume spike ───────────────────────────────────────────────────
+        if tech.volume_ratio < self.MIN_VOLUME_SPIKE:
+            return self._flat(symbol, entry_price, atr, "volume_spike_insufficient",
+                              tech.volume_ratio)
+
+        # ── 7. Confirmación visual OCR ────────────────────────────────────────
+        visual_ok = self._check_visual(entry_price, ocr_price)
+
+        # ── 8. Construir señal confirmada ─────────────────────────────────────
+        tp, sl = self._compute_tp_sl(entry_price, atr, signal_dir)
+        trailing = regime.regime in (MarketRegime.BULL, MarketRegime.BEAR)
+
+        signal = TradeSignal(
+            symbol         = symbol,
+            signal_type    = signal_dir,
+            timestamp      = time.time(),
+            entry_price    = entry_price,
+            take_profit    = tp,
+            stop_loss      = sl,
+            atr            = atr,
+            confidence     = regime.confidence,
+            regime         = regime.regime.value,
+            strategy       = self._pick_strategy(regime.regime),
+            position_size  = position_size,
+            iv_rank        = iv.iv_rank_30d,
+            cvd_delta      = cvd.delta_imbalance,
+            rsi            = tech.rsi_14,
+            volume_ratio   = tech.volume_ratio,
+            visual_confirmed = visual_ok,
+            max_hold_days  = self.MAX_HOLD_DAYS,
+            trailing_active = trailing,
+        )
+
+        logger.info(
+            "SEÑAL %s %s | conf=%.2f | TP=%.2f | SL=%.2f | OCR=%s",
+            signal_dir.value, symbol, regime.confidence,
+            tp, sl, "✓" if visual_ok else "✗"
+        )
+
+        # Registrar posición abierta
+        self._positions[symbol] = OpenPosition(
+            symbol        = symbol,
+            side          = signal_dir,
+            entry_price   = entry_price,
+            current_price = entry_price,
+            take_profit   = tp,
+            stop_loss     = sl,
+            trailing_stop = sl,
+            atr           = atr,
+            quantity      = position_size,
+            opened_at     = time.time(),
+            max_hold_days = self.MAX_HOLD_DAYS,
+            strategy      = signal.strategy,
+            highest_price = entry_price,
+            lowest_price  = entry_price,
+        )
+
+        self._signal_history.append(signal)
+        return signal
+
+    # ── Gestión de salida ─────────────────────────────────────────────────────
+
+    def _check_exit(self, pos: OpenPosition, current_price: float) -> Optional[TradeSignal]:
+        """Verifica si la posición abierta debe cerrarse."""
+        pos.current_price = current_price
+        reason = ""
+
+        if pos.side == SignalType.BUY:
+            pos.highest_price = max(pos.highest_price, current_price)
+
+            # Trailing stop para posición long
+            if pos.trailing_active:
+                new_trail = pos.highest_price - pos.atr * self.SL_ATR_MULT
+                pos.trailing_stop = max(pos.trailing_stop, new_trail)
+
+            if current_price >= pos.take_profit:
+                reason = "take_profit"
+            elif current_price <= pos.trailing_stop:
+                reason = "trailing_stop" if current_price < pos.stop_loss else "stop_loss"
+
+        else:  # SELL
+            pos.lowest_price = min(pos.lowest_price, current_price)
+
+            if pos.trailing_active:
+                new_trail = pos.lowest_price + pos.atr * self.SL_ATR_MULT
+                pos.trailing_stop = min(pos.trailing_stop, new_trail)
+
+            if current_price <= pos.take_profit:
+                reason = "take_profit"
+            elif current_price >= pos.trailing_stop:
+                reason = "stop_loss"
+
+        # Time exit
+        days_open = (time.time() - pos.opened_at) / 86400
+        if days_open >= pos.max_hold_days:
+            reason = "time_exit"
+
+        if reason:
+            del self._positions[pos.symbol]
+            return TradeSignal(
+                symbol       = pos.symbol,
+                signal_type  = SignalType.EXIT,
+                timestamp    = time.time(),
+                entry_price  = current_price,
+                take_profit  = pos.take_profit,
+                stop_loss    = pos.stop_loss,
+                atr          = pos.atr,
+                confidence   = 1.0,
+                exit_reason  = reason,
+                strategy     = pos.strategy,
+            )
+
+        return None
+
+    # ── Dirección técnica ─────────────────────────────────────────────────────
+
+    def _get_technical_direction(self, tech, regime) -> SignalType:
+        """Bull/Bear según régimen + confirmación RSI/MACD."""
+        from atlas_code_quant.models.regime_classifier import MarketRegime
+
+        is_bull = regime.regime == MarketRegime.BULL
+        is_bear = regime.regime == MarketRegime.BEAR
+        is_sideways = regime.regime == MarketRegime.SIDEWAYS
+
+        # MACD cruce
+        macd_bullish = tech.macd > tech.macd_signal and tech.macd_hist > 0
+        macd_bearish = tech.macd < tech.macd_signal and tech.macd_hist < 0
+
+        # RSI divergencia (oversold en bull, overbought en bear, extremos en sideways)
+        rsi_bull = tech.rsi_14 < self.RSI_OVERSOLD + 15   # RSI saliendo de oversold
+        rsi_bear = tech.rsi_14 > self.RSI_OVERBOUGHT - 15
+
+        if is_bull and macd_bullish and rsi_bull:
+            return SignalType.BUY
+        if is_bear and macd_bearish and rsi_bear:
+            return SignalType.SELL
+        if is_sideways:
+            # Mean reversion: comprar oversold, vender overbought
+            if tech.rsi_14 < self.RSI_OVERSOLD and macd_bullish:
+                return SignalType.BUY
+            if tech.rsi_14 > self.RSI_OVERBOUGHT and macd_bearish:
+                return SignalType.SELL
+
+        return SignalType.FLAT
+
+    # ── Utilidades ────────────────────────────────────────────────────────────
+
+    def _compute_tp_sl(
+        self, price: float, atr: float, direction: SignalType
+    ) -> tuple[float, float]:
+        if direction == SignalType.BUY:
+            tp = price + atr * self.TP_ATR_MULT
+            sl = price - atr * self.SL_ATR_MULT
+        else:
+            tp = price - atr * self.TP_ATR_MULT
+            sl = price + atr * self.SL_ATR_MULT
+        return round(tp, 2), round(sl, 2)
+
+    def _pick_strategy(self, regime) -> str:
+        from atlas_code_quant.models.regime_classifier import MarketRegime
+        map_ = {
+            MarketRegime.BULL:     "trend_following",
+            MarketRegime.BEAR:     "trend_following_short",
+            MarketRegime.SIDEWAYS: "mean_reversion",
+        }
+        return map_.get(regime, "unknown")
+
+    def _check_visual(self, api_price: float, ocr_price: Optional[float]) -> bool:
+        """Verifica que el precio OCR coincide con el precio API (±0.5%)."""
+        if ocr_price is None or ocr_price <= 0:
+            return False
+        diff = abs(api_price - ocr_price) / api_price
+        return diff <= self.VISUAL_PRICE_TOLERANCE
+
+    def _compute_zscore(self, value: float) -> float:
+        if len(self._cvd_history) < 10:
+            return 0.0
+        import numpy as np
+        arr = self._cvd_history[-100:]
+        mean = float(sum(arr) / len(arr))
+        std  = float((sum((x - mean) ** 2 for x in arr) / len(arr)) ** 0.5)
+        return (value - mean) / std if std > 1e-10 else 0.0
+
+    def _flat(self, symbol: str, price: float, atr: float,
+              reason: str, value: float) -> TradeSignal:
+        logger.debug("FLAT %s — %s (%.3f)", symbol, reason, value)
+        return TradeSignal(
+            symbol      = symbol,
+            signal_type = SignalType.FLAT,
+            timestamp   = time.time(),
+            entry_price = price,
+            take_profit = price + atr * self.TP_ATR_MULT,
+            stop_loss   = price - atr * self.SL_ATR_MULT,
+            atr         = atr,
+            confidence  = 0.0,
+            exit_reason = reason,
+        )
+
+    def open_positions(self) -> dict[str, OpenPosition]:
+        return dict(self._positions)
+
+    def signal_history(self, last_n: int = 50) -> list[TradeSignal]:
+        return self._signal_history[-last_n:]

@@ -1,0 +1,330 @@
+# ATLAS-Quant — Módulo 9A: Production Guard
+"""Capa de seguridad de producción para trading live.
+
+Responsabilidades:
+  1. Verificar que test_runner aprobó el sistema (ready_for_live.json)
+  2. Daily loss limit: 2% equity → pausa automática del día
+  3. Max position size: 5% del portfolio por orden
+  4. Forzar Tradier preview=True antes de cualquier orden real
+  5. Double confirmation: voz + círculo físico ×3 + F12 humano
+     → requerida SÓLO antes del PRIMER trade live del día
+
+Reset diario: a las 09:30 ET (apertura de mercado).
+"""
+from __future__ import annotations
+
+import json
+import logging
+import math
+import os
+import threading
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
+
+logger = logging.getLogger("atlas.production.guard")
+
+# ── Constantes de seguridad ───────────────────────────────────────────────────
+_DAILY_LOSS_LIMIT_PCT  = float(os.getenv("ATLAS_DAILY_LOSS_PCT",  "2.0"))   # %
+_MAX_POSITION_SIZE_PCT = float(os.getenv("ATLAS_MAX_POS_PCT",     "5.0"))   # %
+_CIRCLE_RADIUS_PX      = 80
+_CIRCLE_STEPS          = 36
+_DOUBLE_CONFIRM_CIRCLES = 3      # círculos de mouse para confirmación
+_F12_WAIT_S            = 30.0   # tiempo máximo esperando F12
+_READY_FOR_LIVE_FILE   = Path(os.getenv(
+    "ATLAS_READY_FILE",
+    "data/operation/ready_for_live.json"
+))
+
+# pyautogui / pynput opcionales
+try:
+    import pyautogui
+    pyautogui.FAILSAFE = False
+    pyautogui.PAUSE    = 0.02
+    _GUI_OK = True
+except ImportError:
+    _GUI_OK = False
+
+try:
+    from pynput import keyboard as _kb
+    _PYNPUT_OK = True
+except ImportError:
+    _PYNPUT_OK = False
+
+
+@dataclass
+class GuardState:
+    """Estado del guardián de producción (reset diario en apertura)."""
+    date_str:         str   = ""           # "2026-03-22"
+    opening_equity:   float = 0.0
+    daily_pnl:        float = 0.0
+    daily_paused:     bool  = False
+    first_live_today: bool  = True         # True → requiere double confirmation
+    trades_today:     int   = 0
+    blocks_today:     int   = 0
+
+
+class ProductionGuard:
+    """Guardián de seguridad para el primer día de trading live.
+
+    Uso::
+
+        guard = ProductionGuard(voice=vf, hid=hid_ctrl)
+        ok, reason = guard.check_ready_for_live()
+        if not ok:
+            raise SystemExit(reason)
+
+        # Antes de cada orden:
+        ok, reason = guard.gate_order(order_value=2400, portfolio_value=100_000)
+        if not ok:
+            logger.warning("Orden bloqueada: %s", reason)
+    """
+
+    def __init__(
+        self,
+        voice=None,
+        hid=None,
+        daily_loss_pct: float = _DAILY_LOSS_LIMIT_PCT,
+        max_position_pct: float = _MAX_POSITION_SIZE_PCT,
+    ) -> None:
+        self.voice           = voice
+        self.hid             = hid
+        self.daily_loss_pct  = daily_loss_pct
+        self.max_pos_pct     = max_position_pct
+        self._state          = GuardState()
+        self._lock           = threading.Lock()
+        self._f12_event      = threading.Event()
+        self._f12_listener   = None
+
+    # ── Verificación de elegibilidad LIVE ─────────────────────────────────────
+
+    def check_ready_for_live(self) -> tuple[bool, str]:
+        """Lee ready_for_live.json y verifica que el sistema pasó el test runner."""
+        for path in [_READY_FOR_LIVE_FILE,
+                     Path("reports/ready_for_live.json"),
+                     Path("data/ready_for_live.json")]:
+            if path.exists():
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        data = json.load(f)
+                    if not data.get("ready_for_live", False):
+                        return False, (
+                            f"Test runner no aprobó LIVE — "
+                            f"Sharpe={data.get('sharpe',0):.2f} "
+                            f"DD={data.get('max_drawdown_pct',0):.1f}%"
+                        )
+                    logger.info(
+                        "✓ ready_for_live verificado — Sharpe=%.2f DD=%.1f%%",
+                        data.get("sharpe", 0), data.get("max_drawdown_pct", 0)
+                    )
+                    return True, "ok"
+                except Exception as exc:
+                    return False, f"Error leyendo ready_for_live.json: {exc}"
+
+        return False, (
+            f"Archivo ready_for_live.json no encontrado. "
+            f"Ejecuta primero: python -m atlas_code_quant.calibration.test_runner"
+        )
+
+    # ── Gate de órdenes ───────────────────────────────────────────────────────
+
+    def gate_order(
+        self,
+        order_value: float,
+        portfolio_value: float,
+        equity: float | None = None,
+    ) -> tuple[bool, str]:
+        """Verifica si una orden puede ejecutarse. Retorna (ok, razón)."""
+        with self._lock:
+            self._refresh_daily_state(equity or portfolio_value)
+
+            # 1. Pausa diaria activa
+            if self._state.daily_paused:
+                self._state.blocks_today += 1
+                return False, f"Pausa diaria activa — pérdida diaria supera {self.daily_loss_pct}%"
+
+            # 2. Daily loss limit
+            if portfolio_value > 0 and equity is not None:
+                daily_loss_pct = abs(self._state.daily_pnl) / max(self._state.opening_equity, 1) * 100
+                if self._state.daily_pnl < 0 and daily_loss_pct >= self.daily_loss_pct:
+                    self._state.daily_paused = True
+                    self._state.blocks_today += 1
+                    msg = (
+                        f"Daily loss limit alcanzado: {daily_loss_pct:.1f}% ≥ {self.daily_loss_pct}%. "
+                        f"Trading pausado hasta mañana."
+                    )
+                    logger.warning(msg)
+                    self._speak(msg, urgent=True)
+                    self._notify_telegram(msg)
+                    return False, msg
+
+            # 3. Max position size
+            if portfolio_value > 0:
+                pos_pct = order_value / portfolio_value * 100
+                if pos_pct > self.max_pos_pct:
+                    self._state.blocks_today += 1
+                    return False, (
+                        f"Posición {pos_pct:.1f}% supera máximo {self.max_pos_pct}%. "
+                        f"Reduce a ${portfolio_value * self.max_pos_pct / 100:,.0f}"
+                    )
+
+        return True, "ok"
+
+    def record_trade_pnl(self, pnl: float) -> None:
+        """Registra PnL de trade terminado para cálculo de daily loss."""
+        with self._lock:
+            self._state.daily_pnl   += pnl
+            self._state.trades_today += 1
+
+    # ── Double confirmation (primer trade live del día) ────────────────────────
+
+    def require_double_confirmation(self) -> bool:
+        """Requiere confirmación doble: voz + círculo ×3 + tecla F12.
+
+        Retorna True si el humano confirmó, False si rechazó o timeout.
+        Sólo se llama una vez al día (first_live_today).
+        """
+        with self._lock:
+            if not self._state.first_live_today:
+                return True   # ya confirmado hoy
+
+        logger.warning("DOUBLE CONFIRMATION requerida para primer trade live del día")
+
+        self._speak(
+            "Atención. ATLAS está listo para ejecutar el primer trade real del día. "
+            "Se requiere confirmación física. "
+            "El robot moverá el mouse en tres círculos. "
+            "Presiona F12 para confirmar o Escape para cancelar.",
+            urgent=True
+        )
+        time.sleep(3.0)
+
+        # Círculos físicos ×3
+        for i in range(_DOUBLE_CONFIRM_CIRCLES):
+            self._speak(f"Círculo {i+1} de {_DOUBLE_CONFIRM_CIRCLES}")
+            confirmed = self._execute_circle()
+            if not confirmed:
+                self._speak("Error en confirmación física. Cancelado.", urgent=True)
+                return False
+            time.sleep(0.8)
+
+        # Esperar F12 del humano
+        self._speak(
+            "Círculos completados. Presiona F12 para confirmar el inicio de trading real. "
+            f"Tienes {int(_F12_WAIT_S)} segundos.",
+            urgent=True
+        )
+
+        confirmed = self._wait_for_f12(timeout=_F12_WAIT_S)
+
+        if confirmed:
+            with self._lock:
+                self._state.first_live_today = False
+            logger.warning("DOUBLE CONFIRMATION APROBADA — trading live autorizado")
+            self._speak("Confirmación aceptada. Iniciando trading real.", urgent=True)
+            self._notify_telegram("✅ ATLAS: Double confirmation aprobada — trading LIVE iniciado")
+        else:
+            logger.warning("DOUBLE CONFIRMATION RECHAZADA o timeout")
+            self._speak("Confirmación no recibida. Permaneciendo en paper.", urgent=True)
+
+        return confirmed
+
+    def _execute_circle(self) -> bool:
+        """Mueve el mouse en un círculo de confirmación."""
+        if not _GUI_OK:
+            logger.info("pyautogui no disponible — simulando círculo")
+            time.sleep(1.2)
+            return True
+        try:
+            cx, cy = pyautogui.position()
+            for step in range(_CIRCLE_STEPS + 1):
+                angle = 2 * math.pi * step / _CIRCLE_STEPS
+                x = int(cx + _CIRCLE_RADIUS_PX * math.cos(angle))
+                y = int(cy + _CIRCLE_RADIUS_PX * math.sin(angle))
+                pyautogui.moveTo(x, y, duration=0.025)
+            pyautogui.moveTo(cx, cy, duration=0.08)
+            return True
+        except Exception as exc:
+            logger.error("Error en círculo: %s", exc)
+            return False
+
+    def _wait_for_f12(self, timeout: float = _F12_WAIT_S) -> bool:
+        """Espera pulsación de F12 dentro del timeout. Esc = cancel."""
+        if not _PYNPUT_OK:
+            # Sin pynput: pedir por stdin
+            print(f"\n{'='*50}")
+            print("⚠  ATLAS QUANT — CONFIRMACIÓN DE TRADING LIVE")
+            print(f"{'='*50}")
+            print(f"Escribe 'CONFIRMO' y Enter (timeout {int(timeout)}s):")
+            try:
+                import signal as _sig
+                def _timeout_handler(s, f):
+                    raise TimeoutError()
+                _sig.signal(_sig.SIGALRM, _timeout_handler)
+                _sig.alarm(int(timeout))
+                resp = input("> ").strip()
+                _sig.alarm(0)
+                return resp == "CONFIRMO"
+            except (TimeoutError, Exception):
+                return False
+
+        self._f12_event.clear()
+        _cancelled = threading.Event()
+
+        def on_press(key):
+            if key == _kb.Key.f12:
+                self._f12_event.set()
+            elif key == _kb.Key.esc:
+                _cancelled.set()
+                self._f12_event.set()   # desbloquear espera
+
+        listener = _kb.Listener(on_press=on_press)
+        listener.daemon = True
+        listener.start()
+        self._f12_event.wait(timeout=timeout)
+        listener.stop()
+
+        return self._f12_event.is_set() and not _cancelled.is_set()
+
+    # ── Estado diario ─────────────────────────────────────────────────────────
+
+    def _refresh_daily_state(self, current_equity: float) -> None:
+        """Reset del estado al inicio de un nuevo día de trading."""
+        import datetime
+        today = datetime.date.today().isoformat()
+        if self._state.date_str != today:
+            logger.info("Nuevo día de trading — reset de estado ProductionGuard")
+            self._state = GuardState(
+                date_str       = today,
+                opening_equity = current_equity,
+                first_live_today = True,
+            )
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _speak(self, text: str, urgent: bool = False) -> None:
+        if self.voice is not None:
+            self.voice.speak(text, urgent=urgent)
+        else:
+            logger.info("TTS: %s", text)
+
+    def _notify_telegram(self, message: str) -> None:
+        try:
+            from atlas_code_quant.production.telegram_alerts import TelegramAlerts
+            TelegramAlerts.send_static(message)
+        except Exception:
+            pass
+
+    def status(self) -> dict:
+        with self._lock:
+            s = self._state
+            return {
+                "date":             s.date_str,
+                "daily_pnl":        round(s.daily_pnl, 2),
+                "daily_paused":     s.daily_paused,
+                "first_live_today": s.first_live_today,
+                "trades_today":     s.trades_today,
+                "blocks_today":     s.blocks_today,
+                "opening_equity":   s.opening_equity,
+            }

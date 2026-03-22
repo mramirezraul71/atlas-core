@@ -57,6 +57,54 @@ _TRADIER_CREDENTIALS_FILE = _default_tradier_credentials_file()
 _TRADIER_FILE_CREDENTIALS = _load_tradier_file_credentials(_TRADIER_CREDENTIALS_FILE)
 
 
+def _load_credentials_file_to_env() -> None:
+    """Carga todos los pares KEY=VALUE de credenciales.txt en os.environ (sin sobreescribir).
+
+    Permite que AlertDispatcher, TelegramBridge y otros módulos lean las credenciales
+    aunque Code-Quant arranque como proceso independiente (sin Atlas Core).
+    """
+    path = DEFAULT_TRADIER_CREDENTIALS_FILE
+    if not path.exists():
+        return
+    # Estas claves las maneja _load_tradier_file_credentials con contexto de sección
+    _tradier_only = {"ACCOUNT_ID", "ACCESS_TOKEN", "BASE_URL"}
+    try:
+        for raw_line in path.read_text(encoding="utf-8-sig", errors="ignore").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or line.startswith("["):
+                continue
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip()
+            if not key or key in _tradier_only:
+                continue
+            if key not in os.environ:  # no sobreescribir vars ya definidas
+                os.environ[key] = value
+    except Exception:
+        pass
+
+
+_load_credentials_file_to_env()
+
+
+def _ienv(key: str, default: int) -> int:
+    """int(os.getenv) con fallback seguro ante valores malformados."""
+    try:
+        return int(os.getenv(key, str(default)))
+    except (ValueError, TypeError):
+        return default
+
+
+def _fenv(key: str, default: float) -> float:
+    """float(os.getenv) con fallback seguro ante valores malformados."""
+    try:
+        return float(os.getenv(key, str(default)))
+    except (ValueError, TypeError):
+        return default
+
+
 @dataclass
 class TradingConfig:
     # Supported assets
@@ -74,25 +122,25 @@ class TradingConfig:
     tradier_live_base_url: str = _clean_setting(os.getenv("TRADIER_LIVE_BASE_URL"), _TRADIER_FILE_CREDENTIALS["live"].get("BASE_URL", "https://api.tradier.com/v1")).rstrip("/")
     tradier_paper_base_url: str = _clean_setting(os.getenv("TRADIER_PAPER_BASE_URL"), _TRADIER_FILE_CREDENTIALS["paper"].get("BASE_URL", "https://sandbox.tradier.com/v1")).rstrip("/")
     tradier_default_scope: str = _clean_setting(os.getenv("TRADIER_DEFAULT_SCOPE")).lower()
-    tradier_timeout_sec: int = int(os.getenv("TRADIER_TIMEOUT_SEC", "15"))
+    tradier_timeout_sec: int = _ienv("TRADIER_TIMEOUT_SEC", 15)
 
     # PDT / monitoring controls
-    tradier_monitor_cache_ttl_sec: int = int(os.getenv("TRADIER_MONITOR_CACHE_TTL_SEC", "300"))
-    tradier_probability_refresh_sec: int = int(os.getenv("TRADIER_PROBABILITY_REFRESH_SEC", "300"))
-    tradier_live_update_interval_sec: int = int(os.getenv("TRADIER_LIVE_UPDATE_INTERVAL_SEC", "5"))
-    tradier_journal_sync_interval_sec: int = int(os.getenv("TRADIER_JOURNAL_SYNC_INTERVAL_SEC", "5"))
-    tradier_journal_history_days: int = int(os.getenv("TRADIER_JOURNAL_HISTORY_DAYS", "30"))
-    tradier_pdt_min_equity: float = float(os.getenv("TRADIER_PDT_MIN_EQUITY", "25000"))
-    tradier_pdt_max_day_trades: int = int(os.getenv("TRADIER_PDT_MAX_DAY_TRADES", "3"))
-    tradier_pdt_window_days: int = int(os.getenv("TRADIER_PDT_WINDOW_DAYS", "5"))
-    tradier_pdt_history_fill_limit: int = int(os.getenv("TRADIER_PDT_HISTORY_FILL_LIMIT", "200"))
+    tradier_monitor_cache_ttl_sec: int = _ienv("TRADIER_MONITOR_CACHE_TTL_SEC", 300)
+    tradier_probability_refresh_sec: int = _ienv("TRADIER_PROBABILITY_REFRESH_SEC", 300)
+    tradier_live_update_interval_sec: int = _ienv("TRADIER_LIVE_UPDATE_INTERVAL_SEC", 5)
+    tradier_journal_sync_interval_sec: int = _ienv("TRADIER_JOURNAL_SYNC_INTERVAL_SEC", 5)
+    tradier_journal_history_days: int = _ienv("TRADIER_JOURNAL_HISTORY_DAYS", 30)
+    tradier_pdt_min_equity: float = _fenv("TRADIER_PDT_MIN_EQUITY", 25000.0)
+    tradier_pdt_max_day_trades: int = _ienv("TRADIER_PDT_MAX_DAY_TRADES", 3)
+    tradier_pdt_window_days: int = _ienv("TRADIER_PDT_WINDOW_DAYS", 5)
+    tradier_pdt_history_fill_limit: int = _ienv("TRADIER_PDT_HISTORY_FILL_LIMIT", 200)
     tradier_pdt_fail_closed: bool = os.getenv("TRADIER_PDT_FAIL_CLOSED", "true").strip().lower() not in {"0", "false", "no"}
 
     # ATLAS brain bridge
     atlas_brain_enabled: bool = os.getenv("ATLAS_BRAIN_BRIDGE_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     atlas_brain_base_url: str = _clean_setting(os.getenv("ATLAS_BRAIN_BASE_URL"), "http://127.0.0.1:8791").rstrip("/")
     atlas_brain_api_key: str = _clean_setting(os.getenv("ATLAS_BRAIN_API_KEY"))
-    atlas_brain_timeout_sec: int = int(os.getenv("ATLAS_BRAIN_TIMEOUT_SEC", "5"))
+    atlas_brain_timeout_sec: int = _ienv("ATLAS_BRAIN_TIMEOUT_SEC", 5)
     atlas_brain_memory_enabled: bool = os.getenv("ATLAS_BRAIN_MEMORY_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     atlas_brain_bitacora_enabled: bool = os.getenv("ATLAS_BRAIN_BITACORA_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     atlas_brain_source: str = _clean_setting(os.getenv("ATLAS_BRAIN_SOURCE"), "quant_brain")
@@ -101,19 +149,19 @@ class TradingConfig:
     scanner_auto_start: bool = os.getenv("QUANT_SCANNER_AUTO_START", "true").strip().lower() not in {"0", "false", "no"}
     scanner_enabled: bool = os.getenv("QUANT_SCANNER_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     scanner_source: str = _clean_setting(os.getenv("QUANT_SCANNER_SOURCE"), "yfinance").lower()
-    scanner_scan_interval_sec: int = int(os.getenv("QUANT_SCANNER_INTERVAL_SEC", "180"))
-    scanner_min_signal_strength: float = float(os.getenv("QUANT_SCANNER_MIN_SIGNAL_STRENGTH", "0.55"))
-    scanner_min_local_win_rate_pct: float = float(os.getenv("QUANT_SCANNER_MIN_LOCAL_WIN_RATE_PCT", "53"))
-    scanner_min_selection_score: float = float(os.getenv("QUANT_SCANNER_MIN_SELECTION_SCORE", "75"))
-    scanner_max_candidates: int = int(os.getenv("QUANT_SCANNER_MAX_CANDIDATES", "8"))
-    scanner_activity_limit: int = int(os.getenv("QUANT_SCANNER_ACTIVITY_LIMIT", "160"))
+    scanner_scan_interval_sec: int = _ienv("QUANT_SCANNER_INTERVAL_SEC", 180)
+    scanner_min_signal_strength: float = _fenv("QUANT_SCANNER_MIN_SIGNAL_STRENGTH", 0.55)
+    scanner_min_local_win_rate_pct: float = _fenv("QUANT_SCANNER_MIN_LOCAL_WIN_RATE_PCT", 53.0)
+    scanner_min_selection_score: float = _fenv("QUANT_SCANNER_MIN_SELECTION_SCORE", 75.0)
+    scanner_max_candidates: int = _ienv("QUANT_SCANNER_MAX_CANDIDATES", 8)
+    scanner_activity_limit: int = _ienv("QUANT_SCANNER_ACTIVITY_LIMIT", 160)
     scanner_require_higher_tf_confirmation: bool = os.getenv("QUANT_SCANNER_REQUIRE_HIGHER_TF", "true").strip().lower() not in {"0", "false", "no"}
     scanner_universe_mode: str = _clean_setting(os.getenv("QUANT_SCANNER_UNIVERSE_MODE"), "us_equities_rotating").lower()
-    scanner_universe_batch_size: int = int(os.getenv("QUANT_SCANNER_UNIVERSE_BATCH_SIZE", "80"))
-    scanner_prefilter_count: int = int(os.getenv("QUANT_SCANNER_PREFILTER_COUNT", "20"))
-    scanner_prefilter_min_price: float = float(os.getenv("QUANT_SCANNER_PREFILTER_MIN_PRICE", "5"))
-    scanner_prefilter_min_dollar_volume_millions: float = float(os.getenv("QUANT_SCANNER_PREFILTER_MIN_DOLLAR_VOLUME_M", "10"))
-    scanner_universe_cache_ttl_sec: int = int(os.getenv("QUANT_SCANNER_UNIVERSE_CACHE_TTL_SEC", "86400"))
+    scanner_universe_batch_size: int = _ienv("QUANT_SCANNER_UNIVERSE_BATCH_SIZE", 80)
+    scanner_prefilter_count: int = _ienv("QUANT_SCANNER_PREFILTER_COUNT", 20)
+    scanner_prefilter_min_price: float = _fenv("QUANT_SCANNER_PREFILTER_MIN_PRICE", 5.0)
+    scanner_prefilter_min_dollar_volume_millions: float = _fenv("QUANT_SCANNER_PREFILTER_MIN_DOLLAR_VOLUME_M", 10.0)
+    scanner_universe_cache_ttl_sec: int = _ienv("QUANT_SCANNER_UNIVERSE_CACHE_TTL_SEC", 86400)
     scanner_universe_raw: str = _clean_setting(
         os.getenv("QUANT_SCANNER_UNIVERSE"),
         "SPY,QQQ,IWM,AAPL,MSFT,NVDA,AMZN,META,AMD,TSLA",
@@ -125,10 +173,10 @@ class TradingConfig:
 
     # Adaptive learning
     adaptive_learning_enabled: bool = os.getenv("QUANT_ADAPTIVE_LEARNING_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
-    adaptive_learning_refresh_sec: int = int(os.getenv("QUANT_ADAPTIVE_LEARNING_REFRESH_SEC", "300"))
-    adaptive_learning_window_days: int = int(os.getenv("QUANT_ADAPTIVE_LEARNING_WINDOW_DAYS", "180"))
-    adaptive_learning_min_strategy_samples: int = int(os.getenv("QUANT_ADAPTIVE_LEARNING_MIN_STRATEGY_SAMPLES", "4"))
-    adaptive_learning_min_symbol_samples: int = int(os.getenv("QUANT_ADAPTIVE_LEARNING_MIN_SYMBOL_SAMPLES", "3"))
+    adaptive_learning_refresh_sec: int = _ienv("QUANT_ADAPTIVE_LEARNING_REFRESH_SEC", 300)
+    adaptive_learning_window_days: int = _ienv("QUANT_ADAPTIVE_LEARNING_WINDOW_DAYS", 180)
+    adaptive_learning_min_strategy_samples: int = _ienv("QUANT_ADAPTIVE_LEARNING_MIN_STRATEGY_SAMPLES", 4)
+    adaptive_learning_min_symbol_samples: int = _ienv("QUANT_ADAPTIVE_LEARNING_MIN_SYMBOL_SAMPLES", 3)
 
     # Risk management — v2 logarítmico (Grok/xAI criterio)
     max_position_pct: float = 0.05             # Fallback si no hay Kelly
@@ -137,21 +185,21 @@ class TradingConfig:
     default_take_profit_pct: float = 0.04
     # Kelly Criterion
     kelly_enabled: bool = True
-    kelly_fraction: float = float(os.getenv("QUANT_KELLY_FRACTION", "0.25"))    # Quarter-Kelly
-    kelly_max_position_pct: float = float(os.getenv("QUANT_KELLY_MAX_PCT", "0.20"))
-    kelly_min_samples: int = int(os.getenv("QUANT_KELLY_MIN_SAMPLES", "6"))
+    kelly_fraction: float = _fenv("QUANT_KELLY_FRACTION", 0.25)        # Quarter-Kelly
+    kelly_max_position_pct: float = _fenv("QUANT_KELLY_MAX_PCT", 0.20)
+    kelly_min_samples: int = _ienv("QUANT_KELLY_MIN_SAMPLES", 6)
     # ATR stops dinámicos
     atr_stops_enabled: bool = os.getenv("QUANT_ATR_STOPS_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
-    atr_sl_multiplier: float = float(os.getenv("QUANT_ATR_SL_MULT", "1.5"))    # SL = entry - ATR*1.5
-    atr_tp_multiplier: float = float(os.getenv("QUANT_ATR_TP_MULT", "3.0"))    # TP = entry + ATR*3.0
-    atr_period: int = int(os.getenv("QUANT_ATR_PERIOD", "14"))
+    atr_sl_multiplier: float = _fenv("QUANT_ATR_SL_MULT", 1.5)        # SL = entry - ATR*1.5
+    atr_tp_multiplier: float = _fenv("QUANT_ATR_TP_MULT", 3.0)        # TP = entry + ATR*3.0
+    atr_period: int = _ienv("QUANT_ATR_PERIOD", 14)
     # Circuit breaker
-    circuit_breaker_consecutive_losses: int = int(os.getenv("QUANT_CB_CONSEC_LOSSES", "3"))
+    circuit_breaker_consecutive_losses: int = _ienv("QUANT_CB_CONSEC_LOSSES", 3)
     # Walk-forward validation
     walk_forward_enabled: bool = os.getenv("QUANT_WALK_FORWARD_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
-    walk_forward_folds: int = int(os.getenv("QUANT_WALK_FORWARD_FOLDS", "5"))
-    walk_forward_train_pct: float = float(os.getenv("QUANT_WF_TRAIN_PCT", "0.70"))
-    walk_forward_val_pct: float = float(os.getenv("QUANT_WF_VAL_PCT", "0.15"))
+    walk_forward_folds: int = _ienv("QUANT_WALK_FORWARD_FOLDS", 5)
+    walk_forward_train_pct: float = _fenv("QUANT_WF_TRAIN_PCT", 0.70)
+    walk_forward_val_pct: float = _fenv("QUANT_WF_VAL_PCT", 0.15)
 
     # Timeframes
     primary_timeframe: str = "1h"
