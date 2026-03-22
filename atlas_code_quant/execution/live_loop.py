@@ -141,6 +141,22 @@ class LiveLoop:
             "▶ LiveLoop iniciado — modo=%s ciclo=%.0fs símbolos=%d",
             self.mode.upper(), self.cycle_s, len(self.symbols)
         )
+        if self.mode == "paper":
+            logger.info(
+                "━━━ SIMULACIÓN PAPER — Mañana Open Test ━━━\n"
+                "    Todas las órdenes van a sandbox.tradier.com\n"
+                "    preview=true forzado — sin capital real\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            )
+            try:
+                from atlas_code_quant.production.telegram_alerts import TelegramAlerts
+                TelegramAlerts.send_static(
+                    "🟡 *LiveLoop PAPER activo*\n"
+                    "SIMULACIÓN PAPER — Mañana Open Test\n"
+                    "sandbox.tradier.com | preview=true"
+                )
+            except Exception:
+                pass
 
     def stop(self, reason: str = "manual") -> None:
         logger.warning("LiveLoop STOP — razón: %s", reason)

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ATLAS-Quant entrypoint para Jetson Docker
-# Modos: api | core | core-live | calibrate | test | train | backtest | shell
+# Modos: api | core | core-live | calibrate | test | train | backtest | morning-test | audit | grafana-setup | shell
 
 set -e
 
@@ -173,6 +173,28 @@ print('Entrenamiento completado')
             --cycles "${CYCLES}" \
             --rtmp "${RTMP}" \
             --mode live
+        ;;
+
+    # ── Morning Market Open Test — 2026-03-23 ────────────────────────────────
+    morning-test)
+        echo "▶ ATLAS Morning Market Open Test — 2026-03-23"
+        echo "   Modo: PAPER | sandbox.tradier.com | preview=true"
+        export ATLAS_MODE=paper
+        export ATLAS_FORCE_LIVE_PREVIEW=true
+
+        check_calibration || echo "  → Test sin calibración física (simulación)"
+
+        SYMBOLS="${ATLAS_SYMBOLS:-SPY,QQQ,AAPL,TSLA,NVDA}"
+        SKIP_WAIT="${ATLAS_SKIP_WAIT:-false}"
+
+        mkdir -p /workspace/reports /workspace/logs
+
+        if [ "${SKIP_WAIT}" = "true" ]; then
+            echo "   SKIP_WAIT=true — ejecutando todas las fases inmediatamente"
+            exec python3 /workspace/morning_market_test.py --now
+        else
+            exec python3 /workspace/morning_market_test.py
+        fi
         ;;
 
     # ── Backtest histórico ────────────────────────────────────────────────────

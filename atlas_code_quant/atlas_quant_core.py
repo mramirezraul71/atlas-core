@@ -495,6 +495,52 @@ class ATLASQuantCore:
             voice.stop()
             return False
 
+    # ── Morning Market Open Test (2026-03-23) ────────────────────────────────
+
+    def start_market_open_test(
+        self,
+        skip_wait: bool = False,
+        now_mode:  bool = False,
+    ) -> int:
+        """Inicia el flujo autónomo completo del Morning Market Open Test.
+
+        Fuerza modo PAPER, activa voz + Telegram + Grafana y delega a
+        MorningMarketTest para orquestar las 4 fases del día.
+
+        Args:
+            skip_wait: si True, no espera al horario ET (útil para CI/test rápido).
+            now_mode:  si True, ejecuta todas las fases inmediatamente.
+
+        Retorna código de salida: 0 = éxito, 1 = cancelado/error.
+        """
+        import os as _os
+        _os.environ["ATLAS_MODE"]                 = "paper"
+        _os.environ["ATLAS_FORCE_LIVE_PREVIEW"]   = "true"
+        self.mode = "paper"
+
+        logger.info("▶ start_market_open_test — modo=PAPER skip_wait=%s now=%s",
+                    skip_wait, now_mode)
+
+        try:
+            # Importación lazy para no romper entornos sin el script
+            import importlib.util, sys as _sys
+            spec = importlib.util.spec_from_file_location(
+                "morning_market_test",
+                str(Path(__file__).resolve().parent.parent / "morning_market_test.py"),
+            )
+            mod = importlib.util.module_from_spec(spec)
+            _sys.modules.setdefault("morning_market_test", mod)
+            spec.loader.exec_module(mod)
+
+            test = mod.MorningMarketTest(skip_wait=skip_wait, now_mode=now_mode)
+            # Compartir sub-sistemas ya inicializados si están disponibles
+            if self._initialized:
+                test._core = self
+            return test.run()
+        except Exception as exc:
+            logger.exception("Error en start_market_open_test: %s", exc)
+            return 1
+
     # ── Ejecución delegada a SignalExecutor (vía LiveLoop) ───────────────────
 
     # ── Callbacks de eventos ──────────────────────────────────────────────────
