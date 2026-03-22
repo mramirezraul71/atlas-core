@@ -19,6 +19,7 @@ const SVG = {
   package: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
   governance: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
   brain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 017 7c0 3-2 5-4 6v3h-6v-3c-2-1-4-3-4-6a7 7 0 017-7z"/><path d="M9 18h6M10 21h4"/></svg>',
+  grafana: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><polyline points="6 16 10 10 14 13 18 8"/><circle cx="6" cy="16" r="1" fill="currentColor"/></svg>',
 };
 
 function _getGreeting() {
@@ -85,28 +86,57 @@ export function render(container) {
 
       <div class="quick-actions">
         <div class="quick-chip" data-action="health">${SVG.health} Salud del sistema</div>
-        <div class="quick-chip" data-action="workspace">${SVG.workspace} Workspace</div>
+        <div class="quick-chip" data-action="clawd-direct">${SVG.brain} ATLAS Directo</div>
         <div class="quick-chip" data-action="bitacora">${SVG.bitacora} Bitacora</div>
+        <div class="quick-chip quant-chip" data-action="code-quant-dashboard" style="color:#00d4aa;border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.07)">${SVG.trading} Code Quant</div>
+        <div class="quick-chip quant-chip" data-action="atlas-quant-scanner" style="color:#00d4aa;border-color:rgba(0,212,170,0.25)">&#9670; Escaner Quant</div>
+        <div class="quick-chip quant-chip" data-action="grafana-quant" style="color:#f46800;border-color:rgba(244,104,0,0.35)">${SVG.grafana} Grafana</div>
         <div class="quick-chip" data-action="rauli-vision">${SVG.eye} Rauli Vision</div>
         <div class="quick-chip" data-action="rauli-panaderia">${SVG.package} Rauli Panaderia</div>
         <div class="quick-chip" data-action="bety-eventos">${SVG.bitacora} Bety Eventos</div>
+        <div class="quick-chip" data-action="workspace">${SVG.workspace} Workspace</div>
         <div class="quick-chip" data-action="config">${SVG.config} AI Config</div>
         <div class="quick-chip" data-action="autonomy">${SVG.governance} Autonomia</div>
-        <div class="quick-chip" data-action="clawd-direct">${SVG.brain} ATLAS Directo</div>
         <div class="quick-chip" data-action="codex-supervisor">${SVG.governance} Codex Supervisor</div>
         <div class="quick-chip" data-action="tools-menu">${SVG.monitor} Menu de herramientas</div>
         <div class="quick-chip" data-action="software-center">${SVG.package} Centro de software</div>
         <div class="quick-chip" data-action="live-diagnostic">${SVG.health} Diagnostico Live</div>
-        <div class="quick-chip" data-action="atlas-quant-scanner">${SVG.trading} Escaner Quant</div>
-        <div class="quick-chip" data-action="code-quant-dashboard" style="color:#00d4aa;border-color:rgba(0,212,170,0.35)">&#9636; Code Quant</div>
         <div class="quick-chip" data-action="atlas-nexus">⬡ Atlas Nexus</div>
         <div class="quick-chip" data-action="robot-3d">🤖 Robot 3D</div>
       </div>
 
       <div class="apps-grid">
+
+        <!-- ── QUANT GROUP ─────────────────────────────── -->
+        <div class="app-tile" data-app="code-quant-dashboard" style="border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.05)">
+          <div class="app-tile-icon" style="color:#00d4aa">${SVG.trading}</div>
+          <div class="app-tile-label" style="color:#00d4aa">Code Quant</div>
+        </div>
+        <div class="app-tile" data-app="atlas-quant-scanner" style="border-color:rgba(0,212,170,0.25)">
+          <div class="app-tile-icon" style="color:#00d4aa">&#9670;</div>
+          <div class="app-tile-label">Escaner Quant</div>
+        </div>
+        <div class="app-tile" data-app="grafana-quant" style="border-color:rgba(244,104,0,0.35)">
+          <div class="app-tile-icon" style="color:#f46800">${SVG.grafana}</div>
+          <div class="app-tile-label">Grafana</div>
+        </div>
+
+        <!-- ── CORE ───────────────────────────────────── -->
         <div class="app-tile" data-app="assistant">
           <div class="app-tile-icon">${SVG.brain}</div>
           <div class="app-tile-label">AI Assistant</div>
+        </div>
+        <div class="app-tile" data-app="monitor">
+          <div class="app-tile-icon">${SVG.monitor}</div>
+          <div class="app-tile-label">Monitor</div>
+        </div>
+        <div class="app-tile" data-app="clawd-direct">
+          <div class="app-tile-icon">${SVG.brain}</div>
+          <div class="app-tile-label">ATLAS Directo</div>
+        </div>
+        <div class="app-tile" data-app="mis-apps">
+          <div class="app-tile-icon">${SVG.apps}</div>
+          <div class="app-tile-label">Mis Apps</div>
         </div>
         <div class="app-tile" data-app="workspace-ext">
           <div class="app-tile-icon">${SVG.workspace}</div>
@@ -120,14 +150,8 @@ export function render(container) {
           <div class="app-tile-icon">${SVG.governance}</div>
           <div class="app-tile-label">Approvals</div>
         </div>
-        <div class="app-tile" data-app="monitor">
-          <div class="app-tile-icon">${SVG.monitor}</div>
-          <div class="app-tile-label">Monitor</div>
-        </div>
-        <div class="app-tile" data-app="mis-apps">
-          <div class="app-tile-icon">${SVG.apps}</div>
-          <div class="app-tile-label">Mis Apps</div>
-        </div>
+
+        <!-- ── BRAZOS ─────────────────────────────────── -->
         <div class="app-tile" data-app="rauli-vision">
           <div class="app-tile-icon">${SVG.eye}</div>
           <div class="app-tile-label">Rauli Vision</div>
@@ -140,29 +164,19 @@ export function render(container) {
           <div class="app-tile-icon">${SVG.bitacora}</div>
           <div class="app-tile-label">Bety Eventos</div>
         </div>
+
+        <!-- ── TOOLS ──────────────────────────────────── -->
         <div class="app-tile" data-app="config-tile">
           <div class="app-tile-icon">${SVG.config}</div>
           <div class="app-tile-label">Settings</div>
         </div>
         <div class="app-tile" data-app="tools-menu">
           <div class="app-tile-icon">${SVG.monitor}</div>
-          <div class="app-tile-label">Menu de herramientas</div>
+          <div class="app-tile-label">Herramientas</div>
         </div>
         <div class="app-tile" data-app="software-center">
           <div class="app-tile-icon">${SVG.package}</div>
-          <div class="app-tile-label">Centro de software</div>
-        </div>
-        <div class="app-tile" data-app="atlas-quant-scanner">
-          <div class="app-tile-icon">${SVG.trading}</div>
-          <div class="app-tile-label">Escaner Quant</div>
-        </div>
-        <div class="app-tile" data-app="code-quant-dashboard" style="border-color:rgba(0,212,170,0.25)">
-          <div class="app-tile-icon" style="color:#00d4aa">&#9636;</div>
-          <div class="app-tile-label">Code Quant</div>
-        </div>
-        <div class="app-tile" data-app="clawd-direct">
-          <div class="app-tile-icon">${SVG.brain}</div>
-          <div class="app-tile-label">ATLAS Directo</div>
+          <div class="app-tile-label">Software</div>
         </div>
         <div class="app-tile" data-app="codex-supervisor">
           <div class="app-tile-icon">${SVG.governance}</div>
@@ -264,6 +278,7 @@ export function render(container) {
     'live-diagnostic': { hash: '/live-diagnostic' },
     'atlas-quant-scanner':  { hash: '/atlas-quant' },
     'code-quant-dashboard': { href: '/v4/static/quant/index.html', newTab: true },
+    'grafana-quant':        { href: 'http://localhost:3002', newTab: true },
     'atlas-nexus': { href: '/nexus', newTab: false },
     'robot-3d':    { href: 'http://127.0.0.1:8002/dashboard', newTab: true },
   };
@@ -294,6 +309,7 @@ export function render(container) {
     'software-center': { hash: '/software-center' },
     'atlas-quant-scanner':  { hash: '/atlas-quant' },
     'code-quant-dashboard': { href: '/v4/static/quant/index.html', newTab: true },
+    'grafana-quant':        { href: 'http://localhost:3002', newTab: true },
     'clawd-direct': { hash: '/clawd-direct' },
     'codex-supervisor': { hash: '/codex-supervisor' },
     'live-diagnostic': { hash: '/live-diagnostic' },
