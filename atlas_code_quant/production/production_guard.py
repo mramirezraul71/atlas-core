@@ -99,6 +99,21 @@ class ProductionGuard:
 
     # ── Verificación de elegibilidad LIVE ─────────────────────────────────────
 
+    def announce_paper_mode(self) -> None:
+        """Anuncia por voz y Telegram que el sistema está en modo PAPER."""
+        msg = (
+            "Sistema en modo PAPER. Mañana Open Test activo. "
+            "Todas las órdenes son simuladas en sandbox Tradier. "
+            "Sin riesgo de capital real."
+        )
+        self._speak(msg)
+        self._notify_telegram(
+            "🟡 *ProductionGuard — PAPER mode*\n"
+            "SIMULACIÓN PAPER — Mañana Open Test\n"
+            "Órdenes simuladas | Sin capital real"
+        )
+        logger.info("[PAPER MODE] %s", msg)
+
     def check_ready_for_live(self) -> tuple[bool, str]:
         """Lee ready_for_live.json y verifica que el sistema pasó el test runner."""
         for path in [_READY_FOR_LIVE_FILE,
