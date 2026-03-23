@@ -541,6 +541,66 @@ class ATLASQuantCore:
             logger.exception("Error en start_market_open_test: %s", exc)
             return 1
 
+    # ── Full Autonomy (M10) ───────────────────────────────────────────────────
+
+    def start_full_autonomy(
+        self,
+        symbols: list[str] | None = None,
+        fullscreen: bool = True,
+    ) -> bool:
+        """Lanza el pipeline completo de autonomía: TradingView → calibración → escaneo → señales paper.
+
+        Secuencia:
+          1. Abre 4 pestañas TradingView gratuito (Chrome + pyautogui)
+          2. Ejecuta calibración física (carga mapa de pantalla)
+          3. Inicializa stream de datos (Tradier sandbox)
+          4. Arranca LiveLoop en modo PAPER
+
+        Retorna True si todos los pasos se completaron.
+        """
+        import os as _os
+        _os.environ["ATLAS_MODE"]               = "paper"
+        _os.environ["ATLAS_FORCE_LIVE_PREVIEW"] = "true"
+        self.mode = "paper"
+
+        logger.info("🤖 start_full_autonomy — modo=PAPER, símbolos=%s", symbols)
+
+        # 1. TradingView FREE — M10
+        chart_launcher = None
+        try:
+            from atlas_code_quant.chart_launcher import launch_free_tradingview
+            chart_launcher = launch_free_tradingview(
+                symbols=symbols,
+                fullscreen=fullscreen,
+            )
+            logger.info("✅ TradingView FREE activo")
+        except Exception as exc:
+            logger.warning("ChartLauncher no disponible: %s — continuando", exc)
+
+        # 2. Calibración física
+        calib_ok = self.calibrate(force=False)
+        if not calib_ok:
+            logger.warning("⚠️  Calibración no completada — mapa de pantalla no disponible")
+
+        # 3. Setup de módulos (si no inicializados)
+        if not self._initialized:
+            try:
+                self.setup(symbols=symbols)
+            except Exception as exc:
+                logger.error("Error en setup: %s", exc)
+                return False
+
+        # 4. LiveLoop PAPER
+        try:
+            self.run(cycles=0)   # 0 = loop infinito hasta señal de parada
+        except KeyboardInterrupt:
+            logger.info("Full autonomy detenida por usuario")
+        except Exception as exc:
+            logger.error("Error en run: %s", exc)
+            return False
+
+        return True
+
     # ── Ejecución delegada a SignalExecutor (vía LiveLoop) ───────────────────
 
     # ── Callbacks de eventos ──────────────────────────────────────────────────

@@ -570,6 +570,19 @@ class MorningMarketTest:
         if self._init_telegram():
             self._speak("telegram_ok")
 
+        # TradingView FREE — M10 (4 pestañas Chrome)
+        try:
+            from atlas_code_quant.chart_launcher import launch_free_tradingview
+            logger.info("📊 Lanzando TradingView gratuito (4 pestañas)…")
+            self._chart_launcher = launch_free_tradingview(
+                symbols=SYMBOLS[:4],
+                voice=self._voice,
+                telegram=self._telegram,
+            )
+        except Exception as e:
+            logger.warning("ChartLauncher: %s — continuando sin TradingView visual", e)
+            self._chart_launcher = None
+
         # Core
         self._init_core()
         self._init_voice()  # Reinit con VoiceFeedback completo

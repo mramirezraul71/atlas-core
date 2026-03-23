@@ -216,11 +216,14 @@ class TradierStreamClient:
                 break
 
             self._reconnect_count += 1
+            import random as _random
+            jitter = _random.uniform(0.0, min(2.0, self.reconnect_delay_s * 0.3))
+            delay  = self.reconnect_delay_s + jitter
             logger.warning(
-                "WS desconectado — reintentando en %.0fs (intento %d/%d)…",
-                self.reconnect_delay_s, self._reconnect_count, self.max_reconnects
+                "WS desconectado — reintentando en %.1fs+%.1fs jitter (intento %d/%d)…",
+                self.reconnect_delay_s, jitter, self._reconnect_count, self.max_reconnects
             )
-            time.sleep(self.reconnect_delay_s)
+            time.sleep(delay)
 
         if self._reconnect_count >= self.max_reconnects:
             logger.critical("Máximo de reconexiones alcanzado — stream detenido")
