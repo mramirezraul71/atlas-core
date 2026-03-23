@@ -136,6 +136,39 @@ class TradingConfig:
     tradier_pdt_history_fill_limit: int = _ienv("TRADIER_PDT_HISTORY_FILL_LIMIT", 200)
     tradier_pdt_fail_closed: bool = os.getenv("TRADIER_PDT_FAIL_CLOSED", "true").strip().lower() not in {"0", "false", "no"}
 
+    # ── Multi-asset: opciones ─────────────────────────────────────────────────
+    options_enabled:          bool  = os.getenv("ATLAS_OPTIONS_ENABLED", "false").strip().lower() not in {"0", "false", "no"}
+    options_min_iv_rank:      float = _fenv("ATLAS_OPTIONS_MIN_IV_RANK", 25.0)
+    options_max_spread_pct:   float = _fenv("ATLAS_OPTIONS_MAX_SPREAD_PCT", 0.20)
+    options_min_dte:          int   = _ienv("ATLAS_OPTIONS_MIN_DTE", 14)
+    options_max_dte:          int   = _ienv("ATLAS_OPTIONS_MAX_DTE", 45)
+    options_target_dte:       int   = _ienv("ATLAS_OPTIONS_TARGET_DTE", 30)
+    options_min_oi:           int   = _ienv("ATLAS_OPTIONS_MIN_OI", 100)
+    options_max_bpr_pct:      float = _fenv("ATLAS_OPTIONS_MAX_BPR_PCT", 0.02)
+    options_width_pct:        float = _fenv("ATLAS_OPTIONS_WIDTH_PCT", 0.03)
+    # ── Multi-asset: ETF ──────────────────────────────────────────────────────
+    etf_options_enabled:      bool  = os.getenv("ATLAS_ETF_OPTIONS_ENABLED", "false").strip().lower() not in {"0", "false", "no"}
+    etf_universe_raw:         str   = _clean_setting(os.getenv("ATLAS_ETF_UNIVERSE"), "SPY,QQQ,IWM,GLD,TLT,XLF,XLE,XLK")
+    # ── Multi-asset: índices ──────────────────────────────────────────────────
+    index_options_enabled:    bool  = os.getenv("ATLAS_INDEX_OPTIONS_ENABLED", "false").strip().lower() not in {"0", "false", "no"}
+    index_universe_raw:       str   = _clean_setting(os.getenv("ATLAS_INDEX_UNIVERSE"), "SPX")
+    spx_max_contracts:        int   = _ienv("ATLAS_SPX_MAX_CONTRACTS", 1)
+    index_options_min_dte:    int   = _ienv("ATLAS_INDEX_OPTIONS_MIN_DTE", 7)
+    index_options_max_dte:    int   = _ienv("ATLAS_INDEX_OPTIONS_MAX_DTE", 45)
+    # ── Multi-asset: crypto ───────────────────────────────────────────────────
+    crypto_enabled:           bool  = os.getenv("ATLAS_CRYPTO_ENABLED", "false").strip().lower() not in {"0", "false", "no"}
+    crypto_universe_raw:      str   = _clean_setting(os.getenv("ATLAS_CRYPTO_UNIVERSE"), "BTC/USDT,ETH/USDT")
+    crypto_exchange:          str   = _clean_setting(os.getenv("ATLAS_CRYPTO_EXCHANGE"), "binance")
+    # ── Multi-asset: futuros (Fase 5) ─────────────────────────────────────────
+    futures_enabled:          bool  = os.getenv("ATLAS_FUTURES_ENABLED", "false").strip().lower() not in {"0", "false", "no"}
+    futures_universe_raw:     str   = _clean_setting(os.getenv("ATLAS_FUTURES_UNIVERSE"), "MES,MNQ")
+
+    # Alpaca — fallback paper cuando Tradier sandbox no responde
+    # Cuenta gratuita en: https://app.alpaca.markets → Paper Trading
+    alpaca_api_key:    str = _clean_setting(os.getenv("ALPACA_API_KEY"))
+    alpaca_secret_key: str = _clean_setting(os.getenv("ALPACA_SECRET_KEY"))
+    alpaca_paper_fallback: bool = os.getenv("ALPACA_PAPER_FALLBACK", "true").strip().lower() not in {"0", "false", "no"}
+
     # ATLAS brain bridge
     atlas_brain_enabled: bool = os.getenv("ATLAS_BRAIN_BRIDGE_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     atlas_brain_base_url: str = _clean_setting(os.getenv("ATLAS_BRAIN_BASE_URL"), "http://127.0.0.1:8791").rstrip("/")
@@ -170,6 +203,10 @@ class TradingConfig:
         os.getenv("QUANT_SCANNER_TIMEFRAMES"),
         "5m,15m,1h,4h,1d",
     )
+    # Multi-asset universe expansion
+    scanner_include_etfs: bool    = os.getenv("ATLAS_SCANNER_INCLUDE_ETFS",    "true").strip().lower()  not in {"0","false","no"}
+    scanner_include_indices: bool = os.getenv("ATLAS_SCANNER_INCLUDE_INDICES", "true").strip().lower()  not in {"0","false","no"}
+    scanner_include_crypto: bool  = os.getenv("ATLAS_SCANNER_INCLUDE_CRYPTO",  "false").strip().lower() not in {"0","false","no"}
 
     # Adaptive learning
     adaptive_learning_enabled: bool = os.getenv("QUANT_ADAPTIVE_LEARNING_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
@@ -244,6 +281,28 @@ class TradingConfig:
         self.adaptive_learning_min_symbol_samples = max(2, min(self.adaptive_learning_min_symbol_samples, 50))
         self.scanner_universe = [item.strip().upper() for item in self.scanner_universe_raw.split(",") if item.strip()]
         self.scanner_timeframes = [item.strip() for item in self.scanner_timeframes_raw.split(",") if item.strip()]
+        # Inject multi-asset symbols into universe (deduplicated, order preserved)
+        _extra: list[str] = []
+        if self.scanner_include_etfs:
+            try:
+                from scanner.etf_universe import ETF_OPTIONS_UNIVERSE
+                _extra.extend(s for s in ETF_OPTIONS_UNIVERSE if s not in self.scanner_universe and s not in _extra)
+            except Exception:
+                pass
+        if self.scanner_include_indices:
+            try:
+                from scanner.index_universe import INDEX_PROFILES
+                _extra.extend(s for s in INDEX_PROFILES if s not in self.scanner_universe and s not in _extra)
+            except Exception:
+                pass
+        if self.scanner_include_crypto:
+            try:
+                from scanner.crypto_universe import CRYPTO_SPOT_UNIVERSE
+                _extra.extend(s for s in CRYPTO_SPOT_UNIVERSE if s not in self.scanner_universe and s not in _extra)
+            except Exception:
+                pass
+        if _extra:
+            self.scanner_universe = self.scanner_universe + _extra
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.models_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
