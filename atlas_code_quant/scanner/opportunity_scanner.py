@@ -17,6 +17,7 @@ from config.settings import settings
 from data.feed import MarketFeed
 from learning.adaptive_policy import AdaptiveLearningService
 from scanner.universe_catalog import ScannerUniverseCatalog
+from scanner.asset_classifier import classify_asset
 
 logger = logging.getLogger("quant.scanner")
 
@@ -1195,8 +1196,11 @@ class OpportunityScannerService:
                 })
                 self._log("info", "Activo descartado por filtros", symbol=symbol, timeframe=timeframe, method=best["method"], reasons=rejection_reasons)
                 continue
+            _asset_profile = classify_asset(symbol)
             accepted.append({
                 "symbol": symbol,
+                "asset_class": _asset_profile.asset_class.value,
+                "has_options": _asset_profile.has_options,
                 "timeframe": timeframe,
                 "direction": _direction_label(int(best["direction"])),
                 "price": round(float(best.get("price") or df["close"].iloc[-1]), 4),

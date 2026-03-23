@@ -355,3 +355,66 @@ class TestIntegration:
             assert ctrl.is_pdt_limited() is True
         with _mock_ledger_count(1):
             assert ctrl.is_pdt_limited() is False
+
+
+# ── TestPDTExemption ───────────────────────────────────────────────────────────
+
+class TestPDTExemption:
+    """Activos exentos del PDT Rule no son bloqueados aunque se agote el límite."""
+
+    def test_is_pdt_exempt_index_option(self):
+        ctrl = make_pdt(mode="live")
+        assert ctrl.is_pdt_exempt("SPX",  "index_option") is True
+        assert ctrl.is_pdt_exempt("NDX",  "index_option") is True
+        assert ctrl.is_pdt_exempt("RUT",  "index_option") is True
+        assert ctrl.is_pdt_exempt("SPXW", "index_option") is True
+
+    def test_is_pdt_exempt_crypto(self):
+        ctrl = make_pdt(mode="live")
+        assert ctrl.is_pdt_exempt("BTC/USDT", "crypto") is True
+        assert ctrl.is_pdt_exempt("ETH/USDT", "crypto") is True
+
+    def test_is_pdt_exempt_future(self):
+        ctrl = make_pdt(mode="live")
+        assert ctrl.is_pdt_exempt("ES", "future") is True
+        assert ctrl.is_pdt_exempt("NQ", "future") is True
+
+    def test_is_pdt_exempt_forex(self):
+        ctrl = make_pdt(mode="live")
+        assert ctrl.is_pdt_exempt("EUR/USD", "forex") is True
+
+    def test_equity_stock_not_exempt(self):
+        ctrl = make_pdt(mode="live")
+        assert ctrl.is_pdt_exempt("AAPL", "equity_stock") is False
+        assert ctrl.is_pdt_exempt("TSLA", "equity_stock") is False
+
+    def test_etf_not_exempt(self):
+        ctrl = make_pdt(mode="live")
+        assert ctrl.is_pdt_exempt("SPY",  "equity_etf") is False
+        assert ctrl.is_pdt_exempt("QQQ",  "equity_etf") is False
+
+    def test_can_open_exempt_when_limit_exhausted(self):
+        """SPX can_open returns allowed=True even with 0 DTs remaining."""
+        ctrl = make_pdt(mode="live", max_dt=2)
+        with _mock_ledger_count(2):  # limit exhausted
+            dec = ctrl.can_open("SPX", signal_score=0.9, asset_class="index_option")
+        assert dec.allowed is True
+        assert dec.reason == "pdt_exempt_asset_class"
+
+    def test_can_open_crypto_exempt_when_limit_exhausted(self):
+        ctrl = make_pdt(mode="live", max_dt=2)
+        with _mock_ledger_count(2):
+            dec = ctrl.can_open("BTC/USDT", signal_score=0.8, asset_class="crypto")
+        assert dec.allowed is True
+
+    def test_can_open_equity_blocked_when_limit_exhausted(self):
+        ctrl = make_pdt(mode="live", max_dt=2)
+        with _mock_ledger_count(2):
+            dec = ctrl.can_open("AAPL", signal_score=0.9, asset_class="equity_stock")
+        assert dec.allowed is False
+
+    def test_exempt_reason_in_decision(self):
+        ctrl = make_pdt(mode="live", max_dt=2)
+        with _mock_ledger_count(2):
+            dec = ctrl.can_open("NDX", signal_score=0.85, asset_class="index_option")
+        assert "exempt" in dec.reason.lower()

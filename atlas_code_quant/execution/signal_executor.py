@@ -34,6 +34,11 @@ from atlas_code_quant.execution.tradier_execution import (
 from atlas_code_quant.execution.tradier_controls import resolve_account_session
 from atlas_code_quant.execution.kelly_sizer import KellySizer
 from atlas_code_quant.api.schemas import OrderRequest
+from atlas_code_quant.execution.alpaca_paper import (
+    AlpacaPaperBroker,
+    get_alpaca_paper_broker,
+    _tradier_error_is_fallback,
+)
 
 
 # ── Constantes ────────────────────────────────────────────────────────────────
@@ -173,11 +178,15 @@ class SignalExecutor:
         if current_mode == "paper":
             return self._simulate(result, sig, order_req)
 
-        # ── Intentos vía API ──────────────────────────────────────────────────
+        # ── Intentos vía BrokerRouter ─────────────────────────────────────────
+        from atlas_code_quant.execution.broker_router import BrokerRouter
+        _router = BrokerRouter(mode=current_mode)
+        asset_class = sig.get("asset_class", "equity_stock")
+
         last_error = ""
         for attempt in range(1, _MAX_API_RETRIES + 1):
             try:
-                response = route_order_to_tradier(order_req)
+                response = _router.route(order_req, asset_class=asset_class)
                 order_id = str(
                     (response.get("tradier_response") or {}).get("id", "")
                 )
@@ -259,18 +268,84 @@ class SignalExecutor:
         sig: dict,
         order_req: OrderRequest,
     ) -> ExecutionResult:
-        """Simulación paper: registra sin enviar a broker."""
-        entry = sig.get("entry_price", 0)
-        # Simula slippage de 0.05% en paper
+        """Paper mode: intenta Tradier sandbox → fallback Alpaca → simulación local."""
+        entry = sig.get("entry_price", 0.0)
+
+        # 1. Intentar Tradier sandbox primero
+        try:
+            response = route_order_to_tradier(order_req)
+            tradier_resp = response.get("tradier_response") or {}
+            result.status           = "simulated"
+            result.order_id         = str(tradier_resp.get("id", f"TRADIER-PAPER-{int(time.time())}"))
+            result.fill_price       = float(tradier_resp.get("avg_fill_price") or entry)
+            result.tradier_response = response
+            logger.info(
+                "PAPER/TRADIER [%s] %s qty=%d fill=%.4f",
+                sig["symbol"], sig["signal_type"], result.quantity, result.fill_price,
+            )
+            return result
+
+        except TradierOrderBlocked as exc:
+            result.status = "blocked"
+            result.error  = str(exc)
+            return result
+
+        except Exception as tradier_exc:
+            if not _tradier_error_is_fallback(tradier_exc):
+                # Error no recuperable (ej. auth) — no tiene sentido ir a Alpaca
+                slippage = entry * 0.0005
+                fill = entry + slippage if sig["signal_type"] == "BUY" else entry - slippage
+                result.status     = "simulated"
+                result.fill_price = round(fill, 4)
+                result.order_id   = f"PAPER-{int(time.time())}-{sig['symbol']}"
+                result.error      = f"tradier_non_fallback: {tradier_exc}"
+                logger.warning("PAPER/LOCAL [%s] Tradier error no-fallback: %s", sig["symbol"], tradier_exc)
+                return result
+
+            logger.warning(
+                "PAPER Tradier sandbox no disponible (%s) — intentando Alpaca paper",
+                tradier_exc,
+            )
+
+        # 2. Fallback Alpaca paper
+        from atlas_code_quant.config.settings import settings as _s
+        if getattr(_s, "alpaca_paper_fallback", True):
+            alpaca = get_alpaca_paper_broker()
+            if alpaca.is_configured():
+                side  = "buy" if sig["signal_type"] == "BUY" else "sell"
+                ares  = alpaca.place_order(
+                    symbol     = sig["symbol"],
+                    side       = side,
+                    qty        = result.quantity,
+                    order_type = "market",
+                )
+                if ares.status not in ("error", "rejected"):
+                    result.status     = "simulated"
+                    result.order_id   = f"ALPACA-{ares.order_id}"
+                    result.fill_price = ares.fill_price or entry
+                    result.error      = ""
+                    logger.info(
+                        "PAPER/ALPACA [%s] %s qty=%d id=%s",
+                        sig["symbol"], side.upper(), result.quantity, ares.order_id,
+                    )
+                    return result
+                else:
+                    logger.warning("PAPER/ALPACA orden rechazada [%s]: %s", sig["symbol"], ares.error)
+            else:
+                logger.warning(
+                    "Alpaca paper no configurado (ALPACA_API_KEY vacío). "
+                    "Crea cuenta gratis en https://app.alpaca.markets"
+                )
+
+        # 3. Último recurso: simulación local sin broker
         slippage = entry * 0.0005
         fill = entry + slippage if sig["signal_type"] == "BUY" else entry - slippage
-
         result.status     = "simulated"
         result.fill_price = round(fill, 4)
-        result.order_id   = f"PAPER-{int(time.time())}-{sig['symbol']}"
+        result.order_id   = f"PAPER-LOCAL-{int(time.time())}-{sig['symbol']}"
         logger.info(
-            "PAPER [%s] %s qty=%d fill=%.4f",
-            sig["symbol"], sig["signal_type"], result.quantity, fill
+            "PAPER/LOCAL [%s] %s qty=%d fill=%.4f (sin broker)",
+            sig["symbol"], sig["signal_type"], result.quantity, fill,
         )
         return result
 
@@ -317,26 +392,68 @@ class SignalExecutor:
     # ── Construcción de OrderRequest ──────────────────────────────────────────
 
     def _build_order_request(self, sig: dict, quantity: int) -> OrderRequest:
-        """Construye OrderRequest compatible con route_order_to_tradier."""
+        """Construye OrderRequest — bifurca equity vs opciones."""
+        if sig.get("use_options") and sig.get("option_strategy_type"):
+            return self._build_option_order_request(sig, quantity)
+        return self._build_equity_order_request(sig, quantity)
+
+    def _build_equity_order_request(self, sig: dict, quantity: int) -> OrderRequest:
+        """OrderRequest estándar para equity/ETF/crypto/futuros."""
         signal_type = sig.get("signal_type", "BUY").upper()
-
-        side_map = {
-            "BUY":  "buy",
-            "SELL": "sell",
-            "EXIT": "sell",   # salida siempre vende
-        }
-        scope = "live" if self.mode == "live" else "paper"
-
+        side_map    = {"BUY": "buy", "SELL": "sell", "EXIT": "sell"}
+        scope       = "live" if self.mode == "live" else "paper"
         return OrderRequest(
-            symbol         = sig["symbol"],
-            side           = side_map.get(signal_type, "buy"),
-            size           = quantity,
-            order_type     = "market",
-            duration       = "day",
-            account_scope  = scope,  # type: ignore[arg-type]
-            preview        = (self.mode == "paper"),
-            tag            = f"atlas_quant_{sig.get('strategy', 'auto')}",
+            symbol        = sig["symbol"],
+            side          = side_map.get(signal_type, "buy"),
+            size          = quantity,
+            order_type    = "market",
+            duration      = "day",
+            account_scope = scope,  # type: ignore[arg-type]
+            preview       = (self.mode == "paper"),
+            tag           = f"atlas_quant_{sig.get('strategy', 'auto')}",
         )
+
+    def _build_option_order_request(self, sig: dict, quantity: int) -> OrderRequest:
+        """Construye OrderRequest multi-leg para estrategias de opciones."""
+        from atlas_code_quant.execution.option_selector import (
+            select_option_contract, pick_expiration,
+        )
+        from atlas_code_quant.execution.option_chain_cache import OptionChainCache
+        from atlas_code_quant.config.settings import settings as _s
+        from atlas_code_quant.api.schemas import TradierOrderLeg
+
+        scope  = "live" if self.mode == "live" else "paper"
+        symbol = sig["symbol"]
+
+        # Sin cadena real en papel → construir OrderRequest mínimo con hint
+        # (la cadena real se obtiene en el ciclo de live_loop si tradier está up)
+        legs_raw = sig.get("_option_legs") or []
+        if legs_raw:
+            legs = [
+                TradierOrderLeg(
+                    option_symbol = leg.get("symbol", ""),
+                    side          = "buy_to_open" if leg.get("side") == "long" else "sell_to_open",
+                    quantity      = quantity,
+                )
+                for leg in legs_raw
+                if leg.get("symbol")
+            ]
+            return OrderRequest(
+                symbol        = symbol,
+                side          = "buy",
+                size          = quantity,
+                order_type    = "market",
+                duration      = "day",
+                account_scope = scope,   # type: ignore[arg-type]
+                preview       = (self.mode == "paper"),
+                legs          = legs if legs else None,
+                tradier_class = "multileg" if len(legs) > 1 else "option",
+                tag           = f"atlas_options_{sig.get('option_strategy_type','auto')}",
+            )
+
+        # Sin patas precalculadas → orden equity normal como fallback
+        logger.warning("[OPTS] %s — sin patas precalculadas, enviando equity", symbol)
+        return self._build_equity_order_request(sig, quantity)
 
     # ── Registro de ejecución ─────────────────────────────────────────────────
 

@@ -120,11 +120,26 @@ class PDTController:
 
     # ── API principal ─────────────────────────────────────────────────────────
 
+    @staticmethod
+    def is_pdt_exempt(symbol: str, asset_class: str = "equity_stock") -> bool:
+        """True si el activo está exento de la regla PDT (FINRA Rule 4210).
+
+        Índices broad-based (SPX, NDX, RUT) no son securities para PDT.
+        Crypto y futuros tampoco.
+        """
+        exempt_classes = {"index_option", "crypto", "future", "forex"}
+        if asset_class in exempt_classes:
+            return True
+        # Por símbolo para cuando asset_class no viene informado
+        exempt_symbols = {"SPX", "SPXW", "NDX", "RUT", "VIX", "XSP"}
+        return symbol.upper() in exempt_symbols
+
     def can_open(
         self,
         symbol:       str,
         signal_score: float,
         is_swing:     bool = False,
+        asset_class:  str  = "equity_stock",
     ) -> PDTDecision:
         """Gate de apertura de posición.
 
@@ -141,6 +156,14 @@ class PDTController:
             self._refresh_day()
             dt_used      = self._count_dt_total()
             dt_remaining = max(0, self._max_day_trades - dt_used)
+
+            # Activos exentos de PDT (índices, crypto, futuros, forex)
+            if self.is_pdt_exempt(symbol, asset_class):
+                self._state.allowed_by_pdt += 1
+                return PDTDecision(
+                    allowed=True, reason="pdt_exempt_asset_class",
+                    day_trades_used=dt_used, day_trades_remaining=dt_remaining,
+                )
 
             # Modo paper: nunca bloquear, solo registrar
             if self.mode == "paper":

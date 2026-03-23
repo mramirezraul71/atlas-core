@@ -63,6 +63,12 @@ class TradeSignal:
     metadata: dict = field(default_factory=dict)
     # Tipo granular (opcional — no rompe código existente que no lo use)
     signal_kind: str = SignalKind.FLAT
+    # ── Multi-asset (Fases 1-4) ────────────────────────────────────────────
+    asset_class: str = "equity_stock"          # AssetClass.value
+    use_options: bool = False                  # True → construir orden de opciones
+    option_strategy_type: str = ""             # StrategyType hint
+    preferred_dte_range: tuple = (14, 45)      # (min_dte, max_dte)
+    iv_hv_ratio: float = 1.0                   # IV / HV histórica
 
 
 @dataclass
