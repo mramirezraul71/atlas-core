@@ -541,6 +541,51 @@ class ATLASQuantCore:
             logger.exception("Error en start_market_open_test: %s", exc)
             return 1
 
+    # ── Immediate Start (HOY — apertura en minutos) ─────────────────────────
+
+    def start_immediate(
+        self,
+        symbols: list[str] | None = None,
+        skip_tv: bool = False,
+    ) -> int:
+        """Arranca AHORA sin esperar horario ET.
+
+        Delegado a immediate_start.ImmediateStart para mantener la lógica
+        centralizada. Fuerza PAPER mode y sandbox.tradier.com.
+
+        Args:
+            symbols:  Símbolos a operar (default: AAPL,TSLA,SPY,QQQ).
+            skip_tv:  Si True, no intenta abrir TradingView (headless).
+
+        Retorna código de salida: 0 = éxito, 1 = error.
+        """
+        import os as _os
+        _os.environ["ATLAS_MODE"]               = "paper"
+        _os.environ["ATLAS_FORCE_LIVE_PREVIEW"] = "true"
+        self.mode = "paper"
+
+        logger.info("⚡ start_immediate — PAPER skip_tv=%s symbols=%s",
+                    skip_tv, symbols)
+
+        try:
+            import importlib.util, sys as _sys
+            spec = importlib.util.spec_from_file_location(
+                "immediate_start",
+                str(Path(__file__).resolve().parent.parent / "immediate_start.py"),
+            )
+            mod = importlib.util.module_from_spec(spec)
+            _sys.modules.setdefault("immediate_start", mod)
+            spec.loader.exec_module(mod)
+
+            runner = mod.ImmediateStart(symbols=symbols, skip_tv=skip_tv)
+            # Compartir core ya inicializado si está listo
+            if self._initialized:
+                runner._core = self
+            return runner.run()
+        except Exception as exc:
+            logger.exception("Error en start_immediate: %s", exc)
+            return 1
+
     # ── Full Autonomy (M10) ───────────────────────────────────────────────────
 
     def start_full_autonomy(
