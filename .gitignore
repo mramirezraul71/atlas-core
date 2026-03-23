@@ -58,6 +58,11 @@ __pycache__/
 # CI reportes generados
 snapshots/ci/
 
+# Prometheus binary (descargado en runtime — no trackear)
+tools/prometheus/prometheus.exe
+tools/prometheus/promtool.exe
+tools/prometheus/data/
+
 # Snapshots / evidencia generada (LOCAL) - nunca subir
 snapshots/**
 
