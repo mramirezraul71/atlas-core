@@ -145,6 +145,9 @@ class LiveLoop:
         self._thread: Optional[threading.Thread] = None
         self._stop_event    = threading.Event()
 
+        # BarAggregators: uno por símbolo — agrega ticks 5s → velas 1m
+        self._bar_aggregators: dict = {}   # symbol → BarAggregator
+
         # Registro de hotkeys HID
         self._setup_hotkeys()
 
@@ -228,12 +231,18 @@ class LiveLoop:
             except Exception as exc:
                 logger.warning("update_symbols stream resubscribe: %s", exc)
 
-        # Añadir TechnicalIndicators para nuevos símbolos
+        # Añadir TechnicalIndicators y BarAggregator para nuevos símbolos
         for sym in added:
             if sym not in self.tech_indicators:
                 try:
                     from atlas_code_quant.pipeline.indicators import TechnicalIndicators
                     self.tech_indicators[sym] = TechnicalIndicators(sym)
+                except Exception:
+                    pass
+            if sym not in self._bar_aggregators:
+                try:
+                    from atlas_code_quant.pipeline.indicators import BarAggregator
+                    self._bar_aggregators[sym] = BarAggregator(bar_seconds=60)
                 except Exception:
                     pass
 
@@ -387,7 +396,23 @@ class LiveLoop:
         if ti is None or len(ti._closes) < 30:
             return None
 
-        tech = ti.update(price, price * 1.001, price * 0.999, 1000.0)
+        # Usar high/low del quote si están disponibles, sino aproximar ±0.1%
+        q_high   = getattr(quote, "high", price * 1.001)
+        q_low    = getattr(quote, "low",  price * 0.999)
+        q_volume = float(getattr(quote, "volume", 1000.0) or 1000.0)
+
+        tech = ti.update(price, q_high, q_low, q_volume)
+
+        # Actualizar BarAggregator con el tick actual
+        if symbol not in self._bar_aggregators:
+            try:
+                from atlas_code_quant.pipeline.indicators import BarAggregator
+                self._bar_aggregators[symbol] = BarAggregator(bar_seconds=60)
+            except Exception:
+                pass
+        bar_agg = self._bar_aggregators.get(symbol)
+        if bar_agg is not None:
+            bar_agg.update(price, q_high, q_low, q_volume)
 
         # CVD + IV
         cvd = self.cvd_calc.snapshot() if self.cvd_calc else None
@@ -432,6 +457,21 @@ class LiveLoop:
         ocr_price  = (min(ocr_prices, key=lambda p: abs(p - price))
                       if ocr_prices else None)
 
+        # Construir BarState para filtro de momentum (None si no hay datos suficientes)
+        bar_state = None
+        if bar_agg is not None and bar_agg.n_closed() >= 2:
+            try:
+                from atlas_code_quant.strategy.momentum import BarState
+                bar_state = BarState(
+                    last      = bar_agg.last_closed_bar,
+                    prev      = bar_agg.prev_closed_bar,
+                    current   = bar_agg.current_bar,
+                    secs_left = bar_agg.seconds_to_close(),
+                    avg_vol   = bar_agg.avg_volume(20),
+                )
+            except Exception:
+                bar_state = None
+
         signal = self.signal_gen.evaluate(
             symbol        = symbol,
             regime        = regime,
@@ -441,6 +481,7 @@ class LiveLoop:
             entry_price   = price,
             ocr_price     = ocr_price,
             position_size = size_result.shares,
+            bar_state     = bar_state,
         )
 
         # Ejecutar si hay señal accionable
