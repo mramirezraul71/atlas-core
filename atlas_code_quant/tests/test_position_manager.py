@@ -162,7 +162,8 @@ class TestCheckCloseConditions:
 
     def test_eod(self):
         pos = make_long(entry=100)
-        kind, qty = check_close_conditions(pos, eod_bars_left=0)
+        # current_price=100.5: entre SL y TP, no dispara nada salvo EOD
+        kind, qty = check_close_conditions(pos, current_price=100.5, eod_bars_left=0)
         assert kind == SignalKind.CLOSE_EOD
 
     def test_time_exit(self):
@@ -372,9 +373,10 @@ class TestTrailingThenClose:
         # trailing = 110 - 5 = 105
         assert pos.trailing_stop == pytest.approx(105.0)
 
-        # Precio cae a 104 → trailing cruzado
-        pos = update_trailing_stop(pos, 104.0)
-        kind, qty = check_close_conditions(pos, current_price=104.0)
+        # Precio cae a 103 → por debajo del trailing (105) y por debajo del TP (104)
+        # → CLOSE_TRAIL (no CLOSE_TP porque 103 < 104 = TP)
+        pos = update_trailing_stop(pos, 103.0)
+        kind, qty = check_close_conditions(pos, current_price=103.0)
         assert kind == SignalKind.CLOSE_TRAIL
 
     def test_1r_luego_tp_completo(self):
