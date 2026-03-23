@@ -157,7 +157,7 @@ def _validate_live_activation(risk_engine=None) -> tuple[bool, str]:
             return False, "circuit breaker activo — no se permite LIVE"
 
         # Drawdown alto
-        if state.drawdown_pct > 0.05:
+        if state.drawdown_pct >= 0.05:
             return False, f"drawdown {state.drawdown_pct*100:.1f}% > 5% umbral para live"
 
     # Variables de entorno requeridas
