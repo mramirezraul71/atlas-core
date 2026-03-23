@@ -1,6 +1,6 @@
 #!/bin/bash
 # ATLAS-Quant entrypoint para Jetson Docker
-# Modos: api | core | core-live | calibrate | test | train | backtest | morning-test | audit | grafana-setup | shell
+# Modos: api | core | core-live | calibrate | test | train | backtest | immediate-start | morning-test | audit | grafana-setup | shell
 
 set -e
 
@@ -173,6 +173,32 @@ print('Entrenamiento completado')
             --cycles "${CYCLES}" \
             --rtmp "${RTMP}" \
             --mode live
+        ;;
+
+    # ── Immediate Start — Apertura HOY (sin esperar horario) ────────────────
+    immediate-start)
+        echo "⚡ ATLAS Immediate Start — PAPER MODE — Arranque AHORA"
+        echo "   Modo: PAPER | sandbox.tradier.com | preview=true"
+        export ATLAS_MODE=paper
+        export ATLAS_FORCE_LIVE_PREVIEW=true
+
+        check_calibration || echo "  → Iniciando sin calibración física (simulación)"
+
+        SYMBOLS="${ATLAS_SYMBOLS:-AAPL,TSLA,SPY,QQQ}"
+        SKIP_TV="${ATLAS_SKIP_TV:-false}"
+
+        mkdir -p /workspace/reports /workspace/logs
+
+        echo "   Símbolos: ${SYMBOLS}"
+
+        if [ "${SKIP_TV}" = "true" ]; then
+            exec python3 /workspace/immediate_start.py \
+                --symbols "${SYMBOLS}" \
+                --skip-tv
+        else
+            exec python3 /workspace/immediate_start.py \
+                --symbols "${SYMBOLS}"
+        fi
         ;;
 
     # ── Morning Market Open Test — 2026-03-23 ────────────────────────────────
