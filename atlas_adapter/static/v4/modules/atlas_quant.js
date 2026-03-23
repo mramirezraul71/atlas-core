@@ -3231,9 +3231,27 @@ export default {
             Inicio
           </button>
           <h2>Atlas Code-Quant</h2>
-          <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+          <div style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span class="chip blue" style="font-size:10px">v0.1.0</span>
-            <span class="live-badge">EN LINEA</span>
+            <span class="live-badge" id="aq-header-live">EN LINEA</span>
+            <a href="/v4/static/quant/index.html" target="_blank"
+               style="display:inline-flex;align-items:center;gap:4px;text-decoration:none;
+                      padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;
+                      background:rgba(0,212,170,0.15);border:1px solid rgba(0,212,170,0.4);
+                      color:#00d4aa;white-space:nowrap"
+               title="Abrir dashboard completo con gráficos, backtest y journal">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              Dashboard Completo &#8599;
+            </a>
+            <a href="http://localhost:3002" target="_blank"
+               style="display:inline-flex;align-items:center;gap:4px;text-decoration:none;
+                      padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;
+                      background:rgba(244,104,0,0.12);border:1px solid rgba(244,104,0,0.35);
+                      color:#f46800;white-space:nowrap"
+               title="Abrir Grafana Pro Dashboard">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2"/><polyline points="6 16 10 10 14 13 18 8"/></svg>
+              Grafana &#8599;
+            </a>
           </div>
         </div>
 
