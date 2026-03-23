@@ -1,4 +1,4 @@
-﻿{
+{
   "uid": "atlas-quant-pro-2026",
   "title": "⚡ ATLAS-QUANT PRO 2026 — Robot de Trading Autónomo",
   "description": "Dashboard profesional de monitoreo ATLAS-Quant-Core v1.0 | Jetson Orin Nano",
@@ -1666,6 +1666,22 @@
     ]
   },
   "links": [
+    {
+      "title": "← ATLAS Central",
+      "url": "http://localhost:8791/ui",
+      "type": "link",
+      "icon": "home",
+      "targetBlank": false,
+      "tooltip": "Volver al dashboard central de ATLAS"
+    },
+    {
+      "title": "⬡ Code-Quant",
+      "url": "http://localhost:8791/v4/static/quant/index.html",
+      "type": "link",
+      "icon": "dashboard",
+      "targetBlank": true,
+      "tooltip": "Abrir dashboard gráfico de Quant"
+    },
     {
       "title": "📊 Atlas API",
       "url": "http://localhost:8792/docs",
