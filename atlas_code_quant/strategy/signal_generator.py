@@ -33,6 +33,10 @@ class SignalType(str, Enum):
     EXIT = "EXIT"    # salir posición existente
 
 
+# Re-export para conveniencia — la lógica granular vive en position_manager.py
+from atlas_code_quant.execution.position_manager import SignalKind  # noqa: E402
+
+
 @dataclass
 class TradeSignal:
     """Señal de trading generada por el motor de estrategia."""
@@ -57,6 +61,8 @@ class TradeSignal:
     max_hold_days: int = 10
     trailing_active: bool = False
     metadata: dict = field(default_factory=dict)
+    # Tipo granular (opcional — no rompe código existente que no lo use)
+    signal_kind: str = SignalKind.FLAT
 
 
 @dataclass
@@ -197,6 +203,8 @@ class SignalGenerator:
             timestamp      = time.time(),
             entry_price    = entry_price,
             take_profit    = tp,
+            signal_kind    = (SignalKind.OPEN_LONG if signal_dir == SignalType.BUY
+                              else SignalKind.OPEN_SHORT),
             stop_loss      = sl,
             atr            = atr,
             confidence     = regime.confidence,
@@ -278,6 +286,12 @@ class SignalGenerator:
 
         if reason:
             del self._positions[pos.symbol]
+            _kind_map = {
+                "take_profit":   SignalKind.CLOSE_TP,
+                "stop_loss":     SignalKind.CLOSE_SL,
+                "trailing_stop": SignalKind.CLOSE_TRAIL,
+                "time_exit":     SignalKind.CLOSE_TIME,
+            }
             return TradeSignal(
                 symbol       = pos.symbol,
                 signal_type  = SignalType.EXIT,
@@ -289,6 +303,7 @@ class SignalGenerator:
                 confidence   = 1.0,
                 exit_reason  = reason,
                 strategy     = pos.strategy,
+                signal_kind  = _kind_map.get(reason, SignalKind.CLOSE_SL),
             )
 
         return None

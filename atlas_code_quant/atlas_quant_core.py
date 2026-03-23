@@ -797,6 +797,200 @@ class ATLASQuantCore:
             self.hid.stop_hotkey_listener()
         logger.info("=== ATLAS-Quant-Core DETENIDO ===")
 
+    # ── start_scanner_to_loop ─────────────────────────────────────────────────
+
+    def start_scanner_to_loop(
+        self,
+        token: str | None = None,
+        universe: list[str] | None = None,
+        skip_tv: bool = False,
+        eod_time_et: tuple[int, int] = (16, 0),
+        close_before_min: int = 15,
+    ) -> int:
+        """Flujo completo autónomo: Scanner → TV FREE → setup() → LiveLoop → EOD.
+
+        Pasos:
+          1. force_paper_mode() — bloquea órdenes reales
+          2. run_dynamic_scanner() → top_symbols (IV/HV/CVD/liquidez)
+          3. ChartLauncher.launch_free_tradingview(top_symbols) (si no skip_tv)
+          4. Espera atlas_screen_map.json (calibración)
+          5. Inicializa Telegram, Grafana, voz
+          6. setup() con top_symbols → M1-M7
+          7. live_loop.start() en background con PositionManager
+          8. Supervisor loop hasta EOD (actualiza Grafana c/60s)
+          9. EOD: position_manager.close_all_eod() + live_loop.stop()
+
+        Args:
+            token:            TRADIER_PAPER_TOKEN (lee env si None)
+            universe:         12 símbolos de universo (usa _SCANNER_UNIVERSE si None)
+            skip_tv:          No lanzar TradingView (headless/Docker)
+            eod_time_et:      Hora cierre mercado ET (defecto 16:00)
+            close_before_min: Minutos antes EOD para cerrar posiciones (defecto 15)
+
+        Returns:
+            0 = OK, 1 = error crítico
+        """
+        import os as _os
+        import time as _time
+
+        # 1. Forzar paper mode
+        try:
+            from atlas_code_quant.production.production_guard import ProductionGuard
+            ProductionGuard.force_paper_mode()
+        except Exception as exc:
+            logger.warning("force_paper_mode: %s", exc)
+
+        _token = token or _os.getenv("TRADIER_PAPER_TOKEN", "")
+
+        # 2. Scanner dinámico
+        top_symbols: list[str] = []
+        if _token:
+            try:
+                from atlas_code_quant.chart_launcher import run_dynamic_scanner
+                top_symbols = run_dynamic_scanner(
+                    token       = _token,
+                    universe    = universe,
+                    max_symbols = 6,
+                )
+                logger.info("Scanner resultado: %s", top_symbols)
+            except Exception as exc:
+                logger.warning("Scanner falló (%s) — usando universo fallback", exc)
+
+        if not top_symbols:
+            top_symbols = (universe or ["SPY", "QQQ", "AAPL", "TSLA"])[:6]
+
+        # 3. TradingView FREE
+        if not skip_tv:
+            try:
+                from atlas_code_quant.chart_launcher import ChartLauncher
+                launcher = ChartLauncher(symbols=top_symbols[:4])
+                launcher.launch_free_tradingview(fullscreen=True)
+            except Exception as exc:
+                logger.warning("TradingView launch: %s", exc)
+
+        # 4. Esperar calibración (hasta 30s)
+        screen_map = Path("calibration/atlas_screen_map.json")
+        for _ in range(6):
+            if screen_map.exists():
+                break
+            logger.info("Esperando atlas_screen_map.json…")
+            _time.sleep(5)
+
+        # 5. Subsistemas opcionales
+        _voice = _telegram = _grafana = None
+        try:
+            from atlas_code_quant.calibration.voice_feedback import VoiceFeedback
+            _voice = VoiceFeedback()
+            _voice.start()
+        except Exception:
+            pass
+        try:
+            from atlas_code_quant.production.telegram_alerts import TelegramAlerts
+            _telegram = TelegramAlerts
+            TelegramAlerts.send_static(
+                "⚡ ATLAS start_scanner_to_loop — PAPER\n"
+                f"Símbolos: {', '.join(top_symbols)}"
+            )
+        except Exception:
+            pass
+        try:
+            from atlas_code_quant.production.grafana_dashboard import GrafanaDashboard
+            _grafana = GrafanaDashboard()
+        except Exception:
+            pass
+
+        # 6. setup() con top_symbols
+        self._symbols = top_symbols
+        try:
+            self.setup()
+        except Exception as exc:
+            logger.error("setup() falló: %s", exc)
+            return 1
+
+        # 7. Inyectar PositionManager en live_loop y arrancar
+        if self.live_loop is not None:
+            from atlas_code_quant.execution.position_manager import PositionManager
+            pm = PositionManager(risk_engine=self.risk_engine)
+            self.live_loop.position_manager = pm
+            self.live_loop._eod_time_et     = eod_time_et
+            self.live_loop._eod_close_min   = close_before_min
+            self.live_loop.start()
+        else:
+            logger.error("live_loop no inicializado tras setup()")
+            return 1
+
+        # 8. Supervisor loop hasta EOD
+        import datetime
+        try:
+            import zoneinfo
+            _tz = zoneinfo.ZoneInfo("America/New_York")
+        except Exception:
+            _tz = None
+
+        logger.info("Supervisor activo — esperando EOD %02d:%02d ET", *eod_time_et)
+        try:
+            while True:
+                _time.sleep(60)
+
+                # Actualizar Grafana
+                if _grafana is not None:
+                    try:
+                        eq = self.risk_engine.state().current_equity \
+                             if self.risk_engine else 100_000.0
+                        _grafana.update(equity=eq, mode=self.mode)
+                    except Exception:
+                        pass
+
+                # Chequeo EOD
+                if _tz is not None:
+                    now = datetime.datetime.now(_tz)
+                    eod = now.replace(
+                        hour=eod_time_et[0], minute=eod_time_et[1],
+                        second=0, microsecond=0
+                    )
+                    mins_left = (eod - now).total_seconds() / 60
+                    if mins_left <= 0:
+                        logger.warning("EOD alcanzado — cerrando todas las posiciones")
+                        break
+
+        except KeyboardInterrupt:
+            logger.warning("Supervisor interrumpido por usuario")
+
+        # 9. EOD: cierre forzado + parada
+        if self.live_loop is not None:
+            if hasattr(self.live_loop, "position_manager"):
+                prices_now = {
+                    s: self.live_loop._mid_price(
+                        self.live_loop._latest_quotes.get(s)
+                    )
+                    for s in self.live_loop.position_manager.open_symbols()
+                }
+                eod_closes = self.live_loop.position_manager.close_all_eod(
+                    prices_now,
+                    self.risk_engine.state().current_equity if self.risk_engine else 100_000.0
+                )
+                self.live_loop._execute_close_signals(
+                    eod_closes,
+                    self.risk_engine.state().current_equity if self.risk_engine else 100_000.0
+                )
+            self.live_loop.stop("eod")
+            self.live_loop.join(timeout=15)
+
+        if _voice:
+            try:
+                _voice.speak("Sesión terminada. Todas las posiciones cerradas.")
+                _voice.stop()
+            except Exception:
+                pass
+        if _telegram:
+            try:
+                _telegram.send_static("✅ ATLAS EOD — sesión terminada, posiciones cerradas")
+            except Exception:
+                pass
+
+        logger.info("start_scanner_to_loop completado")
+        return 0
+
     def status(self) -> dict:
         return {
             "running":         self._running,

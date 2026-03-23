@@ -29,6 +29,7 @@ Optimizaciones Jetson (<2GB RAM idle):
 """
 from __future__ import annotations
 
+import datetime
 import logging
 import os
 import signal
@@ -38,6 +39,11 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 logger = logging.getLogger("atlas.execution.live_loop")
+
+# Importación lazy para evitar circular imports al nivel de módulo
+def _get_position_manager_cls():
+    from atlas_code_quant.execution.position_manager import PositionManager
+    return PositionManager
 
 # ── Configuración de entorno ──────────────────────────────────────────────────
 _MODE            = os.getenv("ATLAS_MODE", "paper").strip().lower()
@@ -98,6 +104,9 @@ class LiveLoop:
         symbols: list[str] | None = None,
         mode: str = _MODE,
         cycle_s: float = _CYCLE_S,
+        position_manager=None,   # PositionManager (opcional; se crea internamente si None)
+        eod_time_et: tuple[int, int] = (16, 0),   # hora de cierre ET
+        eod_close_min: int = 15,                  # cerrar N min antes del cierre
     ) -> None:
         self.camera         = camera
         self.stream         = stream
@@ -114,6 +123,17 @@ class LiveLoop:
         self.symbols        = (symbols or [])[:_MAX_SYMBOLS]
         self.mode           = mode
         self.cycle_s        = cycle_s
+
+        # PositionManager: se acepta externamente o se crea uno vacío
+        if position_manager is not None:
+            self.position_manager = position_manager
+        else:
+            PM = _get_position_manager_cls()
+            self.position_manager = PM(risk_engine=risk_engine)
+
+        self._eod_time_et   = eod_time_et
+        self._eod_close_min = eod_close_min
+        self._eod_fired     = False   # flag: cierre EOD ya ejecutado hoy
 
         self._running       = False
         self._paused        = False
@@ -295,12 +315,42 @@ class LiveLoop:
             if health.value == "failed":
                 logger.error("Self-healing: subsistema FAILED — ciclo con precaución")
 
-        # ── 5-8. Evaluar cada símbolo ─────────────────────────────────────────
-        equity = self._get_equity()
+        # ── 5. Gestión de posiciones abiertas (trailing + cierres) ───────────
+        equity         = self._get_equity()
+        eod_bars       = self._eod_bars_left()
+        current_regime = getattr(metrics, "_last_regime", "")
+
+        # Cierre forzado EOD (una sola vez por sesión)
+        if eod_bars == 0 and not self._eod_fired:
+            self._eod_fired = True
+            prices_now = {s: self._mid_price(self._latest_quotes.get(s))
+                          for s in self.position_manager.open_symbols()}
+            eod_closes = self.position_manager.close_all_eod(prices_now, equity)
+            self._execute_close_signals(eod_closes, equity)
+            logger.warning("[LL] EOD cierre forzado — %d posiciones", len(eod_closes))
+
+        # Gestión normal de posiciones: trailing + SL/TP/TRAIL/REDUCE/TIME/REVERSE
+        all_closes = []
+        for symbol in self.position_manager.open_symbols():
+            quote = self._latest_quotes.get(symbol)
+            if quote is None:
+                continue
+            price  = self._mid_price(quote)
+            closes = self.position_manager.update_cycle(
+                symbol, price, current_regime, eod_bars, equity
+            )
+            all_closes.extend(closes)
+        self._execute_close_signals(all_closes, equity)
+        metrics.signals_executed += len([c for c in all_closes if not c.is_partial])
+
+        # ── 6-8. Evaluar entradas para símbolos SIN posición abierta ─────────
         for symbol in self.symbols:
             if self._emergency:
                 break
-            result = self._evaluate_and_execute(symbol, ocr_result, equity)
+            # No abrir nuevas entradas si ya hay posición gestionada por PM
+            if self.position_manager.has_position(symbol):
+                continue
+            result = self._evaluate_and_execute(symbol, ocr_result, equity, metrics)
             if result is not None:
                 metrics.signals_evaluated += 1
                 if result.status in ("submitted", "simulated", "hid_fallback"):
@@ -319,7 +369,7 @@ class LiveLoop:
 
     # ── Evaluación + ejecución de símbolo ─────────────────────────────────────
 
-    def _evaluate_and_execute(self, symbol: str, ocr_result, equity: float):
+    def _evaluate_and_execute(self, symbol: str, ocr_result, equity: float, metrics: CycleMetrics | None = None):
         """Pipeline completo para un símbolo: indicadores → régimen → señal → orden."""
         from atlas_code_quant.strategy.signal_generator import SignalType
 
@@ -364,6 +414,11 @@ class LiveLoop:
         )
         regime = self.regime_clf.predict(features)
 
+        # Guardar régimen actual en métricas (para gestión de posiciones)
+        if metrics is not None:
+            metrics._last_regime = regime.regime.value if hasattr(regime.regime, "value") \
+                                   else str(regime.regime)
+
         # Señal
         size_result = self.risk_engine.compute_size(
             symbol            = symbol,
@@ -390,13 +445,83 @@ class LiveLoop:
 
         # Ejecutar si hay señal accionable
         if signal.signal_type in (SignalType.BUY, SignalType.SELL, SignalType.EXIT):
-            return self.executor.execute(
+            result = self.executor.execute(
                 signal      = signal,
                 ocr_result  = ocr_result,
                 capital     = equity,
             )
+            # Registrar apertura en PositionManager si la ejecución fue exitosa
+            if (result.status in ("submitted", "simulated", "hid_fallback")
+                    and signal.signal_type in (SignalType.BUY, SignalType.SELL)):
+                side = "long" if signal.signal_type == SignalType.BUY else "short"
+                self.position_manager.open(
+                    symbol          = symbol,
+                    side            = side,
+                    qty             = float(result.quantity or size_result.shares),
+                    entry_price     = result.fill_price or price,
+                    atr             = tech.atr_20,
+                    strategy        = signal.strategy,
+                    regime          = signal.regime,
+                    portfolio_value = equity,
+                )
+            return result
 
         return None
+
+    # ── Gestión de posiciones abiertas ────────────────────────────────────────
+
+    def _eod_bars_left(self) -> int:
+        """Barras de 5s que quedan hasta la hora de cierre ET."""
+        try:
+            import zoneinfo
+            tz   = zoneinfo.ZoneInfo("America/New_York")
+            now  = datetime.datetime.now(tz)
+            eod  = now.replace(
+                hour=self._eod_time_et[0],
+                minute=self._eod_time_et[1],
+                second=0, microsecond=0
+            )
+            secs = max(0.0, (eod - now).total_seconds())
+            return int(secs / self.cycle_s)
+        except Exception:
+            return 9_999   # sin zoneinfo: no forzar cierre
+
+    def _execute_close_signals(
+        self,
+        closes,          # list[CloseSignal]
+        equity: float,
+    ) -> None:
+        """Convierte CloseSignal → OrderRequest y ejecuta vía SignalExecutor."""
+        if not closes or self.executor is None:
+            return
+
+        from atlas_code_quant.execution.position_manager import SignalKind
+
+        for close in closes:
+            # Construir un dict compatible con SignalExecutor._normalize()
+            sig_type = "SELL" if close.side == "long" else "BUY"   # opuesto para cerrar
+            signal_dict = {
+                "symbol":        close.symbol,
+                "signal_type":   sig_type,
+                "entry_price":   close.current_price,
+                "stop_loss":     close.stop_loss,
+                "take_profit":   close.take_profit,
+                "atr":           close.atr,
+                "confidence":    1.0,
+                "position_size": int(close.qty_to_close),
+                "strategy":      close.strategy,
+                "exit_reason":   close.signal_kind,
+                "signal_kind":   close.signal_kind,
+            }
+            try:
+                result = self.executor.execute(signal=signal_dict, capital=equity)
+                logger.info(
+                    "[LL] CLOSE %s %s %.4f qty=%.4f razón=%s status=%s",
+                    close.side.upper(), close.symbol, close.current_price,
+                    close.qty_to_close, close.signal_kind, result.status,
+                )
+            except Exception as exc:
+                logger.error("[LL] Error ejecutando cierre %s: %s", close.symbol, exc)
 
     # ── Hotkeys físicos ───────────────────────────────────────────────────────
 
