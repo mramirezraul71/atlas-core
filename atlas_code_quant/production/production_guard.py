@@ -26,13 +26,16 @@ from typing import Optional
 logger = logging.getLogger("atlas.production.guard")
 
 # ── Constantes de seguridad ───────────────────────────────────────────────────
-_DAILY_LOSS_LIMIT_PCT  = float(os.getenv("ATLAS_DAILY_LOSS_PCT",  "2.0"))   # %
-_MAX_POSITION_SIZE_PCT = float(os.getenv("ATLAS_MAX_POS_PCT",     "5.0"))   # %
-_CIRCLE_RADIUS_PX      = 80
-_CIRCLE_STEPS          = 36
+_DAILY_LOSS_LIMIT_PCT   = float(os.getenv("ATLAS_DAILY_LOSS_PCT",   "2.0"))  # %
+_WEEKLY_LOSS_LIMIT_PCT  = float(os.getenv("ATLAS_WEEKLY_LOSS_PCT",  "5.0"))  # %
+_MONTHLY_LOSS_LIMIT_PCT = float(os.getenv("ATLAS_MONTHLY_LOSS_PCT", "10.0")) # %
+_MAX_POSITION_SIZE_PCT  = float(os.getenv("ATLAS_MAX_POS_PCT",      "5.0"))  # %
+_MAX_TRADES_PER_DAY     = int(os.getenv("ATLAS_MAX_TRADES_PER_DAY", "6"))    # trades
+_CIRCLE_RADIUS_PX       = 80
+_CIRCLE_STEPS           = 36
 _DOUBLE_CONFIRM_CIRCLES = 3      # círculos de mouse para confirmación
-_F12_WAIT_S            = 30.0   # tiempo máximo esperando F12
-_READY_FOR_LIVE_FILE   = Path(os.getenv(
+_F12_WAIT_S             = 30.0   # tiempo máximo esperando F12
+_READY_FOR_LIVE_FILE    = Path(os.getenv(
     "ATLAS_READY_FILE",
     "data/operation/ready_for_live.json"
 ))
@@ -63,6 +66,13 @@ class GuardState:
     first_live_today: bool  = True         # True → requiere double confirmation
     trades_today:     int   = 0
     blocks_today:     int   = 0
+    # Seguimiento semanal/mensual (persiste a través de resets diarios)
+    week_str:         str   = ""           # "2026-W12"
+    weekly_pnl:       float = 0.0
+    weekly_paused:    bool  = False
+    month_str:        str   = ""           # "2026-03"
+    monthly_pnl:      float = 0.0
+    monthly_paused:   bool  = False
 
 
 class ProductionGuard:
@@ -85,17 +95,23 @@ class ProductionGuard:
         self,
         voice=None,
         hid=None,
-        daily_loss_pct: float = _DAILY_LOSS_LIMIT_PCT,
+        daily_loss_pct:   float = _DAILY_LOSS_LIMIT_PCT,
+        weekly_loss_pct:  float = _WEEKLY_LOSS_LIMIT_PCT,
+        monthly_loss_pct: float = _MONTHLY_LOSS_LIMIT_PCT,
         max_position_pct: float = _MAX_POSITION_SIZE_PCT,
+        max_trades_day:   int   = _MAX_TRADES_PER_DAY,
     ) -> None:
-        self.voice           = voice
-        self.hid             = hid
-        self.daily_loss_pct  = daily_loss_pct
-        self.max_pos_pct     = max_position_pct
-        self._state          = GuardState()
-        self._lock           = threading.Lock()
-        self._f12_event      = threading.Event()
-        self._f12_listener   = None
+        self.voice              = voice
+        self.hid                = hid
+        self.daily_loss_pct     = daily_loss_pct
+        self.weekly_loss_pct    = weekly_loss_pct
+        self.monthly_loss_pct   = monthly_loss_pct
+        self.max_pos_pct        = max_position_pct
+        self.max_trades_day     = max_trades_day
+        self._state             = GuardState()
+        self._lock              = threading.Lock()
+        self._f12_event         = threading.Event()
+        self._f12_listener      = None
 
     # ── Verificación de elegibilidad LIVE ─────────────────────────────────────
 
@@ -161,27 +177,38 @@ class ProductionGuard:
 
     def gate_order(
         self,
-        order_value: float,
+        order_value:     float,
         portfolio_value: float,
-        equity: float | None = None,
+        equity:          float | None = None,
+        is_close:        bool = False,   # True → skip trade-count limit (cierres siempre pasan)
     ) -> tuple[bool, str]:
         """Verifica si una orden puede ejecutarse. Retorna (ok, razón)."""
         with self._lock:
             self._refresh_daily_state(equity or portfolio_value)
 
-            # 1. Pausa diaria activa
+            # 1. Pausas activas (diaria / semanal / mensual)
             if self._state.daily_paused:
                 self._state.blocks_today += 1
                 return False, f"Pausa diaria activa — pérdida diaria supera {self.daily_loss_pct}%"
 
+            if self._state.weekly_paused:
+                self._state.blocks_today += 1
+                return False, f"Pausa semanal activa — pérdida semanal supera {self.weekly_loss_pct}%"
+
+            if self._state.monthly_paused:
+                self._state.blocks_today += 1
+                return False, f"Pausa mensual activa — pérdida mensual supera {self.monthly_loss_pct}%"
+
+            ref_equity = max(self._state.opening_equity, 1.0)
+
             # 2. Daily loss limit
-            if portfolio_value > 0 and equity is not None:
-                daily_loss_pct = abs(self._state.daily_pnl) / max(self._state.opening_equity, 1) * 100
-                if self._state.daily_pnl < 0 and daily_loss_pct >= self.daily_loss_pct:
+            if equity is not None and self._state.daily_pnl < 0:
+                daily_loss_pct = abs(self._state.daily_pnl) / ref_equity * 100
+                if daily_loss_pct >= self.daily_loss_pct:
                     self._state.daily_paused = True
                     self._state.blocks_today += 1
                     msg = (
-                        f"Daily loss limit alcanzado: {daily_loss_pct:.1f}% ≥ {self.daily_loss_pct}%. "
+                        f"Daily loss limit: {daily_loss_pct:.1f}% ≥ {self.daily_loss_pct}%. "
                         f"Trading pausado hasta mañana."
                     )
                     logger.warning(msg)
@@ -189,7 +216,45 @@ class ProductionGuard:
                     self._notify_telegram(msg)
                     return False, msg
 
-            # 3. Max position size
+            # 3. Weekly loss limit
+            if self._state.weekly_pnl < 0:
+                weekly_loss_pct = abs(self._state.weekly_pnl) / ref_equity * 100
+                if weekly_loss_pct >= self.weekly_loss_pct:
+                    self._state.weekly_paused = True
+                    self._state.blocks_today += 1
+                    msg = (
+                        f"Weekly loss limit: {weekly_loss_pct:.1f}% ≥ {self.weekly_loss_pct}%. "
+                        f"Trading pausado hasta la próxima semana."
+                    )
+                    logger.warning(msg)
+                    self._speak(msg, urgent=True)
+                    self._notify_telegram(msg)
+                    return False, msg
+
+            # 4. Monthly loss limit
+            if self._state.monthly_pnl < 0:
+                monthly_loss_pct = abs(self._state.monthly_pnl) / ref_equity * 100
+                if monthly_loss_pct >= self.monthly_loss_pct:
+                    self._state.monthly_paused = True
+                    self._state.blocks_today += 1
+                    msg = (
+                        f"Monthly loss limit: {monthly_loss_pct:.1f}% ≥ {self.monthly_loss_pct}%. "
+                        f"Trading pausado hasta el próximo mes."
+                    )
+                    logger.warning(msg)
+                    self._speak(msg, urgent=True)
+                    self._notify_telegram(msg)
+                    return False, msg
+
+            # 5. Max trades per day (solo para aperturas)
+            if not is_close and self._state.trades_today >= self.max_trades_day:
+                self._state.blocks_today += 1
+                return False, (
+                    f"Máximo de trades diarios alcanzado: "
+                    f"{self._state.trades_today}/{self.max_trades_day}"
+                )
+
+            # 6. Max position size
             if portfolio_value > 0:
                 pos_pct = order_value / portfolio_value * 100
                 if pos_pct > self.max_pos_pct:
@@ -202,9 +267,11 @@ class ProductionGuard:
         return True, "ok"
 
     def record_trade_pnl(self, pnl: float) -> None:
-        """Registra PnL de trade terminado para cálculo de daily loss."""
+        """Registra PnL de trade terminado (diario + semanal + mensual)."""
         with self._lock:
-            self._state.daily_pnl   += pnl
+            self._state.daily_pnl    += pnl
+            self._state.weekly_pnl   += pnl
+            self._state.monthly_pnl  += pnl
             self._state.trades_today += 1
 
     # ── Double confirmation (primer trade live del día) ────────────────────────
@@ -320,16 +387,39 @@ class ProductionGuard:
     # ── Estado diario ─────────────────────────────────────────────────────────
 
     def _refresh_daily_state(self, current_equity: float) -> None:
-        """Reset del estado al inicio de un nuevo día de trading."""
-        import datetime
-        today = datetime.date.today().isoformat()
-        if self._state.date_str != today:
-            logger.info("Nuevo día de trading — reset de estado ProductionGuard")
-            self._state = GuardState(
-                date_str       = today,
-                opening_equity = current_equity,
-                first_live_today = True,
-            )
+        """Reset del estado al inicio de un nuevo día de trading.
+
+        Preserva PnL semanal/mensual y sus flags de pausa a través de días.
+        Resetea PnL semanal si cambió la semana ISO; mensual si cambió el mes.
+        """
+        import datetime as _dt
+        today      = _dt.date.today()
+        today_str  = today.isoformat()
+        week_str   = f"{today.isocalendar()[0]}-W{today.isocalendar()[1]:02d}"
+        month_str  = today.strftime("%Y-%m")
+
+        if self._state.date_str == today_str:
+            return   # mismo día, nada que resetear
+
+        logger.info("Nuevo día de trading — reset de estado ProductionGuard")
+
+        # Preservar acumuladores semanales/mensuales (reset si cambió la semana/mes)
+        prev_weekly_pnl    = self._state.weekly_pnl   if self._state.week_str  == week_str  else 0.0
+        prev_monthly_pnl   = self._state.monthly_pnl  if self._state.month_str == month_str else 0.0
+        prev_weekly_pause  = self._state.weekly_paused  if self._state.week_str  == week_str  else False
+        prev_monthly_pause = self._state.monthly_paused if self._state.month_str == month_str else False
+
+        self._state = GuardState(
+            date_str         = today_str,
+            opening_equity   = current_equity,
+            first_live_today = True,
+            week_str         = week_str,
+            weekly_pnl       = prev_weekly_pnl,
+            weekly_paused    = prev_weekly_pause,
+            month_str        = month_str,
+            monthly_pnl      = prev_monthly_pnl,
+            monthly_paused   = prev_monthly_pause,
+        )
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -350,11 +440,16 @@ class ProductionGuard:
         with self._lock:
             s = self._state
             return {
-                "date":             s.date_str,
-                "daily_pnl":        round(s.daily_pnl, 2),
-                "daily_paused":     s.daily_paused,
-                "first_live_today": s.first_live_today,
-                "trades_today":     s.trades_today,
-                "blocks_today":     s.blocks_today,
-                "opening_equity":   s.opening_equity,
+                "date":              s.date_str,
+                "daily_pnl":         round(s.daily_pnl, 2),
+                "daily_paused":      s.daily_paused,
+                "weekly_pnl":        round(s.weekly_pnl, 2),
+                "weekly_paused":     s.weekly_paused,
+                "monthly_pnl":       round(s.monthly_pnl, 2),
+                "monthly_paused":    s.monthly_paused,
+                "first_live_today":  s.first_live_today,
+                "trades_today":      s.trades_today,
+                "blocks_today":      s.blocks_today,
+                "opening_equity":    s.opening_equity,
+                "max_trades_day":    self.max_trades_day,
             }

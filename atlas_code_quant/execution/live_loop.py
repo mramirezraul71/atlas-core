@@ -131,6 +131,10 @@ class LiveLoop:
             PM = _get_position_manager_cls()
             self.position_manager = PM(risk_engine=risk_engine)
 
+        # PDTController — gestiona presupuesto de day trades
+        # Se puede inyectar externamente o se crea uno con el modo actual
+        self.pdt_controller = None   # se inyecta desde atlas_quant_core o tests
+
         self._eod_time_et   = eod_time_et
         self._eod_close_min = eod_close_min
         self._eod_fired     = False   # flag: cierre EOD ya ejecutado hoy
@@ -486,12 +490,38 @@ class LiveLoop:
 
         # Ejecutar si hay señal accionable
         if signal.signal_type in (SignalType.BUY, SignalType.SELL, SignalType.EXIT):
+
+            # ── Gate PDT (solo para aperturas, no para EXIT/cierres de SG) ────
+            if (signal.signal_type in (SignalType.BUY, SignalType.SELL)
+                    and self.pdt_controller is not None):
+                is_swing = getattr(signal, "is_swing", False)
+                pdt_dec  = self.pdt_controller.can_open(
+                    symbol       = symbol,
+                    signal_score = signal.confidence,
+                    is_swing     = is_swing,
+                )
+                if not pdt_dec.allowed:
+                    logger.warning(
+                        "[LL] PDT BLOQUEADO apertura %s: %s (DT_usados=%d restantes=%d)",
+                        symbol, pdt_dec.reason,
+                        pdt_dec.day_trades_used, pdt_dec.day_trades_remaining,
+                    )
+                    if metrics is not None:
+                        metrics.signals_blocked += 1
+                    return None
+                logger.debug(
+                    "[LL] PDT OK apertura %s — DT_usados=%d/%d score=%.2f",
+                    symbol, pdt_dec.day_trades_used,
+                    pdt_dec.day_trades_used + pdt_dec.day_trades_remaining,
+                    signal.confidence,
+                )
+
             result = self.executor.execute(
                 signal      = signal,
                 ocr_result  = ocr_result,
                 capital     = equity,
             )
-            # Registrar apertura en PositionManager si la ejecución fue exitosa
+            # Registrar apertura en PositionManager + PDTController
             if (result.status in ("submitted", "simulated", "hid_fallback")
                     and signal.signal_type in (SignalType.BUY, SignalType.SELL)):
                 side = "long" if signal.signal_type == SignalType.BUY else "short"
@@ -505,6 +535,9 @@ class LiveLoop:
                     regime          = signal.regime,
                     portfolio_value = equity,
                 )
+                if self.pdt_controller is not None:
+                    self.pdt_controller.record_open(symbol)
+
             return result
 
         return None
@@ -538,7 +571,25 @@ class LiveLoop:
 
         from atlas_code_quant.execution.position_manager import SignalKind
 
+        from atlas_code_quant.execution.pdt_controller import RISK_CLOSE_KINDS
+
         for close in closes:
+            # ── Gate PDT para cierres voluntarios ─────────────────────────────
+            if self.pdt_controller is not None:
+                is_risk = close.signal_kind.upper() in RISK_CLOSE_KINDS
+                pdt_dec = self.pdt_controller.can_close(
+                    symbol       = close.symbol,
+                    signal_kind  = close.signal_kind,
+                    is_risk_close= is_risk,
+                )
+                if not pdt_dec.allowed:
+                    logger.warning(
+                        "[LL] PDT BLOQUEADO cierre %s (%s): %s — "
+                        "posición permanece abierta hasta SL/EOD",
+                        close.symbol, close.signal_kind, pdt_dec.reason,
+                    )
+                    continue   # no ejecutar este cierre; la posición se gestiona por SL/EOD
+
             # Construir un dict compatible con SignalExecutor._normalize()
             sig_type = "SELL" if close.side == "long" else "BUY"   # opuesto para cerrar
             signal_dict = {
@@ -561,6 +612,11 @@ class LiveLoop:
                     close.side.upper(), close.symbol, close.current_price,
                     close.qty_to_close, close.signal_kind, result.status,
                 )
+                # Registrar cierre en PDTController tras ejecución exitosa
+                if (self.pdt_controller is not None and
+                        result.status in ("submitted", "simulated", "hid_fallback") and
+                        not close.is_partial):
+                    self.pdt_controller.record_close(close.symbol)
             except Exception as exc:
                 logger.error("[LL] Error ejecutando cierre %s: %s", close.symbol, exc)
 
