@@ -138,6 +138,7 @@ class SignalGenerator:
         ocr_price: float | None = None,
         current_capital: float = 100_000.0,
         position_size: int = 0,
+        bar_state=None,   # BarState opcional — activa filtro de momentum si se provee
     ) -> TradeSignal:
         """Evalúa condiciones y retorna señal de trading o FLAT."""
 
@@ -192,6 +193,23 @@ class SignalGenerator:
 
         # ── 7. Confirmación visual OCR ────────────────────────────────────────
         visual_ok = self._check_visual(entry_price, ocr_price)
+
+        # ── 7.5. Filtro de momentum (velas 1m) — sólo si se provee bar_state ──
+        if bar_state is not None:
+            from atlas_code_quant.strategy.momentum import (
+                MomentumConfig,
+                should_open_momentum_long,
+                should_open_momentum_short,
+            )
+            _mcfg = MomentumConfig()
+            if signal_dir == SignalType.BUY:
+                if not should_open_momentum_long(bar_state, tech, cvd, regime, _mcfg):
+                    return self._flat(symbol, entry_price, atr,
+                                      "momentum_not_confirmed_long", 0.0)
+            else:
+                if not should_open_momentum_short(bar_state, tech, cvd, regime, _mcfg):
+                    return self._flat(symbol, entry_price, atr,
+                                      "momentum_not_confirmed_short", 0.0)
 
         # ── 8. Construir señal confirmada ─────────────────────────────────────
         tp, sl = self._compute_tp_sl(entry_price, atr, signal_dir)

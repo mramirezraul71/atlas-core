@@ -446,3 +446,123 @@ class TechnicalIndicators:
             return float(np.clip(hurst, 0.0, 1.0))
         except Exception:
             return 0.5
+
+
+# ── Bar + BarAggregator ───────────────────────────────────────────────────────
+
+@dataclass
+class Bar:
+    """Vela OHLCV con metadatos de tiempo."""
+    open:      float
+    high:      float
+    low:       float
+    close:     float
+    volume:    float
+    ts_open:   float           # UNIX timestamp apertura (boundary del intervalo)
+    ts_close:  float = 0.0    # UNIX timestamp cierre real (0 si aún abierta)
+    is_closed: bool  = False
+
+
+class BarAggregator:
+    """Agrega ticks de precio en velas OHLCV de N segundos (default 60 = 1m).
+
+    Usa boundaries UNIX (floor al intervalo) para alineación exacta:
+    tick en t=1234 con bar_seconds=60 → ts_open=1200.
+
+    Uso::
+
+        agg = BarAggregator(bar_seconds=60)
+        for tick in ticks:
+            closed = agg.update(close=tick.price, high=tick.high,
+                                low=tick.low, volume=tick.vol)
+            if closed:
+                print(f"Vela cerrada: {closed.open} → {closed.close}")
+
+    Propiedades:
+        last_closed_bar  — vela más reciente cerrada
+        prev_closed_bar  — penúltima vela cerrada
+        current_bar      — vela en formación (aún no cerrada)
+        seconds_to_close — segundos hasta que cierra la vela actual
+        avg_volume(n)    — volumen promedio de las últimas n velas
+    """
+
+    def __init__(self, bar_seconds: int = 60) -> None:
+        self._bar_seconds = bar_seconds
+        self._current: Optional[Bar] = None
+        self._closed:  deque[Bar]    = deque(maxlen=200)
+        self._vol_history: deque[float] = deque(maxlen=200)
+
+    def update(
+        self,
+        close:  float,
+        high:   float,
+        low:    float,
+        volume: float,
+        ts: float | None = None,
+    ) -> Optional[Bar]:
+        """Procesa tick; retorna la vela recién cerrada, o None si la vela sigue abierta."""
+        now    = ts if ts is not None else time.time()
+        bar_ts = float(int(now // self._bar_seconds) * self._bar_seconds)
+
+        if self._current is None:
+            self._current = Bar(
+                open=close, high=high, low=low, close=close,
+                volume=volume, ts_open=bar_ts,
+            )
+            return None
+
+        if bar_ts == self._current.ts_open:
+            # Mismo intervalo: actualizar OHLCV
+            self._current.high   = max(self._current.high, high)
+            self._current.low    = min(self._current.low,  low)
+            self._current.close  = close
+            self._current.volume += volume
+            return None
+
+        # Nuevo intervalo → cerrar barra actual
+        closed           = self._current
+        closed.ts_close  = now
+        closed.is_closed = True
+        self._closed.append(closed)
+        self._vol_history.append(closed.volume)
+
+        # Abrir nueva barra
+        self._current = Bar(
+            open=close, high=high, low=low, close=close,
+            volume=volume, ts_open=bar_ts,
+        )
+        return closed
+
+    @property
+    def last_closed_bar(self) -> Optional[Bar]:
+        """Última vela cerrada (la más reciente)."""
+        return self._closed[-1] if self._closed else None
+
+    @property
+    def prev_closed_bar(self) -> Optional[Bar]:
+        """Penúltima vela cerrada."""
+        return self._closed[-2] if len(self._closed) >= 2 else None
+
+    @property
+    def current_bar(self) -> Optional[Bar]:
+        """Vela actualmente en formación (aún no cerrada)."""
+        return self._current
+
+    def seconds_to_close(self, ts: float | None = None) -> float:
+        """Segundos que faltan para cerrar la vela actual."""
+        if self._current is None:
+            return float(self._bar_seconds)
+        now     = ts if ts is not None else time.time()
+        bar_end = self._current.ts_open + self._bar_seconds
+        return max(0.0, bar_end - now)
+
+    def avg_volume(self, n_bars: int = 20) -> float:
+        """Volumen promedio de las últimas n velas cerradas."""
+        if not self._vol_history:
+            return 0.0
+        recent = list(self._vol_history)[-n_bars:]
+        return sum(recent) / len(recent)
+
+    def n_closed(self) -> int:
+        """Número de velas cerradas en el buffer."""
+        return len(self._closed)
