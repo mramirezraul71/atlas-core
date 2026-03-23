@@ -99,6 +99,21 @@ class ProductionGuard:
 
     # ── Verificación de elegibilidad LIVE ─────────────────────────────────────
 
+    @staticmethod
+    def force_paper_mode() -> None:
+        """Fuerza ATLAS_MODE=paper y ATLAS_FORCE_LIVE_PREVIEW=true en el proceso actual.
+
+        Llamar al inicio de immediate_start / start_immediate_dynamic para
+        garantizar que ningún subcomponente pueda ejecutar órdenes reales.
+        """
+        import os as _os
+        _os.environ["ATLAS_MODE"]               = "paper"
+        _os.environ["ATLAS_FORCE_LIVE_PREVIEW"] = "true"
+        logger.warning(
+            "force_paper_mode(): ATLAS_MODE=paper ATLAS_FORCE_LIVE_PREVIEW=true — "
+            "órdenes reales BLOQUEADAS"
+        )
+
     def announce_paper_mode(self) -> None:
         """Anuncia por voz y Telegram que el sistema está en modo PAPER."""
         msg = (

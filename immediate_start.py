@@ -129,21 +129,31 @@ class ImmediateStart:
 
         return 0
 
-    # ── TradingView ───────────────────────────────────────────────────────────
+    # ── Scanner dinámico + TradingView ───────────────────────────────────────
 
     def _launch_tradingview(self) -> None:
-        logger.info("📊 Lanzando TradingView FREE — 4 pestañas Chrome…")
+        """M10 DINÁMICO: escáner primero → abre solo los mejores activos."""
+        logger.info("🔍 Scanner dinámico + TradingView FREE…")
+        token = os.getenv("TRADIER_PAPER_TOKEN", "")
         try:
-            from atlas_code_quant.chart_launcher import launch_free_tradingview
-            self._chart_launcher = launch_free_tradingview(
+            from atlas_code_quant.chart_launcher import ChartLauncher, run_dynamic_scanner
+            # 1. Escanear universo
+            if token:
+                top = run_dynamic_scanner(token=token)
+                if top:
+                    self.symbols = top
+                    logger.info("Scanner: top_symbols = %s", self.symbols)
+            # 2. Lanzar TradingView con los símbolos del scanner
+            launcher = ChartLauncher(
                 symbols=self.symbols,
                 voice=self._voice,
                 telegram=self._telegram,
-                fullscreen=True,
             )
-            logger.info("✅ TradingView FREE activo — %s", self.symbols)
+            ok = launcher.launch_free_tradingview(fullscreen=True)
+            self._chart_launcher = launcher
+            logger.info("✅ TradingView dinámico activo — %s", self.symbols)
         except Exception as exc:
-            logger.warning("ChartLauncher falló: %s — continuando sin TV visual", exc)
+            logger.warning("ChartLauncher/Scanner: %s — continuando", exc)
 
     # ── Subsistemas ───────────────────────────────────────────────────────────
 

@@ -175,29 +175,28 @@ print('Entrenamiento completado')
             --mode live
         ;;
 
-    # ── Immediate Start — Apertura HOY (sin esperar horario) ────────────────
+    # ── Immediate Start DINÁMICO — Scanner → top_symbols → TV → PAPER ────────
     immediate-start)
-        echo "⚡ ATLAS Immediate Start — PAPER MODE — Arranque AHORA"
+        echo "⚡ ATLAS Immediate Start DINÁMICO — PAPER MODE"
+        echo "   Flujo: Scanner IV/HV/CVD/Liq → top_symbols → TradingView → LiveLoop"
         echo "   Modo: PAPER | sandbox.tradier.com | preview=true"
         export ATLAS_MODE=paper
         export ATLAS_FORCE_LIVE_PREVIEW=true
 
-        check_calibration || echo "  → Iniciando sin calibración física (simulación)"
+        if [ -z "${TRADIER_PAPER_TOKEN}" ]; then
+            echo "ERROR: TRADIER_PAPER_TOKEN no configurado"
+            exit 1
+        fi
 
-        SYMBOLS="${ATLAS_SYMBOLS:-AAPL,TSLA,SPY,QQQ}"
+        check_calibration || echo "  → Sin calibración física (simulación)"
+
         SKIP_TV="${ATLAS_SKIP_TV:-false}"
-
         mkdir -p /workspace/reports /workspace/logs
 
-        echo "   Símbolos: ${SYMBOLS}"
-
         if [ "${SKIP_TV}" = "true" ]; then
-            exec python3 /workspace/immediate_start.py \
-                --symbols "${SYMBOLS}" \
-                --skip-tv
+            exec python3 /workspace/immediate_start.py --skip-tv
         else
-            exec python3 /workspace/immediate_start.py \
-                --symbols "${SYMBOLS}"
+            exec python3 /workspace/immediate_start.py
         fi
         ;;
 
