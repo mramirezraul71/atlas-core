@@ -36,6 +36,19 @@ logger = logging.getLogger("atlas.chart_launcher")
 
 _DEFAULT_SYMBOLS = ["SPY", "QQQ", "AAPL", "TSLA"]
 
+# Universo de escaneo para el scanner dinámico (máximo 6 resultan)
+_SCANNER_UNIVERSE = [
+    "SPY", "QQQ", "AAPL", "TSLA", "NVDA", "MSFT",
+    "AMZN", "META", "AMD", "IWM", "GLD", "XLF",
+]
+
+# Filtros del escáner dinámico
+_SCAN_IV_RANK_MIN  = 70.0   # IV Rank mínimo (percentil)
+_SCAN_IV_HV_RATIO  = 1.2    # IV / HV mínimo
+_SCAN_CVD_SIGMA    = 1.0    # CVD z-score mínimo
+_SCAN_LIQ_MIN_USD  = 10e6   # liquidez mínima $ (volumen × precio)
+_SCAN_MAX_SYMBOLS  = 6      # máximo de símbolos a abrir
+
 # URL base TradingView gratuita — funciona sin login
 # interval: 5=5m, 15=15m, 60=1h, D=1D
 _TV_BASE = "https://www.tradingview.com/chart/"
@@ -88,6 +101,215 @@ def _chrome_path() -> Optional[str]:
     return None
 
 
+def run_dynamic_scanner(
+    token: str,
+    universe: list[str] | None = None,
+    iv_rank_min: float = _SCAN_IV_RANK_MIN,
+    iv_hv_ratio_min: float = _SCAN_IV_HV_RATIO,
+    cvd_sigma_min: float = _SCAN_CVD_SIGMA,
+    liq_min_usd: float = _SCAN_LIQ_MIN_USD,
+    max_symbols: int = _SCAN_MAX_SYMBOLS,
+) -> list[str]:
+    """Escáner dinámico: filtra activos por IV Rank, IV/HV, CVD y liquidez.
+
+    Usa Tradier REST (sandbox o live). Devuelve top_symbols ordenados por score.
+
+    Criterios de filtro:
+      - Liquidez (vol × precio)  ≥ liq_min_usd
+      - IV Rank proxy             ≥ iv_rank_min   (percentil ATM IV vs universe)
+      - IV/HV ratio               ≥ iv_hv_ratio_min
+      - CVD z-score (bid/ask vol) ≥ cvd_sigma_min  (positivo = presión compradora)
+
+    Args:
+        token:          Tradier access token (paper o live).
+        universe:       Lista de símbolos a escanear (default: _SCANNER_UNIVERSE).
+        iv_rank_min:    Percentil mínimo de IV (0-100).
+        iv_hv_ratio_min: IV / HV mínimo.
+        cvd_sigma_min:  Z-score CVD mínimo.
+        liq_min_usd:    Liquidez mínima en USD.
+        max_symbols:    Máximo de símbolos devueltos.
+
+    Retorna lista de símbolos que pasaron los filtros, ordenados por score.
+    """
+    try:
+        import requests as _req
+        import statistics as _stat
+        import math as _math
+    except ImportError as e:
+        logger.error("Scanner: import error — %s", e)
+        return list((universe or _SCANNER_UNIVERSE)[:max_symbols])
+
+    syms = list(universe or _SCANNER_UNIVERSE)
+    hdrs = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+
+    # ── 1. Quotes: liquidez + spread + CVD proxy ──────────────────────────────
+    logger.info("Scanner: fetching quotes para %d símbolos…", len(syms))
+    try:
+        r = _req.get(
+            "https://sandbox.tradier.com/v1/markets/quotes",
+            headers=hdrs,
+            params={"symbols": ",".join(syms)},
+            timeout=12,
+        )
+        r.raise_for_status()
+        raw_quotes = r.json().get("quotes", {}).get("quote", [])
+        if isinstance(raw_quotes, dict):
+            raw_quotes = [raw_quotes]
+    except Exception as exc:
+        logger.warning("Scanner quotes error: %s — usando universo completo", exc)
+        return list(syms[:max_symbols])
+
+    quote_map: dict[str, dict] = {}
+    for q in raw_quotes:
+        sym  = q.get("symbol", "")
+        last = float(q.get("last") or q.get("close") or 0)
+        bid  = float(q.get("bid") or 0)
+        ask  = float(q.get("ask") or 0)
+        bsz  = float(q.get("bidsize") or q.get("bid_size") or 1)
+        asz  = float(q.get("asksize") or q.get("ask_size") or 1)
+        vol  = int(q.get("volume") or 0)
+        hi   = float(q.get("high") or last)
+        lo   = float(q.get("low") or last)
+        op   = float(q.get("open") or last)
+        if sym:
+            quote_map[sym] = {
+                "last": last, "bid": bid, "ask": ask,
+                "bid_sz": bsz, "ask_sz": asz,
+                "vol": vol, "hi": hi, "lo": lo, "open": op,
+            }
+
+    # ── 2. IV via opciones (primer vencimiento disponible) ────────────────────
+    logger.info("Scanner: fetching IV para opciones…")
+    iv_map: dict[str, float] = {}   # sym → ATM IV promedio
+    for sym in syms:
+        try:
+            re_exp = _req.get(
+                "https://sandbox.tradier.com/v1/markets/options/expirations",
+                headers=hdrs,
+                params={"symbol": sym, "includeAllRoots": "true"},
+                timeout=8,
+            )
+            exps = re_exp.json().get("expirations", {}).get("date", [])
+            exp  = (exps[0] if isinstance(exps, list) else exps) if exps else None
+            if not exp:
+                continue
+            rc = _req.get(
+                "https://sandbox.tradier.com/v1/markets/options/chains",
+                headers=hdrs,
+                params={"symbol": sym, "expiration": exp, "greeks": "true"},
+                timeout=10,
+            )
+            opts = rc.json().get("options", {}).get("option", [])
+            if isinstance(opts, dict):
+                opts = [opts]
+            ivs = [
+                float(o.get("greeks", {}).get("mid_iv", 0) or 0)
+                for o in opts
+                if o.get("greeks") and float(o.get("greeks", {}).get("mid_iv", 0) or 0) > 0
+            ]
+            if ivs:
+                iv_map[sym] = sum(ivs) / len(ivs)
+        except Exception:
+            pass
+
+    # ── 3. Calcular métricas de filtrado ──────────────────────────────────────
+    all_ivs = [v for v in iv_map.values() if v > 0]
+    iv_median = _stat.median(all_ivs) if all_ivs else 0.5
+    iv_sorted = sorted(all_ivs)
+    n_iv      = len(iv_sorted)
+
+    def iv_rank_pct(iv: float) -> float:
+        """Percentil de IV dentro del universo escaneado."""
+        if n_iv == 0 or iv <= 0:
+            return 0.0
+        below = sum(1 for x in iv_sorted if x <= iv)
+        return (below / n_iv) * 100.0
+
+    candidates: list[dict] = []
+
+    for sym in syms:
+        q = quote_map.get(sym)
+        if not q or q["last"] <= 0:
+            continue
+
+        last  = q["last"]
+        vol   = q["vol"]
+        bid   = q["bid"]
+        ask   = q["ask"]
+        bsz   = q["bid_sz"]
+        asz   = q["ask_sz"]
+        hi    = q["hi"]
+        lo    = q["lo"]
+
+        # Liquidez
+        liq_usd = vol * last
+        if liq_usd < liq_min_usd:
+            continue
+
+        # IV + IV Rank
+        iv   = iv_map.get(sym, 0.0)
+        rank = iv_rank_pct(iv)
+        if rank < iv_rank_min:
+            continue
+
+        # HV proxy: rango intradiario normalizado (Yang-Zhang no disponible → usar hi-lo/open)
+        hv_proxy = ((hi - lo) / last) * _math.sqrt(252) if last > 0 else 0.0
+        if hv_proxy <= 0:
+            hv_proxy = 0.001
+
+        iv_hv = iv / hv_proxy if hv_proxy > 0 else 0.0
+        if iv_hv < iv_hv_ratio_min:
+            continue
+
+        # CVD proxy: desequilibrio bid/ask size → z-score relativo
+        total_sz = bsz + asz
+        cvd_raw  = (asz - bsz) / total_sz if total_sz > 0 else 0.0  # positivo = más compras
+        # z-score relativo al rango: si > cvd_sigma * 0.1 => pasa
+        cvd_sigma = cvd_raw / 0.1 if cvd_raw > 0 else 0.0
+        if cvd_sigma < cvd_sigma_min:
+            # Permitir si señal neutral y otros filtros muy fuertes
+            if not (rank >= 85 and iv_hv >= 1.5):
+                continue
+
+        # Score compuesto (mayor = mejor candidato)
+        score = rank * 0.4 + iv_hv * 10 + cvd_sigma * 5 + min(liq_usd / 1e8, 10)
+
+        candidates.append({
+            "symbol":   sym,
+            "last":     last,
+            "liq_usd":  liq_usd,
+            "iv":       iv,
+            "iv_rank":  rank,
+            "iv_hv":    iv_hv,
+            "cvd":      cvd_sigma,
+            "score":    score,
+        })
+        logger.info(
+            "  ✅ PASS  %s — liq=$%.0fM iv=%.1f%% rank=%.0f%% iv/hv=%.2f cvd=%.2f score=%.1f",
+            sym, liq_usd / 1e6, iv * 100, rank, iv_hv, cvd_sigma, score,
+        )
+
+    # ── 4. Ordenar por score y limitar ────────────────────────────────────────
+    candidates.sort(key=lambda x: x["score"], reverse=True)
+    top = [c["symbol"] for c in candidates[:max_symbols]]
+
+    if not top:
+        logger.warning(
+            "Scanner: ningún símbolo pasó los filtros — "
+            "relajando criterios y usando top liquidez"
+        )
+        # Fallback: top-4 por liquidez
+        liq_ranked = sorted(
+            [sym for sym in syms if sym in quote_map],
+            key=lambda s: quote_map[s]["vol"] * quote_map[s]["last"],
+            reverse=True,
+        )
+        top = liq_ranked[:4]
+
+    logger.info("Scanner resultado: %s (%d símbolos)", top, len(top))
+    return top
+
+
 class ChartLauncher:
     """Lanzador de TradingView gratuito con pyautogui para ATLAS-Quant M10."""
 
@@ -99,10 +321,11 @@ class ChartLauncher:
         voice=None,
         telegram=None,
     ) -> None:
-        self.symbols  = (symbols or _DEFAULT_SYMBOLS)[:4]
+        self.symbols  = (symbols or _DEFAULT_SYMBOLS)[:_SCAN_MAX_SYMBOLS]
         self._voice   = voice
         self._telegram = telegram
         self._windows: list[dict] = []   # coords guardadas por ventana
+        self._top_symbols: list[str] = []   # resultado del último scan dinámico
 
     # ── API pública ───────────────────────────────────────────────────────────
 
@@ -189,6 +412,93 @@ class ChartLauncher:
 
         logger.info("✅ TradingView FREE lanzado correctamente")
         return True
+
+    def launch_dynamic_tradingview(
+        self,
+        token: str,
+        universe: list[str] | None = None,
+        fullscreen: bool = True,
+        iv_rank_min: float = _SCAN_IV_RANK_MIN,
+        iv_hv_ratio_min: float = _SCAN_IV_HV_RATIO,
+        cvd_sigma_min: float = _SCAN_CVD_SIGMA,
+        liq_min_usd: float = _SCAN_LIQ_MIN_USD,
+    ) -> list[str]:
+        """M10 DINÁMICO: escáner primero → abre solo los símbolos que pasan los filtros.
+
+        Flujo:
+          1. Corre run_dynamic_scanner() con los parámetros dados
+          2. Actualiza self.symbols con los resultados
+          3. Llama launch_free_tradingview() con los nuevos símbolos
+          4. Guarda top_symbols en atlas_screen_map.json["scanner_result"]
+
+        Args:
+            token:          Tradier token (paper sandbox).
+            universe:       Universo de escaneo (default: _SCANNER_UNIVERSE).
+            fullscreen:     Activar pantalla completa.
+            iv_rank_min:    Percentil IV mínimo (0-100).
+            iv_hv_ratio_min: IV/HV mínimo.
+            cvd_sigma_min:  CVD z-score mínimo.
+            liq_min_usd:    Liquidez mínima en USD.
+
+        Retorna la lista de símbolos que pasaron el escáner (top_symbols).
+        """
+        logger.info("🔍 ChartLauncher DINÁMICO — escaneando universo…")
+        self._speak("Iniciando escáner dinámico de mercado. Filtrando por IV Rank, liquidez y CVD.")
+
+        top = run_dynamic_scanner(
+            token=token,
+            universe=universe,
+            iv_rank_min=iv_rank_min,
+            iv_hv_ratio_min=iv_hv_ratio_min,
+            cvd_sigma_min=cvd_sigma_min,
+            liq_min_usd=liq_min_usd,
+        )
+
+        self._top_symbols = top
+        self.symbols      = top[:_SCAN_MAX_SYMBOLS]
+
+        if not self.symbols:
+            logger.warning("Scanner sin resultados — nada que abrir")
+            return []
+
+        msg = f"Escáner completado. {len(self.symbols)} activos seleccionados: {', '.join(self.symbols)}."
+        self._speak(msg)
+        self._alert(
+            f"📊 *Scanner dinámico completado*\n"
+            f"Seleccionados ({len(self.symbols)}): {', '.join(self.symbols)}\n"
+            f"Filtros: IV Rank >{iv_rank_min:.0f}% | IV/HV >{iv_hv_ratio_min} | liq >$10M"
+        )
+
+        ok = self.launch_free_tradingview(fullscreen=fullscreen)
+        if not ok:
+            logger.error("launch_free_tradingview falló tras scanner")
+            return self.symbols
+
+        # Persistir resultado del scanner en atlas_screen_map.json
+        try:
+            out_path = self.SCREEN_MAP_PATH
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            existing: dict = {}
+            if out_path.exists():
+                try:
+                    with open(out_path, encoding="utf-8") as f:
+                        import json as _json
+                        existing = _json.load(f)
+                except Exception:
+                    pass
+            existing["scanner_result"]      = self.symbols
+            existing["scanner_universe"]    = list(universe or _SCANNER_UNIVERSE)
+            existing["scanner_iv_rank_min"] = iv_rank_min
+            existing["scanner_iv_hv_min"]   = iv_hv_ratio_min
+            existing["scanner_liq_min_usd"] = liq_min_usd
+            with open(out_path, "w", encoding="utf-8") as f:
+                import json as _json
+                _json.dump(existing, f, indent=2, ensure_ascii=False)
+            logger.info("Scanner result guardado en %s", out_path)
+        except Exception as exc:
+            logger.warning("No se pudo persistir scanner_result: %s", exc)
+
+        return self.symbols
 
     def switch_to_symbol(self, symbol: str) -> bool:
         """Cambia a la pestaña que muestra el símbolo indicado."""

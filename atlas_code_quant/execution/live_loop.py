@@ -182,6 +182,48 @@ class LiveLoop:
         self._paused = False
         logger.info("▶ LiveLoop reanudado")
 
+    def update_symbols(self, new_symbols: list[str]) -> None:
+        """Actualiza dinámicamente los símbolos operados sin reiniciar el loop.
+
+        Usado por el scanner dinámico para cambiar el universo en caliente.
+        Actualiza suscripción del stream Tradier y tech_indicators.
+
+        Args:
+            new_symbols: Lista nueva de símbolos (resultado del scanner).
+        """
+        new_symbols = [s.upper() for s in new_symbols][:_MAX_SYMBOLS]
+        added   = [s for s in new_symbols if s not in self.symbols]
+        removed = [s for s in self.symbols if s not in new_symbols]
+
+        self.symbols = new_symbols
+        logger.info(
+            "update_symbols: +%s -%s → activos=%s",
+            added, removed, self.symbols,
+        )
+
+        # Re-suscribir stream Tradier
+        if self.stream is not None:
+            try:
+                self.stream.subscribe(new_symbols)
+            except Exception as exc:
+                logger.warning("update_symbols stream resubscribe: %s", exc)
+
+        # Añadir TechnicalIndicators para nuevos símbolos
+        for sym in added:
+            if sym not in self.tech_indicators:
+                try:
+                    from atlas_code_quant.pipeline.indicators import TechnicalIndicators
+                    self.tech_indicators[sym] = TechnicalIndicators(sym)
+                except Exception:
+                    pass
+
+        # Actualizar signal_gen si tiene método de símbolos
+        if self.signal_gen is not None and hasattr(self.signal_gen, "update_symbols"):
+            try:
+                self.signal_gen.update_symbols(new_symbols)
+            except Exception as exc:
+                logger.warning("update_symbols signal_gen: %s", exc)
+
     # ── Loop principal ────────────────────────────────────────────────────────
 
     def _run(self) -> None:

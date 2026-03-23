@@ -541,6 +541,87 @@ class ATLASQuantCore:
             logger.exception("Error en start_market_open_test: %s", exc)
             return 1
 
+    # ── Immediate Start Dinámico (scanner primero) ───────────────────────────
+
+    def start_immediate_dynamic(
+        self,
+        token: str | None = None,
+        universe: list[str] | None = None,
+        skip_tv: bool = False,
+    ) -> int:
+        """Arranque dinámico: escáner → top_symbols → TradingView → LiveLoop PAPER.
+
+        Secuencia:
+          1. force_paper_mode() — bloquea órdenes reales
+          2. run_dynamic_scanner() — filtra IV Rank >70%, IV/HV >1.2, CVD >1σ, liq >$10M
+          3. launch_dynamic_tradingview(top_symbols) — abre solo esos gráficos en Chrome
+          4. setup(symbols=top_symbols) — inicializa todos los módulos con lista dinámica
+          5. LiveLoop PAPER en background
+
+        Args:
+            token:    Tradier paper token (default: TRADIER_PAPER_TOKEN env var).
+            universe: Universo de escaneo (default: _SCANNER_UNIVERSE en chart_launcher).
+            skip_tv:  Si True, omite la apertura de Chrome (headless/Jetson sin display).
+
+        Retorna 0 = éxito, 1 = error.
+        """
+        import os as _os
+        from atlas_code_quant.production.production_guard import ProductionGuard
+        ProductionGuard.force_paper_mode()
+        self.mode = "paper"
+
+        _token = token or _os.getenv("TRADIER_PAPER_TOKEN", "")
+        if not _token:
+            logger.error("start_immediate_dynamic: TRADIER_PAPER_TOKEN no configurado")
+            return 1
+
+        logger.info("⚡ start_immediate_dynamic — escaneando universo…")
+
+        # ── Scanner ───────────────────────────────────────────────────────────
+        try:
+            from atlas_code_quant.chart_launcher import run_dynamic_scanner, ChartLauncher
+            top_symbols = run_dynamic_scanner(token=_token, universe=universe)
+        except Exception as exc:
+            logger.error("Scanner error: %s — usando universo reducido", exc)
+            top_symbols = (universe or ["SPY", "QQQ", "AAPL", "TSLA"])[:4]
+
+        logger.info("top_symbols: %s", top_symbols)
+
+        # ── TradingView dinámico ───────────────────────────────────────────────
+        if not skip_tv:
+            try:
+                launcher = ChartLauncher(symbols=top_symbols)
+                ok = launcher.launch_free_tradingview(fullscreen=True)
+                if not ok:
+                    logger.warning("TradingView launch parcial — continuando")
+            except Exception as exc:
+                logger.warning("TradingView: %s — continuando sin gráficos", exc)
+
+        # ── Setup módulos con top_symbols dinámicos ───────────────────────────
+        self._symbols = top_symbols
+        try:
+            if not self._initialized:
+                self.setup()
+            elif self.live_loop is not None:
+                self.live_loop.update_symbols(top_symbols)
+        except Exception as exc:
+            logger.error("Setup error: %s", exc)
+            return 1
+
+        # ── LiveLoop PAPER ────────────────────────────────────────────────────
+        try:
+            self.live_loop.start()
+            self.live_loop.join()
+        except KeyboardInterrupt:
+            self.live_loop.stop("KeyboardInterrupt")
+        except Exception as exc:
+            logger.error("LiveLoop error: %s", exc)
+            return 1
+        finally:
+            self._shutdown()
+
+        return 0
+
     # ── Immediate Start (HOY — apertura en minutos) ─────────────────────────
 
     def start_immediate(
