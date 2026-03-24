@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "atlas_base_url": "http://127.0.0.1:8791",
+  "memory_enabled": true,
+  "bitacora_enabled": true,
+  "last_delivery_ok": true,
+  "last_bitacora_ok": true,
+  "last_memory_ok": true,
+  "last_event_kind": "operation_cycle",
+  "last_event_at": "2026-03-20T11:19:51.570046",
+  "last_error": "",
+  "total_events": 8,
+  "delivered_events": 5,
+  "queued_local_only_events": 3,
+  "emitted_journal_keys": [],
+  "events_path": "C:\\ATLAS_PUSH\\atlas_code_quant\\logs\\quant_brain_bridge.jsonl"
+}
