@@ -1,17 +1,24 @@
 #!/usr/bin/env python
-"""autonomous_loop.py — Loop autonomo externo ATLAS-Quant v2.
+"""autonomous_loop.py — Loop autonomo externo ATLAS-Quant v3.
 
-Mejoras v2:
+v3 (vision):
+  - Validacion visual pre-submit via Insta360 / desktop OCR
+  - Si vision disponible: confirma color de chart antes de enviar orden
+  - --no-vision-gate para deshabilitar la validacion visual
+  - Visual confidence threshold configurable (--min-visual-conf, default 0.0 = solo log)
+
+v2:
   - Gate de horario de mercado (9:30-15:45 ET solo)
   - Deduplicacion: no envia el mismo simbolo hasta el proximo ciclo
   - Timeout reducido a 25s para no bloquear si el brain no responde
   - Cooldown por simbolo (no repetir dentro de N minutos)
-  - Arranged para Task Scheduler (start/stop limpio)
 
 Uso:
     python scripts/autonomous_loop.py
     python scripts/autonomous_loop.py --port 8792 --interval 120
     python scripts/autonomous_loop.py --no-market-hours-gate  # para testing
+    python scripts/autonomous_loop.py --no-vision-gate        # sin validacion visual
+    python scripts/autonomous_loop.py --min-visual-conf 0.6   # bloquear si conf < 0.6
 """
 from __future__ import annotations
 
@@ -26,6 +33,60 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+
+# ── Vision (opcional — no bloquea si el modulo no esta disponible) ────────────
+_VISION_AVAILABLE = False
+_vision_pipeline = None
+
+def _init_vision() -> None:
+    global _VISION_AVAILABLE, _vision_pipeline
+    try:
+        _ROOT_PY = Path(__file__).resolve().parents[1]
+        if str(_ROOT_PY) not in sys.path:
+            sys.path.insert(0, str(_ROOT_PY))
+        from atlas_code_quant.vision.visual_pipeline import VisualPipeline
+        _vision_pipeline = VisualPipeline.get_instance()
+        src = _vision_pipeline._capture.source_available()
+        _VISION_AVAILABLE = src != "none"
+        logger_placeholder = logging.getLogger("atlas.execution.live_loop")
+        logger_placeholder.info("Vision pipeline OK — fuente: %s", src)
+    except Exception as exc:
+        logging.getLogger("atlas.execution.live_loop").warning(
+            "Vision no disponible: %s", exc
+        )
+
+
+def _visual_check(direction: str, api_price: float, min_conf: float) -> tuple[bool, str]:
+    """Valida la senal contra el estado visual del grafico.
+
+    Returns:
+        (ok, reason) — ok=True si pasa, False si se debe bloquear
+    """
+    if not _VISION_AVAILABLE or _vision_pipeline is None:
+        return True, "vision_not_available"
+    try:
+        from atlas_code_quant.strategy.visual_triggers import VisualTriggerValidator
+        ocr = _vision_pipeline.analyze(max_age_sec=60.0)
+        signal_type = "BUY" if direction in {"long", "alcista", "bull", "up"} else "SELL"
+        vtv = VisualTriggerValidator()
+        val = vtv.validate(
+            signal_type=signal_type,
+            api_price=api_price,
+            ocr_result=ocr,
+        )
+        passed = val.overall_confidence >= min_conf if min_conf > 0 else True
+        reason = (
+            f"visual_ok conf={val.overall_confidence:.2f} color={ocr.chart_color} "
+            f"pattern={ocr.pattern_detected}"
+        )
+        if not passed:
+            reason = (
+                f"visual_BLOCKED conf={val.overall_confidence:.2f}<{min_conf} "
+                f"color={ocr.chart_color} pattern={ocr.pattern_detected}"
+            )
+        return passed, reason
+    except Exception as exc:
+        return True, f"visual_error:{exc}"
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 _ROOT = Path(__file__).resolve().parents[1]
@@ -145,12 +206,16 @@ def run_loop(
     max_per_cycle: int,
     api_key: str,
     no_market_hours_gate: bool = False,
+    no_vision_gate: bool = False,
+    min_visual_conf: float = 0.0,
 ) -> None:
     logger.info("=" * 60)
-    logger.info("ATLAS autonomous_loop v2 iniciado")
+    logger.info("ATLAS autonomous_loop v3 iniciado")
     logger.info("  base=%s interval=%ds max_per_cycle=%d", base, interval_sec, max_per_cycle)
     logger.info("  market_hours_gate=%s", not no_market_hours_gate)
     logger.info("  symbol_cooldown=%dmin", _SYMBOL_COOLDOWN_MIN)
+    logger.info("  vision_gate=%s min_visual_conf=%.2f available=%s",
+                not no_vision_gate, min_visual_conf, _VISION_AVAILABLE)
     logger.info("=" * 60)
 
     cycle = 0
@@ -268,6 +333,18 @@ def run_loop(
 
             logger.info("[cycle %d] -> %s score=%.1f dir=%s tf=%s", cycle, sym, score, direction, tf)
 
+            # ── Validacion visual pre-submit ──────────────────────────────────
+            if not no_vision_gate and _VISION_AVAILABLE:
+                vis_ok, vis_reason = _visual_check(
+                    direction=direction,
+                    api_price=float(cand.get("price") or cand.get("entry_price") or 0),
+                    min_conf=min_visual_conf,
+                )
+                logger.info("  VISION  %s | %s", sym, vis_reason)
+                if not vis_ok:
+                    logger.info("  SKIP    %s | bloqueado por vision", sym)
+                    continue
+
             order_body = {
                 "order": {
                     "symbol": sym,
@@ -335,13 +412,19 @@ def run_loop(
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="ATLAS autonomous loop v2")
+    parser = argparse.ArgumentParser(description="ATLAS autonomous loop v3")
     parser.add_argument("--port",               type=int,   default=None)
     parser.add_argument("--interval",           type=int,   default=120,  help="Segundos entre ciclos (default 120)")
     parser.add_argument("--max-per-cycle",      type=int,   default=1)
     parser.add_argument("--api-key",            default="atlas-quant-local")
     parser.add_argument("--no-market-hours-gate", action="store_true", help="Operar fuera de horario (testing)")
+    parser.add_argument("--no-vision-gate",     action="store_true", help="Deshabilitar validacion visual")
+    parser.add_argument("--min-visual-conf",    type=float, default=0.0,
+                        help="Confianza minima visual para bloquear (0.0=solo log, 0.6=bloqueo)")
     args = parser.parse_args()
+
+    # Inicializar pipeline visual (no bloquea si falla)
+    _init_vision()
 
     if args.port:
         base = f"http://127.0.0.1:{args.port}"
@@ -358,7 +441,12 @@ def main() -> int:
     logger.info("Servidor: %s", base)
 
     try:
-        run_loop(base, args.interval, args.max_per_cycle, args.api_key, args.no_market_hours_gate)
+        run_loop(
+            base, args.interval, args.max_per_cycle, args.api_key,
+            args.no_market_hours_gate,
+            no_vision_gate=args.no_vision_gate,
+            min_visual_conf=args.min_visual_conf,
+        )
     except KeyboardInterrupt:
         logger.info("Loop detenido (Ctrl+C)")
     return 0
