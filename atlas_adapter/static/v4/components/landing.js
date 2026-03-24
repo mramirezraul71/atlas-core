@@ -90,6 +90,7 @@ export function render(container) {
         <div class="quick-chip" data-action="bitacora">${SVG.bitacora} Bitacora</div>
         <div class="quick-chip quant-chip" data-action="code-quant-dashboard" style="color:#00d4aa;border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.07)">${SVG.trading} Code Quant</div>
         <div class="quick-chip quant-chip" data-action="atlas-quant-scanner" style="color:#00d4aa;border-color:rgba(0,212,170,0.25)">&#9670; Escaner Quant</div>
+        <div class="quick-chip quant-chip" data-action="option-strat" style="color:#00d4aa;border-color:rgba(0,212,170,0.35);background:rgba(0,212,170,0.07)">&#9651; OptionStrat</div>
         <div class="quick-chip quant-chip" data-action="grafana-quant" style="color:#f46800;border-color:rgba(244,104,0,0.35)">${SVG.grafana} Grafana</div>
         <div class="quick-chip" data-action="rauli-vision">${SVG.eye} Rauli Vision</div>
         <div class="quick-chip" data-action="rauli-panaderia">${SVG.package} Rauli Panaderia</div>
@@ -115,6 +116,10 @@ export function render(container) {
         <div class="app-tile" data-app="atlas-quant-scanner" style="border-color:rgba(0,212,170,0.25)">
           <div class="app-tile-icon" style="color:#00d4aa">&#9670;</div>
           <div class="app-tile-label">Escaner Quant</div>
+        </div>
+        <div class="app-tile" data-app="option-strat" style="border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.05)">
+          <div class="app-tile-icon" style="color:#00d4aa">&#9651;</div>
+          <div class="app-tile-label" style="color:#00d4aa">OptionStrat</div>
         </div>
         <div class="app-tile" data-app="grafana-quant" style="border-color:rgba(244,104,0,0.35)">
           <div class="app-tile-icon" style="color:#f46800">${SVG.grafana}</div>
@@ -278,6 +283,7 @@ export function render(container) {
     'live-diagnostic': { hash: '/live-diagnostic' },
     'atlas-quant-scanner':  { hash: '/atlas-quant' },
     'code-quant-dashboard': { href: '/v4/static/quant/index.html', newTab: true },
+    'option-strat':         { href: 'http://localhost:8792/options/ui', newTab: true },
     'grafana-quant':        { href: 'http://localhost:3002', newTab: true },
     'atlas-nexus': { href: '/nexus', newTab: false },
     'robot-3d':    { href: 'http://127.0.0.1:8002/dashboard', newTab: true },
@@ -309,6 +315,7 @@ export function render(container) {
     'software-center': { hash: '/software-center' },
     'atlas-quant-scanner':  { hash: '/atlas-quant' },
     'code-quant-dashboard': { href: '/v4/static/quant/index.html', newTab: true },
+    'option-strat':         { href: 'http://localhost:8792/options/ui', newTab: true },
     'grafana-quant':        { href: 'http://localhost:3002', newTab: true },
     'clawd-direct': { hash: '/clawd-direct' },
     'codex-supervisor': { hash: '/codex-supervisor' },
