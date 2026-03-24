@@ -113,6 +113,8 @@ class LiveLoop:
         motif_cycle_interval: int = 10,           # cada cuántos ciclos correr find_motifs (~50s)
         motif_forecast_horizon: int = 5,          # barras futuras para get_forecast_dist
         indicator_lab=None,                       # IndicatorLabService opcional — TIN inference
+        mtf_analyzer=None,                        # MultiTimeframeAnalyzer opcional
+        mtf_cycle_interval: int = 20,             # cada cuántos ciclos correr análisis MTF (~100s)
     ) -> None:
         self.camera         = camera
         self.stream         = stream
@@ -156,6 +158,11 @@ class LiveLoop:
 
         # IndicatorLabService — XGBoost ranking + TIN inference
         self.indicator_lab = indicator_lab
+
+        # MultiTimeframeAnalyzer — coherencia MTF (hook cada mtf_cycle_interval ciclos)
+        self.mtf_analyzer          = mtf_analyzer
+        self._mtf_cycle_interval   = max(1, mtf_cycle_interval)
+        self._mtf_state: dict      = {}   # {symbol: MultiTFReport}
 
         # PDTController — gestiona presupuesto de day trades
         # Se puede inyectar externamente o se crea uno con el modo actual
@@ -388,6 +395,11 @@ class LiveLoop:
                 and self._cycle_count % self._motif_cycle_interval == 0):
             self._run_motif_update()
 
+        # ── 5.6. Multi-TF coherence hook (cada mtf_cycle_interval ciclos) ────
+        if (self.mtf_analyzer is not None
+                and self._cycle_count % self._mtf_cycle_interval == 0):
+            self._run_mtf_update()
+
         # ── 6-8. Evaluar entradas para símbolos SIN posición abierta ─────────
         for symbol in self.symbols:
             if self._emergency:
@@ -500,6 +512,32 @@ class LiveLoop:
                 )
             except Exception as _me:
                 logger.debug("[MotifHook] %s error: %s", symbol, _me)
+
+    def _run_mtf_update(self) -> None:
+        """Hook Multi-Timeframe: analiza coherencia de régimen en 1m/5m/15m/1h.
+
+        Toma el buffer de closes de TechnicalIndicator (resolución tick/1m)
+        y submuestrea para simular distintos TFs.
+        Guarda ``MultiTFReport`` en ``self._mtf_state[symbol]``.
+        """
+        for symbol in self.symbols:
+            ti = self.tech_indicators.get(symbol)
+            if ti is None or not hasattr(ti, "_closes") or len(ti._closes) < 120:
+                continue
+            try:
+                closes = np.array(list(ti._closes), dtype=np.float64)
+                report = self.mtf_analyzer.analyze(symbol, closes)
+                self._mtf_state[symbol] = report
+                logger.debug(
+                    "[MTFHook] %s: dominant=%s coherence=%.3f aligned=%d/%d",
+                    symbol,
+                    report.dominant_trend.value,
+                    report.coherence_score,
+                    report.aligned_count,
+                    report.total_tfs,
+                )
+            except Exception as _mtf_err:
+                logger.debug("[MTFHook] %s error: %s", symbol, _mtf_err)
 
     def _evaluate_and_execute(self, symbol: str, ocr_result, equity: float, metrics: CycleMetrics | None = None):
         """Pipeline completo para un símbolo: indicadores → régimen → señal → orden."""
@@ -636,6 +674,9 @@ class LiveLoop:
         _motif_edge = float(_mstate.get("edge_score", 0.5)) if _mstate else 0.5
         _tin_score  = float(_mstate.get("tin_score",  0.5)) if _mstate else 0.5
 
+        # Extraer MultiTFReport del estado MTF (None si aún no calculado)
+        _mtf_report = self._mtf_state.get(symbol)
+
         signal = self.signal_gen.evaluate(
             symbol          = symbol,
             regime          = regime,
@@ -649,6 +690,7 @@ class LiveLoop:
             pattern_lab_ctx = pattern_lab_ctx,
             motif_edge      = _motif_edge,
             tin_score       = _tin_score,
+            mtf_report      = _mtf_report,
         )
 
         # Inyectar motif + TIN state en metadata de la señal
@@ -658,6 +700,13 @@ class LiveLoop:
             signal.metadata["motif_n_matches"]    = _mstate.get("n_matches", 0)
             signal.metadata["motif_cycle"]        = _mstate.get("cycle", 0)
             signal.metadata["tin_score"]          = _mstate.get("tin_score", 0.5)
+
+        # Inyectar MTF state en metadata
+        if _mtf_report is not None:
+            signal.metadata["mtf_coherence"]      = round(_mtf_report.coherence_score, 4)
+            signal.metadata["mtf_dominant"]       = _mtf_report.dominant_trend.value
+            signal.metadata["mtf_aligned"]        = _mtf_report.aligned_count
+            signal.metadata["mtf_total_tfs"]      = _mtf_report.total_tfs
 
         # Ejecutar si hay señal accionable
         if signal.signal_type in (SignalType.BUY, SignalType.SELL, SignalType.EXIT):
