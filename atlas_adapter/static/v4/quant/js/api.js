@@ -11,17 +11,26 @@ const API_BASE = (location.port === '8791' || location.port === '443')
 const API_KEY  = localStorage.getItem('quant_api_key') || '';
 
 // ── HTTP helper ────────────────────────────────────────────────────
+const _FETCH_TIMEOUT = 8000;  // 8 s máximo por petición
+
+function _fetchWithTimeout(url, opts = {}) {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), _FETCH_TIMEOUT);
+  return fetch(url, { ...opts, signal: ctrl.signal })
+    .finally(() => clearTimeout(id));
+}
+
 async function apiGet(path, params = {}) {
   const url = new URL(API_BASE + path, window.location.origin);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const r = await fetch(url, {
+  const r = await _fetchWithTimeout(url, {
     headers: { 'x-api-key': API_KEY, 'Accept': 'application/json' }
   });
   return r.json();
 }
 
 async function apiPost(path, body = {}) {
-  const r = await fetch(API_BASE + path, {
+  const r = await _fetchWithTimeout(API_BASE + path, {
     method: 'POST',
     headers: {
       'x-api-key': API_KEY,

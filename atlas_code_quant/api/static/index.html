@@ -9,8 +9,6 @@
     const _QBASE = (location.port==='8792'||location.port==='') ? '/static' : '/quant-static';
     document.write('<link rel="stylesheet" href="'+_QBASE+'/css/dash.css"/>');
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 </head>
 <body>
   <!-- TOPBAR -->
@@ -493,10 +491,13 @@
   <!-- TOAST CONTAINER -->
   <div class="toast-container" id="toast-container"></div>
 
+  <!-- CDN al final del body: no bloquean el render -->
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js" defer></script>
   <script>
     const _S = (location.port==='8792'||location.port==='') ? '/static' : '/quant-static';
     ['api','charts','app'].forEach(f=>{
-      const s=document.createElement('script'); s.src=_S+'/js/'+f+'.js'; document.body.appendChild(s);
+      const s=document.createElement('script'); s.src=_S+'/js/'+f+'.js'; s.defer=true; document.body.appendChild(s);
     });
   </script>
 </body>
