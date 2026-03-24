@@ -143,7 +143,7 @@ class SignalGenerator:
     MIN_IV_RANK           = 70.0     # IV Rank mínimo para considerar
     MIN_IV_HV_RATIO       = 1.2      # IV/HV mínimo
     MIN_VOLUME_SPIKE      = 1.8      # multiplicador de volumen
-    MIN_MTF_COHERENCE     = 0.70     # coherencia multi-TF mínima para operar
+    MIN_MTF_COHERENCE     = 0.75     # coherencia multi-TF mínima para operar
     RSI_OVERBOUGHT        = 70.0
     RSI_OVERSOLD          = 30.0
     CVD_ZSCORE_THRESHOLD  = 1.0      # desviaciones estándar
@@ -175,9 +175,9 @@ class SignalGenerator:
     def final_signal_score(components: SignalComponents) -> float:
         """Fórmula definitiva de score de señal.
 
-        Ponderación optimizada:
-            25% motif_edge   — patrón temporal (normalizado a [0,1])
-            35% tin_score    — red neuronal de indicadores técnicos
+        Ponderación optimizada (sensitivity_analysis.py, 20k señales):
+            30% motif_edge   — patrón temporal (normalizado a [0,1])
+            30% tin_score    — red neuronal de indicadores técnicos
             20% mtf_coherence— alineación multi-timeframe
             20% regime_conf  — confianza del clasificador de régimen
 
@@ -192,8 +192,8 @@ class SignalGenerator:
         tin_norm    = max(0.0, min(1.0, float(components.tin_score)))
         mtf_norm    = max(0.0, min(1.0, float(components.mtf_coherence)))
         regime_norm = max(0.0, min(1.0, float(components.regime_confidence)))
-        score = (0.25 * motif_norm
-               + 0.35 * tin_norm
+        score = (0.30 * motif_norm
+               + 0.30 * tin_norm
                + 0.20 * mtf_norm
                + 0.20 * regime_norm)
         return float(max(0.0, min(1.0, score)))
