@@ -1,0 +1,34 @@
+{
+  "account_scope": "paper",
+  "paper_only": true,
+  "auton_mode": "paper_autonomous",
+  "executor_mode": "paper_api",
+  "vision_mode": "desktop_capture",
+  "require_operator_present": false,
+  "operator_present": true,
+  "screen_integrity_ok": true,
+  "sentiment_score": 0.0,
+  "sentiment_source": "manual",
+  "min_auton_win_rate_pct": 65.0,
+  "max_level4_bpr_pct": 20.0,
+  "auto_pause_on_operational_errors": true,
+  "operational_error_limit": 3,
+  "operational_error_count": 0,
+  "operational_error_day": "2026-03-24",
+  "fail_safe_active": false,
+  "fail_safe_reason": null,
+  "last_operational_error": null,
+  "notes": "paper_autonomous activado 2026-03-24. vision=desktop_capture (NEXUS robot no requerido).",
+  "last_decision": {
+    "decision": "eligible",
+    "allowed": true,
+    "timestamp": "2026-03-24T00:00:00.000000",
+    "reason": "ok"
+  },
+  "last_candidate": {
+    "symbol": "SPY",
+    "strategy_type": null,
+    "scope": "paper",
+    "action": "submit"
+  }
+}
