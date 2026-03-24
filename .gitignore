@@ -19,6 +19,10 @@ node_modules/
 .vscode/
 .idea/
 data/
+# Excepciones: estado operacional de quant (controla autonomía)
+!atlas_code_quant/data/
+!atlas_code_quant/data/operation/
+!atlas_code_quant/data/operation/operation_center_state.json
 cache/
 temp/
 backup/
