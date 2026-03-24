@@ -1,0 +1,12 @@
+{
+  "mode": "paper_api",
+  "kill_switch_active": false,
+  "last_action": {
+    "type": "execute",
+    "action": "preview",
+    "mode": "paper_api",
+    "timestamp": "2026-03-19T08:45:38.805476",
+    "decision": "paper_preview_sent"
+  },
+  "notes": ""
+}

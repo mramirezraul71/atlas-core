@@ -1,0 +1,47 @@
+{
+  "generated_at": "2026-03-24T10:47:18.089622+00:00",
+  "enabled": true,
+  "window_days": 180,
+  "sample_count": 0,
+  "scopes": {
+    "all": {
+      "scope": "all",
+      "sample_count": 0,
+      "win_rate_pct": 0.0,
+      "profit_factor": 0.0,
+      "expectancy_pct": 0.0,
+      "risk_multiplier": 1.0,
+      "strategy_biases": {},
+      "symbol_biases": {},
+      "directional_symbol_biases": {},
+      "top_positive": [],
+      "top_negative": []
+    },
+    "paper": {
+      "scope": "paper",
+      "sample_count": 0,
+      "win_rate_pct": 0.0,
+      "profit_factor": 0.0,
+      "expectancy_pct": 0.0,
+      "risk_multiplier": 1.0,
+      "strategy_biases": {},
+      "symbol_biases": {},
+      "directional_symbol_biases": {},
+      "top_positive": [],
+      "top_negative": []
+    },
+    "live": {
+      "scope": "live",
+      "sample_count": 0,
+      "win_rate_pct": 0.0,
+      "profit_factor": 0.0,
+      "expectancy_pct": 0.0,
+      "risk_multiplier": 1.0,
+      "strategy_biases": {},
+      "symbol_biases": {},
+      "directional_symbol_biases": {},
+      "top_positive": [],
+      "top_negative": []
+    }
+  }
+}

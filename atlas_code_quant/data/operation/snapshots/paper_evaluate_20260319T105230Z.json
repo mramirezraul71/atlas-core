@@ -1,0 +1,25 @@
+{
+  "captured_at": "2026-03-19T10:52:30.010615",
+  "provider": "atlas_push_bridge",
+  "operator_present": true,
+  "screen_integrity_ok": true,
+  "notes": "Camara conectada via puente PUSH para fase paper",
+  "capture_path": null,
+  "meta_path": null,
+  "capture_ok": false,
+  "bridge_status": {
+    "ok": false,
+    "http_ok": false,
+    "status_code": 0,
+    "error": "<urlopen error [WinError 10061] No se puede establecer una conexi\u00f3n ya que el equipo de destino deneg\u00f3 expresamente dicha conexi\u00f3n>",
+    "push_base_url": "http://127.0.0.1:8791"
+  },
+  "capture_target": "nexus:camera",
+  "screen_target": null,
+  "calib_path": null,
+  "source": "camera",
+  "gaze": null,
+  "capture": null,
+  "resource_id": null,
+  "capture_error": "<urlopen error [WinError 10061] No se puede establecer una conexi\u00f3n ya que el equipo de destino deneg\u00f3 expresamente dicha conexi\u00f3n>"
+}
