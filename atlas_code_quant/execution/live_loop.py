@@ -109,6 +109,9 @@ class LiveLoop:
         eod_close_min: int = 15,                  # cerrar N min antes del cierre
         learning_brain=None,                      # AtlasLearningBrain opcional
         pattern_lab=None,                         # PatternLabService opcional
+        motif_lab_service=None,                   # MotifLabService opcional (hook cada N ciclos)
+        motif_cycle_interval: int = 15,           # cada cuántos ciclos correr find_motifs (~75s)
+        motif_forecast_horizon: int = 5,          # barras futuras para get_forecast_dist
     ) -> None:
         self.camera         = camera
         self.stream         = stream
@@ -142,6 +145,13 @@ class LiveLoop:
         self.pattern_lab = pattern_lab
         if pattern_lab is not None and signal_gen is not None:
             signal_gen._pattern_lab = pattern_lab
+
+        # MotifLabService — hook periódico de descubrimiento de patrones
+        self.motif_lab_service      = motif_lab_service
+        self._motif_cycle_interval  = max(1, motif_cycle_interval)
+        self._motif_forecast_horizon= motif_forecast_horizon
+        # Estado por símbolo: {symbol: dict} con la última distribución calculada
+        self._motif_forecast_state: dict = {}
 
         # PDTController — gestiona presupuesto de day trades
         # Se puede inyectar externamente o se crea uno con el modo actual
@@ -368,6 +378,12 @@ class LiveLoop:
         self._execute_close_signals(all_closes, equity)
         metrics.signals_executed += len([c for c in all_closes if not c.is_partial])
 
+        # ── 5.5. Motif Discovery hook (cada motif_cycle_interval ciclos) ────────
+        if (self.motif_lab_service is not None
+                and self.motif_lab_service.is_fitted
+                and self._cycle_count % self._motif_cycle_interval == 0):
+            self._run_motif_update()
+
         # ── 6-8. Evaluar entradas para símbolos SIN posición abierta ─────────
         for symbol in self.symbols:
             if self._emergency:
@@ -393,6 +409,73 @@ class LiveLoop:
             })
 
     # ── Evaluación + ejecución de símbolo ─────────────────────────────────────
+
+    def _run_motif_update(self) -> None:
+        """
+        Hook periódico de Motif Discovery.
+
+        Para cada símbolo activo:
+          1. Construye un DataFrame de features desde el TechnicalIndicator buffer.
+          2. Llama MotifLabService.find_motifs(recent_df, top_k=20).
+          3. Llama get_forecast_dist(matches, horizon) → guarda en _motif_forecast_state.
+
+        Se llama cada `_motif_cycle_interval` ciclos (≈75s con ciclo 5s).
+        """
+        import pandas as _pd
+
+        for symbol in self.symbols:
+            ti = self.tech_indicators.get(symbol)
+            if ti is None or not hasattr(ti, "_closes") or len(ti._closes) < 30:
+                continue
+            try:
+                closes = list(ti._closes)
+                n_w = self.motif_lab_service._window_size
+                recent_closes = closes[-n_w:]
+
+                # RSI simple aproximado desde buffer de closes
+                def _rsi_simple(c, p=14):
+                    if len(c) < p + 1:
+                        return 50.0
+                    arr = np.diff(c[-p-1:])
+                    gains  = np.where(arr > 0, arr, 0)
+                    losses = np.where(arr < 0, -arr, 0)
+                    ag, al = gains.mean(), losses.mean()
+                    return 100 - (100 / (1 + ag / (al + 1e-8)))
+
+                snap = ti.snapshot() if hasattr(ti, "snapshot") else None
+                rsi  = getattr(snap, "rsi_14", _rsi_simple(closes)) if snap else _rsi_simple(closes)
+                macd = getattr(snap, "macd_hist", 0.0) if snap else 0.0
+                vol  = getattr(snap, "volume_ratio", 1.0) if snap else 1.0
+                cvd  = (self.cvd_calc.snapshot().delta_imbalance
+                        if self.cvd_calc is not None else 0.0)
+
+                recent_df = _pd.DataFrame({
+                    "close":      recent_closes,
+                    "rsi":        [rsi] * len(recent_closes),
+                    "macd":       [macd] * len(recent_closes),
+                    "volume_rel": [vol] * len(recent_closes),
+                    "cvd":        [cvd] * len(recent_closes),
+                })
+
+                matches = self.motif_lab_service.find_motifs(recent_df, top_k=20)
+                dist    = self.motif_lab_service.get_forecast_dist(
+                    matches, horizon=self._motif_forecast_horizon
+                )
+                self._motif_forecast_state[symbol] = {
+                    "dist":         dist,
+                    "n_matches":    len(matches),
+                    "edge_score":   dist.get("edge_score", 0.5),
+                    "prob_positive":dist.get("prob_positive", 0.5),
+                    "cycle":        self._cycle_count,
+                }
+                logger.debug(
+                    "[MotifHook] %s: %d matches | edge=%.3f | prob_pos=%.1%%",
+                    symbol, len(matches),
+                    dist.get("edge_score", 0.5),
+                    dist.get("prob_positive", 0.5) * 100,
+                )
+            except Exception as _me:
+                logger.debug("[MotifHook] %s error: %s", symbol, _me)
 
     def _evaluate_and_execute(self, symbol: str, ocr_result, equity: float, metrics: CycleMetrics | None = None):
         """Pipeline completo para un símbolo: indicadores → régimen → señal → orden."""
@@ -536,6 +619,14 @@ class LiveLoop:
             bar_state       = bar_state,
             pattern_lab_ctx = pattern_lab_ctx,
         )
+
+        # Inyectar motif state en metadata de la señal
+        _mstate = self._motif_forecast_state.get(symbol)
+        if _mstate is not None:
+            signal.metadata["motif_edge_score"]   = _mstate.get("edge_score", 0.5)
+            signal.metadata["motif_prob_positive"]= _mstate.get("prob_positive", 0.5)
+            signal.metadata["motif_n_matches"]    = _mstate.get("n_matches", 0)
+            signal.metadata["motif_cycle"]        = _mstate.get("cycle", 0)
 
         # Ejecutar si hay señal accionable
         if signal.signal_type in (SignalType.BUY, SignalType.SELL, SignalType.EXIT):
