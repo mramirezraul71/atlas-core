@@ -755,8 +755,6 @@ def _compute_edge_score(rets: np.ndarray) -> float:
 # MotifDiscoveryService siguen disponibles para el patrón de llamada
 # usado en pattern_lab.py (fit(price_series, feature_df, config)).
 
-from __future__ import annotations  # noqa: E402 — ya está arriba; este bloque es documental
-
 try:
     from dataclasses import dataclass as _dc, field as _f
     from typing import Any as _Any

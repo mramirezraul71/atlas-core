@@ -110,7 +110,7 @@ class LiveLoop:
         learning_brain=None,                      # AtlasLearningBrain opcional
         pattern_lab=None,                         # PatternLabService opcional
         motif_lab_service=None,                   # MotifLabService opcional (hook cada N ciclos)
-        motif_cycle_interval: int = 15,           # cada cuántos ciclos correr find_motifs (~75s)
+        motif_cycle_interval: int = 10,           # cada cuántos ciclos correr find_motifs (~50s)
         motif_forecast_horizon: int = 5,          # barras futuras para get_forecast_dist
     ) -> None:
         self.camera         = camera
@@ -607,6 +607,10 @@ class LiveLoop:
                 signal_score      = pattern_lab_ctx.signal_score,
             )
 
+        # Extraer motif_edge del estado periódico (0-1, 0.5=neutral)
+        _mstate    = self._motif_forecast_state.get(symbol)
+        _motif_edge = float(_mstate.get("edge_score", 0.5)) if _mstate else 0.5
+
         signal = self.signal_gen.evaluate(
             symbol          = symbol,
             regime          = regime,
@@ -618,10 +622,10 @@ class LiveLoop:
             position_size   = size_result.shares,
             bar_state       = bar_state,
             pattern_lab_ctx = pattern_lab_ctx,
+            motif_edge      = _motif_edge,
         )
 
-        # Inyectar motif state en metadata de la señal
-        _mstate = self._motif_forecast_state.get(symbol)
+        # Inyectar motif state completo en metadata de la señal
         if _mstate is not None:
             signal.metadata["motif_edge_score"]   = _mstate.get("edge_score", 0.5)
             signal.metadata["motif_prob_positive"]= _mstate.get("prob_positive", 0.5)
