@@ -31,14 +31,59 @@ from __future__ import annotations
 
 import datetime
 import logging
+import logging.handlers
 import os
 import signal
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger("atlas.execution.live_loop")
+
+# ── File handler para logs/atlas_live_loop.log ────────────────────────────────
+# Se instala una sola vez (flag de módulo) cuando el LiveLoop arranca.
+_LIVE_LOG_HANDLER_INSTALLED = False
+
+def _install_live_log_handler(log_path: Path) -> None:
+    """Añade RotatingFileHandler a los loggers de loop + señales.
+
+    Formato de línea:
+        2026-03-24 14:32:01,234 INFO  SIGNAL BUY SPY | signal_score=0.72 (motif=0.45, tin=0.85, regime=0.65) ...
+        2026-03-24 14:32:01,300 INFO  FLAT SPY | reason=mtf_coherence_low value=0.580
+
+    Greppable:
+        grep "signal_score.*SPY" logs/atlas_live_loop.log
+        grep "FLAT SPY" logs/atlas_live_loop.log
+        grep "SIGNAL.*SPY" logs/atlas_live_loop.log
+    """
+    global _LIVE_LOG_HANDLER_INSTALLED
+    if _LIVE_LOG_HANDLER_INSTALLED:
+        return
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    fmt = logging.Formatter(
+        "%(asctime)s %(levelname)-5s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S,%f"[:-3],
+    )
+    handler = logging.handlers.RotatingFileHandler(
+        log_path,
+        maxBytes   = 20 * 1024 * 1024,   # 20 MB por archivo
+        backupCount= 5,
+        encoding   = "utf-8",
+    )
+    handler.setFormatter(fmt)
+    handler.setLevel(logging.INFO)
+
+    # Aplica a loop + signal generator
+    for name in ("atlas.execution.live_loop", "atlas.strategy.signals"):
+        lg = logging.getLogger(name)
+        lg.addHandler(handler)
+        if lg.level == logging.NOTSET or lg.level > logging.INFO:
+            lg.setLevel(logging.INFO)
+
+    _LIVE_LOG_HANDLER_INSTALLED = True
+    logger.info("Live log: %s", log_path)
 
 # Importación lazy para evitar circular imports al nivel de módulo
 def _get_position_manager_cls():
@@ -192,13 +237,17 @@ class LiveLoop:
 
     def start(self) -> None:
         """Inicia el loop en un thread de background."""
+        # Instalar file handler antes de cualquier log
+        _root = Path(__file__).resolve().parent.parent.parent  # atlas_code_quant/../..
+        _install_live_log_handler(_root / "logs" / "atlas_live_loop.log")
+
         self._running = True
         self._thread  = threading.Thread(
             target=self._run, daemon=False, name="atlas-live-loop"
         )
         self._thread.start()
         logger.info(
-            "▶ LiveLoop iniciado — modo=%s ciclo=%.0fs símbolos=%d",
+            "LiveLoop iniciado — modo=%s ciclo=%.0fs simbolos=%d",
             self.mode.upper(), self.cycle_s, len(self.symbols)
         )
         if self.mode == "paper":
