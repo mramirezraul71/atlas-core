@@ -122,6 +122,7 @@ class KellyRiskEngine:
         atr: float,
         signal_confidence: float = 0.65,
         capital_override: float | None = None,
+        signal_score: float | None = None,
     ) -> PositionSize:
         """Calcula tamaño de posición usando Kelly + Volatilidad Inversa."""
         capital = capital_override or self.capital
@@ -144,6 +145,10 @@ class KellyRiskEngine:
         kelly_f = self._compute_kelly_fraction()
         # Escalar por confianza de la señal
         kelly_f *= signal_confidence
+        # Escalar adicionalmente por signal_score del Pattern Lab (si disponible)
+        # signal_score=0.5 → sin cambio (×1.0), score=0.7 → ×1.4, score=0.3 → ×0.6
+        if signal_score is not None:
+            kelly_f *= max(0.1, 2.0 * float(signal_score))
 
         # ── Volatilidad inversa ──────────────────────────────────────────────
         inv_vol_f = self._compute_inv_vol_fraction(symbol, atr, price)

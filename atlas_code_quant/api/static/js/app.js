@@ -87,7 +87,7 @@ function _setBackendState(online) {
         'padding:6px 12px', 'font-size:13px', 'font-weight:600',
         'letter-spacing:.5px',
       ].join(';');
-      banner.textContent = '⚠ Backend offline — puerto 8792 no disponible. Reintentando…';
+      banner.textContent = '⚠ Backend offline — puerto 8795 no disponible. Reintentando…';
       document.body.prepend(banner);
     }
     document.getElementById('chip-uptime')?.setAttribute('data-offline', '1');

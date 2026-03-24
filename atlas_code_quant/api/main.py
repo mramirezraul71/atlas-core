@@ -39,6 +39,7 @@ from api.schemas import (
     StrategySelectorPayload, StrategySelectorRequest,
     ScannerConfigPayload, ScannerControlRequest, ScannerReportPayload, ScannerStatusPayload,
     StatusEnum, SignalEnum,
+    LoopStartRequest, VisionProviderRequest,
 )
 from backtesting.winning_probability import SUPPORTED_STRATEGIES, get_winning_probability
 from config.settings import settings
@@ -157,8 +158,16 @@ async def preload_tradier_sessions() -> None:
 
 @app.on_event("shutdown")
 async def stop_background_services() -> None:
+    global _auto_cycle_task
     await _JOURNAL_SYNC.stop()
     await _SCANNER.stop()
+    if _auto_cycle_task and not _auto_cycle_task.done():
+        _AUTO_CYCLE_STATE["running"] = False
+        _auto_cycle_task.cancel()
+        try:
+            await _auto_cycle_task
+        except (asyncio.CancelledError, Exception):
+            pass
     # Fase 3 — apagar dispatcher
     try:
         await get_alert_dispatcher().stop()
@@ -173,6 +182,22 @@ async def stop_background_services() -> None:
 # ── Registry global (se popula al iniciar el motor) ──────────────────────────
 _strategies: dict = {}
 _portfolio = None
+
+# ── Auto-cycle loop (scanner → operation_center bridge) ──────────────────────
+_AUTO_CYCLE_STATE: dict = {
+    "running": False,
+    "cycle_count": 0,
+    "last_cycle_at": None,
+    "last_candidate_symbol": None,
+    "last_action": None,
+    "last_result": None,
+    "loop_interval_sec": 120,
+    "max_per_cycle": 1,
+    "started_at": None,
+    "stopped_at": None,
+    "error": None,
+}
+_auto_cycle_task: asyncio.Task | None = None
 
 
 def _auth(x_api_key: str | None) -> None:
@@ -595,6 +620,227 @@ async def operation_test_cycle(
     except Exception as exc:
         logger.exception("Error running operation cycle")
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
+    """Loop background: toma candidatos del scanner y los evalúa en OperationCenter."""
+    global _AUTO_CYCLE_STATE
+    _AUTO_CYCLE_STATE.update({
+        "running": True, "cycle_count": 0, "error": None,
+        "started_at": datetime.utcnow().isoformat(), "stopped_at": None,
+        "loop_interval_sec": interval_sec, "max_per_cycle": max_per_cycle,
+    })
+    logger.info("[auto-cycle] Iniciado. interval=%ds max_per_cycle=%d", interval_sec, max_per_cycle)
+    try:
+        while _AUTO_CYCLE_STATE["running"]:
+            await asyncio.sleep(interval_sec)
+            if not _AUTO_CYCLE_STATE["running"]:
+                break
+            try:
+                report = await asyncio.to_thread(_SCANNER.report, 24)
+                candidates = list(report.get("candidates") or [])
+                if not candidates:
+                    _AUTO_CYCLE_STATE["last_cycle_at"] = datetime.utcnow().isoformat()
+                    _AUTO_CYCLE_STATE["cycle_count"] += 1
+                    logger.debug("[auto-cycle] Ciclo %d — sin candidatos", _AUTO_CYCLE_STATE["cycle_count"])
+                    continue
+
+                sorted_cands = sorted(
+                    candidates,
+                    key=lambda c: float(c.get("selection_score") or 0),
+                    reverse=True,
+                )[:max_per_cycle]
+
+                op_status = await asyncio.to_thread(_OPERATION_CENTER.status)
+                auton_mode = str(op_status.get("auton_mode") or "paper_supervised")
+                action = "submit" if auton_mode not in {"off", "paper_supervised"} else "preview"
+
+                last_result = None
+                for cand in sorted_cands:
+                    symbol = str(cand.get("symbol") or "").strip()
+                    if not symbol:
+                        continue
+                    direction = str(cand.get("direction") or "long").lower()
+                    side = "buy" if direction in {"long", "bull", "up"} else "sell_short"
+                    ac_raw = str(cand.get("asset_class") or "equity").lower()
+                    asset_class = ac_raw if ac_raw in {"equity", "option", "multileg", "combo"} else "equity"
+                    order = OrderRequest(
+                        symbol=symbol, side=side, size=1,
+                        order_type="market", asset_class=asset_class,  # type: ignore[arg-type]
+                        account_scope="paper", preview=True,
+                    )
+                    result = await asyncio.to_thread(
+                        _OPERATION_CENTER.evaluate_candidate,
+                        order=order, action=action, capture_context=False,  # type: ignore[call-arg]
+                    )
+                    last_result = {
+                        "symbol": symbol, "action": action,
+                        "blocked": bool(result.get("blocked")),
+                        "reasons": (result.get("reasons") or []),
+                        "selection_score": cand.get("selection_score"),
+                        "win_rate_pct": (result.get("probability") or {}).get("win_rate_pct"),
+                    }
+                    logger.info("[auto-cycle] symbol=%s action=%s blocked=%s score=%.1f",
+                                symbol, action, last_result["blocked"],
+                                float(cand.get("selection_score") or 0))
+
+                _AUTO_CYCLE_STATE.update({
+                    "cycle_count": _AUTO_CYCLE_STATE["cycle_count"] + 1,
+                    "last_cycle_at": datetime.utcnow().isoformat(),
+                    "last_candidate_symbol": sorted_cands[0].get("symbol") if sorted_cands else None,
+                    "last_action": action,
+                    "last_result": last_result,
+                })
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _AUTO_CYCLE_STATE["error"] = str(exc)
+                _AUTO_CYCLE_STATE["last_cycle_at"] = datetime.utcnow().isoformat()
+                logger.exception("[auto-cycle] Error en ciclo: %s", exc)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        _AUTO_CYCLE_STATE.update({"running": False, "stopped_at": datetime.utcnow().isoformat()})
+        logger.info("[auto-cycle] Detenido. ciclos=%d", _AUTO_CYCLE_STATE["cycle_count"])
+
+
+@app.post("/operation/loop/start", response_model=StdResponse, tags=["Operation"])
+async def operation_loop_start(
+    body: LoopStartRequest,
+    x_api_key: str | None = Header(None),
+):
+    """Inicia el ciclo autónomo: toma candidatos del scanner y los envía a OperationCenter.
+    En modo paper_supervised ejecuta preview (evalúa sin enviar orden).
+    En modo paper_autonomous ejecuta submit (envía a paper trading).
+    """
+    _auth(x_api_key)
+    global _auto_cycle_task
+    t0 = time.perf_counter()
+    if _AUTO_CYCLE_STATE.get("running") and _auto_cycle_task and not _auto_cycle_task.done():
+        return StdResponse(
+            ok=False, error="auto_cycle_already_running",
+            data=dict(_AUTO_CYCLE_STATE),
+            ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+    if _auto_cycle_task and not _auto_cycle_task.done():
+        _auto_cycle_task.cancel()
+    _auto_cycle_task = asyncio.create_task(
+        _auto_cycle_loop(body.interval_sec, body.max_per_cycle)
+    )
+    return StdResponse(
+        ok=True,
+        data={"started": True, "interval_sec": body.interval_sec, "max_per_cycle": body.max_per_cycle},
+        ms=round((time.perf_counter() - t0) * 1000, 2),
+    )
+
+
+@app.post("/operation/loop/stop", response_model=StdResponse, tags=["Operation"])
+async def operation_loop_stop(x_api_key: str | None = Header(None)):
+    """Detiene el ciclo autónomo de evaluación."""
+    _auth(x_api_key)
+    global _auto_cycle_task
+    t0 = time.perf_counter()
+    _AUTO_CYCLE_STATE["running"] = False
+    if _auto_cycle_task and not _auto_cycle_task.done():
+        _auto_cycle_task.cancel()
+        try:
+            await asyncio.wait_for(asyncio.shield(_auto_cycle_task), timeout=3.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+            pass
+    return StdResponse(
+        ok=True,
+        data={"stopped": True, "cycles_completed": _AUTO_CYCLE_STATE.get("cycle_count", 0)},
+        ms=round((time.perf_counter() - t0) * 1000, 2),
+    )
+
+
+@app.get("/operation/loop/status", response_model=StdResponse, tags=["Operation"])
+async def operation_loop_status(x_api_key: str | None = Header(None)):
+    """Estado actual del ciclo autónomo scanner→operación."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    state = dict(_AUTO_CYCLE_STATE)
+    state["task_alive"] = bool(_auto_cycle_task and not _auto_cycle_task.done())
+    return StdResponse(ok=True, data=state, ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+# ── Vision management endpoints ───────────────────────────────────────────────
+
+@app.get("/operation/vision", response_model=StdResponse, tags=["Operation"])
+async def operation_vision_status_endpoint(x_api_key: str | None = Header(None)):
+    """Estado completo del proveedor de visión incluyendo diagnóstico de conectividad."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        status = await asyncio.to_thread(_VISION.status)
+        diagnose = await asyncio.to_thread(_VISION.diagnose)
+        return StdResponse(
+            ok=True,
+            data={"status": status, "diagnose": diagnose},
+            ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+    except Exception as exc:
+        logger.exception("Error en vision status")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/operation/vision/provider", response_model=StdResponse, tags=["Operation"])
+async def operation_vision_provider(
+    body: VisionProviderRequest,
+    x_api_key: str | None = Header(None),
+):
+    """Cambia el proveedor de visión activo (ej: direct_nexus → desktop_capture → off)."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    supported = {"off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge"}
+    if body.provider not in supported:
+        return StdResponse(
+            ok=False,
+            error=f"Proveedor no soportado. Opciones: {sorted(supported)}",
+            ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+    try:
+        updated = await asyncio.to_thread(
+            _VISION.update,
+            provider=body.provider,
+            notes=body.notes,
+        )
+        diagnose = await asyncio.to_thread(_VISION.diagnose)
+        return StdResponse(
+            ok=True,
+            data={"updated": updated, "diagnose": diagnose},
+            ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+    except Exception as exc:
+        logger.exception("Error cambiando proveedor de vision")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+# ── V2 aliases — loop & vision ────────────────────────────────────────────────
+
+@app.post("/api/v2/quant/operation/loop/start", response_model=StdResponse, tags=["V2"])
+async def operation_loop_start_v2(body: LoopStartRequest, x_api_key: str | None = Header(None)):
+    return await operation_loop_start(body=body, x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/operation/loop/stop", response_model=StdResponse, tags=["V2"])
+async def operation_loop_stop_v2(x_api_key: str | None = Header(None)):
+    return await operation_loop_stop(x_api_key=x_api_key)
+
+
+@app.get("/api/v2/quant/operation/loop/status", response_model=StdResponse, tags=["V2"])
+async def operation_loop_status_v2(x_api_key: str | None = Header(None)):
+    return await operation_loop_status(x_api_key=x_api_key)
+
+
+@app.get("/api/v2/quant/operation/vision", response_model=StdResponse, tags=["V2"])
+async def operation_vision_v2(x_api_key: str | None = Header(None)):
+    return await operation_vision_status_endpoint(x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/operation/vision/provider", response_model=StdResponse, tags=["V2"])
+async def operation_vision_provider_v2(body: VisionProviderRequest, x_api_key: str | None = Header(None)):
+    return await operation_vision_provider(body=body, x_api_key=x_api_key)
 
 
 @app.get("/vision/calibration/status", response_model=StdResponse, tags=["Operation"])
