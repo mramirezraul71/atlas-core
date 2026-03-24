@@ -21,7 +21,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-from atlas_code_quant.options.strategy_engine import (
+from .strategy_engine import (
     GreeksVector,
     MarketSnapshot,
     Strategy,

@@ -22,23 +22,22 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from atlas_code_quant.options.strategy_engine import (
-    MarketSnapshot,
-    Strategy,
-    breakeven_points,
-    greeks,
-    payoff_at_expiry,
-    pnl_today,
-    scenario_pnl,
-    strategy_from_dict,
-    strategy_risk_summary,
-    strategy_to_dict,
-)
-from atlas_code_quant.options.strategy_templates import (
-    TEMPLATE_REGISTRY,
-    list_templates,
-)
-from atlas_code_quant.options.portfolio_analyzer import PortfolioAnalyzer
+try:
+    from options.strategy_engine import (
+        MarketSnapshot, Strategy, breakeven_points, greeks,
+        payoff_at_expiry, pnl_today, scenario_pnl,
+        strategy_from_dict, strategy_risk_summary, strategy_to_dict,
+    )
+    from options.strategy_templates import TEMPLATE_REGISTRY, list_templates
+    from options.portfolio_analyzer import PortfolioAnalyzer
+except ModuleNotFoundError:
+    from atlas_code_quant.options.strategy_engine import (
+        MarketSnapshot, Strategy, breakeven_points, greeks,
+        payoff_at_expiry, pnl_today, scenario_pnl,
+        strategy_from_dict, strategy_risk_summary, strategy_to_dict,
+    )
+    from atlas_code_quant.options.strategy_templates import TEMPLATE_REGISTRY, list_templates
+    from atlas_code_quant.options.portfolio_analyzer import PortfolioAnalyzer
 
 logger = logging.getLogger("atlas.options.api")
 

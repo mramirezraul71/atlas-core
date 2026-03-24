@@ -37,7 +37,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Dict, Optional, Tuple
 
-from atlas_code_quant.options.strategy_engine import (
+from .strategy_engine import (
     LinearLeg,
     OptionLeg,
     Strategy,
