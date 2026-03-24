@@ -112,6 +112,7 @@ class LiveLoop:
         motif_lab_service=None,                   # MotifLabService opcional (hook cada N ciclos)
         motif_cycle_interval: int = 10,           # cada cuántos ciclos correr find_motifs (~50s)
         motif_forecast_horizon: int = 5,          # barras futuras para get_forecast_dist
+        indicator_lab=None,                       # IndicatorLabService opcional — TIN inference
     ) -> None:
         self.camera         = camera
         self.stream         = stream
@@ -152,6 +153,9 @@ class LiveLoop:
         self._motif_forecast_horizon= motif_forecast_horizon
         # Estado por símbolo: {symbol: dict} con la última distribución calculada
         self._motif_forecast_state: dict = {}
+
+        # IndicatorLabService — XGBoost ranking + TIN inference
+        self.indicator_lab = indicator_lab
 
         # PDTController — gestiona presupuesto de day trades
         # Se puede inyectar externamente o se crea uno con el modo actual
@@ -461,17 +465,37 @@ class LiveLoop:
                 dist    = self.motif_lab_service.get_forecast_dist(
                     matches, horizon=self._motif_forecast_horizon
                 )
+                _edge = dist.get("edge_score", 0.5)
+
+                # ── TIN inference (IndicatorLabService) ──────────────────────
+                _tin_score = 0.5  # neutral default
+                if self.indicator_lab is not None:
+                    try:
+                        _snap = ti.snapshot() if hasattr(ti, "snapshot") else None
+                        _feat = self.indicator_lab.get_top_features(
+                            symbol    = symbol,
+                            timeframe = "5m",   # default; could be parameterized
+                            snap      = _snap,
+                            closes    = closes,
+                        )
+                        _tin_score = self.indicator_lab.predict(
+                            features   = _feat,
+                            motif_edge = _edge,
+                        )
+                    except Exception as _tin_err:
+                        logger.debug("[TINHook] %s error: %s", symbol, _tin_err)
+
                 self._motif_forecast_state[symbol] = {
                     "dist":         dist,
                     "n_matches":    len(matches),
-                    "edge_score":   dist.get("edge_score", 0.5),
+                    "edge_score":   _edge,
                     "prob_positive":dist.get("prob_positive", 0.5),
+                    "tin_score":    _tin_score,
                     "cycle":        self._cycle_count,
                 }
                 logger.debug(
-                    "[MotifHook] %s: %d matches | edge=%.3f | prob_pos=%.1%%",
-                    symbol, len(matches),
-                    dist.get("edge_score", 0.5),
+                    "[MotifHook] %s: %d matches | edge=%.3f | tin=%.3f | prob_pos=%.1%%",
+                    symbol, len(matches), _edge, _tin_score,
                     dist.get("prob_positive", 0.5) * 100,
                 )
             except Exception as _me:
@@ -607,9 +631,10 @@ class LiveLoop:
                 signal_score      = pattern_lab_ctx.signal_score,
             )
 
-        # Extraer motif_edge del estado periódico (0-1, 0.5=neutral)
-        _mstate    = self._motif_forecast_state.get(symbol)
+        # Extraer motif_edge + tin_score del estado periódico (0.5=neutral)
+        _mstate     = self._motif_forecast_state.get(symbol)
         _motif_edge = float(_mstate.get("edge_score", 0.5)) if _mstate else 0.5
+        _tin_score  = float(_mstate.get("tin_score",  0.5)) if _mstate else 0.5
 
         signal = self.signal_gen.evaluate(
             symbol          = symbol,
@@ -623,14 +648,16 @@ class LiveLoop:
             bar_state       = bar_state,
             pattern_lab_ctx = pattern_lab_ctx,
             motif_edge      = _motif_edge,
+            tin_score       = _tin_score,
         )
 
-        # Inyectar motif state completo en metadata de la señal
+        # Inyectar motif + TIN state en metadata de la señal
         if _mstate is not None:
             signal.metadata["motif_edge_score"]   = _mstate.get("edge_score", 0.5)
             signal.metadata["motif_prob_positive"]= _mstate.get("prob_positive", 0.5)
             signal.metadata["motif_n_matches"]    = _mstate.get("n_matches", 0)
             signal.metadata["motif_cycle"]        = _mstate.get("cycle", 0)
+            signal.metadata["tin_score"]          = _mstate.get("tin_score", 0.5)
 
         # Ejecutar si hay señal accionable
         if signal.signal_type in (SignalType.BUY, SignalType.SELL, SignalType.EXIT):

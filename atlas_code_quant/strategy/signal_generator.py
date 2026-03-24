@@ -149,6 +149,7 @@ class SignalGenerator:
         bar_state=None,         # BarState opcional — activa filtro de momentum si se provee
         pattern_lab_ctx=None,   # PatternLabContext opcional — gate de signal_score
         motif_edge: float = 0.5,  # edge_score de MotifLabService [0-1], 0.5=neutral
+        tin_score: float = 0.5,   # TechnicalIndicatorNet prob [0-1], 0.5=neutral
     ) -> TradeSignal:
         """Evalúa condiciones y retorna señal de trading o FLAT."""
 
@@ -236,12 +237,12 @@ class SignalGenerator:
         tp, sl = self._compute_tp_sl(entry_price, atr, signal_dir)
         trailing = regime.regime in (MarketRegime.BULL, MarketRegime.BEAR)
 
-        # signal_score = 70% régimen + 30% motif_edge
-        # motif_edge=0.5 → neutral (sin cambio neto), >0.5 → boost, <0.5 → penalización
+        # signal_score = 30% motif_edge + 40% tin_score + 30% regime_conf
+        # 0.5 → neutral en motif/tin, confidence puro del régimen como base
         _base_score   = float(regime.confidence)
-        _motif_weight = 0.30
-        _signal_score = float(_base_score * (1 - _motif_weight)
-                              + float(motif_edge) * _motif_weight)
+        _signal_score = (0.30 * float(motif_edge)
+                       + 0.40 * float(tin_score)
+                       + 0.30 * _base_score)
         _signal_score = max(0.0, min(1.0, _signal_score))
 
         signal = TradeSignal(
@@ -254,7 +255,7 @@ class SignalGenerator:
                               else SignalKind.OPEN_SHORT),
             stop_loss      = sl,
             atr            = atr,
-            confidence     = _signal_score,   # 70% régimen + 30% motif_edge
+            confidence     = _signal_score,   # 30% motif + 40% TIN + 30% regime
             regime         = regime.regime.value,
             strategy       = self._pick_strategy(regime.regime),
             position_size  = position_size,
@@ -270,6 +271,7 @@ class SignalGenerator:
         # Metadata — scores de todos los componentes
         signal.metadata["regime_confidence"] = round(_base_score, 4)
         signal.metadata["motif_edge"]        = round(float(motif_edge), 4)
+        signal.metadata["tin_score"]         = round(float(tin_score), 4)
         signal.metadata["signal_score"]      = round(_signal_score, 4)
         if pattern_lab_ctx is not None:
             signal.metadata["pattern_score"]   = round(_pattern_score, 4)
@@ -278,8 +280,8 @@ class SignalGenerator:
             signal.metadata["n_motifs"]        = getattr(pattern_lab_ctx, "n_motifs_found", 0)
 
         logger.info(
-            "SEÑAL %s %s | score=%.3f (regime=%.2f motif_edge=%.2f) | TP=%.2f SL=%.2f | OCR=%s",
-            signal_dir.value, symbol, _signal_score, _base_score, motif_edge,
+            "SEÑAL %s %s | score=%.3f (regime=%.2f motif=%.2f tin=%.2f) | TP=%.2f SL=%.2f | OCR=%s",
+            signal_dir.value, symbol, _signal_score, _base_score, motif_edge, tin_score,
             tp, sl, "OK" if visual_ok else "NO",
         )
 
