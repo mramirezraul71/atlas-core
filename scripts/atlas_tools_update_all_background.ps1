@@ -6,6 +6,46 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$_LOG_DIR       = Join-Path $RepoRoot "logs"
+$_OPS_BUS       = Join-Path $_LOG_DIR "ops_bus.log"
+$_DIAG_LOG      = Join-Path $_LOG_DIR "snapshot_safe_diagnostic.log"
+$_BITACORA_FILE = Join-Path $_LOG_DIR "ans_evolution_bitacora.json"
+
+function _Ts { (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ") }
+
+function _OpsLog([string]$msg, [string]$level = "info") {
+    try {
+        "$(_Ts) [$($level.ToUpper().PadRight(8))] [TOOLS_UPDATE_ALL] $msg" |
+            Out-File -FilePath $_OPS_BUS -Append -Encoding utf8
+    } catch {}
+}
+
+function _DiagLog([string]$msg) {
+    try { "$(_Ts) TOOLS_UPDATE_ALL $msg" | Out-File -FilePath $_DIAG_LOG -Append -Encoding utf8 } catch {}
+}
+
+function _BitacoraLog([string]$msg, [bool]$ok = $true) {
+    $entry = [ordered]@{
+        timestamp = _Ts
+        message   = $msg.Substring(0, [Math]::Min(500, $msg.Length))
+        ok        = $ok
+        source    = "auto_update"
+    }
+    try {
+        $entries = [System.Collections.Generic.List[object]]::new()
+        if (Test-Path $_BITACORA_FILE) {
+            $raw = Get-Content $_BITACORA_FILE -Raw -ErrorAction SilentlyContinue
+            if ($raw -and $raw.Trim()) {
+                $parsed = $raw | ConvertFrom-Json -ErrorAction SilentlyContinue
+                if ($parsed) { foreach ($e in @($parsed)) { $entries.Add($e) } }
+            }
+        }
+        $entries.Add($entry)
+        if ($entries.Count -gt 500) { $entries = $entries[($entries.Count - 500)..($entries.Count - 1)] }
+        ($entries | ConvertTo-Json -Depth 5 -Compress:$false) | Set-Content -Path $_BITACORA_FILE -Encoding UTF8
+    } catch {}
+}
+
 function _WriteJob([hashtable]$obj) {
   $dir = Split-Path -Parent $JobFile
   if (-not (Test-Path $dir)) {
@@ -226,6 +266,9 @@ if ($ToolsCsv) {
 }
 
 $jobStartedAt = (Get-Date).ToString("o")
+_OpsLog ("[UPDATE-ALL] Iniciando -- herramientas: " + ($tools -join ", ")) "info"
+_BitacoraLog ("[UPDATE-ALL] Iniciado -- " + $tools.Count + " herramientas en cola") $true
+_DiagLog "START tools=$($tools -join ',')"
 
 _WriteJob @{
   ok = $true
@@ -279,9 +322,18 @@ try {
     }
 
     $done += 1
-    if (-not [bool]$parsed.ok) { $failed += 1 }
+    $toolOk = [bool]$parsed.ok
+    if (-not $toolOk) { $failed += 1 }
     $results += @($parsed)
-    Write-Host ("[tools-update-all] end tool={0} ok={1} done={2} failed={3}" -f $t, [bool]$parsed.ok, $done, $failed)
+    if ($toolOk) {
+        _OpsLog ("OK: " + $t + " actualizado (done=" + $done + " total=" + $tools.Count + ")") "info"
+        _BitacoraLog ("[UPDATE-ALL] OK: " + $t + " actualizado") $true
+    } else {
+        $errMsg = if ($parsed.error) { [string]$parsed.error } else { "error_desconocido" }
+        _OpsLog ("FALLO: " + $t + " -- " + $errMsg) "high"
+        _BitacoraLog ("[UPDATE-ALL] FALLO: " + $t + " -- " + $errMsg) $false
+    }
+    Write-Host ("[tools-update-all] end tool={0} ok={1} done={2} failed={3}" -f $t, $toolOk, $done, $failed)
 
     _WriteJob @{
       ok = ($failed -eq 0)
@@ -298,10 +350,11 @@ try {
   }
 
   $allOk = ($failed -eq 0)
+  $finalStatus = if ($allOk) { "done" } else { "failed" }
   _WriteJob @{
     ok = $allOk
     tool = "all"
-    status = if ($allOk) { "done" } else { "failed" }
+    status = $finalStatus
     finished_at = (Get-Date).ToString("o")
     tools = $tools
     total = $tools.Count
@@ -310,10 +363,18 @@ try {
     results = $results
     error = if ($allOk) { $null } else { "one_or_more_updates_failed" }
   }
-  Write-Host ("[tools-update-all] finished status={0} done={1} failed={2}" -f $(if ($allOk) { "done" } else { "failed" }), $done, $failed)
+  $summaryMsg = ("[UPDATE-ALL] Completado -- OK=" + $done + " FAIL=" + $failed + " TOTAL=" + $tools.Count)
+  _OpsLog $summaryMsg $(if ($allOk) { "info" } else { "high" })
+  _BitacoraLog $summaryMsg $allOk
+  _DiagLog "FINISH status=$finalStatus done=$done failed=$failed"
+  Write-Host ("[tools-update-all] finished status={0} done={1} failed={2}" -f $finalStatus, $done, $failed)
 }
 catch {
-  Write-Host ("[tools-update-all] fatal error={0}" -f $_.Exception.Message)
+  $fatalMsg = $_.Exception.Message
+  Write-Host ("[tools-update-all] fatal error={0}" -f $fatalMsg)
+  _OpsLog ("[UPDATE-ALL] ERROR FATAL: " + $fatalMsg) "high"
+  _BitacoraLog ("[UPDATE-ALL] Abortado por error fatal: " + $fatalMsg) $false
+  _DiagLog "FATAL error=$fatalMsg"
   _WriteJob @{
     ok = $false
     tool = "all"
@@ -321,6 +382,6 @@ catch {
     finished_at = (Get-Date).ToString("o")
     tools = $tools
     total = $tools.Count
-    error = $_.Exception.Message
+    error = $fatalMsg
   }
 }

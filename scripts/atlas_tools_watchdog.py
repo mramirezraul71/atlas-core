@@ -248,6 +248,58 @@ def _local_inventory() -> Dict[str, Dict[str, Any]]:
     ytdlp_ver = _get_pkg_version("yt-dlp")
     puppeteer_ver = _get_puppeteer_version()
 
+    # ── Trading / ML stack (atlas_code_quant) ─────────────────────────
+    pandas_ver      = _get_pkg_version("pandas")
+    numpy_ver       = _get_pkg_version("numpy")
+    scipy_ver       = _get_pkg_version("scipy")
+    sklearn_ver     = _get_pkg_version("scikit-learn")
+    xgboost_ver     = _get_pkg_version("xgboost")
+    lightgbm_ver    = _get_pkg_version("lightgbm")
+    statsmodels_ver = _get_pkg_version("statsmodels")
+    ta_ver          = _get_pkg_version("ta")
+    yfinance_ver    = _get_pkg_version("yfinance")
+    optuna_ver      = _get_pkg_version("optuna")
+    sb3_ver         = _get_pkg_version("stable-baselines3")
+    backtrader_ver  = _get_pkg_version("backtrader")
+    gymnasium_ver   = _get_pkg_version("gymnasium")
+    easyocr_ver     = _get_pkg_version("easyocr")
+
+    # ── Core framework ─────────────────────────────────────────────────
+    fastapi_ver    = _get_pkg_version("fastapi")
+    uvicorn_ver    = _get_pkg_version("uvicorn")
+    httpx_ver      = _get_pkg_version("httpx")
+    sqlalchemy_ver = _get_pkg_version("SQLAlchemy")
+    pydantic_ver   = _get_pkg_version("pydantic")
+
+    # ── Software: Prometheus ───────────────────────────────────────────
+    prometheus_ver = ""
+    ok_prometheus  = False
+    for _pd in [ROOT / "tools" / "prometheus", Path("C:/prometheus"), Path("C:/Program Files/prometheus")]:
+        _exe = _pd / "prometheus.exe"
+        if _exe.exists():
+            _ok_p, _out_p = _run_cmd([str(_exe), "--version"], timeout=6)
+            if _out_p:
+                prometheus_ver = _extract_version(_out_p)
+                ok_prometheus  = True
+            break
+
+    # ── Software: Grafana ──────────────────────────────────────────────
+    ok_grafana, out_grafana = _run_cmd(["grafana-server", "--version"], timeout=6)
+    grafana_ver = _extract_version(out_grafana) if ok_grafana else ""
+    wg_grafana_ok = False
+    if not grafana_ver:
+        wg_grafana_ok, wg_grafana_out = _winget_installed("GrafanaLabs.Grafana")
+        grafana_ver = _extract_version(wg_grafana_out) if wg_grafana_ok else ""
+        ok_grafana  = ok_grafana or wg_grafana_ok
+
+    # ── Software: Docker ───────────────────────────────────────────────
+    ok_docker, out_docker = _run_cmd(["docker", "--version"], timeout=8)
+    docker_ver = _extract_version(out_docker) if ok_docker else ""
+
+    # ── Software: Python interpreter ───────────────────────────────────
+    ok_python, out_python = _run_cmd(["python", "--version"], timeout=5)
+    python_ver = _extract_version(out_python) if ok_python else ""
+
     pending = _queue_pending()
     queue_warn = pending > 0
 
@@ -470,27 +522,311 @@ def _local_inventory() -> Dict[str, Dict[str, Any]]:
             "details": out_uv if out_uv else "",
             "update_script": "",
         },
+        # ── Trading / ML stack ──────────────────────────────────────────
+        "pandas": {
+            "id": "pandas",
+            "name": "pandas (Data)",
+            "category": "trading",
+            "critical": True,
+            "version": pandas_ver,
+            "status": _tool_status(bool(pandas_ver)),
+            "health": "ready" if pandas_ver else "missing",
+            "details": "Análisis de series temporales de mercado",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool pandas",
+        },
+        "numpy": {
+            "id": "numpy",
+            "name": "NumPy (Cómputo)",
+            "category": "trading",
+            "critical": True,
+            "version": numpy_ver,
+            "status": _tool_status(bool(numpy_ver)),
+            "health": "ready" if numpy_ver else "missing",
+            "details": "Vectores, arrays y álgebra numérica",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool numpy",
+        },
+        "scipy": {
+            "id": "scipy",
+            "name": "SciPy (Estadística)",
+            "category": "trading",
+            "critical": True,
+            "version": scipy_ver,
+            "status": _tool_status(bool(scipy_ver)),
+            "health": "ready" if scipy_ver else "missing",
+            "details": "Pricing Black-Scholes + estadística quant",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool scipy",
+        },
+        "scikit-learn": {
+            "id": "scikit-learn",
+            "name": "scikit-learn (ML)",
+            "category": "trading",
+            "critical": True,
+            "version": sklearn_ver,
+            "status": _tool_status(bool(sklearn_ver)),
+            "health": "ready" if sklearn_ver else "missing",
+            "details": "Clasificadores, scalers y pipelines ML",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool scikit-learn",
+        },
+        "xgboost": {
+            "id": "xgboost",
+            "name": "XGBoost (ML Trading)",
+            "category": "trading",
+            "critical": True,
+            "version": xgboost_ver,
+            "status": _tool_status(bool(xgboost_ver)),
+            "health": "ready" if xgboost_ver else "missing",
+            "details": "Signal ranker — fallback a RandomForest",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool xgboost",
+        },
+        "lightgbm": {
+            "id": "lightgbm",
+            "name": "LightGBM (ML Trading)",
+            "category": "trading",
+            "critical": True,
+            "version": lightgbm_ver,
+            "status": _tool_status(bool(lightgbm_ver)),
+            "health": "ready" if lightgbm_ver else "missing",
+            "details": "Signal ranker principal — 19 features",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool lightgbm",
+        },
+        "statsmodels": {
+            "id": "statsmodels",
+            "name": "statsmodels (Series)",
+            "category": "trading",
+            "critical": False,
+            "version": statsmodels_ver,
+            "status": _tool_status(bool(statsmodels_ver)),
+            "health": "ready" if statsmodels_ver else "missing",
+            "details": "ARIMA, cointegración y tests estadísticos",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool statsmodels",
+        },
+        "ta": {
+            "id": "ta",
+            "name": "TA (Indicadores Técnicos)",
+            "category": "trading",
+            "critical": True,
+            "version": ta_ver,
+            "status": _tool_status(bool(ta_ver)),
+            "health": "ready" if ta_ver else "missing",
+            "details": "RSI, MACD, Bollinger, ATR, EMA",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool ta",
+        },
+        "yfinance": {
+            "id": "yfinance",
+            "name": "yfinance (Market Data)",
+            "category": "trading",
+            "critical": True,
+            "version": yfinance_ver,
+            "status": _tool_status(bool(yfinance_ver)),
+            "health": "ready" if yfinance_ver else "missing",
+            "details": "OHLCV histórico + datos de opciones Yahoo",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool yfinance",
+        },
+        "optuna": {
+            "id": "optuna",
+            "name": "Optuna (Hypertuning)",
+            "category": "trading",
+            "critical": False,
+            "version": optuna_ver,
+            "status": _tool_status(bool(optuna_ver)),
+            "health": "ready" if optuna_ver else "missing",
+            "details": "Optimización de hiperparámetros RL cada 4-24h",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool optuna",
+        },
+        "stable-baselines3": {
+            "id": "stable-baselines3",
+            "name": "Stable-Baselines3 (RL)",
+            "category": "trading",
+            "critical": False,
+            "version": sb3_ver,
+            "status": _tool_status(bool(sb3_ver)),
+            "health": "ready" if sb3_ver else "missing",
+            "details": "PPO/DQN/A2C — agentes RL de trading",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool stable-baselines3",
+        },
+        "backtrader": {
+            "id": "backtrader",
+            "name": "Backtrader (Backtesting)",
+            "category": "trading",
+            "critical": False,
+            "version": backtrader_ver,
+            "status": _tool_status(bool(backtrader_ver)),
+            "health": "ready" if backtrader_ver else "missing",
+            "details": "Simulación histórica de estrategias",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool backtrader",
+        },
+        "gymnasium": {
+            "id": "gymnasium",
+            "name": "Gymnasium (RL Env)",
+            "category": "trading",
+            "critical": False,
+            "version": gymnasium_ver,
+            "status": _tool_status(bool(gymnasium_ver)),
+            "health": "ready" if gymnasium_ver else "missing",
+            "details": "Entornos RL compatibles OpenAI Gym",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool gymnasium",
+        },
+        "easyocr": {
+            "id": "easyocr",
+            "name": "EasyOCR (Visual Trading)",
+            "category": "trading",
+            "critical": False,
+            "version": easyocr_ver,
+            "status": _tool_status(bool(easyocr_ver)),
+            "health": "ready" if easyocr_ver else "missing",
+            "details": "Extracción de precios desde pantalla",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool easyocr",
+        },
+        # ── Core framework ──────────────────────────────────────────────
+        "fastapi": {
+            "id": "fastapi",
+            "name": "FastAPI",
+            "category": "framework",
+            "critical": True,
+            "version": fastapi_ver,
+            "status": _tool_status(bool(fastapi_ver)),
+            "health": "ready" if fastapi_ver else "missing",
+            "details": "API principal Atlas + Quant (8791/8795)",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool fastapi",
+        },
+        "uvicorn": {
+            "id": "uvicorn",
+            "name": "Uvicorn (ASGI)",
+            "category": "framework",
+            "critical": True,
+            "version": uvicorn_ver,
+            "status": _tool_status(bool(uvicorn_ver)),
+            "health": "ready" if uvicorn_ver else "missing",
+            "details": "Servidor ASGI — hot reload activo",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool uvicorn",
+        },
+        "httpx": {
+            "id": "httpx",
+            "name": "httpx (HTTP async)",
+            "category": "framework",
+            "critical": True,
+            "version": httpx_ver,
+            "status": _tool_status(bool(httpx_ver)),
+            "health": "ready" if httpx_ver else "missing",
+            "details": "Cliente HTTP async — model router + trading",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool httpx",
+        },
+        "sqlalchemy": {
+            "id": "sqlalchemy",
+            "name": "SQLAlchemy (ORM)",
+            "category": "framework",
+            "critical": True,
+            "version": sqlalchemy_ver,
+            "status": _tool_status(bool(sqlalchemy_ver)),
+            "health": "ready" if sqlalchemy_ver else "missing",
+            "details": "ORM — journal de trades + episodic memory",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool sqlalchemy",
+        },
+        "pydantic": {
+            "id": "pydantic",
+            "name": "Pydantic (Schemas)",
+            "category": "framework",
+            "critical": True,
+            "version": pydantic_ver,
+            "status": _tool_status(bool(pydantic_ver)),
+            "health": "ready" if pydantic_ver else "missing",
+            "details": "Validación de schemas API y config",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool pydantic",
+        },
+        # ── Software externo ────────────────────────────────────────────
+        "prometheus": {
+            "id": "prometheus",
+            "name": "Prometheus (Métricas)",
+            "category": "software",
+            "critical": False,
+            "version": prometheus_ver,
+            "status": _tool_status(ok_prometheus, warning=ok_prometheus and not prometheus_ver),
+            "health": "ready" if ok_prometheus else "not_detected",
+            "details": "tools/prometheus/ — métricas Atlas + Quant",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool prometheus",
+        },
+        "grafana": {
+            "id": "grafana",
+            "name": "Grafana (Dashboard)",
+            "category": "software",
+            "critical": False,
+            "version": grafana_ver,
+            "status": _tool_status(ok_grafana, warning=wg_grafana_ok and not ok_grafana),
+            "health": "ready" if ok_grafana else "not_detected",
+            "details": "Puerto 3002 — dashboards métricas y trading",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool grafana",
+        },
+        "docker": {
+            "id": "docker",
+            "name": "Docker",
+            "category": "software",
+            "critical": False,
+            "version": docker_ver,
+            "status": _tool_status(ok_docker),
+            "health": "ready" if ok_docker else "not_detected",
+            "details": "Contenedores — servicios auxiliares",
+            "update_script": "scripts\\atlas_tool_update.ps1 -Tool docker",
+        },
+        "python": {
+            "id": "python",
+            "name": "Python",
+            "category": "software",
+            "critical": True,
+            "version": python_ver,
+            "status": _tool_status(ok_python),
+            "health": "ready" if ok_python else "not_detected",
+            "details": "Intérprete principal — venv en C:\\ATLAS_PUSH\\venv",
+            "update_script": "",
+        },
     }
     return tools
 
 
 def _latest_fetchers() -> Dict[str, Any]:
     return {
-        "ollama": lambda: _github_release_latest("ollama", "ollama"),
+        # ── Herramientas sistema ──────────────────────────────────────────
+        "ollama":      lambda: _github_release_latest("ollama", "ollama"),
         "cloudflared": lambda: _github_release_latest("cloudflare", "cloudflared"),
-        "git": lambda: _github_release_latest("git-for-windows", "git"),
-        "node": _node_latest,
-        "ccxt": lambda: _pypi_latest("ccxt"),
+        "git":         lambda: _github_release_latest("git-for-windows", "git"),
+        "node":        _node_latest,
+        "tailscale":   lambda: _github_release_latest("tailscale", "tailscale"),
+        "jq":          lambda: _github_release_latest("jqdashboard", "jq"),
+        "task":        lambda: _github_release_latest("GothenburgBitFactory", "taskwarrior"),
+        "tmux":        lambda: _github_release_latest("tmux", "tmux"),
+        # ── PyPI — herramientas existentes ────────────────────────────────
+        "ccxt":        lambda: _pypi_latest("ccxt"),
         "playwright_py": lambda: _pypi_latest("playwright"),
-        "puppeteer": _npm_latest_puppeteer,
-        "tailscale": lambda: _github_release_latest("tailscale", "tailscale"),
-        "ruff": lambda: _pypi_latest("ruff"),
-        "yt-dlp": lambda: _pypi_latest("yt-dlp"),
-        "uv": lambda: _pypi_latest("uv"),
-        "jq": lambda: _github_release_latest("stedolan", "jq"),
-        "httpie": lambda: _pypi_latest("httpie"),
-        "task": lambda: _github_release_latest("GothenburgBitFactory", "taskwarrior"),
-        "tmux": lambda: _github_release_latest("tmux", "tmux"),
+        "ruff":        lambda: _pypi_latest("ruff"),
+        "yt-dlp":      lambda: _pypi_latest("yt-dlp"),
+        "uv":          lambda: _pypi_latest("uv"),
+        "httpie":      lambda: _pypi_latest("httpie"),
+        # ── NPM ────────────────────────────────────────────────────────────
+        "puppeteer":   _npm_latest_puppeteer,
+        # ── PyPI — Trading / ML stack ─────────────────────────────────────
+        "pandas":           lambda: _pypi_latest("pandas"),
+        "numpy":            lambda: _pypi_latest("numpy"),
+        "scipy":            lambda: _pypi_latest("scipy"),
+        "scikit-learn":     lambda: _pypi_latest("scikit-learn"),
+        "xgboost":          lambda: _pypi_latest("xgboost"),
+        "lightgbm":         lambda: _pypi_latest("lightgbm"),
+        "statsmodels":      lambda: _pypi_latest("statsmodels"),
+        "ta":               lambda: _pypi_latest("ta"),
+        "yfinance":         lambda: _pypi_latest("yfinance"),
+        "optuna":           lambda: _pypi_latest("optuna"),
+        "stable-baselines3": lambda: _pypi_latest("stable-baselines3"),
+        "backtrader":       lambda: _pypi_latest("backtrader"),
+        "gymnasium":        lambda: _pypi_latest("gymnasium"),
+        "easyocr":          lambda: _pypi_latest("easyocr"),
+        # ── PyPI — Core framework ─────────────────────────────────────────
+        "fastapi":    lambda: _pypi_latest("fastapi"),
+        "uvicorn":    lambda: _pypi_latest("uvicorn"),
+        "httpx":      lambda: _pypi_latest("httpx"),
+        "sqlalchemy": lambda: _pypi_latest("SQLAlchemy"),
+        "pydantic":   lambda: _pypi_latest("pydantic"),
+        # ── Software externo — GitHub releases ────────────────────────────
+        "prometheus": lambda: _github_release_latest("prometheus", "prometheus"),
+        "grafana":    lambda: _github_release_latest("grafana", "grafana"),
+        "docker":     lambda: _github_release_latest("moby", "moby"),
     }
 
 
