@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OptionStrat · ATLAS Code-Quant</title>
+  <script>
+    const _BASE = (location.port === '8792' || location.port === '') ? '/static' : '/quant-static';
+    document.write('<link rel="stylesheet" href="' + _BASE + '/options/style.css"/>');
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- ── TOPBAR ─────────────────────────────────────────────────── -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <a href="javascript:void(0)" onclick="window.open('http://'+location.hostname+':8792/ui','_self')" class="back-btn" title="Volver a Quant">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        Quant
+      </a>
+      <span class="topbar-sep">|</span>
+      <span class="brand-icon">⬡</span>
+      <span class="brand-name">ATLAS <em>OPTION</em>STRAT</span>
+      <span class="version-badge">v1.0.0</span>
+    </div>
+    <div class="topbar-right">
+      <span id="api-status" class="badge badge-closed">API --</span>
+    </div>
+  </header>
+
+  <div class="shell">
+    <!-- ── SIDEBAR ──────────────────────────────────────────────── -->
+    <nav class="sidebar">
+      <div class="nav-section">
+        <div class="nav-section-label">Estrategias</div>
+        <div class="nav-item active" data-view="builder">
+          <span class="nav-icon">⬙</span><span>Constructor</span>
+        </div>
+        <div class="nav-item" data-view="templates">
+          <span class="nav-icon">⬗</span><span>Plantillas</span>
+        </div>
+        <div class="nav-item" data-view="scenario">
+          <span class="nav-icon">⬛</span><span>Escenario</span>
+        </div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-label">Cartera</div>
+        <div class="nav-item" data-view="portfolio">
+          <span class="nav-icon">⬡</span><span>Portfolio</span>
+        </div>
+      </div>
+      <div class="sidebar-footer">
+        <span id="sidebar-time">--:--:--</span>
+      </div>
+    </nav>
+
+    <!-- ── MAIN ─────────────────────────────────────────────────── -->
+    <main class="main-content">
+
+      <!-- ══════════════════════════════════════════════════════════
+           VIEW: BUILDER
+           ══════════════════════════════════════════════════════════ -->
+      <section class="view active" id="view-builder">
+        <div class="view-header">
+          <h1 class="view-title">Constructor de Estrategia</h1>
+          <div class="view-actions">
+            <button class="btn-sm" id="btn-clear-builder">✕ Limpiar</button>
+            <button class="btn-sm" id="btn-add-to-portfolio">＋ Añadir a cartera</button>
+            <button class="btn-primary" id="btn-preview">▶ Calcular</button>
+          </div>
+        </div>
+
+        <div class="sidebar-layout">
+          <!-- LEFT: Config -->
+          <div>
+            <!-- Subyacente + mercado -->
+            <div class="panel">
+              <div class="panel-header"><span class="panel-title">Subyacente &amp; Mercado</span></div>
+              <div class="panel-body">
+                <div class="form-grid">
+                  <label>Nombre estrategia
+                    <input class="input-sm" id="strat-name" value="Mi Estrategia" />
+                  </label>
+                  <label>Subyacente
+                    <input class="input-sm" id="strat-underlying" value="SPY" />
+                  </label>
+                  <label>Precio spot ($)
+                    <input class="input-sm" id="strat-spot" type="number" value="500" step="0.01" />
+                  </label>
+                  <label>Tasa libre riesgo (%)
+                    <input class="input-sm" id="strat-rate" type="number" value="5" step="0.1" />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Legs -->
+            <div class="panel">
+              <div class="panel-header">
+                <span class="panel-title">Legs</span>
+                <div class="gap-row">
+                  <button class="btn-sm" id="btn-add-call">+ Call</button>
+                  <button class="btn-sm" id="btn-add-put">+ Put</button>
+                  <button class="btn-sm" id="btn-add-stock">+ Stock</button>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div class="legs-list" id="legs-list">
+                  <div class="text-muted label-sm" id="legs-empty">
+                    Sin legs. Usa los botones de arriba o elige una plantilla.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT: Results -->
+          <div>
+            <!-- Risk summary -->
+            <div class="risk-bar" id="risk-bar" style="display:none">
+              <div class="risk-item">
+                <div class="risk-label">Máx. Profit</div>
+                <div class="risk-value profit" id="risk-max-profit">--</div>
+              </div>
+              <div class="risk-item">
+                <div class="risk-label">Máx. Loss</div>
+                <div class="risk-value loss" id="risk-max-loss">--</div>
+              </div>
+              <div class="risk-item">
+                <div class="risk-label">Net Premium</div>
+                <div class="risk-value neutral" id="risk-premium">--</div>
+              </div>
+            </div>
+
+            <!-- Greeks -->
+            <div class="greeks-row" id="greeks-row" style="display:none">
+              <div class="greek-card">
+                <div class="greek-label">Δ Delta</div>
+                <div class="greek-value delta" id="g-delta">--</div>
+                <div class="greek-sub">por $1 spot</div>
+              </div>
+              <div class="greek-card">
+                <div class="greek-label">Γ Gamma</div>
+                <div class="greek-value gamma" id="g-gamma">--</div>
+                <div class="greek-sub">por $1 spot</div>
+              </div>
+              <div class="greek-card">
+                <div class="greek-label">Θ Theta</div>
+                <div class="greek-value theta" id="g-theta">--</div>
+                <div class="greek-sub">$/día</div>
+              </div>
+              <div class="greek-card">
+                <div class="greek-label">ν Vega</div>
+                <div class="greek-value vega" id="g-vega">--</div>
+                <div class="greek-sub">por 1% IV</div>
+              </div>
+              <div class="greek-card">
+                <div class="greek-label">ρ Rho</div>
+                <div class="greek-value rho" id="g-rho">--</div>
+                <div class="greek-sub">por 1% tasa</div>
+              </div>
+            </div>
+
+            <!-- Payoff chart -->
+            <div class="panel">
+              <div class="panel-header">
+                <span class="panel-title">Payoff</span>
+                <div class="chart-legend">
+                  <div class="legend-item">
+                    <div class="legend-dot" style="background:#00d4aa;"></div> Vencimiento
+                  </div>
+                  <div class="legend-item">
+                    <div class="legend-dot" style="background:#63b3ed;border-style:dashed;"></div> T+0
+                  </div>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div style="height:280px; position:relative;">
+                  <canvas id="chart-payoff"></canvas>
+                  <div id="chart-placeholder" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px;">
+                    Configura legs y presiona Calcular
+                  </div>
+                </div>
+                <div class="mt-sm gap-row">
+                  <span class="label-sm">Breakevens:</span>
+                  <div class="breakeven-list" id="breakeven-list">
+                    <span class="empty-chip">--</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════════
+           VIEW: TEMPLATES
+           ══════════════════════════════════════════════════════════ -->
+      <section class="view" id="view-templates">
+        <div class="view-header">
+          <h1 class="view-title">Plantillas de Estrategia</h1>
+          <div class="view-actions">
+            <select class="select-sm" id="tpl-filter-bias" style="width:130px">
+              <option value="">Todos los bias</option>
+              <option value="bullish">Bullish</option>
+              <option value="bearish">Bearish</option>
+              <option value="neutral">Neutral</option>
+              <option value="very_bullish">Very Bullish</option>
+              <option value="very_bearish">Very Bearish</option>
+            </select>
+            <select class="select-sm" id="tpl-filter-cat" style="width:130px">
+              <option value="">Todas las cats</option>
+              <option value="single">Single</option>
+              <option value="spread">Spread</option>
+              <option value="vol">Volatilidad</option>
+              <option value="multileg">Multi-leg</option>
+              <option value="stock">Stock</option>
+              <option value="time">Time</option>
+              <option value="special">Special</option>
+            </select>
+            <button class="btn-sm" id="tpl-refresh">↺ Cargar</button>
+          </div>
+        </div>
+
+        <!-- Template grid -->
+        <div class="panel">
+          <div class="panel-body">
+            <div class="template-grid" id="template-grid">
+              <div class="text-muted label-sm">Cargando plantillas…</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Build form -->
+        <div class="panel" id="tpl-build-panel" style="display:none">
+          <div class="panel-header">
+            <span class="panel-title" id="tpl-build-title">Construir desde plantilla</span>
+          </div>
+          <div class="panel-body">
+            <div class="form-grid" id="tpl-build-form">
+              <label>Símbolo
+                <input class="input-sm" id="tpl-symbol" value="SPY" />
+              </label>
+              <label>Spot ($)
+                <input class="input-sm" id="tpl-spot" type="number" value="500" step="0.01" />
+              </label>
+              <label>DTE (días)
+                <input class="input-sm" id="tpl-dte" type="number" value="30" />
+              </label>
+              <label>IV (0‑1)
+                <input class="input-sm" id="tpl-iv" type="number" value="0.25" step="0.01" />
+              </label>
+              <label>Strike ATM ($) <span class="label-sm" id="tpl-strike-hint">(strike principal)</span>
+                <input class="input-sm" id="tpl-strike" type="number" value="500" step="0.5" />
+              </label>
+              <label>Strike 2 ($) <span class="label-sm">(spread, alas)</span>
+                <input class="input-sm" id="tpl-strike2" type="number" value="510" step="0.5" />
+              </label>
+              <label>Strike 3 ($) <span class="label-sm">(condor, butterfly)</span>
+                <input class="input-sm" id="tpl-strike3" type="number" value="490" step="0.5" />
+              </label>
+              <label>Strike 4 ($) <span class="label-sm">(condor 4to strike)</span>
+                <input class="input-sm" id="tpl-strike4" type="number" value="520" step="0.5" />
+              </label>
+              <label>Cantidad
+                <input class="input-sm" id="tpl-qty" type="number" value="1" min="1" />
+              </label>
+            </div>
+            <div class="gap-row mt-sm">
+              <button class="btn-primary" id="btn-tpl-build">▶ Construir y previsualizar</button>
+              <button class="btn-sm" id="btn-tpl-cancel">✕ Cancelar</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════════
+           VIEW: SCENARIO
+           ══════════════════════════════════════════════════════════ -->
+      <section class="view" id="view-scenario">
+        <div class="view-header">
+          <h1 class="view-title">Análisis de Escenario</h1>
+          <button class="btn-primary" id="btn-run-scenario">▶ Calcular Heatmap</button>
+        </div>
+
+        <div class="two-col">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Parámetros</span></div>
+            <div class="panel-body">
+              <div class="form-grid">
+                <label>Spot mín ($)
+                  <input class="input-sm" id="sc-spot-min" type="number" value="430" />
+                </label>
+                <label>Spot máx ($)
+                  <input class="input-sm" id="sc-spot-max" type="number" value="570" />
+                </label>
+                <label>DTE values (coma separados)
+                  <input class="input-sm" id="sc-dte-vals" value="30,21,14,7,1" />
+                </label>
+                <label>IV multiplier
+                  <input class="input-sm" id="sc-iv-mult" type="number" value="1.0" step="0.1" />
+                </label>
+                <label>N spots
+                  <input class="input-sm" id="sc-n-spots" type="number" value="15" />
+                </label>
+              </div>
+              <div class="mt-sm text-muted label-sm">
+                La estrategia activa en el Constructor se usará para el heatmap.
+              </div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Leyenda</span></div>
+            <div class="panel-body">
+              <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
+                <div style="background:linear-gradient(to right,#1a3d2b,#48bb78);width:80px;height:12px;border-radius:2px;"></div>
+                <span class="label-sm">Ganancia máx.</span>
+              </div>
+              <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
+                <div style="background:linear-gradient(to right,#3d1a1a,#f56565);width:80px;height:12px;border-radius:2px;"></div>
+                <span class="label-sm">Pérdida máx.</span>
+              </div>
+              <div class="mt-sm text-muted label-sm">
+                Filas = precio del subyacente<br>Columnas = días hasta vencimiento
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><span class="panel-title">Heatmap PnL ($)</span></div>
+          <div class="panel-body scroll-box">
+            <div id="heatmap-container" style="min-height:200px;display:flex;align-items:center;justify-content:center;">
+              <span class="text-muted label-sm">Configura parámetros y presiona Calcular</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════════════════════════════════════════════════════
+           VIEW: PORTFOLIO
+           ══════════════════════════════════════════════════════════ -->
+      <section class="view" id="view-portfolio">
+        <div class="view-header">
+          <h1 class="view-title">Portfolio de Opciones</h1>
+          <div class="view-actions">
+            <input class="input-sm" id="port-spot-input" placeholder="SPY:500,QQQ:400" style="width:200px" title="Precios actuales {sym:precio,...}" />
+            <button class="btn-sm" id="btn-port-refresh">↺ Actualizar</button>
+          </div>
+        </div>
+
+        <!-- Portfolio greeks totales -->
+        <div class="greeks-row" id="port-greeks-row">
+          <div class="greek-card">
+            <div class="greek-label">Δ Delta total</div>
+            <div class="greek-value delta" id="pg-delta">--</div>
+            <div class="greek-sub">cartera</div>
+          </div>
+          <div class="greek-card">
+            <div class="greek-label">Γ Gamma total</div>
+            <div class="greek-value gamma" id="pg-gamma">--</div>
+            <div class="greek-sub">cartera</div>
+          </div>
+          <div class="greek-card">
+            <div class="greek-label">Θ Theta total</div>
+            <div class="greek-value theta" id="pg-theta">--</div>
+            <div class="greek-sub">$/día</div>
+          </div>
+          <div class="greek-card">
+            <div class="greek-label">ν Vega total</div>
+            <div class="greek-value vega" id="pg-vega">--</div>
+            <div class="greek-sub">cartera</div>
+          </div>
+          <div class="greek-card">
+            <div class="greek-label">PnL total</div>
+            <div class="greek-value" id="pg-total-pnl">--</div>
+            <div class="greek-sub">estimado</div>
+          </div>
+        </div>
+
+        <!-- Risk flags -->
+        <div id="risk-flags-box" style="display:none" class="panel">
+          <div class="panel-header"><span class="panel-title" style="color:var(--yellow)">⚠ Risk Flags</span></div>
+          <div class="panel-body">
+            <div id="risk-flags-list"></div>
+          </div>
+        </div>
+
+        <!-- Strategies table -->
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Estrategias abiertas</span>
+            <span class="live-badge">LIVE</span>
+          </div>
+          <div class="panel-body">
+            <table class="data-tbl">
+              <thead><tr>
+                <th>Nombre</th><th>Subyacente</th><th>Bias</th>
+                <th>PnL actual</th><th>Delta</th><th>Theta</th>
+                <th>Max Profit</th><th>Max Loss</th><th>Abierta</th><th>Acción</th>
+              </tr></thead>
+              <tbody id="portfolio-body">
+                <tr class="empty-row"><td colspan="10">Sin estrategias abiertas</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- PnL by underlying chart -->
+        <div class="two-col">
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">PnL por subyacente</span></div>
+            <div class="panel-body" style="height:200px;position:relative;">
+              <canvas id="chart-port-pnl"></canvas>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header"><span class="panel-title">Distribución bias</span></div>
+            <div class="panel-body" style="height:200px;position:relative;">
+              <canvas id="chart-port-bias"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- TOAST CONTAINER -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script>
+    const _S = (location.port === '8792' || location.port === '') ? '/static' : '/quant-static';
+    const _appScript = document.createElement('script');
+    _appScript.src = _S + '/options/app.js';
+    document.body.appendChild(_appScript);
+  </script>
+</body>
+</html>

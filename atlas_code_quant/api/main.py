@@ -62,6 +62,9 @@ from operations.vision_calibration import VisionCalibrationService
 from scanner.opportunity_scanner import OpportunityScannerService
 from selector.strategy_selector import StrategySelectorService
 
+# ── OptionStrat ───────────────────────────────────────────────────────────────
+from api.routes.options import router as options_router
+
 # ── Fase 3: alertas, visión, retraining ──────────────────────────────────────
 from operations.alert_dispatcher import get_alert_dispatcher
 from learning.visual_state_builder import get_visual_state_builder
@@ -117,6 +120,17 @@ async def dashboard_ui():
     if idx.exists():
         return FileResponse(str(idx))
     raise HTTPException(status_code=404, detail="Dashboard not found")
+
+
+@app.get("/options/ui", include_in_schema=False)
+async def options_ui():
+    """OptionStrat UI — constructor y analizador de estrategias de opciones"""
+    idx = _STATIC_DIR / "options" / "index.html"
+    if idx.exists():
+        return FileResponse(str(idx))
+    raise HTTPException(status_code=404, detail="OptionStrat UI not found")
+
+app.include_router(options_router)
 
 
 @app.on_event("startup")
