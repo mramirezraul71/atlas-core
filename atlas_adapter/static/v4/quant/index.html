@@ -35,6 +35,15 @@
         Grafana &#8599;
       </a>
       <span class="topbar-sep">|</span>
+      <a href="javascript:void(0)" onclick="window.open('http://'+location.hostname+':8792/options/ui','_self')"
+         style="display:inline-flex;align-items:center;gap:4px;color:var(--text-muted);font-size:11px;
+                text-decoration:none;padding:2px 6px;border-radius:4px;transition:color .15s"
+         onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-muted)'"
+         title="OptionStrat — constructor de estrategias">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        OptionStrat
+      </a>
+      <span class="topbar-sep">|</span>
       <span class="brand-icon">⬡</span>
       <span class="brand-name">ATLAS <em>CODE-QUANT</em></span>
       <span class="version-badge">v1.1.0</span>
@@ -89,6 +98,16 @@
              title="ATLAS Central">
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="12 2 22 20 2 20"/></svg>
             ATLAS
+          </a>
+          <a href="javascript:void(0)"
+             onclick="window.open('http://'+location.hostname+':8792/options/ui','_self')"
+             style="font-size:10px;color:var(--accent);text-decoration:none;
+                    padding:3px 7px;border-radius:4px;border:1px solid rgba(0,212,170,0.25);
+                    display:inline-flex;align-items:center;gap:3px;transition:opacity .15s"
+             onmouseover="this.style.opacity='.7'" onmouseout="this.style.opacity='1'"
+             title="OptionStrat UI">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Options
           </a>
           <a href="http://localhost:3002" target="_blank"
              style="font-size:10px;color:#f46800;text-decoration:none;
@@ -225,39 +244,82 @@
       <!-- ── POSICIONES ─────────────────────────────────────────────── -->
       <section class="view" id="view-positions">
         <div class="view-header">
-          <h1 class="view-title">Posiciones Abiertas</h1>
-          <button class="btn-sm" id="pos-refresh">&#8635; Actualizar</button>
+          <h1 class="view-title">Posiciones</h1>
+          <div class="view-actions">
+            <span class="live-badge" id="pos-auto-badge" style="display:none">AUTO 5s</span>
+            <button class="btn-sm" id="pos-refresh">&#8635; Actualizar</button>
+          </div>
         </div>
-        <div class="kpi-row" id="pos-kpi-row">
+
+        <!-- KPIs -->
+        <div class="kpi-row">
           <div class="kpi-card">
-            <span class="kpi-label">Posiciones</span>
+            <span class="kpi-label">Abiertas</span>
             <span class="kpi-value" id="pos-count">0</span>
+            <span class="kpi-sub" id="pos-mode-badge">paper</span>
           </div>
           <div class="kpi-card">
-            <span class="kpi-label">PnL no realizado</span>
+            <span class="kpi-label">PnL No Realizado</span>
             <span class="kpi-value" id="pos-unrealized">--</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">PnL Realizado Hoy</span>
+            <span class="kpi-value" id="pos-realized">--</span>
           </div>
           <div class="kpi-card">
             <span class="kpi-label">Exposición</span>
             <span class="kpi-value" id="pos-exposure">--</span>
           </div>
           <div class="kpi-card">
+            <span class="kpi-label">DT Restantes</span>
+            <span class="kpi-value accent" id="pos-dt-left">--</span>
+            <span class="kpi-sub" id="pos-dt-used">-- usados</span>
+          </div>
+          <div class="kpi-card">
             <span class="kpi-label">Circuit Breaker</span>
-            <span class="kpi-value" id="pos-cb">OK</span>
+            <span class="kpi-value" id="pos-cb">--</span>
           </div>
         </div>
-        <div class="panel">
-          <div class="panel-body">
-            <table class="data-tbl" id="positions-tbl">
-              <thead><tr>
-                <th>Símbolo</th><th>Lado</th><th>Entrada</th><th>Actual</th>
-                <th>Unidades</th><th>PnL $</th><th>PnL %</th><th>Ret. Log.</th>
-                <th>SL</th><th>TP</th><th>ATR</th>
-              </tr></thead>
-              <tbody id="positions-body">
-                <tr class="empty-row"><td colspan="11">Sin posiciones abiertas</td></tr>
-              </tbody>
-            </table>
+
+        <!-- Tabs -->
+        <div class="tab-bar">
+          <button class="tab-btn active" data-pos-tab="open">&#9670; Abiertas</button>
+          <button class="tab-btn" data-pos-tab="history">&#9632; Historial del día</button>
+        </div>
+
+        <!-- Tab: Abiertas -->
+        <div class="tab-pane active" id="pos-tab-open">
+          <div class="panel">
+            <div class="panel-body" style="overflow-x:auto">
+              <table class="data-tbl">
+                <thead><tr>
+                  <th>Símbolo</th><th>Lado</th><th>Entrada</th><th>Actual</th>
+                  <th>Unidades</th><th>PnL $</th><th>PnL %</th>
+                  <th>SL / TP</th><th>Progreso</th><th>Duración</th><th></th>
+                </tr></thead>
+                <tbody id="positions-body">
+                  <tr class="empty-row"><td colspan="11">Sin posiciones abiertas</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: Historial -->
+        <div class="tab-pane" id="pos-tab-history">
+          <div class="panel">
+            <div class="panel-body" style="overflow-x:auto">
+              <table class="data-tbl">
+                <thead><tr>
+                  <th>Hora cierre</th><th>Símbolo</th><th>Lado</th>
+                  <th>Entrada</th><th>Salida</th><th>PnL $</th><th>PnL %</th>
+                  <th>Duración</th><th>Razón</th><th>Broker</th>
+                </tr></thead>
+                <tbody id="pos-history-body">
+                  <tr class="empty-row"><td colspan="10">Sin operaciones cerradas hoy</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>
