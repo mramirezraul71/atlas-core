@@ -757,6 +757,40 @@ class LiveLoop:
             signal.metadata["mtf_aligned"]        = _mtf_report.aligned_count
             signal.metadata["mtf_total_tfs"]      = _mtf_report.total_tfs
 
+        # ── Kelly Dinámico — recalcular size basado en score tier ────────────
+        if signal.signal_type in (SignalType.BUY, SignalType.SELL):
+            _dyn = self.risk_engine.compute_size_dynamic(signal, equity)
+
+            if _dyn.tier == "SKIP":
+                # Score insuficiente — descartar señal
+                logger.info(
+                    "SIGNAL %s | score=%.2f | SKIP (tier=SKIP, umbral=0.55)",
+                    symbol, signal.confidence,
+                )
+                if metrics is not None:
+                    metrics.signals_blocked += 1
+                return None
+
+            # Actualizar posición con tamaño dinámico
+            signal.position_size = _dyn.shares
+            signal.kelly_fraction = _dyn.score_factor
+            signal.metadata["kelly_tier"]        = _dyn.tier
+            signal.metadata["kelly_factor"]      = round(_dyn.score_factor, 3)
+            signal.metadata["kelly_shares"]      = _dyn.shares
+
+            # ── Log final combinado (greppable) ───────────────────────────────
+            # "SIGNAL SPY | score=0.72 | 0.45+0.85+0.82+0.65 | size=1.95x tier=NORMAL shares=15"
+            _m  = signal.metadata.get("motif_edge",        0.5)
+            _t  = signal.metadata.get("tin_score",         0.5)
+            _c  = signal.metadata.get("mtf_coherence",     0.5)
+            _r  = signal.metadata.get("regime_confidence", 0.5)
+            logger.info(
+                "SIGNAL %s | score=%.2f | %.2f+%.2f+%.2f+%.2f | size=%.2fx tier=%s shares=%d",
+                symbol, signal.confidence,
+                _m, _t, _c, _r,
+                _dyn.score_factor, _dyn.tier, _dyn.shares,
+            )
+
         # Ejecutar si hay señal accionable
         if signal.signal_type in (SignalType.BUY, SignalType.SELL, SignalType.EXIT):
 
