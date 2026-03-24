@@ -14,8 +14,11 @@ function Write-Snapshot([string]$line) {
 }
 
 function Get-PythonExe {
-  $venvPy = Join-Path $RepoRoot ".venv\Scripts\python.exe"
-  if (Test-Path $venvPy) { return $venvPy }
+  $candidates = @(
+    (Join-Path $RepoRoot "venv\Scripts\python.exe"),
+    (Join-Path $RepoRoot ".venv\Scripts\python.exe")
+  )
+  foreach ($c in $candidates) { if (Test-Path $c) { return $c } }
   return "python"
 }
 
@@ -202,6 +205,84 @@ if ($ok) {
       }
       "tailscale" {
         Invoke-WingetUpgradeWithFallback -Name "winget_upgrade_tailscale" -PackageId "Tailscale.Tailscale"
+      }
+      # ── Trading / ML stack — pip upgrade ────────────────────────────
+      "pandas" {
+        Invoke-Cmd -Name "pip_upgrade_pandas" -Exe $py -ArgList @("-m","pip","install","--upgrade","pandas")
+      }
+      "numpy" {
+        Invoke-Cmd -Name "pip_upgrade_numpy" -Exe $py -ArgList @("-m","pip","install","--upgrade","numpy")
+      }
+      "scipy" {
+        Invoke-Cmd -Name "pip_upgrade_scipy" -Exe $py -ArgList @("-m","pip","install","--upgrade","scipy")
+      }
+      "scikit-learn" {
+        Invoke-Cmd -Name "pip_upgrade_sklearn" -Exe $py -ArgList @("-m","pip","install","--upgrade","scikit-learn")
+      }
+      "xgboost" {
+        Invoke-Cmd -Name "pip_upgrade_xgboost" -Exe $py -ArgList @("-m","pip","install","--upgrade","xgboost")
+      }
+      "lightgbm" {
+        Invoke-Cmd -Name "pip_upgrade_lightgbm" -Exe $py -ArgList @("-m","pip","install","--upgrade","lightgbm")
+      }
+      "statsmodels" {
+        Invoke-Cmd -Name "pip_upgrade_statsmodels" -Exe $py -ArgList @("-m","pip","install","--upgrade","statsmodels")
+      }
+      "ta" {
+        Invoke-Cmd -Name "pip_upgrade_ta" -Exe $py -ArgList @("-m","pip","install","--upgrade","ta")
+      }
+      "yfinance" {
+        Invoke-Cmd -Name "pip_upgrade_yfinance" -Exe $py -ArgList @("-m","pip","install","--upgrade","yfinance")
+      }
+      "optuna" {
+        Invoke-Cmd -Name "pip_upgrade_optuna" -Exe $py -ArgList @("-m","pip","install","--upgrade","optuna")
+      }
+      "stable-baselines3" {
+        Invoke-Cmd -Name "pip_upgrade_sb3" -Exe $py -ArgList @("-m","pip","install","--upgrade","stable-baselines3")
+      }
+      "backtrader" {
+        Invoke-Cmd -Name "pip_upgrade_backtrader" -Exe $py -ArgList @("-m","pip","install","--upgrade","backtrader")
+      }
+      "gymnasium" {
+        Invoke-Cmd -Name "pip_upgrade_gymnasium" -Exe $py -ArgList @("-m","pip","install","--upgrade","gymnasium")
+      }
+      "easyocr" {
+        Invoke-Cmd -Name "pip_upgrade_easyocr" -Exe $py -ArgList @("-m","pip","install","--upgrade","easyocr")
+      }
+      # ── Core framework — pip upgrade ─────────────────────────────────
+      "fastapi" {
+        Invoke-Cmd -Name "pip_upgrade_fastapi" -Exe $py -ArgList @("-m","pip","install","--upgrade","fastapi")
+      }
+      "uvicorn" {
+        Invoke-Cmd -Name "pip_upgrade_uvicorn" -Exe $py -ArgList @("-m","pip","install","--upgrade","uvicorn[standard]")
+      }
+      "httpx" {
+        Invoke-Cmd -Name "pip_upgrade_httpx" -Exe $py -ArgList @("-m","pip","install","--upgrade","httpx")
+      }
+      "sqlalchemy" {
+        Invoke-Cmd -Name "pip_upgrade_sqlalchemy" -Exe $py -ArgList @("-m","pip","install","--upgrade","SQLAlchemy")
+      }
+      "pydantic" {
+        Invoke-Cmd -Name "pip_upgrade_pydantic" -Exe $py -ArgList @("-m","pip","install","--upgrade","pydantic")
+      }
+      # ── Software externo ─────────────────────────────────────────────
+      "prometheus" {
+        $promScript = Join-Path $RepoRoot "tools\prometheus\start_monitoring.ps1"
+        if (Test-Path $promScript) {
+          Write-Host "Prometheus: re-ejecutando start_monitoring para actualizar binarios..."
+          Invoke-Cmd -Name "prometheus_update" -Exe "powershell" -ArgList @("-NoProfile","-ExecutionPolicy","Bypass","-File",$promScript)
+        } else {
+          throw "Script start_monitoring.ps1 no encontrado en tools\prometheus\"
+        }
+      }
+      "grafana" {
+        Invoke-WingetUpgradeAnyId -Name "winget_upgrade_grafana" -PackageIds @(
+          "GrafanaLabs.Grafana",
+          "GrafanaLabs.Grafana.OSS"
+        )
+      }
+      "docker" {
+        Invoke-WingetUpgradeWithFallback -Name "winget_upgrade_docker" -PackageId "Docker.DockerDesktop"
       }
       default {
         throw "Tool no soportada para update: $Tool"
