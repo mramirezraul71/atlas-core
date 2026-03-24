@@ -33,6 +33,35 @@ class SignalType(str, Enum):
     EXIT = "EXIT"    # salir posición existente
 
 
+class ScoreTier(str, Enum):
+    """Tier de ejecución basado en signal_score final."""
+    FULL   = "FULL"    # score >= 0.75 → Kelly × hasta 2.0
+    NORMAL = "NORMAL"  # score >= 0.65 → Kelly base
+    SMALL  = "SMALL"   # score >= 0.55 → Kelly × 0.50
+    SKIP   = "SKIP"    # score <  0.55 → no ejecutar
+
+
+# ── Componentes del score final ───────────────────────────────────────────────
+
+from dataclasses import dataclass as _dc  # noqa: E402 (antes de otros imports)
+
+
+@_dc
+class SignalComponents:
+    """Entradas normalizadas para ``final_signal_score()``.
+
+    Todos los campos deberían estar en [0, 1]:
+      * ``motif_edge``       — edge_score de MotifLabService (0=bajista, 0.5=neutro, 1=alcista)
+      * ``tin_score``        — probabilidad de subida del TechnicalIndicatorNet
+      * ``mtf_coherence``    — coherencia multi-timeframe
+      * ``regime_confidence``— confianza del clasificador de régimen
+    """
+    motif_edge:         float = 0.5
+    tin_score:          float = 0.5
+    mtf_coherence:      float = 0.5
+    regime_confidence:  float = 0.5
+
+
 # Re-export para conveniencia — la lógica granular vive en position_manager.py
 from atlas_code_quant.execution.position_manager import SignalKind  # noqa: E402
 
@@ -118,6 +147,12 @@ class SignalGenerator:
     RSI_OVERBOUGHT        = 70.0
     RSI_OVERSOLD          = 30.0
     CVD_ZSCORE_THRESHOLD  = 1.0      # desviaciones estándar
+
+    # ── Score tiers (espejan KellyRiskEngine) ─────────────────────────────────
+    TIER_FULL   = 0.75    # Kelly × hasta 2.0
+    TIER_NORMAL = 0.65    # Kelly base
+    TIER_SMALL  = 0.55    # Kelly × 0.50
+    # SKIP: score < TIER_SMALL → no ejecutar
     VISUAL_PRICE_TOLERANCE = 0.005   # 0.5% tolerancia OCR vs API
 
     # ── Parámetros de salida ──────────────────────────────────────────────────
@@ -133,6 +168,46 @@ class SignalGenerator:
         self._cvd_history: list[float] = []   # para z-score
         self._learning_brain = learning_brain  # AtlasLearningBrain opcional
         self._pattern_lab = pattern_lab        # PatternLabService opcional
+
+    # ── Score final ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def final_signal_score(components: SignalComponents) -> float:
+        """Fórmula definitiva de score de señal.
+
+        Ponderación optimizada:
+            25% motif_edge   — patrón temporal (normalizado a [0,1])
+            35% tin_score    — red neuronal de indicadores técnicos
+            20% mtf_coherence— alineación multi-timeframe
+            20% regime_conf  — confianza del clasificador de régimen
+
+        La normalización ``(motif_edge + 1) / 2`` convierte el rango [-1, 1]
+        a [0, 1]; si motif_edge ya está en [0, 1] el resultado se mantiene
+        dentro del rango válido.
+
+        Returns:
+            float en [0.0, 1.0]
+        """
+        motif_norm  = max(0.0, min(1.0, (float(components.motif_edge) + 1.0) / 2.0))
+        tin_norm    = max(0.0, min(1.0, float(components.tin_score)))
+        mtf_norm    = max(0.0, min(1.0, float(components.mtf_coherence)))
+        regime_norm = max(0.0, min(1.0, float(components.regime_confidence)))
+        score = (0.25 * motif_norm
+               + 0.35 * tin_norm
+               + 0.20 * mtf_norm
+               + 0.20 * regime_norm)
+        return float(max(0.0, min(1.0, score)))
+
+    @staticmethod
+    def score_tier(score: float) -> ScoreTier:
+        """Devuelve el tier de ejecución para un score dado."""
+        if score >= 0.75:
+            return ScoreTier.FULL
+        if score >= 0.65:
+            return ScoreTier.NORMAL
+        if score >= 0.55:
+            return ScoreTier.SMALL
+        return ScoreTier.SKIP
 
     # ── Evaluación de señal ───────────────────────────────────────────────────
 
@@ -249,13 +324,18 @@ class SignalGenerator:
         tp, sl = self._compute_tp_sl(entry_price, atr, signal_dir)
         trailing = regime.regime in (MarketRegime.BULL, MarketRegime.BEAR)
 
-        # signal_score = 30% motif_edge + 40% tin_score + 30% regime_conf
-        # 0.5 → neutral en motif/tin, confidence puro del régimen como base
-        _base_score   = float(regime.confidence)
-        _signal_score = (0.30 * float(motif_edge)
-                       + 0.40 * float(tin_score)
-                       + 0.30 * _base_score)
-        _signal_score = max(0.0, min(1.0, _signal_score))
+        # ── Fórmula definitiva: 25% motif + 35% TIN + 20% MTF + 20% regime ──
+        _base_score  = float(regime.confidence)
+        _mtf_coh_val = (float(mtf_report.coherence_score)
+                        if mtf_report is not None else 0.5)
+        _components  = SignalComponents(
+            motif_edge        = float(motif_edge),
+            tin_score         = float(tin_score),
+            mtf_coherence     = _mtf_coh_val,
+            regime_confidence = _base_score,
+        )
+        _signal_score = self.final_signal_score(_components)
+        _tier         = self.score_tier(_signal_score)
 
         signal = TradeSignal(
             symbol         = symbol,
@@ -284,24 +364,23 @@ class SignalGenerator:
         signal.metadata["regime_confidence"] = round(_base_score, 4)
         signal.metadata["motif_edge"]        = round(float(motif_edge), 4)
         signal.metadata["tin_score"]         = round(float(tin_score), 4)
+        signal.metadata["mtf_coherence"]     = round(_mtf_coh_val, 4)
         signal.metadata["signal_score"]      = round(_signal_score, 4)
+        signal.metadata["score_tier"]        = _tier.value
         if pattern_lab_ctx is not None:
             signal.metadata["pattern_score"]   = round(_pattern_score, 4)
             signal.metadata["tin_prob"]        = round(getattr(pattern_lab_ctx, "tin_prob_positive", 0.5), 4)
             signal.metadata["arima_deviation"] = round(getattr(pattern_lab_ctx, "arima_deviation", 0.0), 6)
             signal.metadata["n_motifs"]        = getattr(pattern_lab_ctx, "n_motifs_found", 0)
 
-        _mtf_coh = float(mtf_report.coherence_score) if mtf_report is not None else -1.0
-        signal.metadata["mtf_coherence_at_signal"] = round(_mtf_coh, 4) if _mtf_coh >= 0 else None
-
-        # ── Log greppable: "signal_score=X.XX (motif=..., tin=..., regime=...)" ──
-        _mtf_part = f" mtf_coh={_mtf_coh:.2f}" if _mtf_coh >= 0 else ""
+        # ── Log greppable: componentes desglosados + tier ─────────────────────
+        # "SIGNAL SPY | score=0.72 | 0.45+0.85+0.82+0.65 | tier=NORMAL"
+        # La parte "size=Xx" la añade live_loop tras compute_size_dynamic()
         logger.info(
-            "SIGNAL %s %s | signal_score=%.2f (motif=%.2f, tin=%.2f, regime=%.2f%s)"
-            " | TP=%.2f SL=%.2f | OCR=%s",
-            signal_dir.value, symbol,
-            _signal_score, motif_edge, tin_score, _base_score, _mtf_part,
-            tp, sl, "OK" if visual_ok else "NO",
+            "SIGNAL %s | score=%.2f | %.2f+%.2f+%.2f+%.2f | tier=%s | TP=%.2f SL=%.2f",
+            symbol, _signal_score,
+            float(motif_edge), float(tin_score), _mtf_coh_val, _base_score,
+            _tier.value, tp, sl,
         )
 
         # Registrar posición abierta

@@ -45,6 +45,39 @@ class PositionSize:
     risk_usd: float
     capital_pct: float
     method: str = "kelly_inv_vol"
+    # Campos dinámicos — añadidos por compute_size_dynamic()
+    tier: str = "NORMAL"        # FULL / NORMAL / SMALL / SKIP
+    score_factor: float = 1.0   # multiplicador aplicado al tamaño base
+    score: float = 0.5          # signal_score usado para determinar el tier
+
+
+# ── Score tiers (espeja SignalGenerator.ScoreTier sin crear dependencia) ─────
+_TIER_FULL   = 0.75   # score >= 0.75 → factor hasta 2.0
+_TIER_NORMAL = 0.65   # score >= 0.65 → factor 0.75-1.0
+_TIER_SMALL  = 0.55   # score >= 0.55 → factor 0.50
+# < _TIER_SMALL → SKIP (shares = 0)
+
+
+def _score_tier_factor(score: float) -> tuple:
+    """Devuelve (tier_name: str, factor: float) para un score dado.
+
+    Factores:
+      SKIP   (< 0.55) → factor = 0.0
+      SMALL  (≥ 0.55) → factor = 0.50   (mitad del Kelly base)
+      NORMAL (≥ 0.65) → factor continuo [0.75, 1.0) via ``score × 3 - 1``
+      FULL   (≥ 0.75) → factor continuo [1.0, 2.0] via ``min(2.0, score × 3)``
+
+    El factor continuo en FULL/NORMAL usa ``min(2.0, max(0.5, score × 3))``
+    tal como especifica la integración; los tiers agregan la lógica SKIP y SMALL.
+    """
+    if score < _TIER_SMALL:
+        return ("SKIP", 0.0)
+    if score < _TIER_NORMAL:
+        return ("SMALL", 0.50)
+    # NORMAL y FULL: fórmula continua
+    factor = min(2.0, max(0.5, score * 3.0))
+    tier   = "FULL" if score >= _TIER_FULL else "NORMAL"
+    return (tier, factor)
 
 
 @dataclass
@@ -337,6 +370,102 @@ class KellyRiskEngine:
             "avg_win_usd":         round(s.avg_win_usd, 2),
             "avg_loss_usd":        round(s.avg_loss_usd, 2),
         }
+
+    # ── Kelly Dinámico ────────────────────────────────────────────────────────
+
+    def compute_size_dynamic(
+        self,
+        signal,                  # TradeSignal (forward-ref: evita import circular)
+        equity: float,
+    ) -> PositionSize:
+        """Kelly dinámico escalado por el score tier del signal.
+
+        Tiers y factores::
+
+            score < 0.55  → SKIP   factor=0.00  → size=0 (no ejecutar)
+            score < 0.65  → SMALL  factor=0.50  → mitad del Kelly base
+            score < 0.75  → NORMAL factor∈[0.75,1.0) continuo vía score×3
+            score ≥ 0.75  → FULL   factor∈[1.0, 2.0] continuo vía min(2,score×3)
+
+        El circuit breaker es respetado antes de calcular el factor.
+
+        Returns:
+            :class:`PositionSize` con ``tier``, ``score_factor`` y ``score``
+            rellenados.  Si tier=SKIP o circuit_breaker activo, ``shares=0``.
+        """
+        symbol = getattr(signal, "symbol", "?")
+        price  = float(getattr(signal, "entry_price", 0.0))
+        atr    = float(getattr(signal, "atr", 0.0))
+        score  = float(getattr(signal, "confidence", 0.5))
+
+        tier, factor = _score_tier_factor(score)
+
+        # ── Circuit breaker ──────────────────────────────────────────────────
+        if self._state.circuit_breaker_active:
+            if time.time() < self._state.circuit_breaker_until:
+                remaining = (self._state.circuit_breaker_until - time.time()) / 60
+                logger.warning(
+                    "KELLY %s | CIRCUIT_BREAKER activo %.0f min restantes",
+                    symbol, remaining,
+                )
+                return PositionSize(
+                    shares=0, kelly_fraction=0.0, inv_vol_fraction=0.0,
+                    final_fraction=0.0, risk_usd=0.0, capital_pct=0.0,
+                    method="circuit_breaker_blocked",
+                    tier="SKIP", score_factor=0.0, score=score,
+                )
+            else:
+                self._state.circuit_breaker_active = False
+
+        # ── SKIP tier ────────────────────────────────────────────────────────
+        if factor == 0.0:
+            logger.info(
+                "KELLY %s | tier=SKIP score=%.2f — señal descartada",
+                symbol, score,
+            )
+            return PositionSize(
+                shares=0, kelly_fraction=0.0, inv_vol_fraction=0.0,
+                final_fraction=0.0, risk_usd=0.0, capital_pct=0.0,
+                method="kelly_dynamic_skip",
+                tier="SKIP", score_factor=0.0, score=score,
+            )
+
+        # ── Base Kelly × factor ──────────────────────────────────────────────
+        capital   = equity
+        kelly_f   = self._compute_kelly_fraction() * score * factor
+        inv_vol_f = self._compute_inv_vol_fraction(symbol, atr, price)
+        final_f   = min(kelly_f, inv_vol_f, self.MAX_POSITION_PCT)
+        final_f   = min(final_f, self._state.kelly_fraction_active)
+
+        sl_dist         = atr * self.ATR_SL_MULTIPLIER
+        max_risk_usd    = capital * self.MAX_RISK_PER_TRADE
+        shares_by_risk  = int(max_risk_usd / sl_dist)  if sl_dist  > 0 else 0
+        shares_by_kelly = int(capital * final_f / price) if price  > 0 else 0
+        shares          = max(0, min(shares_by_risk, shares_by_kelly))
+
+        risk_usd    = shares * sl_dist
+        capital_pct = (shares * price / capital * 100) if capital > 0 else 0.0
+
+        result = PositionSize(
+            shares           = shares,
+            kelly_fraction   = kelly_f,
+            inv_vol_fraction = inv_vol_f,
+            final_fraction   = final_f,
+            risk_usd         = round(risk_usd, 2),
+            capital_pct      = round(capital_pct, 2),
+            method           = "kelly_dynamic",
+            tier             = tier,
+            score_factor     = factor,
+            score            = score,
+        )
+
+        logger.info(
+            "KELLY %s | tier=%s factor=%.2fx shares=%d risk=$%.2f (%.2f%%) "
+            "| kelly=%.4f invvol=%.4f",
+            symbol, tier, factor, shares, risk_usd, capital_pct,
+            kelly_f, inv_vol_f,
+        )
+        return result
 
     def reset_circuit_breaker(self) -> None:
         """Desactiva manualmente el circuit breaker (requiere confirmación del operador)."""
