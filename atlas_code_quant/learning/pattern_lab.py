@@ -457,6 +457,102 @@ class PatternLabService:
             **self._fit_metadata,
         }
 
+    # ── Hook LEAN Simulator ────────────────────────────────────────────────────
+
+    def retrain_from_lean_simulator(
+        self,
+        symbols: list[str] | None = None,
+        years: int = 3,
+        out_dir: str | None = None,
+    ) -> dict:
+        """Reentrena motifs y TIN usando datos sintéticos del LeanSimulator.
+
+        Genera un dataset de entrenamiento (GBM + Markov), luego ajusta
+        motif_service y tin_predictor sobre los trades producidos.
+
+        Args:
+            symbols: Lista de tickers a simular. Default: ["SPY", "QQQ", "IWM"].
+            years:   Años de historia sintética a generar por símbolo.
+            out_dir: Carpeta de salida para los CSV. Default: logs/lean_sim/.
+
+        Returns:
+            dict con paths generados y métricas de reentrenamiento.
+        """
+        from atlas_code_quant.backtest.lean_simulator import LeanSimulator  # lazy import
+
+        _symbols = symbols or ["SPY", "QQQ", "IWM"]
+        _out     = out_dir or str(Path(__file__).resolve().parents[2] / "logs" / "lean_sim")
+
+        logger.info(
+            "PatternLabService.retrain_from_lean_simulator: símbolos=%s years=%d",
+            _symbols, years,
+        )
+
+        simulator = LeanSimulator(out_dir=_out)
+        paths     = simulator.generate_training_dataset(_symbols, years=years, out_dir=_out)
+
+        trades_path   = paths.get("trades_csv")
+        features_path = paths.get("features_csv")
+
+        if not trades_path or not Path(trades_path).exists():
+            logger.warning("LeanSim: trades_csv no generado — abortando retrain")
+            return {"ok": False, "error": "trades_csv missing", "paths": paths}
+
+        # ── Cargar datos y reentrenar ─────────────────────────────────────────
+        try:
+            trades_df   = pd.read_csv(trades_path)
+            features_df = pd.read_csv(features_path) if features_path and Path(features_path).exists() else None
+        except Exception as exc:
+            logger.error("LeanSim: error cargando CSV: %s", exc)
+            return {"ok": False, "error": str(exc), "paths": paths}
+
+        results: dict = {"ok": True, "paths": paths, "motif": {}, "tin": {}}
+
+        # ── Reentrenar MotifDiscoveryService ─────────────────────────────────
+        if "close" in trades_df.columns:
+            close_series = trades_df.set_index(
+                trades_df.columns[0] if trades_df.columns[0] != "close" else "timestamp"
+            )["close"].dropna()
+            try:
+                self._motif_service.fit(close_series, n_motifs=self.config.n_motifs)
+                results["motif"] = {"fitted": True, "n_bars": len(close_series)}
+                logger.info("LeanSim: motif_service reentrenado con %d barras", len(close_series))
+            except Exception as exc:
+                logger.error("LeanSim: motif_service.fit falló: %s", exc)
+                results["motif"] = {"fitted": False, "error": str(exc)}
+
+        # ── Reentrenar TINPredictor desde features ────────────────────────────
+        if features_df is not None and self._tin_predictor is not None:
+            feature_cols = [c for c in features_df.columns
+                            if c not in ("timestamp", "symbol", "signal_score", "outcome")]
+            if feature_cols and "outcome" in features_df.columns:
+                X = features_df[feature_cols].fillna(0.0).values
+                y = (features_df["outcome"] > 0).astype(float).values
+                try:
+                    self._tin_predictor.fit(X, y)
+                    results["tin"] = {"fitted": True, "n_samples": len(y)}
+                    logger.info("LeanSim: tin_predictor reentrenado con %d muestras", len(y))
+                except Exception as exc:
+                    logger.error("LeanSim: tin_predictor.fit falló: %s", exc)
+                    results["tin"] = {"fitted": False, "error": str(exc)}
+            else:
+                results["tin"] = {"fitted": False, "reason": "missing feature_cols or outcome column"}
+        else:
+            results["tin"] = {"fitted": False, "reason": "no features_df or tin_predictor not initialized"}
+
+        self._fit_metadata["lean_sim_retrain"] = {
+            "symbols": _symbols,
+            "years": years,
+            "trades_rows": len(trades_df),
+        }
+
+        logger.info(
+            "PatternLabService.retrain_from_lean_simulator: completado | motif=%s tin=%s",
+            results["motif"].get("fitted"),
+            results["tin"].get("fitted"),
+        )
+        return results
+
 
 # ── Función auxiliar ───────────────────────────────────────────────────────────
 
