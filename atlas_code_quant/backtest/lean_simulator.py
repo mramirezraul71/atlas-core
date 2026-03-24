@@ -36,13 +36,30 @@ import csv
 import logging
 import math
 import os
+import sqlite3
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+
+# ── Scanner universe imports ──────────────────────────────────────────────────
+try:
+    from atlas_code_quant.scanner.universe_catalog import ScannerUniverseCatalog
+    from atlas_code_quant.scanner.asset_classifier import (
+        AssetClass,
+        AssetProfile,
+        classify_asset,
+    )
+    from atlas_code_quant.scanner.etf_universe import get_all_etf_symbols, get_liquid_etfs
+    from atlas_code_quant.scanner.index_universe import get_all_index_symbols
+    from atlas_code_quant.scanner.crypto_universe import get_all_crypto_symbols
+    from atlas_code_quant.scanner.futures_universe import get_all_futures_symbols
+    _SCANNER_AVAILABLE = True
+except ImportError:
+    _SCANNER_AVAILABLE = False
 
 logger = logging.getLogger("atlas.backtest.lean")
 
@@ -83,6 +100,77 @@ _DT_5MIN        = 1.0 / (_TRADING_DAYS * _BARS_PER_DAY)  # fracción anual
 # Comisiones y slippage (modelo simplificado)
 _SLIPPAGE_BPS   = 2.0    # 2 bps por lado
 _COMMISSION_PER_SHARE = 0.005  # $0.005/share (IB-like)
+_TRADIER_COMMISSION = 0.35   # $0.35/order (Tradier flat)
+
+# ── Params GBM por clase de activo (fallback cuando símbolo no está en _SYMBOL_PARAMS) ─
+# Estructura: {asset_class_value: {S0, mu_ann, sigma_ann, avg_vol}}
+_ASSET_CLASS_PARAMS: Dict[str, Dict] = {
+    "equity_stock":  {"S0": 80.0,    "mu_ann": 0.14, "sigma_ann": 0.28, "avg_vol": 5_000_000},
+    "equity_etf":    {"S0": 200.0,   "mu_ann": 0.11, "sigma_ann": 0.16, "avg_vol": 20_000_000},
+    "index_option":  {"S0": 4500.0,  "mu_ann": 0.12, "sigma_ann": 0.14, "avg_vol": 0},
+    "crypto":        {"S0": 45_000.0,"mu_ann": 0.80, "sigma_ann": 0.90, "avg_vol": 500_000_000},
+    "future":        {"S0": 4500.0,  "mu_ann": 0.10, "sigma_ann": 0.15, "avg_vol": 0},
+    "forex":         {"S0": 1.10,    "mu_ann": 0.01, "sigma_ann": 0.06, "avg_vol": 0},
+    "unknown":       {"S0": 50.0,    "mu_ann": 0.10, "sigma_ann": 0.30, "avg_vol": 1_000_000},
+}
+
+
+def _build_full_universe() -> List[str]:
+    """Construye el universo completo combinando todos los módulos del scanner.
+
+    Orden de prioridad:
+    1. ETFs líquidos (opciones activas)
+    2. Índices con opciones
+    3. Crypto (si _SCANNER_AVAILABLE)
+    4. Futuros micro (capital reducido)
+
+    Exclye crypto y futuros del universo por defecto; se activan con flags de entorno.
+    """
+    if not _SCANNER_AVAILABLE:
+        return list(_SYMBOL_PARAMS.keys())
+
+    include_crypto  = os.getenv("ATLAS_SCANNER_INCLUDE_CRYPTO",  "false").lower() == "true"
+    include_futures = os.getenv("ATLAS_SCANNER_INCLUDE_FUTURES", "false").lower() == "true"
+
+    syms: List[str] = []
+
+    # ETFs líquidos (OI ≥ 50k) — núcleo del universo
+    try:
+        syms += get_liquid_etfs(min_oi=50_000)
+    except Exception:
+        syms += list(_SYMBOL_PARAMS.keys())
+
+    # Índices con opciones (SPX, NDX, RUT…)
+    try:
+        syms += [s for s in get_all_index_symbols() if s not in syms]
+    except Exception:
+        pass
+
+    # Crypto (opcional)
+    if include_crypto:
+        try:
+            syms += [s for s in get_all_crypto_symbols() if s not in syms]
+        except Exception:
+            pass
+
+    # Futuros micro (opcional)
+    if include_futures:
+        try:
+            from atlas_code_quant.scanner.futures_universe import get_micro_futures
+            syms += [s for s in get_micro_futures() if s not in syms]
+        except Exception:
+            pass
+
+    # Dedup preservando orden
+    seen: set = set()
+    result = []
+    for s in syms:
+        if s not in seen:
+            seen.add(s)
+            result.append(s)
+
+    logger.info("_build_full_universe: %d símbolos", len(result))
+    return result
 
 # Score pipeline — pesos de producción (sensitivity_analysis.py)
 _W_MOTIF  = 0.30
@@ -297,24 +385,70 @@ class LeanSimulator:
 
     Uso típico::
 
-        sim = LeanSimulator(symbols=["SPY","QQQ","IWM","AAPL","NVDA"])
+        # Universo completo del scanner (ETFs + índices + crypto opcional)
+        sim = LeanSimulator(use_full_universe=True)
         paths = sim.generate_training_dataset(years=5)
-        # → data/backtest/trades_20260324.csv  (~200K filas)
-        # → data/backtest/features_20260324.csv (~500K filas)
+        # → logs/lean_sim/trades_20260324.csv
+        # → logs/lean_sim/features_20260324.csv
+        # → logs/lean_sim/lean_sim_20260324.db  (SQLite)
 
-        # Entrenamiento PatternLab:
-        lab.retrain_from_lean_simulator()
+        # Universo reducido para pruebas rápidas
+        sim = LeanSimulator(use_full_universe=False)
+
+        # Universo custom
+        sim = LeanSimulator(symbols=["SPY","QQQ","IWM"])
     """
 
     def __init__(
         self,
-        symbols: list[str] | None = None,
+        symbols: List[str] | None = None,
         config: SimConfig | None = None,
+        use_full_universe: bool = False,
+        out_dir: str | None = None,
     ) -> None:
-        self.symbols    = symbols or ["SPY", "QQQ", "IWM", "AAPL", "NVDA"]
         self.cfg        = config or SimConfig()
-        self.data_cache: dict[str, pd.DataFrame] = {}
+        if out_dir:
+            self.cfg.out_dir = out_dir
+
+        if symbols is not None:
+            # Explicit list overrides everything
+            self.symbols = list(symbols)
+        elif use_full_universe:
+            self.symbols = _build_full_universe()
+        else:
+            self.symbols = ["SPY", "QQQ", "IWM", "AAPL", "NVDA"]
+
+        self.data_cache: Dict[str, pd.DataFrame] = {}
         self._rng       = np.random.default_rng(self.cfg.random_seed)
+        print(f"LeanSimulator: {len(self.symbols)} símbolos | universe={'full' if use_full_universe else 'custom' if symbols else 'default'}")
+
+    def _get_symbol_params(self, symbol: str) -> Dict:
+        """Devuelve params GBM para un símbolo.
+
+        Prioridad:
+        1. _SYMBOL_PARAMS (tabla curada de conocidos)
+        2. classify_asset() → _ASSET_CLASS_PARAMS[asset_class]
+        3. Fallback "unknown"
+        """
+        if symbol in _SYMBOL_PARAMS:
+            return _SYMBOL_PARAMS[symbol]
+
+        if _SCANNER_AVAILABLE:
+            try:
+                profile = classify_asset(symbol)
+                class_key = profile.asset_class.value  # e.g. "equity_etf"
+                base = dict(_ASSET_CLASS_PARAMS.get(class_key, _ASSET_CLASS_PARAMS["unknown"]))
+                # Ajustar volatilidad para leveraged ETFs (TQQQ/SQQQ/SPXL/SPXU)
+                if class_key == "equity_etf" and any(
+                    symbol.startswith(pfx) for pfx in ("TQQQ", "SQQQ", "SPXL", "SPXU", "UVXY", "SVXY")
+                ):
+                    base["sigma_ann"] *= 2.5
+                    base["mu_ann"]    *= 2.0
+                return base
+            except Exception:
+                pass
+
+        return dict(_ASSET_CLASS_PARAMS["unknown"])
 
     # ── 1. Generación de datos históricos ─────────────────────────────────────
 
@@ -334,9 +468,9 @@ class LeanSimulator:
         Returns:
             DataFrame con columnas [timestamp, open, high, low, close, volume, regime].
         """
-        params = _SYMBOL_PARAMS.get(symbol, _SYMBOL_PARAMS["SPY"])
-        S0     = start_price or params["S0"]
-        mu_ann = params["mu_ann"]
+        params  = self._get_symbol_params(symbol)
+        S0      = start_price or params["S0"]
+        mu_ann  = params["mu_ann"]
         sig_ann = params["sigma_ann"]
         avg_vol = params["avg_vol"]
 
@@ -883,15 +1017,20 @@ class LeanSimulator:
         date_tag       = time.strftime("%Y%m%d")
         trades_path    = out_dir / f"trades_{date_tag}.csv"
         features_path  = out_dir / f"features_{date_tag}.csv"
+        db_path        = out_dir / f"lean_sim_{date_tag}.db"
 
         n_trades_total   = 0
         n_features_total = 0
         trades_header_written   = False
         features_header_written = False
 
+        # Per-symbol stats para retornar métricas agregadas
+        symbol_stats: Dict[str, Dict] = {}
+        all_trades_for_db: List[pd.DataFrame] = []
+
         logger.info(
-            "LeanSim: generate_training_dataset | syms=%s years=%d target=1M+",
-            syms, years,
+            "LeanSim: generate_training_dataset | syms=%d years=%d target=1M+",
+            len(syms), years,
         )
         t_global = time.perf_counter()
 
@@ -921,6 +1060,10 @@ class LeanSimulator:
                 )
                 trades_header_written  = True
                 n_trades_total        += len(trades_df)
+                all_trades_for_db.append(trades_df)
+
+                # Stats por símbolo
+                symbol_stats[sym] = self.compute_metrics(trades_df)
 
             # Escribir features en chunks (sin columna regime ya en features)
             feat_export = feat_df.drop(columns=["regime"], errors="ignore")
@@ -943,26 +1086,110 @@ class LeanSimulator:
                 n_trades_total, n_features_total,
             )
 
+        # ── Exportar SQLite ───────────────────────────────────────────────────
+        db_exported = False
+        if all_trades_for_db:
+            try:
+                all_trades = pd.concat(all_trades_for_db, ignore_index=True)
+                self.export_to_sqlite(all_trades, str(db_path), symbol_stats)
+                db_exported = True
+            except Exception as e:
+                logger.error("LeanSim: export_to_sqlite falló: %s", e)
+
         elapsed = (time.perf_counter() - t_global)
+
+        # Sharpe promedio entre símbolos con datos
+        sharpe_vals = [v.get("sharpe", 0) for v in symbol_stats.values() if isinstance(v, dict)]
+        sharpe_avg  = round(sum(sharpe_vals) / len(sharpe_vals), 3) if sharpe_vals else 0.0
+
         logger.info(
-            "LeanSim: COMPLETADO | trades=%d features=%d | %.1fs",
-            n_trades_total, n_features_total, elapsed,
+            "LeanSim: COMPLETADO | trades=%d features=%d | sharpe_avg=%.3f | %.1fs",
+            n_trades_total, n_features_total, sharpe_avg, elapsed,
         )
         print(
             f"  LeanSim completado: {n_trades_total:,} trades | "
-            f"{n_features_total:,} feature rows | {elapsed:.1f}s"
+            f"{n_features_total:,} feature rows | sharpe_avg={sharpe_avg} | {elapsed:.1f}s"
         )
         return {
-            "trades_csv":   str(trades_path),
-            "features_csv": str(features_path),
-            "n_trades":     n_trades_total,
-            "n_features":   n_features_total,
-            "elapsed_s":    round(elapsed, 2),
+            "trades_csv":        str(trades_path),
+            "trades_path":       str(trades_path),    # alias para PatternLab hook
+            "features_csv":      str(features_path),
+            "features_path":     str(features_path),  # alias
+            "db_path":           str(db_path) if db_exported else None,
+            "n_trades":          n_trades_total,
+            "total_trades":      n_trades_total,       # alias para PatternLab hook
+            "n_features":        n_features_total,
+            "sharpe_avg":        sharpe_avg,
+            "trades_por_symbol": {s: v.get("n_trades", 0) for s, v in symbol_stats.items()},
+            "elapsed_s":         round(elapsed, 2),
         }
+
+    # ── 6b. Exportar SQLite ───────────────────────────────────────────────────
+
+    def export_to_sqlite(
+        self,
+        trades_df: pd.DataFrame,
+        db_path: str,
+        symbol_stats: Dict[str, Dict] | None = None,
+    ) -> None:
+        """Exporta trades a SQLite compatible con TradingJournalService.
+
+        Tablas:
+          - trades         : filas de TradeRecord
+          - symbol_metrics : métricas por símbolo (win_rate, sharpe, etc.)
+          - sim_metadata   : metadatos de la simulación
+        """
+        db_path = str(db_path)
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+
+        with sqlite3.connect(db_path) as conn:
+            # ── Tabla trades ─────────────────────────────────────────────────
+            trades_df.to_sql("trades", conn, if_exists="replace", index=False)
+
+            # ── Tabla symbol_metrics ──────────────────────────────────────────
+            if symbol_stats:
+                rows = []
+                for sym, m in symbol_stats.items():
+                    if isinstance(m, dict):
+                        rows.append({
+                            "symbol":           sym,
+                            "n_trades":         m.get("n_trades", 0),
+                            "win_rate":         m.get("win_rate", 0),
+                            "profit_factor":    m.get("profit_factor", 0),
+                            "sharpe":           m.get("sharpe", 0),
+                            "max_drawdown_pct": m.get("max_drawdown_pct", 0),
+                            "total_pnl":        m.get("total_pnl", 0),
+                            "final_equity":     m.get("final_equity", 0),
+                            "avg_score":        m.get("avg_score", 0),
+                        })
+                if rows:
+                    pd.DataFrame(rows).to_sql(
+                        "symbol_metrics", conn, if_exists="replace", index=False
+                    )
+
+            # ── Tabla sim_metadata ────────────────────────────────────────────
+            meta = pd.DataFrame([{
+                "generated_at":  time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "n_symbols":     trades_df["symbol"].nunique() if "symbol" in trades_df else 0,
+                "n_trades":      len(trades_df),
+                "capital":       self.cfg.capital,
+                "kelly_base":    self.cfg.kelly_base,
+                "sl_atr_mult":   self.cfg.sl_atr_mult,
+                "tp_atr_mult":   self.cfg.tp_atr_mult,
+                "score_weights": f"motif={_W_MOTIF} tin={_W_TIN} mtf={_W_MTF} regime={_W_REGIME}",
+                "simulator_ver": "1.1",
+            }])
+            meta.to_sql("sim_metadata", conn, if_exists="replace", index=False)
+
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_trades_ts ON trades(timestamp)")
+            conn.commit()
+
+        logger.info("LeanSim: SQLite exportado → %s | %d trades", db_path, len(trades_df))
 
     # ── 7. Métricas de backtest ───────────────────────────────────────────────
 
-    def compute_metrics(self, trades_df: pd.DataFrame) -> dict:
+    def compute_metrics(self, trades_df: pd.DataFrame) -> Dict:
         """Calcula métricas de backtest sobre un trades_df."""
         if trades_df.empty:
             return {"error": "sin trades"}
