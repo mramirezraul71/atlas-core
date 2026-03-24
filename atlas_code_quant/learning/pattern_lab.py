@@ -459,11 +459,27 @@ class PatternLabService:
 
     # ── Hook LEAN Simulator ────────────────────────────────────────────────────
 
+    def retrain_from_lean(
+        self,
+        years: int = 5,
+        symbols: list[str] | None = None,
+        use_full_universe: bool = True,
+        output_dir: str | None = None,
+    ) -> dict:
+        """Alias principal — firma del prompt original."""
+        return self.retrain_from_lean_simulator(
+            symbols=symbols,
+            years=years,
+            out_dir=output_dir,
+            use_full_universe=use_full_universe,
+        )
+
     def retrain_from_lean_simulator(
         self,
         symbols: list[str] | None = None,
-        years: int = 3,
+        years: int = 5,
         out_dir: str | None = None,
+        use_full_universe: bool = False,
     ) -> dict:
         """Reentrena motifs y TIN usando datos sintéticos del LeanSimulator.
 
@@ -480,16 +496,21 @@ class PatternLabService:
         """
         from atlas_code_quant.backtest.lean_simulator import LeanSimulator  # lazy import
 
-        _symbols = symbols or ["SPY", "QQQ", "IWM"]
-        _out     = out_dir or str(Path(__file__).resolve().parents[2] / "logs" / "lean_sim")
+        _out = out_dir or str(Path(__file__).resolve().parents[2] / "logs" / "lean_sim")
 
         logger.info(
-            "PatternLabService.retrain_from_lean_simulator: símbolos=%s years=%d",
-            _symbols, years,
+            "PatternLabService.retrain_from_lean_simulator: use_full_universe=%s years=%d",
+            use_full_universe, years,
         )
 
-        simulator = LeanSimulator(out_dir=_out)
-        paths     = simulator.generate_training_dataset(_symbols, years=years, out_dir=_out)
+        simulator = LeanSimulator(
+            symbols=symbols,
+            use_full_universe=use_full_universe,
+            out_dir=_out,
+        )
+        paths = simulator.generate_training_dataset(years=years, out_dir=_out)
+
+        print(f"PatternLab reentrenado con {paths.get('total_trades', 0):,} trades")
 
         trades_path   = paths.get("trades_csv")
         features_path = paths.get("features_csv")
