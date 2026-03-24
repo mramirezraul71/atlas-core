@@ -508,3 +508,255 @@ class RegimeClassifier:
             return float(np.clip(slope, 0.0, 1.0))
         except Exception:
             return 0.5
+
+
+# ── Multi-Timeframe Coherence ─────────────────────────────────────────────────
+
+@dataclass
+class TFReport:
+    """Clasificación de régimen para un timeframe específico."""
+    timeframe:  str
+    regime:     MarketRegime
+    strength:   float   # 0-1: fuerza direccional (FLAT/SIDE penalizado)
+    confidence: float   # probabilidad bruta del clasificador
+    proba_bull: float = 0.0
+    proba_bear: float = 0.0
+    proba_sideways: float = 0.0
+
+
+@dataclass
+class MultiTFReport:
+    """Resumen de coherencia multi-timeframe para un símbolo."""
+    symbol:          str
+    dominant_trend:  MarketRegime   # régimen con más votos
+    coherence_score: float          # 0-1; <0.7 → skip señal
+    aligned_count:   int            # TFs alineados con dominant_trend
+    total_tfs:       int
+    tf_breakdown:    dict           # {tf: TFReport}
+    timestamp:       float
+
+
+class MultiTimeframeAnalyzer:
+    """Analiza coherencia de régimen en múltiples timeframes.
+
+    Lógica::
+
+        Para cada TF:
+            1. Toma closes (submuestreados desde buffer 1m)
+            2. Calcula features escalares: RSI, ADX, retorno, ATR, Hurst
+            3. Llama regime_clf.predict() → RegimeOutput
+            4. Calcula strength = confidence × factor (SIDEWAYS 0.3×, FLAT 0×)
+
+        coherence_score = alignment_ratio × (0.4 + 0.6 × avg_strength)
+            donde alignment_ratio = n_TFs_con_dominant / n_total
+
+    Ejemplo::
+
+        mtf = MultiTimeframeAnalyzer(regime_clf=clf, timeframes=["1m","5m","15m","1h"])
+        report = mtf.analyze("SPY", closes_1m=np.array([...]))
+        print(report.coherence_score)   # 0.82 → operar
+    """
+
+    # Mínimo de barras de closes_1m para intentar análisis
+    MIN_BARS: int = 120
+
+    # Submuestreo de closes_1m por timeframe (cada N barras 1m)
+    _TF_STEP: dict = {
+        "1m":  1,
+        "2m":  2,
+        "5m":  5,
+        "15m": 15,
+        "30m": 30,
+        "1h":  60,
+        "4h":  240,
+        "1d":  390,
+    }
+
+    def __init__(
+        self,
+        regime_clf: "RegimeClassifier",
+        timeframes: list[str] | None = None,
+        min_bars_per_tf: int = 30,
+    ) -> None:
+        self._regime_clf     = regime_clf
+        self.timeframes      = timeframes or ["1m", "5m", "15m", "1h"]
+        self._min_bars_per_tf = min_bars_per_tf
+
+    # ── API pública ───────────────────────────────────────────────────────────
+
+    def analyze(self, symbol: str, closes_1m: np.ndarray) -> MultiTFReport:
+        """Analiza coherencia a partir de un buffer de closes en 1m.
+
+        Args:
+            symbol:    Ticker (solo informativo).
+            closes_1m: Array de closes a resolución 1m (o el intervalo nativo
+                       del buffer — se submuestrea según ``_TF_STEP``).
+
+        Returns:
+            :class:`MultiTFReport` con ``coherence_score``, ``dominant_trend``
+            y desglose por TF.
+        """
+        tf_reports: dict[str, TFReport] = {}
+
+        for tf in self.timeframes:
+            step  = self._TF_STEP.get(tf, 5)
+            sub   = closes_1m[::step] if step > 1 else closes_1m
+            if len(sub) < self._min_bars_per_tf:
+                # No hay suficientes barras para este TF — usar neutral FLAT
+                tf_reports[tf] = TFReport(
+                    timeframe  = tf,
+                    regime     = MarketRegime.FLAT,
+                    strength   = 0.0,
+                    confidence = 0.0,
+                )
+                continue
+            tf_reports[tf] = self._classify_from_closes(tf, sub)
+
+        dominant = self._dominant_regime(tf_reports)
+        coh      = self._coherence_score(tf_reports, dominant)
+        aligned  = sum(
+            1 for r in tf_reports.values() if r.regime == dominant
+        )
+
+        return MultiTFReport(
+            symbol          = symbol,
+            dominant_trend  = dominant,
+            coherence_score = coh,
+            aligned_count   = aligned,
+            total_tfs       = len(tf_reports),
+            tf_breakdown    = tf_reports,
+            timestamp       = __import__("time").time(),
+        )
+
+    def analyze_from_outputs(
+        self,
+        symbol: str,
+        tf_outputs: "dict[str, RegimeOutput]",
+    ) -> MultiTFReport:
+        """Construye MultiTFReport desde RegimeOutputs ya calculados externamente.
+
+        Útil cuando el caller ya tiene el régimen de cada TF y sólo
+        necesita el score de coherencia agregado.
+        """
+        tf_reports: dict[str, TFReport] = {}
+        for tf, ro in tf_outputs.items():
+            tf_reports[tf] = TFReport(
+                timeframe      = tf,
+                regime         = ro.regime,
+                strength       = self._trend_strength(ro),
+                confidence     = ro.confidence,
+                proba_bull     = ro.proba_bull,
+                proba_bear     = ro.proba_bear,
+                proba_sideways = ro.proba_sideways,
+            )
+
+        dominant = self._dominant_regime(tf_reports)
+        coh      = self._coherence_score(tf_reports, dominant)
+        aligned  = sum(
+            1 for r in tf_reports.values() if r.regime == dominant
+        )
+
+        return MultiTFReport(
+            symbol          = symbol,
+            dominant_trend  = dominant,
+            coherence_score = coh,
+            aligned_count   = aligned,
+            total_tfs       = len(tf_reports),
+            tf_breakdown    = tf_reports,
+            timestamp       = __import__("time").time(),
+        )
+
+    # ── Internos ──────────────────────────────────────────────────────────────
+
+    def _classify_from_closes(self, tf: str, closes: np.ndarray) -> TFReport:
+        """Clasifica régimen de un array de closes usando RegimeClassifier."""
+        n = len(closes)
+        # Placeholder arrays para high/low (usar closes como proxy)
+        highs = closes * 1.001
+        lows  = closes * 0.999
+        vols  = np.ones(n) * 1e6
+
+        ret_20 = float((closes[-1] - closes[-20]) / closes[-20]) if n >= 21 else 0.0
+        atr_20 = RegimeClassifier._compute_atr(closes, highs, lows, 20)
+        atr_n  = atr_20 / closes[-1] if closes[-1] > 0 else 0.0
+        rsi    = RegimeClassifier._compute_rsi_simple(closes, 14)
+        adx    = RegimeClassifier._compute_adx_simple(closes, highs, lows, 14)
+        hurst  = RegimeClassifier._compute_hurst_simple(closes)
+        vol_r  = vols[-1] / (vols[-20:].mean() + 1e-10) if n >= 20 else 1.0
+
+        feats = self._regime_clf.extract_features(
+            adx          = adx,
+            return_20d   = ret_20,
+            hurst        = hurst,
+            iv_rank      = 0.5,    # neutral — sin datos IV en este contexto
+            cvd_slope_5m = 0.0,
+            rsi_14       = rsi,
+            macd_hist    = 0.0,
+            atr_norm     = atr_n,
+            volume_ratio = vol_r,
+        )
+
+        ro = self._regime_clf.predict(feats)
+        return TFReport(
+            timeframe      = tf,
+            regime         = ro.regime,
+            strength       = self._trend_strength(ro),
+            confidence     = ro.confidence,
+            proba_bull     = ro.proba_bull,
+            proba_bear     = ro.proba_bear,
+            proba_sideways = ro.proba_sideways,
+        )
+
+    @staticmethod
+    def _trend_strength(ro: "RegimeOutput") -> float:
+        """Fuerza de la tendencia [0-1].
+
+        * BULL / BEAR → confidence directamente
+        * SIDEWAYS    → confidence × 0.3  (tendencia débil para trading)
+        * FLAT        → 0.0
+        """
+        if ro.regime == MarketRegime.FLAT:
+            return 0.0
+        if ro.regime == MarketRegime.SIDEWAYS:
+            return float(ro.confidence) * 0.3
+        return float(ro.confidence)
+
+    @staticmethod
+    def _dominant_regime(tf_reports: "dict[str, TFReport]") -> MarketRegime:
+        """Voto mayoritario entre BULL, BEAR, SIDEWAYS (ignora FLAT)."""
+        counts: dict[MarketRegime, float] = {
+            MarketRegime.BULL:     0.0,
+            MarketRegime.BEAR:     0.0,
+            MarketRegime.SIDEWAYS: 0.0,
+        }
+        for r in tf_reports.values():
+            if r.regime in counts:
+                # Ponderado por strength para desempate
+                counts[r.regime] += 1.0 + r.strength
+        best = max(counts, key=lambda k: counts[k])
+        # Si todos son FLAT → devolver FLAT
+        if all(r.regime == MarketRegime.FLAT for r in tf_reports.values()):
+            return MarketRegime.FLAT
+        return best
+
+    @staticmethod
+    def _coherence_score(
+        tf_reports: "dict[str, TFReport]",
+        dominant:   MarketRegime,
+    ) -> float:
+        """
+        coherence = alignment_ratio × (0.4 + 0.6 × avg_strength)
+
+        * alignment_ratio = TFs con dominant / total TFs
+        * avg_strength    = media de strength de TODOS los TFs
+        * El factor (0.4 + 0.6×avg_str) asegura que coherencia ≥ 0.4
+          cuando todos los TFs coinciden, incluso si la señal es débil.
+        """
+        n = len(tf_reports)
+        if n == 0:
+            return 0.0
+        n_aligned   = sum(1 for r in tf_reports.values() if r.regime == dominant)
+        alignment   = n_aligned / n
+        avg_strength = sum(r.strength for r in tf_reports.values()) / n
+        score = alignment * (0.4 + 0.6 * avg_strength)
+        return float(np.clip(score, 0.0, 1.0))

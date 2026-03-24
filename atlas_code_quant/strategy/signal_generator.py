@@ -114,6 +114,7 @@ class SignalGenerator:
     MIN_IV_RANK           = 70.0     # IV Rank mínimo para considerar
     MIN_IV_HV_RATIO       = 1.2      # IV/HV mínimo
     MIN_VOLUME_SPIKE      = 1.8      # multiplicador de volumen
+    MIN_MTF_COHERENCE     = 0.70     # coherencia multi-TF mínima para operar
     RSI_OVERBOUGHT        = 70.0
     RSI_OVERSOLD          = 30.0
     CVD_ZSCORE_THRESHOLD  = 1.0      # desviaciones estándar
@@ -150,6 +151,7 @@ class SignalGenerator:
         pattern_lab_ctx=None,   # PatternLabContext opcional — gate de signal_score
         motif_edge: float = 0.5,  # edge_score de MotifLabService [0-1], 0.5=neutral
         tin_score: float = 0.5,   # TechnicalIndicatorNet prob [0-1], 0.5=neutral
+        mtf_report=None,          # MultiTFReport opcional — gate de coherencia MTF
     ) -> TradeSignal:
         """Evalúa condiciones y retorna señal de trading o FLAT."""
 
@@ -178,6 +180,16 @@ class SignalGenerator:
         if regime.regime == MarketRegime.FLAT:
             return self._flat(symbol, entry_price, atr, "regime_confidence_low",
                               regime.confidence)
+
+        # ── 3.5. Gate Multi-TF coherence ──────────────────────────────────────
+        if mtf_report is not None:
+            _coh = float(mtf_report.coherence_score)
+            if _coh < self.MIN_MTF_COHERENCE:
+                return self._flat(
+                    symbol, entry_price, atr,
+                    f"mtf_coherence_low",
+                    _coh,
+                )
 
         # ── 4. Señal técnica ──────────────────────────────────────────────────
         signal_dir = self._get_technical_direction(tech, regime)
@@ -279,9 +291,13 @@ class SignalGenerator:
             signal.metadata["arima_deviation"] = round(getattr(pattern_lab_ctx, "arima_deviation", 0.0), 6)
             signal.metadata["n_motifs"]        = getattr(pattern_lab_ctx, "n_motifs_found", 0)
 
+        _mtf_coh = float(mtf_report.coherence_score) if mtf_report is not None else -1.0
+        signal.metadata["mtf_coherence_at_signal"] = round(_mtf_coh, 4) if _mtf_coh >= 0 else None
+
         logger.info(
-            "SEÑAL %s %s | score=%.3f (regime=%.2f motif=%.2f tin=%.2f) | TP=%.2f SL=%.2f | OCR=%s",
+            "SEÑAL %s %s | score=%.3f (regime=%.2f motif=%.2f tin=%.2f mtf_coh=%.2f) | TP=%.2f SL=%.2f | OCR=%s",
             signal_dir.value, symbol, _signal_score, _base_score, motif_edge, tin_score,
+            _mtf_coh if _mtf_coh >= 0 else 0.0,
             tp, sl, "OK" if visual_ok else "NO",
         )
 
