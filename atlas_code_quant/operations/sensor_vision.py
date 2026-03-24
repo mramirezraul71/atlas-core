@@ -343,14 +343,36 @@ class SensorVisionService:
             state["notes"] = str(notes)
         return self._save(state)
 
+    # ── Insta360 / VisualPipeline ──────────────────────────────────────────────
+
+    @staticmethod
+    def _insta360_pipeline():
+        """Devuelve VisualPipeline singleton o None si el modulo no esta disponible."""
+        try:
+            from atlas_code_quant.vision.visual_pipeline import VisualPipeline
+            return VisualPipeline.get_instance()
+        except Exception:
+            return None
+
+    def _insta360_available(self) -> bool:
+        pipeline = self._insta360_pipeline()
+        if pipeline is None:
+            return False
+        try:
+            return pipeline._capture.source_available() != "none"
+        except Exception:
+            return False
+
     def status(self) -> dict[str, Any]:
         state = self._load()
         provider = str(state.get("provider") or "direct_nexus")
         bridge_status = self._atlas_push_bridge_status() if provider == "atlas_push_bridge" else None
+        insta360_ok = self._insta360_available()
         provider_ready = (
             provider in {"off", "manual"}
             or (provider == "desktop_capture" and self._desktop_capture_available())
             or (provider == "direct_nexus" and self._direct_nexus_available())
+            or (provider == "insta360" and insta360_ok)
             or (
                 provider == "atlas_push_bridge"
                 and (bool((bridge_status or {}).get("ok")) or self._direct_nexus_available())
@@ -358,9 +380,9 @@ class SensorVisionService:
         )
         return {
             **state,
-            "supported_modes": ["off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge", "insta360_pending"],
+            "supported_modes": ["off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge", "insta360"],
             "desktop_capture_available": self._desktop_capture_available(),
-            "insta360_available": False,
+            "insta360_available": insta360_ok,
             "atlas_push_bridge_status": bridge_status,
             "atlas_push_bridge_available": bool((bridge_status or {}).get("ok")),
             "direct_nexus_fallback_available": self._direct_nexus_available(),
@@ -405,10 +427,25 @@ class SensorVisionService:
                 "detail": bridge_status,
             })
 
+        # insta360 check
+        insta360_ok = self._insta360_available()
+        pipeline = self._insta360_pipeline()
+        insta360_source = pipeline._capture.source_available() if pipeline else "none"
+        checks.append({
+            "name": "insta360",
+            "source": insta360_source,
+            "reachable": insta360_ok,
+            "note": f"Fuente activa: {insta360_source}" if insta360_ok else (
+                "No hay fuente de video disponible. Conecta la Insta360 via USB o configura "
+                "INSTA360_RTMP_URL. El modo 'desktop' esta disponible como fallback."
+            ),
+        })
+
         provider_ready = (
             provider in {"off", "manual"}
             or (provider == "desktop_capture" and desktop_ok)
             or (provider == "direct_nexus" and nexus_ok)
+            or (provider == "insta360" and insta360_ok)
             or (provider == "atlas_push_bridge" and (bridge_ok or nexus_ok))
         )
 
@@ -425,6 +462,11 @@ class SensorVisionService:
                 reasons_not_ready.append("atlas_push_bridge: ni el bridge ni el NEXUS robot responden.")
             if provider == "desktop_capture" and not desktop_ok:
                 reasons_not_ready.append("desktop_capture: no disponible en este entorno.")
+            if provider == "insta360" and not insta360_ok:
+                reasons_not_ready.append(
+                    "insta360: sin fuente de video. Conecta la Insta360 via USB, "
+                    "configura INSTA360_RTMP_URL, o cambia a provider='desktop_capture'."
+                )
 
         suggestion: str | None = None
         if not provider_ready and desktop_ok:
@@ -492,8 +534,35 @@ class SensorVisionService:
             record.update(bridge_record)
             if not record.get("capture_ok"):
                 record.setdefault("capture_error", "Captura via bridge no disponible")
-        elif provider == "insta360_pending":
-            record["capture_error"] = "El proveedor Insta360 aun no esta conectado; falta el puente con el SDK."
+        elif provider == "insta360":
+            pipeline = self._insta360_pipeline()
+            if pipeline is None:
+                record["capture_error"] = "atlas_code_quant.vision no disponible (ImportError)"
+            else:
+                try:
+                    cap = pipeline._capture.capture(timeout_sec=5.0)
+                    if cap.ok and cap.frame is not None:
+                        ocr_result = pipeline._ocr.analyze(cap.frame)
+                        # Guardar frame como PNG si es posible
+                        try:
+                            import cv2  # type: ignore
+                            image_path = self.snapshots_dir / f"{label}_{timestamp}.png"
+                            cv2.imwrite(str(image_path), cap.frame)
+                            record["capture_path"] = str(image_path)
+                        except Exception:
+                            pass
+                        record["capture_ok"] = True
+                        record["ocr"] = {
+                            "chart_color": ocr_result.chart_color,
+                            "prices": ocr_result.prices[:5],
+                            "pattern": ocr_result.pattern_detected,
+                            "confidence": ocr_result.confidence,
+                            "source": cap.source,
+                        }
+                    else:
+                        record["capture_error"] = f"Insta360 capture failed: {cap.error}"
+                except Exception as exc:
+                    record["capture_error"] = f"Insta360 pipeline error: {exc}"
         else:
             record["capture_error"] = "Proveedor manual activo; no se intento captura automatica."
 

@@ -792,7 +792,7 @@ async def operation_vision_provider(
     """Cambia el proveedor de visión activo (ej: direct_nexus → desktop_capture → off)."""
     _auth(x_api_key)
     t0 = time.perf_counter()
-    supported = {"off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge"}
+    supported = {"off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge", "insta360"}
     if body.provider not in supported:
         return StdResponse(
             ok=False,
@@ -814,6 +814,65 @@ async def operation_vision_provider(
     except Exception as exc:
         logger.exception("Error cambiando proveedor de vision")
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+# ── Vision chart analyze (Insta360 / desktop OCR) ─────────────────────────────
+
+@app.get("/vision/chart/analyze", response_model=StdResponse, tags=["Operation"])
+async def vision_chart_analyze(
+    max_age_sec: float = 30.0,
+    x_api_key: str | None = Header(None),
+):
+    """Captura un frame (Insta360/desktop) y ejecuta OCR sobre el grafico.
+
+    Devuelve: chart_color, prices detectados, patron, confidence y fuente.
+    """
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        from atlas_code_quant.vision.visual_pipeline import VisualPipeline
+        pipeline = await asyncio.to_thread(VisualPipeline.get_instance)
+        result = await asyncio.to_thread(pipeline.analyze, max_age_sec)
+        return StdResponse(
+            ok=result.error is None,
+            data={
+                "chart_color": result.chart_color,
+                "prices": result.prices[:10],
+                "pattern_detected": result.pattern_detected,
+                "confidence": result.confidence,
+                "source": result.source,
+                "raw_texts_sample": result.raw_texts[:5] if result.raw_texts else [],
+                "error": result.error,
+            },
+            ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+    except Exception as exc:
+        logger.exception("Error en vision chart analyze")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/vision/chart/status", response_model=StdResponse, tags=["Operation"])
+async def vision_chart_status(x_api_key: str | None = Header(None)):
+    """Estado del pipeline visual: fuente activa, OCR disponible, ultimo resultado."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        from atlas_code_quant.vision.visual_pipeline import VisualPipeline
+        pipeline = await asyncio.to_thread(VisualPipeline.get_instance)
+        status = await asyncio.to_thread(pipeline.status)
+        return StdResponse(ok=True, data=status, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/api/v2/quant/vision/chart/analyze", response_model=StdResponse, tags=["V2"])
+async def vision_chart_analyze_v2(max_age_sec: float = 30.0, x_api_key: str | None = Header(None)):
+    return await vision_chart_analyze(max_age_sec=max_age_sec, x_api_key=x_api_key)
+
+
+@app.get("/api/v2/quant/vision/chart/status", response_model=StdResponse, tags=["V2"])
+async def vision_chart_status_v2(x_api_key: str | None = Header(None)):
+    return await vision_chart_status(x_api_key=x_api_key)
 
 
 # ── V2 aliases — loop & vision ────────────────────────────────────────────────
