@@ -294,10 +294,13 @@ class SignalGenerator:
         _mtf_coh = float(mtf_report.coherence_score) if mtf_report is not None else -1.0
         signal.metadata["mtf_coherence_at_signal"] = round(_mtf_coh, 4) if _mtf_coh >= 0 else None
 
+        # ── Log greppable: "signal_score=X.XX (motif=..., tin=..., regime=...)" ──
+        _mtf_part = f" mtf_coh={_mtf_coh:.2f}" if _mtf_coh >= 0 else ""
         logger.info(
-            "SEÑAL %s %s | score=%.3f (regime=%.2f motif=%.2f tin=%.2f mtf_coh=%.2f) | TP=%.2f SL=%.2f | OCR=%s",
-            signal_dir.value, symbol, _signal_score, _base_score, motif_edge, tin_score,
-            _mtf_coh if _mtf_coh >= 0 else 0.0,
+            "SIGNAL %s %s | signal_score=%.2f (motif=%.2f, tin=%.2f, regime=%.2f%s)"
+            " | TP=%.2f SL=%.2f | OCR=%s",
+            signal_dir.value, symbol,
+            _signal_score, motif_edge, tin_score, _base_score, _mtf_part,
             tp, sl, "OK" if visual_ok else "NO",
         )
 
@@ -497,9 +500,25 @@ class SignalGenerator:
         std  = float((sum((x - mean) ** 2 for x in arr) / len(arr)) ** 0.5)
         return (value - mean) / std if std > 1e-10 else 0.0
 
+    # Razones que son ruido normal — solo debug
+    _FLAT_DEBUG_REASONS = frozenset({
+        "no_technical_confluence",
+        "cvd_not_confirming_buy",
+        "cvd_not_confirming_sell",
+        "volume_spike_insufficient",
+        "momentum_not_confirmed_long",
+        "momentum_not_confirmed_short",
+    })
+
     def _flat(self, symbol: str, price: float, atr: float,
               reason: str, value: float) -> TradeSignal:
-        logger.debug("FLAT %s — %s (%.3f)", symbol, reason, value)
+        if reason in self._FLAT_DEBUG_REASONS:
+            logger.debug("FLAT %s — %s (%.3f)", symbol, reason, value)
+        else:
+            logger.info(
+                "FLAT %s | reason=%s value=%.3f",
+                symbol, reason, value,
+            )
         return TradeSignal(
             symbol      = symbol,
             signal_type = SignalType.FLAT,
