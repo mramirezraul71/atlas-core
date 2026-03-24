@@ -18,9 +18,11 @@ function initNav() {
 }
 
 function onViewActivated(view) {
+  // Detener auto-refresh si salimos de posiciones
+  if (view !== 'positions') _stopPosAutoRefresh();
   switch (view) {
     case 'overview':   loadOverview(); break;
-    case 'positions':  loadPositions(); break;
+    case 'positions':  loadPositions(); _startPosAutoRefresh(); break;
     case 'scanner':    loadScanner(); break;
     case 'backtest':   /* user-triggered */ break;
     case 'journal':    loadJournal(); break;
@@ -175,44 +177,192 @@ document.addEventListener('click', e => {
 });
 
 // ── POSITIONS ─────────────────────────────────────────────────────
+let _posRefreshInterval = null;
+
+function _posTabInit() {
+  document.querySelectorAll('[data-pos-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-pos-tab]').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(`pos-tab-${btn.dataset.posTab}`)?.classList.add('active');
+      if (btn.dataset.posTab === 'history') loadPosHistory();
+    });
+  });
+}
+
+function _posDuration(openedAtMs) {
+  if (!openedAtMs) return '--';
+  const diffMin = Math.floor((Date.now() - openedAtMs) / 60000);
+  if (diffMin < 60) return `${diffMin}m`;
+  return `${Math.floor(diffMin / 60)}h ${diffMin % 60}m`;
+}
+
+function _posProgress(entry, current, sl, tp) {
+  if (!sl || !tp || !entry) return '';
+  const range = tp - sl;
+  if (range <= 0) return '';
+  const pct = Math.max(0, Math.min(100, ((current - sl) / range) * 100));
+  const color = pct >= 66 ? 'var(--green)' : pct >= 33 ? 'var(--yellow)' : 'var(--red)';
+  return `<div class="sl-tp-bar">
+    <div class="sl-tp-fill" style="width:${pct.toFixed(1)}%;background:${color}"></div>
+  </div>
+  <span style="font-size:10px;color:var(--text-muted)">${pct.toFixed(0)}%</span>`;
+}
+
 async function loadPositions() {
   try {
-    const r = await QuantAPI.positions();
-    const positions = r.data?.positions || r.data || [];
+    const [posR, healthR] = await Promise.all([
+      QuantAPI.positions().catch(() => null),
+      QuantAPI.health().catch(() => null),
+    ]);
+
+    const data      = posR?.data || {};
+    const positions = data.positions || (Array.isArray(posR?.data) ? posR.data : []);
+    const health    = healthR || {};
+
+    // ── KPIs ──
     document.getElementById('pos-count').textContent = positions.length;
 
+    const mode = (health.mode || 'paper').toUpperCase();
+    const modeBadge = document.getElementById('pos-mode-badge');
+    modeBadge.textContent  = mode;
+    modeBadge.style.color  = mode === 'LIVE' ? 'var(--red)' : 'var(--accent)';
+
+    let totalUnrealized = 0;
+    positions.forEach(p => { totalUnrealized += p.unrealized_pnl || 0; });
+    const unEl = document.getElementById('pos-unrealized');
+    unEl.textContent  = fmt.usd(totalUnrealized);
+    unEl.className    = `kpi-value ${totalUnrealized >= 0 ? 'green' : 'red'}`;
+
+    const realized = data.realized_pnl_today ?? health.realized_pnl ?? null;
+    const realEl = document.getElementById('pos-realized');
+    realEl.textContent = fmt.usd(realized);
+    realEl.className   = `kpi-value ${(realized || 0) >= 0 ? 'green' : 'red'}`;
+
+    const exposure = data.total_exposure ?? null;
+    document.getElementById('pos-exposure').textContent =
+      exposure != null ? fmt.usd(exposure) : '--';
+
+    const dtLeft = health.day_trades_remaining ?? data.day_trades_remaining ?? '--';
+    const dtUsed = health.days_trades_used     ?? data.day_trades_used     ?? '--';
+    document.getElementById('pos-dt-left').textContent = dtLeft;
+    document.getElementById('pos-dt-used').textContent = `${dtUsed} usados`;
+
+    const cb = health.circuit_breaker_active ?? data.circuit_breaker_active;
+    const cbEl = document.getElementById('pos-cb');
+    cbEl.textContent = cb ? '⛔ ACTIVO' : '✓ OK';
+    cbEl.className   = `kpi-value ${cb ? 'red' : 'green'}`;
+
+    // ── Tabla abiertas ──
     const tbody = document.getElementById('positions-body');
     if (!positions.length) {
       tbody.innerHTML = '<tr class="empty-row"><td colspan="11">Sin posiciones abiertas</td></tr>';
       return;
     }
 
-    let totalUnrealized = 0;
     tbody.innerHTML = positions.map(p => {
-      const pnl = p.unrealized_pnl || 0;
-      totalUnrealized += pnl;
-      const cls = pnl >= 0 ? 'green' : 'red';
-      return `<tr>
-        <td class="accent">${p.symbol}</td>
-        <td>${p.side || '--'}</td>
-        <td>${fmt.usd(p.entry_price)}</td>
-        <td>${fmt.usd(p.current_price)}</td>
-        <td>${fmt.num(p.quantity, 4)}</td>
-        <td class="${cls}">${fmt.usd(pnl)}</td>
-        <td class="${cls}">${fmt.pct(p.pnl_pct)}</td>
-        <td>${fmt.num(p.log_return, 4)}</td>
-        <td class="red">${fmt.usd(p.stop_loss)}</td>
-        <td class="green">${fmt.usd(p.take_profit)}</td>
-        <td>${fmt.num(p.atr, 4)}</td>
+      const pnl    = p.unrealized_pnl || 0;
+      const pnlCls = pnl >= 0 ? 'green' : 'red';
+      const side   = (p.side || '--').toUpperCase();
+      const sideCls = side === 'LONG' || side === 'BUY' ? 'green' : 'red';
+      const dur    = _posDuration(p.opened_at ? p.opened_at * 1000 : null);
+      const prog   = _posProgress(p.entry_price, p.current_price, p.stop_loss, p.take_profit);
+      const broker = p.broker || 'local';
+      const brokerColor = broker.includes('alpaca') ? '#9b59b6' :
+                          broker.includes('tradier') ? '#00d4aa' : 'var(--text-muted)';
+      return `<tr class="pos-row" data-symbol="${p.symbol}">
+        <td class="accent" style="font-family:var(--font-mono)">${p.symbol}</td>
+        <td class="${sideCls}" style="font-weight:600">${side}</td>
+        <td style="font-family:var(--font-mono)">${fmt.usd(p.entry_price)}</td>
+        <td style="font-family:var(--font-mono)">${fmt.usd(p.current_price)}</td>
+        <td>${fmt.num(p.quantity, 0)}</td>
+        <td class="${pnlCls}" style="font-family:var(--font-mono);font-weight:600">${fmt.usd(pnl)}</td>
+        <td class="${pnlCls}">${fmt.pct(p.pnl_pct)}</td>
+        <td style="font-size:11px;font-family:var(--font-mono)">
+          <span class="red">${fmt.usd(p.stop_loss)}</span>
+          <span style="color:var(--text-muted)"> / </span>
+          <span class="green">${fmt.usd(p.take_profit)}</span>
+        </td>
+        <td style="min-width:80px">${prog}</td>
+        <td style="color:var(--text-muted);font-size:11px">${dur}</td>
+        <td>
+          <button class="btn-xs red pos-close-btn" data-symbol="${p.symbol}"
+                  style="border-color:rgba(245,101,101,0.4)"
+                  title="Cerrar posición ${p.symbol}">✕</button>
+        </td>
       </tr>`;
     }).join('');
 
-    document.getElementById('pos-unrealized').textContent = fmt.usd(totalUnrealized);
-    document.getElementById('pos-unrealized').className =
-      `kpi-value ${totalUnrealized >= 0 ? 'green' : 'red'}`;
+    // Close buttons
+    document.querySelectorAll('.pos-close-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const sym = btn.dataset.symbol;
+        if (!confirm(`¿Cerrar posición ${sym}?`)) return;
+        try {
+          const r = await apiPost('/positions/close', { symbol: sym, reason: 'manual_dashboard' });
+          if (r.ok) {
+            toast(`Cierre enviado: ${sym}`, 'success');
+            setTimeout(loadPositions, 1000);
+          } else {
+            toast(`Error cerrando ${sym}: ${r.error}`, 'error');
+          }
+        } catch (e) {
+          toast(`Error: ${e.message}`, 'error');
+        }
+      });
+    });
+
   } catch (e) {
     toast('Error cargando posiciones: ' + e.message, 'error');
   }
+}
+
+async function loadPosHistory() {
+  try {
+    const r = await QuantAPI.journalEntries(50).catch(() => null);
+    const entries = r?.data?.entries || r?.data || [];
+    const today = new Date().toISOString().slice(0, 10);
+    const todayEntries = entries.filter(e => (e.closed_at || '').startsWith(today));
+
+    const tbody = document.getElementById('pos-history-body');
+    if (!todayEntries.length) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="10">Sin operaciones cerradas hoy</td></tr>';
+      return;
+    }
+    tbody.innerHTML = todayEntries.map(e => {
+      const pnl    = e.pnl || 0;
+      const pnlCls = pnl >= 0 ? 'green' : 'red';
+      const broker = e.broker || 'local';
+      const brokerLabel = broker.includes('alpaca') ? '🟣 Alpaca' :
+                          broker.includes('tradier') ? '🟢 Tradier' : '⚪ Local';
+      return `<tr>
+        <td style="font-size:11px;color:var(--text-muted)">${(e.closed_at || '').slice(11, 16)}</td>
+        <td class="accent" style="font-family:var(--font-mono)">${e.symbol}</td>
+        <td>${(e.side || '--').toUpperCase()}</td>
+        <td style="font-family:var(--font-mono)">${fmt.usd(e.entry_price)}</td>
+        <td style="font-family:var(--font-mono)">${fmt.usd(e.exit_price)}</td>
+        <td class="${pnlCls}" style="font-weight:600">${fmt.usd(pnl)}</td>
+        <td class="${pnlCls}">${fmt.pct(e.pnl_pct)}</td>
+        <td style="color:var(--text-muted);font-size:11px">${e.duration_min ? e.duration_min + 'm' : '--'}</td>
+        <td style="font-size:11px">${e.exit_reason || '--'}</td>
+        <td style="font-size:11px">${brokerLabel}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    toast('Error cargando historial: ' + e.message, 'error');
+  }
+}
+
+function _startPosAutoRefresh() {
+  document.getElementById('pos-auto-badge').style.display = 'inline-flex';
+  _posRefreshInterval = setInterval(loadPositions, 5000);
+}
+
+function _stopPosAutoRefresh() {
+  document.getElementById('pos-auto-badge').style.display = 'none';
+  clearInterval(_posRefreshInterval);
+  _posRefreshInterval = null;
 }
 
 // ── SCANNER ───────────────────────────────────────────────────────
@@ -547,6 +697,7 @@ document.getElementById('pos-refresh')?.addEventListener('click', loadPositions)
 // ── Init ──────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   initNav();
+  _posTabInit();
   startClock();
   initWS();
   loadOverview();

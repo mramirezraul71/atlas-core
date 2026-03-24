@@ -70,7 +70,7 @@ const MENU_ITEMS = [
     category: 'Integraciones',
     items: [
       { id: 'trading',      label: 'IA de trading',        desc: 'Analisis de mercados con Grok',                    icon: 'trending-up', route: '/trading',      badge: 'Beta' },
-      { id: 'atlas-quant',  label: 'Atlas Code-Quant',  desc: 'Bot de trading algoritmico con IA — puerto 8792', icon: 'trending-up', route: '/atlas-quant',  badge: 'Nuevo'  },
+      { id: 'atlas-quant',  label: 'Atlas Code-Quant',  desc: 'Bot de trading algoritmico con IA — puerto 8795', icon: 'trending-up', route: '/atlas-quant',  badge: 'Nuevo'  },
       { id: 'atlas-quant-scanner', label: 'Escaner Quant', desc: 'Barrido permanente de oportunidades explicables', icon: 'trending-up', route: '/atlas-quant', badge: 'Live' },
       { id: 'access-control', label: 'Control de Acceso', desc: 'Usuarios, sesiones y permisos del sistema',      icon: 'lock',        route: '/access-control' },
     ]

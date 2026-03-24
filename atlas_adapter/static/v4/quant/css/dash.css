@@ -664,6 +664,58 @@ body {
   to { opacity: 0; transform: translateY(4px); }
 }
 
+/* ── Tabs (Posiciones) ───────────────────────────────────────────── */
+.tab-bar {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+
+.tab-btn {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 7px 14px;
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition: color .15s, border-color .15s;
+  letter-spacing: 0.02em;
+}
+.tab-btn:hover { color: var(--text-primary); }
+.tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* ── SL/TP progress bar ──────────────────────────────────────────── */
+.sl-tp-bar {
+  height: 5px;
+  background: var(--bg-panel-2);
+  border-radius: 3px;
+  overflow: hidden;
+  width: 80px;
+  margin-bottom: 2px;
+  border: 1px solid var(--border);
+}
+.sl-tp-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width .4s ease;
+}
+
+/* ── Pos row hover ───────────────────────────────────────────────── */
+.pos-row { transition: background .1s; }
+.pos-row:hover { background: var(--bg-hover); }
+
 /* ── Scrollbars ──────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }

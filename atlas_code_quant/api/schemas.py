@@ -418,6 +418,23 @@ class StrategySelectorPayload(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+# ── Auto-cycle loop control ───────────────────────────────────────────────────
+
+class LoopStartRequest(BaseModel):
+    """POST /operation/loop/start — Inicia el ciclo autónomo scanner→operación."""
+    interval_sec: int = Field(120, ge=15, le=3600,
+        description="Segundos entre ciclos de evaluación.")
+    max_per_cycle: int = Field(1, ge=1, le=5,
+        description="Máximo de candidatos a evaluar por ciclo.")
+
+
+class VisionProviderRequest(BaseModel):
+    """POST /operation/vision/provider — Cambia el proveedor de visión activo."""
+    provider: str = Field(...,
+        description="Uno de: off, manual, desktop_capture, direct_nexus, atlas_push_bridge")
+    notes: str | None = None
+
+
 class ScannerConfigPayload(BaseModel):
     enabled: bool = True
     source: Literal["yfinance", "ccxt"] = "yfinance"

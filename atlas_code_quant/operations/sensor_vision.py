@@ -367,6 +367,82 @@ class SensorVisionService:
             "provider_ready": provider_ready,
         }
 
+    def diagnose(self) -> dict[str, Any]:
+        """Diagnóstico detallado del proveedor de visión — incluye causas de provider_ready=False."""
+        state = self._load()
+        provider = str(state.get("provider") or "direct_nexus")
+        checks: list[dict[str, Any]] = []
+
+        # NEXUS robot check (port 8002)
+        nexus_url = self._robot_base_url()
+        nexus_ok = self._direct_nexus_available()
+        checks.append({
+            "name": "nexus_robot",
+            "url": f"{nexus_url}/api/health",
+            "reachable": nexus_ok,
+            "note": "OK" if nexus_ok else (
+                f"No responde en {nexus_url}. Inicia atlas_nexus_robot (puerto 8002) "
+                "o cambia el proveedor a 'desktop_capture' o 'off'."
+            ),
+        })
+
+        # desktop capture check
+        desktop_ok = self._desktop_capture_available()
+        checks.append({
+            "name": "desktop_capture",
+            "reachable": desktop_ok,
+            "note": "Disponible" if desktop_ok else "No disponible en este entorno.",
+        })
+
+        # atlas_push_bridge check
+        bridge_status = self._atlas_push_bridge_status() if provider == "atlas_push_bridge" else None
+        bridge_ok = bool((bridge_status or {}).get("ok"))
+        if provider == "atlas_push_bridge":
+            checks.append({
+                "name": "atlas_push_bridge",
+                "url": f"{self._push_base_url()}/api/trading/quant/vision-bridge/status",
+                "reachable": bridge_ok,
+                "detail": bridge_status,
+            })
+
+        provider_ready = (
+            provider in {"off", "manual"}
+            or (provider == "desktop_capture" and desktop_ok)
+            or (provider == "direct_nexus" and nexus_ok)
+            or (provider == "atlas_push_bridge" and (bridge_ok or nexus_ok))
+        )
+
+        reasons_not_ready: list[str] = []
+        if not provider_ready:
+            if provider == "direct_nexus" and not nexus_ok:
+                reasons_not_ready.append(
+                    f"direct_nexus: NEXUS robot no responde en {nexus_url}. "
+                    "Soluciones: (1) iniciar atlas_nexus_robot, "
+                    "(2) POST /operation/vision/provider con provider='desktop_capture', "
+                    "(3) POST /operation/vision/provider con provider='off'."
+                )
+            if provider == "atlas_push_bridge" and not bridge_ok and not nexus_ok:
+                reasons_not_ready.append("atlas_push_bridge: ni el bridge ni el NEXUS robot responden.")
+            if provider == "desktop_capture" and not desktop_ok:
+                reasons_not_ready.append("desktop_capture: no disponible en este entorno.")
+
+        suggestion: str | None = None
+        if not provider_ready and desktop_ok:
+            suggestion = "desktop_capture disponible. Llama POST /operation/vision/provider con provider='desktop_capture' para activarla."
+        elif not provider_ready:
+            suggestion = "Ningún proveedor activo disponible. Usa provider='off' para deshabilitar el requisito de visión."
+
+        return {
+            "provider": provider,
+            "provider_ready": provider_ready,
+            "reasons_not_ready": reasons_not_ready,
+            "suggestion": suggestion,
+            "checks": checks,
+            "nexus_robot_url": nexus_url,
+            "desktop_capture_available": desktop_ok,
+            "last_capture_at": state.get("last_capture_at"),
+        }
+
     def capture_context_snapshot(self, *, label: str = "operation") -> dict[str, Any]:
         state = self._load()
         timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")

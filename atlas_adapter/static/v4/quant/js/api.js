@@ -3,10 +3,10 @@
    Wrapper REST + WebSocket para todos los endpoints del backend
    ================================================================ */
 
-// Si se sirve desde Atlas (8791), las llamadas van directamente a 8792.
-// Si se sirve desde el propio servidor quant (8792), same-origin funciona igual.
+// Si se sirve desde Atlas (8791), las llamadas van directamente a 8795.
+// Si se sirve desde el propio servidor quant (8795), same-origin funciona igual.
 const API_BASE = (location.port === '8791' || location.port === '443')
-  ? 'http://127.0.0.1:8792'
+  ? 'http://127.0.0.1:8795'
   : '';
 const API_KEY  = localStorage.getItem('quant_api_key') || '';
 
@@ -95,7 +95,7 @@ class QuantWS {
   connect() {
     const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
     const wsHost = (location.port === '8791' || location.port === '443')
-      ? '127.0.0.1:8792'
+      ? '127.0.0.1:8795'
       : location.host;
     const url = `${protocol}://${wsHost}/ws/live-updates`;
     this._ws = new WebSocket(url);

@@ -108,6 +108,7 @@ class LiveLoop:
         eod_time_et: tuple[int, int] = (16, 0),   # hora de cierre ET
         eod_close_min: int = 15,                  # cerrar N min antes del cierre
         learning_brain=None,                      # AtlasLearningBrain opcional
+        pattern_lab=None,                         # PatternLabService opcional
     ) -> None:
         self.camera         = camera
         self.stream         = stream
@@ -136,6 +137,11 @@ class LiveLoop:
         self.learning_brain = learning_brain
         if learning_brain is not None and signal_gen is not None:
             signal_gen._learning_brain = learning_brain
+
+        # PatternLabService — gate de señal + edge score
+        self.pattern_lab = pattern_lab
+        if pattern_lab is not None and signal_gen is not None:
+            signal_gen._pattern_lab = pattern_lab
 
         # PDTController — gestiona presupuesto de day trades
         # Se puede inyectar externamente o se crea uno con el modo actual
@@ -482,16 +488,53 @@ class LiveLoop:
             except Exception:
                 bar_state = None
 
+        # ── Pattern Lab context ────────────────────────────────────────────────
+        pattern_lab_ctx = None
+        if self.pattern_lab is not None and self.pattern_lab.is_fitted:
+            try:
+                # Construir un DataFrame de features desde TechnicalSnapshot
+                _feat_dict: dict = {}
+                for _attr in ["rsi_14", "macd", "macd_hist", "adx_14", "atr_20",
+                               "volume_ratio", "hurst", "bb_pct"]:
+                    _v = getattr(tech, _attr, None)
+                    if _v is not None:
+                        _feat_dict[_attr] = [float(_v)]
+                if _feat_dict:
+                    import pandas as _pd
+                    _recent_window = _pd.DataFrame(_feat_dict)
+                    _price_s = (_pd.Series(list(ti._closes), name="close")
+                                if hasattr(ti, "_closes") else None)
+                    pattern_lab_ctx = self.pattern_lab.evaluate_symbol(
+                        symbol        = symbol,
+                        recent_window = _recent_window,
+                        regime_output = regime,
+                        price_series  = _price_s,
+                    )
+            except Exception as _pl_err:
+                logger.debug("PatternLab._evaluate_and_execute(%s): %s", symbol, _pl_err)
+
+        # Recalcular size con signal_score del Pattern Lab
+        if pattern_lab_ctx is not None and pattern_lab_ctx.is_valid:
+            size_result = self.risk_engine.compute_size(
+                symbol            = symbol,
+                price             = price,
+                atr               = tech.atr_20,
+                signal_confidence = regime.confidence,
+                capital_override  = equity,
+                signal_score      = pattern_lab_ctx.signal_score,
+            )
+
         signal = self.signal_gen.evaluate(
-            symbol        = symbol,
-            regime        = regime,
-            tech          = tech,
-            cvd           = cvd,
-            iv            = iv,
-            entry_price   = price,
-            ocr_price     = ocr_price,
-            position_size = size_result.shares,
-            bar_state     = bar_state,
+            symbol          = symbol,
+            regime          = regime,
+            tech            = tech,
+            cvd             = cvd,
+            iv              = iv,
+            entry_price     = price,
+            ocr_price       = ocr_price,
+            position_size   = size_result.shares,
+            bar_state       = bar_state,
+            pattern_lab_ctx = pattern_lab_ctx,
         )
 
         # Ejecutar si hay señal accionable

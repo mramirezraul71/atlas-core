@@ -1,7 +1,7 @@
 /**
  * ATLAS v4.3 — Atlas Code-Quant
  * Shortcut y panel de estado del sistema de trading algorítmico.
- * API interna en puerto 8792.
+ * API interna en puerto 8795.
  */
 import { poll, stop } from '../lib/polling.js';
 
@@ -10,7 +10,7 @@ const MONITOR_POLL_ID = 'atlas-quant-monitor';
 const JOURNAL_POLL_ID = 'atlas-quant-journal';
 const OPERATION_POLL_ID = 'atlas-quant-operation';
 const SCANNER_POLL_ID = 'atlas-quant-scanner';
-const QUANT_API = 'http://127.0.0.1:8792';
+const QUANT_API = 'http://127.0.0.1:8795';
 const QUANT_API_V2 = `${QUANT_API}/api/v2/quant`;
 const API_KEY   = 'atlas-quant-local';
 const QUANT_WS = `${QUANT_API.replace(/^http/i, 'ws')}/api/v2/quant/ws/live-updates`;
@@ -1944,6 +1944,46 @@ function _renderOperationStatus(container, payload = {}, { syncForm = false } = 
       </div>
     </div>
   `;
+  // ── Auto-cycle loop panel ──────────────────────────────────────────────────
+  const loopEl = container.querySelector('#aq-op-loop');
+  if (loopEl) {
+    _renderLoopPanel(container, loopEl);
+  }
+  // ── Vision provider panel ──────────────────────────────────────────────────
+  const visionEl = container.querySelector('#aq-op-vision');
+  if (visionEl && vision) {
+    const providerReady = vision.provider_ready;
+    const provider = vision.provider || 'direct_nexus';
+    visionEl.innerHTML = `
+      <div class="approval-card" style="padding:12px;margin-top:12px;background:rgba(255,255,255,0.02)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <div class="section-title" style="font-size:14px;margin:0">Vision de camara</div>
+          <span class="chip ${providerReady ? 'green' : 'red'}">${providerReady ? 'Conectada' : 'Sin conexion'}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px">
+          <div class="provider-card" style="padding:10px">
+            <div class="provider-role">Proveedor</div>
+            <div class="provider-name" style="font-size:13px">${_esc(_labelVisionMode(provider))}</div>
+          </div>
+          <div class="provider-card" style="padding:10px">
+            <div class="provider-role">Ultima captura</div>
+            <div class="provider-name" style="font-size:13px">${_esc(vision.last_capture_at || 'nunca')}</div>
+          </div>
+          <div class="provider-card" style="padding:10px">
+            <div class="provider-role">Integridad pantalla</div>
+            <div class="provider-name" style="font-size:13px;color:${vision.screen_integrity_ok ? 'var(--accent-green)' : 'var(--accent-orange)'}">${vision.screen_integrity_ok ? 'OK' : 'alerta'}</div>
+          </div>
+        </div>
+        ${!providerReady ? `
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <span style="font-size:11px;color:var(--accent-orange)">Cambia proveedor:</span>
+          ${['off','desktop_capture','direct_nexus'].map(p => `
+            <button class="action-btn" style="font-size:11px;padding:4px 8px" onclick="_setVisionProvider(this,${JSON.stringify(p)})">${_esc(p)}</button>
+          `).join('')}
+        </div>` : ''}
+      </div>
+    `;
+  }
   listEl.innerHTML = positions.length === 0
     ? `<div class="empty-state" style="padding:16px 0"><div class="empty-sub">Sin estrategias activas para telemetria operacional</div></div>`
     : positions.map((item) => `
@@ -1979,6 +2019,108 @@ async function _fetchOperationStatus(container) {
     summaryEl.innerHTML = `<div class="empty-state" style="padding:12px 0"><div class="empty-title" style="color:var(--accent-red)">Operacion no disponible</div><div class="empty-sub">${_esc(e.message || 'Error')}</div></div>`;
     listEl.innerHTML = '';
     return null;
+  }
+}
+
+// ── Auto-cycle loop panel ──────────────────────────────────────────────────────
+async function _renderLoopPanel(container, el) {
+  try {
+    const d = await _fetchJsonRetry(`${QUANT_API_V2}/operation/loop/status`, { headers: _headers() });
+    const loop = d?.ok ? (d.data || {}) : {};
+    const running = !!loop.running;
+    el.innerHTML = `
+      <div class="approval-card" style="padding:12px;margin-top:12px;background:rgba(255,255,255,0.02)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <div class="section-title" style="font-size:14px;margin:0">Auto-cycle loop</div>
+          <span class="chip ${running ? 'green live-badge' : 'orange'}">${running ? 'Corriendo' : 'Detenido'}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px">
+          <div class="provider-card" style="padding:10px">
+            <div class="provider-role">Ciclos</div>
+            <div class="provider-name" style="font-size:13px">${_esc(String(loop.cycle_count || 0))}</div>
+          </div>
+          <div class="provider-card" style="padding:10px">
+            <div class="provider-role">Ultimo ciclo</div>
+            <div class="provider-name" style="font-size:12px">${_esc(loop.last_cycle_at || 'nunca')}</div>
+          </div>
+          <div class="provider-card" style="padding:10px">
+            <div class="provider-role">Ultimo simbolo</div>
+            <div class="provider-name" style="font-size:13px">${_esc(loop.last_candidate_symbol || '—')}</div>
+          </div>
+          <div class="provider-card" style="padding:10px">
+            <div class="provider-role">Ultima accion</div>
+            <div class="provider-name" style="font-size:13px">${_esc(loop.last_action || '—')}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+          ${!running ? `<button class="action-btn" onclick="_loopStart(this)">Iniciar loop</button>` : ''}
+          ${running  ? `<button class="action-btn" style="background:var(--accent-orange)" onclick="_loopStop(this)">Detener loop</button>` : ''}
+          ${loop.last_result?.symbol ? `<span class="chip ${loop.last_result.blocked ? 'orange' : 'green'}">${_esc(loop.last_result.symbol)}: ${loop.last_result.blocked ? 'bloqueado' : 'evaluado OK'}</span>` : ''}
+          ${loop.error ? `<span class="chip red">Error: ${_esc(String(loop.error).substring(0,80))}</span>` : ''}
+        </div>
+      </div>
+    `;
+  } catch {
+    el.innerHTML = '';
+  }
+}
+
+async function _loopStart(btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const d = await fetch(`${QUANT_API_V2}/operation/loop/start`, {
+      method: 'POST',
+      headers: _headers(),
+      body: JSON.stringify({ interval_sec: 120, max_per_cycle: 1 }),
+    }).then(r => r.json());
+    if (!d?.ok) throw new Error(d?.error || 'Error al iniciar loop');
+    const container = ACTIVE_CONTAINER;
+    if (container) {
+      const el = container.querySelector('#aq-op-loop');
+      if (el) _renderLoopPanel(container, el);
+    }
+  } catch (e) {
+    alert('Error al iniciar auto-cycle: ' + (e.message || e));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function _loopStop(btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const d = await fetch(`${QUANT_API_V2}/operation/loop/stop`, {
+      method: 'POST',
+      headers: _headers(),
+    }).then(r => r.json());
+    if (!d?.ok) throw new Error(d?.error || 'Error al detener loop');
+    const container = ACTIVE_CONTAINER;
+    if (container) {
+      const el = container.querySelector('#aq-op-loop');
+      if (el) _renderLoopPanel(container, el);
+    }
+  } catch (e) {
+    alert('Error al detener auto-cycle: ' + (e.message || e));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function _setVisionProvider(btn, provider) {
+  if (btn) btn.disabled = true;
+  try {
+    const d = await fetch(`${QUANT_API_V2}/operation/vision/provider`, {
+      method: 'POST',
+      headers: _headers(),
+      body: JSON.stringify({ provider }),
+    }).then(r => r.json());
+    if (!d?.ok) throw new Error(d?.error || 'Error cambiando proveedor');
+    const container = ACTIVE_CONTAINER;
+    if (container) await _fetchOperationStatus(container);
+  } catch (e) {
+    alert('Error: ' + (e.message || e));
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -3265,7 +3407,7 @@ export default {
                 <div class="provider-dot down" id="aq-dot"></div>
                 <span style="font-size:18px;font-weight:700" id="aq-status">—</span>
               </div>
-              <div class="stat-card-sub">puerto 8792</div>
+              <div class="stat-card-sub">puerto 8795</div>
             </div>
             <div class="stat-card">
               <div class="stat-card-label">Tiempo activo</div>
@@ -3722,6 +3864,8 @@ export default {
             <div id="aq-op-summary">
               <div style="padding:16px;text-align:center"><div class="spinner" style="margin:0 auto"></div></div>
             </div>
+            <div id="aq-op-loop"></div>
+            <div id="aq-op-vision"></div>
             <div id="aq-op-strategies" style="margin-top:14px"></div>
             <div id="aq-op-result" style="margin-top:14px"></div>
           </div>
@@ -4143,7 +4287,7 @@ export default {
               ['🧠','models/','ML Señales'],
               ['⚙️','strategies/','Dirigido por eventos'],
               ['💼','execution/','Portafolio y riesgo'],
-              ['🌐','api/','REST :8792'],
+              ['🌐','api/','REST :8795'],
               ['🔬','backtesting/','Motor de backtest'],
             ].map(([icon,name,desc]) => `
               <div class="provider-card" style="padding:12px">

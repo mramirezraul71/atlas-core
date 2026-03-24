@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OptionStrat · ATLAS Code-Quant</title>
   <script>
-    const _BASE = (location.port === '8792' || location.port === '') ? '/static' : '/quant-static';
+    const _BASE = (location.port !== '8791') ? '/static' : '/quant-static';
     document.write('<link rel="stylesheet" href="' + _BASE + '/options/style.css"/>');
   </script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
@@ -15,7 +15,7 @@
   <!-- ── TOPBAR ─────────────────────────────────────────────────── -->
   <header class="topbar">
     <div class="topbar-brand">
-      <a href="javascript:void(0)" onclick="window.open('http://'+location.hostname+':8792/ui','_self')" class="back-btn" title="Volver a Quant">
+      <a href="javascript:void(0)" onclick="window.open('http://'+location.hostname+':'+location.port+'/ui','_self')" class="back-btn" title="Volver a Quant">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
         Quant
       </a>
@@ -432,7 +432,7 @@
   <div class="toast-container" id="toast-container"></div>
 
   <script>
-    const _S = (location.port === '8792' || location.port === '') ? '/static' : '/quant-static';
+    const _S = (location.port !== '8791') ? '/static' : '/quant-static';
     const _appScript = document.createElement('script');
     _appScript.src = _S + '/options/app.js';
     document.body.appendChild(_appScript);

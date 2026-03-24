@@ -126,11 +126,12 @@ class SignalGenerator:
     MAX_HOLD_DAYS = 20
     TRAILING_ACTIVATION = 1.5  # activar trailing cuando ganancia ≥ 1.5×ATR
 
-    def __init__(self, learning_brain=None) -> None:
+    def __init__(self, learning_brain=None, pattern_lab=None) -> None:
         self._positions: dict[str, OpenPosition] = {}
         self._signal_history: list[TradeSignal] = []
         self._cvd_history: list[float] = []   # para z-score
         self._learning_brain = learning_brain  # AtlasLearningBrain opcional
+        self._pattern_lab = pattern_lab        # PatternLabService opcional
 
     # ── Evaluación de señal ───────────────────────────────────────────────────
 
@@ -145,7 +146,8 @@ class SignalGenerator:
         ocr_price: float | None = None,
         current_capital: float = 100_000.0,
         position_size: int = 0,
-        bar_state=None,   # BarState opcional — activa filtro de momentum si se provee
+        bar_state=None,         # BarState opcional — activa filtro de momentum si se provee
+        pattern_lab_ctx=None,   # PatternLabContext opcional — gate de signal_score
     ) -> TradeSignal:
         """Evalúa condiciones y retorna señal de trading o FLAT."""
 
@@ -218,6 +220,17 @@ class SignalGenerator:
                     return self._flat(symbol, entry_price, atr,
                                       "momentum_not_confirmed_short", 0.0)
 
+        # ── 7.8. Pattern Lab gate (signal_score) ──────────────────────────────
+        _pattern_score = 0.5   # neutral si no hay contexto
+        if pattern_lab_ctx is not None:
+            _pattern_score = float(getattr(pattern_lab_ctx, "signal_score", 0.5))
+            _min_score = getattr(
+                getattr(self._pattern_lab, "config", None), "min_signal_score_to_pass", 0.55
+            ) if self._pattern_lab is not None else 0.55
+            if _pattern_score < _min_score:
+                return self._flat(symbol, entry_price, atr,
+                                  "pattern_lab_score_below_threshold", _pattern_score)
+
         # ── 8. Construir señal confirmada ─────────────────────────────────────
         tp, sl = self._compute_tp_sl(entry_price, atr, signal_dir)
         trailing = regime.regime in (MarketRegime.BULL, MarketRegime.BEAR)
@@ -245,9 +258,17 @@ class SignalGenerator:
             trailing_active = trailing,
         )
 
+        # Añadir Pattern Lab score al metadata
+        if pattern_lab_ctx is not None:
+            signal.metadata["pattern_score"]      = round(_pattern_score, 4)
+            signal.metadata["motif_edge"]         = round(getattr(pattern_lab_ctx, "motif_edge_score", 0.5), 4)
+            signal.metadata["tin_prob"]           = round(getattr(pattern_lab_ctx, "tin_prob_positive", 0.5), 4)
+            signal.metadata["arima_deviation"]    = round(getattr(pattern_lab_ctx, "arima_deviation", 0.0), 6)
+            signal.metadata["n_motifs"]           = getattr(pattern_lab_ctx, "n_motifs_found", 0)
+
         logger.info(
-            "SEÑAL %s %s | conf=%.2f | TP=%.2f | SL=%.2f | OCR=%s",
-            signal_dir.value, symbol, regime.confidence,
+            "SEÑAL %s %s | conf=%.2f | pattern_score=%.3f | TP=%.2f | SL=%.2f | OCR=%s",
+            signal_dir.value, symbol, regime.confidence, _pattern_score,
             tp, sl, "✓" if visual_ok else "✗"
         )
 
