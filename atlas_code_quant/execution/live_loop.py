@@ -107,6 +107,7 @@ class LiveLoop:
         position_manager=None,   # PositionManager (opcional; se crea internamente si None)
         eod_time_et: tuple[int, int] = (16, 0),   # hora de cierre ET
         eod_close_min: int = 15,                  # cerrar N min antes del cierre
+        learning_brain=None,                      # AtlasLearningBrain opcional
     ) -> None:
         self.camera         = camera
         self.stream         = stream
@@ -130,6 +131,11 @@ class LiveLoop:
         else:
             PM = _get_position_manager_cls()
             self.position_manager = PM(risk_engine=risk_engine)
+
+        # AtlasLearningBrain — scoring y registro de trades (opcional)
+        self.learning_brain = learning_brain
+        if learning_brain is not None and signal_gen is not None:
+            signal_gen._learning_brain = learning_brain
 
         # PDTController — gestiona presupuesto de day trades
         # Se puede inyectar externamente o se crea uno con el modo actual
@@ -617,8 +623,60 @@ class LiveLoop:
                         result.status in ("submitted", "simulated", "hid_fallback") and
                         not close.is_partial):
                     self.pdt_controller.record_close(close.symbol)
+
+                # Registrar trade cerrado en AtlasLearningBrain
+                if (self.learning_brain is not None and
+                        result.status in ("submitted", "simulated", "hid_fallback") and
+                        not close.is_partial):
+                    self._record_closed_trade(close, result, equity)
+
             except Exception as exc:
                 logger.error("[LL] Error ejecutando cierre %s: %s", close.symbol, exc)
+
+    # ── AtlasLearningBrain — registro de trades cerrados ──────────────────────
+
+    def _record_closed_trade(self, close, result, equity: float) -> None:
+        """Construye un TradeEvent desde CloseSignal y lo registra en learning_brain."""
+        try:
+            import uuid
+            from atlas_code_quant.learning.trade_events import TradeEvent
+
+            fill_price = getattr(result, "fill_price", None) or close.current_price
+            r_initial = abs(close.entry_price - close.stop_loss)
+            if r_initial == 0:
+                r_initial = close.atr or 1.0
+
+            side_str = "buy" if close.side == "long" else "sell"
+            if side_str == "buy":
+                r_realized = (fill_price - close.entry_price) / r_initial
+            else:
+                r_realized = (close.entry_price - fill_price) / r_initial
+
+            now = datetime.datetime.utcnow()
+            trade = TradeEvent(
+                trade_id=str(uuid.uuid4()),
+                symbol=close.symbol,
+                asset_class="equity_stock",  # default; mejorar con AssetClassifier si disponible
+                side=side_str,
+                entry_time=now - datetime.timedelta(seconds=60),  # aproximación
+                exit_time=now,
+                timeframe="1m",
+                entry_price=close.entry_price,
+                exit_price=fill_price,
+                stop_loss_price=close.stop_loss,
+                r_initial=r_initial,
+                r_realized=round(r_realized, 4),
+                mae_r=0.0,
+                mfe_r=0.0,
+                setup_type=close.strategy or "unknown",
+                regime="UNKNOWN",
+                exit_type=close.signal_kind,
+                capital_at_entry=equity,
+                position_size=close.qty_to_close,
+            )
+            self.learning_brain.record_trade(trade)
+        except Exception as _lb_exc:
+            logger.warning("[LL] learning_brain.record_trade error: %s", _lb_exc)
 
     # ── Hotkeys físicos ───────────────────────────────────────────────────────
 

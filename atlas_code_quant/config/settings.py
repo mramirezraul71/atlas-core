@@ -208,6 +208,20 @@ class TradingConfig:
     scanner_include_indices: bool = os.getenv("ATLAS_SCANNER_INCLUDE_INDICES", "true").strip().lower()  not in {"0","false","no"}
     scanner_include_crypto: bool  = os.getenv("ATLAS_SCANNER_INCLUDE_CRYPTO",  "false").strip().lower() not in {"0","false","no"}
 
+    # AtlasLearningBrain — criterios de readiness y scoring híbrido
+    learning_brain_enabled: bool = os.getenv("ATLAS_LEARNING_BRAIN_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+    learning_brain_ml_weight: float = _fenv("ATLAS_LEARNING_ML_WEIGHT", 0.4)
+    learning_brain_stats_weight: float = _fenv("ATLAS_LEARNING_STATS_WEIGHT", 0.6)
+    learning_brain_retrain_every_n: int = _ienv("ATLAS_LEARNING_RETRAIN_N", 50)
+    # Umbrales de readiness para live
+    readiness_min_n_trades: int = _ienv("ATLAS_READINESS_MIN_TRADES", 300)
+    readiness_min_months: float = _fenv("ATLAS_READINESS_MIN_MONTHS", 3.0)
+    readiness_min_profit_factor: float = _fenv("ATLAS_READINESS_MIN_PF", 1.5)
+    readiness_min_calmar: float = _fenv("ATLAS_READINESS_MIN_CALMAR", 1.5)
+    readiness_max_dd_pct: float = _fenv("ATLAS_READINESS_MAX_DD_PCT", 15.0)
+    readiness_min_expectancy_r: float = _fenv("ATLAS_READINESS_MIN_EXPECTANCY_R", 0.20)
+    readiness_min_stability: float = _fenv("ATLAS_READINESS_MIN_STABILITY", 0.70)
+
     # Adaptive learning
     adaptive_learning_enabled: bool = os.getenv("QUANT_ADAPTIVE_LEARNING_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     adaptive_learning_refresh_sec: int = _ienv("QUANT_ADAPTIVE_LEARNING_REFRESH_SEC", 300)
