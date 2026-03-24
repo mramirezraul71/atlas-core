@@ -126,10 +126,11 @@ class SignalGenerator:
     MAX_HOLD_DAYS = 20
     TRAILING_ACTIVATION = 1.5  # activar trailing cuando ganancia ≥ 1.5×ATR
 
-    def __init__(self) -> None:
+    def __init__(self, learning_brain=None) -> None:
         self._positions: dict[str, OpenPosition] = {}
         self._signal_history: list[TradeSignal] = []
         self._cvd_history: list[float] = []   # para z-score
+        self._learning_brain = learning_brain  # AtlasLearningBrain opcional
 
     # ── Evaluación de señal ───────────────────────────────────────────────────
 
@@ -269,6 +270,51 @@ class SignalGenerator:
         )
 
         self._signal_history.append(signal)
+
+        # ── 9. Scoring de aprendizaje (AtlasLearningBrain) ───────────────────
+        if self._learning_brain is not None:
+            try:
+                from atlas_code_quant.learning.trade_events import SignalContext
+                import datetime as _dt
+                ctx = SignalContext(
+                    symbol=symbol,
+                    asset_class=signal.asset_class,
+                    side=signal_dir.value,
+                    setup_type=signal.strategy or "unknown",
+                    regime=signal.regime,
+                    timeframe="1m",
+                    entry_price=entry_price,
+                    stop_loss_price=sl,
+                    r_initial=abs(entry_price - sl),
+                    rsi=tech.rsi_14,
+                    macd_hist=getattr(tech, "macd_hist", 0.0),
+                    atr=atr,
+                    bb_pct=getattr(tech, "bb_pct", 0.0),
+                    volume_ratio=tech.volume_ratio,
+                    cvd=cvd.delta_imbalance,
+                    iv_rank=iv.iv_rank_30d,
+                    iv_hv_ratio=getattr(iv, "iv_hv_ratio", 1.0),
+                    capital=current_capital,
+                    position_size=float(position_size),
+                    signal_time=_dt.datetime.utcnow(),
+                )
+                score_result = self._learning_brain.score_signal(ctx)
+                signal.metadata["learning_score"] = score_result.total_score
+                signal.metadata["learning_approved"] = score_result.approved
+                signal.metadata["learning_reasoning"] = score_result.reasoning
+                signal.metadata["size_multiplier"] = score_result.size_multiplier
+
+                if not score_result.approved:
+                    logger.info(
+                        "SEÑAL %s %s BLOQUEADA por learning_brain: score=%.3f < threshold=%.2f — %s",
+                        signal_dir.value, symbol, score_result.total_score,
+                        score_result.threshold_used, score_result.reasoning,
+                    )
+                    return self._flat(symbol, entry_price, atr, "learning_score_below_threshold",
+                                      score_result.total_score)
+            except Exception as _lb_exc:
+                logger.warning("learning_brain.score_signal error: %s", _lb_exc)
+
         return signal
 
     # ── Gestión de salida ─────────────────────────────────────────────────────

@@ -78,6 +78,9 @@ class ATLASQuantCore:
         self._latest_quotes: dict[str, object] = {}
         self._cycle_count = 0
 
+        # AtlasLearningBrain (inicializado bajo demanda)
+        self.learning_brain = None
+
     # ── Setup ──────────────────────────────────────────────────────────────────
 
     def setup(self) -> None:
@@ -411,6 +414,16 @@ class ATLASQuantCore:
 
     # ── Activación LIVE completa (Módulo 9) ──────────────────────────────────
 
+    def check_system_readiness_for_live(self):
+        """Evalúa si el sistema está listo para cuenta real (7 criterios).
+
+        Retorna SystemReadinessReport. Si no hay learning_brain, retorna None.
+        """
+        if self.learning_brain is None:
+            logger.warning("check_system_readiness_for_live: learning_brain no inicializado")
+            return None
+        return self.learning_brain.is_system_ready_for_live()
+
     def activate_live(
         self,
         symbols: list[str] | None = None,
@@ -418,10 +431,11 @@ class ATLASQuantCore:
         rtmp_url: str = "rtmp://192.168.1.10/live/atlas",
         force_rerun_test: bool = False,
         skip_confirmation: bool = False,
+        skip_readiness_check: bool = False,
     ) -> bool:
         """Ejecuta el protocolo completo de activación LIVE (Módulo 9).
 
-        Flujo: calibración → test runner → ProductionGuard →
+        Flujo: [readiness check] → calibración → test runner → ProductionGuard →
                Tradier preview test → double confirmation → launch live.
 
         Retorna True si ATLAS se lanzó en LIVE, False si se canceló.
@@ -431,6 +445,21 @@ class ATLASQuantCore:
             core = ATLASQuantCore()
             core.activate_live(symbols=["SPY", "AAPL"])
         """
+        # ── Gate de readiness (AtlasLearningBrain) ────────────────────────────
+        if not skip_readiness_check and self.learning_brain is not None:
+            readiness = self.learning_brain.is_system_ready_for_live()
+            if not readiness.ready:
+                logger.warning(
+                    "activate_live BLOQUEADO por readiness check: %s\n"
+                    "  Criterios fallidos: %s\n"
+                    "  Siguiente paso: %s",
+                    readiness.summary,
+                    ", ".join(readiness.failed),
+                    readiness.next_step,
+                )
+                return False
+            logger.info("Readiness check OK: %s", readiness.summary)
+
         from atlas_code_quant.production.live_activation import activate
 
         rc = activate(
