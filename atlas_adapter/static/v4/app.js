@@ -1,5 +1,5 @@
-/**
- * ATLAS v4 — App Shell
+﻿/**
+ * ATLAS v4 â€” App Shell
  * Orchestrates router, topbar, mega menu, theme, and module registry.
  */
 const THEMES = ['cyan', 'purple', 'green', 'blue', 'orange', 'pink', 'red', 'gold'];
@@ -33,15 +33,15 @@ function _renderModuleError(v, moduleId, errMsg) {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
         Inicio
       </button>
-      <h2>Error de módulo</h2>
+      <h2>Error de mÃ³dulo</h2>
     </div>
     <div class="module-body">
       <div class="codebox" style="margin-bottom:12px;color:var(--accent-red)">
-        No se pudo cargar el módulo <strong>${_esc(moduleId || 'unknown')}</strong>.
+        No se pudo cargar el mÃ³dulo <strong>${_esc(moduleId || 'unknown')}</strong>.
       </div>
       <div class="codebox" style="margin-bottom:12px;font-size:12px">${_esc(errMsg || 'Error desconocido')}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="action-btn primary" id="moderr-retry">Reintentar módulo</button>
+        <button class="action-btn primary" id="moderr-retry">Reintentar mÃ³dulo</button>
         <button class="action-btn" id="moderr-reload">Recargar UI</button>
       </div>
     </div>
@@ -81,7 +81,7 @@ function _buildTopbar(app) {
       <span id="topbar-safe-mode" style="display:none;padding:3px 8px;border-radius:999px;border:1px solid rgba(248,81,73,.45);color:#f85149;font-size:11px;font-weight:700;">UI Safe Mode</span>
       <button class="topbar-btn" id="btn-theme" title="Cambiar tema">${SVG.theme}</button>
       <button class="topbar-btn" id="btn-home" title="Inicio">${SVG.home}</button>
-      <button class="topbar-btn" id="btn-menu" title="Menú" aria-label="Menú principal">${SVG.menu}</button>
+      <button class="topbar-btn" id="btn-menu" title="MenÃº" aria-label="MenÃº principal">${SVG.menu}</button>
     </div>
   `;
   app.appendChild(bar);
@@ -104,7 +104,7 @@ function _openUpdatePanel() {
     <div class="update-panel">
       <button type="button" class="update-panel-close" aria-label="Cerrar">&times;</button>
       <h2>Actualizar ATLAS</h2>
-      <p class="subtitle">Comprobar prerequisitos, estado del repo y aplicar actualizaciones desde el remoto. Si «Aplicar» falla por política, configura <code>POLICY_ALLOW_UPDATE_APPLY=true</code> en <code>config/atlas.env</code> y reinicia el servidor.</p>
+      <p class="subtitle">Comprobar prerequisitos, estado del repo y aplicar actualizaciones desde el remoto. Si Â«AplicarÂ» falla por polÃ­tica, configura <code>POLICY_ALLOW_UPDATE_APPLY=true</code> en <code>config/atlas.env</code> y reinicia el servidor.</p>
       <div class="update-panel-section">
         <div class="update-panel-section-title">Software</div>
         <div id="update-prereqs"></div>
@@ -115,8 +115,8 @@ function _openUpdatePanel() {
       </div>
       <div class="update-panel-actions">
         <button type="button" class="update-panel-btn" id="update-btn-refresh">Comprobar</button>
-        <button type="button" class="update-panel-btn primary" id="update-btn-apply">Aplicar actualización</button>
-        <button type="button" class="update-panel-btn" id="update-btn-restart" title="Reinicia el servidor ATLAS para cargar cambios (config, código).">Reiniciar servidor</button>
+        <button type="button" class="update-panel-btn primary" id="update-btn-apply">Aplicar actualizaciÃ³n</button>
+        <button type="button" class="update-panel-btn" id="update-btn-restart" title="Reinicia el servidor ATLAS para cargar cambios (config, cÃ³digo).">Reiniciar servidor</button>
       </div>
       <div class="update-panel-log" id="update-log"></div>
     </div>
@@ -149,7 +149,7 @@ function _openUpdatePanel() {
         <div class="update-panel-row"><span class="status-dot ${d.repo_has_changes ? 'warn' : 'ok'}"></span> Repo: ${_esc(d.branch || '?')} ${d.repo_has_changes ? '(cambios locales)' : 'limpio'}</div>
       `;
     } catch (e) {
-      prereqsEl.innerHTML = '<div class="update-panel-row"><span class="status-dot error"></span> Error: ' + _esc(String(e)) + '. Comprueba que el servidor esté en marcha y recarga la página.</div>';
+      prereqsEl.innerHTML = '<div class="update-panel-row"><span class="status-dot error"></span> Error: ' + _esc(String(e)) + '. Comprueba que el servidor estÃ© en marcha y recarga la pÃ¡gina.</div>';
     }
   }
 
@@ -159,10 +159,10 @@ function _openUpdatePanel() {
       const j = await r.json();
       const d = (j.data || j) || {};
       repoEl.innerHTML = `
-        <div class="update-panel-row"><span class="status-dot ok"></span> Rama: ${_esc(d.branch || '—')}</div>
-        <div class="update-panel-row">Commit actual: ${_esc((d.head_commit || '').slice(0, 8) || '—')}</div>
-        <div class="update-panel-row">Remoto: ${_esc((d.remote_commit || '').slice(0, 8) || '—')}</div>
-        <div class="update-panel-row"><span class="status-dot ${d.has_update ? 'warn' : 'ok'}"></span> ${d.has_update ? 'Hay actualizaciones disponibles' : 'Al día'}</div>
+        <div class="update-panel-row"><span class="status-dot ok"></span> Rama: ${_esc(d.branch || 'â€”')}</div>
+        <div class="update-panel-row">Commit actual: ${_esc((d.head_commit || '').slice(0, 8) || 'â€”')}</div>
+        <div class="update-panel-row">Remoto: ${_esc((d.remote_commit || '').slice(0, 8) || 'â€”')}</div>
+        <div class="update-panel-row"><span class="status-dot ${d.has_update ? 'warn' : 'ok'}"></span> ${d.has_update ? 'Hay actualizaciones disponibles' : 'Al dÃ­a'}</div>
       `;
     } catch (e) {
       repoEl.innerHTML = '<div class="update-panel-row"><span class="status-dot error"></span> Error: ' + _esc(String(e)) + '</div>';
@@ -181,11 +181,11 @@ function _openUpdatePanel() {
     log('Comprobando...');
     await loadPrereqs();
     await loadRepo();
-    log('Comprobación lista.');
+    log('ComprobaciÃ³n lista.');
   });
 
   overlay.querySelector('#update-btn-restart').addEventListener('click', async () => {
-    if (!confirm('¿Reiniciar el servidor ATLAS ahora? Se cerrará esta sesión en ~3 segundos. Deberás recargar la página cuando vuelva a estar en línea.')) return;
+    if (!confirm('Â¿Reiniciar el servidor ATLAS ahora? Se cerrarÃ¡ esta sesiÃ³n en ~3 segundos. DeberÃ¡s recargar la pÃ¡gina cuando vuelva a estar en lÃ­nea.')) return;
     const btn = overlay.querySelector('#update-btn-restart');
     btn.disabled = true;
     log('Solicitando reinicio del servidor...');
@@ -194,12 +194,12 @@ function _openUpdatePanel() {
       const j = await r.json().catch(() => ({}));
       if (r.ok && j.ok) {
         log(j.data && j.data.message ? j.data.message : 'Reinicio programado.');
-        log('Recarga la página en 5-10 segundos (F5).');
+        log('Recarga la pÃ¡gina en 5-10 segundos (F5).');
       } else {
         log('Error: ' + (j.error || r.status));
         if (r.status === 404) {
           log('');
-          log('Este servidor no tiene la ruta de reinicio (código antiguo). Reinicio manual:');
+          log('Este servidor no tiene la ruta de reinicio (cÃ³digo antiguo). Reinicio manual:');
           log('  1. Cierra esta ventana y en una terminal ejecuta:');
           log('  2. cd ' + (window.location.pathname.startsWith('/ui') ? 'tu_carpeta_ATLAS_PUSH' : 'C:\\ATLAS_PUSH'));
           log('  3. powershell -ExecutionPolicy Bypass -File scripts\\restart_push_from_api.ps1');
@@ -207,16 +207,16 @@ function _openUpdatePanel() {
         }
       }
     } catch (e) {
-      log('Error: ' + String(e) + ' (el servidor puede estar reiniciándose).');
+      log('Error: ' + String(e) + ' (el servidor puede estar reiniciÃ¡ndose).');
     }
     btn.disabled = false;
   });
 
   overlay.querySelector('#update-btn-apply').addEventListener('click', async () => {
-    if (!confirm('¿Aplicar actualización desde el remoto? (fetch + staging + smoke + promote).')) return;
+    if (!confirm('Â¿Aplicar actualizaciÃ³n desde el remoto? (fetch + staging + smoke + promote).')) return;
     const btn = overlay.querySelector('#update-btn-apply');
     btn.disabled = true;
-    log('Aplicando actualización...');
+    log('Aplicando actualizaciÃ³n...');
     try {
       const r = await fetch('/update/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
       const j = await r.json();
@@ -228,7 +228,7 @@ function _openUpdatePanel() {
         log('Error: ' + err);
         if (j.data && j.data.steps && Array.isArray(j.data.steps)) {
           const lastBad = j.data.steps.filter(s => !s.ok).pop();
-          if (lastBad) log('Último paso fallido: ' + (lastBad.step || '') + (lastBad.error ? ' — ' + lastBad.error : ''));
+          if (lastBad) log('Ãšltimo paso fallido: ' + (lastBad.step || '') + (lastBad.error ? ' â€” ' + lastBad.error : ''));
         }
         if (err.includes('POLICY_ALLOW_UPDATE_APPLY') || err.includes('policy')) {
           log('');
@@ -288,10 +288,10 @@ function _handleRoute() {
         if (typeof cleanup === 'function') try { cleanup(); } catch {}
         try { mod.destroy?.(); } catch {}
       };
-      // Estandariza texto del botón back en todos los módulos
+      // Estandariza texto del botÃ³n back en todos los mÃ³dulos
       v.querySelectorAll('.back-btn').forEach(btn => {
         const txt = btn.textContent.trim();
-        if (txt === 'Inicio' || txt === 'Home' || txt === '← Home') {
+        if (txt === 'Inicio' || txt === 'Home' || txt === 'â† Home') {
           const svg = btn.querySelector('svg');
           btn.innerHTML = (svg ? svg.outerHTML : '') + ' Inicio';
         }
@@ -304,7 +304,7 @@ function _handleRoute() {
   const mod = MODULE_REGISTRY[moduleId];
   if (mod) { _mountMod(mod, v); return; }
 
-  // Prefix routing para sub-rutas (ej: body-module/ans → MODULE_REGISTRY['body-module'])
+  // Prefix routing para sub-rutas (ej: body-module/ans â†’ MODULE_REGISTRY['body-module'])
   const slashIdx = moduleId.indexOf('/');
   if (slashIdx >= 0) {
     const prefixId  = moduleId.slice(0, slashIdx);
@@ -319,7 +319,7 @@ function _handleRoute() {
     return;
   }
 
-  // Unknown route → landing
+  // Unknown route â†’ landing
   location.hash = '/';
 }
 
@@ -330,7 +330,7 @@ const MODULE_BUILD = '20260320-paper-phase3d-order-flow';
     'autonomy', 'healing', 'approvals', 'audit', 'comms',
     'events', 'api_explorer', 'tools_menu', 'software_center', 'voice', 'trading', 'body_module', 'bety_eventos',
     'tutorias', 'cognitive', 'vision', 'chat', 'apps', 'clawd_direct', 'codex_supervisor', 'live_diagnostic',
-    'atlas_quant', 'access_control', 'doctor',
+    'atlas_quant', 'access_control',
   ];
   for (const name of MODULE_NAMES) {
     try {
@@ -430,3 +430,4 @@ if (document.readyState === 'loading') {
 } else {
   main();
 }
+

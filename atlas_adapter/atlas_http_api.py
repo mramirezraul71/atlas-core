@@ -1,4 +1,4 @@
-﻿r"""ATLAS HTTP API adapter
+r"""ATLAS HTTP API adapter
 Expone /status /tools /execute usando el command_router.handle de C:\ATLAS\modules\command_router.py
 """
 import asyncio
@@ -35,7 +35,6 @@ from atlas_adapter.routes.status_observability import (
     build_router as build_status_observability_router,
 )
 from atlas_adapter.routes.trading_quant import build_router as build_trading_quant_router
-from atlas_adapter.routes.doctor_router import build_router as build_doctor_router
 from atlas_adapter.services.nexus_robot_runtime import (
     get_robot_status,
 )
@@ -103,7 +102,6 @@ app.include_router(
 )
 app.include_router(build_nexus_runtime_router(repo_root=BASE_DIR, env_path=ENV_PATH))
 app.include_router(build_trading_quant_router())
-app.include_router(build_doctor_router())
 
 app.add_middleware(
     CORSMiddleware,
@@ -3434,15 +3432,6 @@ def api_kernel_event_bus_reset_errors(body: dict):
         return {"ok": False, "error": str(e)}
 
 
-@app.get("/doctor")
-def doctor_endpoint():
-    """Diagnostico rapido del sistema."""
-    try:
-        from atlas_runtime import doctor
-
-        return {"ok": True, "result": doctor()}
-    except Exception as e:
-        return {"ok": True, "result": f"Doctor unavailable: {e}"}
 
 
 @app.get("/modules/check-all")
@@ -6064,7 +6053,6 @@ def tools():
         "ok": True,
         "tools": [
             "atlas.status",
-            "atlas.doctor",
             "atlas.modules",
             "atlas.snapshot",
             "atlas.note.create",
@@ -6082,7 +6070,7 @@ def execute(step: Step):
     if t == "atlas.status":
         cmd = "/status"
     elif t == "atlas.doctor":
-        cmd = "/doctor"
+        return {"ok": False, "error": "Tool deshabilitada: atlas.doctor"}
     elif t == "atlas.modules":
         cmd = "/modules"
     elif t == "atlas.snapshot":
@@ -13171,7 +13159,7 @@ TU IDENTIDAD:
 - Tienes sistema nervioso (ANS), memoria episodica, semantica, autobiografica, lifelog, world model, aprendizaje por refuerzo, gobernanza, vision y comunicaciones.
 
 TUS CAPACIDADES REALES:
-- Autodiagnostico: puedes verificar tu propia salud via /health, /doctor, /support/selfcheck
+- Autodiagnostico: puedes verificar tu propia salud via /health, /support/selfcheck
 - Memoria: almacenas experiencias, aprendes de errores, consolidas conocimiento
 - Gobernanza: operas en modos governed/growth/emergency con aprobacion del Owner para acciones criticas
 - Comunicaciones: envias y recibes mensajes por Telegram y WhatsApp
@@ -16951,6 +16939,3 @@ async def quant_static(file_path: str):
 # ─────────────────────────────────────────────────────────────────────────────
 
 _dedupe_http_routes()
-
-
-

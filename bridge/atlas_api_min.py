@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List
@@ -12,13 +12,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 
-from atlas_runtime import doctor, handle, modules_report, status
+from atlas_runtime import handle, modules_report, status
 
 app = FastAPI(title="ATLAS Bridge API", version="3.8.0")
 
-# ═══════════════════════════════════════════════════════════════
-# Integrar API de Tutorías
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# Integrar API de TutorÃ­as
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 try:
     from modules.humanoid.quality.tutorias.api import router as tutorias_router
 
@@ -27,9 +27,9 @@ try:
 except ImportError:
     TUTORIAS_ENABLED = False
 
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Integrar API de Chat Thread Manager
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 try:
     from chat_api_router import router as chat_router
 
@@ -38,9 +38,9 @@ try:
 except ImportError:
     CHAT_ENABLED = False
 
-# ═══════════════════════════════════════════════════════════════
-# Definición de módulos del sistema
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# DefiniciÃ³n de mÃ³dulos del sistema
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 HUMANOID_MODULES = [
     "brain",
     "memory_engine",
@@ -59,13 +59,13 @@ HUMANOID_MODULES = [
     "quality",
 ]
 
-# Cache de estado de módulos
+# Cache de estado de mÃ³dulos
 _modules_cache: Dict[str, Dict[str, Any]] = {}
 _last_modules_check: float = 0
 
-# ═══════════════════════════════════════════════════════════════
-# Sistema de Bitácora Central
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# Sistema de BitÃ¡cora Central
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 _bitacora: List[Dict[str, Any]] = []
 _bitacora_max_entries = 500
 
@@ -73,7 +73,7 @@ _bitacora_max_entries = 500
 def log_to_bitacora(
     message: str, level: str = "info", source: str = "system", data: Dict = None
 ):
-    """Registrar evento en la bitácora central"""
+    """Registrar evento en la bitÃ¡cora central"""
     import datetime
 
     entry = {
@@ -113,16 +113,10 @@ def _tools():
         "ok": True,
         "tools": [
             {"name": "atlas.status", "path": "/status", "method": "GET"},
-            {"name": "atlas.doctor", "path": "/doctor", "method": "GET"},
             {"name": "atlas.modules", "path": "/modules", "method": "GET"},
             {"name": "atlas.run", "path": "/run", "method": "POST"},
         ],
     }
-
-
-@app.get("/doctor")
-def _doctor():
-    return {"ok": True, "result": doctor()}
 
 
 @app.get("/modules")
@@ -136,18 +130,18 @@ def _run(payload: dict):
     return {"ok": True, "result": handle(text)}
 
 
-# ═══════════════════════════════════════════════════════════════
-# Conexión al Cerebro - Endpoints completos
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ConexiÃ³n al Cerebro - Endpoints completos
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-# ═══════════════════════════════════════════════════════════════
-# Endpoints de Bitácora
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# Endpoints de BitÃ¡cora
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 
 @app.get("/bitacora")
 def get_bitacora(limit: int = 100, source: str = None, level: str = None):
-    """Obtener entradas de la bitácora"""
+    """Obtener entradas de la bitÃ¡cora"""
     entries = _bitacora
 
     if source:
@@ -165,7 +159,7 @@ def get_bitacora(limit: int = 100, source: str = None, level: str = None):
 
 @app.get("/bitacora/stream")
 def get_bitacora_since(since_id: int = 0):
-    """Obtener entradas nuevas desde un ID específico (para polling)"""
+    """Obtener entradas nuevas desde un ID especÃ­fico (para polling)"""
     new_entries = [e for e in _bitacora if e["id"] > since_id]
     return {
         "ok": True,
@@ -177,7 +171,7 @@ def get_bitacora_since(since_id: int = 0):
 
 @app.post("/bitacora/log")
 def add_bitacora_entry(payload: dict):
-    """Agregar entrada a la bitácora desde el frontend"""
+    """Agregar entrada a la bitÃ¡cora desde el frontend"""
     message = payload.get("message", "")
     level = payload.get("level", "info")
     source = payload.get("source", "system")
@@ -192,23 +186,23 @@ def add_bitacora_entry(payload: dict):
 
 @app.delete("/bitacora")
 def clear_bitacora():
-    """Limpiar la bitácora"""
+    """Limpiar la bitÃ¡cora"""
     global _bitacora
     count = len(_bitacora)
     _bitacora = []
-    log_to_bitacora("Bitácora limpiada", "info", "system", {"cleared": count})
+    log_to_bitacora("BitÃ¡cora limpiada", "info", "system", {"cleared": count})
     return {"ok": True, "cleared": count}
 
 
-# ═══════════════════════════════════════════════════════════════
-# Conexión al Cerebro - Con logging
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# ConexiÃ³n al Cerebro - Con logging
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 
 @app.get("/brain/status")
 def brain_status():
     """Estado completo del cerebro"""
-    # No loguear consultas rutinarias de estado (evita spam en bitácora)
+    # No loguear consultas rutinarias de estado (evita spam en bitÃ¡cora)
     try:
         from modules.humanoid.brain import BrainOrchestrator
 
@@ -261,13 +255,13 @@ def brain_process(payload: dict):
         return {"ok": False, "error": str(e)}
 
 
-# ═══════════════════════════════════════════════════════════════
-# Módulos del Cuerpo - Check individual
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# MÃ³dulos del Cuerpo - Check individual
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 
 def check_module(module_name: str) -> Dict[str, Any]:
-    """Verificar estado de un módulo específico"""
+    """Verificar estado de un mÃ³dulo especÃ­fico"""
     try:
         module_path = f"modules.humanoid.{module_name}"
         mod = __import__(module_path, fromlist=[module_name])
@@ -275,7 +269,7 @@ def check_module(module_name: str) -> Dict[str, Any]:
             "id": module_name,
             "status": "ok",
             "connected": True,
-            "message": f"Módulo {module_name} operativo",
+            "message": f"MÃ³dulo {module_name} operativo",
         }
     except ImportError as e:
         return {
@@ -295,14 +289,14 @@ def check_module(module_name: str) -> Dict[str, Any]:
 
 @app.get("/modules/check/{module_id}")
 def check_single_module(module_id: str):
-    """Verificar un módulo específico"""
-    log_to_bitacora(f"Verificando módulo: {module_id}", "info", "modules")
+    """Verificar un mÃ³dulo especÃ­fico"""
+    log_to_bitacora(f"Verificando mÃ³dulo: {module_id}", "info", "modules")
     if module_id not in HUMANOID_MODULES:
-        log_to_bitacora(f"Módulo no existe: {module_id}", "error", "modules")
-        return {"ok": False, "error": f"Módulo {module_id} no existe"}
+        log_to_bitacora(f"MÃ³dulo no existe: {module_id}", "error", "modules")
+        return {"ok": False, "error": f"MÃ³dulo {module_id} no existe"}
     result = check_module(module_id)
     log_to_bitacora(
-        f"Módulo {module_id}: {result['status']}",
+        f"MÃ³dulo {module_id}: {result['status']}",
         "success" if result["status"] == "ok" else "error",
         "modules",
     )
@@ -311,7 +305,7 @@ def check_single_module(module_id: str):
 
 @app.get("/modules/check-all")
 def check_all_modules():
-    """Verificar todos los módulos"""
+    """Verificar todos los mÃ³dulos"""
     global _modules_cache, _last_modules_check
 
     # Cache de 5 segundos
@@ -340,13 +334,13 @@ def check_all_modules():
 
 @app.post("/modules/reconnect/{module_id}")
 def reconnect_module(module_id: str):
-    """Intentar reconectar un módulo"""
-    log_to_bitacora(f"Reconectando módulo: {module_id}", "info", "modules")
+    """Intentar reconectar un mÃ³dulo"""
+    log_to_bitacora(f"Reconectando mÃ³dulo: {module_id}", "info", "modules")
     if module_id not in HUMANOID_MODULES:
-        log_to_bitacora(f"Módulo no existe: {module_id}", "error", "modules")
-        return {"ok": False, "error": f"Módulo {module_id} no existe"}
+        log_to_bitacora(f"MÃ³dulo no existe: {module_id}", "error", "modules")
+        return {"ok": False, "error": f"MÃ³dulo {module_id} no existe"}
 
-    # Forzar reimportación
+    # Forzar reimportaciÃ³n
     module_path = f"modules.humanoid.{module_id}"
     try:
         import importlib
@@ -359,21 +353,21 @@ def reconnect_module(module_id: str):
         # Actualizar cache
         _modules_cache[module_id] = check_module(module_id)
         log_to_bitacora(
-            f"Módulo {module_id} reconectado exitosamente", "success", "modules"
+            f"MÃ³dulo {module_id} reconectado exitosamente", "success", "modules"
         )
-        return {"ok": True, "message": f"Módulo {module_id} reconectado"}
+        return {"ok": True, "message": f"MÃ³dulo {module_id} reconectado"}
     except Exception as e:
         log_to_bitacora(f"Error reconectando {module_id}: {e}", "error", "modules")
         return {"ok": False, "error": str(e)}
 
 
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Sistema Nervioso
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Sistema Nervioso - Estado completo
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 _nervous_state = {
     "mode": "normal",  # normal, stress, calm
@@ -405,12 +399,12 @@ def nervous_status():
     """Estado del sistema nervioso"""
     import random
 
-    # No loguear consultas rutinarias de estado (evita spam en bitácora)
-    # Actualizar señales dinámicamente
+    # No loguear consultas rutinarias de estado (evita spam en bitÃ¡cora)
+    # Actualizar seÃ±ales dinÃ¡micamente
     _nervous_state["signals_per_min"] += random.randint(1, 5)
     _nervous_state["latency_ms"] = random.randint(8, 18)
 
-    # Simular variación de heartbeat según modo
+    # Simular variaciÃ³n de heartbeat segÃºn modo
     if _nervous_state["mode"] == "normal":
         _nervous_state["heartbeat"] = random.randint(68, 78)
     elif _nervous_state["mode"] == "stress":
@@ -433,7 +427,7 @@ def nervous_status():
 
 @app.get("/nervous/diagnostic")
 def nervous_diagnostic():
-    """Diagnóstico completo del sistema nervioso"""
+    """DiagnÃ³stico completo del sistema nervioso"""
     import random
 
     # Verificar todos los nodos
@@ -475,7 +469,7 @@ def get_nervous_nodes():
 
 @app.get("/nervous/node/{node_id}")
 def get_nervous_node(node_id: str):
-    """Obtener estado de un nodo específico"""
+    """Obtener estado de un nodo especÃ­fico"""
     if node_id not in _nervous_state["nodes"]:
         return {"ok": False, "error": f"Nodo {node_id} no existe"}
     return {"ok": True, "node": node_id, **_nervous_state["nodes"][node_id]}
@@ -483,28 +477,28 @@ def get_nervous_node(node_id: str):
 
 @app.post("/nervous/simulate/stress")
 def simulate_stress():
-    """Simular respuesta de estrés"""
+    """Simular respuesta de estrÃ©s"""
     global _nervous_state
-    log_to_bitacora("⚡ Simulación de estrés iniciada", "warning", "nervous")
+    log_to_bitacora("âš¡ SimulaciÃ³n de estrÃ©s iniciada", "warning", "nervous")
     _nervous_state["mode"] = "stress"
     _nervous_state["heartbeat"] = 110
     _nervous_state["nodes"]["simpatico"]["load"] = 90
     _nervous_state["nodes"]["cardiaco"]["load"] = 85
-    log_to_bitacora("Sistema simpático activado - BPM: 110", "warning", "nervous")
-    return {"ok": True, "mode": "stress", "message": "Sistema simpático activado"}
+    log_to_bitacora("Sistema simpÃ¡tico activado - BPM: 110", "warning", "nervous")
+    return {"ok": True, "mode": "stress", "message": "Sistema simpÃ¡tico activado"}
 
 
 @app.post("/nervous/simulate/calm")
 def simulate_calm():
-    """Activar sistema parasimpático para calmar"""
+    """Activar sistema parasimpÃ¡tico para calmar"""
     global _nervous_state
-    log_to_bitacora("🧘 Activando sistema parasimpático", "info", "nervous")
+    log_to_bitacora("ðŸ§˜ Activando sistema parasimpÃ¡tico", "info", "nervous")
     _nervous_state["mode"] = "calm"
     _nervous_state["heartbeat"] = 65
     _nervous_state["nodes"]["parasimpatico"]["load"] = 80
     _nervous_state["nodes"]["simpatico"]["load"] = 15
     log_to_bitacora("Sistema normalizado - BPM: 65", "success", "nervous")
-    return {"ok": True, "mode": "calm", "message": "Sistema parasimpático activado"}
+    return {"ok": True, "mode": "calm", "message": "Sistema parasimpÃ¡tico activado"}
 
 
 @app.post("/nervous/reset")
@@ -539,10 +533,10 @@ def test_reflexes():
 
 @app.get("/nervous/signals")
 def get_signals():
-    """Obtener señales del sistema nervioso"""
+    """Obtener seÃ±ales del sistema nervioso"""
     import random
 
-    # Actualizar señales dinámicamente
+    # Actualizar seÃ±ales dinÃ¡micamente
     for key in _nervous_state["signals"]:
         base = _nervous_state["signals"][key]
         variation = random.randint(-5, 5)
@@ -551,13 +545,13 @@ def get_signals():
     return {"ok": True, "signals": _nervous_state["signals"]}
 
 
-# ═══════════════════════════════════════════════════════════════
-# Vision / Cámaras
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# Vision / CÃ¡maras
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 
 def get_camera_names_windows() -> Dict[int, str]:
-    """Obtener nombres reales de cámaras en Windows usando WMI"""
+    """Obtener nombres reales de cÃ¡maras en Windows usando WMI"""
     camera_names = {}
     try:
         import subprocess
@@ -604,7 +598,7 @@ def get_camera_names_windows() -> Dict[int, str]:
 
 @app.get("/vision/cameras")
 def list_cameras():
-    """Listar cámaras disponibles con nombres reales"""
+    """Listar cÃ¡maras disponibles con nombres reales"""
     try:
         import cv2
 
@@ -617,12 +611,12 @@ def list_cameras():
             if cap.isOpened():
                 ret, frame = cap.read()
                 if ret:
-                    # Obtener resolución
+                    # Obtener resoluciÃ³n
                     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                     fps = int(cap.get(cv2.CAP_PROP_FPS)) or 30
 
-                    # Usar nombre real si está disponible
+                    # Usar nombre real si estÃ¡ disponible
                     name = camera_names.get(i, f"Camera {i}")
 
                     cameras.append(
@@ -643,14 +637,14 @@ def list_cameras():
 
 @app.post("/vision/scan")
 def scan_cameras():
-    """Escanear cámaras"""
+    """Escanear cÃ¡maras"""
     return list_cameras()
 
 
 @app.get("/vision/capture/{camera_id}")
 def capture_frame(camera_id: int):
-    """Capturar frame de una cámara"""
-    log_to_bitacora(f"Capturando frame de cámara {camera_id}", "info", "vision")
+    """Capturar frame de una cÃ¡mara"""
+    log_to_bitacora(f"Capturando frame de cÃ¡mara {camera_id}", "info", "vision")
     try:
         import base64
 
@@ -658,8 +652,8 @@ def capture_frame(camera_id: int):
 
         cap = cv2.VideoCapture(camera_id)
         if not cap.isOpened():
-            log_to_bitacora(f"Cámara {camera_id} no disponible", "error", "vision")
-            return {"ok": False, "error": f"Cámara {camera_id} no disponible"}
+            log_to_bitacora(f"CÃ¡mara {camera_id} no disponible", "error", "vision")
+            return {"ok": False, "error": f"CÃ¡mara {camera_id} no disponible"}
 
         ret, frame = cap.read()
         cap.release()
@@ -681,9 +675,9 @@ def capture_frame(camera_id: int):
         return {"ok": False, "error": str(e)}
 
 
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Gobernanza
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 _governance_mode = "governed"
 
@@ -705,14 +699,14 @@ def set_governance_mode(mode: str):
     """Cambiar modo de gobernanza"""
     global _governance_mode
     if mode not in ["growth", "governed", "emergency"]:
-        return {"ok": False, "error": "Modo inválido"}
+        return {"ok": False, "error": "Modo invÃ¡lido"}
     _governance_mode = mode
     return {"ok": True, "mode": _governance_mode}
 
 
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Config IA
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 _ai_config = {
     "mode": "auto",
@@ -723,7 +717,7 @@ _ai_config = {
     "top_k": 40,
     "max_tokens": 2048,
     "repeat_penalty": 1.1,
-    "system_prompt": "Eres ATLAS, un sistema de inteligencia artificial avanzado. Responde de forma concisa, precisa y útil.",
+    "system_prompt": "Eres ATLAS, un sistema de inteligencia artificial avanzado. Responde de forma concisa, precisa y Ãºtil.",
     "memory_context": "long",
     "context_window": 8192,
     "ollama_url": "http://localhost:11434",
@@ -744,7 +738,7 @@ _ai_config = {
 
 @app.get("/config/ai")
 def get_ai_config():
-    """Obtener configuración de IA"""
+    """Obtener configuraciÃ³n de IA"""
     # No enviar API key al frontend
     config_safe = {k: v for k, v in _ai_config.items() if k != "api_key"}
     config_safe["has_api_key"] = bool(_ai_config.get("api_key"))
@@ -753,7 +747,7 @@ def get_ai_config():
 
 @app.post("/config/ai")
 def update_ai_config(payload: dict):
-    """Actualizar configuración de IA"""
+    """Actualizar configuraciÃ³n de IA"""
     global _ai_config
 
     # Campos permitidos
@@ -781,12 +775,12 @@ def update_ai_config(payload: dict):
         if key in payload:
             _ai_config[key] = payload[key]
 
-    return {"ok": True, "message": "Configuración actualizada"}
+    return {"ok": True, "message": "ConfiguraciÃ³n actualizada"}
 
 
 @app.post("/config/ai/test")
 def test_ai_connection():
-    """Probar conexión con el proveedor de IA"""
+    """Probar conexiÃ³n con el proveedor de IA"""
     provider = _ai_config.get("provider", "ollama")
 
     try:
@@ -799,7 +793,7 @@ def test_ai_connection():
                 return {"ok": True, "provider": provider, "message": "Ollama conectado"}
             return {
                 "ok": False,
-                "error": f"Ollama respondió con status {res.status_code}",
+                "error": f"Ollama respondiÃ³ con status {res.status_code}",
             }
 
         elif provider == "openai":
@@ -817,11 +811,11 @@ def test_ai_connection():
                 return {"ok": True, "provider": provider, "message": "OpenAI conectado"}
             return {
                 "ok": False,
-                "error": f"OpenAI respondió con status {res.status_code}",
+                "error": f"OpenAI respondiÃ³ con status {res.status_code}",
             }
 
         elif provider == "anthropic":
-            # Test básico de Anthropic
+            # Test bÃ¡sico de Anthropic
             return {
                 "ok": True,
                 "provider": provider,
@@ -940,15 +934,15 @@ def brain_generate(payload: dict):
 
         else:
             # Fallback para otros proveedores
-            return {"ok": False, "error": f"Proveedor {provider} no implementado aún"}
+            return {"ok": False, "error": f"Proveedor {provider} no implementado aÃºn"}
 
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Dashboard UI
-# ═══════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 @app.get("/ui", response_class=HTMLResponse)
 def serve_dashboard():
     """Serve the main ATLAS Dashboard"""
@@ -982,3 +976,4 @@ def get_version():
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8791)
+

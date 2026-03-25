@@ -1,4 +1,4 @@
-"""FastAPI lifespan hooks extracted from the main PUSH API module."""
+﻿"""FastAPI lifespan hooks extracted from the main PUSH API module."""
 from __future__ import annotations
 
 import asyncio
@@ -189,7 +189,7 @@ async def app_lifespan(app):
                         )
 
                         append_evolution_log(
-                            message="[QUALITY] Autonomía POT iniciada (dispatcher+triggers).",
+                            message="[QUALITY] AutonomÃ­a POT iniciada (dispatcher+triggers).",
                             ok=bool(quality_result.get("all_ok", False)),
                             source="quality",
                         )
@@ -242,12 +242,12 @@ async def app_lifespan(app):
 
             def _on_nexus_change(connected: bool, message: str) -> None:
                 if connected:
-                    text = "[CONEXIÓN] Buscando NEXUS en puerto 8000... OK."
+                    text = "[CONEXIÃ“N] Buscando NEXUS en puerto 8000... OK."
                 else:
                     extra = (message or "").strip()
                     extra = (": " + extra[:120]) if extra else ""
                     text = (
-                        "[CONEXIÓN] Buscando NEXUS en puerto 8000... Desconectado"
+                        "[CONEXIÃ“N] Buscando NEXUS en puerto 8000... Desconectado"
                         + extra
                     )
                 try:
@@ -301,10 +301,10 @@ async def app_lifespan(app):
         log.info("Iniciando background tasks de ATLAS AUTONOMOUS...")
         health_agg = HealthAggregator()
         health_agg.start_monitoring()
-        log.info("✓ Health Monitoring activo")
+        log.info("âœ“ Health Monitoring activo")
         alert_mgr = AlertManager()
         asyncio.create_task(alert_mgr.start_evaluation_loop(60))
-        log.info("✓ Alert Manager activo")
+        log.info("âœ“ Alert Manager activo")
         learning = LearningOrchestrator()
 
         async def _learning_loop():
@@ -312,12 +312,12 @@ async def app_lifespan(app):
                 await asyncio.sleep(3600)
                 try:
                     learning.run_learning_cycle()
-                    log.info("✓ Learning cycle ejecutado")
+                    log.info("âœ“ Learning cycle ejecutado")
                 except Exception as exc:
                     log.error("Error en learning cycle: %s", exc)
 
         asyncio.create_task(_learning_loop())
-        log.info("✓ Learning Engine activo")
+        log.info("âœ“ Learning Engine activo")
 
         metrics_agg = MetricsAggregator()
 
@@ -435,7 +435,7 @@ async def app_lifespan(app):
                 await asyncio.sleep(telemetry_interval_sec)
 
         asyncio.create_task(_telemetry_loop())
-        log.info("✓ Telemetry Metrics activo (intervalo %ss)", telemetry_interval_sec)
+        log.info("âœ“ Telemetry Metrics activo (intervalo %ss)", telemetry_interval_sec)
     except Exception as exc:
         logging.getLogger(__name__).debug(
             "ATLAS AUTONOMOUS background tasks no iniciados: %s", exc
@@ -478,7 +478,7 @@ async def app_lifespan(app):
             await start_supervisor_daemon()
     except Exception:
         pass
-    # ── Self-Healing Loop — autocorrección de todos los módulos ATLAS ─────────
+    # â”€â”€ Self-Healing Loop â€” autocorrecciÃ³n de todos los mÃ³dulos ATLAS â”€â”€â”€â”€â”€â”€â”€â”€â”€
     try:
         if os.getenv("ATLAS_SELF_HEALING_ENABLED", "true").strip().lower() in (
             "1", "true", "yes", "y", "on"
@@ -513,29 +513,18 @@ async def app_lifespan(app):
                         daemon=True,
                     )
                     _heal_thread.start()
-                    logging.getLogger(__name__).info("✓ Self-Healing Loop activo")
+                    logging.getLogger(__name__).info("âœ“ Self-Healing Loop activo")
     except Exception as _heal_err:
         logging.getLogger(__name__).warning("Self-Healing Loop no pudo iniciar: %s", _heal_err)
-    # ── ATLAS DOCTOR — Sistema Nervioso Central ────────────────────────────────
-    try:
-        if os.getenv("ATLAS_DOCTOR_ENABLED", "true").strip().lower() in (
-            "1", "true", "yes", "y", "on"
-        ):
-            from atlas_adapter.services.doctor_nervous_system import get_doctor
-            _doctor_inst = get_doctor()
-            await _doctor_inst.start_nervous_system()
-            logging.getLogger(__name__).info("✓ ATLAS DOCTOR activo")
-    except Exception as _doc_err:
-        logging.getLogger(__name__).warning("ATLAS DOCTOR no pudo iniciar: %s", _doc_err)
+    # ATLAS DOCTOR eliminado
     yield
-    try:
-        from atlas_adapter.services.doctor_nervous_system import get_doctor as _gd
-        await _gd().stop_nervous_system()
-    except Exception:
-        pass
     try:
         from atlas_adapter.supervisor_daemon import stop_supervisor_daemon
 
         await stop_supervisor_daemon()
     except Exception:
         pass
+
+
+
+

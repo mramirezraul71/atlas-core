@@ -1,4 +1,4 @@
-import json
+﻿import json
 import os
 import re
 from datetime import datetime
@@ -34,7 +34,7 @@ def _now_stamp():
 
 def _safe_name(s: str) -> str:
     s = s.strip().replace('"', "").replace("'", "")
-    s = re.sub(r"[^\w\- áéíóúÁÉÍÓÚñÑ]", "", s)
+    s = re.sub(r"[^\w\- Ã¡Ã©Ã­Ã³ÃºÃÃ‰ÃÃ“ÃšÃ±Ã‘]", "", s)
     s = re.sub(r"\s+", " ", s).strip()
     if not s:
         s = "nota"
@@ -43,7 +43,7 @@ def _safe_name(s: str) -> str:
 
 def _note_path(title: str) -> Path:
     title = _safe_name(title)
-    # archivo amigable (mantiene espacios). Si prefieres guiones, cambia aquí.
+    # archivo amigable (mantiene espacios). Si prefieres guiones, cambia aquÃ­.
     return NOTES_DIR / f"{title}.md"
 
 
@@ -65,54 +65,26 @@ def status() -> str:
 
 def doctor() -> str:
     _ensure_dirs()
-    parts = []
-    parts.append(("VAULT", VAULT_DIR))
-    parts.append(("NOTES", NOTES_DIR))
-    parts.append(("LOGS", LOGS_DIR))
-    parts.append(("SNAPS", SNAPS_DIR))
-
-    ok = True
-    lines = ["ATLAS DOCTOR:"]
-    for name, p in parts:
-        try:
-            p.mkdir(parents=True, exist_ok=True)
-            test = p / ".atlas_write_test"
-            with open(test, "w", encoding="utf-8") as f:
-                f.write("ok")
-            test.unlink(missing_ok=True)
-            lines.append(f"- {name}: OK")
-        except Exception as e:
-            ok = False
-            lines.append(f"- {name}: FAIL ({e})")
-
-    if ok:
-        _write_log("doctor: OK")
-    else:
-        _write_log("doctor: FAIL")
-
-    return "\n".join(lines)
-
+    _write_log("doctor: removed")
+    return "ATLAS: el modulo Doctor fue eliminado."
 
 def modules_report() -> str:
     return (
-        " Módulos activos:\n"
+        " Modulos activos:\n"
         "- Telegram Bot\n"
         "- Command Router\n"
         "- Notes (Vault)\n"
         "- Snapshots\n"
         "- Logs\n"
-        "- Doctor\n"
         "- Inbox\n"
         "\nComandos:\n"
         "/status\n"
-        "/doctor\n"
         "/modules\n"
         "/snapshot etiqueta\n"
         "/note create Titulo\n"
         "/note append Titulo | texto\n"
         "/note view Titulo\n"
     )
-
 
 def note_create(title: str) -> str:
     _ensure_dirs()
@@ -185,7 +157,7 @@ def snapshot(label: str = "snapshot") -> str:
 # =========================
 def handle(text: str) -> str:
     if not text:
-        return "ATLAS: vacío."
+        return "ATLAS: vacÃ­o."
 
     t = text.strip()
 
@@ -230,7 +202,7 @@ def handle(text: str) -> str:
     # ----- Natural Spanish (your current way) -----
     # "Atlas, crea una nota llamada X"
     m = re.search(
-        r"crea\s+una\s+nota\s+(llamada|con\s+el\s+t[ií]tulo)\s+(.+)$",
+        r"crea\s+una\s+nota\s+(llamada|con\s+el\s+t[iÃ­]tulo)\s+(.+)$",
         low,
         re.IGNORECASE,
     )
@@ -251,8 +223,8 @@ def handle(text: str) -> str:
         label = m3.group(1).strip()
         return snapshot(label)
 
-    # "Atlas, dime qué módulos tienes activos"
-    if "módulos" in low and ("activos" in low or "tienes" in low):
+    # "Atlas, dime quÃ© mÃ³dulos tienes activos"
+    if "mÃ³dulos" in low and ("activos" in low or "tienes" in low):
         return modules_report()
 
     # ----- Repo push: subir repo de esta u otra app (Cursor/chat) -----
@@ -293,9 +265,9 @@ def handle(text: str) -> str:
         except Exception as e:
             return "Error al subir repo: " + str(e)
 
-    # "Atlas, qué repos puedo subir" / "lista de repos"
+    # "Atlas, quÃ© repos puedo subir" / "lista de repos"
     if ("repo" in low or "repos" in low) and (
-        "lista" in low or "cuáles" in low or "qué" in low or "listar" in low
+        "lista" in low or "cuÃ¡les" in low or "quÃ©" in low or "listar" in low
     ):
         try:
             from modules.repo_push import list_known_apps
@@ -306,7 +278,7 @@ def handle(text: str) -> str:
                     "No hay apps configuradas en known_apps (config/repo_monitor.yaml)."
                 )
             return "Repos que puedes subir: " + ", ".join(
-                "%s → %s" % (k, v) for k, v in list(apps.items())[:10]
+                "%s â†’ %s" % (k, v) for k, v in list(apps.items())[:10]
             )
         except Exception as e:
             return "Error: " + str(e)
@@ -320,3 +292,5 @@ def handle(text: str) -> str:
 # -------------------------------------------------------------------
 def route_command(text: str) -> str:
     return handle(text)
+
+
