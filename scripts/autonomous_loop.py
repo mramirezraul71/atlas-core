@@ -122,6 +122,40 @@ def _compute_signal_score_proxy(cand: dict) -> tuple[float, dict]:
     return score, components
 
 
+def _paper_record_fill(
+    base: str,
+    api_key: str,
+    symbol: str,
+    side: str,
+    qty: int,
+    price: float,
+    strategy: str = "",
+    signal_score: float = 0.0,
+    score_tier: str = "",
+    option_strategy: str = "",
+) -> None:
+    """Registra un fill en el PaperBroker local via REST (fuego y olvida)."""
+    if not price or price <= 0:
+        return
+    try:
+        body = {
+            "symbol": symbol,
+            "side": side,
+            "qty": qty,
+            "price": price,
+            "strategy": strategy,
+            "signal_score": round(signal_score, 4),
+            "score_tier": score_tier,
+            "option_strategy": option_strategy,
+        }
+        _api_call(base, "/paper/fill", method="POST", body=body,
+                  timeout=5, api_key=api_key)
+    except Exception as exc:
+        logging.getLogger("atlas.loop.paper").warning(
+            "paper_record_fill error: %s", exc
+        )
+
+
 def _signal_gate(cand: dict, min_score: float) -> tuple[bool, float, str]:
     """Gate de signal_score compuesto.
 
@@ -474,22 +508,28 @@ def run_loop(
                 if blocked:
                     reason_str = ", ".join(str(r) for r in reasons[:2]) if reasons else "?"
                     logger.info("  BLOCKED %s | %s | %s", sym, decision, reason_str)
-                elif order_id:
+                elif order_id or (not blocked and decision not in ("", None)):
                     cycle_submitted += 1
                     total_submitted += 1
                     symbol_last_order[sym] = now_utc
                     logger.info(
                         "  SUBMIT  %s | id=%s | decision=%s | score=%.1f",
-                        sym, order_id, decision, score
+                        sym, order_id or "local", decision, score
                     )
-                else:
-                    # submit_ready pero sin id (broker no respondio con id)
-                    cycle_submitted += 1
-                    total_submitted += 1
-                    symbol_last_order[sym] = now_utc
-                    logger.info(
-                        "  SUBMIT  %s | decision=%s | score=%.1f | (sin id broker)",
-                        sym, decision, score
+
+                    # ── Registrar en Paper Broker local ───────────────────────
+                    _paper_record_fill(
+                        base=base, api_key=api_key,
+                        symbol=sym, side=side,
+                        qty=int(order_body["order"].get("size", 1)),
+                        price=float(cand.get("price") or cand.get("entry_price") or 0),
+                        strategy=str(cand.get("setup_type") or cand.get("strategy") or "auto"),
+                        signal_score=sig_score,
+                        score_tier=str(cand.get("score_tier") or
+                                       ("FULL" if sig_score >= 0.75 else
+                                        "NORMAL" if sig_score >= 0.65 else
+                                        "SMALL" if sig_score >= 0.55 else "SKIP")),
+                        option_strategy=str(cand.get("option_strategy_type") or ""),
                     )
             else:
                 logger.warning("  ERROR   %s | sin respuesta del servidor", sym)

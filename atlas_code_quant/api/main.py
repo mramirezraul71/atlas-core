@@ -1746,3 +1746,192 @@ async def retraining_trigger(
         logger.exception("Error al disparar retraining")
         return StdResponse(ok=False, error=str(e), ms=round((time.perf_counter() - t0) * 1000, 2))
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PAPER TRADING PLATFORM — endpoints /paper/*
+# Capital virtual, fills simulados, equity curve, blotter
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _get_pb():
+    """Singleton lazy del PaperBroker."""
+    from paper.paper_broker import get_paper_broker
+    return get_paper_broker()
+
+
+@app.get("/paper/account", response_model=StdResponse, tags=["Paper Trading"])
+async def paper_account(x_api_key: str | None = Header(None)):
+    """Resumen completo de la cuenta paper: equity, P&L, win rate, drawdown."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        summary = _get_pb().get_account_summary()
+        return StdResponse(ok=True, data=summary.to_dict(),
+                           ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as e:
+        return StdResponse(ok=False, error=str(e),
+                           ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/paper/positions", response_model=StdResponse, tags=["Paper Trading"])
+async def paper_positions(x_api_key: str | None = Header(None)):
+    """Posiciones abiertas con P&L no realizado."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        return StdResponse(ok=True, data=_get_pb().get_positions(),
+                           ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as e:
+        return StdResponse(ok=False, error=str(e),
+                           ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/paper/orders", response_model=StdResponse, tags=["Paper Trading"])
+async def paper_orders(
+    limit: int = 100,
+    x_api_key: str | None = Header(None),
+):
+    """Blotter: historial de órdenes paper (fills + rechazos)."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        return StdResponse(ok=True, data=_get_pb().get_orders(limit=limit),
+                           ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as e:
+        return StdResponse(ok=False, error=str(e),
+                           ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/paper/equity-curve", response_model=StdResponse, tags=["Paper Trading"])
+async def paper_equity_curve(
+    limit: int = 500,
+    x_api_key: str | None = Header(None),
+):
+    """Curva de equity: lista de {ts, equity, cash, realized_pnl, event}."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        return StdResponse(ok=True, data=_get_pb().get_equity_curve_recent(limit=limit),
+                           ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as e:
+        return StdResponse(ok=False, error=str(e),
+                           ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+class PaperFillRequest(BaseModel):
+    symbol:         str
+    side:           str              # buy | sell | sell_short | buy_to_cover
+    qty:            int
+    price:          float
+    strategy:       str   = ""
+    signal_score:   float = 0.0
+    score_tier:     str   = ""
+    option_strategy:str   = ""
+
+
+@app.post("/paper/fill", response_model=StdResponse, tags=["Paper Trading"])
+async def paper_fill(body: PaperFillRequest, x_api_key: str | None = Header(None)):
+    """Registra un fill paper manualmente o desde autonomous_loop."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        result = _get_pb().fill(
+            symbol=body.symbol,
+            side=body.side,
+            qty=body.qty,
+            price=body.price,
+            strategy=body.strategy,
+            signal_score=body.signal_score,
+            score_tier=body.score_tier,
+            option_strategy=body.option_strategy,
+        )
+        return StdResponse(
+            ok=result.status == "filled",
+            data={
+                "order_id":     result.order_id,
+                "status":       result.status,
+                "fill_price":   result.fill_price,
+                "commission":   result.commission,
+                "pnl":          result.pnl,
+                "reject_reason":result.reject_reason,
+            },
+            ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+    except Exception as e:
+        return StdResponse(ok=False, error=str(e),
+                           ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+class PaperCloseRequest(BaseModel):
+    symbol: str
+    price:  float
+    qty:    int = 0    # 0 = cerrar todo
+
+
+@app.post("/paper/close", response_model=StdResponse, tags=["Paper Trading"])
+async def paper_close(body: PaperCloseRequest, x_api_key: str | None = Header(None)):
+    """Cierra una posición paper (total o parcial)."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        pb = _get_pb()
+        positions = pb.get_positions()
+        pos = next((p for p in positions if p["symbol"] == body.symbol), None)
+        if not pos:
+            return StdResponse(ok=False, error=f"No open position for {body.symbol}",
+                               ms=round((time.perf_counter() - t0) * 1000, 2))
+        qty   = body.qty if body.qty > 0 else pos["qty"]
+        side  = "sell" if pos["side"] == "long" else "buy_to_cover"
+        result = pb.fill(symbol=body.symbol, side=side, qty=qty, price=body.price)
+        return StdResponse(
+            ok=result.status == "filled",
+            data={"order_id": result.order_id, "pnl": result.pnl, "status": result.status},
+            ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+    except Exception as e:
+        return StdResponse(ok=False, error=str(e),
+                           ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+class PaperResetRequest(BaseModel):
+    initial_capital: float = 0.0    # 0 = usar capital original
+
+
+@app.post("/paper/reset", response_model=StdResponse, tags=["Paper Trading"])
+async def paper_reset(body: PaperResetRequest, x_api_key: str | None = Header(None)):
+    """Resetea la cuenta paper al capital inicial (historial de órdenes se conserva)."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        result = _get_pb().reset(new_capital=body.initial_capital or None)
+        return StdResponse(ok=True, data=result,
+                           ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as e:
+        return StdResponse(ok=False, error=str(e),
+                           ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+# ── V2 aliases ────────────────────────────────────────────────────────────────
+@app.get("/api/v2/quant/paper/account",      response_model=StdResponse, tags=["V2"])
+async def paper_account_v2(x_api_key: str | None = Header(None)):
+    return await paper_account(x_api_key=x_api_key)
+
+@app.get("/api/v2/quant/paper/positions",    response_model=StdResponse, tags=["V2"])
+async def paper_positions_v2(x_api_key: str | None = Header(None)):
+    return await paper_positions(x_api_key=x_api_key)
+
+@app.get("/api/v2/quant/paper/orders",       response_model=StdResponse, tags=["V2"])
+async def paper_orders_v2(limit: int = 100, x_api_key: str | None = Header(None)):
+    return await paper_orders(limit=limit, x_api_key=x_api_key)
+
+@app.get("/api/v2/quant/paper/equity-curve", response_model=StdResponse, tags=["V2"])
+async def paper_equity_curve_v2(limit: int = 500, x_api_key: str | None = Header(None)):
+    return await paper_equity_curve(limit=limit, x_api_key=x_api_key)
+
+@app.post("/api/v2/quant/paper/fill",        response_model=StdResponse, tags=["V2"])
+async def paper_fill_v2(body: PaperFillRequest, x_api_key: str | None = Header(None)):
+    return await paper_fill(body=body, x_api_key=x_api_key)
+
+@app.post("/api/v2/quant/paper/reset",       response_model=StdResponse, tags=["V2"])
+async def paper_reset_v2(body: PaperResetRequest, x_api_key: str | None = Header(None)):
+    return await paper_reset(body=body, x_api_key=x_api_key)
+
