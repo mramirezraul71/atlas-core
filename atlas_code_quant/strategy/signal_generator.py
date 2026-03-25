@@ -140,10 +140,16 @@ class SignalGenerator:
     """
 
     # ── Umbrales de entrada ───────────────────────────────────────────────────
-    MIN_IV_RANK           = 70.0     # IV Rank mínimo para considerar
-    MIN_IV_HV_RATIO       = 1.2      # IV/HV mínimo
+    MIN_IV_RANK           = 30.0     # IV Rank mínimo para considerar (scanner ya filtra en 70)
+    MIN_IV_HV_RATIO       = 0.8      # IV/HV mínimo (bajado para no descartar señales válidas)
     MIN_VOLUME_SPIKE      = 1.8      # multiplicador de volumen
     MIN_MTF_COHERENCE     = 0.75     # coherencia multi-TF mínima para operar
+
+    # ── Umbrales de decisión opciones ────────────────────────────────────────
+    OPT_MIN_IV_RANK       = 40.0     # IV Rank mínimo para usar opciones
+    OPT_MIN_IV_HV_RATIO   = 1.1      # IV/HV mínimo para usar opciones
+    OPT_MIN_SIGNAL_SCORE  = 0.65     # score mínimo para instrumento opciones
+    OPT_HIGH_IV_RANK      = 75.0     # IV Rank alto → estrategias de venta de vol
     RSI_OVERBOUGHT        = 70.0
     RSI_OVERSOLD          = 30.0
     CVD_ZSCORE_THRESHOLD  = 1.0      # desviaciones estándar
@@ -337,6 +343,32 @@ class SignalGenerator:
         _signal_score = self.final_signal_score(_components)
         _tier         = self.score_tier(_signal_score)
 
+        # ── 8.1. Decisión de instrumento: equity vs opciones ─────────────────
+        _iv_rank_val  = float(iv.iv_rank_30d)
+        _iv_hv_val    = float(getattr(iv, "iv_hv_ratio", 1.0))
+        _use_options  = (
+            _iv_rank_val  >= self.OPT_MIN_IV_RANK
+            and _iv_hv_val >= self.OPT_MIN_IV_HV_RATIO
+            and regime.regime in (MarketRegime.BULL, MarketRegime.BEAR)
+            and _signal_score >= self.OPT_MIN_SIGNAL_SCORE
+        )
+        _option_strategy = (
+            self._pick_option_strategy(regime.regime, signal_dir, _iv_rank_val)
+            if _use_options else ""
+        )
+
+        if _use_options:
+            logger.info(
+                "OPTIONS %s | strategy=%s iv_rank=%.1f iv_hv=%.2f score=%.3f",
+                symbol, _option_strategy, _iv_rank_val, _iv_hv_val, _signal_score,
+            )
+        else:
+            logger.info(
+                "EQUITY %s | iv_rank=%.1f (need>=%.0f) iv_hv=%.2f (need>=%.1f) score=%.3f",
+                symbol, _iv_rank_val, self.OPT_MIN_IV_RANK,
+                _iv_hv_val, self.OPT_MIN_IV_HV_RATIO, _signal_score,
+            )
+
         signal = TradeSignal(
             symbol         = symbol,
             signal_type    = signal_dir,
@@ -347,26 +379,31 @@ class SignalGenerator:
                               else SignalKind.OPEN_SHORT),
             stop_loss      = sl,
             atr            = atr,
-            confidence     = _signal_score,   # 30% motif + 40% TIN + 30% regime
+            confidence     = _signal_score,
             regime         = regime.regime.value,
             strategy       = self._pick_strategy(regime.regime),
             position_size  = position_size,
             iv_rank        = iv.iv_rank_30d,
+            iv_hv_ratio    = _iv_hv_val,
             cvd_delta      = cvd.delta_imbalance,
             rsi            = tech.rsi_14,
             volume_ratio   = tech.volume_ratio,
             visual_confirmed = visual_ok,
             max_hold_days  = self.MAX_HOLD_DAYS,
             trailing_active = trailing,
+            use_options          = _use_options,
+            option_strategy_type = _option_strategy,
         )
 
         # Metadata — scores de todos los componentes
-        signal.metadata["regime_confidence"] = round(_base_score, 4)
-        signal.metadata["motif_edge"]        = round(float(motif_edge), 4)
-        signal.metadata["tin_score"]         = round(float(tin_score), 4)
-        signal.metadata["mtf_coherence"]     = round(_mtf_coh_val, 4)
-        signal.metadata["signal_score"]      = round(_signal_score, 4)
-        signal.metadata["score_tier"]        = _tier.value
+        signal.metadata["regime_confidence"]   = round(_base_score, 4)
+        signal.metadata["motif_edge"]          = round(float(motif_edge), 4)
+        signal.metadata["tin_score"]           = round(float(tin_score), 4)
+        signal.metadata["mtf_coherence"]       = round(_mtf_coh_val, 4)
+        signal.metadata["signal_score"]        = round(_signal_score, 4)
+        signal.metadata["score_tier"]          = _tier.value
+        signal.metadata["use_options"]         = _use_options
+        signal.metadata["option_strategy_type"]= _option_strategy
         if pattern_lab_ctx is not None:
             signal.metadata["pattern_score"]   = round(_pattern_score, 4)
             signal.metadata["tin_prob"]        = round(getattr(pattern_lab_ctx, "tin_prob_positive", 0.5), 4)
@@ -562,6 +599,32 @@ class SignalGenerator:
             MarketRegime.SIDEWAYS: "mean_reversion",
         }
         return map_.get(regime, "unknown")
+
+    def _pick_option_strategy(self, regime, direction: SignalType, iv_rank: float) -> str:
+        """Selecciona la estrategia de opciones según régimen, dirección e IV Rank.
+
+        Lógica:
+          - IV Rank > OPT_HIGH_IV_RANK (75): IV alta → vender vol → SHORT_STRANGLE
+          - Bull + BUY                      → Bull call spread → CALL_VERTICAL
+          - Bear + SELL                     → Bear put spread  → PUT_VERTICAL
+          - Sideways (no debería llegar)    → SINGLE_LEG como fallback
+
+        Returns:
+            str — uno de: CALL_VERTICAL, PUT_VERTICAL, SHORT_STRANGLE, SINGLE_LEG
+        """
+        from atlas_code_quant.models.regime_classifier import MarketRegime
+
+        if iv_rank >= self.OPT_HIGH_IV_RANK:
+            return "SHORT_STRANGLE"
+
+        if regime == MarketRegime.BULL and direction == SignalType.BUY:
+            return "CALL_VERTICAL"
+
+        if regime == MarketRegime.BEAR and direction == SignalType.SELL:
+            return "PUT_VERTICAL"
+
+        # Fallback: dirección única sin cobertura
+        return "SINGLE_LEG"
 
     def _check_visual(self, api_price: float, ocr_price: Optional[float]) -> bool:
         """Verifica que el precio OCR coincide con el precio API (±0.5%)."""
