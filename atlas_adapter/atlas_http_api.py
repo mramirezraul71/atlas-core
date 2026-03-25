@@ -16179,7 +16179,13 @@ _ARM_DEFS: dict = {
         "name": "Rauli Vision",
         "frontend_port": 5174,
         "api_port": 3000,
+        # Arquitectura real: espejo.exe(:8080) ← simple-server.py(:3000) ← dashboard(:5174)
         "processes": [
+            {
+                "label": "Espejo API",
+                "cwd": "_external/RAULI-VISION/espejo",
+                "cmd": "set PORT=8080 && set ACCESS_STORE=data\\access-store.json && espejo.exe",
+            },
             {
                 "label": "Proxy API",
                 "cwd": "_external/RAULI-VISION/cliente-local",

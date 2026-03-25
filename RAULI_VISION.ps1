@@ -6,8 +6,9 @@
 
 $WatchdogScript = "$PSScriptRoot\scripts\rauli_vision_watchdog.ps1"
 $TaskName       = "RAULI-VISION-Watchdog"
-$DashPort       = 5174   # Vision dashboard: apps.js APP_DEFAULTS usa 5174
-$EspejoPort     = 3000
+$EspejoPort     = 8080   # espejo.exe — Go backend
+$ProxyPort      = 3000   # simple-server.py — Python proxy → :8080
+$DashPort       = 5174   # dashboard React/Vite
 $LogFile        = "$PSScriptRoot\logs\rauli_vision_watchdog.log"
 
 function Write-Step([string]$msg) {
@@ -38,25 +39,28 @@ if ($wdRunning) {
 Write-Step "Esperando servicios..."
 $deadline = (Get-Date).AddSeconds(40)
 $espejoOk = $false
+$proxyOk  = $false
 $dashOk   = $false
 
 while ((Get-Date) -lt $deadline -and (-not ($espejoOk -and $dashOk))) {
     Start-Sleep -Seconds 2
     $espejoOk = (Get-NetTCPConnection -State Listen -LocalPort $EspejoPort -EA SilentlyContinue) -ne $null
+    $proxyOk  = (Get-NetTCPConnection -State Listen -LocalPort $ProxyPort  -EA SilentlyContinue) -ne $null
     $dashOk   = (Get-NetTCPConnection -State Listen -LocalPort $DashPort   -EA SilentlyContinue) -ne $null
     $eIcon = if ($espejoOk) { "✓" } else { "○" }
+    $pIcon = if ($proxyOk)  { "✓" } else { "○" }
     $dIcon = if ($dashOk)   { "✓" } else { "○" }
-    Write-Host "`r  Espejo :$EspejoPort $eIcon   Dashboard :$DashPort $dIcon   " -NoNewline
+    Write-Host "`r  Espejo :$EspejoPort $eIcon   Proxy :$ProxyPort $pIcon   Dashboard :$DashPort $dIcon   " -NoNewline
 }
 Write-Host ""
 
 if ($espejoOk -and $dashOk) {
-    Write-Ok "Ambos servicios activos"
+    Write-Ok "Todos los servicios activos"
     Write-Host ""
     Write-Host "  Abriendo RAULI-VISION..." -ForegroundColor Magenta
     Start-Process "http://localhost:$DashPort"
 } elseif ($dashOk) {
-    Write-Warn "Dashboard OK — espejo puede tardar unos segundos más"
+    Write-Warn "Dashboard OK — espejo/proxy pueden tardar unos segundos más"
     Start-Process "http://localhost:$DashPort"
 } else {
     Write-Warn "Los servicios aún están iniciando, abre manualmente:"

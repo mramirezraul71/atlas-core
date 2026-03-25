@@ -148,6 +148,13 @@ function _isLoopbackUrl(raw) {
 }
 
 async function _bootstrapRemotePublicUrls() {
+  // Limpiar siempre primero — URLs guardadas del localStorage pueden ser túneles
+  // caídos de sesiones anteriores. Solo se restauran si el servidor confirma que
+  // están activos. Esto garantiza que el fallback a localhost funcione incluso si
+  // ATLAS no se reinició después de un cambio de configuración.
+  localStorage.removeItem('atlas-apps-url-panaderia');
+  localStorage.removeItem('atlas-apps-url-vision');
+
   try {
     const r = await fetch('/api/apps/public-urls', { signal: AbortSignal.timeout(12000) });
     const d = await r.json().catch(() => null);
@@ -155,14 +162,12 @@ async function _bootstrapRemotePublicUrls() {
     const pan = payload.panaderia || {};
     const vis = payload.vision || {};
 
+    // Solo guardar si el backend devolvió URL no-vacía (implica que el túnel responde)
     if (_safeUrl(pan.frontendBase)) {
       localStorage.setItem('atlas-apps-url-panaderia', JSON.stringify({
         frontendBase: pan.frontendBase,
         apiBase: _safeUrl(pan.apiBase) || pan.frontendBase,
       }));
-    } else {
-      // Túnel offline → limpiar URL guardada para que se use localhost
-      localStorage.removeItem('atlas-apps-url-panaderia');
     }
 
     if (_safeUrl(vis.frontendBase)) {
@@ -170,14 +175,12 @@ async function _bootstrapRemotePublicUrls() {
         frontendBase: vis.frontendBase,
         apiBase: _safeUrl(vis.apiBase) || vis.frontendBase,
       }));
-    } else {
-      // Túnel offline → limpiar URL guardada para que se use localhost
-      localStorage.removeItem('atlas-apps-url-vision');
     }
 
     APPS = _buildApps();
   } catch {
-    // Best effort only.
+    // Fetch falló — localStorage ya limpio, se usarán defaults (localhost)
+    APPS = _buildApps();
   }
 }
 
@@ -203,6 +206,9 @@ async function _resolveBestBase(app) {
   function _add(url) {
     const s = _safeUrl(url);
     if (!s || seen.has(s)) return;
+    // Cliente local: nunca usar URLs públicas (Cloudflare/remoto) — no-cors fetch
+    // no distingue 200 de 502, causaría que una URL caída parezca alcanzable.
+    if (IS_LOCAL_CLIENT && !_isLoopbackUrl(s)) return;
     if (!IS_LOCAL_CLIENT && _isLoopbackUrl(s)) return;
     seen.add(s);
     candidates.push(s);
@@ -210,11 +216,8 @@ async function _resolveBestBase(app) {
 
   _add(app.base);
 
-  const appBase = _safeUrl(app.base);
-  const appBaseIsLoopback = _isLoopbackUrl(appBase);
-
-  if (IS_LOCAL_CLIENT && (!appBase || appBaseIsLoopback)) {
-    // Solo priorizar localhost cuando no haya URL publica configurada.
+  if (IS_LOCAL_CLIENT) {
+    // Para clientes locales, preguntar al servidor qué puerto escucha realmente.
     try {
       const r = await fetch(`/arms/${app.id}/ping`, { signal: AbortSignal.timeout(2500) });
       const d = await r.json().catch(() => null);

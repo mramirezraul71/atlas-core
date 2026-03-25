@@ -478,6 +478,44 @@ async def app_lifespan(app):
             await start_supervisor_daemon()
     except Exception:
         pass
+    # ── Self-Healing Loop — autocorrección de todos los módulos ATLAS ─────────
+    try:
+        if os.getenv("ATLAS_SELF_HEALING_ENABLED", "true").strip().lower() in (
+            "1", "true", "yes", "y", "on"
+        ):
+            import importlib.util as _ilu
+            import threading as _threading
+
+            _heal_script = BASE_DIR / "scripts" / "atlas_self_healing_loop.py"
+            if _heal_script.exists():
+                _spec = _ilu.spec_from_file_location("atlas_self_healing_runtime", str(_heal_script))
+                if _spec and _spec.loader:
+                    _heal_mod = _ilu.module_from_spec(_spec)
+                    _spec.loader.exec_module(_heal_mod)
+                    _heal_fn = getattr(_heal_mod, "run_healing_cycle", None)
+
+                    def _self_heal_daemon():
+                        import time as _time
+                        _interval = int(os.getenv("ATLAS_HEAL_INTERVAL_SEC", "60"))
+                        _heal_log = logging.getLogger("atlas.heal.daemon")
+                        _heal_log.info("Self-Healing daemon iniciado (intervalo=%ss)", _interval)
+                        while True:
+                            try:
+                                if callable(_heal_fn):
+                                    _heal_fn()
+                            except Exception as _e:
+                                _heal_log.error("Error en ciclo self-healing: %s", _e)
+                            _time.sleep(_interval)
+
+                    _heal_thread = _threading.Thread(
+                        target=_self_heal_daemon,
+                        name="atlas-self-healing",
+                        daemon=True,
+                    )
+                    _heal_thread.start()
+                    logging.getLogger(__name__).info("✓ Self-Healing Loop activo")
+    except Exception as _heal_err:
+        logging.getLogger(__name__).warning("Self-Healing Loop no pudo iniciar: %s", _heal_err)
     yield
     try:
         from atlas_adapter.supervisor_daemon import stop_supervisor_daemon
