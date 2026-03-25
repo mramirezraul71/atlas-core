@@ -14,19 +14,19 @@
   "auto_pause_on_operational_errors": true,
   "operational_error_limit": 3,
   "operational_error_count": 0,
-  "operational_error_day": "2026-03-24",
+  "operational_error_day": "2026-03-25",
   "fail_safe_active": false,
   "fail_safe_reason": null,
   "last_operational_error": null,
   "notes": "paper_autonomous activado 2026-03-24. vision=desktop_capture (NEXUS robot no requerido).",
   "last_decision": {
-    "decision": "eligible",
+    "decision": "submit_ready",
     "allowed": true,
-    "timestamp": "2026-03-24T00:00:00.000000",
+    "timestamp": "2026-03-25T04:35:35.136402",
     "reason": "ok"
   },
   "last_candidate": {
-    "symbol": "SPY",
+    "symbol": "CBOE",
     "strategy_type": null,
     "scope": "paper",
     "action": "submit"
