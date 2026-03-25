@@ -1,5 +1,5 @@
 """
-ATLAS DOCTOR CLI — Interfaz de línea de comandos
+ATLAS DOCTOR CLI - Interfaz de línea de comandos
 ================================================
 Uso:
     python -m atlas_adapter.services.doctor_cli status
@@ -22,21 +22,21 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 # ── Helpers de presentación ────────────────────────────────────────────────────
-TIER_ICONS = {0: "🔴", 1: "🟠", 2: "🟡", 3: "🔵", 4: "🟣"}
+TIER_ICONS = {0: "[CRASH]", 1: "[CRIT]", 2: "[DEGRAD]", 3: "[WARN]", 4: "[EVOL]"}
 TIER_LABELS = {0: "CRASH", 1: "CRÍTICO", 2: "DEGRADADO", 3: "WARNING", 4: "EVOLUCIÓN"}
 
 
 def _print_header(title: str) -> None:
     w = 64
-    print("\n" + "═" * w)
+    print("\n" + "=" * w)
     print(f"  {title}")
-    print("═" * w)
+    print("=" * w)
 
 
 def _print_status(data: dict) -> None:
-    _print_header("ATLAS DOCTOR — Estado del Sistema Nervioso")
+    _print_header("ATLAS DOCTOR - Estado del Sistema Nervioso")
     ok = data.get("ok", False)
-    print(f"  Estado global  : {'✓ OK' if ok else '✗ ANOMALÍAS DETECTADAS'}")
+    print(f"  Estado global  : {'OK' if ok else 'ANOMALIAS DETECTADAS'}")
     print(f"  Ciclo          : #{data.get('cycle', '--')}")
     print(f"  Último ciclo   : {data.get('last_ts', '--')}")
     print(f"  Anomalías      : {data.get('anomalies_count', 0)}")
@@ -47,7 +47,7 @@ def _print_status(data: dict) -> None:
         print(f"\n  Por tier:")
         for label, count in tiers.items():
             tier_num = next((k for k, v in TIER_LABELS.items() if v == label), 3)
-            icon = TIER_ICONS.get(tier_num, "⚪")
+            icon = TIER_ICONS.get(tier_num, "[?]")
             print(f"    {icon} {label}: {count}")
 
     anomalies = data.get("anomalies", [])
@@ -55,7 +55,7 @@ def _print_status(data: dict) -> None:
         print(f"\n  Anomalías activas:")
         for a in anomalies:
             tier_num = a.get("tier", 3)
-            icon = TIER_ICONS.get(tier_num, "⚪")
+            icon = TIER_ICONS.get(tier_num, "[?]")
             label = TIER_LABELS.get(tier_num, a.get("tier"))
             print(f"    {icon} [{label}] {a['component']} ({a['layer']})")
             print(f"       {a['description']}")
@@ -65,12 +65,12 @@ def _print_status(data: dict) -> None:
         print(f"\n  Acciones tomadas:")
         for act in actions:
             healed = act.get("healed", False)
-            mark = "✓" if healed else "→"
-            print(f"    {mark} {act['component']}: {act['type']} — {act.get('outcome') or act.get('detail', '')}")
+            mark = "[OK]" if healed else "    "
+            print(f"    {mark} {act['component']}: {act['type']} - {act.get('outcome') or act.get('detail', '')}")
 
 
 def _print_ports(data: dict) -> None:
-    _print_header("ATLAS DOCTOR — Estado de Puertos (15)")
+    _print_header("ATLAS DOCTOR - Estado de Puertos (15)")
     by_layer: dict = {}
     for name, p in data.items():
         layer = p.get("layer", "other")
@@ -81,20 +81,20 @@ def _print_ports(data: dict) -> None:
         for name, p in items:
             up = p.get("up", False)
             mark = "UP  " if up else "DOWN"
-            icon = "✓" if up else "✗"
+            icon = "UP" if up else "DOWN"
             print(f"    [{mark}] {icon} :{p['port']:<5}  {name:<22}  {p.get('description', '')}")
 
 
 def _print_history(items: list) -> None:
-    _print_header(f"ATLAS DOCTOR — Historial de Eventos ({len(items)})")
+    _print_header(f"ATLAS DOCTOR - Historial de Eventos ({len(items)})")
     if not items:
         print("  Sin eventos registrados.")
         return
     for e in items[:30]:
         healed = e.get("healed") in (1, True)
         tier = e.get("tier", 3)
-        icon = TIER_ICONS.get(tier, "⚪")
-        mark = "✓ SANADO" if healed else e.get("action_type", "")
+        icon = TIER_ICONS.get(tier, "[?]")
+        mark = "[SANADO]" if healed else e.get("action_type", "")
         print(f"  {icon} {e.get('ts', '')[:19]}  {e.get('component', ''):<22}  "
               f"[{e.get('tier_label', '')}]  {mark}")
         if e.get("outcome"):
@@ -123,7 +123,7 @@ def cmd_diagnose(args) -> None:
     if args.json:
         print(json.dumps(data, indent=2, ensure_ascii=False))
     else:
-        print("\n⚡ Diagnóstico completo ejecutado:")
+        print("\n[>>] Diagnostico completo ejecutado:")
         _print_status(data)
 
 
@@ -138,7 +138,7 @@ def cmd_retrospect(args) -> None:
 
 
 def cmd_emergency(args) -> None:
-    _print_header("🚨 ATLAS DOCTOR — EMERGENCY STOP")
+    _print_header("ATLAS DOCTOR - EMERGENCY STOP")
     if not args.force:
         resp = input("  ¿Confirmar emergency stop? [s/N]: ").strip().lower()
         if resp not in ("s", "si", "sí", "y", "yes"):
@@ -177,7 +177,7 @@ def cmd_ports(args) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="python -m atlas_adapter.services.doctor_cli",
-        description="ATLAS DOCTOR CLI — Sistema Nervioso Central"
+        description="ATLAS DOCTOR CLI - Sistema Nervioso Central"
     )
     parser.add_argument("--json", action="store_true", help="Salida en JSON")
     parser.add_argument("--dry-run", action="store_true", help="No ejecutar reparaciones")
@@ -190,7 +190,7 @@ def main() -> None:
     retro = sub.add_parser("retrospect", help="Análisis histórico de eventos")
     retro.add_argument("--limit", type=int, default=50)
 
-    em = sub.add_parser("emergency", help="Emergency stop — detiene subsistemas críticos")
+    em = sub.add_parser("emergency", help="Emergency stop - detiene subsistemas críticos")
     em.add_argument("--force", action="store_true", help="Sin confirmación interactiva")
 
     sub.add_parser("ports", help="Estado instantáneo de todos los puertos")

@@ -5,9 +5,9 @@
     "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
     "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
   ],
-  "fetched_at": "2026-03-23T16:20:24Z",
-  "fetched_epoch": 1774282824.2627122,
-  "total_symbols": 10374,
+  "fetched_at": "2026-03-24T16:20:37Z",
+  "fetched_epoch": 1774369237.4241815,
+  "total_symbols": 10376,
   "symbols": [
     "A",
     "AA",
@@ -23,6 +23,7 @@
     "AAMI",
     "AAOI",
     "AAON",
+    "AAOX",
     "AAP",
     "AAPB",
     "AAPD",
@@ -429,6 +430,7 @@
     "AMZD",
     "AMZE",
     "AMZN",
+    "AMZO",
     "AMZP",
     "AMZU",
     "AMZW",
@@ -3108,7 +3110,6 @@
     "EWY",
     "EWZ",
     "EWZS",
-    "EXAS",
     "EXC",
     "EXE",
     "EXEL",
@@ -4298,6 +4299,7 @@
     "HLT",
     "HLX",
     "HLXC",
+    "HLXX",
     "HMC",
     "HMN",
     "HMR",
@@ -4547,6 +4549,7 @@
     "IBTQ",
     "IBUF",
     "IBUY",
+    "IBX",
     "ICAP",
     "ICCC",
     "ICCM",
@@ -5635,7 +5638,6 @@
     "LQDT",
     "LQDW",
     "LQIG",
-    "LQPE",
     "LQTI",
     "LRCU",
     "LRCX",
@@ -10385,8 +10387,8 @@
     "ZYME"
   ],
   "meta": {
-    "nasdaq_rows": 4282,
-    "other_rows": 6093,
-    "deduped_rows": 10374
+    "nasdaq_rows": 4281,
+    "other_rows": 6096,
+    "deduped_rows": 10376
   }
 }
