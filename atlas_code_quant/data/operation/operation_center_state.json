@@ -22,11 +22,11 @@
   "last_decision": {
     "decision": "submit_ready",
     "allowed": true,
-    "timestamp": "2026-03-25T04:35:35.136402",
+    "timestamp": "2026-03-25T04:44:16.218380",
     "reason": "ok"
   },
   "last_candidate": {
-    "symbol": "CBOE",
+    "symbol": "CF",
     "strategy_type": null,
     "scope": "paper",
     "action": "submit"
