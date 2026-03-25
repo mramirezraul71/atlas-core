@@ -199,6 +199,10 @@ export function render(container) {
           <div class="app-tile-icon">🤖</div>
           <div class="app-tile-label">Robot 3D</div>
         </div>
+        <div class="app-tile" data-app="doctor" style="border-color:rgba(255,80,80,0.4);background:rgba(255,80,80,0.05)">
+          <div class="app-tile-icon" style="color:#ff5050">${SVG.health}</div>
+          <div class="app-tile-label" style="color:#ff5050">ATLAS Doctor</div>
+        </div>
       </div>
     </div>
 
@@ -322,6 +326,7 @@ export function render(container) {
     'live-diagnostic': { hash: '/live-diagnostic' },
     'atlas-nexus': { href: '/nexus', newTab: false },
     'robot-3d':    { href: 'http://127.0.0.1:8002/dashboard', newTab: true },
+    'doctor':      { hash: '/doctor' },
   };
 
   container.querySelectorAll('.app-tile').forEach(tile => {
