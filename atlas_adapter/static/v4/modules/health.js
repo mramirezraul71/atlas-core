@@ -1,5 +1,5 @@
-/**
- * ATLAS v4.2 — Health Module
+﻿/**
+ * ATLAS v4.2 â€” Health Module
  * Score dial + checks grid + system stats.
  */
 import { poll, stop } from '../lib/polling.js';
@@ -20,9 +20,9 @@ function _scoreColor(score) {
 }
 
 function _scoreLabel(score) {
-  if (score >= 90) return 'Óptimo';
+  if (score >= 90) return 'Ã“ptimo';
   if (score >= 70) return 'Degradado';
-  return 'Crítico';
+  return 'CrÃ­tico';
 }
 
 function _fmt(val, unit = '') {
@@ -47,10 +47,7 @@ export default {
           <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
             <button class="action-btn" id="btn-deep-check" style="font-size:11px;padding:4px 10px">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-              Diagnóstico
-            </button>
-            <button class="action-btn" onclick="location.hash='/doctor'" style="font-size:11px;padding:4px 10px;border-color:rgba(255,80,80,0.5);color:#ff5050">
-              &#9829; ATLAS Doctor
+              DiagnÃ³stico
             </button>
             <span class="live-badge">LIVE</span>
           </div>
@@ -96,12 +93,12 @@ export default {
               <div class="stat-card-sub" id="h-ar-pids">--</div>
             </div>
             <div class="stat-card">
-              <div class="stat-card-label">Último Reinicio</div>
+              <div class="stat-card-label">Ãšltimo Reinicio</div>
               <div class="stat-card-value" id="h-ar-restart">--</div>
               <div class="stat-card-sub" id="h-ar-count">--</div>
             </div>
             <div class="stat-card">
-              <div class="stat-card-label">Último Error</div>
+              <div class="stat-card-label">Ãšltimo Error</div>
               <div class="stat-card-value" id="h-ar-error">--</div>
               <div class="stat-card-sub" id="h-ar-streak">--</div>
             </div>
@@ -178,7 +175,7 @@ function _render(container, data) {
   if (sLbl) { sLbl.textContent = _scoreLabel(score); sLbl.style.color = color; }
 
   // Stats row
-  _txt(container, '#h-status', data.ok ? '✓  Saludable' : '⚠  Degradado');
+  _txt(container, '#h-status', data.ok ? 'âœ“  Saludable' : 'âš   Degradado');
   const statusEl = container.querySelector('#h-status');
   if (statusEl) statusEl.style.color = data.ok ? 'var(--accent-green)' : 'var(--accent-orange)';
 
@@ -212,7 +209,7 @@ function _render(container, data) {
   grid.innerHTML = entries.map(([name, val]) => {
     const ok = _checkOk(val);
     const cls = ok ? 'ok' : (val === 'warn' || val?.status === 'warn' ? 'warn' : 'error');
-    const icon = cls === 'ok' ? '✓' : cls === 'warn' ? '!' : '✕';
+    const icon = cls === 'ok' ? 'âœ“' : cls === 'warn' ? '!' : 'âœ•';
     const display = typeof val === 'object'
       ? (val.value !== undefined ? _esc(String(val.value)) : (val.status ? _esc(val.status) : 'active'))
       : _esc(String(val));
@@ -269,17 +266,18 @@ function _txt(container, sel, text) {
 
 async function _deepCheck(container) {
   const btn = container.querySelector('#btn-deep-check');
-  if (btn) { btn.disabled = true; btn.textContent = '⟳ Analizando...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'âŸ³ Analizando...'; }
   try {
     const r = await fetch('/health/deep');
     const data = await r.json();
     _render(container, data);
-    window.AtlasToast?.show('Diagnóstico completo cargado', 'success');
+    window.AtlasToast?.show('DiagnÃ³stico completo cargado', 'success');
   } catch (e) {
-    window.AtlasToast?.show(`Diagnóstico fallido: ${e.message}`, 'error');
+    window.AtlasToast?.show(`DiagnÃ³stico fallido: ${e.message}`, 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg> Diagnóstico'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg> DiagnÃ³stico'; }
   }
 }
 
 window.AtlasModuleHealth = { id: 'health' };
+

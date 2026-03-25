@@ -1,4 +1,4 @@
-import os
+﻿import os
 from datetime import datetime
 from pathlib import Path
 
@@ -38,29 +38,22 @@ def status() -> str:
 
 
 def doctor() -> str:
-    try:
-        _ensure_dirs()
-        _log("doctor OK")
-        return "ATLAS DOCTOR: OK"
-    except Exception as e:
-        _log(f"doctor FAIL {e}")
-        return f"ATLAS DOCTOR FAIL: {e}"
-
+    _ensure_dirs()
+    _log("doctor removed")
+    return "ATLAS: el modulo Doctor fue eliminado."
 
 def modules_report() -> str:
     return (
-        "Módulos activos:\n"
+        "Modulos activos:\n"
         "- Notes Vault\n"
         "- Logs\n"
         "- Snapshots\n"
-        "- Doctor\n"
         "- Runtime Router\n"
     )
 
-
 def handle(text: str) -> str:
     if not text:
-        return "ATLAS vacío."
+        return "ATLAS vacio."
 
     t = text.lower().strip()
 
@@ -72,4 +65,6 @@ def handle(text: str) -> str:
         return modules_report()
 
     _log(f"inbox: {text}")
-    return f"ATLAS recibió: {text}"
+    return f"ATLAS recibio: {text}"
+
+

@@ -1,5 +1,5 @@
-/**
- * ATLAS v4 — Landing Page (Google-style)
+﻿/**
+ * ATLAS v4 â€” Landing Page (Google-style)
  * Clean, centered search bar with contextual quick actions and app tiles.
  */
 import { get, on } from '../lib/state.js';
@@ -102,13 +102,13 @@ export function render(container) {
         <div class="quick-chip" data-action="tools-menu">${SVG.monitor} Menu de herramientas</div>
         <div class="quick-chip" data-action="software-center">${SVG.package} Centro de software</div>
         <div class="quick-chip" data-action="live-diagnostic">${SVG.health} Diagnostico Live</div>
-        <div class="quick-chip" data-action="atlas-nexus">⬡ Atlas Nexus</div>
-        <div class="quick-chip" data-action="robot-3d">🤖 Robot 3D</div>
+        <div class="quick-chip" data-action="atlas-nexus">â¬¡ Atlas Nexus</div>
+        <div class="quick-chip" data-action="robot-3d">ðŸ¤– Robot 3D</div>
       </div>
 
       <div class="apps-grid">
 
-        <!-- ── QUANT GROUP ─────────────────────────────── -->
+        <!-- â”€â”€ QUANT GROUP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
         <div class="app-tile" data-app="code-quant-dashboard" style="border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.05)">
           <div class="app-tile-icon" style="color:#00d4aa">${SVG.trading}</div>
           <div class="app-tile-label" style="color:#00d4aa">Code Quant</div>
@@ -126,7 +126,7 @@ export function render(container) {
           <div class="app-tile-label">Grafana</div>
         </div>
 
-        <!-- ── CORE ───────────────────────────────────── -->
+        <!-- â”€â”€ CORE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
         <div class="app-tile" data-app="assistant">
           <div class="app-tile-icon">${SVG.brain}</div>
           <div class="app-tile-label">AI Assistant</div>
@@ -156,7 +156,7 @@ export function render(container) {
           <div class="app-tile-label">Approvals</div>
         </div>
 
-        <!-- ── BRAZOS ─────────────────────────────────── -->
+        <!-- â”€â”€ BRAZOS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
         <div class="app-tile" data-app="rauli-vision">
           <div class="app-tile-icon">${SVG.eye}</div>
           <div class="app-tile-label">Rauli Vision</div>
@@ -170,7 +170,7 @@ export function render(container) {
           <div class="app-tile-label">Bety Eventos</div>
         </div>
 
-        <!-- ── TOOLS ──────────────────────────────────── -->
+        <!-- â”€â”€ TOOLS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
         <div class="app-tile" data-app="config-tile">
           <div class="app-tile-icon">${SVG.config}</div>
           <div class="app-tile-label">Settings</div>
@@ -192,17 +192,13 @@ export function render(container) {
           <div class="app-tile-label">Diagnostico Live</div>
         </div>
         <div class="app-tile" data-app="atlas-nexus">
-          <div class="app-tile-icon">⬡</div>
+          <div class="app-tile-icon">â¬¡</div>
           <div class="app-tile-label">Atlas Nexus</div>
         </div>
         <div class="app-tile" data-app="robot-3d">
-          <div class="app-tile-icon">🤖</div>
+          <div class="app-tile-icon">ðŸ¤–</div>
           <div class="app-tile-label">Robot 3D</div>
-        </div>
-        <div class="app-tile" data-app="doctor" style="border-color:rgba(255,80,80,0.4);background:rgba(255,80,80,0.05)">
-          <div class="app-tile-icon" style="color:#ff5050">${SVG.health}</div>
-          <div class="app-tile-label" style="color:#ff5050">ATLAS Doctor</div>
-        </div>
+        </div></div>
       </div>
     </div>
 
@@ -225,7 +221,7 @@ export function render(container) {
   searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitSearch(); });
   submitBtn.addEventListener('click', submitSearch);
 
-  // ── Micrófono (Web Speech API) ──────────────────────────────────────────────
+  // â”€â”€ MicrÃ³fono (Web Speech API) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const micBtn = container.querySelector('#landing-mic');
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRec) {
@@ -240,7 +236,7 @@ export function render(container) {
     rec.onstart = () => {
       _recognizing = true;
       micBtn.classList.add('listening');
-      micBtn.title = 'Escuchando… (clic para detener)';
+      micBtn.title = 'Escuchandoâ€¦ (clic para detener)';
     };
     rec.onend = () => {
       _recognizing = false;
@@ -259,8 +255,8 @@ export function render(container) {
       _recognizing = false;
       micBtn.classList.remove('listening');
       const msg = e.error === 'not-allowed'
-        ? 'Permiso de micrófono denegado'
-        : 'Error de micrófono: ' + e.error;
+        ? 'Permiso de micrÃ³fono denegado'
+        : 'Error de micrÃ³fono: ' + e.error;
       window.AtlasToast?.show(msg, 'error');
     };
 
@@ -269,7 +265,7 @@ export function render(container) {
       rec.start();
     });
   }
-  // ───────────────────────────────────────────────────────────────────────────
+  // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const CHIP_ROUTES = {
     health:    { hash: '/health' },
@@ -326,7 +322,6 @@ export function render(container) {
     'live-diagnostic': { hash: '/live-diagnostic' },
     'atlas-nexus': { href: '/nexus', newTab: false },
     'robot-3d':    { href: 'http://127.0.0.1:8002/dashboard', newTab: true },
-    'doctor':      { hash: '/doctor' },
   };
 
   container.querySelectorAll('.app-tile').forEach(tile => {
@@ -353,3 +348,5 @@ export function render(container) {
 }
 
 window.AtlasLanding = { render };
+
+
