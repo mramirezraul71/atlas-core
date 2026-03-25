@@ -6,7 +6,7 @@
 
 $WatchdogScript = "$PSScriptRoot\scripts\rauli_vision_watchdog.ps1"
 $TaskName       = "RAULI-VISION-Watchdog"
-$DashPort       = 5173
+$DashPort       = 5174   # Vision dashboard: apps.js APP_DEFAULTS usa 5174
 $EspejoPort     = 3000
 $LogFile        = "$PSScriptRoot\logs\rauli_vision_watchdog.log"
 

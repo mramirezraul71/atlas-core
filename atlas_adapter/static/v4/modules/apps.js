@@ -160,13 +160,21 @@ async function _bootstrapRemotePublicUrls() {
         frontendBase: pan.frontendBase,
         apiBase: _safeUrl(pan.apiBase) || pan.frontendBase,
       }));
+    } else {
+      // Túnel offline → limpiar URL guardada para que se use localhost
+      localStorage.removeItem('atlas-apps-url-panaderia');
     }
+
     if (_safeUrl(vis.frontendBase)) {
       localStorage.setItem('atlas-apps-url-vision', JSON.stringify({
         frontendBase: vis.frontendBase,
         apiBase: _safeUrl(vis.apiBase) || vis.frontendBase,
       }));
+    } else {
+      // Túnel offline → limpiar URL guardada para que se use localhost
+      localStorage.removeItem('atlas-apps-url-vision');
     }
+
     APPS = _buildApps();
   } catch {
     // Best effort only.

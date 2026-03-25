@@ -16249,10 +16249,32 @@ def _normalize_public_base(raw: str) -> str:
     return s.rstrip("/")
 
 
+def _probe_url_reachable(url: str, timeout: float = 3.0) -> bool:
+    """True si la URL responde con cualquier código HTTP (incluso 4xx)."""
+    if not url:
+        return False
+    try:
+        import urllib.request as _ur
+        req = _ur.Request(url, method="HEAD")
+        with _ur.urlopen(req, timeout=timeout):
+            return True
+    except Exception:
+        try:
+            # Fallback GET por si HEAD no está permitido
+            import urllib.request as _ur2
+            with _ur2.urlopen(url, timeout=timeout):
+                return True
+        except Exception:
+            return False
+
+
 def _public_arm_urls() -> Dict[str, Any]:
     """
     Resolve public URLs for remote clients.
     Priority: explicit env vars -> app vars -> quick tunnel logs.
+
+    Si la URL de túnel Cloudflare no responde, devuelve cadena vacía para que
+    el frontend caiga automáticamente al fallback de localhost.
     """
     pan_front = _normalize_public_base(
         os.getenv("ATLAS_PANADERIA_PUBLIC_URL")
@@ -16271,19 +16293,27 @@ def _public_arm_urls() -> Dict[str, Any]:
     if not pan_front:
         pan_front = _extract_trycloudflare_url(BASE_DIR / "logs" / "cloudflared_panaderia.log")
     if not pan_api and pan_front:
-        # Common setup for Vite dev + proxy: same origin, /api proxied to backend.
         pan_api = pan_front
+
+    # Validar que los túneles estén realmente activos — si no responden, devolver
+    # vacío para que apps.js caiga a localhost (evita iframe colgado en túnel caído).
+    if pan_front and not _probe_url_reachable(pan_front):
+        pan_front = ""
+        pan_api   = ""
+    if vis_front and not _probe_url_reachable(vis_front):
+        vis_front = ""
+        vis_api   = ""
 
     return {
         "panaderia": {
             "frontendBase": pan_front,
             "apiBase": pan_api,
-            "source": "env_or_quick_tunnel",
+            "source": "env_or_quick_tunnel" if pan_front else "offline",
         },
         "vision": {
             "frontendBase": vis_front,
             "apiBase": vis_api,
-            "source": "env",
+            "source": "env" if vis_front else "offline",
         },
     }
 
