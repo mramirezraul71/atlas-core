@@ -73,6 +73,9 @@ class ATLASQuantCore:
         self.executor = None
         self.live_loop = None
 
+        # Supervisor AI (inicializado en setup())
+        self.supervisor_ai = None
+
         # Estado
         self._symbols: list[str] = []
         self._latest_quotes: dict[str, object] = {}
@@ -232,6 +235,26 @@ class ATLASQuantCore:
             "✓ Módulo 7 (Ejecución) inicializado — modo=%s executor=%s",
             self.mode.upper(), self.executor.__class__.__name__,
         )
+
+        # ── Supervisor AI ─────────────────────────────────────────────────────
+        try:
+            from atlas_code_quant.monitoring.atlas_supervisor_ai import (
+                AtlasSupervisorAI,
+                get_supervisor,
+            )
+            from atlas_code_quant.production.production_guard import ProductionGuard
+            from atlas_code_quant.operations.alert_dispatcher import get_alert_dispatcher
+
+            self.supervisor_ai = AtlasSupervisorAI(
+                strategy_tracker=getattr(self, "_strategy_tracker", None),
+                guard=ProductionGuard(),
+                dispatcher=get_alert_dispatcher(),
+                auto_force_paper=False,
+            )
+            self.supervisor_ai.start()
+            logger.info("✓ AtlasSupervisorAI iniciado (revisión cada 120s)")
+        except Exception as _sup_err:
+            logger.warning("AtlasSupervisorAI no pudo iniciar: %s", _sup_err)
 
         # Iniciar cámara
         self.camera.start()
@@ -824,6 +847,8 @@ class ATLASQuantCore:
             self.healer.stop()
         if self.hid:
             self.hid.stop_hotkey_listener()
+        if self.supervisor_ai is not None:
+            self.supervisor_ai.stop()
         logger.info("=== ATLAS-Quant-Core DETENIDO ===")
 
     # ── start_scanner_to_loop ─────────────────────────────────────────────────
