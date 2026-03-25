@@ -22,11 +22,11 @@
   "last_decision": {
     "decision": "submit_ready",
     "allowed": true,
-    "timestamp": "2026-03-25T04:44:16.218380",
+    "timestamp": "2026-03-25T04:50:40.167760",
     "reason": "ok"
   },
   "last_candidate": {
-    "symbol": "CF",
+    "symbol": "CIEN",
     "strategy_type": null,
     "scope": "paper",
     "action": "submit"
