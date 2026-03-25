@@ -49,6 +49,9 @@ export default {
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
               Diagnóstico
             </button>
+            <button class="action-btn" onclick="location.hash='/doctor'" style="font-size:11px;padding:4px 10px;border-color:rgba(255,80,80,0.5);color:#ff5050">
+              &#9829; ATLAS Doctor
+            </button>
             <span class="live-badge">LIVE</span>
           </div>
         </div>
