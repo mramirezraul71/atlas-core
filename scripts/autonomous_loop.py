@@ -1,24 +1,25 @@
 #!/usr/bin/env python
-"""autonomous_loop.py — Loop autonomo externo ATLAS-Quant v3.
+"""autonomous_loop.py — Loop autonomo externo ATLAS-Quant v4.
+
+v4 (signal_score compuesto):
+  - SignalComponents proxy desde datos del scanner (win_rate, strength, alignment, mtf)
+  - final_signal_score = 0.30*motif + 0.30*TIN + 0.20*MTF + 0.20*regime
+  - Gate configurable: --min-signal-score 0.55 (default)
+  - Log correcto: SCANNER -> SIGNAL score -> VISION conf -> SUBMIT
 
 v3 (vision):
   - Validacion visual pre-submit via Insta360 / desktop OCR
-  - Si vision disponible: confirma color de chart antes de enviar orden
-  - --no-vision-gate para deshabilitar la validacion visual
-  - Visual confidence threshold configurable (--min-visual-conf, default 0.0 = solo log)
+  - --no-vision-gate / --min-visual-conf
 
 v2:
   - Gate de horario de mercado (9:30-15:45 ET solo)
-  - Deduplicacion: no envia el mismo simbolo hasta el proximo ciclo
-  - Timeout reducido a 25s para no bloquear si el brain no responde
-  - Cooldown por simbolo (no repetir dentro de N minutos)
+  - Deduplicacion / cooldown 30min por simbolo
 
 Uso:
     python scripts/autonomous_loop.py
-    python scripts/autonomous_loop.py --port 8792 --interval 120
-    python scripts/autonomous_loop.py --no-market-hours-gate  # para testing
-    python scripts/autonomous_loop.py --no-vision-gate        # sin validacion visual
-    python scripts/autonomous_loop.py --min-visual-conf 0.6   # bloquear si conf < 0.6
+    python scripts/autonomous_loop.py --min-signal-score 0.60   # gate estricto
+    python scripts/autonomous_loop.py --min-signal-score 0.0    # solo log, sin bloqueo
+    python scripts/autonomous_loop.py --no-vision-gate
 """
 from __future__ import annotations
 
@@ -54,6 +55,87 @@ def _init_vision() -> None:
         logging.getLogger("atlas.execution.live_loop").warning(
             "Vision no disponible: %s", exc
         )
+
+
+# ── Signal score gate ─────────────────────────────────────────────────────────
+# Mapeo scanner → SignalComponents (proxy cuando LiveLoop no esta corriendo)
+#
+# Scanner devuelve:
+#   local_win_rate_pct  [0-100]  → tin_score  (probabilidad historica de exito)
+#   signal_strength_pct [0-100]  → regime_confidence (fuerza de tendencia)
+#   alignment_score     [0-100]  → mtf_coherence (alineacion multi-TF)
+#   direction + selection_score  → motif_edge (sesgo direccional)
+#
+# formula: final_score = 0.30*motif + 0.30*tin + 0.20*mtf + 0.20*regime
+
+def _compute_signal_score_proxy(cand: dict) -> tuple[float, dict]:
+    """Calcula final_signal_score usando datos del candidato del scanner."""
+    sel_score  = float(cand.get("selection_score") or 75.0)
+    win_rate   = float(cand.get("local_win_rate_pct") or 65.0)
+    strength   = float(cand.get("signal_strength_pct") or 50.0)
+    alignment  = float(cand.get("alignment_score") or 50.0)
+    direction  = str(cand.get("direction") or "neutral").lower()
+    conf_pct   = float((cand.get("confirmation") or {}).get("confidence_pct") or alignment)
+    order_flow = float((cand.get("order_flow") or {}).get("score_pct") or 50.0)
+
+    # motif_edge: refleja el sesgo direccional + fuerza del setup
+    # selection_score [75-100] → [0.55-1.0], ajustado por direccion
+    base_edge = max(0.0, min(1.0, (sel_score - 50.0) / 50.0))
+    if direction in {"bajista", "bearish", "short", "down", "sell"}:
+        motif_edge = 1.0 - base_edge   # invert: bajista fuerte = bajo edge long
+    else:
+        motif_edge = base_edge
+
+    # tin_score: win_rate historica [0-100] → [0-1]
+    tin_score = max(0.0, min(1.0, win_rate / 100.0))
+
+    # mtf_coherence: alignment + higher_tf confirmation [0-100] → [0-1]
+    mtf_coh = max(0.0, min(1.0, (alignment * 0.6 + conf_pct * 0.4) / 100.0))
+
+    # regime_confidence: strength de la tendencia [0-100] → [0-1]
+    regime_conf = max(0.0, min(1.0, strength / 100.0))
+
+    # formula final_signal_score (misma que SignalGenerator)
+    motif_n = max(0.0, min(1.0, (motif_edge + 1.0) / 2.0))  # normalizar [-1,1]→[0,1]
+    score = (0.30 * motif_n + 0.30 * tin_score
+             + 0.20 * mtf_coh + 0.20 * regime_conf)
+    score = round(max(0.0, min(1.0, score)), 4)
+
+    # tier
+    if score >= 0.75:
+        tier = "FULL"
+    elif score >= 0.65:
+        tier = "NORMAL"
+    elif score >= 0.55:
+        tier = "SMALL"
+    else:
+        tier = "SKIP"
+
+    components = {
+        "motif_edge": round(motif_edge, 3),
+        "tin_score": round(tin_score, 3),
+        "mtf_coherence": round(mtf_coh, 3),
+        "regime_confidence": round(regime_conf, 3),
+        "signal_score": score,
+        "tier": tier,
+    }
+    return score, components
+
+
+def _signal_gate(cand: dict, min_score: float) -> tuple[bool, float, str]:
+    """Gate de signal_score compuesto.
+
+    Returns:
+        (passed, score, log_line)
+    """
+    score, comp = _compute_signal_score_proxy(cand)
+    log_line = (
+        f"score={score:.3f} tier={comp['tier']} "
+        f"(motif={comp['motif_edge']:.2f} tin={comp['tin_score']:.2f} "
+        f"mtf={comp['mtf_coherence']:.2f} regime={comp['regime_confidence']:.2f})"
+    )
+    passed = score >= min_score if min_score > 0 else True
+    return passed, score, log_line
 
 
 def _visual_check(direction: str, api_price: float, min_conf: float) -> tuple[bool, str]:
@@ -208,12 +290,14 @@ def run_loop(
     no_market_hours_gate: bool = False,
     no_vision_gate: bool = False,
     min_visual_conf: float = 0.0,
+    min_signal_score: float = 0.55,
 ) -> None:
     logger.info("=" * 60)
-    logger.info("ATLAS autonomous_loop v3 iniciado")
+    logger.info("ATLAS autonomous_loop v4 iniciado")
     logger.info("  base=%s interval=%ds max_per_cycle=%d", base, interval_sec, max_per_cycle)
     logger.info("  market_hours_gate=%s", not no_market_hours_gate)
     logger.info("  symbol_cooldown=%dmin", _SYMBOL_COOLDOWN_MIN)
+    logger.info("  signal_score_gate=%.2f (SKIP si score<%.2f)", min_signal_score, min_signal_score)
     logger.info("  vision_gate=%s min_visual_conf=%.2f available=%s",
                 not no_vision_gate, min_visual_conf, _VISION_AVAILABLE)
     logger.info("=" * 60)
@@ -331,9 +415,18 @@ def run_loop(
             side      = "buy" if direction in {"long", "alcista", "bull", "up"} else "sell_short"
             tf        = cand.get("timeframe", "?")
 
-            logger.info("[cycle %d] -> %s score=%.1f dir=%s tf=%s", cycle, sym, score, direction, tf)
+            logger.info("[cycle %d] SCANNER %s | scanner_score=%.1f dir=%s tf=%s",
+                        cycle, sym, score, direction, tf)
 
-            # ── Validacion visual pre-submit ──────────────────────────────────
+            # ── Gate 1: signal_score compuesto (motif+TIN+MTF+regime) ─────────
+            sig_ok, sig_score, sig_log = _signal_gate(cand, min_signal_score)
+            logger.info("  SIGNAL  %s | %s", sym, sig_log)
+            if not sig_ok:
+                logger.info("  SKIP    %s | signal_score %.3f < %.2f (SKIP tier)",
+                            sym, sig_score, min_signal_score)
+                continue
+
+            # ── Gate 2: validacion visual (color chart Insta360/desktop) ──────
             if not no_vision_gate and _VISION_AVAILABLE:
                 vis_ok, vis_reason = _visual_check(
                     direction=direction,
@@ -421,6 +514,8 @@ def main() -> int:
     parser.add_argument("--no-vision-gate",     action="store_true", help="Deshabilitar validacion visual")
     parser.add_argument("--min-visual-conf",    type=float, default=0.0,
                         help="Confianza minima visual para bloquear (0.0=solo log, 0.6=bloqueo)")
+    parser.add_argument("--min-signal-score",   type=float, default=0.55,
+                        help="Signal score minimo para enviar orden (0.55=SMALL+, 0.0=desactivado)")
     args = parser.parse_args()
 
     # Inicializar pipeline visual (no bloquea si falla)
@@ -446,6 +541,7 @@ def main() -> int:
             args.no_market_hours_gate,
             no_vision_gate=args.no_vision_gate,
             min_visual_conf=args.min_visual_conf,
+            min_signal_score=args.min_signal_score,
         )
     except KeyboardInterrupt:
         logger.info("Loop detenido (Ctrl+C)")
