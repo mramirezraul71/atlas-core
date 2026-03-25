@@ -516,7 +516,23 @@ async def app_lifespan(app):
                     logging.getLogger(__name__).info("✓ Self-Healing Loop activo")
     except Exception as _heal_err:
         logging.getLogger(__name__).warning("Self-Healing Loop no pudo iniciar: %s", _heal_err)
+    # ── ATLAS DOCTOR — Sistema Nervioso Central ────────────────────────────────
+    try:
+        if os.getenv("ATLAS_DOCTOR_ENABLED", "true").strip().lower() in (
+            "1", "true", "yes", "y", "on"
+        ):
+            from atlas_adapter.services.doctor_nervous_system import get_doctor
+            _doctor_inst = get_doctor()
+            await _doctor_inst.start_nervous_system()
+            logging.getLogger(__name__).info("✓ ATLAS DOCTOR activo")
+    except Exception as _doc_err:
+        logging.getLogger(__name__).warning("ATLAS DOCTOR no pudo iniciar: %s", _doc_err)
     yield
+    try:
+        from atlas_adapter.services.doctor_nervous_system import get_doctor as _gd
+        await _gd().stop_nervous_system()
+    except Exception:
+        pass
     try:
         from atlas_adapter.supervisor_daemon import stop_supervisor_daemon
 
