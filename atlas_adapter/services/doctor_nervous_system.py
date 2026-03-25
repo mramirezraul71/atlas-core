@@ -206,16 +206,10 @@ def _similar_count(component: str, hours: int = 24) -> int:
 def _detect_api_layer() -> List[Anomaly]:
     anomalies = []
 
-    # ATLAS API :8791
+    # ATLAS API :8791 — solo TCP (evitar auto-probe circular dentro del mismo proceso)
     if not _tcp("127.0.0.1", 8791):
         anomalies.append(Anomaly("atlas_api", "api", TIER_CRASH,
                                  "ATLAS API :8791 TCP down — uvicorn caído"))
-    else:
-        ok, status, body = _http("http://127.0.0.1:8791/health", timeout=2.5)
-        if not ok:
-            anomalies.append(Anomaly("atlas_api", "api", TIER_CRITICAL,
-                                     f"ATLAS API /health no responde (status={status})",
-                                     {"status": status, "body": body[:80]}))
 
     # ATLAS-Quant :8795
     if not _tcp("127.0.0.1", 8795):
@@ -338,8 +332,8 @@ def _detect_quant_layer() -> List[Anomaly]:
 def _detect_cognitive_layer() -> List[Anomaly]:
     anomalies = []
 
-    # Triada IA vía /api/battery/status
-    ok, _, body = _http("http://127.0.0.1:8791/api/battery/status", timeout=3.0)
+    # Triada IA vía /api/battery/status — timeout corto para no bloquear
+    ok, _, body = _http("http://127.0.0.1:8791/api/battery/status", timeout=1.5)
     if ok:
         try:
             d = json.loads(body)
