@@ -43,7 +43,7 @@ $PidFile     = "C:\ATLAS_PUSH\logs\rauli_vision.pids"
 
 # ── Puertos ────────────────────────────────────────────────────────────────────
 $EspejoPort  = 3000
-$DashPort    = 5173
+$DashPort    = 5174   # Vision dashboard: puerto 5174 (apps.js APP_DEFAULTS)
 
 # ── Credenciales espejo (no-secretas en dev local) ─────────────────────────────
 $EspejoEnv = @{
@@ -189,7 +189,7 @@ function Start-Dashboard {
 
     # Servir dist/ con Vite preview — no requiere hot-reload, es más estable
     $proc = Start-Process -FilePath "cmd.exe" `
-        -ArgumentList "/c", "npm run preview -- --port $DashPort --host 0.0.0.0" `
+        -ArgumentList "/c", "npm run preview -- --port $DashPort --host 127.0.0.1" `
         -WorkingDirectory $DashDir `
         -RedirectStandardOutput "$($LogFile).dash.log" `
         -RedirectStandardError  "$($LogFile).dash.err.log" `
