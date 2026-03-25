@@ -206,8 +206,9 @@ def _similar_count(component: str, hours: int = 24) -> int:
 def _detect_api_layer() -> List[Anomaly]:
     anomalies = []
 
-    # ATLAS API :8791 — solo TCP (evitar auto-probe circular dentro del mismo proceso)
-    if not _tcp("127.0.0.1", 8791):
+    # ATLAS API :8791 — solo TCP, doble confirmación para evitar falsos TIER0
+    # (el proceso puede estar temporalmente saturado aceptando conexiones)
+    if not _tcp("127.0.0.1", 8791, timeout=0.5) and not _tcp("127.0.0.1", 8791, timeout=1.0):
         anomalies.append(Anomaly("atlas_api", "api", TIER_CRASH,
                                  "ATLAS API :8791 TCP down — uvicorn caído"))
 
@@ -381,21 +382,12 @@ def _heal(anomaly: Anomaly) -> HealAction:
 
     # ── TIER 0/1: CRASH o CRÍTICO ──────────────────────────────────────────────
     if comp == "atlas_api" and anomaly.tier <= TIER_CRITICAL:
-        if count <= MAX_RETRIES:
-            pid = _spawn(
-                [VENV_PYTHON, "-m", "uvicorn", "atlas_adapter.atlas_http_api:app",
-                 "--host", "0.0.0.0", "--port", "8791"],
-                cwd=str(BASE_DIR)
-            )
-            ok = pid and _wait_port(8791, 20)
-            action.action_type = "restart"
-            action.action_detail = f"uvicorn restart PID={pid}"
-            action.healed = bool(ok)
-            action.outcome = "UP :8791" if ok else "no responde tras restart"
-        else:
-            action.action_type = "alert"
-            action.action_detail = f"MAX_RETRIES alcanzado ({count}x) — escalado a ops_bus"
-            _escalate(anomaly)
+        # NEVER restart atlas_api from inside the atlas_api process itself —
+        # that would spawn zombie uvicorn and block the threadpool with _wait_port.
+        # The push_autorevive_watchdog handles this externally.
+        action.action_type = "alert"
+        action.action_detail = "atlas_api TCP fallo momentáneo — watchdog externo maneja restart"
+        _escalate(anomaly)
 
     elif comp == "vision_espejo":
         if count <= MAX_RETRIES:
@@ -486,6 +478,11 @@ class AtlasDoctor:
         self.last_anomalies: List[Anomaly] = []
         self.last_actions: List[HealAction] = []
         self.cycle_count: int = 0
+        # Visual inspector (lazy init)
+        self._visual_task: Optional[asyncio.Task] = None
+        self._visual_anomalies: List[Dict[str, Any]] = []
+        # Dual inspector (lazy init)
+        self._dual_task: Optional[asyncio.Task] = None
         _init_db()
 
     # ── Colección del estado completo ──────────────────────────────────────────
@@ -512,12 +509,60 @@ class AtlasDoctor:
     async def nervous_system_loop(self) -> None:
         _log.info("[DOCTOR] Sistema Nervioso iniciado (interval=%ss, dry_run=%s)",
                   HEAL_INTERVAL, DRY_RUN)
+        _visual_enabled = os.getenv("ATLAS_VISUAL_INSPECTOR", "false").lower() in (
+            "1", "true", "yes"
+        )
         while self._running:
             try:
                 async with self._lock:
                     await self._run_cycle()
             except Exception as exc:
                 _log.error("[DOCTOR] Error en ciclo: %s", exc)
+
+            # Visual inspector: cada 30 ciclos (~15 min con HEAL_INTERVAL=30s)
+            # Task INDEPENDIENTE — nunca dentro del lock
+            if (
+                _visual_enabled
+                and self.cycle_count % 30 == 0
+                and self.cycle_count > 0
+                and (self._visual_task is None or self._visual_task.done())
+            ):
+                try:
+                    from atlas_adapter.services.visual_self_inspector import (
+                        VisualSelfInspector,
+                    )
+                    _inspector = VisualSelfInspector(doctor=self)
+                    self._visual_task = asyncio.create_task(
+                        _inspector.run_full_inspection(),
+                        name="atlas-visual-inspector",
+                    )
+                    _log.info("[DOCTOR] Visual inspector iniciado (ciclo #%d)", self.cycle_count)
+                except Exception as _vi_err:
+                    _log.warning("[DOCTOR] Visual inspector no pudo iniciarse: %s", _vi_err)
+
+            # Dual inspector: cada 30 ciclos, INDEPENDIENTE del visual inspector
+            _dual_enabled = os.getenv("ATLAS_DUAL_INSPECTOR", "false").lower() in (
+                "1", "true", "yes"
+            )
+            if (
+                _dual_enabled
+                and self.cycle_count % 30 == 0
+                and self.cycle_count > 0
+                and (self._dual_task is None or self._dual_task.done())
+            ):
+                try:
+                    from atlas_adapter.services.dual_self_inspector import (
+                        DualSelfInspector,
+                    )
+                    _dual = DualSelfInspector(doctor=self)
+                    self._dual_task = asyncio.create_task(
+                        _dual.run_dual_inspection(),
+                        name="atlas-dual-inspector",
+                    )
+                    _log.info("[DOCTOR] Dual inspector iniciado (ciclo #%d)", self.cycle_count)
+                except Exception as _di_err:
+                    _log.warning("[DOCTOR] Dual inspector no pudo iniciarse: %s", _di_err)
+
             await asyncio.sleep(HEAL_INTERVAL)
 
     async def _run_cycle(self) -> None:
@@ -586,6 +631,48 @@ class AtlasDoctor:
                 for x in self.last_actions
             ],
         }
+
+    def report_visual_anomalies(self, anomalies: List[Dict[str, Any]]) -> None:
+        """
+        Recibe anomalías del VisualSelfInspector y las persiste en SQLite.
+
+        Cada anomalía visual se convierte en un HealAction con action_type='visual_audit'
+        y se registra en doctor_events para trazabilidad. No reemplaza last_anomalies
+        (que son anomalías del sistema en tiempo real); se almacena en _visual_anomalies.
+
+        Args:
+            anomalies: Lista de dicts con campos: module, issues, ocr_confidence, tier.
+        """
+        self._visual_anomalies = anomalies
+        for item in anomalies:
+            try:
+                anomaly = Anomaly(
+                    component=f"visual:{item.get('module', 'unknown')}",
+                    layer="api",
+                    tier=int(item.get("tier", TIER_WARNING)),
+                    description="; ".join(item.get("issues", ["visual_anomaly"])),
+                    context={
+                        "ocr_confidence": item.get("ocr_confidence", 0.0),
+                        "metrics":        item.get("metrics", {}),
+                        "source":         "visual_inspector",
+                    },
+                )
+                action = HealAction(
+                    anomaly=anomaly,
+                    action_type="visual_audit",
+                    action_detail=f"visual inspection: {anomaly.description[:120]}",
+                    healed=False,
+                    outcome="pending_review",
+                )
+                _record_event(action)
+                _log.warning(
+                    "[DOCTOR] VISUAL ANOMALY: %s → %s (conf=%.2f)",
+                    anomaly.component,
+                    anomaly.description[:80],
+                    item.get("ocr_confidence", 0.0),
+                )
+            except Exception as exc:
+                _log.error("[DOCTOR] Error registrando anomalía visual: %s", exc)
 
     def history(self, limit: int = 50) -> List[Dict]:
         return _recent_events(limit)

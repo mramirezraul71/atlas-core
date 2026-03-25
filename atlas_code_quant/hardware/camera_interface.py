@@ -167,7 +167,7 @@ class CameraInterface:
 
     def __init__(
         self,
-        rtmp_url: str = "rtmp://192.168.1.10/live/atlas",
+        rtmp_url: "str | int" = "rtmp://192.168.1.10/live/atlas",
         yolo_model_path: str = "yolov8n.pt",
         ocr_languages: list[str] | None = None,
         frame_queue_size: int = 30,
@@ -271,12 +271,18 @@ class CameraInterface:
     # ── Thread de captura RTMP ────────────────────────────────────────────────
 
     def _capture_loop(self) -> None:
-        """Abre stream RTMP y pone frames en la queue."""
+        """Abre stream RTMP o cámara USB y pone frames en la queue."""
         retry_delay = 2.0
+        # Soporte índice entero (USB/DirectShow) además de URL RTMP
+        _src = self.rtmp_url
+        if isinstance(_src, str) and _src.lstrip("-").isdigit():
+            _src = int(_src)
+        _open_args = (_src, cv2.CAP_DSHOW) if isinstance(_src, int) else (_src,)
+
         while self._running:
-            self._cap = cv2.VideoCapture(self.rtmp_url)
+            self._cap = cv2.VideoCapture(*_open_args)
             if not self._cap.isOpened():
-                logger.error("No se pudo abrir RTMP: %s — reintentando en %.0fs",
+                logger.error("No se pudo abrir fuente: %s — reintentando en %.0fs",
                              self.rtmp_url, retry_delay)
                 time.sleep(retry_delay)
                 retry_delay = min(retry_delay * 1.5, 30.0)
