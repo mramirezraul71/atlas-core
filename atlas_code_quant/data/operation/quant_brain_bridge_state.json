@@ -7,10 +7,10 @@
   "last_bitacora_ok": true,
   "last_memory_ok": true,
   "last_event_kind": "operation_cycle",
-  "last_event_at": "2026-03-25T04:44:16.779539",
+  "last_event_at": "2026-03-25T04:50:40.720432",
   "last_error": "",
-  "total_events": 268,
-  "delivered_events": 146,
+  "total_events": 270,
+  "delivered_events": 148,
   "queued_local_only_events": 122,
   "emitted_journal_keys": [],
   "events_path": "C:\\ATLAS_PUSH\\atlas_code_quant\\logs\\quant_brain_bridge.jsonl"
