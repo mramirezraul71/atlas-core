@@ -38,11 +38,15 @@ import subprocess
 import sys
 import time
 import webbrowser
+from statistics import fmean
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import numpy as np
+# Asegurar import estable cuando se ejecuta como script directo
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 # Cargar atlas.env antes de leer env vars (cuando se corre como script CLI)
 try:
@@ -68,6 +72,9 @@ _DASHBOARD_URL = os.getenv(
 _PAGE_LOAD_WAIT = float(os.getenv("ATLAS_VISUAL_PAGE_LOAD_S", "3.0"))
 _FRAME_TIMEOUT = float(os.getenv("ATLAS_VISUAL_FRAME_TIMEOUT_S", "10.0"))
 _OCR_CONF_THRESHOLD = float(os.getenv("ATLAS_VISUAL_OCR_CONF_MIN", "0.55"))
+_USE_HID_NAV = os.getenv("ATLAS_VISUAL_USE_HID_NAV", "false").strip().lower() in (
+    "1", "true", "yes", "y", "on"
+)
 
 # ── Módulos SPA y sus hashes de ruta ──────────────────────────────────────────
 # Orden: módulos críticos primero para detección rápida de fallos graves
@@ -185,22 +192,8 @@ def _autonomous_navigate(url: str) -> None:
     Args:
         url: URL completa con hash (ej: http://127.0.0.1:8791/ui#/health)
     """
-    # Nivel 1: HID Ctrl+L — navega en ventana existente (más rápido, sin tab nueva)
-    try:
-        import pyautogui  # type: ignore[import]
-        pyautogui.hotkey("ctrl", "l")
-        time.sleep(0.15)
-        pyautogui.typewrite(url, interval=0.02)
-        pyautogui.press("enter")
-        logging.getLogger("atlas.visual_inspector").debug(
-            "[Navigate] HID Ctrl+L → %s", url
-        )
-        return
-    except Exception:
-        pass
-
     if sys.platform == "win32":
-        # Nivel 2: PowerShell Start-Process (fuerza primer plano)
+        # Nivel 1: PowerShell Start-Process (fuerza primer plano)
         try:
             subprocess.Popen(
                 ["powershell", "-WindowStyle", "Hidden", "-Command",
@@ -216,7 +209,7 @@ def _autonomous_navigate(url: str) -> None:
         except Exception:
             pass
 
-        # Nivel 3: cmd start
+        # Nivel 2: cmd start
         try:
             subprocess.Popen(
                 ["cmd", "/c", "start", "", url],
@@ -226,6 +219,33 @@ def _autonomous_navigate(url: str) -> None:
             )
             logging.getLogger("atlas.visual_inspector").debug(
                 "[Navigate] cmd start → %s", url
+            )
+            return
+        except Exception:
+            pass
+
+    # Nivel 3 (opt-in): HID Ctrl+L + pegar desde clipboard
+    if _USE_HID_NAV:
+        try:
+            import pyautogui  # type: ignore[import]
+            try:
+                import pyperclip  # type: ignore[import]
+                pyperclip.copy(url)
+            except Exception:
+                subprocess.run(
+                    ["clip"],
+                    input=url.encode("utf-8"),
+                    check=False,
+                    capture_output=True,
+                )
+
+            pyautogui.hotkey("ctrl", "l")
+            time.sleep(0.15)
+            pyautogui.hotkey("ctrl", "a")
+            pyautogui.hotkey("ctrl", "v")
+            pyautogui.press("enter")
+            logging.getLogger("atlas.visual_inspector").debug(
+                "[Navigate] HID clipboard → %s", url
             )
             return
         except Exception:
@@ -608,7 +628,7 @@ class VisualSelfInspector:
         total = len(self._last_results)
         ok_count = sum(1 for r in self._last_results if r.ok)
         confs = [r.ocr_confidence for r in self._last_results if r.ocr_confidence > 0]
-        avg_conf = float(np.mean(confs)) if confs else 0.0
+        avg_conf = float(fmean(confs)) if confs else 0.0
 
         return {
             "completed":          True,
