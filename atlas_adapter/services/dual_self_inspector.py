@@ -38,6 +38,7 @@ import subprocess
 import sys
 import time
 import webbrowser
+from statistics import fmean
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -46,8 +47,6 @@ from typing import Any, Dict, List, Optional, Tuple
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-
-import numpy as np
 
 # Cargar atlas.env antes de leer env vars (cuando se corre como script CLI)
 try:
@@ -78,6 +77,9 @@ _FRAME_TIMEOUT = float(os.getenv("ATLAS_DUAL_FRAME_TIMEOUT_S", "10.0"))
 _MISMATCH_THRESHOLD = float(os.getenv("ATLAS_DUAL_MISMATCH_THRESHOLD", "0.10"))  # 10%
 # Índice del monitor mss que muestra el dashboard (1 = primer monitor físico)
 _MSS_MONITOR_IDX = int(os.getenv("ATLAS_DUAL_MONITOR_IDX", "1"))
+_USE_HID_NAV = os.getenv("ATLAS_DUAL_USE_HID_NAV", "false").strip().lower() in (
+    "1", "true", "yes", "y", "on"
+)
 
 # ── Singleton EasyOCR para capturas de screenshot ─────────────────────────────
 # Un solo reader por proceso: la carga tarda ~30s y consume ~2GB RAM.
@@ -398,28 +400,27 @@ class DualSelfInspector:
 
     def _autonomous_navigate(self, url: str) -> None:
         """
-        Abre el browser de forma autónoma en Windows, trayéndolo al primer plano.
-
-        Estrategia por capas (fallback progresivo):
-          1. PowerShell Start-Process: abre/enfoca Chrome/Edge con la URL.
-             Fuerza la ventana al frente — más fiable que webbrowser en Windows.
-          2. Si falla: cmd 'start' (abre en browser default del sistema).
-          3. Fallback final: webbrowser.open() estándar.
-
-        También intenta usar las manos HID (Ctrl+L + URL) para navegar dentro
-        de una ventana ya abierta, evitando abrir una nueva pestaña cada vez.
-
-        Args:
-            url: URL completa con hash (ej: http://127.0.0.1:8791/ui#/health)
+        Navega el browser al URL dado. Estrategia:
+          1. cmd /c start (Windows): abre/navega en browser default — maneja ':' y '#' correctos.
+          2. PowerShell Start-Process: alternativa Windows.
+          3. HID clipboard: Ctrl+L + pegar URL (si browser ya está en primer plano).
+          4. webbrowser.open: fallback universal.
         """
-        # Intentar navegar con Ctrl+L en ventana existente (más rápido, sin nueva pestaña)
-        _navigated_hid = self._navigate_via_hid(url)
-        if _navigated_hid:
-            logger.debug("[DualInspector] HID Ctrl+L → %s", url)
-            return
-
-        # Fallback 1: PowerShell Start-Process (fuerza primer plano en Windows)
         if sys.platform == "win32":
+            # Primario: cmd start — el más fiable para URLs con hash y caracteres especiales
+            try:
+                subprocess.Popen(
+                    ["cmd", "/c", "start", "", url],
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                logger.info("[DualInspector] nav→ cmd start: %s", url)
+                return
+            except Exception as exc:
+                logger.debug("[DualInspector] cmd start failed: %s", exc)
+
+            # Secundario: PowerShell Start-Process
             try:
                 subprocess.Popen(
                     ["powershell", "-WindowStyle", "Hidden", "-Command",
@@ -428,46 +429,44 @@ class DualSelfInspector:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-                logger.debug("[DualInspector] PowerShell Start-Process → %s", url)
+                logger.info("[DualInspector] nav→ PS Start-Process: %s", url)
                 return
             except Exception as exc:
-                logger.debug("[DualInspector] PowerShell navigate failed: %s", exc)
+                logger.debug("[DualInspector] PS navigate failed: %s", exc)
 
-            # Fallback 2: cmd start (default browser, trae al frente)
-            try:
-                subprocess.Popen(
-                    ["cmd", "/c", "start", "", url],
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                logger.debug("[DualInspector] cmd start → %s", url)
-                return
-            except Exception as exc:
-                logger.debug("[DualInspector] cmd start failed: %s", exc)
+        # Terciario (opt-in): HID clipboard+paste (browser en primer plano)
+        if _USE_HID_NAV and self._navigate_via_hid(url):
+            logger.info("[DualInspector] nav→ HID clipboard: %s", url)
+            return
 
-        # Fallback 3: webbrowser estándar (cualquier OS)
+        # Fallback final
         webbrowser.open(url, new=0, autoraise=True)
-        logger.debug("[DualInspector] webbrowser.open → %s", url)
+        logger.info("[DualInspector] nav→ webbrowser.open: %s", url)
 
     def _navigate_via_hid(self, url: str) -> bool:
         """
-        Navega a una URL dentro de la ventana activa usando Ctrl+L (barra de dirección).
-        Solo funciona si el browser ya está abierto y en primer plano.
-
-        Args:
-            url: URL de destino
-
-        Returns:
-            True si la navegación HID se ejecutó sin error; False si no disponible.
+        Navega usando Ctrl+L + clipboard paste.
+        typewrite() no soporta ':' ni '#' en todos los layouts — se usa clipboard.
         """
         try:
             import pyautogui  # type: ignore[import]
-            # Abrir barra de dirección (Chrome/Edge/Firefox)
+            # Poner URL en clipboard para evitar problemas con chars especiales
+            try:
+                import pyperclip  # type: ignore[import]
+                pyperclip.copy(url)
+                use_clipboard = True
+            except ImportError:
+                # Fallback: clip.exe (Windows built-in)
+                subprocess.run(["clip"], input=url.encode("utf-8"),
+                               check=False, capture_output=True)
+                use_clipboard = True
+
             pyautogui.hotkey("ctrl", "l")
-            time.sleep(0.2)
-            # Escribir URL y confirmar
-            pyautogui.typewrite(url, interval=0.02)
+            time.sleep(0.3)
+            pyautogui.hotkey("ctrl", "a")   # seleccionar todo en barra
+            if use_clipboard:
+                pyautogui.hotkey("ctrl", "v")   # pegar URL completa
+            time.sleep(0.1)
             pyautogui.press("enter")
             return True
         except Exception:
@@ -527,7 +526,7 @@ class DualSelfInspector:
             ocr_out = ocr_reader.readtext(img_array)
             texts = [text for (_, text, _) in ocr_out if text.strip()]
             confs = [conf for (_, _, conf) in ocr_out]
-            avg_conf = float(np.mean(confs)) if confs else 0.0
+            avg_conf = float(fmean(confs)) if confs else 0.0
             metrics = _parse_metrics(texts)
         except Exception as exc:
             logger.error("[DualInspector] OCR screenshot error: %s", exc)
@@ -610,15 +609,15 @@ class DualSelfInspector:
         Returns:
             DualModuleResult con divergencias calculadas.
         """
-        # Si alguna fuente falló, no podemos validar → no marcamos como mismatch
+        # Si alguna fuente falló, marcamos mismatch operativo (inspección incompleta).
         if not screenshot.ok or not physical.ok:
             return DualModuleResult(
                 module=module,
-                match=True,   # Indeterminate — no penalizar por fallo de captura
+                match=False,
                 screenshot=screenshot,
                 physical=physical,
                 divergences={},
-                max_diff=0.0,
+                max_diff=1.0,
                 tier=2,
             )
 
@@ -694,14 +693,21 @@ class DualSelfInspector:
         try:
             payload = []
             for r in mismatches:
+                issues = [
+                    f"dual_mismatch: {k} diff={v*100:.1f}%"
+                    for k, v in r.divergences.items()
+                    if v >= self._mismatch_threshold
+                ]
+                if r.screenshot.error:
+                    issues.append(f"screenshot_capture_error: {r.screenshot.error}")
+                if r.physical.error:
+                    issues.append(f"physical_capture_error: {r.physical.error}")
+                if not issues:
+                    issues.append("dual_mismatch_without_metrics")
                 payload.append({
                     "module":          r.module,
                     "ok":              False,
-                    "issues":          [
-                        f"dual_mismatch: {k} diff={v*100:.1f}%"
-                        for k, v in r.divergences.items()
-                        if v >= self._mismatch_threshold
-                    ],
+                    "issues":          issues,
                     "ocr_confidence":  min(
                         r.screenshot.confidence, r.physical.confidence
                     ),
@@ -723,7 +729,7 @@ class DualSelfInspector:
         total = len(self._last_results)
         ok = sum(1 for r in self._last_results if r.match)
         diffs = [r.max_diff for r in self._last_results if r.divergences]
-        avg_diff = float(np.mean(diffs)) if diffs else 0.0
+        avg_diff = float(fmean(diffs)) if diffs else 0.0
         return {
             "completed":      True,
             "last_run_ts":    self._last_run_ts,

@@ -93,11 +93,16 @@ def doctor_history(limit: int = Query(50, ge=1, le=500)):
 
 # ── POST /doctor/diagnose ─────────────────────────────────────────────────────
 @router.post("/diagnose")
-async def doctor_diagnose():
+async def doctor_diagnose(
+    include_self_inspection: bool = Query(
+        True,
+        description="Si true, espera inspección visual y dual (cámara + screenshot).",
+    )
+):
     """Fuerza un ciclo de diagnóstico completo ahora."""
     try:
         d = _doctor()
-        result = await d.run_once()
+        result = await d.run_once(include_self_inspection=include_self_inspection)
         return _std(True, result)
     except Exception as e:
         return _std(False, error=str(e))

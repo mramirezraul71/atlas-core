@@ -42,6 +42,21 @@ DRY_RUN = os.getenv("ATLAS_DOCTOR_DRY_RUN", "false").lower() in ("1", "true", "y
 
 _log = logging.getLogger("atlas.doctor")
 
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "y", "on")
+
+
+VISUAL_ENABLED = _env_bool("ATLAS_VISUAL_INSPECTOR", True)
+DUAL_ENABLED = _env_bool("ATLAS_DUAL_INSPECTOR", True)
+SELF_INSPECT_ON_START = _env_bool("ATLAS_SELF_INSPECT_ON_START", True)
+VISUAL_INTERVAL_SEC = int(os.getenv("ATLAS_VISUAL_INTERVAL_SEC", "300"))
+DUAL_INTERVAL_SEC = int(os.getenv("ATLAS_DUAL_INTERVAL_SEC", "300"))
+SELF_INSPECT_TIMEOUT_SEC = int(os.getenv("ATLAS_SELF_INSPECT_TIMEOUT_SEC", "180"))
+
 # ── Tipos de datos ──────────────────────────────────────────────────────────────
 TIER_CRASH    = 0   # 0.1s  — servicio core caído
 TIER_CRITICAL = 1   # 1s    — funcionalidad crítica degradada
@@ -483,6 +498,15 @@ class AtlasDoctor:
         self._visual_anomalies: List[Dict[str, Any]] = []
         # Dual inspector (lazy init)
         self._dual_task: Optional[asyncio.Task] = None
+        self._visual_inspector: Optional[Any] = None
+        self._dual_inspector: Optional[Any] = None
+        self._visual_last_error: Optional[str] = None
+        self._dual_last_error: Optional[str] = None
+        self._visual_last_summary: Dict[str, Any] = {}
+        self._dual_last_summary: Dict[str, Any] = {}
+        now = time.monotonic()
+        self._visual_next_run_at = now if SELF_INSPECT_ON_START else now + VISUAL_INTERVAL_SEC
+        self._dual_next_run_at = now if SELF_INSPECT_ON_START else now + DUAL_INTERVAL_SEC
         _init_db()
 
     # ── Colección del estado completo ──────────────────────────────────────────
@@ -505,12 +529,125 @@ class AtlasDoctor:
                 all_anomalies.extend(r)
         return all_anomalies
 
+    def _should_run_visual(self, now_mono: float) -> bool:
+        if not VISUAL_ENABLED:
+            return False
+        if self._visual_task is not None and not self._visual_task.done():
+            return False
+        return now_mono >= self._visual_next_run_at
+
+    def _should_run_dual(self, now_mono: float) -> bool:
+        if not DUAL_ENABLED:
+            return False
+        if self._dual_task is not None and not self._dual_task.done():
+            return False
+        return now_mono >= self._dual_next_run_at
+
+    def _on_visual_task_done(self, task: asyncio.Task) -> None:
+        try:
+            _ = task.result()
+            if self._visual_inspector is not None and hasattr(self._visual_inspector, "summary"):
+                self._visual_last_summary = self._visual_inspector.summary() or {}
+            self._visual_last_error = None
+        except Exception as exc:
+            self._visual_last_error = str(exc)
+            _log.warning("[DOCTOR] Visual inspector terminó con error: %s", exc)
+        finally:
+            try:
+                if self._visual_inspector is not None and hasattr(self._visual_inspector, "stop_camera"):
+                    self._visual_inspector.stop_camera()
+            except Exception:
+                pass
+            self._visual_next_run_at = time.monotonic() + max(30, VISUAL_INTERVAL_SEC)
+
+    def _on_dual_task_done(self, task: asyncio.Task) -> None:
+        try:
+            _ = task.result()
+            if self._dual_inspector is not None and hasattr(self._dual_inspector, "summary"):
+                self._dual_last_summary = self._dual_inspector.summary() or {}
+            self._dual_last_error = None
+        except Exception as exc:
+            self._dual_last_error = str(exc)
+            _log.warning("[DOCTOR] Dual inspector terminó con error: %s", exc)
+        finally:
+            try:
+                if self._dual_inspector is not None and hasattr(self._dual_inspector, "stop_camera"):
+                    self._dual_inspector.stop_camera()
+            except Exception:
+                pass
+            self._dual_next_run_at = time.monotonic() + max(30, DUAL_INTERVAL_SEC)
+
+    async def _run_visual_once(self, *, force: bool = False) -> None:
+        """Ejecuta una inspección visual y espera resultado/timeout."""
+        if not force and not self._should_run_visual(time.monotonic()):
+            return
+        try:
+            from atlas_adapter.services.visual_self_inspector import VisualSelfInspector
+
+            self._visual_inspector = VisualSelfInspector(doctor=self)
+            self._visual_task = asyncio.create_task(
+                self._visual_inspector.run_full_inspection(),
+                name="atlas-visual-inspector",
+            )
+            self._visual_task.add_done_callback(self._on_visual_task_done)
+            _log.info("[DOCTOR] Visual inspector iniciado (blocking)")
+            await asyncio.wait_for(
+                asyncio.shield(self._visual_task),
+                timeout=max(30, SELF_INSPECT_TIMEOUT_SEC),
+            )
+        except asyncio.TimeoutError:
+            self._visual_last_error = (
+                f"visual_timeout_after_{max(30, SELF_INSPECT_TIMEOUT_SEC)}s"
+            )
+            _log.warning("[DOCTOR] Visual inspector timeout")
+            if self._visual_task and not self._visual_task.done():
+                self._visual_task.cancel()
+        except Exception as exc:
+            self._visual_last_error = str(exc)
+            _log.warning("[DOCTOR] Visual inspector no pudo ejecutarse: %s", exc)
+            self._visual_next_run_at = time.monotonic() + max(30, VISUAL_INTERVAL_SEC)
+
+    async def _run_dual_once(self, *, force: bool = False) -> None:
+        """Ejecuta una inspección dual y espera resultado/timeout."""
+        if not force and not self._should_run_dual(time.monotonic()):
+            return
+        try:
+            from atlas_adapter.services.dual_self_inspector import DualSelfInspector
+
+            self._dual_inspector = DualSelfInspector(doctor=self)
+            self._dual_task = asyncio.create_task(
+                self._dual_inspector.run_dual_inspection(),
+                name="atlas-dual-inspector",
+            )
+            self._dual_task.add_done_callback(self._on_dual_task_done)
+            _log.info("[DOCTOR] Dual inspector iniciado (blocking)")
+            await asyncio.wait_for(
+                asyncio.shield(self._dual_task),
+                timeout=max(30, SELF_INSPECT_TIMEOUT_SEC),
+            )
+        except asyncio.TimeoutError:
+            self._dual_last_error = (
+                f"dual_timeout_after_{max(30, SELF_INSPECT_TIMEOUT_SEC)}s"
+            )
+            _log.warning("[DOCTOR] Dual inspector timeout")
+            if self._dual_task and not self._dual_task.done():
+                self._dual_task.cancel()
+        except Exception as exc:
+            self._dual_last_error = str(exc)
+            _log.warning("[DOCTOR] Dual inspector no pudo ejecutarse: %s", exc)
+            self._dual_next_run_at = time.monotonic() + max(30, DUAL_INTERVAL_SEC)
+
     # ── Loop principal ─────────────────────────────────────────────────────────
     async def nervous_system_loop(self) -> None:
         _log.info("[DOCTOR] Sistema Nervioso iniciado (interval=%ss, dry_run=%s)",
                   HEAL_INTERVAL, DRY_RUN)
-        _visual_enabled = os.getenv("ATLAS_VISUAL_INSPECTOR", "false").lower() in (
-            "1", "true", "yes"
+        _log.info(
+            "[DOCTOR] Self-Inspection config visual=%s dual=%s on_start=%s visual_interval=%ss dual_interval=%ss",
+            VISUAL_ENABLED,
+            DUAL_ENABLED,
+            SELF_INSPECT_ON_START,
+            VISUAL_INTERVAL_SEC,
+            DUAL_INTERVAL_SEC,
         )
         while self._running:
             try:
@@ -519,49 +656,9 @@ class AtlasDoctor:
             except Exception as exc:
                 _log.error("[DOCTOR] Error en ciclo: %s", exc)
 
-            # Visual inspector: cada 30 ciclos (~15 min con HEAL_INTERVAL=30s)
-            # Task INDEPENDIENTE — nunca dentro del lock
-            if (
-                _visual_enabled
-                and self.cycle_count % 30 == 0
-                and self.cycle_count > 0
-                and (self._visual_task is None or self._visual_task.done())
-            ):
-                try:
-                    from atlas_adapter.services.visual_self_inspector import (
-                        VisualSelfInspector,
-                    )
-                    _inspector = VisualSelfInspector(doctor=self)
-                    self._visual_task = asyncio.create_task(
-                        _inspector.run_full_inspection(),
-                        name="atlas-visual-inspector",
-                    )
-                    _log.info("[DOCTOR] Visual inspector iniciado (ciclo #%d)", self.cycle_count)
-                except Exception as _vi_err:
-                    _log.warning("[DOCTOR] Visual inspector no pudo iniciarse: %s", _vi_err)
-
-            # Dual inspector: cada 30 ciclos, INDEPENDIENTE del visual inspector
-            _dual_enabled = os.getenv("ATLAS_DUAL_INSPECTOR", "false").lower() in (
-                "1", "true", "yes"
-            )
-            if (
-                _dual_enabled
-                and self.cycle_count % 30 == 0
-                and self.cycle_count > 0
-                and (self._dual_task is None or self._dual_task.done())
-            ):
-                try:
-                    from atlas_adapter.services.dual_self_inspector import (
-                        DualSelfInspector,
-                    )
-                    _dual = DualSelfInspector(doctor=self)
-                    self._dual_task = asyncio.create_task(
-                        _dual.run_dual_inspection(),
-                        name="atlas-dual-inspector",
-                    )
-                    _log.info("[DOCTOR] Dual inspector iniciado (ciclo #%d)", self.cycle_count)
-                except Exception as _di_err:
-                    _log.warning("[DOCTOR] Dual inspector no pudo iniciarse: %s", _di_err)
+            # Ejecutar inspección visual/dual y esperar resultado (validación real).
+            await self._run_visual_once(force=False)
+            await self._run_dual_once(force=False)
 
             await asyncio.sleep(HEAL_INTERVAL)
 
@@ -595,7 +692,7 @@ class AtlasDoctor:
                       self.cycle_count, len(anomalies), healed, elapsed)
 
     # ── Ciclo único (CLI / tests) ──────────────────────────────────────────────
-    async def run_once(self) -> Dict:
+    async def run_once(self, *, include_self_inspection: bool = True) -> Dict:
         _init_db()
         anomalies = await self.collect_full_state()
         self.last_anomalies = anomalies
@@ -605,6 +702,10 @@ class AtlasDoctor:
             actions.append(action)
             _record_event(action)
         self.last_actions = actions
+        if include_self_inspection:
+            # Forzar una pasada completa visual + dual durante diagnose/manual run.
+            await self._run_visual_once(force=True)
+            await self._run_dual_once(force=True)
         return self.status_report()
 
     # ── Status público ─────────────────────────────────────────────────────────
@@ -630,6 +731,22 @@ class AtlasDoctor:
                  "detail": x.action_detail, "healed": x.healed, "outcome": x.outcome}
                 for x in self.last_actions
             ],
+            "self_inspection": {
+                "visual_enabled": VISUAL_ENABLED,
+                "dual_enabled": DUAL_ENABLED,
+                "on_start": SELF_INSPECT_ON_START,
+                "visual_interval_sec": VISUAL_INTERVAL_SEC,
+                "dual_interval_sec": DUAL_INTERVAL_SEC,
+                "timeout_sec": SELF_INSPECT_TIMEOUT_SEC,
+                "visual_running": bool(self._visual_task and not self._visual_task.done()),
+                "dual_running": bool(self._dual_task and not self._dual_task.done()),
+                "visual_next_in_sec": max(0, int(self._visual_next_run_at - time.monotonic())),
+                "dual_next_in_sec": max(0, int(self._dual_next_run_at - time.monotonic())),
+                "visual_last_error": self._visual_last_error,
+                "dual_last_error": self._dual_last_error,
+                "visual_last_summary": self._visual_last_summary,
+                "dual_last_summary": self._dual_last_summary,
+            },
         }
 
     def report_visual_anomalies(self, anomalies: List[Dict[str, Any]]) -> None:
@@ -696,6 +813,21 @@ class AtlasDoctor:
             try:
                 await self._task
             except asyncio.CancelledError:
+                pass
+        for inspector_task in (self._visual_task, self._dual_task):
+            if inspector_task and not inspector_task.done():
+                inspector_task.cancel()
+                try:
+                    await inspector_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    pass
+        for inspector in (self._visual_inspector, self._dual_inspector):
+            try:
+                if inspector is not None and hasattr(inspector, "stop_camera"):
+                    inspector.stop_camera()
+            except Exception:
                 pass
         _log.info("[DOCTOR] Sistema Nervioso detenido")
 
