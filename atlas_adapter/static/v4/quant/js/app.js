@@ -20,6 +20,7 @@ function initNav() {
 function onViewActivated(view) {
   // Detener auto-refresh si salimos de posiciones
   if (view !== 'positions') _stopPosAutoRefresh();
+  if (view !== 'paper' && window.ppStopAutoRefresh) window.ppStopAutoRefresh();
   switch (view) {
     case 'overview':   loadOverview(); break;
     case 'positions':  loadPositions(); _startPosAutoRefresh(); break;
@@ -29,6 +30,12 @@ function onViewActivated(view) {
     case 'rl':         loadRL(); break;
     case 'visual':     /* user-triggered */ break;
     case 'alerts':     loadAlerts(); break;
+    case 'paper':
+      if (window.loadPaperPlatform) {
+        window.loadPaperPlatform();
+        if (window.ppStartAutoRefresh) window.ppStartAutoRefresh();
+      }
+      break;
   }
 }
 
