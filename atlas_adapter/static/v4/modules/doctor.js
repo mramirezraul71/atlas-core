@@ -182,28 +182,37 @@ export default {
   },
 
   mount() {
-    // Poll status
+    const _safe = url => fetch(url).then(r => r.json()).catch(() => null);
+
     poll(POLL_ID, async () => {
-      try {
-        const [statusR, portsR, histR, chromaR] = await Promise.all([
-          fetch('/doctor/status').then(r => r.json()),
-          fetch('/doctor/ports').then(r => r.json()),
-          fetch('/doctor/history?limit=40').then(r => r.json()),
-          fetch('/doctor/chromadb').then(r => r.json()),
-        ]);
+      // Fetches independientes — uno que falle no bloquea los demás
+      const [statusR, portsR, histR, chromaR] = await Promise.all([
+        _safe('/doctor/status'),
+        _safe('/doctor/ports'),
+        _safe('/doctor/history?limit=40'),
+        _safe('/doctor/chromadb'),
+      ]);
 
-        if (statusR.ok) _applyStatus(statusR.data);
-        if (portsR.ok) _applyPorts(portsR.data);
-        if (histR.ok)  _applyHistory(histR.data?.items || []);
-        if (chromaR.ok) _applyChroma(chromaR.data);
-
-        // Anomalías del status
+      if (statusR?.ok) {
+        _applyStatus(statusR.data);
         const anomalies = statusR.data?.anomalies || [];
         const el = document.getElementById('dr-anomalies-list');
         if (el) el.innerHTML = _anomalyList(anomalies);
+      } else {
+        const sv = document.getElementById('dr-status-val');
+        if (sv && sv.textContent === '--') { sv.textContent = 'sin datos'; }
+      }
 
-      } catch (e) { /* silent */ }
-    }, 15000);
+      if (portsR?.ok) _applyPorts(portsR.data);
+      if (histR?.ok)  _applyHistory(histR.data?.items || []);
+      if (chromaR?.ok) _applyChroma(chromaR.data);
+
+      // Limpiar "Cargando..." si algo respondió
+      if (statusR || portsR) {
+        const pg = document.getElementById('dr-ports-grid');
+        if (pg && pg.innerHTML.includes('Cargando')) pg.innerHTML = '<div class="empty-state">Sin datos de puertos aún</div>';
+      }
+    }, 12000);
   },
 
   unmount() {
