@@ -20,8 +20,8 @@ from execution.tradier_controls import (
     _event_timestamp,
     resolve_account_session,
 )
-from journal.db import init_db, session_scope
-from journal.models import TradingJournal
+from atlas_code_quant.journal.db import init_db, session_scope
+from atlas_code_quant.journal.models import TradingJournal
 from monitoring.strategy_tracker import StrategyTracker
 from config.settings import settings
 from operations.brain_bridge import QuantBrainBridge
@@ -60,6 +60,16 @@ def _json_load(value: str | None, fallback: Any) -> Any:
         return json.loads(value)
     except Exception:
         return fallback
+
+
+def _coerce_list_payload(value: Any) -> list[Any]:
+    if value is None or value == "" or value == {}:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return [value] if value else []
+    return [value]
 
 
 def _strategy_leg_tokens(strategy: dict[str, Any]) -> list[str]:
@@ -143,8 +153,8 @@ def _build_thesis(strategy: dict[str, Any], iv_rank: float | None) -> str:
         f"<li>Probabilidad al entrar: {win_rate:.2f}%.</li>"
         f"{iv_line}"
         f"<li>Driver de riesgo dominante: {driver}.</li>"
-        f"<li>Tesis automática: conservar la estructura mientras el perfil de probabilidad siga a favor y el driver dominante no se acelere en contra.</li>"
-        f"<li>Sentimiento Grok: pendiente de enriquecimiento externo; el campo queda listo para persistir esa explicación.</li>"
+        f"<li>Tesis automÃ¡tica: conservar la estructura mientras el perfil de probabilidad siga a favor y el driver dominante no se acelere en contra.</li>"
+        f"<li>Sentimiento Grok: pendiente de enriquecimiento externo; el campo queda listo para persistir esa explicaciÃ³n.</li>"
         f"</ul>"
     )
 
@@ -330,9 +340,11 @@ def _entry_payload(entry: TradingJournal) -> dict[str, Any]:
         "attribution": _json_load(entry.attribution_json, {}),
         "post_mortem": _json_load(entry.post_mortem_json, {}),
         "post_mortem_text": entry.post_mortem_text or "",
-        "broker_order_ids": _json_load(entry.broker_order_ids_json, []),
+        # Normaliza payloads heredados del journal SQLite donde algunas columnas
+        # historicas quedaron serializadas como {} en vez de [].
+        "broker_order_ids": _coerce_list_payload(_json_load(entry.broker_order_ids_json, [])),
         "raw_entry_payload": _json_load(entry.raw_entry_payload_json, {}),
-        "raw_exit_payload": _json_load(entry.raw_exit_payload_json, []),
+        "raw_exit_payload": _coerce_list_payload(_json_load(entry.raw_exit_payload_json, [])),
         "updated_at": entry.updated_at.isoformat() if entry.updated_at else None,
         "last_synced_at": entry.last_synced_at.isoformat() if entry.last_synced_at else None,
     }
@@ -514,3 +526,5 @@ class TradingJournalService:
             "count": len(rows),
             "items": [_entry_payload(entry) for entry in rows],
         }
+
+
