@@ -8,28 +8,49 @@
 const API_BASE = (location.port === '8791' || location.port === '443')
   ? 'http://127.0.0.1:8795'
   : '';
-const API_KEY  = localStorage.getItem('quant_api_key') || '';
+const API_KEY = (() => {
+  const saved = localStorage.getItem('quant_api_key');
+  if (saved && saved.trim()) return saved.trim();
+  const fallback = 'atlas-quant-local';
+  localStorage.setItem('quant_api_key', fallback);
+  return fallback;
+})();
 
 // ── HTTP helper ────────────────────────────────────────────────────
 const _FETCH_TIMEOUT = 8000;  // 8 s máximo por petición
 
-function _fetchWithTimeout(url, opts = {}) {
+function _fetchWithTimeout(url, opts = {}, timeoutMs = _FETCH_TIMEOUT) {
   const ctrl = new AbortController();
-  const id = setTimeout(() => ctrl.abort(), _FETCH_TIMEOUT);
+  const id = setTimeout(() => ctrl.abort(), timeoutMs);
   return fetch(url, { ...opts, signal: ctrl.signal })
     .finally(() => clearTimeout(id));
 }
 
-async function apiGet(path, params = {}) {
+async function _parseResponse(r) {
+  let payload = null;
+  try {
+    payload = await r.json();
+  } catch (_) {
+    payload = { ok: false, error: `HTTP ${r.status}` };
+  }
+  if (payload && typeof payload === 'object') {
+    payload._httpStatus = r.status;
+    if (!r.ok && payload.ok == null) payload.ok = false;
+    if (!r.ok && !payload.error) payload.error = payload.detail || `HTTP ${r.status}`;
+  }
+  return payload;
+}
+
+async function apiGet(path, params = {}, options = {}) {
   const url = new URL(API_BASE + path, window.location.origin);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   const r = await _fetchWithTimeout(url, {
     headers: { 'x-api-key': API_KEY, 'Accept': 'application/json' }
-  });
-  return r.json();
+  }, options.timeoutMs);
+  return _parseResponse(r);
 }
 
-async function apiPost(path, body = {}) {
+async function apiPost(path, body = {}, options = {}) {
   const r = await _fetchWithTimeout(API_BASE + path, {
     method: 'POST',
     headers: {
@@ -38,49 +59,76 @@ async function apiPost(path, body = {}) {
       'Accept': 'application/json'
     },
     body: JSON.stringify(body)
-  });
-  return r.json();
+  }, options.timeoutMs);
+  return _parseResponse(r);
+}
+
+async function apiGetFirst(paths, params = {}, options = {}) {
+  let lastResponse = null;
+  for (const path of paths) {
+    const response = await apiGet(path, params, options);
+    lastResponse = response;
+    if (!response || response._httpStatus !== 404) return response;
+  }
+  return lastResponse || { ok: false, error: 'Endpoint no disponible' };
 }
 
 // ── Endpoint wrappers ─────────────────────────────────────────────
 const QuantAPI = {
 
-  health: () => apiGet('/health'),
+  health: () => apiGetFirst(['/api/v2/quant/health', '/health']),
 
-  status: (scope = 'paper') => apiGet('/status', { account_scope: scope }),
+  status: (scope = 'paper') => apiGetFirst(['/api/v2/quant/status', '/status'], { account_scope: scope }),
 
-  dashboardOverview: (scope = 'paper') => apiGet('/api/v2/quant/dashboard/overview', { account_scope: scope }),
+  dashboardOverview: (scope = 'paper') => apiGetFirst(['/api/v2/quant/dashboard/overview'], { account_scope: scope }),
 
-  positions: () => apiGet('/positions'),
+  positions: (scope = 'paper') => apiGetFirst(['/api/v2/quant/monitor/summary', '/monitor/summary'], { account_scope: scope }),
 
   // Backtest
-  runBacktest: (payload) => apiPost('/backtest', payload),
-  listReports: () => apiGet('/backtest/reports'),
+  runBacktest: (payload) => apiPost('/api/v2/quant/backtest', payload),
+  listReports: () => apiGetFirst(['/api/v2/quant/backtest/reports', '/backtest/reports']),
 
   // Scanner
-  scannerStatus: () => apiGet('/api/v2/quant/scanner/status'),
+  scannerStatus: () => apiGetFirst(['/api/v2/quant/scanner/status', '/scanner/status']),
   scannerStart:  () => apiPost('/api/v2/quant/scanner/control', { action: 'start' }),
   scannerStop:   () => apiPost('/api/v2/quant/scanner/control', { action: 'stop' }),
-  scannerReport: () => apiGet('/api/v2/quant/scanner/report'),
+  scannerReport: () => apiGetFirst(['/api/v2/quant/scanner/report', '/scanner/report']),
 
   // Journal
-  journalStats:   (scope = 'paper') => apiGet('/journal/stats', { account_scope: scope }),
-  journalEntries: (limit = 50, scope = 'paper') =>
-    apiGet('/journal/entries', { limit, account_scope: scope }),
+  journalStats:   () => apiGetFirst(['/api/v2/quant/journal/stats', '/journal/stats']),
+  journalEntries: (limit = 50, status = '') =>
+    apiGetFirst(['/api/v2/quant/journal/entries', '/journal/entries'], { limit, status }),
 
   // Phase 3 — Alerts
-  alertsStatus: () => apiGet('/api/v2/quant/alerts/status'),
+  alertsStatus: () => apiGetFirst(['/api/v2/quant/alerts/status']),
   alertsTest:   (message) => apiPost(`/api/v2/quant/alerts/test?message=${encodeURIComponent(message)}`),
 
   // Phase 3 — Visual
-  visualState: () => apiGet('/api/v2/quant/visual/state'),
+  visualState: () => apiGetFirst(
+    ['/api/v2/quant/visual/state'],
+    {},
+    { timeoutMs: 15000 },
+  ),
+  visionCalibrationStatus: () => apiGetFirst([
+    '/api/v2/quant/vision/calibration/status',
+    '/vision/calibration/status',
+  ]),
 
   // Phase 3 — Retraining
-  retrainingStatus:  (symbol) => apiGet('/api/v2/quant/retraining/status', { symbol }),
+  retrainingStatus:  (symbol) => apiGetFirst(['/api/v2/quant/retraining/status'], { symbol }),
   retrainingTrigger: (symbol) => apiPost(`/api/v2/quant/retraining/trigger?symbol=${encodeURIComponent(symbol)}`),
 
   // Monitor
-  monitorSummary: (scope = 'paper') => apiGet('/monitor/summary', { account_scope: scope }),
+  monitorSummary: (scope = 'paper') => apiGetFirst(['/api/v2/quant/monitor/summary', '/monitor/summary'], { account_scope: scope }),
+
+  // Paper Trading
+  paperAccount: () => apiGetFirst(['/api/v2/quant/paper/account', '/paper/account']),
+  paperPositions: () => apiGetFirst(['/api/v2/quant/paper/positions', '/paper/positions']),
+  paperOrders: (limit = 200) => apiGetFirst(['/api/v2/quant/paper/orders', '/paper/orders'], { limit }),
+  paperEquityCurve: (limit = 500) => apiGetFirst(['/api/v2/quant/paper/equity-curve', '/paper/equity-curve'], { limit }),
+  paperFill: (body) => apiPost('/api/v2/quant/paper/fill', body),
+  paperClose: (body) => apiPost('/paper/close', body),
+  paperReset: (capital = 0) => apiPost('/api/v2/quant/paper/reset', { initial_capital: capital }),
 };
 
 // ── WebSocket manager ─────────────────────────────────────────────
@@ -97,7 +145,7 @@ class QuantWS {
     const wsHost = (location.port === '8791' || location.port === '443')
       ? '127.0.0.1:8795'
       : location.host;
-    const url = `${protocol}://${wsHost}/ws/live-updates`;
+    const url = `${protocol}://${wsHost}/api/v2/quant/ws/live-updates?api_key=${encodeURIComponent(API_KEY)}`;
     this._ws = new WebSocket(url);
 
     this._ws.onopen = () => {

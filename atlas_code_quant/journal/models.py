@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from journal.db import Base
+from atlas_code_quant.journal.db import Base
 
 if TYPE_CHECKING:
     from atlas_code_quant.learning.trade_events import TradeEvent
@@ -50,21 +50,21 @@ class TradingJournal(Base):
     post_mortem_text: Mapped[str] = mapped_column(Text, default="")
     broker_order_ids_json: Mapped[str] = mapped_column(Text, default="[]")
     raw_entry_payload_json: Mapped[str] = mapped_column(Text, default="{}")
-    raw_exit_payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    raw_exit_payload_json: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 # ---------------------------------------------------------------------------
-# LearningTradeRecord — tabla dedicada para el subsistema AtlasLearningBrain
+# LearningTradeRecord â€” tabla dedicada para el subsistema AtlasLearningBrain
 # ---------------------------------------------------------------------------
 
 class LearningTradeRecord(Base):
     """Registro de trade cerrado para el subsistema de aprendizaje.
 
     Tabla separada de TradingJournal para no afectar el schema existente.
-    Almacena los campos en R-múltiplos necesarios para MetricsEngine y ML.
+    Almacena los campos en R-mÃºltiplos necesarios para MetricsEngine y ML.
     """
 
     __tablename__ = "learning_trade_records"
@@ -92,7 +92,7 @@ class LearningTradeRecord(Base):
     regime: Mapped[str] = mapped_column(String(16), index=True)
     exit_type: Mapped[str] = mapped_column(String(32))
 
-    # Indicadores técnicos en entrada
+    # Indicadores tÃ©cnicos en entrada
     rsi: Mapped[float] = mapped_column(Float, default=0.0)
     macd_hist: Mapped[float] = mapped_column(Float, default=0.0)
     atr: Mapped[float] = mapped_column(Float, default=0.0)
@@ -187,3 +187,4 @@ class LearningTradeRecord(Base):
             stats_score_at_entry=self.stats_score_at_entry,
             error_flags=json.loads(self.error_flags_json or "[]"),
         )
+

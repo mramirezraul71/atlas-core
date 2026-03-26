@@ -300,6 +300,10 @@ async function loadPosHistory() {
   if (!tbody) return;
   try {
     const response = await QuantAPI.journalEntries(50, 'closed').catch(() => null);
+    if (response && response.ok === false) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="10">Journal no disponible: ${response.error || 'sin detalle'}</td></tr>`;
+      return;
+    }
     const items = response?.data?.items || response?.data || [];
     const today = new Date().toISOString().slice(0, 10);
     const todayItems = items.filter((item) => String(item.exit_time || item.closed_at || '').startsWith(today));
@@ -555,6 +559,23 @@ async function captureVisualState() {
   try {
     const r = await QuantAPI.visualState();
     if (!r.ok) {
+      const fallback = await QuantAPI.visionCalibrationStatus().catch(() => null);
+      if (fallback?.ok) {
+        const d = fallback.data || {};
+        setText('vs-brightness', '--');
+        setText('vs-sharpness', '--');
+        setText('vs-screens', d.monitor ? '1' : '--');
+        setText('vs-color', d.calibration_exists ? 'calibrado' : '--');
+        setText('vs-prices', 'no disponible');
+        setText('vs-pattern', d.label || 'calibracion');
+        const badge = document.getElementById('visual-safety-badge');
+        if (badge) {
+          badge.textContent = d.session_active ? 'CALIBRADO' : 'SIN SESION';
+          badge.className = `mode-badge ${d.session_active ? 'ok' : 'safe'}`;
+        }
+        toast('Estado visual no disponible; se mostró estado de calibración', 'warning');
+        return;
+      }
       toast(`Error capturando visual: ${r.error}`, 'error');
       return;
     }
@@ -587,7 +608,7 @@ async function loadAlerts() {
     setText('al-telegram', d.telegram_enabled ? 'ON' : 'OFF');
     setText('al-whatsapp', d.whatsapp_enabled ? 'ON' : 'OFF');
     setText('al-queue', d.queue_size ?? '--');
-    setText('al-sent', d.sent_today ?? '--');
+    setText('al-sent', d.sent_today ?? d.sent_count ?? '--');
     setText('al-level', d.min_level || '--');
     setText('al-cooldown', d.cooldown_s ? `${d.cooldown_s}s` : '--');
   } catch (e) {

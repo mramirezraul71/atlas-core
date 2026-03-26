@@ -5,13 +5,13 @@
 
 // ── API helpers ────────────────────────────────────────────────────
 const PaperAPI = {
-  account:     () => apiGet('/paper/account'),
-  positions:   () => apiGet('/paper/positions'),
-  orders:      (limit = 200) => apiGet('/paper/orders', { limit }),
-  equityCurve: (limit = 500) => apiGet('/paper/equity-curve', { limit }),
-  fill:        (body) => apiPost('/paper/fill', body),
-  close:       (body) => apiPost('/paper/close', body),
-  reset:       (capital = 0) => apiPost('/paper/reset', { initial_capital: capital }),
+  account:     () => QuantAPI.paperAccount(),
+  positions:   () => QuantAPI.paperPositions(),
+  orders:      (limit = 200) => QuantAPI.paperOrders(limit),
+  equityCurve: (limit = 500) => QuantAPI.paperEquityCurve(limit),
+  fill:        (body) => QuantAPI.paperFill(body),
+  close:       (body) => QuantAPI.paperClose(body),
+  reset:       (capital = 0) => QuantAPI.paperReset(capital),
 };
 
 // ── Formato helpers ────────────────────────────────────────────────
@@ -215,6 +215,26 @@ function _ppTierClass(tier) {
 // ── Carga principal ────────────────────────────────────────────────
 let _ppOrders = [];
 
+function _ppRenderUnavailable(message) {
+  const chart = document.getElementById('pp-chart-equity');
+  const positions = document.getElementById('pp-positions-body');
+  const orders = document.getElementById('pp-orders-body');
+  const count = document.getElementById('pp-pos-count');
+  const blotter = document.getElementById('pp-blotter-count');
+
+  if (chart) {
+    chart.innerHTML = `<div class="empty-state" style="padding:32px">${message}</div>`;
+  }
+  if (positions) {
+    positions.innerHTML = `<tr><td colspan="11" class="empty-state">${message}</td></tr>`;
+  }
+  if (orders) {
+    orders.innerHTML = `<tr><td colspan="13" class="empty-state">${message}</td></tr>`;
+  }
+  if (count) count.textContent = '--';
+  if (blotter) blotter.textContent = message;
+}
+
 async function loadPaperPlatform() {
   try {
     _ppInitChart();
@@ -226,6 +246,13 @@ async function loadPaperPlatform() {
       PaperAPI.equityCurve(500),
     ]);
 
+    const responses = [accR, posR, ordR, curveR];
+    const paperUnavailable = responses.every((resp) => !resp?.ok && resp?._httpStatus === 404);
+    if (paperUnavailable) {
+      _ppRenderUnavailable('Paper Trading API no disponible en el backend Quant activo');
+      return;
+    }
+
     if (accR.ok)   _ppRenderAccount(accR.data);
     if (posR.ok)   _ppRenderPositions(posR.data);
     if (curveR.ok) _ppRenderCurve(curveR.data);
@@ -234,6 +261,11 @@ async function loadPaperPlatform() {
       _ppOrders = ordR.data || [];
       const filter = document.getElementById('pp-blotter-filter')?.value || 'all';
       _ppRenderOrders(_ppOrders, filter);
+    }
+
+    const firstError = responses.find((resp) => resp && !resp.ok && resp.error);
+    if (firstError) {
+      toast(`Paper Platform parcial: ${firstError.error}`, 'warning');
     }
 
   } catch (e) {
