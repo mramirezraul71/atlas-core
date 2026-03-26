@@ -1,14 +1,14 @@
 /* ================================================================
-   OptionStrat UI — Atlas Code-Quant  v1.0.0
+   OptionStrat UI â€” Atlas Code-Quant  v1.0.0
    Vanilla JS SPA. Communicates with /options/* API endpoints.
    ================================================================ */
 
 'use strict';
 
-// ── API base (same-origin) ──────────────────────────────────────
+// â”€â”€ API base (same-origin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const API = '';  // relative URLs
 
-// ── State ───────────────────────────────────────────────────────
+// â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const State = {
   legs: [],            // array of leg objects
   payoffChart: null,
@@ -20,7 +20,7 @@ const State = {
   previewBuilt: false,
 };
 
-// ── Helpers ─────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function toast(msg, type = 'info', ms = 3500) {
   const c = document.getElementById('toast-container');
   const d = document.createElement('div');
@@ -69,7 +69,7 @@ async function apiDelete(path) {
   return j.data;
 }
 
-// ── Nav ─────────────────────────────────────────────────────────
+// â”€â”€ Nav â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function initNav() {
   document.querySelectorAll('.nav-item[data-view]').forEach(el => {
     el.addEventListener('click', () => {
@@ -106,7 +106,7 @@ async function checkApiStatus() {
   }
 }
 
-// ── Legs Builder ────────────────────────────────────────────────
+// â”€â”€ Legs Builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _legCounter = 0;
 
 function makeLegId() { return 'leg_' + (++_legCounter); }
@@ -214,7 +214,7 @@ function renderLegCard(leg) {
         <input class="input-sm" type="number" value="${leg.quantity}"
           data-leg-id="${leg.id}" data-field="quantity" style="margin-top:2px" />
       </div>
-      <button class="leg-remove" data-remove="${leg.id}" title="Eliminar leg">✕</button>
+      <button class="leg-remove" data-remove="${leg.id}" title="Eliminar leg">âœ•</button>
     </div>`;
   } else {
     // linear
@@ -222,7 +222,7 @@ function renderLegCard(leg) {
     <div class="leg-card linear">
       <div>
         <span class="leg-type-badge lin">${leg.side.toUpperCase()} STOCK</span>
-        <div class="leg-label" style="margin-top:4px">Símbolo</div>
+        <div class="leg-label" style="margin-top:4px">SÃ­mbolo</div>
         <input class="input-sm" value="${leg.symbol}"
           data-leg-id="${leg.id}" data-field="symbol" />
       </div>
@@ -243,12 +243,12 @@ function renderLegCard(leg) {
           <option ${leg.side==='short'?'selected':''}>short</option>
         </select>
       </div>
-      <button class="leg-remove" data-remove="${leg.id}" title="Eliminar leg">✕</button>
+      <button class="leg-remove" data-remove="${leg.id}" title="Eliminar leg">âœ•</button>
     </div>`;
   }
 }
 
-// ── Build strategy payload from State ───────────────────────────
+// â”€â”€ Build strategy payload from State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function buildStrategyPayload() {
   const name = document.getElementById('strat-name').value || 'Mi Estrategia';
   const underlying = document.getElementById('strat-underlying').value || 'SPY';
@@ -294,9 +294,9 @@ function buildStrategyPayload() {
   };
 }
 
-// ── Preview ──────────────────────────────────────────────────────
+// â”€â”€ Preview â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function previewStrategy() {
-  if (!State.legs.length) { toast('Añade al menos un leg', 'err'); return; }
+  if (!State.legs.length) { toast('AÃ±ade al menos un leg', 'err'); return; }
   const btn = document.getElementById('btn-preview');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>';
@@ -311,7 +311,7 @@ async function previewStrategy() {
     toast('Error: ' + e.message, 'err');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '▶ Calcular';
+    btn.innerHTML = 'â–¶ Calcular';
   }
 }
 
@@ -366,7 +366,7 @@ function colorizeGreek(id, val, negBad = true) {
   }
 }
 
-// ── Payoff Chart ─────────────────────────────────────────────────
+// â”€â”€ Payoff Chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function renderPayoffChart(sGrid, payoffExpiry, pnlToday) {
   const ctx = document.getElementById('chart-payoff').getContext('2d');
   if (State.payoffChart) State.payoffChart.destroy();
@@ -443,7 +443,7 @@ function renderPayoffChart(sGrid, payoffExpiry, pnlToday) {
   });
 }
 
-// ── Clear builder ────────────────────────────────────────────────
+// â”€â”€ Clear builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function clearBuilder() {
   State.legs = [];
   State.currentStrategy = null;
@@ -456,7 +456,7 @@ function clearBuilder() {
   if (State.payoffChart) { State.payoffChart.destroy(); State.payoffChart = null; }
 }
 
-// ── Add to portfolio ─────────────────────────────────────────────
+// â”€â”€ Add to portfolio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function addToPortfolio() {
   if (!State.previewBuilt || !State.legs.length) {
     toast('Calcula la estrategia primero', 'err'); return;
@@ -471,16 +471,16 @@ async function addToPortfolio() {
       tags: [],
     };
     const data = await apiPost('/options/portfolio/add', payload);
-    toast('Estrategia "' + data.name + '" añadida a cartera', 'ok');
+    toast('Estrategia "' + data.name + '" aÃ±adida a cartera', 'ok');
   } catch(e) {
     toast('Error: ' + e.message, 'err');
   }
 }
 
-// ── Templates ────────────────────────────────────────────────────
+// â”€â”€ Templates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loadTemplates() {
   const grid = document.getElementById('template-grid');
-  grid.innerHTML = '<div class="text-muted label-sm">Cargando…</div>';
+  grid.innerHTML = '<div class="text-muted label-sm">Cargandoâ€¦</div>';
   try {
     const data = await apiGet('/options/templates');
     State.templates = data;
@@ -594,7 +594,7 @@ async function loadStrategyIntoBuilder(strat, spot) {
   if (State.payoffChart) { State.payoffChart.destroy(); State.payoffChart = null; }
 }
 
-// ── Scenario heatmap ─────────────────────────────────────────────
+// â”€â”€ Scenario heatmap â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function runScenario() {
   if (!State.legs.length) { toast('Construye una estrategia primero', 'err'); return; }
   const btn = document.getElementById('btn-run-scenario');
@@ -623,7 +623,7 @@ async function runScenario() {
     toast('Error: ' + e.message, 'err');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '▶ Calcular Heatmap';
+    btn.innerHTML = 'â–¶ Calcular Heatmap';
   }
 }
 
@@ -651,7 +651,7 @@ function renderHeatmap(data) {
     }
   }
 
-  let html = '<table class="heatmap-tbl"><thead><tr><th>Spot↓ / DTE→</th>';
+  let html = '<table class="heatmap-tbl"><thead><tr><th>Spotâ†“ / DTEâ†’</th>';
   dte_values.forEach(d => { html += `<th>${d}d</th>`; });
   html += '</tr></thead><tbody>';
 
@@ -671,7 +671,7 @@ function renderHeatmap(data) {
   container.innerHTML = html;
 }
 
-// ── Portfolio ────────────────────────────────────────────────────
+// â”€â”€ Portfolio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loadPortfolio() {
   const btn = document.getElementById('btn-port-refresh');
   btn.innerHTML = '<span class="spinner"></span>';
@@ -685,7 +685,7 @@ async function loadPortfolio() {
   } catch(e) {
     toast('Error portfolio: ' + e.message, 'err');
   } finally {
-    btn.innerHTML = '↺ Actualizar';
+    btn.innerHTML = 'â†º Actualizar';
   }
 }
 
@@ -720,7 +720,7 @@ function renderPortfolio(data) {
   if (data.risk_flags && data.risk_flags.length) {
     flagsBox.style.display = '';
     flagsList.innerHTML = data.risk_flags.map(f =>
-      `<div style="color:var(--yellow);font-size:12px;font-family:var(--font-mono);margin:2px 0">⚠ ${f}</div>`
+      `<div style="color:var(--yellow);font-size:12px;font-family:var(--font-mono);margin:2px 0">âš  ${f}</div>`
     ).join('');
   } else {
     flagsBox.style.display = 'none';
@@ -734,8 +734,8 @@ function renderPortfolio(data) {
     tbody.innerHTML = data.entries.map(e => {
       const pnl = e.current_pnl;
       const pnlCls = pnl >= 0 ? 'td-pos' : 'td-neg';
-      const mp = e.max_profit != null ? '$' + fmt(e.max_profit) : '∞';
-      const ml = e.max_loss != null ? '$' + fmt(e.max_loss) : '-∞';
+      const mp = e.max_profit != null ? '$' + fmt(e.max_profit) : 'âˆž';
+      const ml = e.max_loss != null ? '$' + fmt(e.max_loss) : '-âˆž';
       const opened = e.opened_at ? new Date(e.opened_at).toLocaleDateString('es-ES') : '--';
       return `<tr>
         <td>${e.name}</td>
@@ -747,7 +747,7 @@ function renderPortfolio(data) {
         <td class="td-pos">${mp}</td>
         <td class="td-neg">${ml}</td>
         <td class="td-muted">${opened}</td>
-        <td><button class="btn-danger" data-close="${e.name}">✕ Cerrar</button></td>
+        <td><button class="btn-danger" data-close="${e.name}">âœ• Cerrar</button></td>
       </tr>`;
     }).join('');
     tbody.querySelectorAll('[data-close]').forEach(btn => {
@@ -760,7 +760,7 @@ function renderPortfolio(data) {
 }
 
 async function closeStrategy(name) {
-  if (!confirm(`¿Cerrar estrategia "${name}"?`)) return;
+  if (!confirm(`Â¿Cerrar estrategia "${name}"?`)) return;
   try {
     await apiDelete('/options/portfolio/' + encodeURIComponent(name));
     toast('Estrategia cerrada', 'ok');
@@ -831,7 +831,7 @@ function renderPortfolioCharts(data) {
   });
 }
 
-// ── Wire up all events ───────────────────────────────────────────
+// â”€â”€ Wire up all events â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function initEvents() {
   // Builder
   document.getElementById('btn-add-call').addEventListener('click', () => addOptionLeg('call'));
@@ -864,7 +864,7 @@ function initEvents() {
   document.getElementById('btn-port-refresh').addEventListener('click', loadPortfolio);
 }
 
-// ── Bootstrap ────────────────────────────────────────────────────
+// â”€â”€ Bootstrap â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 document.addEventListener('DOMContentLoaded', () => {
   initNav();
   initEvents();
@@ -874,3 +874,4 @@ document.addEventListener('DOMContentLoaded', () => {
   renderLegs();
   toast('OptionStrat cargado', 'info', 2000);
 });
+
