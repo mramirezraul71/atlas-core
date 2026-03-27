@@ -54,6 +54,9 @@ $_OPS_BUS    = Join-Path $_LOG_DIR "ops_bus.log"
 $_DIAG_LOG   = Join-Path $_LOG_DIR "snapshot_safe_diagnostic.log"
 $_VENV_PY    = Join-Path $RepoRoot "venv\Scripts\python.exe"
 $_QUANT_DIR  = Join-Path $RepoRoot "atlas_code_quant"
+$_PYTHONPATH_PARTS = @($RepoRoot, $_QUANT_DIR)
+if ($env:PYTHONPATH) { $_PYTHONPATH_PARTS += $env:PYTHONPATH }
+$_QUANT_PYTHONPATH = [string]::Join(";", ($_PYTHONPATH_PARTS | Where-Object { $_ -and $_.Trim() -ne "" } | Select-Object -Unique))
 $_API_BASE   = "http://127.0.0.1:$Port"
 $_API_HEALTH = "$_API_BASE/health"
 
@@ -153,6 +156,7 @@ if ($healthOk) {
 
     _OpsLog "Lanzando uvicorn en puerto $Port"
     Write-Host "[quant-start] Lanzando uvicorn -- puerto $Port"
+    $env:PYTHONPATH = $_QUANT_PYTHONPATH
     Start-Process -FilePath $_VENV_PY `
         -ArgumentList $uvicornArgs `
         -WorkingDirectory $_QUANT_DIR `
