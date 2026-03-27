@@ -20,13 +20,13 @@
   "last_operational_error": null,
   "notes": "paper_autonomous activado 2026-03-24. vision=desktop_capture (NEXUS robot no requerido).",
   "last_decision": {
-    "decision": "blocked",
-    "allowed": false,
-    "timestamp": "2026-03-27T16:27:50.571453",
-    "reason": "La parada de emergencia esta activa."
+    "decision": "submit_ready",
+    "allowed": true,
+    "timestamp": "2026-03-27T21:42:56.607995",
+    "reason": "ok"
   },
   "last_candidate": {
-    "symbol": "RES",
+    "symbol": "FIVE",
     "strategy_type": null,
     "scope": "paper",
     "action": "submit"
