@@ -31,6 +31,9 @@
 .PARAMETER LogOnly
     No lanza servidor si no esta corriendo -- solo verifica y loguea el estado.
 
+.PARAMETER EnableReload
+    Activa uvicorn --reload para desarrollo interactivo. Por defecto desactivado en runbooks operacionales.
+
 .EXAMPLE
     .\atlas_quant_start.ps1
     .\atlas_quant_start.ps1 -Port 8795 -AutoCycle -CycleIntervalSec 90
@@ -43,7 +46,8 @@ param(
     [switch]$AutoCycle,
     [int]$CycleIntervalSec   = 120,
     [int]$MaxWaitSec         = 60,
-    [switch]$LogOnly
+    [switch]$LogOnly,
+    [switch]$EnableReload
 )
 
 $ErrorActionPreference = "Stop"
@@ -82,6 +86,12 @@ function Test-PortListen([int]$p) {
     return $null -ne $conn
 }
 
+function Get-PortOwners([int]$p) {
+    $owners = Get-NetTCPConnection -LocalPort $p -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique
+    return @($owners | Where-Object { $_ -and $_ -gt 0 })
+}
+
 function Test-HealthEndpoint([string]$url, [int]$timeoutMs = 4000) {
     try {
         $wr = [System.Net.WebRequest]::Create($url)
@@ -117,15 +127,34 @@ _DiagLog "START port=$Port AutoCycle=$AutoCycle"
 Write-Host "[quant-start] ATLAS-Quant startup -- puerto $Port"
 
 # ── Step 1: Check if already running ─────────────────────────────────────────
+$portOwners = Get-PortOwners -p $Port
 $alreadyListening = Test-PortListen -p $Port
-$healthOk         = Test-HealthEndpoint -url $_API_HEALTH
+$healthOk = Test-HealthEndpoint -url $_API_HEALTH
+
+if (-not $healthOk -and $portOwners.Count -gt 0 -and -not $LogOnly) {
+    _OpsLog "Puerto $Port ocupado sin health; limpiando procesos: $($portOwners -join ', ')" "warn"
+    Write-Host "[quant-start] Puerto $Port ocupado sin health. Limpiando proceso(s): $($portOwners -join ', ')"
+    foreach ($ownerPid in $portOwners) {
+        try {
+            Stop-Process -Id $ownerPid -Force -ErrorAction Stop
+        } catch {
+            _OpsLog ("No se pudo detener PID {0} en puerto {1}: {2}" -f $ownerPid, $Port, $_.Exception.Message) "warn"
+        }
+    }
+    Start-Sleep -Seconds 2
+    $portOwners = Get-PortOwners -p $Port
+    $alreadyListening = Test-PortListen -p $Port
+    $healthOk = Test-HealthEndpoint -url $_API_HEALTH
+}
 
 if ($healthOk) {
     _OpsLog "Servidor ya corriendo en puerto $Port -- saltando lanzamiento"
     Write-Host "[quant-start] Servidor ya activo en $Port"
-} elseif ($alreadyListening) {
-    _OpsLog "Puerto $Port ocupado pero no responde en /health -- esperando..." "warn"
-    Write-Host "[quant-start] Puerto $Port ocupado, esperando health..."
+} elseif ($portOwners.Count -gt 0) {
+    _OpsLog "Puerto $Port sigue ocupado tras limpieza; procesos: $($portOwners -join ', ')" "high"
+    Write-Warning "[quant-start] Puerto $Port sigue ocupado por: $($portOwners -join ', ')"
+    _DiagLog "FINISH status=error reason=port_busy port=$Port owners=$($portOwners -join ',')"
+    exit 2
 } elseif ($LogOnly) {
     _OpsLog "LogOnly=true -- servidor NO esta corriendo en puerto $Port" "warn"
     Write-Host "[quant-start] Modo LogOnly: servidor no activo."
@@ -150,9 +179,11 @@ if ($healthOk) {
         "-m", "uvicorn",
         "api.main:app",
         "--host", "0.0.0.0",
-        "--port", "$Port",
-        "--reload"
+        "--port", "$Port"
     )
+    if ($EnableReload) {
+        $uvicornArgs += "--reload"
+    }
 
     _OpsLog "Lanzando uvicorn en puerto $Port"
     Write-Host "[quant-start] Lanzando uvicorn -- puerto $Port"
@@ -160,7 +191,7 @@ if ($healthOk) {
     Start-Process -FilePath $_VENV_PY `
         -ArgumentList $uvicornArgs `
         -WorkingDirectory $_QUANT_DIR `
-        -NoNewWindow `
+        -WindowStyle Minimized `
         -PassThru | Out-Null
 }
 

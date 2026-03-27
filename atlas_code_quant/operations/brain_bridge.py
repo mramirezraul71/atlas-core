@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -46,6 +47,7 @@ class QuantBrainBridge:
         self.timeout_sec = max(int(settings.atlas_brain_timeout_sec or 5), 1)
         self.state_path = state_path or settings.atlas_brain_state_path
         self.events_path = events_path or settings.atlas_brain_events_path
+        self._state_lock = threading.RLock()
         self._ensure_state()
 
     def _ensure_state(self) -> None:
@@ -62,38 +64,41 @@ class QuantBrainBridge:
             self._save_state(payload)
 
     def _load_state(self) -> dict[str, Any]:
-        self._ensure_state()
-        try:
-            data = json.loads(self.state_path.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                merged = deepcopy(_DEFAULT_STATE)
-                merged.update(data)
-                merged["enabled"] = self.enabled
-                merged["atlas_base_url"] = self.base_url
-                merged["memory_enabled"] = self.memory_enabled
-                merged["bitacora_enabled"] = self.bitacora_enabled
-                merged["events_path"] = str(self.events_path)
-                return merged
-        except Exception:
-            pass
-        fallback = deepcopy(_DEFAULT_STATE)
-        fallback.update(
-            {
-                "enabled": self.enabled,
-                "atlas_base_url": self.base_url,
-                "memory_enabled": self.memory_enabled,
-                "bitacora_enabled": self.bitacora_enabled,
-                "events_path": str(self.events_path),
-            }
-        )
-        return fallback
+        with self._state_lock:
+            self._ensure_state()
+            try:
+                data = json.loads(self.state_path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    merged = deepcopy(_DEFAULT_STATE)
+                    merged.update(data)
+                    merged["enabled"] = self.enabled
+                    merged["atlas_base_url"] = self.base_url
+                    merged["memory_enabled"] = self.memory_enabled
+                    merged["bitacora_enabled"] = self.bitacora_enabled
+                    merged["events_path"] = str(self.events_path)
+                    return merged
+            except Exception:
+                pass
+            fallback = deepcopy(_DEFAULT_STATE)
+            fallback.update(
+                {
+                    "enabled": self.enabled,
+                    "atlas_base_url": self.base_url,
+                    "memory_enabled": self.memory_enabled,
+                    "bitacora_enabled": self.bitacora_enabled,
+                    "events_path": str(self.events_path),
+                }
+            )
+            return fallback
 
     def _save_state(self, payload: dict[str, Any]) -> None:
-        self.state_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
+        with self._state_lock:
+            self.state_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
 
     def _append_event(self, record: dict[str, Any]) -> None:
-        with self.events_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=True) + "\n")
+        with self._state_lock:
+            with self.events_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record, ensure_ascii=True) + "\n")
 
     def _headers(self, content_type: str = "application/json") -> dict[str, str]:
         headers = {"Content-Type": content_type}
@@ -137,12 +142,13 @@ class QuantBrainBridge:
         return journal_key in emitted
 
     def _mark_journal_key(self, journal_key: str) -> None:
-        state = self._load_state()
-        emitted = list(state.get("emitted_journal_keys") or [])
-        if journal_key not in emitted:
-            emitted.append(journal_key)
-        state["emitted_journal_keys"] = emitted[-500:]
-        self._save_state(state)
+        with self._state_lock:
+            state = self._load_state()
+            emitted = list(state.get("emitted_journal_keys") or [])
+            if journal_key not in emitted:
+                emitted.append(journal_key)
+            state["emitted_journal_keys"] = emitted[-500:]
+            self._save_state(state)
 
     def emit(
         self,
@@ -170,58 +176,59 @@ class QuantBrainBridge:
             "outcome": outcome or "",
             "source": self.source,
         }
-        self._append_event(record)
-        state = self._load_state()
-        state["total_events"] = int(state.get("total_events") or 0) + 1
-        state["last_event_kind"] = kind
-        state["last_event_at"] = now
+        with self._state_lock:
+            self._append_event(record)
+            state = self._load_state()
+            state["total_events"] = int(state.get("total_events") or 0) + 1
+            state["last_event_kind"] = kind
+            state["last_event_at"] = now
 
-        delivered_ok = False
-        bitacora_ok = None
-        memory_ok = None
-        errors: list[str] = []
-        if self.enabled:
-            if self.bitacora_enabled:
-                try:
-                    self._post_json(
-                        "/bitacora/log",
-                        {
-                            "message": message[:500],
-                            "level": level,
-                            "source": self.source,
-                            "data": data or {},
-                        },
-                    )
-                    bitacora_ok = True
-                except (error.URLError, error.HTTPError, TimeoutError, ValueError) as exc:
-                    bitacora_ok = False
-                    errors.append(f"bitacora: {exc}")
-            if self.memory_enabled and memorize:
-                try:
-                    self._post_query(
-                        "/api/memory/add",
-                        {
-                            "description": (description or message)[:500],
-                            "context": (context or "")[:2000],
-                            "outcome": (outcome or "")[:500],
-                            "tags": tags or [],
-                        },
-                        timeout_sec=max(self.timeout_sec, 15),
-                    )
-                    memory_ok = True
-                except (error.URLError, error.HTTPError, TimeoutError, ValueError) as exc:
-                    memory_ok = False
-                    errors.append(f"memory: {exc}")
-            delivered_ok = bool(bitacora_ok) or bool(memory_ok)
+            delivered_ok = False
+            bitacora_ok = None
+            memory_ok = None
+            errors: list[str] = []
+            if self.enabled:
+                if self.bitacora_enabled:
+                    try:
+                        self._post_json(
+                            "/bitacora/log",
+                            {
+                                "message": message[:500],
+                                "level": level,
+                                "source": self.source,
+                                "data": data or {},
+                            },
+                        )
+                        bitacora_ok = True
+                    except (error.URLError, error.HTTPError, TimeoutError, ValueError) as exc:
+                        bitacora_ok = False
+                        errors.append(f"bitacora: {exc}")
+                if self.memory_enabled and memorize:
+                    try:
+                        self._post_query(
+                            "/api/memory/add",
+                            {
+                                "description": (description or message)[:500],
+                                "context": (context or "")[:2000],
+                                "outcome": (outcome or "")[:500],
+                                "tags": tags or [],
+                            },
+                            timeout_sec=max(self.timeout_sec, 15),
+                        )
+                        memory_ok = True
+                    except (error.URLError, error.HTTPError, TimeoutError, ValueError) as exc:
+                        memory_ok = False
+                        errors.append(f"memory: {exc}")
+                delivered_ok = bool(bitacora_ok) or bool(memory_ok)
 
-        state["last_delivery_ok"] = delivered_ok
-        state["last_bitacora_ok"] = bitacora_ok
-        state["last_memory_ok"] = memory_ok
-        state["last_error"] = " | ".join(errors)
-        state["delivered_events"] = int(state.get("delivered_events") or 0) + (1 if delivered_ok else 0)
-        state["queued_local_only_events"] = int(state.get("total_events") or 0) - int(state.get("delivered_events") or 0)
-        self._save_state(state)
-        return {"ok": delivered_ok, "record": record, "error": state["last_error"]}
+            state["last_delivery_ok"] = delivered_ok
+            state["last_bitacora_ok"] = bitacora_ok
+            state["last_memory_ok"] = memory_ok
+            state["last_error"] = " | ".join(errors)
+            state["delivered_events"] = int(state.get("delivered_events") or 0) + (1 if delivered_ok else 0)
+            state["queued_local_only_events"] = int(state.get("total_events") or 0) - int(state.get("delivered_events") or 0)
+            self._save_state(state)
+            return {"ok": delivered_ok, "record": record, "error": state["last_error"]}
 
     def record_selector_proposal(self, payload: dict[str, Any]) -> dict[str, Any]:
         candidate = payload.get("candidate") or {}
