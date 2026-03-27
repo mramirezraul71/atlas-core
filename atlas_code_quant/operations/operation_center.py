@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import time
+import threading
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -91,6 +93,8 @@ class OperationCenter:
         self.executor = executor or AutonExecutorService()
         self.brain = brain or QuantBrainBridge()
         self.learning = learning or AdaptiveLearningService()
+        self._monitor_summary_cache: dict[str, dict[str, Any]] = {}
+        self._monitor_summary_cache_at: dict[str, float] = {}
         self._ensure_state()
 
     def _ensure_state(self) -> None:
@@ -128,6 +132,97 @@ class OperationCenter:
         merged = self._normalize_runtime_state(merged)
         self.state_path.write_text(json.dumps(merged, ensure_ascii=True, indent=2), encoding="utf-8")
         return merged
+
+    def _empty_monitor_summary(self, scope: str, *, reason: str | None = None) -> dict[str, Any]:
+        return {
+            "generated_at": datetime.utcnow().isoformat(),
+            "refresh_interval_sec": settings.tradier_probability_refresh_sec,
+            "account_session": {"scope": scope},
+            "balances": {},
+            "alerts": (
+                [
+                    {
+                        "level": "warning",
+                        "message": reason,
+                        "scope": scope,
+                    }
+                ]
+                if reason
+                else []
+            ),
+            "totals": {},
+            "strategies": [],
+            "pdt_status": {},
+        }
+
+    def _cached_monitor_summary(self, scope: str) -> dict[str, Any] | None:
+        cached = self._monitor_summary_cache.get(scope)
+        if cached:
+            return deepcopy(cached)
+        return None
+
+    def _load_monitor_summary(self, scope: str) -> dict[str, Any]:
+        ttl_sec = max(2, int(settings.tradier_monitor_cache_ttl_sec or 300))
+        # `operation/status` debe degradar rapido; no puede quedar secuestrado por el broker.
+        timeout_sec = max(1, min(int(settings.tradier_timeout_sec or 15), 5))
+        now = time.monotonic()
+        cached = self._cached_monitor_summary(scope)
+        cached_at = self._monitor_summary_cache_at.get(scope, 0.0)
+        if cached and (now - cached_at) <= ttl_sec:
+            return cached
+
+        result: dict[str, Any] = {}
+        error_box: list[Exception] = []
+
+        def _worker() -> None:
+            try:
+                result["monitor"] = self.tracker.build_summary(account_scope=scope)  # type: ignore[arg-type]
+            except Exception as exc:
+                error_box.append(exc)
+
+        worker = threading.Thread(target=_worker, name=f"monitor-summary-{scope}", daemon=True)
+        worker.start()
+        worker.join(timeout=timeout_sec)
+        try:
+            if worker.is_alive():
+                raise TimeoutError(f"tracker.build_summary timeout after {timeout_sec}s")
+            if error_box:
+                raise error_box[0]
+            monitor = result["monitor"]
+        except TimeoutError:
+            fallback = cached or self._empty_monitor_summary(
+                scope,
+                reason=f"tracker.build_summary timeout after {timeout_sec}s",
+            )
+            fallback.setdefault("alerts", [])
+            fallback["alerts"] = list(fallback.get("alerts") or [])
+            fallback["alerts"].append(
+                {
+                    "level": "warning",
+                    "message": f"Using cached monitor summary after timeout ({timeout_sec}s)",
+                    "scope": scope,
+                }
+            )
+            return fallback
+        except Exception as exc:
+            fallback = cached or self._empty_monitor_summary(
+                scope,
+                reason=f"tracker.build_summary error: {exc}",
+            )
+            fallback.setdefault("alerts", [])
+            fallback["alerts"] = list(fallback.get("alerts") or [])
+            fallback["alerts"].append(
+                {
+                    "level": "warning",
+                    "message": f"Using cached monitor summary after tracker error: {exc}",
+                    "scope": scope,
+                }
+            )
+            return fallback
+
+        self._monitor_summary_cache[scope] = deepcopy(monitor)
+        self._monitor_summary_cache_at[scope] = now
+        return monitor
 
     def _register_operational_error(self, state: dict[str, Any], *, reason: str) -> dict[str, Any]:
         state = self._normalize_runtime_state(state)
@@ -185,7 +280,7 @@ class OperationCenter:
     def status(self) -> dict[str, Any]:
         config = self._load()
         scope = str(config.get("account_scope") or "paper")
-        monitor = self.tracker.build_summary(account_scope=scope)  # type: ignore[arg-type]
+        monitor = self._load_monitor_summary(scope)
         vision_status = self.vision.status()
         executor_status = self.executor.status()
         journal_snapshot = self.journal.snapshot(limit=3)
