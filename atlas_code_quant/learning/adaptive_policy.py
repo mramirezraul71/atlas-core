@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import math
@@ -9,8 +9,8 @@ from typing import Any
 from sqlalchemy import select
 
 from config.settings import settings
-from journal.db import session_scope
-from journal.models import TradingJournal
+from atlas_code_quant.journal.db import session_scope
+from atlas_code_quant.journal.models import TradingJournal
 
 _BULLISH_STRATEGIES = {
     "equity_long",
@@ -354,7 +354,7 @@ class AdaptiveLearningService:
         if total_bias >= 1.0:
             notes.append("el diario reciente favorece este tipo de setup")
         elif total_bias <= -1.0:
-            notes.append("el diario reciente enfrió este setup y reduce convicción")
+            notes.append("el diario reciente enfriÃ³ este setup y reduce convicciÃ³n")
         if status.get("sample_count", 0) < 6:
             notes.append("aprendizaje con pocas muestras; se usa como ajuste ligero")
         return {
@@ -371,3 +371,5 @@ class AdaptiveLearningService:
             "top_negative": status.get("top_negative", []),
             "notes": notes,
         }
+
+

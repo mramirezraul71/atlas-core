@@ -992,6 +992,9 @@ class ATLASQuantCore:
                         eq = self.risk_engine.state().current_equity \
                              if self.risk_engine else 100_000.0
                         _grafana.update(equity=eq, mode=self.mode)
+                        _grafana.sync_from_canonical(
+                            account_scope=self.mode if self.mode in {"paper", "live"} else "paper"
+                        )
                     except Exception:
                         pass
 

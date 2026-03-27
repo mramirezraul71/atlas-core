@@ -1,12 +1,10 @@
 {
   "mode": "paper_api",
-  "kill_switch_active": false,
+  "kill_switch_active": true,
   "last_action": {
-    "type": "execute",
-    "action": "submit",
-    "mode": "paper_api",
-    "timestamp": "2026-03-25T04:50:40.166688",
-    "decision": "paper_submit_sent"
+    "type": "emergency_stop",
+    "reason": "operation_fail_safe",
+    "timestamp": "2026-03-25T20:22:30.447405"
   },
   "notes": ""
 }

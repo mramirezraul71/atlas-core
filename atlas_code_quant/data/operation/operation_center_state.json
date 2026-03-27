@@ -14,19 +14,19 @@
   "auto_pause_on_operational_errors": true,
   "operational_error_limit": 3,
   "operational_error_count": 0,
-  "operational_error_day": "2026-03-25",
+  "operational_error_day": "2026-03-27",
   "fail_safe_active": false,
   "fail_safe_reason": null,
   "last_operational_error": null,
   "notes": "paper_autonomous activado 2026-03-24. vision=desktop_capture (NEXUS robot no requerido).",
   "last_decision": {
-    "decision": "submit_ready",
-    "allowed": true,
-    "timestamp": "2026-03-25T04:50:40.167760",
-    "reason": "ok"
+    "decision": "blocked",
+    "allowed": false,
+    "timestamp": "2026-03-27T16:27:50.571453",
+    "reason": "La parada de emergencia esta activa."
   },
   "last_candidate": {
-    "symbol": "CIEN",
+    "symbol": "RES",
     "strategy_type": null,
     "scope": "paper",
     "action": "submit"
