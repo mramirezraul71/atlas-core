@@ -26,7 +26,6 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 from atlas_code_quant.monitoring.canonical_snapshot import CanonicalSnapshotService
 from atlas_code_quant.monitoring.strategy_tracker import StrategyTracker
@@ -39,8 +38,7 @@ _DASHBOARD_PATH = Path("grafana/dashboards/atlas.json")
 # ── Prometheus client (opcional) ─────────────────────────────────────────────
 try:
     from prometheus_client import (
-        Gauge, Counter, start_http_server, REGISTRY,
-        CollectorRegistry,
+        Gauge, Counter, start_http_server,
     )
     _PROM_OK = True
 except ImportError:

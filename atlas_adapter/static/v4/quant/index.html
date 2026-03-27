@@ -6,6 +6,7 @@
   <title>Atlas Code-Quant · v1.0.0</title>
   <script>
     const _QVER = '20260327e';
+    const _GRAFANA_PRO_URL = 'http://' + location.hostname + ':3003/d/atlas-quant-pro-2026/7def89ea-334f-564c-b9c7-d190c3f6f69d';
     window.QUANT_ACCOUNT_SCOPE = 'paper';
     window.QUANT_ACCOUNT_ID = '';
   </script>
@@ -29,7 +30,7 @@
         Escaner
       </a>
       <span class="topbar-sep">|</span>
-      <a href="javascript:void(0)" onclick="const u='http://'+location.hostname+':3003/d/atlas-quant-pro-2026/7def89ea-334f-564c-b9c7-d190c3f6f69d'; const w=window.open(u,'_blank','noopener'); if(!w) window.location.href=u; return false;"
+      <a href="javascript:void(0)" onclick="const w=window.open(_GRAFANA_PRO_URL,'_blank','noopener'); if(!w) window.location.href=_GRAFANA_PRO_URL; return false;"
          style="display:inline-flex;align-items:center;gap:4px;color:#f46800;font-size:11px;
                 text-decoration:none;padding:2px 6px;border-radius:4px;transition:opacity .15s"
          onmouseover="this.style.opacity='.7'" onmouseout="this.style.opacity='1'"
@@ -117,7 +118,7 @@
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
             Options
           </a>
-          <a href="javascript:void(0)" onclick="const u='http://'+location.hostname+':3003/d/atlas-quant-pro-2026/7def89ea-334f-564c-b9c7-d190c3f6f69d'; const w=window.open(u,'_blank','noopener'); if(!w) window.location.href=u; return false;"
+          <a href="javascript:void(0)" onclick="const w=window.open(_GRAFANA_PRO_URL,'_blank','noopener'); if(!w) window.location.href=_GRAFANA_PRO_URL; return false;"
              style="font-size:10px;color:#f46800;text-decoration:none;
                     padding:3px 7px;border-radius:4px;border:1px solid rgba(244,104,0,0.25);
                     display:inline-flex;align-items:center;gap:3px;transition:opacity .15s"
