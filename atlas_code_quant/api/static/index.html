@@ -5,9 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Atlas Code-Quant · v1.0.0</title>
   <script>
+    const _QVER = '20260327e';
+    window.QUANT_ACCOUNT_SCOPE = 'paper';
+    window.QUANT_ACCOUNT_ID = '';
     // Detecta la base de los assets según el puerto desde el que se sirve
     const _QBASE = (location.port !== '8791') ? '/static' : '/quant-static';
-    document.write('<link rel="stylesheet" href="'+_QBASE+'/css/dash.css"/>');
+    document.write('<link rel="stylesheet" href="'+_QBASE+'/css/dash.css?v='+_QVER+'"/>');
   </script>
 </head>
 <body>
@@ -21,13 +24,15 @@
       <span class="topbar-sep">|</span>
       <span class="brand-icon">⬡</span>
       <span class="brand-name">ATLAS <em>CODE-QUANT</em></span>
-      <span class="version-badge">v1.1.0</span>
+      <span class="version-badge">v1.1.4</span>
     </div>
     <div class="topbar-status">
       <span class="status-dot" id="ws-dot" title="WebSocket"></span>
       <span class="stat-chip" id="chip-uptime">--</span>
       <span class="stat-chip accent" id="chip-equity">--</span>
       <span class="stat-chip" id="chip-positions">0 pos</span>
+      <span class="stat-chip" id="chip-source">Tradier</span>
+      <span class="stat-chip" id="chip-sync">SYNC --</span>
       <button class="btn-icon" id="btn-emergency" title="Emergency Stop">&#9632;</button>
     </div>
   </header>
@@ -77,6 +82,9 @@
         <div class="view-header">
           <h1 class="view-title">Overview</h1>
           <div class="view-actions">
+            <span class="stat-chip" id="ov-source-badge">Operativa --</span>
+            <span class="stat-chip" id="ov-history-badge">Histórico --</span>
+            <span class="stat-chip" id="ov-sim-badge">Sim --</span>
             <select class="select-sm" id="ov-symbol">
               <option>BTC/USDT</option>
               <option>ETH/USDT</option>
@@ -192,7 +200,11 @@
       <section class="view" id="view-positions">
         <div class="view-header">
           <h1 class="view-title">Posiciones Abiertas</h1>
-          <button class="btn-sm" id="pos-refresh">&#8635; Refresh</button>
+          <div class="view-actions">
+            <span class="stat-chip" id="pos-source-badge">Fuente --</span>
+            <span class="stat-chip" id="pos-sync-badge">Sync --</span>
+            <button class="btn-sm" id="pos-refresh">&#8635; Refresh</button>
+          </div>
         </div>
         <div class="kpi-row" id="pos-kpi-row">
           <div class="kpi-card">
@@ -497,7 +509,7 @@
   <script>
     const _S = (location.port !== '8791') ? '/static' : '/quant-static';
     ['api','charts','app'].forEach(f=>{
-      const s=document.createElement('script'); s.src=_S+'/js/'+f+'.js'; s.defer=true; document.body.appendChild(s);
+      const s=document.createElement('script'); s.src=_S+'/js/'+f+'.js?v='+_QVER; s.defer=true; document.body.appendChild(s);
     });
   </script>
 </body>

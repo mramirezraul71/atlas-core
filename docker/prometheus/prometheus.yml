@@ -1,11 +1,11 @@
 global:
-  scrape_interval: 5s
-  evaluation_interval: 5s
+  scrape_interval: 2s
+  evaluation_interval: 2s
 
 scrape_configs:
   - job_name: atlas-quant
     static_configs:
       - targets:
-          - localhost:9090   # métricas Python del atlas_quant_core
+          - host.docker.internal:9090   # métricas Python del host cuando Prometheus corre en Docker
     metrics_path: /metrics
     scrape_timeout: 4s

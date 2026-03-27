@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ATLAS v4 â€” Landing Page (Google-style)
  * Clean, centered search bar with contextual quick actions and app tiles.
  */
@@ -284,19 +284,31 @@ export function render(container) {
     'atlas-quant-scanner':  { hash: '/atlas-quant' },
     'code-quant-dashboard': { href: '/v4/static/quant/index.html', newTab: true },
     'option-strat':         { href: 'http://localhost:8795/options/ui', newTab: true },
-    'grafana-quant':        { href: 'http://localhost:3002', newTab: true },
+    'grafana-quant':        { href: `http://${location.hostname}:3003/d/atlas-quant-pro-2026/7def89ea-334f-564c-b9c7-d190c3f6f69d`, newTab: true },
     'atlas-nexus': { href: '/nexus', newTab: false },
     'robot-3d':    { href: 'http://127.0.0.1:8002/dashboard', newTab: true },
   };
 
+  function openRoute(route) {
+    if (!route) return;
+    if (route.hash) {
+      location.hash = route.hash;
+      return;
+    }
+    if (route.newTab) {
+      const popup = window.open(route.href, '_blank', 'noopener');
+      if (!popup) {
+        window.location.href = route.href;
+      }
+      return;
+    }
+    window.location.href = route.href;
+  }
+
   container.querySelectorAll('.quick-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       window.AtlasSounds?.click();
-      const r = CHIP_ROUTES[chip.dataset.action];
-      if (!r) return;
-      if (r.hash) location.hash = r.hash;
-      else if (r.newTab) window.open(r.href, '_blank');
-      else window.location.href = r.href;
+      openRoute(CHIP_ROUTES[chip.dataset.action]);
     });
   });
 
@@ -316,7 +328,7 @@ export function render(container) {
     'atlas-quant-scanner':  { hash: '/atlas-quant' },
     'code-quant-dashboard': { href: '/v4/static/quant/index.html', newTab: true },
     'option-strat':         { href: 'http://localhost:8795/options/ui', newTab: true },
-    'grafana-quant':        { href: 'http://localhost:3002', newTab: true },
+    'grafana-quant':        { href: `http://${location.hostname}:3003/d/atlas-quant-pro-2026/7def89ea-334f-564c-b9c7-d190c3f6f69d`, newTab: true },
     'clawd-direct': { hash: '/clawd-direct' },
     'codex-supervisor': { hash: '/codex-supervisor' },
     'live-diagnostic': { hash: '/live-diagnostic' },
@@ -327,11 +339,7 @@ export function render(container) {
   container.querySelectorAll('.app-tile').forEach(tile => {
     tile.addEventListener('click', () => {
       window.AtlasSounds?.click();
-      const r = TILE_ROUTES[tile.dataset.app];
-      if (!r) return;
-      if (r.hash) location.hash = r.hash;
-      else if (r.newTab) window.open(r.href, '_blank');
-      else window.location.href = r.href;
+      openRoute(TILE_ROUTES[tile.dataset.app]);
     });
   });
 

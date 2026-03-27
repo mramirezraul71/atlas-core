@@ -8,7 +8,14 @@
 const API_BASE = (location.port === '8791' || location.port === '443')
   ? 'http://127.0.0.1:8795'
   : '';
-const API_KEY  = localStorage.getItem('quant_api_key') || '';
+const DEFAULT_LOCAL_API_KEY =
+  (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
+    ? 'atlas-quant-local'
+    : '';
+const API_KEY  = localStorage.getItem('quant_api_key') || DEFAULT_LOCAL_API_KEY;
+if (!localStorage.getItem('quant_api_key') && DEFAULT_LOCAL_API_KEY) {
+  localStorage.setItem('quant_api_key', DEFAULT_LOCAL_API_KEY);
+}
 
 // ── HTTP helper ────────────────────────────────────────────────────
 const _FETCH_TIMEOUT_MS = 5000;
@@ -20,13 +27,27 @@ function _fetchWithTimeout(url, options = {}) {
     .finally(() => clearTimeout(tid));
 }
 
+async function _parseResponse(r) {
+  const contentType = r.headers.get('content-type') || '';
+  const payload = contentType.includes('application/json')
+    ? await r.json()
+    : await r.text();
+  if (!r.ok) {
+    const detail = typeof payload === 'string'
+      ? payload
+      : payload?.detail || payload?.error || `HTTP ${r.status}`;
+    throw new Error(detail);
+  }
+  return payload;
+}
+
 async function apiGet(path, params = {}) {
   const url = new URL(API_BASE + path, window.location.origin);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   const r = await _fetchWithTimeout(url, {
     headers: { 'x-api-key': API_KEY, 'Accept': 'application/json' }
   });
-  return r.json();
+  return _parseResponse(r);
 }
 
 async function apiPost(path, body = {}) {
@@ -39,7 +60,7 @@ async function apiPost(path, body = {}) {
     },
     body: JSON.stringify(body)
   });
-  return r.json();
+  return _parseResponse(r);
 }
 
 // ── Endpoint wrappers ─────────────────────────────────────────────
@@ -49,9 +70,14 @@ const QuantAPI = {
 
   status: (scope = 'paper') => apiGet('/status', { account_scope: scope }),
 
-  dashboardOverview: (scope = 'paper') => apiGet('/api/v2/quant/dashboard/overview', { account_scope: scope }),
+  canonicalSnapshot: (scope = 'paper', accountId = '') =>
+    apiGet('/api/v2/quant/canonical/snapshot', { account_scope: scope, ...(accountId ? { account_id: accountId } : {}) }),
 
-  positions: () => apiGet('/positions'),
+  dashboardOverview: (scope = 'paper', accountId = '') =>
+    apiGet('/api/v2/quant/dashboard/overview', { account_scope: scope, ...(accountId ? { account_id: accountId } : {}) }),
+
+  positions: (scope = 'paper', accountId = '') =>
+    apiGet('/api/v2/quant/positions', { account_scope: scope, ...(accountId ? { account_id: accountId } : {}) }),
 
   // Backtest
   runBacktest: (payload) => apiPost('/backtest', payload),
@@ -80,7 +106,8 @@ const QuantAPI = {
   retrainingTrigger: (symbol) => apiPost(`/api/v2/quant/retraining/trigger?symbol=${encodeURIComponent(symbol)}`),
 
   // Monitor
-  monitorSummary: (scope = 'paper') => apiGet('/monitor/summary', { account_scope: scope }),
+  monitorSummary: (scope = 'paper', accountId = '') =>
+    apiGet('/monitor/summary', { account_scope: scope, ...(accountId ? { account_id: accountId } : {}) }),
 };
 
 // ── WebSocket manager ─────────────────────────────────────────────
@@ -93,11 +120,17 @@ class QuantWS {
   }
 
   connect() {
+    const scope = window.QUANT_ACCOUNT_SCOPE || 'paper';
+    const accountId = window.QUANT_ACCOUNT_ID || '';
     const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
     const wsHost = (location.port === '8791' || location.port === '443')
       ? '127.0.0.1:8795'
       : location.host;
-    const url = `${protocol}://${wsHost}/ws/live-updates`;
+    const wsUrl = new URL(`${protocol}://${wsHost}/ws/live-updates`);
+    if (API_KEY) wsUrl.searchParams.set('api_key', API_KEY);
+    if (scope) wsUrl.searchParams.set('account_scope', scope);
+    if (accountId) wsUrl.searchParams.set('account_id', accountId);
+    const url = wsUrl.toString();
     this._ws = new WebSocket(url);
 
     this._ws.onopen = () => {

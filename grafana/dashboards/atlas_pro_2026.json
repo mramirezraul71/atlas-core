@@ -12,13 +12,14 @@
   "timezone": "America/New_York",
   "schemaVersion": 38,
   "version": 1,
-  "refresh": "5s",
+  "refresh": "2s",
   "time": {
     "from": "now-4h",
     "to": "now"
   },
   "timepicker": {
     "refresh_intervals": [
+      "2s",
       "5s",
       "15s",
       "30s",
@@ -44,7 +45,7 @@
     },
     {
       "id": 2,
-      "title": "⚡ EQUITY",
+      "title": "⚡ EQUITY BROKER",
       "type": "stat",
       "gridPos": {
         "x": 0,
@@ -54,15 +55,15 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_equity_usd",
+          "expr": "atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
           "legendFormat": "",
           "refId": "A"
         }
@@ -117,15 +118,15 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_drawdown_pct",
+          "expr": "atlas_broker_drawdown_pct{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
           "legendFormat": "",
           "refId": "A"
         }
@@ -174,7 +175,7 @@
     },
     {
       "id": 4,
-      "title": "💰 PnL HOY",
+      "title": "💰 PnL ABIERTO",
       "type": "stat",
       "gridPos": {
         "x": 8,
@@ -184,15 +185,15 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_daily_pnl_usd",
+          "expr": "atlas_broker_open_pnl_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
           "legendFormat": "",
           "refId": "A"
         }
@@ -233,7 +234,7 @@
     },
     {
       "id": 5,
-      "title": "📈 SHARPE",
+      "title": "📈 SYNC STATUS",
       "type": "stat",
       "gridPos": {
         "x": 12,
@@ -243,15 +244,15 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_sharpe_ratio",
+          "expr": "atlas_sync_status{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
           "legendFormat": "",
           "refId": "A"
         }
@@ -272,11 +273,11 @@
               },
               {
                 "color": "#FFD60A",
-                "value": 1.0
+                "value": 2.0
               },
               {
                 "color": "#00FF9D",
-                "value": 1.5
+                "value": 3.0
               }
             ]
           },
@@ -310,15 +311,15 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_open_positions",
+          "expr": "atlas_broker_open_positions{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
           "legendFormat": "",
           "refId": "A"
         }
@@ -359,7 +360,7 @@
     },
     {
       "id": 7,
-      "title": "🔴 MODO",
+      "title": "🔴 GAP ATLAS",
       "type": "stat",
       "gridPos": {
         "x": 20,
@@ -369,15 +370,15 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_mode == 1 ? 1 : 0",
+          "expr": "atlas_reconcile_gap_usd{scope=\"$scope\",account_id=~\"$account_id\",comparison=\"atlas_internal\"}",
           "legendFormat": "",
           "refId": "A"
         }
@@ -397,8 +398,12 @@
                 "value": null
               },
               {
+                "color": "#FFD60A",
+                "value": 25
+              },
+              {
                 "color": "#FF3B5C",
-                "value": 1
+                "value": 250
               }
             ]
           },
@@ -435,7 +440,7 @@
     },
     {
       "id": 9,
-      "title": "Curva de Equity (USD)",
+      "title": "Curva de Equity Broker (USD)",
       "type": "timeseries",
       "gridPos": {
         "x": 0,
@@ -445,24 +450,24 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_equity_usd",
-          "legendFormat": "Equity",
+          "expr": "atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
+          "legendFormat": "Equity broker",
           "refId": "A"
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_equity_usd * (1 - atlas_drawdown_pct/100)",
+          "expr": "atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"} * (1 - atlas_broker_drawdown_pct{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}/100)",
           "legendFormat": "Drawdown baseline",
           "refId": "B"
         }
@@ -548,13 +553,13 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "atlas_regime",
           "legendFormat": "",
@@ -628,22 +633,22 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_drawdown_pct",
+          "expr": "atlas_broker_drawdown_pct{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
           "legendFormat": "Drawdown actual",
           "refId": "A"
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "8",
           "legendFormat": "Límite crítico 8%",
@@ -652,7 +657,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "2",
           "legendFormat": "Límite diario 2%",
@@ -755,13 +760,13 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "atlas_sharpe_ratio",
           "legendFormat": "Sharpe rolling 20",
@@ -770,7 +775,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "1.5",
           "legendFormat": "Objetivo mínimo live",
@@ -779,7 +784,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "0",
           "legendFormat": "Breakeven",
@@ -895,13 +900,13 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "atlas_iv_rank",
           "legendFormat": "IV Rank",
@@ -910,7 +915,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "70",
           "legendFormat": "Umbral señal (70)",
@@ -972,13 +977,13 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "atlas_ocr_confidence_pct",
           "legendFormat": "Precisión OCR (%)",
@@ -987,7 +992,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "atlas_cycle_ms / 10",
           "legendFormat": "Latencia ciclo (×10ms)",
@@ -1046,15 +1051,15 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_open_positions > 0 ? atlas_equity_usd * 0.012 : 0",
+          "expr": "atlas_broker_open_positions{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"} > 0 ? atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"} * 0.012 : 0",
           "legendFormat": "En posiciones",
           "refId": "A",
           "instant": true
@@ -1062,9 +1067,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_equity_usd * (1 - 0.012 * atlas_open_positions)",
+          "expr": "atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"} * (1 - 0.012 * atlas_broker_open_positions{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"})",
           "legendFormat": "Capital libre",
           "refId": "B",
           "instant": true
@@ -1155,13 +1160,13 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "rate(atlas_trades_total[1m])*60",
           "legendFormat": "Trades/min",
@@ -1170,7 +1175,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "atlas_cycle_ms",
           "legendFormat": "Latencia ciclo (ms)",
@@ -1258,13 +1263,13 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "atlas_cpu_pct",
           "legendFormat": "CPU Jetson (%)",
@@ -1273,7 +1278,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "80",
           "legendFormat": "Throttle OCR (80%)",
@@ -1373,15 +1378,15 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_equity_usd",
+          "expr": "atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
           "legendFormat": "Equity USD",
           "refId": "A",
           "instant": true
@@ -1389,9 +1394,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_open_positions",
+          "expr": "atlas_broker_open_positions{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
           "legendFormat": "Posiciones",
           "refId": "B",
           "instant": true
@@ -1399,19 +1404,19 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_daily_pnl_usd",
-          "legendFormat": "PnL Diario",
+          "expr": "atlas_broker_open_pnl_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
+          "legendFormat": "PnL Abierto",
           "refId": "C",
           "instant": true
         },
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_drawdown_pct",
+          "expr": "atlas_broker_drawdown_pct{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
           "legendFormat": "Drawdown %",
           "refId": "D",
           "instant": true
@@ -1419,10 +1424,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
-          "expr": "atlas_sharpe_ratio",
-          "legendFormat": "Sharpe",
+          "expr": "atlas_reconcile_gap_usd{scope=\"$scope\",account_id=~\"$account_id\",comparison=\"atlas_internal\"}",
+          "legendFormat": "Gap Atlas USD",
           "refId": "E",
           "instant": true
         }
@@ -1481,13 +1486,13 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "atlas-prom-local"
+        "uid": "atlas-prom"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "atlas_ocr_confidence_pct",
           "legendFormat": "📷 OCR Confianza %",
@@ -1497,7 +1502,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "atlas_cpu_pct",
           "legendFormat": "🖥 CPU Jetson %",
@@ -1507,7 +1512,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "atlas_cycle_ms",
           "legendFormat": "⚡ Ciclo ms",
@@ -1517,7 +1522,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "atlas_mode",
           "legendFormat": "🔴 Modo Live",
@@ -1527,7 +1532,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "atlas-prom-local"
+            "uid": "atlas-prom"
           },
           "expr": "atlas_regime",
           "legendFormat": "📊 Régimen",
@@ -1575,77 +1580,57 @@
   "templating": {
     "list": [
       {
-        "name": "symbol",
-        "label": "Símbolo",
+        "name": "scope",
+        "label": "Scope",
         "type": "custom",
         "current": {
-          "text": "SPY",
-          "value": "SPY"
-        },
-        "options": [
-          {
-            "text": "SPY",
-            "value": "SPY",
-            "selected": true
-          },
-          {
-            "text": "QQQ",
-            "value": "QQQ",
-            "selected": false
-          },
-          {
-            "text": "AAPL",
-            "value": "AAPL",
-            "selected": false
-          },
-          {
-            "text": "TSLA",
-            "value": "TSLA",
-            "selected": false
-          },
-          {
-            "text": "NVDA",
-            "value": "NVDA",
-            "selected": false
-          },
-          {
-            "text": "MSFT",
-            "value": "MSFT",
-            "selected": false
-          },
-          {
-            "text": "AMZN",
-            "value": "AMZN",
-            "selected": false
-          }
-        ],
-        "query": "SPY,QQQ,AAPL,TSLA,NVDA,MSFT,AMZN",
-        "hide": 0,
-        "multi": false
-      },
-      {
-        "name": "mode",
-        "label": "Modo",
-        "type": "custom",
-        "current": {
-          "text": "live",
-          "value": "1"
+          "text": "paper",
+          "value": "paper"
         },
         "options": [
           {
             "text": "paper",
-            "value": "0",
-            "selected": false
+            "value": "paper",
+            "selected": true
           },
           {
             "text": "live",
-            "value": "1",
+            "value": "live",
+            "selected": false
+          }
+        ],
+        "query": "paper,live",
+        "hide": 0,
+        "multi": false
+      },
+      {
+        "name": "source",
+        "label": "Fuente",
+        "type": "custom",
+        "current": {
+          "text": "tradier",
+          "value": "tradier"
+        },
+        "options": [
+          {
+            "text": "tradier",
+            "value": "tradier",
             "selected": true
           }
         ],
-        "query": "paper : 0, live : 1",
+        "query": "tradier",
         "hide": 0,
         "multi": false
+      },
+      {
+        "name": "account_id",
+        "label": "Account",
+        "type": "textbox",
+        "current": {
+          "text": ".*",
+          "value": ".*"
+        },
+        "hide": 0
       }
     ]
   },
@@ -1666,22 +1651,6 @@
     ]
   },
   "links": [
-    {
-      "title": "← ATLAS Central",
-      "url": "http://localhost:8791/ui",
-      "type": "link",
-      "icon": "home",
-      "targetBlank": false,
-      "tooltip": "Volver al dashboard central de ATLAS"
-    },
-    {
-      "title": "⬡ Code-Quant",
-      "url": "http://localhost:8791/v4/static/quant/index.html",
-      "type": "link",
-      "icon": "dashboard",
-      "targetBlank": true,
-      "tooltip": "Abrir dashboard gráfico de Quant"
-    },
     {
       "title": "📊 Atlas API",
       "url": "http://localhost:8792/docs",

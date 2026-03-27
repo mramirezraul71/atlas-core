@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import requests
 
-from config.settings import settings
+from atlas_code_quant.config.settings import settings
 
 
 SUPPORTED_STRATEGIES = (

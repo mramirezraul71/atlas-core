@@ -12,6 +12,9 @@ const fmt = {
   ts: (v) => v ? new Date(v).toLocaleTimeString() : '--',
 };
 
+const QUANT_SCOPE = window.QUANT_ACCOUNT_SCOPE || 'paper';
+const QUANT_ACCOUNT_ID = window.QUANT_ACCOUNT_ID || '';
+
 let _equityChart = null;
 let _ddChart = null;
 let _btEquityChart = null;
@@ -38,6 +41,62 @@ function setText(id, value) {
 function setKPI(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
+}
+
+function syncLabel(reconciliation) {
+  const state = reconciliation?.state || 'unknown';
+  if (state === 'healthy') return 'SYNC OK';
+  if (state === 'degraded') return 'SYNC WARN';
+  if (state === 'failed') return 'SYNC FAIL';
+  if (state === 'stale') return 'SYNC STALE';
+  return 'SYNC --';
+}
+
+function renderCanonicalMeta(snapshot) {
+  if (!snapshot) return;
+  const balances = snapshot.balances || {};
+  const totals = snapshot.totals || {};
+  setText('chip-source', `${snapshot.source_label || 'Tradier'} · ${snapshot.account_scope || QUANT_SCOPE}`);
+  setText('chip-sync', syncLabel(snapshot.reconciliation));
+  setText('chip-positions', `${totals.positions || 0} pos`);
+  if (balances.total_equity != null) setText('chip-equity', fmt.usd(balances.total_equity));
+}
+
+function renderPositionsRealtime(snapshot) {
+  if (!snapshot) return;
+  const positions = Array.isArray(snapshot.positions) ? snapshot.positions : [];
+  const tbody = document.getElementById('positions-body');
+  if (!tbody) return;
+  setText('pos-count', String(positions.length));
+  setText('pos-mode-badge', String(snapshot.account_scope || QUANT_SCOPE).toUpperCase());
+  setText('pos-unrealized', fmt.usd(snapshot.total_pnl ?? 0));
+  setText('pos-exposure', fmt.usd(snapshot.gross_exposure ?? 0));
+  setText('pos-cb', syncLabel(snapshot.reconciliation));
+  if (!positions.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="11">Sin posiciones abiertas</td></tr>';
+    return;
+  }
+  tbody.innerHTML = positions.map((position) => {
+    const qty = Math.abs(Number(position.quantity || position.signed_qty || 0));
+    const pnl = Number(position.unrealized_pnl ?? position.current_pnl ?? 0);
+    const pnlCls = pnl >= 0 ? 'green' : 'red';
+    const side = String(position.side || '--').toUpperCase();
+    const sideCls = side.includes('SHORT') ? 'red' : 'green';
+    const strategyLabel = `${position.asset_class || '--'} / ${position.underlying || '--'}`;
+    return `<tr title="${strategyLabel}">
+      <td class="accent" style="font-family:var(--font-mono)">${position.symbol || position.underlying || '--'}</td>
+      <td class="${sideCls}" style="font-weight:600">${side}</td>
+      <td style="font-family:var(--font-mono)">${fmt.usd(position.entry_price)}</td>
+      <td style="font-family:var(--font-mono)">${fmt.usd(position.current_price)}</td>
+      <td>${fmt.num(qty, 0)}</td>
+      <td class="${pnlCls}" style="font-family:var(--font-mono);font-weight:600">${fmt.usd(pnl)}</td>
+      <td class="${pnlCls}">${fmt.pct(position.pnl_pct)}</td>
+      <td style="font-size:11px">${strategyLabel}</td>
+      <td>--</td>
+      <td>--</td>
+      <td style="font-size:11px;color:var(--text-muted)">canonico Tradier</td>
+    </tr>`;
+  }).join('');
 }
 
 function startClock() {
@@ -125,18 +184,21 @@ function _stopPosAutoRefresh() {
 
 async function pollHealth() {
   try {
-    const [statusR, monitorR] = await Promise.all([
+    const [statusR, monitorR, canonicalR] = await Promise.all([
       QuantAPI.status().catch(() => null),
       QuantAPI.monitorSummary().catch(() => null),
+      QuantAPI.canonicalSnapshot(QUANT_SCOPE, QUANT_ACCOUNT_ID).catch(() => null),
     ]);
     const status = statusR?.data || {};
     const monitor = monitorR?.data || {};
+    const canonical = canonicalR?.data || null;
     const uptimeSec = status.uptime_sec || 0;
-    const equity = status.account_session?.total_equity ?? monitor.balances?.total_equity ?? null;
-    const positions = monitor.totals?.positions ?? status.open_positions ?? 0;
+    const equity = canonical?.balances?.total_equity ?? status.account_session?.total_equity ?? monitor.balances?.total_equity ?? null;
+    const positions = canonical?.totals?.positions ?? monitor.totals?.positions ?? status.open_positions ?? 0;
     setText('chip-uptime', `${Math.floor(uptimeSec / 60)}m up`);
     if (equity != null) setText('chip-equity', fmt.usd(equity));
     setText('chip-positions', `${positions} pos`);
+    if (canonical) renderCanonicalMeta(canonical);
   } catch (_) {
     setText('chip-uptime', 'offline');
   }
@@ -628,12 +690,23 @@ function appendLog(id, line) {
 
 function initWS() {
   quantWS.on('quant.live_update', (msg) => {
+    const canonical = msg.canonical_snapshot || null;
     const status = msg.status || {};
     const monitor = msg.monitor_summary || {};
-    const equity = status.account_session?.total_equity ?? monitor.balances?.total_equity ?? null;
-    const positions = monitor.totals?.positions ?? status.open_positions ?? 0;
+    const equity = canonical?.balances?.total_equity ?? status.account_session?.total_equity ?? monitor.balances?.total_equity ?? null;
+    const positions = canonical?.totals?.positions ?? monitor.totals?.positions ?? status.open_positions ?? 0;
     if (equity != null) setText('chip-equity', fmt.usd(equity));
     setText('chip-positions', `${positions} pos`);
+    if (canonical) {
+      renderCanonicalMeta(canonical);
+      if (document.getElementById('view-positions')?.classList.contains('active')) {
+        renderPositionsRealtime({
+          ...canonical,
+          total_pnl: canonical?.totals?.open_pnl ?? 0,
+          gross_exposure: canonical?.balances?.gross_exposure ?? 0,
+        });
+      }
+    }
   });
 
   quantWS.on('quant.live_error', (msg) => {
@@ -710,5 +783,5 @@ document.addEventListener('DOMContentLoaded', () => {
   initWS();
   loadOverview();
   pollHealth();
-  setInterval(pollHealth, 30000);
+  setInterval(pollHealth, 10000);
 });
