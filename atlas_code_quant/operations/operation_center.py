@@ -93,8 +93,11 @@ class OperationCenter:
         self.executor = executor or AutonExecutorService()
         self.brain = brain or QuantBrainBridge()
         self.learning = learning or AdaptiveLearningService()
+        self._monitor_summary_lock = threading.Lock()
         self._monitor_summary_cache: dict[str, dict[str, Any]] = {}
         self._monitor_summary_cache_at: dict[str, float] = {}
+        self._monitor_summary_workers: dict[str, threading.Thread] = {}
+        self._monitor_summary_errors: dict[str, str] = {}
         self._ensure_state()
 
     def _ensure_state(self) -> None:
@@ -156,73 +159,114 @@ class OperationCenter:
         }
 
     def _cached_monitor_summary(self, scope: str) -> dict[str, Any] | None:
-        cached = self._monitor_summary_cache.get(scope)
-        if cached:
-            return deepcopy(cached)
-        return None
+        with self._monitor_summary_lock:
+            cached = self._monitor_summary_cache.get(scope)
+            return deepcopy(cached) if cached else None
+
+    def _monitor_summary_alert(self, monitor: dict[str, Any], *, message: str, scope: str) -> dict[str, Any]:
+        payload = deepcopy(monitor)
+        payload.setdefault("alerts", [])
+        payload["alerts"] = list(payload.get("alerts") or [])
+        payload["alerts"].append(
+            {
+                "level": "warning",
+                "message": message,
+                "scope": scope,
+            }
+        )
+        return payload
+
+    def _start_monitor_summary_refresh(self, scope: str) -> threading.Thread:
+        with self._monitor_summary_lock:
+            current = self._monitor_summary_workers.get(scope)
+            if current and current.is_alive():
+                return current
+
+            def _worker() -> None:
+                try:
+                    monitor = self.tracker.build_summary(account_scope=scope)  # type: ignore[arg-type]
+                    with self._monitor_summary_lock:
+                        self._monitor_summary_cache[scope] = deepcopy(monitor)
+                        self._monitor_summary_cache_at[scope] = time.monotonic()
+                        self._monitor_summary_errors.pop(scope, None)
+                except Exception as exc:
+                    with self._monitor_summary_lock:
+                        self._monitor_summary_errors[scope] = str(exc)
+                finally:
+                    with self._monitor_summary_lock:
+                        current_thread = self._monitor_summary_workers.get(scope)
+                        if current_thread is threading.current_thread():
+                            self._monitor_summary_workers.pop(scope, None)
+
+            worker = threading.Thread(target=_worker, name=f"monitor-summary-{scope}", daemon=True)
+            self._monitor_summary_workers[scope] = worker
+            worker.start()
+            return worker
 
     def _load_monitor_summary(self, scope: str) -> dict[str, Any]:
         ttl_sec = max(2, int(settings.tradier_monitor_cache_ttl_sec or 300))
         # `operation/status` debe degradar rapido; no puede quedar secuestrado por el broker.
         timeout_sec = max(1, min(int(settings.tradier_timeout_sec or 15), 5))
         now = time.monotonic()
-        cached = self._cached_monitor_summary(scope)
-        cached_at = self._monitor_summary_cache_at.get(scope, 0.0)
+        with self._monitor_summary_lock:
+            cached = deepcopy(self._monitor_summary_cache.get(scope)) if self._monitor_summary_cache.get(scope) else None
+            cached_at = self._monitor_summary_cache_at.get(scope, 0.0)
+            worker = self._monitor_summary_workers.get(scope)
+            last_error = self._monitor_summary_errors.get(scope)
         if cached and (now - cached_at) <= ttl_sec:
             return cached
 
-        result: dict[str, Any] = {}
-        error_box: list[Exception] = []
-
-        def _worker() -> None:
-            try:
-                result["monitor"] = self.tracker.build_summary(account_scope=scope)  # type: ignore[arg-type]
-            except Exception as exc:
-                error_box.append(exc)
-
-        worker = threading.Thread(target=_worker, name=f"monitor-summary-{scope}", daemon=True)
-        worker.start()
-        worker.join(timeout=timeout_sec)
-        try:
+        worker = self._start_monitor_summary_refresh(scope)
+        if cached:
             if worker.is_alive():
-                raise TimeoutError(f"tracker.build_summary timeout after {timeout_sec}s")
-            if error_box:
-                raise error_box[0]
-            monitor = result["monitor"]
-        except TimeoutError:
-            fallback = cached or self._empty_monitor_summary(
-                scope,
-                reason=f"tracker.build_summary timeout after {timeout_sec}s",
-            )
-            fallback.setdefault("alerts", [])
-            fallback["alerts"] = list(fallback.get("alerts") or [])
-            fallback["alerts"].append(
-                {
-                    "level": "warning",
-                    "message": f"Using cached monitor summary after timeout ({timeout_sec}s)",
-                    "scope": scope,
-                }
-            )
-            return fallback
-        except Exception as exc:
-            fallback = cached or self._empty_monitor_summary(
-                scope,
-                reason=f"tracker.build_summary error: {exc}",
-            )
-            fallback.setdefault("alerts", [])
-            fallback["alerts"] = list(fallback.get("alerts") or [])
-            fallback["alerts"].append(
-                {
-                    "level": "warning",
-                    "message": f"Using cached monitor summary after tracker error: {exc}",
-                    "scope": scope,
-                }
-            )
-            return fallback
+                return self._monitor_summary_alert(
+                    cached,
+                    message="Refreshing monitor summary in background",
+                    scope=scope,
+                )
+            if last_error:
+                return self._monitor_summary_alert(
+                    cached,
+                    message=f"Using cached monitor summary after tracker error: {last_error}",
+                    scope=scope,
+                )
+            return cached
 
-        self._monitor_summary_cache[scope] = deepcopy(monitor)
-        self._monitor_summary_cache_at[scope] = now
-        return monitor
+        worker.join(timeout=timeout_sec)
+        with self._monitor_summary_lock:
+            monitor = deepcopy(self._monitor_summary_cache.get(scope)) if self._monitor_summary_cache.get(scope) else None
+            last_error = self._monitor_summary_errors.get(scope)
+            still_running = bool(self._monitor_summary_workers.get(scope))
+        if monitor:
+            return monitor
+        if last_error:
+            return self._monitor_summary_alert(
+                self._empty_monitor_summary(
+                    scope,
+                    reason=f"tracker.build_summary error: {last_error}",
+                ),
+                message=f"Using empty monitor summary after tracker error: {last_error}",
+                scope=scope,
+            )
+        if still_running:
+            return self._monitor_summary_alert(
+                self._empty_monitor_summary(
+                    scope,
+                    reason=f"tracker.build_summary timeout after {timeout_sec}s",
+                ),
+                message=f"Monitor summary still refreshing after timeout ({timeout_sec}s)",
+                scope=scope,
+            )
+        return self._empty_monitor_summary(scope, reason="tracker.build_summary returned no data")
+
+    def _dispatch_brain_task(self, task_name: str, callback: Any, /, *args: Any, **kwargs: Any) -> None:
+        def _runner() -> None:
+            try:
+                callback(*args, **kwargs)
+            except Exception:
+                pass
+
+        threading.Thread(target=_runner, name=f"brain-{task_name}", daemon=True).start()
 
     def _register_operational_error(self, state: dict[str, Any], *, reason: str) -> dict[str, Any]:
         state = self._normalize_runtime_state(state)
@@ -347,38 +391,36 @@ class OperationCenter:
             "timestamp": datetime.utcnow().isoformat(),
         }
         self._save(state)
-        try:
-            self.brain.emit(
-                kind="emergency_stop",
-                level="warning",
-                message=f"[QUANT][EMERGENCY] Parada total activada: {reason}",
-                tags=["quant", "operation", "emergency_stop"],
-                data={"reason": reason},
-                description="Parada total activada desde Quant",
-                context=json.dumps({"reason": reason}, ensure_ascii=False),
-                outcome="stopped",
-                memorize=False,
-            )
-        except Exception:
-            pass
+        self._dispatch_brain_task(
+            "emergency-stop",
+            self.brain.emit,
+            kind="emergency_stop",
+            level="warning",
+            message=f"[QUANT][EMERGENCY] Parada total activada: {reason}",
+            tags=["quant", "operation", "emergency_stop"],
+            data={"reason": reason},
+            description="Parada total activada desde Quant",
+            context=json.dumps({"reason": reason}, ensure_ascii=False),
+            outcome="stopped",
+            memorize=False,
+        )
         return self.status()
 
     def clear_emergency_stop(self) -> dict[str, Any]:
         self.executor.clear_emergency_stop()
-        try:
-            self.brain.emit(
-                kind="emergency_reset",
-                level="info",
-                message="[QUANT][EMERGENCY] Parada total desactivada",
-                tags=["quant", "operation", "emergency_reset"],
-                data={},
-                description="Parada total desactivada desde Quant",
-                context="{}",
-                outcome="resumed",
-                memorize=False,
-            )
-        except Exception:
-            pass
+        self._dispatch_brain_task(
+            "emergency-reset",
+            self.brain.emit,
+            kind="emergency_reset",
+            level="info",
+            message="[QUANT][EMERGENCY] Parada total desactivada",
+            tags=["quant", "operation", "emergency_reset"],
+            data={},
+            description="Parada total desactivada desde Quant",
+            context="{}",
+            outcome="resumed",
+            memorize=False,
+        )
         return self.status()
 
     def evaluate_candidate(
@@ -564,17 +606,16 @@ class OperationCenter:
         }
         self._save(config)
         payload["operation_status"] = self.status()
-        try:
-            self.brain.record_operation_cycle(
-                payload,
-                order={
-                    "symbol": order_copy.symbol,
-                    "strategy_type": strategy_type,
-                    "account_scope": scope,
-                    "action": action,
-                    "size": float(order_copy.size),
-                },
-            )
-        except Exception:
-            pass
+        self._dispatch_brain_task(
+            "operation-cycle",
+            self.brain.record_operation_cycle,
+            payload,
+            order={
+                "symbol": order_copy.symbol,
+                "strategy_type": strategy_type,
+                "account_scope": scope,
+                "action": action,
+                "size": float(order_copy.size),
+            },
+        )
         return payload
