@@ -342,11 +342,16 @@ class CanonicalSnapshotService:
         checks: list[dict[str, Any]] = []
         max_equity_gap = 0.0
         max_positions_gap = 0
-        for key in ("atlas_internal", "paper_local"):
+        comparators = (
+            ("atlas_internal", True, True),
+            ("paper_local", True, True),
+            ("optionstrat", False, True),
+        )
+        for key, compare_equity, compare_positions in comparators:
             item = simulators.get(key) or {}
             observed_equity = item.get("equity")
             observed_positions = item.get("open_positions")
-            if observed_equity is not None:
+            if compare_equity and observed_equity is not None:
                 equity_gap = round(float(observed_equity) - canonical_equity, 4)
                 max_equity_gap = max(max_equity_gap, abs(equity_gap))
                 checks.append(
@@ -359,7 +364,7 @@ class CanonicalSnapshotService:
                         "gap_pct": round((equity_gap / canonical_equity * 100.0), 4) if canonical_equity else None,
                     }
                 )
-            if observed_positions is not None:
+            if compare_positions and observed_positions is not None:
                 positions_gap = int(observed_positions) - canonical_positions
                 max_positions_gap = max(max_positions_gap, abs(positions_gap))
                 checks.append(
