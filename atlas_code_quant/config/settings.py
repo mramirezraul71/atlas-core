@@ -127,7 +127,7 @@ class TradingConfig:
     # PDT / monitoring controls
     tradier_monitor_cache_ttl_sec: int = _ienv("TRADIER_MONITOR_CACHE_TTL_SEC", 300)
     tradier_probability_refresh_sec: int = _ienv("TRADIER_PROBABILITY_REFRESH_SEC", 300)
-    tradier_live_update_interval_sec: int = _ienv("TRADIER_LIVE_UPDATE_INTERVAL_SEC", 5)
+    tradier_live_update_interval_sec: int = _ienv("TRADIER_LIVE_UPDATE_INTERVAL_SEC", 2)
     tradier_journal_sync_interval_sec: int = _ienv("TRADIER_JOURNAL_SYNC_INTERVAL_SEC", 5)
     tradier_journal_history_days: int = _ienv("TRADIER_JOURNAL_HISTORY_DAYS", 30)
     tradier_pdt_min_equity: float = _fenv("TRADIER_PDT_MIN_EQUITY", 25000.0)

@@ -160,6 +160,8 @@ class SignalGenerator:
     TIER_SMALL  = 0.55    # Kelly × 0.50
     # SKIP: score < TIER_SMALL → no ejecutar
     VISUAL_PRICE_TOLERANCE = 0.005   # 0.5% tolerancia OCR vs API
+    VISUAL_SCORE_WEIGHT = 0.12       # ajuste maximo absoluto al signal score
+    ALIGNMENT_SCORE_WEIGHT = 0.08    # ajuste por calibracion activa del chart
 
     # ── Parámetros de salida ──────────────────────────────────────────────────
     TP_ATR_MULT = 2.0
@@ -226,6 +228,7 @@ class SignalGenerator:
         iv,
         entry_price: float,
         ocr_price: float | None = None,
+        ocr_result=None,
         current_capital: float = 100_000.0,
         position_size: int = 0,
         bar_state=None,         # BarState opcional — activa filtro de momentum si se provee
@@ -295,8 +298,20 @@ class SignalGenerator:
             return self._flat(symbol, entry_price, atr, "volume_spike_insufficient",
                               tech.volume_ratio)
 
-        # ── 7. Confirmación visual OCR ────────────────────────────────────────
-        visual_ok = self._check_visual(entry_price, ocr_price)
+        # ── 7. Confirmacion visual OCR / Insta360 ─────────────────────────────
+        visual_edge = self._assess_visual_edge(
+            signal_dir=signal_dir,
+            entry_price=entry_price,
+            ocr_price=ocr_price,
+            ocr_result=ocr_result,
+        )
+        entry_alignment = self._assess_entry_alignment(
+            signal_dir=signal_dir,
+            entry_price=entry_price,
+            ocr_price=ocr_price,
+            ocr_result=ocr_result,
+        )
+        visual_ok = bool(visual_edge["confirmed"])
 
         # ── 7.5. Filtro de momentum (velas 1m) — sólo si se provee bar_state ──
         if bar_state is not None:
@@ -341,6 +356,20 @@ class SignalGenerator:
             regime_confidence = _base_score,
         )
         _signal_score = self.final_signal_score(_components)
+        _signal_score = max(
+            0.0,
+            min(
+                1.0,
+                _signal_score + (float(visual_edge["overall_score"]) - 0.5) * self.VISUAL_SCORE_WEIGHT,
+            ),
+        )
+        _signal_score = max(
+            0.0,
+            min(
+                1.0,
+                _signal_score + (float(entry_alignment["score"]) - 0.5) * self.ALIGNMENT_SCORE_WEIGHT,
+            ),
+        )
         _tier         = self.score_tier(_signal_score)
 
         # ── 8.1. Decisión de instrumento: equity vs opciones ─────────────────
@@ -404,6 +433,21 @@ class SignalGenerator:
         signal.metadata["score_tier"]          = _tier.value
         signal.metadata["use_options"]         = _use_options
         signal.metadata["option_strategy_type"]= _option_strategy
+        signal.metadata["visual_edge_score"]   = round(float(visual_edge["overall_score"]), 4)
+        signal.metadata["visual_price_score"]  = round(float(visual_edge["price_score"]), 4)
+        signal.metadata["visual_color_score"]  = round(float(visual_edge["color_score"]), 4)
+        signal.metadata["visual_pattern_score"]= round(float(visual_edge["pattern_score"]), 4)
+        signal.metadata["visual_conf_score"]   = round(float(visual_edge["confidence_score"]), 4)
+        signal.metadata["visual_reason"]       = str(visual_edge["reason"])
+        signal.metadata["visual_mode"]         = str(visual_edge["mode"])
+        signal.metadata["visual_price"]        = visual_edge["ocr_price"]
+        signal.metadata["visual_chart_color"]  = visual_edge["chart_color"]
+        signal.metadata["visual_pattern"]      = visual_edge["pattern"]
+        signal.metadata["entry_alignment_score"] = round(float(entry_alignment["score"]), 4)
+        signal.metadata["entry_alignment_ready"] = bool(entry_alignment["ready"])
+        signal.metadata["entry_alignment_reason"] = str(entry_alignment["reason"])
+        signal.metadata["entry_alignment_sample_count"] = int(entry_alignment["sample_count"])
+        signal.metadata["entry_alignment_calibration_quality"] = round(float(entry_alignment["calibration_quality"]), 4)
         if pattern_lab_ctx is not None:
             signal.metadata["pattern_score"]   = round(_pattern_score, 4)
             signal.metadata["tin_prob"]        = round(getattr(pattern_lab_ctx, "tin_prob_positive", 0.5), 4)
@@ -627,11 +671,183 @@ class SignalGenerator:
         return "SINGLE_LEG"
 
     def _check_visual(self, api_price: float, ocr_price: Optional[float]) -> bool:
-        """Verifica que el precio OCR coincide con el precio API (±0.5%)."""
-        if ocr_price is None or ocr_price <= 0:
-            return False
-        diff = abs(api_price - ocr_price) / api_price
-        return diff <= self.VISUAL_PRICE_TOLERANCE
+        """Compatibilidad con callers antiguos: delega en el score visual."""
+        return bool(
+            self._assess_visual_edge(
+                signal_dir=SignalType.BUY,
+                entry_price=api_price,
+                ocr_price=ocr_price,
+                ocr_result=None,
+            )["confirmed"]
+        )
+
+    def _assess_visual_edge(
+        self,
+        *,
+        signal_dir: SignalType,
+        entry_price: float,
+        ocr_price: Optional[float] = None,
+        ocr_result=None,
+    ) -> dict:
+        """Convierte la lectura visual en una puntuacion de conviccion."""
+        if entry_price <= 0:
+            return {
+                "confirmed": False,
+                "overall_score": 0.0,
+                "price_score": 0.0,
+                "color_score": 0.0,
+                "pattern_score": 0.0,
+                "confidence_score": 0.0,
+                "ocr_price": None,
+                "chart_color": "unknown",
+                "pattern": "",
+                "reason": "invalid_entry_price",
+                "mode": "visual_unavailable",
+            }
+
+        if ocr_result is None and ocr_price is None:
+            return {
+                "confirmed": False,
+                "overall_score": 0.5,
+                "price_score": 0.5,
+                "color_score": 0.5,
+                "pattern_score": 0.5,
+                "confidence_score": 0.0,
+                "ocr_price": None,
+                "chart_color": "unknown",
+                "pattern": "",
+                "reason": "visual_unavailable",
+                "mode": "visual_unavailable",
+            }
+
+        prices = list(getattr(ocr_result, "prices", []) or [])
+        chart_color = str(getattr(ocr_result, "chart_color", "unknown") or "unknown").lower()
+        pattern = str(getattr(ocr_result, "pattern_detected", "") or "").lower()
+        confidence = float(getattr(ocr_result, "ocr_confidence", 0.0) or 0.0)
+        safe_mode = bool(getattr(ocr_result, "safe_mode", False))
+
+        best_price = ocr_price
+        if prices:
+            best_price = min(prices, key=lambda p: abs(p - entry_price))
+
+        if best_price is None:
+            price_score = 0.25
+        else:
+            diff = abs(float(best_price) - entry_price) / entry_price
+            price_score = max(0.0, 1.0 - (diff / max(self.VISUAL_PRICE_TOLERANCE, 1e-6)))
+
+        confidence_score = (
+            max(0.0, min(1.0, confidence / 0.92))
+            if confidence > 0
+            else (0.75 if best_price is not None else 0.0)
+        )
+
+        expected_colors = {"green", "bullish"} if signal_dir == SignalType.BUY else {"red", "bearish"}
+        opposite_colors = {"red", "bearish"} if signal_dir == SignalType.BUY else {"green", "bullish"}
+        if chart_color in expected_colors:
+            color_score = 1.0
+        elif chart_color in opposite_colors:
+            color_score = 0.0
+        else:
+            color_score = 0.5
+
+        bullish_patterns = ("breakout", "uptrend", "bounce", "pullback", "flag", "bandera", "ruptura", "alcista")
+        bearish_patterns = ("breakdown", "downtrend", "reversal", "dump", "selloff", "bajista")
+        if signal_dir == SignalType.BUY:
+            if any(token in pattern for token in bullish_patterns):
+                pattern_score = 1.0
+            elif any(token in pattern for token in bearish_patterns):
+                pattern_score = 0.0
+            else:
+                pattern_score = 0.5
+        else:
+            if any(token in pattern for token in bearish_patterns):
+                pattern_score = 1.0
+            elif any(token in pattern for token in bullish_patterns):
+                pattern_score = 0.0
+            else:
+                pattern_score = 0.5
+
+        if safe_mode:
+            overall = 0.1
+            reason = "visual_safe_mode"
+            mode = "visual_degraded"
+        else:
+            overall = (
+                0.50 * price_score
+                + 0.20 * confidence_score
+                + 0.20 * color_score
+                + 0.10 * pattern_score
+            )
+            if overall >= 0.72 and price_score >= 0.8:
+                reason = "visual_confirmed"
+                mode = "visual_confirmed"
+            elif overall >= 0.5:
+                reason = "visual_neutral"
+                mode = "visual_neutral"
+            else:
+                reason = "visual_degraded"
+                mode = "visual_degraded"
+
+        return {
+            "confirmed": bool(reason == "visual_confirmed"),
+            "overall_score": round(float(overall), 4),
+            "price_score": round(float(price_score), 4),
+            "color_score": round(float(color_score), 4),
+            "pattern_score": round(float(pattern_score), 4),
+            "confidence_score": round(float(confidence_score), 4),
+            "ocr_price": float(best_price) if best_price is not None else None,
+            "chart_color": chart_color,
+            "pattern": pattern,
+            "reason": reason,
+            "mode": mode,
+        }
+
+    def _assess_entry_alignment(
+        self,
+        *,
+        signal_dir: SignalType,
+        entry_price: float,
+        ocr_price: Optional[float] = None,
+        ocr_result=None,
+    ) -> dict:
+        """Usa la calibracion de chart para resumir alineacion de entrada."""
+        if ocr_result is None:
+            return {
+                "ready": False,
+                "score": 0.5,
+                "reason": "alignment_requires_visual_state",
+                "sample_count": 0,
+                "calibration_quality": 0.0,
+            }
+        try:
+            from atlas_code_quant.operations.vision_calibration import VisionCalibrationService
+
+            service = VisionCalibrationService()
+            side = "buy" if signal_dir == SignalType.BUY else "sell"
+            result = service.evaluate_entry_alignment(
+                entry_price=float(entry_price),
+                signal_side=side,
+                ocr_price=float(ocr_price) if ocr_price is not None else None,
+                confidence=float(getattr(ocr_result, "ocr_confidence", 0.0) or 0.0),
+                chart_color=str(getattr(ocr_result, "chart_color", "") or ""),
+                pattern_detected=str(getattr(ocr_result, "pattern_detected", "") or ""),
+            )
+            return {
+                "ready": bool(result.get("ready")),
+                "score": float(result.get("score", 0.5)),
+                "reason": str(result.get("reason", "alignment_unavailable")),
+                "sample_count": int(result.get("sample_count", 0)),
+                "calibration_quality": float(result.get("calibration_quality", 0.0)),
+            }
+        except Exception:
+            return {
+                "ready": False,
+                "score": 0.5,
+                "reason": "alignment_unavailable",
+                "sample_count": 0,
+                "calibration_quality": 0.0,
+            }
 
     def _compute_zscore(self, value: float) -> float:
         if len(self._cvd_history) < 10:

@@ -1,4 +1,4 @@
-"""SQLAlchemy database bootstrap for the trading journal."""
+﻿"""SQLAlchemy database bootstrap for the trading journal."""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -20,7 +20,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 
 def init_db() -> None:
-    from journal import models  # noqa: F401
+    from atlas_code_quant.journal import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 
@@ -36,3 +36,4 @@ def session_scope() -> Iterator[Session]:
         raise
     finally:
         session.close()
+

@@ -18,6 +18,8 @@ services:
     image: prom/prometheus:v2.51.2
     container_name: atlas-prometheus
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "9092:9090"           # 9092 en host (9090 lo usa el core Python, 3000/3001 ocupados)
     volumes:

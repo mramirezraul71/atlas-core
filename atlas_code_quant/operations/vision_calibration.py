@@ -179,6 +179,111 @@ class VisionCalibrationService:
             "notes": str(state.get("notes") or ""),
         }
 
+    def evaluate_entry_alignment(
+        self,
+        *,
+        entry_price: float,
+        signal_side: str,
+        ocr_price: float | None = None,
+        confidence: float = 0.0,
+        chart_color: str = "",
+        pattern_detected: str = "",
+    ) -> dict[str, Any]:
+        """Resume cuan alineada esta la entrada con la calibracion visual activa."""
+        if entry_price <= 0:
+            return {
+                "ready": False,
+                "score": 0.0,
+                "reason": "invalid_entry_price",
+                "sample_count": 0,
+                "calibration_exists": False,
+                "calibration_quality": 0.0,
+                "price_alignment": 0.0,
+                "visual_alignment": 0.0,
+            }
+
+        status = self.status()
+        calibration_exists = bool(status.get("calibration_exists"))
+        session_active = bool(status.get("session_active"))
+        sample_count = int(status.get("sample_count") or 0)
+        monitor = dict(status.get("monitor") or {})
+        last_fit = dict(status.get("last_fit") or {})
+        active_path = Path(str(status.get("active_calibration_path") or self.default_calibration_path))
+        has_dims = int(monitor.get("width") or 0) > 0 and int(monitor.get("height") or 0) > 0
+
+        if not calibration_exists or not active_path.exists():
+            return {
+                "ready": False,
+                "score": 0.5,
+                "reason": "calibration_unavailable",
+                "sample_count": sample_count,
+                "calibration_exists": calibration_exists,
+                "calibration_quality": 0.0,
+                "price_alignment": 0.5,
+                "visual_alignment": 0.5,
+            }
+
+        fit_samples = int((last_fit.get("sample_count") or sample_count) or 0)
+        fit_ok = bool(last_fit.get("ok"))
+        if not fit_ok or fit_samples < 3:
+            return {
+                "ready": False,
+                "score": 0.5,
+                "reason": "calibration_partial",
+                "sample_count": fit_samples,
+                "calibration_exists": calibration_exists,
+                "calibration_quality": 0.0,
+                "price_alignment": 0.5,
+                "visual_alignment": 0.5,
+            }
+
+        calibration_quality = 0.35
+        calibration_quality += min(fit_samples, 9) / 9.0 * 0.45
+        calibration_quality += 0.10 if has_dims else 0.0
+        calibration_quality += 0.10 if not session_active else 0.0
+        calibration_quality = max(0.0, min(1.0, calibration_quality))
+
+        price_alignment = 0.5
+        if ocr_price is not None and ocr_price > 0:
+            diff = abs(float(ocr_price) - float(entry_price)) / float(entry_price)
+            price_alignment = max(0.0, 1.0 - (diff / 0.0075))
+
+        side = str(signal_side or "").strip().lower()
+        color = str(chart_color or "").strip().lower()
+        pattern = str(pattern_detected or "").strip().lower()
+        conf_norm = max(0.0, min(1.0, float(confidence or 0.0)))
+
+        directional = 0.5
+        if side in {"buy", "long"}:
+            if color in {"bullish", "green"}:
+                directional = 1.0
+            elif color in {"bearish", "red"}:
+                directional = 0.0
+            if any(token in pattern for token in ("breakout", "pullback", "bandera", "ruptura", "alcista", "uptrend")):
+                directional = max(directional, 0.9)
+        elif side in {"sell", "short"}:
+            if color in {"bearish", "red"}:
+                directional = 1.0
+            elif color in {"bullish", "green"}:
+                directional = 0.0
+            if any(token in pattern for token in ("breakdown", "bajista", "downtrend", "reversal", "dump")):
+                directional = max(directional, 0.9)
+
+        visual_alignment = (0.65 * directional) + (0.35 * conf_norm)
+        overall = (0.45 * calibration_quality) + (0.35 * price_alignment) + (0.20 * visual_alignment)
+        ready = calibration_quality >= 0.60 and fit_samples >= 3
+        reason = "alignment_ready" if ready else "alignment_partial"
+        return {
+            "ready": ready,
+            "score": round(max(0.0, min(1.0, overall)), 4),
+            "reason": reason,
+            "sample_count": fit_samples,
+            "calibration_exists": calibration_exists,
+            "calibration_quality": round(calibration_quality, 4),
+            "price_alignment": round(price_alignment, 4),
+            "visual_alignment": round(visual_alignment, 4),
+        }
+
     def start_session(
         self,
         *,
