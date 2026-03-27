@@ -112,7 +112,7 @@ class QuantBrainBridge:
             raw = response.read().decode("utf-8", errors="ignore")
         return json.loads(raw) if raw else {"ok": True}
 
-    def _post_query(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _post_query(self, path: str, payload: dict[str, Any], *, timeout_sec: int | None = None) -> dict[str, Any]:
         query = parse.urlencode(payload, doseq=True)
         req = request.Request(
             f"{self.base_url}{path}?{query}",
@@ -120,7 +120,8 @@ class QuantBrainBridge:
             headers=self._headers("application/x-www-form-urlencoded"),
             method="POST",
         )
-        with request.urlopen(req, timeout=self.timeout_sec) as response:
+        effective_timeout = max(int(timeout_sec or self.timeout_sec), 1)
+        with request.urlopen(req, timeout=effective_timeout) as response:
             raw = response.read().decode("utf-8", errors="ignore")
         return json.loads(raw) if raw else {"ok": True}
 
@@ -205,6 +206,7 @@ class QuantBrainBridge:
                             "outcome": (outcome or "")[:500],
                             "tags": tags or [],
                         },
+                        timeout_sec=max(self.timeout_sec, 15),
                     )
                     memory_ok = True
                 except (error.URLError, error.HTTPError, TimeoutError, ValueError) as exc:

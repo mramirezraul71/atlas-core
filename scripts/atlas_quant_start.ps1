@@ -191,8 +191,8 @@ if (-not $healthOk) {
 # ── Step 4: Log scanner + operation status ────────────────────────────────────
 $opStatus = Invoke-QuantApi -method "GET" -path "/api/v2/quant/operation/status"
 if ($opStatus) {
-    $autonMode   = $opStatus.data.auton_mode
-    $scanRunning = $opStatus.data.scanner.running
+    $autonMode = $opStatus.data.config.auton_mode
+    $scanRunning = if ($null -ne $opStatus.data.scanner) { $opStatus.data.scanner.running } else { $null }
     _OpsLog "Estado -- auton_mode=$autonMode scanner_running=$scanRunning"
     Write-Host "[quant-start] auton_mode=$autonMode  scanner_running=$scanRunning"
 } else {
@@ -228,3 +228,4 @@ if ($AutoCycle) {
 _OpsLog "Startup completado -- puerto $Port"
 _DiagLog "FINISH status=ok port=$Port AutoCycle=$AutoCycle"
 Write-Host "[quant-start] Completado. Servidor en http://127.0.0.1:$Port/ui"
+exit 0

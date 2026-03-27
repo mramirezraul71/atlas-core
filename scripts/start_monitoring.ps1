@@ -161,17 +161,48 @@ function Import-GrafanaDashboard([string]$jsonPath) {
         Write-Host "  AVISO: dashboard no encontrado: $jsonPath" -ForegroundColor Yellow
         return
     }
-    $raw = Get-Content -Path $jsonPath -Raw
-    $dashboard = $raw | ConvertFrom-Json
-    if ($null -ne $dashboard.id) {
-        $dashboard.id = $null
+    $pyCode = @"
+import base64
+import json
+import pathlib
+import sys
+import urllib.error
+import urllib.request
+
+json_path = pathlib.Path(sys.argv[1])
+grafana_url = sys.argv[2].rstrip("/")
+auth_header = sys.argv[3]
+
+dashboard = json.loads(json_path.read_text(encoding="utf-8"))
+dashboard["id"] = None
+payload = json.dumps({
+    "dashboard": dashboard,
+    "folderId": 0,
+    "overwrite": True,
+}).encode("utf-8")
+
+req = urllib.request.Request(
+    f"{grafana_url}/api/dashboards/db",
+    data=payload,
+    method="POST",
+    headers={
+        "Authorization": auth_header,
+        "Content-Type": "application/json",
+    },
+)
+
+try:
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        print(resp.read().decode("utf-8", errors="ignore"))
+except urllib.error.HTTPError as exc:
+    body = exc.read().decode("utf-8", errors="ignore")
+    raise SystemExit(f"HTTP {exc.code}: {body}")
+"@
+    $authHeader = "Basic $creds"
+    $result = $pyCode | & $VenvPy - $jsonPath $GrafanaUrl $authHeader 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw ($result | Out-String).Trim()
     }
-    $payload = @{
-        dashboard = $dashboard
-        folderId  = 0
-        overwrite = $true
-    } | ConvertTo-Json -Depth 100
-    Invoke-RestMethod -Uri "$GrafanaUrl/api/dashboards/db" -Method POST -Headers $headers -Body $payload | Out-Null
 }
 
 try {

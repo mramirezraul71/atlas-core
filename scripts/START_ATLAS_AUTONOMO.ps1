@@ -93,6 +93,16 @@ function Invoke-Api([string]$Method, [string]$Path, [hashtable]$Body = @{}) {
     }
 }
 
+function Wait-ForApi([string]$Url, [int]$Attempts = 6, [int]$DelaySec = 2) {
+    for ($i = 0; $i -lt $Attempts; $i++) {
+        if (Test-Health $Url) {
+            return $true
+        }
+        Start-Sleep -Seconds $DelaySec
+    }
+    return $false
+}
+
 Write-Host ""
 Write-Host "======================================================" -ForegroundColor Cyan
 Write-Host " ATLAS-QUANT AUTONOMO - PAPER TRADING" -ForegroundColor Cyan
@@ -129,7 +139,7 @@ if ($healthOk) {
     }
     _Log "Lanzando servidor Quant con atlas_quant_start.ps1..."
     & $_QUANT_START -Port $Port -ApiKey $ApiKey -MaxWaitSec $MaxWaitSec
-    $healthOk = ($LASTEXITCODE -eq 0) -and (Test-Health "$_API/health")
+    $healthOk = Wait-ForApi -Url "$_API/health"
     if (-not $healthOk) {
         _ERR "Servidor Quant no respondio en ${MaxWaitSec}s"
         exit 2
