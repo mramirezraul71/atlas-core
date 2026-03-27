@@ -93,7 +93,11 @@ def test_build_snapshot_is_tradier_first_and_reconciles():
     assert snapshot["totals"]["positions"] == 1
     assert snapshot["balances"]["total_equity"] == 9750.0
     assert snapshot["reconciliation"]["state"] == "failed"
-    assert {item["comparison"] for item in snapshot["reconciliation"]["items"]} == {"atlas_internal", "paper_local"}
+    assert {item["comparison"] for item in snapshot["reconciliation"]["items"]} == {
+        "atlas_internal",
+        "paper_local",
+        "optionstrat",
+    }
 
 
 def test_build_status_payload_includes_balances_and_simulators():
@@ -135,3 +139,8 @@ def test_build_status_payload_includes_balances_and_simulators():
     assert payload["open_positions"] == 1
     assert payload["simulators"]["optionstrat"]["open_positions"] == 1
     assert payload["reconciliation"]["state"] == "healthy"
+    assert {item["comparison"] for item in payload["reconciliation"]["items"]} == {
+        "atlas_internal",
+        "paper_local",
+        "optionstrat",
+    }
