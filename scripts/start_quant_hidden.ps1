@@ -8,10 +8,13 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $FreePortScript = Join-Path $PSScriptRoot "free_port.ps1"
 $QuantDir = Join-Path $RepoRoot "atlas_code_quant"
 $HealthUrl = "http://127.0.0.1:8792/health"
-$Python = "C:\Python314\python.exe"
+$Python = Join-Path $RepoRoot "venv\Scripts\python.exe"
 $LogDir = Join-Path $RepoRoot "logs"
 $StdOutLog = Join-Path $LogDir "code_quant_hidden_stdout.log"
 $StdErrLog = Join-Path $LogDir "code_quant_hidden_stderr.log"
+$QuantPythonPathParts = @($RepoRoot, $QuantDir)
+if ($env:PYTHONPATH) { $QuantPythonPathParts += $env:PYTHONPATH }
+$QuantPythonPath = [string]::Join(";", ($QuantPythonPathParts | Where-Object { $_ -and $_.Trim() -ne "" } | Select-Object -Unique))
 
 if (-not (Test-Path $QuantDir)) {
     throw "Quant dir no encontrado: $QuantDir"
@@ -28,6 +31,7 @@ if (Test-Path $FreePortScript) {
 }
 
 $args = @("-m", "uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8792", "--log-level", "info")
+$env:PYTHONPATH = $QuantPythonPath
 $proc = Start-Process `
     -FilePath $Python `
     -ArgumentList $args `

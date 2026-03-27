@@ -27,6 +27,7 @@ from fastapi import FastAPI, HTTPException, Header, WebSocket, WebSocketDisconne
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from api.decorators import require_live_confirmation
 from api.schemas import (

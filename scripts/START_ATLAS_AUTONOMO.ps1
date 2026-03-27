@@ -31,6 +31,7 @@ $ErrorActionPreference = "Stop"
 $_ROOT     = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $_VENV_PY  = Join-Path $_ROOT "venv\Scripts\python.exe"
 $_QUANT    = Join-Path $_ROOT "atlas_code_quant"
+$_QUANT_START = Join-Path $_ROOT "scripts\atlas_quant_start.ps1"
 $_LOGS     = Join-Path $_ROOT "logs"
 $_OPS_BUS  = Join-Path $_LOGS "ops_bus.log"
 $_API      = "http://127.0.0.1:$Port"
@@ -104,33 +105,18 @@ if ($healthOk) {
 } elseif ($DryRun) {
     _WARN "DryRun: se omitiría lanzar servidor"
 } else {
-    if (-not (Test-Path $_VENV_PY)) {
-        _ERR "Python venv no encontrado: $_VENV_PY"
+    if (-not (Test-Path $_QUANT_START)) {
+        _ERR "Script de arranque Quant no encontrado: $_QUANT_START"
         exit 1
     }
-    _Log "Lanzando uvicorn en puerto $Port..."
-    Start-Process -FilePath $_VENV_PY `
-        -ArgumentList @("-m","uvicorn","api.main:app","--host","0.0.0.0","--port","$Port") `
-        -WorkingDirectory $_QUANT `
-        -NoNewWindow `
-        -PassThru | Out-Null
-
-    _Log "Esperando health endpoint (max ${MaxWaitSec}s)..."
-    $waited = 0
-    while ($waited -lt $MaxWaitSec) {
-        Start-Sleep -Seconds 4
-        $waited += 4
-        $healthOk = Test-Health "$_API/health"
-        if ($healthOk) {
-            _OK "Servidor respondio tras ${waited}s"
-            break
-        }
-        Write-Host "     ... ${waited}/${MaxWaitSec}s" -ForegroundColor DarkGray
-    }
+    _Log "Lanzando servidor Quant con atlas_quant_start.ps1..."
+    & $_QUANT_START -Port $Port -ApiKey $ApiKey -MaxWaitSec $MaxWaitSec
+    $healthOk = ($LASTEXITCODE -eq 0) -and (Test-Health "$_API/health")
     if (-not $healthOk) {
-        _ERR "Servidor no respondio en ${MaxWaitSec}s. Verifica: cd atlas_code_quant && ..\venv\Scripts\uvicorn api.main:app --port $Port"
+        _ERR "Servidor no respondio en ${MaxWaitSec}s. Verifica scripts\atlas_quant_start.ps1 y logs del proceso."
         exit 2
     }
+    _OK "Servidor Quant operativo en $Port"
 }
 
 # ── PASO 3: Verificar + forzar auton_mode=paper_autonomous ───────────────────
