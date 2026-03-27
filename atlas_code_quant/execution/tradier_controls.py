@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from backtesting.winning_probability import TradierClient, TradierScope, _safe_float
-from config.settings import settings
-from execution.tradier_pdt_ledger import count_intraday_day_trades
+from atlas_code_quant.backtesting.winning_probability import TradierClient, TradierScope, _safe_float
+from atlas_code_quant.config.settings import settings
+from atlas_code_quant.execution.tradier_pdt_ledger import count_intraday_day_trades
 
 
 logger = logging.getLogger("quant.execution.tradier_controls")

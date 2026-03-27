@@ -162,30 +162,31 @@ def generate_pro_dashboard() -> dict:
     # ══════════════════════════════════════════════════════════════════════
     panels.append(_row(1, "📊  ATLAS-QUANT  ·  ESTADO EN TIEMPO REAL", y=0))
 
-    panels.append(_stat(2, "⚡ EQUITY", "atlas_equity_usd",
+    panels.append(_stat(2, "⚡ EQUITY BROKER", "atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
                         unit="currencyUSD", y=1, x=0, w=4, h=4, color=_GREEN,
                         thresholds=[{"color": _RED, "value": None},
                                     {"color": _GREEN, "value": 90_000}]))
-    panels.append(_stat(3, "📉 DRAWDOWN", "atlas_drawdown_pct",
+    panels.append(_stat(3, "📉 DRAWDOWN", "atlas_broker_drawdown_pct{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
                         unit="percent", y=1, x=4, w=4, h=4, color=_YELLOW,
                         thresholds=[{"color": _GREEN, "value": None},
                                     {"color": _YELLOW, "value": 3},
                                     {"color": _RED,    "value": 7}]))
-    panels.append(_stat(4, "💰 PnL HOY", "atlas_daily_pnl_usd",
+    panels.append(_stat(4, "💰 PnL ABIERTO", "atlas_broker_open_pnl_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
                         unit="currencyUSD", y=1, x=8, w=4, h=4, color=_BLUE))
-    panels.append(_stat(5, "📈 SHARPE", "atlas_sharpe_ratio",
+    panels.append(_stat(5, "📈 SYNC STATUS", "atlas_sync_status{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
                         unit="short", y=1, x=12, w=4, h=4, color=_PURPLE,
                         thresholds=[{"color": _RED,    "value": None},
-                                    {"color": _YELLOW, "value": 1.0},
-                                    {"color": _GREEN,  "value": 1.5}]))
-    panels.append(_stat(6, "🔵 POSICIONES", "atlas_open_positions",
+                                    {"color": _YELLOW, "value": 2.0},
+                                    {"color": _GREEN,  "value": 3.0}]))
+    panels.append(_stat(6, "🔵 POSICIONES", "atlas_broker_open_positions{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
                         unit="short", y=1, x=16, w=4, h=4, color=_BLUE))
-    panels.append(_stat(7, "🔴 MODO",
-                        'atlas_mode == 1 ? 1 : 0',
+    panels.append(_stat(7, "🔴 GAP ATLAS",
+                        'atlas_reconcile_gap_usd{scope="$scope",account_id=~"$account_id",comparison="atlas_internal"}',
                         unit="short", y=1, x=20, w=4, h=4,
                         color=_RED,
                         thresholds=[{"color": _GREEN, "value": None},
-                                    {"color": _RED, "value": 1}]))
+                                    {"color": _YELLOW, "value": 25},
+                                    {"color": _RED, "value": 250}]))
 
     # ══════════════════════════════════════════════════════════════════════
     # ROW 2 — Equity Curve + Regime Gauge (y=5)
@@ -193,9 +194,9 @@ def generate_pro_dashboard() -> dict:
     panels.append(_row(8, "💹  EQUITY & RÉGIMEN ML", y=5))
 
     panels.append(_ts_panel(
-        9, "Curva de Equity (USD)",
-        [("atlas_equity_usd", "Equity"),
-         ("atlas_equity_usd * (1 - atlas_drawdown_pct/100)", "Drawdown baseline")],
+        9, "Curva de Equity Broker (USD)",
+        [("atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}", "Equity broker"),
+         ("atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"} * (1 - atlas_broker_drawdown_pct{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}/100)", "Drawdown baseline")],
         unit="currencyUSD", y=6, x=0, w=16, h=10,
         fill=20, gradient=True,
         colors=[_GREEN, _RED],
@@ -220,7 +221,7 @@ def generate_pro_dashboard() -> dict:
 
     panels.append(_ts_panel(
         12, "Drawdown Waterfall (%)",
-        [("atlas_drawdown_pct", "Drawdown actual"),
+        [("atlas_broker_drawdown_pct{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}", "Drawdown actual"),
          ("8", "Límite crítico 8%"),
          ("2", "Límite diario 2%")],
         unit="percent", y=17, x=0, w=12, h=9,
@@ -305,10 +306,10 @@ def generate_pro_dashboard() -> dict:
         "datasource": _DS,
         "targets": [
             {"datasource": _DS,
-             "expr": "atlas_open_positions > 0 ? atlas_equity_usd * 0.012 : 0",
+             "expr": "atlas_broker_open_positions{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"} > 0 ? atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"} * 0.012 : 0",
              "legendFormat": "En posiciones", "refId": "A", "instant": True},
             {"datasource": _DS,
-             "expr": "atlas_equity_usd * (1 - 0.012 * atlas_open_positions)",
+             "expr": "atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"} * (1 - 0.012 * atlas_broker_open_positions{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"})",
              "legendFormat": "Capital libre", "refId": "B", "instant": True},
         ],
         "fieldConfig": {
@@ -390,11 +391,11 @@ def generate_pro_dashboard() -> dict:
 
     panels.append(_table(
         22, "Posiciones Abiertas (Live)",
-        [("atlas_equity_usd",      "Equity USD"),
-         ("atlas_open_positions",  "Posiciones"),
-         ("atlas_daily_pnl_usd",   "PnL Diario"),
-         ("atlas_drawdown_pct",    "Drawdown %"),
-         ("atlas_sharpe_ratio",    "Sharpe")],
+        [("atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",      "Equity USD"),
+         ("atlas_broker_open_positions{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",  "Posiciones"),
+         ("atlas_broker_open_pnl_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",   "PnL Abierto"),
+         ("atlas_broker_drawdown_pct{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",    "Drawdown %"),
+         ("atlas_reconcile_gap_usd{scope=\"$scope\",account_id=~\"$account_id\",comparison=\"atlas_internal\"}",    "Gap Atlas USD")],
         y=47, x=0, w=12, h=9,
     ))
 
@@ -444,39 +445,45 @@ def generate_pro_dashboard() -> dict:
         "timezone":      "America/New_York",
         "schemaVersion": 38,
         "version":       1,
-        "refresh":       "5s",
+        "refresh":       "2s",
         "time":          {"from": "now-4h", "to": "now"},
-        "timepicker":    {"refresh_intervals": ["5s", "15s", "30s", "1m", "5m"]},
+        "timepicker":    {"refresh_intervals": ["2s", "5s", "15s", "30s", "1m", "5m"]},
         "fiscalYearStartMonth": 0,
         "graphTooltip": 1,
         "panels":        panels,
         "templating": {
             "list": [
                 {
-                    "name":    "symbol",
-                    "label":   "Símbolo",
+                    "name":    "scope",
+                    "label":   "Scope",
                     "type":    "custom",
-                    "current": {"text": "SPY", "value": "SPY"},
+                    "current": {"text": "paper", "value": "paper"},
                     "options": [
-                        {"text": s, "value": s, "selected": s == "SPY"}
-                        for s in ["SPY", "QQQ", "AAPL", "TSLA", "NVDA", "MSFT", "AMZN"]
+                        {"text": s, "value": s, "selected": s == "paper"}
+                        for s in ["paper", "live"]
                     ],
-                    "query":   "SPY,QQQ,AAPL,TSLA,NVDA,MSFT,AMZN",
+                    "query":   "paper,live",
                     "hide":    0,
                     "multi":   False,
                 },
                 {
-                    "name":    "mode",
-                    "label":   "Modo",
+                    "name":    "source",
+                    "label":   "Fuente",
                     "type":    "custom",
-                    "current": {"text": "live", "value": "1"},
+                    "current": {"text": "tradier", "value": "tradier"},
                     "options": [
-                        {"text": "paper", "value": "0", "selected": False},
-                        {"text": "live",  "value": "1", "selected": True},
+                        {"text": "tradier", "value": "tradier", "selected": True},
                     ],
-                    "query":   "paper : 0, live : 1",
+                    "query":   "tradier",
                     "hide":    0,
                     "multi":   False,
+                },
+                {
+                    "name":    "account_id",
+                    "label":   "Account",
+                    "type":    "textbox",
+                    "current": {"text": ".*", "value": ".*"},
+                    "hide":    0,
                 },
             ]
         },

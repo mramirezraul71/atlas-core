@@ -1,4 +1,4 @@
-"""Atlas Code-Quant — Contratos Pydantic para la API REST."""
+"""Atlas Code-Quant â€” Contratos Pydantic para la API REST."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from backtesting.winning_probability import StrategyType
+from atlas_code_quant.backtesting.winning_probability import StrategyType
 
 
 class SignalEnum(str, Enum):
@@ -22,20 +22,20 @@ class StatusEnum(str, Enum):
     PAUSED  = "paused"
 
 
-# ── Request bodies ───────────────────────────────────────────────────────────
+# â”€â”€ Request bodies â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class EvalSignalRequest(BaseModel):
-    """POST /signal — Solicita evaluación de señal para un ticker."""
-    symbol: str = Field(..., example="BTC/USDT")
-    strategy: str | None = Field(None, example="ma_cross")
-    timeframe: str = Field("1h", example="1h")
+    """POST /signal â€” Solicita evaluaciÃ³n de seÃ±al para un ticker."""
+    symbol: str = Field(..., json_schema_extra={"example": "BTC/USDT"})
+    strategy: str | None = Field(None, json_schema_extra={"example": "ma_cross"})
+    timeframe: str = Field("1h", json_schema_extra={"example": "1h"})
     options_probability: "WinningProbabilityRequest | None" = None
 
 
 class ActivateStrategyRequest(BaseModel):
-    """POST /strategy/activate — Activa una estrategia."""
-    strategy: str = Field(..., example="ma_cross")
-    symbols: list[str] = Field(..., example=["BTC/USDT"])
+    """POST /strategy/activate â€” Activa una estrategia."""
+    strategy: str = Field(..., json_schema_extra={"example": "ma_cross"})
+    symbols: list[str] = Field(..., json_schema_extra={"example": ["BTC/USDT"]})
 
 
 class TradierOrderLeg(BaseModel):
@@ -49,7 +49,7 @@ class TradierOrderLeg(BaseModel):
 
 
 class OrderRequest(BaseModel):
-    """POST /order — Orden de trading desde Atlas/ROS2."""
+    """POST /order â€” Orden de trading desde Atlas/ROS2."""
     symbol: str
     side: str = Field(
         ...,
@@ -78,13 +78,13 @@ class OrderRequest(BaseModel):
 
 
 class WinningProbabilityRequest(BaseModel):
-    """POST /probability/options â€” Probabilidad de victoria para opciones."""
-    symbol: str = Field(..., example="AAPL")
-    strategy_type: StrategyType = Field(..., example="iron_condor")
+    """POST /probability/options Ã¢â‚¬â€ Probabilidad de victoria para opciones."""
+    symbol: str = Field(..., json_schema_extra={"example": "AAPL"})
+    strategy_type: StrategyType = Field(..., json_schema_extra={"example": "iron_condor"})
     account_scope: Literal["live", "paper"] | None = None
     account_id: str | None = None
-    tradier_token: str | None = Field(None, description="Opcional. Si no se envÃ­a, usa TRADIER_API_TOKEN del entorno.")
-    tradier_base_url: str | None = Field(None, example="https://api.tradier.com/v1")
+    tradier_token: str | None = Field(None, description="Opcional. Si no se envÃƒÂ­a, usa TRADIER_API_TOKEN del entorno.")
+    tradier_base_url: str | None = Field(None, json_schema_extra={"example": "https://api.tradier.com/v1"})
     history_days: int = Field(252, ge=30, le=1260)
     min_dte: int = Field(14, ge=1, le=180)
     max_dte: int = Field(45, ge=1, le=365)
@@ -93,12 +93,12 @@ class WinningProbabilityRequest(BaseModel):
 
 
 class ProbabilityGateRequest(WinningProbabilityRequest):
-    """Compuerta opcional de probabilidad antes de abrir una posiciÃ³n."""
+    """Compuerta opcional de probabilidad antes de abrir una posiciÃƒÂ³n."""
     enabled: bool = True
     min_win_rate_pct: float = Field(50.0, ge=0, le=100)
 
 
-# ── Response bodies ──────────────────────────────────────────────────────────
+# â”€â”€ Response bodies â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class SignalResponse(BaseModel):
     symbol: str
@@ -155,11 +155,19 @@ class QuantStatusPayload(BaseModel):
     generated_at: str
     service_status: str
     uptime_sec: float
+    source: str = "tradier"
+    source_label: str = "Tradier canonical"
+    canonical_scope: str | None = None
+    canonical_account_id: str | None = None
+    canonical_updated_at: str | None = None
     account_session: dict[str, Any] | None = None
+    balances: dict[str, Any] = Field(default_factory=dict)
     pdt_status: dict[str, Any] | None = None
     days_trades_used: int = 0
     active_strategies: list[str] = Field(default_factory=list)
     open_positions: int = 0
+    reconciliation: dict[str, Any] = Field(default_factory=dict)
+    simulators: dict[str, Any] = Field(default_factory=dict)
 
 
 class PayoffPoint(BaseModel):
@@ -244,9 +252,9 @@ class JournalEntryPayload(BaseModel):
     attribution: dict[str, Any] = Field(default_factory=dict)
     post_mortem: dict[str, Any] = Field(default_factory=dict)
     post_mortem_text: str = ""
-    broker_order_ids: list[Any] = Field(default_factory=list)
+    broker_order_ids: list[Any] | dict[str, Any] = Field(default_factory=list)
     raw_entry_payload: dict[str, Any] = Field(default_factory=dict)
-    raw_exit_payload: list[dict[str, Any]] = Field(default_factory=list)
+    raw_exit_payload: list[dict[str, Any]] | dict[str, Any] = Field(default_factory=list)
     updated_at: str | None = None
     last_synced_at: str | None = None
 
@@ -418,18 +426,18 @@ class StrategySelectorPayload(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-# ── Auto-cycle loop control ───────────────────────────────────────────────────
+# â”€â”€ Auto-cycle loop control â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class LoopStartRequest(BaseModel):
-    """POST /operation/loop/start — Inicia el ciclo autónomo scanner→operación."""
+    """POST /operation/loop/start â€” Inicia el ciclo autÃ³nomo scannerâ†’operaciÃ³n."""
     interval_sec: int = Field(120, ge=15, le=3600,
-        description="Segundos entre ciclos de evaluación.")
+        description="Segundos entre ciclos de evaluaciÃ³n.")
     max_per_cycle: int = Field(1, ge=1, le=5,
-        description="Máximo de candidatos a evaluar por ciclo.")
+        description="MÃ¡ximo de candidatos a evaluar por ciclo.")
 
 
 class VisionProviderRequest(BaseModel):
-    """POST /operation/vision/provider — Cambia el proveedor de visión activo."""
+    """POST /operation/vision/provider â€” Cambia el proveedor de visiÃ³n activo."""
     provider: str = Field(...,
         description="Uno de: off, manual, desktop_capture, direct_nexus, atlas_push_bridge")
     notes: str | None = None
@@ -487,3 +495,5 @@ class ScannerReportPayload(BaseModel):
 
 EvalSignalRequest.model_rebuild()
 OrderRequest.model_rebuild()
+
+

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from backtesting.winning_probability import (
+from atlas_code_quant.backtesting.winning_probability import (
     SUPPORTED_STRATEGIES,
     StrategyLeg,
     StrategyType,
@@ -18,8 +18,12 @@ from backtesting.winning_probability import (
     _safe_float,
     estimate_probability_from_legs,
 )
-from config.settings import settings
-from execution.tradier_controls import TradierAccountSession, check_pdt_status, resolve_account_session
+from atlas_code_quant.config.settings import settings
+from atlas_code_quant.execution.tradier_controls import (
+    TradierAccountSession,
+    check_pdt_status,
+    resolve_account_session,
+)
 
 
 logger = logging.getLogger("quant.monitor.advanced")

@@ -17,6 +17,7 @@ Puerto por defecto: 8792
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 import logging
 from datetime import datetime
@@ -54,6 +55,7 @@ from execution.tradier_execution import (
 from journal.service import TradingJournalService
 from journal.sync import JournalSyncService
 from learning.adaptive_policy import AdaptiveLearningService
+from monitoring.canonical_snapshot import CanonicalSnapshotService
 from monitoring.strategy_tracker import StrategyTracker
 from operations.auton_executor import AutonExecutorService
 from operations.brain_bridge import QuantBrainBridge
@@ -78,6 +80,7 @@ _ACCOUNT_MANAGER = AccountManager()
 _BRAIN_BRIDGE = QuantBrainBridge()
 _ADAPTIVE_LEARNING = AdaptiveLearningService()
 _STRATEGY_TRACKER = StrategyTracker()
+_CANONICAL_SNAPSHOT = CanonicalSnapshotService(_STRATEGY_TRACKER)
 _JOURNAL = TradingJournalService(_STRATEGY_TRACKER, _BRAIN_BRIDGE)
 _JOURNAL_SYNC = JournalSyncService(_JOURNAL)
 _VISION = SensorVisionService()
@@ -268,6 +271,42 @@ def _active_strategy_ids() -> list[str]:
     return [k for k, v in _strategies.items() if getattr(v, "active", False)]
 
 
+def _canonical_snapshot_payload(
+    *,
+    account_scope: str | None,
+    account_id: str | None,
+) -> dict[str, object]:
+    return _CANONICAL_SNAPSHOT.build_snapshot(
+        account_scope=account_scope,
+        account_id=account_id,
+        internal_portfolio=_portfolio,
+    )
+
+
+def _broker_open_positions_count(
+    *,
+    account_scope: str | None,
+    account_id: str | None,
+) -> int:
+    scope = str(account_scope or "").strip().lower()
+    if scope not in {"paper", "live"}:
+        return len(_portfolio.positions) if _portfolio else 0
+    snapshot = _canonical_snapshot_payload(account_scope=account_scope, account_id=account_id)
+    return int((snapshot.get("totals") or {}).get("positions") or 0)
+
+
+def _tradier_positions_payload(
+    *,
+    account_scope: str | None,
+    account_id: str | None,
+) -> dict[str, object]:
+    return _CANONICAL_SNAPSHOT.build_positions_payload(
+        account_scope=account_scope,
+        account_id=account_id,
+        internal_portfolio=_portfolio,
+    )
+
+
 def _build_status_payload(
     *,
     account_scope: str | None,
@@ -277,16 +316,80 @@ def _build_status_payload(
         account_scope=account_scope,  # type: ignore[arg-type]
         account_id=account_id,
     )
-    return QuantStatusPayload(
-        generated_at=datetime.utcnow().isoformat(),
-        service_status="ok",
+    payload = _CANONICAL_SNAPSHOT.build_status_payload(
+        account_scope=account_scope,
+        account_id=account_id,
         uptime_sec=round(time.time() - _START_TIME, 1),
-        account_session=account_status.session.to_dict(),
-        pdt_status=account_status.pdt_status,
-        days_trades_used=min(int(account_status.pdt_status.get("day_trades_last_window") or 0), 3),
         active_strategies=_active_strategy_ids(),
-        open_positions=len(_portfolio.positions) if _portfolio else 0,
+        internal_portfolio=_portfolio,
+        pdt_status=account_status.pdt_status,
     )
+    if payload.get("account_session") is None:
+        payload["account_session"] = account_status.session.to_dict()
+    return QuantStatusPayload.model_validate(payload)
+
+
+def _compact_monitor_summary(summary: dict[str, object]) -> dict[str, object]:
+    strategies = []
+    for item in list(summary.get("strategies") or [])[:8]:
+        if not isinstance(item, dict):
+            continue
+        strategies.append(
+            {
+                "strategy_id": item.get("strategy_id"),
+                "underlying": item.get("underlying"),
+                "strategy_type": item.get("strategy_type"),
+                "open_pnl": item.get("open_pnl"),
+                "spot": item.get("spot"),
+                "win_rate_pct": item.get("win_rate_pct"),
+                "probability_updated_at": item.get("probability_updated_at"),
+                "net_delta": item.get("net_delta"),
+                "theta_daily": item.get("theta_daily"),
+                "positions": item.get("positions"),
+                "alert": item.get("alert"),
+                "payoff_curve": list(item.get("payoff_curve") or [])[::2],
+                "attribution": item.get("attribution") or {},
+            }
+        )
+    return {
+        "generated_at": summary.get("generated_at"),
+        "refresh_interval_sec": summary.get("refresh_interval_sec"),
+        "source": summary.get("source"),
+        "source_label": summary.get("source_label"),
+        "account_session": summary.get("account_session") or {},
+        "balances": summary.get("balances") or {},
+        "pdt_status": summary.get("pdt_status") or {},
+        "totals": summary.get("totals") or {},
+        "alerts": list(summary.get("alerts") or [])[:8],
+        "strategies": strategies,
+        "reconciliation": summary.get("reconciliation") or {},
+        "simulators": summary.get("simulators") or {},
+    }
+
+
+def _compact_scanner_report(report: dict[str, object]) -> dict[str, object]:
+    candidates = []
+    for item in list(report.get("candidates") or report.get("opportunities") or [])[:6]:
+        if not isinstance(item, dict):
+            continue
+        candidates.append(
+            {
+                "symbol": item.get("symbol"),
+                "strategy_type": item.get("strategy_type") or item.get("strategy"),
+                "selection_score": item.get("selection_score") or item.get("score"),
+                "win_rate_pct": item.get("win_rate_pct") or item.get("win_probability"),
+                "var_95": item.get("var_95") or item.get("risk_pct"),
+                "direction": item.get("direction") or item.get("signal") or item.get("side"),
+                "generated_at": item.get("generated_at") or item.get("timestamp"),
+            }
+        )
+    return {
+        "generated_at": report.get("generated_at"),
+        "status": report.get("status"),
+        "summary": report.get("summary") or {},
+        "candidates": candidates,
+        "candidate_count": len(candidates),
+    }
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
@@ -317,6 +420,23 @@ async def status(
         return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as exc:
         logger.exception("Error building quant status")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/canonical/snapshot", response_model=StdResponse, tags=["Sistema"])
+async def canonical_snapshot(
+    x_api_key: str | None = Header(None),
+    account_scope: str | None = None,
+    account_id: str | None = None,
+):
+    """Snapshot canónico broker-first para UI, WS y observabilidad."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = _canonical_snapshot_payload(account_scope=account_scope, account_id=account_id)
+        return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error building canonical snapshot")
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
@@ -481,9 +601,20 @@ async def place_order(body: OrderRequest, x_api_key: str | None = Header(None)):
 
 
 @app.get("/positions", response_model=StdResponse, tags=["Trading"])
-async def get_positions(x_api_key: str | None = Header(None)):
+async def get_positions(
+    x_api_key: str | None = Header(None),
+    account_scope: str | None = None,
+    account_id: str | None = None,
+):
     """Retorna posiciones abiertas y resumen del portfolio."""
     _auth(x_api_key)
+    scope = str(account_scope or "").strip().lower()
+    if scope in {"paper", "live"}:
+        try:
+            return StdResponse(ok=True, data=_tradier_positions_payload(account_scope=scope, account_id=account_id))
+        except Exception as exc:
+            logger.exception("Error building Tradier positions payload")
+            return StdResponse(ok=False, error=str(exc))
     if not _portfolio:
         return StdResponse(ok=False, error="Portfolio no inicializado")
     return StdResponse(ok=True, data=_portfolio.summary())
@@ -499,7 +630,12 @@ async def monitor_summary(
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
-        data = _STRATEGY_TRACKER.build_summary(account_scope=account_scope, account_id=account_id)  # type: ignore[arg-type]
+        snapshot = _canonical_snapshot_payload(account_scope=account_scope, account_id=account_id)
+        data = dict(snapshot.get("monitor_summary") or {})
+        data["source"] = snapshot.get("source")
+        data["source_label"] = snapshot.get("source_label")
+        data["reconciliation"] = snapshot.get("reconciliation")
+        data["simulators"] = snapshot.get("simulators")
         return StdResponse(ok=True, data=data, ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as e:
         logger.exception("Error building advanced monitor summary")
@@ -1151,8 +1287,21 @@ async def place_order_v2(body: OrderRequest, x_api_key: str | None = Header(None
 
 
 @app.get("/api/v2/quant/positions", response_model=StdResponse, tags=["V2"])
-async def get_positions_v2(x_api_key: str | None = Header(None)):
-    return await get_positions(x_api_key=x_api_key)
+async def get_positions_v2(
+    x_api_key: str | None = Header(None),
+    account_scope: str | None = None,
+    account_id: str | None = None,
+):
+    return await get_positions(x_api_key=x_api_key, account_scope=account_scope, account_id=account_id)
+
+
+@app.get("/api/v2/quant/canonical/snapshot", response_model=StdResponse, tags=["V2"])
+async def canonical_snapshot_v2(
+    x_api_key: str | None = Header(None),
+    account_scope: str | None = None,
+    account_id: str | None = None,
+):
+    return await canonical_snapshot(x_api_key=x_api_key, account_scope=account_scope, account_id=account_id)
 
 
 @app.get("/api/v2/quant/monitor/summary", response_model=StdResponse, tags=["V2"])
@@ -1325,19 +1474,22 @@ async def _quant_live_updates_socket(websocket: WebSocket) -> None:
     try:
         while True:
             try:
-                monitor_summary_payload = await _STRATEGY_TRACKER.live_update(
-                    account_scope=account_scope,  # type: ignore[arg-type]
+                canonical_snapshot_payload = await asyncio.to_thread(
+                    _canonical_snapshot_payload,
+                    account_scope=account_scope,
                     account_id=account_id,
                 )
                 status_payload = _build_status_payload(account_scope=account_scope, account_id=account_id)
                 operation_status_payload = await asyncio.to_thread(_OPERATION_CENTER.status)
-                scanner_report_payload = await asyncio.to_thread(_SCANNER.report, 24)
+                scanner_report_payload = _compact_scanner_report(await asyncio.to_thread(_SCANNER.report, 24))
+                compact_monitor_summary = _compact_monitor_summary(canonical_snapshot_payload["monitor_summary"])
                 await websocket.send_json(
                     {
                         "type": "quant.live_update",
                         "generated_at": datetime.utcnow().isoformat(),
                         "status": status_payload.model_dump(),
-                        "monitor_summary": monitor_summary_payload["monitor_summary"],
+                        "canonical_snapshot": canonical_snapshot_payload,
+                        "monitor_summary": compact_monitor_summary,
                         "operation_status": operation_status_payload,
                         "scanner_report": scanner_report_payload,
                     }
@@ -1552,6 +1704,7 @@ async def list_reports_v2(x_api_key: str | None = Header(None)):
 @app.get("/api/v2/quant/dashboard/overview", response_model=StdResponse, tags=["Dashboard"])
 async def dashboard_overview(
     account_scope: str | None = None,
+    account_id: str | None = None,
     x_api_key: str | None = Header(None),
 ):
     """Agrega métricas de journal + posiciones para el dashboard de análisis gráfico."""
@@ -1561,6 +1714,10 @@ async def dashboard_overview(
     import statistics as _stats
     try:
         scope = account_scope or "paper"
+        canonical_snapshot = _canonical_snapshot_payload(account_scope=scope, account_id=account_id)
+        canonical_balances = canonical_snapshot.get("balances") or {}
+        canonical_totals = canonical_snapshot.get("totals") or {}
+
         # Estadísticas del journal — estructura: {accounts: {live: {...}, paper: {...}}}
         j_stats = _JOURNAL.stats()
         accounts = j_stats.get("accounts", {}) if isinstance(j_stats, dict) else {}
@@ -1631,14 +1788,15 @@ async def dashboard_overview(
         heatmap = acct_stats.get("heatmap") or []
 
         payload = {
-            "equity": round(initial_capital + realized_pnl, 2),
+            "equity": round(float(canonical_balances.get("total_equity") or (initial_capital + realized_pnl)), 2),
             "realized_pnl": round(realized_pnl, 2),
-            "unrealized_pnl": round(float(acct_stats.get("unrealized_pnl") or 0), 2),
+            "unrealized_pnl": round(float(canonical_totals.get("open_pnl") or acct_stats.get("unrealized_pnl") or 0), 2),
             "sharpe_ratio": acct_stats.get("sharpe_ratio"),
             "win_rate_pct": acct_stats.get("win_rate_pct"),
             "profit_factor": acct_stats.get("profit_factor"),
             "expectancy": acct_stats.get("expectancy"),
             "total_trades": acct_stats.get("trades_closed", 0),
+            "open_positions": int(canonical_totals.get("positions") or 0),
             "max_drawdown_pct": round(max_dd, 3) if drawdown_curve else None,
             "calmar_ratio": calmar,
             "equity_curve": equity_curve,
@@ -1648,6 +1806,18 @@ async def dashboard_overview(
             "recent_trades": recent_trades,
             "heatmap": heatmap,
             "daily_pnl_pct": None,
+            "source": canonical_snapshot.get("source"),
+            "source_label": canonical_snapshot.get("source_label"),
+            "account_scope": canonical_snapshot.get("account_scope"),
+            "account_id": canonical_snapshot.get("account_id"),
+            "balances": canonical_balances,
+            "totals": canonical_totals,
+            "reconciliation": canonical_snapshot.get("reconciliation"),
+            "simulators": canonical_snapshot.get("simulators"),
+            "historical_source": {
+                "label": f"Journal {scope}",
+                "kind": "journal",
+            },
         }
         return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as e:

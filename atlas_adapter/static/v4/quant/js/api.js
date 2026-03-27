@@ -80,6 +80,12 @@ const QuantAPI = {
 
   status: (scope = 'paper') => apiGetFirst(['/api/v2/quant/status', '/status'], { account_scope: scope }),
 
+  canonicalSnapshot: (scope = 'paper', accountId = '') =>
+    apiGetFirst(['/api/v2/quant/canonical/snapshot', '/canonical/snapshot'], {
+      account_scope: scope,
+      ...(accountId ? { account_id: accountId } : {}),
+    }),
+
   dashboardOverview: (scope = 'paper') => apiGetFirst(['/api/v2/quant/dashboard/overview'], { account_scope: scope }),
 
   positions: (scope = 'paper') => apiGetFirst(['/api/v2/quant/monitor/summary', '/monitor/summary'], { account_scope: scope }),
@@ -141,11 +147,15 @@ class QuantWS {
   }
 
   connect() {
+    const scope = window.QUANT_ACCOUNT_SCOPE || 'paper';
+    const accountId = window.QUANT_ACCOUNT_ID || '';
     const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
     const wsHost = (location.port === '8791' || location.port === '443')
       ? '127.0.0.1:8795'
       : location.host;
-    const url = `${protocol}://${wsHost}/api/v2/quant/ws/live-updates?api_key=${encodeURIComponent(API_KEY)}`;
+    const qs = new URLSearchParams({ api_key: API_KEY, account_scope: scope });
+    if (accountId) qs.set('account_id', accountId);
+    const url = `${protocol}://${wsHost}/api/v2/quant/ws/live-updates?${qs.toString()}`;
     this._ws = new WebSocket(url);
 
     this._ws.onopen = () => {

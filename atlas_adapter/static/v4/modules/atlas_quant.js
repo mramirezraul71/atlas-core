@@ -3257,6 +3257,35 @@ async function _fetchScannerReport(container) {
     _renderScannerReport(container, d.data);
     return d.data;
   } catch (e) {
+    try {
+      const statusD = await _fetchJsonRetry(`${QUANT_API_V2}/scanner/status`, { headers: _headers() });
+      if (statusD?.ok && statusD?.data) {
+        const status = statusD.data || {};
+        const fallbackPayload = {
+          status,
+          summary: status.summary || {},
+          learning: status.learning || {},
+          universe: {},
+          criteria: [],
+          candidates: [],
+          rejections: [],
+          activity: [{
+            level: 'warn',
+            message: `Reporte del escaner temporalmente no disponible: ${e?.message || 'sin detalle'}`,
+            timestamp: new Date().toISOString(),
+            symbol: status.current_symbol || '',
+            timeframe: status.current_timeframe || '',
+          }],
+          current_work: {
+            step: status.current_step || 'sin actividad',
+            symbol: status.current_symbol || null,
+            timeframe: status.current_timeframe || null,
+          },
+        };
+        _renderScannerReport(container, fallbackPayload);
+        return fallbackPayload;
+      }
+    } catch (_) {}
     summaryEl.innerHTML = `<div class="empty-state" style="padding:12px 0"><div class="empty-title" style="color:var(--accent-red)">Escaner no disponible</div><div class="empty-sub">${_esc(e.message || 'Error')}</div></div>`;
     return null;
   }
@@ -3385,7 +3414,7 @@ export default {
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
               Dashboard Completo &#8599;
             </a>
-            <a href="http://localhost:3002" target="_blank"
+            <a href="javascript:void(0)" onclick="const u='http://'+location.hostname+':3003/d/atlas-quant-pro-2026/7def89ea-334f-564c-b9c7-d190c3f6f69d'; const w=window.open(u,'_blank','noopener'); if(!w) window.location.href=u; return false;"
                style="display:inline-flex;align-items:center;gap:4px;text-decoration:none;
                       padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;
                       background:rgba(244,104,0,0.12);border:1px solid rgba(244,104,0,0.35);

@@ -6,8 +6,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from api.schemas import OrderRequest
-from config.settings import settings
+from atlas_code_quant.api.schemas import OrderRequest
+from atlas_code_quant.config.settings import settings
 
 
 def _ledger_path() -> Path:

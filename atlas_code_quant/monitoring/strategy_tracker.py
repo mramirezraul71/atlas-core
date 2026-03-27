@@ -7,17 +7,21 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from api.schemas import PayoffPoint, QuantPayoffPayload
-from backtesting.winning_probability import (
+from atlas_code_quant.api.schemas import PayoffPoint, QuantPayoffPayload
+from atlas_code_quant.backtesting.winning_probability import (
     StrategyType,
     TradierScope,
     _black_scholes_price,
     _capital_at_risk,
     _safe_float,
 )
-from config.settings import settings
-from execution.tradier_controls import TradierAccountSession, check_pdt_status, resolve_account_session
-from monitoring.advanced_monitor import (
+from atlas_code_quant.config.settings import settings
+from atlas_code_quant.execution.tradier_controls import (
+    TradierAccountSession,
+    check_pdt_status,
+    resolve_account_session,
+)
+from atlas_code_quant.monitoring.advanced_monitor import (
     NormalizedPosition,
     _cached_probability,
     _enrich_equity_quotes,

@@ -63,9 +63,127 @@ const fmt = {
   ts:  v => v ? new Date(v).toLocaleTimeString() : '--',
 };
 
+const QUANT_SCOPE = window.QUANT_ACCOUNT_SCOPE || 'paper';
+const QUANT_ACCOUNT_ID = window.QUANT_ACCOUNT_ID || '';
+
 function colorClass(val) {
   if (val == null) return '';
   return parseFloat(val) >= 0 ? 'green' : 'red';
+}
+
+function syncLabel(reconciliation) {
+  const state = reconciliation?.state || 'unknown';
+  if (state === 'healthy') return 'SYNC OK';
+  if (state === 'degraded') return 'SYNC WARN';
+  if (state === 'failed') return 'SYNC FAIL';
+  if (state === 'stale') return 'SYNC STALE';
+  return 'SYNC --';
+}
+
+function simulatorSummary(simulators) {
+  const paper = simulators?.paper_local?.open_positions;
+  const optionstrat = simulators?.optionstrat?.open_positions;
+  const paperText = paper == null ? 'paper --' : `paper ${paper}`;
+  const optText = optionstrat == null ? 'opt --' : `opt ${optionstrat}`;
+  return `${paperText} | ${optText}`;
+}
+
+function renderCanonicalMeta(snapshot) {
+  if (!snapshot) return;
+  const totals = snapshot.totals || {};
+  const balances = snapshot.balances || {};
+  const reconciliation = snapshot.reconciliation || {};
+  document.getElementById('chip-source').textContent =
+    `${snapshot.source_label || 'Tradier'} · ${snapshot.account_scope || QUANT_SCOPE}`;
+  document.getElementById('chip-sync').textContent = syncLabel(reconciliation);
+  document.getElementById('chip-positions').textContent =
+    `${totals.positions || 0} pos`;
+  if (balances.total_equity != null) {
+    document.getElementById('chip-equity').textContent = fmt.usd(balances.total_equity);
+  }
+  const ovSource = document.getElementById('ov-source-badge');
+  if (ovSource) ovSource.textContent = `Operativa ${snapshot.source_label || 'Tradier'}`;
+  const ovSim = document.getElementById('ov-sim-badge');
+  if (ovSim) ovSim.textContent = simulatorSummary(snapshot.simulators);
+  const posSource = document.getElementById('pos-source-badge');
+  if (posSource) posSource.textContent = `Fuente ${snapshot.source_label || 'Tradier'}`;
+  const posSync = document.getElementById('pos-sync-badge');
+  if (posSync) posSync.textContent = syncLabel(reconciliation);
+}
+
+function renderOverviewHistory(meta) {
+  const ovHistory = document.getElementById('ov-history-badge');
+  if (!ovHistory) return;
+  const label = meta?.historical_source?.label || 'Histórico --';
+  ovHistory.textContent = label;
+}
+
+function renderOverviewRealtime(snapshot, overview = null) {
+  if (!snapshot) return;
+  const balances = snapshot.balances || {};
+  const totals = snapshot.totals || {};
+  const monitorSummary = snapshot.monitor_summary || {};
+  const equity = balances.total_equity;
+  const openPnl = totals.open_pnl;
+  const positions = totals.positions || 0;
+
+  setKPI('kpi-equity', fmt.usd(equity));
+  document.getElementById('kpi-trades').textContent = `${positions} pos abiertas`;
+  const pnlEl = document.getElementById('kpi-equity-delta');
+  if (pnlEl) {
+    pnlEl.textContent = `${openPnl >= 0 ? '+' : ''}${fmt.usd(openPnl)} abierto`;
+    pnlEl.style.color = openPnl >= 0 ? 'var(--green)' : 'var(--red)';
+  }
+  if (overview) {
+    setKPI('kpi-sharpe', fmt.num(overview.sharpe_ratio, 2));
+    setKPI('kpi-dd', overview.max_drawdown_pct != null ? `${fmt.num(overview.max_drawdown_pct, 2)}%` : '--');
+    setKPI('kpi-wr', fmt.pct(overview.win_rate_pct));
+    setKPI('kpi-calmar', fmt.num(overview.calmar_ratio, 2));
+  } else if (monitorSummary.generated_at) {
+    renderOverviewHistory({ historical_source: { label: 'Histórico journal + operativa Tradier' } });
+  }
+}
+
+function renderPositionsRealtime(snapshot) {
+  if (!snapshot) return;
+  const positions = snapshot.positions || [];
+  const tbody = document.getElementById('positions-body');
+  if (!tbody) return;
+
+  document.getElementById('pos-count').textContent = positions.length;
+  if (!positions.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="11">Sin posiciones abiertas</td></tr>';
+    document.getElementById('pos-unrealized').textContent = fmt.usd(0);
+    document.getElementById('pos-exposure').textContent = fmt.usd(snapshot.gross_exposure || 0);
+    document.getElementById('pos-cb').textContent = syncLabel(snapshot.reconciliation);
+    return;
+  }
+
+  let totalUnrealized = 0;
+  tbody.innerHTML = positions.map((p) => {
+    const pnl = p.unrealized_pnl || 0;
+    totalUnrealized += pnl;
+    const cls = pnl >= 0 ? 'green' : 'red';
+    return `<tr>
+      <td class="accent">${p.symbol}</td>
+      <td>${p.side || '--'}</td>
+      <td>${fmt.usd(p.entry_price)}</td>
+      <td>${fmt.usd(p.current_price)}</td>
+      <td>${fmt.num(p.quantity, 4)}</td>
+      <td class="${cls}">${fmt.usd(pnl)}</td>
+      <td class="${cls}">${fmt.pct(p.pnl_pct)}</td>
+      <td>${fmt.num(p.log_return, 4)}</td>
+      <td class="red">${fmt.usd(p.stop_loss)}</td>
+      <td class="green">${fmt.usd(p.take_profit)}</td>
+      <td>${fmt.num(p.atr, 4)}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('pos-unrealized').textContent = fmt.usd(totalUnrealized);
+  document.getElementById('pos-unrealized').className =
+    `kpi-value ${totalUnrealized >= 0 ? 'green' : 'red'}`;
+  document.getElementById('pos-exposure').textContent = fmt.usd(snapshot.gross_exposure || 0);
+  document.getElementById('pos-cb').textContent = syncLabel(snapshot.reconciliation);
 }
 
 // ── Backend online/offline state ─────────────────────────────────
@@ -103,12 +221,30 @@ function _setBackendState(online) {
 async function pollHealth() {
   window._lastHealthAt = Date.now();
   try {
-    const r = await QuantAPI.health();
+    const [health, status, canonical] = await Promise.all([
+      QuantAPI.health(),
+      QuantAPI.status(QUANT_SCOPE).catch(() => null),
+      QuantAPI.canonicalSnapshot(QUANT_SCOPE, QUANT_ACCOUNT_ID).catch(() => null),
+    ]);
     _setBackendState(true);
     document.getElementById('chip-uptime').textContent =
-      `${Math.floor((r.uptime_sec || 0) / 60)}m up`;
+      `${Math.floor((health.uptime_sec || 0) / 60)}m up`;
+    const canonicalData = canonical?.data || null;
+    if (canonicalData) renderCanonicalMeta(canonicalData);
+    const openPositions =
+      canonicalData?.totals?.positions ??
+      status?.data?.open_positions ??
+      health.open_positions ??
+      0;
     document.getElementById('chip-positions').textContent =
-      `${r.open_positions || 0} pos`;
+      `${openPositions || 0} pos`;
+    const totalEquity =
+      canonicalData?.balances?.total_equity ??
+      status?.data?.balances?.total_equity ??
+      status?.data?.account_session?.total_equity;
+    if (totalEquity != null) {
+      document.getElementById('chip-equity').textContent = fmt.usd(totalEquity);
+    }
   } catch (_) {
     _setBackendState(false);
   }
@@ -122,12 +258,32 @@ async function loadOverview() {
     const health = await QuantAPI.health().catch(() => null);
     if (!health) { _setBackendState(false); return; }
     _setBackendState(true);
-    const ov = await QuantAPI.dashboardOverview().catch(() => null);
+    const [ov, canonical] = await Promise.all([
+      QuantAPI.dashboardOverview(QUANT_SCOPE, QUANT_ACCOUNT_ID).catch(() => null),
+      QuantAPI.canonicalSnapshot(QUANT_SCOPE, QUANT_ACCOUNT_ID).catch(() => null),
+    ]);
 
     const m = ov?.data || {};
+    const canonicalData = canonical?.data || m;
+    const brokerEquity =
+      canonicalData?.balances?.total_equity ??
+      m?.balances?.total_equity ??
+      null;
+    const brokerOpenPnl =
+      canonicalData?.totals?.open_pnl ??
+      m?.totals?.open_pnl ??
+      null;
+    const brokerPositions =
+      canonicalData?.totals?.positions ??
+      m?.open_positions ??
+      0;
+    const effectiveEquity = brokerEquity ?? m.equity;
+    const effectiveUnrealized = brokerOpenPnl ?? m.unrealized_pnl;
+    renderCanonicalMeta(canonicalData);
+    renderOverviewHistory(m);
 
     // ── KPIs ──
-    setKPI('kpi-equity',  fmt.usd(m.equity));
+    setKPI('kpi-equity',  fmt.usd(effectiveEquity));
     setKPI('kpi-sharpe',  fmt.num(m.sharpe_ratio, 2));
     // max_drawdown_pct ya viene en % (negativo)
     const ddPct = m.max_drawdown_pct;
@@ -136,18 +292,22 @@ async function loadOverview() {
     setKPI('kpi-wr',     fmt.pct(m.win_rate_pct));
     setKPI('kpi-kelly',  '--');   // Kelly viene del backtest, no del journal
     setKPI('kpi-calmar', fmt.num(m.calmar_ratio, 2));
-    document.getElementById('kpi-trades').textContent = `${m.total_trades || 0} trades`;
+    document.getElementById('kpi-trades').textContent =
+      m.total_trades
+        ? `${m.total_trades || 0} trades`
+        : `${brokerPositions || 0} pos abiertas`;
 
     // PnL delta
-    const pnl = m.realized_pnl;
+    const pnl = effectiveUnrealized;
     const el = document.getElementById('kpi-equity-delta');
     if (el && pnl != null) {
-      el.textContent = `${pnl >= 0 ? '+' : ''}${fmt.usd(pnl)} realizado`;
+      el.textContent = `${pnl >= 0 ? '+' : ''}${fmt.usd(pnl)} abierto`;
       el.style.color = pnl >= 0 ? 'var(--green)' : 'var(--red)';
     }
 
     // Actualizar topbar equity
-    if (m.equity) document.getElementById('chip-equity').textContent = fmt.usd(m.equity);
+    if (effectiveEquity != null) document.getElementById('chip-equity').textContent = fmt.usd(effectiveEquity);
+    document.getElementById('chip-positions').textContent = `${brokerPositions || 0} pos`;
 
     // ── Equity curve (TradingView) ──
     const eq = m.equity_curve || [];
@@ -212,8 +372,9 @@ document.addEventListener('click', e => {
 // ── POSITIONS ─────────────────────────────────────────────────────
 async function loadPositions() {
   try {
-    const r = await QuantAPI.positions();
+    const r = await QuantAPI.positions(QUANT_SCOPE, QUANT_ACCOUNT_ID);
     const positions = r.data?.positions || r.data || [];
+    if (r.data) renderCanonicalMeta(r.data);
     document.getElementById('pos-count').textContent = positions.length;
 
     const tbody = document.getElementById('positions-body');
@@ -245,6 +406,10 @@ async function loadPositions() {
     document.getElementById('pos-unrealized').textContent = fmt.usd(totalUnrealized);
     document.getElementById('pos-unrealized').className =
       `kpi-value ${totalUnrealized >= 0 ? 'green' : 'red'}`;
+    if (r.data?.gross_exposure != null) {
+      document.getElementById('pos-exposure').textContent = fmt.usd(r.data.gross_exposure);
+    }
+    document.getElementById('pos-cb').textContent = syncLabel(r.data?.reconciliation);
   } catch (e) {
     toast('Error cargando posiciones: ' + e.message, 'error');
   }
@@ -534,6 +699,19 @@ function appendLog(id, line) {
 
 // ── WebSocket feed ────────────────────────────────────────────────
 function initWS() {
+  quantWS.on('quant.live_update', (msg) => {
+    if (msg.canonical_snapshot) {
+      renderCanonicalMeta(msg.canonical_snapshot);
+      renderOverviewRealtime(msg.canonical_snapshot);
+      if (document.getElementById('view-positions')?.classList.contains('active')) {
+        renderPositionsRealtime({
+          ...msg.canonical_snapshot,
+          gross_exposure: msg.canonical_snapshot?.balances?.gross_exposure ?? 0,
+        });
+      }
+    }
+  });
+
   quantWS.on('signal', (msg) => {
     const tbody = document.getElementById('signal-feed-body');
     if (!tbody) return;
@@ -588,12 +766,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Primer health check inmediato, luego adaptativo
   pollHealth();
-  // Cuando offline: sondear cada 5s. Cuando online: cada 30s.
+  // Cuando offline: sondear cada 2s. Cuando online: cada 10s como respaldo del WS.
   setInterval(() => {
-    const interval = _backendOnline === false ? 5_000 : 30_000;
+    const interval = _backendOnline === false ? 2_000 : 10_000;
     if (!window._lastHealthAt || Date.now() - window._lastHealthAt >= interval) {
       window._lastHealthAt = Date.now();
       pollHealth();
     }
-  }, 5_000);
+  }, 2_000);
 });
