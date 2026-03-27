@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -753,7 +753,7 @@ def _local_inventory() -> Dict[str, Dict[str, Any]]:
             "version": grafana_ver,
             "status": _tool_status(ok_grafana, warning=wg_grafana_ok and not ok_grafana),
             "health": "ready" if ok_grafana else "not_detected",
-            "details": "Puerto 3002 — dashboards métricas y trading",
+            "details": "Puerto 3003 — dashboards métricas y trading",
             "update_script": "scripts\\atlas_tool_update.ps1 -Tool grafana",
         },
         "docker": {

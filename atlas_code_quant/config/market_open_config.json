@@ -58,7 +58,7 @@
     ]
   },
   "grafana": {
-    "url": "http://localhost:3002",
+    "url": "http://localhost:3003",
     "metrics_port": 9090,
     "dashboard_uid": "atlas-quant-pro-2026"
   },

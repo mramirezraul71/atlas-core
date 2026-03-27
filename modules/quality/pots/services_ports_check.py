@@ -50,7 +50,7 @@ def get_pot() -> POT:
             ("vision_proxy_python",  3000, "Proxy Python → espejo (Cloudflare apunta aquí)", "RAULI_VISION.ps1"),
             ("vision_dashboard",     5174, "Dashboard React/Vite (RAULI-VISION UI)",   "RAULI_VISION.ps1"),
             # Monitoring (opcional)
-            ("grafana",              3002, "Grafana — métricas y dashboards",           "start_monitoring.ps1"),
+            ("grafana",              3003, "Grafana — métricas y dashboards",           "start_monitoring.ps1"),
             ("prometheus",           9090, "Prometheus — metrics scraper",              "start_monitoring.ps1"),
         ]
 
@@ -113,7 +113,7 @@ def get_pot() -> POT:
         description=(
             "Audita puertos TCP y endpoints HTTP de todos los módulos activos: "
             "Core (8791/8000/8002), Quant (8795), RAULI-VISION (8080/3000/5174), "
-            "Monitoring (3002/9090), WhatsApp (3010). Solo lectura — no reinicia nada."
+            "Monitoring (3003/9090), WhatsApp (3010). Solo lectura — no reinicia nada."
         ),
         severity=POTSeverity.MED,
         rules=[
