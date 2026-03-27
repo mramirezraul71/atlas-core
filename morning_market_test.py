@@ -93,7 +93,7 @@ VOICE_MESSAGES = {
     "calibration_ok":
         "Calibración de cámara cargada correctamente. Monitores mapeados.",
     "grafana_ok":
-        "Dashboard Grafana profesional activo en puerto tres mil dos.",
+        "Dashboard Grafana profesional activo en puerto tres mil tres.",
     "telegram_ok":
         "Canal de alertas Telegram configurado y operativo.",
     "premarket_start":
@@ -825,7 +825,7 @@ class MorningMarketTest:
         lines += [
             "",
             "## Próximos Pasos",
-            "- [ ] Revisar dashboard Grafana en http://localhost:3002",
+            "- [ ] Revisar dashboard Grafana en http://localhost:3003",
             "- [ ] Si win_rate ≥ 45% y DD ≤ 2%: activar modo LIVE con `python live_activation.py`",
             "- [ ] Configurar Telegram bot para alertas en producción",
             f"- [ ] **Veredicto del sistema**: {'ACTIVAR LIVE' if ready else 'CONTINUAR EN PAPER'}",
