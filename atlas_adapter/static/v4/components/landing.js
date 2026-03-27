@@ -267,6 +267,8 @@ export function render(container) {
   }
   // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+  const GRAFANA_PRO_URL = `http://${location.hostname}:3003/d/atlas-quant-pro-2026/7def89ea-334f-564c-b9c7-d190c3f6f69d`;
+
   const CHIP_ROUTES = {
     health:    { hash: '/health' },
     workspace: { href: '/workspace', newTab: true },
@@ -284,7 +286,7 @@ export function render(container) {
     'atlas-quant-scanner':  { hash: '/atlas-quant' },
     'code-quant-dashboard': { href: '/v4/static/quant/index.html', newTab: true },
     'option-strat':         { href: 'http://localhost:8795/options/ui', newTab: true },
-    'grafana-quant':        { href: `http://${location.hostname}:3003/d/atlas-quant-pro-2026/7def89ea-334f-564c-b9c7-d190c3f6f69d`, newTab: true },
+    'grafana-quant':        { href: GRAFANA_PRO_URL, newTab: true },
     'atlas-nexus': { href: '/nexus', newTab: false },
     'robot-3d':    { href: 'http://127.0.0.1:8002/dashboard', newTab: true },
   };
@@ -328,7 +330,7 @@ export function render(container) {
     'atlas-quant-scanner':  { hash: '/atlas-quant' },
     'code-quant-dashboard': { href: '/v4/static/quant/index.html', newTab: true },
     'option-strat':         { href: 'http://localhost:8795/options/ui', newTab: true },
-    'grafana-quant':        { href: `http://${location.hostname}:3003/d/atlas-quant-pro-2026/7def89ea-334f-564c-b9c7-d190c3f6f69d`, newTab: true },
+    'grafana-quant':        { href: GRAFANA_PRO_URL, newTab: true },
     'clawd-direct': { hash: '/clawd-direct' },
     'codex-supervisor': { hash: '/codex-supervisor' },
     'live-diagnostic': { hash: '/live-diagnostic' },
