@@ -25,11 +25,11 @@
   "last_decision": {
     "decision": "submit_ready",
     "allowed": true,
-    "timestamp": "2026-03-28T02:58:06.007647",
+    "timestamp": "2026-03-28T05:02:09.200139",
     "reason": "ok"
   },
   "last_candidate": {
-    "symbol": "UA",
+    "symbol": "BTU",
     "strategy_type": null,
     "scope": "paper",
     "action": "submit"
