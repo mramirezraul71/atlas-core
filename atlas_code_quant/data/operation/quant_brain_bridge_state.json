@@ -7,11 +7,11 @@
   "last_bitacora_ok": false,
   "last_memory_ok": false,
   "last_event_kind": "operation_cycle",
-  "last_event_at": "2026-03-28T02:58:06.816871",
+  "last_event_at": "2026-03-28T05:02:09.937156",
   "last_error": "bitacora: timed out | memory: timed out",
-  "total_events": 1103,
-  "delivered_events": 570,
-  "queued_local_only_events": 533,
+  "total_events": 1151,
+  "delivered_events": 601,
+  "queued_local_only_events": 550,
   "emitted_journal_keys": [],
   "events_path": "C:\\ATLAS_PUSH\\atlas_code_quant\\logs\\quant_brain_bridge.jsonl"
 }
