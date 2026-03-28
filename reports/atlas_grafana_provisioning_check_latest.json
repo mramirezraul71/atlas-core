@@ -1,0 +1,183 @@
+﻿{
+    "checked_at":  "2026-03-28T06:08:02.2284651-04:00",
+    "grafana_url":  "http://127.0.0.1:3003",
+    "grafana_version":  "10.4.2",
+    "provisioning_rebuild":  {
+                                 "ok":  true,
+                                 "skipped":  false,
+                                 "output":  "provisioning_ok"
+                             },
+    "telegram_env_ready":  false,
+    "overall_status":  "ready",
+    "reload":  {
+                   "datasources":  {
+                                       "ok":  true,
+                                       "step":  "datasources_reload",
+                                       "value":  {
+                                                     "message":  "Datasources config reloaded"
+                                                 }
+                                   },
+                   "dashboards":  {
+                                      "ok":  false,
+                                      "step":  "dashboards_reload",
+                                      "error":  "{\"message\":\"Internal Server Error\",\"traceID\":\"\"}"
+                                  },
+                   "alerting":  {
+                                    "ok":  true,
+                                    "step":  "alerting_reload",
+                                    "value":  {
+                                                  "message":  "Alerting config reloaded"
+                                              }
+                                }
+               },
+    "verification":  {
+                         "datasource_ok":  true,
+                         "dashboards_ok":  true,
+                         "alerting_ready":  true,
+                         "dashboard_uids":  [
+                                                "bfhdbld5jy0w0c",
+                                                "atlas-quant-pro-2026",
+                                                "atlas-quant-main"
+                                            ],
+                         "contact_point_names":  [
+                                                     "email receiver"
+                                                 ],
+                         "policy_root_receiver":  "grafana-default-email",
+                         "policy_route_receivers":  [
+
+                                                    ],
+                         "atlas_telegram_present":  false,
+                         "atlas_policy_route_present":  false
+                     },
+    "raw":  {
+                "health":  {
+                               "ok":  true,
+                               "step":  "health",
+                               "value":  {
+                                             "commit":  "22809dea50455ae875624827dd277b17621b4ed4",
+                                             "database":  "ok",
+                                             "version":  "10.4.2"
+                                         }
+                           },
+                "datasource":  {
+                                   "ok":  true,
+                                   "step":  "datasource_check",
+                                   "value":  {
+                                                 "id":  1,
+                                                 "uid":  "atlas-prom",
+                                                 "orgId":  1,
+                                                 "name":  "atlas-prometheus",
+                                                 "type":  "prometheus",
+                                                 "typeLogoUrl":  "public/app/plugins/datasource/prometheus/img/prometheus_logo.svg",
+                                                 "access":  "proxy",
+                                                 "url":  "http://localhost:9091",
+                                                 "user":  "",
+                                                 "database":  "",
+                                                 "basicAuth":  false,
+                                                 "basicAuthUser":  "",
+                                                 "withCredentials":  false,
+                                                 "isDefault":  true,
+                                                 "jsonData":  {
+                                                                  "httpMethod":  "GET",
+                                                                  "timeInterval":  "2s"
+                                                              },
+                                                 "secureJsonFields":  {
+
+                                                                      },
+                                                 "version":  1,
+                                                 "readOnly":  false
+                                             }
+                               },
+                "dashboards":  {
+                                   "ok":  true,
+                                   "step":  "dashboard_search",
+                                   "value":  {
+                                                 "value":  [
+                                                               {
+                                                                   "id":  3,
+                                                                   "uid":  "bfhdbld5jy0w0c",
+                                                                   "title":  "ATLAS Alerts",
+                                                                   "uri":  "db/atlas-alerts",
+                                                                   "url":  "/dashboards/f/bfhdbld5jy0w0c/atlas-alerts",
+                                                                   "slug":  "",
+                                                                   "type":  "dash-folder",
+                                                                   "tags":  [
+
+                                                                            ],
+                                                                   "isStarred":  false,
+                                                                   "sortMeta":  0
+                                                               },
+                                                               {
+                                                                   "id":  2,
+                                                                   "uid":  "atlas-quant-pro-2026",
+                                                                   "title":  "ATLAS-QUANT PRO 2026 - Robot de Trading Autonomo",
+                                                                   "uri":  "db/atlas-quant-pro-2026-robot-de-trading-autonomo",
+                                                                   "url":  "/d/atlas-quant-pro-2026/atlas-quant-pro-2026-robot-de-trading-autonomo",
+                                                                   "slug":  "",
+                                                                   "type":  "dash-db",
+                                                                   "tags":  [
+                                                                                "atlas",
+                                                                                "live",
+                                                                                "production",
+                                                                                "quant",
+                                                                                "trading"
+                                                                            ],
+                                                                   "isStarred":  false,
+                                                                   "sortMeta":  0
+                                                               },
+                                                               {
+                                                                   "id":  1,
+                                                                   "uid":  "atlas-quant-main",
+                                                                   "title":  "ATLAS-Quant â Robot de Trading",
+                                                                   "uri":  "db/atlas-quant-e28094-robot-de-trading",
+                                                                   "url":  "/d/atlas-quant-main/atlas-quant-e28094-robot-de-trading",
+                                                                   "slug":  "",
+                                                                   "type":  "dash-db",
+                                                                   "tags":  [
+                                                                                "atlas",
+                                                                                "quant",
+                                                                                "trading"
+                                                                            ],
+                                                                   "isStarred":  false,
+                                                                   "sortMeta":  0
+                                                               }
+                                                           ],
+                                                 "Count":  3
+                                             }
+                               },
+                "contact_points":  {
+                                       "ok":  true,
+                                       "step":  "contact_points",
+                                       "value":  {
+                                                     "value":  [
+                                                                   {
+                                                                       "uid":  "",
+                                                                       "name":  "email receiver",
+                                                                       "type":  "email",
+                                                                       "settings":  {
+                                                                                        "addresses":  "\u003cexample@email.com\u003e"
+                                                                                    },
+                                                                       "disableResolveMessage":  false
+                                                                   }
+                                                               ],
+                                                     "Count":  1
+                                                 }
+                                   },
+                "policies":  {
+                                 "ok":  true,
+                                 "step":  "policies",
+                                 "value":  {
+                                               "receiver":  "grafana-default-email",
+                                               "group_by":  [
+                                                                "alertname",
+                                                                "component",
+                                                                "severity"
+                                                            ],
+                                               "group_wait":  "30s",
+                                               "group_interval":  "5m",
+                                               "repeat_interval":  "4h",
+                                               "provenance":  "file"
+                                           }
+                             }
+            }
+}

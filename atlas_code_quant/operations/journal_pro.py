@@ -20,3 +20,11 @@ class JournalProService:
             "recent_entries_count": entries.get("count", 0),
         }
 
+    def position_management_snapshot(self, *, account_type: str | None = None, limit: int = 12) -> dict[str, Any]:
+        return self.journal.position_management_snapshot(account_type=account_type, limit=limit)
+
+    def exit_governance_snapshot(self, *, account_type: str | None = None, limit: int = 10) -> dict[str, Any]:
+        return self.journal.exit_governance_snapshot(account_type=account_type, limit=limit)
+
+    def post_trade_learning_snapshot(self, *, account_type: str | None = None, limit: int = 10) -> dict[str, Any]:
+        return self.journal.post_trade_learning_snapshot(account_type=account_type, limit=limit)

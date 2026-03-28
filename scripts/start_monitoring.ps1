@@ -215,6 +215,20 @@ try {
 }
 
 # ── Resumen ───────────────────────────────────────────────────────
+Write-Host "[6/6] Verificando provisioning y alerting de Grafana..." -ForegroundColor Cyan
+$GrafanaCheckScript = "$Root\scripts\reload_grafana_provisioning.ps1"
+if (Test-Path $GrafanaCheckScript) {
+    try {
+        & $GrafanaCheckScript -GrafanaUrl $GrafanaUrl | Out-Null
+        Write-Host "  Provisioning verificado OK." -ForegroundColor Green
+    } catch {
+        Write-Host "  AVISO: verificacion de provisioning con incidencias." -ForegroundColor Yellow
+        Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  AVISO: script de verificacion no encontrado: $GrafanaCheckScript" -ForegroundColor Yellow
+}
+
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
 Write-Host "  ATLAS Monitoring Stack LISTO" -ForegroundColor Green

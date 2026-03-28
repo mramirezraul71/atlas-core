@@ -68,6 +68,59 @@ class _Journal:
     def snapshot(self, limit: int = 3) -> dict:
         return {"recent_entries_count": 0, "recent_entries": [], "limit": limit}
 
+    def position_management_snapshot(self, account_type: str | None = None, limit: int = 12) -> dict:
+        return {
+            "enabled": True,
+            "account_type": account_type,
+            "summary": {"open_positions": 0, "watchlist_count": 0},
+            "alerts": [],
+            "watchlist": [],
+            "limit": limit,
+        }
+
+    def exit_governance_snapshot(self, account_type: str | None = None, limit: int = 10) -> dict:
+        return {
+            "enabled": True,
+            "account_type": account_type,
+            "summary": {"exit_now_count": 0, "de_risk_count": 0, "take_profit_count": 0},
+            "alerts": [],
+            "recommendations": [],
+            "limit": limit,
+        }
+
+    def post_trade_learning_snapshot(self, account_type: str | None = None, limit: int = 10) -> dict:
+        return {
+            "enabled": True,
+            "account_type": account_type,
+            "summary": {"closed_trades": 0, "policy_candidate_count": 0},
+            "root_cause_breakdown": [],
+            "strategy_learning": [],
+            "policy_candidates": [],
+            "limit": limit,
+        }
+
+
+def _scorecard_payload() -> dict:
+    return {
+        "available": True,
+        "generated_at": "2026-03-28T00:00:00",
+        "headline": {
+            "atlas_process_compliance_score": 60.0,
+            "atlas_process_compliance_status": "watch",
+            "atlas_implementation_usefulness_score": 20.0,
+            "atlas_implementation_usefulness_status": "critical",
+        },
+        "metrics": {
+            "process_compliance_score": {"value": 60.0, "status": "watch"},
+            "implementation_usefulness_score": {"value": 20.0, "status": "critical"},
+        },
+        "supporting_indicators": {
+            "brain_delivery_ratio_pct": 53.43,
+            "open_untracked_ratio_pct": 100.0,
+        },
+        "next_actions": ["seguir auditando"],
+    }
+
 
 def test_operation_status_uses_timeout_fallback_without_blocking(tmp_path: Path):
     original_timeout = settings.tradier_timeout_sec
@@ -83,6 +136,7 @@ def test_operation_status_uses_timeout_fallback_without_blocking(tmp_path: Path)
             brain=_Brain(),
             learning=_Learning(),
             state_path=tmp_path / "operation_center_state.json",
+            scorecard_provider=_scorecard_payload,
         )
 
         started = time.perf_counter()
@@ -115,6 +169,7 @@ def test_operation_status_reuses_inflight_monitor_refresh(tmp_path: Path):
             brain=_Brain(),
             learning=_Learning(),
             state_path=tmp_path / "operation_center_state.json",
+            scorecard_provider=_scorecard_payload,
         )
 
         first = center.status()
@@ -143,6 +198,7 @@ def test_emergency_stop_does_not_block_on_slow_brain_emit(tmp_path: Path):
         brain=brain,
         learning=_Learning(),
         state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
     )
 
     started = time.perf_counter()
@@ -151,6 +207,82 @@ def test_emergency_stop_does_not_block_on_slow_brain_emit(tmp_path: Path):
 
     assert elapsed < 0.8
     assert payload["last_decision"]["decision"] == "emergency_stop"
+
+
+def test_operation_status_exposes_scorecard_snapshot(tmp_path: Path):
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+
+    payload = center.status()
+
+    assert payload["scorecard"]["available"] is True
+    assert payload["scorecard"]["headline"]["atlas_process_compliance_score"] == 60.0
+    assert payload["scorecard"]["supporting_indicators"]["brain_delivery_ratio_pct"] == 53.43
+
+
+def test_operation_status_exposes_position_management_snapshot(tmp_path: Path):
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+
+    payload = center.status()
+
+    assert payload["position_management"]["enabled"] is True
+    assert payload["position_management"]["account_type"] == "paper"
+    assert payload["position_management"]["summary"]["open_positions"] == 0
+
+
+def test_operation_status_exposes_exit_governance_snapshot(tmp_path: Path):
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+
+    payload = center.status()
+
+    assert payload["exit_governance"]["enabled"] is True
+    assert payload["exit_governance"]["account_type"] == "paper"
+    assert payload["exit_governance"]["summary"]["exit_now_count"] == 0
+
+
+def test_operation_status_exposes_post_trade_learning_snapshot(tmp_path: Path):
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+
+    payload = center.status()
+
+    assert payload["post_trade_learning"]["enabled"] is True
+    assert payload["post_trade_learning"]["account_type"] == "paper"
+    assert payload["post_trade_learning"]["summary"]["closed_trades"] == 0
 
 
 class _JournalingFastTracker:

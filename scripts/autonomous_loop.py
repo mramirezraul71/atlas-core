@@ -256,6 +256,39 @@ def _api_call(
         return None
 
 
+def _equity_strategy_type(direction: str) -> str:
+    return "equity_short" if direction in {"bajista", "bearish", "short", "down", "sell"} else "equity_long"
+
+
+def _load_positions_snapshot(base: str, api_key: str) -> dict:
+    payload = _api_call(base, "/api/v2/quant/positions?account_scope=paper", timeout=15, api_key=api_key)
+    if payload and payload.get("ok") and isinstance(payload.get("data"), dict):
+        return payload["data"]
+    payload = _api_call(base, "/positions?account_scope=paper", timeout=15, api_key=api_key)
+    if payload and payload.get("ok") and isinstance(payload.get("data"), dict):
+        return payload["data"]
+    return {}
+
+
+def _positions_open_symbols(snapshot: dict) -> set[str]:
+    symbols: set[str] = set()
+    for item in snapshot.get("positions", []):
+        if not isinstance(item, dict):
+            continue
+        for key in ("underlying", "symbol"):
+            value = str(item.get(key) or "").strip().upper()
+            if value:
+                symbols.add(value)
+    return symbols
+
+
+def _reconciliation_state(snapshot: dict) -> str:
+    reconciliation = snapshot.get("reconciliation") or {}
+    if not isinstance(reconciliation, dict):
+        return ""
+    return str(reconciliation.get("state") or "").strip().lower()
+
+
 def _detect_base(ports: list[int], api_key: str) -> str | None:
     for port in ports:
         base = f"http://127.0.0.1:{port}"
@@ -388,6 +421,17 @@ def run_loop(
 
         else:
             logger.warning("[cycle %d] Sin estado operacional - continuando de todas formas", cycle)
+        positions_snapshot = _load_positions_snapshot(base, api_key)
+        reconciliation_state = _reconciliation_state(positions_snapshot)
+        if reconciliation_state != "healthy":
+            logger.warning(
+                "[cycle %d] Reconciliation en estado '%s' - veto de submit",
+                cycle,
+                reconciliation_state or "unknown",
+            )
+            time.sleep(interval_sec)
+            continue
+        open_symbols = _positions_open_symbols(positions_snapshot)
 
         # ── Obtener candidatos ────────────────────────────────────────────────
         scan = _api_call(base, "/scanner/report", timeout=15, api_key=api_key)
@@ -449,6 +493,10 @@ def run_loop(
             side      = "buy" if direction in {"long", "alcista", "bull", "up"} else "sell_short"
             tf        = cand.get("timeframe", "?")
 
+            if sym.upper() in open_symbols:
+                logger.info("  SKIP    %s | open_symbol_guard ya tiene exposicion abierta", sym)
+                continue
+
             logger.info("[cycle %d] SCANNER %s | scanner_score=%.1f dir=%s tf=%s",
                         cycle, sym, score, direction, tf)
 
@@ -481,6 +529,8 @@ def run_loop(
                     "account_scope": "paper",
                     "preview": False,
                     "asset_class": "equity",
+                    "strategy_type": _equity_strategy_type(direction),
+                    "tag": f"autonomous_loop:{cand.get('strategy_key') or 'scanner'}:{cand.get('timeframe') or 'tf'}",
                 },
                 "action": "submit",
                 "capture_context": False,  # evita esperar al brain (reduce 15s de timeout)

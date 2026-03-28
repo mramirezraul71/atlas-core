@@ -185,6 +185,8 @@ class TradingConfig:
     scanner_scan_interval_sec: int = _ienv("QUANT_SCANNER_INTERVAL_SEC", 180)
     scanner_min_signal_strength: float = _fenv("QUANT_SCANNER_MIN_SIGNAL_STRENGTH", 0.55)
     scanner_min_local_win_rate_pct: float = _fenv("QUANT_SCANNER_MIN_LOCAL_WIN_RATE_PCT", 53.0)
+    scanner_min_local_profit_factor: float = _fenv("QUANT_SCANNER_MIN_LOCAL_PROFIT_FACTOR", 1.05)
+    scanner_min_backtest_sample: int = _ienv("QUANT_SCANNER_MIN_BACKTEST_SAMPLE", 12)
     scanner_min_selection_score: float = _fenv("QUANT_SCANNER_MIN_SELECTION_SCORE", 75.0)
     scanner_max_candidates: int = _ienv("QUANT_SCANNER_MAX_CANDIDATES", 8)
     scanner_activity_limit: int = _ienv("QUANT_SCANNER_ACTIVITY_LIMIT", 160)
@@ -207,6 +209,26 @@ class TradingConfig:
     scanner_include_etfs: bool    = os.getenv("ATLAS_SCANNER_INCLUDE_ETFS",    "true").strip().lower()  not in {"0","false","no"}
     scanner_include_indices: bool = os.getenv("ATLAS_SCANNER_INCLUDE_INDICES", "true").strip().lower()  not in {"0","false","no"}
     scanner_include_crypto: bool  = os.getenv("ATLAS_SCANNER_INCLUDE_CRYPTO",  "false").strip().lower() not in {"0","false","no"}
+
+    # Entry validation
+    entry_validation_enabled: bool = os.getenv("QUANT_ENTRY_VALIDATION_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+    entry_max_equity_spread_pct: float = _fenv("QUANT_ENTRY_MAX_EQUITY_SPREAD_PCT", 0.25)
+    entry_max_adverse_drift_pct: float = _fenv("QUANT_ENTRY_MAX_ADVERSE_DRIFT_PCT", 0.35)
+    entry_warn_drift_vs_expected_move_pct: float = _fenv("QUANT_ENTRY_WARN_DRIFT_SHARE_EXPECTED_MOVE_PCT", 25.0)
+
+    # Position management
+    position_management_enabled: bool = os.getenv("QUANT_POSITION_MANAGEMENT_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+    position_management_max_symbol_heat_pct: float = _fenv("QUANT_POSITION_MGMT_MAX_SYMBOL_HEAT_PCT", 12.0)
+    position_management_max_unrealized_loss_r: float = _fenv("QUANT_POSITION_MGMT_MAX_UNREALIZED_LOSS_R", 0.35)
+    position_management_max_thesis_drift_pct: float = _fenv("QUANT_POSITION_MGMT_MAX_THESIS_DRIFT_PCT", 15.0)
+    position_management_max_stale_hours: int = _ienv("QUANT_POSITION_MGMT_MAX_STALE_HOURS", 72)
+
+    # Exit governance
+    exit_governance_enabled: bool = os.getenv("QUANT_EXIT_GOVERNANCE_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+    exit_governance_hard_exit_loss_r: float = _fenv("QUANT_EXIT_GOVERNANCE_HARD_EXIT_LOSS_R", 0.50)
+    exit_governance_take_profit_r: float = _fenv("QUANT_EXIT_GOVERNANCE_TAKE_PROFIT_R", 0.75)
+    exit_governance_time_stop_hours: int = _ienv("QUANT_EXIT_GOVERNANCE_TIME_STOP_HOURS", 96)
+    exit_governance_trailing_profit_floor_r: float = _fenv("QUANT_EXIT_GOVERNANCE_TRAILING_PROFIT_FLOOR_R", 0.35)
 
     # AtlasLearningBrain — criterios de readiness y scoring híbrido
     learning_brain_enabled: bool = os.getenv("ATLAS_LEARNING_BRAIN_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
@@ -279,6 +301,8 @@ class TradingConfig:
         self.scanner_scan_interval_sec = max(15, min(self.scanner_scan_interval_sec, 3600))
         self.scanner_min_signal_strength = max(0.0, min(self.scanner_min_signal_strength, 1.0))
         self.scanner_min_local_win_rate_pct = max(0.0, min(self.scanner_min_local_win_rate_pct, 100.0))
+        self.scanner_min_local_profit_factor = max(0.5, min(self.scanner_min_local_profit_factor, 10.0))
+        self.scanner_min_backtest_sample = max(3, min(self.scanner_min_backtest_sample, 200))
         self.scanner_min_selection_score = max(75.0, min(self.scanner_min_selection_score, 100.0))
         self.scanner_max_candidates = max(1, min(self.scanner_max_candidates, 50))
         self.scanner_activity_limit = max(20, min(self.scanner_activity_limit, 1000))
@@ -289,6 +313,17 @@ class TradingConfig:
         self.scanner_prefilter_min_price = max(0.5, min(self.scanner_prefilter_min_price, 1000.0))
         self.scanner_prefilter_min_dollar_volume_millions = max(0.1, min(self.scanner_prefilter_min_dollar_volume_millions, 5000.0))
         self.scanner_universe_cache_ttl_sec = max(3600, min(self.scanner_universe_cache_ttl_sec, 604800))
+        self.entry_max_equity_spread_pct = max(0.01, min(self.entry_max_equity_spread_pct, 5.0))
+        self.entry_max_adverse_drift_pct = max(0.01, min(self.entry_max_adverse_drift_pct, 10.0))
+        self.entry_warn_drift_vs_expected_move_pct = max(1.0, min(self.entry_warn_drift_vs_expected_move_pct, 100.0))
+        self.position_management_max_symbol_heat_pct = max(1.0, min(self.position_management_max_symbol_heat_pct, 100.0))
+        self.position_management_max_unrealized_loss_r = max(0.05, min(self.position_management_max_unrealized_loss_r, 10.0))
+        self.position_management_max_thesis_drift_pct = max(1.0, min(self.position_management_max_thesis_drift_pct, 100.0))
+        self.position_management_max_stale_hours = max(1, min(self.position_management_max_stale_hours, 24 * 30))
+        self.exit_governance_hard_exit_loss_r = max(0.05, min(self.exit_governance_hard_exit_loss_r, 10.0))
+        self.exit_governance_take_profit_r = max(0.05, min(self.exit_governance_take_profit_r, 20.0))
+        self.exit_governance_time_stop_hours = max(1, min(self.exit_governance_time_stop_hours, 24 * 60))
+        self.exit_governance_trailing_profit_floor_r = max(0.05, min(self.exit_governance_trailing_profit_floor_r, 20.0))
         self.adaptive_learning_refresh_sec = max(30, min(self.adaptive_learning_refresh_sec, 3600))
         self.adaptive_learning_window_days = max(30, min(self.adaptive_learning_window_days, 730))
         self.adaptive_learning_min_strategy_samples = max(2, min(self.adaptive_learning_min_strategy_samples, 50))

@@ -248,6 +248,523 @@ def _trade_return(entry: TradingJournal) -> float | None:
     return _safe_float(entry.realized_pnl, float("nan")) / base if base > 0 else None
 
 
+def _risk_budget(entry: TradingJournal) -> float:
+    risk_at_entry = abs(_safe_float(entry.risk_at_entry, 0.0))
+    if risk_at_entry > 0:
+        return risk_at_entry
+    entry_notional = abs(_safe_float(entry.entry_notional, 0.0))
+    if entry_notional > 0:
+        return entry_notional
+    return 1.0
+
+
+def _position_open_r_multiple(entry: TradingJournal) -> float:
+    return round(_safe_float(entry.unrealized_pnl, 0.0) / _risk_budget(entry), 4)
+
+
+def _thesis_drift_pct(entry: TradingJournal) -> float | None:
+    current_win = _safe_float(entry.current_win_rate_pct, float("nan"))
+    entry_win = _safe_float(entry.win_rate_at_entry, float("nan"))
+    if current_win != current_win or entry_win != entry_win:
+        return None
+    return round(current_win - entry_win, 4)
+
+
+def _holding_hours(entry: TradingJournal, *, now: datetime) -> float:
+    if not entry.entry_time:
+        return 0.0
+    return round(max((now - entry.entry_time).total_seconds() / 3600.0, 0.0), 4)
+
+
+def _ratio_pct(numerator: float, denominator: float) -> float:
+    if denominator <= 0:
+        return 0.0
+    return float(numerator / denominator * 100.0)
+
+
+def _bucket_concentration(
+    open_entries: list[TradingJournal],
+    *,
+    key_name: str,
+    key_builder: Any,
+    total_risk_budget: float,
+) -> list[dict[str, Any]]:
+    buckets: dict[str, dict[str, Any]] = {}
+    for entry in open_entries:
+        key = str(key_builder(entry) or "unknown")
+        bucket = buckets.setdefault(
+            key,
+            {
+                key_name: key,
+                "open_positions": 0,
+                "risk_budget": 0.0,
+                "entry_notional": 0.0,
+                "unrealized_pnl": 0.0,
+            },
+        )
+        bucket["open_positions"] += 1
+        bucket["risk_budget"] += _risk_budget(entry)
+        bucket["entry_notional"] += abs(_safe_float(entry.entry_notional, 0.0))
+        bucket["unrealized_pnl"] += _safe_float(entry.unrealized_pnl, 0.0)
+
+    rows: list[dict[str, Any]] = []
+    for bucket in buckets.values():
+        risk_share_pct = _ratio_pct(bucket["risk_budget"], total_risk_budget) if total_risk_budget > 0 else 0.0
+        rows.append(
+            {
+                key_name: bucket[key_name],
+                "open_positions": int(bucket["open_positions"]),
+                "risk_budget": round(bucket["risk_budget"], 4),
+                "risk_share_pct": round(risk_share_pct, 4),
+                "entry_notional": round(bucket["entry_notional"], 4),
+                "unrealized_pnl": round(bucket["unrealized_pnl"], 4),
+            }
+        )
+    return sorted(rows, key=lambda item: (-_safe_float(item.get("risk_share_pct"), 0.0), str(item.get(key_name) or "")))
+
+
+def build_position_management_snapshot(
+    open_entries: list[TradingJournal],
+    *,
+    account_type: str | None = None,
+    limit: int = 12,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    generated_at = (now or datetime.utcnow()).isoformat()
+    active_now = now or datetime.utcnow()
+    filtered = [
+        entry
+        for entry in open_entries
+        if entry.status == "open" and (account_type in {None, "", "all"} or entry.account_type == account_type)
+    ]
+    capped_limit = max(1, min(int(limit), 25))
+    thresholds = {
+        "position_management_enabled": bool(settings.position_management_enabled),
+        "max_symbol_heat_pct": float(settings.position_management_max_symbol_heat_pct),
+        "max_unrealized_loss_r": float(settings.position_management_max_unrealized_loss_r),
+        "max_thesis_drift_pct": float(settings.position_management_max_thesis_drift_pct),
+        "max_stale_hours": int(settings.position_management_max_stale_hours),
+    }
+    if not filtered:
+        return {
+            "generated_at": generated_at,
+            "account_type": account_type or "all",
+            "enabled": thresholds["position_management_enabled"],
+            "summary": {
+                "open_positions": 0,
+                "total_risk_budget": 0.0,
+                "total_entry_notional": 0.0,
+                "total_unrealized_pnl": 0.0,
+                "avg_holding_hours": 0.0,
+                "median_holding_hours": 0.0,
+                "adverse_positions_count": 0,
+                "stale_positions_count": 0,
+                "thesis_deteriorated_count": 0,
+                "watchlist_count": 0,
+                "max_symbol_heat_pct": 0.0,
+                "max_strategy_heat_pct": 0.0,
+            },
+            "alerts": [],
+            "concentrations": {"by_symbol": [], "by_strategy_type": []},
+            "watchlist": [],
+            "thresholds": thresholds,
+        }
+
+    position_rows: list[dict[str, Any]] = []
+    holding_hours_values: list[float] = []
+    adverse_count = 0
+    stale_count = 0
+    thesis_deteriorated_count = 0
+    total_risk_budget = round(sum(_risk_budget(entry) for entry in filtered), 4)
+    total_entry_notional = round(sum(abs(_safe_float(entry.entry_notional, 0.0)) for entry in filtered), 4)
+    total_unrealized_pnl = round(sum(_safe_float(entry.unrealized_pnl, 0.0) for entry in filtered), 4)
+
+    for entry in filtered:
+        holding_hours = _holding_hours(entry, now=active_now)
+        holding_hours_values.append(holding_hours)
+        thesis_drift_pct = _thesis_drift_pct(entry)
+        open_r_multiple = _position_open_r_multiple(entry)
+        symbol_heat_pct = _ratio_pct(_risk_budget(entry), total_risk_budget) if total_risk_budget > 0 else 0.0
+        reasons: list[str] = []
+        if open_r_multiple <= -float(settings.position_management_max_unrealized_loss_r):
+            adverse_count += 1
+            reasons.append("adverse_loss_r")
+        if holding_hours >= int(settings.position_management_max_stale_hours) and _safe_float(entry.unrealized_pnl, 0.0) <= 0.0:
+            stale_count += 1
+            reasons.append("stale_loser")
+        if thesis_drift_pct is not None and thesis_drift_pct <= -float(settings.position_management_max_thesis_drift_pct):
+            thesis_deteriorated_count += 1
+            reasons.append("thesis_drift")
+        if symbol_heat_pct > float(settings.position_management_max_symbol_heat_pct):
+            reasons.append("symbol_heat")
+
+        position_rows.append(
+            {
+                "symbol": entry.symbol,
+                "strategy_type": entry.strategy_type,
+                "account_type": entry.account_type,
+                "entry_time": entry.entry_time.isoformat() if entry.entry_time else None,
+                "holding_hours": round(holding_hours, 4),
+                "unrealized_pnl": round(_safe_float(entry.unrealized_pnl, 0.0), 4),
+                "open_r_multiple": open_r_multiple,
+                "thesis_drift_pct": thesis_drift_pct,
+                "risk_budget": round(_risk_budget(entry), 4),
+                "entry_notional": round(abs(_safe_float(entry.entry_notional, 0.0)), 4),
+                "symbol_heat_pct": round(symbol_heat_pct, 4),
+                "alert_reasons": reasons,
+                "status": "watch" if reasons else "normal",
+                "journal_key": entry.journal_key,
+                "strategy_id": entry.strategy_id,
+            }
+        )
+
+    symbol_concentrations = _bucket_concentration(
+        filtered,
+        key_name="symbol",
+        key_builder=lambda entry: entry.symbol,
+        total_risk_budget=total_risk_budget,
+    )
+    strategy_concentrations = _bucket_concentration(
+        filtered,
+        key_name="strategy_type",
+        key_builder=lambda entry: entry.strategy_type,
+        total_risk_budget=total_risk_budget,
+    )
+    max_symbol_heat_pct = round(max((_safe_float(row.get("risk_share_pct"), 0.0) for row in symbol_concentrations), default=0.0), 4)
+    max_strategy_heat_pct = round(max((_safe_float(row.get("risk_share_pct"), 0.0) for row in strategy_concentrations), default=0.0), 4)
+
+    alerts: list[dict[str, Any]] = []
+    if max_symbol_heat_pct > float(settings.position_management_max_symbol_heat_pct):
+        top_symbol = symbol_concentrations[0]["symbol"] if symbol_concentrations else "unknown"
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "symbol_heat_exceeded",
+                "message": (
+                    f"El calor por simbolo excede el umbral configurado: {top_symbol} concentra {max_symbol_heat_pct:.2f}% "
+                    f"del riesgo abierto."
+                ),
+                "value": max_symbol_heat_pct,
+                "threshold": float(settings.position_management_max_symbol_heat_pct),
+            }
+        )
+    if adverse_count > 0:
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "adverse_positions_present",
+                "message": f"Hay {adverse_count} posiciones abiertas con perdida superior al umbral de R no realizado.",
+                "value": adverse_count,
+                "threshold": float(settings.position_management_max_unrealized_loss_r),
+            }
+        )
+    if stale_count > 0:
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "stale_losers_present",
+                "message": f"Hay {stale_count} posiciones estancadas o perdedoras mas alla del hold time tolerado.",
+                "value": stale_count,
+                "threshold": int(settings.position_management_max_stale_hours),
+            }
+        )
+    if thesis_deteriorated_count > 0:
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "thesis_drift_present",
+                "message": (
+                    f"Hay {thesis_deteriorated_count} posiciones cuya probabilidad o tesis se deterioro mas alla del umbral permitido."
+                ),
+                "value": thesis_deteriorated_count,
+                "threshold": float(settings.position_management_max_thesis_drift_pct),
+            }
+        )
+
+    watchlist = [row for row in position_rows if row["alert_reasons"]]
+    watchlist.sort(
+        key=lambda row: (
+            -len(row["alert_reasons"]),
+            _safe_float(row.get("open_r_multiple"), 0.0),
+            -_safe_float(row.get("holding_hours"), 0.0),
+        )
+    )
+
+    return {
+        "generated_at": generated_at,
+        "account_type": account_type or "all",
+        "enabled": thresholds["position_management_enabled"],
+        "summary": {
+            "open_positions": len(filtered),
+            "total_risk_budget": total_risk_budget,
+            "total_entry_notional": total_entry_notional,
+            "total_unrealized_pnl": total_unrealized_pnl,
+            "avg_holding_hours": round(float(np.mean(holding_hours_values)) if holding_hours_values else 0.0, 4),
+            "median_holding_hours": round(float(np.median(holding_hours_values)) if holding_hours_values else 0.0, 4),
+            "adverse_positions_count": adverse_count,
+            "stale_positions_count": stale_count,
+            "thesis_deteriorated_count": thesis_deteriorated_count,
+            "watchlist_count": len(watchlist),
+            "max_symbol_heat_pct": max_symbol_heat_pct,
+            "max_strategy_heat_pct": max_strategy_heat_pct,
+        },
+        "alerts": alerts,
+        "concentrations": {
+            "by_symbol": symbol_concentrations[: capped_limit // 2 if capped_limit > 1 else 1],
+            "by_strategy_type": strategy_concentrations[: capped_limit // 2 if capped_limit > 1 else 1],
+        },
+        "watchlist": watchlist[:capped_limit],
+        "thresholds": thresholds,
+    }
+
+
+def build_exit_governance_snapshot(
+    open_entries: list[TradingJournal],
+    *,
+    account_type: str | None = None,
+    limit: int = 10,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    position_management = build_position_management_snapshot(
+        open_entries,
+        account_type=account_type,
+        limit=max(limit, 10),
+        now=now,
+    )
+    thresholds = {
+        "exit_governance_enabled": bool(settings.exit_governance_enabled),
+        "hard_exit_loss_r": float(settings.exit_governance_hard_exit_loss_r),
+        "take_profit_r": float(settings.exit_governance_take_profit_r),
+        "time_stop_hours": int(settings.exit_governance_time_stop_hours),
+        "trailing_profit_floor_r": float(settings.exit_governance_trailing_profit_floor_r),
+        "thesis_drift_guard_pct": float(settings.position_management_max_thesis_drift_pct),
+        "symbol_heat_guard_pct": float(settings.position_management_max_symbol_heat_pct),
+    }
+    candidates: list[dict[str, Any]] = []
+    action_counts = {
+        "exit_now": 0,
+        "de_risk": 0,
+        "take_profit": 0,
+        "hold": 0,
+    }
+
+    for row in position_management.get("watchlist") or []:
+        reasons = set(str(reason) for reason in row.get("alert_reasons") or [])
+        open_r_multiple = _safe_float(row.get("open_r_multiple"), 0.0)
+        holding_hours = _safe_float(row.get("holding_hours"), 0.0)
+        thesis_drift_pct = _safe_float(row.get("thesis_drift_pct"), float("nan"))
+        symbol_heat_pct = _safe_float(row.get("symbol_heat_pct"), 0.0)
+
+        recommendation = "hold"
+        exit_reason = "monitor_only"
+        urgency = "low"
+
+        if open_r_multiple <= -float(settings.exit_governance_hard_exit_loss_r):
+            recommendation = "exit_now"
+            exit_reason = "hard_stop_loss_r"
+            urgency = "high"
+        elif "thesis_drift" in reasons and open_r_multiple < 0:
+            recommendation = "exit_now"
+            exit_reason = "thesis_invalidated"
+            urgency = "high"
+        elif holding_hours >= int(settings.exit_governance_time_stop_hours) and open_r_multiple <= 0:
+            recommendation = "exit_now"
+            exit_reason = "time_stop"
+            urgency = "medium"
+        elif open_r_multiple >= float(settings.exit_governance_take_profit_r):
+            recommendation = "take_profit"
+            exit_reason = "profit_target"
+            urgency = "medium"
+        elif symbol_heat_pct > float(settings.position_management_max_symbol_heat_pct):
+            recommendation = "de_risk"
+            exit_reason = "book_concentration"
+            urgency = "medium"
+        elif open_r_multiple >= float(settings.exit_governance_trailing_profit_floor_r) and thesis_drift_pct == thesis_drift_pct and thesis_drift_pct < 0:
+            recommendation = "de_risk"
+            exit_reason = "protect_open_profit"
+            urgency = "medium"
+
+        action_counts[recommendation] += 1
+        candidates.append(
+            {
+                **row,
+                "recommendation": recommendation,
+                "exit_reason": exit_reason,
+                "urgency": urgency,
+            }
+        )
+
+    candidates.sort(
+        key=lambda row: (
+            {"exit_now": 0, "de_risk": 1, "take_profit": 2, "hold": 3}.get(str(row.get("recommendation")), 4),
+            {"high": 0, "medium": 1, "low": 2}.get(str(row.get("urgency")), 3),
+            _safe_float(row.get("open_r_multiple"), 0.0),
+            -_safe_float(row.get("holding_hours"), 0.0),
+        )
+    )
+
+    alerts: list[dict[str, Any]] = []
+    if action_counts["exit_now"] > 0:
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "exit_now_candidates_present",
+                "message": f"Hay {action_counts['exit_now']} posiciones que ya cumplen criterio estructurado de salida inmediata.",
+                "value": action_counts["exit_now"],
+            }
+        )
+    if action_counts["de_risk"] > 0:
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "de_risk_candidates_present",
+                "message": f"Hay {action_counts['de_risk']} posiciones que conviene reducir o proteger.",
+                "value": action_counts["de_risk"],
+            }
+        )
+    if action_counts["take_profit"] > 0:
+        alerts.append(
+            {
+                "level": "info",
+                "code": "take_profit_candidates_present",
+                "message": f"Hay {action_counts['take_profit']} posiciones con criterio de toma parcial o proteccion de beneficio.",
+                "value": action_counts["take_profit"],
+            }
+        )
+
+    return {
+        "generated_at": position_management.get("generated_at"),
+        "account_type": account_type or "all",
+        "enabled": thresholds["exit_governance_enabled"],
+        "summary": {
+            "open_positions": position_management.get("summary", {}).get("open_positions", 0),
+            "exit_now_count": action_counts["exit_now"],
+            "de_risk_count": action_counts["de_risk"],
+            "take_profit_count": action_counts["take_profit"],
+            "hold_count": action_counts["hold"],
+        },
+        "alerts": alerts,
+        "recommendations": candidates[: max(1, min(int(limit), 20))],
+        "position_management_summary": position_management.get("summary", {}),
+        "thresholds": thresholds,
+    }
+
+
+def build_post_trade_learning_snapshot(
+    closed_entries: list[TradingJournal],
+    *,
+    account_type: str | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    filtered = [
+        entry
+        for entry in closed_entries
+        if entry.status == "closed" and (account_type in {None, "", "all"} or entry.account_type == account_type)
+    ]
+    capped_limit = max(1, min(int(limit), 20))
+    if not filtered:
+        return {
+            "generated_at": datetime.utcnow().isoformat(),
+            "account_type": account_type or "all",
+            "enabled": True,
+            "summary": {
+                "closed_trades": 0,
+                "win_rate_pct": 0.0,
+                "realized_pnl": 0.0,
+                "post_mortem_coverage_pct": 0.0,
+                "policy_candidate_count": 0,
+            },
+            "root_cause_breakdown": [],
+            "strategy_learning": [],
+            "policy_candidates": [],
+        }
+
+    wins = sum(1 for entry in filtered if _safe_float(entry.realized_pnl, 0.0) > 0)
+    realized_pnl = round(sum(_safe_float(entry.realized_pnl, 0.0) for entry in filtered), 4)
+    root_causes: dict[str, dict[str, Any]] = {}
+    strategy_map: dict[str, dict[str, Any]] = {}
+    coverage = 0
+
+    for entry in filtered:
+        post_mortem = _json_load(entry.post_mortem_json, {})
+        if post_mortem:
+            coverage += 1
+        root_cause = str(post_mortem.get("root_cause") or "unknown")
+        cause_bucket = root_causes.setdefault(
+            root_cause,
+            {"root_cause": root_cause, "count": 0, "realized_pnl": 0.0, "loss_count": 0},
+        )
+        cause_bucket["count"] += 1
+        pnl = _safe_float(entry.realized_pnl, 0.0)
+        cause_bucket["realized_pnl"] += pnl
+        if pnl < 0:
+            cause_bucket["loss_count"] += 1
+
+        strategy_type = str(entry.strategy_type or "unknown")
+        strat_bucket = strategy_map.setdefault(
+            strategy_type,
+            {"strategy_type": strategy_type, "count": 0, "realized_pnl": 0.0, "wins": 0},
+        )
+        strat_bucket["count"] += 1
+        strat_bucket["realized_pnl"] += pnl
+        if pnl > 0:
+            strat_bucket["wins"] += 1
+
+    root_cause_breakdown = []
+    for bucket in root_causes.values():
+        root_cause_breakdown.append(
+            {
+                "root_cause": bucket["root_cause"],
+                "count": int(bucket["count"]),
+                "loss_count": int(bucket["loss_count"]),
+                "realized_pnl": round(bucket["realized_pnl"], 4),
+            }
+        )
+    root_cause_breakdown.sort(key=lambda item: (-item["loss_count"], item["realized_pnl"]))
+
+    strategy_learning = []
+    policy_candidates = []
+    for bucket in strategy_map.values():
+        count = int(bucket["count"])
+        win_rate_pct = round((int(bucket["wins"]) / count) * 100.0, 2) if count else 0.0
+        realized = round(bucket["realized_pnl"], 4)
+        row = {
+            "strategy_type": bucket["strategy_type"],
+            "count": count,
+            "win_rate_pct": win_rate_pct,
+            "realized_pnl": realized,
+        }
+        strategy_learning.append(row)
+        if count >= 2 and realized < 0:
+            policy_candidates.append(
+                {
+                    "kind": "strategy_review",
+                    "strategy_type": bucket["strategy_type"],
+                    "sample_count": count,
+                    "realized_pnl": realized,
+                    "recommendation": "review_reduce_or_disable",
+                }
+            )
+    strategy_learning.sort(key=lambda item: (item["realized_pnl"], item["win_rate_pct"]))
+    policy_candidates.sort(key=lambda item: (item["realized_pnl"], -item["sample_count"]))
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "account_type": account_type or "all",
+        "enabled": True,
+        "summary": {
+            "closed_trades": len(filtered),
+            "win_rate_pct": round((wins / len(filtered)) * 100.0, 2),
+            "realized_pnl": realized_pnl,
+            "post_mortem_coverage_pct": round(_ratio_pct(coverage, len(filtered)), 2),
+            "policy_candidate_count": len(policy_candidates),
+        },
+        "root_cause_breakdown": root_cause_breakdown[:capped_limit],
+        "strategy_learning": strategy_learning[:capped_limit],
+        "policy_candidates": policy_candidates[:capped_limit],
+    }
+
+
 def _equity_curve(entries: list[TradingJournal]) -> list[dict[str, Any]]:
     running = 0.0
     points: list[dict[str, Any]] = []
@@ -527,4 +1044,26 @@ class TradingJournalService:
             "items": [_entry_payload(entry) for entry in rows],
         }
 
+    def position_management_snapshot(self, *, account_type: str | None = None, limit: int = 12) -> dict[str, Any]:
+        with session_scope() as db:
+            query = select(TradingJournal).where(TradingJournal.status == "open")
+            if account_type not in {None, "", "all"}:
+                query = query.where(TradingJournal.account_type == account_type)
+            rows = db.execute(query.order_by(TradingJournal.updated_at.desc(), TradingJournal.id.desc())).scalars().all()
+        return build_position_management_snapshot(rows, account_type=account_type, limit=limit)
 
+    def exit_governance_snapshot(self, *, account_type: str | None = None, limit: int = 10) -> dict[str, Any]:
+        with session_scope() as db:
+            query = select(TradingJournal).where(TradingJournal.status == "open")
+            if account_type not in {None, "", "all"}:
+                query = query.where(TradingJournal.account_type == account_type)
+            rows = db.execute(query.order_by(TradingJournal.updated_at.desc(), TradingJournal.id.desc())).scalars().all()
+        return build_exit_governance_snapshot(rows, account_type=account_type, limit=limit)
+
+    def post_trade_learning_snapshot(self, *, account_type: str | None = None, limit: int = 10) -> dict[str, Any]:
+        with session_scope() as db:
+            query = select(TradingJournal).where(TradingJournal.status == "closed")
+            if account_type not in {None, "", "all"}:
+                query = query.where(TradingJournal.account_type == account_type)
+            rows = db.execute(query.order_by(TradingJournal.updated_at.desc(), TradingJournal.id.desc())).scalars().all()
+        return build_post_trade_learning_snapshot(rows, account_type=account_type, limit=limit)
