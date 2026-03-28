@@ -571,8 +571,26 @@ class StrategySelectorService:
         direction = str(candidate.get("direction") or "").lower()
         higher_tf = str((candidate.get("confirmation") or {}).get("higher_timeframe") or "1h")
         strategy_type = str(selected.get("strategy_type") or "")
+        reference_price = _safe_float(
+            candidate.get("price"),
+            _safe_float((probability_payload or {}).get("market_snapshot", {}).get("spot"), 0.0),
+        )
         predicted_move = _safe_float(candidate.get("predicted_move_pct"), 0.0)
         confidence = _safe_float((probability_payload or {}).get("win_rate_pct"), _safe_float(candidate.get("local_win_rate_pct"), 0.0))
+        max_adverse_drift_pct = {
+            "5m": 0.20,
+            "15m": 0.25,
+            "1h": 0.35,
+            "4h": 0.50,
+            "1d": 0.75,
+        }.get(timeframe.lower(), 0.35)
+        max_spread_pct = {
+            "5m": 0.15,
+            "15m": 0.18,
+            "1h": 0.25,
+            "4h": 0.35,
+            "1d": 0.45,
+        }.get(timeframe.lower(), 0.25)
         if strategy_type in {"equity_long", "equity_short"}:
             entry_style = "ruptura confirmada en cierre" if timeframe in {"5m", "15m"} else "entrada en continuidad con confirmacion superior"
             trigger = "rompimiento del maximo/minimo de la vela señal" if timeframe in {"5m", "15m"} else "continuacion tras mantener soporte/resistencia"
@@ -595,8 +613,11 @@ class StrategySelectorService:
             "confirmation_rule": f"la direccion en {higher_tf} debe seguir {direction or 'coherente'}",
             "chart_focus": "vela señal, zona de ruptura, volumen y confirmacion superior",
             "dte_window": dte,
+            "entry_reference_price": round(reference_price, 4) if reference_price > 0 else None,
             "expected_move_pct": round(predicted_move, 2),
             "confidence_reference_pct": round(confidence, 2),
+            "max_adverse_drift_pct": round(max_adverse_drift_pct, 2),
+            "max_spread_pct": round(max_spread_pct, 2),
         }
 
     def _confidence_breakdown(
@@ -774,7 +795,7 @@ class StrategySelectorService:
         )
         order_seed = {
             "symbol": candidate.get("symbol"),
-            "strategy_type": None if meta["family"] == "equity" else strategy_type,
+            "strategy_type": strategy_type,
             "asset_class": meta["asset_class"],
             "side": meta["side"],
             "position_effect": meta["position_effect"],
@@ -784,9 +805,12 @@ class StrategySelectorService:
             "account_scope": account_scope,
             "account_id": account_id,
             "tag": f"selector:{candidate.get('strategy_key') or 'idea'}:{candidate.get('timeframe') or 'tf'}",
+            "entry_reference_price": entry_plan.get("entry_reference_price"),
+            "entry_expected_move_pct": entry_plan.get("expected_move_pct"),
+            "entry_confidence_reference_pct": entry_plan.get("confidence_reference_pct"),
+            "max_entry_drift_pct": entry_plan.get("max_adverse_drift_pct"),
+            "max_entry_spread_pct": entry_plan.get("max_spread_pct"),
         }
-        if meta["family"] == "equity":
-            order_seed["strategy_type"] = ""
 
         risk_profile = self._risk_profile(
             candidate=candidate,

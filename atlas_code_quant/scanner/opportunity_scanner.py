@@ -168,6 +168,10 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _clip(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
 def _pct_change(a: float, b: float) -> float:
     if not b:
         return 0.0
@@ -220,6 +224,8 @@ class ScannerConfig:
     scan_interval_sec: int
     min_signal_strength: float
     min_local_win_rate_pct: float
+    min_local_profit_factor: float
+    min_backtest_sample: int
     min_selection_score: float
     max_candidates: int
     require_higher_tf_confirmation: bool
@@ -238,6 +244,8 @@ class ScannerConfig:
             "scan_interval_sec": self.scan_interval_sec,
             "min_signal_strength": self.min_signal_strength,
             "min_local_win_rate_pct": self.min_local_win_rate_pct,
+            "min_local_profit_factor": self.min_local_profit_factor,
+            "min_backtest_sample": self.min_backtest_sample,
             "min_selection_score": self.min_selection_score,
             "max_candidates": self.max_candidates,
             "require_higher_tf_confirmation": self.require_higher_tf_confirmation,
@@ -261,6 +269,8 @@ class OpportunityScannerService:
             scan_interval_sec=settings.scanner_scan_interval_sec,
             min_signal_strength=settings.scanner_min_signal_strength,
             min_local_win_rate_pct=settings.scanner_min_local_win_rate_pct,
+            min_local_profit_factor=settings.scanner_min_local_profit_factor,
+            min_backtest_sample=settings.scanner_min_backtest_sample,
             min_selection_score=settings.scanner_min_selection_score,
             max_candidates=settings.scanner_max_candidates,
             require_higher_tf_confirmation=settings.scanner_require_higher_tf_confirmation,
@@ -538,6 +548,10 @@ class OpportunityScannerService:
                 self._config.min_signal_strength = max(0.0, min(float(payload["min_signal_strength"]), 1.0))
             if "min_local_win_rate_pct" in payload:
                 self._config.min_local_win_rate_pct = max(0.0, min(float(payload["min_local_win_rate_pct"]), 100.0))
+            if "min_local_profit_factor" in payload:
+                self._config.min_local_profit_factor = max(0.5, min(float(payload["min_local_profit_factor"]), 10.0))
+            if "min_backtest_sample" in payload:
+                self._config.min_backtest_sample = max(3, min(int(payload["min_backtest_sample"]), 200))
             if "min_selection_score" in payload:
                 self._config.min_selection_score = max(75.0, min(float(payload["min_selection_score"]), 100.0))
             if "max_candidates" in payload:
@@ -1008,6 +1022,8 @@ class OpportunityScannerService:
         warmup = {"trend_ema_stack": 210, "breakout_donchian": 50, "rsi_pullback_trend": 210, "ml_directional": 80}.get(method, 80)
         wins = losses = sample = 0
         pnl_pos = pnl_neg = 0.0
+        win_moves: list[float] = []
+        loss_moves: list[float] = []
         lookback_start = max(warmup, len(df) - 140)
         for idx in range(lookback_start, len(df) - horizon):
             window = df.iloc[: idx + 1]
@@ -1022,15 +1038,43 @@ class OpportunityScannerService:
             if signed_move > 0:
                 wins += 1
                 pnl_pos += signed_move
+                win_moves.append(signed_move)
             else:
                 losses += 1
                 pnl_neg += abs(signed_move)
+                loss_moves.append(abs(signed_move))
+        avg_win_pct = (sum(win_moves) / len(win_moves) * 100.0) if win_moves else 0.0
+        avg_loss_pct = (sum(loss_moves) / len(loss_moves) * 100.0) if loss_moves else 0.0
+        expectancy_pct = (((pnl_pos - pnl_neg) / sample) * 100.0) if sample else 0.0
+        profit_factor = round(pnl_pos / pnl_neg, 3) if pnl_neg > 0 else (999.0 if pnl_pos > 0 else 0.0)
+        payoff_ratio = round(avg_win_pct / avg_loss_pct, 3) if avg_loss_pct > 0 else (999.0 if avg_win_pct > 0 else 0.0)
+        sample_confidence_pct = round(_clip((sample / 24.0) ** 0.5 * 100.0, 10.0, 100.0), 2) if sample else 0.0
+        profit_factor_score_pct = round(_clip((min(profit_factor, 3.0) - 0.8) / 1.4 * 100.0, 0.0, 100.0), 2)
+        expectancy_score_pct = round(_clip((expectancy_pct + 0.30) / 0.90 * 100.0, 0.0, 100.0), 2)
+        payoff_score_pct = round(_clip((min(payoff_ratio, 2.5) - 0.6) / 1.4 * 100.0, 0.0, 100.0), 2)
+        quality_score_pct = round(
+            (float((wins / sample) * 100.0) * 0.28 if sample else 0.0)
+            + (profit_factor_score_pct * 0.24)
+            + (expectancy_score_pct * 0.20)
+            + (payoff_score_pct * 0.14)
+            + (sample_confidence_pct * 0.14),
+            2,
+        )
         result = {
             "sample": sample,
             "wins": wins,
             "losses": losses,
             "win_rate_pct": round((wins / sample) * 100.0, 2) if sample else 0.0,
-            "profit_factor": round(pnl_pos / pnl_neg, 3) if pnl_neg > 0 else (999.0 if pnl_pos > 0 else 0.0),
+            "profit_factor": profit_factor,
+            "expectancy_pct": round(expectancy_pct, 4),
+            "avg_win_pct": round(avg_win_pct, 4),
+            "avg_loss_pct": round(avg_loss_pct, 4),
+            "payoff_ratio": payoff_ratio,
+            "sample_confidence_pct": sample_confidence_pct,
+            "profit_factor_score_pct": profit_factor_score_pct,
+            "expectancy_score_pct": expectancy_score_pct,
+            "payoff_score_pct": payoff_score_pct,
+            "quality_score_pct": quality_score_pct,
         }
         self._perf_cache = {key: value for key, value in self._perf_cache.items() if key[:3] != (symbol, timeframe, method)}
         self._perf_cache[cache_key] = result
@@ -1106,13 +1150,29 @@ class OpportunityScannerService:
                     "evidence_score": evidence["evidence_score"],
                     "local_win_rate_pct": perf["win_rate_pct"],
                     "local_profit_factor": perf["profit_factor"],
+                    "local_expectancy_pct": perf["expectancy_pct"],
+                    "local_avg_win_pct": perf["avg_win_pct"],
+                    "local_avg_loss_pct": perf["avg_loss_pct"],
+                    "local_payoff_ratio": perf["payoff_ratio"],
                     "local_sample": perf["sample"],
+                    "sample_confidence_pct": perf["sample_confidence_pct"],
+                    "local_quality_score_pct": perf["quality_score_pct"],
                 })
             consensus_map[timeframe] = self._timeframe_consensus(evaluations)
             if not evaluations:
                 rejected.append({"symbol": symbol, "timeframe": timeframe, "reason": "ningún criterio produjo setup fuerte", "stage": "signal"})
                 continue
-            best = sorted(evaluations, key=lambda item: (float(item["local_win_rate_pct"]), float(item["strength"]), float(item["evidence_score"])), reverse=True)[0]
+            best = sorted(
+                evaluations,
+                key=lambda item: (
+                    float(item.get("local_quality_score_pct") or 0.0),
+                    float(item.get("local_profit_factor") or 0.0),
+                    float(item.get("local_expectancy_pct") or 0.0),
+                    float(item.get("strength") or 0.0),
+                    float(item.get("evidence_score") or 0.0),
+                ),
+                reverse=True,
+            )[0]
             higher_tf = HIGHER_TIMEFRAME_MAP.get(timeframe)
             higher_consensus = consensus_map.get(higher_tf or "", {"direction": 0, "label": "neutral", "confidence": 0.0})
             alignment_score = 55.0
@@ -1129,6 +1189,14 @@ class OpportunityScannerService:
                     rejection_reasons.append(f"{higher_tf} contradice la dirección {_direction_label(int(best['direction']))}")
             if float(best["local_win_rate_pct"]) < self._config.min_local_win_rate_pct:
                 rejection_reasons.append(f"win rate local {best['local_win_rate_pct']:.2f}% < mínimo {self._config.min_local_win_rate_pct:.2f}%")
+            if float(best["local_profit_factor"]) < self._config.min_local_profit_factor:
+                rejection_reasons.append(
+                    f"profit factor local {best['local_profit_factor']:.2f} < mínimo {self._config.min_local_profit_factor:.2f}"
+                )
+            if int(best["local_sample"]) < self._config.min_backtest_sample:
+                rejection_reasons.append(
+                    f"sample local {int(best['local_sample'])} < mínimo {int(self._config.min_backtest_sample)}"
+                )
             adaptive_context = self.learning.context(
                 symbol=symbol,
                 direction=_direction_label(int(best.get("direction") or 0)),
@@ -1146,14 +1214,15 @@ class OpportunityScannerService:
                     order_flow_alignment_score = 48.0
                 else:
                     order_flow_alignment_score = max(25.0 - (order_flow_confidence * 0.15), 0.0)
+            local_quality_score = float(best.get("local_quality_score_pct") or 0.0)
             selection_score = round(
-                (float(best["local_win_rate_pct"]) * 0.38)
-                + (float(relative_strength_pct) * 0.16)
-                + (float(best["strength"]) * 100.0 * 0.16)
-                + (alignment_score * 0.12)
-                + (float(best["evidence_score"]) * 100.0 * 0.08)
-                + (order_flow_score * 0.10)
-                + (order_flow_alignment_score * 0.08)
+                (local_quality_score * 0.44)
+                + (float(relative_strength_pct) * 0.14)
+                + (float(best["strength"]) * 100.0 * 0.12)
+                + (alignment_score * 0.10)
+                + (float(best["evidence_score"]) * 100.0 * 0.06)
+                + (order_flow_score * 0.08)
+                + (order_flow_alignment_score * 0.06)
                 + adaptive_bias,
                 2,
             )
@@ -1168,6 +1237,12 @@ class OpportunityScannerService:
             if selection_score < self._config.min_selection_score:
                 rejection_reasons.append(f"selection score {selection_score:.2f} < mínimo {self._config.min_selection_score:.2f}")
             reasons = list(best.get("reasons") or [])
+            reasons.append(
+                "calidad local "
+                f"{local_quality_score:.1f} | pf {float(best.get('local_profit_factor') or 0.0):.2f} | "
+                f"expectancy {float(best.get('local_expectancy_pct') or 0.0):.3f}% | "
+                f"sample {int(best.get('local_sample') or 0)}"
+            )
             reasons.append(f"fuerza relativa {relative_strength_pct:.1f}% del universo")
             if higher_tf:
                 reasons.append(f"confirmación {higher_tf}: {higher_consensus.get('label', 'neutral')}")
@@ -1187,6 +1262,11 @@ class OpportunityScannerService:
                     "method": best["method"],
                     "method_label": best["method_label"],
                     "local_win_rate_pct": best["local_win_rate_pct"],
+                    "local_profit_factor": best["local_profit_factor"],
+                    "local_expectancy_pct": best["local_expectancy_pct"],
+                    "local_payoff_ratio": best["local_payoff_ratio"],
+                    "local_sample": best["local_sample"],
+                    "local_quality_score_pct": local_quality_score,
                     "selection_score": selection_score,
                     "adaptive_context": adaptive_context,
                     "order_flow": order_flow,
@@ -1212,7 +1292,13 @@ class OpportunityScannerService:
                 "signal_strength_pct": round(float(best["strength"]) * 100.0, 2),
                 "local_win_rate_pct": best["local_win_rate_pct"],
                 "local_profit_factor": best["local_profit_factor"],
+                "local_expectancy_pct": best["local_expectancy_pct"],
+                "local_avg_win_pct": best["local_avg_win_pct"],
+                "local_avg_loss_pct": best["local_avg_loss_pct"],
+                "local_payoff_ratio": best["local_payoff_ratio"],
                 "local_sample": best["local_sample"],
+                "sample_confidence_pct": best["sample_confidence_pct"],
+                "local_quality_score_pct": local_quality_score,
                 "predicted_move_pct": self._predicted_move_pct(df, float(best["strength"])),
                 "relative_strength_pct": round(float(relative_strength_pct), 2),
                 "alignment_score": alignment_score,

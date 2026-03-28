@@ -27,6 +27,7 @@ import threading
 import time
 from pathlib import Path
 
+from atlas_code_quant.learning.trading_implementation_scorecard import build_trading_implementation_scorecard
 from atlas_code_quant.monitoring.canonical_snapshot import CanonicalSnapshotService
 from atlas_code_quant.monitoring.strategy_tracker import StrategyTracker
 
@@ -34,6 +35,254 @@ logger = logging.getLogger("atlas.production.grafana")
 
 _METRICS_PORT = int(os.getenv("ATLAS_METRICS_PORT", "9090"))
 _DASHBOARD_PATH = Path("grafana/dashboards/atlas.json")
+
+
+def _grafana_alert_rule_yaml() -> str:
+    return (
+        "apiVersion: 1\n"
+        "groups:\n"
+        "  - orgId: 1\n"
+        "    name: atlas_operational_discipline\n"
+        "    folder: ATLAS Alerts\n"
+        "    interval: 30s\n"
+        "    rules:\n"
+        "      - uid: atlas_usefulness_low\n"
+        "        title: ATLAS Implementation Usefulness Low\n"
+        "        condition: B\n"
+        "        data:\n"
+        "          - refId: A\n"
+        "            datasourceUid: atlas-prom\n"
+        "            relativeTimeRange:\n"
+        "              from: 300\n"
+        "              to: 0\n"
+        "            model:\n"
+        "              datasource:\n"
+        "                type: prometheus\n"
+        "                uid: atlas-prom\n"
+        "              editorMode: code\n"
+        "              expr: atlas_implementation_usefulness_score\n"
+        "              instant: true\n"
+        "              intervalMs: 1000\n"
+        "              maxDataPoints: 43200\n"
+        "              range: false\n"
+        "              refId: A\n"
+        "          - refId: B\n"
+        "            datasourceUid: '__expr__'\n"
+        "            relativeTimeRange:\n"
+        "              from: 300\n"
+        "              to: 0\n"
+        "            model:\n"
+        "              conditions:\n"
+        "                - evaluator:\n"
+        "                    params:\n"
+        "                      - 40\n"
+        "                    type: lt\n"
+        "                  operator:\n"
+        "                    type: and\n"
+        "                  query:\n"
+        "                    params:\n"
+        "                      - A\n"
+        "                  reducer:\n"
+        "                    type: last\n"
+        "                  type: query\n"
+        "              datasource:\n"
+        "                type: __expr__\n"
+        "                uid: '__expr__'\n"
+        "              expression: A\n"
+        "              intervalMs: 1000\n"
+        "              maxDataPoints: 43200\n"
+        "              refId: B\n"
+        "              type: classic_conditions\n"
+        "        dashboardUid: atlas-quant-pro-2026\n"
+        "        panelId: 26\n"
+        "        noDataState: Alerting\n"
+        "        execErrState: Alerting\n"
+        "        for: 2m\n"
+        "        annotations:\n"
+        "          summary: ATLAS implementation usefulness score below 40.\n"
+        "          description: The current implementation still lacks enough live-paper evidence to claim operational usefulness.\n"
+        "        labels:\n"
+        "          component: atlas_scorecard\n"
+        "          severity: warning\n"
+        "      - uid: atlas_brain_delivery_low\n"
+        "        title: ATLAS Brain Delivery Ratio Low\n"
+        "        condition: B\n"
+        "        data:\n"
+        "          - refId: A\n"
+        "            datasourceUid: atlas-prom\n"
+        "            relativeTimeRange:\n"
+        "              from: 300\n"
+        "              to: 0\n"
+        "            model:\n"
+        "              datasource:\n"
+        "                type: prometheus\n"
+        "                uid: atlas-prom\n"
+        "              editorMode: code\n"
+        "              expr: atlas_brain_delivery_ratio_pct\n"
+        "              instant: true\n"
+        "              intervalMs: 1000\n"
+        "              maxDataPoints: 43200\n"
+        "              range: false\n"
+        "              refId: A\n"
+        "          - refId: B\n"
+        "            datasourceUid: '__expr__'\n"
+        "            relativeTimeRange:\n"
+        "              from: 300\n"
+        "              to: 0\n"
+        "            model:\n"
+        "              conditions:\n"
+        "                - evaluator:\n"
+        "                    params:\n"
+        "                      - 80\n"
+        "                    type: lt\n"
+        "                  operator:\n"
+        "                    type: and\n"
+        "                  query:\n"
+        "                    params:\n"
+        "                      - A\n"
+        "                  reducer:\n"
+        "                    type: last\n"
+        "                  type: query\n"
+        "              datasource:\n"
+        "                type: __expr__\n"
+        "                uid: '__expr__'\n"
+        "              expression: A\n"
+        "              intervalMs: 1000\n"
+        "              maxDataPoints: 43200\n"
+        "              refId: B\n"
+        "              type: classic_conditions\n"
+        "        dashboardUid: atlas-quant-pro-2026\n"
+        "        panelId: 27\n"
+        "        noDataState: Alerting\n"
+        "        execErrState: Alerting\n"
+        "        for: 5m\n"
+        "        annotations:\n"
+        "          summary: ATLAS brain delivery ratio below 80%.\n"
+        "          description: Memory and bitacora are not absorbing enough of the operational learning flow.\n"
+        "        labels:\n"
+        "          component: atlas_memory\n"
+        "          severity: warning\n"
+        "      - uid: atlas_untracked_open_gt_zero\n"
+        "        title: ATLAS Untracked Open Positions Present\n"
+        "        condition: B\n"
+        "        data:\n"
+        "          - refId: A\n"
+        "            datasourceUid: atlas-prom\n"
+        "            relativeTimeRange:\n"
+        "              from: 300\n"
+        "              to: 0\n"
+        "            model:\n"
+        "              datasource:\n"
+        "                type: prometheus\n"
+        "                uid: atlas-prom\n"
+        "              editorMode: code\n"
+        "              expr: atlas_open_untracked_ratio_pct\n"
+        "              instant: true\n"
+        "              intervalMs: 1000\n"
+        "              maxDataPoints: 43200\n"
+        "              range: false\n"
+        "              refId: A\n"
+        "          - refId: B\n"
+        "            datasourceUid: '__expr__'\n"
+        "            relativeTimeRange:\n"
+        "              from: 300\n"
+        "              to: 0\n"
+        "            model:\n"
+        "              conditions:\n"
+        "                - evaluator:\n"
+        "                    params:\n"
+        "                      - 0\n"
+        "                    type: gt\n"
+        "                  operator:\n"
+        "                    type: and\n"
+        "                  query:\n"
+        "                    params:\n"
+        "                      - A\n"
+        "                  reducer:\n"
+        "                    type: last\n"
+        "                  type: query\n"
+        "              datasource:\n"
+        "                type: __expr__\n"
+        "                uid: '__expr__'\n"
+        "              expression: A\n"
+        "              intervalMs: 1000\n"
+        "              maxDataPoints: 43200\n"
+        "              refId: B\n"
+        "              type: classic_conditions\n"
+        "        dashboardUid: atlas-quant-pro-2026\n"
+        "        panelId: 28\n"
+        "        noDataState: Alerting\n"
+        "        execErrState: Alerting\n"
+        "        for: 2m\n"
+        "        annotations:\n"
+        "          summary: ATLAS still has open positions without strategy attribution.\n"
+        "          description: Open positions should not remain in untracked once the trading process hardening is active.\n"
+        "        labels:\n"
+        "          component: atlas_journal\n"
+        "          severity: critical\n"
+    )
+
+
+def _grafana_contact_points_yaml(*, telegram_enabled: bool) -> str:
+    if not telegram_enabled:
+        return "apiVersion: 1\ncontactPoints: []\n"
+
+    return (
+        "apiVersion: 1\n"
+        "contactPoints:\n"
+        "  - orgId: 1\n"
+        "    name: atlas-telegram\n"
+        "    receivers:\n"
+        "      - uid: atlas_telegram_main\n"
+        "        type: telegram\n"
+        "        disableResolveMessage: false\n"
+        "        settings:\n"
+        "          chatid: $TELEGRAM_ADMIN_CHAT_ID\n"
+        "          uploadImage: false\n"
+        "        secure_settings:\n"
+        "          bottoken: $TELEGRAM_BOT_TOKEN\n"
+    )
+
+
+def _grafana_notification_policies_yaml(*, telegram_enabled: bool) -> str:
+    routes = ""
+    if telegram_enabled:
+        routes = (
+            "    routes:\n"
+            "      - receiver: atlas-telegram\n"
+            "        object_matchers:\n"
+            "          - ['component', '=', 'atlas_scorecard']\n"
+            "        group_by: ['alertname', 'severity']\n"
+            "        group_wait: 10s\n"
+            "        group_interval: 2m\n"
+            "        repeat_interval: 2h\n"
+            "      - receiver: atlas-telegram\n"
+            "        object_matchers:\n"
+            "          - ['component', '=', 'atlas_memory']\n"
+            "        group_by: ['alertname', 'severity']\n"
+            "        group_wait: 10s\n"
+            "        group_interval: 2m\n"
+            "        repeat_interval: 2h\n"
+            "      - receiver: atlas-telegram\n"
+            "        object_matchers:\n"
+            "          - ['component', '=', 'atlas_journal']\n"
+            "        group_by: ['alertname', 'severity']\n"
+            "        group_wait: 10s\n"
+            "        group_interval: 2m\n"
+            "        repeat_interval: 2h\n"
+        )
+
+    return (
+        "apiVersion: 1\n"
+        "policies:\n"
+        "  - orgId: 1\n"
+        "    receiver: grafana-default-email\n"
+        "    group_by: ['alertname', 'component', 'severity']\n"
+        "    group_wait: 30s\n"
+        "    group_interval: 5m\n"
+        "    repeat_interval: 4h\n"
+        f"{routes}"
+    )
 
 # ── Prometheus client (opcional) ─────────────────────────────────────────────
 try:
@@ -137,6 +386,26 @@ class GrafanaDashboard:
             self.regime        = Gauge("atlas_regime",                "Régimen 0=Bear 1=Sideways 2=Bull")
             self.mode_live     = Gauge("atlas_mode",                  "Modo 0=paper 1=live")
             self.trades_total  = Counter("atlas_trades_total",        "Total trades ejecutados")
+            self.process_compliance_score = Gauge(
+                "atlas_process_compliance_score",
+                "Cumplimiento del marco metodologico de trading",
+            )
+            self.implementation_usefulness_score = Gauge(
+                "atlas_implementation_usefulness_score",
+                "Utilidad comprobable de la implantacion operativa",
+            )
+            self.brain_delivery_ratio = Gauge(
+                "atlas_brain_delivery_ratio_pct",
+                "Porcentaje de eventos entregados a memoria o bitacora",
+            )
+            self.open_untracked_ratio = Gauge(
+                "atlas_open_untracked_ratio_pct",
+                "Porcentaje de posiciones abiertas aun sin atribucion de estrategia",
+            )
+            self.evidence_sufficiency = Gauge(
+                "atlas_evidence_sufficiency_score",
+                "Suficiencia de evidencia cerrada para afirmar utilidad real",
+            )
         except Exception as exc:
             logger.warning("Error registrando métricas Prometheus: %s", exc)
 
@@ -213,6 +482,7 @@ class GrafanaDashboard:
             internal_portfolio=internal_portfolio,
         )
         self._apply_canonical_snapshot(snapshot)
+        self.sync_from_scorecard(root_path=Path.cwd())
         return snapshot
 
     def _apply_canonical_snapshot(self, snapshot: dict) -> None:
@@ -266,6 +536,35 @@ class GrafanaDashboard:
     def _sync_state_code(state: str | None) -> int:
         mapping = {"failed": 0, "degraded": 1, "stale": 2, "healthy": 3}
         return mapping.get(str(state or "").strip().lower(), 0)
+
+    def sync_from_scorecard(self, *, root_path: Path | None = None) -> dict | None:
+        if not _PROM_OK or not self._started:
+            return None
+        base_path = root_path or Path.cwd()
+        try:
+            scorecard = build_trading_implementation_scorecard(
+                root=base_path,
+                protocol_path=base_path / "reports/trading_self_audit_protocol.json",
+                journal_db_path=base_path / "atlas_code_quant/data/journal/trading_journal.sqlite3",
+                brain_state_path=base_path / "atlas_code_quant/data/operation/quant_brain_bridge_state.json",
+                grafana_check_path=base_path / "reports/atlas_grafana_provisioning_check_latest.json",
+                pytest_result=None,
+            )
+        except Exception as exc:
+            logger.debug("Error sincronizando scorecard a Prometheus: %s", exc)
+            return None
+        self._apply_scorecard_snapshot(scorecard)
+        return scorecard
+
+    def _apply_scorecard_snapshot(self, scorecard: dict) -> None:
+        headline = scorecard.get("headline") or {}
+        indicators = scorecard.get("supporting_indicators") or {}
+        with self._lock:
+            self.process_compliance_score.set(float(headline.get("atlas_process_compliance_score") or 0.0))
+            self.implementation_usefulness_score.set(float(headline.get("atlas_implementation_usefulness_score") or 0.0))
+            self.brain_delivery_ratio.set(float(indicators.get("brain_delivery_ratio_pct") or 0.0))
+            self.open_untracked_ratio.set(float(indicators.get("open_untracked_ratio_pct") or 0.0))
+            self.evidence_sufficiency.set(float(indicators.get("evidence_sufficiency_score") or 0.0))
 
     # ── Dashboard Grafana JSON ────────────────────────────────────────────────
 
@@ -374,6 +673,11 @@ class GrafanaDashboard:
             panel(14, "Trades Totales",
                   "rate(atlas_trades_total[5m])*60",
                   unit="short", y=22, w=8, h=8),
+            stat_panel(15, "Process Score",   "atlas_process_compliance_score", "percent", y=30, color="green"),
+            stat_panel(16, "Usefulness",      "atlas_implementation_usefulness_score", "percent", y=30, color="blue"),
+            stat_panel(17, "Brain Delivery",  "atlas_brain_delivery_ratio_pct", "percent", y=30, color="cyan"),
+            stat_panel(18, "Untracked Open",  "atlas_open_untracked_ratio_pct", "percent", y=30, color="red"),
+            stat_panel(19, "Evidence Score",  "atlas_evidence_sufficiency_score", "percent", y=30, color="orange"),
         ]
 
         return {
@@ -438,36 +742,75 @@ class GrafanaDashboard:
         return dest
 
     def save_provisioning(self) -> None:
-        """Escribe archivos de provisioning de Grafana (datasource + dashboard)."""
-        # Datasource: Prometheus
-        ds_path = Path("grafana/provisioning/datasources/atlas.yaml")
-        ds_path.parent.mkdir(parents=True, exist_ok=True)
-        ds_path.write_text(
-            "apiVersion: 1\n"
-            "datasources:\n"
-            "  - name: atlas-prometheus\n"
-            "    uid: atlas-prom\n"
-            "    type: prometheus\n"
-            "    url: http://prometheus:9090\n"
-            "    access: proxy\n"
-            "    isDefault: true\n"
-            "    jsonData:\n"
-            "      timeInterval: '2s'\n",
-            encoding="utf-8"
-        )
+        """Escribe archivos de provisioning de Grafana (datasource + dashboard + alerting)."""
+        provisioning_targets = [
+            {
+                "base": Path("grafana/provisioning"),
+                "prometheus_url": "http://prometheus:9090",
+                "dashboard_provider_name": "atlas",
+                "dashboard_path": "/etc/grafana/dashboards",
+            },
+            {
+                "base": Path("grafana/local/provisioning"),
+                "prometheus_url": "http://localhost:9091",
+                "dashboard_provider_name": "atlas-local",
+                "dashboard_path": str((Path("grafana/dashboards")).resolve()),
+            },
+        ]
 
-        # Dashboard provisioning
-        db_path = Path("grafana/provisioning/dashboards/atlas.yaml")
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        db_path.write_text(
-            "apiVersion: 1\n"
-            "providers:\n"
-            "  - name: atlas\n"
-            "    type: file\n"
-            "    options:\n"
-            "      path: /etc/grafana/dashboards\n",
-            encoding="utf-8"
+        telegram_enabled = bool(
+            str(os.getenv("TELEGRAM_BOT_TOKEN", "")).strip()
+            and str(os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")).strip()
         )
+        alerting_yaml = _grafana_alert_rule_yaml()
+        contact_points_yaml = _grafana_contact_points_yaml(telegram_enabled=telegram_enabled)
+        notification_policies_yaml = _grafana_notification_policies_yaml(telegram_enabled=telegram_enabled)
+        for target in provisioning_targets:
+            base = target["base"]
+            ds_path = base / "datasources/atlas.yaml"
+            ds_path.parent.mkdir(parents=True, exist_ok=True)
+            ds_path.write_text(
+                "apiVersion: 1\n"
+                "datasources:\n"
+                "  - name: atlas-prometheus\n"
+                "    uid: atlas-prom\n"
+                "    type: prometheus\n"
+                f"    url: {target['prometheus_url']}\n"
+                "    access: proxy\n"
+                "    isDefault: true\n"
+                "    editable: true\n"
+                "    jsonData:\n"
+                "      httpMethod: GET\n"
+                "      timeInterval: '2s'\n",
+                encoding="utf-8",
+            )
+
+            db_path = base / "dashboards/atlas.yaml"
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            db_path.write_text(
+                "apiVersion: 1\n"
+                "providers:\n"
+                f"  - name: {target['dashboard_provider_name']}\n"
+                "    orgId: 1\n"
+                "    folder: \"\"\n"
+                "    type: file\n"
+                "    disableDeletion: false\n"
+                "    updateIntervalSeconds: 2\n"
+                "    allowUiUpdates: true\n"
+                "    options:\n"
+                f"      path: \"{target['dashboard_path']}\"\n",
+                encoding="utf-8",
+            )
+
+            alert_path = base / "alerting/atlas_scorecard_alerts.yaml"
+            alert_path.parent.mkdir(parents=True, exist_ok=True)
+            alert_path.write_text(alerting_yaml, encoding="utf-8")
+
+            contact_points_path = base / "alerting/atlas_contact_points.yaml"
+            contact_points_path.write_text(contact_points_yaml, encoding="utf-8")
+
+            notification_policies_path = base / "alerting/atlas_notification_policies.yaml"
+            notification_policies_path.write_text(notification_policies_yaml, encoding="utf-8")
 
         logger.info("Archivos de provisioning Grafana escritos")
 

@@ -1,0 +1,217 @@
+{
+  "generated_at": "2026-03-28T10:40:31.137945+00:00",
+  "topic": "atlas_quant_trading_implementation_scorecard",
+  "summary": "Scorecard operativo para medir dos cosas separadas: cuanto del metodo ya esta implantado y cuanta evidencia real existe de que esa implantacion esta sirviendo.",
+  "metric_catalog": [
+    {
+      "name": "process_compliance_score",
+      "goal": "Medir cuanto del marco metodologico ya esta realmente implantado por etapa."
+    },
+    {
+      "name": "artifact_coverage_score",
+      "goal": "Medir si cada avance deja huella en protocolo, informes y archivos reutilizables."
+    },
+    {
+      "name": "memory_persistence_score",
+      "goal": "Medir si ATLAS esta reteniendo los cambios en memoria y bitacora."
+    },
+    {
+      "name": "external_benchmark_coverage_score",
+      "goal": "Medir cuantas etapas auditadas estan respaldadas por confrontacion externa seria."
+    },
+    {
+      "name": "observability_feedback_score",
+      "goal": "Medir si Grafana, Prometheus y el chequeo operativo estan devolviendo feedback confiable para sostener disciplina."
+    },
+    {
+      "name": "test_guardrail_score",
+      "goal": "Medir cuanta proteccion automatizada existe sobre lo ya implantado."
+    },
+    {
+      "name": "implementation_usefulness_score",
+      "goal": "Medir si ya existe evidencia operativa suficiente para afirmar que los cambios sirven de algo."
+    }
+  ],
+  "headline": {
+    "atlas_process_compliance_score": 97.5,
+    "atlas_process_compliance_status": "healthy",
+    "atlas_implementation_usefulness_score": 20.0,
+    "atlas_implementation_usefulness_status": "critical"
+  },
+  "metrics": {
+    "process_compliance_score": {
+      "name": "process_compliance_score",
+      "value": 97.5,
+      "status": "healthy",
+      "details": {
+        "stage_count": 6,
+        "audited_or_active_stages": 6,
+        "stage_statuses": {
+          "scanner_selection": "baseline_hardened",
+          "entry_validation": "baseline_hardened",
+          "execution_quality": "baseline_hardened",
+          "position_management": "baseline_hardened",
+          "exit_governance": "baseline_hardened",
+          "post_trade_learning": "active_focus"
+        },
+        "formula": "baseline_hardened=1.0, active_focus=0.85, pending_extension=0.25"
+      }
+    },
+    "artifact_coverage_score": {
+      "name": "artifact_coverage_score",
+      "value": 100.0,
+      "status": "healthy",
+      "details": {
+        "checks": {
+          "protocol_module": true,
+          "protocol_record_script": true,
+          "protocol_json": true,
+          "framework_report": true,
+          "scanner_audit_report": true,
+          "entry_audit_report": true,
+          "execution_audit_report": true,
+          "position_management_audit_report": true,
+          "exit_governance_audit_report": true,
+          "post_trade_learning_audit_report": true,
+          "external_benchmark_report": true
+        }
+      }
+    },
+    "memory_persistence_score": {
+      "name": "memory_persistence_score",
+      "value": 68.07,
+      "status": "watch",
+      "details": {
+        "delivered_events": 713,
+        "total_events": 1311,
+        "queued_local_only_events": 598,
+        "delivery_ratio_pct": 54.39,
+        "last_memory_ok": true,
+        "last_bitacora_ok": true,
+        "protocol_note_events": 11,
+        "scorecard_note_events": 6
+      }
+    },
+    "external_benchmark_coverage_score": {
+      "name": "external_benchmark_coverage_score",
+      "value": 100.0,
+      "status": "healthy",
+      "details": {
+        "audited_stages": [
+          "entry_validation",
+          "execution_quality",
+          "exit_governance",
+          "position_management",
+          "post_trade_learning",
+          "scanner_selection"
+        ],
+        "covered_audited_stages": [
+          "entry_validation",
+          "execution_quality",
+          "exit_governance",
+          "position_management",
+          "post_trade_learning",
+          "scanner_selection"
+        ],
+        "registered_source_count": 16,
+        "stage_coverage_pct": 100.0,
+        "source_depth_pct": 100.0,
+        "translation_pct": 100.0
+      }
+    },
+    "observability_feedback_score": {
+      "name": "observability_feedback_score",
+      "value": 93.33,
+      "status": "healthy",
+      "details": {
+        "report_available": true,
+        "overall_status": "ready",
+        "grafana_version": "10.4.2",
+        "telegram_env_ready": false,
+        "health_ok": true,
+        "datasource_ok": true,
+        "dashboards_ok": true,
+        "alerting_ready": true,
+        "provisioning_rebuild_ok": true,
+        "reload_resilience_pct": 66.67,
+        "foundation_score_pct": 100.0,
+        "freshness_pct": 100.0,
+        "age_hours": 0.54
+      }
+    },
+    "test_guardrail_score": {
+      "name": "test_guardrail_score",
+      "value": 100.0,
+      "status": "healthy",
+      "details": {
+        "mode": "executed",
+        "presence_score": 100.0,
+        "expected_tests": {
+          "protocol": true,
+          "scorecard": true,
+          "position_management": true,
+          "scanner": true,
+          "operation_status": true,
+          "operation_guards": true
+        },
+        "pytest": {
+          "mode": "executed",
+          "score": 100.0,
+          "passed": 22,
+          "failed": 0,
+          "errors": 0,
+          "skipped": 0,
+          "summary": "22 passed in 6.36s",
+          "returncode": 0,
+          "command": [
+            "C:\\Users\\r6957\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+            "-m",
+            "pytest",
+            "-q",
+            "atlas_code_quant/tests/test_trading_self_audit_protocol.py",
+            "atlas_code_quant/tests/test_trading_implementation_scorecard.py",
+            "atlas_code_quant/tests/test_position_management_snapshot.py",
+            "atlas_code_quant/tests/test_scanner_metric_recalibration.py",
+            "atlas_code_quant/tests/test_operation_center_status.py",
+            "atlas_code_quant/tests/test_operation_center_autonomous_guards.py"
+          ],
+          "raw_output": "......................                                                   [100%]\n22 passed in 6.36s\n"
+        }
+      }
+    },
+    "implementation_usefulness_score": {
+      "name": "implementation_usefulness_score",
+      "value": 20.0,
+      "status": "critical",
+      "details": {
+        "journal_available": true,
+        "open_total": 351,
+        "open_untracked": 351,
+        "open_untracked_ratio_pct": 100.0,
+        "attributed_open_positions_pct": 0.0,
+        "closed_total": 0,
+        "evidence_sufficiency_score": 0.0,
+        "open_pnl": -2152.71,
+        "realized_pnl": 0.0,
+        "external_learning_translation_score": 100.0,
+        "note": "Este score no afirma edge de mercado. Mide si ya hay evidencia operativa suficiente para decir que lo implantado esta sirviendo y siendo absorbido por el sistema vivo."
+      }
+    }
+  },
+  "supporting_indicators": {
+    "brain_delivery_ratio_pct": 54.39,
+    "attributed_open_positions_pct": 0.0,
+    "open_untracked_ratio_pct": 100.0,
+    "evidence_sufficiency_score": 0.0,
+    "external_learning_translation_score": 100.0,
+    "observability_feedback_score": 93.33,
+    "grafana_reload_resilience_pct": 66.67,
+    "grafana_alerting_ready_pct": 100.0
+  },
+  "next_actions": [
+    "Cerrar la brecha de estrategia no atribuida: el libro abierto no debe seguir en untracked.",
+    "Aun no hay muestra cerrada suficiente: usar paper controlado y no declarar mejora de edge todavia.",
+    "Mejorar la entrega a memoria/bitacora: la absorcion real del aprendizaje todavia es irregular.",
+    "Investigar por que alguna recarga Admin API de Grafana sigue siendo fragil aunque los dashboards esten visibles."
+  ]
+}

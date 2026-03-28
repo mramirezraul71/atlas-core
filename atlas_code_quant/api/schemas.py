@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 
 from atlas_code_quant.backtesting.winning_probability import StrategyType
 
+OrderStrategyType = StrategyType | Literal["equity_long", "equity_short"]
+
 
 class SignalEnum(str, Enum):
     BUY  = "BUY"
@@ -73,7 +75,12 @@ class OrderRequest(BaseModel):
     account_scope: Literal["live", "paper"] | None = None
     account_id: str | None = None
     position_effect: Literal["auto", "open", "close"] = "auto"
-    strategy_type: StrategyType | None = None
+    strategy_type: OrderStrategyType | None = None
+    entry_reference_price: float | None = None
+    entry_expected_move_pct: float | None = None
+    entry_confidence_reference_pct: float | None = None
+    max_entry_drift_pct: float | None = None
+    max_entry_spread_pct: float | None = None
     live_confirmed: bool = False
 
 
@@ -305,8 +312,12 @@ class OperationStatusPayload(BaseModel):
     brain: dict[str, Any] = Field(default_factory=dict)
     learning: dict[str, Any] = Field(default_factory=dict)
     journal: dict[str, Any] = Field(default_factory=dict)
+    position_management: dict[str, Any] = Field(default_factory=dict)
+    exit_governance: dict[str, Any] = Field(default_factory=dict)
+    post_trade_learning: dict[str, Any] = Field(default_factory=dict)
     failsafe: dict[str, Any] = Field(default_factory=dict)
     monitor_summary: dict[str, Any] = Field(default_factory=dict)
+    scorecard: dict[str, Any] = Field(default_factory=dict)
     auton_mode_active: bool = False
     last_decision: dict[str, Any] | None = None
     last_candidate: dict[str, Any] | None = None
@@ -316,6 +327,7 @@ class OperationCyclePayload(BaseModel):
     generated_at: str
     decision: str
     allowed: bool
+    blocked: bool = False
     action: Literal["evaluate", "preview", "submit"]
     reasons: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
@@ -326,6 +338,8 @@ class OperationCyclePayload(BaseModel):
     monitor_summary: dict[str, Any] = Field(default_factory=dict)
     sentiment: dict[str, Any] = Field(default_factory=dict)
     what_if: dict[str, Any] = Field(default_factory=dict)
+    entry_validation: dict[str, Any] = Field(default_factory=dict)
+    execution_quality: dict[str, Any] = Field(default_factory=dict)
     operation_status: dict[str, Any] = Field(default_factory=dict)
 
 

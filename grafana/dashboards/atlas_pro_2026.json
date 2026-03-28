@@ -1,6 +1,6 @@
 {
   "uid": "atlas-quant-pro-2026",
-  "title": "⚡ ATLAS-QUANT PRO 2026 — Robot de Trading Autónomo",
+  "title": "ATLAS-QUANT PRO 2026 - Robot de Trading Autonomo",
   "description": "Dashboard profesional de monitoreo ATLAS-Quant-Core v1.0 | Jetson Orin Nano",
   "tags": [
     "atlas",
@@ -32,7 +32,7 @@
   "panels": [
     {
       "id": 1,
-      "title": "📊  ATLAS-QUANT  ·  ESTADO EN TIEMPO REAL",
+      "title": "ATLAS-QUANT · ESTADO EN TIEMPO REAL",
       "type": "row",
       "gridPos": {
         "x": 0,
@@ -45,7 +45,7 @@
     },
     {
       "id": 2,
-      "title": "⚡ EQUITY BROKER",
+      "title": "EQUITY BROKER",
       "type": "stat",
       "gridPos": {
         "x": 0,
@@ -108,7 +108,7 @@
     },
     {
       "id": 3,
-      "title": "📉 DRAWDOWN",
+      "title": "DRAWDOWN",
       "type": "stat",
       "gridPos": {
         "x": 4,
@@ -175,7 +175,7 @@
     },
     {
       "id": 4,
-      "title": "💰 PnL ABIERTO",
+      "title": "PNL ABIERTO",
       "type": "stat",
       "gridPos": {
         "x": 8,
@@ -209,7 +209,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "#00FF9D",
+                "color": "#00C6FF",
                 "value": null
               }
             ]
@@ -234,7 +234,7 @@
     },
     {
       "id": 5,
-      "title": "📈 SYNC STATUS",
+      "title": "SYNC STATUS",
       "type": "stat",
       "gridPos": {
         "x": 12,
@@ -273,11 +273,11 @@
               },
               {
                 "color": "#FFD60A",
-                "value": 2.0
+                "value": 2
               },
               {
                 "color": "#00FF9D",
-                "value": 3.0
+                "value": 3
               }
             ]
           },
@@ -301,7 +301,7 @@
     },
     {
       "id": 6,
-      "title": "🔵 POSICIONES",
+      "title": "POSICIONES",
       "type": "stat",
       "gridPos": {
         "x": 16,
@@ -335,7 +335,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "#00FF9D",
+                "color": "#00C6FF",
                 "value": null
               }
             ]
@@ -360,7 +360,7 @@
     },
     {
       "id": 7,
-      "title": "🔴 GAP ATLAS",
+      "title": "GAP ATLAS",
       "type": "stat",
       "gridPos": {
         "x": 20,
@@ -385,7 +385,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "currencyUSD",
           "color": {
             "mode": "fixed",
             "fixedColor": "#FF3B5C"
@@ -427,7 +427,7 @@
     },
     {
       "id": 8,
-      "title": "💹  EQUITY & RÉGIMEN ML",
+      "title": "EQUITY Y REGIMEN",
       "type": "row",
       "gridPos": {
         "x": 0,
@@ -440,7 +440,7 @@
     },
     {
       "id": 9,
-      "title": "Curva de Equity Broker (USD)",
+      "title": "Curva de Equity Broker",
       "type": "timeseries",
       "gridPos": {
         "x": 0,
@@ -459,7 +459,7 @@
             "uid": "atlas-prom"
           },
           "expr": "atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
-          "legendFormat": "Equity broker",
+          "legendFormat": "Equity",
           "refId": "A"
         },
         {
@@ -467,8 +467,8 @@
             "type": "prometheus",
             "uid": "atlas-prom"
           },
-          "expr": "atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"} * (1 - atlas_broker_drawdown_pct{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}/100)",
-          "legendFormat": "Drawdown baseline",
+          "expr": "atlas_broker_open_pnl_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
+          "legendFormat": "PnL abierto",
           "refId": "B"
         }
       ],
@@ -517,7 +517,7 @@
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "#FF3B5C",
+                  "fixedColor": "#00C6FF",
                   "mode": "fixed"
                 }
               }
@@ -543,7 +543,7 @@
     },
     {
       "id": 10,
-      "title": "Régimen ML",
+      "title": "Regimen ML",
       "type": "gauge",
       "gridPos": {
         "x": 16,
@@ -610,7 +610,7 @@
     },
     {
       "id": 11,
-      "title": "⚠️  RIESGO: DRAWDOWN & SHARPE",
+      "title": "RIESGO: DRAWDOWN Y SHARPE",
       "type": "row",
       "gridPos": {
         "x": 0,
@@ -623,7 +623,7 @@
     },
     {
       "id": 12,
-      "title": "Drawdown Waterfall (%)",
+      "title": "Drawdown Waterfall",
       "type": "timeseries",
       "gridPos": {
         "x": 0,
@@ -642,7 +642,7 @@
             "uid": "atlas-prom"
           },
           "expr": "atlas_broker_drawdown_pct{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"}",
-          "legendFormat": "Drawdown actual",
+          "legendFormat": "Drawdown",
           "refId": "A"
         },
         {
@@ -651,7 +651,7 @@
             "uid": "atlas-prom"
           },
           "expr": "8",
-          "legendFormat": "Límite crítico 8%",
+          "legendFormat": "Limite critico 8%",
           "refId": "B"
         },
         {
@@ -660,7 +660,7 @@
             "uid": "atlas-prom"
           },
           "expr": "2",
-          "legendFormat": "Límite diario 2%",
+          "legendFormat": "Limite diario 2%",
           "refId": "C"
         }
       ],
@@ -750,7 +750,7 @@
     },
     {
       "id": 13,
-      "title": "Sharpe Ratio Tendencia",
+      "title": "Sharpe Ratio",
       "type": "timeseries",
       "gridPos": {
         "x": 12,
@@ -778,7 +778,7 @@
             "uid": "atlas-prom"
           },
           "expr": "1.5",
-          "legendFormat": "Objetivo mínimo live",
+          "legendFormat": "Objetivo live",
           "refId": "B"
         },
         {
@@ -877,7 +877,7 @@
     },
     {
       "id": 14,
-      "title": "🎯  INDICADORES: IV RANK · OCR · KELLY",
+      "title": "INDICADORES DE SISTEMA",
       "type": "row",
       "gridPos": {
         "x": 0,
@@ -890,7 +890,7 @@
     },
     {
       "id": 15,
-      "title": "IV Rank por Símbolo",
+      "title": "IV Rank",
       "type": "timeseries",
       "gridPos": {
         "x": 0,
@@ -918,56 +918,82 @@
             "uid": "atlas-prom"
           },
           "expr": "70",
-          "legendFormat": "Umbral señal (70)",
+          "legendFormat": "Umbral 70",
           "refId": "B"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
-          "min": 0,
-          "max": 100,
           "color": {
-            "mode": "continuous-RdYlGn"
+            "mode": "fixed",
+            "fixedColor": "#00FF9D"
           },
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 25,
+            "gradientMode": "none",
             "lineInterpolation": "smooth",
-            "gradientMode": "scheme"
+            "showPoints": "never",
+            "axisColorMode": "text",
+            "axisBorderShow": false,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "bySeriesIndex",
+              "options": 0
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#00FF9D",
+                  "mode": "fixed"
+                }
+              }
+            ]
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
+          {
+            "matcher": {
+              "id": "bySeriesIndex",
+              "options": 1
+            },
+            "properties": [
               {
-                "color": "#00FF9D",
-                "value": null
-              },
-              {
-                "color": "#FFD60A",
-                "value": 50
-              },
-              {
-                "color": "#FF3B5C",
-                "value": 80
+                "id": "color",
+                "value": {
+                  "fixedColor": "#FFD60A",
+                  "mode": "fixed"
+                }
               }
             ]
           }
-        }
+        ]
       },
       "options": {
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "desc"
         },
         "legend": {
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "min"
+          ]
         }
       }
     },
     {
       "id": 16,
-      "title": "OCR Precisión + Latencia Cámara",
+      "title": "OCR y Latencia",
       "type": "timeseries",
       "gridPos": {
         "x": 8,
@@ -986,7 +1012,7 @@
             "uid": "atlas-prom"
           },
           "expr": "atlas_ocr_confidence_pct",
-          "legendFormat": "Precisión OCR (%)",
+          "legendFormat": "OCR confianza",
           "refId": "A"
         },
         {
@@ -995,7 +1021,7 @@
             "uid": "atlas-prom"
           },
           "expr": "atlas_cycle_ms / 10",
-          "legendFormat": "Latencia ciclo (×10ms)",
+          "legendFormat": "Latencia x10ms",
           "refId": "B"
         }
       ],
@@ -1003,46 +1029,75 @@
         "defaults": {
           "unit": "percent",
           "color": {
-            "mode": "palette-classic"
+            "mode": "fixed",
+            "fixedColor": "#00FF9D"
           },
           "custom": {
             "lineWidth": 2,
-            "fillOpacity": 10,
-            "lineInterpolation": "smooth"
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "axisColorMode": "text",
+            "axisBorderShow": false,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "bySeriesIndex",
+              "options": 0
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#00C6FF",
+                  "mode": "fixed"
+                }
+              }
+            ]
           },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
+          {
+            "matcher": {
+              "id": "bySeriesIndex",
+              "options": 1
+            },
+            "properties": [
               {
-                "color": "#FF3B5C",
-                "value": null
-              },
-              {
-                "color": "#FFD60A",
-                "value": 80
-              },
-              {
-                "color": "#00FF9D",
-                "value": 92
+                "id": "color",
+                "value": {
+                  "fixedColor": "#FFD60A",
+                  "mode": "fixed"
+                }
               }
             ]
           }
-        }
+        ]
       },
       "options": {
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "desc"
         },
         "legend": {
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "min"
+          ]
         }
       }
     },
     {
       "id": 17,
-      "title": "Kelly Allocation",
-      "type": "piechart",
+      "title": "CPU Jetson",
+      "type": "gauge",
       "gridPos": {
         "x": 16,
         "y": 27,
@@ -1059,61 +1114,40 @@
             "type": "prometheus",
             "uid": "atlas-prom"
           },
-          "expr": "atlas_broker_open_positions{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"} > 0 ? atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"} * 0.012 : 0",
-          "legendFormat": "En posiciones",
-          "refId": "A",
-          "instant": true
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "atlas-prom"
-          },
-          "expr": "atlas_broker_equity_usd{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"} * (1 - 0.012 * atlas_broker_open_positions{source=\"$source\",scope=\"$scope\",account_id=~\"$account_id\"})",
-          "legendFormat": "Capital libre",
-          "refId": "B",
-          "instant": true
+          "expr": "atlas_cpu_pct",
+          "legendFormat": "",
+          "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "currencyUSD",
-          "color": {
-            "mode": "palette-classic"
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "En posiciones"
-            },
-            "properties": [
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
               {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#00FF9D",
-                  "mode": "fixed"
-                }
+                "color": "#00FF9D",
+                "value": null
+              },
+              {
+                "color": "#FFD60A",
+                "value": 70
+              },
+              {
+                "color": "#FF3B5C",
+                "value": 85
               }
             ]
           },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Capital libre"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "#1C2130",
-                  "mode": "fixed"
-                }
-              }
-            ]
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "neutral": 0
           }
-        ]
+        }
       },
       "options": {
         "reduceOptions": {
@@ -1121,23 +1155,15 @@
             "lastNotNull"
           ]
         },
-        "pieType": "donut",
-        "tooltip": {
-          "mode": "single"
-        },
-        "legend": {
-          "displayMode": "list",
-          "placement": "right"
-        },
-        "displayLabels": [
-          "percent",
-          "name"
-        ]
+        "orientation": "auto",
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "text": {}
       }
     },
     {
       "id": 18,
-      "title": "🔬  CVD · VOLUMEN · SELF-HEALING",
+      "title": "ACTIVIDAD OPERATIVA",
       "type": "row",
       "gridPos": {
         "x": 0,
@@ -1150,7 +1176,7 @@
     },
     {
       "id": 19,
-      "title": "CVD + Volume Spike Alert",
+      "title": "Trades y Ciclo",
       "type": "timeseries",
       "gridPos": {
         "x": 0,
@@ -1178,7 +1204,7 @@
             "uid": "atlas-prom"
           },
           "expr": "atlas_cycle_ms",
-          "legendFormat": "Latencia ciclo (ms)",
+          "legendFormat": "Ciclo ms",
           "refId": "B"
         }
       ],
@@ -1253,7 +1279,7 @@
     },
     {
       "id": 20,
-      "title": "Self-Healing Events",
+      "title": "Memoria y Evidencia",
       "type": "timeseries",
       "gridPos": {
         "x": 12,
@@ -1271,8 +1297,8 @@
             "type": "prometheus",
             "uid": "atlas-prom"
           },
-          "expr": "atlas_cpu_pct",
-          "legendFormat": "CPU Jetson (%)",
+          "expr": "atlas_brain_delivery_ratio_pct",
+          "legendFormat": "Brain delivery",
           "refId": "A"
         },
         {
@@ -1280,64 +1306,59 @@
             "type": "prometheus",
             "uid": "atlas-prom"
           },
-          "expr": "80",
-          "legendFormat": "Throttle OCR (80%)",
+          "expr": "atlas_evidence_sufficiency_score",
+          "legendFormat": "Evidence score",
           "refId": "B"
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
-          "min": 0,
-          "max": 100,
           "color": {
             "mode": "fixed",
-            "fixedColor": "#FFD60A"
+            "fixedColor": "#00FF9D"
           },
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 20,
-            "lineInterpolation": "smooth"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "#00FF9D",
-                "value": null
-              },
-              {
-                "color": "#FFD60A",
-                "value": 70
-              },
-              {
-                "color": "#FF3B5C",
-                "value": 85
-              }
-            ]
+            "gradientMode": "none",
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "axisColorMode": "text",
+            "axisBorderShow": false,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           }
         },
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "Throttle OCR (80%)"
+              "id": "bySeriesIndex",
+              "options": 0
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "#FF3B5C55",
+                  "fixedColor": "#A855F7",
                   "mode": "fixed"
                 }
-              },
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "bySeriesIndex",
+              "options": 1
+            },
+            "properties": [
               {
-                "id": "custom.lineWidth",
-                "value": 1
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
+                "id": "color",
+                "value": {
+                  "fixedColor": "#FFD60A",
+                  "mode": "fixed"
+                }
               }
             ]
           }
@@ -1345,17 +1366,23 @@
       },
       "options": {
         "tooltip": {
-          "mode": "multi"
+          "mode": "multi",
+          "sort": "desc"
         },
         "legend": {
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max",
+            "min"
+          ]
         }
       }
     },
     {
       "id": 21,
-      "title": "🤖  POSICIONES VIVAS · ESTADO DEL ROBOT",
+      "title": "POSICIONES Y ESTADO DEL ROBOT",
       "type": "row",
       "gridPos": {
         "x": 0,
@@ -1368,7 +1395,7 @@
     },
     {
       "id": 22,
-      "title": "Posiciones Abiertas (Live)",
+      "title": "Resumen de posiciones",
       "type": "table",
       "gridPos": {
         "x": 0,
@@ -1476,7 +1503,7 @@
     },
     {
       "id": 23,
-      "title": "Estado del Robot (Insta360 + HID + Sistema)",
+      "title": "ROBOT STATUS",
       "type": "stat",
       "gridPos": {
         "x": 12,
@@ -1494,56 +1521,17 @@
             "type": "prometheus",
             "uid": "atlas-prom"
           },
-          "expr": "atlas_ocr_confidence_pct",
-          "legendFormat": "📷 OCR Confianza %",
-          "refId": "A",
-          "instant": true
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "atlas-prom"
-          },
-          "expr": "atlas_cpu_pct",
-          "legendFormat": "🖥 CPU Jetson %",
-          "refId": "B",
-          "instant": true
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "atlas-prom"
-          },
-          "expr": "atlas_cycle_ms",
-          "legendFormat": "⚡ Ciclo ms",
-          "refId": "C",
-          "instant": true
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "atlas-prom"
-          },
           "expr": "atlas_mode",
-          "legendFormat": "🔴 Modo Live",
-          "refId": "D",
-          "instant": true
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "atlas-prom"
-          },
-          "expr": "atlas_regime",
-          "legendFormat": "📊 Régimen",
-          "refId": "E",
-          "instant": true
+          "legendFormat": "",
+          "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "unit": "short",
           "color": {
-            "mode": "thresholds"
+            "mode": "fixed",
+            "fixedColor": "#00FF9D"
           },
           "thresholds": {
             "mode": "absolute",
@@ -1558,7 +1546,7 @@
               }
             ]
           },
-          "custom": {}
+          "mappings": []
         }
       },
       "options": {
@@ -1569,11 +1557,359 @@
           "fields": "",
           "values": false
         },
-        "orientation": "horizontal",
+        "orientation": "auto",
         "textMode": "value_and_name",
         "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto"
+        "graphMode": "area",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 24,
+      "title": "CONTROL INTERNO · SCORECARD DE IMPLANTACION",
+      "type": "row",
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 25,
+      "title": "PROCESS SCORE",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 57,
+        "w": 5,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "atlas-prom"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "atlas-prom"
+          },
+          "expr": "atlas_process_compliance_score",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#00FF9D"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#FF3B5C",
+                "value": null
+              },
+              {
+                "color": "#FFD60A",
+                "value": 50
+              },
+              {
+                "color": "#00FF9D",
+                "value": 80
+              }
+            ]
+          },
+          "mappings": []
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 26,
+      "title": "USEFULNESS",
+      "type": "stat",
+      "gridPos": {
+        "x": 5,
+        "y": 57,
+        "w": 5,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "atlas-prom"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "atlas-prom"
+          },
+          "expr": "atlas_implementation_usefulness_score",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#00C6FF"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#FF3B5C",
+                "value": null
+              },
+              {
+                "color": "#FFD60A",
+                "value": 40
+              },
+              {
+                "color": "#00FF9D",
+                "value": 70
+              }
+            ]
+          },
+          "mappings": []
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 27,
+      "title": "BRAIN DELIVERY",
+      "type": "stat",
+      "gridPos": {
+        "x": 10,
+        "y": 57,
+        "w": 5,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "atlas-prom"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "atlas-prom"
+          },
+          "expr": "atlas_brain_delivery_ratio_pct",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#A855F7"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#FF3B5C",
+                "value": null
+              },
+              {
+                "color": "#FFD60A",
+                "value": 60
+              },
+              {
+                "color": "#00FF9D",
+                "value": 85
+              }
+            ]
+          },
+          "mappings": []
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 28,
+      "title": "UNTRACKED OPEN",
+      "type": "stat",
+      "gridPos": {
+        "x": 15,
+        "y": 57,
+        "w": 4,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "atlas-prom"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "atlas-prom"
+          },
+          "expr": "atlas_open_untracked_ratio_pct",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#FF3B5C"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#00FF9D",
+                "value": null
+              },
+              {
+                "color": "#FFD60A",
+                "value": 5
+              },
+              {
+                "color": "#FF3B5C",
+                "value": 20
+              }
+            ]
+          },
+          "mappings": []
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 29,
+      "title": "EVIDENCE SCORE",
+      "type": "stat",
+      "gridPos": {
+        "x": 19,
+        "y": 57,
+        "w": 5,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "atlas-prom"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "atlas-prom"
+          },
+          "expr": "atlas_evidence_sufficiency_score",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#FFD60A"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#FF3B5C",
+                "value": null
+              },
+              {
+                "color": "#FFD60A",
+                "value": 30
+              },
+              {
+                "color": "#00FF9D",
+                "value": 70
+              }
+            ]
+          },
+          "mappings": []
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center"
       }
     }
   ],
@@ -1652,14 +1988,14 @@
   },
   "links": [
     {
-      "title": "📊 Atlas API",
+      "title": "Atlas API",
       "url": "http://localhost:8792/docs",
       "type": "link",
       "icon": "external link",
       "targetBlank": true
     },
     {
-      "title": "🔴 Emergency Stop",
+      "title": "Emergency Stop",
       "url": "http://localhost:8792/api/trading/emergency_stop",
       "type": "link",
       "icon": "bolt",
@@ -1706,12 +2042,6 @@
       "type": "panel",
       "id": "gauge",
       "name": "Gauge",
-      "version": ""
-    },
-    {
-      "type": "panel",
-      "id": "piechart",
-      "name": "Pie chart",
       "version": ""
     },
     {

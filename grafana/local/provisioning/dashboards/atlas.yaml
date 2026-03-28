@@ -8,4 +8,4 @@ providers:
     updateIntervalSeconds: 2
     allowUiUpdates: true
     options:
-      path: C:\ATLAS_PUSH\grafana\dashboards
+      path: "C:\ATLAS_PUSH\grafana\dashboards"

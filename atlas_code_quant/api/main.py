@@ -96,6 +96,11 @@ _OPERATION_CENTER = OperationCenter(
     executor=_AUTON_EXECUTOR,
     brain=_BRAIN_BRIDGE,
     learning=_ADAPTIVE_LEARNING,
+    reconciliation_provider=lambda *, account_scope, account_id=None: _CANONICAL_SNAPSHOT.build_snapshot(
+        account_scope=account_scope,
+        account_id=account_id,
+        internal_portfolio=_portfolio,
+    ),
 )
 
 app = FastAPI(
@@ -305,6 +310,29 @@ def _tradier_positions_payload(
         account_id=account_id,
         internal_portfolio=_portfolio,
     )
+
+
+def _equity_strategy_type_for_direction(direction: str | None) -> str:
+    return "equity_short" if str(direction or "").strip().lower() in {"short", "bear", "down", "bajista"} else "equity_long"
+
+
+def _open_symbols_from_positions_payload(payload: dict[str, object]) -> set[str]:
+    symbols: set[str] = set()
+    for position in payload.get("positions") or []:
+        if not isinstance(position, dict):
+            continue
+        for key in ("underlying", "symbol"):
+            value = str(position.get(key) or "").strip().upper()
+            if value:
+                symbols.add(value)
+    return symbols
+
+
+def _reconciliation_is_healthy(payload: dict[str, object]) -> bool:
+    reconciliation = payload.get("reconciliation") or {}
+    if not isinstance(reconciliation, dict):
+        return False
+    return str(reconciliation.get("state") or "").lower() == "healthy"
 
 
 def _build_status_payload(
@@ -791,11 +819,37 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                 op_status = await asyncio.to_thread(_OPERATION_CENTER.status)
                 auton_mode = str(op_status.get("auton_mode") or "paper_supervised")
                 action = "submit" if auton_mode not in {"off", "paper_supervised"} else "preview"
+                positions_payload = _tradier_positions_payload(account_scope="paper", account_id=None)
+                open_symbols = _open_symbols_from_positions_payload(positions_payload)
+                if action == "submit" and not _reconciliation_is_healthy(positions_payload):
+                    _AUTO_CYCLE_STATE.update({
+                        "cycle_count": _AUTO_CYCLE_STATE["cycle_count"] + 1,
+                        "last_cycle_at": datetime.utcnow().isoformat(),
+                        "last_action": action,
+                        "last_result": {
+                            "action": action,
+                            "blocked": True,
+                            "reasons": ["Reconciliation gate blocked submit because canonical snapshot is not healthy."],
+                        },
+                    })
+                    logger.warning("[auto-cycle] submit blocked: reconciliation is not healthy")
+                    continue
 
                 last_result = None
                 for cand in sorted_cands:
                     symbol = str(cand.get("symbol") or "").strip()
                     if not symbol:
+                        continue
+                    if symbol.upper() in open_symbols:
+                        last_result = {
+                            "symbol": symbol,
+                            "action": action,
+                            "blocked": True,
+                            "reasons": [f"Open-symbol guard blocked re-entry for {symbol.upper()}."],
+                            "selection_score": cand.get("selection_score"),
+                            "win_rate_pct": None,
+                        }
+                        logger.info("[auto-cycle] symbol=%s action=%s blocked=open_symbol_guard", symbol, action)
                         continue
                     direction = str(cand.get("direction") or "long").lower()
                     side = "buy" if direction in {"long", "bull", "up"} else "sell_short"
@@ -805,6 +859,10 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         symbol=symbol, side=side, size=1,
                         order_type="market", asset_class=asset_class,  # type: ignore[arg-type]
                         account_scope="paper", preview=True,
+                        strategy_type=_equity_strategy_type_for_direction(direction) if asset_class == "equity" else None,
+                        entry_reference_price=float(cand.get("price") or 0.0) or None,
+                        entry_expected_move_pct=float(cand.get("predicted_move_pct") or 0.0) or None,
+                        entry_confidence_reference_pct=float(cand.get("local_win_rate_pct") or 0.0) or None,
                     )
                     result = await asyncio.to_thread(
                         _OPERATION_CENTER.evaluate_candidate,
@@ -2105,4 +2163,3 @@ async def paper_fill_v2(body: PaperFillRequest, x_api_key: str | None = Header(N
 @app.post("/api/v2/quant/paper/reset",       response_model=StdResponse, tags=["V2"])
 async def paper_reset_v2(body: PaperResetRequest, x_api_key: str | None = Header(None)):
     return await paper_reset(body=body, x_api_key=x_api_key)
-
