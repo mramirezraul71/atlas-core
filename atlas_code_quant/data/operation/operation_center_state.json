@@ -13,20 +13,23 @@
   "max_level4_bpr_pct": 20.0,
   "auto_pause_on_operational_errors": true,
   "operational_error_limit": 3,
-  "operational_error_count": 0,
-  "operational_error_day": "2026-03-27",
+  "operational_error_count": 1,
+  "operational_error_day": "2026-03-28",
   "fail_safe_active": false,
   "fail_safe_reason": null,
-  "last_operational_error": null,
+  "last_operational_error": {
+    "reason": "executor_exception:504 Server Error: Gateway Time-out for url: https://sandbox.tradier.com/v1/accounts/VA9201365/orders. Tradier detail: <html>\r\n<head><title>504 Gateway Time-out</title></head>\r\n<body>\r\n<center><h1>504 Gateway Time-out</h1></center>\r\n</body>\r\n</html>",
+    "timestamp": "2026-03-28T00:44:22.232931"
+  },
   "notes": "paper_autonomous activado 2026-03-24. vision=desktop_capture (NEXUS robot no requerido).",
   "last_decision": {
     "decision": "submit_ready",
     "allowed": true,
-    "timestamp": "2026-03-27T21:42:56.607995",
+    "timestamp": "2026-03-28T02:58:06.007647",
     "reason": "ok"
   },
   "last_candidate": {
-    "symbol": "FIVE",
+    "symbol": "UA",
     "strategy_type": null,
     "scope": "paper",
     "action": "submit"
