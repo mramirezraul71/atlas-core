@@ -220,6 +220,64 @@ def _grafana_alert_rule_yaml() -> str:
         "        labels:\n"
         "          component: atlas_journal\n"
         "          severity: critical\n"
+        "      - uid: atlas_recent_unattributed_entries_gt_zero\n"
+        "        title: ATLAS Recent Unattributed Entries Present\n"
+        "        condition: B\n"
+        "        data:\n"
+        "          - refId: A\n"
+        "            datasourceUid: atlas-prom\n"
+        "            relativeTimeRange:\n"
+        "              from: 300\n"
+        "              to: 0\n"
+        "            model:\n"
+        "              datasource:\n"
+        "                type: prometheus\n"
+        "                uid: atlas-prom\n"
+        "              editorMode: code\n"
+        "              expr: atlas_recent_unattributed_entries_count\n"
+        "              instant: true\n"
+        "              intervalMs: 1000\n"
+        "              maxDataPoints: 43200\n"
+        "              range: false\n"
+        "              refId: A\n"
+        "          - refId: B\n"
+        "            datasourceUid: '__expr__'\n"
+        "            relativeTimeRange:\n"
+        "              from: 300\n"
+        "              to: 0\n"
+        "            model:\n"
+        "              conditions:\n"
+        "                - evaluator:\n"
+        "                    params:\n"
+        "                      - 0\n"
+        "                    type: gt\n"
+        "                  operator:\n"
+        "                    type: and\n"
+        "                  query:\n"
+        "                    params:\n"
+        "                      - A\n"
+        "                  reducer:\n"
+        "                    type: last\n"
+        "                  type: query\n"
+        "              datasource:\n"
+        "                type: __expr__\n"
+        "                uid: '__expr__'\n"
+        "              expression: A\n"
+        "              intervalMs: 1000\n"
+        "              maxDataPoints: 43200\n"
+        "              refId: B\n"
+        "              type: classic_conditions\n"
+        "        dashboardUid: atlas-quant-pro-2026\n"
+        "        panelId: 30\n"
+        "        noDataState: Alerting\n"
+        "        execErrState: Alerting\n"
+        "        for: 2m\n"
+        "        annotations:\n"
+        "          summary: ATLAS has recent journal entries without valid strategy attribution.\n"
+        "          description: New entries should not be born with unknown or untracked strategy_type once attribution hardening is active.\n"
+        "        labels:\n"
+        "          component: atlas_journal\n"
+        "          severity: critical\n"
     )
 
 
@@ -406,6 +464,14 @@ class GrafanaDashboard:
                 "atlas_evidence_sufficiency_score",
                 "Suficiencia de evidencia cerrada para afirmar utilidad real",
             )
+            self.attributed_open_positions = Gauge(
+                "atlas_attributed_open_positions_pct",
+                "Porcentaje de posiciones abiertas con atribucion valida de estrategia",
+            )
+            self.recent_unattributed_entries = Gauge(
+                "atlas_recent_unattributed_entries_count",
+                "Cantidad de entradas recientes del journal con atribucion invalida",
+            )
         except Exception as exc:
             logger.warning("Error registrando métricas Prometheus: %s", exc)
 
@@ -565,6 +631,8 @@ class GrafanaDashboard:
             self.brain_delivery_ratio.set(float(indicators.get("brain_delivery_ratio_pct") or 0.0))
             self.open_untracked_ratio.set(float(indicators.get("open_untracked_ratio_pct") or 0.0))
             self.evidence_sufficiency.set(float(indicators.get("evidence_sufficiency_score") or 0.0))
+            self.attributed_open_positions.set(float(indicators.get("attributed_open_positions_pct") or 0.0))
+            self.recent_unattributed_entries.set(float(indicators.get("recent_unattributed_count") or 0.0))
 
     # ── Dashboard Grafana JSON ────────────────────────────────────────────────
 
@@ -678,6 +746,7 @@ class GrafanaDashboard:
             stat_panel(17, "Brain Delivery",  "atlas_brain_delivery_ratio_pct", "percent", y=30, color="cyan"),
             stat_panel(18, "Untracked Open",  "atlas_open_untracked_ratio_pct", "percent", y=30, color="red"),
             stat_panel(19, "Evidence Score",  "atlas_evidence_sufficiency_score", "percent", y=30, color="orange"),
+            stat_panel(20, "Recent Bad Attr", "atlas_recent_unattributed_entries_count", "short", y=34, color="red"),
         ]
 
         return {

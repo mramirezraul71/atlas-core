@@ -7,6 +7,7 @@ import pytest
 
 from atlas_code_quant.execution.option_selector import (
     ContractSelection,
+    describe_strategy_governance,
     pick_strategy,
     pick_expiration,
     pick_strike,
@@ -67,6 +68,32 @@ class TestPickStrategy:
 
     def test_very_high_iv_sideways_iron_condor(self):
         assert pick_strategy("BUY", "SIDEWAYS", 85, 2.0) == "iron_condor"
+
+    def test_event_near_bull_avoids_credit_spread(self):
+        strat = pick_strategy("BUY", "BULL", iv_rank=65, iv_hv_ratio=1.4, event_near=True)
+        assert strat == "bull_call_debit_spread"
+
+    def test_very_high_iv_sideways_balanced_skew_can_use_iron_butterfly(self):
+        strat = pick_strategy(
+            "BUY",
+            "SIDEWAYS",
+            iv_rank=82,
+            iv_hv_ratio=1.5,
+            skew_pct=0.03,
+            liquidity_score=0.9,
+            thesis="neutral_income",
+        )
+        assert strat == "iron_butterfly"
+
+    def test_weak_liquidity_avoids_directional_credit_selling(self):
+        strat = pick_strategy(
+            "SELL",
+            "BEAR",
+            iv_rank=70,
+            iv_hv_ratio=1.5,
+            liquidity_score=0.2,
+        )
+        assert strat == "bear_put_debit_spread"
 
 
 class TestPickExpiration:
@@ -187,3 +214,39 @@ class TestSelectOptionContract:
         result = select_option_contract("SPY", "BUY", 450, 60, 1.3, "BULL", exps, chain)
         assert isinstance(result.strategy_type, str)
         assert len(result.strategy_type) > 0
+
+    def test_contract_selection_includes_governance_reasons(self):
+        exps = _make_expirations()
+        chain = {e: {"calls": _make_chain_options(option_type="call"), "puts": _make_chain_options(option_type="put")} for e in exps}
+        result = select_option_contract(
+            "SPY",
+            "BUY",
+            450,
+            68,
+            1.4,
+            "BULL",
+            exps,
+            chain,
+            event_near=True,
+            liquidity_score=0.8,
+            thesis="directional_explosive",
+        )
+        assert result.governance["thesis"] == "directional_explosive"
+        assert result.governance["event_near"] is True
+        assert len(result.governance["reasons"]) >= 2
+
+
+class TestStrategyGovernance:
+    def test_governance_describes_premium_posture(self):
+        governance = describe_strategy_governance(
+            direction="BUY",
+            regime="BULL",
+            iv_rank=70,
+            iv_hv_ratio=1.4,
+            strategy="bull_put_credit_spread",
+            thesis="directional_controlled",
+            event_near=False,
+            liquidity_score=0.9,
+        )
+        assert governance["premium_stance"] == "sell_premium_defined_risk"
+        assert governance["strategy_family"] == "directional_credit"

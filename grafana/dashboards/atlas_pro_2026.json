@@ -1911,6 +1911,73 @@
         "graphMode": "area",
         "justifyMode": "center"
       }
+    },
+    {
+      "id": 30,
+      "title": "RECENT BAD ATTR",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 62,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "atlas-prom"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "atlas-prom"
+          },
+          "expr": "atlas_recent_unattributed_entries_count",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#FF3B5C"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#00FF9D",
+                "value": null
+              },
+              {
+                "color": "#FFD60A",
+                "value": 1
+              },
+              {
+                "color": "#FF3B5C",
+                "value": 3
+              }
+            ]
+          },
+          "mappings": []
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center"
+      }
     }
   ],
   "templating": {

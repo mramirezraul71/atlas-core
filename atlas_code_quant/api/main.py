@@ -82,7 +82,7 @@ _BRAIN_BRIDGE = QuantBrainBridge()
 _ADAPTIVE_LEARNING = AdaptiveLearningService()
 _STRATEGY_TRACKER = StrategyTracker()
 _CANONICAL_SNAPSHOT = CanonicalSnapshotService(_STRATEGY_TRACKER)
-_JOURNAL = TradingJournalService(_STRATEGY_TRACKER, _BRAIN_BRIDGE)
+_JOURNAL = TradingJournalService(_STRATEGY_TRACKER, _BRAIN_BRIDGE, _ADAPTIVE_LEARNING, get_ic_tracker())
 _JOURNAL_SYNC = JournalSyncService(_JOURNAL)
 _VISION = SensorVisionService()
 _AUTON_EXECUTOR = AutonExecutorService()
@@ -922,22 +922,36 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         logger.info("[auto-cycle] symbol=%s action=%s blocked=open_symbol_guard", symbol, action)
                         continue
                     direction = str(cand.get("direction") or "long").lower()
-                    side = "buy" if direction in {"long", "bull", "up"} else "sell_short"
-                    ac_raw = str(cand.get("asset_class") or "equity").lower()
-                    asset_class = ac_raw if ac_raw in {"equity", "option", "multileg", "combo"} else "equity"
-                    # FIX: preview solo cuando action=="preview"; submit real cuando action=="submit"
-                    order = OrderRequest(
-                        symbol=symbol, side=side, size=1,
-                        order_type="market", asset_class=asset_class,  # type: ignore[arg-type]
-                        account_scope="paper", preview=(action == "preview"),
-                        strategy_type=_equity_strategy_type_for_direction(direction) if asset_class == "equity" else None,
-                        entry_reference_price=float(cand.get("price") or 0.0) or None,
-                        entry_expected_move_pct=float(cand.get("predicted_move_pct") or 0.0) or None,
-                        entry_confidence_reference_pct=float(cand.get("local_win_rate_pct") or 0.0) or None,
-                    )
+                    fallback_side = "buy" if direction in {"long", "bull", "up"} else "sell_short"
+                    proposal = _SELECTOR.proposal(candidate=dict(cand), account_scope="paper")
+                    order_seed = dict(proposal.get("order_seed") or {})
+                    if not order_seed:
+                        ac_raw = str(cand.get("asset_class") or "equity").lower()
+                        asset_class = ac_raw if ac_raw in {"equity", "option", "multileg", "combo"} else "equity"
+                        order_seed = {
+                            "symbol": symbol,
+                            "side": fallback_side,
+                            "size": 1,
+                            "order_type": "market",
+                            "asset_class": asset_class,
+                            "account_scope": "paper",
+                            "preview": (action == "preview"),
+                            "strategy_type": _equity_strategy_type_for_direction(direction) if asset_class == "equity" else None,
+                            "entry_reference_price": float(cand.get("price") or 0.0) or None,
+                            "entry_expected_move_pct": float(cand.get("predicted_move_pct") or 0.0) or None,
+                            "entry_confidence_reference_pct": float(cand.get("local_win_rate_pct") or 0.0) or None,
+                        }
+                    asset_class = str(order_seed.get("asset_class") or cand.get("asset_class") or "equity").lower()
+                    if asset_class == "equity" and not order_seed.get("strategy_type"):
+                        order_seed["strategy_type"] = _equity_strategy_type_for_direction(direction)
+                    side = str(order_seed.get("side") or fallback_side).lower()
+                    order_seed["preview"] = (action == "preview")
+                    order = OrderRequest(**order_seed)
                     result = await asyncio.to_thread(
                         _OPERATION_CENTER.evaluate_candidate,
-                        order=order, action=action, capture_context=False,  # type: ignore[call-arg]
+                        order=order,
+                        action=action,
+                        capture_context=bool(order.chart_plan or order.camera_plan),  # type: ignore[call-arg]
                     )
                     last_result = {
                         "symbol": symbol, "action": action,

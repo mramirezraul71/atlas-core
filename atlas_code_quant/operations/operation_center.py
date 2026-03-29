@@ -18,6 +18,7 @@ from learning.trading_implementation_scorecard import build_trading_implementati
 from monitoring.strategy_tracker import StrategyTracker
 from operations.auton_executor import AutonExecutorService
 from operations.brain_bridge import QuantBrainBridge
+from operations.chart_execution import ChartExecutionService
 from operations.journal_pro import JournalProService
 from operations.sensor_vision import SensorVisionService
 
@@ -67,6 +68,9 @@ _DEFAULT_STATE = {
     "notes": "Plano de control orientado a simulada con camara directa robot",
     "last_decision": None,
     "last_candidate": None,
+    "attribution_integrity_alert_active": False,
+    "attribution_integrity_last_count": 0,
+    "attribution_integrity_last_event_at": None,
 }
 
 
@@ -88,6 +92,7 @@ class OperationCenter:
         reconciliation_provider: Callable[..., dict[str, Any]] | None = None,
         quote_provider: Callable[..., dict[str, Any] | None] | None = None,
         scorecard_provider: Callable[[], dict[str, Any]] | None = None,
+        chart_execution: ChartExecutionService | None = None,
     ) -> None:
         base_dir = settings.data_dir.parent / "operation"
         base_dir.mkdir(parents=True, exist_ok=True)
@@ -98,6 +103,7 @@ class OperationCenter:
         self.vision = vision or SensorVisionService()
         self.executor = executor or AutonExecutorService()
         self.brain = brain or QuantBrainBridge()
+        self.chart_execution = chart_execution or ChartExecutionService()
         self.learning = learning or AdaptiveLearningService()
         self.reconciliation_provider = reconciliation_provider
         self.quote_provider = quote_provider or self._default_quote_provider
@@ -325,6 +331,56 @@ class OperationCenter:
                 pass
 
         threading.Thread(target=_runner, name=f"brain-{task_name}", daemon=True).start()
+
+    def _maybe_emit_attribution_integrity_event(
+        self,
+        *,
+        state: dict[str, Any],
+        snapshot: dict[str, Any],
+        scope: str,
+    ) -> dict[str, Any]:
+        summary = snapshot.get("summary") or {}
+        flagged_count = int(summary.get("recent_flagged_count") or 0)
+        alert_active = bool(state.get("attribution_integrity_alert_active"))
+        previous_count = int(state.get("attribution_integrity_last_count") or 0)
+        should_emit = flagged_count > 0 and not alert_active and previous_count <= 0
+
+        state["attribution_integrity_alert_active"] = flagged_count > 0
+        state["attribution_integrity_last_count"] = flagged_count
+        if not should_emit:
+            return state
+
+        state["attribution_integrity_last_event_at"] = datetime.utcnow().isoformat()
+        brain_emit = getattr(self.brain, "emit", None)
+        if callable(brain_emit):
+            self._dispatch_brain_task(
+                "attribution-integrity",
+                brain_emit,
+                kind="attribution_integrity_alert",
+                level="warning",
+                message=(
+                    f"[QUANT][ATTRIBUTION] {flagged_count} entradas recientes con atribucion invalida "
+                    f"detectadas en scope {scope}"
+                ),
+                tags=["quant", "journal", "attribution_integrity", scope],
+                data={
+                    "scope": scope,
+                    "summary": summary,
+                    "alerts": snapshot.get("alerts") or [],
+                    "flagged_entries": snapshot.get("flagged_entries") or [],
+                },
+                description="Quant detecto entradas recientes sin strategy_type valido en el journal operativo",
+                context=json.dumps(
+                    {
+                        "scope": scope,
+                        "summary": summary,
+                    },
+                    ensure_ascii=False,
+                ),
+                outcome="attribution_integrity_alerted",
+                memorize=True,
+            )
+        return state
 
     @staticmethod
     def _is_opening_equity_order(order: OrderRequest) -> bool:
@@ -672,6 +728,13 @@ class OperationCenter:
         vision_status = self.vision.status()
         executor_status = self.executor.status()
         journal_snapshot = self.journal.snapshot(limit=3)
+        attribution_integrity = self.journal.attribution_integrity_snapshot(account_type=scope, limit=10)
+        config = self._maybe_emit_attribution_integrity_event(
+            state=config,
+            snapshot=attribution_integrity,
+            scope=scope,
+        )
+        config = self._save(config)
         position_management = self.journal.position_management_snapshot(account_type=scope, limit=10)
         exit_governance = self.journal.exit_governance_snapshot(account_type=scope, limit=10)
         post_trade_learning = self.journal.post_trade_learning_snapshot(account_type=scope, limit=10)
@@ -704,11 +767,13 @@ class OperationCenter:
             "vision": vision_status,
             "executor": executor_status,
             "brain": self.brain.status(),
+            "chart_execution": self.chart_execution.status(),
             "learning": self.learning.status(account_scope=scope),
             "journal": {
                 "recent_entries_count": journal_snapshot.get("recent_entries_count", 0),
                 "recent_entries": journal_snapshot.get("recent_entries", []),
             },
+            "attribution_integrity": attribution_integrity,
             "position_management": position_management,
             "exit_governance": exit_governance,
             "post_trade_learning": post_trade_learning,
@@ -877,9 +942,21 @@ class OperationCenter:
         elif not opening_equity_order:
             warnings.append(f"strategy_type '{strategy_type}' has no configured probability model.")
 
+        visual_entry_gate = self._build_visual_entry_gate(
+            order=order_copy,
+            action=action,
+            capture_context=capture_context,
+            vision_status=vision_status,
+        )
+        reasons.extend(list(visual_entry_gate.get("reasons") or []))
+        warnings.extend(list(visual_entry_gate.get("warnings") or []))
+
         context_snapshot = self.vision.capture_context_snapshot(label=f"{scope}_{action}") if capture_context else None
         if capture_context and isinstance(context_snapshot, dict) and context_snapshot.get("capture_ok") is False:
             warnings.append("La captura visual no fue confirmada correctamente.")
+            visual_entry_gate.setdefault("warnings", []).append("visual context snapshot failed.")
+        visual_entry_gate["context_capture_requested"] = bool(capture_context)
+        visual_entry_gate["context_capture_ok"] = bool(isinstance(context_snapshot, dict) and context_snapshot.get("capture_ok") is not False) if capture_context else False
         allowed = not reasons
         execution_result: dict[str, Any] | None = None
         operational_failure_reason: str | None = None
@@ -955,6 +1032,10 @@ class OperationCenter:
                     "status": entry_validation.get("status"),
                     "blocked": bool(entry_validation.get("blocked")),
                 },
+                "visual_entry_gate": {
+                    "status": visual_entry_gate.get("status"),
+                    "degraded": bool(visual_entry_gate.get("degraded")),
+                },
                 "execution_quality": {
                     "status": execution_quality.get("status"),
                     "degraded": bool(execution_quality.get("degraded")),
@@ -974,6 +1055,7 @@ class OperationCenter:
             "probability": probability_payload,
             "vision_snapshot": context_snapshot,
             "entry_validation": entry_validation,
+            "visual_entry_gate": visual_entry_gate,
             "execution_quality": execution_quality,
             "monitor_summary": {
                 "account_session": monitor.get("account_session"),
@@ -1013,3 +1095,52 @@ class OperationCenter:
             },
         )
         return payload
+
+    def _build_visual_entry_gate(
+        self,
+        *,
+        order: OrderRequest,
+        action: Literal["evaluate", "preview", "submit"],
+        capture_context: bool,
+        vision_status: dict[str, Any],
+    ) -> dict[str, Any]:
+        chart_plan = order.chart_plan or {}
+        camera_plan = order.camera_plan or {}
+        chart_requested = bool(chart_plan.get("targets"))
+        camera_required = bool(camera_plan.get("required"))
+        gate = {
+            "status": "not_requested",
+            "degraded": False,
+            "reasons": [],
+            "warnings": [],
+            "chart_requested": chart_requested,
+            "camera_required": camera_required,
+            "camera_provider": camera_plan.get("provider") or vision_status.get("provider"),
+            "camera_provider_ready": bool(vision_status.get("provider_ready")),
+            "chart_execution": {},
+        }
+
+        if not chart_requested and not camera_required:
+            return gate
+
+        chart_execution = self.chart_execution.ensure_chart_mission(
+            chart_plan=chart_plan,
+            camera_plan=camera_plan,
+            symbol=str(order.symbol or ""),
+        )
+        gate["chart_execution"] = chart_execution
+        gate["status"] = "visual_ready" if chart_execution.get("open_ok") else "visual_watch"
+
+        if chart_requested and not chart_execution.get("open_ok"):
+            gate["degraded"] = True
+            gate["warnings"].append("chart mission is defined but chart opening is not confirmed.")
+
+        if camera_required and action in {"preview", "submit"} and not capture_context:
+            gate["degraded"] = True
+            gate["warnings"].append("camera validation requested but capture_context=False skipped visual confirmation.")
+
+        if camera_required and not bool(vision_status.get("provider_ready")):
+            gate["degraded"] = True
+            gate["warnings"].append("camera provider is not ready for visual confirmation.")
+
+        return gate

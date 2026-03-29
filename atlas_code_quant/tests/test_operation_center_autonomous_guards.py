@@ -69,6 +69,9 @@ class _Vision:
     def status(self) -> dict:
         return {"provider": "desktop_capture", "provider_ready": True, "operator_present": True, "screen_integrity_ok": True}
 
+    def capture_context_snapshot(self, *, label: str = "operation") -> dict:
+        return {"capture_ok": True, "label": label, "source": "test"}
+
 
 class _Executor:
     def __init__(self) -> None:
@@ -112,6 +115,30 @@ class _Brain:
 class _Learning:
     def status(self, account_scope: str | None = None) -> dict:
         return {"account_scope": account_scope, "policy_ready": True}
+
+
+class _ChartExecution:
+    def __init__(self, open_ok: bool = True) -> None:
+        self.open_ok = open_ok
+
+    def status(self) -> dict:
+        return {"auto_open_enabled": True, "browser_available": True}
+
+    def ensure_chart_mission(self, *, chart_plan: dict | None, camera_plan: dict | None, symbol: str) -> dict:
+        targets = list((chart_plan or {}).get("targets") or [])
+        return {
+            "requested": bool(targets),
+            "provider": (chart_plan or {}).get("provider") or "tradingview",
+            "target_count": len(targets),
+            "requested_timeframes": [target.get("timeframe") for target in targets],
+            "camera_required": bool((camera_plan or {}).get("required")),
+            "open_attempted": True,
+            "open_ok": self.open_ok,
+            "open_mode": "test",
+            "symbol_match": True,
+            "timeframe_match": True,
+            "warnings": [],
+        }
 
 
 def _quote_provider_factory(payload: dict[str, object]):
@@ -380,3 +407,81 @@ def test_execution_quality_confirms_matching_route_payload(tmp_path: Path) -> No
     assert payload["execution_quality"]["checks"]["symbol_match"] is True
     assert payload["execution_quality"]["checks"]["quantity_match"] is True
     assert payload["execution_quality"]["checks"]["broker_status_ok"] is True
+
+
+def test_visual_entry_gate_warns_when_camera_validation_is_skipped(tmp_path: Path) -> None:
+    center = OperationCenter(
+        tracker=_Tracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        chart_execution=_ChartExecution(open_ok=True),
+        state_path=tmp_path / "operation_center_state.json",
+    )
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="AAPL",
+            side="buy",
+            size=1,
+            order_type="market",
+            asset_class="equity",
+            account_scope="paper",
+            strategy_type="equity_long",
+            chart_plan={
+                "provider": "tradingview",
+                "targets": [
+                    {"title": "AAPL disparo 1h", "timeframe": "1h", "url": "https://www.tradingview.com/chart/?symbol=NASDAQ%3AAAPL&interval=60"}
+                ],
+            },
+            camera_plan={"required": True, "provider": "direct_nexus"},
+        ),
+        action="submit",
+        capture_context=False,
+    )
+
+    assert payload["visual_entry_gate"]["degraded"] is True
+    assert any("capture_context=False" in warning for warning in payload["visual_entry_gate"]["warnings"])
+
+
+def test_visual_entry_gate_reports_chart_execution_when_context_is_enabled(tmp_path: Path) -> None:
+    center = OperationCenter(
+        tracker=_Tracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        chart_execution=_ChartExecution(open_ok=True),
+        state_path=tmp_path / "operation_center_state.json",
+        quote_provider=_quote_provider_factory({"symbol": "AAPL", "bid": 100.0, "ask": 100.05, "last": 100.02}),
+    )
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="AAPL",
+            side="buy",
+            size=1,
+            order_type="market",
+            asset_class="equity",
+            account_scope="paper",
+            strategy_type="equity_long",
+            entry_reference_price=100.0,
+            chart_plan={
+                "provider": "tradingview",
+                "targets": [
+                    {"title": "AAPL disparo 1h", "timeframe": "1h", "url": "https://www.tradingview.com/chart/?symbol=NASDAQ%3AAAPL&interval=60"},
+                    {"title": "AAPL confirmacion 4h", "timeframe": "4h", "url": "https://www.tradingview.com/chart/?symbol=NASDAQ%3AAAPL&interval=240"},
+                ],
+            },
+            camera_plan={"required": True, "provider": "direct_nexus"},
+        ),
+        action="submit",
+        capture_context=True,
+    )
+
+    assert payload["visual_entry_gate"]["chart_execution"]["open_ok"] is True
+    assert payload["visual_entry_gate"]["context_capture_requested"] is True
+    assert payload["visual_entry_gate"]["context_capture_ok"] is True
