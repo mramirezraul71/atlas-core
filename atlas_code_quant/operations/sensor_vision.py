@@ -559,6 +559,13 @@ class SensorVisionService:
                             "confidence": ocr_result.confidence,
                             "source": cap.source,
                         }
+                        record["visual_signal"] = {
+                            "source": cap.source,
+                            "chart_bias": ocr_result.chart_color,
+                            "pattern": ocr_result.pattern_detected,
+                            "ocr_confidence_pct": round(float(ocr_result.confidence or 0.0) * 100.0, 2),
+                            "price_count": len(ocr_result.prices[:5]),
+                        }
                     else:
                         record["capture_error"] = f"Insta360 capture failed: {cap.error}"
                 except Exception as exc:

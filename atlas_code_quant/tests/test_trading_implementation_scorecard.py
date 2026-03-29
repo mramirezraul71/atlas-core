@@ -29,6 +29,7 @@ def _build_minimal_repo(root: Path) -> tuple[Path, Path, Path]:
     _write_text(root / "reports/atlas_quant_exit_governance_audit_20260328.md", "# exit governance\n")
     _write_text(root / "reports/atlas_quant_post_trade_learning_audit_20260328.md", "# post trade learning\n")
     _write_text(root / "reports/atlas_quant_external_benchmark_confrontation_20260328.md", "# external\n")
+    _write_text(root / "reports/atlas_quant_visual_benchmark_confrontation_20260329.md", "# visual benchmark\n")
     _write_text(root / "atlas_code_quant/tests/test_trading_self_audit_protocol.py", "def test_placeholder():\n    assert True\n")
     _write_text(root / "atlas_code_quant/tests/test_trading_implementation_scorecard.py", "def test_placeholder():\n    assert True\n")
     _write_text(root / "atlas_code_quant/tests/test_position_management_snapshot.py", "def test_placeholder():\n    assert True\n")
@@ -52,7 +53,19 @@ def _build_minimal_repo(root: Path) -> tuple[Path, Path, Path]:
             {"used_for": ["position_management"]},
             {"used_for": ["exit_governance"]},
             {"used_for": ["post_trade_learning"]},
+            {"title": "visual-a", "used_for": ["visual_entry_optimization"]},
+            {"title": "visual-b", "used_for": ["visual_entry_optimization"]},
+            {"title": "visual-c", "used_for": ["visual_entry_optimization"]},
+            {"title": "visual-d", "used_for": ["visual_entry_optimization"]},
+            {"title": "visual-e", "used_for": ["visual_entry_optimization"]},
         ],
+        "visual_entry_benchmark_focus": {
+            "current_focus": "visual_entry_optimization",
+            "human_best_practice": ["contexto", "nivel", "trigger", "invalidacion"],
+            "automation_translation": ["chart_plan", "expected_visual", "ocr", "gate"],
+            "recommended_metrics": ["a", "b", "c", "d", "e", "f"],
+            "web_feedback_loop": ["detectar", "buscar", "comparar", "persistir"],
+        },
     }
     protocol_path = root / "reports/trading_self_audit_protocol.json"
     protocol_path.write_text(json.dumps(protocol), encoding="utf-8")
@@ -133,10 +146,12 @@ def test_build_trading_implementation_scorecard_computes_headline_and_indicators
 
     assert payload["headline"]["atlas_process_compliance_score"] == pytest.approx(97.5)
     assert payload["metrics"]["artifact_coverage_score"]["value"] == 100.0
-    assert payload["metrics"]["external_benchmark_coverage_score"]["value"] == pytest.approx(87.5)
+    assert payload["metrics"]["external_benchmark_coverage_score"]["value"] == pytest.approx(97.92)
     assert payload["metrics"]["observability_feedback_score"]["value"] == pytest.approx(93.33)
+    assert payload["metrics"]["visual_benchmark_feedback_score"]["value"] == 100.0
     assert payload["metrics"]["implementation_usefulness_score"]["value"] == pytest.approx(49.5)
     assert payload["supporting_indicators"]["attributed_open_positions_pct"] == 50.0
     assert payload["supporting_indicators"]["evidence_sufficiency_score"] == 20.0
     assert payload["supporting_indicators"]["grafana_alerting_ready_pct"] == 100.0
+    assert payload["supporting_indicators"]["visual_benchmark_source_count"] == 5
     assert payload["next_actions"]

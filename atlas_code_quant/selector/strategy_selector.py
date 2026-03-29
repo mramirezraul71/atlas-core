@@ -150,6 +150,77 @@ def _chart_plan(symbol: str, timeframe: str, higher_timeframe: str | None, chart
     }
 
 
+def _expected_visual_signature(candidate: dict[str, Any], strategy_type: str) -> dict[str, Any]:
+    direction = str(candidate.get("direction") or "").lower()
+    timeframe = str(candidate.get("timeframe") or "1h")
+    higher_timeframe = str((candidate.get("confirmation") or {}).get("higher_timeframe") or "1h")
+    bullish = direction == "alcista" or strategy_type in {"equity_long", "long_call", "bull_call_debit_spread", "bull_put_credit_spread"}
+    expected_chart_bias = "bullish" if bullish else "bearish"
+    expected_patterns = (
+        ["breakout", "uptrend", "bounce", "pullback", "flag", "bandera", "ruptura", "alcista"]
+        if bullish
+        else ["breakdown", "downtrend", "reversal", "dump", "selloff", "bajista", "resistance", "bear"]
+    )
+    return {
+        "symbol": str(candidate.get("symbol") or "").upper(),
+        "direction": direction or ("alcista" if bullish else "bajista"),
+        "timeframe": timeframe,
+        "higher_timeframe": higher_timeframe,
+        "expected_chart_bias": expected_chart_bias,
+        "expected_patterns": expected_patterns,
+    }
+
+
+def _camera_validation_profile(*, timeframe: str, strategy_type: str, family: str) -> dict[str, Any]:
+    tf = str(timeframe or "1h").lower()
+    base_ocr = {
+        "5m": 84.0,
+        "15m": 78.0,
+        "1h": 72.0,
+        "4h": 68.0,
+        "1d": 65.0,
+    }.get(tf, 72.0)
+    base_alignment = {
+        "5m": 80.0,
+        "15m": 76.0,
+        "1h": 72.0,
+        "4h": 70.0,
+        "1d": 68.0,
+    }.get(tf, 72.0)
+
+    if family == "equity":
+        return {
+            "validation_mode": "structure_timing",
+            "min_ocr_confidence_pct": base_ocr,
+            "min_alignment_score_pct": base_alignment,
+            "require_pattern_confirmation": tf in {"5m", "15m", "1h"},
+            "require_price_evidence": tf in {"5m", "15m"},
+        }
+    if family == "simple":
+        return {
+            "validation_mode": "directional_option_confirmation",
+            "min_ocr_confidence_pct": max(base_ocr, 78.0),
+            "min_alignment_score_pct": max(base_alignment, 76.0),
+            "require_pattern_confirmation": True,
+            "require_price_evidence": True,
+        }
+    if family in {"debit", "credit", "options"}:
+        return {
+            "validation_mode": "defined_risk_structure_confirmation",
+            "min_ocr_confidence_pct": max(base_ocr, 84.0),
+            "min_alignment_score_pct": max(base_alignment, 80.0),
+            "require_pattern_confirmation": True,
+            "require_price_evidence": True,
+        }
+    return {
+        "validation_mode": "generic_visual_confirmation",
+        "min_ocr_confidence_pct": base_ocr,
+        "min_alignment_score_pct": base_alignment,
+        "require_pattern_confirmation": True,
+        "require_price_evidence": False,
+    }
+
+
 class StrategySelectorService:
     def __init__(self, tracker: StrategyTracker, learning: AdaptiveLearningService | None = None):
         self.tracker = tracker
@@ -759,10 +830,18 @@ class StrategySelectorService:
         meta = _strategy_meta(strategy_type)
         camera_profile = _timeframe_profile(str(candidate.get("timeframe") or "1h"))
         camera_visual_fit_pct = round(camera_profile["camera_fit"] + (8.0 if meta["family"] == "equity" else 4.0 if meta["family"] in {"debit", "credit"} else 0.0), 1)
+        expected_visual = _expected_visual_signature(candidate, strategy_type)
+        validation_profile = _camera_validation_profile(
+            timeframe=str(candidate.get("timeframe") or "1h"),
+            strategy_type=strategy_type,
+            family=str(meta.get("family") or ""),
+        )
         camera_plan = {
             "provider": "direct_nexus",
             "required": True,
             "visual_fit_pct": camera_visual_fit_pct,
+            "expected_visual": expected_visual,
+            "validation_profile": validation_profile,
             "checkpoints": [
                 "abrir el grafico principal y el de confirmacion",
                 "centrar la zona de disparo para la camara",

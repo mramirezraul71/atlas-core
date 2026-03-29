@@ -338,6 +338,63 @@ EXTERNAL_BENCHMARK_SOURCE_REGISTRY: list[dict[str, Any]] = [
         ],
     },
     {
+        "title": "Chart Patterns Transcript",
+        "url": "https://www.fidelity.com/bin-public/060_www_fidelity_com/documents/learning-center/Transcript_Chart%20patterns_v2.pdf",
+        "domain": "fidelity.com",
+        "source_type": "broker_education_doc",
+        "used_for": [
+            "entry_validation",
+            "visual_entry_optimization",
+            "breakout_confirmation",
+            "pullback_confirmation",
+        ],
+    },
+    {
+        "title": "How to Read Stock Charts and Trading Patterns",
+        "url": "https://www.schwab.com/learn/story/how-to-read-stock-charts-and-trading-patterns",
+        "domain": "schwab.com",
+        "source_type": "broker_education_doc",
+        "used_for": [
+            "entry_validation",
+            "visual_entry_optimization",
+            "timeframe_structure_confirmation",
+        ],
+    },
+    {
+        "title": "Technical Indicators: 3 Trading Traps to Avoid",
+        "url": "https://www.schwab.com/learn/story/technical-indicators-3-trading-traps-to-avoid",
+        "domain": "schwab.com",
+        "source_type": "broker_education_doc",
+        "used_for": [
+            "entry_validation",
+            "visual_entry_optimization",
+            "false_breakout_avoidance",
+        ],
+    },
+    {
+        "title": "Using the Volume Profile Indicator",
+        "url": "https://workplace.schwab.com/story/using-volume-profile-indicator",
+        "domain": "schwab.com",
+        "source_type": "broker_education_doc",
+        "used_for": [
+            "entry_validation",
+            "visual_entry_optimization",
+            "price_acceptance_rejection",
+        ],
+    },
+    {
+        "title": "Trend Following with Managed Futures: Historical Perspectives",
+        "url": "https://www.cmegroup.com/content/dam/cmegroup/education/files/trend-following-with-managed-futures-historical-perspectives.pdf",
+        "domain": "cmegroup.com",
+        "source_type": "education_reference",
+        "used_for": [
+            "scanner_selection",
+            "entry_validation",
+            "breakout_discipline",
+            "trend_context",
+        ],
+    },
+    {
         "title": "Proper Position Size",
         "url": "https://www.cmegroup.com/education/courses/trade-and-risk-management/the-2-percent-rule.html",
         "domain": "cmegroup.com",
@@ -511,6 +568,10 @@ IMPLEMENTATION_SCORECARD_METRICS: list[dict[str, str]] = [
     {
         "name": "observability_feedback_score",
         "goal": "Medir si Grafana, Prometheus y el chequeo operativo estan devolviendo feedback confiable para sostener disciplina.",
+    },
+    {
+        "name": "visual_benchmark_feedback_score",
+        "goal": "Medir si el benchmark visual externo ya fue traducido a criterios reutilizables, reportes y controles reales de entrada.",
     },
     {
         "name": "test_guardrail_score",
@@ -882,6 +943,57 @@ ENTRY_VALIDATION_DEEP_DIVE: dict[str, Any] = {
 }
 
 
+VISUAL_ENTRY_BENCHMARK_DEEP_DIVE: dict[str, Any] = {
+    "current_focus": "visual_entry_optimization",
+    "human_best_practice": [
+        "contexto claro en timeframe superior antes de mirar el disparo fino",
+        "nivel tecnico visible y defendible: soporte, resistencia, breakout o pullback",
+        "trigger concreto en vez de intuicion: cierre de confirmacion, rechazo, recuperacion o expansion",
+        "invalidacion clara antes del ticket",
+    ],
+    "automation_translation": [
+        "chart plan por timeframe y simbolo",
+        "expected visual thesis con sesgo y patrones esperados",
+        "evidencia OCR y captura persistida",
+        "bloqueo fail-closed cuando la confirmacion visual es insuficiente",
+    ],
+    "external_benchmark_focus": [
+        "breakout confirmation",
+        "pullback confirmation",
+        "multi-timeframe structure",
+        "volume and price acceptance",
+        "implementation shortfall versus decision benchmark",
+    ],
+    "key_findings": [
+        "El metodo visual mas robusto no es mirar mas cosas, sino exigir contexto, nivel, trigger e invalidacion en ese orden.",
+        "Los humanos competentes esperan confirmacion visual y aceptan entrar algo mas tarde a cambio de reducir trampas de breakout.",
+        "Los sistemas automaticos serios ganan cuando traducen esa confirmacion a reglas medibles y la confrontan con benchmark de ejecucion.",
+        "ATLAS necesitaba dejar de tratar la camara como una captura decorativa y usarla como contraste operativo de la tesis esperada.",
+    ],
+    "likely_failures": [
+        "abrir grafico sin confirmar que lo visible sigue alineado con el setup",
+        "usar OCR solo como evidencia de captura y no como contraste de sesgo o patron",
+        "exigir el mismo nivel de validacion visual a una equity simple y a una estructura de opciones definida",
+    ],
+    "recommended_metrics": [
+        "visual_readiness_score_pct",
+        "visual_alignment_score_pct",
+        "ocr_confidence_pct",
+        "chart_symbol_match",
+        "chart_timeframe_match",
+        "capture_evidence_present",
+        "visual_gate_block_rate",
+    ],
+    "web_feedback_loop": [
+        "detectar que setups visuales generan mas bloqueos o mas confirmaciones",
+        "buscar benchmark externo especifico para ese patron o error tipico",
+        "comparar el criterio humano descrito por la fuente con la implementacion real de ATLAS",
+        "traducir la comparacion a thresholds, warnings, tests o scorecard",
+        "persistir la fuente y la conclusion en memoria para la siguiente iteracion",
+    ],
+}
+
+
 EXECUTION_QUALITY_DEEP_DIVE: dict[str, Any] = {
     "current_focus": "execution_quality",
     "key_findings": [
@@ -1034,6 +1146,7 @@ def build_trading_self_audit_note() -> dict[str, Any]:
         "stage_map": build_trading_stage_map(),
         "scanner_selection_focus": SCANNER_SELECTION_DEEP_DIVE,
         "entry_validation_focus": ENTRY_VALIDATION_DEEP_DIVE,
+        "visual_entry_benchmark_focus": VISUAL_ENTRY_BENCHMARK_DEEP_DIVE,
         "execution_quality_focus": EXECUTION_QUALITY_DEEP_DIVE,
         "position_management_focus": POSITION_MANAGEMENT_DEEP_DIVE,
         "exit_governance_focus": EXIT_GOVERNANCE_DEEP_DIVE,

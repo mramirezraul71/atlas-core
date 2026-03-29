@@ -86,29 +86,44 @@ class ChartExecutionService:
             "cooldown_active": cooldown_active,
             "symbol_match": all(symbol.upper() in str(target.get("title") or "").upper() or symbol.upper() in str(target.get("url") or "").upper() for target in targets) if targets else False,
             "timeframe_match": all(bool(target.get("timeframe")) for target in targets) if targets else False,
+            "manual_required": False,
+            "operator_review_required": False,
+            "execution_state": "not_requested",
+            "readiness_score_pct": 100.0 if not targets else 0.0,
             "warnings": [],
         }
 
         if not targets:
             payload["open_mode"] = "not_requested"
+            payload["execution_state"] = "not_requested"
             self._last_payload = dict(payload)
             return payload
 
         if not auto_open_enabled:
             payload["warnings"].append("chart auto-open is disabled in settings; visual mission remains manual.")
             payload["open_mode"] = "manual_required"
+            payload["manual_required"] = True
+            payload["operator_review_required"] = True
+            payload["execution_state"] = "manual_required"
+            payload["readiness_score_pct"] = 35.0
             self._last_payload = dict(payload)
             return payload
 
         if not browser_path:
             payload["warnings"].append("browser path could not be resolved for chart auto-open.")
             payload["open_mode"] = "browser_unavailable"
+            payload["manual_required"] = True
+            payload["operator_review_required"] = True
+            payload["execution_state"] = "browser_unavailable"
+            payload["readiness_score_pct"] = 25.0
             self._last_payload = dict(payload)
             return payload
 
         if cooldown_active:
             payload["open_mode"] = "cooldown_reuse"
             payload["open_ok"] = True
+            payload["execution_state"] = "cooldown_reuse"
+            payload["readiness_score_pct"] = 90.0
             self._last_payload = dict(payload)
             return payload
 
@@ -117,12 +132,18 @@ class ChartExecutionService:
             payload["open_attempted"] = True
             payload["open_ok"] = True
             payload["open_mode"] = "browser_urls"
+            payload["execution_state"] = "opened"
+            payload["readiness_score_pct"] = 100.0
             self._last_signature = signature
             self._last_open_at = time.monotonic()
         except Exception as exc:
             payload["open_attempted"] = True
             payload["open_ok"] = False
             payload["open_mode"] = "error"
+            payload["manual_required"] = True
+            payload["operator_review_required"] = True
+            payload["execution_state"] = "error"
+            payload["readiness_score_pct"] = 20.0
             payload["warnings"].append(f"chart auto-open error: {exc}")
 
         self._last_payload = dict(payload)

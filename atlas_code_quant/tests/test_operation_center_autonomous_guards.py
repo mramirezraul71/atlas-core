@@ -33,6 +33,21 @@ class _Journal:
     def snapshot(self, limit: int = 3) -> dict:
         return {"recent_entries_count": 0, "recent_entries": [], "limit": limit}
 
+    def attribution_integrity_snapshot(self, account_type: str | None = None, limit: int = 10) -> dict:
+        return {
+            "enabled": True,
+            "account_type": account_type,
+            "summary": {
+                "open_untracked_count": 0,
+                "recent_flagged_count": 0,
+                "attributed_open_positions_pct": 100.0,
+                "open_untracked_ratio_pct": 0.0,
+            },
+            "alerts": [],
+            "flagged_entries": [],
+            "limit": limit,
+        }
+
     def position_management_snapshot(self, account_type: str | None = None, limit: int = 12) -> dict:
         return {
             "enabled": True,
@@ -66,11 +81,48 @@ class _Journal:
 
 
 class _Vision:
+    def __init__(
+        self,
+        *,
+        provider: str = "desktop_capture",
+        provider_ready: bool = True,
+        capture_ok: bool = True,
+        include_evidence: bool = True,
+        ocr_confidence: float | None = None,
+        chart_color: str | None = None,
+        pattern: str | None = None,
+        prices: list[float] | None = None,
+    ) -> None:
+        self.provider = provider
+        self.provider_ready = provider_ready
+        self.capture_ok = capture_ok
+        self.include_evidence = include_evidence
+        self.ocr_confidence = ocr_confidence
+        self.chart_color = chart_color
+        self.pattern = pattern
+        self.prices = list(prices or [])
+
     def status(self) -> dict:
-        return {"provider": "desktop_capture", "provider_ready": True, "operator_present": True, "screen_integrity_ok": True}
+        return {
+            "provider": self.provider,
+            "provider_ready": self.provider_ready,
+            "operator_present": True,
+            "screen_integrity_ok": True,
+        }
 
     def capture_context_snapshot(self, *, label: str = "operation") -> dict:
-        return {"capture_ok": True, "label": label, "source": "test"}
+        payload = {"capture_ok": self.capture_ok, "label": label, "source": "test", "provider": self.provider}
+        if self.include_evidence:
+            payload["capture_path"] = f"C:/tmp/{label}.png"
+            payload["meta_path"] = f"C:/tmp/{label}.json"
+        if self.ocr_confidence is not None:
+            payload["ocr"] = {
+                "confidence": self.ocr_confidence,
+                "pattern": self.pattern or "trend_hold",
+                "chart_color": self.chart_color or "neutral",
+                "prices": list(self.prices),
+            }
+        return payload
 
 
 class _Executor:
@@ -118,8 +170,22 @@ class _Learning:
 
 
 class _ChartExecution:
-    def __init__(self, open_ok: bool = True) -> None:
+    def __init__(
+        self,
+        open_ok: bool = True,
+        *,
+        open_mode: str = "test",
+        symbol_match: bool = True,
+        timeframe_match: bool = True,
+        manual_required: bool = False,
+        readiness_score_pct: float | None = None,
+    ) -> None:
         self.open_ok = open_ok
+        self.open_mode = open_mode
+        self.symbol_match = symbol_match
+        self.timeframe_match = timeframe_match
+        self.manual_required = manual_required
+        self.readiness_score_pct = 100.0 if readiness_score_pct is None and open_ok else (35.0 if readiness_score_pct is None else readiness_score_pct)
 
     def status(self) -> dict:
         return {"auto_open_enabled": True, "browser_available": True}
@@ -134,9 +200,13 @@ class _ChartExecution:
             "camera_required": bool((camera_plan or {}).get("required")),
             "open_attempted": True,
             "open_ok": self.open_ok,
-            "open_mode": "test",
-            "symbol_match": True,
-            "timeframe_match": True,
+            "open_mode": self.open_mode,
+            "execution_state": self.open_mode,
+            "symbol_match": self.symbol_match,
+            "timeframe_match": self.timeframe_match,
+            "manual_required": self.manual_required,
+            "operator_review_required": self.manual_required or not self.open_ok,
+            "readiness_score_pct": self.readiness_score_pct,
             "warnings": [],
         }
 
@@ -442,7 +512,13 @@ def test_visual_entry_gate_warns_when_camera_validation_is_skipped(tmp_path: Pat
         capture_context=False,
     )
 
+    assert payload["allowed"] is False
+    assert payload["blocked"] is True
     assert payload["visual_entry_gate"]["degraded"] is True
+    assert payload["visual_entry_gate"]["status"] == "manual_review"
+    assert payload["visual_entry_gate"]["blocking_ready"] is False
+    assert payload["visual_entry_gate"]["operator_review_required"] is True
+    assert any("Visual gate blocked submit" in reason for reason in payload["reasons"])
     assert any("capture_context=False" in warning for warning in payload["visual_entry_gate"]["warnings"])
 
 
@@ -483,5 +559,282 @@ def test_visual_entry_gate_reports_chart_execution_when_context_is_enabled(tmp_p
     )
 
     assert payload["visual_entry_gate"]["chart_execution"]["open_ok"] is True
+    assert payload["visual_entry_gate"]["status"] == "visual_ready"
     assert payload["visual_entry_gate"]["context_capture_requested"] is True
     assert payload["visual_entry_gate"]["context_capture_ok"] is True
+    assert payload["visual_entry_gate"]["readiness_score_pct"] == 100.0
+    assert payload["allowed"] is True
+
+
+def test_visual_entry_gate_requires_manual_review_when_chart_mission_needs_manual_open(tmp_path: Path) -> None:
+    center = OperationCenter(
+        tracker=_Tracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        chart_execution=_ChartExecution(open_ok=False, open_mode="manual_required", manual_required=True, readiness_score_pct=35.0),
+        state_path=tmp_path / "operation_center_state.json",
+    )
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="AAPL",
+            side="buy",
+            size=1,
+            order_type="market",
+            asset_class="equity",
+            account_scope="paper",
+            strategy_type="equity_long",
+            chart_plan={
+                "provider": "tradingview",
+                "targets": [
+                    {"title": "AAPL disparo 1h", "timeframe": "1h", "url": "https://www.tradingview.com/chart/?symbol=NASDAQ%3AAAPL&interval=60"}
+                ],
+            },
+        ),
+        action="submit",
+        capture_context=False,
+    )
+
+    assert payload["allowed"] is False
+    assert payload["visual_entry_gate"]["status"] == "manual_required"
+    assert payload["visual_entry_gate"]["manual_required"] is True
+    assert payload["visual_entry_gate"]["blocking_ready"] is False
+    assert payload["visual_entry_gate"]["blocking_reason"] == "chart mission requires manual opening"
+    assert payload["visual_entry_gate"]["readiness_score_pct"] == 35.0
+    assert any("Visual gate blocked submit" in reason for reason in payload["reasons"])
+
+
+def test_visual_entry_gate_marks_chart_pending_when_symbol_match_is_not_confirmed(tmp_path: Path) -> None:
+    center = OperationCenter(
+        tracker=_Tracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        chart_execution=_ChartExecution(open_ok=True, open_mode="opened", symbol_match=False, readiness_score_pct=60.0),
+        state_path=tmp_path / "operation_center_state.json",
+    )
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="AAPL",
+            side="buy",
+            size=1,
+            order_type="market",
+            asset_class="equity",
+            account_scope="paper",
+            strategy_type="equity_long",
+            chart_plan={
+                "provider": "tradingview",
+                "targets": [
+                    {"title": "AAPL disparo 1h", "timeframe": "1h", "url": "https://www.tradingview.com/chart/?symbol=NASDAQ%3AAAPL&interval=60"}
+                ],
+            },
+        ),
+        action="submit",
+        capture_context=False,
+    )
+
+    assert payload["visual_entry_gate"]["degraded"] is True
+    assert payload["visual_entry_gate"]["status"] == "manual_review"
+    assert payload["visual_entry_gate"]["blocking_ready"] is False
+    assert any("symbol match" in warning for warning in payload["visual_entry_gate"]["warnings"])
+    assert any("Visual gate blocked submit" in reason for reason in payload["reasons"])
+
+
+def test_visual_entry_gate_blocks_when_camera_capture_fails(tmp_path: Path) -> None:
+    center = OperationCenter(
+        tracker=_Tracker(),
+        journal=_Journal(),
+        vision=_Vision(capture_ok=False, include_evidence=False),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        chart_execution=_ChartExecution(open_ok=True, open_mode="opened", readiness_score_pct=100.0),
+        state_path=tmp_path / "operation_center_state.json",
+    )
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="AAPL",
+            side="buy",
+            size=1,
+            order_type="market",
+            asset_class="equity",
+            account_scope="paper",
+            strategy_type="equity_long",
+            chart_plan={
+                "provider": "tradingview",
+                "targets": [
+                    {"title": "AAPL disparo 1h", "timeframe": "1h", "url": "https://www.tradingview.com/chart/?symbol=NASDAQ%3AAAPL&interval=60"}
+                ],
+            },
+            camera_plan={"required": True, "provider": "direct_nexus", "visual_fit_pct": 88.0},
+        ),
+        action="submit",
+        capture_context=True,
+    )
+
+    assert payload["allowed"] is False
+    assert payload["blocked"] is True
+    assert payload["visual_entry_gate"]["status"] == "camera_unavailable"
+    assert payload["visual_entry_gate"]["blocking_reason"] == "visual context capture failed"
+    assert payload["visual_entry_gate"]["context_evidence"]["capture_ok"] is False
+    assert any("Visual gate blocked submit" in reason for reason in payload["reasons"])
+
+
+def test_visual_entry_gate_blocks_when_visual_fit_is_too_low(tmp_path: Path) -> None:
+    center = OperationCenter(
+        tracker=_Tracker(),
+        journal=_Journal(),
+        vision=_Vision(capture_ok=True, include_evidence=True, ocr_confidence=0.92),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        chart_execution=_ChartExecution(open_ok=True, open_mode="opened", readiness_score_pct=100.0),
+        state_path=tmp_path / "operation_center_state.json",
+    )
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="AAPL",
+            side="buy",
+            size=1,
+            order_type="market",
+            asset_class="equity",
+            account_scope="paper",
+            strategy_type="equity_long",
+            chart_plan={
+                "provider": "tradingview",
+                "targets": [
+                    {"title": "AAPL disparo 5m", "timeframe": "5m", "url": "https://www.tradingview.com/chart/?symbol=NASDAQ%3AAAPL&interval=5"}
+                ],
+            },
+            camera_plan={"required": True, "provider": "direct_nexus", "visual_fit_pct": 58.0},
+        ),
+        action="submit",
+        capture_context=True,
+    )
+
+    assert payload["allowed"] is False
+    assert payload["blocked"] is True
+    assert payload["visual_entry_gate"]["status"] == "manual_review"
+    assert payload["visual_entry_gate"]["blocking_ready"] is False
+    assert payload["visual_entry_gate"]["context_evidence"]["ocr_confidence_pct"] == 92.0
+    assert any("camera visual fit" in warning for warning in payload["visual_entry_gate"]["warnings"])
+
+
+def test_visual_entry_gate_blocks_when_ocr_thesis_is_misaligned(tmp_path: Path) -> None:
+    center = OperationCenter(
+        tracker=_Tracker(),
+        journal=_Journal(),
+        vision=_Vision(capture_ok=True, include_evidence=True, ocr_confidence=0.95, chart_color="bearish", pattern="breakdown"),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        chart_execution=_ChartExecution(open_ok=True, open_mode="opened", readiness_score_pct=100.0),
+        state_path=tmp_path / "operation_center_state.json",
+    )
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="AAPL",
+            side="buy",
+            size=1,
+            order_type="market",
+            asset_class="equity",
+            account_scope="paper",
+            strategy_type="equity_long",
+            chart_plan={
+                "provider": "tradingview",
+                "targets": [
+                    {"title": "AAPL disparo 1h", "timeframe": "1h", "url": "https://www.tradingview.com/chart/?symbol=NASDAQ%3AAAPL&interval=60"}
+                ],
+            },
+            camera_plan={
+                "required": True,
+                "provider": "direct_nexus",
+                "visual_fit_pct": 88.0,
+                "expected_visual": {
+                    "symbol": "AAPL",
+                    "direction": "alcista",
+                    "timeframe": "1h",
+                    "higher_timeframe": "4h",
+                    "expected_chart_bias": "bullish",
+                    "expected_patterns": ["breakout", "uptrend", "pullback", "alcista"],
+                },
+            },
+        ),
+        action="submit",
+        capture_context=True,
+    )
+
+    assert payload["allowed"] is False
+    assert payload["blocked"] is True
+    assert payload["visual_entry_gate"]["status"] == "manual_review"
+    assert payload["visual_entry_gate"]["blocking_ready"] is False
+    assert payload["visual_entry_gate"]["blocking_reason"] == "visual thesis is misaligned with OCR evidence"
+    assert payload["visual_entry_gate"]["context_evidence"]["visual_alignment"]["confirmed"] is False
+    assert payload["visual_entry_gate"]["context_evidence"]["visual_alignment"]["alignment_score_pct"] == 0.0
+
+
+def test_visual_entry_gate_blocks_option_setup_when_ocr_confidence_is_below_profile_threshold(tmp_path: Path) -> None:
+    center = OperationCenter(
+        tracker=_Tracker(),
+        journal=_Journal(),
+        vision=_Vision(capture_ok=True, include_evidence=True, ocr_confidence=0.74, chart_color="bullish", pattern="breakout", prices=[100.5, 101.2]),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        chart_execution=_ChartExecution(open_ok=True, open_mode="opened", readiness_score_pct=100.0),
+        state_path=tmp_path / "operation_center_state.json",
+    )
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="AAPL",
+            side="buy",
+            size=1,
+            order_type="debit",
+            asset_class="multileg",
+            account_scope="paper",
+            strategy_type="bull_call_debit_spread",
+            chart_plan={
+                "provider": "tradingview",
+                "targets": [
+                    {"title": "AAPL disparo 1h", "timeframe": "1h", "url": "https://www.tradingview.com/chart/?symbol=NASDAQ%3AAAPL&interval=60"}
+                ],
+            },
+            camera_plan={
+                "required": True,
+                "provider": "direct_nexus",
+                "visual_fit_pct": 84.0,
+                "expected_visual": {
+                    "symbol": "AAPL",
+                    "direction": "alcista",
+                    "timeframe": "1h",
+                    "higher_timeframe": "4h",
+                    "expected_chart_bias": "bullish",
+                    "expected_patterns": ["breakout", "uptrend", "pullback", "alcista"],
+                },
+                "validation_profile": {
+                    "validation_mode": "defined_risk_structure_confirmation",
+                    "min_ocr_confidence_pct": 84.0,
+                    "min_alignment_score_pct": 80.0,
+                    "require_pattern_confirmation": True,
+                    "require_price_evidence": True,
+                },
+            },
+        ),
+        action="submit",
+        capture_context=True,
+    )
+
+    assert payload["allowed"] is False
+    assert payload["blocked"] is True
+    assert payload["visual_entry_gate"]["blocking_reason"] == "OCR confidence 74.00% is below the required threshold (84.00%)"
+    assert payload["visual_entry_gate"]["context_evidence"]["validation_profile"]["validation_mode"] == "defined_risk_structure_confirmation"
