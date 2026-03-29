@@ -135,6 +135,31 @@ class TestICSignalTracker:
         ok = tmp_tracker.update_outcome(signal_id="nonexistent", exit_price=100.0)
         assert ok is False
 
+    def test_update_pending_outcome_matches_nearest_signal(self, tmp_tracker):
+        older_sid = tmp_tracker.record_signal(
+            symbol="AAPL", method="trend_ema_stack",
+            predicted_move_pct=1.0, entry_price=99.5,
+        )
+        newer_sid = tmp_tracker.record_signal(
+            symbol="AAPL", method="trend_ema_stack",
+            predicted_move_pct=2.0, entry_price=100.0,
+        )
+        tmp_tracker._state["signals"][older_sid]["recorded_at"] = "2026-03-27T12:00:00+00:00"
+        tmp_tracker._state["signals"][newer_sid]["recorded_at"] = "2026-03-28T12:00:00+00:00"
+        tmp_tracker._save()
+
+        matched_sid = tmp_tracker.update_pending_outcome(
+            symbol="AAPL",
+            method="trend_ema_stack",
+            entry_price=100.0,
+            recorded_near="2026-03-28T12:05:00+00:00",
+            exit_price=103.0,
+        )
+
+        assert matched_sid == newer_sid
+        assert tmp_tracker._state["signals"][newer_sid]["outcome_available"] is True
+        assert tmp_tracker._state["signals"][older_sid]["outcome_available"] is False
+
     def test_update_outcome_zero_entry(self, tmp_tracker):
         sid = tmp_tracker.record_signal(
             symbol="SPY", method="momentum",

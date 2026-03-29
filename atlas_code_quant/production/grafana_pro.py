@@ -256,6 +256,7 @@ def generate_pro_dashboard() -> dict:
     panels.append(_stat(27, "BRAIN DELIVERY", "atlas_brain_delivery_ratio_pct", unit="percent", y=57, x=10, w=5, h=5, color=_PURPLE, thresholds=[{"color": _RED, "value": None}, {"color": _YELLOW, "value": 60}, {"color": _GREEN, "value": 85}]))
     panels.append(_stat(28, "UNTRACKED OPEN", "atlas_open_untracked_ratio_pct", unit="percent", y=57, x=15, w=4, h=5, color=_RED, thresholds=[{"color": _GREEN, "value": None}, {"color": _YELLOW, "value": 5}, {"color": _RED, "value": 20}]))
     panels.append(_stat(29, "EVIDENCE SCORE", "atlas_evidence_sufficiency_score", unit="percent", y=57, x=19, w=5, h=5, color=_YELLOW, thresholds=[{"color": _RED, "value": None}, {"color": _YELLOW, "value": 30}, {"color": _GREEN, "value": 70}]))
+    panels.append(_stat(30, "RECENT BAD ATTR", "atlas_recent_unattributed_entries_count", unit="short", y=62, x=0, w=6, h=5, color=_RED, thresholds=[{"color": _GREEN, "value": None}, {"color": _YELLOW, "value": 1}, {"color": _RED, "value": 3}]))
 
     return {
         "uid": "atlas-quant-pro-2026",

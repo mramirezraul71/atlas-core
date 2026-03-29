@@ -50,6 +50,19 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _parse_iso_utc(value: Any) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def _spearman_r(x: list[float], y: list[float]) -> tuple[float, float]:
     """Correlación de Spearman e t-estadístico.
 
@@ -202,6 +215,80 @@ class ICSignalTracker:
         self._save()
         return True
 
+    def find_pending_signal_id(
+        self,
+        *,
+        symbol: str,
+        method: str | None = None,
+        entry_price: float | None = None,
+        recorded_near: str | None = None,
+    ) -> str | None:
+        """Encuentra la señal pendiente más probable para una posición cerrada.
+
+        Se prioriza por cercanía temporal al momento de entrada y, como apoyo,
+        por cercanía del precio de entrada. Esto permite conectar outcomes del
+        journal aunque el signal_id no haya viajado por todo el pipeline.
+        """
+        target_symbol = str(symbol or "").upper().strip()
+        if not target_symbol:
+            return None
+
+        target_method = str(method or "").strip() or None
+        target_entry_price = abs(_safe_float(entry_price, 0.0))
+        target_recorded_at = _parse_iso_utc(recorded_near)
+
+        candidates: list[tuple[float, str]] = []
+        signals = self._state.get("signals") or {}
+        for signal_id, sig in signals.items():
+            if sig.get("outcome_available"):
+                continue
+            if str(sig.get("symbol") or "").upper().strip() != target_symbol:
+                continue
+            if target_method and str(sig.get("method") or "").strip() != target_method:
+                continue
+
+            recorded_at = _parse_iso_utc(sig.get("recorded_at"))
+            time_penalty = 0.0
+            if target_recorded_at and recorded_at:
+                time_penalty = abs((recorded_at - target_recorded_at).total_seconds())
+            elif target_recorded_at or recorded_at:
+                time_penalty = 10**9
+
+            price_penalty = 0.0
+            signal_entry = abs(_safe_float(sig.get("entry_price"), 0.0))
+            if target_entry_price > 0 and signal_entry > 0:
+                price_penalty = abs(signal_entry - target_entry_price)
+            elif target_entry_price > 0 or signal_entry > 0:
+                price_penalty = 10**6
+
+            candidates.append((time_penalty + price_penalty, signal_id))
+
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: item[0])
+        return candidates[0][1]
+
+    def update_pending_outcome(
+        self,
+        *,
+        symbol: str,
+        exit_price: float,
+        method: str | None = None,
+        entry_price: float | None = None,
+        recorded_near: str | None = None,
+    ) -> str | None:
+        """Actualiza outcome de la señal pendiente más probable para un símbolo."""
+        signal_id = self.find_pending_signal_id(
+            symbol=symbol,
+            method=method,
+            entry_price=entry_price,
+            recorded_near=recorded_near,
+        )
+        if not signal_id:
+            return None
+        updated = self.update_outcome(signal_id=signal_id, exit_price=exit_price)
+        return signal_id if updated else None
+
     def compute_ic(
         self,
         method: str | None = None,
@@ -309,16 +396,12 @@ class ICSignalTracker:
             if sig.get("outcome_available"):
                 continue
             if older_than_hours > 0:
-                try:
-                    recorded = datetime.fromisoformat(
-                        str(sig["recorded_at"]).replace("Z", "+00:00")
-                    )
-                    if recorded.tzinfo is None:
-                        recorded = recorded.replace(tzinfo=timezone.utc)
+                recorded = _parse_iso_utc(sig.get("recorded_at"))
+                if recorded is not None:
                     age_h = (now - recorded).total_seconds() / 3600.0
                     if age_h < older_than_hours:
                         continue
-                except (KeyError, ValueError):
+                else:
                     pass
             result.append({
                 "signal_id": sig["signal_id"],
@@ -344,11 +427,9 @@ class ICSignalTracker:
         to_delete = []
         for sid, sig in signals.items():
             try:
-                recorded = datetime.fromisoformat(
-                    str(sig.get("recorded_at", "")).replace("Z", "+00:00")
-                )
-                if recorded.tzinfo is None:
-                    recorded = recorded.replace(tzinfo=timezone.utc)
+                recorded = _parse_iso_utc(sig.get("recorded_at"))
+                if recorded is None:
+                    raise ValueError("invalid recorded_at")
                 age_days = (now - recorded).total_seconds() / 86400.0
                 if age_days > keep_days:
                     to_delete.append(sid)

@@ -810,6 +810,8 @@ class StrategySelectorService:
             "entry_confidence_reference_pct": entry_plan.get("confidence_reference_pct"),
             "max_entry_drift_pct": entry_plan.get("max_adverse_drift_pct"),
             "max_entry_spread_pct": entry_plan.get("max_spread_pct"),
+            "chart_plan": chart_plan,
+            "camera_plan": camera_plan,
         }
 
         risk_profile = self._risk_profile(

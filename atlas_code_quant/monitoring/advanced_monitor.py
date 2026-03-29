@@ -219,6 +219,10 @@ def _group_single(position: NormalizedPosition, strategy_type: str) -> dict[str,
     }
 
 
+def _single_equity_strategy_type(position: NormalizedPosition) -> str:
+    return "equity_short" if float(position.signed_qty) < 0 else "equity_long"
+
+
 def _infer_groups(positions: list[NormalizedPosition]) -> list[dict[str, Any]]:
     groups: list[dict[str, Any]] = []
     by_underlying: dict[str, list[NormalizedPosition]] = {}
@@ -228,6 +232,10 @@ def _infer_groups(positions: list[NormalizedPosition]) -> list[dict[str, Any]]:
     for underlying, bucket in by_underlying.items():
         equities = [position for position in bucket if position.asset_class == "equity"]
         options = [position for position in bucket if position.asset_class == "option"]
+        if equities and not options:
+            for position in equities:
+                groups.append(_group_single(position, _single_equity_strategy_type(position)))
+            continue
         if equities and len(options) == 1 and options[0].option_type == "call" and options[0].signed_qty < 0:
             groups.append({"group_id": f"covered_call:{underlying}", "underlying": underlying, "strategy_type": "covered_call", "positions": equities + options})
             continue

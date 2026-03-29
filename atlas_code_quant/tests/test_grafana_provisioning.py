@@ -1,4 +1,5 @@
 from atlas_code_quant.production.grafana_dashboard import (
+    _grafana_alert_rule_yaml,
     _grafana_contact_points_yaml,
     _grafana_notification_policies_yaml,
 )
@@ -28,3 +29,9 @@ def test_notification_policies_yaml_adds_routes_when_telegram_enabled():
     assert "receiver: grafana-default-email" in payload
     assert "receiver: atlas-telegram" in payload
     assert "atlas_scorecard" in payload
+
+
+def test_alerting_yaml_includes_recent_unattributed_entries_rule():
+    payload = _grafana_alert_rule_yaml()
+    assert "atlas_recent_unattributed_entries_count" in payload
+    assert "ATLAS Recent Unattributed Entries Present" in payload

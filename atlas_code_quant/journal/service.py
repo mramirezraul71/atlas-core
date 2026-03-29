@@ -22,8 +22,10 @@ from execution.tradier_controls import (
 )
 from atlas_code_quant.journal.db import init_db, session_scope
 from atlas_code_quant.journal.models import TradingJournal
-from monitoring.strategy_tracker import StrategyTracker
 from config.settings import settings
+from learning.adaptive_policy import AdaptiveLearningService
+from learning.ic_signal_tracker import ICSignalTracker, get_ic_tracker
+from monitoring.strategy_tracker import StrategyTracker
 from operations.brain_bridge import QuantBrainBridge
 
 logger = logging.getLogger("quant.journal")
@@ -72,6 +74,11 @@ def _coerce_list_payload(value: Any) -> list[Any]:
     return [value]
 
 
+def _is_bad_strategy_type(value: Any) -> bool:
+    normalized = str(value or "").strip().lower()
+    return normalized in {"", "unknown", "untracked", "none", "null"}
+
+
 def _strategy_leg_tokens(strategy: dict[str, Any]) -> list[str]:
     tokens: list[str] = []
     for position in sorted(
@@ -90,6 +97,71 @@ def _strategy_leg_tokens(strategy: dict[str, Any]) -> list[str]:
                 f"option:{position.get('symbol')}:{position.get('expiration')}:{position.get('side')}:{position.get('option_type')}:{position.get('strike')}"
             )
     return tokens
+
+
+def _position_match_tokens(positions: list[dict[str, Any]]) -> list[str]:
+    tokens: list[str] = []
+    for position in sorted(
+        positions or [],
+        key=lambda item: (
+            str(item.get("symbol") or ""),
+            str(item.get("expiration") or ""),
+            float(item.get("strike") or 0.0),
+            str(item.get("side") or ""),
+            float(item.get("signed_qty") or 0.0),
+        ),
+    ):
+        asset_class = str(position.get("asset_class") or "").lower()
+        symbol = str(position.get("symbol") or "").upper()
+        side = str(position.get("side") or "").lower()
+        signed_qty = round(_safe_float(position.get("signed_qty"), 0.0), 6)
+        if asset_class == "equity":
+            tokens.append(f"equity:{symbol}:{side}:{signed_qty}")
+        else:
+            expiration = str(position.get("expiration") or "")
+            option_type = str(position.get("option_type") or "")
+            strike = round(_safe_float(position.get("strike"), 0.0), 6)
+            tokens.append(
+                f"option:{symbol}:{expiration}:{side}:{option_type}:{strike}:{signed_qty}"
+            )
+    return tokens
+
+
+def _strategy_match_signature(strategy: dict[str, Any]) -> str:
+    return "|".join(_position_match_tokens(strategy.get("positions") or []))
+
+
+def _entry_match_signature(entry: TradingJournal) -> str:
+    return "|".join(_position_match_tokens(_json_load(entry.legs_details, [])))
+
+
+def _select_matching_open_entry(
+    open_entries: list[TradingJournal],
+    *,
+    strategy: dict[str, Any],
+    strategy_id: str,
+) -> TradingJournal | None:
+    tracker_strategy_id = str(strategy.get("strategy_id") or "").strip()
+    strategy_match_signature = _strategy_match_signature(strategy)
+
+    for entry in open_entries:
+        if entry.strategy_id == strategy_id:
+            return entry
+
+    if tracker_strategy_id:
+        for entry in open_entries:
+            if str(entry.tracker_strategy_id or "").strip() == tracker_strategy_id:
+                return entry
+
+    if not strategy_match_signature:
+        return None
+
+    for entry in open_entries:
+        if not _is_bad_strategy_type(entry.strategy_type):
+            continue
+        if _entry_match_signature(entry) == strategy_match_signature:
+            return entry
+    return None
 
 
 def _stable_strategy_id(strategy: dict[str, Any]) -> tuple[str, str]:
@@ -765,6 +837,74 @@ def build_post_trade_learning_snapshot(
     }
 
 
+def build_attribution_integrity_snapshot(
+    entries: list[TradingJournal],
+    *,
+    account_type: str | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    capped_limit = max(1, min(int(limit), 25))
+    filtered = [
+        entry
+        for entry in entries
+        if account_type in {None, "", "all"} or entry.account_type == account_type
+    ]
+    open_entries = [entry for entry in filtered if entry.status == "open"]
+    flagged_open = [entry for entry in open_entries if _is_bad_strategy_type(entry.strategy_type)]
+    flagged_recent = [
+        entry
+        for entry in sorted(
+            filtered,
+            key=lambda item: (item.updated_at or item.last_synced_at or item.entry_time),
+            reverse=True,
+        )
+        if _is_bad_strategy_type(entry.strategy_type)
+    ][:capped_limit]
+
+    attributed_open_positions_pct = round(
+        ((len(open_entries) - len(flagged_open)) / len(open_entries)) * 100.0,
+        2,
+    ) if open_entries else 100.0
+    open_untracked_ratio_pct = round((len(flagged_open) / len(open_entries)) * 100.0, 2) if open_entries else 0.0
+
+    alerts: list[dict[str, Any]] = []
+    if flagged_open:
+        alerts.append(
+            {
+                "level": "critical",
+                "code": "open_positions_unattributed",
+                "message": f"{len(flagged_open)} open positions remain unattributed (strategy_type unknown/untracked).",
+                "count": len(flagged_open),
+            }
+        )
+    if flagged_recent:
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "recent_entries_flagged",
+                "message": f"{len(flagged_recent)} recent journal entries are flagged for attribution integrity review.",
+                "count": len(flagged_recent),
+            }
+        )
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "account_type": account_type or "all",
+        "enabled": True,
+        "summary": {
+            "entries_total": len(filtered),
+            "open_positions": len(open_entries),
+            "open_untracked_count": len(flagged_open),
+            "recent_flagged_count": len(flagged_recent),
+            "attributed_open_positions_pct": attributed_open_positions_pct,
+            "open_untracked_ratio_pct": open_untracked_ratio_pct,
+        },
+        "alerts": alerts,
+        "flagged_entries": [_entry_payload(entry) for entry in flagged_recent],
+        "limit": capped_limit,
+    }
+
+
 def _equity_curve(entries: list[TradingJournal]) -> list[dict[str, Any]]:
     running = 0.0
     points: list[dict[str, Any]] = []
@@ -868,9 +1008,17 @@ def _entry_payload(entry: TradingJournal) -> dict[str, Any]:
 
 
 class TradingJournalService:
-    def __init__(self, tracker: StrategyTracker | None = None, brain: QuantBrainBridge | None = None) -> None:
+    def __init__(
+        self,
+        tracker: StrategyTracker | None = None,
+        brain: QuantBrainBridge | None = None,
+        learning: AdaptiveLearningService | None = None,
+        ic_tracker: ICSignalTracker | None = None,
+    ) -> None:
         self.tracker = tracker or StrategyTracker()
         self.brain = brain or QuantBrainBridge()
+        self.learning = learning or AdaptiveLearningService()
+        self.ic_tracker = ic_tracker or get_ic_tracker()
 
     def init_db(self) -> None:
         init_db()
@@ -881,14 +1029,19 @@ class TradingJournalService:
 
     def _upsert_open_entry(self, db: Any, account: TradierAccountSession, client: TradierClient, strategy: dict[str, Any], matched_events: list[dict[str, Any]]) -> tuple[str, bool]:
         strategy_id, signature = _stable_strategy_id(strategy)
-        entry = db.execute(
+        existing_open_entries = db.execute(
             select(TradingJournal).where(
                 TradingJournal.account_type == account.scope,
                 TradingJournal.account_id == account.account_id,
-                TradingJournal.strategy_id == strategy_id,
                 TradingJournal.status == "open",
-            ).limit(1)
-        ).scalar_one_or_none()
+                TradingJournal.symbol == str(strategy.get("underlying") or ""),
+            )
+        ).scalars().all()
+        entry = _select_matching_open_entry(
+            existing_open_entries,
+            strategy=strategy,
+            strategy_id=strategy_id,
+        )
         opened_at, entry_flow, open_fees = _open_event_details(matched_events)
         iv_rank = _estimate_iv_rank(client, str(strategy.get("underlying") or ""), _extract_avg_iv(strategy))
         if entry is None:
@@ -927,7 +1080,10 @@ class TradingJournalService:
             db.flush()
             return strategy_id, True
 
+        entry.strategy_id = strategy_id
         entry.tracker_strategy_id = str(strategy.get("strategy_id") or entry.tracker_strategy_id or "")
+        entry.strategy_type = str(strategy.get("strategy_type") or entry.strategy_type or "unknown")
+        entry.symbol = str(strategy.get("underlying") or entry.symbol or "")
         entry.legs_signature = signature
         entry.legs_details = _json_dump(strategy.get("positions") or [])
         entry.current_win_rate_pct = _safe_float(strategy.get("win_rate_pct"), entry.current_win_rate_pct or float("nan"))
@@ -936,6 +1092,7 @@ class TradingJournalService:
         entry.spot_price = _safe_float(strategy.get("spot"), 0.0)
         entry.iv_rank = iv_rank if iv_rank is not None else entry.iv_rank
         entry.fees = max(_safe_float(entry.fees, 0.0), open_fees)
+        entry.is_level4 = str(strategy.get("strategy_type") or "") in LEVEL4_STRATEGIES
         entry.greeks_json = _json_dump({"delta": strategy.get("net_delta"), "gamma": strategy.get("net_gamma"), "theta": strategy.get("theta_daily"), "vega": strategy.get("net_vega")})
         entry.attribution_json = _json_dump(strategy.get("attribution") or {})
         entry.raw_entry_payload_json = _json_dump(strategy.get("win_rate_details") or {})
@@ -966,6 +1123,51 @@ class TradingJournalService:
                 f"Driver dominante: {driver}. Diagnostico principal: {root_cause}."
             )
         entry.last_synced_at = datetime.utcnow()
+
+    def _sync_closed_entry_learning(self, entry_payload: dict[str, Any]) -> dict[str, Any]:
+        symbol = str(entry_payload.get("symbol") or "").upper().strip()
+        entry_time = str(entry_payload.get("entry_time") or "")
+        strategy_type = str(entry_payload.get("strategy_type") or "").strip() or None
+        entry_price = abs(_safe_float(entry_payload.get("entry_price"), 0.0))
+        exit_price = abs(_safe_float(entry_payload.get("exit_price"), 0.0))
+        signal_id = None
+
+        if symbol and exit_price > 0:
+            try:
+                signal_id = self.ic_tracker.update_pending_outcome(
+                    symbol=symbol,
+                    method=strategy_type,
+                    entry_price=entry_price if entry_price > 0 else None,
+                    recorded_near=entry_time or None,
+                    exit_price=exit_price,
+                )
+            except Exception:
+                logger.exception("Unable to update IC outcome for %s", entry_payload.get("journal_key"))
+
+        return {
+            "journal_key": entry_payload.get("journal_key"),
+            "symbol": symbol,
+            "signal_id": signal_id,
+            "ic_updated": bool(signal_id),
+        }
+
+    def _process_closed_entry_payloads(self, scope: str, closed_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        outcomes: list[dict[str, Any]] = []
+        if not closed_entries:
+            return outcomes
+
+        for entry_payload in closed_entries:
+            outcomes.append(self._sync_closed_entry_learning(entry_payload))
+            try:
+                self.brain.record_journal_outcome(entry_payload)
+            except Exception:
+                logger.exception("Unable to publish journal outcome for %s", entry_payload.get("journal_key"))
+
+        try:
+            self.learning.refresh(force=True)
+        except Exception:
+            logger.exception("Unable to refresh adaptive learning after journal sync for scope=%s", scope)
+        return outcomes
 
     def sync_scope(self, scope: str) -> dict[str, Any]:
         client, account = resolve_account_session(account_scope=scope)  # type: ignore[arg-type]
@@ -1003,13 +1205,18 @@ class TradingJournalService:
                 closed_entries.append(_entry_payload(entry))
                 closed += 1
 
-        for entry_payload in closed_entries:
-            try:
-                self.brain.record_journal_outcome(entry_payload)
-            except Exception:
-                logger.exception("Unable to publish journal outcome for %s", entry_payload.get("journal_key"))
+        learning_outcomes = self._process_closed_entry_payloads(scope, closed_entries)
 
-        return {"scope": scope, "account_id": account.account_id, "created": created, "updated": updated, "closed": closed, "active_strategies": len(strategies), "trade_events_seen": len(trade_events)}
+        return {
+            "scope": scope,
+            "account_id": account.account_id,
+            "created": created,
+            "updated": updated,
+            "closed": closed,
+            "active_strategies": len(strategies),
+            "trade_events_seen": len(trade_events),
+            "learning_outcomes": learning_outcomes,
+        }
 
     def stats(self) -> dict[str, Any]:
         with session_scope() as db:
@@ -1067,3 +1274,11 @@ class TradingJournalService:
                 query = query.where(TradingJournal.account_type == account_type)
             rows = db.execute(query.order_by(TradingJournal.updated_at.desc(), TradingJournal.id.desc())).scalars().all()
         return build_post_trade_learning_snapshot(rows, account_type=account_type, limit=limit)
+
+    def attribution_integrity_snapshot(self, *, account_type: str | None = None, limit: int = 10) -> dict[str, Any]:
+        with session_scope() as db:
+            query = select(TradingJournal)
+            if account_type not in {None, "", "all"}:
+                query = query.where(TradingJournal.account_type == account_type)
+            rows = db.execute(query.order_by(TradingJournal.updated_at.desc(), TradingJournal.id.desc())).scalars().all()
+        return build_attribution_integrity_snapshot(rows, account_type=account_type, limit=limit)

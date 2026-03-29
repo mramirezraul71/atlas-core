@@ -28,3 +28,6 @@ class JournalProService:
 
     def post_trade_learning_snapshot(self, *, account_type: str | None = None, limit: int = 10) -> dict[str, Any]:
         return self.journal.post_trade_learning_snapshot(account_type=account_type, limit=limit)
+
+    def attribution_integrity_snapshot(self, *, account_type: str | None = None, limit: int = 10) -> dict[str, Any]:
+        return self.journal.attribution_integrity_snapshot(account_type=account_type, limit=limit)

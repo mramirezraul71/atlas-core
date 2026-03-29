@@ -358,6 +358,8 @@ def _compute_journal_operational_indicators(journal_db_path: Path, external_tran
     evidence_sufficiency_score = _ratio_pct(min(closed_total, 20), 20)
     post_mortem_coverage_pct = _ratio_pct(closed_with_postmortem, closed_total) if closed_total else 0.0
     recent_attribution_pct = _ratio_pct(recent_attributed, recent_total) if recent_total else 0.0
+    recent_unattributed_count = max(recent_total - recent_attributed, 0)
+    recent_unattributed_ratio_pct = _ratio_pct(recent_unattributed_count, recent_total) if recent_total else 0.0
 
     # Fórmula principal: preservada para comparación histórica
     score = _clamp_pct(
@@ -381,6 +383,8 @@ def _compute_journal_operational_indicators(journal_db_path: Path, external_tran
             "realized_pnl": round(realized_pnl, 2),
             "post_mortem_coverage_pct": post_mortem_coverage_pct,
             "recent_attribution_pct": recent_attribution_pct,
+            "recent_unattributed_count": recent_unattributed_count,
+            "recent_unattributed_ratio_pct": recent_unattributed_ratio_pct,
             "recent_sample_size": recent_total,
             "external_learning_translation_score": external_translation_score,
             "note": (
@@ -681,6 +685,7 @@ def build_trading_implementation_scorecard(
             "brain_delivery_ratio_pct": memory_persistence["details"]["delivery_ratio_pct"],
             "attributed_open_positions_pct": usefulness["details"].get("attributed_open_positions_pct", 0.0),
             "open_untracked_ratio_pct": usefulness["details"].get("open_untracked_ratio_pct", 0.0),
+            "recent_unattributed_count": usefulness["details"].get("recent_unattributed_count", 0),
             "evidence_sufficiency_score": usefulness["details"].get("evidence_sufficiency_score", 0.0),
             "post_mortem_coverage_pct": usefulness["details"].get("post_mortem_coverage_pct", 0.0),
             "recent_attribution_pct": usefulness["details"].get("recent_attribution_pct", 0.0),
@@ -747,6 +752,7 @@ def format_trading_implementation_scorecard_markdown(payload: dict[str, Any]) ->
             f"- `brain_delivery_ratio_pct`: `{indicators['brain_delivery_ratio_pct']}`",
             f"- `attributed_open_positions_pct`: `{indicators['attributed_open_positions_pct']}`",
             f"- `open_untracked_ratio_pct`: `{indicators['open_untracked_ratio_pct']}`",
+            f"- `recent_unattributed_count`: `{indicators['recent_unattributed_count']}`",
             f"- `evidence_sufficiency_score`: `{indicators['evidence_sufficiency_score']}`",
             f"- `post_mortem_coverage_pct`: `{indicators['post_mortem_coverage_pct']}`",
             f"- `recent_attribution_pct`: `{indicators['recent_attribution_pct']}`",

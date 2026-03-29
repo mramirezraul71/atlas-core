@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from threading import Event
 from pathlib import Path
 
 from atlas_code_quant.operations.operation_center import OperationCenter
@@ -45,8 +46,19 @@ class _Executor:
 
 
 class _Brain:
+    def __init__(self) -> None:
+        self.emit_calls = 0
+        self.last_emit: dict | None = None
+        self.emit_event = Event()
+
     def status(self) -> dict:
         return {"last_memory_ok": True, "last_error": ""}
+
+    def emit(self, **payload: object) -> dict:
+        self.emit_calls += 1
+        self.last_emit = dict(payload)
+        self.emit_event.set()
+        return {"ok": True}
 
 
 class _SlowBrain(_Brain):
@@ -67,6 +79,23 @@ class _Learning:
 class _Journal:
     def snapshot(self, limit: int = 3) -> dict:
         return {"recent_entries_count": 0, "recent_entries": [], "limit": limit}
+
+    def attribution_integrity_snapshot(self, account_type: str | None = None, limit: int = 10) -> dict:
+        return {
+            "enabled": True,
+            "account_type": account_type,
+            "summary": {
+                "entries_total": 0,
+                "open_positions": 0,
+                "open_untracked_count": 0,
+                "recent_flagged_count": 0,
+                "attributed_open_positions_pct": 100.0,
+                "open_untracked_ratio_pct": 0.0,
+            },
+            "alerts": [],
+            "flagged_entries": [],
+            "limit": limit,
+        }
 
     def position_management_snapshot(self, account_type: str | None = None, limit: int = 12) -> dict:
         return {
@@ -245,6 +274,70 @@ def test_operation_status_exposes_position_management_snapshot(tmp_path: Path):
     assert payload["position_management"]["enabled"] is True
     assert payload["position_management"]["account_type"] == "paper"
     assert payload["position_management"]["summary"]["open_positions"] == 0
+
+
+def test_operation_status_exposes_attribution_integrity_snapshot(tmp_path: Path):
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+
+    payload = center.status()
+
+    assert payload["attribution_integrity"]["enabled"] is True
+    assert payload["attribution_integrity"]["account_type"] == "paper"
+    assert payload["attribution_integrity"]["summary"]["open_untracked_count"] == 0
+
+
+class _JournalWithAttributionAlert(_Journal):
+    def attribution_integrity_snapshot(self, account_type: str | None = None, limit: int = 10) -> dict:
+        return {
+            "enabled": True,
+            "account_type": account_type,
+            "summary": {
+                "entries_total": 2,
+                "open_positions": 1,
+                "open_untracked_count": 1,
+                "recent_flagged_count": 1,
+                "attributed_open_positions_pct": 0.0,
+                "open_untracked_ratio_pct": 100.0,
+            },
+            "alerts": [{"level": "critical", "code": "recent_entries_flagged"}],
+            "flagged_entries": [{"symbol": "AAPL", "strategy_type": "untracked"}],
+            "limit": limit,
+        }
+
+
+def test_operation_status_emits_brain_event_when_attribution_integrity_appears(tmp_path: Path):
+    brain = _Brain()
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=_JournalWithAttributionAlert(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=brain,
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+
+    payload = center.status()
+    assert payload["attribution_integrity"]["summary"]["recent_flagged_count"] == 1
+    assert brain.emit_event.wait(1.0)
+    assert brain.emit_calls == 1
+    assert brain.last_emit is not None
+    assert brain.last_emit["kind"] == "attribution_integrity_alert"
+
+    brain.emit_event.clear()
+    center.status()
+    assert not brain.emit_event.wait(0.2)
+    assert brain.emit_calls == 1
 
 
 def test_operation_status_exposes_exit_governance_snapshot(tmp_path: Path):

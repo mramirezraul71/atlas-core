@@ -81,6 +81,8 @@ class OrderRequest(BaseModel):
     entry_confidence_reference_pct: float | None = None
     max_entry_drift_pct: float | None = None
     max_entry_spread_pct: float | None = None
+    chart_plan: dict[str, Any] = Field(default_factory=dict)
+    camera_plan: dict[str, Any] = Field(default_factory=dict)
     live_confirmed: bool = False
 
 
@@ -310,8 +312,10 @@ class OperationStatusPayload(BaseModel):
     vision: dict[str, Any] = Field(default_factory=dict)
     executor: dict[str, Any] = Field(default_factory=dict)
     brain: dict[str, Any] = Field(default_factory=dict)
+    chart_execution: dict[str, Any] = Field(default_factory=dict)
     learning: dict[str, Any] = Field(default_factory=dict)
     journal: dict[str, Any] = Field(default_factory=dict)
+    attribution_integrity: dict[str, Any] = Field(default_factory=dict)
     position_management: dict[str, Any] = Field(default_factory=dict)
     exit_governance: dict[str, Any] = Field(default_factory=dict)
     post_trade_learning: dict[str, Any] = Field(default_factory=dict)
@@ -339,6 +343,7 @@ class OperationCyclePayload(BaseModel):
     sentiment: dict[str, Any] = Field(default_factory=dict)
     what_if: dict[str, Any] = Field(default_factory=dict)
     entry_validation: dict[str, Any] = Field(default_factory=dict)
+    visual_entry_gate: dict[str, Any] = Field(default_factory=dict)
     execution_quality: dict[str, Any] = Field(default_factory=dict)
     operation_status: dict[str, Any] = Field(default_factory=dict)
 

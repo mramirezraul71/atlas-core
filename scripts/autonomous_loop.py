@@ -307,6 +307,36 @@ def _detect_base(ports: list[int], api_key: str) -> str | None:
     return None
 
 
+def _selector_proposal(base: str, api_key: str, cand: dict) -> dict:
+    body = {
+        "candidate": {
+            "symbol": str(cand.get("symbol") or ""),
+            "timeframe": str(cand.get("timeframe") or "1h"),
+            "direction": str(cand.get("direction") or "long"),
+            "price": cand.get("price"),
+            "strategy_key": cand.get("strategy_key"),
+            "strategy_label": cand.get("strategy_label"),
+            "selection_score": float(cand.get("selection_score") or 0.0),
+            "local_win_rate_pct": float(cand.get("local_win_rate_pct") or 0.0),
+            "predicted_move_pct": float(cand.get("predicted_move_pct") or 0.0),
+            "relative_strength_pct": float(cand.get("relative_strength_pct") or 0.0),
+            "order_flow": cand.get("order_flow") or {},
+            "confirmation": cand.get("confirmation") or {},
+            "why_selected": cand.get("why_selected") or [],
+        },
+        "account_scope": "paper",
+        "chart_provider": "tradingview",
+        "prefer_defined_risk": True,
+        "allow_equity": True,
+        "allow_credit": True,
+        "risk_budget_pct": 0.75,
+    }
+    result = _api_call(base, "/api/v2/quant/selector/proposal", method="POST", body=body, timeout=25, api_key=api_key)
+    if not result:
+        result = _api_call(base, "/selector/proposal", method="POST", body=body, timeout=25, api_key=api_key)
+    return result or {}
+
+
 # ── Gate de horario de mercado ────────────────────────────────────────────────
 
 def _now_et() -> datetime:
@@ -520,8 +550,11 @@ def run_loop(
                     logger.info("  SKIP    %s | bloqueado por vision", sym)
                     continue
 
-            order_body = {
-                "order": {
+            proposal = _selector_proposal(base, api_key, cand)
+            proposal_data = proposal.get("data") or {}
+            order_seed = dict(proposal_data.get("order_seed") or {})
+            if not order_seed:
+                order_seed = {
                     "symbol": sym,
                     "side": side,
                     "size": 1,
@@ -531,9 +564,16 @@ def run_loop(
                     "asset_class": "equity",
                     "strategy_type": _equity_strategy_type(direction),
                     "tag": f"autonomous_loop:{cand.get('strategy_key') or 'scanner'}:{cand.get('timeframe') or 'tf'}",
-                },
+                }
+            asset_class = str(order_seed.get("asset_class") or "equity").lower()
+            if asset_class == "equity" and not order_seed.get("strategy_type"):
+                order_seed["strategy_type"] = _equity_strategy_type(direction)
+            order_seed["preview"] = False
+
+            order_body = {
+                "order": order_seed,
                 "action": "submit",
-                "capture_context": False,  # evita esperar al brain (reduce 15s de timeout)
+                "capture_context": bool(order_seed.get("chart_plan") or order_seed.get("camera_plan")) and not no_vision_gate,
             }
 
             result = _api_call(
