@@ -738,6 +738,7 @@ class OperationCenter:
         position_management = self.journal.position_management_snapshot(account_type=scope, limit=10)
         exit_governance = self.journal.exit_governance_snapshot(account_type=scope, limit=10)
         post_trade_learning = self.journal.post_trade_learning_snapshot(account_type=scope, limit=10)
+        visual_benchmark = self._load_visual_benchmark_snapshot(scorecard)
         return {
             "generated_at": datetime.utcnow().isoformat(),
             "config": {
@@ -777,6 +778,7 @@ class OperationCenter:
             "position_management": position_management,
             "exit_governance": exit_governance,
             "post_trade_learning": post_trade_learning,
+            "visual_benchmark": visual_benchmark,
             "failsafe": {
                 "active": bool(config.get("fail_safe_active")),
                 "reason": config.get("fail_safe_reason"),
@@ -796,6 +798,32 @@ class OperationCenter:
             "auton_mode_active": str(config.get("auton_mode") or "off") != "off" and not executor_status.get("kill_switch_active", False),
             "last_decision": config.get("last_decision"),
             "last_candidate": config.get("last_candidate"),
+        }
+
+    def _load_visual_benchmark_snapshot(self, scorecard: dict[str, Any]) -> dict[str, Any]:
+        protocol_path = self.root_path / "reports/trading_self_audit_protocol.json"
+        protocol: dict[str, Any] = {}
+        try:
+            if protocol_path.exists():
+                payload = json.loads(protocol_path.read_text(encoding="utf-8"))
+                if isinstance(payload, dict):
+                    protocol = payload
+        except Exception:
+            protocol = {}
+        focus = protocol.get("visual_entry_benchmark_focus") or {}
+        indicators = scorecard.get("supporting_indicators") or {}
+        metric = (scorecard.get("metrics") or {}).get("visual_benchmark_feedback_score") or {}
+        return {
+            "enabled": bool(focus),
+            "current_focus": focus.get("current_focus"),
+            "status": metric.get("status"),
+            "score": metric.get("value"),
+            "visual_source_count": indicators.get("visual_benchmark_source_count", 0),
+            "translation_pct": indicators.get("visual_benchmark_translation_pct", 0.0),
+            "human_best_practice": list(focus.get("human_best_practice") or []),
+            "automation_translation": list(focus.get("automation_translation") or []),
+            "recommended_metrics": list(focus.get("recommended_metrics") or []),
+            "web_feedback_loop": list(focus.get("web_feedback_loop") or []),
         }
 
     def emergency_stop(self, *, reason: str = "manual_stop") -> dict[str, Any]:
@@ -957,6 +985,14 @@ class OperationCenter:
             visual_entry_gate.setdefault("warnings", []).append("visual context snapshot failed.")
         visual_entry_gate["context_capture_requested"] = bool(capture_context)
         visual_entry_gate["context_capture_ok"] = bool(isinstance(context_snapshot, dict) and context_snapshot.get("capture_ok") is not False) if capture_context else False
+        visual_entry_gate = self._finalize_visual_entry_gate(
+            gate=visual_entry_gate,
+            order=order_copy,
+            action=action,
+            context_snapshot=context_snapshot if isinstance(context_snapshot, dict) else None,
+        )
+        reasons.extend(list(visual_entry_gate.get("reasons") or []))
+        warnings.extend(list(visual_entry_gate.get("warnings") or []))
         allowed = not reasons
         execution_result: dict[str, Any] | None = None
         operational_failure_reason: str | None = None
@@ -1110,7 +1146,14 @@ class OperationCenter:
         camera_required = bool(camera_plan.get("required"))
         gate = {
             "status": "not_requested",
+            "applies": bool(chart_requested or camera_required),
             "degraded": False,
+            "manual_required": False,
+            "operator_review_required": False,
+            "blocking_ready": True,
+            "blocking_reason": None,
+            "readiness_score_pct": 100.0 if not (chart_requested or camera_required) else 0.0,
+            "readiness_components": {},
             "reasons": [],
             "warnings": [],
             "chart_requested": chart_requested,
@@ -1129,18 +1172,303 @@ class OperationCenter:
             symbol=str(order.symbol or ""),
         )
         gate["chart_execution"] = chart_execution
-        gate["status"] = "visual_ready" if chart_execution.get("open_ok") else "visual_watch"
+        chart_score = 100.0
+        if chart_requested:
+            if bool(chart_execution.get("open_ok")) and bool(chart_execution.get("symbol_match")) and bool(chart_execution.get("timeframe_match")):
+                chart_score = float(chart_execution.get("readiness_score_pct") or 100.0)
+            elif bool(chart_execution.get("manual_required")):
+                chart_score = float(chart_execution.get("readiness_score_pct") or 35.0)
+            else:
+                chart_score = float(chart_execution.get("readiness_score_pct") or 20.0)
+
+        camera_provider_ready = bool(vision_status.get("provider_ready"))
+        camera_score = 100.0
+        context_score = 100.0
+        if camera_required:
+            camera_score = 100.0 if camera_provider_ready else 0.0
+            context_score = 100.0 if capture_context else 0.0
+
+        weight_total = 0.0
+        weighted_sum = 0.0
+        if chart_requested:
+            weight_total += 55.0
+            weighted_sum += chart_score * 55.0
+        if camera_required:
+            weight_total += 25.0
+            weighted_sum += camera_score * 25.0
+            weight_total += 20.0
+            weighted_sum += context_score * 20.0
+
+        readiness_score = round((weighted_sum / weight_total), 2) if weight_total > 0 else 100.0
+        gate["readiness_score_pct"] = readiness_score
+        gate["readiness_components"] = {
+            "chart_score_pct": round(chart_score, 2) if chart_requested else None,
+            "camera_provider_score_pct": round(camera_score, 2) if camera_required else None,
+            "context_capture_score_pct": round(context_score, 2) if camera_required else None,
+        }
 
         if chart_requested and not chart_execution.get("open_ok"):
             gate["degraded"] = True
             gate["warnings"].append("chart mission is defined but chart opening is not confirmed.")
+            gate["manual_required"] = True
 
         if camera_required and action in {"preview", "submit"} and not capture_context:
             gate["degraded"] = True
             gate["warnings"].append("camera validation requested but capture_context=False skipped visual confirmation.")
+            gate["manual_required"] = True
 
-        if camera_required and not bool(vision_status.get("provider_ready")):
+        if camera_required and not camera_provider_ready:
             gate["degraded"] = True
             gate["warnings"].append("camera provider is not ready for visual confirmation.")
+            gate["manual_required"] = True
+
+        if chart_requested and not bool(chart_execution.get("symbol_match")):
+            gate["degraded"] = True
+            gate["warnings"].append("chart mission opened but symbol match is not confirmed.")
+            gate["manual_required"] = True
+
+        if chart_requested and not bool(chart_execution.get("timeframe_match")):
+            gate["degraded"] = True
+            gate["warnings"].append("chart mission opened but timeframe match is not confirmed.")
+            gate["manual_required"] = True
+
+        if bool(chart_execution.get("manual_required")):
+            gate["manual_required"] = True
+
+        if gate["degraded"] or gate["manual_required"]:
+            gate["operator_review_required"] = True
+
+        chart_state = str(chart_execution.get("execution_state") or chart_execution.get("open_mode") or "")
+        if not gate["degraded"] and not gate["manual_required"]:
+            gate["status"] = "visual_ready"
+        elif camera_required and not camera_provider_ready:
+            gate["status"] = "camera_unavailable"
+            gate["blocking_ready"] = False
+            gate["blocking_reason"] = "camera provider is not ready"
+        elif camera_required and action in {"preview", "submit"} and not capture_context:
+            gate["status"] = "manual_review"
+            gate["blocking_ready"] = False
+            gate["blocking_reason"] = "camera validation was skipped"
+        elif chart_requested and chart_state == "manual_required":
+            gate["status"] = "manual_required"
+            gate["blocking_ready"] = False
+            gate["blocking_reason"] = "chart mission requires manual opening"
+        elif chart_requested and chart_state == "browser_unavailable":
+            gate["status"] = "chart_pending"
+            gate["blocking_ready"] = False
+            gate["blocking_reason"] = "browser is unavailable for chart mission"
+        elif chart_requested and not bool(chart_execution.get("open_ok")):
+            gate["status"] = "chart_pending"
+            gate["blocking_ready"] = False
+            gate["blocking_reason"] = "chart opening is not confirmed"
+        else:
+            gate["status"] = "manual_review"
+            gate["blocking_ready"] = False
+            gate["blocking_reason"] = "visual checks require operator review"
 
         return gate
+
+    def _finalize_visual_entry_gate(
+        self,
+        *,
+        gate: dict[str, Any],
+        order: OrderRequest,
+        action: Literal["evaluate", "preview", "submit"],
+        context_snapshot: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        payload = deepcopy(gate)
+        payload.setdefault("reasons", [])
+        payload.setdefault("warnings", [])
+
+        camera_plan = order.camera_plan or {}
+        camera_required = bool(payload.get("camera_required"))
+        context = context_snapshot or {}
+        capture_requested = bool(payload.get("context_capture_requested"))
+        capture_ok = bool(payload.get("context_capture_ok"))
+        evidence_present = any(bool(context.get(key)) for key in ("capture_path", "resource_id", "meta_path"))
+        ocr_payload = context.get("ocr") if isinstance(context.get("ocr"), dict) else {}
+        ocr_confidence = _safe_float((ocr_payload or {}).get("confidence"), 0.0)
+        if 0.0 < ocr_confidence <= 1.0:
+            ocr_confidence *= 100.0
+        gaze_payload = context.get("gaze") if isinstance(context.get("gaze"), dict) else {}
+        gaze_ok = bool(gaze_payload) and not bool(gaze_payload.get("error"))
+        camera_fit_pct = _safe_float(camera_plan.get("visual_fit_pct"), 0.0)
+        visual_alignment = self._visual_alignment_snapshot(
+            camera_plan=camera_plan,
+            ocr_payload=ocr_payload or {},
+        )
+        validation_profile = camera_plan.get("validation_profile") if isinstance(camera_plan.get("validation_profile"), dict) else {}
+        min_ocr_conf_pct = _safe_float(validation_profile.get("min_ocr_confidence_pct"), 0.0)
+        min_alignment_score_pct = _safe_float(validation_profile.get("min_alignment_score_pct"), 70.0)
+        require_pattern_confirmation = bool(validation_profile.get("require_pattern_confirmation"))
+        require_price_evidence = bool(validation_profile.get("require_price_evidence"))
+
+        evidence_score = 100.0
+        if camera_required:
+            if capture_requested and capture_ok:
+                evidence_score = 100.0 if evidence_present else 70.0
+            elif capture_requested and not capture_ok:
+                evidence_score = 0.0
+            elif not capture_requested:
+                evidence_score = 0.0
+            if ocr_confidence > 0:
+                evidence_score = max(evidence_score, min(100.0, ocr_confidence))
+
+        base_score = _safe_float(payload.get("readiness_score_pct"), 100.0)
+        if camera_required:
+            fit_score = 100.0 if camera_fit_pct <= 0 else min(100.0, camera_fit_pct)
+            payload["readiness_score_pct"] = round((base_score * 0.60) + (fit_score * 0.15) + (evidence_score * 0.25), 2)
+        else:
+            payload["readiness_score_pct"] = round(base_score, 2)
+
+        payload["context_evidence"] = {
+            "provider": context.get("provider"),
+            "capture_ok": capture_ok,
+            "capture_path_present": bool(context.get("capture_path")),
+            "resource_id_present": bool(context.get("resource_id")),
+            "meta_path_present": bool(context.get("meta_path")),
+            "evidence_present": evidence_present,
+            "ocr_confidence_pct": round(ocr_confidence, 2) if ocr_confidence > 0 else None,
+            "ocr_pattern": (ocr_payload or {}).get("pattern"),
+            "ocr_chart_bias": (ocr_payload or {}).get("chart_color"),
+            "gaze_ok": gaze_ok,
+            "validation_profile": validation_profile,
+            "visual_alignment": visual_alignment,
+        }
+
+        if camera_required and camera_fit_pct > 0 and camera_fit_pct < 70.0:
+            payload["degraded"] = True
+            payload["manual_required"] = True
+            payload["operator_review_required"] = True
+            payload["blocking_ready"] = False
+            payload["status"] = "manual_review"
+            payload["blocking_reason"] = (
+                f"camera visual fit {camera_fit_pct:.1f}% is below the minimum robust threshold"
+            )
+            payload["warnings"].append(
+                f"camera visual fit ({camera_fit_pct:.1f}%) is below the minimum robust threshold for entry timing."
+            )
+
+        if camera_required and capture_requested and not capture_ok:
+            payload["degraded"] = True
+            payload["manual_required"] = True
+            payload["operator_review_required"] = True
+            payload["blocking_ready"] = False
+            payload["status"] = "camera_unavailable"
+            payload["blocking_reason"] = "visual context capture failed"
+
+        if camera_required and capture_requested and capture_ok and not evidence_present:
+            payload["degraded"] = True
+            payload["manual_required"] = True
+            payload["operator_review_required"] = True
+            payload["warnings"].append("visual capture succeeded but no persistent capture evidence was recorded.")
+
+        if visual_alignment.get("checked") and not bool(visual_alignment.get("confirmed")):
+            payload["degraded"] = True
+            payload["manual_required"] = True
+            payload["operator_review_required"] = True
+            payload["warnings"].append(
+                "OCR visual alignment does not confirm the expected directional thesis for this setup."
+            )
+            if _safe_float(visual_alignment.get("alignment_score_pct"), 0.0) < min_alignment_score_pct:
+                payload["blocking_ready"] = False
+                payload["status"] = "manual_review"
+                payload["blocking_reason"] = "visual thesis is misaligned with OCR evidence"
+
+        if camera_required and min_ocr_conf_pct > 0 and 0.0 < ocr_confidence < min_ocr_conf_pct:
+            payload["degraded"] = True
+            payload["manual_required"] = True
+            payload["operator_review_required"] = True
+            payload["blocking_ready"] = False
+            payload["status"] = "manual_review"
+            payload["blocking_reason"] = (
+                f"OCR confidence {ocr_confidence:.2f}% is below the required threshold ({min_ocr_conf_pct:.2f}%)"
+            )
+            payload["warnings"].append(
+                f"OCR confidence ({ocr_confidence:.2f}%) is below the required threshold for this setup."
+            )
+
+        if require_pattern_confirmation and camera_required and capture_requested and capture_ok and not str((ocr_payload or {}).get("pattern") or "").strip():
+            payload["degraded"] = True
+            payload["manual_required"] = True
+            payload["operator_review_required"] = True
+            payload["warnings"].append("Pattern confirmation is required for this setup but OCR did not return a pattern.")
+
+        if require_price_evidence and camera_required and capture_requested and capture_ok and not list((ocr_payload or {}).get("prices") or []):
+            payload["degraded"] = True
+            payload["manual_required"] = True
+            payload["operator_review_required"] = True
+            payload["warnings"].append("Price evidence is required for this setup but OCR did not detect visible prices.")
+
+        if (
+            action in {"preview", "submit"}
+            and bool(settings.visual_gate_fail_closed)
+            and bool(payload.get("applies"))
+        ):
+            threshold = _safe_float(settings.visual_gate_min_readiness_pct, 75.0)
+            if not bool(payload.get("blocking_ready")):
+                reason = str(payload.get("blocking_reason") or "visual gate is not ready")
+                payload["reasons"].append(f"Visual gate blocked {action}: {reason}.")
+            elif _safe_float(payload.get("readiness_score_pct"), 0.0) < threshold:
+                payload["degraded"] = True
+                payload["manual_required"] = True
+                payload["operator_review_required"] = True
+                payload["blocking_ready"] = False
+                payload["status"] = "manual_review"
+                payload["blocking_reason"] = (
+                    f"visual readiness score {_safe_float(payload.get('readiness_score_pct'), 0.0):.2f}% "
+                    f"is below the required threshold ({threshold:.2f}%)"
+                )
+                payload["reasons"].append(f"Visual gate blocked {action}: {payload['blocking_reason']}.")
+
+        return payload
+
+    @staticmethod
+    def _visual_alignment_snapshot(
+        *,
+        camera_plan: dict[str, Any],
+        ocr_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        expected = camera_plan.get("expected_visual") if isinstance(camera_plan.get("expected_visual"), dict) else {}
+        pattern = str(ocr_payload.get("pattern") or "").lower()
+        chart_bias = str(ocr_payload.get("chart_color") or "").lower()
+        expected_bias = str(expected.get("expected_chart_bias") or "").lower()
+        expected_patterns = [str(item).lower() for item in (expected.get("expected_patterns") or []) if str(item).strip()]
+        if not expected or (not pattern and not chart_bias):
+            return {
+                "checked": False,
+                "confirmed": None,
+                "alignment_score_pct": None,
+                "expected_chart_bias": expected_bias or None,
+                "observed_chart_bias": chart_bias or None,
+                "observed_pattern": pattern or None,
+            }
+
+        bias_score = 50.0
+        if expected_bias:
+            bias_score = 100.0 if chart_bias == expected_bias else 0.0 if chart_bias else 50.0
+
+        pattern_score = 50.0
+        if expected_patterns:
+            pattern_score = 100.0 if any(token in pattern for token in expected_patterns) else 0.0 if pattern else 50.0
+
+        weights = []
+        weighted = []
+        if expected_bias:
+            weights.append(0.55)
+            weighted.append(bias_score * 0.55)
+        if expected_patterns:
+            weights.append(0.45)
+            weighted.append(pattern_score * 0.45)
+        alignment_score = round(sum(weighted) / sum(weights), 2) if weights else 50.0
+
+        return {
+            "checked": True,
+            "confirmed": alignment_score >= 70.0,
+            "alignment_score_pct": alignment_score,
+            "expected_chart_bias": expected_bias or None,
+            "observed_chart_bias": chart_bias or None,
+            "observed_pattern": pattern or None,
+            "bias_score_pct": round(bias_score, 2),
+            "pattern_score_pct": round(pattern_score, 2),
+        }

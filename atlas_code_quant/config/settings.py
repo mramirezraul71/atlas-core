@@ -217,6 +217,8 @@ class TradingConfig:
     entry_warn_drift_vs_expected_move_pct: float = _fenv("QUANT_ENTRY_WARN_DRIFT_SHARE_EXPECTED_MOVE_PCT", 25.0)
     chart_auto_open_enabled: bool = os.getenv("QUANT_CHART_AUTO_OPEN_ENABLED", "false").strip().lower() not in {"0", "false", "no"}
     chart_open_cooldown_sec: int = _ienv("QUANT_CHART_OPEN_COOLDOWN_SEC", 90)
+    visual_gate_min_readiness_pct: float = _fenv("QUANT_VISUAL_GATE_MIN_READINESS_PCT", 75.0)
+    visual_gate_fail_closed: bool = os.getenv("QUANT_VISUAL_GATE_FAIL_CLOSED", "true").strip().lower() not in {"0", "false", "no"}
 
     # Position management
     position_management_enabled: bool = os.getenv("QUANT_POSITION_MANAGEMENT_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
@@ -319,6 +321,7 @@ class TradingConfig:
         self.entry_max_adverse_drift_pct = max(0.01, min(self.entry_max_adverse_drift_pct, 10.0))
         self.entry_warn_drift_vs_expected_move_pct = max(1.0, min(self.entry_warn_drift_vs_expected_move_pct, 100.0))
         self.chart_open_cooldown_sec = max(10, min(self.chart_open_cooldown_sec, 3600))
+        self.visual_gate_min_readiness_pct = max(0.0, min(self.visual_gate_min_readiness_pct, 100.0))
         self.position_management_max_symbol_heat_pct = max(1.0, min(self.position_management_max_symbol_heat_pct, 100.0))
         self.position_management_max_unrealized_loss_r = max(0.05, min(self.position_management_max_unrealized_loss_r, 10.0))
         self.position_management_max_thesis_drift_pct = max(1.0, min(self.position_management_max_thesis_drift_pct, 100.0))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from threading import Event
 from pathlib import Path
@@ -142,10 +143,13 @@ def _scorecard_payload() -> dict:
         "metrics": {
             "process_compliance_score": {"value": 60.0, "status": "watch"},
             "implementation_usefulness_score": {"value": 20.0, "status": "critical"},
+            "visual_benchmark_feedback_score": {"value": 92.0, "status": "healthy"},
         },
         "supporting_indicators": {
             "brain_delivery_ratio_pct": 53.43,
             "open_untracked_ratio_pct": 100.0,
+            "visual_benchmark_source_count": 5,
+            "visual_benchmark_translation_pct": 100.0,
         },
         "next_actions": ["seguir auditando"],
     }
@@ -376,6 +380,40 @@ def test_operation_status_exposes_post_trade_learning_snapshot(tmp_path: Path):
     assert payload["post_trade_learning"]["enabled"] is True
     assert payload["post_trade_learning"]["account_type"] == "paper"
     assert payload["post_trade_learning"]["summary"]["closed_trades"] == 0
+
+
+def test_operation_status_exposes_visual_benchmark_snapshot(tmp_path: Path):
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    protocol = {
+        "visual_entry_benchmark_focus": {
+            "current_focus": "visual_entry_optimization",
+            "human_best_practice": ["contexto", "nivel", "trigger", "invalidacion"],
+            "automation_translation": ["chart_plan", "expected_visual", "ocr", "gate"],
+            "recommended_metrics": ["visual_readiness_score_pct", "visual_alignment_score_pct"],
+            "web_feedback_loop": ["detectar", "buscar", "comparar", "persistir"],
+        }
+    }
+    (reports_dir / "trading_self_audit_protocol.json").write_text(json.dumps(protocol), encoding="utf-8")
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+    center.root_path = tmp_path
+
+    payload = center.status()
+
+    assert payload["visual_benchmark"]["enabled"] is True
+    assert payload["visual_benchmark"]["current_focus"] == "visual_entry_optimization"
+    assert payload["visual_benchmark"]["score"] == 92.0
+    assert payload["visual_benchmark"]["visual_source_count"] == 5
+    assert payload["visual_benchmark"]["translation_pct"] == 100.0
 
 
 class _JournalingFastTracker:

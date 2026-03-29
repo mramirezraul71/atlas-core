@@ -294,6 +294,44 @@ def _compute_observability_feedback(grafana_check: dict[str, Any]) -> dict[str, 
     }
 
 
+def _compute_visual_benchmark_feedback(root: Path, protocol: dict[str, Any]) -> dict[str, Any]:
+    sources = protocol.get("external_benchmark_sources") or []
+    visual_sources = [
+        source for source in sources
+        if "visual_entry_optimization" in {str(item) for item in (source.get("used_for") or [])}
+    ]
+    focus = protocol.get("visual_entry_benchmark_focus") or {}
+    report_present = _glob_exists(root, "reports/atlas_quant_visual_benchmark_confrontation_*.md")
+    protocol_focus_present = bool(focus)
+    metric_depth_pct = _ratio_pct(min(len(focus.get("recommended_metrics") or []), 6), 6)
+    source_depth_pct = _ratio_pct(min(len(visual_sources), 5), 5)
+    translation_checks = {
+        "protocol_focus_present": protocol_focus_present,
+        "report_present": report_present,
+        "has_web_feedback_loop": bool(focus.get("web_feedback_loop")),
+        "has_human_best_practice": bool(focus.get("human_best_practice")),
+        "has_automation_translation": bool(focus.get("automation_translation")),
+    }
+    translation_pct = _ratio_pct(sum(1 for ok in translation_checks.values() if ok), len(translation_checks))
+    score = _clamp_pct((source_depth_pct * 0.35) + (metric_depth_pct * 0.30) + (translation_pct * 0.35))
+    return {
+        "name": "visual_benchmark_feedback_score",
+        "value": score,
+        "status": _score_status(score),
+        "details": {
+            "visual_source_count": len(visual_sources),
+            "visual_source_titles": [str(source.get("title") or "") for source in visual_sources],
+            "recommended_metric_count": len(focus.get("recommended_metrics") or []),
+            "source_depth_pct": source_depth_pct,
+            "metric_depth_pct": metric_depth_pct,
+            "translation_pct": translation_pct,
+            "protocol_focus_present": protocol_focus_present,
+            "report_present": report_present,
+            "translation_checks": translation_checks,
+        },
+    }
+
+
 def _compute_journal_operational_indicators(journal_db_path: Path, external_translation_score: float) -> dict[str, Any]:
     if not journal_db_path.exists():
         score = 0.0
@@ -647,6 +685,7 @@ def build_trading_implementation_scorecard(
     memory_persistence = _compute_memory_persistence(root, brain_state)
     external_benchmark = _compute_external_benchmark_coverage(root, protocol)
     observability_feedback = _compute_observability_feedback(grafana_check)
+    visual_benchmark_feedback = _compute_visual_benchmark_feedback(root, protocol)
     test_guardrails = _compute_test_guardrail_score(root, pytest_result)
     usefulness = _compute_journal_operational_indicators(
         journal_db_path,
@@ -660,6 +699,7 @@ def build_trading_implementation_scorecard(
         memory_persistence,
         external_benchmark,
         observability_feedback,
+        visual_benchmark_feedback,
         test_guardrails,
         usefulness,
         signal_ic_quality,
@@ -694,6 +734,9 @@ def build_trading_implementation_scorecard(
                 0.0,
             ),
             "observability_feedback_score": observability_feedback["value"],
+            "visual_benchmark_feedback_score": visual_benchmark_feedback["value"],
+            "visual_benchmark_source_count": visual_benchmark_feedback["details"].get("visual_source_count", 0),
+            "visual_benchmark_translation_pct": visual_benchmark_feedback["details"].get("translation_pct", 0.0),
             "grafana_reload_resilience_pct": observability_feedback["details"].get("reload_resilience_pct", 0.0),
             "grafana_alerting_ready_pct": 100.0 if observability_feedback["details"].get("alerting_ready") else 0.0,
             "signal_ic_quality_score": signal_ic_quality["value"],
@@ -731,6 +774,7 @@ def format_trading_implementation_scorecard_markdown(payload: dict[str, Any]) ->
         "memory_persistence_score",
         "external_benchmark_coverage_score",
         "observability_feedback_score",
+        "visual_benchmark_feedback_score",
         "test_guardrail_score",
         "implementation_usefulness_score",
         "signal_ic_quality_score",
@@ -758,6 +802,9 @@ def format_trading_implementation_scorecard_markdown(payload: dict[str, Any]) ->
             f"- `recent_attribution_pct`: `{indicators['recent_attribution_pct']}`",
             f"- `external_learning_translation_score`: `{indicators['external_learning_translation_score']}`",
             f"- `observability_feedback_score`: `{indicators['observability_feedback_score']}`",
+            f"- `visual_benchmark_feedback_score`: `{indicators['visual_benchmark_feedback_score']}`",
+            f"- `visual_benchmark_source_count`: `{indicators['visual_benchmark_source_count']}`",
+            f"- `visual_benchmark_translation_pct`: `{indicators['visual_benchmark_translation_pct']}`",
             f"- `grafana_reload_resilience_pct`: `{indicators['grafana_reload_resilience_pct']}`",
             f"- `grafana_alerting_ready_pct`: `{indicators['grafana_alerting_ready_pct']}`",
             f"- `signal_ic_quality_score`: `{indicators['signal_ic_quality_score']}` (IC={indicators['ic_overall']}, status={indicators['ic_status']}, n={indicators['ic_tracker_signals_with_outcome']})",
@@ -767,6 +814,7 @@ def format_trading_implementation_scorecard_markdown(payload: dict[str, Any]) ->
             f"- El proceso va por `{headline['atlas_process_compliance_score']}/100`: esto mide implantacion metodologica, no edge de mercado.",
             f"- La utilidad va por `{headline['atlas_implementation_usefulness_score']}/100`: esto mide si ya hay evidencia suficiente de que lo implementado esta mejorando el sistema vivo.",
             f"- La observabilidad va por `{metrics['observability_feedback_score']['value']}/100`: esto mide si el tablero operativo realmente esta devolviendo feedback confiable para vigilar la implantacion.",
+            f"- El benchmark visual va por `{metrics['visual_benchmark_feedback_score']['value']}/100`: esto mide si la investigacion visual externa ya fue aterrizada a controles reutilizables en ATLAS.",
             f"- La calidad de señal IC va por `{metrics['signal_ic_quality_score']['value']}/100`: esto mide el poder predictivo real del scanner (IC Grinold-Kahn). 0=sin datos, 100=IC>=0.10 significativo.",
             "",
             "## Next Actions",

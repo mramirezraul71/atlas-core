@@ -319,6 +319,7 @@ class OperationStatusPayload(BaseModel):
     position_management: dict[str, Any] = Field(default_factory=dict)
     exit_governance: dict[str, Any] = Field(default_factory=dict)
     post_trade_learning: dict[str, Any] = Field(default_factory=dict)
+    visual_benchmark: dict[str, Any] = Field(default_factory=dict)
     failsafe: dict[str, Any] = Field(default_factory=dict)
     monitor_summary: dict[str, Any] = Field(default_factory=dict)
     scorecard: dict[str, Any] = Field(default_factory=dict)
