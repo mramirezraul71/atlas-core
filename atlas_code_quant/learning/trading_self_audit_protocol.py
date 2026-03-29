@@ -381,6 +381,113 @@ EXTERNAL_BENCHMARK_SOURCE_REGISTRY: list[dict[str, Any]] = [
             "journaling_discipline",
         ],
     },
+    # ── Nuevas fuentes incorporadas en auditoría 2026-03-28 ───────────────────
+    {
+        "title": "Active Portfolio Management — Grinold & Kahn (2000)",
+        "url": "https://www.mhprofessional.com/active-portfolio-management-9780070248823-usa",
+        "domain": "mhprofessional.com",
+        "source_type": "reference_book",
+        "key_benchmarks": {
+            "IC_threshold_meaningful": 0.05,
+            "IC_threshold_strong": 0.10,
+            "t_stat_min": 2.0,
+            "IR_viable": 0.5,
+            "formula": "IR = IC × sqrt(Breadth)",
+        },
+        "used_for": [
+            "scanner_selection",
+            "signal_ic_quality",
+            "information_coefficient_tracking",
+        ],
+    },
+    {
+        "title": "The Implementation Shortfall — Perold (1988)",
+        "url": "https://pages.stern.nyu.edu/~jhasbrou/STPP/drafts/STPPms13b.pdf",
+        "domain": "pages.stern.nyu.edu",
+        "source_type": "paper",
+        "key_benchmarks": {
+            "arrival_price_slippage_liquid_bps": 5,
+            "arrival_price_slippage_midcap_bps": 15,
+            "adverse_selection_threshold_pct": 50,
+            "IS_components": ["delay_cost", "market_impact", "timing_risk", "opportunity_cost"],
+        },
+        "used_for": [
+            "execution_quality",
+            "entry_validation",
+            "implementation_shortfall_decomposition",
+        ],
+    },
+    {
+        "title": "Trade Your Way to Financial Freedom — Van Tharp (2006)",
+        "url": "https://www.mhprofessional.com/9780071474467-usa-trade-your-way-to-financial-freedom",
+        "domain": "mhprofessional.com",
+        "source_type": "reference_book",
+        "key_benchmarks": {
+            "expectancy_r_viable": 0.20,
+            "expectancy_r_excellent": 0.50,
+            "atr_trailing_stop_range": [2.0, 3.0],
+            "r_multiple_min_payoff": 2.0,
+        },
+        "used_for": [
+            "position_management",
+            "exit_governance",
+            "r_multiple_system",
+            "stop_loss_calibration",
+        ],
+    },
+    {
+        "title": "When Do Stop-Loss Rules Stop Losses? — Kaminski & Lo (2014)",
+        "url": "https://www.sciencedirect.com/science/article/pii/S1386418113000366",
+        "domain": "sciencedirect.com",
+        "source_type": "paper",
+        "key_benchmarks": {
+            "stop_adds_value_when": "combined with full exit-and-reentry protocol",
+            "time_stop_recommendation": "close positions not at +0.5R within 50% of expected holding period",
+            "mfe_trailing_activation_r": 1.0,
+        },
+        "used_for": [
+            "exit_governance",
+            "position_management",
+            "time_stop_discipline",
+        ],
+    },
+    {
+        "title": "Determinants of Portfolio Performance — Brinson, Hood & Beebower (1986)",
+        "url": "https://www.cfainstitute.org/en/membership/professional-development/refresher-readings/portfolio-performance-evaluation",
+        "domain": "cfainstitute.org",
+        "source_type": "paper",
+        "key_benchmarks": {
+            "attribution_components": ["allocation_effect", "selection_effect", "interaction_effect"],
+            "min_sample_per_stratum": 30,
+            "stability_criterion_ratio": 0.70,
+        },
+        "used_for": [
+            "post_trade_learning",
+            "bhb_attribution_decomposition",
+            "strategy_performance_attribution",
+        ],
+    },
+    {
+        "title": "Advances in Financial Machine Learning — Lopez de Prado (2018), Cap. 14",
+        "url": "https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086",
+        "domain": "wiley.com",
+        "source_type": "reference_book",
+        "key_benchmarks": {
+            "min_trades_live_significance": 300,
+            "min_calendar_months": 3,
+            "min_profit_factor_paper": 1.5,
+            "max_drawdown_pct": 15.0,
+            "min_calmar_ratio": 1.5,
+            "min_sharpe_dsr_adjusted": 1.0,
+            "stability_score_min": 0.70,
+        },
+        "used_for": [
+            "post_trade_learning",
+            "live_transition_criteria",
+            "deflated_sharpe_adjustment",
+            "combinatorial_cross_validation",
+        ],
+    },
 ]
 
 
@@ -412,6 +519,14 @@ IMPLEMENTATION_SCORECARD_METRICS: list[dict[str, str]] = [
     {
         "name": "implementation_usefulness_score",
         "goal": "Medir si ya existe evidencia operativa suficiente para afirmar que los cambios sirven de algo.",
+    },
+    {
+        "name": "signal_ic_quality_score",
+        "goal": (
+            "Medir la calidad predictiva real de las señales del scanner via IC (Information Coefficient). "
+            "IC > 0.05 meaningful, IC > 0.10 fuerte (Grinold-Kahn). "
+            "Score=0 mientras no haya muestra suficiente; crece con evidencia real."
+        ),
     },
 ]
 

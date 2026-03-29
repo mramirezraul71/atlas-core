@@ -1,10 +1,16 @@
 import json
 import sqlite3
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import pytest
 
 from atlas_code_quant.learning.trading_implementation_scorecard import build_trading_implementation_scorecard
+
+
+def _fresh_checked_at() -> str:
+    """Returns a checked_at timestamp always within the 6-hour freshness window."""
+    return (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
 
 
 def _write_text(path: Path, content: str) -> None:
@@ -70,7 +76,7 @@ def _build_minimal_repo(root: Path) -> tuple[Path, Path, Path]:
         root / "reports/atlas_grafana_provisioning_check_latest.json",
         json.dumps(
             {
-                "checked_at": "2026-03-28T06:04:39.5710471-04:00",
+                "checked_at": _fresh_checked_at(),
                 "grafana_version": "10.4.2",
                 "overall_status": "ready",
                 "telegram_env_ready": False,

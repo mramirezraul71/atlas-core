@@ -73,6 +73,7 @@ from api.routes.options import router as options_router
 from operations.alert_dispatcher import get_alert_dispatcher
 from learning.visual_state_builder import get_visual_state_builder
 from learning.retraining_scheduler import get_retraining_scheduler
+from learning.ic_signal_tracker import get_ic_tracker
 
 logger = logging.getLogger("quant.api")
 _START_TIME = time.time()
@@ -788,7 +789,13 @@ async def operation_test_cycle(
 
 
 async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
-    """Loop background: toma candidatos del scanner y los evalúa en OperationCenter."""
+    """Loop background: toma candidatos del scanner y los evalúa en OperationCenter.
+
+    Ciclo completo por iteración:
+    1. Exit pass: evalúa posiciones abiertas contra exit_governance y cierra las urgentes.
+    2. Journal sync: sincroniza libro local con broker para actualizar closed trades.
+    3. Entry pass: evalúa candidatos del scanner y somete nuevas entradas.
+    """
     global _AUTO_CYCLE_STATE
     _AUTO_CYCLE_STATE.update({
         "running": True, "cycle_count": 0, "error": None,
@@ -802,12 +809,75 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
             if not _AUTO_CYCLE_STATE["running"]:
                 break
             try:
+                op_status = await asyncio.to_thread(_OPERATION_CENTER.status)
+                auton_mode = str(op_status.get("auton_mode") or "paper_supervised")
+                action = "submit" if auton_mode not in {"off", "paper_supervised"} else "preview"
+
+                # ── 1. EXIT PASS: cerrar posiciones que cumplen criterio de salida ─────
+                exits_sent = 0
+                if action == "submit":
+                    try:
+                        exit_snap = await asyncio.to_thread(
+                            _JOURNAL_PRO.exit_governance_snapshot,
+                            account_type="paper", limit=20,
+                        )
+                        urgent_exits = [
+                            c for c in (exit_snap.get("candidates") or [])
+                            if c.get("recommendation") in {"exit_now", "de_risk"}
+                            and c.get("urgency") in {"high", "medium"}
+                        ]
+                        for pos in urgent_exits:
+                            sym = str(pos.get("symbol") or "").strip().upper()
+                            if not sym:
+                                continue
+                            # strategy_type determina la dirección original de la posición
+                            st = str(pos.get("strategy_type") or "equity_long").lower()
+                            # long → cierre con sell; short → cierre con buy_to_cover
+                            close_side = "sell" if "long" in st else "buy_to_cover"
+                            close_order = OrderRequest(
+                                symbol=sym,
+                                side=close_side,  # type: ignore[arg-type]
+                                size=1,
+                                order_type="market",
+                                asset_class="equity",  # type: ignore[arg-type]
+                                account_scope="paper",
+                                preview=False,  # cierre real, no preview
+                                position_effect="close",  # evita que pase por gate de apertura
+                                strategy_type=st,  # type: ignore[arg-type]
+                                tag=f"exit_governance:{pos.get('exit_reason','auto_exit')}",
+                            )
+                            try:
+                                close_result = await asyncio.to_thread(
+                                    _OPERATION_CENTER.evaluate_candidate,
+                                    order=close_order, action="submit", capture_context=False,
+                                )
+                                exits_sent += 1
+                                logger.info(
+                                    "[auto-cycle] EXIT %s sym=%s reason=%s urgency=%s blocked=%s",
+                                    close_side.upper(), sym,
+                                    pos.get("exit_reason"), pos.get("urgency"),
+                                    close_result.get("blocked"),
+                                )
+                            except Exception as _ex_err:
+                                logger.warning("[auto-cycle] exit order error sym=%s: %s", sym, _ex_err)
+                    except Exception as _eg_err:
+                        logger.warning("[auto-cycle] exit_governance_snapshot error: %s", _eg_err)
+
+                # ── 2. JOURNAL SYNC: sincronizar libro con broker ─────────────────────
+                try:
+                    await asyncio.to_thread(_JOURNAL.sync_scope, "paper")
+                    logger.debug("[auto-cycle] journal sync OK")
+                except Exception as _sync_err:
+                    logger.debug("[auto-cycle] journal sync warning: %s", _sync_err)
+
+                # ── 3. ENTRY PASS: evaluar nuevas entradas ────────────────────────────
                 report = await asyncio.to_thread(_SCANNER.report, 24)
                 candidates = list(report.get("candidates") or [])
                 if not candidates:
                     _AUTO_CYCLE_STATE["last_cycle_at"] = datetime.utcnow().isoformat()
                     _AUTO_CYCLE_STATE["cycle_count"] += 1
-                    logger.debug("[auto-cycle] Ciclo %d — sin candidatos", _AUTO_CYCLE_STATE["cycle_count"])
+                    logger.debug("[auto-cycle] Ciclo %d — sin candidatos (exits_sent=%d)",
+                                 _AUTO_CYCLE_STATE["cycle_count"], exits_sent)
                     continue
 
                 sorted_cands = sorted(
@@ -816,11 +886,10 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     reverse=True,
                 )[:max_per_cycle]
 
-                op_status = await asyncio.to_thread(_OPERATION_CENTER.status)
-                auton_mode = str(op_status.get("auton_mode") or "paper_supervised")
-                action = "submit" if auton_mode not in {"off", "paper_supervised"} else "preview"
                 positions_payload = _tradier_positions_payload(account_scope="paper", account_id=None)
                 open_symbols = _open_symbols_from_positions_payload(positions_payload)
+
+                # Reconciliation gate: solo bloquea en paper_autonomous si broker no responde
                 if action == "submit" and not _reconciliation_is_healthy(positions_payload):
                     _AUTO_CYCLE_STATE.update({
                         "cycle_count": _AUTO_CYCLE_STATE["cycle_count"] + 1,
@@ -829,10 +898,11 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         "last_result": {
                             "action": action,
                             "blocked": True,
-                            "reasons": ["Reconciliation gate blocked submit because canonical snapshot is not healthy."],
+                            "reasons": ["Reconciliation gate: broker no responde o estado desconocido."],
+                            "exits_sent": exits_sent,
                         },
                     })
-                    logger.warning("[auto-cycle] submit blocked: reconciliation is not healthy")
+                    logger.warning("[auto-cycle] entry blocked: reconciliation unhealthy (exits_sent=%d)", exits_sent)
                     continue
 
                 last_result = None
@@ -855,10 +925,11 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     side = "buy" if direction in {"long", "bull", "up"} else "sell_short"
                     ac_raw = str(cand.get("asset_class") or "equity").lower()
                     asset_class = ac_raw if ac_raw in {"equity", "option", "multileg", "combo"} else "equity"
+                    # FIX: preview solo cuando action=="preview"; submit real cuando action=="submit"
                     order = OrderRequest(
                         symbol=symbol, side=side, size=1,
                         order_type="market", asset_class=asset_class,  # type: ignore[arg-type]
-                        account_scope="paper", preview=True,
+                        account_scope="paper", preview=(action == "preview"),
                         strategy_type=_equity_strategy_type_for_direction(direction) if asset_class == "equity" else None,
                         entry_reference_price=float(cand.get("price") or 0.0) or None,
                         entry_expected_move_pct=float(cand.get("predicted_move_pct") or 0.0) or None,
@@ -874,9 +945,26 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         "reasons": (result.get("reasons") or []),
                         "selection_score": cand.get("selection_score"),
                         "win_rate_pct": (result.get("probability") or {}).get("win_rate_pct"),
+                        "exits_sent": exits_sent,
                     }
-                    logger.info("[auto-cycle] symbol=%s action=%s blocked=%s score=%.1f",
-                                symbol, action, last_result["blocked"],
+                    # IC Signal Tracker: registrar señal para medir poder predictivo del scanner
+                    if not last_result["blocked"]:
+                        try:
+                            _predicted_move = float(cand.get("predicted_move_pct") or 0.0)
+                            _entry_price = float(cand.get("price") or 0.0)
+                            if _entry_price > 0 and _predicted_move != 0.0:
+                                get_ic_tracker().record_signal(
+                                    symbol=symbol,
+                                    method=str(cand.get("method") or cand.get("strategy_type") or "unknown"),
+                                    predicted_move_pct=_predicted_move * (1.0 if side == "buy" else -1.0),
+                                    entry_price=_entry_price,
+                                    timeframe=str(cand.get("timeframe") or "1d"),
+                                    selection_score=float(cand.get("selection_score") or 0.0),
+                                )
+                        except Exception as _ic_err:
+                            logger.debug("[auto-cycle] ic_tracker.record_signal skipped: %s", _ic_err)
+                    logger.info("[auto-cycle] ENTRY %s symbol=%s action=%s blocked=%s score=%.1f",
+                                side.upper(), symbol, action, last_result["blocked"],
                                 float(cand.get("selection_score") or 0))
 
                 _AUTO_CYCLE_STATE.update({
@@ -885,6 +973,7 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     "last_candidate_symbol": sorted_cands[0].get("symbol") if sorted_cands else None,
                     "last_action": action,
                     "last_result": last_result,
+                    "exits_sent_last_cycle": exits_sent,
                 })
             except asyncio.CancelledError:
                 raise
