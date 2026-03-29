@@ -326,10 +326,40 @@ def _compute_journal_operational_indicators(journal_db_path: Path, external_tran
             cur.execute("select coalesce(sum(realized_pnl), 0.0) from trading_journal where status='closed'").fetchone()[0]
             or 0.0
         )
+        # Sub-indicadores de proceso: post_mortem coverage y distribución de exits
+        has_post_mortem_col = _journal_has_column(cur, "trading_journal", "post_mortem_json")
+        closed_with_postmortem = 0
+        if has_post_mortem_col and closed_total > 0:
+            closed_with_postmortem = int(
+                cur.execute(
+                    "select count(*) from trading_journal where status='closed' and post_mortem_json is not null and post_mortem_json!='null'"
+                ).fetchone()[0]
+                or 0
+            )
+        # Entradas recientes (últimas 100) con atribución correcta
+        has_updated_at = _journal_has_column(cur, "trading_journal", "updated_at")
+        recent_attributed = 0
+        recent_total = 0
+        if has_updated_at:
+            try:
+                rows = cur.execute(
+                    "select strategy_type from trading_journal order by updated_at desc limit 100"
+                ).fetchall()
+                recent_total = len(rows)
+                recent_attributed = sum(
+                    1 for r in rows
+                    if r[0] not in (None, "untracked", "unknown", "")
+                )
+            except Exception:
+                pass
 
     attributed_open_positions_pct = _ratio_pct(max(open_total - open_untracked, 0), open_total) if open_total else 100.0
     open_untracked_ratio_pct = _ratio_pct(open_untracked, open_total) if open_total else 0.0
     evidence_sufficiency_score = _ratio_pct(min(closed_total, 20), 20)
+    post_mortem_coverage_pct = _ratio_pct(closed_with_postmortem, closed_total) if closed_total else 0.0
+    recent_attribution_pct = _ratio_pct(recent_attributed, recent_total) if recent_total else 0.0
+
+    # Fórmula principal: preservada para comparación histórica
     score = _clamp_pct(
         (attributed_open_positions_pct * 0.45)
         + (evidence_sufficiency_score * 0.35)
@@ -349,11 +379,128 @@ def _compute_journal_operational_indicators(journal_db_path: Path, external_tran
             "evidence_sufficiency_score": evidence_sufficiency_score,
             "open_pnl": round(open_pnl, 2),
             "realized_pnl": round(realized_pnl, 2),
+            "post_mortem_coverage_pct": post_mortem_coverage_pct,
+            "recent_attribution_pct": recent_attribution_pct,
+            "recent_sample_size": recent_total,
             "external_learning_translation_score": external_translation_score,
             "note": (
                 "Este score no afirma edge de mercado. Mide si ya hay evidencia operativa suficiente para decir que "
                 "lo implantado esta sirviendo y siendo absorbido por el sistema vivo."
             ),
+        },
+    }
+
+
+def _journal_has_column(cur: Any, table: str, column: str) -> bool:
+    """Verifica si una columna existe en la tabla del journal."""
+    try:
+        cols = [row[1] for row in cur.execute(f"pragma table_info({table})").fetchall()]
+        return column in cols
+    except Exception:
+        return False
+
+
+def _compute_signal_ic_quality(root: Path) -> dict[str, Any]:
+    """Mide la calidad predictiva del scanner via Information Coefficient (IC).
+
+    IC = correlación de rango entre predicted_move_pct y retorno real observado.
+    Referencia: Grinold & Kahn, Active Portfolio Management (2000).
+        IC > 0.05 meaningful; IC > 0.10 fuerte; t-stat >= 2.0 requerido.
+    """
+    ic_tracker_path = root / "atlas_code_quant" / "data" / "learning" / "ic_tracker.json"
+    if not ic_tracker_path.exists():
+        return {
+            "name": "signal_ic_quality_score",
+            "value": 0.0,
+            "status": "insufficient_data",
+            "details": {
+                "ic_tracker_available": False,
+                "note": (
+                    "No hay tracker de IC disponible. "
+                    "El ICSignalTracker se activa cuando el loop registra señales con outcome real."
+                ),
+            },
+        }
+    try:
+        data = json.loads(ic_tracker_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        data = {}
+
+    signals = data.get("signals") or {}
+    total = len(signals)
+    with_outcome = sum(1 for s in signals.values() if s.get("outcome_available"))
+
+    if with_outcome < 5:
+        score = 5.0 if total > 0 else 0.0  # crédito mínimo por tener el tracker activo
+        return {
+            "name": "signal_ic_quality_score",
+            "value": score,
+            "status": "insufficient_data",
+            "details": {
+                "ic_tracker_available": True,
+                "total_signals": total,
+                "signals_with_outcome": with_outcome,
+                "min_required": 5,
+                "note": (
+                    f"Solo {with_outcome} señales con outcome. "
+                    "Se necesitan al menos 5 para calcular IC, 30 para señal meaningfully útil."
+                ),
+            },
+        }
+
+    # Calcular IC via el tracker
+    try:
+        from atlas_code_quant.learning.ic_signal_tracker import ICSignalTracker
+        tracker = ICSignalTracker(tracker_path=ic_tracker_path)
+        overall = tracker.compute_ic()
+        ic = overall.get("ic")
+        t_stat = overall.get("t_stat") or 0.0
+        ic_status = overall.get("ic_status", "insufficient_data")
+        by_method_summary = {
+            m: {"ic": r.get("ic"), "t_stat": r.get("t_stat"), "n": r.get("n_observations"), "status": r.get("ic_status")}
+            for m, r in (tracker.summary().get("by_method") or {}).items()
+        }
+    except Exception as exc:
+        return {
+            "name": "signal_ic_quality_score",
+            "value": 0.0,
+            "status": "error",
+            "details": {"error": str(exc)},
+        }
+
+    # Mapeo IC → score
+    if ic is None or t_stat is None:
+        score = 10.0
+    elif t_stat < 2.0:
+        score = 20.0  # tracking activo pero aún no significativo
+    elif ic < 0:
+        score = 5.0   # señal predictiva negativa — revisar
+    elif ic < 0.05:
+        score = 35.0  # por debajo de umbral meaningful pero ya significativo
+    elif ic < 0.10:
+        score = 65.0  # meaningful per Grinold-Kahn
+    else:
+        score = 100.0  # fuerte
+
+    return {
+        "name": "signal_ic_quality_score",
+        "value": _clamp_pct(score),
+        "status": _score_status(score),
+        "details": {
+            "ic_tracker_available": True,
+            "total_signals": total,
+            "signals_with_outcome": with_outcome,
+            "overall_ic": ic,
+            "overall_t_stat": t_stat,
+            "ic_status": ic_status,
+            "by_method": by_method_summary,
+            "benchmark": {
+                "ic_meaningful": 0.05,
+                "ic_strong": 0.10,
+                "t_stat_min": 2.0,
+                "source": "Grinold & Kahn — Active Portfolio Management (2000)",
+            },
+            "note": overall.get("interpretation", ""),
         },
     }
 
@@ -401,6 +548,7 @@ def _compute_test_guardrail_score(root: Path, pytest_result: dict[str, Any] | No
         "scanner": (root / "atlas_code_quant/tests/test_scanner_metric_recalibration.py").exists(),
         "operation_status": (root / "atlas_code_quant/tests/test_operation_center_status.py").exists(),
         "operation_guards": (root / "atlas_code_quant/tests/test_operation_center_autonomous_guards.py").exists(),
+        "ic_signal_tracker": (root / "atlas_code_quant/tests/test_ic_signal_tracker.py").exists(),
     }
     presence_score = _ratio_pct(sum(1 for ok in expected_tests.values() if ok), len(expected_tests))
     if pytest_result:
@@ -445,6 +593,33 @@ def _build_next_actions(metric_map: dict[str, dict[str, Any]]) -> list[str]:
         actions.append("Subir la confiabilidad de observabilidad: Grafana/Prometheus aun no devuelven feedback lo bastante robusto.")
     if observability and observability["details"].get("reload_resilience_pct", 0.0) < 100.0:
         actions.append("Investigar por que alguna recarga Admin API de Grafana sigue siendo fragil aunque los dashboards esten visibles.")
+    ic_metric = metric_map.get("signal_ic_quality_score")
+    if ic_metric:
+        ic_status = ic_metric.get("status", "")
+        with_outcome = ic_metric["details"].get("signals_with_outcome", 0)
+        overall_ic = ic_metric["details"].get("overall_ic")
+        if not ic_metric["details"].get("ic_tracker_available"):
+            actions.append("Activar ICSignalTracker: el loop debe llamar tracker.record_signal() al evaluar candidatos.")
+        elif with_outcome < 5:
+            actions.append(
+                f"Acumular outcomes en ICSignalTracker ({with_outcome} actuales, se necesitan >=5): "
+                "asegurarse de que update_outcome() se llama al cerrar posiciones."
+            )
+        elif ic_status in {"not_significant", "insufficient_data"}:
+            actions.append(
+                f"IC aun no significativo (n={with_outcome}): continuar paper-trading para llegar a n>=30 "
+                "antes de evaluar calidad predictiva del scanner."
+            )
+        elif ic_status == "negative":
+            actions.append(
+                f"IC negativo detectado (IC={overall_ic:.4f}): revisar si la prediccion de direccion del scanner "
+                "esta invertida o si hay un bias en el calculo de predicted_move_pct."
+            )
+        elif ic_status == "weak":
+            actions.append(
+                f"IC debil (IC={overall_ic:.4f if overall_ic else '?'}): revisar filtros de regimen y calidad de "
+                "la prediccion antes de escalar el loop."
+            )
     if not actions:
         actions.append("Mantener observacion controlada y exigir evidencia before-after antes de promover a live.")
     return actions
@@ -473,6 +648,7 @@ def build_trading_implementation_scorecard(
         journal_db_path,
         external_translation_score=float(external_benchmark["details"]["translation_pct"]),
     )
+    signal_ic_quality = _compute_signal_ic_quality(root)
 
     metrics = [
         process_compliance,
@@ -482,6 +658,7 @@ def build_trading_implementation_scorecard(
         observability_feedback,
         test_guardrails,
         usefulness,
+        signal_ic_quality,
     ]
     metric_map = {metric["name"]: metric for metric in metrics}
 
@@ -505,6 +682,8 @@ def build_trading_implementation_scorecard(
             "attributed_open_positions_pct": usefulness["details"].get("attributed_open_positions_pct", 0.0),
             "open_untracked_ratio_pct": usefulness["details"].get("open_untracked_ratio_pct", 0.0),
             "evidence_sufficiency_score": usefulness["details"].get("evidence_sufficiency_score", 0.0),
+            "post_mortem_coverage_pct": usefulness["details"].get("post_mortem_coverage_pct", 0.0),
+            "recent_attribution_pct": usefulness["details"].get("recent_attribution_pct", 0.0),
             "external_learning_translation_score": usefulness["details"].get(
                 "external_learning_translation_score",
                 0.0,
@@ -512,6 +691,10 @@ def build_trading_implementation_scorecard(
             "observability_feedback_score": observability_feedback["value"],
             "grafana_reload_resilience_pct": observability_feedback["details"].get("reload_resilience_pct", 0.0),
             "grafana_alerting_ready_pct": 100.0 if observability_feedback["details"].get("alerting_ready") else 0.0,
+            "signal_ic_quality_score": signal_ic_quality["value"],
+            "ic_tracker_signals_with_outcome": signal_ic_quality["details"].get("signals_with_outcome", 0),
+            "ic_overall": signal_ic_quality["details"].get("overall_ic"),
+            "ic_status": signal_ic_quality["details"].get("ic_status", signal_ic_quality.get("status", "insufficient_data")),
         },
         "next_actions": _build_next_actions(metric_map),
     }
@@ -545,7 +728,10 @@ def format_trading_implementation_scorecard_markdown(payload: dict[str, Any]) ->
         "observability_feedback_score",
         "test_guardrail_score",
         "implementation_usefulness_score",
+        "signal_ic_quality_score",
     ]:
+        if metric_name not in metrics:
+            continue
         metric = metrics[metric_name]
         goal = next(
             (item["goal"] for item in payload["metric_catalog"] if item["name"] == metric_name),
@@ -562,16 +748,20 @@ def format_trading_implementation_scorecard_markdown(payload: dict[str, Any]) ->
             f"- `attributed_open_positions_pct`: `{indicators['attributed_open_positions_pct']}`",
             f"- `open_untracked_ratio_pct`: `{indicators['open_untracked_ratio_pct']}`",
             f"- `evidence_sufficiency_score`: `{indicators['evidence_sufficiency_score']}`",
+            f"- `post_mortem_coverage_pct`: `{indicators['post_mortem_coverage_pct']}`",
+            f"- `recent_attribution_pct`: `{indicators['recent_attribution_pct']}`",
             f"- `external_learning_translation_score`: `{indicators['external_learning_translation_score']}`",
             f"- `observability_feedback_score`: `{indicators['observability_feedback_score']}`",
             f"- `grafana_reload_resilience_pct`: `{indicators['grafana_reload_resilience_pct']}`",
             f"- `grafana_alerting_ready_pct`: `{indicators['grafana_alerting_ready_pct']}`",
+            f"- `signal_ic_quality_score`: `{indicators['signal_ic_quality_score']}` (IC={indicators['ic_overall']}, status={indicators['ic_status']}, n={indicators['ic_tracker_signals_with_outcome']})",
             "",
             "## Interpretation",
             "",
             f"- El proceso va por `{headline['atlas_process_compliance_score']}/100`: esto mide implantacion metodologica, no edge de mercado.",
             f"- La utilidad va por `{headline['atlas_implementation_usefulness_score']}/100`: esto mide si ya hay evidencia suficiente de que lo implementado esta mejorando el sistema vivo.",
             f"- La observabilidad va por `{metrics['observability_feedback_score']['value']}/100`: esto mide si el tablero operativo realmente esta devolviendo feedback confiable para vigilar la implantacion.",
+            f"- La calidad de señal IC va por `{metrics['signal_ic_quality_score']['value']}/100`: esto mide el poder predictivo real del scanner (IC Grinold-Kahn). 0=sin datos, 100=IC>=0.10 significativo.",
             "",
             "## Next Actions",
             "",
