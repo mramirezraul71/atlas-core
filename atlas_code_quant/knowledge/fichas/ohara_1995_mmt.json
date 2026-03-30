@@ -1,0 +1,42 @@
+{
+  "id": "ohara_1995_mmt",
+  "title": "Market Microstructure Theory",
+  "authors": [
+    "Maureen O'Hara"
+  ],
+  "year": 1995,
+  "source": "Blackwell Publishers",
+  "url": "https://www.wiley.com/en-us/Market+Microstructure+Theory-p-9780631207610",
+  "category": "CAT1",
+  "topic": "market_microstructure",
+  "subtopics": [
+    "order_flow",
+    "bid_ask_spread",
+    "price_formation",
+    "liquidity"
+  ],
+  "timeframes": [
+    "intraday",
+    "short"
+  ],
+  "markets": [
+    "equity",
+    "futures"
+  ],
+  "method": "theoretical_model",
+  "key_findings": "El proceso de negociación genera información asimétrica entre market makers y traders informados. El spread bid-ask y el impacto de precios son funciones del flujo de órdenes y la selección adversa. El precio en intraday refleja más la presión de orden que los fundamentales.",
+  "limitations": "Aplica principalmente a horizontes intradía. En paper trading sin acceso a Level 2, los modelos de microestructura se aproximan mediante proxies (VWAP, CVD, volumen).",
+  "atlas_utility": "Sustenta el método order_flow_proxy del scanner. Cuando CVD diverge del precio, indica presión institucional. Relevante para gates de entrada en operaciones de corto plazo.",
+  "confidence_level": "high",
+  "scanner_methods": [
+    "order_flow_proxy"
+  ],
+  "tags": [
+    "microestructura",
+    "order_flow",
+    "intraday",
+    "liquidity",
+    "spread"
+  ],
+  "_generated_at": "2026-03-30T02:47:30.593815+00:00"
+}

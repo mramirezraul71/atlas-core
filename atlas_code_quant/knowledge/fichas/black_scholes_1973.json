@@ -1,0 +1,40 @@
+{
+  "id": "black_scholes_1973",
+  "title": "The Pricing of Options and Corporate Liabilities",
+  "authors": [
+    "Fischer Black",
+    "Myron Scholes"
+  ],
+  "year": 1973,
+  "source": "Journal of Political Economy",
+  "url": "https://www.jstor.org/stable/1831029",
+  "category": "CAT4",
+  "topic": "options_pricing",
+  "subtopics": [
+    "Black_Scholes",
+    "implied_volatility",
+    "delta",
+    "options_valuation"
+  ],
+  "timeframes": [
+    "all"
+  ],
+  "markets": [
+    "equity",
+    "options"
+  ],
+  "method": "analytical_model",
+  "key_findings": "El precio de una opción es función de: precio del subyacente, strike, tiempo al vencimiento, tasa libre de riesgo y volatilidad implícita (IV). La IV es la única variable no observable directamente — el mercado la cotiza en el precio de la opción. IV alta = opciones caras = vendedores tienen edge estadístico en el tiempo.",
+  "limitations": "Asume volatilidad constante (skew = 0) y distribución log-normal. En la práctica existe volatility smile/skew que el modelo no captura.",
+  "atlas_utility": "Base del OptionSelector y StrategySelector. IV rank (IV actual vs histórica) determina si conviene comprar o vender opciones. El sistema OptionStrat implementa este principio.",
+  "confidence_level": "high",
+  "scanner_methods": [],
+  "tags": [
+    "options",
+    "IV",
+    "Black_Scholes",
+    "options_pricing",
+    "options_strategy"
+  ],
+  "_generated_at": "2026-03-30T02:47:30.605446+00:00"
+}

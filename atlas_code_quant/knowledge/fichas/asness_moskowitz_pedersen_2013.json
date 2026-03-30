@@ -1,0 +1,46 @@
+{
+  "id": "asness_moskowitz_pedersen_2013",
+  "title": "Value and Momentum Everywhere",
+  "authors": [
+    "Clifford Asness",
+    "Tobias Moskowitz",
+    "Lasse Pedersen"
+  ],
+  "year": 2013,
+  "source": "Journal of Finance",
+  "url": "https://www.jstor.org/stable/43612950",
+  "category": "CAT2",
+  "topic": "momentum",
+  "subtopics": [
+    "value_momentum",
+    "multi_asset",
+    "IC_methodology"
+  ],
+  "timeframes": [
+    "swing",
+    "medium"
+  ],
+  "markets": [
+    "equity",
+    "fx",
+    "futures",
+    "bonds"
+  ],
+  "method": "IC_analysis_portfolio_sort",
+  "key_findings": "Momentum y value funcionan universalmente en 8 clases de activos y 4 países. Están negativamente correlacionados entre sí, ofreciendo diversificación real. El IC del momentum es robusto y replicable out-of-sample. Valida la metodología IC de Grinold-Kahn en contextos multi-activo.",
+  "limitations": "Los retornos combinados value+momentum son menores en períodos recientes post-QE. El value solo ha underperformado significativamente en la última década.",
+  "atlas_utility": "Validación directa de la metodología IC del ICSignalTracker. La robustez del IC de momentum en múltiples activos respalda el uso de predicted_move_pct como señal. Referencia principal para interpretar IC > 0.05 como meaningful.",
+  "confidence_level": "high",
+  "scanner_methods": [
+    "trend_ema_stack",
+    "relative_strength_overlay"
+  ],
+  "tags": [
+    "IC_validation",
+    "momentum",
+    "value",
+    "multi_asset",
+    "grinold_kahn"
+  ],
+  "_generated_at": "2026-03-30T02:47:30.597852+00:00"
+}

@@ -7,7 +7,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from atlas_code_quant.backtesting.winning_probability import StrategyType
+try:
+    from atlas_code_quant.backtesting.winning_probability import StrategyType
+except ModuleNotFoundError:  # pragma: no cover - runtime fallback for uvicorn launched from atlas_code_quant cwd
+    from backtesting.winning_probability import StrategyType
 
 OrderStrategyType = StrategyType | Literal["equity_long", "equity_short"]
 
@@ -81,8 +84,10 @@ class OrderRequest(BaseModel):
     entry_confidence_reference_pct: float | None = None
     max_entry_drift_pct: float | None = None
     max_entry_spread_pct: float | None = None
+    probability_payload: dict[str, Any] = Field(default_factory=dict)
     chart_plan: dict[str, Any] = Field(default_factory=dict)
     camera_plan: dict[str, Any] = Field(default_factory=dict)
+    options_governance: dict[str, Any] = Field(default_factory=dict)
     live_confirmed: bool = False
 
 
@@ -320,6 +325,10 @@ class OperationStatusPayload(BaseModel):
     exit_governance: dict[str, Any] = Field(default_factory=dict)
     post_trade_learning: dict[str, Any] = Field(default_factory=dict)
     visual_benchmark: dict[str, Any] = Field(default_factory=dict)
+    visual_gate_metrics: dict[str, Any] = Field(default_factory=dict)
+    selector_session: dict[str, Any] = Field(default_factory=dict)
+    options_strategy_governance: dict[str, Any] = Field(default_factory=dict)
+    options_governance_adoption: dict[str, Any] = Field(default_factory=dict)
     failsafe: dict[str, Any] = Field(default_factory=dict)
     monitor_summary: dict[str, Any] = Field(default_factory=dict)
     scorecard: dict[str, Any] = Field(default_factory=dict)
@@ -407,6 +416,21 @@ class StrategySelectorCandidatePayload(BaseModel):
     local_win_rate_pct: float = 0.0
     predicted_move_pct: float = 0.0
     relative_strength_pct: float = 0.0
+    asset_class: str | None = None
+    has_options: bool | None = None
+    regime: str | None = None
+    market_regime: str | None = None
+    market_state: str | None = None
+    iv_rank: float | None = None
+    iv_rank_pct: float | None = None
+    iv_hv_ratio: float | None = None
+    liquidity_score: float | None = None
+    skew_pct: float | None = None
+    term_structure_slope: float | None = None
+    event_near: bool | None = None
+    earnings_near: bool | None = None
+    options_thesis: str | None = None
+    thesis: str | None = None
     order_flow: dict[str, Any] = Field(default_factory=dict)
     confirmation: dict[str, Any] = Field(default_factory=dict)
     why_selected: list[str] = Field(default_factory=list)
@@ -420,6 +444,7 @@ class StrategySelectorRequest(BaseModel):
     prefer_defined_risk: bool = True
     allow_equity: bool = True
     allow_credit: bool = True
+    options_session_mode: Literal["balanced", "option_first", "options_only"] = "balanced"
     risk_budget_pct: float = Field(0.75, ge=0.25, le=2.0)
 
 
@@ -454,6 +479,7 @@ class LoopStartRequest(BaseModel):
         description="Segundos entre ciclos de evaluaciÃ³n.")
     max_per_cycle: int = Field(1, ge=1, le=5,
         description="MÃ¡ximo de candidatos a evaluar por ciclo.")
+    selector_session_mode: Literal["balanced", "option_first", "options_only"] | None = None
 
 
 class VisionProviderRequest(BaseModel):

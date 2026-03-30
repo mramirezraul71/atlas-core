@@ -257,6 +257,16 @@ def generate_pro_dashboard() -> dict:
     panels.append(_stat(28, "UNTRACKED OPEN", "atlas_open_untracked_ratio_pct", unit="percent", y=57, x=15, w=4, h=5, color=_RED, thresholds=[{"color": _GREEN, "value": None}, {"color": _YELLOW, "value": 5}, {"color": _RED, "value": 20}]))
     panels.append(_stat(29, "EVIDENCE SCORE", "atlas_evidence_sufficiency_score", unit="percent", y=57, x=19, w=5, h=5, color=_YELLOW, thresholds=[{"color": _RED, "value": None}, {"color": _YELLOW, "value": 30}, {"color": _GREEN, "value": 70}]))
     panels.append(_stat(30, "RECENT BAD ATTR", "atlas_recent_unattributed_entries_count", unit="short", y=62, x=0, w=6, h=5, color=_RED, thresholds=[{"color": _GREEN, "value": None}, {"color": _YELLOW, "value": 1}, {"color": _RED, "value": 3}]))
+    panels.append(_row(31, "VISUAL DISCIPLINE", y=67))
+    panels.append(_stat(32, "VISUAL BENCH", "atlas_visual_benchmark_feedback_score", unit="percent", y=68, x=0, w=6, h=5, color=_PURPLE, thresholds=[{"color": _RED, "value": None}, {"color": _YELLOW, "value": 70}, {"color": _GREEN, "value": 85}]))
+    panels.append(_stat(33, "VISUAL READY", "atlas_visual_gate_readiness_score_pct", unit="percent", y=68, x=6, w=6, h=5, color=_BLUE, thresholds=[{"color": _RED, "value": None}, {"color": _YELLOW, "value": 70}, {"color": _GREEN, "value": 85}]))
+    panels.append(_stat(34, "VISUAL ALIGN", "atlas_visual_gate_alignment_score_pct", unit="percent", y=68, x=12, w=6, h=5, color=_GREEN, thresholds=[{"color": _RED, "value": None}, {"color": _YELLOW, "value": 70}, {"color": _GREEN, "value": 85}]))
+    panels.append(_stat(35, "VISUAL BLOCKS", "atlas_visual_gate_blocked_total", unit="short", y=68, x=18, w=6, h=5, color=_RED, thresholds=[{"color": _GREEN, "value": None}, {"color": _YELLOW, "value": 1}, {"color": _RED, "value": 5}]))
+    panels.append(_ts_panel(36, "Visual Gate Telemetry", [("atlas_visual_gate_evaluated_total", "Evaluated"), ("atlas_visual_gate_pass_total", "Passed"), ("atlas_visual_gate_manual_review_total", "Manual review")], unit="short", y=73, x=0, w=24, h=8, fill=15, colors=[_BLUE, _GREEN, _YELLOW]))
+    panels.append(_row(37, "OPTIONS GOVERNANCE", y=82))
+    panels.append(_stat(38, "OPT GOV", "atlas_options_strategy_governance_feedback_score", unit="percent", y=83, x=0, w=8, h=5, color=_GREEN, thresholds=[{"color": _RED, "value": None}, {"color": _YELLOW, "value": 70}, {"color": _GREEN, "value": 85}]))
+    panels.append(_stat(39, "OPT SOURCES", "atlas_options_governance_source_count", unit="short", y=83, x=8, w=8, h=5, color=_BLUE, thresholds=[{"color": _RED, "value": None}, {"color": _YELLOW, "value": 1}, {"color": _GREEN, "value": 3}]))
+    panels.append(_stat(40, "OPT TRANSL.", "atlas_options_governance_translation_pct", unit="percent", y=83, x=16, w=8, h=5, color=_PURPLE, thresholds=[{"color": _RED, "value": None}, {"color": _YELLOW, "value": 70}, {"color": _GREEN, "value": 85}]))
 
     return {
         "uid": "atlas-quant-pro-2026",

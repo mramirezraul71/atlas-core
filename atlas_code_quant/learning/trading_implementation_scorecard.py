@@ -332,6 +332,44 @@ def _compute_visual_benchmark_feedback(root: Path, protocol: dict[str, Any]) -> 
     }
 
 
+def _compute_options_strategy_governance_feedback(root: Path, protocol: dict[str, Any]) -> dict[str, Any]:
+    sources = protocol.get("external_benchmark_sources") or []
+    options_sources = [
+        source for source in sources
+        if "options_strategy_governance" in {str(item) for item in (source.get("used_for") or [])}
+    ]
+    focus = protocol.get("options_strategy_governance_focus") or {}
+    report_present = _glob_exists(root, "reports/atlas_quant_options_strategy_governance_*.md")
+    focus_present = bool(focus)
+    metric_depth_pct = _ratio_pct(min(len(focus.get("recommended_metrics") or []), 6), 6)
+    source_depth_pct = _ratio_pct(min(len(options_sources), 3), 3)
+    translation_checks = {
+        "focus_present": focus_present,
+        "report_present": report_present,
+        "has_web_feedback_loop": bool(focus.get("web_feedback_loop")),
+        "has_human_best_practice": bool(focus.get("human_best_practice")),
+        "has_automation_translation": bool(focus.get("automation_translation")),
+    }
+    translation_pct = _ratio_pct(sum(1 for ok in translation_checks.values() if ok), len(translation_checks))
+    score = _clamp_pct((source_depth_pct * 0.35) + (metric_depth_pct * 0.30) + (translation_pct * 0.35))
+    return {
+        "name": "options_strategy_governance_feedback_score",
+        "value": score,
+        "status": _score_status(score),
+        "details": {
+            "options_source_count": len(options_sources),
+            "options_source_titles": [str(source.get("title") or "") for source in options_sources],
+            "recommended_metric_count": len(focus.get("recommended_metrics") or []),
+            "source_depth_pct": source_depth_pct,
+            "metric_depth_pct": metric_depth_pct,
+            "translation_pct": translation_pct,
+            "focus_present": focus_present,
+            "report_present": report_present,
+            "translation_checks": translation_checks,
+        },
+    }
+
+
 def _compute_journal_operational_indicators(journal_db_path: Path, external_translation_score: float) -> dict[str, Any]:
     if not journal_db_path.exists():
         score = 0.0
@@ -547,6 +585,66 @@ def _compute_signal_ic_quality(root: Path) -> dict[str, Any]:
     }
 
 
+def _compute_visual_benchmark_feedback(root: Path, protocol: dict[str, Any]) -> dict[str, Any]:
+    """Mide si el benchmark de entrada visual está definido, documentado y operativo."""
+    sources = protocol.get("external_benchmark_sources") or []
+    visual_sources = [s for s in sources if "visual_entry_optimization" in (s.get("used_for") or [])]
+    visual_focus = protocol.get("visual_entry_benchmark_focus") or {}
+    report_exists = _glob_exists(root, "reports/atlas_quant_visual_benchmark_confrontation_*.md")
+    focus_defined = bool(visual_focus.get("current_focus"))
+    has_human_bp = bool(visual_focus.get("human_best_practice"))
+    has_auto_trans = bool(visual_focus.get("automation_translation"))
+    has_metrics = bool(visual_focus.get("recommended_metrics"))
+    has_feedback_loop = bool(visual_focus.get("web_feedback_loop"))
+
+    checks = [report_exists, focus_defined, has_human_bp, has_auto_trans, has_metrics, has_feedback_loop]
+    score = _ratio_pct(sum(1 for c in checks if c), len(checks))
+    return {
+        "name": "visual_benchmark_feedback_score",
+        "value": score,
+        "status": _score_status(score),
+        "details": {
+            "report_available": report_exists,
+            "visual_source_count": len(visual_sources),
+            "focus_defined": focus_defined,
+            "human_best_practice_defined": has_human_bp,
+            "automation_translation_defined": has_auto_trans,
+            "recommended_metrics_defined": has_metrics,
+            "web_feedback_loop_defined": has_feedback_loop,
+        },
+    }
+
+
+def _compute_options_strategy_governance_feedback(root: Path, protocol: dict[str, Any]) -> dict[str, Any]:
+    """Mide si el benchmark de gobernanza de estrategia de opciones está definido y documentado."""
+    sources = protocol.get("external_benchmark_sources") or []
+    options_sources = [s for s in sources if "options_strategy_governance" in (s.get("used_for") or [])]
+    options_focus = protocol.get("options_strategy_governance_focus") or {}
+    report_exists = _glob_exists(root, "reports/atlas_quant_options_strategy_governance_*.md")
+    focus_defined = bool(options_focus.get("current_focus"))
+    has_human_bp = bool(options_focus.get("human_best_practice"))
+    has_auto_trans = bool(options_focus.get("automation_translation"))
+    has_metrics = bool(options_focus.get("recommended_metrics"))
+    has_feedback_loop = bool(options_focus.get("web_feedback_loop"))
+
+    checks = [report_exists, focus_defined, has_human_bp, has_auto_trans, has_metrics, has_feedback_loop]
+    score = _ratio_pct(sum(1 for c in checks if c), len(checks))
+    return {
+        "name": "options_strategy_governance_feedback_score",
+        "value": score,
+        "status": _score_status(score),
+        "details": {
+            "report_available": report_exists,
+            "options_source_count": len(options_sources),
+            "focus_defined": focus_defined,
+            "human_best_practice_defined": has_human_bp,
+            "automation_translation_defined": has_auto_trans,
+            "recommended_metrics_defined": has_metrics,
+            "web_feedback_loop_defined": has_feedback_loop,
+        },
+    }
+
+
 def _parse_pytest_summary(output: str) -> dict[str, Any]:
     passed = sum(int(match) for match in re.findall(r"(\d+)\s+passed", output))
     failed = sum(int(match) for match in re.findall(r"(\d+)\s+failed", output))
@@ -686,6 +784,7 @@ def build_trading_implementation_scorecard(
     external_benchmark = _compute_external_benchmark_coverage(root, protocol)
     observability_feedback = _compute_observability_feedback(grafana_check)
     visual_benchmark_feedback = _compute_visual_benchmark_feedback(root, protocol)
+    options_strategy_governance_feedback = _compute_options_strategy_governance_feedback(root, protocol)
     test_guardrails = _compute_test_guardrail_score(root, pytest_result)
     usefulness = _compute_journal_operational_indicators(
         journal_db_path,
@@ -700,6 +799,7 @@ def build_trading_implementation_scorecard(
         external_benchmark,
         observability_feedback,
         visual_benchmark_feedback,
+        options_strategy_governance_feedback,
         test_guardrails,
         usefulness,
         signal_ic_quality,
@@ -737,6 +837,9 @@ def build_trading_implementation_scorecard(
             "visual_benchmark_feedback_score": visual_benchmark_feedback["value"],
             "visual_benchmark_source_count": visual_benchmark_feedback["details"].get("visual_source_count", 0),
             "visual_benchmark_translation_pct": visual_benchmark_feedback["details"].get("translation_pct", 0.0),
+            "options_strategy_governance_feedback_score": options_strategy_governance_feedback["value"],
+            "options_governance_source_count": options_strategy_governance_feedback["details"].get("options_source_count", 0),
+            "options_governance_translation_pct": options_strategy_governance_feedback["details"].get("translation_pct", 0.0),
             "grafana_reload_resilience_pct": observability_feedback["details"].get("reload_resilience_pct", 0.0),
             "grafana_alerting_ready_pct": 100.0 if observability_feedback["details"].get("alerting_ready") else 0.0,
             "signal_ic_quality_score": signal_ic_quality["value"],
@@ -775,6 +878,7 @@ def format_trading_implementation_scorecard_markdown(payload: dict[str, Any]) ->
         "external_benchmark_coverage_score",
         "observability_feedback_score",
         "visual_benchmark_feedback_score",
+        "options_strategy_governance_feedback_score",
         "test_guardrail_score",
         "implementation_usefulness_score",
         "signal_ic_quality_score",
@@ -805,6 +909,9 @@ def format_trading_implementation_scorecard_markdown(payload: dict[str, Any]) ->
             f"- `visual_benchmark_feedback_score`: `{indicators['visual_benchmark_feedback_score']}`",
             f"- `visual_benchmark_source_count`: `{indicators['visual_benchmark_source_count']}`",
             f"- `visual_benchmark_translation_pct`: `{indicators['visual_benchmark_translation_pct']}`",
+            f"- `options_strategy_governance_feedback_score`: `{indicators['options_strategy_governance_feedback_score']}`",
+            f"- `options_governance_source_count`: `{indicators['options_governance_source_count']}`",
+            f"- `options_governance_translation_pct`: `{indicators['options_governance_translation_pct']}`",
             f"- `grafana_reload_resilience_pct`: `{indicators['grafana_reload_resilience_pct']}`",
             f"- `grafana_alerting_ready_pct`: `{indicators['grafana_alerting_ready_pct']}`",
             f"- `signal_ic_quality_score`: `{indicators['signal_ic_quality_score']}` (IC={indicators['ic_overall']}, status={indicators['ic_status']}, n={indicators['ic_tracker_signals_with_outcome']})",
@@ -815,6 +922,7 @@ def format_trading_implementation_scorecard_markdown(payload: dict[str, Any]) ->
             f"- La utilidad va por `{headline['atlas_implementation_usefulness_score']}/100`: esto mide si ya hay evidencia suficiente de que lo implementado esta mejorando el sistema vivo.",
             f"- La observabilidad va por `{metrics['observability_feedback_score']['value']}/100`: esto mide si el tablero operativo realmente esta devolviendo feedback confiable para vigilar la implantacion.",
             f"- El benchmark visual va por `{metrics['visual_benchmark_feedback_score']['value']}/100`: esto mide si la investigacion visual externa ya fue aterrizada a controles reutilizables en ATLAS.",
+            f"- La gobernanza de opciones va por `{metrics['options_strategy_governance_feedback_score']['value']}/100`: esto mide si el benchmark externo de estructuras con opciones ya fue traducido a familias, reglas y restricciones reutilizables.",
             f"- La calidad de señal IC va por `{metrics['signal_ic_quality_score']['value']}/100`: esto mide el poder predictivo real del scanner (IC Grinold-Kahn). 0=sin datos, 100=IC>=0.10 significativo.",
             "",
             "## Next Actions",

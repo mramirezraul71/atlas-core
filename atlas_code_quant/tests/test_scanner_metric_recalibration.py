@@ -99,3 +99,13 @@ def test_evaluate_symbol_timeframes_rejects_low_profit_factor_even_with_signal(m
     assert accepted == []
     assert rejected
     assert any("profit factor local" in reason for reason in rejected[0]["reasons"])
+
+
+def test_report_does_not_deadlock_when_status_snapshot_is_embedded() -> None:
+    scanner = OpportunityScannerService()
+
+    report = scanner.report(activity_limit=5)
+
+    assert "status" in report
+    assert report["status"]["running"] is False
+    assert isinstance(report["activity"], list)

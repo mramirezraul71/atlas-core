@@ -1,0 +1,37 @@
+{
+  "id": "poser_2003_elliott_effectiveness",
+  "title": "The Effectiveness of the Elliott Waves Theory to Forecast Financial Markets",
+  "authors": [
+    "Stanley Poser"
+  ],
+  "year": 2003,
+  "source": "ABI/Inform",
+  "url": "",
+  "category": "CAT3",
+  "topic": "elliott_waves",
+  "subtopics": [
+    "empirical_validation",
+    "forecasting",
+    "elliott_critique"
+  ],
+  "timeframes": [
+    "all"
+  ],
+  "markets": [
+    "equity"
+  ],
+  "method": "empirical_review",
+  "key_findings": "La revisión empírica de la teoría de Elliott muestra resultados mixtos. El éxito reportado es en gran parte anecdótico. La precisión de las predicciones basadas en ondas no supera significativamente al azar en pruebas objetivas.",
+  "limitations": "El estudio mismo reconoce dificultad en formalizar el conteo de ondas para backtesting riguroso, lo que limita las conclusiones negativas también.",
+  "atlas_utility": "Referencia crítica que modera el uso de Elliott en ATLAS. Confirma que el conteo de ondas no debe ser señal de entrada primaria. Solo como contexto de estructura.",
+  "confidence_level": "medium",
+  "scanner_methods": [],
+  "tags": [
+    "elliott",
+    "empirical",
+    "critique",
+    "contested",
+    "forecasting"
+  ],
+  "_generated_at": "2026-03-30T02:47:30.599506+00:00"
+}

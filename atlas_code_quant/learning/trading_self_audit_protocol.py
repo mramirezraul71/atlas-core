@@ -130,6 +130,33 @@ TRADING_ANALYSIS_SCHEMA: list[dict[str, Any]] = [
             "siguiente foco de auditoria",
         ],
     },
+    {
+        "title": "Credit vs. Debit Spreads: Let Volatility Guide You",
+        "url": "https://www.schwab.com/learn/story/credit-vs-debit-spreads-let-volatility-guide-you",
+        "domain": "schwab.com",
+        "source_type": "broker_guide",
+        "used_for": [
+            "options_strategy_governance",
+        ],
+    },
+    {
+        "title": "Guide to Collars Transcript",
+        "url": "https://www.fidelity.com/bin-public/060_www_fidelity_com/documents/learning-center/Transcript_Guide%20to%20collars_v2.pdf",
+        "domain": "fidelity.com",
+        "source_type": "broker_guide",
+        "used_for": [
+            "options_strategy_governance",
+        ],
+    },
+    {
+        "title": "The OCC Options Strategies",
+        "url": "https://www.theocc.com/strategies",
+        "domain": "theocc.com",
+        "source_type": "industry_guide",
+        "used_for": [
+            "options_strategy_governance",
+        ],
+    },
 ]
 
 
@@ -574,6 +601,10 @@ IMPLEMENTATION_SCORECARD_METRICS: list[dict[str, str]] = [
         "goal": "Medir si el benchmark visual externo ya fue traducido a criterios reutilizables, reportes y controles reales de entrada.",
     },
     {
+        "name": "options_strategy_governance_feedback_score",
+        "goal": "Medir si el benchmark externo de estructuras con opciones ya fue traducido a taxonomia, constraints y reglas reutilizables.",
+    },
+    {
         "name": "test_guardrail_score",
         "goal": "Medir cuanta proteccion automatizada existe sobre lo ya implantado.",
     },
@@ -994,6 +1025,55 @@ VISUAL_ENTRY_BENCHMARK_DEEP_DIVE: dict[str, Any] = {
 }
 
 
+OPTIONS_STRATEGY_GOVERNANCE_DEEP_DIVE: dict[str, Any] = {
+    "current_focus": "options_strategy_governance",
+    "human_best_practice": [
+        "separar primero la tesis: direccional, neutral theta, expansion, contraccion o cobertura",
+        "usar nivel de IV y su relacion con HV para decidir entre premium comprado, debit spread o credit spread",
+        "mirar term structure antes de usar calendar o diagonal",
+        "no usar estrategias de cobertura si no existe contexto real de stock o inventario que proteger",
+    ],
+    "automation_translation": [
+        "normalizar tesis y aliases de estrategia antes de seleccionar estructura",
+        "distinguir familias: directional_debit, directional_credit, neutral_theta y time_spread",
+        "activar calendar o diagonal solo cuando la term structure lo justifica",
+        "registrar preferred_but_unavailable_strategy cuando falte contexto para una cobertura real",
+    ],
+    "external_benchmark_focus": [
+        "iv guides credit versus debit",
+        "time spreads need term structure support",
+        "hedges require stock context",
+        "event risk penalizes short premium",
+    ],
+    "key_findings": [
+        "ATLAS estaba demasiado concentrado en verticales e iron condor, con poca discriminacion entre tesis de volatilidad, tiempo y cobertura.",
+        "La eleccion de estrategia con opciones no debe depender solo de direccion e IV; tambien importa la curva temporal de volatilidad y si existe posicion subyacente a proteger.",
+        "Calendar y diagonal son estructuras utiles cuando la tesis es de tiempo/vega y la term structure lo respalda.",
+        "Covered call o protective put son ideas validas, pero no deben activarse automaticamente si el sistema no confirma contexto de stock real en cartera.",
+    ],
+    "likely_failures": [
+        "vender credito en alta IV con evento cercano solo porque la prima parece atractiva",
+        "forzar una vertical cuando la tesis real es de carry temporal o term structure",
+        "confundir una necesidad de cobertura con una idea direccional pura",
+    ],
+    "recommended_metrics": [
+        "options_strategy_family",
+        "volatility_posture",
+        "term_structure_slope",
+        "event_penalty_applied",
+        "preferred_but_unavailable_strategy",
+        "time_spread_gap_dte",
+    ],
+    "web_feedback_loop": [
+        "detectar cuando el selector elige demasiadas verticales frente a tesis de tiempo o cobertura",
+        "buscar benchmark externo de estructura adecuada para ese contexto",
+        "comparar el criterio externo con la taxonomia real del selector",
+        "traducir la comparacion a familia, governance o constraints nuevos",
+        "persistir la conclusion para que la siguiente iteracion no vuelva a simplificar de mas la capa de opciones",
+    ],
+}
+
+
 EXECUTION_QUALITY_DEEP_DIVE: dict[str, Any] = {
     "current_focus": "execution_quality",
     "key_findings": [
@@ -1147,6 +1227,7 @@ def build_trading_self_audit_note() -> dict[str, Any]:
         "scanner_selection_focus": SCANNER_SELECTION_DEEP_DIVE,
         "entry_validation_focus": ENTRY_VALIDATION_DEEP_DIVE,
         "visual_entry_benchmark_focus": VISUAL_ENTRY_BENCHMARK_DEEP_DIVE,
+        "options_strategy_governance_focus": OPTIONS_STRATEGY_GOVERNANCE_DEEP_DIVE,
         "execution_quality_focus": EXECUTION_QUALITY_DEEP_DIVE,
         "position_management_focus": POSITION_MANAGEMENT_DEEP_DIVE,
         "exit_governance_focus": EXIT_GOVERNANCE_DEEP_DIVE,

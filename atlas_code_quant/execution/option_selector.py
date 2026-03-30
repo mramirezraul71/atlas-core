@@ -39,13 +39,46 @@ class ContractSelection:
 
 def _normalize_thesis(thesis: str | None, regime: str, direction: str) -> str:
     raw = (thesis or "").strip().lower()
+    aliases = {
+        "calendar": "time_spread",
+        "calendar_spread": "time_spread",
+        "diagonal": "time_spread",
+        "diagonal_spread": "time_spread",
+        "time_spread": "time_spread",
+        "theta_carry": "time_spread",
+        "term_structure": "time_spread",
+        "neutral_theta": "neutral_income",
+        "income": "neutral_income",
+        "range": "range_bound",
+        "range_trade": "range_bound",
+        "hedge": "hedged_overlay",
+        "hedged": "hedged_overlay",
+        "protective": "hedged_overlay",
+        "protective_put": "hedged_overlay",
+        "covered_call": "hedged_overlay",
+        "collar": "hedged_overlay",
+    }
     if raw:
-        return raw
+        return aliases.get(raw, raw)
     if (regime or "").upper() == "SIDEWAYS":
         return "range_bound"
     if (direction or "").upper() in {"BUY", "SELL"}:
         return "directional_controlled"
     return "directional_controlled"
+
+
+_TIME_SPREAD_STRATEGIES = {
+    "call_calendar_spread",
+    "put_calendar_spread",
+    "call_diagonal_debit_spread",
+    "put_diagonal_debit_spread",
+}
+
+
+def _preferred_but_unavailable_strategy(thesis: str, direction: str) -> str | None:
+    if thesis == "hedged_overlay":
+        return "protective_put" if (direction or "").upper() == "BUY" else "collar"
+    return None
 
 
 def _governance_reasons(
@@ -110,6 +143,8 @@ def describe_strategy_governance(
         premium_stance = "debit_defined_risk"
     elif strategy in {"long_call", "long_put"}:
         premium_stance = "long_premium"
+    elif strategy in _TIME_SPREAD_STRATEGIES:
+        premium_stance = "time_spread_defined_risk"
 
     if strategy in {"iron_condor", "iron_butterfly"}:
         strategy_family = "neutral_theta"
@@ -117,6 +152,8 @@ def describe_strategy_governance(
         strategy_family = "directional_credit"
     elif strategy in {"bull_call_debit_spread", "bear_put_debit_spread"}:
         strategy_family = "directional_debit"
+    elif strategy in _TIME_SPREAD_STRATEGIES:
+        strategy_family = "term_structure_time_spread"
     else:
         strategy_family = "directional_long_premium"
 
@@ -125,6 +162,8 @@ def describe_strategy_governance(
         volatility_posture = "short_volatility_defined_risk"
     elif premium_stance == "long_premium":
         volatility_posture = "long_volatility"
+    elif premium_stance == "time_spread_defined_risk":
+        volatility_posture = "long_back_vega_short_front_theta"
 
     return {
         "thesis": normalized_thesis,
@@ -135,6 +174,12 @@ def describe_strategy_governance(
         "premium_stance": premium_stance,
         "volatility_posture": volatility_posture,
         "strategy_family": strategy_family,
+        "preferred_but_unavailable_strategy": _preferred_but_unavailable_strategy(normalized_thesis, direction),
+        "benchmark_framework": {
+            "iv_drives_credit_vs_debit": True,
+            "term_structure_drives_time_spreads": True,
+            "hedging_requires_stock_context": normalized_thesis == "hedged_overlay",
+        },
         "reasons": _governance_reasons(
             direction=direction,
             regime=regime,
@@ -177,6 +222,16 @@ def pick_strategy(
     balanced_skew = abs(skew_pct) <= 0.12
     event_driven = bool(event_near or normalized_thesis in {"directional_explosive", "vol_expansion", "event_driven"})
     theta_friendly = normalized_thesis in {"neutral_income", "vol_contraction", "range_bound"} or is_side
+    term_structure_friendly = term_structure_slope >= 1.03 and not liquidity_weak and not event_driven
+
+    if normalized_thesis == "time_spread" and term_structure_friendly:
+        if is_side:
+            return "call_calendar_spread" if direction != "SELL" else "put_calendar_spread"
+        if is_bull:
+            return "call_diagonal_debit_spread"
+        if is_bear:
+            return "put_diagonal_debit_spread"
+        return "call_calendar_spread" if direction != "SELL" else "put_calendar_spread"
 
     if theta_friendly and not event_driven and high_iv and not liquidity_weak:
         if normalized_thesis == "neutral_income" and iv_rank >= 75 and balanced_skew and prefer_defined_risk:
@@ -201,9 +256,48 @@ def pick_strategy(
             return "long_put" if iv_rank < 20 else "bear_put_debit_spread"
         return "bear_put_debit_spread"
 
-    if theta_friendly and term_structure_slope > 1.05 and not liquidity_weak:
-        return "iron_condor"
+    if theta_friendly and term_structure_friendly and not high_iv:
+        return "call_calendar_spread" if direction != "SELL" else "put_calendar_spread"
     return "iron_condor"
+
+
+def pick_expiration_pair(
+    expirations: list[str],
+    *,
+    front_target_dte: int = 21,
+    back_target_dte: int = 45,
+    min_front_dte: int = 7,
+    max_back_dte: int = 90,
+    min_gap_dte: int = 7,
+) -> tuple[str | None, str | None]:
+    from datetime import date, datetime
+
+    today = date.today()
+    dtes: list[tuple[int, str]] = []
+    for exp in expirations:
+        try:
+            exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        dte = (exp_date - today).days
+        if dte >= min_front_dte:
+            dtes.append((dte, exp))
+    if not dtes:
+        return None, None
+
+    front_candidates = [(abs(dte - front_target_dte), dte, exp) for dte, exp in dtes]
+    front_candidates.sort()
+    for _, front_dte, front_exp in front_candidates:
+        back_candidates = [
+            (abs(dte - back_target_dte), dte, exp)
+            for dte, exp in dtes
+            if dte >= max(front_dte + min_gap_dte, back_target_dte - (back_target_dte - front_target_dte))
+            and dte <= max_back_dte
+        ]
+        if back_candidates:
+            back_candidates.sort()
+            return front_exp, back_candidates[0][2]
+    return None, None
 
 
 def pick_expiration(
@@ -272,6 +366,9 @@ def build_legs_for_strategy(
     chain_puts: list[dict],
     spot: float,
     expiration: str,
+    back_expiration: str | None = None,
+    back_chain_calls: list[dict] | None = None,
+    back_chain_puts: list[dict] | None = None,
     width_pct: float = 0.03,
     min_oi: int = 100,
 ) -> list[dict]:
@@ -291,6 +388,22 @@ def build_legs_for_strategy(
             "delta": float((opt.get("greeks") or {}).get("delta") or 0),
             "open_interest": float(opt.get("open_interest") or 0),
         }
+
+    def _pick_same_or_closest_strike(options: list[dict], *, strike: float, option_type: str, min_oi: int) -> dict | None:
+        candidates: list[tuple[float, dict]] = []
+        for opt in options:
+            try:
+                if str(opt.get("option_type") or "").lower() != option_type.lower():
+                    continue
+                if float(opt.get("open_interest") or 0) < min_oi:
+                    continue
+                candidates.append((abs(float(opt.get("strike") or 0) - strike), opt))
+            except (TypeError, ValueError):
+                continue
+        if not candidates:
+            return None
+        candidates.sort(key=lambda item: item[0])
+        return candidates[0][1]
 
     if strategy_type == "long_call":
         call = pick_strike(chain_calls, spot, "call", target_delta=0.40, min_oi=min_oi)
@@ -360,6 +473,76 @@ def build_legs_for_strategy(
             legs.append(_leg(wing_put, "long"))
         return legs if len(legs) == 4 else []
 
+    if strategy_type == "call_calendar_spread":
+        front_call = pick_strike(chain_calls, spot, "call", target_delta=0.50, min_oi=min_oi)
+        back_calls = back_chain_calls or []
+        if front_call and back_calls and back_expiration:
+            back_call = _pick_same_or_closest_strike(
+                back_calls,
+                strike=float(front_call.get("strike") or spot),
+                option_type="call",
+                min_oi=min_oi,
+            )
+            if back_call:
+                return [
+                    _leg(front_call, "short"),
+                    {**_leg(back_call, "long"), "expiration": back_expiration},
+                ]
+        return []
+
+    if strategy_type == "put_calendar_spread":
+        front_put = pick_strike(chain_puts, spot, "put", target_delta=0.50, min_oi=min_oi)
+        back_puts = back_chain_puts or []
+        if front_put and back_puts and back_expiration:
+            back_put = _pick_same_or_closest_strike(
+                back_puts,
+                strike=float(front_put.get("strike") or spot),
+                option_type="put",
+                min_oi=min_oi,
+            )
+            if back_put:
+                return [
+                    _leg(front_put, "short"),
+                    {**_leg(back_put, "long"), "expiration": back_expiration},
+                ]
+        return []
+
+    if strategy_type == "call_diagonal_debit_spread":
+        front_short = pick_strike(chain_calls, spot, "call", target_delta=0.30, min_oi=min_oi)
+        back_calls = back_chain_calls or []
+        if front_short and back_calls and back_expiration:
+            eligible = [
+                opt for opt in back_calls
+                if str(opt.get("option_type") or "").lower() == "call"
+                and float(opt.get("open_interest") or 0) >= min_oi
+                and float(opt.get("strike") or 0) <= float(front_short.get("strike") or spot)
+            ]
+            back_long = pick_strike(eligible or back_calls, spot, "call", target_delta=0.55, min_oi=min_oi)
+            if back_long:
+                return [
+                    _leg(front_short, "short"),
+                    {**_leg(back_long, "long"), "expiration": back_expiration},
+                ]
+        return []
+
+    if strategy_type == "put_diagonal_debit_spread":
+        front_short = pick_strike(chain_puts, spot, "put", target_delta=0.30, min_oi=min_oi)
+        back_puts = back_chain_puts or []
+        if front_short and back_puts and back_expiration:
+            eligible = [
+                opt for opt in back_puts
+                if str(opt.get("option_type") or "").lower() == "put"
+                and float(opt.get("open_interest") or 0) >= min_oi
+                and float(opt.get("strike") or 0) >= float(front_short.get("strike") or spot)
+            ]
+            back_long = pick_strike(eligible or back_puts, spot, "put", target_delta=0.55, min_oi=min_oi)
+            if back_long:
+                return [
+                    _leg(front_short, "short"),
+                    {**_leg(back_long, "long"), "expiration": back_expiration},
+                ]
+        return []
+
     logger.warning("Strategy not implemented in build_legs_for_strategy: %s", strategy_type)
     return []
 
@@ -418,22 +601,58 @@ def select_option_contract(
     logger.info("[OPT] %s -> strategy=%s iv_rank=%.1f regime=%s", symbol, strategy, iv_rank, regime)
 
     exp = pick_expiration(expirations, target_dte=target_dte, min_dte=min_dte, max_dte=max_dte)
+    front_exp = back_exp = None
+    if strategy in _TIME_SPREAD_STRATEGIES:
+        front_exp, back_exp = pick_expiration_pair(
+            expirations,
+            front_target_dte=max(min_dte, max(7, min(target_dte, 30) - 10)),
+            back_target_dte=max(target_dte, 35),
+            min_front_dte=max(7, min_dte // 2),
+            max_back_dte=max(max_dte + 30, target_dte + 15),
+            min_gap_dte=7,
+        )
+        if not front_exp or not back_exp:
+            warnings.append("No expiration pair available for calendar/diagonal structure.")
+            return ContractSelection(strategy_type=strategy, legs=[], governance=governance, warnings=warnings, is_valid=False)
+        exp = front_exp
     if not exp:
         warnings.append(f"No expiration available between {min_dte}-{max_dte} DTE")
         return ContractSelection(strategy_type=strategy, legs=[], governance=governance, warnings=warnings, is_valid=False)
 
-    chain = chain_by_exp.get(exp, {})
-    chain_calls = chain.get("calls") or chain.get("options", {}).get("option", [])
-    chain_puts = chain.get("puts") or []
-    if not chain_puts and chain_calls:
-        chain_puts = [opt for opt in chain_calls if (opt.get("option_type") or "").lower() == "put"]
-        chain_calls = [opt for opt in chain_calls if (opt.get("option_type") or "").lower() == "call"]
+    def _chain_side(expiration: str) -> tuple[list[dict], list[dict]]:
+        chain = chain_by_exp.get(expiration, {})
+        calls = chain.get("calls") or chain.get("options", {}).get("option", [])
+        puts = chain.get("puts") or []
+        if not puts and calls:
+            puts = [opt for opt in calls if (opt.get("option_type") or "").lower() == "put"]
+            calls = [opt for opt in calls if (opt.get("option_type") or "").lower() == "call"]
+        return calls, puts
 
+    chain_calls, chain_puts = _chain_side(exp)
     if not chain_calls and not chain_puts:
         warnings.append(f"Empty chain for {symbol} exp={exp}")
         return ContractSelection(strategy_type=strategy, legs=[], governance=governance, warnings=warnings, is_valid=False)
 
-    legs = build_legs_for_strategy(strategy, chain_calls, chain_puts, spot, exp, width_pct=width_pct, min_oi=min_oi)
+    back_chain_calls: list[dict] = []
+    back_chain_puts: list[dict] = []
+    if back_exp:
+        back_chain_calls, back_chain_puts = _chain_side(back_exp)
+        if not back_chain_calls and not back_chain_puts:
+            warnings.append(f"Empty back chain for {symbol} exp={back_exp}")
+            return ContractSelection(strategy_type=strategy, legs=[], governance=governance, warnings=warnings, is_valid=False)
+
+    legs = build_legs_for_strategy(
+        strategy,
+        chain_calls,
+        chain_puts,
+        spot,
+        exp,
+        back_expiration=back_exp,
+        back_chain_calls=back_chain_calls,
+        back_chain_puts=back_chain_puts,
+        width_pct=width_pct,
+        min_oi=min_oi,
+    )
     if not legs:
         warnings.append(f"No liquid contracts found for {strategy}")
         return ContractSelection(strategy_type=strategy, legs=[], governance=governance, warnings=warnings, is_valid=False)
@@ -443,12 +662,45 @@ def select_option_contract(
     credit = max(0.0, net)
     anchor = legs[0].get("strike", spot)
     avg_iv = sum(leg.get("iv", 0) for leg in legs) / max(len(legs), 1)
-    score = min(1.0, (iv_rank / 100) * 0.4 + (1 - max(0, avg_iv - 0.3)) * 0.3 + 0.3)
+    liquidity_component = max(0.0, min(liquidity_score, 1.0))
+    event_penalty = 0.12 if event_near and strategy in {"iron_condor", "iron_butterfly", "bull_put_credit_spread", "bear_call_credit_spread"} else 0.0
+    term_structure_bonus = 0.10 if strategy in _TIME_SPREAD_STRATEGIES and term_structure_slope >= 1.03 else 0.0
+    strategy_fit = 0.55
+    if strategy in {"bull_put_credit_spread", "bear_call_credit_spread", "iron_condor", "iron_butterfly"}:
+        strategy_fit = 0.85 if (iv_rank >= 55 or iv_hv_ratio >= 1.2) else 0.45
+    elif strategy in {"long_call", "long_put", "bull_call_debit_spread", "bear_put_debit_spread"}:
+        strategy_fit = 0.85 if (iv_rank <= 35 or iv_hv_ratio <= 1.05 or event_near) else 0.60
+    elif strategy in _TIME_SPREAD_STRATEGIES:
+        strategy_fit = 0.85 if term_structure_slope >= 1.03 and not event_near else 0.55
+    score = max(
+        0.0,
+        min(
+            1.0,
+            (strategy_fit * 0.40)
+            + (liquidity_component * 0.20)
+            + (max(0.0, 1 - max(0, avg_iv - 0.35)) * 0.15)
+            + (min(iv_rank / 100, 1.0) * 0.10)
+            + (term_structure_bonus)
+            + 0.15
+            - event_penalty,
+        ),
+    )
     option_symbol = legs[0].get("symbol", "") if len(legs) == 1 else ""
 
     from datetime import date, datetime
 
-    dte = (datetime.strptime(exp, "%Y-%m-%d").date() - date.today()).days
+    dte = (datetime.strptime(back_exp or exp, "%Y-%m-%d").date() - date.today()).days
+    if back_exp:
+        governance = {
+            **governance,
+            "front_expiration": front_exp,
+            "back_expiration": back_exp,
+            "time_spread_gap_dte": (
+                (datetime.strptime(back_exp, "%Y-%m-%d").date() - datetime.strptime(front_exp, "%Y-%m-%d").date()).days
+                if front_exp
+                else None
+            ),
+        }
 
     return ContractSelection(
         strategy_type=strategy,

@@ -10,6 +10,7 @@ from atlas_code_quant.execution.option_selector import (
     describe_strategy_governance,
     pick_strategy,
     pick_expiration,
+    pick_expiration_pair,
     pick_strike,
     build_legs_for_strategy,
     select_option_contract,
@@ -95,6 +96,42 @@ class TestPickStrategy:
         )
         assert strat == "bear_put_debit_spread"
 
+    def test_time_spread_sideways_prefers_calendar(self):
+        strat = pick_strategy(
+            "BUY",
+            "SIDEWAYS",
+            iv_rank=34,
+            iv_hv_ratio=1.0,
+            thesis="time_spread",
+            term_structure_slope=1.08,
+            liquidity_score=0.8,
+        )
+        assert strat == "call_calendar_spread"
+
+    def test_time_spread_bull_prefers_call_diagonal(self):
+        strat = pick_strategy(
+            "BUY",
+            "BULL",
+            iv_rank=38,
+            iv_hv_ratio=1.0,
+            thesis="calendar",
+            term_structure_slope=1.06,
+            liquidity_score=0.9,
+        )
+        assert strat == "call_diagonal_debit_spread"
+
+    def test_time_spread_bear_prefers_put_diagonal(self):
+        strat = pick_strategy(
+            "SELL",
+            "BEAR",
+            iv_rank=40,
+            iv_hv_ratio=1.0,
+            thesis="diagonal",
+            term_structure_slope=1.07,
+            liquidity_score=0.9,
+        )
+        assert strat == "put_diagonal_debit_spread"
+
 
 class TestPickExpiration:
     def test_selects_closest_to_target(self):
@@ -116,6 +153,13 @@ class TestPickExpiration:
         exp_30d = (date.today() + timedelta(days=30)).strftime("%Y-%m-%d")
         result = pick_expiration([exp_5d, exp_30d], target_dte=30, min_dte=14, max_dte=45)
         assert result == exp_30d
+
+    def test_pick_expiration_pair_returns_front_and_back(self):
+        exps = _make_expirations(start_days=14, n=4, step=14)
+        front, back = pick_expiration_pair(exps, front_target_dte=21, back_target_dte=45)
+        assert front is not None
+        assert back is not None
+        assert front != back
 
 
 class TestPickStrike:
@@ -178,6 +222,36 @@ class TestBuildLegsForStrategy:
         # May be 1 or 2 legs depending on available strikes
         assert isinstance(legs, list)
 
+    def test_calendar_spread_builds_two_legs(self):
+        front_calls = _make_chain_options(spot=450, option_type="call", n=15)
+        back_calls = _make_chain_options(spot=450, option_type="call", n=15)
+        legs = build_legs_for_strategy(
+            "call_calendar_spread",
+            front_calls,
+            [],
+            spot=450,
+            expiration="2024-06-19",
+            back_expiration="2024-07-17",
+            back_chain_calls=back_calls,
+        )
+        assert len(legs) == 2
+        assert {leg["side"] for leg in legs} == {"short", "long"}
+
+    def test_diagonal_spread_builds_two_legs(self):
+        front_calls = _make_chain_options(spot=450, option_type="call", n=15)
+        back_calls = _make_chain_options(spot=450, option_type="call", n=15)
+        legs = build_legs_for_strategy(
+            "call_diagonal_debit_spread",
+            front_calls,
+            [],
+            spot=450,
+            expiration="2024-06-19",
+            back_expiration="2024-07-17",
+            back_chain_calls=back_calls,
+        )
+        assert len(legs) == 2
+        assert {leg["side"] for leg in legs} == {"short", "long"}
+
 
 class TestSelectOptionContract:
     def test_returns_contract_selection(self):
@@ -235,6 +309,32 @@ class TestSelectOptionContract:
         assert result.governance["event_near"] is True
         assert len(result.governance["reasons"]) >= 2
 
+    def test_time_spread_selection_returns_expiration_pair_metadata(self):
+        exps = _make_expirations(start_days=14, n=4, step=14)
+        chain = {
+            exp: {
+                "calls": _make_chain_options(option_type="call"),
+                "puts": _make_chain_options(option_type="put"),
+            }
+            for exp in exps
+        }
+        result = select_option_contract(
+            "SPY",
+            "BUY",
+            450,
+            34,
+            1.0,
+            "SIDEWAYS",
+            exps,
+            chain,
+            thesis="time_spread",
+            term_structure_slope=1.08,
+            liquidity_score=0.8,
+        )
+        assert result.is_valid is True
+        assert result.strategy_type == "call_calendar_spread"
+        assert result.governance["front_expiration"] != result.governance["back_expiration"]
+
 
 class TestStrategyGovernance:
     def test_governance_describes_premium_posture(self):
@@ -250,3 +350,19 @@ class TestStrategyGovernance:
         )
         assert governance["premium_stance"] == "sell_premium_defined_risk"
         assert governance["strategy_family"] == "directional_credit"
+
+    def test_governance_marks_time_spread_framework(self):
+        governance = describe_strategy_governance(
+            direction="BUY",
+            regime="SIDEWAYS",
+            iv_rank=35,
+            iv_hv_ratio=1.0,
+            strategy="call_calendar_spread",
+            thesis="time_spread",
+            event_near=False,
+            liquidity_score=0.8,
+            term_structure_slope=1.08,
+        )
+        assert governance["premium_stance"] == "time_spread_defined_risk"
+        assert governance["strategy_family"] == "term_structure_time_spread"
+        assert governance["benchmark_framework"]["term_structure_drives_time_spreads"] is True

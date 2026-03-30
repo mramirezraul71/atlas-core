@@ -289,6 +289,73 @@ class ICSignalTracker:
         updated = self.update_outcome(signal_id=signal_id, exit_price=exit_price)
         return signal_id if updated else None
 
+    def update_pending_outcome(
+        self,
+        *,
+        symbol: str,
+        method: str,
+        entry_price: float,
+        recorded_near: str,
+        exit_price: float,
+    ) -> str | None:
+        """Busca la señal pendiente más cercana y registra su outcome.
+
+        Útil cuando el cierre de posición no tiene signal_id pero sí tiene el contexto
+        original (símbolo, método, precio de entrada, timestamp aproximado).
+
+        Matching: filtra por symbol+method+outcome_available=False, luego elige la señal
+        con |entry_price_diff| mínimo; en caso de empate, la más cercana en tiempo a
+        recorded_near.
+
+        Args:
+            symbol: Ticker.
+            method: Método del scanner.
+            entry_price: Precio de entrada de la señal original.
+            recorded_near: Timestamp ISO aproximado del momento de la señal.
+            exit_price: Precio de salida para calcular el retorno real.
+
+        Returns:
+            signal_id actualizado, o None si no se encontró candidato.
+        """
+        signals = self._state.get("signals") or {}
+        sym_upper = str(symbol).upper()
+        try:
+            target_dt = datetime.fromisoformat(
+                str(recorded_near).replace("Z", "+00:00")
+            )
+            if target_dt.tzinfo is None:
+                target_dt = target_dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            target_dt = None
+
+        candidates = [
+            sig for sig in signals.values()
+            if not sig.get("outcome_available")
+            and str(sig.get("symbol") or "").upper() == sym_upper
+            and str(sig.get("method") or "") == str(method)
+        ]
+        if not candidates:
+            return None
+
+        def _sort_key(sig: dict) -> tuple[float, float]:
+            price_diff = abs(_safe_float(sig.get("entry_price"), 0.0) - _safe_float(entry_price, 0.0))
+            time_diff = 0.0
+            if target_dt is not None:
+                try:
+                    rec = datetime.fromisoformat(
+                        str(sig.get("recorded_at", "")).replace("Z", "+00:00")
+                    )
+                    if rec.tzinfo is None:
+                        rec = rec.replace(tzinfo=timezone.utc)
+                    time_diff = abs((target_dt - rec).total_seconds())
+                except ValueError:
+                    time_diff = float("inf")
+            return (price_diff, time_diff)
+
+        best = min(candidates, key=_sort_key)
+        updated = self.update_outcome(signal_id=best["signal_id"], exit_price=exit_price)
+        return best["signal_id"] if updated else None
+
     def compute_ic(
         self,
         method: str | None = None,

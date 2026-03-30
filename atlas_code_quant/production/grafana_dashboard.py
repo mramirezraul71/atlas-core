@@ -104,6 +104,122 @@ def _grafana_alert_rule_yaml() -> str:
         "        labels:\n"
         "          component: atlas_scorecard\n"
         "          severity: warning\n"
+        "      - uid: atlas_visual_benchmark_low\n"
+        "        title: ATLAS Visual Benchmark Feedback Low\n"
+        "        condition: B\n"
+        "        data:\n"
+        "          - refId: A\n"
+        "            datasourceUid: atlas-prom\n"
+        "            relativeTimeRange:\n"
+        "              from: 300\n"
+        "              to: 0\n"
+        "            model:\n"
+        "              datasource:\n"
+        "                type: prometheus\n"
+        "                uid: atlas-prom\n"
+        "              editorMode: code\n"
+        "              expr: atlas_visual_benchmark_feedback_score\n"
+        "              instant: true\n"
+        "              intervalMs: 1000\n"
+        "              maxDataPoints: 43200\n"
+        "              range: false\n"
+        "              refId: A\n"
+        "          - refId: B\n"
+        "            datasourceUid: '__expr__'\n"
+        "            relativeTimeRange:\n"
+        "              from: 300\n"
+        "              to: 0\n"
+        "            model:\n"
+        "              conditions:\n"
+        "                - evaluator:\n"
+        "                    params:\n"
+        "                      - 70\n"
+        "                    type: lt\n"
+        "                  operator:\n"
+        "                    type: and\n"
+        "                  query:\n"
+        "                    params:\n"
+        "                      - A\n"
+        "                  reducer:\n"
+        "                    type: last\n"
+        "                  type: query\n"
+        "              datasource:\n"
+        "                type: __expr__\n"
+        "                uid: '__expr__'\n"
+        "              expression: A\n"
+        "              intervalMs: 1000\n"
+        "              maxDataPoints: 43200\n"
+        "              refId: B\n"
+        "              type: classic_conditions\n"
+        "        dashboardUid: atlas-quant-pro-2026\n"
+        "        panelId: 32\n"
+        "        noDataState: Alerting\n"
+        "        execErrState: Alerting\n"
+        "        for: 2m\n"
+        "        annotations:\n"
+        "          summary: ATLAS visual benchmark feedback score below 70.\n"
+        "          description: The external visual benchmark is no longer being translated robustly into reusable controls.\n"
+        "        labels:\n"
+        "          component: atlas_scorecard\n"
+        "          severity: warning\n"
+        "      - uid: atlas_options_governance_low\n"
+        "        title: ATLAS Options Governance Feedback Low\n"
+        "        condition: B\n"
+        "        data:\n"
+        "          - refId: A\n"
+        "            datasourceUid: atlas-prom\n"
+        "            relativeTimeRange:\n"
+        "              from: 300\n"
+        "              to: 0\n"
+        "            model:\n"
+        "              datasource:\n"
+        "                type: prometheus\n"
+        "                uid: atlas-prom\n"
+        "              editorMode: code\n"
+        "              expr: atlas_options_strategy_governance_feedback_score\n"
+        "              instant: true\n"
+        "              intervalMs: 1000\n"
+        "              maxDataPoints: 43200\n"
+        "              range: false\n"
+        "              refId: A\n"
+        "          - refId: B\n"
+        "            datasourceUid: '__expr__'\n"
+        "            relativeTimeRange:\n"
+        "              from: 300\n"
+        "              to: 0\n"
+        "            model:\n"
+        "              conditions:\n"
+        "                - evaluator:\n"
+        "                    params:\n"
+        "                      - 70\n"
+        "                    type: lt\n"
+        "                  operator:\n"
+        "                    type: and\n"
+        "                  query:\n"
+        "                    params:\n"
+        "                      - A\n"
+        "                  reducer:\n"
+        "                    type: last\n"
+        "                  type: query\n"
+        "              datasource:\n"
+        "                type: __expr__\n"
+        "                uid: '__expr__'\n"
+        "              expression: A\n"
+        "              intervalMs: 1000\n"
+        "              maxDataPoints: 43200\n"
+        "              refId: B\n"
+        "              type: classic_conditions\n"
+        "        dashboardUid: atlas-quant-pro-2026\n"
+        "        panelId: 38\n"
+        "        noDataState: Alerting\n"
+        "        execErrState: Alerting\n"
+        "        for: 2m\n"
+        "        annotations:\n"
+        "          summary: ATLAS options governance feedback score below 70.\n"
+        "          description: The external options strategy benchmark is not being translated robustly into reusable governance rules.\n"
+        "        labels:\n"
+        "          component: atlas_scorecard\n"
+        "          severity: warning\n"
         "      - uid: atlas_brain_delivery_low\n"
         "        title: ATLAS Brain Delivery Ratio Low\n"
         "        condition: B\n"
@@ -472,6 +588,66 @@ class GrafanaDashboard:
                 "atlas_recent_unattributed_entries_count",
                 "Cantidad de entradas recientes del journal con atribucion invalida",
             )
+            self.visual_benchmark_feedback_score = Gauge(
+                "atlas_visual_benchmark_feedback_score",
+                "Cobertura y traduccion operativa del benchmark visual externo",
+            )
+            self.options_strategy_governance_feedback_score = Gauge(
+                "atlas_options_strategy_governance_feedback_score",
+                "Cobertura y traduccion operativa del benchmark externo de estrategias con opciones",
+            )
+            self.options_governance_source_count = Gauge(
+                "atlas_options_governance_source_count",
+                "Cantidad de fuentes externas integradas para gobernanza de opciones",
+            )
+            self.options_governance_translation_pct = Gauge(
+                "atlas_options_governance_translation_pct",
+                "Porcentaje de traduccion del benchmark de opciones a reglas reutilizables",
+            )
+            self.visual_benchmark_source_count = Gauge(
+                "atlas_visual_benchmark_source_count",
+                "Cantidad de fuentes externas visuales integradas al protocolo",
+            )
+            self.visual_benchmark_translation_pct = Gauge(
+                "atlas_visual_benchmark_translation_pct",
+                "Porcentaje de traduccion del benchmark visual a controles reutilizables",
+            )
+            self.visual_gate_readiness_score = Gauge(
+                "atlas_visual_gate_readiness_score_pct",
+                "Readiness score del ultimo visual entry gate evaluado",
+            )
+            self.visual_gate_alignment_score = Gauge(
+                "atlas_visual_gate_alignment_score_pct",
+                "Alignment score del ultimo visual entry gate frente a OCR",
+            )
+            self.visual_gate_evaluated_total = Gauge(
+                "atlas_visual_gate_evaluated_total",
+                "Cantidad acumulada de evaluaciones del visual entry gate",
+            )
+            self.visual_gate_applies_total = Gauge(
+                "atlas_visual_gate_applies_total",
+                "Cantidad acumulada de evaluaciones donde el visual gate aplicaba",
+            )
+            self.visual_gate_blocked_total = Gauge(
+                "atlas_visual_gate_blocked_total",
+                "Cantidad acumulada de bloqueos del visual entry gate",
+            )
+            self.visual_gate_pass_total = Gauge(
+                "atlas_visual_gate_pass_total",
+                "Cantidad acumulada de pases del visual entry gate",
+            )
+            self.visual_gate_manual_review_total = Gauge(
+                "atlas_visual_gate_manual_review_total",
+                "Cantidad acumulada de revisiones manuales exigidas por el visual entry gate",
+            )
+            self.visual_gate_last_blocked = Gauge(
+                "atlas_visual_gate_last_blocked_state",
+                "Estado del ultimo visual entry gate 0=pass 1=blocked",
+            )
+            self.visual_gate_last_manual_review = Gauge(
+                "atlas_visual_gate_last_manual_review_state",
+                "Estado del ultimo visual entry gate 0=no 1=manual review",
+            )
         except Exception as exc:
             logger.warning("Error registrando métricas Prometheus: %s", exc)
 
@@ -620,6 +796,7 @@ class GrafanaDashboard:
             logger.debug("Error sincronizando scorecard a Prometheus: %s", exc)
             return None
         self._apply_scorecard_snapshot(scorecard)
+        self._apply_visual_gate_snapshot(base_path / "atlas_code_quant/data/operation/operation_center_state.json")
         return scorecard
 
     def _apply_scorecard_snapshot(self, scorecard: dict) -> None:
@@ -633,6 +810,35 @@ class GrafanaDashboard:
             self.evidence_sufficiency.set(float(indicators.get("evidence_sufficiency_score") or 0.0))
             self.attributed_open_positions.set(float(indicators.get("attributed_open_positions_pct") or 0.0))
             self.recent_unattributed_entries.set(float(indicators.get("recent_unattributed_count") or 0.0))
+            self.visual_benchmark_feedback_score.set(float(indicators.get("visual_benchmark_feedback_score") or 0.0))
+            self.options_strategy_governance_feedback_score.set(float(indicators.get("options_strategy_governance_feedback_score") or 0.0))
+            self.options_governance_source_count.set(float(indicators.get("options_governance_source_count") or 0.0))
+            self.options_governance_translation_pct.set(float(indicators.get("options_governance_translation_pct") or 0.0))
+            self.visual_benchmark_source_count.set(float(indicators.get("visual_benchmark_source_count") or 0.0))
+            self.visual_benchmark_translation_pct.set(float(indicators.get("visual_benchmark_translation_pct") or 0.0))
+
+    def _apply_visual_gate_snapshot(self, state_path: Path) -> None:
+        try:
+            if not state_path.exists():
+                return
+            payload = json.loads(state_path.read_text(encoding="utf-8"))
+            stats = payload.get("visual_gate_stats") if isinstance(payload, dict) else None
+            if not isinstance(stats, dict):
+                return
+        except Exception as exc:
+            logger.debug("Error cargando visual gate snapshot a Prometheus: %s", exc)
+            return
+
+        with self._lock:
+            self.visual_gate_readiness_score.set(float(stats.get("last_readiness_score_pct") or 0.0))
+            self.visual_gate_alignment_score.set(float(stats.get("last_alignment_score_pct") or 0.0))
+            self.visual_gate_evaluated_total.set(float(stats.get("evaluated_count") or 0.0))
+            self.visual_gate_applies_total.set(float(stats.get("applies_count") or 0.0))
+            self.visual_gate_blocked_total.set(float(stats.get("blocked_count") or 0.0))
+            self.visual_gate_pass_total.set(float(stats.get("passed_count") or 0.0))
+            self.visual_gate_manual_review_total.set(float(stats.get("manual_review_count") or 0.0))
+            self.visual_gate_last_blocked.set(1.0 if bool(stats.get("last_blocked")) else 0.0)
+            self.visual_gate_last_manual_review.set(1.0 if bool(stats.get("last_manual_required")) else 0.0)
 
     # ── Dashboard Grafana JSON ────────────────────────────────────────────────
 
@@ -747,6 +953,13 @@ class GrafanaDashboard:
             stat_panel(18, "Untracked Open",  "atlas_open_untracked_ratio_pct", "percent", y=30, color="red"),
             stat_panel(19, "Evidence Score",  "atlas_evidence_sufficiency_score", "percent", y=30, color="orange"),
             stat_panel(20, "Recent Bad Attr", "atlas_recent_unattributed_entries_count", "short", y=34, color="red"),
+            stat_panel(21, "Visual Bench",    "atlas_visual_benchmark_feedback_score", "percent", y=34, color="purple"),
+            stat_panel(22, "Visual Ready",    "atlas_visual_gate_readiness_score_pct", "percent", y=34, color="cyan"),
+            stat_panel(23, "Visual Blocks",   "atlas_visual_gate_blocked_total", "short", y=34, color="red"),
+            stat_panel(24, "Manual Review",   "atlas_visual_gate_manual_review_total", "short", y=34, color="orange"),
+            stat_panel(25, "Options Bench",   "atlas_options_strategy_governance_feedback_score", "percent", y=38, color="green"),
+            stat_panel(26, "Options Sources", "atlas_options_governance_source_count", "short", y=38, color="blue"),
+            stat_panel(27, "Options Transl.", "atlas_options_governance_translation_pct", "percent", y=38, color="purple"),
         ]
 
         return {

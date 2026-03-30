@@ -20,9 +20,17 @@ import asyncio
 import math
 import time
 import logging
+import sys
 from datetime import datetime
 
 from pathlib import Path as _PathLib
+
+_API_FILE = _PathLib(__file__).resolve()
+_QUANT_ROOT = _API_FILE.parents[1]
+_REPO_ROOT = _API_FILE.parents[2]
+for _path in (str(_REPO_ROOT), str(_QUANT_ROOT)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 from fastapi import FastAPI, HTTPException, Header, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -55,6 +63,14 @@ from execution.tradier_execution import (
 from journal.service import TradingJournalService
 from journal.sync import JournalSyncService
 from learning.adaptive_policy import AdaptiveLearningService
+from learning.learning_orchestrator import (
+    run_learning_loop,
+    stop_learning_loop,
+    get_orchestrator_status,
+    reconcile_closed_positions,
+    apply_ic_to_policy,
+    run_daily_analysis as _run_daily_analysis,
+)
 from monitoring.canonical_snapshot import CanonicalSnapshotService
 from monitoring.strategy_tracker import StrategyTracker
 from operations.auton_executor import AutonExecutorService
@@ -74,6 +90,7 @@ from operations.alert_dispatcher import get_alert_dispatcher
 from learning.visual_state_builder import get_visual_state_builder
 from learning.retraining_scheduler import get_retraining_scheduler
 from learning.ic_signal_tracker import get_ic_tracker
+from knowledge.knowledge_base import get_knowledge_base
 
 logger = logging.getLogger("quant.api")
 _START_TIME = time.time()
@@ -164,6 +181,15 @@ async def preload_tradier_sessions() -> None:
         logger.info("AlertDispatcher iniciado")
     except Exception:
         logger.exception("AlertDispatcher: fallo en startup (no crítico)")
+    # Fase 4 — Learning Orchestrator (loop de aprendizaje cerrado)
+    try:
+        asyncio.create_task(
+            run_learning_loop(reconcile_interval_sec=300),
+            name="learning_orchestrator",
+        )
+        logger.info("LearningOrchestrator iniciado (reconcile cada 5 min)")
+    except Exception:
+        logger.exception("LearningOrchestrator: fallo en startup (no crítico)")
 
 
 @app.on_event("shutdown")
@@ -171,6 +197,7 @@ async def stop_background_services() -> None:
     global _auto_cycle_task
     await _JOURNAL_SYNC.stop()
     await _SCANNER.stop()
+    stop_learning_loop()
     if _auto_cycle_task and not _auto_cycle_task.done():
         _AUTO_CYCLE_STATE["running"] = False
         _auto_cycle_task.cancel()
@@ -206,8 +233,29 @@ _AUTO_CYCLE_STATE: dict = {
     "started_at": None,
     "stopped_at": None,
     "error": None,
+    "selector_session_mode_override": None,
+    "current_stage": "idle",
+    "stage_started_at": None,
+    "stage_history": [],
 }
 _auto_cycle_task: asyncio.Task | None = None
+
+
+def _auto_cycle_mark_stage(stage: str, **details: Any) -> None:
+    timestamp = datetime.utcnow().isoformat()
+    previous_stage = str(_AUTO_CYCLE_STATE.get("current_stage") or "idle")
+    history = list(_AUTO_CYCLE_STATE.get("stage_history") or [])
+    history.append(
+        {
+            "timestamp": timestamp,
+            "stage": stage,
+            "previous_stage": previous_stage,
+            "details": details or {},
+        }
+    )
+    _AUTO_CYCLE_STATE["current_stage"] = stage
+    _AUTO_CYCLE_STATE["stage_started_at"] = timestamp
+    _AUTO_CYCLE_STATE["stage_history"] = history[-20:]
 
 
 def _auth(x_api_key: str | None) -> None:
@@ -749,6 +797,29 @@ async def operation_status(x_api_key: str | None = Header(None)):
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
+def _operation_config_snapshot_payload(config: dict[str, Any]) -> dict[str, Any]:
+    vision = config.get("vision") if isinstance(config.get("vision"), dict) else {}
+    executor = config.get("executor") if isinstance(config.get("executor"), dict) else {}
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "config": {
+            "account_scope": config.get("account_scope"),
+            "paper_only": bool(config.get("paper_only", True)),
+            "auton_mode": config.get("auton_mode"),
+            "executor_mode": config.get("executor_mode") or executor.get("mode"),
+            "vision_mode": config.get("vision_mode") or vision.get("provider"),
+            "require_operator_present": bool(config.get("require_operator_present", False)),
+            "min_auton_win_rate_pct": float(config.get("min_auton_win_rate_pct") or 0.0),
+            "max_level4_bpr_pct": float(config.get("max_level4_bpr_pct") or 0.0),
+            "auto_pause_on_operational_errors": bool(config.get("auto_pause_on_operational_errors", True)),
+            "operational_error_limit": int(config.get("operational_error_limit") or 0),
+            "notes": config.get("notes") or "",
+        },
+        "vision": vision,
+        "executor": executor,
+    }
+
+
 @app.post("/operation/config", response_model=StdResponse, tags=["Operation"])
 async def operation_config(
     body: OperationConfigPayload,
@@ -759,8 +830,8 @@ async def operation_config(
     t0 = time.perf_counter()
     try:
         _OPERATION_CENTER.update_config(body.model_dump())
-        payload = OperationStatusPayload.model_validate(_OPERATION_CENTER.status())
-        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+        payload = _operation_config_snapshot_payload(await asyncio.to_thread(_OPERATION_CENTER.get_config))
+        return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as exc:
         logger.exception("Error updating operation config")
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
@@ -801,21 +872,28 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
         "running": True, "cycle_count": 0, "error": None,
         "started_at": datetime.utcnow().isoformat(), "stopped_at": None,
         "loop_interval_sec": interval_sec, "max_per_cycle": max_per_cycle,
+        "current_stage": "starting",
+        "stage_started_at": datetime.utcnow().isoformat(),
+        "stage_history": [],
     })
+    _auto_cycle_mark_stage("starting", interval_sec=interval_sec, max_per_cycle=max_per_cycle)
     logger.info("[auto-cycle] Iniciado. interval=%ds max_per_cycle=%d", interval_sec, max_per_cycle)
     try:
         while _AUTO_CYCLE_STATE["running"]:
+            _auto_cycle_mark_stage("sleeping", interval_sec=interval_sec)
             await asyncio.sleep(interval_sec)
             if not _AUTO_CYCLE_STATE["running"]:
                 break
             try:
-                op_status = await asyncio.to_thread(_OPERATION_CENTER.status)
-                auton_mode = str(op_status.get("auton_mode") or "paper_supervised")
+                _auto_cycle_mark_stage("config_refresh")
+                op_config = await asyncio.to_thread(_OPERATION_CENTER.get_config)
+                auton_mode = str(op_config.get("auton_mode") or "paper_supervised")
                 action = "submit" if auton_mode not in {"off", "paper_supervised"} else "preview"
 
                 # ── 1. EXIT PASS: cerrar posiciones que cumplen criterio de salida ─────
                 exits_sent = 0
                 if action == "submit":
+                    _auto_cycle_mark_stage("exit_pass", action=action)
                     try:
                         exit_snap = await asyncio.to_thread(
                             _JOURNAL_PRO.exit_governance_snapshot,
@@ -864,18 +942,24 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         logger.warning("[auto-cycle] exit_governance_snapshot error: %s", _eg_err)
 
                 # ── 2. JOURNAL SYNC: sincronizar libro con broker ─────────────────────
-                try:
-                    await asyncio.to_thread(_JOURNAL.sync_scope, "paper")
-                    logger.debug("[auto-cycle] journal sync OK")
-                except Exception as _sync_err:
-                    logger.debug("[auto-cycle] journal sync warning: %s", _sync_err)
+                if action == "submit":
+                    try:
+                        _auto_cycle_mark_stage("journal_sync", action=action)
+                        await asyncio.to_thread(_JOURNAL.sync_scope, "paper")
+                        logger.debug("[auto-cycle] journal sync OK")
+                    except Exception as _sync_err:
+                        logger.debug("[auto-cycle] journal sync warning: %s", _sync_err)
+                else:
+                    _auto_cycle_mark_stage("journal_sync_skipped", action=action)
 
                 # ── 3. ENTRY PASS: evaluar nuevas entradas ────────────────────────────
+                _auto_cycle_mark_stage("scanner_report", action=action)
                 report = await asyncio.to_thread(_SCANNER.report, 24)
                 candidates = list(report.get("candidates") or [])
                 if not candidates:
                     _AUTO_CYCLE_STATE["last_cycle_at"] = datetime.utcnow().isoformat()
                     _AUTO_CYCLE_STATE["cycle_count"] += 1
+                    _auto_cycle_mark_stage("cycle_complete", action=action, candidates=0, exits_sent=exits_sent)
                     logger.debug("[auto-cycle] Ciclo %d — sin candidatos (exits_sent=%d)",
                                  _AUTO_CYCLE_STATE["cycle_count"], exits_sent)
                     continue
@@ -902,13 +986,37 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                             "exits_sent": exits_sent,
                         },
                     })
+                    _auto_cycle_mark_stage("blocked_reconciliation", action=action, exits_sent=exits_sent)
                     logger.warning("[auto-cycle] entry blocked: reconciliation unhealthy (exits_sent=%d)", exits_sent)
                     continue
 
                 last_result = None
+                selector_session_mode = str(
+                    _AUTO_CYCLE_STATE.get("selector_session_mode_override")
+                    or settings.selector_session_mode
+                    or "balanced"
+                ).lower()
+                require_optionable = bool(settings.selector_options_require_available)
                 for cand in sorted_cands:
                     symbol = str(cand.get("symbol") or "").strip()
                     if not symbol:
+                        continue
+                    _auto_cycle_mark_stage(
+                        "candidate_selected",
+                        symbol=symbol,
+                        action=action,
+                        selector_session_mode=selector_session_mode,
+                    )
+                    if selector_session_mode == "options_only" and require_optionable and not bool(cand.get("has_options")):
+                        last_result = {
+                            "symbol": symbol,
+                            "action": action,
+                            "blocked": True,
+                            "reasons": [f"Options-only session skipped {symbol.upper()} because has_options is false."],
+                            "selection_score": cand.get("selection_score"),
+                            "win_rate_pct": None,
+                        }
+                        logger.info("[auto-cycle] symbol=%s action=%s blocked=options_only_requires_options", symbol, action)
                         continue
                     if symbol.upper() in open_symbols:
                         last_result = {
@@ -923,7 +1031,12 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         continue
                     direction = str(cand.get("direction") or "long").lower()
                     fallback_side = "buy" if direction in {"long", "bull", "up"} else "sell_short"
-                    proposal = _SELECTOR.proposal(candidate=dict(cand), account_scope="paper")
+                    _auto_cycle_mark_stage("selector_proposal", symbol=symbol, action=action)
+                    proposal = _SELECTOR.proposal(
+                        candidate=dict(cand),
+                        account_scope="paper",
+                        options_session_mode=selector_session_mode,
+                    )
                     order_seed = dict(proposal.get("order_seed") or {})
                     if not order_seed:
                         ac_raw = str(cand.get("asset_class") or "equity").lower()
@@ -947,6 +1060,13 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     side = str(order_seed.get("side") or fallback_side).lower()
                     order_seed["preview"] = (action == "preview")
                     order = OrderRequest(**order_seed)
+                    _auto_cycle_mark_stage(
+                        "operation_center_evaluate",
+                        symbol=symbol,
+                        action=action,
+                        side=side,
+                        asset_class=asset_class,
+                    )
                     result = await asyncio.to_thread(
                         _OPERATION_CENTER.evaluate_candidate,
                         order=order,
@@ -962,12 +1082,13 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         "exits_sent": exits_sent,
                     }
                     # IC Signal Tracker: registrar señal para medir poder predictivo del scanner
+                    _ic_signal_id: str | None = None
                     if not last_result["blocked"]:
                         try:
                             _predicted_move = float(cand.get("predicted_move_pct") or 0.0)
                             _entry_price = float(cand.get("price") or 0.0)
                             if _entry_price > 0 and _predicted_move != 0.0:
-                                get_ic_tracker().record_signal(
+                                _ic_signal_id = get_ic_tracker().record_signal(
                                     symbol=symbol,
                                     method=str(cand.get("method") or cand.get("strategy_type") or "unknown"),
                                     predicted_move_pct=_predicted_move * (1.0 if side == "buy" else -1.0),
@@ -975,8 +1096,30 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                                     timeframe=str(cand.get("timeframe") or "1d"),
                                     selection_score=float(cand.get("selection_score") or 0.0),
                                 )
+                                if _ic_signal_id:
+                                    last_result["ic_signal_id"] = _ic_signal_id
                         except Exception as _ic_err:
                             logger.debug("[auto-cycle] ic_tracker.record_signal skipped: %s", _ic_err)
+                    # Knowledge advisory — contexto académico no bloqueante
+                    if not last_result["blocked"] and action == "submit":
+                        try:
+                            _kb_ctx = get_knowledge_base().advisory_context(
+                                method=str(cand.get("method") or cand.get("strategy_type") or ""),
+                                timeframe=str(cand.get("timeframe") or "1d"),
+                            )
+                            last_result["knowledge_advisory"] = {
+                                "academic_support_score": _kb_ctx.get("academic_support_score"),
+                                "warnings": _kb_ctx.get("warnings", []),
+                                "recommendations": _kb_ctx.get("recommendations", []),
+                                "sources_used": _kb_ctx.get("sources_used", 0),
+                            }
+                            if _kb_ctx.get("warnings"):
+                                logger.debug(
+                                    "[auto-cycle] knowledge warnings for %s: %s",
+                                    symbol, _kb_ctx["warnings"][:1],
+                                )
+                        except Exception as _kb_err:
+                            logger.debug("[auto-cycle] knowledge_advisory skipped: %s", _kb_err)
                     logger.info("[auto-cycle] ENTRY %s symbol=%s action=%s blocked=%s score=%.1f",
                                 side.upper(), symbol, action, last_result["blocked"],
                                 float(cand.get("selection_score") or 0))
@@ -989,16 +1132,25 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     "last_result": last_result,
                     "exits_sent_last_cycle": exits_sent,
                 })
+                _auto_cycle_mark_stage(
+                    "cycle_complete",
+                    action=action,
+                    candidates=len(sorted_cands),
+                    exits_sent=exits_sent,
+                    blocked=bool((last_result or {}).get("blocked")),
+                )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 _AUTO_CYCLE_STATE["error"] = str(exc)
                 _AUTO_CYCLE_STATE["last_cycle_at"] = datetime.utcnow().isoformat()
+                _auto_cycle_mark_stage("cycle_error", error=str(exc))
                 logger.exception("[auto-cycle] Error en ciclo: %s", exc)
     except asyncio.CancelledError:
         pass
     finally:
         _AUTO_CYCLE_STATE.update({"running": False, "stopped_at": datetime.utcnow().isoformat()})
+        _auto_cycle_mark_stage("stopped", cycles=_AUTO_CYCLE_STATE["cycle_count"])
         logger.info("[auto-cycle] Detenido. ciclos=%d", _AUTO_CYCLE_STATE["cycle_count"])
 
 
@@ -1022,12 +1174,18 @@ async def operation_loop_start(
         )
     if _auto_cycle_task and not _auto_cycle_task.done():
         _auto_cycle_task.cancel()
+    _AUTO_CYCLE_STATE["selector_session_mode_override"] = body.selector_session_mode
     _auto_cycle_task = asyncio.create_task(
         _auto_cycle_loop(body.interval_sec, body.max_per_cycle)
     )
     return StdResponse(
         ok=True,
-        data={"started": True, "interval_sec": body.interval_sec, "max_per_cycle": body.max_per_cycle},
+        data={
+            "started": True,
+            "interval_sec": body.interval_sec,
+            "max_per_cycle": body.max_per_cycle,
+            "selector_session_mode": body.selector_session_mode or str(settings.selector_session_mode or "balanced").lower(),
+        },
         ms=round((time.perf_counter() - t0) * 1000, 2),
     )
 
@@ -1039,6 +1197,7 @@ async def operation_loop_stop(x_api_key: str | None = Header(None)):
     global _auto_cycle_task
     t0 = time.perf_counter()
     _AUTO_CYCLE_STATE["running"] = False
+    _AUTO_CYCLE_STATE["selector_session_mode_override"] = None
     if _auto_cycle_task and not _auto_cycle_task.done():
         _auto_cycle_task.cancel()
         try:
@@ -1401,6 +1560,7 @@ async def selector_proposal(
                 prefer_defined_risk=body.prefer_defined_risk,
                 allow_equity=body.allow_equity,
                 allow_credit=body.allow_credit,
+                options_session_mode=body.options_session_mode,
                 risk_budget_pct=body.risk_budget_pct,
             )
         )
@@ -2266,3 +2426,259 @@ async def paper_fill_v2(body: PaperFillRequest, x_api_key: str | None = Header(N
 @app.post("/api/v2/quant/paper/reset",       response_model=StdResponse, tags=["V2"])
 async def paper_reset_v2(body: PaperResetRequest, x_api_key: str | None = Header(None)):
     return await paper_reset(body=body, x_api_key=x_api_key)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KNOWLEDGE BASE — biblioteca académica consultable para toma de decisiones
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/knowledge/query", response_model=StdResponse, tags=["Knowledge"])
+async def knowledge_query(
+    method: str | None = None,
+    timeframe: str | None = None,
+    topic: str | None = None,
+    max_sources: int = 5,
+    x_api_key: str | None = Header(None),
+):
+    """Consulta la biblioteca académica de ATLAS-Quant.
+
+    Retorna fuentes relevantes, hallazgos clave, warnings y recomendaciones
+    operativas basadas en evidencia académica.
+
+    Args:
+        method: Método del scanner (trend_ema_stack, breakout_donchian, etc.)
+        timeframe: Temporalidad (1d, swing, intraday, short, medium, long)
+        topic: Tema (momentum, mean_reversion, microstructure, options, etc.)
+        max_sources: Máximo de fuentes a incluir (default 5)
+    """
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        kb = get_knowledge_base()
+        ctx = kb.advisory_context(
+            method=method,
+            timeframe=timeframe,
+            topic=topic,
+            max_sources=max_sources,
+        )
+        return StdResponse(ok=True, data=ctx, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/knowledge/sources", response_model=StdResponse, tags=["Knowledge"])
+async def knowledge_sources(
+    category: str | None = None,
+    confidence: str | None = None,
+    x_api_key: str | None = Header(None),
+):
+    """Lista las fuentes del catálogo académico.
+
+    Args:
+        category: Filtrar por categoría (CAT1-CAT5)
+        confidence: Filtrar por nivel mínimo de confianza (high, medium, low)
+    """
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        kb = get_knowledge_base()
+        sources = kb.sources_by_confidence(min_level=confidence or "low")
+        if category:
+            sources = [s for s in sources if str(s.get("category", "")) == category.upper()]
+        compact = [
+            {
+                "id": s["id"],
+                "title": s["title"],
+                "authors": s.get("authors", []),
+                "year": s.get("year"),
+                "category": s.get("category"),
+                "topic": s.get("topic"),
+                "confidence_level": s.get("confidence_level"),
+                "timeframes": s.get("timeframes", []),
+                "scanner_methods": s.get("scanner_methods", []),
+                "tags": s.get("tags", []),
+            }
+            for s in sources
+        ]
+        return StdResponse(ok=True, data={"sources": compact, "total": len(compact)},
+                           ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/knowledge/summary", response_model=StdResponse, tags=["Knowledge"])
+async def knowledge_summary(x_api_key: str | None = Header(None)):
+    """Resumen estadístico de la biblioteca académica."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        kb = get_knowledge_base()
+        return StdResponse(ok=True, data=kb.summary(),
+                           ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/knowledge/source/{source_id}", response_model=StdResponse, tags=["Knowledge"])
+async def knowledge_source_detail(source_id: str, x_api_key: str | None = Header(None)):
+    """Ficha completa de una referencia por ID."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        kb = get_knowledge_base()
+        src = kb.source_by_id(source_id)
+        if src is None:
+            return StdResponse(ok=False, error=f"Source '{source_id}' not found",
+                               ms=round((time.perf_counter() - t0) * 1000, 2))
+        return StdResponse(ok=True, data=src, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+# ── V2 aliases Knowledge ──────────────────────────────────────────────────────
+@app.get("/api/v2/quant/knowledge/query",   response_model=StdResponse, tags=["V2"])
+async def knowledge_query_v2(method: str | None = None, timeframe: str | None = None,
+                               topic: str | None = None, max_sources: int = 5,
+                               x_api_key: str | None = Header(None)):
+    return await knowledge_query(method=method, timeframe=timeframe, topic=topic,
+                                  max_sources=max_sources, x_api_key=x_api_key)
+
+@app.get("/api/v2/quant/knowledge/sources", response_model=StdResponse, tags=["V2"])
+async def knowledge_sources_v2(category: str | None = None, confidence: str | None = None,
+                                 x_api_key: str | None = Header(None)):
+    return await knowledge_sources(category=category, confidence=confidence, x_api_key=x_api_key)
+
+@app.get("/api/v2/quant/knowledge/summary", response_model=StdResponse, tags=["V2"])
+async def knowledge_summary_v2(x_api_key: str | None = Header(None)):
+    return await knowledge_summary(x_api_key=x_api_key)
+
+
+@app.get("/knowledge/search", response_model=StdResponse, tags=["Knowledge"])
+async def knowledge_search(
+    q: str,
+    max_results: int = 10,
+    x_api_key: str | None = Header(None),
+):
+    """Búsqueda full-text sobre título, hallazgos, utility, tags y subtopics."""
+    t0 = _now_ms()
+    try:
+        kb = get_knowledge_base()
+        results = kb.search(q, max_results=max_results)
+        return _std_resp(True, {
+            "query": q,
+            "max_results": max_results,
+            "results_found": len(results),
+            "results": results,
+        }, _now_ms() - t0)
+    except Exception as e:
+        logger.exception("[knowledge/search] error")
+        return _std_resp(False, None, _now_ms() - t0, str(e))
+
+
+@app.post("/knowledge/ingest", response_model=StdResponse, tags=["Knowledge"])
+async def knowledge_ingest(
+    generate_fichas: bool = True,
+    download_papers: bool = False,
+    source_ids: list[str] | None = None,
+    x_api_key: str | None = Header(None),
+):
+    """Genera fichas JSON y opcionalmente descarga papers open-access."""
+    t0 = _now_ms()
+    try:
+        from knowledge.ingest_pipeline import (
+            generate_fichas as _gen_fichas,
+            ingest_open_access as _ingest_oa,
+            ingest_status as _status,
+        )
+        result: dict = {}
+        if generate_fichas:
+            result["fichas"] = _gen_fichas()
+        if download_papers:
+            result["open_access"] = _ingest_oa(source_ids=source_ids)
+        result["status"] = _status()
+        return _std_resp(True, result, _now_ms() - t0)
+    except Exception as e:
+        logger.exception("[knowledge/ingest] error")
+        return _std_resp(False, None, _now_ms() - t0, str(e))
+
+
+@app.get("/knowledge/ingest/status", response_model=StdResponse, tags=["Knowledge"])
+async def knowledge_ingest_status(x_api_key: str | None = Header(None)):
+    """Estado del pipeline de ingest: fichas generadas, papers descargados."""
+    t0 = _now_ms()
+    try:
+        from knowledge.ingest_pipeline import ingest_status as _status
+        return _std_resp(True, _status(), _now_ms() - t0)
+    except Exception as e:
+        logger.exception("[knowledge/ingest/status] error")
+        return _std_resp(False, None, _now_ms() - t0, str(e))
+
+
+@app.get("/api/v2/quant/knowledge/search", response_model=StdResponse, tags=["V2"])
+async def knowledge_search_v2(q: str, max_results: int = 10,
+                               x_api_key: str | None = Header(None)):
+    return await knowledge_search(q=q, max_results=max_results, x_api_key=x_api_key)
+
+
+# ── Learning Orchestrator — endpoints ─────────────────────────────────────────
+
+@app.get("/learning/orchestrator/status", response_model=StdResponse, tags=["Learning"])
+async def learning_orchestrator_status(x_api_key: str | None = Header(None)):
+    """Estado del loop de aprendizaje: reconciliaciones, IC updates, políticas."""
+    t0 = _now_ms()
+    return _std_resp(True, get_orchestrator_status(), _now_ms() - t0)
+
+
+@app.post("/learning/orchestrator/reconcile", response_model=StdResponse, tags=["Learning"])
+async def learning_orchestrator_reconcile(x_api_key: str | None = Header(None)):
+    """Fuerza una reconciliación inmediata de posiciones cerradas."""
+    t0 = _now_ms()
+    try:
+        result = await reconcile_closed_positions()
+        if result.get("ic_updated", 0) > 0:
+            ic_result = await asyncio.to_thread(apply_ic_to_policy)
+            result["ic_policy"] = ic_result
+        return _std_resp(True, result, _now_ms() - t0)
+    except Exception as e:
+        logger.exception("[learning/reconcile] error")
+        return _std_resp(False, None, _now_ms() - t0, str(e))
+
+
+@app.post("/learning/orchestrator/daily-analysis", response_model=StdResponse, tags=["Learning"])
+async def learning_daily_analysis(x_api_key: str | None = Header(None)):
+    """Fuerza el análisis diario completo: métricas, patrones, readiness."""
+    t0 = _now_ms()
+    try:
+        result = await _run_daily_analysis()
+        return _std_resp(True, result, _now_ms() - t0)
+    except Exception as e:
+        logger.exception("[learning/daily-analysis] error")
+        return _std_resp(False, None, _now_ms() - t0, str(e))
+
+
+@app.get("/learning/ic/summary", response_model=StdResponse, tags=["Learning"])
+async def learning_ic_summary(method: str | None = None,
+                               x_api_key: str | None = Header(None)):
+    """IC actual por método. Base científica del sizing y filtros del scanner."""
+    t0 = _now_ms()
+    try:
+        tracker = get_ic_tracker()
+        if method:
+            data = tracker.compute_ic(method=method)
+        else:
+            data = tracker.summary()
+        return _std_resp(True, data, _now_ms() - t0)
+    except Exception as e:
+        logger.exception("[learning/ic/summary] error")
+        return _std_resp(False, None, _now_ms() - t0, str(e))
+
+
+@app.get("/api/v2/quant/learning/orchestrator/status", response_model=StdResponse, tags=["V2"])
+async def learning_orch_status_v2(x_api_key: str | None = Header(None)):
+    return await learning_orchestrator_status(x_api_key=x_api_key)
+
+
+@app.get("/api/v2/quant/learning/ic/summary", response_model=StdResponse, tags=["V2"])
+async def learning_ic_summary_v2(method: str | None = None,
+                                  x_api_key: str | None = Header(None)):
+    return await learning_ic_summary(method=method, x_api_key=x_api_key)

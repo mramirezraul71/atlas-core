@@ -1,0 +1,41 @@
+{
+  "id": "faber_2007_tactical",
+  "title": "A Quantitative Approach to Tactical Asset Allocation",
+  "authors": [
+    "Mebane Faber"
+  ],
+  "year": 2007,
+  "source": "SSRN",
+  "url": "https://mebfaber.com/wp-content/uploads/2010/10/SSRN-id962461.pdf",
+  "category": "CAT2",
+  "topic": "trend_following",
+  "subtopics": [
+    "moving_average",
+    "tactical_allocation",
+    "market_timing"
+  ],
+  "timeframes": [
+    "medium"
+  ],
+  "markets": [
+    "equity",
+    "bonds",
+    "commodities",
+    "fx"
+  ],
+  "method": "backtesting_rule_based",
+  "key_findings": "Una regla simple de media móvil de 10 meses (SMA 200 días) mejora el Sharpe y reduce drawdown en múltiples clases de activos. El filtro de tendencia no requiere predicción: solo determina si el precio está sobre o bajo la media. Out-of-sample: Sharpe ~0.7 vs ~0.4 buy&hold.",
+  "limitations": "Basado en datos mensuales — aplica a horizontes de medio/largo plazo. El whipsaw en mercados laterales erosiona el retorno. Requiere patience.",
+  "atlas_utility": "Sustenta la lógica de trend_ema_stack como filtro de régimen: solo operar en dirección de la tendencia estructural (precio > EMA 200). El filtro no predice, selecciona lado.",
+  "confidence_level": "high",
+  "scanner_methods": [
+    "trend_ema_stack"
+  ],
+  "tags": [
+    "trend_following",
+    "moving_average",
+    "market_timing",
+    "drawdown_reduction"
+  ],
+  "_generated_at": "2026-03-30T02:47:30.605044+00:00"
+}

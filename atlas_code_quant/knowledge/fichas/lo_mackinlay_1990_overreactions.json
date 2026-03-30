@@ -1,0 +1,41 @@
+{
+  "id": "lo_mackinlay_1990_overreactions",
+  "title": "When Are Contrarian Profits Due to Stock Market Overreaction?",
+  "authors": [
+    "Andrew W. Lo",
+    "A. Craig MacKinlay"
+  ],
+  "year": 1990,
+  "source": "Review of Financial Studies",
+  "url": "https://www.jstor.org/stable/2962020",
+  "category": "CAT5",
+  "topic": "contrarian_momentum",
+  "subtopics": [
+    "cross_autocorrelation",
+    "lead_lag",
+    "portfolio_attribution"
+  ],
+  "timeframes": [
+    "short",
+    "swing"
+  ],
+  "markets": [
+    "equity"
+  ],
+  "method": "portfolio_decomposition",
+  "key_findings": "Los retornos de estrategias contrarias no son completamente explicados por sobrereacción. La autocorrelación cruzada entre acciones (lead-lag de grandes a pequeñas) contribuye significativamente a los retornos contrarios. El momentum puede ser explota este lead-lag.",
+  "limitations": "El lead-lag es menos prominente en mercados modernos con algoritmos que integran información más rápido. Puede ser artefacto de sincronismo de precios.",
+  "atlas_utility": "Sustenta el uso de índices y ETFs como leading indicators del universo de acciones. Cuando SPY/QQQ muestran momentum, las acciones del universo lo siguen con lag.",
+  "confidence_level": "medium",
+  "scanner_methods": [
+    "relative_strength_overlay",
+    "trend_ema_stack"
+  ],
+  "tags": [
+    "lead_lag",
+    "cross_autocorrelation",
+    "contrarian",
+    "index_leading"
+  ],
+  "_generated_at": "2026-03-30T02:47:30.602497+00:00"
+}

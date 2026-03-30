@@ -1,0 +1,38 @@
+{
+  "id": "perold_1988_is",
+  "title": "The Implementation Shortfall: Paper versus Reality",
+  "authors": [
+    "Andre Perold"
+  ],
+  "year": 1988,
+  "source": "Journal of Portfolio Management",
+  "url": "https://www.pm-research.com/content/iijpormgmt/14/3/4",
+  "category": "CAT4",
+  "topic": "execution_quality",
+  "subtopics": [
+    "implementation_shortfall",
+    "transaction_costs",
+    "slippage",
+    "market_impact"
+  ],
+  "timeframes": [
+    "intraday",
+    "short"
+  ],
+  "markets": [
+    "equity"
+  ],
+  "method": "decomposition_framework",
+  "key_findings": "El costo real de trading (Implementation Shortfall) = retorno en papel – retorno real. Se descompone en: delay cost, market impact, spread cost, opportunity cost. Los costos de ejecución pueden eliminar completamente el alpha de señales débiles.",
+  "limitations": "En paper trading los costos son cero, pero en live trading pueden ser 0.1-0.5% por operación. Señales con IC débil (< 0.05) son especialmente vulnerables.",
+  "atlas_utility": "Define el estándar de ejecución para el loop autónomo. Justifica medir el tiempo entre señal y orden (decision lag). Señales con IC < 0.05 NO justifican costos de ejecución real.",
+  "confidence_level": "high",
+  "scanner_methods": [],
+  "tags": [
+    "execution",
+    "implementation_shortfall",
+    "transaction_costs",
+    "live_criteria"
+  ],
+  "_generated_at": "2026-03-30T02:47:30.601460+00:00"
+}

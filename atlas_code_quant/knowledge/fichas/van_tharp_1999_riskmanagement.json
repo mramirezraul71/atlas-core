@@ -1,0 +1,44 @@
+{
+  "id": "van_tharp_1999_riskmanagement",
+  "title": "Trade Your Way to Financial Freedom",
+  "authors": [
+    "Van K. Tharp"
+  ],
+  "year": 1999,
+  "source": "McGraw-Hill",
+  "url": "https://www.mhprofessional.com/trade-your-way-to-financial-freedom-9780071493208-usa",
+  "category": "CAT5",
+  "topic": "position_sizing",
+  "subtopics": [
+    "R_multiples",
+    "expectancy",
+    "risk_per_trade",
+    "position_sizing"
+  ],
+  "timeframes": [
+    "all"
+  ],
+  "markets": [
+    "equity",
+    "futures",
+    "fx"
+  ],
+  "method": "risk_framework",
+  "key_findings": "El tamaño de posición (position sizing) es más determinante que el sistema de señales para el resultado final. R-múltiple = retorno / riesgo inicial definido por stop. Expectancy = E[R] debe ser > 0 para que el sistema sea ganador. Sistemas con Expectancy = 0.5R generan compounding robusto.",
+  "limitations": "Requiere definición objetiva del stop antes de entrar. Sin stop definido, el R-múltiple no puede calcularse y el framework pierde sentido.",
+  "atlas_utility": "Marco central de position_management_snapshot y exit_governance. Justifica la integración de StrategySelector con stop_pct en el auto-cycle. Sin stop en el journal, los R-múltiples son indefinidos — gap crítico identificado.",
+  "confidence_level": "high",
+  "scanner_methods": [
+    "trend_ema_stack",
+    "breakout_donchian",
+    "rsi_pullback_trend"
+  ],
+  "tags": [
+    "R_multiples",
+    "position_sizing",
+    "expectancy",
+    "stop_loss",
+    "risk_management"
+  ],
+  "_generated_at": "2026-03-30T02:47:30.603415+00:00"
+}

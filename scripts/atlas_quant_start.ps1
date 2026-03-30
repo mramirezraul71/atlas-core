@@ -56,6 +56,8 @@ $ErrorActionPreference = "Stop"
 $_LOG_DIR    = Join-Path $RepoRoot "logs"
 $_OPS_BUS    = Join-Path $_LOG_DIR "ops_bus.log"
 $_DIAG_LOG   = Join-Path $_LOG_DIR "snapshot_safe_diagnostic.log"
+$_UVICORN_STDOUT = Join-Path $_LOG_DIR "quant_uvicorn_stdout.log"
+$_UVICORN_STDERR = Join-Path $_LOG_DIR "quant_uvicorn_stderr.log"
 $_VENV_PY    = Join-Path $RepoRoot "venv\Scripts\python.exe"
 $_QUANT_DIR  = Join-Path $RepoRoot "atlas_code_quant"
 $_PYTHONPATH_PARTS = @($RepoRoot, $_QUANT_DIR)
@@ -88,8 +90,35 @@ function Test-PortListen([int]$p) {
 
 function Get-PortOwners([int]$p) {
     $owners = Get-NetTCPConnection -LocalPort $p -ErrorAction SilentlyContinue |
+        Where-Object { $_.State -eq "Listen" } |
         Select-Object -ExpandProperty OwningProcess -Unique
     return @($owners | Where-Object { $_ -and $_ -gt 0 })
+}
+
+function Get-QuantProcessCandidates([int]$p) {
+    $needle = "--port $p"
+    $matches = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -like "python*" -and
+            $_.CommandLine -and
+            $_.CommandLine -like "*uvicorn*api.main:app*" -and
+            $_.CommandLine -like "*$needle*"
+        } |
+        Select-Object -ExpandProperty ProcessId -Unique
+    return @($matches | Where-Object { $_ -and $_ -gt 0 })
+}
+
+function Stop-QuantProcesses([int[]]$pids, [int[]]$keepPids = @()) {
+    $targets = @($pids | Where-Object { $_ -and ($_ -notin $keepPids) } | Select-Object -Unique)
+    foreach ($targetPid in $targets) {
+        try {
+            Stop-Process -Id $targetPid -Force -ErrorAction Stop
+            _OpsLog "Proceso Quant duplicado detenido: PID=$targetPid"
+        } catch {
+            _OpsLog ("No se pudo detener PID {0}: {1}" -f $targetPid, $_.Exception.Message) "warn"
+        }
+    }
+    return $targets
 }
 
 function Test-HealthEndpoint([string]$url, [int]$timeoutMs = 4000) {
@@ -128,26 +157,30 @@ Write-Host "[quant-start] ATLAS-Quant startup -- puerto $Port"
 
 # ── Step 1: Check if already running ─────────────────────────────────────────
 $portOwners = Get-PortOwners -p $Port
+$quantCandidates = Get-QuantProcessCandidates -p $Port
 $alreadyListening = Test-PortListen -p $Port
 $healthOk = Test-HealthEndpoint -url $_API_HEALTH
+$launchedThisRun = $false
 
 if (-not $healthOk -and $portOwners.Count -gt 0 -and -not $LogOnly) {
     _OpsLog "Puerto $Port ocupado sin health; limpiando procesos: $($portOwners -join ', ')" "warn"
     Write-Host "[quant-start] Puerto $Port ocupado sin health. Limpiando proceso(s): $($portOwners -join ', ')"
-    foreach ($ownerPid in $portOwners) {
-        try {
-            Stop-Process -Id $ownerPid -Force -ErrorAction Stop
-        } catch {
-            _OpsLog ("No se pudo detener PID {0} en puerto {1}: {2}" -f $ownerPid, $Port, $_.Exception.Message) "warn"
-        }
-    }
+    [void](Stop-QuantProcesses -pids (@($portOwners) + @($quantCandidates)))
     Start-Sleep -Seconds 2
     $portOwners = Get-PortOwners -p $Port
+    $quantCandidates = Get-QuantProcessCandidates -p $Port
     $alreadyListening = Test-PortListen -p $Port
     $healthOk = Test-HealthEndpoint -url $_API_HEALTH
 }
 
 if ($healthOk) {
+    if ($portOwners.Count -gt 0 -and $quantCandidates.Count -gt 1) {
+        $keepPid = @($portOwners | Select-Object -First 1)
+        $stopped = Stop-QuantProcesses -pids $quantCandidates -keepPids $keepPid
+        if ($stopped.Count -gt 0) {
+            Write-Host "[quant-start] Limpieza preventiva de procesos Quant duplicados: $($stopped -join ', ')"
+        }
+    }
     _OpsLog "Servidor ya corriendo en puerto $Port -- saltando lanzamiento"
     Write-Host "[quant-start] Servidor ya activo en $Port"
 } elseif ($portOwners.Count -gt 0) {
@@ -187,12 +220,21 @@ if ($healthOk) {
 
     _OpsLog "Lanzando uvicorn en puerto $Port"
     Write-Host "[quant-start] Lanzando uvicorn -- puerto $Port"
+    try {
+        "" | Out-File -FilePath $_UVICORN_STDOUT -Encoding utf8
+        "" | Out-File -FilePath $_UVICORN_STDERR -Encoding utf8
+    } catch {}
     $env:PYTHONPATH = $_QUANT_PYTHONPATH
     Start-Process -FilePath $_VENV_PY `
-        -ArgumentList $uvicornArgs `
         -WorkingDirectory $_QUANT_DIR `
-        -WindowStyle Minimized `
+        -ArgumentList $uvicornArgs `
+        -RedirectStandardOutput $_UVICORN_STDOUT `
+        -RedirectStandardError $_UVICORN_STDERR `
+        -WindowStyle Hidden `
         -PassThru | Out-Null
+    _OpsLog "Logs uvicorn redirect -- stdout=$_UVICORN_STDOUT stderr=$_UVICORN_STDERR"
+    $launchedThisRun = $true
+    Start-Sleep -Milliseconds 500
 }
 
 # ── Step 3: Wait for health ───────────────────────────────────────────────────
@@ -205,6 +247,15 @@ if (-not $healthOk) {
         $waited += $stepSec
         $healthOk = Test-HealthEndpoint -url $_API_HEALTH
         if ($healthOk) {
+            $portOwners = Get-PortOwners -p $Port
+            $quantCandidates = Get-QuantProcessCandidates -p $Port
+            if (-not $launchedThisRun -and $portOwners.Count -gt 0 -and $quantCandidates.Count -gt 1) {
+                $keepPid = @($portOwners | Select-Object -First 1)
+                $stopped = Stop-QuantProcesses -pids $quantCandidates -keepPids $keepPid
+                if ($stopped.Count -gt 0) {
+                    Write-Host "[quant-start] Procesos Quant duplicados limpiados tras health: $($stopped -join ', ')"
+                }
+            }
             _OpsLog "Servidor respondio en /health tras ${waited}s"
             Write-Host "[quant-start] Servidor activo tras ${waited}s"
             break
