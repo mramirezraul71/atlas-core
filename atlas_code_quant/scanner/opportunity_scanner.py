@@ -337,7 +337,7 @@ class OpportunityScannerService:
                 "prefilter_scored": 0,
                 "deep_scan_symbols": selected,
                 "provisional_candidates": 0,
-                "dynamic_min_selection_score": max(75.0, float(self._config.min_selection_score)),
+                "dynamic_min_selection_score": float(self._config.min_selection_score),
             }
             return summary, universe_meta
 
@@ -353,7 +353,7 @@ class OpportunityScannerService:
             "prefilter_scored": manual_count,
             "deep_scan_symbols": manual_count,
             "provisional_candidates": 0,
-            "dynamic_min_selection_score": max(75.0, float(self._config.min_selection_score)),
+            "dynamic_min_selection_score": float(self._config.min_selection_score),
         }
         universe_meta = {
             "mode": "manual",
@@ -556,7 +556,7 @@ class OpportunityScannerService:
             if "min_backtest_sample" in payload:
                 self._config.min_backtest_sample = max(3, min(int(payload["min_backtest_sample"]), 200))
             if "min_selection_score" in payload:
-                self._config.min_selection_score = max(75.0, min(float(payload["min_selection_score"]), 100.0))
+                self._config.min_selection_score = max(50.0, min(float(payload["min_selection_score"]), 100.0))
             if "max_candidates" in payload:
                 self._config.max_candidates = max(1, min(int(payload["max_candidates"]), 50))
             if "require_higher_tf_confirmation" in payload:
@@ -1104,7 +1104,7 @@ class OpportunityScannerService:
         return round(max(atr_pct * (0.8 + strength), 0.05), 2)
 
     def _dynamic_selection_threshold(self, candidates: list[dict[str, Any]]) -> float:
-        base_floor = max(75.0, float(self._config.min_selection_score))
+        base_floor = float(self._config.min_selection_score)
         if not candidates:
             return round(base_floor, 2)
 

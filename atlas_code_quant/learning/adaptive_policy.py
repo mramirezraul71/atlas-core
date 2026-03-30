@@ -267,7 +267,11 @@ class AdaptiveLearningService:
                     .limit(2000)
                 )
             )
-        rows = [row for row in rows if (row.exit_time or row.updated_at or row.entry_time) >= cutoff]
+
+        def _naive(dt: datetime | None) -> datetime | None:
+            return dt.replace(tzinfo=None) if dt is not None and dt.tzinfo is not None else dt
+
+        rows = [row for row in rows if (_naive(row.exit_time) or _naive(row.updated_at) or _naive(row.entry_time) or cutoff) >= cutoff]
         return {
             "generated_at": _utcnow_iso(),
             "enabled": self.enabled,

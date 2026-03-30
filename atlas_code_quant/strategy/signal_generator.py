@@ -157,7 +157,7 @@ class SignalGenerator:
     # ── Score tiers (espejan KellyRiskEngine) ─────────────────────────────────
     TIER_FULL   = 0.75    # Kelly × hasta 2.0
     TIER_NORMAL = 0.65    # Kelly base
-    TIER_SMALL  = 0.55    # Kelly × 0.50
+    TIER_SMALL  = 0.50    # Kelly × 0.50 — permite operar en condiciones neutrales (cold-start)
     # SKIP: score < TIER_SMALL → no ejecutar
     VISUAL_PRICE_TOLERANCE = 0.005   # 0.5% tolerancia OCR vs API
     VISUAL_SCORE_WEIGHT = 0.12       # ajuste maximo absoluto al signal score
