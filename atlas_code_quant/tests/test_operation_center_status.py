@@ -152,6 +152,42 @@ class _Journal:
         }
 
 
+class _CountingJournal(_Journal):
+    def __init__(self) -> None:
+        self.calls: dict[str, int] = {
+            "snapshot": 0,
+            "attribution_integrity": 0,
+            "position_management": 0,
+            "exit_governance": 0,
+            "post_trade_learning": 0,
+            "options_governance_adoption": 0,
+        }
+
+    def snapshot(self, limit: int = 3) -> dict:
+        self.calls["snapshot"] += 1
+        return super().snapshot(limit=limit)
+
+    def attribution_integrity_snapshot(self, account_type: str | None = None, limit: int = 10) -> dict:
+        self.calls["attribution_integrity"] += 1
+        return super().attribution_integrity_snapshot(account_type=account_type, limit=limit)
+
+    def position_management_snapshot(self, account_type: str | None = None, limit: int = 12) -> dict:
+        self.calls["position_management"] += 1
+        return super().position_management_snapshot(account_type=account_type, limit=limit)
+
+    def exit_governance_snapshot(self, account_type: str | None = None, limit: int = 10) -> dict:
+        self.calls["exit_governance"] += 1
+        return super().exit_governance_snapshot(account_type=account_type, limit=limit)
+
+    def post_trade_learning_snapshot(self, account_type: str | None = None, limit: int = 10) -> dict:
+        self.calls["post_trade_learning"] += 1
+        return super().post_trade_learning_snapshot(account_type=account_type, limit=limit)
+
+    def options_governance_adoption_snapshot(self, account_type: str | None = None, limit: int = 10) -> dict:
+        self.calls["options_governance_adoption"] += 1
+        return super().options_governance_adoption_snapshot(account_type=account_type, limit=limit)
+
+
 def _scorecard_payload() -> dict:
     return {
         "available": True,
@@ -284,6 +320,53 @@ def test_operation_status_exposes_scorecard_snapshot(tmp_path: Path):
     assert payload["scorecard"]["available"] is True
     assert payload["scorecard"]["headline"]["atlas_process_compliance_score"] == 60.0
     assert payload["scorecard"]["supporting_indicators"]["brain_delivery_ratio_pct"] == 53.43
+
+
+def test_operation_status_lite_skips_heavy_journal_snapshots(tmp_path: Path):
+    journal = _CountingJournal()
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=journal,
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+
+    payload = center.status_lite()
+
+    assert payload["config"]["account_scope"] == "paper"
+    assert payload["monitor_summary"]["balances"]["total_equity"] == 100000.0
+    assert payload["scorecard"]["headline"]["atlas_process_compliance_score"] == 60.0
+    assert payload["selector_session"]["mode"] == "balanced"
+    assert all(count == 0 for count in journal.calls.values())
+
+
+def test_operation_status_reuses_short_lived_status_cache(tmp_path: Path):
+    journal = _CountingJournal()
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=journal,
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+
+    first = center.status()
+    second = center.status()
+
+    assert first["generated_at"] == second["generated_at"]
+    assert journal.calls["snapshot"] == 1
+    assert journal.calls["attribution_integrity"] == 1
+    assert journal.calls["position_management"] == 1
+    assert journal.calls["exit_governance"] == 1
+    assert journal.calls["post_trade_learning"] == 1
+    assert journal.calls["options_governance_adoption"] == 1
 
 
 def test_operation_status_exposes_position_management_snapshot(tmp_path: Path):

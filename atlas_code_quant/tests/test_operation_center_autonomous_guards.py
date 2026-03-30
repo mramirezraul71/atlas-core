@@ -972,3 +972,6 @@ def test_preview_reuses_precomputed_probability_payload_without_recomputing(tmp_
     assert payload["probability_source"] == "precomputed"
     assert payload["probability"]["win_rate_pct"] == 72.5
     assert payload["evaluation_timings"]["probability_sec"] >= 0.0
+    assert payload["evaluation_profile"]["dominant_stage"] in payload["evaluation_timings"]
+    assert payload["evaluation_profile"]["captured_stage_count"] >= 1
+    assert "monitor_summary_sec" in payload["evaluation_timings"]
