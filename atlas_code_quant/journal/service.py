@@ -1310,7 +1310,22 @@ class TradingJournalService:
         entry.exit_price = exit_flow if exit_flow not in {None, 0.0} else entry.mark_price
         entry.fees = round(_safe_float(entry.fees, 0.0) + close_fees, 4)
         if entry.entry_price is not None and entry.exit_price is not None:
-            entry.realized_pnl = round(-(entry.entry_price + entry.exit_price) - _safe_float(entry.fees, 0.0), 4)
+            # FIX 2026-03-30: fórmula corregida — direction * (|exit| - |entry_per_share|) * qty
+            # La formula anterior -(entry+exit) sumaba los precios en vez de restarlos,
+            # produciendo PnL siempre negativo para longs y siempre positivo para shorts.
+            # Usamos abs() para ser independientes de la convencion de signo del broker.
+            entry_px = abs(_safe_float(entry.entry_notional or entry.entry_price, 0.0))
+            exit_px  = abs(_safe_float(entry.exit_price, 0.0))
+            _st = str(entry.strategy_type or "").lower()
+            is_short = any(kw in _st for kw in ("short", "bear_put", "bear_call", "long_put"))
+            direction = -1.0 if is_short else 1.0
+            _raw_ep = abs(_safe_float(entry.entry_price, 0.0))
+            qty = round(entry_px / _raw_ep, 0) if _raw_ep > 0 else 1.0
+            qty = max(qty, 1.0)
+            entry.realized_pnl = round(
+                direction * (exit_px - entry_px / qty) * qty - _safe_float(entry.fees, 0.0),
+                4,
+            )
         else:
             entry.realized_pnl = round(_safe_float(entry.unrealized_pnl, 0.0) - close_fees, 4)
         entry.unrealized_pnl = 0.0
