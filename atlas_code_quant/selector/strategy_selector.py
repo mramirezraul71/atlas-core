@@ -10,6 +10,10 @@ from backtesting.winning_probability import (
     _strategy_payoff,
     get_winning_probability,
 )
+try:
+    from atlas_code_quant.context.market_context_engine import MarketContextEngine
+except ModuleNotFoundError:  # pragma: no cover - runtime fallback for uvicorn launched from atlas_code_quant cwd
+    from context.market_context_engine import MarketContextEngine
 from execution.option_selector import describe_strategy_governance, pick_strategy
 from learning.adaptive_policy import AdaptiveLearningService
 from monitoring.strategy_tracker import StrategyTracker
@@ -282,9 +286,15 @@ def _options_governance_snapshot(candidate: dict[str, Any], strategy_type: str, 
 
 
 class StrategySelectorService:
-    def __init__(self, tracker: StrategyTracker, learning: AdaptiveLearningService | None = None):
+    def __init__(
+        self,
+        tracker: StrategyTracker,
+        learning: AdaptiveLearningService | None = None,
+        context_engine: MarketContextEngine | None = None,
+    ):
         self.tracker = tracker
         self.learning = learning or AdaptiveLearningService()
+        self.context_engine = context_engine or MarketContextEngine()
 
     def _legs_from_probability(self, probability_payload: dict[str, Any] | None) -> list[StrategyLeg]:
         if not probability_payload:
@@ -1193,6 +1203,7 @@ class StrategySelectorService:
                 "verificar que la estructura de velas siga intacta",
             ],
         }
+        market_context = self.context_engine.build(candidate=candidate, tracker_summary=summary)
         options_governance = _options_governance_snapshot(candidate, strategy_type, str(meta.get("family") or ""))
         entry_plan = self._entry_plan(
             candidate=candidate,
@@ -1217,6 +1228,21 @@ class StrategySelectorService:
             camera_visual_fit_pct=camera_visual_fit_pct,
             selected=selected,
         )
+        context_gate = market_context.get("decision_gate") or {}
+        context_report = market_context.get("context_report") or {}
+        if bool(context_gate.get("blocked")):
+            automation_ready["context_gate"] = "blocked"
+            automation_ready["operation_preview_ready"] = False
+            automation_ready["paper_submit_ready"] = False
+            warnings.extend(f"Context gate blocked: {reason}" for reason in (context_gate.get("reasons") or []))
+        elif bool(context_gate.get("degraded")):
+            automation_ready["context_gate"] = "degraded"
+            automation_ready["paper_submit_ready"] = False
+            warnings.extend(f"Context gate degraded: {reason}" for reason in (context_gate.get("reasons") or []))
+        else:
+            automation_ready["context_gate"] = "allow"
+        confidence_breakdown["market_context_confidence_pct"] = market_context.get("confidence_pct")
+        confidence_breakdown["market_context_gate"] = context_gate.get("action")
         execution_fields = self._order_seed_execution_fields(
             selected=selected,
             probability_payload=probability_payload,
@@ -1242,6 +1268,7 @@ class StrategySelectorService:
             "probability_payload": probability_payload or {},
             "chart_plan": chart_plan,
             "camera_plan": camera_plan,
+            "market_context": market_context,
             "options_governance": options_governance,
             **execution_fields,
         }
@@ -1252,6 +1279,8 @@ class StrategySelectorService:
             size_plan=size_plan,
             probability_payload=probability_payload,
         )
+        risk_profile["market_context_gate"] = context_gate.get("action")
+        risk_profile["market_context_permission"] = context_report.get("permission")
         playbook = build_strategy_playbook(
             candidate=candidate,
             selected={**selected, "meta": meta},
@@ -1281,6 +1310,7 @@ class StrategySelectorService:
             "size_plan": size_plan,
             "chart_plan": chart_plan,
             "camera_plan": camera_plan,
+            "market_context": market_context,
             "options_governance": options_governance,
             "entry_plan": entry_plan,
             "confidence_breakdown": confidence_breakdown,

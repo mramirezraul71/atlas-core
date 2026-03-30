@@ -393,3 +393,36 @@ def test_proposal_builds_single_option_order_seed(monkeypatch) -> None:
     assert order_seed["tradier_class"] == "option"
     assert order_seed["option_symbol"] == "NVDA260417C00100000"
     assert "legs" not in order_seed or not order_seed["legs"]
+
+
+def test_proposal_includes_market_context_and_degrades_when_context_is_weak(monkeypatch) -> None:
+    monkeypatch.setattr(selector_module, "get_winning_probability", _fake_probability)
+    service = _service()
+    candidate = {
+        "symbol": "TSLA",
+        "direction": "alcista",
+        "timeframe": "15m",
+        "strategy_key": "breakout_event",
+        "selection_score": 58.0,
+        "local_win_rate_pct": 50.0,
+        "predicted_move_pct": 3.3,
+        "confirmation": {"direction": "alcista", "higher_timeframe": "1h"},
+        "regime": "BULL",
+        "iv_rank": 80.0,
+        "iv_hv_ratio": 1.4,
+        "liquidity_score": 0.42,
+        "event_near": True,
+        "price": 100.0,
+        "order_flow": {"direction": "alcista", "confidence_pct": 45.0, "score_pct": 44.0},
+    }
+
+    proposal = service.proposal(
+        candidate=candidate,
+        account_scope="paper",
+        allow_equity=False,
+        allow_credit=True,
+    )
+
+    assert proposal["market_context"]["decision_gate"]["action"] in {"block", "degrade"}
+    assert proposal["order_seed"]["market_context"]["symbol"] == "TSLA"
+    assert proposal["automation_ready"]["context_gate"] in {"blocked", "degraded"}

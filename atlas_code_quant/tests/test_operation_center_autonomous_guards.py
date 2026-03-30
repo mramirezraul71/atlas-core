@@ -338,6 +338,51 @@ def test_blocks_submit_when_reconciliation_is_not_healthy_and_uses_total_equity(
     assert executor.calls == 0
 
 
+def test_market_context_gate_blocks_submit_when_context_is_explicitly_blocked(tmp_path: Path) -> None:
+    executor = _Executor()
+    center = OperationCenter(
+        tracker=_Tracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=executor,
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+    )
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="AAPL",
+            side="buy",
+            size=1,
+            order_type="market",
+            asset_class="equity",
+            account_scope="paper",
+            strategy_type="equity_long",
+            market_context={
+                "confidence_pct": 41.0,
+                "macro_bias": {"state": "defensive"},
+                "regime": {"primary_regime": "risk_extreme"},
+                "context_report": {"permission": "block"},
+                "decision_gate": {
+                    "action": "block",
+                    "blocked": True,
+                    "degraded": False,
+                    "reasons": ["regimen clasificado como riesgo extremo"],
+                    "warnings": [],
+                },
+            },
+        ),
+        action="submit",
+        capture_context=False,
+    )
+
+    assert payload["allowed"] is False
+    assert payload["market_context_gate"]["blocked"] is True
+    assert any("Market context blocked submit" in reason for reason in payload["reasons"])
+    assert executor.calls == 0
+
+
 def test_blocks_submit_when_adverse_entry_drift_is_too_high(tmp_path: Path) -> None:
     executor = _Executor()
     center = OperationCenter(
