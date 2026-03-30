@@ -187,7 +187,7 @@ class TradingConfig:
     scanner_min_local_win_rate_pct: float = _fenv("QUANT_SCANNER_MIN_LOCAL_WIN_RATE_PCT", 53.0)
     scanner_min_local_profit_factor: float = _fenv("QUANT_SCANNER_MIN_LOCAL_PROFIT_FACTOR", 1.05)
     scanner_min_backtest_sample: int = _ienv("QUANT_SCANNER_MIN_BACKTEST_SAMPLE", 12)
-    scanner_min_selection_score: float = _fenv("QUANT_SCANNER_MIN_SELECTION_SCORE", 75.0)
+    scanner_min_selection_score: float = _fenv("QUANT_SCANNER_MIN_SELECTION_SCORE", 65.0)
     scanner_max_candidates: int = _ienv("QUANT_SCANNER_MAX_CANDIDATES", 8)
     scanner_activity_limit: int = _ienv("QUANT_SCANNER_ACTIVITY_LIMIT", 160)
     scanner_require_higher_tf_confirmation: bool = os.getenv("QUANT_SCANNER_REQUIRE_HIGHER_TF", "true").strip().lower() not in {"0", "false", "no"}
@@ -298,7 +298,7 @@ class TradingConfig:
 
     # Internal API (Atlas/ROS2)
     api_host: str = "0.0.0.0"
-    api_port: int = 8792
+    api_port: int = 8795
     api_key: str = os.getenv("QUANT_API_KEY", "atlas-quant-local")
 
     # Paths
@@ -321,7 +321,7 @@ class TradingConfig:
         self.scanner_min_local_win_rate_pct = max(0.0, min(self.scanner_min_local_win_rate_pct, 100.0))
         self.scanner_min_local_profit_factor = max(0.5, min(self.scanner_min_local_profit_factor, 10.0))
         self.scanner_min_backtest_sample = max(3, min(self.scanner_min_backtest_sample, 200))
-        self.scanner_min_selection_score = max(75.0, min(self.scanner_min_selection_score, 100.0))
+        self.scanner_min_selection_score = max(50.0, min(self.scanner_min_selection_score, 100.0))
         self.scanner_max_candidates = max(1, min(self.scanner_max_candidates, 50))
         self.scanner_activity_limit = max(20, min(self.scanner_activity_limit, 1000))
         self.scanner_universe_mode = self.scanner_universe_mode if self.scanner_universe_mode in {"manual", "us_equities_rotating"} else "us_equities_rotating"

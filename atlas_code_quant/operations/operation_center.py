@@ -54,7 +54,7 @@ _LEVEL4_CREDIT_STRATEGIES: set[str] = {
 _DEFAULT_STATE = {
     "account_scope": "paper",
     "paper_only": True,
-    "auton_mode": "paper_supervised",
+    "auton_mode": "paper_autonomous",
     "executor_mode": "paper_api",
     "vision_mode": "direct_nexus",
     "require_operator_present": False,
@@ -1258,7 +1258,10 @@ class OperationCenter:
         if bool(config.get("require_operator_present")) and not vision_status.get("operator_present"):
             reasons.append("La politica actual exige presencia del operador.")
         if str(config.get("vision_mode") or "manual") != "off" and not vision_status.get("screen_integrity_ok"):
-            reasons.append("La verificacion de pantallas no esta en estado OK.")
+            if scope != "paper":
+                reasons.append("La verificacion de pantallas no esta en estado OK.")
+            else:
+                warnings.append("Vision: screen_integrity_ok es false (no bloquea en paper).")
         if action == "submit" and str(config.get("auton_mode") or "off") == "off":
             reasons.append("El modo autonomo esta apagado.")
         if pdt_status.get("blocked_opening"):
@@ -1369,6 +1372,8 @@ class OperationCenter:
         )
         reasons.extend(list(visual_entry_gate.get("reasons") or []))
         warnings.extend(list(visual_entry_gate.get("warnings") or []))
+        if reasons:
+            logger.info("[evaluate_candidate] BLOCKED %s — reasons: %s", order_copy.symbol, reasons)
         allowed = not reasons
         execution_result: dict[str, Any] | None = None
         operational_failure_reason: str | None = None
@@ -1822,7 +1827,7 @@ class OperationCenter:
 
         supervised_manual_chart_preview = (
             action == "preview"
-            and str(auton_mode or "").lower() == "paper_supervised"
+            and str(auton_mode or "").lower() in {"paper_supervised", "paper_autonomous"}
             and bool(settings.visual_gate_supervised_manual_chart_preview)
             and str(payload.get("blocking_reason") or "") == "chart mission requires manual opening"
         )
