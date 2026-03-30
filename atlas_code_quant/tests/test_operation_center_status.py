@@ -216,6 +216,11 @@ def _scorecard_payload() -> dict:
     }
 
 
+def _slow_scorecard_payload() -> dict:
+    time.sleep(2.0)
+    return _scorecard_payload()
+
+
 def test_operation_status_uses_timeout_fallback_without_blocking(tmp_path: Path):
     original_timeout = settings.tradier_timeout_sec
     original_ttl = settings.tradier_monitor_cache_ttl_sec
@@ -335,13 +340,46 @@ def test_operation_status_lite_skips_heavy_journal_snapshots(tmp_path: Path):
         scorecard_provider=_scorecard_payload,
     )
 
+    first = center.status_lite()
+    time.sleep(0.1)
     payload = center.status_lite()
 
     assert payload["config"]["account_scope"] == "paper"
+    assert first["monitor_summary"]["balances"] == {}
     assert payload["monitor_summary"]["balances"]["total_equity"] == 100000.0
     assert payload["scorecard"]["headline"]["atlas_process_compliance_score"] == 60.0
     assert payload["selector_session"]["mode"] == "balanced"
     assert all(count == 0 for count in journal.calls.values())
+
+
+def test_operation_status_lite_returns_fast_with_background_monitor_and_scorecard_refresh(tmp_path: Path):
+    original_timeout = settings.tradier_timeout_sec
+    original_ttl = settings.tradier_monitor_cache_ttl_sec
+    settings.tradier_timeout_sec = 5
+    settings.tradier_monitor_cache_ttl_sec = 300
+    try:
+        center = OperationCenter(
+            tracker=_SlowTracker(),
+            journal=_CountingJournal(),
+            vision=_Vision(),
+            executor=_Executor(),
+            brain=_Brain(),
+            learning=_Learning(),
+            state_path=tmp_path / "operation_center_state.json",
+            scorecard_provider=_slow_scorecard_payload,
+        )
+
+        started = time.perf_counter()
+        payload = center.status_lite()
+        elapsed = time.perf_counter() - started
+    finally:
+        settings.tradier_timeout_sec = original_timeout
+        settings.tradier_monitor_cache_ttl_sec = original_ttl
+
+    assert elapsed < 1.0
+    assert payload["monitor_summary"]["balances"] == {}
+    assert payload["scorecard"]["available"] is False
+    assert payload["scorecard"]["status"] == "refreshing"
 
 
 def test_operation_status_reuses_short_lived_status_cache(tmp_path: Path):

@@ -135,6 +135,8 @@ class OperationCenter:
         self._scorecard_lock = threading.Lock()
         self._scorecard_cache: dict[str, Any] | None = None
         self._scorecard_cache_at = 0.0
+        self._scorecard_worker: threading.Thread | None = None
+        self._scorecard_error: str | None = None
         self._status_cache_lock = threading.Lock()
         self._status_cache_payload: dict[str, Any] | None = None
         self._status_cache_at = 0.0
@@ -304,7 +306,7 @@ class OperationCenter:
             worker.start()
             return worker
 
-    def _load_monitor_summary(self, scope: str) -> dict[str, Any]:
+    def _load_monitor_summary(self, scope: str, *, fast: bool = False) -> dict[str, Any]:
         ttl_sec = max(2, int(settings.tradier_monitor_cache_ttl_sec or 300))
         # `operation/status` debe degradar rapido; no puede quedar secuestrado por el broker.
         timeout_sec = max(1, min(int(settings.tradier_timeout_sec or 15), 5))
@@ -318,6 +320,19 @@ class OperationCenter:
             return cached
 
         worker = self._start_monitor_summary_refresh(scope)
+        if fast:
+            if cached:
+                return self._monitor_summary_alert(
+                    cached,
+                    message="Refreshing monitor summary in background",
+                    scope=scope,
+                )
+            reason = f"tracker.build_summary refreshing in background for scope {scope}"
+            return self._monitor_summary_alert(
+                self._empty_monitor_summary(scope, reason=reason),
+                message=f"Monitor summary refreshing in background for {scope}",
+                scope=scope,
+            )
         if cached:
             if worker.is_alive():
                 return self._monitor_summary_alert(
@@ -387,24 +402,74 @@ class OperationCenter:
             "json_path": str(self.root_path / "reports/atlas_quant_implementation_scorecard.json"),
         }
 
-    def _load_scorecard(self) -> dict[str, Any]:
+    def _empty_scorecard_snapshot(self, *, status: str, error: str | None = None) -> dict[str, Any]:
+        payload = {
+            "available": False,
+            "status": status,
+            "generated_at": datetime.utcnow().isoformat(),
+            "headline": {},
+            "metrics": {},
+            "supporting_indicators": {},
+            "next_actions": [],
+        }
+        if error:
+            payload["error"] = error
+        return payload
+
+    def _start_scorecard_refresh(self) -> threading.Thread:
+        with self._scorecard_lock:
+            current = self._scorecard_worker
+            if current and current.is_alive():
+                return current
+
+            def _worker() -> None:
+                try:
+                    payload = self.scorecard_provider()
+                except Exception as exc:
+                    payload = self._empty_scorecard_snapshot(status="error", error=str(exc))
+                    with self._scorecard_lock:
+                        self._scorecard_error = str(exc)
+                else:
+                    with self._scorecard_lock:
+                        self._scorecard_error = None
+                finally:
+                    with self._scorecard_lock:
+                        self._scorecard_cache = deepcopy(payload)
+                        self._scorecard_cache_at = time.monotonic()
+                        if self._scorecard_worker is threading.current_thread():
+                            self._scorecard_worker = None
+
+            worker = threading.Thread(target=_worker, name="scorecard-refresh", daemon=True)
+            self._scorecard_worker = worker
+            worker.start()
+            return worker
+
+    def _load_scorecard(self, *, fast: bool = False) -> dict[str, Any]:
         ttl_sec = 30.0
         now = time.monotonic()
         with self._scorecard_lock:
             if self._scorecard_cache is not None and (now - self._scorecard_cache_at) <= ttl_sec:
                 return deepcopy(self._scorecard_cache)
-        try:
-            payload = self.scorecard_provider()
-        except Exception as exc:
-            payload = {
-                "available": False,
-                "error": str(exc),
-                "generated_at": datetime.utcnow().isoformat(),
-            }
+            cached = deepcopy(self._scorecard_cache) if self._scorecard_cache is not None else None
+            worker = self._scorecard_worker
+            last_error = self._scorecard_error
+        worker = self._start_scorecard_refresh()
+        if fast:
+            if cached is not None:
+                cached["status"] = "refreshing" if worker.is_alive() else (cached.get("status") or "cached")
+                if last_error:
+                    cached["error"] = last_error
+                return cached
+            return self._empty_scorecard_snapshot(status="refreshing", error=last_error)
+        worker.join(timeout=2.0)
         with self._scorecard_lock:
-            self._scorecard_cache = deepcopy(payload)
-            self._scorecard_cache_at = now
-        return payload
+            if self._scorecard_cache is not None:
+                payload = deepcopy(self._scorecard_cache)
+                if self._scorecard_error and "error" not in payload:
+                    payload["error"] = self._scorecard_error
+                return payload
+            error = self._scorecard_error
+        return self._empty_scorecard_snapshot(status="timeout", error=error)
 
     def _dispatch_brain_task(self, task_name: str, callback: Any, /, *args: Any, **kwargs: Any) -> None:
         def _runner() -> None:
@@ -843,10 +908,10 @@ class OperationCenter:
     def status_lite(self) -> dict[str, Any]:
         config = self._load()
         scope = str(config.get("account_scope") or "paper")
-        monitor = self._load_monitor_summary(scope)
+        monitor = self._load_monitor_summary(scope, fast=True)
         vision_status = self.vision.status()
         executor_status = self.executor.status()
-        scorecard = self._load_scorecard()
+        scorecard = self._load_scorecard(fast=True)
         payload = self._lightweight_operation_status(
             scope=scope,
             config=config,
@@ -863,6 +928,8 @@ class OperationCenter:
         }
         payload["scorecard"] = {
             "available": bool(scorecard.get("available")),
+            "status": scorecard.get("status"),
+            "error": scorecard.get("error"),
             "generated_at": scorecard.get("generated_at"),
             "headline": deepcopy(scorecard.get("headline") or {}),
         }
