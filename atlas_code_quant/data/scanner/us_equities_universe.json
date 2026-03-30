@@ -5,9 +5,9 @@
     "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
     "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
   ],
-  "fetched_at": "2026-03-27T16:24:39Z",
-  "fetched_epoch": 1774628679.1585991,
-  "total_symbols": 10399,
+  "fetched_at": "2026-03-30T15:43:25Z",
+  "fetched_epoch": 1774885405.9152238,
+  "total_symbols": 10400,
   "symbols": [
     "A",
     "AA",
@@ -1442,7 +1442,6 @@
     "BX",
     "BXC",
     "BXMT",
-    "BXMX",
     "BXP",
     "BXSL",
     "BY",
@@ -1503,6 +1502,7 @@
     "CAPR",
     "CAPS",
     "CAPT",
+    "CAQ",
     "CAR",
     "CARD",
     "CARE",
@@ -2417,7 +2417,6 @@
     "DHY",
     "DIA",
     "DIAL",
-    "DIAX",
     "DIBS",
     "DIEM",
     "DIG",
@@ -4196,6 +4195,7 @@
     "HCC",
     "HCHL",
     "HCI",
+    "HCIC",
     "HCKT",
     "HCMA",
     "HCMT",
@@ -4442,7 +4442,6 @@
     "HYGW",
     "HYHG",
     "HYIN",
-    "HYKE",
     "HYLB",
     "HYLN",
     "HYLS",
@@ -5742,6 +5741,7 @@
     "MAGY",
     "MAIA",
     "MAIN",
+    "MAKO",
     "MAKX",
     "MAMA",
     "MAMB",
@@ -8026,7 +8026,6 @@
     "RYM",
     "RYN",
     "RYOJ",
-    "RYSE",
     "RYTM",
     "RYZ",
     "RZB",
@@ -8150,7 +8149,9 @@
     "SCOR",
     "SCOW",
     "SCPQ",
+    "SCSB",
     "SCSC",
+    "SCUB",
     "SCUS",
     "SCVL",
     "SCWO",
@@ -10410,8 +10411,8 @@
     "ZYME"
   ],
   "meta": {
-    "nasdaq_rows": 4291,
-    "other_rows": 6109,
-    "deduped_rows": 10399
+    "nasdaq_rows": 4294,
+    "other_rows": 6107,
+    "deduped_rows": 10400
   }
 }
