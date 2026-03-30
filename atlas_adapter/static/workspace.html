@@ -1950,6 +1950,7 @@ async function uploadChatImage(file) {
 async function attachImageFile(file) {
   if (!file) return;
   if (!(file.type || '').startsWith('image/')) return;
+  let requestTimedOut = false;
   try {
     emitLive('file', 'Subiendo imagen: <code>' + escapeHtml(file.name || 'paste.png') + '</code>');
     const uploaded = await uploadChatImage(file);
@@ -2521,7 +2522,7 @@ async function supervisorInvestigate() {
 }
 
 async function terminalExecute(cmd) {
-  const r = await fetch("/api/workspace/terminal/execute", {
+  const r = await fetch(API + "/api/workspace/terminal/execute", {
     method: "POST",
     headers: {"Content-Type":"application/json"},
     body: JSON.stringify({ command: cmd })
@@ -2711,7 +2712,7 @@ async function executeStep(step) {
 
   try {
     if (step.type === 'terminal') {
-      const response = await fetch('/api/workspace/terminal/execute', {
+      const response = await fetch(API + '/api/workspace/terminal/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command: step.cmd })
@@ -3316,8 +3317,9 @@ async function sendMessage() {
     const controller = new AbortController();
     currentRequestController = controller;
     const timeout = setTimeout(() => {
+      requestTimedOut = true;
       if (currentRequestController) currentRequestController.abort();
-    }, 120000);
+    }, window.ATLAS_AGENT_REQUEST_TIMEOUT_MS || 300000);
     const rawMode = document.getElementById('agent-mode').value;
     const backendMode = rawMode === 'auto' ? 'plan_only' : rawMode;
     const requestBody = {
@@ -3514,8 +3516,11 @@ async function sendMessage() {
   } catch (err) {
     thoughtSetError(thinkingId);
     thoughtSetTitle(thinkingId, 'Conexión fallida');
-    thoughtAddStep(thinkingId, err.name === 'AbortError' ? 'Solicitud abortada por el usuario' : 'Error: ' + err.message, 'error');
-    const msg = String(err && err.name === 'AbortError' ? 'Solicitud abortada' : ('Error de conexion: ' + (err.message || err)));
+    const abortMsg = requestTimedOut ? 'Solicitud abortada por timeout del workspace' : 'Solicitud abortada por el usuario';
+    thoughtAddStep(thinkingId, err.name === 'AbortError' ? abortMsg : 'Error: ' + err.message, 'error');
+    const msg = String(err && err.name === 'AbortError'
+      ? (requestTimedOut ? 'Solicitud abortada por timeout del workspace' : 'Solicitud abortada')
+      : ('Error de conexion: ' + (err.message || err)));
     addChatMessage(msg, 'cascade');
     emitLive('err', '<strong>Conexion fallida:</strong> ' + escapeHtml(msg));
   }
@@ -3540,13 +3545,15 @@ async function sendViaAgentEngine(goalText, _chip) {
   let toolsUsed = [];
   let iterations = 0;
   let finalText = '';
+  let requestTimedOut = false;
 
   try {
     const controller = new AbortController();
     currentRequestController = controller;
     const timeout = setTimeout(() => {
+      requestTimedOut = true;
       if (currentRequestController) currentRequestController.abort();
-    }, 120000);
+    }, window.ATLAS_AGENT_REQUEST_TIMEOUT_MS || 300000);
 
     const response = await fetch(API + '/agent/chat', {
       method: 'POST',
@@ -3627,7 +3634,7 @@ async function sendViaAgentEngine(goalText, _chip) {
     thoughtSetError(thinkingId);
 
     if (err.name === 'AbortError') {
-      addChatMessage('⏹️ Ejecución interrumpida por usuario', 'cascade');
+      addChatMessage(requestTimedOut ? '⏹️ Ejecución detenida por timeout del workspace' : '⏹️ Ejecución interrumpida por usuario', 'cascade');
     } else {
       addChatMessage('Error de conexión: ' + err.message, 'cascade');
     }

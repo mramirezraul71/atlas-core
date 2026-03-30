@@ -238,7 +238,8 @@ class InterpreterSession:
             "true",
             "yes",
         )
-        oi.safe_mode = "ask"
+        safe_mode = (os.getenv("INTERPRETER_SAFE_MODE") or "").strip().lower()
+        oi.safe_mode = safe_mode or "off"
         oi.verbose = False
         oi.system_message = _ATLAS_SYSTEM_MESSAGE
         try:

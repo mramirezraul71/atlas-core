@@ -1,4 +1,4 @@
-﻿"""FastAPI lifespan hooks extracted from the main PUSH API module."""
+"""FastAPI lifespan hooks extracted from the main PUSH API module."""
 from __future__ import annotations
 
 import asyncio
@@ -22,6 +22,25 @@ def _schedule_autonomy_daemon_start() -> None:
             asyncio.create_task(asyncio.to_thread(start_fn))
     except Exception:
         pass
+
+
+def _schedule_background_startup(
+    name: str, fn, *, logger_name: str | None = None, success_message: str | None = None
+) -> None:
+    log = logging.getLogger(logger_name or __name__)
+
+    async def _runner():
+        try:
+            result = await asyncio.to_thread(fn)
+            if success_message:
+                if isinstance(result, dict) and not result.get("ok", True):
+                    log.warning("%s: %s", name, result)
+                else:
+                    log.info("%s", success_message)
+        except Exception as exc:
+            log.error("%s failed: %s", name, exc)
+
+    asyncio.create_task(_runner())
 
 
 @asynccontextmanager
@@ -154,11 +173,20 @@ async def app_lifespan(app):
                 if not safe_startup:
                     from modules.humanoid.comms.bootstrap import bootstrap_comms
 
-                    comms_result = bootstrap_comms(skip_tests=True)
-                    if not comms_result.get("ok"):
-                        comms_logger = logging.getLogger("atlas.comms.startup")
-                        for warning in comms_result.get("warnings", []):
-                            comms_logger.warning("Comms bootstrap: %s", warning)
+                    def _bootstrap_comms_bg():
+                        comms_result = bootstrap_comms(skip_tests=True)
+                        if not comms_result.get("ok"):
+                            comms_logger = logging.getLogger("atlas.comms.startup")
+                            for warning in comms_result.get("warnings", []):
+                                comms_logger.warning("Comms bootstrap: %s", warning)
+                        return comms_result
+
+                    _schedule_background_startup(
+                        "comms_bootstrap",
+                        _bootstrap_comms_bg,
+                        logger_name="atlas.comms.startup",
+                        success_message="Comms bootstrap lanzado en background",
+                    )
             except Exception as comms_err:
                 logging.getLogger("atlas.comms.startup").error(
                     "Comms bootstrap failed: %s", comms_err
@@ -169,32 +197,40 @@ async def app_lifespan(app):
                 ).strip().lower() in ("1", "true", "yes", "y", "on"):
                     from modules.humanoid.quality import start_autonomous_system
 
-                    quality_result = start_autonomous_system()
-                    try:
-                        if os.getenv(
-                            "AUTONOMY_DAEMON_AUTOSTART", "true"
-                        ).strip().lower() in ("1", "true", "yes", "y", "on"):
-                            from modules.humanoid.quality.autonomy_daemon import (
-                                is_autonomy_running,
-                                start_autonomy,
+                    def _start_quality_bg():
+                        quality_result = start_autonomous_system()
+                        try:
+                            if os.getenv(
+                                "AUTONOMY_DAEMON_AUTOSTART", "true"
+                            ).strip().lower() in ("1", "true", "yes", "y", "on"):
+                                from modules.humanoid.quality.autonomy_daemon import (
+                                    is_autonomy_running,
+                                    start_autonomy,
+                                )
+
+                                if not is_autonomy_running():
+                                    start_autonomy()
+                        except Exception:
+                            pass
+                        try:
+                            from modules.humanoid.ans.evolution_bitacora import (
+                                append_evolution_log,
                             )
 
-                            if not is_autonomy_running():
-                                start_autonomy()
-                    except Exception:
-                        pass
-                    try:
-                        from modules.humanoid.ans.evolution_bitacora import (
-                            append_evolution_log,
-                        )
+                            append_evolution_log(
+                                message="[QUALITY] AutonomÃ­a POT iniciada (dispatcher+triggers).",
+                                ok=bool(quality_result.get("all_ok", False)),
+                                source="quality",
+                            )
+                        except Exception:
+                            pass
+                        return quality_result
 
-                        append_evolution_log(
-                            message="[QUALITY] AutonomÃ­a POT iniciada (dispatcher+triggers).",
-                            ok=bool(quality_result.get("all_ok", False)),
-                            source="quality",
-                        )
-                    except Exception:
-                        pass
+                    _schedule_background_startup(
+                        "quality_autonomy",
+                        _start_quality_bg,
+                        success_message="Quality autonomy lanzada en background",
+                    )
             except Exception:
                 pass
             try:
@@ -488,9 +524,12 @@ async def app_lifespan(app):
 
             _heal_script = BASE_DIR / "scripts" / "atlas_self_healing_loop.py"
             if _heal_script.exists():
+                import sys as _sys
+
                 _spec = _ilu.spec_from_file_location("atlas_self_healing_runtime", str(_heal_script))
                 if _spec and _spec.loader:
                     _heal_mod = _ilu.module_from_spec(_spec)
+                    _sys.modules[_spec.name] = _heal_mod
                     _spec.loader.exec_module(_heal_mod)
                     _heal_fn = getattr(_heal_mod, "run_healing_cycle", None)
 
@@ -507,13 +546,28 @@ async def app_lifespan(app):
                                 _heal_log.error("Error en ciclo self-healing: %s", _e)
                             _time.sleep(_interval)
 
-                    _heal_thread = _threading.Thread(
-                        target=_self_heal_daemon,
-                        name="atlas-self-healing",
-                        daemon=True,
+                    async def _delayed_self_heal_start():
+                        _startup_grace = max(
+                            5,
+                            int(
+                                os.getenv(
+                                    "ATLAS_SELF_HEALING_STARTUP_GRACE_SEC", "45"
+                                )
+                                or "45"
+                            ),
+                        )
+                        await asyncio.sleep(_startup_grace)
+                        _heal_thread = _threading.Thread(
+                            target=_self_heal_daemon,
+                            name="atlas-self-healing",
+                            daemon=True,
+                        )
+                        _heal_thread.start()
+
+                    asyncio.create_task(_delayed_self_heal_start())
+                    logging.getLogger(__name__).info(
+                        "âœ“ Self-Healing Loop programado con gracia de arranque"
                     )
-                    _heal_thread.start()
-                    logging.getLogger(__name__).info("âœ“ Self-Healing Loop activo")
     except Exception as _heal_err:
         logging.getLogger(__name__).warning("Self-Healing Loop no pudo iniciar: %s", _heal_err)
     # ATLAS DOCTOR eliminado

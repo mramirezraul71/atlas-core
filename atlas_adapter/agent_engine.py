@@ -641,18 +641,31 @@ def _tool_interpreter(inp: Dict) -> str:
     task = inp["task"]
     language = inp.get("language", "")
     try:
-        payload = {"prompt": task, "auto_run": True}
+        payload_task = task
         if language:
-            payload["language"] = language
+            payload_task = f"{task}\n\nPrefer language: {language}"
+        payload = {"task": payload_task, "auto_run": True}
+        if language:
+            payload["language_hint"] = language
         r = requests.post(
             "http://127.0.0.1:8791/api/workspace/interpreter/quick",
             json=payload,
             timeout=120,
         )
-        data = r.json()
-        if data.get("ok"):
-            return f"[Interpreter OK | {data.get('ms', 0)}ms | model: {data.get('model', 'auto')}]\n{_truncate(data.get('output', ''), 6000)}"
-        return f"Interpreter error: {data.get('error', 'unknown')}"
+        r.raise_for_status()
+        body = r.json()
+        result = body.get("data") or {}
+        ok = bool(body.get("ok")) and bool(result.get("ok", True))
+        if ok:
+            elapsed_ms = result.get("elapsed_ms") or body.get("ms", 0)
+            model_name = result.get("model", "auto")
+            output = result.get("result") or result.get("output") or ""
+            return (
+                f"[Interpreter OK | {elapsed_ms}ms | model: {model_name}]\n"
+                f"{_truncate(output, 6000)}"
+            )
+        error = result.get("error") or body.get("error") or "unknown"
+        return f"Interpreter error: {error}"
     except Exception as e:
         return f"Interpreter error: {e}"
 
@@ -735,6 +748,14 @@ def _tool_browser_navigate(inp: Dict) -> str:
         return _truncate(json.dumps(result, indent=2, ensure_ascii=False, default=str))
     except Exception as e:
         return f"browser_navigate error: {e}"
+
+
+def _background_tool_timeout(tool_name: str, tool_input: Dict[str, Any]) -> float:
+    if tool_name == "execute_command":
+        return float(min(tool_input.get("timeout", COMMAND_TIMEOUT), 300) + 5)
+    if tool_name == "interpreter":
+        return 125.0
+    return 30.0
 
 
 def _tool_vision_analyze_image(inp: Dict) -> str:
@@ -1576,13 +1597,17 @@ def run_agent(
                 task_contract, pre_checks, checks, final_text
             )
             runner.move_to_verify(post_checks)
-            verification_passed = (
-                all(c.get("ok") for c in post_checks) if post_checks else False
+            verification_passed = _post_checks_passed(post_checks)
+            final_state = _resolve_final_state(
+                task_contract, post_checks, checks, final_text
             )
-            if _looks_like_completion_claim(final_text) and not verification_passed:
+            if (
+                _looks_like_completion_claim(final_text)
+                and final_state == "blocked_no_verification"
+            ):
                 final_text = _blocked_no_verification_message()
             rollback_results: List[Dict[str, Any]] = []
-            if runner.should_auto_rollback(verification_passed):
+            if runner.should_auto_rollback(final_state != "blocked_no_verification"):
                 rollback_results = runner.rollback()
             runner.move_to_report("completed")
             yield {"event": "text", "data": {"content": final_text, "llm_ms": llm_ms}}
@@ -1598,9 +1623,7 @@ def run_agent(
                     "post_checks": post_checks,
                     "rollback": rollback_results,
                     "verification_passed": verification_passed,
-                    "final_state": "success_verified"
-                    if verification_passed
-                    else "blocked_no_verification",
+                    "final_state": final_state,
                     "runner_state": runner.state,
                     "runner_timeline": runner.timeline,
                     "kpis": runner.kpis(),
@@ -1659,15 +1682,19 @@ def run_agent(
                 import threading
 
                 progress_q = queue.Queue()
-                result_holder = [None]
+                result_holder = {"text": None}
+                done_event = threading.Event()
 
                 def _run_tool(
                     tn=tool_name, ti=tool_input, pq=progress_q, rh=result_holder
                 ):
-                    rh[0] = execute_tool(
-                        tn, ti, progress_callback=lambda line: pq.put(line)
-                    )
-                    pq.put(None)
+                    try:
+                        rh["text"] = execute_tool(
+                            tn, ti, progress_callback=lambda line: pq.put(line)
+                        )
+                    finally:
+                        done_event.set()
+                        pq.put(None)
 
                 th = threading.Thread(target=_run_tool, daemon=True)
                 th.start()
@@ -1699,8 +1726,12 @@ def run_agent(
                                     "elapsed_s": round(elapsed, 1),
                                 },
                             }
-                th.join(timeout=5)
-                result_text = result_holder[0] or "Error: tool did not return"
+                wait_ok = done_event.wait(timeout=_background_tool_timeout(tool_name, tool_input))
+                th.join(timeout=0.5)
+                if not wait_ok:
+                    result_text = "Error: tool timed out waiting for background worker"
+                else:
+                    result_text = result_holder["text"] or "Error: tool did not return"
             else:
                 result_text = execute_tool(tool_name, tool_input)
 
@@ -1751,14 +1782,13 @@ def run_agent(
     total_ms = int((time.perf_counter() - total_t0) * 1000)
     post_checks = _run_post_checks(task_contract, pre_checks, checks, "")
     runner.move_to_verify(post_checks)
-    verification_passed = (
-        all(c.get("ok") for c in post_checks) if post_checks else False
-    )
+    verification_passed = _post_checks_passed(post_checks)
+    final_state = _resolve_final_state(task_contract, post_checks, checks, "")
     final_text = f"Tarea completada tras {SAFETY_MAX_ITERATIONS} iteraciones."
-    if not verification_passed:
+    if final_state == "blocked_no_verification":
         final_text = _blocked_no_verification_message()
     rollback_results: List[Dict[str, Any]] = []
-    if runner.should_auto_rollback(verification_passed):
+    if runner.should_auto_rollback(final_state != "blocked_no_verification"):
         rollback_results = runner.rollback()
     runner.move_to_report("max_iterations_reached")
     yield {"event": "text", "data": {"content": final_text, "llm_ms": 0}}
@@ -1773,9 +1803,7 @@ def run_agent(
             "post_checks": post_checks,
             "rollback": rollback_results,
             "verification_passed": verification_passed,
-            "final_state": "success_verified"
-            if verification_passed
-            else "blocked_no_verification",
+            "final_state": final_state,
             "runner_state": runner.state,
             "runner_timeline": runner.timeline,
             "kpis": runner.kpis(),
@@ -1825,12 +1853,15 @@ def _build_task_contract(user_message: str) -> Dict[str, Any]:
         expected_tools.extend(["read_file", "write_file", "edit_file"])
     if not expected_tools:
         expected_tools = ["read_file", "execute_command", "atlas_api"]
+    requires_hard_evidence = needs_runtime or needs_files
     return {
         "task_type": "runtime"
         if needs_runtime
         else ("file_ops" if needs_files else "generic"),
         "requires_runtime_evidence": needs_runtime,
         "requires_file_evidence": needs_files,
+        "requires_hard_evidence": requires_hard_evidence,
+        "allow_text_only_completion": not requires_hard_evidence,
         "expected_tools": expected_tools,
         "success_criteria": [
             "at_least_one_successful_tool_call",
@@ -1870,11 +1901,18 @@ def _run_post_checks(
 ) -> List[Dict[str, Any]]:
     successful_tools = [c for c in tool_checks if c.get("ok")]
     tool_names = {c.get("tool") for c in successful_tools}
+    requires_hard_evidence = bool(contract.get("requires_hard_evidence"))
+    allow_text_only_completion = bool(contract.get("allow_text_only_completion"))
+    tool_call_ok = len(successful_tools) > 0 or (
+        allow_text_only_completion and bool((final_text or "").strip())
+    )
     checks: List[Dict[str, Any]] = [
         {
             "name": "at_least_one_successful_tool_call",
-            "ok": len(successful_tools) > 0,
-            "detail": f"successful_tools={len(successful_tools)}",
+            "ok": tool_call_ok,
+            "detail": "text_only_completion_allowed"
+            if allow_text_only_completion and len(successful_tools) == 0
+            else f"successful_tools={len(successful_tools)}",
         }
     ]
     if contract.get("requires_runtime_evidence"):
@@ -1899,7 +1937,9 @@ def _run_post_checks(
             }
         )
     unverified_claim = (
-        _looks_like_completion_claim(final_text or "") and len(successful_tools) == 0
+        _looks_like_completion_claim(final_text or "")
+        and len(successful_tools) == 0
+        and requires_hard_evidence
     )
     checks.append(
         {
@@ -1916,6 +1956,26 @@ def _run_post_checks(
         }
     )
     return checks
+
+
+def _post_checks_passed(post_checks: List[Dict[str, Any]]) -> bool:
+    return all(c.get("ok") for c in post_checks) if post_checks else False
+
+
+def _resolve_final_state(
+    contract: Dict[str, Any],
+    post_checks: List[Dict[str, Any]],
+    tool_checks: List[Dict[str, Any]],
+    final_text: str,
+) -> str:
+    if not _post_checks_passed(post_checks):
+        return "blocked_no_verification"
+    successful_tools = [c for c in tool_checks if c.get("ok")]
+    if contract.get("requires_hard_evidence") or successful_tools:
+        return "success_verified"
+    if (final_text or "").strip():
+        return "completed_unverified"
+    return "blocked_no_verification"
 
 
 def _looks_like_completion_claim(text: str) -> bool:

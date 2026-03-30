@@ -1519,10 +1519,14 @@ def api_workspace_navigate(body: WorkspaceNavigateBody):
 
 
 class InterpreterExecuteBody(BaseModel):
-    task: str
+    task: Optional[str] = None
+    prompt: Optional[str] = None
     model: Optional[str] = None
     auto_run: bool = False
     session_id: Optional[str] = None
+
+    def resolved_task(self) -> str:
+        return str((self.task or self.prompt or "")).strip()
 
 
 @app.post("/api/workspace/interpreter/execute", tags=["Workspace"])
@@ -1530,7 +1534,7 @@ async def api_workspace_interpreter_execute(body: InterpreterExecuteBody):
     """Execute a task via Open Interpreter with SSE streaming."""
     from fastapi.responses import StreamingResponse
 
-    task = (body.task or "").strip()
+    task = body.resolved_task()
     if not task:
         return _std_resp(False, None, 0, "task is required")
 
@@ -1607,7 +1611,7 @@ def api_workspace_interpreter_models():
 async def api_workspace_interpreter_quick(body: InterpreterExecuteBody):
     """Execute a simple task and return the full result (no streaming)."""
     t0 = time.perf_counter()
-    task = (body.task or "").strip()
+    task = body.resolved_task()
     if not task:
         return _std_resp(False, None, 0, "task is required")
     try:
