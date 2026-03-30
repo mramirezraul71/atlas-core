@@ -211,6 +211,14 @@ class TradingConfig:
     scanner_include_crypto: bool  = os.getenv("ATLAS_SCANNER_INCLUDE_CRYPTO",  "false").strip().lower() not in {"0","false","no"}
     selector_session_mode: str = _clean_setting(os.getenv("QUANT_SELECTOR_SESSION_MODE"), "balanced").lower()
     selector_options_require_available: bool = os.getenv("QUANT_SELECTOR_OPTIONS_REQUIRE_AVAILABLE", "true").strip().lower() not in {"0", "false", "no"}
+    startup_preload_sessions_in_background: bool = os.getenv(
+        "QUANT_STARTUP_PRELOAD_SESSIONS_IN_BACKGROUND",
+        "true",
+    ).strip().lower() not in {"0", "false", "no"}
+    startup_alert_dispatcher_delay_sec: int = _ienv("QUANT_STARTUP_ALERT_DISPATCHER_DELAY_SEC", 1)
+    startup_journal_sync_delay_sec: int = _ienv("QUANT_STARTUP_JOURNAL_SYNC_DELAY_SEC", 8)
+    startup_scanner_delay_sec: int = _ienv("QUANT_STARTUP_SCANNER_DELAY_SEC", 10)
+    startup_learning_delay_sec: int = _ienv("QUANT_STARTUP_LEARNING_DELAY_SEC", 10)
 
     # Entry validation
     entry_validation_enabled: bool = os.getenv("QUANT_ENTRY_VALIDATION_ENABLED", "true").strip().lower() not in {"0", "false", "no"}

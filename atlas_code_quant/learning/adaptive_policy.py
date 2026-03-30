@@ -285,8 +285,8 @@ class AdaptiveLearningService:
             return self._save_snapshot(self._compute_snapshot())
         return self._snapshot
 
-    def _select_scope(self, account_scope: str | None) -> dict[str, Any]:
-        payload = self.refresh()
+    def _select_scope(self, account_scope: str | None, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        payload = payload or self.refresh()
         scopes = payload.get("scopes") or {}
         scope = str(account_scope or "paper").strip().lower()
         preferred = scopes.get(scope) if scope in {"paper", "live"} else None
@@ -294,9 +294,9 @@ class AdaptiveLearningService:
             return preferred
         return scopes.get("all") or _empty_scope_snapshot("all")
 
-    def status(self, account_scope: str | None = None) -> dict[str, Any]:
-        payload = self.refresh()
-        scope_data = self._select_scope(account_scope)
+    def status(self, account_scope: str | None = None, *, fast: bool = False) -> dict[str, Any]:
+        payload = self._snapshot if fast else self.refresh()
+        scope_data = self._select_scope(account_scope, payload=payload)
         return {
             "enabled": bool(payload.get("enabled", False)),
             "generated_at": payload.get("generated_at"),
@@ -309,6 +309,7 @@ class AdaptiveLearningService:
             "risk_multiplier": scope_data.get("risk_multiplier", 1.0),
             "top_positive": scope_data.get("top_positive", []),
             "top_negative": scope_data.get("top_negative", []),
+            "status_mode": "fast_cached" if fast else "full",
         }
 
     def strategy_bias(self, strategy_type: str | None, account_scope: str | None = None) -> float:

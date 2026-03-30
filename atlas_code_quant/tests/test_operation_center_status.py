@@ -5,6 +5,7 @@ import time
 from threading import Event
 from pathlib import Path
 
+import atlas_code_quant.operations.operation_center as operation_center_module
 from atlas_code_quant.operations.operation_center import OperationCenter
 from config.settings import settings
 
@@ -325,6 +326,52 @@ def test_operation_status_exposes_scorecard_snapshot(tmp_path: Path):
     assert payload["scorecard"]["available"] is True
     assert payload["scorecard"]["headline"]["atlas_process_compliance_score"] == 60.0
     assert payload["scorecard"]["supporting_indicators"]["brain_delivery_ratio_pct"] == 53.43
+
+
+def test_operation_status_scorecard_paths_follow_builder_payload(tmp_path: Path, monkeypatch) -> None:
+    expected_report = tmp_path / "reports" / "atlas_quant_implementation_scorecard_latest.md"
+    expected_json = tmp_path / "reports" / "atlas_quant_implementation_scorecard.json"
+
+    def _fake_build_scorecard(*, root: Path, **_: object) -> dict:
+        assert root == tmp_path
+        return {
+            "generated_at": "2026-03-30T00:00:00",
+            "headline": _scorecard_payload()["headline"],
+            "metrics": {
+                "process_compliance_score": {"value": 60.0, "status": "watch"},
+            },
+            "supporting_indicators": _scorecard_payload()["supporting_indicators"],
+            "next_actions": ["seguir auditando"],
+        }
+
+    monkeypatch.setattr(operation_center_module, "build_trading_implementation_scorecard", _fake_build_scorecard)
+    monkeypatch.setattr(
+        operation_center_module,
+        "write_trading_implementation_scorecard_json",
+        lambda payload, path: expected_json,
+    )
+    monkeypatch.setattr(
+        operation_center_module,
+        "write_trading_implementation_scorecard_report",
+        lambda payload, path: expected_report,
+    )
+
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=_CountingJournal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+    )
+    center.root_path = tmp_path
+
+    payload = center.status()
+
+    assert payload["scorecard"]["report_path"] == str(expected_report)
+    assert payload["scorecard"]["json_path"] == str(expected_json)
+    assert payload["scorecard"]["headline"]["atlas_process_compliance_score"] == 60.0
 
 
 def test_operation_status_lite_skips_heavy_journal_snapshots(tmp_path: Path):

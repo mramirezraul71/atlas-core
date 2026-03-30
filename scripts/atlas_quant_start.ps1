@@ -311,12 +311,36 @@ if (-not $healthOk) {
 
 # ── Step 4: Log scanner + operation status ────────────────────────────────────
 $opStatus = Invoke-QuantApi -method "GET" -path "/api/v2/quant/operation/status/lite" -timeoutSec 20
+$loopStatus = Invoke-QuantApi -method "GET" -path "/api/v2/quant/operation/loop/status" -timeoutSec 20
 if ($opStatus) {
     $autonMode = $opStatus.data.config.auton_mode
     $killSwitch = $opStatus.data.config.kill_switch_active
     $selectorMode = if ($null -ne $opStatus.data.selector_session) { $opStatus.data.selector_session.mode } else { $null }
     _OpsLog "Estado -- auton_mode=$autonMode kill_switch=$killSwitch selector_mode=$selectorMode"
     Write-Host "[quant-start] auton_mode=$autonMode  kill_switch=$killSwitch  selector_mode=$selectorMode"
+    $loopRunning = $false
+    if ($loopStatus -and $loopStatus.ok -and $loopStatus.data) {
+        $loopRunning = [bool]$loopStatus.data.running
+        _OpsLog "Loop status -- running=$loopRunning task_alive=$($loopStatus.data.task_alive) cycle_count=$($loopStatus.data.cycle_count)"
+    } else {
+        _OpsLog "No se pudo obtener operation/loop/status durante startup" "warn"
+    }
+
+    if ($autonMode -and $autonMode -ne "off" -and -not $loopRunning) {
+        $reconcileBody = @{ interval_sec = $CycleIntervalSec; max_per_cycle = 1 }
+        if ($selectorMode) {
+            $reconcileBody["selector_session_mode"] = $selectorMode
+        }
+        $loopResp = Invoke-QuantApi -method "POST" -path "/api/v2/quant/operation/loop/start" -body $reconcileBody
+        if ($loopResp -and $loopResp.ok) {
+            _OpsLog "Loop reconciliado en startup -- interval=${CycleIntervalSec}s selector_mode=$selectorMode"
+            Write-Host "[quant-start] Loop reconciliado en startup. Intervalo: ${CycleIntervalSec}s"
+        } else {
+            $loopErr = if ($loopResp) { $loopResp.error } else { "sin respuesta" }
+            _OpsLog "Loop NO pudo reconciliarse en startup: $loopErr" "warn"
+            Write-Warning "[quant-start] Loop reconcile error: $loopErr"
+        }
+    }
 } else {
     _OpsLog "No se pudo obtener operation/status/lite (API key o endpoint no disponible)" "warn"
 }

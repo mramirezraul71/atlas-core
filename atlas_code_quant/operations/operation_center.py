@@ -15,7 +15,11 @@ from backtesting.winning_probability import SUPPORTED_STRATEGIES, StrategyLeg, _
 from config.settings import settings
 from execution.tradier_controls import resolve_account_session
 from learning.adaptive_policy import AdaptiveLearningService
-from learning.trading_implementation_scorecard import build_trading_implementation_scorecard
+from learning.trading_implementation_scorecard import (
+    build_trading_implementation_scorecard,
+    write_trading_implementation_scorecard_json,
+    write_trading_implementation_scorecard_report,
+)
 from monitoring.strategy_tracker import StrategyTracker
 from operations.auton_executor import AutonExecutorService
 from operations.brain_bridge import QuantBrainBridge
@@ -384,6 +388,14 @@ class OperationCenter:
             grafana_check_path=self.root_path / "reports/atlas_grafana_provisioning_check_latest.json",
             pytest_result=None,
         )
+        json_path = write_trading_implementation_scorecard_json(
+            payload,
+            self.root_path / "reports/atlas_quant_implementation_scorecard.json",
+        )
+        report_path = write_trading_implementation_scorecard_report(
+            payload,
+            self.root_path / "reports/atlas_quant_implementation_scorecard_latest.md",
+        )
         metric_summary = {
             name: {
                 "value": metric.get("value"),
@@ -398,8 +410,8 @@ class OperationCenter:
             "metrics": metric_summary,
             "supporting_indicators": payload.get("supporting_indicators") or {},
             "next_actions": payload.get("next_actions") or [],
-            "report_path": str(self.root_path / "reports/atlas_quant_implementation_scorecard_20260328.md"),
-            "json_path": str(self.root_path / "reports/atlas_quant_implementation_scorecard.json"),
+            "report_path": str(report_path),
+            "json_path": str(json_path),
         }
 
     def _empty_scorecard_snapshot(self, *, status: str, error: str | None = None) -> dict[str, Any]:
@@ -909,7 +921,10 @@ class OperationCenter:
         config = self._load()
         scope = str(config.get("account_scope") or "paper")
         monitor = self._load_monitor_summary(scope, fast=True)
-        vision_status = self.vision.status()
+        try:
+            vision_status = self.vision.status(fast=True)
+        except TypeError:
+            vision_status = self.vision.status()
         executor_status = self.executor.status()
         scorecard = self._load_scorecard(fast=True)
         payload = self._lightweight_operation_status(
@@ -934,7 +949,10 @@ class OperationCenter:
             "headline": deepcopy(scorecard.get("headline") or {}),
         }
         payload["chart_execution"] = self.chart_execution.status()
-        payload["learning"] = self.learning.status(account_scope=scope)
+        try:
+            payload["learning"] = self.learning.status(account_scope=scope, fast=True)
+        except TypeError:
+            payload["learning"] = self.learning.status(account_scope=scope)
         payload["auton_mode_active"] = (
             str(config.get("auton_mode") or "off") != "off"
             and not executor_status.get("kill_switch_active", False)

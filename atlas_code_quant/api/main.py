@@ -160,10 +160,41 @@ async def options_ui():
 
 app.include_router(options_router)
 
+_startup_services_task: asyncio.Task | None = None
+_STARTUP_BACKGROUND_STATE: dict[str, object] = {
+    "running": False,
+    "stage": "idle",
+    "started_at": None,
+    "finished_at": None,
+    "last_error": None,
+}
+
+
+def _mark_startup_background(stage: str, *, error: str | None = None) -> None:
+    timestamp = datetime.utcnow().isoformat()
+    _STARTUP_BACKGROUND_STATE["stage"] = stage
+    if stage == "starting":
+        _STARTUP_BACKGROUND_STATE["running"] = True
+        _STARTUP_BACKGROUND_STATE["started_at"] = timestamp
+        _STARTUP_BACKGROUND_STATE["finished_at"] = None
+    elif stage in {"completed", "cancelled", "failed"}:
+        _STARTUP_BACKGROUND_STATE["running"] = False
+        _STARTUP_BACKGROUND_STATE["finished_at"] = timestamp
+    if error is not None:
+        _STARTUP_BACKGROUND_STATE["last_error"] = error
+
 
 @app.on_event("startup")
 async def preload_tradier_sessions() -> None:
     _JOURNAL.init_db()
+    global _startup_services_task
+    if _startup_services_task and not _startup_services_task.done():
+        return
+    _startup_services_task = asyncio.create_task(
+        _start_background_services(),
+        name="quant-background-startup",
+    )
+    return
     for scope, token in (("paper", settings.tradier_paper_token), ("live", settings.tradier_live_token)):
         if not token:
             continue
@@ -192,9 +223,79 @@ async def preload_tradier_sessions() -> None:
         logger.exception("LearningOrchestrator: fallo en startup (no crítico)")
 
 
+async def _start_background_services() -> None:
+    global _auto_cycle_task
+    _mark_startup_background("starting")
+    try:
+        _mark_startup_background("preloading_sessions")
+        if settings.startup_preload_sessions_in_background:
+            for scope, token in (("paper", settings.tradier_paper_token), ("live", settings.tradier_live_token)):
+                if not token:
+                    continue
+                try:
+                    await asyncio.to_thread(_ACCOUNT_MANAGER.resolve, account_scope=scope)  # type: ignore[arg-type]
+                    logger.info("Tradier %s session preloaded", scope)
+                except Exception:
+                    logger.exception("Unable to preload Tradier %s session", scope)
+
+        if settings.startup_alert_dispatcher_delay_sec > 0:
+            _mark_startup_background("waiting_alert_dispatcher")
+            await asyncio.sleep(settings.startup_alert_dispatcher_delay_sec)
+        _mark_startup_background("starting_alert_dispatcher")
+        try:
+            await get_alert_dispatcher().start()
+            logger.info("AlertDispatcher iniciado")
+        except Exception:
+            logger.exception("AlertDispatcher: fallo en startup (no critico)")
+
+        if settings.startup_journal_sync_delay_sec > 0:
+            _mark_startup_background("waiting_journal_sync")
+            await asyncio.sleep(settings.startup_journal_sync_delay_sec)
+        _mark_startup_background("starting_journal_sync")
+        await _JOURNAL_SYNC.start()
+
+        if settings.scanner_auto_start and settings.scanner_enabled:
+            if settings.startup_scanner_delay_sec > 0:
+                _mark_startup_background("waiting_scanner")
+                await asyncio.sleep(settings.startup_scanner_delay_sec)
+            _mark_startup_background("starting_scanner")
+            await _SCANNER.start()
+
+        if settings.startup_learning_delay_sec > 0:
+            _mark_startup_background("waiting_learning_loop")
+            await asyncio.sleep(settings.startup_learning_delay_sec)
+        _mark_startup_background("starting_learning_loop")
+        asyncio.create_task(
+            run_learning_loop(reconcile_interval_sec=300),
+            name="learning_orchestrator",
+        )
+        logger.info("LearningOrchestrator iniciado (reconcile cada 5 min)")
+        if _ensure_auto_cycle_running():
+            logger.info(
+                "Auto-cycle iniciado en startup: mode=%s interval=%ss max_per_cycle=%s",
+                _OPERATION_CENTER.get_config().get("auton_mode"),
+                _AUTO_CYCLE_STATE.get("loop_interval_sec"),
+                _AUTO_CYCLE_STATE.get("max_per_cycle"),
+            )
+        _mark_startup_background("completed")
+    except asyncio.CancelledError:
+        _mark_startup_background("cancelled")
+        raise
+    except Exception as exc:
+        logger.exception("Background startup failed")
+        _mark_startup_background("failed", error=str(exc))
+
+
 @app.on_event("shutdown")
 async def stop_background_services() -> None:
-    global _auto_cycle_task
+    global _auto_cycle_task, _startup_services_task
+    if _startup_services_task and not _startup_services_task.done():
+        _startup_services_task.cancel()
+        try:
+            await _startup_services_task
+        except asyncio.CancelledError:
+            pass
+        _startup_services_task = None
     await _JOURNAL_SYNC.stop()
     await _SCANNER.stop()
     stop_learning_loop()
@@ -256,6 +357,27 @@ def _auto_cycle_mark_stage(stage: str, **details: Any) -> None:
     _AUTO_CYCLE_STATE["current_stage"] = stage
     _AUTO_CYCLE_STATE["stage_started_at"] = timestamp
     _AUTO_CYCLE_STATE["stage_history"] = history[-20:]
+
+
+def _auton_mode_requires_loop(config: dict[str, Any]) -> bool:
+    return str(config.get("auton_mode") or "off").strip().lower() != "off"
+
+
+def _ensure_auto_cycle_running() -> bool:
+    global _auto_cycle_task
+    if _AUTO_CYCLE_STATE.get("running") and _auto_cycle_task and not _auto_cycle_task.done():
+        return False
+    op_config = _OPERATION_CENTER.get_config()
+    if not _auton_mode_requires_loop(op_config):
+        return False
+    interval_sec = int(_AUTO_CYCLE_STATE.get("loop_interval_sec") or 120)
+    max_per_cycle = int(_AUTO_CYCLE_STATE.get("max_per_cycle") or 1)
+    _AUTO_CYCLE_STATE["selector_session_mode_override"] = None
+    _auto_cycle_task = asyncio.create_task(
+        _auto_cycle_loop(interval_sec, max_per_cycle),
+        name="quant-auto-cycle-startup",
+    )
+    return True
 
 
 def _auth(x_api_key: str | None) -> None:
@@ -803,7 +925,7 @@ async def operation_status_lite(x_api_key: str | None = Header(None)):
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
-        payload = await asyncio.to_thread(_OPERATION_CENTER.status_lite)
+        payload = _OPERATION_CENTER.status_lite()
         return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as exc:
         logger.exception("Error building lightweight operation status")
@@ -1819,7 +1941,7 @@ async def _quant_live_updates_socket(websocket: WebSocket) -> None:
                     account_id=account_id,
                 )
                 status_payload = _build_status_payload(account_scope=account_scope, account_id=account_id)
-                operation_status_payload = await asyncio.to_thread(_OPERATION_CENTER.status_lite)
+                operation_status_payload = _OPERATION_CENTER.status_lite()
                 scanner_report_payload = _compact_scanner_report(await asyncio.to_thread(_SCANNER.report, 24))
                 compact_monitor_summary = _compact_monitor_summary(canonical_snapshot_payload["monitor_summary"])
                 await websocket.send_json(
@@ -1865,7 +1987,7 @@ async def _operation_stream_socket(websocket: WebSocket) -> None:
     await websocket.accept()
     try:
         while True:
-            payload = await asyncio.to_thread(_OPERATION_CENTER.status_lite)
+            payload = _OPERATION_CENTER.status_lite()
             await websocket.send_json(
                 {
                     "type": "quant.operation_update",
