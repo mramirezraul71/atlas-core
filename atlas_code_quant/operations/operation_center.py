@@ -713,6 +713,44 @@ class OperationCenter:
             )
         return payload
 
+    def _build_market_context_gate(
+        self,
+        *,
+        order: OrderRequest,
+        action: Literal["evaluate", "preview", "submit"],
+    ) -> dict[str, Any]:
+        context = dict(order.market_context or {})
+        gate = dict(context.get("decision_gate") or {})
+        payload: dict[str, Any] = {
+            "enabled": bool(context),
+            "stage": "market_context",
+            "status": "missing" if not context else str(gate.get("action") or "allow"),
+            "blocked": False,
+            "degraded": False,
+            "reasons": [],
+            "warnings": [],
+            "confidence_pct": _safe_float(context.get("confidence_pct"), 0.0) if context else None,
+            "macro_bias": ((context.get("macro_bias") or {}).get("state") if context else None),
+            "regime": ((context.get("regime") or {}).get("primary_regime") if context else None),
+            "permission": ((context.get("context_report") or {}).get("permission") if context else None),
+            "source_trace": dict(context.get("source_trace") or {}) if context else {},
+        }
+        if not context:
+            payload["warnings"].append("market_context is missing; context-first gate cannot validate the setup.")
+            return payload
+
+        payload["warnings"].extend(list(gate.get("warnings") or []))
+        gate_reasons = list(gate.get("reasons") or [])
+        if bool(gate.get("blocked")) and action in {"preview", "submit"}:
+            payload["blocked"] = True
+            payload["status"] = "blocked"
+            payload["reasons"].extend(f"Market context blocked {action}: {reason}" for reason in gate_reasons)
+        elif bool(gate.get("degraded")):
+            payload["degraded"] = True
+            payload["status"] = "degraded"
+            payload["reasons"].extend(f"Market context degraded setup: {reason}" for reason in gate_reasons)
+        return payload
+
     @staticmethod
     def _stringify_order_size(value: float) -> str:
         numeric = float(value)
@@ -1243,6 +1281,13 @@ class OperationCenter:
         reasons.extend(list(entry_validation.get("reasons") or []))
         warnings.extend(list(entry_validation.get("warnings") or []))
 
+        market_context_gate = self._build_market_context_gate(
+            order=order_copy,
+            action=action,
+        )
+        reasons.extend(list(market_context_gate.get("reasons") or []))
+        warnings.extend(list(market_context_gate.get("warnings") or []))
+
         risk_dollars = None
         bpr_pct = None
         if strategy_type and strategy_type in SUPPORTED_STRATEGIES:
@@ -1401,6 +1446,11 @@ class OperationCenter:
                     "status": entry_validation.get("status"),
                     "blocked": bool(entry_validation.get("blocked")),
                 },
+                "market_context": {
+                    "status": market_context_gate.get("status"),
+                    "blocked": bool(market_context_gate.get("blocked")),
+                    "degraded": bool(market_context_gate.get("degraded")),
+                },
                 "visual_entry_gate": {
                     "status": visual_entry_gate.get("status"),
                     "degraded": bool(visual_entry_gate.get("degraded")),
@@ -1425,6 +1475,8 @@ class OperationCenter:
             "probability_source": probability_source,
             "vision_snapshot": context_snapshot,
             "entry_validation": entry_validation,
+            "market_context": order_copy.market_context or {},
+            "market_context_gate": market_context_gate,
             "visual_entry_gate": visual_entry_gate,
             "execution_quality": execution_quality,
             "evaluation_timings": evaluation_timings,

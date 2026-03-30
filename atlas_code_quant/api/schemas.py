@@ -87,6 +87,7 @@ class OrderRequest(BaseModel):
     probability_payload: dict[str, Any] = Field(default_factory=dict)
     chart_plan: dict[str, Any] = Field(default_factory=dict)
     camera_plan: dict[str, Any] = Field(default_factory=dict)
+    market_context: dict[str, Any] = Field(default_factory=dict)
     options_governance: dict[str, Any] = Field(default_factory=dict)
     live_confirmed: bool = False
 
@@ -460,6 +461,7 @@ class StrategySelectorPayload(BaseModel):
     size_plan: dict[str, Any] = Field(default_factory=dict)
     chart_plan: dict[str, Any] = Field(default_factory=dict)
     camera_plan: dict[str, Any] = Field(default_factory=dict)
+    market_context: dict[str, Any] = Field(default_factory=dict)
     entry_plan: dict[str, Any] = Field(default_factory=dict)
     confidence_breakdown: dict[str, Any] = Field(default_factory=dict)
     adaptive_context: dict[str, Any] = Field(default_factory=dict)
