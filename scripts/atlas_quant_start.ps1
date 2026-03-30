@@ -108,6 +108,42 @@ function Get-QuantProcessCandidates([int]$p) {
     return @($matches | Where-Object { $_ -and $_ -gt 0 })
 }
 
+function Expand-QuantPidClosure([int[]]$pids) {
+    $seed = @($pids | Where-Object { $_ -and $_ -gt 0 } | Select-Object -Unique)
+    if ($seed.Count -eq 0) { return @() }
+
+    $allQuant = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -like "python*" -and
+            $_.CommandLine -and
+            $_.CommandLine -like "*uvicorn*api.main:app*" -and
+            $_.CommandLine -like "*--port $Port*"
+        } |
+        Select-Object ProcessId, ParentProcessId
+
+    $closure = New-Object System.Collections.Generic.HashSet[int]
+    $queue = New-Object System.Collections.Generic.Queue[int]
+    foreach ($candidatePid in $seed) {
+        if ($closure.Add([int]$candidatePid)) { $queue.Enqueue([int]$candidatePid) }
+    }
+
+    while ($queue.Count -gt 0) {
+        $current = $queue.Dequeue()
+        foreach ($proc in $allQuant) {
+            $childPid = [int]$proc.ProcessId
+            $parentPid = [int]$proc.ParentProcessId
+            if ($childPid -eq $current -and $parentPid -gt 0 -and $closure.Add($parentPid)) {
+                $queue.Enqueue($parentPid)
+            }
+            if ($parentPid -eq $current -and $childPid -gt 0 -and $closure.Add($childPid)) {
+                $queue.Enqueue($childPid)
+            }
+        }
+    }
+
+    return @([int[]]$closure | Sort-Object)
+}
+
 function Stop-QuantProcesses([int[]]$pids, [int[]]$keepPids = @()) {
     $targets = @($pids | Where-Object { $_ -and ($_ -notin $keepPids) } | Select-Object -Unique)
     foreach ($targetPid in $targets) {
@@ -134,15 +170,15 @@ function Test-HealthEndpoint([string]$url, [int]$timeoutMs = 4000) {
 }
 
 # ── REST helper ───────────────────────────────────────────────────────────────
-function Invoke-QuantApi([string]$method, [string]$path, [hashtable]$body = @{}) {
+function Invoke-QuantApi([string]$method, [string]$path, [hashtable]$body = @{}, [int]$timeoutSec = 10) {
     $url = "$_API_BASE$path"
     $headers = @{ "x-api-key" = $ApiKey; "Content-Type" = "application/json" }
     try {
         if ($method -eq "GET") {
-            $r = Invoke-RestMethod -Uri $url -Method GET -Headers $headers -TimeoutSec 10
+            $r = Invoke-RestMethod -Uri $url -Method GET -Headers $headers -TimeoutSec $timeoutSec
         } else {
             $json = ($body | ConvertTo-Json -Compress)
-            $r = Invoke-RestMethod -Uri $url -Method POST -Headers $headers -Body $json -TimeoutSec 10
+            $r = Invoke-RestMethod -Uri $url -Method POST -Headers $headers -Body $json -TimeoutSec $timeoutSec
         }
         return $r
     } catch {
@@ -162,10 +198,11 @@ $alreadyListening = Test-PortListen -p $Port
 $healthOk = Test-HealthEndpoint -url $_API_HEALTH
 $launchedThisRun = $false
 
-if (-not $healthOk -and $portOwners.Count -gt 0 -and -not $LogOnly) {
-    _OpsLog "Puerto $Port ocupado sin health; limpiando procesos: $($portOwners -join ', ')" "warn"
-    Write-Host "[quant-start] Puerto $Port ocupado sin health. Limpiando proceso(s): $($portOwners -join ', ')"
-    [void](Stop-QuantProcesses -pids (@($portOwners) + @($quantCandidates)))
+if (-not $healthOk -and (@($portOwners).Count -gt 0 -or @($quantCandidates).Count -gt 0) -and -not $LogOnly) {
+    $staleCandidates = Expand-QuantPidClosure -pids (@($portOwners) + @($quantCandidates))
+    _OpsLog "Puerto $Port sin health; limpiando candidatos Quant: $($staleCandidates -join ', ')" "warn"
+    Write-Host "[quant-start] Puerto $Port sin health. Limpiando candidatos Quant: $($staleCandidates -join ', ')"
+    [void](Stop-QuantProcesses -pids $staleCandidates)
     Start-Sleep -Seconds 2
     $portOwners = Get-PortOwners -p $Port
     $quantCandidates = Get-QuantProcessCandidates -p $Port
@@ -176,7 +213,9 @@ if (-not $healthOk -and $portOwners.Count -gt 0 -and -not $LogOnly) {
 if ($healthOk) {
     if ($portOwners.Count -gt 0 -and $quantCandidates.Count -gt 1) {
         $keepPid = @($portOwners | Select-Object -First 1)
-        $stopped = Stop-QuantProcesses -pids $quantCandidates -keepPids $keepPid
+        $keepClosure = Expand-QuantPidClosure -pids $keepPid
+        $allClosure = Expand-QuantPidClosure -pids $quantCandidates
+        $stopped = Stop-QuantProcesses -pids $allClosure -keepPids $keepClosure
         if ($stopped.Count -gt 0) {
             Write-Host "[quant-start] Limpieza preventiva de procesos Quant duplicados: $($stopped -join ', ')"
         }
@@ -271,14 +310,15 @@ if (-not $healthOk) {
 }
 
 # ── Step 4: Log scanner + operation status ────────────────────────────────────
-$opStatus = Invoke-QuantApi -method "GET" -path "/api/v2/quant/operation/status"
+$opStatus = Invoke-QuantApi -method "GET" -path "/api/v2/quant/operation/status/lite" -timeoutSec 20
 if ($opStatus) {
     $autonMode = $opStatus.data.config.auton_mode
-    $scanRunning = if ($null -ne $opStatus.data.scanner) { $opStatus.data.scanner.running } else { $null }
-    _OpsLog "Estado -- auton_mode=$autonMode scanner_running=$scanRunning"
-    Write-Host "[quant-start] auton_mode=$autonMode  scanner_running=$scanRunning"
+    $killSwitch = $opStatus.data.config.kill_switch_active
+    $selectorMode = if ($null -ne $opStatus.data.selector_session) { $opStatus.data.selector_session.mode } else { $null }
+    _OpsLog "Estado -- auton_mode=$autonMode kill_switch=$killSwitch selector_mode=$selectorMode"
+    Write-Host "[quant-start] auton_mode=$autonMode  kill_switch=$killSwitch  selector_mode=$selectorMode"
 } else {
-    _OpsLog "No se pudo obtener operation/status (API key o endpoint no disponible)" "warn"
+    _OpsLog "No se pudo obtener operation/status/lite (API key o endpoint no disponible)" "warn"
 }
 
 # Vision diagnose
