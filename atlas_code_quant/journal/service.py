@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import math
+import threading
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -184,6 +185,7 @@ def _select_matching_open_entry(
 ) -> TradingJournal | None:
     tracker_strategy_id = str(strategy.get("strategy_id") or "").strip()
     strategy_match_signature = _strategy_match_signature(strategy)
+    incoming_strategy_type = str(strategy.get("strategy_type") or "").strip()
 
     for entry in open_entries:
         if entry.strategy_id == strategy_id:
@@ -196,6 +198,16 @@ def _select_matching_open_entry(
 
     if not strategy_match_signature:
         return None
+
+    # If the incoming snapshot degraded to unknown/untracked, prefer an already
+    # attributed open entry with the same structure so we do not churn the journal
+    # by closing the attributed row and reopening it as untracked.
+    if _is_bad_strategy_type(incoming_strategy_type):
+        for entry in open_entries:
+            if _is_bad_strategy_type(entry.strategy_type):
+                continue
+            if _entry_match_signature(entry) == strategy_match_signature:
+                return entry
 
     for entry in open_entries:
         if not _is_bad_strategy_type(entry.strategy_type):
@@ -1193,6 +1205,13 @@ class TradingJournalService:
         self.brain = brain or QuantBrainBridge()
         self.learning = learning or AdaptiveLearningService()
         self.ic_tracker = ic_tracker or get_ic_tracker()
+        self._sync_lock_guard = threading.Lock()
+        self._sync_locks: dict[str, threading.Lock] = {}
+
+    def _scope_sync_lock(self, scope: str) -> threading.Lock:
+        normalized = str(scope or "paper").strip().lower() or "paper"
+        with self._sync_lock_guard:
+            return self._sync_locks.setdefault(normalized, threading.Lock())
 
     def init_db(self) -> None:
         init_db()
@@ -1203,6 +1222,7 @@ class TradingJournalService:
 
     def _upsert_open_entry(self, db: Any, account: TradierAccountSession, client: TradierClient, strategy: dict[str, Any], matched_events: list[dict[str, Any]]) -> tuple[str, bool]:
         strategy_id, signature = _stable_strategy_id(strategy)
+        incoming_strategy_type = str(strategy.get("strategy_type") or "unknown")
         existing_open_entries = db.execute(
             select(TradingJournal).where(
                 TradingJournal.account_type == account.scope,
@@ -1216,6 +1236,16 @@ class TradingJournalService:
             strategy=strategy,
             strategy_id=strategy_id,
         )
+        if (
+            entry is not None
+            and _is_bad_strategy_type(incoming_strategy_type)
+            and not _is_bad_strategy_type(entry.strategy_type)
+        ):
+            # Preserve the attributed identity when the live snapshot momentarily
+            # regresses to "untracked"/unknown for the same open structure.
+            strategy_id = str(entry.strategy_id or strategy_id)
+            signature = str(entry.legs_signature or signature)
+            incoming_strategy_type = str(entry.strategy_type or incoming_strategy_type)
         opened_at, entry_flow, open_fees = _open_event_details(matched_events)
         iv_rank = _estimate_iv_rank(client, str(strategy.get("underlying") or ""), _extract_avg_iv(strategy))
         if entry is None:
@@ -1225,7 +1255,7 @@ class TradingJournalService:
                 account_id=account.account_id,
                 strategy_id=strategy_id,
                 tracker_strategy_id=str(strategy.get("strategy_id") or ""),
-                strategy_type=str(strategy.get("strategy_type") or "unknown"),
+                strategy_type=incoming_strategy_type,
                 symbol=str(strategy.get("underlying") or ""),
                 legs_signature=signature,
                 legs_details=_json_dump(strategy.get("positions") or []),
@@ -1256,7 +1286,7 @@ class TradingJournalService:
 
         entry.strategy_id = strategy_id
         entry.tracker_strategy_id = str(strategy.get("strategy_id") or entry.tracker_strategy_id or "")
-        entry.strategy_type = str(strategy.get("strategy_type") or entry.strategy_type or "unknown")
+        entry.strategy_type = incoming_strategy_type or str(entry.strategy_type or "unknown")
         entry.symbol = str(strategy.get("underlying") or entry.symbol or "")
         entry.legs_signature = signature
         entry.legs_details = _json_dump(strategy.get("positions") or [])
@@ -1344,53 +1374,96 @@ class TradingJournalService:
         return outcomes
 
     def sync_scope(self, scope: str) -> dict[str, Any]:
+        sync_lock = self._scope_sync_lock(scope)
+        if not sync_lock.acquire(blocking=False):
+            return {
+                "scope": scope,
+                "account_id": None,
+                "created": 0,
+                "updated": 0,
+                "closed": 0,
+                "active_strategies": 0,
+                "trade_events_seen": 0,
+                "learning_outcomes": [],
+                "skipped": True,
+                "reason": "sync_already_running",
+            }
+
         client, account = resolve_account_session(account_scope=scope)  # type: ignore[arg-type]
-        summary = self.tracker.build_summary(account_scope=scope, account_id=account.account_id)  # type: ignore[arg-type]
-        strategies = summary.get("strategies") or []
-        trade_events = self._trade_events(client, account.account_id)
-        created = 0
-        updated = 0
-        closed = 0
-        seen_ids: set[str] = set()
-        closed_entries: list[dict[str, Any]] = []
+        try:
+            summary = self.tracker.build_summary(account_scope=scope, account_id=account.account_id)  # type: ignore[arg-type]
+            strategies = summary.get("strategies") or []
 
-        with session_scope() as db:
-            for strategy in strategies:
-                matched = _matching_events(trade_events, strategy)
-                strategy_id, created_now = self._upsert_open_entry(db, account, client, strategy, matched)
-                seen_ids.add(strategy_id)
-                if created_now:
-                    created += 1
-                else:
-                    updated += 1
+            with session_scope() as db:
+                existing_open_entries = db.execute(
+                    select(TradingJournal).where(
+                        TradingJournal.account_type == account.scope,
+                        TradingJournal.account_id == account.account_id,
+                        TradingJournal.status == "open",
+                    )
+                ).scalars().all()
 
-            open_entries = db.execute(
-                select(TradingJournal).where(
-                    TradingJournal.account_type == account.scope,
-                    TradingJournal.account_id == account.account_id,
-                    TradingJournal.status == "open",
-                )
-            ).scalars().all()
-            for entry in open_entries:
-                if entry.strategy_id in seen_ids:
-                    continue
-                strategy_stub = {"underlying": entry.symbol, "positions": _json_load(entry.legs_details, [])}
-                self._close_entry(entry, _matching_events(trade_events, strategy_stub))
-                closed_entries.append(_entry_payload(entry))
-                closed += 1
+            if not strategies and existing_open_entries:
+                return {
+                    "scope": scope,
+                    "account_id": account.account_id,
+                    "created": 0,
+                    "updated": 0,
+                    "closed": 0,
+                    "active_strategies": 0,
+                    "trade_events_seen": 0,
+                    "learning_outcomes": [],
+                    "skipped": True,
+                    "reason": "empty_strategy_snapshot",
+                    "open_entries_preserved": len(existing_open_entries),
+                }
 
-        learning_outcomes = self._process_closed_entry_payloads(scope, closed_entries)
+            trade_events = self._trade_events(client, account.account_id)
+            created = 0
+            updated = 0
+            closed = 0
+            seen_ids: set[str] = set()
+            closed_entries: list[dict[str, Any]] = []
 
-        return {
-            "scope": scope,
-            "account_id": account.account_id,
-            "created": created,
-            "updated": updated,
-            "closed": closed,
-            "active_strategies": len(strategies),
-            "trade_events_seen": len(trade_events),
-            "learning_outcomes": learning_outcomes,
-        }
+            with session_scope() as db:
+                for strategy in strategies:
+                    matched = _matching_events(trade_events, strategy)
+                    strategy_id, created_now = self._upsert_open_entry(db, account, client, strategy, matched)
+                    seen_ids.add(strategy_id)
+                    if created_now:
+                        created += 1
+                    else:
+                        updated += 1
+
+                open_entries = db.execute(
+                    select(TradingJournal).where(
+                        TradingJournal.account_type == account.scope,
+                        TradingJournal.account_id == account.account_id,
+                        TradingJournal.status == "open",
+                    )
+                ).scalars().all()
+                for entry in open_entries:
+                    if entry.strategy_id in seen_ids:
+                        continue
+                    strategy_stub = {"underlying": entry.symbol, "positions": _json_load(entry.legs_details, [])}
+                    self._close_entry(entry, _matching_events(trade_events, strategy_stub))
+                    closed_entries.append(_entry_payload(entry))
+                    closed += 1
+
+            learning_outcomes = self._process_closed_entry_payloads(scope, closed_entries)
+
+            return {
+                "scope": scope,
+                "account_id": account.account_id,
+                "created": created,
+                "updated": updated,
+                "closed": closed,
+                "active_strategies": len(strategies),
+                "trade_events_seen": len(trade_events),
+                "learning_outcomes": learning_outcomes,
+            }
+        finally:
+            sync_lock.release()
 
     def stats(self) -> dict[str, Any]:
         with session_scope() as db:
