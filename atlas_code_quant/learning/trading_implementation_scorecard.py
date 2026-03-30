@@ -370,7 +370,59 @@ def _compute_options_strategy_governance_feedback(root: Path, protocol: dict[str
     }
 
 
-def _compute_journal_operational_indicators(journal_db_path: Path, external_translation_score: float) -> dict[str, Any]:
+def _compute_paper_outcome_quality(root: Path) -> dict[str, Any]:
+    adaptive_path = root / "atlas_code_quant" / "data" / "learning" / "adaptive_policy_snapshot.json"
+    if not adaptive_path.exists():
+        return {
+            "sample_count": 0,
+            "win_rate_pct": 0.0,
+            "profit_factor": 0.0,
+            "expectancy_pct": 0.0,
+            "sample_score": 0.0,
+            "win_rate_score": 0.0,
+            "profit_factor_score": 0.0,
+            "expectancy_score": 0.0,
+            "paper_outcome_quality_score": 0.0,
+            "available": False,
+        }
+
+    adaptive = _read_json(adaptive_path)
+    paper = adaptive.get("scopes", {}).get("paper") or {}
+    sample_count = int(paper.get("sample_count") or 0)
+    win_rate_pct = float(paper.get("win_rate_pct") or 0.0)
+    profit_factor = float(paper.get("profit_factor") or 0.0)
+    expectancy_pct = float(paper.get("expectancy_pct") or 0.0)
+
+    sample_score = _ratio_pct(min(sample_count, 30), 30)
+    win_rate_score = _clamp_pct(((win_rate_pct - 35.0) / 20.0) * 100.0)
+    profit_factor_score = _clamp_pct(((profit_factor - 0.50) / 1.00) * 100.0)
+    expectancy_score = _clamp_pct((expectancy_pct / 25.0) * 100.0)
+    quality_score = _clamp_pct(
+        (sample_score * 0.20)
+        + (win_rate_score * 0.25)
+        + (profit_factor_score * 0.35)
+        + (expectancy_score * 0.20)
+    )
+    return {
+        "sample_count": sample_count,
+        "win_rate_pct": round(win_rate_pct, 3),
+        "profit_factor": round(profit_factor, 3),
+        "expectancy_pct": round(expectancy_pct, 3),
+        "sample_score": sample_score,
+        "win_rate_score": win_rate_score,
+        "profit_factor_score": profit_factor_score,
+        "expectancy_score": expectancy_score,
+        "paper_outcome_quality_score": quality_score,
+        "available": True,
+    }
+
+
+def _compute_journal_operational_indicators(
+    root: Path,
+    journal_db_path: Path,
+    external_translation_score: float,
+    signal_ic_quality_score: float,
+) -> dict[str, Any]:
     if not journal_db_path.exists():
         score = 0.0
         return {
@@ -437,12 +489,26 @@ def _compute_journal_operational_indicators(journal_db_path: Path, external_tran
     recent_unattributed_count = max(recent_total - recent_attributed, 0)
     recent_unattributed_ratio_pct = _ratio_pct(recent_unattributed_count, recent_total) if recent_total else 0.0
 
-    # Fórmula principal: preservada para comparación histórica
+    paper_outcome_quality = _compute_paper_outcome_quality(root)
+    paper_outcome_quality_score = float(paper_outcome_quality["paper_outcome_quality_score"])
+
     score = _clamp_pct(
-        (attributed_open_positions_pct * 0.45)
-        + (evidence_sufficiency_score * 0.35)
-        + (external_translation_score * 0.20)
+        (attributed_open_positions_pct * 0.20)
+        + (evidence_sufficiency_score * 0.15)
+        + (post_mortem_coverage_pct * 0.10)
+        + (recent_attribution_pct * 0.10)
+        + (external_translation_score * 0.10)
+        + (paper_outcome_quality_score * 0.15)
+        + (signal_ic_quality_score * 0.20)
     )
+    usefulness_cap_reason = None
+    if signal_ic_quality_score < 20.0:
+        score = min(score, 60.0)
+        usefulness_cap_reason = "signal_ic_quality_insufficient"
+    if paper_outcome_quality_score < 25.0:
+        score = min(score, 55.0)
+        usefulness_cap_reason = "paper_outcome_quality_weak"
+
     return {
         "name": "implementation_usefulness_score",
         "value": score,
@@ -463,9 +529,13 @@ def _compute_journal_operational_indicators(journal_db_path: Path, external_tran
             "recent_unattributed_ratio_pct": recent_unattributed_ratio_pct,
             "recent_sample_size": recent_total,
             "external_learning_translation_score": external_translation_score,
+            "signal_ic_quality_score": signal_ic_quality_score,
+            "paper_outcome_quality_score": paper_outcome_quality_score,
+            "paper_outcome_quality": paper_outcome_quality,
+            "usefulness_cap_reason": usefulness_cap_reason,
             "note": (
-                "Este score no afirma edge de mercado. Mide si ya hay evidencia operativa suficiente para decir que "
-                "lo implantado esta sirviendo y siendo absorbido por el sistema vivo."
+                "Este score no afirma edge de mercado. Ahora exige no solo libro limpio y trazabilidad, "
+                "sino tambien IC util y calidad paper minimamente sana antes de subir a niveles altos."
             ),
         },
     }
@@ -760,6 +830,15 @@ def _build_next_actions(metric_map: dict[str, dict[str, Any]]) -> list[str]:
                 f"IC debil (IC={overall_ic:.4f if overall_ic else '?'}): revisar filtros de regimen y calidad de "
                 "la prediccion antes de escalar el loop."
             )
+    paper_outcome_quality = usefulness["details"].get("paper_outcome_quality", {}) or {}
+    if usefulness["details"].get("paper_outcome_quality_score", 0.0) < 25.0:
+        actions.append(
+            "La calidad paper sigue debil: no declarar utilidad alta mientras profit_factor/expectancy sigan en zona pobre."
+        )
+    if paper_outcome_quality.get("profit_factor", 0.0) < 1.0:
+        actions.append("El paper book aun no tiene profit factor >= 1.0: revisar reconciliacion, sizing y calidad de señal antes de escalar.")
+    if paper_outcome_quality.get("expectancy_pct", 0.0) <= 0.0:
+        actions.append("La expectancy paper sigue no positiva: exigir mejora real de payoff antes de considerar que la implantacion ya sirve.")
     if not actions:
         actions.append("Mantener observacion controlada y exigir evidencia before-after antes de promover a live.")
     return actions
@@ -786,11 +865,13 @@ def build_trading_implementation_scorecard(
     visual_benchmark_feedback = _compute_visual_benchmark_feedback(root, protocol)
     options_strategy_governance_feedback = _compute_options_strategy_governance_feedback(root, protocol)
     test_guardrails = _compute_test_guardrail_score(root, pytest_result)
+    signal_ic_quality = _compute_signal_ic_quality(root)
     usefulness = _compute_journal_operational_indicators(
+        root,
         journal_db_path,
         external_translation_score=float(external_benchmark["details"]["translation_pct"]),
+        signal_ic_quality_score=float(signal_ic_quality["value"]),
     )
-    signal_ic_quality = _compute_signal_ic_quality(root)
 
     metrics = [
         process_compliance,

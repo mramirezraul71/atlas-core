@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-03-28T10:40:31.137945+00:00",
+  "generated_at": "2026-03-30T14:53:45.706613+00:00",
   "topic": "atlas_quant_trading_implementation_scorecard",
   "summary": "Scorecard operativo para medir dos cosas separadas: cuanto del metodo ya esta implantado y cuanta evidencia real existe de que esa implantacion esta sirviendo.",
   "metric_catalog": [
@@ -24,19 +24,31 @@
       "goal": "Medir si Grafana, Prometheus y el chequeo operativo estan devolviendo feedback confiable para sostener disciplina."
     },
     {
+      "name": "visual_benchmark_feedback_score",
+      "goal": "Medir si el benchmark visual externo ya fue traducido a criterios reutilizables, reportes y controles reales de entrada."
+    },
+    {
+      "name": "options_strategy_governance_feedback_score",
+      "goal": "Medir si el benchmark externo de estructuras con opciones ya fue traducido a taxonomia, constraints y reglas reutilizables."
+    },
+    {
       "name": "test_guardrail_score",
       "goal": "Medir cuanta proteccion automatizada existe sobre lo ya implantado."
     },
     {
       "name": "implementation_usefulness_score",
       "goal": "Medir si ya existe evidencia operativa suficiente para afirmar que los cambios sirven de algo."
+    },
+    {
+      "name": "signal_ic_quality_score",
+      "goal": "Medir la calidad predictiva real de las se\u00f1ales del scanner via IC (Information Coefficient). IC > 0.05 meaningful, IC > 0.10 fuerte (Grinold-Kahn). Score=0 mientras no haya muestra suficiente; crece con evidencia real."
     }
   ],
   "headline": {
     "atlas_process_compliance_score": 97.5,
     "atlas_process_compliance_status": "healthy",
-    "atlas_implementation_usefulness_score": 20.0,
-    "atlas_implementation_usefulness_status": "critical"
+    "atlas_implementation_usefulness_score": 48.0,
+    "atlas_implementation_usefulness_status": "weak"
   },
   "metrics": {
     "process_compliance_score": {
@@ -79,17 +91,17 @@
     },
     "memory_persistence_score": {
       "name": "memory_persistence_score",
-      "value": 68.07,
-      "status": "watch",
+      "value": 94.65,
+      "status": "healthy",
       "details": {
-        "delivered_events": 713,
-        "total_events": 1311,
-        "queued_local_only_events": 598,
-        "delivery_ratio_pct": 54.39,
+        "delivered_events": 802,
+        "total_events": 806,
+        "queued_local_only_events": 4,
+        "delivery_ratio_pct": 99.5,
         "last_memory_ok": true,
         "last_bitacora_ok": true,
-        "protocol_note_events": 11,
-        "scorecard_note_events": 6
+        "protocol_note_events": 0,
+        "scorecard_note_events": 0
       }
     },
     "external_benchmark_coverage_score": {
@@ -121,8 +133,8 @@
     },
     "observability_feedback_score": {
       "name": "observability_feedback_score",
-      "value": 93.33,
-      "status": "healthy",
+      "value": 81.33,
+      "status": "workable",
       "details": {
         "report_available": true,
         "overall_status": "ready",
@@ -135,8 +147,36 @@
         "provisioning_rebuild_ok": true,
         "reload_resilience_pct": 66.67,
         "foundation_score_pct": 100.0,
-        "freshness_pct": 100.0,
-        "age_hours": 0.54
+        "freshness_pct": 40.0,
+        "age_hours": 52.76
+      }
+    },
+    "visual_benchmark_feedback_score": {
+      "name": "visual_benchmark_feedback_score",
+      "value": 16.67,
+      "status": "critical",
+      "details": {
+        "report_available": true,
+        "visual_source_count": 0,
+        "focus_defined": false,
+        "human_best_practice_defined": false,
+        "automation_translation_defined": false,
+        "recommended_metrics_defined": false,
+        "web_feedback_loop_defined": false
+      }
+    },
+    "options_strategy_governance_feedback_score": {
+      "name": "options_strategy_governance_feedback_score",
+      "value": 16.67,
+      "status": "critical",
+      "details": {
+        "report_available": true,
+        "options_source_count": 0,
+        "focus_defined": false,
+        "human_best_practice_defined": false,
+        "automation_translation_defined": false,
+        "recommended_metrics_defined": false,
+        "web_feedback_loop_defined": false
       }
     },
     "test_guardrail_score": {
@@ -144,7 +184,7 @@
       "value": 100.0,
       "status": "healthy",
       "details": {
-        "mode": "executed",
+        "mode": "presence_only",
         "presence_score": 100.0,
         "expected_tests": {
           "protocol": true,
@@ -152,66 +192,88 @@
           "position_management": true,
           "scanner": true,
           "operation_status": true,
-          "operation_guards": true
-        },
-        "pytest": {
-          "mode": "executed",
-          "score": 100.0,
-          "passed": 22,
-          "failed": 0,
-          "errors": 0,
-          "skipped": 0,
-          "summary": "22 passed in 6.36s",
-          "returncode": 0,
-          "command": [
-            "C:\\Users\\r6957\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
-            "-m",
-            "pytest",
-            "-q",
-            "atlas_code_quant/tests/test_trading_self_audit_protocol.py",
-            "atlas_code_quant/tests/test_trading_implementation_scorecard.py",
-            "atlas_code_quant/tests/test_position_management_snapshot.py",
-            "atlas_code_quant/tests/test_scanner_metric_recalibration.py",
-            "atlas_code_quant/tests/test_operation_center_status.py",
-            "atlas_code_quant/tests/test_operation_center_autonomous_guards.py"
-          ],
-          "raw_output": "......................                                                   [100%]\n22 passed in 6.36s\n"
+          "operation_guards": true,
+          "ic_signal_tracker": true
         }
       }
     },
     "implementation_usefulness_score": {
       "name": "implementation_usefulness_score",
-      "value": 20.0,
-      "status": "critical",
+      "value": 48.0,
+      "status": "weak",
       "details": {
         "journal_available": true,
-        "open_total": 351,
-        "open_untracked": 351,
+        "open_total": 439,
+        "open_untracked": 439,
         "open_untracked_ratio_pct": 100.0,
         "attributed_open_positions_pct": 0.0,
-        "closed_total": 0,
-        "evidence_sufficiency_score": 0.0,
-        "open_pnl": -2152.71,
-        "realized_pnl": 0.0,
+        "closed_total": 64222,
+        "evidence_sufficiency_score": 100.0,
+        "open_pnl": -4814.53,
+        "realized_pnl": -27261460.16,
+        "post_mortem_coverage_pct": 100.0,
+        "recent_attribution_pct": 100.0,
+        "recent_unattributed_count": 0,
+        "recent_unattributed_ratio_pct": 0.0,
+        "recent_sample_size": 100,
         "external_learning_translation_score": 100.0,
-        "note": "Este score no afirma edge de mercado. Mide si ya hay evidencia operativa suficiente para decir que lo implantado esta sirviendo y siendo absorbido por el sistema vivo."
+        "signal_ic_quality_score": 0.0,
+        "paper_outcome_quality_score": 20.0,
+        "paper_outcome_quality": {
+          "sample_count": 2000,
+          "win_rate_pct": 23.15,
+          "profit_factor": 0.215,
+          "expectancy_pct": -104.438,
+          "sample_score": 100.0,
+          "win_rate_score": 0.0,
+          "profit_factor_score": 0.0,
+          "expectancy_score": 0.0,
+          "paper_outcome_quality_score": 20.0,
+          "available": true
+        },
+        "usefulness_cap_reason": "paper_outcome_quality_weak",
+        "note": "Este score no afirma edge de mercado. Ahora exige no solo libro limpio y trazabilidad, sino tambien IC util y calidad paper minimamente sana antes de subir a niveles altos."
+      }
+    },
+    "signal_ic_quality_score": {
+      "name": "signal_ic_quality_score",
+      "value": 0.0,
+      "status": "insufficient_data",
+      "details": {
+        "ic_tracker_available": false,
+        "note": "No hay tracker de IC disponible. El ICSignalTracker se activa cuando el loop registra se\u00f1ales con outcome real."
       }
     }
   },
   "supporting_indicators": {
-    "brain_delivery_ratio_pct": 54.39,
+    "brain_delivery_ratio_pct": 99.5,
     "attributed_open_positions_pct": 0.0,
     "open_untracked_ratio_pct": 100.0,
-    "evidence_sufficiency_score": 0.0,
+    "recent_unattributed_count": 0,
+    "evidence_sufficiency_score": 100.0,
+    "post_mortem_coverage_pct": 100.0,
+    "recent_attribution_pct": 100.0,
     "external_learning_translation_score": 100.0,
-    "observability_feedback_score": 93.33,
+    "observability_feedback_score": 81.33,
+    "visual_benchmark_feedback_score": 16.67,
+    "visual_benchmark_source_count": 0,
+    "visual_benchmark_translation_pct": 0.0,
+    "options_strategy_governance_feedback_score": 16.67,
+    "options_governance_source_count": 0,
+    "options_governance_translation_pct": 0.0,
     "grafana_reload_resilience_pct": 66.67,
-    "grafana_alerting_ready_pct": 100.0
+    "grafana_alerting_ready_pct": 100.0,
+    "signal_ic_quality_score": 0.0,
+    "ic_tracker_signals_with_outcome": 0,
+    "ic_overall": null,
+    "ic_status": "insufficient_data"
   },
   "next_actions": [
     "Cerrar la brecha de estrategia no atribuida: el libro abierto no debe seguir en untracked.",
-    "Aun no hay muestra cerrada suficiente: usar paper controlado y no declarar mejora de edge todavia.",
-    "Mejorar la entrega a memoria/bitacora: la absorcion real del aprendizaje todavia es irregular.",
-    "Investigar por que alguna recarga Admin API de Grafana sigue siendo fragil aunque los dashboards esten visibles."
+    "Investigar por que alguna recarga Admin API de Grafana sigue siendo fragil aunque los dashboards esten visibles.",
+    "Activar ICSignalTracker: el loop debe llamar tracker.record_signal() al evaluar candidatos.",
+    "La calidad paper sigue debil: no declarar utilidad alta mientras profit_factor/expectancy sigan en zona pobre.",
+    "El paper book aun no tiene profit factor >= 1.0: revisar reconciliacion, sizing y calidad de se\u00f1al antes de escalar.",
+    "La expectancy paper sigue no positiva: exigir mejora real de payoff antes de considerar que la implantacion ya sirve."
   ]
 }

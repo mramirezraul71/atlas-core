@@ -161,10 +161,13 @@ def test_build_trading_implementation_scorecard_computes_headline_and_indicators
     assert payload["metrics"]["observability_feedback_score"]["value"] == pytest.approx(93.33)
     assert payload["metrics"]["visual_benchmark_feedback_score"]["value"] == 100.0
     assert payload["metrics"]["options_strategy_governance_feedback_score"]["value"] == 100.0
-    assert payload["metrics"]["implementation_usefulness_score"]["value"] == pytest.approx(49.5)
+    assert payload["metrics"]["implementation_usefulness_score"]["value"] == pytest.approx(23.0)
     assert payload["supporting_indicators"]["attributed_open_positions_pct"] == 50.0
     assert payload["supporting_indicators"]["evidence_sufficiency_score"] == 20.0
     assert payload["supporting_indicators"]["grafana_alerting_ready_pct"] == 100.0
     assert payload["supporting_indicators"]["visual_benchmark_source_count"] == 5
     assert payload["supporting_indicators"]["options_governance_source_count"] == 3
+    assert payload["metrics"]["implementation_usefulness_score"]["details"]["signal_ic_quality_score"] == 0.0
+    assert payload["metrics"]["implementation_usefulness_score"]["details"]["paper_outcome_quality_score"] == 0.0
+    assert payload["metrics"]["implementation_usefulness_score"]["details"]["usefulness_cap_reason"] == "paper_outcome_quality_weak"
     assert payload["next_actions"]
