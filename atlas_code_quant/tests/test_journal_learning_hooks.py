@@ -1,4 +1,7 @@
 from __future__ import annotations
+from contextlib import contextmanager
+
+import atlas_code_quant.journal.service as journal_service_module
 from atlas_code_quant.journal.models import TradingJournal
 from atlas_code_quant.journal.service import (
     TradingJournalService,
@@ -158,3 +161,118 @@ def test_select_matching_open_entry_does_not_reuse_untracked_entry_for_opposite_
     )
 
     assert matched is None
+
+
+def test_select_matching_open_entry_reuses_attributed_entry_when_incoming_snapshot_is_untracked():
+    entry = TradingJournal(
+        journal_key="paper:test:equity_long:XOM:1",
+        account_type="paper",
+        account_id="ACC",
+        strategy_id="equity_long:XOM:stable",
+        tracker_strategy_id="equity_long:XOM:stable",
+        strategy_type="equity_long",
+        symbol="XOM",
+        legs_signature="equity:XOM",
+        legs_details=(
+            '[{"symbol":"XOM","asset_class":"equity","side":"long",'
+            '"signed_qty":1.0,"entry_price":111.87,"current_price":112.34}]'
+        ),
+        status="open",
+    )
+    strategy = {
+        "strategy_id": "untracked:XOM:regressed",
+        "strategy_type": "untracked",
+        "underlying": "XOM",
+        "positions": [
+            {
+                "symbol": "XOM",
+                "asset_class": "equity",
+                "side": "long",
+                "signed_qty": 1.0,
+                "entry_price": 111.87,
+                "current_price": 112.34,
+            }
+        ],
+    }
+
+    matched = _select_matching_open_entry(
+        [entry],
+        strategy=strategy,
+        strategy_id="untracked:XOM:deadbeef123456",
+    )
+
+    assert matched is entry
+
+
+def test_sync_scope_skips_when_same_scope_is_already_running() -> None:
+    service = TradingJournalService(
+        tracker=object(),  # type: ignore[arg-type]
+        brain=_Brain(),
+        learning=_Learning(),  # type: ignore[arg-type]
+    )
+    sync_lock = service._scope_sync_lock("paper")
+    assert sync_lock.acquire(blocking=False) is True
+    try:
+        outcome = service.sync_scope("paper")
+    finally:
+        sync_lock.release()
+
+    assert outcome["skipped"] is True
+    assert outcome["reason"] == "sync_already_running"
+    assert outcome["scope"] == "paper"
+
+
+def test_sync_scope_preserves_open_entries_when_strategy_snapshot_is_empty(monkeypatch) -> None:
+    class _Tracker:
+        def build_summary(self, **_: object) -> dict:
+            return {"strategies": []}
+
+    class _Account:
+        scope = "paper"
+        account_id = "ACC"
+
+    open_entry = TradingJournal(
+        journal_key="paper:ACC:equity_long:ZD:1",
+        account_type="paper",
+        account_id="ACC",
+        strategy_id="equity_long:ZD:test",
+        tracker_strategy_id="equity_long:ZD:test",
+        strategy_type="equity_long",
+        symbol="ZD",
+        legs_signature="equity:ZD",
+        legs_details='[{"symbol":"ZD","asset_class":"equity","side":"long","signed_qty":1.0}]',
+        status="open",
+    )
+
+    class _FakeResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return list(self._rows)
+
+    class _FakeDb:
+        def execute(self, _query):
+            return _FakeResult([open_entry])
+
+    @contextmanager
+    def _fake_session_scope():
+        yield _FakeDb()
+
+    monkeypatch.setattr(journal_service_module, "resolve_account_session", lambda **_: (object(), _Account()))
+    monkeypatch.setattr(journal_service_module, "session_scope", _fake_session_scope)
+
+    service = TradingJournalService(
+        tracker=_Tracker(),  # type: ignore[arg-type]
+        brain=_Brain(),
+        learning=_Learning(),  # type: ignore[arg-type]
+    )
+
+    outcome = service.sync_scope("paper")
+
+    assert outcome["skipped"] is True
+    assert outcome["reason"] == "empty_strategy_snapshot"
+    assert outcome["open_entries_preserved"] == 1
