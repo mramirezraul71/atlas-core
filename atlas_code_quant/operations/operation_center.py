@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import threading
 from copy import deepcopy
@@ -22,6 +23,7 @@ from operations.chart_execution import ChartExecutionService
 from operations.journal_pro import JournalProService
 from operations.sensor_vision import SensorVisionService
 
+logger = logging.getLogger("quant.operation_center")
 
 Level4CreditStrategy = Literal[
     "bear_call_credit_spread",
@@ -133,6 +135,9 @@ class OperationCenter:
         self._scorecard_lock = threading.Lock()
         self._scorecard_cache: dict[str, Any] | None = None
         self._scorecard_cache_at = 0.0
+        self._status_cache_lock = threading.Lock()
+        self._status_cache_payload: dict[str, Any] | None = None
+        self._status_cache_at = 0.0
         self._ensure_state()
 
     def _ensure_state(self) -> None:
@@ -187,7 +192,13 @@ class OperationCenter:
         merged.update(payload or {})
         merged = self._normalize_runtime_state(merged)
         self.state_path.write_text(json.dumps(merged, ensure_ascii=True, indent=2), encoding="utf-8")
+        self._invalidate_status_cache()
         return merged
+
+    def _invalidate_status_cache(self) -> None:
+        with self._status_cache_lock:
+            self._status_cache_payload = None
+            self._status_cache_at = 0.0
 
     def _record_visual_gate_metrics(
         self,
@@ -792,6 +803,13 @@ class OperationCenter:
         )
         return self._save(state)
 
+    def _selector_session_payload(self) -> dict[str, Any]:
+        return {
+            "mode": str(settings.selector_session_mode or "balanced").lower(),
+            "require_optionable_candidate": bool(settings.selector_options_require_available),
+            "options_enabled": bool(settings.options_enabled),
+        }
+
     def _lightweight_operation_status(
         self,
         *,
@@ -822,6 +840,40 @@ class OperationCenter:
             },
         }
 
+    def status_lite(self) -> dict[str, Any]:
+        config = self._load()
+        scope = str(config.get("account_scope") or "paper")
+        monitor = self._load_monitor_summary(scope)
+        vision_status = self.vision.status()
+        executor_status = self.executor.status()
+        scorecard = self._load_scorecard()
+        payload = self._lightweight_operation_status(
+            scope=scope,
+            config=config,
+            monitor=monitor,
+            vision_status=vision_status,
+            executor_status=executor_status,
+        )
+        payload["selector_session"] = self._selector_session_payload()
+        payload["failsafe"] = {
+            "active": bool(config.get("fail_safe_active")),
+            "reason": config.get("fail_safe_reason"),
+            "operational_error_count": int(config.get("operational_error_count") or 0),
+            "operational_error_limit": int(config.get("operational_error_limit") or 3),
+        }
+        payload["scorecard"] = {
+            "available": bool(scorecard.get("available")),
+            "generated_at": scorecard.get("generated_at"),
+            "headline": deepcopy(scorecard.get("headline") or {}),
+        }
+        payload["chart_execution"] = self.chart_execution.status()
+        payload["learning"] = self.learning.status(account_scope=scope)
+        payload["auton_mode_active"] = (
+            str(config.get("auton_mode") or "off") != "off"
+            and not executor_status.get("kill_switch_active", False)
+        )
+        return payload
+
     def _safe_journal_payload(
         self,
         *,
@@ -851,6 +903,11 @@ class OperationCenter:
             }
 
     def status(self) -> dict[str, Any]:
+        ttl_sec = 2.0
+        now = time.monotonic()
+        with self._status_cache_lock:
+            if self._status_cache_payload is not None and (now - self._status_cache_at) <= ttl_sec:
+                return deepcopy(self._status_cache_payload)
         config = self._load()
         scope = str(config.get("account_scope") or "paper")
         monitor = self._load_monitor_summary(scope)
@@ -895,11 +952,7 @@ class OperationCenter:
         )
         visual_benchmark = self._load_visual_benchmark_snapshot(scorecard)
         visual_gate_metrics = deepcopy(config.get("visual_gate_stats") or {})
-        selector_session = {
-            "mode": str(settings.selector_session_mode or "balanced").lower(),
-            "require_optionable_candidate": bool(settings.selector_options_require_available),
-            "options_enabled": bool(settings.options_enabled),
-        }
+        selector_session = self._selector_session_payload()
         options_strategy_governance = deepcopy(config.get("last_options_strategy_governance") or {})
         options_governance_adoption = self._safe_journal_payload(
             label="options_governance_adoption",
@@ -907,7 +960,7 @@ class OperationCenter:
             limit=10,
             loader=lambda: self.journal.options_governance_adoption_snapshot(account_type=scope, limit=10),
         )
-        return {
+        payload = {
             "generated_at": datetime.utcnow().isoformat(),
             "config": {
                 **config,
@@ -971,6 +1024,10 @@ class OperationCenter:
             "last_decision": config.get("last_decision"),
             "last_candidate": config.get("last_candidate"),
         }
+        with self._status_cache_lock:
+            self._status_cache_payload = deepcopy(payload)
+            self._status_cache_at = time.monotonic()
+        return payload
 
     def _load_visual_benchmark_snapshot(self, scorecard: dict[str, Any]) -> dict[str, Any]:
         protocol_path = self.root_path / "reports/trading_self_audit_protocol.json"
@@ -1317,6 +1374,24 @@ class OperationCenter:
             "reason": reasons[0] if reasons else "ok",
         }
         payload["evaluation_timings"]["total_sec"] = round(time.perf_counter() - started_at, 4)
+        stage_timings = {
+            key: float(value)
+            for key, value in payload["evaluation_timings"].items()
+            if key != "total_sec" and value is not None
+        }
+        dominant_stage = None
+        dominant_stage_sec = 0.0
+        if stage_timings:
+            dominant_stage, dominant_stage_sec = max(stage_timings.items(), key=lambda item: item[1])
+        total_sec = float(payload["evaluation_timings"]["total_sec"])
+        payload["evaluation_profile"] = {
+            "dominant_stage": dominant_stage,
+            "dominant_stage_sec": round(dominant_stage_sec, 4) if dominant_stage is not None else 0.0,
+            "dominant_stage_share_pct": round((dominant_stage_sec / total_sec) * 100.0, 2) if total_sec > 0 and dominant_stage is not None else 0.0,
+            "stages_over_1s": [name for name, value in stage_timings.items() if value >= 1.0],
+            "nonzero_stages": [name for name, value in stage_timings.items() if value > 0.0],
+            "captured_stage_count": len(stage_timings),
+        }
         self._save(config)
         payload["operation_status"] = self._lightweight_operation_status(
             scope=scope,

@@ -20,3 +20,8 @@ def test_learning_orchestrator_v2_routes_present() -> None:
     assert "/api/v2/quant/learning/orchestrator/reconcile" in paths
     assert "/api/v2/quant/learning/orchestrator/daily-analysis" in paths
     assert "/api/v2/quant/learning/ic/summary" in paths
+
+
+def test_operation_status_lite_v2_route_present() -> None:
+    paths = _route_paths()
+    assert "/api/v2/quant/operation/status/lite" in paths

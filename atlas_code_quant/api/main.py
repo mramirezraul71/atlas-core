@@ -790,10 +790,23 @@ async def operation_status(x_api_key: str | None = Header(None)):
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
-        payload = OperationStatusPayload.model_validate(_OPERATION_CENTER.status())
+        payload = OperationStatusPayload.model_validate(await asyncio.to_thread(_OPERATION_CENTER.status))
         return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as exc:
         logger.exception("Error building operation status")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/operation/status/lite", response_model=StdResponse, tags=["Operation"])
+async def operation_status_lite(x_api_key: str | None = Header(None)):
+    """Lightweight operational status for health checks and tight polling loops."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = await asyncio.to_thread(_OPERATION_CENTER.status_lite)
+        return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error building lightweight operation status")
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
@@ -1673,6 +1686,11 @@ async def operation_status_v2(x_api_key: str | None = Header(None)):
     return await operation_status(x_api_key=x_api_key)
 
 
+@app.get("/api/v2/quant/operation/status/lite", response_model=StdResponse, tags=["V2"])
+async def operation_status_lite_v2(x_api_key: str | None = Header(None)):
+    return await operation_status_lite(x_api_key=x_api_key)
+
+
 @app.post("/api/v2/quant/operation/config", response_model=StdResponse, tags=["V2"])
 async def operation_config_v2(
     body: OperationConfigPayload,
@@ -1801,7 +1819,7 @@ async def _quant_live_updates_socket(websocket: WebSocket) -> None:
                     account_id=account_id,
                 )
                 status_payload = _build_status_payload(account_scope=account_scope, account_id=account_id)
-                operation_status_payload = await asyncio.to_thread(_OPERATION_CENTER.status)
+                operation_status_payload = await asyncio.to_thread(_OPERATION_CENTER.status_lite)
                 scanner_report_payload = _compact_scanner_report(await asyncio.to_thread(_SCANNER.report, 24))
                 compact_monitor_summary = _compact_monitor_summary(canonical_snapshot_payload["monitor_summary"])
                 await websocket.send_json(
@@ -1847,7 +1865,7 @@ async def _operation_stream_socket(websocket: WebSocket) -> None:
     await websocket.accept()
     try:
         while True:
-            payload = await asyncio.to_thread(_OPERATION_CENTER.status)
+            payload = await asyncio.to_thread(_OPERATION_CENTER.status_lite)
             await websocket.send_json(
                 {
                     "type": "quant.operation_update",
