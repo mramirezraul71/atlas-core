@@ -2620,6 +2620,26 @@ async def knowledge_search_v2(q: str, max_results: int = 10,
     return await knowledge_search(q=q, max_results=max_results, x_api_key=x_api_key)
 
 
+@app.post("/api/v2/quant/knowledge/ingest", response_model=StdResponse, tags=["V2"])
+async def knowledge_ingest_v2(
+    generate_fichas: bool = True,
+    download_papers: bool = False,
+    source_ids: list[str] | None = None,
+    x_api_key: str | None = Header(None),
+):
+    return await knowledge_ingest(
+        generate_fichas=generate_fichas,
+        download_papers=download_papers,
+        source_ids=source_ids,
+        x_api_key=x_api_key,
+    )
+
+
+@app.get("/api/v2/quant/knowledge/ingest/status", response_model=StdResponse, tags=["V2"])
+async def knowledge_ingest_status_v2(x_api_key: str | None = Header(None)):
+    return await knowledge_ingest_status(x_api_key=x_api_key)
+
+
 # ── Learning Orchestrator — endpoints ─────────────────────────────────────────
 
 @app.get("/learning/orchestrator/status", response_model=StdResponse, tags=["Learning"])
@@ -2676,6 +2696,16 @@ async def learning_ic_summary(method: str | None = None,
 @app.get("/api/v2/quant/learning/orchestrator/status", response_model=StdResponse, tags=["V2"])
 async def learning_orch_status_v2(x_api_key: str | None = Header(None)):
     return await learning_orchestrator_status(x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/learning/orchestrator/reconcile", response_model=StdResponse, tags=["V2"])
+async def learning_orch_reconcile_v2(x_api_key: str | None = Header(None)):
+    return await learning_orchestrator_reconcile(x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/learning/orchestrator/daily-analysis", response_model=StdResponse, tags=["V2"])
+async def learning_daily_analysis_v2(x_api_key: str | None = Header(None)):
+    return await learning_daily_analysis(x_api_key=x_api_key)
 
 
 @app.get("/api/v2/quant/learning/ic/summary", response_model=StdResponse, tags=["V2"])
