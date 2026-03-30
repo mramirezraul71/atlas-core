@@ -209,6 +209,8 @@ class TradingConfig:
     scanner_include_etfs: bool    = os.getenv("ATLAS_SCANNER_INCLUDE_ETFS",    "true").strip().lower()  not in {"0","false","no"}
     scanner_include_indices: bool = os.getenv("ATLAS_SCANNER_INCLUDE_INDICES", "true").strip().lower()  not in {"0","false","no"}
     scanner_include_crypto: bool  = os.getenv("ATLAS_SCANNER_INCLUDE_CRYPTO",  "false").strip().lower() not in {"0","false","no"}
+    selector_session_mode: str = _clean_setting(os.getenv("QUANT_SELECTOR_SESSION_MODE"), "balanced").lower()
+    selector_options_require_available: bool = os.getenv("QUANT_SELECTOR_OPTIONS_REQUIRE_AVAILABLE", "true").strip().lower() not in {"0", "false", "no"}
 
     # Entry validation
     entry_validation_enabled: bool = os.getenv("QUANT_ENTRY_VALIDATION_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
@@ -219,6 +221,10 @@ class TradingConfig:
     chart_open_cooldown_sec: int = _ienv("QUANT_CHART_OPEN_COOLDOWN_SEC", 90)
     visual_gate_min_readiness_pct: float = _fenv("QUANT_VISUAL_GATE_MIN_READINESS_PCT", 75.0)
     visual_gate_fail_closed: bool = os.getenv("QUANT_VISUAL_GATE_FAIL_CLOSED", "true").strip().lower() not in {"0", "false", "no"}
+    visual_gate_supervised_manual_chart_preview: bool = os.getenv(
+        "QUANT_VISUAL_GATE_SUPERVISED_MANUAL_CHART_PREVIEW",
+        "true",
+    ).strip().lower() not in {"0", "false", "no"}
 
     # Position management
     position_management_enabled: bool = os.getenv("QUANT_POSITION_MANAGEMENT_ENABLED", "true").strip().lower() not in {"0", "false", "no"}

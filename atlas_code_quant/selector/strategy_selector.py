@@ -10,6 +10,7 @@ from backtesting.winning_probability import (
     _strategy_payoff,
     get_winning_probability,
 )
+from execution.option_selector import describe_strategy_governance, pick_strategy
 from learning.adaptive_policy import AdaptiveLearningService
 from monitoring.strategy_tracker import StrategyTracker
 from operations.strategy_playbooks import build_strategy_playbook
@@ -27,6 +28,13 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
 
 def _clip(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
+
+
+def _normalize_options_session_mode(value: str | None) -> str:
+    mode = str(value or "").strip().lower()
+    if mode in {"balanced", "option_first", "options_only"}:
+        return mode
+    return "balanced"
 
 
 def _strategy_meta(strategy_type: str) -> dict[str, str]:
@@ -74,6 +82,24 @@ def _strategy_meta(strategy_type: str) -> dict[str, str]:
             "order_type": "credit",
             "label": "spread de credito",
             "family": "credit",
+        }
+    if strategy_type in {"iron_condor", "iron_butterfly"}:
+        return {
+            "asset_class": "multileg",
+            "side": "sell",
+            "position_effect": "open",
+            "order_type": "credit",
+            "label": "estructura neutral theta",
+            "family": "credit",
+        }
+    if strategy_type in {"call_calendar_spread", "put_calendar_spread", "call_diagonal_debit_spread", "put_diagonal_debit_spread"}:
+        return {
+            "asset_class": "multileg",
+            "side": "buy",
+            "position_effect": "open",
+            "order_type": "debit",
+            "label": "estructura de tiempo",
+            "family": "time_spread",
         }
     return {
         "asset_class": "multileg",
@@ -221,6 +247,40 @@ def _camera_validation_profile(*, timeframe: str, strategy_type: str, family: st
     }
 
 
+def _options_governance_snapshot(candidate: dict[str, Any], strategy_type: str, family: str) -> dict[str, Any]:
+    if family == "equity":
+        return {}
+
+    direction = "BUY" if str(candidate.get("direction") or "").lower() == "alcista" else "SELL"
+    regime = str(candidate.get("regime") or candidate.get("market_regime") or candidate.get("market_state") or "SIDEWAYS").upper()
+    if regime not in {"BULL", "BEAR", "SIDEWAYS", "TREND"}:
+        regime = "BULL" if direction == "BUY" else "BEAR"
+    iv_rank = _safe_float(candidate.get("iv_rank"), _safe_float(candidate.get("iv_rank_pct"), 35.0))
+    iv_hv_ratio = _safe_float(candidate.get("iv_hv_ratio"), 1.0)
+    liquidity_score = _clip(_safe_float(candidate.get("liquidity_score"), 0.8), 0.0, 1.0)
+    skew_pct = _safe_float(candidate.get("skew_pct"), 0.0)
+    term_structure_slope = _safe_float(candidate.get("term_structure_slope"), 1.0)
+    event_near = bool(candidate.get("event_near") or candidate.get("earnings_near"))
+    thesis = str(candidate.get("options_thesis") or candidate.get("thesis") or "").strip().lower() or None
+    governance = describe_strategy_governance(
+        direction=direction,
+        regime=regime,
+        iv_rank=iv_rank,
+        iv_hv_ratio=iv_hv_ratio,
+        strategy=strategy_type,
+        thesis=thesis,
+        event_near=event_near,
+        liquidity_score=liquidity_score,
+        skew_pct=skew_pct,
+        term_structure_slope=term_structure_slope,
+    )
+    governance["enabled"] = True
+    governance["iv_rank"] = round(iv_rank, 2)
+    governance["iv_hv_ratio"] = round(iv_hv_ratio, 3)
+    governance["strategy_type"] = strategy_type
+    return governance
+
+
 class StrategySelectorService:
     def __init__(self, tracker: StrategyTracker, learning: AdaptiveLearningService | None = None):
         self.tracker = tracker
@@ -266,6 +326,67 @@ class StrategySelectorService:
             if not deduped or abs(value - deduped[-1]) > 0.1:
                 deduped.append(value)
         return deduped
+
+    def _tradier_legs_payload(
+        self,
+        *,
+        probability_payload: dict[str, Any] | None,
+        contracts: int,
+    ) -> list[dict[str, Any]]:
+        if not probability_payload:
+            return []
+        payload: list[dict[str, Any]] = []
+        for leg in probability_payload.get("selected_legs") or []:
+            option_symbol = str(leg.get("symbol") or "").strip()
+            side = str(leg.get("side") or "").lower()
+            if not option_symbol or side not in {"long", "short"}:
+                continue
+            payload.append(
+                {
+                    "option_symbol": option_symbol,
+                    "side": "buy_to_open" if side == "long" else "sell_to_open",
+                    "quantity": max(int(contracts), 1),
+                    "instrument_type": "option",
+                }
+            )
+        return payload
+
+    def _order_seed_execution_fields(
+        self,
+        *,
+        selected: dict[str, Any],
+        probability_payload: dict[str, Any] | None,
+        suggested_size: int,
+    ) -> dict[str, Any]:
+        strategy_type = str(selected.get("strategy_type") or "")
+        meta = _strategy_meta(strategy_type)
+        if meta["family"] == "equity":
+            return {}
+
+        selected_legs = list((probability_payload or {}).get("selected_legs") or [])
+        execution_fields: dict[str, Any] = {}
+        order_type = str(meta.get("order_type") or "market")
+        contracts = max(int(suggested_size), 1)
+
+        if len(selected_legs) == 1:
+            option_symbol = str(selected_legs[0].get("symbol") or "").strip()
+            if option_symbol:
+                execution_fields["option_symbol"] = option_symbol
+                execution_fields["tradier_class"] = "option"
+                if order_type == "market":
+                    option_side = str(selected_legs[0].get("side") or "long").lower()
+                    execution_fields["side"] = "buy_to_open" if option_side == "long" else "sell_to_open"
+        elif len(selected_legs) >= 2:
+            legs = self._tradier_legs_payload(probability_payload=probability_payload, contracts=contracts)
+            if legs:
+                execution_fields["legs"] = legs
+                execution_fields["tradier_class"] = "multileg"
+
+        if order_type in {"debit", "credit", "even"}:
+            net_premium = abs(_safe_float((probability_payload or {}).get("net_premium"), 0.0))
+            if net_premium > 0:
+                execution_fields["price"] = round(net_premium, 4)
+        return execution_fields
 
     def _risk_profile(
         self,
@@ -379,7 +500,9 @@ class StrategySelectorService:
         allow_equity: bool,
         allow_credit: bool,
         prefer_defined_risk: bool,
+        options_session_mode: str = "balanced",
     ) -> list[dict[str, Any]]:
+        options_session_mode = _normalize_options_session_mode(options_session_mode)
         direction = str(candidate.get("direction") or "").lower()
         bullish = direction == "alcista"
         timeframe = str(candidate.get("timeframe") or "1h")
@@ -394,6 +517,20 @@ class StrategySelectorService:
         order_flow_score = _safe_float(order_flow.get("score_pct"), 50.0)
         order_flow_direction = str(order_flow.get("direction") or "neutral").lower()
         order_flow_confidence = _safe_float(order_flow.get("confidence_pct"), 0.0)
+        regime = str(
+            candidate.get("regime")
+            or candidate.get("market_regime")
+            or candidate.get("market_state")
+            or ""
+        ).upper()
+        iv_rank = _safe_float(candidate.get("iv_rank"), _safe_float(candidate.get("iv_rank_pct"), 35.0))
+        iv_hv_ratio = _safe_float(candidate.get("iv_hv_ratio"), 1.0)
+        liquidity_score = _clip(_safe_float(candidate.get("liquidity_score"), 0.8), 0.0, 1.0)
+        skew_pct = _safe_float(candidate.get("skew_pct"), 0.0)
+        term_structure_slope = _safe_float(candidate.get("term_structure_slope"), 1.0)
+        event_near = bool(candidate.get("event_near") or candidate.get("earnings_near"))
+        options_thesis = str(candidate.get("options_thesis") or candidate.get("thesis") or "").strip().lower() or None
+        has_options = bool(candidate.get("has_options")) if candidate.get("has_options") is not None else True
 
         learning_context = self.learning.context(
             symbol=symbol,
@@ -407,6 +544,40 @@ class StrategySelectorService:
         base_signal = (selection_score * 0.55) + (local_win * 0.45)
         flow_aligned = order_flow_direction == direction and order_flow_direction in {"alcista", "bajista"}
         flow_opposed = order_flow_direction in {"alcista", "bajista"} and order_flow_direction != direction
+        governance_direction = "BUY" if bullish else "SELL"
+        if regime not in {"BULL", "BEAR", "SIDEWAYS", "TREND"}:
+            regime = "BULL" if bullish else "BEAR"
+        governance_strategy = pick_strategy(
+            governance_direction,
+            regime,
+            iv_rank,
+            iv_hv_ratio,
+            thesis=options_thesis,
+            event_near=event_near,
+            liquidity_score=liquidity_score,
+            skew_pct=skew_pct,
+            term_structure_slope=term_structure_slope,
+            prefer_defined_risk=prefer_defined_risk,
+        )
+        governance_snapshot = describe_strategy_governance(
+            direction=governance_direction,
+            regime=regime,
+            iv_rank=iv_rank,
+            iv_hv_ratio=iv_hv_ratio,
+            strategy=governance_strategy,
+            thesis=options_thesis,
+            event_near=event_near,
+            liquidity_score=liquidity_score,
+            skew_pct=skew_pct,
+            term_structure_slope=term_structure_slope,
+        )
+        recommended_family = str(governance_snapshot.get("strategy_family") or "")
+        high_iv = iv_rank >= 55 or iv_hv_ratio >= 1.2
+        low_iv = iv_rank <= 25 and iv_hv_ratio <= 1.0
+        balanced_skew = abs(skew_pct) <= 0.12
+        unique_options: dict[str, dict[str, Any]] = {}
+        allow_equity = bool(allow_equity and options_session_mode != "options_only")
+        option_mode_active = options_session_mode in {"option_first", "options_only"} and has_options
 
         def _adaptive_bias_for(strategy_type: str) -> float:
             strategy_bias = self.learning.strategy_bias(strategy_type, account_scope=account_scope)
@@ -418,6 +589,164 @@ class StrategySelectorService:
             if adaptive_bias <= -1.0:
                 return [negative]
             return []
+
+        def _governance_family(strategy_type: str) -> str:
+            if strategy_type in {"iron_condor", "iron_butterfly"}:
+                return "neutral_theta"
+            if strategy_type in {"bull_put_credit_spread", "bear_call_credit_spread"}:
+                return "directional_credit"
+            if strategy_type in {"bull_call_debit_spread", "bear_put_debit_spread"}:
+                return "directional_debit"
+            if strategy_type in {"call_calendar_spread", "put_calendar_spread", "call_diagonal_debit_spread", "put_diagonal_debit_spread"}:
+                return "term_structure_time_spread"
+            if strategy_type in {"long_call", "long_put"}:
+                return "directional_long_premium"
+            return "other"
+
+        def _register(option: dict[str, Any]) -> None:
+            strategy_type = str(option.get("strategy_type") or "")
+            if not strategy_type:
+                return
+            family = _governance_family(strategy_type)
+            score = _safe_float(option.get("score"), 0.0)
+            if option_mode_active:
+                if family == "other":
+                    pass
+                elif family == "term_structure_time_spread":
+                    score += 8.0 if options_session_mode == "option_first" else 12.0
+                elif family in {"neutral_theta", "directional_credit", "directional_debit", "directional_long_premium"}:
+                    score += 5.0 if options_session_mode == "option_first" else 8.0
+            if strategy_type.startswith("equity_") and options_session_mode == "option_first":
+                score -= 10.0
+            option = {**option, "score": round(score, 2)}
+            existing = unique_options.get(strategy_type)
+            if existing is None or _safe_float(option.get("score"), 0.0) > _safe_float(existing.get("score"), 0.0):
+                unique_options[strategy_type] = option
+
+        def _governance_notes(strategy_type: str) -> list[str]:
+            notes: list[str] = []
+            if strategy_type == governance_strategy:
+                notes.append("la gobernanza de volatilidad y regimen favorece esta estructura")
+            family = _governance_family(strategy_type)
+            if family == recommended_family and family != "other":
+                notes.append("coincide con la familia recomendada por benchmark de opciones")
+            if family == "term_structure_time_spread":
+                if term_structure_slope >= 1.03 and not event_near and liquidity_score >= 0.55:
+                    notes.append("la term structure favorece una estructura de tiempo")
+                else:
+                    notes.append("si la term structure pierde apoyo, esta estructura baja de prioridad")
+            if family == "neutral_theta":
+                if high_iv and not event_near and liquidity_score >= 0.55:
+                    notes.append("el contexto de IV respalda theta definido con riesgo acotado")
+                else:
+                    notes.append("theta neutral exige IV alta, liquidez sana y ausencia de evento cercano")
+            return notes
+
+        def _governance_candidate() -> dict[str, Any]:
+            strategy_type = governance_strategy
+            family = _governance_family(strategy_type)
+            adaptive_bias = _adaptive_bias_for(strategy_type)
+            if family == "term_structure_time_spread":
+                family_bonus = 14.0 if timeframe in {"1h", "4h", "1d"} else 6.0
+                if confirmed:
+                    family_bonus += 5.0
+                if term_structure_slope >= 1.03:
+                    family_bonus += 7.0
+                else:
+                    family_bonus -= 8.0
+                if options_thesis in {"calendar", "diagonal", "time_spread", "term_structure", "theta_carry"}:
+                    family_bonus += 6.0
+                if event_near:
+                    family_bonus -= 7.0
+                if liquidity_score < 0.55:
+                    family_bonus -= 6.0
+                if flow_aligned:
+                    family_bonus += min(4.0 + (order_flow_confidence * 0.02), 7.0)
+                elif flow_opposed:
+                    family_bonus -= min(7.0 + (order_flow_confidence * 0.03), 10.0)
+                camera_precision = round(profile["camera_fit"] + 1.0, 1)
+                vehicle_type = "time_spread"
+                why = [
+                    "estructura de tiempo para explotar theta frontal y sesgo controlado",
+                    "apta cuando la curva temporal aporta informacion mas util que un vertical puro",
+                ]
+            elif family == "neutral_theta":
+                family_bonus = 12.0 if timeframe in {"4h", "1d"} else 4.0
+                family_bonus += 6.0 if high_iv else -8.0
+                family_bonus += 4.0 if balanced_skew else -5.0
+                family_bonus += 3.0 if not event_near else -9.0
+                family_bonus += 3.0 if liquidity_score >= 0.65 else -6.0
+                camera_precision = round(profile["camera_fit"] - 2.0, 1)
+                vehicle_type = "neutral_theta"
+                why = [
+                    "estructura de theta definida para mercado lateral o contraccion de volatilidad",
+                    "prefiere precio aceptado dentro de rango y sin catalizador cercano",
+                ]
+            elif family == "directional_credit":
+                family_bonus = 10.0 if timeframe in {"4h", "1d"} else 4.0
+                family_bonus += 6.0 if high_iv else -6.0
+                family_bonus += 4.0 if confirmed else -4.0
+                family_bonus += 3.0 if liquidity_score >= 0.6 else -5.0
+                family_bonus += 2.0 if prefer_defined_risk else 0.0
+                if event_near:
+                    family_bonus -= 8.0
+                camera_precision = round(profile["camera_fit"] - 2.0, 1)
+                vehicle_type = "defined_risk_credit"
+                why = [
+                    "prima vendida con riesgo definido cuando la IV sostiene el credito",
+                    "mejor si la continuidad es clara y el desplazamiento esperado es moderado",
+                ]
+            elif family == "directional_long_premium":
+                family_bonus = 9.0 if event_near else 5.0
+                family_bonus += 5.0 if low_iv else -2.0
+                family_bonus += 2.0 if confirmed else -5.0
+                if flow_aligned:
+                    family_bonus += min(5.0 + (order_flow_confidence * 0.025), 8.0)
+                elif flow_opposed:
+                    family_bonus -= min(7.0 + (order_flow_confidence * 0.03), 10.0)
+                camera_precision = round(profile["camera_fit"] - (8.0 if timeframe == "5m" else 4.0), 1)
+                vehicle_type = "simple_option"
+                why = [
+                    "premium largo para expansion direccional o catalizador cercano",
+                    "acepta mejor convexidad cuando vender prima seria fragil",
+                ]
+            else:
+                family_bonus = 10.0 if timeframe in {"1h", "4h"} else 4.0
+                family_bonus += 5.0 if confirmed else 0.0
+                family_bonus += 4.0 if 1.2 <= predicted_move <= 3.8 else -1.0
+                family_bonus += 3.0 if prefer_defined_risk else 0.0
+                if flow_aligned:
+                    family_bonus += min(5.0 + (order_flow_confidence * 0.025), 8.5)
+                elif flow_opposed:
+                    family_bonus -= min(7.0 + (order_flow_confidence * 0.03), 10.0)
+                camera_precision = round(profile["camera_fit"] + 2.0, 1)
+                vehicle_type = "defined_risk_debit"
+                why = [
+                    "delta direccional con riesgo acotado",
+                    "equilibrio solido entre precision, costo y control del riesgo",
+                ]
+
+            return {
+                "strategy_type": strategy_type,
+                "vehicle_type": vehicle_type,
+                "score": round(base_signal + family_bonus + adaptive_bias, 2),
+                "camera_precision_pct": camera_precision,
+                "why": [
+                    *why,
+                    *_governance_notes(strategy_type),
+                    *_adaptive_note(
+                        adaptive_bias,
+                        "el aprendizaje reciente apoya esta estructura en este activo",
+                        "el aprendizaje reciente recomienda bajar conviccion en esta estructura",
+                    ),
+                ],
+                "adaptive_bias": adaptive_bias,
+                "governance_alignment": {
+                    "recommended_strategy": governance_strategy,
+                    "recommended_family": recommended_family,
+                    "snapshot": governance_snapshot,
+                },
+            }
 
         if allow_equity:
             equity_bonus = 0.0
@@ -436,7 +765,7 @@ class StrategySelectorService:
                 equity_bonus -= min(10.0 + (order_flow_confidence * 0.04), 14.0)
             strategy_type = "equity_long" if bullish else "equity_short"
             adaptive_bias = _adaptive_bias_for(strategy_type)
-            options.append({
+            _register({
                 "strategy_type": strategy_type,
                 "vehicle_type": "equity",
                 "score": round(base_signal + equity_bonus + adaptive_bias, 2),
@@ -465,7 +794,7 @@ class StrategySelectorService:
             simple_bonus -= min(8.0 + (order_flow_confidence * 0.03), 12.0)
         strategy_type = "long_call" if bullish else "long_put"
         adaptive_bias = _adaptive_bias_for(strategy_type)
-        options.append({
+        _register({
             "strategy_type": strategy_type,
             "vehicle_type": "simple_option",
             "score": round(base_signal + simple_bonus + adaptive_bias, 2),
@@ -494,7 +823,7 @@ class StrategySelectorService:
             debit_bonus -= min(7.0 + (order_flow_confidence * 0.03), 10.0)
         strategy_type = "bull_call_debit_spread" if bullish else "bear_put_debit_spread"
         adaptive_bias = _adaptive_bias_for(strategy_type)
-        options.append({
+        _register({
             "strategy_type": strategy_type,
             "vehicle_type": "defined_risk_debit",
             "score": round(base_signal + debit_bonus + adaptive_bias, 2),
@@ -525,7 +854,7 @@ class StrategySelectorService:
                 credit_bonus -= min(9.0 + (order_flow_confidence * 0.035), 12.0)
             strategy_type = "bull_put_credit_spread" if bullish else "bear_call_credit_spread"
             adaptive_bias = _adaptive_bias_for(strategy_type)
-            options.append({
+            _register({
                 "strategy_type": strategy_type,
                 "vehicle_type": "defined_risk_credit",
                 "score": round(base_signal + credit_bonus + adaptive_bias, 2),
@@ -545,6 +874,8 @@ class StrategySelectorService:
                 "adaptive_bias": adaptive_bias,
             })
 
+        _register(_governance_candidate())
+        options = list(unique_options.values())
         return sorted(options, key=lambda item: float(item.get("score") or 0.0), reverse=True)
 
     def _option_risk_per_unit(self, strategy_type: str, probability_payload: dict[str, Any] | None) -> float | None:
@@ -674,6 +1005,10 @@ class StrategySelectorService:
             entry_style = "spread de debito con confirmacion antes del ticket"
             trigger = "tomar cuando el riesgo definido mejora la relacion costo/precision"
             dte = "21 a 45 dias"
+        elif strategy_type in {"call_calendar_spread", "put_calendar_spread", "call_diagonal_debit_spread", "put_diagonal_debit_spread"}:
+            entry_style = "estructura de tiempo con confirmacion de sesgo y term structure"
+            trigger = "tomar solo si el desplazamiento y la curva temporal siguen respaldando calendar o diagonal"
+            dte = "frente 14 a 30 dias / fondo 35 a 60 dias"
         else:
             entry_style = "spread de credito solo con lectura estable"
             trigger = "solo si la zona corta queda fuera del desplazamiento esperado"
@@ -765,6 +1100,12 @@ class StrategySelectorService:
                 "risk_invalidation": "salir si pierde 25%-35% del debito o falla la confirmacion",
                 "time_stop": "si el activo se lateraliza y erosiona el setup, salir temprano",
             }
+        if strategy_type in {"call_calendar_spread", "put_calendar_spread", "call_diagonal_debit_spread", "put_diagonal_debit_spread"}:
+            return {
+                "primary_take_profit": "salir cuando la tesis de tiempo o sesgo ya se exprese y el spread capture expansion suficiente",
+                "risk_invalidation": "cerrar si falla el sesgo o si la term structure deja de respaldar la estructura",
+                "time_stop": "no dejar que el frente se deteriore sin que el movimiento haya aparecido",
+            }
         return {
             "primary_take_profit": "recomprar entre 40% y 60% del credito maximo",
             "risk_invalidation": "salir si alcanza 1.5x el credito o si se rompe el lado corto",
@@ -781,8 +1122,10 @@ class StrategySelectorService:
         prefer_defined_risk: bool = True,
         allow_equity: bool = True,
         allow_credit: bool = True,
+        options_session_mode: str = "balanced",
         risk_budget_pct: float = 0.75,
     ) -> dict[str, Any]:
+        options_session_mode = _normalize_options_session_mode(options_session_mode)
         summary = self.tracker.build_summary(account_scope=account_scope, account_id=account_id)  # type: ignore[arg-type]
         balances = summary.get("balances") or {}
         account_session = summary.get("account_session") or {}
@@ -792,6 +1135,7 @@ class StrategySelectorService:
             allow_equity=allow_equity,
             allow_credit=allow_credit,
             prefer_defined_risk=prefer_defined_risk,
+            options_session_mode=options_session_mode,
         )
         if not candidate_structures:
             raise ValueError("No se pudo generar una estructura sugerida")
@@ -849,6 +1193,7 @@ class StrategySelectorService:
                 "verificar que la estructura de velas siga intacta",
             ],
         }
+        options_governance = _options_governance_snapshot(candidate, strategy_type, str(meta.get("family") or ""))
         entry_plan = self._entry_plan(
             candidate=candidate,
             selected=selected,
@@ -872,6 +1217,11 @@ class StrategySelectorService:
             camera_visual_fit_pct=camera_visual_fit_pct,
             selected=selected,
         )
+        execution_fields = self._order_seed_execution_fields(
+            selected=selected,
+            probability_payload=probability_payload,
+            suggested_size=max(int(_safe_float(size_plan.get("suggested_size"), 1.0)), 1),
+        )
         order_seed = {
             "symbol": candidate.get("symbol"),
             "strategy_type": strategy_type,
@@ -889,8 +1239,11 @@ class StrategySelectorService:
             "entry_confidence_reference_pct": entry_plan.get("confidence_reference_pct"),
             "max_entry_drift_pct": entry_plan.get("max_adverse_drift_pct"),
             "max_entry_spread_pct": entry_plan.get("max_spread_pct"),
+            "probability_payload": probability_payload or {},
             "chart_plan": chart_plan,
             "camera_plan": camera_plan,
+            "options_governance": options_governance,
+            **execution_fields,
         }
 
         risk_profile = self._risk_profile(
@@ -915,6 +1268,7 @@ class StrategySelectorService:
         return {
             "generated_at": datetime.utcnow().isoformat(),
             "account_scope": account_scope,
+            "selector_session": {"mode": options_session_mode},
             "account_session": account_session,
             "balances": balances,
             "candidate": candidate,
@@ -927,6 +1281,7 @@ class StrategySelectorService:
             "size_plan": size_plan,
             "chart_plan": chart_plan,
             "camera_plan": camera_plan,
+            "options_governance": options_governance,
             "entry_plan": entry_plan,
             "confidence_breakdown": confidence_breakdown,
             "adaptive_context": adaptive_context,

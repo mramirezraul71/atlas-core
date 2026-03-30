@@ -31,3 +31,6 @@ class JournalProService:
 
     def attribution_integrity_snapshot(self, *, account_type: str | None = None, limit: int = 10) -> dict[str, Any]:
         return self.journal.attribution_integrity_snapshot(account_type=account_type, limit=limit)
+
+    def options_governance_adoption_snapshot(self, *, account_type: str | None = None, limit: int = 10) -> dict[str, Any]:
+        return self.journal.options_governance_adoption_snapshot(account_type=account_type, limit=limit)

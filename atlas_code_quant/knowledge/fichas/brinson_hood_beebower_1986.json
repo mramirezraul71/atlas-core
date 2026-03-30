@@ -1,0 +1,42 @@
+{
+  "id": "brinson_hood_beebower_1986",
+  "title": "Determinants of Portfolio Performance",
+  "authors": [
+    "Gary Brinson",
+    "L. Randolph Hood",
+    "Gilbert Beebower"
+  ],
+  "year": 1986,
+  "source": "Financial Analysts Journal",
+  "url": "https://www.jstor.org/stable/4478947",
+  "category": "CAT5",
+  "topic": "portfolio_attribution",
+  "subtopics": [
+    "BHB_attribution",
+    "asset_allocation",
+    "security_selection",
+    "timing"
+  ],
+  "timeframes": [
+    "medium",
+    "long"
+  ],
+  "markets": [
+    "equity",
+    "bonds"
+  ],
+  "method": "attribution_decomposition",
+  "key_findings": "El 93.6% de la variación de retornos entre carteras se explica por la asignación de activos (asset allocation). La selección de valores y el timing contribuyen marginalmente. La decisión de en qué clase de activo estar es más importante que qué activo elegir.",
+  "limitations": "El estudio aplica a carteras diversificadas institucionales. En un sistema de short-term trading como ATLAS, la selección de valor y el timing son más relevantes que la asignación.",
+  "atlas_utility": "Marco de post_trade_learning_snapshot. La atribución BHB identifica si el alpha viene de la clase de activo (equity vs options vs ETF) o del símbolo específico. Requiere strategy_type correctamente atribuido para cada trade cerrado.",
+  "confidence_level": "high",
+  "scanner_methods": [],
+  "tags": [
+    "attribution",
+    "BHB",
+    "post_trade",
+    "asset_allocation",
+    "learning"
+  ],
+  "_generated_at": "2026-03-30T02:47:30.604633+00:00"
+}

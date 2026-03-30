@@ -50,6 +50,42 @@ LEVEL4_STRATEGIES = {
     "put_diagonal_debit_spread",
 }
 
+OPTION_SINGLE_LEG_STRATEGIES = {
+    "long_call",
+    "long_put",
+}
+
+OPTION_DIRECTIONAL_VERTICAL_STRATEGIES = {
+    "bull_call_debit_spread",
+    "bear_put_debit_spread",
+    "bull_put_credit_spread",
+    "bear_call_credit_spread",
+}
+
+OPTION_NEUTRAL_THETA_STRATEGIES = {
+    "iron_condor",
+    "iron_butterfly",
+    "call_credit_condor",
+    "put_credit_condor",
+    "call_credit_butterfly",
+    "put_credit_butterfly",
+}
+
+OPTION_TIME_SPREAD_STRATEGIES = {
+    "calendar_spread",
+    "call_calendar_spread",
+    "put_calendar_spread",
+    "call_diagonal_debit_spread",
+    "put_diagonal_debit_spread",
+}
+
+OPTION_STRATEGY_FAMILY_MAP = {
+    **{name: "single_leg_directional" for name in OPTION_SINGLE_LEG_STRATEGIES},
+    **{name: "directional_vertical" for name in OPTION_DIRECTIONAL_VERTICAL_STRATEGIES},
+    **{name: "neutral_theta" for name in OPTION_NEUTRAL_THETA_STRATEGIES},
+    **{name: "term_structure_time_spread" for name in OPTION_TIME_SPREAD_STRATEGIES},
+}
+
 
 def _json_dump(value: Any) -> str:
     return json.dumps(value or {}, ensure_ascii=True, default=str)
@@ -77,6 +113,11 @@ def _coerce_list_payload(value: Any) -> list[Any]:
 def _is_bad_strategy_type(value: Any) -> bool:
     normalized = str(value or "").strip().lower()
     return normalized in {"", "unknown", "untracked", "none", "null"}
+
+
+def _option_strategy_family(strategy_type: Any) -> str | None:
+    normalized = str(strategy_type or "").strip().lower()
+    return OPTION_STRATEGY_FAMILY_MAP.get(normalized)
 
 
 def _strategy_leg_tokens(strategy: dict[str, Any]) -> list[str]:
@@ -905,6 +946,139 @@ def build_attribution_integrity_snapshot(
     }
 
 
+def build_options_governance_adoption_snapshot(
+    entries: list[TradingJournal],
+    *,
+    account_type: str | None = None,
+    limit: int = 10,
+) -> dict[str, Any]:
+    capped_limit = max(1, min(int(limit), 20))
+    filtered = [
+        entry
+        for entry in entries
+        if account_type in {None, "", "all"} or entry.account_type == account_type
+    ]
+    option_entries = [
+        entry
+        for entry in filtered
+        if _option_strategy_family(entry.strategy_type) is not None
+    ]
+    if not option_entries:
+        return {
+            "generated_at": datetime.utcnow().isoformat(),
+            "account_type": account_type or "all",
+            "enabled": True,
+            "summary": {
+                "option_entries_total": 0,
+                "open_option_positions": 0,
+                "closed_option_trades": 0,
+                "time_spread_count": 0,
+                "vertical_count": 0,
+                "neutral_theta_count": 0,
+                "single_leg_count": 0,
+                "strategy_diversity_count": 0,
+                "time_spread_share_pct": 0.0,
+                "vertical_share_pct": 0.0,
+            },
+            "alerts": [
+                {
+                    "level": "warning",
+                    "code": "options_governance_not_exercised",
+                    "message": "Options governance is implemented, but no option trades exist yet in the journal for this account scope.",
+                }
+            ],
+            "family_mix": [],
+            "strategy_mix": [],
+            "limit": capped_limit,
+        }
+
+    open_entries = [entry for entry in option_entries if entry.status == "open"]
+    closed_entries = [entry for entry in option_entries if entry.status == "closed"]
+    family_counts: dict[str, int] = {}
+    strategy_counts: dict[str, dict[str, Any]] = {}
+    for entry in option_entries:
+        family = str(_option_strategy_family(entry.strategy_type) or "unknown")
+        family_counts[family] = family_counts.get(family, 0) + 1
+        strategy_key = str(entry.strategy_type or "unknown")
+        bucket = strategy_counts.setdefault(
+            strategy_key,
+            {"strategy_type": strategy_key, "count": 0, "status_open": 0, "status_closed": 0},
+        )
+        bucket["count"] += 1
+        if entry.status == "open":
+            bucket["status_open"] += 1
+        elif entry.status == "closed":
+            bucket["status_closed"] += 1
+
+    option_total = len(option_entries)
+    time_spread_count = family_counts.get("term_structure_time_spread", 0)
+    vertical_count = family_counts.get("directional_vertical", 0)
+    neutral_theta_count = family_counts.get("neutral_theta", 0)
+    single_leg_count = family_counts.get("single_leg_directional", 0)
+    time_spread_share_pct = round(_ratio_pct(time_spread_count, option_total), 2)
+    vertical_share_pct = round(_ratio_pct(vertical_count, option_total), 2)
+
+    alerts: list[dict[str, Any]] = []
+    if vertical_share_pct >= 80.0 and option_total >= 5:
+        alerts.append(
+            {
+                "level": "warning",
+                "code": "options_mix_concentrated_in_verticals",
+                "message": "Option usage is still heavily concentrated in directional verticals; calendars/diagonals are not yet being exercised much.",
+                "vertical_share_pct": vertical_share_pct,
+            }
+        )
+    if time_spread_count == 0 and option_total >= 5:
+        alerts.append(
+            {
+                "level": "watch",
+                "code": "time_spread_not_exercised",
+                "message": "No calendar/diagonal structures have been exercised yet in the observed option sample.",
+            }
+        )
+
+    family_mix = [
+        {
+            "family": family,
+            "count": count,
+            "share_pct": round(_ratio_pct(count, option_total), 2),
+        }
+        for family, count in family_counts.items()
+    ]
+    family_mix.sort(key=lambda item: (-item["count"], item["family"]))
+
+    strategy_mix = [
+        {
+            **bucket,
+            "share_pct": round(_ratio_pct(bucket["count"], option_total), 2),
+        }
+        for bucket in strategy_counts.values()
+    ]
+    strategy_mix.sort(key=lambda item: (-item["count"], item["strategy_type"]))
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "account_type": account_type or "all",
+        "enabled": True,
+        "summary": {
+            "option_entries_total": option_total,
+            "open_option_positions": len(open_entries),
+            "closed_option_trades": len(closed_entries),
+            "time_spread_count": time_spread_count,
+            "vertical_count": vertical_count,
+            "neutral_theta_count": neutral_theta_count,
+            "single_leg_count": single_leg_count,
+            "strategy_diversity_count": len(strategy_counts),
+            "time_spread_share_pct": time_spread_share_pct,
+            "vertical_share_pct": vertical_share_pct,
+        },
+        "alerts": alerts,
+        "family_mix": family_mix[:capped_limit],
+        "strategy_mix": strategy_mix[:capped_limit],
+        "limit": capped_limit,
+    }
+
+
 def _equity_curve(entries: list[TradingJournal]) -> list[dict[str, Any]]:
     running = 0.0
     points: list[dict[str, Any]] = []
@@ -1282,3 +1456,11 @@ class TradingJournalService:
                 query = query.where(TradingJournal.account_type == account_type)
             rows = db.execute(query.order_by(TradingJournal.updated_at.desc(), TradingJournal.id.desc())).scalars().all()
         return build_attribution_integrity_snapshot(rows, account_type=account_type, limit=limit)
+
+    def options_governance_adoption_snapshot(self, *, account_type: str | None = None, limit: int = 10) -> dict[str, Any]:
+        with session_scope() as db:
+            query = select(TradingJournal)
+            if account_type not in {None, "", "all"}:
+                query = query.where(TradingJournal.account_type == account_type)
+            rows = db.execute(query.order_by(TradingJournal.updated_at.desc(), TradingJournal.id.desc())).scalars().all()
+        return build_options_governance_adoption_snapshot(rows, account_type=account_type, limit=limit)

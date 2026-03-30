@@ -129,6 +129,28 @@ class _Journal:
             "limit": limit,
         }
 
+    def options_governance_adoption_snapshot(self, account_type: str | None = None, limit: int = 10) -> dict:
+        return {
+            "enabled": True,
+            "account_type": account_type,
+            "summary": {
+                "option_entries_total": 0,
+                "open_option_positions": 0,
+                "closed_option_trades": 0,
+                "time_spread_count": 0,
+                "vertical_count": 0,
+                "neutral_theta_count": 0,
+                "single_leg_count": 0,
+                "strategy_diversity_count": 0,
+                "time_spread_share_pct": 0.0,
+                "vertical_share_pct": 0.0,
+            },
+            "alerts": [],
+            "family_mix": [],
+            "strategy_mix": [],
+            "limit": limit,
+        }
+
 
 def _scorecard_payload() -> dict:
     return {
@@ -144,12 +166,15 @@ def _scorecard_payload() -> dict:
             "process_compliance_score": {"value": 60.0, "status": "watch"},
             "implementation_usefulness_score": {"value": 20.0, "status": "critical"},
             "visual_benchmark_feedback_score": {"value": 92.0, "status": "healthy"},
+            "options_strategy_governance_feedback_score": {"value": 88.0, "status": "healthy"},
         },
         "supporting_indicators": {
             "brain_delivery_ratio_pct": 53.43,
             "open_untracked_ratio_pct": 100.0,
             "visual_benchmark_source_count": 5,
             "visual_benchmark_translation_pct": 100.0,
+            "options_governance_source_count": 3,
+            "options_governance_translation_pct": 100.0,
         },
         "next_actions": ["seguir auditando"],
     }
@@ -414,6 +439,115 @@ def test_operation_status_exposes_visual_benchmark_snapshot(tmp_path: Path):
     assert payload["visual_benchmark"]["score"] == 92.0
     assert payload["visual_benchmark"]["visual_source_count"] == 5
     assert payload["visual_benchmark"]["translation_pct"] == 100.0
+
+
+def test_operation_status_exposes_visual_gate_metrics_snapshot(tmp_path: Path):
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+    state = center._load()
+    state["visual_gate_stats"] = {
+        "evaluated_count": 12,
+        "applies_count": 9,
+        "blocked_count": 4,
+        "passed_count": 5,
+        "manual_review_count": 6,
+        "last_status": "manual_review",
+        "last_blocked": True,
+        "last_manual_required": True,
+        "last_readiness_score_pct": 68.5,
+        "last_alignment_score_pct": 54.0,
+        "last_updated_at": "2026-03-29T12:00:00",
+        "last_symbol": "AAPL",
+        "last_action": "preview",
+        "last_blocking_reason": "visual thesis is misaligned with OCR evidence",
+    }
+    center._save(state)
+
+    payload = center.status()
+
+    assert payload["visual_gate_metrics"]["evaluated_count"] == 12
+    assert payload["visual_gate_metrics"]["blocked_count"] == 4
+    assert payload["visual_gate_metrics"]["last_status"] == "manual_review"
+    assert payload["visual_gate_metrics"]["last_blocked"] is True
+    assert payload["visual_gate_metrics"]["last_readiness_score_pct"] == 68.5
+
+
+def test_operation_status_exposes_options_strategy_governance_snapshot(tmp_path: Path):
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+    state = center._load()
+    state["last_options_strategy_governance"] = {
+        "enabled": True,
+        "benchmark_framework": "iv_guides_credit_vs_debit",
+        "strategy_type": "call_calendar_spread",
+        "structure_family": "term_structure_time_spread",
+        "term_structure_slope": 1.18,
+        "preferred_but_unavailable_strategy": None,
+    }
+    center._save(state)
+
+    payload = center.status()
+
+    assert payload["options_strategy_governance"]["enabled"] is True
+    assert payload["options_strategy_governance"]["strategy_type"] == "call_calendar_spread"
+    assert payload["options_strategy_governance"]["structure_family"] == "term_structure_time_spread"
+
+
+def test_operation_status_exposes_options_governance_adoption_snapshot(tmp_path: Path):
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+
+    payload = center.status()
+
+    assert payload["options_governance_adoption"]["enabled"] is True
+    assert payload["options_governance_adoption"]["summary"]["option_entries_total"] == 0
+    assert payload["options_governance_adoption"]["summary"]["time_spread_count"] == 0
+
+
+def test_operation_status_exposes_selector_session_settings(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(settings, "selector_session_mode", "options_only")
+    monkeypatch.setattr(settings, "selector_options_require_available", True)
+    monkeypatch.setattr(settings, "options_enabled", True)
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+
+    payload = center.status()
+
+    assert payload["selector_session"]["mode"] == "options_only"
+    assert payload["selector_session"]["require_optionable_candidate"] is True
+    assert payload["selector_session"]["options_enabled"] is True
 
 
 class _JournalingFastTracker:

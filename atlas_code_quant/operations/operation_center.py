@@ -71,6 +71,23 @@ _DEFAULT_STATE = {
     "attribution_integrity_alert_active": False,
     "attribution_integrity_last_count": 0,
     "attribution_integrity_last_event_at": None,
+    "visual_gate_stats": {
+        "evaluated_count": 0,
+        "applies_count": 0,
+        "blocked_count": 0,
+        "passed_count": 0,
+        "manual_review_count": 0,
+        "last_status": "not_requested",
+        "last_blocked": False,
+        "last_manual_required": False,
+        "last_readiness_score_pct": 100.0,
+        "last_alignment_score_pct": None,
+        "last_updated_at": None,
+        "last_symbol": None,
+        "last_action": None,
+        "last_blocking_reason": None,
+    },
+    "last_options_strategy_governance": {},
 }
 
 
@@ -145,6 +162,24 @@ class OperationCenter:
                 state["fail_safe_reason"] = None
         state["operational_error_limit"] = max(1, int(state.get("operational_error_limit") or 3))
         state["operational_error_count"] = max(0, int(state.get("operational_error_count") or 0))
+        visual_gate = state.get("visual_gate_stats")
+        if not isinstance(visual_gate, dict):
+            visual_gate = {}
+        normalized_visual_gate = deepcopy(_DEFAULT_STATE["visual_gate_stats"])
+        normalized_visual_gate.update(visual_gate)
+        for key in ("evaluated_count", "applies_count", "blocked_count", "passed_count", "manual_review_count"):
+            normalized_visual_gate[key] = max(0, int(normalized_visual_gate.get(key) or 0))
+        normalized_visual_gate["last_blocked"] = bool(normalized_visual_gate.get("last_blocked"))
+        normalized_visual_gate["last_manual_required"] = bool(normalized_visual_gate.get("last_manual_required"))
+        normalized_visual_gate["last_readiness_score_pct"] = round(
+            _safe_float(normalized_visual_gate.get("last_readiness_score_pct"), 100.0),
+            2,
+        )
+        alignment = normalized_visual_gate.get("last_alignment_score_pct")
+        normalized_visual_gate["last_alignment_score_pct"] = (
+            round(_safe_float(alignment, 0.0), 2) if alignment is not None else None
+        )
+        state["visual_gate_stats"] = normalized_visual_gate
         return state
 
     def _save(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -153,6 +188,43 @@ class OperationCenter:
         merged = self._normalize_runtime_state(merged)
         self.state_path.write_text(json.dumps(merged, ensure_ascii=True, indent=2), encoding="utf-8")
         return merged
+
+    def _record_visual_gate_metrics(
+        self,
+        *,
+        state: dict[str, Any],
+        gate: dict[str, Any],
+        order: OrderRequest,
+        action: Literal["evaluate", "preview", "submit"],
+    ) -> dict[str, Any]:
+        stats = deepcopy(state.get("visual_gate_stats") or _DEFAULT_STATE["visual_gate_stats"])
+        stats["evaluated_count"] = int(stats.get("evaluated_count") or 0) + 1
+        applies = bool(gate.get("applies"))
+        if applies:
+            stats["applies_count"] = int(stats.get("applies_count") or 0) + 1
+        blocked = bool(gate.get("applies")) and (
+            not bool(gate.get("blocking_ready"))
+            or any(str(reason).lower().startswith("visual gate blocked") for reason in (gate.get("reasons") or []))
+        )
+        if blocked:
+            stats["blocked_count"] = int(stats.get("blocked_count") or 0) + 1
+        elif applies:
+            stats["passed_count"] = int(stats.get("passed_count") or 0) + 1
+        if bool(gate.get("manual_required")) or bool(gate.get("operator_review_required")):
+            stats["manual_review_count"] = int(stats.get("manual_review_count") or 0) + 1
+
+        alignment = ((gate.get("context_evidence") or {}).get("visual_alignment") or {}).get("alignment_score_pct")
+        stats["last_status"] = str(gate.get("status") or "not_requested")
+        stats["last_blocked"] = blocked
+        stats["last_manual_required"] = bool(gate.get("manual_required")) or bool(gate.get("operator_review_required"))
+        stats["last_readiness_score_pct"] = round(_safe_float(gate.get("readiness_score_pct"), 100.0), 2)
+        stats["last_alignment_score_pct"] = round(_safe_float(alignment, 0.0), 2) if alignment is not None else None
+        stats["last_updated_at"] = datetime.utcnow().isoformat()
+        stats["last_symbol"] = str(order.symbol or "")
+        stats["last_action"] = action
+        stats["last_blocking_reason"] = gate.get("blocking_reason")
+        state["visual_gate_stats"] = stats
+        return state
 
     def _empty_monitor_summary(self, scope: str, *, reason: str | None = None) -> dict[str, Any]:
         return {
@@ -720,6 +792,64 @@ class OperationCenter:
         )
         return self._save(state)
 
+    def _lightweight_operation_status(
+        self,
+        *,
+        scope: str,
+        config: dict[str, Any],
+        monitor: dict[str, Any],
+        vision_status: dict[str, Any],
+        executor_status: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "generated_at": datetime.utcnow().isoformat(),
+            "scope": scope,
+            "config": {
+                "account_scope": config.get("account_scope"),
+                "paper_only": bool(config.get("paper_only", True)),
+                "auton_mode": config.get("auton_mode"),
+                "executor_mode": executor_status.get("mode"),
+                "vision_mode": vision_status.get("provider"),
+                "kill_switch_active": bool(executor_status.get("kill_switch_active", False)),
+            },
+            "vision": vision_status,
+            "executor": executor_status,
+            "brain": self.brain.status(),
+            "monitor_summary": {
+                "account_session": monitor.get("account_session"),
+                "balances": monitor.get("balances") or {},
+                "totals": monitor.get("totals") or {},
+            },
+        }
+
+    def _safe_journal_payload(
+        self,
+        *,
+        label: str,
+        scope: str,
+        limit: int,
+        loader: Callable[[], dict[str, Any]],
+    ) -> dict[str, Any]:
+        try:
+            return loader()
+        except Exception as exc:
+            logger.warning("journal snapshot fallback for %s: %s", label, exc)
+            return {
+                "generated_at": datetime.utcnow().isoformat(),
+                "account_type": scope,
+                "enabled": False,
+                "error": str(exc),
+                "summary": {},
+                "alerts": [
+                    {
+                        "level": "warning",
+                        "code": f"{label}_fallback",
+                        "message": f"Journal snapshot '{label}' fell back because the journal database was busy or unavailable.",
+                    }
+                ],
+                "limit": limit,
+            }
+
     def status(self) -> dict[str, Any]:
         config = self._load()
         scope = str(config.get("account_scope") or "paper")
@@ -727,18 +857,56 @@ class OperationCenter:
         scorecard = self._load_scorecard()
         vision_status = self.vision.status()
         executor_status = self.executor.status()
-        journal_snapshot = self.journal.snapshot(limit=3)
-        attribution_integrity = self.journal.attribution_integrity_snapshot(account_type=scope, limit=10)
+        journal_snapshot = self._safe_journal_payload(
+            label="snapshot",
+            scope=scope,
+            limit=3,
+            loader=lambda: self.journal.snapshot(limit=3),
+        )
+        attribution_integrity = self._safe_journal_payload(
+            label="attribution_integrity",
+            scope=scope,
+            limit=10,
+            loader=lambda: self.journal.attribution_integrity_snapshot(account_type=scope, limit=10),
+        )
         config = self._maybe_emit_attribution_integrity_event(
             state=config,
             snapshot=attribution_integrity,
             scope=scope,
         )
         config = self._save(config)
-        position_management = self.journal.position_management_snapshot(account_type=scope, limit=10)
-        exit_governance = self.journal.exit_governance_snapshot(account_type=scope, limit=10)
-        post_trade_learning = self.journal.post_trade_learning_snapshot(account_type=scope, limit=10)
+        position_management = self._safe_journal_payload(
+            label="position_management",
+            scope=scope,
+            limit=10,
+            loader=lambda: self.journal.position_management_snapshot(account_type=scope, limit=10),
+        )
+        exit_governance = self._safe_journal_payload(
+            label="exit_governance",
+            scope=scope,
+            limit=10,
+            loader=lambda: self.journal.exit_governance_snapshot(account_type=scope, limit=10),
+        )
+        post_trade_learning = self._safe_journal_payload(
+            label="post_trade_learning",
+            scope=scope,
+            limit=10,
+            loader=lambda: self.journal.post_trade_learning_snapshot(account_type=scope, limit=10),
+        )
         visual_benchmark = self._load_visual_benchmark_snapshot(scorecard)
+        visual_gate_metrics = deepcopy(config.get("visual_gate_stats") or {})
+        selector_session = {
+            "mode": str(settings.selector_session_mode or "balanced").lower(),
+            "require_optionable_candidate": bool(settings.selector_options_require_available),
+            "options_enabled": bool(settings.options_enabled),
+        }
+        options_strategy_governance = deepcopy(config.get("last_options_strategy_governance") or {})
+        options_governance_adoption = self._safe_journal_payload(
+            label="options_governance_adoption",
+            scope=scope,
+            limit=10,
+            loader=lambda: self.journal.options_governance_adoption_snapshot(account_type=scope, limit=10),
+        )
         return {
             "generated_at": datetime.utcnow().isoformat(),
             "config": {
@@ -779,6 +947,10 @@ class OperationCenter:
             "exit_governance": exit_governance,
             "post_trade_learning": post_trade_learning,
             "visual_benchmark": visual_benchmark,
+            "visual_gate_metrics": visual_gate_metrics,
+            "selector_session": selector_session,
+            "options_strategy_governance": options_strategy_governance,
+            "options_governance_adoption": options_governance_adoption,
             "failsafe": {
                 "active": bool(config.get("fail_safe_active")),
                 "reason": config.get("fail_safe_reason"),
@@ -874,13 +1046,17 @@ class OperationCenter:
         action: Literal["evaluate", "preview", "submit"] = "evaluate",
         capture_context: bool = True,
     ) -> dict[str, Any]:
+        started_at = time.perf_counter()
+        evaluation_timings: dict[str, float] = {}
         config = self._load()
         order_copy = order.model_copy(deep=True)
         if not order_copy.account_scope:
             order_copy.account_scope = str(config.get("account_scope") or "paper")  # type: ignore[assignment]
         scope = str(order_copy.account_scope or "paper")
         opening_equity_order = self._is_opening_equity_order(order_copy)
+        monitor_started = time.perf_counter()
         monitor = self.tracker.build_summary(account_scope=scope)  # type: ignore[arg-type]
+        evaluation_timings["monitor_summary_sec"] = round(time.perf_counter() - monitor_started, 4)
         balances = monitor.get("balances") or {}
         pdt_status = monitor.get("pdt_status") or {}
         reconciliation = self._load_reconciliation(account_scope=scope, account_id=order_copy.account_id)
@@ -890,6 +1066,7 @@ class OperationCenter:
         reasons: list[str] = []
         warnings: list[str] = []
         probability_payload: dict[str, Any] | None = None
+        probability_source = "none"
         strategy_type = str(order_copy.strategy_type or order_copy.probability_gate.strategy_type) if order_copy.probability_gate and order_copy.strategy_type is None else (str(order_copy.strategy_type) if order_copy.strategy_type else None)
 
         if bool(config.get("paper_only", True)) and scope != "paper":
@@ -927,12 +1104,20 @@ class OperationCenter:
         risk_dollars = None
         bpr_pct = None
         if strategy_type and strategy_type in SUPPORTED_STRATEGIES:
-            probability_result = get_winning_probability(
-                symbol=order_copy.symbol,
-                strategy_type=strategy_type,  # type: ignore[arg-type]
-                account_scope=scope,  # type: ignore[arg-type]
-            )
-            probability_payload = probability_result.to_dict()
+            probability_started = time.perf_counter()
+            precomputed_probability = dict(order_copy.probability_payload or {})
+            if action != "submit" and precomputed_probability:
+                probability_payload = precomputed_probability
+                probability_source = "precomputed"
+            else:
+                probability_result = get_winning_probability(
+                    symbol=order_copy.symbol,
+                    strategy_type=strategy_type,  # type: ignore[arg-type]
+                    account_scope=scope,  # type: ignore[arg-type]
+                )
+                probability_payload = probability_result.to_dict()
+                probability_source = "live"
+            evaluation_timings["probability_sec"] = round(time.perf_counter() - probability_started, 4)
             legs = [
                 StrategyLeg(
                     side=str(leg.get("side") or "long"),  # type: ignore[arg-type]
@@ -979,7 +1164,10 @@ class OperationCenter:
         reasons.extend(list(visual_entry_gate.get("reasons") or []))
         warnings.extend(list(visual_entry_gate.get("warnings") or []))
 
+        context_capture_started = time.perf_counter()
         context_snapshot = self.vision.capture_context_snapshot(label=f"{scope}_{action}") if capture_context else None
+        if capture_context:
+            evaluation_timings["context_capture_sec"] = round(time.perf_counter() - context_capture_started, 4)
         if capture_context and isinstance(context_snapshot, dict) and context_snapshot.get("capture_ok") is False:
             warnings.append("La captura visual no fue confirmada correctamente.")
             visual_entry_gate.setdefault("warnings", []).append("visual context snapshot failed.")
@@ -989,6 +1177,7 @@ class OperationCenter:
             gate=visual_entry_gate,
             order=order_copy,
             action=action,
+            auton_mode=str(config.get("auton_mode") or "off"),
             context_snapshot=context_snapshot if isinstance(context_snapshot, dict) else None,
         )
         reasons.extend(list(visual_entry_gate.get("reasons") or []))
@@ -1003,7 +1192,9 @@ class OperationCenter:
             else:
                 order_copy.preview = action != "submit"
                 try:
+                    execution_started = time.perf_counter()
                     execution_result = self.executor.execute(order=order_copy, action=action, mode=str(config.get("executor_mode") or "disabled"))
+                    evaluation_timings["executor_sec"] = round(time.perf_counter() - execution_started, 4)
                     if execution_result.get("decision") == "blocked":
                         allowed = False
                         block_reason = str(execution_result.get("reason") or "El ejecutor bloqueo la operacion.")
@@ -1089,10 +1280,12 @@ class OperationCenter:
             },
             "execution": execution_result,
             "probability": probability_payload,
+            "probability_source": probability_source,
             "vision_snapshot": context_snapshot,
             "entry_validation": entry_validation,
             "visual_entry_gate": visual_entry_gate,
             "execution_quality": execution_quality,
+            "evaluation_timings": evaluation_timings,
             "monitor_summary": {
                 "account_session": monitor.get("account_session"),
                 "balances": balances,
@@ -1110,14 +1303,28 @@ class OperationCenter:
             "scope": scope,
             "action": action,
         }
+        config["last_options_strategy_governance"] = deepcopy(order_copy.options_governance or {})
+        config = self._record_visual_gate_metrics(
+            state=config,
+            gate=visual_entry_gate,
+            order=order_copy,
+            action=action,
+        )
         config["last_decision"] = {
             "decision": decision,
             "allowed": allowed,
             "timestamp": payload["generated_at"],
             "reason": reasons[0] if reasons else "ok",
         }
+        payload["evaluation_timings"]["total_sec"] = round(time.perf_counter() - started_at, 4)
         self._save(config)
-        payload["operation_status"] = self.status()
+        payload["operation_status"] = self._lightweight_operation_status(
+            scope=scope,
+            config=config,
+            monitor=monitor,
+            vision_status=vision_status,
+            executor_status=executor_status,
+        )
         self._dispatch_brain_task(
             "operation-cycle",
             self.brain.record_operation_cycle,
@@ -1274,6 +1481,7 @@ class OperationCenter:
         gate: dict[str, Any],
         order: OrderRequest,
         action: Literal["evaluate", "preview", "submit"],
+        auton_mode: str,
         context_snapshot: dict[str, Any] | None,
     ) -> dict[str, Any]:
         payload = deepcopy(gate)
@@ -1400,6 +1608,19 @@ class OperationCenter:
             payload["operator_review_required"] = True
             payload["warnings"].append("Price evidence is required for this setup but OCR did not detect visible prices.")
 
+        supervised_manual_chart_preview = (
+            action == "preview"
+            and str(auton_mode or "").lower() == "paper_supervised"
+            and bool(settings.visual_gate_supervised_manual_chart_preview)
+            and str(payload.get("blocking_reason") or "") == "chart mission requires manual opening"
+        )
+        if supervised_manual_chart_preview:
+            payload["blocking_ready"] = True
+            payload["status"] = "manual_assist_preview"
+            payload["warnings"].append(
+                "chart mission requires manual opening, but supervised preview is allowed for operator-assisted validation."
+            )
+
         if (
             action in {"preview", "submit"}
             and bool(settings.visual_gate_fail_closed)
@@ -1409,7 +1630,7 @@ class OperationCenter:
             if not bool(payload.get("blocking_ready")):
                 reason = str(payload.get("blocking_reason") or "visual gate is not ready")
                 payload["reasons"].append(f"Visual gate blocked {action}: {reason}.")
-            elif _safe_float(payload.get("readiness_score_pct"), 0.0) < threshold:
+            elif not supervised_manual_chart_preview and _safe_float(payload.get("readiness_score_pct"), 0.0) < threshold:
                 payload["degraded"] = True
                 payload["manual_required"] = True
                 payload["operator_review_required"] = True

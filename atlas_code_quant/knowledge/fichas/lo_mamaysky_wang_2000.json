@@ -1,0 +1,39 @@
+{
+  "id": "lo_mamaysky_wang_2000",
+  "title": "Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation",
+  "authors": [
+    "Andrew W. Lo",
+    "Harry Mamaysky",
+    "Jiang Wang"
+  ],
+  "year": 2000,
+  "source": "Journal of Finance",
+  "url": "https://www.jstor.org/stable/222453",
+  "category": "CAT3",
+  "topic": "technical_patterns",
+  "subtopics": [
+    "head_and_shoulders",
+    "double_top_bottom",
+    "pattern_recognition"
+  ],
+  "timeframes": [
+    "short",
+    "swing"
+  ],
+  "markets": [
+    "equity"
+  ],
+  "method": "nonparametric_kernel_regression",
+  "key_findings": "Algunos patrones chartistas clásicos (head-and-shoulders, double top/bottom, triangles) contienen información estadísticamente significativa sobre retornos futuros. Los patrones no pueden explicarse completamente por la hipótesis de caminata aleatoria. El head-and-shoulders tiene evidencia más robusta que otros patrones.",
+  "limitations": "La identificación objetiva de patrones es difícil. Los retornos son pequeños y sensibles a costos de transacción. Los patrones no son confiables de forma aislada.",
+  "atlas_utility": "Sustenta el uso de patrones visuales en sensor_vision y chart_ocr. La validación empírica de H&S refuerza el uso de exit governance cuando se detecta un patrón de distribución en una posición abierta.",
+  "confidence_level": "medium",
+  "scanner_methods": [],
+  "tags": [
+    "chart_patterns",
+    "head_and_shoulders",
+    "technical_analysis",
+    "visual"
+  ],
+  "_generated_at": "2026-03-30T02:47:30.598442+00:00"
+}

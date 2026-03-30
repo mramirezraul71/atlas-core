@@ -510,27 +510,30 @@ class OpportunityScannerService:
                 logger.exception("Fallo en el ciclo del escáner")
             await asyncio.sleep(max(int(self._config.scan_interval_sec), 15))
 
+    def _status_payload_locked(self) -> dict[str, Any]:
+        return {
+            "generated_at": _utcnow_iso(),
+            "running": self._running,
+            "cycle_count": self._cycle_count,
+            "last_cycle_at": self._last_cycle_at,
+            "last_cycle_ms": self._last_cycle_ms,
+            "current_symbol": self._current_symbol,
+            "current_timeframe": self._current_timeframe,
+            "current_step": self._current_step,
+            "last_error": self._last_error,
+            "config": self._config.to_dict(),
+            "summary": dict(self._report.get("summary") or {}),
+            "learning": self.learning.status(account_scope=settings.tradier_default_scope),
+        }
+
     def status(self) -> dict[str, Any]:
         with self._state_lock:
-            return {
-                "generated_at": _utcnow_iso(),
-                "running": self._running,
-                "cycle_count": self._cycle_count,
-                "last_cycle_at": self._last_cycle_at,
-                "last_cycle_ms": self._last_cycle_ms,
-                "current_symbol": self._current_symbol,
-                "current_timeframe": self._current_timeframe,
-                "current_step": self._current_step,
-                "last_error": self._last_error,
-                "config": self._config.to_dict(),
-                "summary": dict(self._report.get("summary") or {}),
-                "learning": self.learning.status(account_scope=settings.tradier_default_scope),
-            }
+            return self._status_payload_locked()
 
     def report(self, activity_limit: int = 60) -> dict[str, Any]:
         with self._state_lock:
             data = dict(self._report or self._empty_report())
-            data["status"] = self.status()
+            data["status"] = self._status_payload_locked()
             data["activity"] = list(self._activity[-max(1, activity_limit) :])
             return data
 

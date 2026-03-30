@@ -1,0 +1,38 @@
+{
+  "id": "debondt_thaler_1985",
+  "title": "Does the Stock Market Overreact?",
+  "authors": [
+    "Werner F.M. De Bondt",
+    "Richard Thaler"
+  ],
+  "year": 1985,
+  "source": "Journal of Finance",
+  "url": "https://www.jstor.org/stable/2327804",
+  "category": "CAT2",
+  "topic": "mean_reversion",
+  "subtopics": [
+    "overreaction",
+    "long_term_reversal",
+    "behavioral"
+  ],
+  "timeframes": [
+    "long"
+  ],
+  "markets": [
+    "equity"
+  ],
+  "method": "portfolio_sort",
+  "key_findings": "Los 'perdedores' de los últimos 3-5 años outperforman a los 'ganadores' en los 3-5 años siguientes. El mercado sobrereacciona a noticias y fundamentales. La reversión de largo plazo es opuesta al momentum de medio plazo.",
+  "limitations": "El efecto se concentra en acciones pequeñas. Parte del retorno es atribuible a mayor riesgo. No es explotable en paper trading de corto plazo con universo US equities grande.",
+  "atlas_utility": "Warning: el momentum de ATLAS opera en 5-60 días. La reversión de largo plazo (>1 año) no aplica directamente, pero sugiere limitar el holding en posiciones ganadoras que ya llevan más de 6-12 meses.",
+  "confidence_level": "high",
+  "scanner_methods": [],
+  "tags": [
+    "mean_reversion",
+    "long_term",
+    "overreaction",
+    "behavioral",
+    "warning"
+  ],
+  "_generated_at": "2026-03-30T02:47:30.596801+00:00"
+}

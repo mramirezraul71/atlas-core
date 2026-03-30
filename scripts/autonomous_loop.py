@@ -308,6 +308,7 @@ def _detect_base(ports: list[int], api_key: str) -> str | None:
 
 
 def _selector_proposal(base: str, api_key: str, cand: dict) -> dict:
+    options_session_mode = os.getenv("QUANT_SELECTOR_SESSION_MODE", "balanced").strip().lower() or "balanced"
     body = {
         "candidate": {
             "symbol": str(cand.get("symbol") or ""),
@@ -320,6 +321,21 @@ def _selector_proposal(base: str, api_key: str, cand: dict) -> dict:
             "local_win_rate_pct": float(cand.get("local_win_rate_pct") or 0.0),
             "predicted_move_pct": float(cand.get("predicted_move_pct") or 0.0),
             "relative_strength_pct": float(cand.get("relative_strength_pct") or 0.0),
+            "asset_class": cand.get("asset_class"),
+            "has_options": cand.get("has_options"),
+            "regime": cand.get("regime"),
+            "market_regime": cand.get("market_regime"),
+            "market_state": cand.get("market_state"),
+            "iv_rank": cand.get("iv_rank"),
+            "iv_rank_pct": cand.get("iv_rank_pct"),
+            "iv_hv_ratio": cand.get("iv_hv_ratio"),
+            "liquidity_score": cand.get("liquidity_score"),
+            "skew_pct": cand.get("skew_pct"),
+            "term_structure_slope": cand.get("term_structure_slope"),
+            "event_near": cand.get("event_near"),
+            "earnings_near": cand.get("earnings_near"),
+            "options_thesis": cand.get("options_thesis"),
+            "thesis": cand.get("thesis"),
             "order_flow": cand.get("order_flow") or {},
             "confirmation": cand.get("confirmation") or {},
             "why_selected": cand.get("why_selected") or [],
@@ -327,8 +343,9 @@ def _selector_proposal(base: str, api_key: str, cand: dict) -> dict:
         "account_scope": "paper",
         "chart_provider": "tradingview",
         "prefer_defined_risk": True,
-        "allow_equity": True,
+        "allow_equity": options_session_mode != "options_only",
         "allow_credit": True,
+        "options_session_mode": options_session_mode,
         "risk_budget_pct": 0.75,
     }
     result = _api_call(base, "/api/v2/quant/selector/proposal", method="POST", body=body, timeout=25, api_key=api_key)

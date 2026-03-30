@@ -9,6 +9,7 @@ if str(QUANT_ROOT) not in sys.path:
     sys.path.insert(0, str(QUANT_ROOT))
 
 from api.schemas import OrderRequest
+import operations.operation_center as operation_center_module
 from operations.operation_center import OperationCenter
 
 
@@ -76,6 +77,23 @@ class _Journal:
             "root_cause_breakdown": [],
             "strategy_learning": [],
             "policy_candidates": [],
+            "limit": limit,
+        }
+
+    def options_governance_adoption_snapshot(self, account_type: str | None = None, limit: int = 10) -> dict:
+        return {
+            "enabled": True,
+            "account_type": account_type,
+            "summary": {
+                "options_entries_count": 0,
+                "time_spread_count": 0,
+                "vertical_spread_count": 0,
+                "single_leg_count": 0,
+                "structural_diversity_score_pct": 0.0,
+                "operationally_exercised": False,
+            },
+            "alerts": [],
+            "structures": [],
             "limit": limit,
         }
 
@@ -607,6 +625,48 @@ def test_visual_entry_gate_requires_manual_review_when_chart_mission_needs_manua
     assert any("Visual gate blocked submit" in reason for reason in payload["reasons"])
 
 
+def test_visual_entry_gate_allows_supervised_preview_when_chart_open_is_manual(tmp_path: Path) -> None:
+    center = OperationCenter(
+        tracker=_Tracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        chart_execution=_ChartExecution(open_ok=False, open_mode="manual_required", manual_required=True, readiness_score_pct=35.0),
+        state_path=tmp_path / "operation_center_state.json",
+    )
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="AAPL",
+            side="buy",
+            size=1,
+            order_type="market",
+            asset_class="equity",
+            account_scope="paper",
+            strategy_type="equity_long",
+            chart_plan={
+                "provider": "tradingview",
+                "targets": [
+                    {"title": "AAPL disparo 1h", "timeframe": "1h", "url": "https://www.tradingview.com/chart/?symbol=NASDAQ%3AAAPL&interval=60"}
+                ],
+            },
+        ),
+        action="preview",
+        capture_context=False,
+    )
+
+    assert payload["allowed"] is True
+    assert payload["blocked"] is False
+    assert payload["visual_entry_gate"]["status"] == "manual_assist_preview"
+    assert payload["visual_entry_gate"]["manual_required"] is True
+    assert payload["visual_entry_gate"]["blocking_ready"] is True
+    assert payload["visual_entry_gate"]["blocking_reason"] == "chart mission requires manual opening"
+    assert any("supervised preview is allowed" in warning for warning in payload["visual_entry_gate"]["warnings"])
+    assert not any("Visual gate blocked preview" in reason for reason in payload["reasons"])
+
+
 def test_visual_entry_gate_marks_chart_pending_when_symbol_match_is_not_confirmed(tmp_path: Path) -> None:
     center = OperationCenter(
         tracker=_Tracker(),
@@ -838,3 +898,77 @@ def test_visual_entry_gate_blocks_option_setup_when_ocr_confidence_is_below_prof
     assert payload["blocked"] is True
     assert payload["visual_entry_gate"]["blocking_reason"] == "OCR confidence 74.00% is below the required threshold (84.00%)"
     assert payload["visual_entry_gate"]["context_evidence"]["validation_profile"]["validation_mode"] == "defined_risk_structure_confirmation"
+
+
+def test_preview_reuses_precomputed_probability_payload_without_recomputing(tmp_path: Path, monkeypatch) -> None:
+    center = OperationCenter(
+        tracker=_Tracker(balances={"total_equity": 100000.0, "cash": 50000.0, "option_buying_power": 50000.0}),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        chart_execution=_ChartExecution(open_ok=True, manual_required=False),
+        state_path=tmp_path / "operation_center_state.json",
+    )
+
+    def _unexpected_probability(**_: object):
+        raise AssertionError("get_winning_probability should not be called when preview already has precomputed probability")
+
+    monkeypatch.setattr(operation_center_module, "get_winning_probability", _unexpected_probability)
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="ABT",
+            side="sell_to_open",
+            size=1,
+            order_type="credit",
+            asset_class="multileg",
+            tradier_class="multileg",
+            strategy_type="bear_call_credit_spread",
+            account_scope="paper",
+            probability_payload={
+                "win_rate_pct": 72.5,
+                "selected_legs": [
+                    {
+                        "side": "short",
+                        "option_type": "call",
+                        "strike": 120.0,
+                        "premium_mid": 1.8,
+                        "expiration": "2026-05-15",
+                        "dte": 45,
+                        "symbol": "ABT260515C00120000",
+                        "bid": 1.7,
+                        "ask": 1.9,
+                        "volume": 100,
+                        "open_interest": 200,
+                        "implied_volatility": 0.22,
+                    },
+                    {
+                        "side": "long",
+                        "option_type": "call",
+                        "strike": 125.0,
+                        "premium_mid": 0.8,
+                        "expiration": "2026-05-15",
+                        "dte": 45,
+                        "symbol": "ABT260515C00125000",
+                        "bid": 0.75,
+                        "ask": 0.85,
+                        "volume": 100,
+                        "open_interest": 200,
+                        "implied_volatility": 0.21,
+                    },
+                ],
+                "market_snapshot": {"spot": 116.0},
+                "net_premium": 1.0,
+            },
+            chart_plan={"targets": []},
+            camera_plan={"required": False},
+        ),
+        action="preview",
+        capture_context=False,
+    )
+
+    assert payload["probability_source"] == "precomputed"
+    assert payload["probability"]["win_rate_pct"] == 72.5
+    assert payload["evaluation_timings"]["probability_sec"] >= 0.0

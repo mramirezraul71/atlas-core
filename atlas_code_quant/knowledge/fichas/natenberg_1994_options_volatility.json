@@ -1,0 +1,39 @@
+{
+  "id": "natenberg_1994_options_volatility",
+  "title": "Option Volatility and Pricing",
+  "authors": [
+    "Sheldon Natenberg"
+  ],
+  "year": 1994,
+  "source": "McGraw-Hill",
+  "url": "https://www.mhprofessional.com/option-volatility-and-pricing-9780071818773-usa",
+  "category": "CAT4",
+  "topic": "options_trading",
+  "subtopics": [
+    "volatility_trading",
+    "IV_rank",
+    "delta_hedging",
+    "options_strategies"
+  ],
+  "timeframes": [
+    "short",
+    "swing"
+  ],
+  "markets": [
+    "options"
+  ],
+  "method": "practitioner_framework",
+  "key_findings": "La volatilidad implícita revierte a la media — las opciones caras (IV alta) tienden a bajar en volatilidad y vice versa. Vender premium cuando IV rank > 50% tiene edge estadístico documentado en múltiples estudios empíricos.",
+  "limitations": "La reversión a la media de IV puede fallar en eventos de tail risk. La gestión de riesgo (delta-hedging, max loss) es crítica.",
+  "atlas_utility": "Marco operativo del OptionSelector: IV rank > 50% → considerar venta de premium. IV rank < 30% → considerar compra de opciones / spreads debit. DTE 21-45 días: zona óptima para theta decay según el framework.",
+  "confidence_level": "high",
+  "scanner_methods": [],
+  "tags": [
+    "options",
+    "IV_rank",
+    "premium_selling",
+    "theta",
+    "options_strategy"
+  ],
+  "_generated_at": "2026-03-30T02:47:30.605946+00:00"
+}

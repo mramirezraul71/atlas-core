@@ -1,0 +1,42 @@
+{
+  "id": "jegadeesh_titman_1993",
+  "title": "Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency",
+  "authors": [
+    "Narasimhan Jegadeesh",
+    "Sheridan Titman"
+  ],
+  "year": 1993,
+  "source": "Journal of Finance",
+  "url": "https://www.jstor.org/stable/2328883",
+  "category": "CAT2",
+  "topic": "momentum",
+  "subtopics": [
+    "cross_sectional_momentum",
+    "winner_loser",
+    "equity_premium"
+  ],
+  "timeframes": [
+    "swing",
+    "medium"
+  ],
+  "markets": [
+    "equity"
+  ],
+  "method": "portfolio_sort",
+  "key_findings": "Las acciones con mejores retornos en los últimos 3-12 meses siguen outperformando en los siguientes 3-12 meses (momentum cross-seccional). Los retornos de la estrategia no son explicables por riesgo sistemático simple (CAPM). El efecto es robusto en múltiples períodos.",
+  "limitations": "El momentum revierte después de 12 meses (DeBondt & Thaler). Tiene crashes en periodos de recuperación post-crash. Los costos de transacción erosionan el alpha en portafolios pequeños.",
+  "atlas_utility": "Sustenta relative_strength_overlay. Priorizar activos con mejor momentum cross-seccional en el universo scanner. Validado en períodos de 3-12 meses.",
+  "confidence_level": "high",
+  "scanner_methods": [
+    "relative_strength_overlay",
+    "trend_ema_stack"
+  ],
+  "tags": [
+    "momentum",
+    "cross_sectional",
+    "winners",
+    "swing",
+    "classical"
+  ],
+  "_generated_at": "2026-03-30T02:47:30.595543+00:00"
+}
