@@ -363,9 +363,22 @@ class SensorVisionService:
         except Exception:
             return False
 
-    def status(self) -> dict[str, Any]:
+    def status(self, *, fast: bool = False) -> dict[str, Any]:
         state = self._load()
         provider = str(state.get("provider") or "direct_nexus")
+        if fast:
+            provider_ready = provider in {"off", "manual"} or bool(state.get("screen_integrity_ok"))
+            return {
+                **state,
+                "supported_modes": ["off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge", "insta360"],
+                "desktop_capture_available": provider == "desktop_capture",
+                "insta360_available": provider == "insta360",
+                "atlas_push_bridge_status": None,
+                "atlas_push_bridge_available": provider == "atlas_push_bridge",
+                "direct_nexus_fallback_available": provider == "direct_nexus",
+                "provider_ready": provider_ready,
+                "status_mode": "fast_cached",
+            }
         bridge_status = self._atlas_push_bridge_status() if provider == "atlas_push_bridge" else None
         insta360_ok = self._insta360_available()
         provider_ready = (
@@ -387,6 +400,7 @@ class SensorVisionService:
             "atlas_push_bridge_available": bool((bridge_status or {}).get("ok")),
             "direct_nexus_fallback_available": self._direct_nexus_available(),
             "provider_ready": provider_ready,
+            "status_mode": "full",
         }
 
     def diagnose(self) -> dict[str, Any]:
