@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-03-31T16:50:45.635814+00:00",
+  "generated_at": "2026-03-31T21:32:14.985800+00:00",
   "topic": "atlas_quant_trading_implementation_scorecard",
   "summary": "Scorecard operativo para medir dos cosas separadas: cuanto del metodo ya esta implantado y cuanta evidencia real existe de que esa implantacion esta sirviendo.",
   "metric_catalog": [
@@ -91,13 +91,13 @@
     },
     "memory_persistence_score": {
       "name": "memory_persistence_score",
-      "value": 93.8,
+      "value": 93.63,
       "status": "healthy",
       "details": {
-        "delivered_events": 1604,
-        "total_events": 1632,
-        "queued_local_only_events": 28,
-        "delivery_ratio_pct": 98.28,
+        "delivered_events": 1661,
+        "total_events": 1694,
+        "queued_local_only_events": 33,
+        "delivery_ratio_pct": 98.05,
         "last_memory_ok": true,
         "last_bitacora_ok": true,
         "protocol_note_events": 0,
@@ -148,7 +148,7 @@
         "reload_resilience_pct": 66.67,
         "foundation_score_pct": 100.0,
         "freshness_pct": 0.0,
-        "age_hours": 78.71
+        "age_hours": 83.4
       }
     },
     "visual_benchmark_feedback_score": {
@@ -209,7 +209,7 @@
         "attributed_open_positions_pct": 100.0,
         "closed_total": 77479,
         "evidence_sufficiency_score": 100.0,
-        "open_pnl": -3051.39,
+        "open_pnl": -3378.56,
         "realized_pnl": -33035588.98,
         "post_mortem_coverage_pct": 100.0,
         "recent_attribution_pct": 100.0,
@@ -246,7 +246,7 @@
     }
   },
   "supporting_indicators": {
-    "brain_delivery_ratio_pct": 98.28,
+    "brain_delivery_ratio_pct": 98.05,
     "attributed_open_positions_pct": 100.0,
     "open_untracked_ratio_pct": 0.0,
     "recent_unattributed_count": 0,

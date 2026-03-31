@@ -22,11 +22,11 @@
   "last_decision": {
     "decision": "blocked",
     "allowed": false,
-    "timestamp": "2026-03-31T16:35:23.728445",
-    "reason": "Market context degraded setup: la sesion actual rechaza el nivel o la direccion"
+    "timestamp": "2026-03-31T21:32:16.870823",
+    "reason": "Entry validation blocked submit because adverse drift is 1.40% (> 0.75%)."
   },
   "last_candidate": {
-    "symbol": "CPT",
+    "symbol": "POOL",
     "strategy_type": "equity_short",
     "scope": "paper",
     "action": "submit"
@@ -35,18 +35,18 @@
   "attribution_integrity_last_count": 0,
   "attribution_integrity_last_event_at": null,
   "visual_gate_stats": {
-    "evaluated_count": 60,
-    "applies_count": 17,
-    "blocked_count": 17,
+    "evaluated_count": 123,
+    "applies_count": 80,
+    "blocked_count": 80,
     "passed_count": 0,
-    "manual_review_count": 17,
+    "manual_review_count": 80,
     "last_status": "camera_unavailable",
     "last_blocked": true,
     "last_manual_required": true,
-    "last_readiness_score_pct": 51.75,
+    "last_readiness_score_pct": 53.55,
     "last_alignment_score_pct": null,
-    "last_updated_at": "2026-03-31T16:35:23.728496",
-    "last_symbol": "CPT",
+    "last_updated_at": "2026-03-31T21:32:16.870874",
+    "last_symbol": "POOL",
     "last_action": "submit",
     "last_blocking_reason": "visual context capture failed"
   },
