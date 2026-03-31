@@ -127,6 +127,152 @@ robot_status = {
 }
 
 
+# ── Persistent Camera Manager ─────────────────────────────────────────────────
+import threading
+import time as _time
+
+class LiveCameraManager:
+    """Mantiene la cámara USB abierta y sirve frames estabilizados."""
+
+    def __init__(self, camera_index: int = 0, target_fps: float = 10.0):
+        self._index = camera_index
+        self._target_fps = target_fps
+        self._cap: Any = None
+        self._frame: Any = None
+        self._prev_gray: Any = None
+        self._lock = threading.Lock()
+        self._running = False
+        self._thread: threading.Thread | None = None
+        self._frame_count = 0
+        self._motion_score = 0.0
+        self._motion_detected = False
+        self._started_at: float = 0.0
+
+    def start(self) -> bool:
+        if self._running:
+            return True
+        # Retry: DirectShow puede tardar en liberar el device tras un kill
+        for attempt in range(3):
+            self._cap = cv2.VideoCapture(self._index, cv2.CAP_DSHOW)
+            if self._cap.isOpened():
+                break
+            logger.warning("LiveCamera: attempt %d — cannot open index %d, retrying...",
+                           attempt + 1, self._index)
+            _time.sleep(2)
+        if not self._cap or not self._cap.isOpened():
+            logger.error("LiveCamera: cannot open index %d after 3 attempts", self._index)
+            return False
+        # 720p para balance CPU/calidad
+        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        self._running = True
+        self._started_at = _time.time()
+        self._thread = threading.Thread(target=self._capture_loop, daemon=True)
+        self._thread.start()
+        logger.info("LiveCamera STARTED on index %d (target %.1f fps)", self._index, self._target_fps)
+        return True
+
+    def stop(self):
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=3)
+        if self._cap:
+            self._cap.release()
+        self._cap = None
+        logger.info("LiveCamera STOPPED")
+
+    def _capture_loop(self):
+        # Warmup: descartar primeros frames para auto-exposure (Insta360 necesita ~5 frames)
+        for i in range(8):
+            ret, _ = self._cap.read()
+            if not ret:
+                logger.warning("LiveCamera warmup frame %d failed", i)
+        logger.info("LiveCamera warmup done — starting capture loop")
+        interval = 1.0 / self._target_fps
+        consecutive_fails = 0
+        while self._running:
+            t0 = _time.time()
+            ret, frame = self._cap.read()
+            if ret and frame is not None:
+                consecutive_fails = 0
+                with self._lock:
+                    self._frame = frame.copy()
+                    self._frame_count += 1
+                # Detección de movimiento simple
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                gray = cv2.GaussianBlur(gray, (21, 21), 0)
+                if self._prev_gray is not None:
+                    delta = cv2.absdiff(self._prev_gray, gray)
+                    thresh = cv2.threshold(delta, 25, 255, cv2.THRESH_BINARY)[1]
+                    motion = (thresh.sum() / 255.0) / (gray.shape[0] * gray.shape[1]) * 100.0
+                    self._motion_score = round(motion, 2)
+                    self._motion_detected = motion > 1.0  # >1% pixeles cambiaron
+                self._prev_gray = gray
+            else:
+                consecutive_fails += 1
+                if consecutive_fails == 1:
+                    logger.warning("LiveCamera: frame read failed — reconnecting...")
+                if consecutive_fails >= 10:
+                    # Reconectar cámara
+                    logger.warning("LiveCamera: %d consecutive failures — reopening device", consecutive_fails)
+                    try:
+                        self._cap.release()
+                        _time.sleep(2)
+                        self._cap = cv2.VideoCapture(self._index, cv2.CAP_DSHOW)
+                        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                        if self._cap.isOpened():
+                            logger.info("LiveCamera: reconnected successfully")
+                            consecutive_fails = 0
+                        else:
+                            logger.error("LiveCamera: reconnect failed — waiting 5s")
+                            _time.sleep(5)
+                    except Exception as e:
+                        logger.error("LiveCamera reconnect error: %s", e)
+                        _time.sleep(5)
+            elapsed = _time.time() - t0
+            sleep_time = max(0, interval - elapsed)
+            if sleep_time > 0:
+                _time.sleep(sleep_time)
+
+    def get_frame(self) -> tuple[bool, Any]:
+        with self._lock:
+            if self._frame is not None:
+                return True, self._frame.copy()
+        return False, None
+
+    def get_jpeg(self, quality: int = 85) -> bytes | None:
+        ok, frame = self.get_frame()
+        if not ok:
+            return None
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        h, w = frame.shape[:2]
+        cv2.putText(frame, f"ATLAS NEXUS LIVE | {w}x{h} | motion:{self._motion_score:.1f}%",
+                    (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 1)
+        cv2.putText(frame, ts, (10, h - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
+        if self._motion_detected:
+            cv2.putText(frame, "MOTION", (w - 120, 25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+        _, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+        return buf.tobytes()
+
+    @property
+    def status(self) -> dict:
+        return {
+            "running": self._running,
+            "camera_index": self._index,
+            "frame_count": self._frame_count,
+            "target_fps": self._target_fps,
+            "motion_score_pct": float(self._motion_score),
+            "motion_detected": bool(self._motion_detected),
+            "uptime_sec": round(_time.time() - self._started_at, 1) if self._running else 0,
+            "has_frame": self._frame is not None,
+        }
+
+live_camera = LiveCameraManager(camera_index=int(os.getenv("NEXUS_CAMERA_INDEX", "0")))
+
+
 # WebSocket connections manager
 class ConnectionManager:
     def __init__(self):
@@ -325,62 +471,107 @@ async def receive_command(body: CommandBody):
 @app.get("/camera/stream")
 @app.get("/api/camera/stream")
 async def camera_stream():
-    """Captura real de cámara USB via OpenCV — sin mocks."""
+    """Snapshot JPEG del stream persistente de la Insta360."""
     import io
     from fastapi.responses import StreamingResponse
 
-    camera_index = int(os.getenv("NEXUS_CAMERA_INDEX", "0"))
-    cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
-    if not cap.isOpened():
-        logger.error("No camera found at index %d", camera_index)
-        return {"status": "error", "hw_detected": False,
-                "message": f"No camera at index {camera_index}. Connected cameras: check /camera/detect"}
-
-    ret, frame = cap.read()
-    cap.release()
-    if not ret or frame is None:
-        logger.error("Camera opened but frame capture failed")
-        return {"status": "error", "hw_detected": True, "message": "Frame capture failed"}
-
-    h, w = frame.shape[:2]
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cv2.putText(frame, f"ATLAS NEXUS LIVE | {w}x{h}", (10, 25),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
-    cv2.putText(frame, ts, (10, h - 10),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-
-    _, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    jpeg = live_camera.get_jpeg(quality=90)
+    if jpeg is None:
+        return {"status": "error", "message": "Camera not running or no frame available",
+                "camera_status": live_camera.status}
     return StreamingResponse(
-        io.BytesIO(buffer.tobytes()),
-        media_type="image/jpeg",
+        io.BytesIO(jpeg), media_type="image/jpeg",
         headers={"Cache-Control": "no-cache"},
     )
+
+
+@app.get("/camera/mjpeg")
+@app.get("/api/camera/mjpeg")
+async def camera_mjpeg():
+    """MJPEG streaming continuo — abre en navegador para video en vivo."""
+    from fastapi.responses import StreamingResponse
+
+    def generate():
+        while True:
+            jpeg = live_camera.get_jpeg(quality=75)
+            if jpeg:
+                yield (b"--frame\r\n"
+                       b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n")
+            _time.sleep(1.0 / live_camera._target_fps)
+
+    return StreamingResponse(generate(),
+                             media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.get("/camera/status")
+@app.get("/api/camera/status")
+async def camera_live_status():
+    """Estado del camera manager persistente."""
+    return {"camera": live_camera.status, "mode": "LIVE"}
 
 
 @app.get("/camera/detect")
 @app.get("/api/camera/detect")
 async def camera_detect():
-    """Detecta todas las cámaras USB reales conectadas al sistema."""
+    """Detecta cámaras USB reales. Si LiveCamera tiene una activa, la reporta sin reabrir."""
     found = []
+    active_idx = live_camera._index if live_camera._running else -1
     for idx in range(6):
+        if idx == active_idx:
+            # Ya abierta por LiveCamera — no reabrir (DirectShow bloquea)
+            found.append({"index": idx, "resolution": "1280x720", "frame_ok": True,
+                          "note": "active in LiveCameraManager"})
+            continue
         cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
         if cap.isOpened():
             w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             ret, _ = cap.read()
             cap.release()
-            found.append({"index": idx, "resolution": f"{w}x{h}", "frame_ok": ret})
+            found.append({"index": idx, "resolution": f"{w}x{h}", "frame_ok": bool(ret)})
         else:
+            cap.release()
             break
     return {"cameras": found, "count": len(found),
             "active_index": int(os.getenv("NEXUS_CAMERA_INDEX", "0"))}
 
 
+@app.post("/camera/yolo")
+@app.post("/api/camera/yolo")
+async def camera_yolo_detect():
+    """Ejecuta YOLO sobre el frame actual de la cámara en vivo."""
+    ok, frame = live_camera.get_frame()
+    if not ok:
+        return {"status": "error", "message": "No live frame available"}
+    detector = get_detector()
+    t0 = _time.time()
+    detections = detector.detect_objects(frame)
+    elapsed = round(_time.time() - t0, 4)
+    return {
+        "status": "success",
+        "source": "live_camera",
+        "detections": detections,
+        "total_objects": len(detections),
+        "processing_time_sec": elapsed,
+        "motion_score_pct": live_camera._motion_score,
+        "motion_detected": live_camera._motion_detected,
+    }
+
+
 @app.get("/camera/test")
 @app.get("/api/camera/test")
 async def test_camera():
-    """Test de cámara real — intenta abrir hardware USB."""
+    """Test de cámara real — usa LiveCameraManager si ya está corriendo."""
     try:
+        # Si el LiveCameraManager ya tiene la cámara abierta, usar ese
+        if live_camera._running and live_camera._frame is not None:
+            jpeg = live_camera.get_jpeg()
+            if jpeg and len(jpeg) > 0:
+                logger.info("Camera test OK via LiveCameraManager (frame %d bytes)", len(jpeg))
+                return {"status": "success", "hw_detected": True,
+                        "resolution": "1280x720", "frame_ok": True,
+                        "camera_index": live_camera._index}
+        # Fallback: abrir directamente (solo si LiveCamera no está corriendo)
         camera_index = int(os.getenv("NEXUS_CAMERA_INDEX", "0"))
         cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
         if not cap.isOpened():
@@ -764,9 +955,16 @@ async def startup_event():
     logger.info("🚀 ATLAS NEXUS Robot Backend starting up...")
     update_uptime.start_time = datetime.now()
 
+    # Iniciar camera manager persistente
+    cam_ok = live_camera.start()
+    if cam_ok:
+        logger.info("LiveCameraManager started — Insta360 capturing at 10fps")
+    else:
+        logger.warning("LiveCameraManager failed to start — no camera available")
+
     # Testear módulos básicos
     camera_test = await test_camera()
-    robot_status["modules"]["camera"] = camera_test["status"] == "success"
+    robot_status["modules"]["camera"] = camera_test["status"] == "success" or cam_ok
 
     ai_test = await test_ai()
     robot_status["modules"]["ai"] = ai_test["status"] == "success"
@@ -824,6 +1022,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Evento de shutdown"""
+    live_camera.stop()
     logger.info("ATLAS NEXUS Robot Backend shutting down...")
 
 
