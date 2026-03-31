@@ -1063,7 +1063,7 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                             account_type="paper", limit=20,
                         )
                         urgent_exits = [
-                            c for c in (exit_snap.get("candidates") or [])
+                            c for c in (exit_snap.get("recommendations") or [])
                             if c.get("recommendation") in {"exit_now", "de_risk"}
                             and c.get("urgency") in {"high", "medium"}
                         ]
@@ -1085,7 +1085,7 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                                 preview=False,  # cierre real, no preview
                                 position_effect="close",  # evita que pase por gate de apertura
                                 strategy_type=st,  # type: ignore[arg-type]
-                                tag=f"exit_governance:{pos.get('exit_reason','auto_exit')}",
+                                tag="exitgov",
                             )
                             try:
                                 close_result = await asyncio.to_thread(
