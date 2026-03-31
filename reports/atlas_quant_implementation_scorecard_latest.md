@@ -1,6 +1,6 @@
 # ATLAS Quant - Trading Implementation Scorecard
 
-- Generated at: `2026-03-31T07:07:47.141792+00:00`
+- Generated at: `2026-03-31T16:50:45.635814+00:00`
 - Process compliance: `97.5/100` (healthy)
 - Implementation usefulness: `55.0/100` (watch)
 
@@ -8,9 +8,9 @@
 
 - `process_compliance_score`: `97.5/100` (healthy) - Medir cuanto del marco metodologico ya esta realmente implantado por etapa.
 - `artifact_coverage_score`: `100.0/100` (healthy) - Medir si cada avance deja huella en protocolo, informes y archivos reutilizables.
-- `memory_persistence_score`: `69.02/100` (watch) - Medir si ATLAS esta reteniendo los cambios en memoria y bitacora.
+- `memory_persistence_score`: `93.8/100` (healthy) - Medir si ATLAS esta reteniendo los cambios en memoria y bitacora.
 - `external_benchmark_coverage_score`: `100.0/100` (healthy) - Medir cuantas etapas auditadas estan respaldadas por confrontacion externa seria.
-- `observability_feedback_score`: `81.33/100` (workable) - Medir si Grafana, Prometheus y el chequeo operativo estan devolviendo feedback confiable para sostener disciplina.
+- `observability_feedback_score`: `73.33/100` (workable) - Medir si Grafana, Prometheus y el chequeo operativo estan devolviendo feedback confiable para sostener disciplina.
 - `visual_benchmark_feedback_score`: `16.67/100` (critical) - Medir si el benchmark visual externo ya fue traducido a criterios reutilizables, reportes y controles reales de entrada.
 - `options_strategy_governance_feedback_score`: `16.67/100` (critical) - Medir si el benchmark externo de estructuras con opciones ya fue traducido a taxonomia, constraints y reglas reutilizables.
 - `test_guardrail_score`: `100.0/100` (healthy) - Medir cuanta proteccion automatizada existe sobre lo ya implantado.
@@ -19,7 +19,7 @@
 
 ## Supporting Indicators
 
-- `brain_delivery_ratio_pct`: `98.6`
+- `brain_delivery_ratio_pct`: `98.28`
 - `attributed_open_positions_pct`: `100.0`
 - `open_untracked_ratio_pct`: `0.0`
 - `recent_unattributed_count`: `0`
@@ -27,7 +27,7 @@
 - `post_mortem_coverage_pct`: `100.0`
 - `recent_attribution_pct`: `100.0`
 - `external_learning_translation_score`: `100.0`
-- `observability_feedback_score`: `81.33`
+- `observability_feedback_score`: `73.33`
 - `visual_benchmark_feedback_score`: `16.67`
 - `visual_benchmark_source_count`: `0`
 - `visual_benchmark_translation_pct`: `0.0`
@@ -42,13 +42,14 @@
 
 - El proceso va por `97.5/100`: esto mide implantacion metodologica, no edge de mercado.
 - La utilidad va por `55.0/100`: esto mide si ya hay evidencia suficiente de que lo implementado esta mejorando el sistema vivo.
-- La observabilidad va por `81.33/100`: esto mide si el tablero operativo realmente esta devolviendo feedback confiable para vigilar la implantacion.
+- La observabilidad va por `73.33/100`: esto mide si el tablero operativo realmente esta devolviendo feedback confiable para vigilar la implantacion.
 - El benchmark visual va por `16.67/100`: esto mide si la investigacion visual externa ya fue aterrizada a controles reutilizables en ATLAS.
 - La gobernanza de opciones va por `16.67/100`: esto mide si el benchmark externo de estructuras con opciones ya fue traducido a familias, reglas y restricciones reutilizables.
 - La calidad de señal IC va por `0.0/100`: esto mide el poder predictivo real del scanner (IC Grinold-Kahn). 0=sin datos, 100=IC>=0.10 significativo.
 
 ## Next Actions
 
+- Subir la confiabilidad de observabilidad: Grafana/Prometheus aun no devuelven feedback lo bastante robusto.
 - Investigar por que alguna recarga Admin API de Grafana sigue siendo fragil aunque los dashboards esten visibles.
 - Activar ICSignalTracker: el loop debe llamar tracker.record_signal() al evaluar candidatos.
 - La calidad paper sigue debil: no declarar utilidad alta mientras profit_factor/expectancy sigan en zona pobre.

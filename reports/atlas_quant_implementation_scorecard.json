@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-03-31T07:07:47.141792+00:00",
+  "generated_at": "2026-03-31T16:50:45.635814+00:00",
   "topic": "atlas_quant_trading_implementation_scorecard",
   "summary": "Scorecard operativo para medir dos cosas separadas: cuanto del metodo ya esta implantado y cuanta evidencia real existe de que esa implantacion esta sirviendo.",
   "metric_catalog": [
@@ -91,15 +91,15 @@
     },
     "memory_persistence_score": {
       "name": "memory_persistence_score",
-      "value": 69.02,
-      "status": "watch",
+      "value": 93.8,
+      "status": "healthy",
       "details": {
-        "delivered_events": 1550,
-        "total_events": 1572,
-        "queued_local_only_events": 22,
-        "delivery_ratio_pct": 98.6,
-        "last_memory_ok": false,
-        "last_bitacora_ok": false,
+        "delivered_events": 1604,
+        "total_events": 1632,
+        "queued_local_only_events": 28,
+        "delivery_ratio_pct": 98.28,
+        "last_memory_ok": true,
+        "last_bitacora_ok": true,
         "protocol_note_events": 0,
         "scorecard_note_events": 0
       }
@@ -133,7 +133,7 @@
     },
     "observability_feedback_score": {
       "name": "observability_feedback_score",
-      "value": 81.33,
+      "value": 73.33,
       "status": "workable",
       "details": {
         "report_available": true,
@@ -147,8 +147,8 @@
         "provisioning_rebuild_ok": true,
         "reload_resilience_pct": 66.67,
         "foundation_score_pct": 100.0,
-        "freshness_pct": 40.0,
-        "age_hours": 69.0
+        "freshness_pct": 0.0,
+        "age_hours": 78.71
       }
     },
     "visual_benchmark_feedback_score": {
@@ -203,14 +203,14 @@
       "status": "watch",
       "details": {
         "journal_available": true,
-        "open_total": 439,
+        "open_total": 438,
         "open_untracked": 0,
         "open_untracked_ratio_pct": 0.0,
         "attributed_open_positions_pct": 100.0,
-        "closed_total": 77478,
+        "closed_total": 77479,
         "evidence_sufficiency_score": 100.0,
-        "open_pnl": -6074.76,
-        "realized_pnl": -33031538.31,
+        "open_pnl": -3051.39,
+        "realized_pnl": -33035588.98,
         "post_mortem_coverage_pct": 100.0,
         "recent_attribution_pct": 100.0,
         "recent_unattributed_count": 0,
@@ -223,7 +223,7 @@
           "sample_count": 2000,
           "win_rate_pct": 18.0,
           "profit_factor": 0.218,
-          "expectancy_pct": -81.859,
+          "expectancy_pct": -81.797,
           "sample_score": 100.0,
           "win_rate_score": 0.0,
           "profit_factor_score": 0.0,
@@ -246,7 +246,7 @@
     }
   },
   "supporting_indicators": {
-    "brain_delivery_ratio_pct": 98.6,
+    "brain_delivery_ratio_pct": 98.28,
     "attributed_open_positions_pct": 100.0,
     "open_untracked_ratio_pct": 0.0,
     "recent_unattributed_count": 0,
@@ -254,7 +254,7 @@
     "post_mortem_coverage_pct": 100.0,
     "recent_attribution_pct": 100.0,
     "external_learning_translation_score": 100.0,
-    "observability_feedback_score": 81.33,
+    "observability_feedback_score": 73.33,
     "visual_benchmark_feedback_score": 16.67,
     "visual_benchmark_source_count": 0,
     "visual_benchmark_translation_pct": 0.0,
@@ -269,6 +269,7 @@
     "ic_status": "insufficient_data"
   },
   "next_actions": [
+    "Subir la confiabilidad de observabilidad: Grafana/Prometheus aun no devuelven feedback lo bastante robusto.",
     "Investigar por que alguna recarga Admin API de Grafana sigue siendo fragil aunque los dashboards esten visibles.",
     "Activar ICSignalTracker: el loop debe llamar tracker.record_signal() al evaluar candidatos.",
     "La calidad paper sigue debil: no declarar utilidad alta mientras profit_factor/expectancy sigan en zona pobre.",
