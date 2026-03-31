@@ -34,11 +34,12 @@ try:
     _ROS2_OK = True
 except ImportError:
     _ROS2_OK = False
-    logger.warning("rclpy no disponible — ROS2 bridge en modo simulado")
-    # Stubs mínimos para que el código compile sin ROS2
+    logger.warning("rclpy NOT INSTALLED — ROS2 bridge DISABLED. Install with: pip install rclpy")
+    # Stubs que loguean cada intento de publicación en vez de silenciar
     class Node:  # type: ignore[no-redef]
         def __init__(self, name: str) -> None:
             self._name = name
+            logger.info("ROS2 Node '%s' created in STUB mode (no rclpy)", name)
         def create_publisher(self, *a, **kw): return _StubPublisher()
         def create_subscription(self, *a, **kw): return None
         def create_timer(self, *a, **kw): return None
@@ -46,8 +47,12 @@ except ImportError:
         def destroy_node(self): pass
 
     class _StubPublisher:
+        _warned = False
         def publish(self, msg: object) -> None:
-            pass
+            if not _StubPublisher._warned:
+                logger.warning("ROS2 STUB: message NOT published (rclpy not installed). "
+                               "This message appears once per session.")
+                _StubPublisher._warned = True
 
     class String:  # type: ignore[no-redef]
         data: str = ""
