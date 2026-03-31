@@ -146,13 +146,13 @@ class HIDController:
 
     def _check_armed(self, action: str) -> bool:
         if not _PYAUTOGUI_OK:
-            logger.debug("HID no disponible: %s", action)
+            logger.warning("HID BLOCKED — pyautogui not installed. Action: %s", action)
             return False
         if self._emergency_active:
-            logger.error("HID bloqueado — emergency stop activo")
+            logger.error("HID BLOCKED — emergency stop active. Action: %s", action)
             return False
         if not self.armed:
-            logger.debug("HID no armado — acción simulada: %s", action)
+            logger.info("HID DRY-RUN — armed=False, action NOT executed: %s (arm with F12 or armed=True)", action)
             return False
         return True
 

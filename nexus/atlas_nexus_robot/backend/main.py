@@ -273,6 +273,41 @@ class CommandBody(BaseModel):
         extra = "allow"
 
 
+@app.get("/hardware/status")
+@app.get("/api/hardware/status")
+async def hardware_status():
+    """Detección real de hardware conectado — sin mocks."""
+    import serial.tools.list_ports as slp
+    com_ports = [{"device": p.device, "description": p.description, "hwid": p.hwid}
+                 for p in slp.comports()]
+    cameras = []
+    for idx in range(6):
+        cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+        if cap.isOpened():
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            cap.release()
+            cameras.append({"index": idx, "resolution": f"{w}x{h}"})
+        else:
+            break
+    ros2_available = False
+    try:
+        import rclpy  # noqa: F401
+        ros2_available = True
+    except ImportError:
+        pass
+    return {
+        "serial_ports": com_ports,
+        "serial_count": len(com_ports),
+        "cameras": cameras,
+        "camera_count": len(cameras),
+        "ros2_installed": ros2_available,
+        "pyautogui_installed": bool(robot_status["modules"].get("control")),
+        "actuators_connected": len(com_ports) > 0,
+        "verdict": "HARDWARE PRESENT" if (com_ports or cameras) else "SOFTWARE ONLY",
+    }
+
+
 @app.post("/command")
 @app.post("/api/command")
 async def receive_command(body: CommandBody):
@@ -290,141 +325,82 @@ async def receive_command(body: CommandBody):
 @app.get("/camera/stream")
 @app.get("/api/camera/stream")
 async def camera_stream():
-    """Stream de cámara profesional optimizado"""
-    try:
-        import io
+    """Captura real de cámara USB via OpenCV — sin mocks."""
+    import io
+    from fastapi.responses import StreamingResponse
 
-        import cv2
-        import numpy as np
-        from fastapi.responses import StreamingResponse
+    camera_index = int(os.getenv("NEXUS_CAMERA_INDEX", "0"))
+    cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        logger.error("No camera found at index %d", camera_index)
+        return {"status": "error", "hw_detected": False,
+                "message": f"No camera at index {camera_index}. Connected cameras: check /camera/detect"}
 
-        # Crear imagen profesional estática para evitar inestabilidad
-        img = np.zeros((480, 640, 3), dtype=np.uint8)
+    ret, frame = cap.read()
+    cap.release()
+    if not ret or frame is None:
+        logger.error("Camera opened but frame capture failed")
+        return {"status": "error", "hw_detected": True, "message": "Frame capture failed"}
 
-        # Fondo gradiente profesional
-        for i in range(480):
-            color_value = int(20 + (i / 480) * 30)
-            img[i, :] = [color_value, color_value, color_value + 10]
+    h, w = frame.shape[:2]
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cv2.putText(frame, f"ATLAS NEXUS LIVE | {w}x{h}", (10, 25),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
+    cv2.putText(frame, ts, (10, h - 10),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
 
-        # Marco del sistema
-        cv2.rectangle(img, (10, 10), (630, 470), (0, 150, 255), 2)
-        cv2.rectangle(img, (20, 20), (620, 460), (0, 100, 200), 1)
+    _, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    return StreamingResponse(
+        io.BytesIO(buffer.tobytes()),
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-cache"},
+    )
 
-        # Header con branding
-        cv2.rectangle(img, (20, 20), (620, 70), (0, 50, 100), -1)
-        cv2.putText(img, "ATLAS NEXUS ROBOTICS", (40, 55), 0, 1.2, (0, 255, 255), 2)
 
-        # Panel de estado
-        panel_y = 90
-        cv2.rectangle(img, (30, panel_y), (300, 200), (0, 30, 60), -1)
-        cv2.rectangle(img, (30, panel_y), (300, 200), (0, 150, 255), 1)
-
-        # Indicadores de estado estáticos
-        status_items = [
-            ("SYSTEM", "ONLINE", (0, 255, 0)),
-            ("CAMERA", "ACTIVE", (0, 255, 0)),
-            ("VISION", "READY", (0, 255, 0)),
-            ("AI", "STANDBY", (255, 255, 0)),
-        ]
-
-        for i, (label, status, color) in enumerate(status_items):
-            y_pos = panel_y + 25 + i * 25
-            cv2.putText(img, f"{label}:", (45, y_pos), 0, 0.6, (200, 200, 200), 1)
-            cv2.putText(img, status, (150, y_pos), 0, 0.6, color, 2)
-
-        # Panel de métricas estáticas
-        metrics_y = 220
-        cv2.rectangle(img, (320, metrics_y), (610, 350), (0, 30, 60), -1)
-        cv2.rectangle(img, (320, metrics_y), (610, 350), (0, 150, 255), 1)
-
-        # Métricas fijas para estabilidad
-        metrics = [
-            "TIME: --:--:--",
-            "FRAME: ----",
-            "FPS: 30.0",
-            "RES: 640x480",
-            "BITRATE: 2.1M",
-        ]
-
-        for i, metric in enumerate(metrics):
-            y_pos = metrics_y + 25 + i * 22
-            cv2.putText(img, metric, (335, y_pos), 0, 0.5, (0, 255, 200), 1)
-
-        # Panel de sensores
-        sensor_y = 370
-        cv2.rectangle(img, (30, sensor_y), (610, 450), (0, 30, 60), -1)
-        cv2.rectangle(img, (30, sensor_y), (610, 450), (0, 150, 255), 1)
-
-        # Datos de sensores estáticos
-        sensor_data = [
-            ("TEMP", "42.3°C", (255, 100, 100)),
-            ("CPU", "67%", (255, 200, 0)),
-            ("RAM", "4.2GB", (100, 200, 255)),
-            ("NET", "1.2MB/s", (100, 255, 100)),
-        ]
-
-        for i, (sensor, value, color) in enumerate(sensor_data):
-            x_pos = 50 + i * 140
-            cv2.putText(img, sensor, (x_pos, sensor_y + 25), 0, 0.5, (150, 150, 150), 1)
-            cv2.putText(img, value, (x_pos, sensor_y + 45), 0, 0.6, color, 2)
-
-        # Footer con información
-        cv2.rectangle(img, (20, 460), (620, 470), (0, 100, 200), -1)
-        cv2.putText(
-            img,
-            "PROFESSIONAL CAMERA SYSTEM v2.0 | ENCODING: H.264 | QUALITY: HIGH",
-            (30, 468),
-            0,
-            0.4,
-            (0, 255, 255),
-            1,
-        )
-
-        # Convertir a bytes con alta calidad
-        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
-        _, buffer = cv2.imencode(".jpg", img, encode_param)
-        img_bytes = buffer.tobytes()
-
-        return StreamingResponse(
-            io.BytesIO(img_bytes),
-            media_type="image/jpeg",
-            headers={
-                "Content-Disposition": "inline; filename=camera_stream.jpg",
-                "Cache-Control": "public, max-age=3600",  # Cache por 1 hora para estabilidad
-                "ETag": '"professional-camera-v2"',
-            },
-        )
-    except Exception as e:
-        logger.error(f"❌ Camera stream error: {e}")
-        return {"status": "error", "message": f"Stream error: {str(e)}"}
+@app.get("/camera/detect")
+@app.get("/api/camera/detect")
+async def camera_detect():
+    """Detecta todas las cámaras USB reales conectadas al sistema."""
+    found = []
+    for idx in range(6):
+        cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+        if cap.isOpened():
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            ret, _ = cap.read()
+            cap.release()
+            found.append({"index": idx, "resolution": f"{w}x{h}", "frame_ok": ret})
+        else:
+            break
+    return {"cameras": found, "count": len(found),
+            "active_index": int(os.getenv("NEXUS_CAMERA_INDEX", "0"))}
 
 
 @app.get("/camera/test")
 @app.get("/api/camera/test")
 async def test_camera():
-    """Testear cámara profesional"""
+    """Test de cámara real — intenta abrir hardware USB."""
     try:
-        import cv2
-        import numpy as np
-
-        logger.info("✅ Professional camera system ready")
-        return {
-            "status": "success",
-            "message": "Professional camera system operational",
-            "resolution": "640x480",
-            "channels": 3,
-            "fps": 30.0,
-            "encoding": "H.264",
-            "quality": "HIGH",
-            "system": "ATLAS NEXUS PRO CAMERA v2.0",
-            "note": "Professional simulation mode active",
-        }
-    except ImportError:
-        logger.error("❌ OpenCV not installed")
-        return {"status": "error", "message": "OpenCV not installed"}
+        camera_index = int(os.getenv("NEXUS_CAMERA_INDEX", "0"))
+        cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            logger.warning("Camera test: no device at index %d", camera_index)
+            return {"status": "error", "hw_detected": False,
+                    "message": f"No camera at index {camera_index}"}
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        ret, frame = cap.read()
+        cap.release()
+        if ret and frame is not None:
+            logger.info("Camera test OK: %dx%d at index %d", w, h, camera_index)
+            return {"status": "success", "hw_detected": True,
+                    "resolution": f"{w}x{h}", "frame_ok": True,
+                    "camera_index": camera_index}
+        return {"status": "error", "hw_detected": True,
+                "message": "Camera opened but frame read failed"}
     except Exception as e:
-        logger.error(f"❌ Camera test failed: {e}")
-        return {"status": "error", "message": f"Camera test failed: {str(e)}"}
+        logger.error("Camera test error: %s", e)
+        return {"status": "error", "message": str(e)}
 
 
 @app.get("/ai/test")
@@ -806,11 +782,24 @@ async def startup_event():
         logger.warning(f"YOLO initialization failed: {e}")
         robot_status["modules"]["yolo"] = False
 
-    # Activar módulos básicos
-    robot_status["modules"]["control"] = True
-    robot_status["modules"]["sensors"] = True
-    robot_status["modules"]["actuators"] = True
-    robot_status["modules"]["communication"] = True
+    # Detección real de hardware — no marcar True sin evidencia
+    robot_status["modules"]["communication"] = True  # WebSocket siempre disponible
+    # Control: solo True si pyautogui disponible (HID)
+    try:
+        import pyautogui  # noqa: F401
+        robot_status["modules"]["control"] = True
+    except ImportError:
+        robot_status["modules"]["control"] = False
+    # Sensors: True si al menos una cámara real detectada
+    robot_status["modules"]["sensors"] = robot_status["modules"]["camera"]
+    # Actuators: False — no hay motores/serial conectados (sin puertos COM detectados)
+    import serial.tools.list_ports as _slp
+    _com_ports = list(_slp.comports())
+    robot_status["modules"]["actuators"] = len(_com_ports) > 0
+    if _com_ports:
+        logger.info("Serial ports detected: %s", [p.device for p in _com_ports])
+    else:
+        logger.info("No serial/COM ports — actuators module disabled (no physical hardware)")
 
     # Inicializar AI Consultant (Bedrock/Direct) para aprendizaje continuo.
     global ai_consultant_instance
