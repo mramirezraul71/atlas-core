@@ -1514,6 +1514,71 @@ class TradingJournalService:
             "items": [_entry_payload(entry) for entry in rows],
         }
 
+    def chart_data(self, *, account_scope: str = "paper", limit: int = 500) -> dict[str, Any]:
+        """Datos optimizados para el modulo de charts avanzados del dashboard."""
+        capped = max(1, min(int(limit), 2000))
+        with session_scope() as db:
+            rows = db.execute(
+                select(TradingJournal)
+                .where(TradingJournal.status == "closed")
+                .where(TradingJournal.account_type == account_scope)
+                .order_by(TradingJournal.exit_time.asc(), TradingJournal.id.asc())
+                .limit(capped)
+            ).scalars().all()
+
+        trades: list[dict] = []
+        equity = 0.0
+        peak = 0.0
+        for row in rows:
+            pnl = _safe_float(row.realized_pnl, 0.0)
+            equity += pnl
+            peak = max(peak, equity)
+            dd = ((equity - peak) / peak * 100.0) if peak > 0 else 0.0
+            risk = abs(_safe_float(row.risk_at_entry, 0.0))
+            r_mult = round(pnl / risk, 3) if risk > 0 else 0.0
+            exit_ts = row.exit_time.isoformat() if row.exit_time else None
+            entry_ts = row.entry_time.isoformat() if row.entry_time else None
+            trades.append({
+                "n": len(trades) + 1,
+                "symbol": row.symbol or "",
+                "strategy_type": row.strategy_type or "",
+                "entry_time": entry_ts,
+                "exit_time": exit_ts,
+                "pnl": round(pnl, 2),
+                "equity": round(equity, 2),
+                "drawdown_pct": round(dd, 2),
+                "r_multiple": r_mult,
+                "win": pnl > 0,
+            })
+
+        # Daily PnL aggregation for calendar
+        daily_pnl: dict[str, dict] = {}
+        for t in trades:
+            day = (t["exit_time"] or "")[:10]
+            if not day:
+                continue
+            if day not in daily_pnl:
+                daily_pnl[day] = {"pnl": 0.0, "trades": 0, "strategies": {}}
+            daily_pnl[day]["pnl"] = round(daily_pnl[day]["pnl"] + t["pnl"], 2)
+            daily_pnl[day]["trades"] += 1
+            st = t["strategy_type"]
+            if st:
+                daily_pnl[day]["strategies"][st] = daily_pnl[day]["strategies"].get(st, 0) + 1
+
+        calendar = [
+            {"date": k, "pnl": v["pnl"], "trades": v["trades"],
+             "dominant_strategy": max(v["strategies"], key=v["strategies"].get) if v["strategies"] else ""}
+            for k, v in sorted(daily_pnl.items())
+        ]
+
+        return {
+            "generated_at": datetime.utcnow().isoformat(),
+            "account_scope": account_scope,
+            "total_trades": len(trades),
+            "trades": trades,
+            "calendar": calendar,
+        }
+
     def position_management_snapshot(self, *, account_type: str | None = None, limit: int = 12) -> dict[str, Any]:
         with session_scope() as db:
             query = select(TradingJournal).where(TradingJournal.status == "open")

@@ -27,6 +27,7 @@ function onViewActivated(view) {
     case 'rl':         loadRL(); break;
     case 'visual':     /* user-triggered */ break;
     case 'alerts':     loadAlerts(); break;
+    case 'analytics':  if (window.AtlasCharts) AtlasCharts.init(); break;
   }
 }
 
@@ -756,6 +757,7 @@ document.getElementById('btn-emergency')?.addEventListener('click', () => {
 // ── Refresh buttons ───────────────────────────────────────────────
 document.getElementById('ov-refresh')?.addEventListener('click', loadOverview);
 document.getElementById('pos-refresh')?.addEventListener('click', loadPositions);
+document.getElementById('ac-refresh')?.addEventListener('click', () => { if (window.AtlasCharts) AtlasCharts.refresh(); });
 
 // ── Init ──────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {

@@ -385,6 +385,14 @@ def _auth(x_api_key: str | None) -> None:
         raise HTTPException(status_code=401, detail="API key inválida")
 
 
+def _now_ms() -> float:
+    return time.perf_counter() * 1000
+
+
+def _std_resp(ok: bool, data, ms: float, error: str | None = None) -> StdResponse:
+    return StdResponse(ok=ok, data=data, ms=round(ms, 2), error=error)
+
+
 def _probability_payload(body: WinningProbabilityRequest) -> dict:
     result = get_winning_probability(
         symbol=body.symbol,
@@ -890,6 +898,23 @@ async def journal_entries(
         return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as exc:
         logger.exception("Error building journal entries")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/journal/chart-data", response_model=StdResponse, tags=["Journal"])
+async def journal_chart_data(
+    x_api_key: str | None = Header(None),
+    account_scope: str = "paper",
+    limit: int = 500,
+):
+    """Datos optimizados para charts avanzados: equity curve, R-multiples, calendar."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = await asyncio.to_thread(_JOURNAL.chart_data, account_scope=account_scope, limit=limit)
+        return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error building journal chart-data")
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
@@ -2820,6 +2845,7 @@ async def learning_daily_analysis(x_api_key: str | None = Header(None)):
 async def learning_ic_summary(method: str | None = None,
                                x_api_key: str | None = Header(None)):
     """IC actual por método. Base científica del sizing y filtros del scanner."""
+    _auth(x_api_key)
     t0 = _now_ms()
     try:
         tracker = get_ic_tracker()

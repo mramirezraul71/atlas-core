@@ -94,6 +94,15 @@ const QuantAPI = {
   journalEntries: (limit = 50, scope = 'paper') =>
     apiGet('/journal/entries', { limit, account_scope: scope }),
 
+  journalChartData: (limit = 500, scope = 'paper') =>
+    apiGet('/journal/chart-data', { limit, account_scope: scope }),
+
+  learningICSummary: (method = '') =>
+    apiGet('/learning/ic/summary', method ? { method } : {}),
+
+  learningOrchestratorStatus: () =>
+    apiGet('/learning/orchestrator/status'),
+
   // Phase 3 — Alerts
   alertsStatus: () => apiGet('/api/v2/quant/alerts/status'),
   alertsTest:   (message) => apiPost(`/api/v2/quant/alerts/test?message=${encodeURIComponent(message)}`),
