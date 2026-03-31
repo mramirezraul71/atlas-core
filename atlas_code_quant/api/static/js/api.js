@@ -103,6 +103,22 @@ const QuantAPI = {
   learningOrchestratorStatus: () =>
     apiGet('/learning/orchestrator/status'),
 
+  // DuckDB Analytics
+  journalAnalytics: (scope = 'paper') =>
+    apiGet('/journal/analytics', { account_scope: scope }),
+  journalAnalyticsRisk: (scope = 'paper') =>
+    apiGet('/journal/analytics/risk', { account_scope: scope }),
+
+  // Event Store
+  eventStoreStats: () => apiGet('/events/stats'),
+  eventStoreQuery: (topic, limit = 100) =>
+    apiGet('/events/query', { topic, limit }),
+
+  // Strategy Evolution
+  evolutionRun: (symbols = 'SPY,QQQ,AAPL', generations = 20, population = 30) =>
+    apiPost(`/evolution/run?symbols=${encodeURIComponent(symbols)}&generations=${generations}&population=${population}`),
+  evolutionResults: () => apiGet('/evolution/results'),
+
   // Phase 3 — Alerts
   alertsStatus: () => apiGet('/api/v2/quant/alerts/status'),
   alertsTest:   (message) => apiPost(`/api/v2/quant/alerts/test?message=${encodeURIComponent(message)}`),

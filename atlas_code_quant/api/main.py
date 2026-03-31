@@ -90,6 +90,9 @@ from operations.alert_dispatcher import get_alert_dispatcher
 from learning.visual_state_builder import get_visual_state_builder
 from learning.retraining_scheduler import get_retraining_scheduler
 from learning.ic_signal_tracker import get_ic_tracker
+from learning.duckdb_analytics import get_analytics_engine
+from learning.event_store import get_event_store
+from learning.strategy_evolver import StrategyEvolver
 from knowledge.knowledge_base import get_knowledge_base
 
 logger = logging.getLogger("quant.api")
@@ -1096,6 +1099,15 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                                     pos.get("exit_reason"), pos.get("urgency"),
                                     close_result.get("blocked"),
                                 )
+                                try:
+                                    get_event_store().append("exit.submitted", {
+                                        "symbol": sym, "side": close_side,
+                                        "reason": pos.get("exit_reason"),
+                                        "urgency": pos.get("urgency"),
+                                        "blocked": close_result.get("blocked"),
+                                    }, source="auto_cycle")
+                                except Exception:
+                                    pass
                             except Exception as _ex_err:
                                 logger.warning("[auto-cycle] exit order error sym=%s: %s", sym, _ex_err)
                     except Exception as _eg_err:
@@ -1283,6 +1295,18 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     logger.info("[auto-cycle] ENTRY %s symbol=%s action=%s blocked=%s score=%.1f",
                                 side.upper(), symbol, action, last_result["blocked"],
                                 float(cand.get("selection_score") or 0))
+                    # Event Store: registrar señal/orden para replay y auditoría
+                    try:
+                        _es = get_event_store()
+                        _es_topic = "order.submitted" if not last_result["blocked"] else "signal.blocked"
+                        _es.append(_es_topic, {
+                            "symbol": symbol, "side": side, "action": action,
+                            "blocked": last_result["blocked"],
+                            "selection_score": float(cand.get("selection_score") or 0),
+                            "reasons": last_result.get("reasons", []),
+                        }, source="auto_cycle")
+                    except Exception:
+                        pass  # event store is non-critical
 
                 _AUTO_CYCLE_STATE.update({
                     "cycle_count": _AUTO_CYCLE_STATE["cycle_count"] + 1,
@@ -1292,6 +1316,31 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     "last_result": last_result,
                     "exits_sent_last_cycle": exits_sent,
                 })
+                # ── 4. RISK CHECK: factor correlation → NEXUS alert si >60% ────
+                try:
+                    _risk = await asyncio.to_thread(
+                        get_analytics_engine().factor_correlation, "paper"
+                    )
+                    if _risk.get("risk_level") in ("CRITICAL", "WARNING"):
+                        _risk_msg = (
+                            f"⚠ ATLAS Risk Alert [{_risk['risk_level']}] — "
+                            f"Factor concentration detected: "
+                            + ", ".join(
+                                f"{a['type']}={a.get('symbol') or a.get('strategy')} ({a['pct']}%)"
+                                for a in _risk.get("alerts", [])
+                            )
+                        )
+                        logger.warning("[auto-cycle] %s", _risk_msg)
+                        get_event_store().append("risk.concentration", _risk, source="auto_cycle")
+                        if _risk["risk_level"] == "CRITICAL":
+                            await get_alert_dispatcher().system_error(
+                                component="quant_core.risk_engine",
+                                error=_risk_msg,
+                                critical=True,
+                            )
+                except Exception as _risk_err:
+                    logger.debug("[auto-cycle] risk check skipped: %s", _risk_err)
+
                 _auto_cycle_mark_stage(
                     "cycle_complete",
                     action=action,
@@ -2878,3 +2927,124 @@ async def learning_daily_analysis_v2(x_api_key: str | None = Header(None)):
 async def learning_ic_summary_v2(method: str | None = None,
                                   x_api_key: str | None = Header(None)):
     return await learning_ic_summary(method=method, x_api_key=x_api_key)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DuckDB Analytics, Event Store & Strategy Evolution
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/journal/analytics", response_model=StdResponse, tags=["Journal"])
+async def journal_analytics(account_scope: str = "paper",
+                            x_api_key: str | None = Header(None)):
+    """Full analytics bundle via DuckDB: equity curve, daily PnL, R-distribution,
+    strategy performance, and factor correlation risk alerts."""
+    _auth(x_api_key)
+    t0 = _now_ms()
+    try:
+        data = await asyncio.to_thread(get_analytics_engine().full_analytics, account_scope)
+        return _std_resp(True, data, _now_ms() - t0)
+    except Exception as e:
+        logger.exception("[journal/analytics] error")
+        return _std_resp(False, None, _now_ms() - t0, str(e))
+
+
+@app.get("/journal/analytics/risk", response_model=StdResponse, tags=["Journal"])
+async def journal_analytics_risk(account_scope: str = "paper",
+                                  x_api_key: str | None = Header(None)):
+    """Factor correlation risk check — detects symbol/strategy concentration >60%."""
+    _auth(x_api_key)
+    t0 = _now_ms()
+    try:
+        data = await asyncio.to_thread(get_analytics_engine().factor_correlation, account_scope)
+        return _std_resp(True, data, _now_ms() - t0)
+    except Exception as e:
+        logger.exception("[journal/analytics/risk] error")
+        return _std_resp(False, None, _now_ms() - t0, str(e))
+
+
+@app.get("/events/stats", response_model=StdResponse, tags=["Learning"])
+async def event_store_stats(x_api_key: str | None = Header(None)):
+    """Event store statistics: buffer size, topic counts, disk usage."""
+    _auth(x_api_key)
+    t0 = _now_ms()
+    try:
+        data = get_event_store().stats()
+        return _std_resp(True, data, _now_ms() - t0)
+    except Exception as e:
+        return _std_resp(False, None, _now_ms() - t0, str(e))
+
+
+@app.get("/events/query", response_model=StdResponse, tags=["Learning"])
+async def event_store_query(topic: str | None = None, source: str | None = None,
+                            since: str | None = None, limit: int = 100,
+                            x_api_key: str | None = Header(None)):
+    """Query events from the in-memory event store."""
+    _auth(x_api_key)
+    t0 = _now_ms()
+    try:
+        data = get_event_store().query(topic=topic, source=source, since=since, limit=limit)
+        return _std_resp(True, {"count": len(data), "events": data}, _now_ms() - t0)
+    except Exception as e:
+        return _std_resp(False, None, _now_ms() - t0, str(e))
+
+
+@app.post("/evolution/run", response_model=StdResponse, tags=["Learning"])
+async def evolution_run(symbols: str = "SPY,QQQ,AAPL,MSFT,NVDA",
+                        generations: int = 20,
+                        population: int = 30,
+                        x_api_key: str | None = Header(None)):
+    """Launch a strategy evolution run using Genetic Programming + VectorBT.
+
+    Args:
+        symbols: Comma-separated list of symbols to test against.
+        generations: Number of evolutionary generations.
+        population: Population size per generation.
+    """
+    _auth(x_api_key)
+    t0 = _now_ms()
+    try:
+        sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+        evolver = StrategyEvolver(
+            symbols=sym_list,
+            population_size=min(population, 100),
+            generations=min(generations, 50),
+        )
+        result = await asyncio.to_thread(evolver.evolve)
+        # Record evolution event
+        get_event_store().append("evolution.completed", {
+            "symbols": sym_list,
+            "generations": generations,
+            "winners": len(result.get("winners", [])),
+        }, source="strategy_evolver")
+        return _std_resp(True, result, _now_ms() - t0)
+    except Exception as e:
+        logger.exception("[evolution/run] error")
+        return _std_resp(False, None, _now_ms() - t0, str(e))
+
+
+@app.get("/evolution/results", response_model=StdResponse, tags=["Learning"])
+async def evolution_results(x_api_key: str | None = Header(None)):
+    """List saved evolution results from data/learning/evolution/."""
+    _auth(x_api_key)
+    t0 = _now_ms()
+    try:
+        from pathlib import Path
+        evo_dir = Path(settings.data_dir).parent / "learning" / "evolution"
+        if not evo_dir.exists():
+            return _std_resp(True, {"results": []}, _now_ms() - t0)
+        import json
+        results = []
+        for f in sorted(evo_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:20]:
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                results.append({"file": f.name, "summary": {
+                    "winners": len(data.get("winners", [])),
+                    "total_evaluated": data.get("total_evaluated", 0),
+                    "best_fitness": data.get("best_fitness", 0),
+                    "timestamp": data.get("timestamp", ""),
+                }})
+            except Exception:
+                pass
+        return _std_resp(True, {"results": results}, _now_ms() - t0)
+    except Exception as e:
+        return _std_resp(False, None, _now_ms() - t0, str(e))
