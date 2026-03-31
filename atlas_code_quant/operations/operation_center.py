@@ -1273,7 +1273,12 @@ class OperationCenter:
             reasons.append(f"Open-symbol guard blocked re-entry for {symbol_upper}.")
         reconciliation_state = str((reconciliation or {}).get("state") or "").lower()
         if opening_equity_order and action == "submit" and reconciliation_state and reconciliation_state != "healthy":
-            reasons.append(f"Reconciliation gate blocked submit because state is '{reconciliation_state}'.")
+            # In paper mode, the paper_local simulator always reports 0 positions,
+            # causing a permanent reconciliation mismatch. Only block if we're NOT in paper mode.
+            if scope != "paper":
+                reasons.append(f"Reconciliation gate blocked submit because state is '{reconciliation_state}'.")
+            else:
+                warnings.append(f"Reconciliation degraded (state='{reconciliation_state}') — bypassed in paper mode.")
 
         entry_validation = self._build_entry_validation(
             order=order_copy,
