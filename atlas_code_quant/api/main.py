@@ -1145,22 +1145,30 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                 positions_payload = _tradier_positions_payload(account_scope="paper", account_id=None)
                 open_symbols = _open_symbols_from_positions_payload(positions_payload)
 
-                # Reconciliation gate: solo bloquea en paper_autonomous si broker no responde
-                if action == "submit" and not _reconciliation_is_healthy(positions_payload):
-                    _AUTO_CYCLE_STATE.update({
-                        "cycle_count": _AUTO_CYCLE_STATE["cycle_count"] + 1,
-                        "last_cycle_at": datetime.utcnow().isoformat(),
-                        "last_action": action,
-                        "last_result": {
-                            "action": action,
-                            "blocked": True,
-                            "reasons": ["Reconciliation gate: broker no responde o estado desconocido."],
-                            "exits_sent": exits_sent,
-                        },
-                    })
-                    _auto_cycle_mark_stage("blocked_reconciliation", action=action, exits_sent=exits_sent)
-                    logger.warning("[auto-cycle] entry blocked: reconciliation unhealthy (exits_sent=%d)", exits_sent)
-                    continue
+                # Reconciliation gate: in paper mode, only block if Tradier didn't respond
+                # (the paper_local simulator always reports 0 positions, causing false failures)
+                _recon_source = str((positions_payload.get("source") or "")).lower()
+                _recon_has_data = bool(positions_payload.get("positions"))
+                _recon_healthy = _reconciliation_is_healthy(positions_payload)
+                if action == "submit" and not _recon_healthy:
+                    if _recon_source == "tradier" and _recon_has_data:
+                        # Tradier responded with positions — paper_local mismatch is expected, proceed
+                        logger.info("[auto-cycle] reconciliation degraded (paper_local mismatch) but Tradier OK — proceeding")
+                    else:
+                        _AUTO_CYCLE_STATE.update({
+                            "cycle_count": _AUTO_CYCLE_STATE["cycle_count"] + 1,
+                            "last_cycle_at": datetime.utcnow().isoformat(),
+                            "last_action": action,
+                            "last_result": {
+                                "action": action,
+                                "blocked": True,
+                                "reasons": ["Reconciliation gate: broker no responde o estado desconocido."],
+                                "exits_sent": exits_sent,
+                            },
+                        })
+                        _auto_cycle_mark_stage("blocked_reconciliation", action=action, exits_sent=exits_sent)
+                        logger.warning("[auto-cycle] entry blocked: reconciliation unhealthy, source=%s (exits_sent=%d)", _recon_source, exits_sent)
+                        continue
 
                 last_result = None
                 selector_session_mode = str(
