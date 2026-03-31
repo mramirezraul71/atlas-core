@@ -1317,7 +1317,8 @@ class TradingJournalService:
             entry_px = abs(_safe_float(entry.entry_notional or entry.entry_price, 0.0))
             exit_px  = abs(_safe_float(entry.exit_price, 0.0))
             _st = str(entry.strategy_type or "").lower()
-            is_short = any(kw in _st for kw in ("short", "bear_put", "bear_call", "long_put"))
+            _is_bullish = any(kw in _st for kw in ("bull_call", "bull_put", "covered_call", "cash_secured_put"))
+            is_short = not _is_bullish and any(kw in _st for kw in ("short", "bear_put", "bear_call", "long_put"))
             direction = -1.0 if is_short else 1.0
             _raw_ep = abs(_safe_float(entry.entry_price, 0.0))
             qty = round(entry_px / _raw_ep, 0) if _raw_ep > 0 else 1.0

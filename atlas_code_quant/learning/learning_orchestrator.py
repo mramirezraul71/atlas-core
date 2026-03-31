@@ -430,11 +430,12 @@ async def run_daily_analysis() -> dict[str, Any]:
         _STATE["last_daily_analysis_at"] = _utcnow().isoformat()
         _STATE["last_daily_analysis_date"] = date.today().isoformat()
         _STATE["last_readiness_report"] = {
-            "is_ready": readiness.is_ready,
-            "readiness_score": readiness.readiness_score,
-            "criteria_passed": readiness.criteria_passed,
-            "criteria_failed": readiness.criteria_failed,
-            "blockers": readiness.blockers,
+            "is_ready": readiness.ready,
+            "criteria_passed": readiness.passed,
+            "criteria_failed": readiness.failed,
+            "n_trades_evaluated": readiness.n_trades_evaluated,
+            "summary": readiness.summary,
+            "next_step": readiness.next_step,
         }
 
         logger.info(
@@ -444,7 +445,7 @@ async def run_daily_analysis() -> dict[str, Any]:
             report.global_metrics.profit_factor,
             report.stability_score,
             len(report.proposed_policies),
-            readiness.is_ready,
+            readiness.ready,
         )
 
         return {
@@ -452,8 +453,8 @@ async def run_daily_analysis() -> dict[str, Any]:
             "profit_factor": report.global_metrics.profit_factor,
             "stability_score": report.stability_score,
             "proposed_policies": len(report.proposed_policies),
-            "readiness_score": readiness.readiness_score,
-            "is_ready_for_live": readiness.is_ready,
+            "n_trades_evaluated": readiness.n_trades_evaluated,
+            "is_ready_for_live": readiness.ready,
         }
     except Exception as e:
         logger.warning("[orchestrator] daily_analysis failed: %s", e)
