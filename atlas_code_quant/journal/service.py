@@ -6,7 +6,7 @@ import json
 import logging
 import math
 import threading
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import numpy as np
@@ -1091,10 +1091,22 @@ def build_options_governance_adoption_snapshot(
     }
 
 
+def _make_aware(dt: datetime | None) -> datetime | None:
+    """Ensure a datetime is timezone-aware (UTC) for safe comparison."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def _equity_curve(entries: list[TradingJournal]) -> list[dict[str, Any]]:
     running = 0.0
     points: list[dict[str, Any]] = []
-    for entry in sorted((item for item in entries if item.exit_time), key=lambda item: item.exit_time or item.entry_time):
+    for entry in sorted(
+        (item for item in entries if item.exit_time),
+        key=lambda item: _make_aware(item.exit_time) or _make_aware(item.entry_time) or datetime.min.replace(tzinfo=timezone.utc),
+    ):
         running += _safe_float(entry.realized_pnl, 0.0)
         points.append({"timestamp": (entry.exit_time or entry.entry_time).isoformat(), "equity": round(running, 4), "pnl": round(_safe_float(entry.realized_pnl, 0.0), 4)})
     return points
