@@ -522,6 +522,9 @@ def build_position_management_snapshot(
             reasons.append("thesis_drift")
         if symbol_heat_pct > float(settings.position_management_max_symbol_heat_pct):
             reasons.append("symbol_heat")
+        abs_loss = _safe_float(entry.unrealized_pnl, 0.0)
+        if abs_loss <= -float(settings.exit_governance_hard_exit_loss_usd):
+            reasons.append("hard_dollar_loss")
 
         position_rows.append(
             {
@@ -664,6 +667,7 @@ def build_exit_governance_snapshot(
         "trailing_profit_floor_r": float(settings.exit_governance_trailing_profit_floor_r),
         "thesis_drift_guard_pct": float(settings.position_management_max_thesis_drift_pct),
         "symbol_heat_guard_pct": float(settings.position_management_max_symbol_heat_pct),
+        "hard_exit_loss_usd": float(settings.exit_governance_hard_exit_loss_usd),
     }
     candidates: list[dict[str, Any]] = []
     action_counts = {
@@ -684,9 +688,14 @@ def build_exit_governance_snapshot(
         exit_reason = "monitor_only"
         urgency = "low"
 
+        abs_loss_usd = _safe_float(row.get("unrealized_pnl"), 0.0)
         if open_r_multiple <= -float(settings.exit_governance_hard_exit_loss_r):
             recommendation = "exit_now"
             exit_reason = "hard_stop_loss_r"
+            urgency = "high"
+        elif abs_loss_usd <= -float(settings.exit_governance_hard_exit_loss_usd):
+            recommendation = "exit_now"
+            exit_reason = "hard_dollar_loss"
             urgency = "high"
         elif "thesis_drift" in reasons and open_r_multiple < 0:
             recommendation = "exit_now"

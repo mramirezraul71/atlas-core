@@ -247,6 +247,7 @@ class TradingConfig:
     exit_governance_take_profit_r: float = _fenv("QUANT_EXIT_GOVERNANCE_TAKE_PROFIT_R", 0.75)
     exit_governance_time_stop_hours: int = _ienv("QUANT_EXIT_GOVERNANCE_TIME_STOP_HOURS", 96)
     exit_governance_trailing_profit_floor_r: float = _fenv("QUANT_EXIT_GOVERNANCE_TRAILING_PROFIT_FLOOR_R", 0.35)
+    exit_governance_hard_exit_loss_usd: float = _fenv("QUANT_EXIT_GOVERNANCE_HARD_EXIT_LOSS_USD", 200.0)
 
     # AtlasLearningBrain — criterios de readiness y scoring híbrido
     learning_brain_enabled: bool = os.getenv("ATLAS_LEARNING_BRAIN_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
@@ -345,6 +346,7 @@ class TradingConfig:
         self.exit_governance_take_profit_r = max(0.05, min(self.exit_governance_take_profit_r, 20.0))
         self.exit_governance_time_stop_hours = max(1, min(self.exit_governance_time_stop_hours, 24 * 60))
         self.exit_governance_trailing_profit_floor_r = max(0.05, min(self.exit_governance_trailing_profit_floor_r, 20.0))
+        self.exit_governance_hard_exit_loss_usd = max(10.0, min(self.exit_governance_hard_exit_loss_usd, 100000.0))
         self.adaptive_learning_refresh_sec = max(30, min(self.adaptive_learning_refresh_sec, 3600))
         self.adaptive_learning_window_days = max(30, min(self.adaptive_learning_window_days, 730))
         self.adaptive_learning_min_strategy_samples = max(2, min(self.adaptive_learning_min_strategy_samples, 50))

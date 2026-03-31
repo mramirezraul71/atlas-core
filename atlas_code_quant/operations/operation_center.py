@@ -904,6 +904,12 @@ class OperationCenter:
         ):
             if key in payload and payload[key] is not None:
                 state[key] = payload[key]
+        if payload.get("reset_fail_safe"):
+            state["fail_safe_active"] = False
+            state["fail_safe_reason"] = None
+            state["operational_error_count"] = 0
+            state["last_operational_error"] = None
+            self.executor.clear_emergency_stop()
         if "operator_present" in payload or "screen_integrity_ok" in payload or "notes" in payload or "vision_mode" in payload:
             self.vision.update(
                 provider=payload.get("vision_mode"),
@@ -1249,13 +1255,14 @@ class OperationCenter:
         probability_source = "none"
         strategy_type = str(order_copy.strategy_type or order_copy.probability_gate.strategy_type) if order_copy.probability_gate and order_copy.strategy_type is None else (str(order_copy.strategy_type) if order_copy.strategy_type else None)
 
+        is_close_order = str(order_copy.position_effect or "").lower() == "close"
         if bool(config.get("paper_only", True)) and scope != "paper":
             reasons.append("El plano de control esta bloqueado en modo solo simulada.")
-        if executor_status.get("kill_switch_active"):
+        if not is_close_order and executor_status.get("kill_switch_active"):
             reasons.append("La parada de emergencia esta activa.")
-        if bool(config.get("fail_safe_active")) and action in {"preview", "submit"}:
+        if not is_close_order and bool(config.get("fail_safe_active")) and action in {"preview", "submit"}:
             reasons.append(f"Failsafe operativo activo: {config.get('fail_safe_reason') or 'error_limit'}.")
-        if bool(config.get("require_operator_present")) and not vision_status.get("operator_present"):
+        if not is_close_order and bool(config.get("require_operator_present")) and not vision_status.get("operator_present"):
             reasons.append("La politica actual exige presencia del operador.")
         if str(config.get("vision_mode") or "manual") != "off" and not vision_status.get("screen_integrity_ok"):
             if scope != "paper":
@@ -1293,7 +1300,10 @@ class OperationCenter:
             order=order_copy,
             action=action,
         )
-        reasons.extend(list(market_context_gate.get("reasons") or []))
+        if is_close_order:
+            warnings.extend([f"[close bypass] {r}" for r in (market_context_gate.get("reasons") or [])])
+        else:
+            reasons.extend(list(market_context_gate.get("reasons") or []))
         warnings.extend(list(market_context_gate.get("warnings") or []))
 
         risk_dollars = None
@@ -1374,6 +1384,7 @@ class OperationCenter:
             action=action,
             auton_mode=str(config.get("auton_mode") or "off"),
             context_snapshot=context_snapshot if isinstance(context_snapshot, dict) else None,
+            scope=scope,
         )
         reasons.extend(list(visual_entry_gate.get("reasons") or []))
         warnings.extend(list(visual_entry_gate.get("warnings") or []))
@@ -1705,6 +1716,7 @@ class OperationCenter:
         action: Literal["evaluate", "preview", "submit"],
         auton_mode: str,
         context_snapshot: dict[str, Any] | None,
+        scope: str = "",
     ) -> dict[str, Any]:
         payload = deepcopy(gate)
         payload.setdefault("reasons", [])
@@ -1848,21 +1860,26 @@ class OperationCenter:
             and bool(settings.visual_gate_fail_closed)
             and bool(payload.get("applies"))
         ):
-            threshold = _safe_float(settings.visual_gate_min_readiness_pct, 75.0)
-            if not bool(payload.get("blocking_ready")):
-                reason = str(payload.get("blocking_reason") or "visual gate is not ready")
-                payload["reasons"].append(f"Visual gate blocked {action}: {reason}.")
-            elif not supervised_manual_chart_preview and _safe_float(payload.get("readiness_score_pct"), 0.0) < threshold:
-                payload["degraded"] = True
-                payload["manual_required"] = True
-                payload["operator_review_required"] = True
-                payload["blocking_ready"] = False
-                payload["status"] = "manual_review"
-                payload["blocking_reason"] = (
-                    f"visual readiness score {_safe_float(payload.get('readiness_score_pct'), 0.0):.2f}% "
-                    f"is below the required threshold ({threshold:.2f}%)"
+            if scope == "paper":
+                payload["warnings"].append(
+                    f"Visual gate would block {action} ({payload.get('blocking_reason') or 'not ready'}) — bypassed in paper mode."
                 )
-                payload["reasons"].append(f"Visual gate blocked {action}: {payload['blocking_reason']}.")
+            else:
+                threshold = _safe_float(settings.visual_gate_min_readiness_pct, 75.0)
+                if not bool(payload.get("blocking_ready")):
+                    reason = str(payload.get("blocking_reason") or "visual gate is not ready")
+                    payload["reasons"].append(f"Visual gate blocked {action}: {reason}.")
+                elif not supervised_manual_chart_preview and _safe_float(payload.get("readiness_score_pct"), 0.0) < threshold:
+                    payload["degraded"] = True
+                    payload["manual_required"] = True
+                    payload["operator_review_required"] = True
+                    payload["blocking_ready"] = False
+                    payload["status"] = "manual_review"
+                    payload["blocking_reason"] = (
+                        f"visual readiness score {_safe_float(payload.get('readiness_score_pct'), 0.0):.2f}% "
+                        f"is below the required threshold ({threshold:.2f}%)"
+                    )
+                    payload["reasons"].append(f"Visual gate blocked {action}: {payload['blocking_reason']}.")
 
         return payload
 

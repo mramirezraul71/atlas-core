@@ -297,6 +297,7 @@ class OperationConfigPayload(BaseModel):
     operational_error_limit: int = Field(3, ge=1, le=10)
     notes: str = ""
     kill_switch_active: bool = False
+    reset_fail_safe: bool = False
 
 
 class OperationCycleRequest(BaseModel):
