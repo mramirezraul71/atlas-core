@@ -1,9 +1,9 @@
 {
-  "provider": "direct_nexus",
+  "provider": "off",
   "operator_present": true,
   "screen_integrity_ok": true,
-  "last_capture_path": "C:\\ATLAS_PUSH\\snapshots\\grasp\\nexus_camera_1773976239.jpg",
-  "last_capture_at": "2026-03-20T03:10:31.372207",
-  "last_capture_note": "Captura de contexto guardada",
+  "last_capture_path": null,
+  "last_capture_at": "2026-03-31T16:35:23.726467",
+  "last_capture_note": "Proveedor manual activo; no se intento captura automatica.",
   "notes": ""
 }

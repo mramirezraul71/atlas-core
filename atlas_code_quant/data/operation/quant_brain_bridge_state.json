@@ -3,17 +3,16 @@
   "atlas_base_url": "http://127.0.0.1:8791",
   "memory_enabled": true,
   "bitacora_enabled": true,
-  "last_delivery_ok": false,
-  "last_bitacora_ok": false,
-  "last_memory_ok": false,
-  "last_event_kind": "trade_victory",
-  "last_event_at": "2026-03-30T22:21:19.757016",
-  "last_error": "bitacora: <urlopen error [WinError 10061] No se puede establecer una conexi\u00f3n ya que el equipo de destino deneg\u00f3 expresamente dicha conexi\u00f3n> | memory: <urlopen error [WinError 10061] No se puede establecer una conexi\u00f3n ya que el equipo de destino deneg\u00f3 expresamente dicha conexi\u00f3n>",
-  "total_events": 1572,
-  "delivered_events": 1550,
-  "queued_local_only_events": 22,
+  "last_delivery_ok": true,
+  "last_bitacora_ok": true,
+  "last_memory_ok": true,
+  "last_event_kind": "operation_cycle",
+  "last_event_at": "2026-03-31T16:35:23.730210",
+  "last_error": "",
+  "total_events": 1632,
+  "delivered_events": 1604,
+  "queued_local_only_events": 28,
   "emitted_journal_keys": [
-    "paper:VA9201365:untracked:KALV:c76c56ddb2c5f3:1774900952",
     "paper:VA9201365:untracked:KBR:ec337c35ead928:1774900952",
     "paper:VA9201365:untracked:KEX:b0442fb0861b7d:1774900952",
     "paper:VA9201365:untracked:KEYS:8fe4943db1eab5:1774900952",
@@ -512,7 +511,8 @@
     "paper:VA9201365:untracked:YPF:3314ee725ea3ec:1774901187",
     "paper:VA9201365:untracked:YUM:2b70f97953f034:1774901187",
     "paper:VA9201365:untracked:ZBH:9b172846bbc016:1774901187",
-    "paper:VA9201365:untracked:ZD:ded125ad56ccf1:1774901187"
+    "paper:VA9201365:untracked:ZD:ded125ad56ccf1:1774901187",
+    "paper:VA9201365:untracked:LITE:6de21f02fbc397:1774901296"
   ],
   "events_path": "C:\\ATLAS_PUSH\\atlas_code_quant\\logs\\quant_brain_bridge.jsonl"
 }
