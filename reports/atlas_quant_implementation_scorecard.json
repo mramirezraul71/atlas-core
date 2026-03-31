@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-03-30T16:05:54.298887+00:00",
+  "generated_at": "2026-03-31T07:07:47.141792+00:00",
   "topic": "atlas_quant_trading_implementation_scorecard",
   "summary": "Scorecard operativo para medir dos cosas separadas: cuanto del metodo ya esta implantado y cuanta evidencia real existe de que esa implantacion esta sirviendo.",
   "metric_catalog": [
@@ -91,15 +91,15 @@
     },
     "memory_persistence_score": {
       "name": "memory_persistence_score",
-      "value": 93.89,
-      "status": "healthy",
+      "value": 69.02,
+      "status": "watch",
       "details": {
-        "delivered_events": 873,
-        "total_events": 887,
-        "queued_local_only_events": 14,
-        "delivery_ratio_pct": 98.42,
-        "last_memory_ok": true,
-        "last_bitacora_ok": true,
+        "delivered_events": 1550,
+        "total_events": 1572,
+        "queued_local_only_events": 22,
+        "delivery_ratio_pct": 98.6,
+        "last_memory_ok": false,
+        "last_bitacora_ok": false,
         "protocol_note_events": 0,
         "scorecard_note_events": 0
       }
@@ -148,7 +148,7 @@
         "reload_resilience_pct": 66.67,
         "foundation_score_pct": 100.0,
         "freshness_pct": 40.0,
-        "age_hours": 53.96
+        "age_hours": 69.0
       }
     },
     "visual_benchmark_feedback_score": {
@@ -207,10 +207,10 @@
         "open_untracked": 0,
         "open_untracked_ratio_pct": 0.0,
         "attributed_open_positions_pct": 100.0,
-        "closed_total": 76683,
+        "closed_total": 77478,
         "evidence_sufficiency_score": 100.0,
-        "open_pnl": -4775.29,
-        "realized_pnl": -32671403.18,
+        "open_pnl": -6074.76,
+        "realized_pnl": -33031538.31,
         "post_mortem_coverage_pct": 100.0,
         "recent_attribution_pct": 100.0,
         "recent_unattributed_count": 0,
@@ -218,17 +218,17 @@
         "recent_sample_size": 100,
         "external_learning_translation_score": 100.0,
         "signal_ic_quality_score": 0.0,
-        "paper_outcome_quality_score": 0.0,
+        "paper_outcome_quality_score": 20.0,
         "paper_outcome_quality": {
-          "sample_count": 0,
-          "win_rate_pct": 0.0,
-          "profit_factor": 0.0,
-          "expectancy_pct": 0.0,
-          "sample_score": 0.0,
+          "sample_count": 2000,
+          "win_rate_pct": 18.0,
+          "profit_factor": 0.218,
+          "expectancy_pct": -81.859,
+          "sample_score": 100.0,
           "win_rate_score": 0.0,
           "profit_factor_score": 0.0,
           "expectancy_score": 0.0,
-          "paper_outcome_quality_score": 0.0,
+          "paper_outcome_quality_score": 20.0,
           "available": true
         },
         "usefulness_cap_reason": "paper_outcome_quality_weak",
@@ -246,7 +246,7 @@
     }
   },
   "supporting_indicators": {
-    "brain_delivery_ratio_pct": 98.42,
+    "brain_delivery_ratio_pct": 98.6,
     "attributed_open_positions_pct": 100.0,
     "open_untracked_ratio_pct": 0.0,
     "recent_unattributed_count": 0,
