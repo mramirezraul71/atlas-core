@@ -268,6 +268,7 @@ class TradingConfig:
     adaptive_learning_window_days: int = _ienv("QUANT_ADAPTIVE_LEARNING_WINDOW_DAYS", 180)
     adaptive_learning_min_strategy_samples: int = _ienv("QUANT_ADAPTIVE_LEARNING_MIN_STRATEGY_SAMPLES", 4)
     adaptive_learning_min_symbol_samples: int = _ienv("QUANT_ADAPTIVE_LEARNING_MIN_SYMBOL_SAMPLES", 3)
+    adaptive_learning_epoch_start: str = _clean_setting(os.getenv("QUANT_ADAPTIVE_LEARNING_EPOCH_START"), "2026-03-30")
 
     # Risk management — v2 logarítmico (Grok/xAI criterio)
     max_position_pct: float = 0.05             # Fallback si no hay Kelly

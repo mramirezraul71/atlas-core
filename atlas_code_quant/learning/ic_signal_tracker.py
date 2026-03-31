@@ -272,27 +272,6 @@ class ICSignalTracker:
         self,
         *,
         symbol: str,
-        exit_price: float,
-        method: str | None = None,
-        entry_price: float | None = None,
-        recorded_near: str | None = None,
-    ) -> str | None:
-        """Actualiza outcome de la señal pendiente más probable para un símbolo."""
-        signal_id = self.find_pending_signal_id(
-            symbol=symbol,
-            method=method,
-            entry_price=entry_price,
-            recorded_near=recorded_near,
-        )
-        if not signal_id:
-            return None
-        updated = self.update_outcome(signal_id=signal_id, exit_price=exit_price)
-        return signal_id if updated else None
-
-    def update_pending_outcome(
-        self,
-        *,
-        symbol: str,
         method: str,
         entry_price: float,
         recorded_near: str,

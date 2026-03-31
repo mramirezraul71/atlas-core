@@ -258,6 +258,16 @@ class AdaptiveLearningService:
         if not self.enabled:
             return self._empty_snapshot()
         cutoff = datetime.utcnow() - timedelta(days=self.window_days)
+        epoch_start: datetime | None = None
+        try:
+            epoch_str = settings.adaptive_learning_epoch_start
+            if epoch_str:
+                epoch_start = datetime.fromisoformat(epoch_str)
+        except (ValueError, AttributeError):
+            pass
+        if epoch_start is not None and epoch_start > cutoff:
+            cutoff = epoch_start
+
         with session_scope() as session:
             rows = list(
                 session.scalars(
