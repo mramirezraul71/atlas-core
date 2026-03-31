@@ -2992,31 +2992,58 @@ async def event_store_query(topic: str | None = None, source: str | None = None,
 async def evolution_run(symbols: str = "SPY,QQQ,AAPL,MSFT,NVDA",
                         generations: int = 20,
                         population: int = 30,
+                        period: str = "3mo",
                         x_api_key: str | None = Header(None)):
-    """Launch a strategy evolution run using Genetic Programming + VectorBT.
+    """Launch a strategy evolution run using Genetic Programming + vectorized backtesting.
 
+    Downloads OHLCV data via yfinance and runs genetic evolution for each symbol.
     Args:
-        symbols: Comma-separated list of symbols to test against.
-        generations: Number of evolutionary generations.
-        population: Population size per generation.
+        symbols: Comma-separated list of symbols.
+        generations: Number of evolutionary generations (max 50).
+        population: Population size per generation (max 100).
+        period: yfinance period string (e.g. "3mo", "6mo", "1y").
     """
     _auth(x_api_key)
     t0 = _now_ms()
     try:
+        import yfinance as yf
         sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
-        evolver = StrategyEvolver(
-            symbols=sym_list,
-            population_size=min(population, 100),
-            generations=min(generations, 50),
-        )
-        result = await asyncio.to_thread(evolver.evolve)
-        # Record evolution event
+        gens = min(generations, 50)
+        pop = min(population, 100)
+        all_results: list[dict] = []
+        evolver = StrategyEvolver()
+
+        for sym in sym_list:
+            logger.info("[evolution/run] Downloading %s period=%s", sym, period)
+            ticker = yf.Ticker(sym)
+            df = await asyncio.to_thread(ticker.history, period=period, interval="1d")
+            if df is None or len(df) < 100:
+                all_results.append({"symbol": sym, "error": f"Insufficient data ({len(df) if df is not None else 0} bars, need 100+)"})
+                continue
+            # Normalize column names to lowercase
+            df.columns = [c.lower() for c in df.columns]
+            result = await asyncio.to_thread(
+                evolver.evolve, ohlcv=df, symbol=sym,
+                generations=gens, population_size=pop,
+            )
+            all_results.append({
+                "symbol": sym,
+                "bars": len(df),
+                "generations": gens,
+                "total_backtests": result.total_backtests,
+                "duration_sec": result.duration_sec,
+                "passing_count": len(result.passing_genomes),
+                "best_genomes": result.best_genomes[:5],
+                "generation_stats": result.generation_stats[-3:],  # last 3 gen stats
+            })
+
         get_event_store().append("evolution.completed", {
             "symbols": sym_list,
-            "generations": generations,
-            "winners": len(result.get("winners", [])),
+            "generations": gens,
+            "period": period,
+            "results_count": len(all_results),
         }, source="strategy_evolver")
-        return _std_resp(True, result, _now_ms() - t0)
+        return _std_resp(True, {"symbols": sym_list, "period": period, "results": all_results}, _now_ms() - t0)
     except Exception as e:
         logger.exception("[evolution/run] error")
         return _std_resp(False, None, _now_ms() - t0, str(e))
@@ -3037,11 +3064,21 @@ async def evolution_results(x_api_key: str | None = Header(None)):
         for f in sorted(evo_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:20]:
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
+                gen_stats = data.get("generation_stats", [])
+                best = data.get("best_genomes", [{}])[0] if data.get("best_genomes") else {}
                 results.append({"file": f.name, "summary": {
-                    "winners": len(data.get("winners", [])),
-                    "total_evaluated": data.get("total_evaluated", 0),
-                    "best_fitness": data.get("best_fitness", 0),
-                    "timestamp": data.get("timestamp", ""),
+                    "symbol": data.get("symbol", ""),
+                    "generations": data.get("generations", 0),
+                    "population_size": data.get("population_size", 0),
+                    "total_backtests": data.get("total_backtests", 0),
+                    "passing_count": data.get("passing_count", 0),
+                    "duration_sec": data.get("duration_sec", 0),
+                    "best_fitness": best.get("fitness", 0),
+                    "best_sharpe": best.get("sharpe", 0),
+                    "best_ic": best.get("ic", 0),
+                    "best_profit_factor": best.get("profit_factor", 0),
+                    "best_win_rate": best.get("win_rate", 0),
+                    "last_gen_stats": gen_stats[-1] if gen_stats else {},
                 }})
             except Exception:
                 pass

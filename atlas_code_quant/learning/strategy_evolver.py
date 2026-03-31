@@ -129,7 +129,10 @@ class StrategyGenome:
                 self.profit_factor > 1.1)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d["fitness"] = self.fitness
+        d["passes_filter"] = self.passes_filter
+        return d
 
 
 # ── Genetic Operations ─────────────────────────────────────────────
