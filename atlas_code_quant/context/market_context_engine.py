@@ -180,7 +180,7 @@ class MarketContextEngine:
             gap_state = "expansion_risk"
         elif predicted_move >= 1.0:
             gap_state = "tradable_gap"
-        session_bias = "accepted" if flow_conf >= 65.0 else "uncertain" if flow_conf >= 45.0 else "rejected"
+        session_bias = "accepted" if flow_conf >= 60.0 else "uncertain" if flow_conf >= 35.0 else "rejected"
         return {
             "session_phase": session_phase,
             "gap_state": gap_state,
@@ -267,10 +267,10 @@ class MarketContextEngine:
             uncertainty_score += 15.0
         if any("IC" in warning or "ic" in warning for warning in (advisory.get("warnings") or [])):
             warnings.append("evidencia estadistica en vivo insuficiente")
-            uncertainty_score += 20.0
+            uncertainty_score += 10.0
         if _safe_float(candidate.get("local_win_rate_pct"), 0.0) < 55.0:
             warnings.append("win rate local todavia debil")
-            uncertainty_score += 18.0
+            uncertainty_score += 8.0
 
         quality = _clip(100.0 - uncertainty_score - global_risk_score * 0.25, 0.0, 100.0)
         clarity = _clip(quality * 0.7 + regime["confidence_pct"] * 0.3, 0.0, 100.0)

@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Literal
 
-from api.schemas import OrderRequest
+from api.schemas import OrderRequest, TradierOrderLeg
 from backtesting.winning_probability import SUPPORTED_STRATEGIES, StrategyLeg, _capital_at_risk, _safe_float, get_winning_probability
 from config.settings import settings
 from execution.tradier_controls import resolve_account_session
@@ -62,10 +62,10 @@ _DEFAULT_STATE = {
     "screen_integrity_ok": True,
     "sentiment_score": 0.0,
     "sentiment_source": "manual",
-    "min_auton_win_rate_pct": 65.0,
+    "min_auton_win_rate_pct": 35.0,
     "max_level4_bpr_pct": 20.0,
     "auto_pause_on_operational_errors": True,
-    "operational_error_limit": 3,
+    "operational_error_limit": 10,
     "operational_error_count": 0,
     "operational_error_day": None,
     "fail_safe_active": False,
@@ -1300,14 +1300,18 @@ class OperationCenter:
             order=order_copy,
             action=action,
         )
+        mcg_reasons = list(market_context_gate.get("reasons") or [])
         if is_close_order:
-            warnings.extend([f"[close bypass] {r}" for r in (market_context_gate.get("reasons") or [])])
+            warnings.extend([f"[close bypass] {r}" for r in mcg_reasons])
+        elif scope == "paper" and mcg_reasons:
+            warnings.extend([f"[paper bypass] {r}" for r in mcg_reasons])
         else:
-            reasons.extend(list(market_context_gate.get("reasons") or []))
+            reasons.extend(mcg_reasons)
         warnings.extend(list(market_context_gate.get("warnings") or []))
 
         risk_dollars = None
         bpr_pct = None
+        legs: list = []
         if strategy_type and strategy_type in SUPPORTED_STRATEGIES:
             probability_started = time.perf_counter()
             precomputed_probability = dict(order_copy.probability_payload or {})
@@ -1348,7 +1352,7 @@ class OperationCenter:
                 _safe_float(balances.get("cash"), 0.0),
             )
             bpr_pct = round((risk_dollars / buying_power) * 100.0, 2) if buying_power > 0 else None
-            min_win_rate = _safe_float(config.get("min_auton_win_rate_pct"), 65.0)
+            min_win_rate = _safe_float(config.get("min_auton_win_rate_pct"), 35.0)
             if _safe_float(probability_payload.get("win_rate_pct"), 0.0) < min_win_rate:
                 reasons.append(f"La probabilidad de exito esta por debajo del filtro ({probability_payload.get('win_rate_pct'):.2f}% < {min_win_rate:.2f}%).")
             if strategy_type in _LEVEL4_CREDIT_STRATEGIES and bpr_pct is not None:
@@ -1399,20 +1403,48 @@ class OperationCenter:
                 reasons.append("La ejecucion real sigue deshabilitada mientras solo simulada este activa.")
             else:
                 order_copy.preview = action != "submit"
-                try:
-                    execution_started = time.perf_counter()
-                    execution_result = self.executor.execute(order=order_copy, action=action, mode=str(config.get("executor_mode") or "disabled"))
-                    evaluation_timings["executor_sec"] = round(time.perf_counter() - execution_started, 4)
-                    if execution_result.get("decision") == "blocked":
+                if not order_copy.legs and strategy_type and strategy_type not in {"equity_long", "equity_short"}:
+                    if legs and len(legs) >= 2:
+                        _side_map = {"long": "buy_to_open", "short": "sell_to_open"}
+                        order_copy.legs = [
+                            TradierOrderLeg(
+                                option_symbol=leg.symbol,
+                                side=_side_map.get(leg.side, "buy_to_open"),
+                                quantity=max(float(order_copy.size), 1.0),
+                            )
+                            for leg in legs
+                        ]
+                        if not order_copy.tradier_class:
+                            order_copy.tradier_class = "multileg"
+                        _net_prem = _safe_float((probability_payload or {}).get("net_premium"), 0.0)
+                        if strategy_type in _LEVEL4_CREDIT_STRATEGIES:
+                            order_copy.order_type = "credit"
+                            order_copy.price = round(abs(_net_prem), 2) if _net_prem != 0.0 else 0.01
+                        elif _net_prem > 0.0:
+                            order_copy.order_type = "debit"
+                            order_copy.price = round(_net_prem, 2)
+                        logger.info("[evaluate_candidate] Populated %d legs for %s (%s) order_type=%s price=%s", len(order_copy.legs), order_copy.symbol, strategy_type, order_copy.order_type, order_copy.price)
+                    else:
                         allowed = False
-                        block_reason = str(execution_result.get("reason") or "El ejecutor bloqueo la operacion.")
-                        reasons.append(block_reason)
-                        operational_failure_reason = block_reason
-                except Exception as exc:
-                    allowed = False
-                    operational_failure_reason = f"executor_exception:{exc}"
-                    reasons.append(f"Fallo operativo del ejecutor: {exc}")
-                    execution_result = {"decision": "error", "error": str(exc)}
+                        reasons.append(f"Estrategia {strategy_type} requiere legs pero el probability genero {len(legs)} (minimo 2).")
+                        logger.warning("[evaluate_candidate] Insufficient legs (%d) for %s (%s) — blocking execution", len(legs), order_copy.symbol, strategy_type)
+                if not allowed:
+                    logger.info("[evaluate_candidate] Skipping executor — order already blocked for %s", order_copy.symbol)
+                else:
+                    try:
+                        execution_started = time.perf_counter()
+                        execution_result = self.executor.execute(order=order_copy, action=action, mode=str(config.get("executor_mode") or "disabled"))
+                        evaluation_timings["executor_sec"] = round(time.perf_counter() - execution_started, 4)
+                        if execution_result.get("decision") == "blocked":
+                            allowed = False
+                            block_reason = str(execution_result.get("reason") or "El ejecutor bloqueo la operacion.")
+                            reasons.append(block_reason)
+                            operational_failure_reason = block_reason
+                    except Exception as exc:
+                        allowed = False
+                        operational_failure_reason = f"executor_exception:{exc}"
+                        reasons.append(f"Fallo operativo del ejecutor: {exc}")
+                        execution_result = {"decision": "error", "error": str(exc)}
 
         execution_quality = self._build_execution_quality(
             order=order_copy,

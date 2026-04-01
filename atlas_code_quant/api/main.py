@@ -1149,7 +1149,7 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     candidates,
                     key=lambda c: float(c.get("selection_score") or 0),
                     reverse=True,
-                )[:max_per_cycle]
+                )
 
                 positions_payload = _tradier_positions_payload(account_scope="paper", account_id=None)
                 open_symbols = _open_symbols_from_positions_payload(positions_payload)
@@ -1180,6 +1180,7 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         continue
 
                 last_result = None
+                executed_count = 0
                 selector_session_mode = str(
                     _AUTO_CYCLE_STATE.get("selector_session_mode_override")
                     or settings.selector_session_mode
@@ -1324,6 +1325,10 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         }, source="auto_cycle")
                     except Exception:
                         pass  # event store is non-critical
+                    if not last_result["blocked"]:
+                        executed_count += 1
+                        if executed_count >= max_per_cycle:
+                            break
 
                 _AUTO_CYCLE_STATE.update({
                     "cycle_count": _AUTO_CYCLE_STATE["cycle_count"] + 1,

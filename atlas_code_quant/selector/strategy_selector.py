@@ -1259,7 +1259,7 @@ class StrategySelectorService:
             "size": size_plan["suggested_size"],
             "account_scope": account_scope,
             "account_id": account_id,
-            "tag": f"selector:{candidate.get('strategy_key') or 'idea'}:{candidate.get('timeframe') or 'tf'}",
+            "tag": f"sel-{candidate.get('strategy_key') or 'idea'}-{candidate.get('timeframe') or 'tf'}",
             "entry_reference_price": entry_plan.get("entry_reference_price"),
             "entry_expected_move_pct": entry_plan.get("expected_move_pct"),
             "entry_confidence_reference_pct": entry_plan.get("confidence_reference_pct"),
