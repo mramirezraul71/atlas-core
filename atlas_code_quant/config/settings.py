@@ -222,8 +222,8 @@ class TradingConfig:
 
     # Entry validation
     entry_validation_enabled: bool = os.getenv("QUANT_ENTRY_VALIDATION_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
-    entry_max_equity_spread_pct: float = _fenv("QUANT_ENTRY_MAX_EQUITY_SPREAD_PCT", 0.25)
-    entry_max_adverse_drift_pct: float = _fenv("QUANT_ENTRY_MAX_ADVERSE_DRIFT_PCT", 0.35)
+    entry_max_equity_spread_pct: float = _fenv("QUANT_ENTRY_MAX_EQUITY_SPREAD_PCT", 1.50)
+    entry_max_adverse_drift_pct: float = _fenv("QUANT_ENTRY_MAX_ADVERSE_DRIFT_PCT", 2.00)
     entry_warn_drift_vs_expected_move_pct: float = _fenv("QUANT_ENTRY_WARN_DRIFT_SHARE_EXPECTED_MOVE_PCT", 25.0)
     chart_auto_open_enabled: bool = os.getenv("QUANT_CHART_AUTO_OPEN_ENABLED", "false").strip().lower() not in {"0", "false", "no"}
     chart_open_cooldown_sec: int = _ienv("QUANT_CHART_OPEN_COOLDOWN_SEC", 90)

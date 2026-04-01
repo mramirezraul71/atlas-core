@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any, Literal
 
 from api.schemas import OrderRequest, TradierOrderLeg
@@ -97,9 +98,15 @@ def _normalize_equity_side(side: str) -> str:
 
 
 def _resolve_order_class(body: OrderRequest) -> TradierOrderClass:
+    logger.info("[_resolve_order_class] V18 tradier_class=%s asset_class=%s legs=%d", body.tradier_class, body.asset_class, len(body.legs or []))
+    # If tradier_class is explicitly set AND legs are present, use it.
     if body.tradier_class is not None:
-        return body.tradier_class
-    if body.asset_class != "auto":
+        if body.tradier_class in ("multileg", "combo") and not body.legs:
+            logger.warning("tradier_class=%s but no legs — downgrading to equity", body.tradier_class)
+        else:
+            return body.tradier_class
+    # If asset_class requires legs but none present, fall through to auto-detect.
+    if body.asset_class not in ("auto",) and body.asset_class not in ("multileg", "combo"):
         return body.asset_class
     if body.legs:
         return "combo" if any(leg.instrument_type == "equity" for leg in body.legs) else "multileg"
@@ -164,8 +171,9 @@ def build_tradier_order_payload(body: OrderRequest) -> tuple[TradierOrderClass, 
         "duration": body.duration,
         "preview": str(body.preview).lower(),
     }
-    if body.tag:
-        payload["tag"] = body.tag
+    # Tag disabled — Tradier sandbox rejects all tag formats
+    # if body.tag:
+    #     payload["tag"] = re.sub(r"[^a-zA-Z0-9_]", "", body.tag)[:255]
     if body.extended_hours:
         payload["extended_hours"] = "true"
     if body.price is not None and body.order_type in {"limit", "debit", "credit", "even", "stop_limit"}:
