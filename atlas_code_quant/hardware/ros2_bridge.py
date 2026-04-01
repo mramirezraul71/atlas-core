@@ -34,25 +34,22 @@ try:
     _ROS2_OK = True
 except ImportError:
     _ROS2_OK = False
-    logger.warning("rclpy NOT INSTALLED — ROS2 bridge DISABLED. Install with: pip install rclpy")
-    # Stubs que loguean cada intento de publicación en vez de silenciar
+    logger.info("rclpy not installed — ROS2 bridge disabled (not required for serial/vision mode)")
+
     class Node:  # type: ignore[no-redef]
+        """Nodo ROS2 inerte — no loguea ni simula nada."""
         def __init__(self, name: str) -> None:
             self._name = name
-            logger.info("ROS2 Node '%s' created in STUB mode (no rclpy)", name)
-        def create_publisher(self, *a, **kw): return _StubPublisher()
+        def create_publisher(self, *a, **kw): return _NullPublisher()
         def create_subscription(self, *a, **kw): return None
         def create_timer(self, *a, **kw): return None
         def get_logger(self): return logger
         def destroy_node(self): pass
 
-    class _StubPublisher:
-        _warned = False
+    class _NullPublisher:
+        """Descarta mensajes silenciosamente — sin logs, sin stubs."""
         def publish(self, msg: object) -> None:
-            if not _StubPublisher._warned:
-                logger.warning("ROS2 STUB: message NOT published (rclpy not installed). "
-                               "This message appears once per session.")
-                _StubPublisher._warned = True
+            pass
 
     class String:  # type: ignore[no-redef]
         data: str = ""
@@ -101,9 +98,9 @@ class ATLASRos2Bridge:
         self._robot_state = RobotState(timestamp=time.time())
         self._state_lock = threading.Lock()
         self._emergency_callbacks: list[Callable[[], None]] = []
-        self._pub_signal: object = _StubPublisher()
-        self._pub_status: object = _StubPublisher()
-        self._pub_ocr: object = _StubPublisher()
+        self._pub_signal: object = _NullPublisher()
+        self._pub_status: object = _NullPublisher()
+        self._pub_ocr: object = _NullPublisher()
 
     def on_emergency_stop(self, callback: Callable[[], None]) -> None:
         self._emergency_callbacks.append(callback)
@@ -203,9 +200,9 @@ class Ros2TradingNode(Node):
                 Bool, ATLASRos2Bridge.TOPIC_ESTOP, self._estop_cb, 10
             )
         else:
-            self.pub_signal = _StubPublisher()
-            self.pub_status = _StubPublisher()
-            self.pub_ocr    = _StubPublisher()
+            self.pub_signal = _NullPublisher()
+            self.pub_status = _NullPublisher()
+            self.pub_ocr    = _NullPublisher()
 
         self.get_logger().info("Ros2TradingNode iniciado")
 
