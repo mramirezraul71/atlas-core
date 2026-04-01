@@ -13648,6 +13648,31 @@ def api_kernel_event_bus_publish(body: dict):
         return {"ok": False, "error": str(e)}
 
 
+@app.post("/events", tags=["Events"])
+def events_ingest(body: dict):
+    """Recibe eventos externos ligeros y los reinyecta al Event Bus interno.
+
+    Pensado como puerta estable para sensores periféricos como atlas_vision_sensor.
+    """
+    try:
+        from modules.humanoid.core.event_bus import publish_event
+
+        if not isinstance(body, dict):
+            return {"ok": False, "error": "body must be an object"}
+
+        event_type = str((body or {}).get("type") or "").strip()
+        source = str((body or {}).get("source") or "external").strip() or "external"
+        topic = str((body or {}).get("topic") or "").strip()
+        if not topic:
+            normalized_type = event_type or "event"
+            topic = f"{source}.{normalized_type}"
+
+        result = publish_event(topic, body, forward_to_kernel=True)
+        return {"ok": True, "topic": topic, "result": result}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 class AtlasAgentRunBody(BaseModel):
     goal: str
     model: Optional[str] = None
