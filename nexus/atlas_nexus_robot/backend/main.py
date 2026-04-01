@@ -146,6 +146,8 @@ class LiveCameraManager:
         self._frame_count = 0
         self._motion_score = 0.0
         self._motion_detected = False
+        self._motion_quadrant: str = "none"  # "left", "right", "center", "none"
+        self._motion_quadrant_score: dict = {"left": 0.0, "right": 0.0}
         self._started_at: float = 0.0
 
     def start(self) -> bool:
@@ -198,15 +200,33 @@ class LiveCameraManager:
                 with self._lock:
                     self._frame = frame.copy()
                     self._frame_count += 1
-                # Detección de movimiento simple
+                # Detección de movimiento por cuadrante (izquierda / derecha)
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 gray = cv2.GaussianBlur(gray, (21, 21), 0)
                 if self._prev_gray is not None:
                     delta = cv2.absdiff(self._prev_gray, gray)
                     thresh = cv2.threshold(delta, 25, 255, cv2.THRESH_BINARY)[1]
-                    motion = (thresh.sum() / 255.0) / (gray.shape[0] * gray.shape[1]) * 100.0
+                    h, w = thresh.shape
+                    total_pixels = h * w
+                    motion = (thresh.sum() / 255.0) / total_pixels * 100.0
                     self._motion_score = round(motion, 2)
-                    self._motion_detected = motion > 1.0  # >1% pixeles cambiaron
+                    self._motion_detected = motion > 1.0
+                    # Análisis por cuadrante: mitad izquierda vs derecha
+                    mid = w // 2
+                    left_motion = (thresh[:, :mid].sum() / 255.0) / (h * mid) * 100.0
+                    right_motion = (thresh[:, mid:].sum() / 255.0) / (h * (w - mid)) * 100.0
+                    self._motion_quadrant_score = {
+                        "left": round(left_motion, 2),
+                        "right": round(right_motion, 2),
+                    }
+                    if left_motion > 1.5 and left_motion > right_motion * 1.5:
+                        self._motion_quadrant = "left"
+                    elif right_motion > 1.5 and right_motion > left_motion * 1.5:
+                        self._motion_quadrant = "right"
+                    elif motion > 1.0:
+                        self._motion_quadrant = "center"
+                    else:
+                        self._motion_quadrant = "none"
                 self._prev_gray = gray
             else:
                 consecutive_fails += 1
@@ -252,7 +272,8 @@ class LiveCameraManager:
         cv2.putText(frame, ts, (10, h - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 200, 200), 1)
         if self._motion_detected:
-            cv2.putText(frame, "MOTION", (w - 120, 25),
+            quad_label = f"MOTION [{self._motion_quadrant.upper()}]"
+            cv2.putText(frame, quad_label, (w - 200, 25),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
         _, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
         return buf.tobytes()
@@ -266,11 +287,117 @@ class LiveCameraManager:
             "target_fps": self._target_fps,
             "motion_score_pct": float(self._motion_score),
             "motion_detected": bool(self._motion_detected),
+            "motion_quadrant": self._motion_quadrant,
+            "motion_quadrant_score": {k: float(v) for k, v in self._motion_quadrant_score.items()},
             "uptime_sec": round(_time.time() - self._started_at, 1) if self._running else 0,
             "has_frame": self._frame is not None,
         }
 
 live_camera = LiveCameraManager(camera_index=int(os.getenv("NEXUS_CAMERA_INDEX", "0")))
+
+# ── Serial Controller (Arduino/ESP32 auto-detect) ────────────────────────────
+import importlib.util as _ilu
+_serial_ctrl_path = os.path.join(os.path.dirname(__file__),
+                                 "..", "..", "..", "atlas_code_quant", "hardware", "serial_controller.py")
+_serial_ctrl_path = os.path.abspath(_serial_ctrl_path)
+_spec = _ilu.spec_from_file_location("serial_controller", _serial_ctrl_path)
+_serial_mod = _ilu.module_from_spec(_spec)
+import sys as _sys
+_sys.modules["serial_controller"] = _serial_mod
+_spec.loader.exec_module(_serial_mod)
+ATLASSerialController = _serial_mod.ATLASSerialController
+SerialDevice = _serial_mod.SerialDevice
+
+
+def _on_serial_connect(device: SerialDevice):
+    """Callback cuando se conecta un dispositivo ATLAS."""
+    robot_status["modules"]["actuators"] = True
+    logger.info("ACTUATORS ONLINE — %s on %s (firmware: %s)",
+                device.description, device.port, device.firmware_version)
+
+
+def _on_serial_disconnect(port: str):
+    """Callback cuando se desconecta un dispositivo ATLAS."""
+    robot_status["modules"]["actuators"] = False
+    logger.warning("ACTUATORS OFFLINE — device on %s disconnected", port)
+
+
+serial_controller = ATLASSerialController(
+    on_connect=_on_serial_connect,
+    on_disconnect=_on_serial_disconnect,
+)
+
+
+# ── Vínculo Visión → Serial (motion quadrant → command) ──────────────────────
+
+class VisionSerialBridge:
+    """Envía comandos serial basados en el cuadrante de movimiento detectado.
+
+    Regla: movimiento derecha → CMD:1, movimiento izquierda → CMD:2.
+    Cooldown de 1s entre comandos para evitar spam.
+    """
+
+    def __init__(self, camera: LiveCameraManager, serial_ctrl: ATLASSerialController,
+                 cooldown: float = 1.0):
+        self._camera = camera
+        self._serial = serial_ctrl
+        self._cooldown = cooldown
+        self._last_cmd_time = 0.0
+        self._last_quadrant = "none"
+        self._running = False
+        self._thread: threading.Thread | None = None
+        self._cmd_count = 0
+
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, daemon=True, name="atlas-vision-serial")
+        self._thread.start()
+        logger.info("VisionSerialBridge STARTED (cooldown=%.1fs)", self._cooldown)
+
+    def stop(self):
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=3)
+
+    def _loop(self):
+        while self._running:
+            try:
+                quadrant = self._camera._motion_quadrant
+                now = _time.time()
+                if (quadrant != "none"
+                        and quadrant != self._last_quadrant
+                        and (now - self._last_cmd_time) >= self._cooldown
+                        and self._serial.connected):
+                    if quadrant == "right":
+                        self._serial.send_command(1)
+                        self._cmd_count += 1
+                    elif quadrant == "left":
+                        self._serial.send_command(2)
+                        self._cmd_count += 1
+                    elif quadrant == "center":
+                        self._serial.send_command(3)
+                        self._cmd_count += 1
+                    self._last_quadrant = quadrant
+                    self._last_cmd_time = now
+                elif quadrant == "none":
+                    self._last_quadrant = "none"
+            except Exception as exc:
+                logger.error("VisionSerialBridge error: %s", exc)
+            _time.sleep(0.1)  # 10Hz check rate
+
+    @property
+    def status(self) -> dict:
+        return {
+            "running": self._running,
+            "serial_connected": self._serial.connected,
+            "last_quadrant": self._last_quadrant,
+            "commands_sent": self._cmd_count,
+        }
+
+
+vision_serial_bridge = VisionSerialBridge(live_camera, serial_controller)
 
 
 # WebSocket connections manager
@@ -442,6 +569,7 @@ async def hardware_status():
         ros2_available = True
     except ImportError:
         pass
+    atlas_serial = serial_controller.state
     return {
         "serial_ports": com_ports,
         "serial_count": len(com_ports),
@@ -449,8 +577,68 @@ async def hardware_status():
         "camera_count": len(cameras),
         "ros2_installed": ros2_available,
         "pyautogui_installed": bool(robot_status["modules"].get("control")),
-        "actuators_connected": len(com_ports) > 0,
+        "actuators_connected": atlas_serial.connected,
+        "atlas_device": {
+            "port": atlas_serial.device_port,
+            "last_command": atlas_serial.last_command,
+            "error_count": atlas_serial.error_count,
+            "telemetry": atlas_serial.telemetry,
+        } if atlas_serial.connected else None,
+        "vision_serial_bridge": vision_serial_bridge.status,
         "verdict": "HARDWARE PRESENT" if (com_ports or cameras) else "SOFTWARE ONLY",
+    }
+
+
+@app.get("/serial/status")
+@app.get("/api/serial/status")
+async def serial_status():
+    """Estado del controlador serial ATLAS."""
+    st = serial_controller.state
+    dev = serial_controller.device
+    return {
+        "connected": st.connected,
+        "device": {
+            "port": dev.port,
+            "description": dev.description,
+            "vid": hex(dev.vid),
+            "pid": hex(dev.pid),
+            "firmware": dev.firmware_version,
+            "connected_at": dev.connected_at,
+            "last_ack": dev.last_ack,
+        } if dev else None,
+        "last_command": st.last_command,
+        "last_command_at": st.last_command_at,
+        "telemetry": st.telemetry,
+        "error_count": st.error_count,
+    }
+
+
+@app.post("/serial/command/{cmd_id}")
+@app.post("/api/serial/command/{cmd_id}")
+async def serial_send_command(cmd_id: int, payload: str = ""):
+    """Envía un comando manual al dispositivo serial ATLAS."""
+    if not serial_controller.connected:
+        return {"ok": False, "error": "No ATLAS device connected"}
+    ok = serial_controller.send_command(cmd_id, payload)
+    return {"ok": ok, "command": f"CMD:{cmd_id}", "payload": payload}
+
+
+@app.post("/serial/estop")
+@app.post("/api/serial/estop")
+async def serial_estop():
+    """Parada de emergencia vía serial."""
+    ok = serial_controller.send_estop()
+    return {"ok": ok, "action": "ESTOP"}
+
+
+@app.get("/vision-serial/status")
+@app.get("/api/vision-serial/status")
+async def vision_serial_status():
+    """Estado del puente visión → serial."""
+    return {
+        "bridge": vision_serial_bridge.status,
+        "camera_quadrant": live_camera._motion_quadrant,
+        "camera_quadrant_score": {k: float(v) for k, v in live_camera._motion_quadrant_score.items()},
     }
 
 
@@ -990,14 +1178,15 @@ async def startup_event():
         robot_status["modules"]["control"] = False
     # Sensors: True si al menos una cámara real detectada
     robot_status["modules"]["sensors"] = robot_status["modules"]["camera"]
-    # Actuators: False — no hay motores/serial conectados (sin puertos COM detectados)
+    # Actuators: se activa automáticamente cuando serial_controller detecta un dispositivo ATLAS
+    robot_status["modules"]["actuators"] = False
     import serial.tools.list_ports as _slp
     _com_ports = list(_slp.comports())
-    robot_status["modules"]["actuators"] = len(_com_ports) > 0
     if _com_ports:
-        logger.info("Serial ports detected: %s", [p.device for p in _com_ports])
+        logger.info("Serial ports detected: %s — waiting for ATLAS handshake...",
+                     [p.device for p in _com_ports])
     else:
-        logger.info("No serial/COM ports — actuators module disabled (no physical hardware)")
+        logger.info("No serial/COM ports — actuators will activate when Arduino is connected")
 
     # Inicializar AI Consultant (Bedrock/Direct) para aprendizaje continuo.
     global ai_consultant_instance
@@ -1013,6 +1202,13 @@ async def startup_event():
     except Exception as e:
         logger.warning("No se pudo inicializar AI Consultant: %s", e)
 
+    # Iniciar serial controller (escaneo continuo de puertos COM)
+    serial_controller.start()
+    logger.info("Serial scanner started — waiting for ATLAS device on COM ports...")
+
+    # Iniciar puente visión → serial
+    vision_serial_bridge.start()
+
     # Iniciar background task para broadcast de status
     asyncio.create_task(broadcast_status())
 
@@ -1022,6 +1218,8 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Evento de shutdown"""
+    vision_serial_bridge.stop()
+    serial_controller.stop()
     live_camera.stop()
     logger.info("ATLAS NEXUS Robot Backend shutting down...")
 
