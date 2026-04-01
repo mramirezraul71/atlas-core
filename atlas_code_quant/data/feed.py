@@ -141,6 +141,7 @@ class MarketFeed:
             progress=False,
             auto_adjust=False,
             threads=False,
+            timeout=10,  # Evitar bloqueo indefinido con símbolos delisted
         )
         df = _normalize_yfinance_columns(df)
         if df.empty:
@@ -170,6 +171,7 @@ class MarketFeed:
                     auto_adjust=False,
                     group_by="ticker",
                     threads=False,
+                    timeout=15,  # Timeout batch: 15s máximo
                 )
                 out.update(self._extract_yfinance_batch_frames(raw, chunk, timeframe, limit))
             except Exception as exc:

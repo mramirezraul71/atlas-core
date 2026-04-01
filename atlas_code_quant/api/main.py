@@ -17,11 +17,20 @@ Puerto por defecto: 8792
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import math
 import time
 import logging
 import sys
 from datetime import datetime
+
+# Ampliar thread pool: el default (min(32, cpu+4)) se satura cuando
+# yfinance/Yahoo Finance hace múltiples HTTP requests bloqueantes.
+# Con 64 threads, el event loop puede servir requests HTTP mientras
+# el scanner descarga datos en background.
+asyncio.get_event_loop().set_default_executor(
+    concurrent.futures.ThreadPoolExecutor(max_workers=64, thread_name_prefix="quant-io")
+)
 
 from pathlib import Path as _PathLib
 
