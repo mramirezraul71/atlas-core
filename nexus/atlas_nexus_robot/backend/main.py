@@ -1189,42 +1189,22 @@ async def get_system_info():
 # YOLO Object Detection Endpoints
 @app.post("/yolo/detect", response_model=DetectionResponse)
 async def detect_objects(request: DetectionRequest):
-    """Detect objects in image using YOLO"""
-    import base64
+    """Detect objects in LIVE camera frame using YOLO."""
     import time
 
     try:
-        # Get detector
         detector = get_detector()
-
-        # Create test image (in real implementation, this would come from camera)
-        test_image = np.zeros((480, 640, 3), dtype=np.uint8)
-        test_image[:] = (50, 100, 150)  # Background color
-
-        # Add some test objects (rectangles)
-        cv2.rectangle(test_image, (100, 100), (200, 200), (255, 0, 0), -1)
-        cv2.rectangle(test_image, (300, 150), (400, 250), (0, 255, 0), -1)
-        cv2.rectangle(test_image, (450, 200), (550, 300), (0, 0, 255), -1)
-
-        # Update confidence threshold
         detector.confidence_threshold = request.confidence_threshold
 
-        # Perform detection
+        # Usar frame real de la cámara en vivo
+        ok, frame = live_camera.get_frame()
+        if not ok or frame is None:
+            raise HTTPException(status_code=503, detail="No live camera frame available")
+
         start_time = time.time()
-        detections = detector.detect_objects(test_image)
+        detections = detector.detect_objects(frame)
         processing_time = time.time() - start_time
 
-        # Draw boxes if requested
-        if request.draw_boxes:
-            annotated_image = detector.draw_detections(test_image, detections)
-        else:
-            annotated_image = test_image
-
-        # Convert image to base64 for response
-        _, buffer = cv2.imencode(".jpg", annotated_image)
-        img_base64 = base64.b64encode(buffer).decode("utf-8")
-
-        # Update robot status
         robot_status["modules"]["yolo"] = True
         robot_status["yolo_stats"] = detector.get_detection_stats()
         robot_status["last_update"] = datetime.now().isoformat()
@@ -1234,9 +1214,11 @@ async def detect_objects(request: DetectionRequest):
             detections=detections,
             total_objects=len(detections),
             processing_time=processing_time,
-            image_shape=list(test_image.shape),
+            image_shape=list(frame.shape),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"YOLO detection error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
