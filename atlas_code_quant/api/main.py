@@ -28,7 +28,12 @@ from datetime import datetime
 # yfinance/Yahoo Finance hace múltiples HTTP requests bloqueantes.
 # Con 64 threads, el event loop puede servir requests HTTP mientras
 # el scanner descarga datos en background.
-asyncio.get_event_loop().set_default_executor(
+try:
+    _loop = asyncio.get_running_loop()
+except RuntimeError:
+    _loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(_loop)
+_loop.set_default_executor(
     concurrent.futures.ThreadPoolExecutor(max_workers=64, thread_name_prefix="quant-io")
 )
 
