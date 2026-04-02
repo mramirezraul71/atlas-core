@@ -47,7 +47,6 @@ function Resolve-AtlasPython {
         $candidates.Add($env:PYTHON)
     }
 
-    $candidates.Add((Join-Path $RepoRoot ".venv\Scripts\python.exe"))
     $candidates.Add((Join-Path $RepoRoot "venv\Scripts\python.exe"))
 
     try {
@@ -80,3 +79,61 @@ function Resolve-AtlasPython {
     throw "No ATLAS Python interpreter found$([string]::Concat($(if($RequirePreflight){' that passes runtime preflight'}else{''})))."
 }
 
+function Acquire-AtlasFileLock {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    try {
+        $dir = Split-Path -Path $Path -Parent
+        if ($dir -and -not (Test-Path $dir)) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+        return [System.IO.File]::Open(
+            $Path,
+            [System.IO.FileMode]::OpenOrCreate,
+            [System.IO.FileAccess]::ReadWrite,
+            [System.IO.FileShare]::None
+        )
+    } catch {
+        return $null
+    }
+}
+
+function Release-AtlasFileLock {
+    param(
+        [Parameter(Mandatory = $false)]
+        $Handle
+    )
+
+    try {
+        if ($Handle) {
+            $Handle.Close()
+            $Handle.Dispose()
+        }
+    } catch {
+        # best effort
+    }
+}
+
+function Stop-AtlasPythonProcesses {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Pattern
+    )
+
+    try {
+        $matches = Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -and $_.CommandLine -match $Pattern }
+        foreach ($proc in $matches) {
+            try {
+                Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+            } catch {
+                # best effort
+            }
+        }
+    } catch {
+        # best effort
+    }
+}
