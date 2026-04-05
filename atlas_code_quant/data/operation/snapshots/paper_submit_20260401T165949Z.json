@@ -1,0 +1,11 @@
+{
+  "captured_at": "2026-04-01T16:59:49.027472",
+  "provider": "off",
+  "operator_present": true,
+  "screen_integrity_ok": true,
+  "notes": "",
+  "capture_path": null,
+  "meta_path": null,
+  "capture_ok": false,
+  "capture_error": "Proveedor manual activo; no se intento captura automatica."
+}

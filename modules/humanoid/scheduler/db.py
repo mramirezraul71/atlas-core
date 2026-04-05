@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import traceback
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -60,17 +61,40 @@ class SchedulerDB:
         root = (
             os.getenv("ATLAS_REPO_PATH") or os.getenv("ATLAS_PUSH_ROOT") or ""
         ).strip()
+        preferred_name = "atlas_sched.sqlite"
+        legacy_name = "scheduler.db"
         if root:
-            return str((Path(root).resolve() / "logs" / "scheduler.db"))
+            logs_dir = Path(root).resolve() / "logs"
+            preferred = logs_dir / preferred_name
+            legacy = logs_dir / legacy_name
+            if preferred.exists():
+                return str(preferred)
+            if legacy.exists():
+                return str(legacy)
+            return str(preferred)
         # db.py -> modules/humanoid/scheduler/db.py, subir a raíz y usar logs/
         try:
             here = Path(__file__).resolve()
             for parent in [here.parent, *here.parents]:
                 if (parent / ".git").is_dir():
-                    return str((parent / "logs" / "scheduler.db"))
+                    logs_dir = parent / "logs"
+                    preferred = logs_dir / preferred_name
+                    legacy = logs_dir / legacy_name
+                    if preferred.exists():
+                        return str(preferred)
+                    if legacy.exists():
+                        return str(legacy)
+                    return str(preferred)
         except Exception:
             pass
-        return str((Path.cwd() / "logs" / "scheduler.db"))
+        logs_dir = Path.cwd() / "logs"
+        preferred = logs_dir / preferred_name
+        legacy = logs_dir / legacy_name
+        if preferred.exists():
+            return str(preferred)
+        if legacy.exists():
+            return str(legacy)
+        return str(preferred)
 
     def _ensure(self) -> sqlite3.Connection:
         if self._connection is not None:
@@ -221,6 +245,27 @@ class SchedulerDB:
         error: Optional[str],
     ) -> None:
         conn = self._ensure()
+        try:
+            base = Path(os.getenv("ATLAS_BASE", Path(__file__).resolve().parents[3]))
+            trace_dir = base / "state"
+            trace_dir.mkdir(parents=True, exist_ok=True)
+            trace_path = trace_dir / "atlas_scheduler_db_trace.jsonl"
+            row = {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "source": "scheduler.db",
+                "pid": os.getpid(),
+                "job_id": job_id,
+                "db_path": self._path,
+                "ok": bool(ok),
+                "ms": ms,
+                "result_json_head": str(result_json)[:500] if result_json is not None else None,
+                "error": error,
+                "stack_head": traceback.format_stack(limit=8),
+            }
+            with trace_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
         conn.execute(
             "INSERT INTO job_runs (job_id, ts_start, ts_end, ok, ms, result_json, error) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (job_id, ts_start, ts_end, 1 if ok else 0, ms, result_json, error),

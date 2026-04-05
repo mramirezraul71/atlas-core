@@ -300,6 +300,7 @@ class Supervisor:
                     "ok": e.get("ok", True),
                     "error": (e.get("error") or "")[:100],
                     "ms": e.get("ms", 0),
+                    "payload": e.get("payload") or {},
                 }
                 for e in aud["entries"][:15]
             ]
@@ -364,7 +365,37 @@ class Supervisor:
 
         audit = snap.get("recent_audit", [])
         errors = [e for e in audit if not e.get("ok", True)]
-        if errors:
+        scheduler_errors = [e for e in errors if str(e.get("module") or "") == "scheduler"]
+        scheduler_semantic_only = False
+        if scheduler_errors and len(scheduler_errors) == len(errors):
+            scheduler_actions = {
+                str(e.get("action") or "").strip().lower() for e in scheduler_errors
+            }
+            scheduler_semantic_only = (
+                scheduler_actions.issubset({"job_run_end", "job_failed"})
+                and not any((e.get("error") or "").strip() for e in scheduler_errors)
+            )
+        if scheduler_semantic_only:
+            job_kinds = sorted(
+                {
+                    str((e.get("payload") or {}).get("kind") or "").strip()
+                    for e in scheduler_errors
+                    if (e.get("payload") or {}).get("kind")
+                }
+            )
+            max_retries = max(
+                int((e.get("payload") or {}).get("retries") or 0)
+                for e in scheduler_errors
+            )
+            kind_txt = ", ".join(job_kinds) if job_kinds else "scheduler"
+            msg = (
+                f"Scheduler degradado: {kind_txt} terminó con score/reintentos bajos,"
+                " sin excepción de ejecución"
+            )
+            if max_retries > 0:
+                msg += f" (retries={max_retries})"
+            warnings.append(msg)
+        elif errors:
             modules_with_errors = list(set(e.get("module", "?") for e in errors))
             issues.append(
                 f"{len(errors)} errores recientes en auditoría (módulos: {', '.join(modules_with_errors)})"
@@ -387,7 +418,12 @@ class Supervisor:
             warnings.append(f"Disco casi lleno: {sys['disk_pct']}%")
 
         bitacora = snap.get("bitacora_recent", [])
-        bit_errors = [b for b in bitacora if not b.get("ok", True)]
+        bit_errors = [
+            b
+            for b in bitacora
+            if (not b.get("ok", True))
+            and str(b.get("source") or "").strip().lower() != "supervisor"
+        ]
         if bit_errors:
             issues.append(f"{len(bit_errors)} entradas con error en bitácora reciente")
 
@@ -398,7 +434,7 @@ class Supervisor:
             "severity": "critical"
             if len(issues) > 3
             else "warning"
-            if issues
+            if (issues or warnings)
             else "healthy",
         }
 

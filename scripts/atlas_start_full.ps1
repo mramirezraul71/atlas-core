@@ -212,7 +212,7 @@ if (-not $initial.push -or $Force) {
     if (-not $Force) {
         Write-Warn "PUSH normalmente corre en foreground. Ejecutalo manualmente si no esta arriba:"
         Write-Host "    cd $RepoRoot" -ForegroundColor DarkGray
-        Write-Host "    python -m uvicorn atlas_adapter.atlas_http_api:app --host 0.0.0.0 --port 8791" -ForegroundColor DarkGray
+        Write-Host "    python -m uvicorn atlas_adapter.atlas_http_api:app --host 127.0.0.1 --port 8791" -ForegroundColor DarkGray
     } else {
         # Force: arrancar en background (solo para testing, no recomendado en produccion)
         Write-Warn "Forzando arranque de PUSH en segundo plano..."
@@ -221,7 +221,7 @@ if (-not $initial.push -or $Force) {
             & $FreePort -Port 8791 -Kill | Out-Null
             Start-Sleep -Milliseconds 800
         }
-        $pushArgs = "-m uvicorn atlas_adapter.atlas_http_api:app --host 0.0.0.0 --port 8791"
+        $pushArgs = "-m uvicorn atlas_adapter.atlas_http_api:app --host 127.0.0.1 --port 8791"
         Start-Process $pushPython -ArgumentList $pushArgs -WorkingDirectory $RepoRoot -WindowStyle Hidden
         $pushOk = Wait-Endpoint -Urls @($PUSH_URL) -MaxWaitSec 30 -Label "PUSH :8791"
         if ($pushOk) {

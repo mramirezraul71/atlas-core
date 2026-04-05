@@ -271,7 +271,7 @@ export function render(container) {
 
   const CHIP_ROUTES = {
     health:    { hash: '/health' },
-    workspace: { href: '/workspace', newTab: true },
+    workspace: { href: '/nexus', newTab: true },
     bitacora:  { hash: '/bitacora' },
     'rauli-vision': { hash: '/apps/vision' },
     'rauli-panaderia': { hash: '/apps/panaderia' },
@@ -288,7 +288,7 @@ export function render(container) {
     'option-strat':         { href: 'http://localhost:8795/options/ui', newTab: true },
     'grafana-quant':        { href: GRAFANA_PRO_URL, newTab: true },
     'atlas-nexus': { href: '/nexus', newTab: false },
-    'robot-3d':    { href: 'http://127.0.0.1:8002/dashboard', newTab: true },
+    'robot-3d':    { href: `http://${location.hostname}:8002/dashboard`, newTab: true },
   };
 
   function openRoute(route) {
@@ -316,7 +316,7 @@ export function render(container) {
 
   const TILE_ROUTES = {
     'assistant':    { hash: '/chat' },
-    'workspace-ext':{ href: '/workspace', newTab: true },
+    'workspace-ext':{ href: '/nexus', newTab: true },
     'governance':   { hash: '/autonomy' },
     'approvals':    { hash: '/approvals' },
     'monitor':      { hash: '/health' },
@@ -335,7 +335,7 @@ export function render(container) {
     'codex-supervisor': { hash: '/codex-supervisor' },
     'live-diagnostic': { hash: '/live-diagnostic' },
     'atlas-nexus': { href: '/nexus', newTab: false },
-    'robot-3d':    { href: 'http://127.0.0.1:8002/dashboard', newTab: true },
+    'robot-3d':    { href: `http://${location.hostname}:8002/dashboard`, newTab: true },
   };
 
   container.querySelectorAll('.app-tile').forEach(tile => {

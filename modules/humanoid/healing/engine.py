@@ -84,14 +84,17 @@ def restart_scheduler() -> Dict[str, Any]:
     if not can_restart_scheduler():
         return {"ok": False, "message": "healing not allowed or max restarts exceeded"}
     try:
-        from modules.humanoid.scheduler.engine import (start_scheduler,
-                                                       stop_scheduler)
+        from modules.humanoid.scheduler import request_scheduler_restart
 
-        stop_scheduler()
-        asyncio.get_event_loop().call_soon_threadsafe(lambda: start_scheduler())
+        requested = bool(request_scheduler_restart())
+        if not requested:
+            return {
+                "ok": False,
+                "message": "scheduler restart could not be scheduled on a live event loop",
+            }
         _restart_timestamps.append(time.time())
-        _audit("healing", "restart_scheduler", True, {})
-        return {"ok": True, "message": "scheduler restart requested"}
+        _audit("healing", "restart_scheduler", True, {"requested": True})
+        return {"ok": True, "message": "scheduler restart requested", "requested": True}
     except Exception as e:
         _log.exception("Healing restart_scheduler failed: %s", e)
         _audit("healing", "restart_scheduler", False, {"error": str(e)}, str(e))

@@ -20,7 +20,7 @@ export default {
           </button>
           <h2>Codex Supervisor</h2>
           <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
-            <a class="action-btn" href="/workspace" target="_blank" rel="noopener">Abrir Workspace</a>
+            <a class="action-btn" href="/nexus" target="_blank" rel="noopener">Abrir Panel NEXUS</a>
           </div>
         </div>
         <div class="module-body" style="display:flex;flex-direction:column;gap:12px;height:100%">
@@ -31,7 +31,7 @@ export default {
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="action-btn" id="cs-refresh">Refrescar</button>
-            <button class="action-btn" id="cs-open-workspace" title="Abre la consola de trabajo para ejecución supervisada">Ir a Workspace</button>
+            <button class="action-btn" id="cs-open-workspace" title="Abre el panel canónico de NEXUS">Ir a NEXUS</button>
             <button class="action-btn" id="cs-link-claude">Vincular suscripción Claude</button>
             <a class="action-btn" href="https://console.anthropic.com/" target="_blank" rel="noopener">Anthropic Console</a>
             <a class="action-btn" href="#/config">AI Config</a>
@@ -102,7 +102,7 @@ export default {
     }
 
     container.querySelector('#cs-refresh')?.addEventListener('click', refresh);
-    container.querySelector('#cs-open-workspace')?.addEventListener('click', () => window.open('/workspace', '_blank'));
+    container.querySelector('#cs-open-workspace')?.addEventListener('click', () => window.open('/nexus', '_blank'));
     container.querySelector('#cs-link-claude')?.addEventListener('click', () => {
       elClaudeBox.style.display = elClaudeBox.style.display === 'none' ? 'block' : 'none';
     });

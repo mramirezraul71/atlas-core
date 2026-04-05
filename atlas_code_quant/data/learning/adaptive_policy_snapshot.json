@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-03-31T21:28:17.798915+00:00",
+  "generated_at": "2026-04-02T21:27:22.488677+00:00",
   "enabled": true,
   "window_days": 180,
   "sample_count": 2000,
@@ -7,18 +7,27 @@
     "all": {
       "scope": "all",
       "sample_count": 2000,
-      "win_rate_pct": 18.0,
+      "win_rate_pct": 18.05,
       "profit_factor": 0.218,
-      "expectancy_pct": -81.797,
+      "expectancy_pct": -81.526,
       "risk_multiplier": 0.9,
       "strategy_biases": {
+        "bear_put_debit_spread": {
+          "sample": 4,
+          "wins": 2,
+          "win_rate_pct": 50.0,
+          "profit_factor": 0.459,
+          "expectancy_pct": -2.093,
+          "pnl_sum": -82.5,
+          "bias_score": -0.67
+        },
         "equity_long": {
-          "sample": 1112,
+          "sample": 1108,
           "wins": 0,
           "win_rate_pct": 0.0,
           "profit_factor": 0.0,
-          "expectancy_pct": -195.444,
-          "pnl_sum": -849008.47,
+          "expectancy_pct": -195.435,
+          "pnl_sum": -846328.41,
           "bias_score": -5.0
         },
         "untracked": {
@@ -31,12 +40,12 @@
           "bias_score": -5.0
         },
         "equity_short": {
-          "sample": 338,
-          "wins": 338,
+          "sample": 337,
+          "wins": 337,
           "win_rate_pct": 100.0,
           "profit_factor": 999.0,
-          "expectancy_pct": 198.175,
-          "pnl_sum": 186480.38,
+          "expectancy_pct": 198.176,
+          "pnl_sum": 186405.21,
           "bias_score": 5.0
         }
       },
@@ -2931,49 +2940,49 @@
           "bias_score": -3.5
         },
         "ERAS": {
-          "sample": 5,
+          "sample": 4,
           "wins": 0,
           "win_rate_pct": 0.0,
           "profit_factor": 0.0,
-          "expectancy_pct": -159.369,
-          "pnl_sum": -846.8,
-          "bias_score": -3.5
+          "expectancy_pct": -149.394,
+          "pnl_sum": -635.04,
+          "bias_score": -3.35
         },
         "EQNR": {
-          "sample": 5,
+          "sample": 4,
           "wins": 0,
           "win_rate_pct": 0.0,
           "profit_factor": 0.0,
-          "expectancy_pct": -157.476,
-          "pnl_sum": -2371.32,
-          "bias_score": -3.5
+          "expectancy_pct": -147.652,
+          "pnl_sum": -1778.49,
+          "bias_score": -3.35
         },
         "EPD": {
-          "sample": 5,
+          "sample": 4,
           "wins": 0,
           "win_rate_pct": 0.0,
           "profit_factor": 0.0,
-          "expectancy_pct": -158.269,
-          "pnl_sum": -313.12,
-          "bias_score": -3.5
+          "expectancy_pct": -148.374,
+          "pnl_sum": -234.91,
+          "bias_score": -3.35
         },
         "EOG": {
-          "sample": 5,
+          "sample": 4,
           "wins": 0,
           "win_rate_pct": 0.0,
           "profit_factor": 0.0,
-          "expectancy_pct": -158.85,
-          "pnl_sum": -7186.5,
-          "bias_score": -3.5
+          "expectancy_pct": -148.94,
+          "pnl_sum": -5389.25,
+          "bias_score": -3.35
         },
         "ENPH": {
-          "sample": 5,
-          "wins": 4,
-          "win_rate_pct": 80.0,
+          "sample": 4,
+          "wins": 3,
+          "win_rate_pct": 75.0,
           "profit_factor": 999.0,
-          "expectancy_pct": 158.232,
-          "pnl_sum": 300.64,
-          "bias_score": 3.5
+          "expectancy_pct": 148.336,
+          "pnl_sum": 225.47,
+          "bias_score": 3.25
         },
         "ENB": {
           "sample": 4,
@@ -6882,51 +6891,6 @@
           "expectancy_pct": -197.22,
           "pnl_sum": -4510.35,
           "bias_score": -2.5
-        },
-        "ERAS:alcista": {
-          "sample": 3,
-          "wins": 0,
-          "win_rate_pct": 0.0,
-          "profit_factor": 0.0,
-          "expectancy_pct": -199.047,
-          "pnl_sum": -634.58,
-          "bias_score": -2.5
-        },
-        "EQNR:alcista": {
-          "sample": 3,
-          "wins": 0,
-          "win_rate_pct": 0.0,
-          "profit_factor": 0.0,
-          "expectancy_pct": -196.847,
-          "pnl_sum": -1778.56,
-          "bias_score": -2.5
-        },
-        "EPD:alcista": {
-          "sample": 3,
-          "wins": 0,
-          "win_rate_pct": 0.0,
-          "profit_factor": 0.0,
-          "expectancy_pct": -197.872,
-          "pnl_sum": -234.82,
-          "bias_score": -2.5
-        },
-        "EOG:alcista": {
-          "sample": 3,
-          "wins": 0,
-          "win_rate_pct": 0.0,
-          "profit_factor": 0.0,
-          "expectancy_pct": -198.543,
-          "pnl_sum": -5390.57,
-          "bias_score": -2.5
-        },
-        "ENPH:bajista": {
-          "sample": 3,
-          "wins": 3,
-          "win_rate_pct": 100.0,
-          "profit_factor": 999.0,
-          "expectancy_pct": 197.825,
-          "pnl_sum": 225.52,
-          "bias_score": 2.5
         }
       },
       "top_positive": [
@@ -6934,7 +6898,7 @@
           "kind": "strategy",
           "key": "equity_short",
           "bias_score": 5.0,
-          "sample": 338
+          "sample": 337
         },
         {
           "kind": "symbol",
@@ -6960,7 +6924,7 @@
           "kind": "strategy",
           "key": "equity_long",
           "bias_score": -5.0,
-          "sample": 1112
+          "sample": 1108
         },
         {
           "kind": "strategy",
@@ -6985,18 +6949,27 @@
     "paper": {
       "scope": "paper",
       "sample_count": 2000,
-      "win_rate_pct": 18.0,
+      "win_rate_pct": 18.05,
       "profit_factor": 0.218,
-      "expectancy_pct": -81.797,
+      "expectancy_pct": -81.526,
       "risk_multiplier": 0.9,
       "strategy_biases": {
+        "bear_put_debit_spread": {
+          "sample": 4,
+          "wins": 2,
+          "win_rate_pct": 50.0,
+          "profit_factor": 0.459,
+          "expectancy_pct": -2.093,
+          "pnl_sum": -82.5,
+          "bias_score": -0.67
+        },
         "equity_long": {
-          "sample": 1112,
+          "sample": 1108,
           "wins": 0,
           "win_rate_pct": 0.0,
           "profit_factor": 0.0,
-          "expectancy_pct": -195.444,
-          "pnl_sum": -849008.47,
+          "expectancy_pct": -195.435,
+          "pnl_sum": -846328.41,
           "bias_score": -5.0
         },
         "untracked": {
@@ -7009,12 +6982,12 @@
           "bias_score": -5.0
         },
         "equity_short": {
-          "sample": 338,
-          "wins": 338,
+          "sample": 337,
+          "wins": 337,
           "win_rate_pct": 100.0,
           "profit_factor": 999.0,
-          "expectancy_pct": 198.175,
-          "pnl_sum": 186480.38,
+          "expectancy_pct": 198.176,
+          "pnl_sum": 186405.21,
           "bias_score": 5.0
         }
       },
@@ -9909,49 +9882,49 @@
           "bias_score": -3.5
         },
         "ERAS": {
-          "sample": 5,
+          "sample": 4,
           "wins": 0,
           "win_rate_pct": 0.0,
           "profit_factor": 0.0,
-          "expectancy_pct": -159.369,
-          "pnl_sum": -846.8,
-          "bias_score": -3.5
+          "expectancy_pct": -149.394,
+          "pnl_sum": -635.04,
+          "bias_score": -3.35
         },
         "EQNR": {
-          "sample": 5,
+          "sample": 4,
           "wins": 0,
           "win_rate_pct": 0.0,
           "profit_factor": 0.0,
-          "expectancy_pct": -157.476,
-          "pnl_sum": -2371.32,
-          "bias_score": -3.5
+          "expectancy_pct": -147.652,
+          "pnl_sum": -1778.49,
+          "bias_score": -3.35
         },
         "EPD": {
-          "sample": 5,
+          "sample": 4,
           "wins": 0,
           "win_rate_pct": 0.0,
           "profit_factor": 0.0,
-          "expectancy_pct": -158.269,
-          "pnl_sum": -313.12,
-          "bias_score": -3.5
+          "expectancy_pct": -148.374,
+          "pnl_sum": -234.91,
+          "bias_score": -3.35
         },
         "EOG": {
-          "sample": 5,
+          "sample": 4,
           "wins": 0,
           "win_rate_pct": 0.0,
           "profit_factor": 0.0,
-          "expectancy_pct": -158.85,
-          "pnl_sum": -7186.5,
-          "bias_score": -3.5
+          "expectancy_pct": -148.94,
+          "pnl_sum": -5389.25,
+          "bias_score": -3.35
         },
         "ENPH": {
-          "sample": 5,
-          "wins": 4,
-          "win_rate_pct": 80.0,
+          "sample": 4,
+          "wins": 3,
+          "win_rate_pct": 75.0,
           "profit_factor": 999.0,
-          "expectancy_pct": 158.232,
-          "pnl_sum": 300.64,
-          "bias_score": 3.5
+          "expectancy_pct": 148.336,
+          "pnl_sum": 225.47,
+          "bias_score": 3.25
         },
         "ENB": {
           "sample": 4,
@@ -13860,51 +13833,6 @@
           "expectancy_pct": -197.22,
           "pnl_sum": -4510.35,
           "bias_score": -2.5
-        },
-        "ERAS:alcista": {
-          "sample": 3,
-          "wins": 0,
-          "win_rate_pct": 0.0,
-          "profit_factor": 0.0,
-          "expectancy_pct": -199.047,
-          "pnl_sum": -634.58,
-          "bias_score": -2.5
-        },
-        "EQNR:alcista": {
-          "sample": 3,
-          "wins": 0,
-          "win_rate_pct": 0.0,
-          "profit_factor": 0.0,
-          "expectancy_pct": -196.847,
-          "pnl_sum": -1778.56,
-          "bias_score": -2.5
-        },
-        "EPD:alcista": {
-          "sample": 3,
-          "wins": 0,
-          "win_rate_pct": 0.0,
-          "profit_factor": 0.0,
-          "expectancy_pct": -197.872,
-          "pnl_sum": -234.82,
-          "bias_score": -2.5
-        },
-        "EOG:alcista": {
-          "sample": 3,
-          "wins": 0,
-          "win_rate_pct": 0.0,
-          "profit_factor": 0.0,
-          "expectancy_pct": -198.543,
-          "pnl_sum": -5390.57,
-          "bias_score": -2.5
-        },
-        "ENPH:bajista": {
-          "sample": 3,
-          "wins": 3,
-          "win_rate_pct": 100.0,
-          "profit_factor": 999.0,
-          "expectancy_pct": 197.825,
-          "pnl_sum": 225.52,
-          "bias_score": 2.5
         }
       },
       "top_positive": [
@@ -13912,7 +13840,7 @@
           "kind": "strategy",
           "key": "equity_short",
           "bias_score": 5.0,
-          "sample": 338
+          "sample": 337
         },
         {
           "kind": "symbol",
@@ -13938,7 +13866,7 @@
           "kind": "strategy",
           "key": "equity_long",
           "bias_score": -5.0,
-          "sample": 1112
+          "sample": 1108
         },
         {
           "kind": "strategy",

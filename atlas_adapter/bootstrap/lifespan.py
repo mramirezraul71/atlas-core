@@ -24,6 +24,16 @@ def _schedule_autonomy_daemon_start() -> None:
         pass
 
 
+def _schedule_autonomy_manager_start() -> None:
+    """Bootstrap del Autonomy Manager sin bloquear el arranque de PUSH."""
+    try:
+        from modules.humanoid.autonomy_manager.daemon import get_autonomy_manager_daemon
+
+        get_autonomy_manager_daemon().start()
+    except Exception:
+        pass
+
+
 def _schedule_background_startup(
     name: str, fn, *, logger_name: str | None = None, success_message: str | None = None
 ) -> None:
@@ -84,6 +94,19 @@ async def app_lifespan(app):
         "y",
         "on",
     )
+    minimal_startup = os.getenv("ATLAS_MINIMAL_STARTUP", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    )
+    if minimal_startup:
+        logging.getLogger(__name__).warning(
+            "ATLAS minimal startup enabled; background subsystems skipped."
+        )
+        yield
+        return
     if humanoid and sched:
         from concurrent.futures import ThreadPoolExecutor
 
@@ -298,9 +321,11 @@ async def app_lifespan(app):
                         headers={"Content-Type": "application/json"},
                         method="POST",
                     )
-                    urllib.request.urlopen(req, timeout=3)
-                except Exception:
-                    pass
+                    urllib.request.urlopen(req, timeout=1)
+                except Exception as e:
+                    logging.getLogger("atlas.startup").warning(
+                        "ANS no disponible en startup: %s. Continuando.", e
+                    )
 
             register_status_callback(_on_nexus_change)
             start_heartbeat()
@@ -508,6 +533,17 @@ async def app_lifespan(app):
     except Exception:
         pass
     try:
+        if os.getenv("ATLAS_AUTONOMY_MANAGER_AUTOSTART", "true").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        ):
+            await asyncio.to_thread(_schedule_autonomy_manager_start)
+    except Exception:
+        pass
+    try:
         if not safe_startup:
             from atlas_adapter.supervisor_daemon import start_supervisor_daemon
 
@@ -578,7 +614,4 @@ async def app_lifespan(app):
         await stop_supervisor_daemon()
     except Exception:
         pass
-
-
-
 

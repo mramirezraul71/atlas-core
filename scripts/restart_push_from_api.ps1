@@ -71,6 +71,8 @@ try {
 }
 
 Set-Location $RepoRoot
+$env:ATLAS_SAFE_STARTUP = if ($env:ATLAS_SAFE_STARTUP) { $env:ATLAS_SAFE_STARTUP } else { "true" }
+$env:ATLAS_MINIMAL_STARTUP = if ($env:ATLAS_MINIMAL_STARTUP) { $env:ATLAS_MINIMAL_STARTUP } else { "true" }
 Start-Sleep -Seconds $DelaySeconds
 Stop-StalePushProcesses
 Start-Sleep -Milliseconds 500
@@ -80,7 +82,7 @@ if (Test-Path $FreePortScript) {
     Start-Sleep -Milliseconds 800
 }
 
-$args = @("-m", "uvicorn", "atlas_adapter.atlas_http_api:app", "--host", "127.0.0.1", "--port", "8791")
+$args = @("-m", "uvicorn", "atlas_adapter.atlas_http_api:app", "--host", "127.0.0.1", "--port", "8791", "--log-level", "info")
 $pushProc = Start-Process $PyExe -ArgumentList $args -WorkingDirectory $RepoRoot -WindowStyle Hidden -PassThru
 Start-Sleep -Milliseconds 400
 if ($pushProc.HasExited) {

@@ -832,6 +832,18 @@ def supervisor_daemon_status():
         return {"ok": False, "error": str(e)[:200], "data": {}}
 
 
+@app.post("/supervisor/daemon/start", tags=["LLM Supervisor"])
+async def supervisor_daemon_start():
+    """Inicia explícitamente el daemon del Supervisor en el runtime HTTP actual."""
+    try:
+        from atlas_adapter.supervisor_daemon import get_supervisor_daemon, start_supervisor_daemon
+
+        await start_supervisor_daemon()
+        return get_supervisor_daemon().status()
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:200], "data": {}}
+
+
 @app.get("/supervisor/directives", tags=["LLM Supervisor"])
 def supervisor_directives(status: str = "", limit: int = 50):
     """Cola de directivas internas del Supervisor (persistidas en autonomy_tasks.db)."""
@@ -3616,7 +3628,7 @@ _aggr_config = {
     "pages": [
         p.strip()
         for p in (
-            os.getenv("AUTONOMY_AGGRESSIVE_PAGES") or "/ui,/workspace,/nexus"
+            os.getenv("AUTONOMY_AGGRESSIVE_PAGES") or "/ui,/nexus"
         ).split(",")
         if str(p).strip()
     ],
@@ -3625,9 +3637,9 @@ _aggr_config = {
 
 def _get_aggr_config() -> Dict[str, Any]:
     with _AGGR_LOCK:
-        pages = list(_aggr_config.get("pages") or ["/ui", "/workspace", "/nexus"])
+        pages = list(_aggr_config.get("pages") or ["/ui", "/nexus"])
         if not pages:
-            pages = ["/ui", "/workspace", "/nexus"]
+            pages = ["/ui", "/nexus"]
         return {
             "enabled": bool(_aggr_config.get("enabled", True)),
             "idle_sec": int(_aggr_config.get("idle_sec", 25) or 25),
@@ -3655,7 +3667,7 @@ def _set_aggr_config(payload: Dict[str, Any]) -> Dict[str, Any]:
                 pages = [p.strip() for p in raw_pages.split(",") if p.strip()]
             elif isinstance(raw_pages, list):
                 pages = [str(p).strip() for p in raw_pages if str(p).strip()]
-            _aggr_config["pages"] = pages or ["/ui", "/workspace", "/nexus"]
+            _aggr_config["pages"] = pages or ["/ui", "/nexus"]
     return _get_aggr_config()
 
 
@@ -3723,10 +3735,10 @@ def _run_aggressive_cycle() -> Dict[str, Any]:
         from modules.humanoid.nerve import feet_execute
 
         cfg = _get_aggr_config()
-        raw_pages = cfg.get("pages") or ["/ui", "/workspace", "/nexus"]
+        raw_pages = cfg.get("pages") or ["/ui", "/nexus"]
         pages = [p.strip() for p in raw_pages if str(p).strip()]
         if not pages:
-            pages = ["/ui", "/workspace", "/nexus"]
+            pages = ["/ui", "/nexus"]
         path = pages[_aggr_nav_idx % len(pages)]
         _aggr_nav_idx += 1
         if path.startswith("http://") or path.startswith("https://"):
@@ -4298,6 +4310,27 @@ def autonomy_status():
         pass
     data["timeline"] = timeline
 
+    try:
+        from modules.humanoid.autonomy_manager.daemon import (
+            get_autonomy_manager_daemon,
+        )
+
+        manager_payload = get_autonomy_manager_daemon().status()
+        data["manager"] = {
+            "daemon": manager_payload.get("data") or {},
+            "latest": manager_payload.get("latest") or {},
+        }
+        latest = data["manager"]["latest"]
+        if latest:
+            data["kpis"]["autonomy_manager_actions_executed"] = int(
+                latest.get("actions_executed") or 0
+            )
+            data["kpis"]["autonomy_manager_actions_failed"] = int(
+                latest.get("actions_failed") or 0
+            )
+    except Exception:
+        data["manager"] = {"daemon": {}, "latest": {}}
+
     data["ms"] = int((time.perf_counter() - t0) * 1000)
     data["ok"] = True
     return data
@@ -4390,6 +4423,119 @@ def autonomy_scanner_run_once():
             "error": str(e)[:300],
             "ms": int((time.perf_counter() - t0) * 1000),
         }
+
+
+@app.get("/api/autonomy/manager/status", tags=["Autonomia"])
+def autonomy_manager_status():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.autonomy_manager.daemon import (
+            get_autonomy_manager_daemon,
+        )
+        from modules.humanoid.autonomy_manager import storage
+
+        daemon = get_autonomy_manager_daemon().status()
+        runtime_model = storage.read_json(storage.RUNTIME_MODEL_PATH, default={})
+        control_plane = storage.read_json(storage.CONTROL_PLANE_PATH, default={})
+        return {
+            "ok": True,
+            "daemon": daemon.get("data") or {},
+            "latest": daemon.get("latest") or {},
+            "control_plane": control_plane or (((runtime_model.get("network") or {}).get("control_plane")) or {}),
+            "recent_cycles": storage.list_recent_cycles(limit=10),
+            "recent_actions": storage.list_recent_actions(limit=12),
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
+
+
+@app.get("/api/autonomy/runtime-model", tags=["Autonomia"])
+def autonomy_runtime_model():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.autonomy_manager import storage
+
+        return {
+            "ok": True,
+            "data": storage.read_json(storage.RUNTIME_MODEL_PATH, default={}),
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
+
+
+@app.get("/api/autonomy/plans", tags=["Autonomia"])
+def autonomy_plans():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.autonomy_manager import storage
+
+        return {
+            "ok": True,
+            "latest_plan": storage.read_json(storage.PLAN_PATH, default={}),
+            "latest_policy": storage.read_json(storage.POLICY_STATE_PATH, default={}),
+            "latest_execution": storage.read_json(storage.EXECUTION_PATH, default={}),
+            "latest": storage.read_json(storage.LATEST_PATH, default={}),
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
+
+
+@app.post("/api/autonomy/manager/run-once", tags=["Autonomia"])
+def autonomy_manager_run_once(body: dict | None = None):
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.autonomy_manager.manager import run_cycle
+
+        payload = body if isinstance(body, dict) else {}
+        report = run_cycle(
+            trigger_mode=str(payload.get("trigger_mode") or "api"),
+            emit=bool(payload.get("emit", True)),
+            use_ai=bool(payload.get("use_ai", True)),
+        )
+        return {
+            "ok": True,
+            "report": report,
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
+
+
+@app.post("/api/autonomy/manager/start", tags=["Autonomia"])
+def autonomy_manager_start():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.autonomy_manager.daemon import (
+            get_autonomy_manager_daemon,
+        )
+
+        return {
+            "ok": True,
+            "data": get_autonomy_manager_daemon().start(),
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
+
+
+@app.post("/api/autonomy/manager/stop", tags=["Autonomia"])
+def autonomy_manager_stop():
+    t0 = time.perf_counter()
+    try:
+        from modules.humanoid.autonomy_manager.daemon import (
+            get_autonomy_manager_daemon,
+        )
+
+        return {
+            "ok": True,
+            "data": get_autonomy_manager_daemon().stop(),
+            "ms": int((time.perf_counter() - t0) * 1000),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300], "ms": int((time.perf_counter() - t0) * 1000)}
 
 
 @app.get("/api/autonomy/aggressive/config", tags=["Autonomia"])
@@ -5369,17 +5515,13 @@ async def serve_ui_static(file_path: str):
 
 @app.get("/workspace")
 def serve_workspace():
-    """ATLAS Agent Workspace â€” IDE-style interface para comandar ATLAS en tiempo real."""
+    """Workspace retirado del flujo principal para evitar confusión con el dashboard canónico de NEXUS."""
     path = STATIC_DIR / "workspace.html"
-    if path.exists():
-        return FileResponse(
-            path,
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-            },
-        )
-    return {"ok": False, "error": "workspace.html not found"}
+    return FileResponse(
+        path,
+        media_type="text/html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @app.get("/v4")
@@ -8127,11 +8269,43 @@ async def autonomous_dashboard():
 def actions_log_endpoint(limit: int = 50):
     """Log de acciones del sistema â€” datos locales de la bitacora."""
     try:
+        import re
+
         from modules.humanoid.ans.evolution_bitacora import \
             get_evolution_entries
 
-        entries = get_evolution_entries(limit=limit)
-        return {"ok": True, "entries": entries[:limit]}
+        limit = max(1, int(limit or 50))
+        fetch_limit = max(limit * 5, 100)
+        raw_entries = get_evolution_entries(limit=fetch_limit)
+        deduped = []
+        seen_supervisor = set()
+
+        def _entry_signature(entry):
+            source = str(entry.get("source") or "").strip().lower()
+            message = str(entry.get("message") or entry.get("msg") or "").strip().lower()
+            if (
+                source == "supervisor"
+                and "errores recientes en auditor" in message
+                and "scheduler.job_failed" in message
+                and "scheduler.job_run_end" in message
+            ):
+                return "supervisor|scheduler_audit_recurring"
+            message = re.sub(r"\b\d+(?:\.\d+)?%?\b", "<n>", message)
+            message = re.sub(r"\s+", " ", message).strip()
+            return f"{source}|{message[:240]}"
+
+        for entry in raw_entries or []:
+            source = str(entry.get("source") or "").strip().lower()
+            if source == "supervisor":
+                sig = _entry_signature(entry)
+                if sig in seen_supervisor:
+                    continue
+                seen_supervisor.add(sig)
+            deduped.append(entry)
+            if len(deduped) >= limit:
+                break
+
+        return {"ok": True, "entries": deduped[:limit]}
     except Exception:
         return {"ok": True, "entries": []}
 
@@ -8223,6 +8397,15 @@ from modules.cuerpo_proxy import proxy_to_cuerpo
 )
 async def cuerpo_proxy_route(request: Request, path: str = "") -> Response:
     """Proxy a Robot (cÃ¡maras, visiÃ³n) en NEXUS_ROBOT_URL/NEXUS_ROBOT_API_URL. Panel de cÃ¡maras integrado."""
+    return await proxy_to_cuerpo(request, path)
+
+
+@app.api_route("/robot", methods=["GET", "POST"])
+@app.api_route(
+    "/robot/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+)
+async def robot_proxy_route(request: Request, path: str = "") -> Response:
+    """Alias canÃ³nico del Robot para no exponer puertos crudos en la navegaciÃ³n."""
     return await proxy_to_cuerpo(request, path)
 
 
@@ -9589,9 +9772,11 @@ def scheduler_job_run_now(body: SchedulerJobIdBody):
     """Schedule job to run immediately (set next_run_ts to now)."""
     t0 = time.perf_counter()
     try:
-        from datetime import datetime, timezone
+        import json
+        from datetime import datetime, timedelta, timezone
 
         from modules.humanoid.scheduler import get_scheduler_db
+        from modules.humanoid.scheduler.runner import run_job_sync
 
         db = get_scheduler_db()
         j = db.get_job(body.job_id)
@@ -9600,6 +9785,52 @@ def scheduler_job_run_now(body: SchedulerJobIdBody):
                 False, None, int((time.perf_counter() - t0) * 1000), "job not found"
             )
         now = datetime.now(timezone.utc).isoformat()
+        kind = str(j.get("kind") or "").strip().lower()
+
+        # Critical jobs that supervise market open should execute inline in the
+        # current healthy HTTP process when explicitly triggered. This avoids
+        # relying on a stale background worker path during time-sensitive windows.
+        if kind == "market_open_supervisor":
+            lease_until = (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat()
+            db.set_running(body.job_id, lease_until)
+            result = run_job_sync(dict(j, last_run_ts=now))
+            ok = bool(result.get("ok", False))
+            ms = int(result.get("ms", 0) or 0)
+            err = result.get("error")
+            result_json = result.get("result_json")
+
+            db.insert_run(body.job_id, now, datetime.now(timezone.utc).isoformat(), ok, ms, result_json, err)
+
+            retries = int(j.get("retries") or 0)
+            interval = j.get("interval_seconds")
+            next_ts = None
+            if ok and interval:
+                next_ts = (datetime.now(timezone.utc) + timedelta(seconds=int(interval))).isoformat()
+            db.set_finished(body.job_id, ok, err, next_ts, retries)
+            if ok and interval and next_ts:
+                db.set_queued(body.job_id, next_ts)
+
+            parsed_result = None
+            if result_json:
+                try:
+                    parsed_result = json.loads(result_json)
+                except Exception:
+                    parsed_result = {"raw": result_json}
+            total_ms = int((time.perf_counter() - t0) * 1000)
+            return _std_resp(
+                True,
+                {
+                    "job_id": body.job_id,
+                    "status": "executed_inline",
+                    "ok": ok,
+                    "next_run_ts": next_ts,
+                    "result": parsed_result,
+                    "error": err,
+                },
+                total_ms,
+                None if ok else err,
+            )
+
         db.set_queued(body.job_id, now)
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(
@@ -9622,6 +9853,55 @@ def scheduler_job_runs(job_id: str, limit: int = 50):
         runs = db.get_runs(job_id, limit=limit)
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(True, runs, ms, None)
+    except Exception as e:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(False, None, ms, str(e))
+
+
+@app.get("/scheduler/runtime-debug")
+def scheduler_runtime_debug():
+    """Diagnóstico del runtime real del scheduler dentro del proceso vivo de PUSH."""
+    t0 = time.perf_counter()
+    try:
+        import inspect
+
+        import modules.humanoid.scheduler.engine as sched_engine
+        import modules.humanoid.scheduler.runner as sched_runner
+
+        db = sched_engine.get_scheduler_db()
+        sample_job = {
+            "id": "runtime-debug-market-open",
+            "name": "runtime_debug_market_open",
+            "kind": "market_open_supervisor",
+            "payload": {
+                "label": "RUNTIME_DEBUG",
+                "emit_bitacora": False,
+                "emit_telegram": False,
+            },
+        }
+        smoke = sched_runner.run_job_sync(sample_job)
+        source = inspect.getsource(sched_runner.run_job_sync)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return _std_resp(
+            True,
+            {
+                "cwd": os.getcwd(),
+                "pid": os.getpid(),
+                "python_executable": sys.executable,
+                "runner_file": getattr(sched_runner, "__file__", None),
+                "engine_file": getattr(sched_engine, "__file__", None),
+                "db_path": getattr(db, "_path", None),
+                "scheduler_running": bool(sched_engine.is_scheduler_running()),
+                "scheduler_running_count": int(getattr(sched_engine, "get_running_count", lambda: 0)()),
+                "scheduler_loop_task": repr(getattr(sched_engine, "_loop_task", None)),
+                "supports_market_open_supervisor": "market_open_supervisor" in source,
+                "run_job_sync_source_head": source[:1200],
+                "runtime_smoke": smoke,
+                "sys_path_head": sys.path[:8],
+            },
+            ms,
+            None,
+        )
     except Exception as e:
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(False, None, ms, str(e))

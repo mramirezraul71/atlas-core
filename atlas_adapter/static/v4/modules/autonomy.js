@@ -7,6 +7,8 @@ import { poll, stop } from '../lib/polling.js';
 import { set } from '../lib/state.js';
 
 const POLL_ID = 'autonomy-module';
+let _lastAutonomyStatusPayload = null;
+let _lastRuntimeModelPayload = null;
 
 function _esc(s) { const d = document.createElement('span'); d.textContent = s ?? ''; return d.innerHTML; }
 function _time(ts) { if (!ts) return '--'; try { return new Date(ts).toLocaleTimeString(); } catch { return String(ts); } }
@@ -45,6 +47,81 @@ function _taskStatus(status) {
   if (s === 'done' || s === 'completed' || s === 'success') return 'done';
   if (s === 'failed' || s === 'error') return 'failed';
   return 'pending';
+}
+
+function _policyBadge(mode) {
+  const m = (mode + '').toLowerCase();
+  if (m.includes('emergency')) return `<span class="mode-badge emergency">Emergency</span>`;
+  if (m.includes('safe_hold')) return `<span class="mode-badge manual">Safe Hold</span>`;
+  if (m.includes('degraded_system')) return `<span class="mode-badge supervised">Degraded System</span>`;
+  if (m.includes('degraded_local')) return `<span class="mode-badge supervised">Degraded Local</span>`;
+  if (m.includes('manual')) return `<span class="mode-badge manual">Manual Assist</span>`;
+  return `<span class="mode-badge autonomous">Nominal</span>`;
+}
+
+function _extractManagerCompat(payload) {
+  const timeline = Array.isArray(payload?.timeline) ? payload.timeline : [];
+  const items = [...timeline];
+  const latestCycleFinish = items.find(item => (item?.event || '').includes('Autonomy Manager cycle') && (item?.event || '').includes('finished'));
+  const latestCycleStart = items.find(item => (item?.event || '').includes('Autonomy Manager cycle') && (item?.event || '').includes('started'));
+  const latestActionStart = items.find(item => (item?.event || '').includes('Autonomy Manager action') && (item?.event || '').includes('started'));
+  const latestActionFinish = items.find(item => (item?.event || '').includes('Autonomy Manager action') && (item?.event || '').includes('finished'));
+
+  const finishEvent = latestCycleFinish?.event || '';
+  const startEvent = latestCycleStart?.event || '';
+  const actionStartEvent = latestActionStart?.event || '';
+
+  const cycleId = (finishEvent.match(/cycle\s+([A-Za-z0-9_]+)/)?.[1]
+    || startEvent.match(/cycle\s+([A-Za-z0-9_]+)/)?.[1]
+    || '');
+  const managerStatus = finishEvent.match(/status=([a-z_]+)/i)?.[1]
+    || (startEvent ? 'running' : 'unknown');
+  const policyMode = startEvent.match(/policy=([a-z_]+)/i)?.[1] || '';
+  const executed = Number(finishEvent.match(/executed=(\d+)/i)?.[1] || 0);
+  const failed = Number(finishEvent.match(/failed=(\d+)/i)?.[1] || 0);
+  const actionTarget = actionStartEvent.match(/target=([^\s]+)/i)?.[1] || '';
+  const actionKind = actionStartEvent.match(/action\s+([a-z_]+)/i)?.[1] || '';
+
+  const startedTs = latestCycleStart?.ts || '';
+  const finishedTs = latestCycleFinish?.ts || '';
+  const isRunning = Boolean(
+    latestCycleStart
+    && (!latestCycleFinish || String(startedTs) > String(finishedTs))
+  );
+
+  return {
+    daemon: {
+      running: payload?.subsystems?.daemon?.active === true,
+      interval_sec: null,
+      cycles_run: null,
+      current_phase: isRunning ? (latestActionStart ? 'executing' : 'planning') : 'completed',
+      current_action: isRunning
+        ? (actionKind && actionTarget ? `${actionKind}:${actionTarget}` : 'cycle in progress')
+        : '',
+      last_run_at: latestCycleFinish?.ts || latestCycleStart?.ts || '',
+      next_run_at: '',
+      last_status: isRunning ? 'running' : managerStatus,
+    },
+    latest: {
+      cycle_id: cycleId,
+      generated_at: latestCycleFinish?.ts || latestCycleStart?.ts || '',
+      manager_status: isRunning ? 'running' : managerStatus,
+      current_phase: isRunning ? (latestActionStart ? 'executing' : 'planning') : 'completed',
+      current_action: isRunning
+        ? (actionKind && actionTarget ? `${actionKind}:${actionTarget}` : 'cycle in progress')
+        : '',
+      actions_planned: null,
+      actions_executed: executed,
+      actions_succeeded: Math.max(0, executed - failed),
+      actions_failed: failed,
+      policy: {
+        mode: policyMode || 'manual_assist',
+        reason: payload?.subsystems?.daemon?.detail || '',
+      },
+      summary: latestCycleFinish?.event || latestCycleStart?.event || '',
+    },
+    compat: true,
+  };
 }
 
 export default {
@@ -176,6 +253,46 @@ export default {
           </div>
 
           <!-- === SECCIÓN 4: COLA DE TAREAS === -->
+          <div class="section-title">Autonomy Manager</div>
+          <div class="stat-row" style="margin-bottom:12px">
+            <div class="stat-card hero">
+              <div class="stat-card-label">Policy Mode</div>
+              <div id="mgr-policy" style="margin-top:6px"><span class="mode-badge manual">Cargando...</span></div>
+              <div class="stat-card-sub" id="mgr-reason" style="margin-top:6px"></div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-label">Manager Daemon</div>
+              <div class="stat-card-value" id="mgr-daemon-state">--</div>
+              <div class="stat-card-sub" id="mgr-daemon-meta"></div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-label">Último ciclo</div>
+              <div class="stat-card-value accent" id="mgr-cycle-status">--</div>
+              <div class="stat-card-sub" id="mgr-cycle-time"></div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-label">Acciones</div>
+              <div class="stat-card-value" id="mgr-actions">--</div>
+              <div class="stat-card-sub" id="mgr-actions-sub"></div>
+            </div>
+          </div>
+          <div class="action-bar" style="margin-bottom:12px">
+            <button class="action-btn success" id="btn-mgr-start">Start Manager</button>
+            <button class="action-btn danger" id="btn-mgr-stop">Stop Manager</button>
+            <button class="action-btn primary" id="btn-mgr-run">Run Once</button>
+            <span id="mgr-msg" style="font-size:11px;color:var(--text-muted);align-self:center"></span>
+          </div>
+          <div class="stat-row" style="margin-bottom:18px">
+            <div class="stat-card" style="flex:1 1 260px">
+              <div class="stat-card-label">Plan actual</div>
+              <div id="mgr-plan" style="font-size:12px;color:var(--text-secondary);margin-top:8px">Sin datos</div>
+            </div>
+            <div class="stat-card" style="flex:1 1 260px">
+              <div class="stat-card-label">Últimas acciones</div>
+              <div id="mgr-recent-actions" style="font-size:12px;color:var(--text-secondary);margin-top:8px">Sin datos</div>
+            </div>
+          </div>
+
           <div class="section-title">
             Cola de Tareas
             <span class="count" id="task-count-lbl"></span>
@@ -205,6 +322,9 @@ export default {
     // Aggressive mode
     container.querySelector('#btn-aggr-save')?.addEventListener('click',   () => _saveAggr(container));
     container.querySelector('#btn-aggr-toggle')?.addEventListener('click', () => _toggleAggr(container));
+    container.querySelector('#btn-mgr-start')?.addEventListener('click',   () => _managerControl('start', container));
+    container.querySelector('#btn-mgr-stop')?.addEventListener('click',    () => _managerControl('stop', container));
+    container.querySelector('#btn-mgr-run')?.addEventListener('click',     () => _managerRunOnce(container));
 
     // Lazy-load rules/log on details open
     container.querySelector('details:first-of-type')?.addEventListener('toggle', e => {
@@ -218,36 +338,49 @@ export default {
     _loadAggrConfig(container);
 
     poll(POLL_ID,          '/api/autonomy/status',              20000, (d) => { if (d) _renderAutonomy(container, d); });
+    poll(POLL_ID + ':rt',  '/api/autonomy/runtime-model',       10000, (d) => { if (d) _renderRuntimeModel(container, d); });
     poll(POLL_ID + ':gov', '/governance/status',                8000, (d) => { if (d) _renderGovernance(container, d); });
     poll(POLL_ID + ':t',   '/api/autonomy/tasks',               10000, (d) => { if (d) _renderTasks(container, d); });
     poll(POLL_ID + ':ag',  '/api/autonomy/aggressive/config',   10000,(d) => { if (d) _renderAggrConfig(container, d); });
+    poll(POLL_ID + ':mgr', '/api/autonomy/manager/status',       5000,(d) => { if (d) _renderManager(container, d); });
+    poll(POLL_ID + ':pl',  '/api/autonomy/plans',                6000,(d) => { if (d) _renderPlans(container, d); });
   },
 
   destroy() {
     stop(POLL_ID);
+    stop(POLL_ID + ':rt');
     stop(POLL_ID + ':gov');
     stop(POLL_ID + ':t');
     stop(POLL_ID + ':ag');
+    stop(POLL_ID + ':mgr');
+    stop(POLL_ID + ':pl');
   },
 };
 
 /* ─── Refresh general ───────────────────────────────────────────────── */
 
 async function _refresh(container) {
-  const [a, g, t] = await Promise.all([
+  const [a, rtm, g, t, m, p] = await Promise.all([
     fetch('/api/autonomy/status').then(r => r.json()).catch(() => null),
+    fetch('/api/autonomy/runtime-model').then(r => r.json()).catch(() => null),
     fetch('/governance/status').then(r => r.json()).catch(() => null),
     fetch('/api/autonomy/tasks').then(r => r.json()).catch(() => null),
+    fetch('/api/autonomy/manager/status').then(r => r.json()).catch(() => null),
+    fetch('/api/autonomy/plans').then(r => r.json()).catch(() => null),
   ]);
   if (a) _renderAutonomy(container, a);
+  if (rtm) _renderRuntimeModel(container, rtm);
   if (g) _renderGovernance(container, g);
   if (t) _renderTasks(container, t);
+  if (m) _renderManager(container, m);
+  if (p) _renderPlans(container, p);
 }
 
 /* ─── Renderizadores de estado ──────────────────────────────────────── */
 
 function _renderAutonomy(container, data) {
   const p = _payload(data);
+  _lastAutonomyStatusPayload = p;
   const running = _daemonRunning(p);
 
   const stateEl = container.querySelector('#daemon-state');
@@ -285,6 +418,8 @@ function _renderAutonomy(container, data) {
   }
 
   set('lastActivity', `Autonomy: ${running ? 'running' : 'stopped'}`);
+  _renderManager(container, null);
+  _renderPlans(container, null);
 }
 
 function _renderGovernance(container, data) {
@@ -566,6 +701,184 @@ async function _loadGovLog(container) {
     }).join('');
   } catch (e) {
     if (el) el.innerHTML = `<div style="font-size:11px;color:var(--text-muted)">Error: ${_esc(e.message)}</div>`;
+  }
+}
+
+function _renderRuntimeModel(container, data) {
+  _lastRuntimeModelPayload = _payload(data);
+  _renderManager(container, null);
+  _renderPlans(container, null);
+}
+
+async function _managerControl(action, container) {
+  const msg = container.querySelector('#mgr-msg');
+  if (msg) msg.textContent = `${action === 'start' ? 'Iniciando' : 'Deteniendo'} manager...`;
+  try {
+    const url = action === 'start' ? '/api/autonomy/manager/start' : '/api/autonomy/manager/stop';
+    const r = await fetch(url, { method: 'POST' });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || data.ok === false) throw new Error(data.error || `HTTP ${r.status}`);
+    window.AtlasToast?.show(`Manager ${action}: OK`, 'success');
+    if (msg) msg.textContent = `Manager ${action}: OK`;
+    setTimeout(() => _refresh(container), 1000);
+  } catch (e) {
+    window.AtlasToast?.show(e.message, 'error');
+    if (msg) msg.textContent = `Error: ${e.message}`;
+  }
+}
+
+async function _managerRunOnce(container) {
+  const msg = container.querySelector('#mgr-msg');
+  if (msg) msg.textContent = 'Ejecutando ciclo...';
+  try {
+    const r = await fetch('/api/autonomy/manager/run-once', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trigger_mode: 'dashboard', emit: true, use_ai: true }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || data.ok === false) throw new Error(data.error || `HTTP ${r.status}`);
+    window.AtlasToast?.show('Autonomy Manager ejecutado', 'success');
+    if (msg) msg.textContent = data?.report?.summary || 'Cycle completed';
+    setTimeout(() => _refresh(container), 1200);
+  } catch (e) {
+    window.AtlasToast?.show(e.message, 'error');
+    if (msg) msg.textContent = `Error: ${e.message}`;
+  }
+}
+
+function _renderManager(container, data) {
+  const compat = (!data || data?.ok === false || data?.detail === 'Not Found') && _lastAutonomyStatusPayload
+    ? _extractManagerCompat(_lastAutonomyStatusPayload)
+    : data;
+  const daemon = compat?.daemon || {};
+  const latest = compat?.latest || {};
+  const runtimeModel = compat?.runtime_model || _lastRuntimeModelPayload || {};
+  const controlPlane = compat?.control_plane || latest?.control_plane || runtimeModel?.network?.control_plane || {};
+  const daemonState = container.querySelector('#mgr-daemon-state');
+  const daemonMeta = container.querySelector('#mgr-daemon-meta');
+  const policy = container.querySelector('#mgr-policy');
+  const reason = container.querySelector('#mgr-reason');
+  const cycleStatus = container.querySelector('#mgr-cycle-status');
+  const cycleTime = container.querySelector('#mgr-cycle-time');
+  const actions = container.querySelector('#mgr-actions');
+  const actionsSub = container.querySelector('#mgr-actions-sub');
+  const startBtn = container.querySelector('#btn-mgr-start');
+  const stopBtn = container.querySelector('#btn-mgr-stop');
+
+  const running = daemon?.running === true;
+  if (daemonState) {
+    daemonState.textContent = compat?.compat ? (running ? 'Activo (compat)' : 'Detenido (compat)') : (running ? 'Activo' : 'Detenido');
+    daemonState.style.color = running ? 'var(--accent-green)' : 'var(--accent-red)';
+  }
+  if (daemonMeta) {
+    const bits = [];
+    if (daemon?.interval_sec) bits.push(`intervalo ${daemon.interval_sec}s`);
+    if (daemon?.cycles_run !== undefined && daemon?.cycles_run !== null) bits.push(`ciclos ${daemon.cycles_run || 0}`);
+    if (controlPlane?.preferred_endpoint) bits.push(`control ${controlPlane.preferred_endpoint}`);
+    daemonMeta.textContent = bits.join(' · ');
+  }
+  if (policy) policy.innerHTML = _policyBadge(latest?.policy?.mode || latest?.policy_mode || 'manual_assist');
+  const currentPhase = latest?.current_phase || daemon?.current_phase || '';
+  const currentAction = latest?.current_action || daemon?.current_action || '';
+  const activeInterlocks = latest?.policy?.interlocks?.active || [];
+  const reasonParts = [
+    latest?.policy?.reason || '',
+    latest?.summary || '',
+    currentPhase ? `fase ${currentPhase}` : '',
+    currentAction ? `acción ${currentAction}` : '',
+    activeInterlocks.length ? `interlocks ${activeInterlocks.length}` : '',
+    controlPlane?.listener_conflict ? `conflicto listener 8791 -> ${controlPlane.preferred_endpoint || '127.0.0.1:8791'}` : '',
+  ].filter(Boolean);
+  if (reason) reason.textContent = reasonParts.join(' · ');
+  if (cycleStatus) cycleStatus.textContent = latest?.manager_status || daemon?.last_status || '--';
+  if (cycleTime) {
+    const when = _time(latest?.generated_at || daemon?.last_run_at);
+    const next = daemon?.next_run_at ? ` · next ${_time(daemon.next_run_at)}` : '';
+    cycleTime.textContent = `${when}${next}`;
+  }
+  if (actions) actions.textContent = `${latest?.actions_executed ?? 0}/${latest?.actions_planned ?? 0}`;
+  if (actionsSub) {
+    const notifications = latest?.notifications || {};
+    const bits = [
+      `ok ${latest?.actions_succeeded ?? 0}`,
+      `failed ${latest?.actions_failed ?? 0}`,
+    ];
+    if (notifications.bitacora_emitted === true) bits.push('bitácora ok');
+    if (notifications.telegram_emitted === true) bits.push('telegram ok');
+    else if (notifications.telegram_attempted === true) bits.push('telegram fail');
+    actionsSub.textContent = bits.join(' · ');
+  }
+  if (startBtn) startBtn.disabled = running;
+  if (stopBtn) stopBtn.disabled = !running;
+}
+
+function _renderPlans(container, data) {
+  const compat = (!data || data?.ok === false || data?.detail === 'Not Found') && _lastAutonomyStatusPayload
+    ? _extractManagerCompat(_lastAutonomyStatusPayload)
+    : data;
+  const plan = compat?.latest_plan || {};
+  const exec = compat?.latest_execution || {};
+  const latest = compat?.latest || {};
+  const runtimeModel = compat?.runtime_model || _lastRuntimeModelPayload || {};
+  const controlPlane = compat?.control_plane || latest?.control_plane || runtimeModel?.network?.control_plane || {};
+  const planEl = container.querySelector('#mgr-plan');
+  const actionsEl = container.querySelector('#mgr-recent-actions');
+  if (planEl) {
+    const items = (plan?.actions || []).slice(0, 4);
+    const targetedDomains = Array.isArray(plan?.domains_targeted) ? plan.domains_targeted : [];
+    const deferred = Array.isArray(plan?.deferred_actions) ? plan.deferred_actions : [];
+    const interlocks = latest?.policy?.interlocks?.active || [];
+    const currentFocus = plan?.current_focus || latest?.policy?.mission?.current_focus || '';
+    const missionPhases = Array.isArray(plan?.mission_phases) ? plan.mission_phases : [];
+    const controlPlaneHtml = controlPlane?.preferred_endpoint
+      ? `<div style="margin:6px 0 8px;color:${controlPlane?.listener_conflict ? 'var(--accent-orange)' : 'var(--text-muted)'};font-size:11px">Control plane: ${_esc(controlPlane.preferred_endpoint)}${controlPlane?.listener_conflict ? ' · conflicto 8791 mitigado localmente' : ''}</div>`
+      : '';
+    if (items.length) {
+      const actionHtml = items.map(a => `<div style="margin-bottom:8px"><strong>${_esc(a.kind || 'action')}</strong> · ${_esc(a.target || '--')}<div style="color:var(--text-muted)">${_esc(a.description || '')}</div><div style="color:var(--text-muted);font-size:11px">${_esc(a.domain || '--')} · ${_esc(a.why || '')}</div></div>`).join('');
+      const phaseHtml = missionPhases.length
+        ? `<div style="margin:6px 0 8px;color:var(--text-muted);font-size:11px">Fases: ${_esc(missionPhases.map(item => `${item.name}:${(item.domains || []).join('/')}`).join(' · '))}</div>`
+        : '';
+      const focusHtml = currentFocus
+        ? `<div style="margin:6px 0 8px;color:var(--accent-cyan);font-size:11px">Focus: ${_esc(currentFocus)}</div>`
+        : '';
+      const domainHtml = targetedDomains.length
+        ? `<div style="margin:6px 0 8px;color:var(--text-muted);font-size:11px">Dominios: ${_esc(targetedDomains.join(', '))}</div>`
+        : '';
+      const interlockHtml = interlocks.length
+        ? `<div style="margin:6px 0 8px;color:var(--accent-orange);font-size:11px">Interlocks: ${_esc(interlocks.slice(0, 4).join(' · '))}</div>`
+        : '';
+      const deferredHtml = deferred.length
+        ? `<div style="color:var(--text-muted);font-size:11px">Diferidas: ${_esc(deferred.slice(0, 3).map(item => `${item.domain}:${item.reason}`).join(' · '))}</div>`
+        : '';
+      planEl.innerHTML = `${focusHtml}${controlPlaneHtml}${phaseHtml}${domainHtml}${interlockHtml}${actionHtml}${deferredHtml}`;
+    } else if (compat?.compat) {
+      planEl.innerHTML = `<div style="margin-bottom:6px"><strong>${_esc(latest?.manager_status || '--')}</strong><div style="color:var(--text-muted)">${_esc(latest?.summary || 'Compat mode from autonomy timeline')}</div></div>`;
+    } else {
+      planEl.innerHTML = controlPlaneHtml || 'Sin datos';
+    }
+  }
+  if (actionsEl) {
+    if ((latest?.manager_status || '').toLowerCase() === 'running') {
+      actionsEl.innerHTML = `<div style="margin-bottom:6px"><strong style="color:var(--accent-orange)">running</strong> · ${_esc(latest?.current_action || '--')}<div style="color:var(--text-muted)">${_esc(latest?.current_phase || 'executing')} · ${_esc(latest?.generated_at || '')}</div></div>`;
+      return;
+    }
+    const items = (exec?.action_results || []).slice(-4).reverse();
+    const notifications = latest?.notifications || exec?.notifications || {};
+    if (items.length) {
+      const resultsHtml = items.map(item => {
+          const a = item?.action || {};
+          const r = item?.result || {};
+          const cls = r?.ok ? 'var(--accent-green)' : 'var(--accent-red)';
+          return `<div style="margin-bottom:6px"><strong style="color:${cls}">${_esc(a.kind || 'action')}</strong> · ${_esc(a.target || '--')}<div style="color:var(--text-muted)">${_esc(r?.status || '--')} · ${_esc(r?.finished_at || '')}</div></div>`;
+        }).join('');
+      const notifyHtml = `<div style="margin-top:8px;color:var(--text-muted);font-size:11px">Notificaciones: bitácora ${notifications.bitacora_emitted === true ? 'ok' : '--'} · telegram ${notifications.telegram_emitted === true ? 'ok' : notifications.telegram_attempted === true ? 'fail' : '--'}</div>`;
+      actionsEl.innerHTML = `${resultsHtml}${notifyHtml}`;
+    } else if (compat?.compat && latest?.summary) {
+      actionsEl.innerHTML = `<div style="margin-bottom:6px"><strong style="color:var(--accent-green)">${_esc(latest?.manager_status || '--')}</strong><div style="color:var(--text-muted)">${_esc(latest?.summary)}</div></div>`;
+    } else {
+      actionsEl.innerHTML = 'Sin datos';
+    }
   }
 }
 

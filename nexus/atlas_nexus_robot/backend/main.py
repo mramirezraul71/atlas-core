@@ -137,6 +137,16 @@ robot_status = {
     },
 }
 
+startup_state = {
+    "running": False,
+    "stage": "idle",
+    "started_at": None,
+    "finished_at": None,
+    "last_error": None,
+}
+
+_startup_task: asyncio.Task | None = None
+
 
 # ── Persistent Camera Manager ─────────────────────────────────────────────────
 import threading
@@ -1412,92 +1422,132 @@ async def broadcast_status():
         )
 
 
+def _mark_startup_stage(stage: str, error: str | None = None) -> None:
+    timestamp = datetime.now().isoformat()
+    startup_state["stage"] = stage
+    if stage == "starting":
+        startup_state["running"] = True
+        startup_state["started_at"] = timestamp
+        startup_state["finished_at"] = None
+    elif stage in {"completed", "failed", "cancelled"}:
+        startup_state["running"] = False
+        startup_state["finished_at"] = timestamp
+    if error is not None:
+        startup_state["last_error"] = error
+
+
+async def _initialize_robot_background() -> None:
+    _mark_startup_stage("starting")
+    try:
+        logger.info("🚀 ATLAS NEXUS Robot Backend background init starting...")
+        update_uptime.start_time = datetime.now()
+
+        _mark_startup_stage("camera_manager")
+        cam_ok = await asyncio.to_thread(live_camera.start)
+        if cam_ok:
+            logger.info("LiveCameraManager started — Insta360 capturing at 10fps")
+        else:
+            logger.warning("LiveCameraManager failed to start — no camera available")
+
+        _mark_startup_stage("camera_test")
+        camera_test = await test_camera()
+        robot_status["modules"]["camera"] = camera_test["status"] == "success" or cam_ok
+
+        _mark_startup_stage("ai_test")
+        ai_test = await test_ai()
+        robot_status["modules"]["ai"] = ai_test["status"] == "success"
+
+        _mark_startup_stage("vision_test")
+        vision_test = await test_vision()
+        robot_status["modules"]["vision"] = vision_test["status"] == "success"
+
+        _mark_startup_stage("yolo_test")
+        try:
+            yolo_test = await test_yolo()
+            robot_status["modules"]["yolo"] = yolo_test["status"] == "success"
+        except Exception as e:
+            logger.warning(f"YOLO initialization failed: {e}")
+            robot_status["modules"]["yolo"] = False
+
+        robot_status["modules"]["communication"] = True
+        try:
+            import pyautogui  # noqa: F401
+            robot_status["modules"]["control"] = True
+        except ImportError:
+            robot_status["modules"]["control"] = False
+        robot_status["modules"]["sensors"] = robot_status["modules"]["camera"]
+        robot_status["modules"]["actuators"] = False
+
+        _mark_startup_stage("serial_scan")
+        import serial.tools.list_ports as _slp
+        _com_ports = list(_slp.comports())
+        if _com_ports:
+            logger.info(
+                "Serial ports detected: %s — waiting for ATLAS handshake...",
+                [p.device for p in _com_ports],
+            )
+        else:
+            logger.info(
+                "No serial/COM ports — actuators will activate when Arduino is connected"
+            )
+
+        _mark_startup_stage("ai_consultant")
+        global ai_consultant_instance
+        try:
+            from brain.learning.ai_consultant import AIConsultant
+
+            ai_consultant_instance = AIConsultant()
+            logger.info(
+                "AI Consultant inicializado (modo=%s, region=%s)",
+                getattr(ai_consultant_instance, "ai_mode", "unknown"),
+                getattr(ai_consultant_instance, "aws_region", "unknown"),
+            )
+        except Exception as e:
+            logger.warning("No se pudo inicializar AI Consultant: %s", e)
+
+        _mark_startup_stage("workers")
+        serial_controller.start()
+        logger.info("Serial scanner started — waiting for ATLAS device on COM ports...")
+        vision_serial_bridge.start()
+        safe_mode.start()
+        watchdog.start()
+        model_updater.start()
+        asyncio.create_task(broadcast_status())
+
+        _mark_startup_stage("completed")
+        logger.info("✅ ATLAS NEXUS Robot Backend ready! [SafeMode + Watchdog + AutoUpdate ACTIVE]")
+    except asyncio.CancelledError:
+        _mark_startup_stage("cancelled")
+        raise
+    except Exception as exc:
+        _mark_startup_stage("failed", error=str(exc))
+        logger.exception("Robot background init failed")
+
+
 @app.on_event("startup")
 async def startup_event():
     """Evento de startup"""
+    global _startup_task
     logger.info("🚀 ATLAS NEXUS Robot Backend starting up...")
-    update_uptime.start_time = datetime.now()
-
-    # Iniciar camera manager persistente
-    cam_ok = live_camera.start()
-    if cam_ok:
-        logger.info("LiveCameraManager started — Insta360 capturing at 10fps")
-    else:
-        logger.warning("LiveCameraManager failed to start — no camera available")
-
-    # Testear módulos básicos
-    camera_test = await test_camera()
-    robot_status["modules"]["camera"] = camera_test["status"] == "success" or cam_ok
-
-    ai_test = await test_ai()
-    robot_status["modules"]["ai"] = ai_test["status"] == "success"
-
-    vision_test = await test_vision()
-    robot_status["modules"]["vision"] = vision_test["status"] == "success"
-
-    # Test YOLO
-    try:
-        yolo_test = await test_yolo()
-        robot_status["modules"]["yolo"] = yolo_test["status"] == "success"
-    except Exception as e:
-        logger.warning(f"YOLO initialization failed: {e}")
-        robot_status["modules"]["yolo"] = False
-
-    # Detección real de hardware — no marcar True sin evidencia
-    robot_status["modules"]["communication"] = True  # WebSocket siempre disponible
-    # Control: solo True si pyautogui disponible (HID)
-    try:
-        import pyautogui  # noqa: F401
-        robot_status["modules"]["control"] = True
-    except ImportError:
-        robot_status["modules"]["control"] = False
-    # Sensors: True si al menos una cámara real detectada
-    robot_status["modules"]["sensors"] = robot_status["modules"]["camera"]
-    # Actuators: se activa automáticamente cuando serial_controller detecta un dispositivo ATLAS
-    robot_status["modules"]["actuators"] = False
-    import serial.tools.list_ports as _slp
-    _com_ports = list(_slp.comports())
-    if _com_ports:
-        logger.info("Serial ports detected: %s — waiting for ATLAS handshake...",
-                     [p.device for p in _com_ports])
-    else:
-        logger.info("No serial/COM ports — actuators will activate when Arduino is connected")
-
-    # Inicializar AI Consultant (Bedrock/Direct) para aprendizaje continuo.
-    global ai_consultant_instance
-    try:
-        from brain.learning.ai_consultant import AIConsultant
-
-        ai_consultant_instance = AIConsultant()
-        logger.info(
-            "AI Consultant inicializado (modo=%s, region=%s)",
-            getattr(ai_consultant_instance, "ai_mode", "unknown"),
-            getattr(ai_consultant_instance, "aws_region", "unknown"),
-        )
-    except Exception as e:
-        logger.warning("No se pudo inicializar AI Consultant: %s", e)
-
-    # Iniciar serial controller (escaneo continuo de puertos COM)
-    serial_controller.start()
-    logger.info("Serial scanner started — waiting for ATLAS device on COM ports...")
-
-    # Iniciar puente visión → serial
-    vision_serial_bridge.start()
-
-    # Sistemas autónomos
-    safe_mode.start()
-    watchdog.start()
-    model_updater.start()
-
-    # Iniciar background task para broadcast de status
-    asyncio.create_task(broadcast_status())
-
-    logger.info("✅ ATLAS NEXUS Robot Backend ready! [SafeMode + Watchdog + AutoUpdate ACTIVE]")
+    if _startup_task and not _startup_task.done():
+        return
+    _startup_task = asyncio.create_task(
+        _initialize_robot_background(),
+        name="atlas-robot-background-init",
+    )
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Evento de shutdown"""
+    global _startup_task
+    if _startup_task and not _startup_task.done():
+        _startup_task.cancel()
+        try:
+            await _startup_task
+        except asyncio.CancelledError:
+            pass
+        _startup_task = None
     watchdog.stop()
     model_updater.stop()
     safe_mode.stop()

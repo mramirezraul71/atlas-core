@@ -80,7 +80,7 @@ function Start-PushService {
     Free-Port -Port 8791
     Set-Location $RepoRoot
     Write-Host "Iniciando PUSH (8791) en primer plano. Cierra con Ctrl+C." -ForegroundColor Yellow
-    & $pushPython -m uvicorn atlas_adapter.atlas_http_api:app --host 0.0.0.0 --port 8791
+    & $pushPython -m uvicorn atlas_adapter.atlas_http_api:app --host 127.0.0.1 --port 8791
 }
 
 # ----- Main -----

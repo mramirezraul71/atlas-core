@@ -9,6 +9,7 @@ import sqlite3
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -242,12 +243,19 @@ def list_supervisor_directives(
 class SupervisorDaemonStatus:
     enabled: bool
     running: bool
+    running_local: bool
+    running_external: bool
     interval_sec: int
     last_tick_ts: float
     last_severity: str
     last_signature: str
     last_notice_ts: float
     last_task_id: str
+    runtime_owner: str
+    lock_exists: bool
+    lock_held_elsewhere: bool
+    lock_age_sec: float
+    recent_external_ts: str
 
 
 class SupervisorDaemon:
@@ -334,6 +342,61 @@ class SupervisorDaemon:
 
         self._sup = None
 
+    def _lock_held_elsewhere(self) -> bool:
+        """Detecta si otro proceso mantiene el lock del daemon."""
+        if self._lock_handle is not None:
+            return False
+        if not _LOCK_PATH.exists():
+            return False
+        try:
+            fh = open(_LOCK_PATH, "a+", encoding="utf-8")
+        except Exception:
+            return True
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            return False
+        except Exception:
+            return True
+        finally:
+            try:
+                fh.close()
+            except Exception:
+                pass
+
+    def _recent_external_supervisor_ts(self) -> str:
+        """Lee la última actividad visible del supervisor desde la bitácora."""
+        try:
+            from modules.humanoid.ans.evolution_bitacora import get_evolution_entries
+
+            for entry in get_evolution_entries(limit=30) or []:
+                if str(entry.get("source") or "").strip().lower() == "supervisor":
+                    return str(entry.get("timestamp") or "")
+        except Exception:
+            pass
+        return ""
+
+    def _external_running(self) -> tuple[bool, str]:
+        recent_ts = self._recent_external_supervisor_ts()
+        if not recent_ts:
+            return False, ""
+        try:
+            recent_dt = datetime.fromisoformat(recent_ts.replace("Z", "+00:00"))
+            if recent_dt.tzinfo is None:
+                recent_dt = recent_dt.replace(tzinfo=timezone.utc)
+            age_sec = (datetime.now(timezone.utc) - recent_dt).total_seconds()
+            return age_sec <= max(self.interval_sec * 3, 600), recent_ts
+        except Exception:
+            return False, recent_ts
+
     def _acquire_singleton_lock(self) -> bool:
         """Evita múltiples daemons en procesos distintos (causa de spam)."""
         _LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -385,15 +448,35 @@ class SupervisorDaemon:
                 pass
 
     def status(self) -> Dict[str, Any]:
+        lock_exists = _LOCK_PATH.exists()
+        try:
+            lock_age_sec = (
+                max(0.0, time.time() - float(_LOCK_PATH.stat().st_mtime))
+                if lock_exists
+                else 0.0
+            )
+        except Exception:
+            lock_age_sec = 0.0
+        external_running, recent_external_ts = self._external_running()
+        lock_held_elsewhere = self._lock_held_elsewhere()
+        effective_running = bool(self._running or external_running)
+        runtime_owner = "local" if self._running else ("external" if external_running else "none")
         st = SupervisorDaemonStatus(
             enabled=bool(self.enabled),
-            running=bool(self._running),
+            running=effective_running,
+            running_local=bool(self._running),
+            running_external=bool(external_running),
             interval_sec=int(self.interval_sec),
             last_tick_ts=float(self._last_tick_ts),
             last_severity=str(self._last_severity),
             last_signature=str(self._last_signature),
             last_notice_ts=float(self._last_notice_ts),
             last_task_id=str(self._last_task_id),
+            runtime_owner=runtime_owner,
+            lock_exists=bool(lock_exists),
+            lock_held_elsewhere=bool(lock_held_elsewhere),
+            lock_age_sec=float(lock_age_sec),
+            recent_external_ts=str(recent_external_ts),
         )
         return {"ok": True, "data": st.__dict__}
 

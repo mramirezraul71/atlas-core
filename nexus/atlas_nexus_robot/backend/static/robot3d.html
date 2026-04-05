@@ -71,7 +71,7 @@ canvas{display:block}
     <div style="display:flex;align-items:center;gap:14px">
         <div class="hud-nav">
             <a id="link-dash">📊 Dashboard</a>
-            <a id="link-ws">⚡ Workspace</a>
+            <a id="link-ws">🤖 Panel Robot</a>
             <a id="link-nexus">🌐 Nexus</a>
         </div>
         <div class="hud-status on" id="robot-status"><span class="hud-pulse"></span> EN LINEA</div>
@@ -139,9 +139,9 @@ const NEXUS_API = 'http://' + HOST + ':8000';
 
 document.getElementById('link-dash').href = 'http://'+HOST+':8791/ui';
 document.getElementById('link-dash').target = '_blank';
-document.getElementById('link-ws').href = 'http://'+HOST+':8791/workspace';
+document.getElementById('link-ws').href = 'http://'+HOST+':8791/cuerpo/';
 document.getElementById('link-ws').target = '_blank';
-document.getElementById('link-nexus').href = 'http://'+HOST+':8000/dashboard';
+document.getElementById('link-nexus').href = 'http://'+HOST+':8791/nexus';
 document.getElementById('link-nexus').target = '_blank';
 
 const MODULE_MAP = {

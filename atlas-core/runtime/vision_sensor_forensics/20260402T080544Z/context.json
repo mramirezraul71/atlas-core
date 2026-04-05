@@ -1,0 +1,160 @@
+{
+  "artifact_id": "20260402T080544Z",
+  "event_type": "visual_signal",
+  "severity": "HIGH",
+  "sensor_state": "DEGRADE",
+  "buffered_frames": 151,
+  "payload": {
+    "action": "degrade",
+    "confidence_pct": 87.0,
+    "primary_source": "geometry",
+    "agreement_count": 1,
+    "contradictions": [
+      "Quant muestra error operacional o fail-safe activo"
+    ],
+    "reasons": [
+      "la geometria confirma estructura compatible con el sesgo visual"
+    ],
+    "visual": {
+      "frame_shape": [
+        720,
+        1280
+      ],
+      "edge_density": 0.030256,
+      "slope": 0.026799,
+      "volatility": 25.0394,
+      "chart_bias": "bearish",
+      "ocr_pattern": "bajista",
+      "ocr_confidence": 1.0,
+      "ocr_prices": [
+        2.0,
+        5.0,
+        6.0,
+        8.0,
+        9.0,
+        15.0,
+        22.0,
+        61.0,
+        78.0,
+        104.0,
+        1034.0,
+        30608.0
+      ]
+    },
+    "candles": {
+      "available": false,
+      "reason": "ohlc_unavailable"
+    },
+    "geometry": {
+      "line_count": 192.0,
+      "dominant_slope": 0.1118,
+      "slope_std": 2.2589,
+      "consistency_score": 1.0
+    },
+    "telemetry": {
+      "captured_at": 1775117141.4045374,
+      "system": {
+        "ok": true,
+        "status_code": 200,
+        "service": "atlas_push",
+        "payload": {
+          "ok": true,
+          "service": "atlas_push",
+          "ts": "2026-04-02T08:05:41.407537+00:00",
+          "pid": 76560,
+          "version": "0.6.0"
+        }
+      },
+      "quant": {
+        "ok": false,
+        "status_code": 0,
+        "payload": {},
+        "error": "HTTPConnectionPool(host='127.0.0.1', port=8795): Max retries exceeded with url: /operation/status/lite (Caused by ConnectTimeoutError(<HTTPConnection(host='127.0.0.1', port=8795) at 0x1f6a053cd50>, 'Connection to 127.0.0.1 timed out. (connect timeout=1.5)'))"
+      },
+      "quant_state": {
+        "ok": true,
+        "path": "C:\\ATLAS_PUSH\\atlas_code_quant\\data\\operation\\operation_center_state.json",
+        "payload": {
+          "account_scope": "paper",
+          "paper_only": true,
+          "auton_mode": "paper_autonomous",
+          "executor_mode": "paper_api",
+          "vision_mode": "off",
+          "require_operator_present": false,
+          "operator_present": true,
+          "screen_integrity_ok": true,
+          "sentiment_score": 0.0,
+          "sentiment_source": "manual",
+          "min_auton_win_rate_pct": 35.0,
+          "max_level4_bpr_pct": 20.0,
+          "auto_pause_on_operational_errors": true,
+          "operational_error_limit": 10,
+          "operational_error_count": 3,
+          "operational_error_day": "2026-04-02",
+          "fail_safe_active": false,
+          "fail_safe_reason": null,
+          "last_operational_error": {
+            "reason": "executor_exception:Order type 'debit' requires price",
+            "timestamp": "2026-04-02T04:50:19.776148"
+          },
+          "notes": "",
+          "last_decision": {
+            "decision": "blocked",
+            "allowed": false,
+            "timestamp": "2026-04-02T08:04:37.419701",
+            "reason": "Entry validation blocked submit because adverse drift is 21.57% (> 0.25%)."
+          },
+          "last_candidate": {
+            "symbol": "HCSG",
+            "strategy_type": "equity_short",
+            "scope": "paper",
+            "action": "submit"
+          },
+          "attribution_integrity_alert_active": true,
+          "attribution_integrity_last_count": 10,
+          "attribution_integrity_last_event_at": "2026-04-01T13:31:02.970081",
+          "visual_gate_stats": {
+            "evaluated_count": 1280,
+            "applies_count": 1237,
+            "blocked_count": 1237,
+            "passed_count": 0,
+            "manual_review_count": 1237,
+            "last_status": "camera_unavailable",
+            "last_blocked": true,
+            "last_manual_required": true,
+            "last_readiness_score_pct": 49.95,
+            "last_alignment_score_pct": null,
+            "last_updated_at": "2026-04-02T08:04:37.419751",
+            "last_symbol": "HCSG",
+            "last_action": "submit",
+            "last_blocking_reason": "visual context capture failed"
+          },
+          "last_options_strategy_governance": {}
+        }
+      }
+    },
+    "chart_bias": "bearish",
+    "visual_pattern": "uptrend",
+    "candle_top_pattern": null,
+    "candle_direction": "unknown",
+    "geometry_pattern": "triangle",
+    "source_scores": {
+      "vision": 0.7677,
+      "talib": 0.0,
+      "geometry": 0.93,
+      "telemetry": 0.0
+    },
+    "system_ok": true,
+    "quant_status_url": null,
+    "quant_last_decision": {
+      "decision": "blocked",
+      "allowed": false,
+      "timestamp": "2026-04-02T08:04:37.419701",
+      "reason": "Entry validation blocked submit because adverse drift is 21.57% (> 0.25%)."
+    },
+    "quant_last_operational_error": {
+      "reason": "executor_exception:Order type 'debit' requires price",
+      "timestamp": "2026-04-02T04:50:19.776148"
+    }
+  }
+}

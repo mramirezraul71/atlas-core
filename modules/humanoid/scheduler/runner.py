@@ -7,6 +7,7 @@ import logging
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
@@ -15,6 +16,72 @@ _scheduler_actor = "scheduler"
 _APPROVAL_DIGEST_LAST_KEY = ""
 
 _log = logging.getLogger("humanoid.scheduler.runner")
+
+
+def _append_scheduler_trace(event: str, payload: Dict[str, Any]) -> None:
+    try:
+        base = Path(os.getenv("ATLAS_BASE", Path(__file__).resolve().parents[3]))
+        trace_dir = base / "state"
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        trace_path = trace_dir / "atlas_scheduler_trace.jsonl"
+        row = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "source": "runner",
+            "event": event,
+            **(payload or {}),
+        }
+        with trace_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _normalize_scheduler_result(kind: str, out: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
+    """
+    Distingue entre fallo de ejecución del job y resultado degradado del dominio.
+
+    Para `nervous_cycle`, un score bajo significa degradación operacional del
+    sistema nervioso, no un crash del scheduler. El ciclo completó, generó
+    snapshot y debe quedar auditado sin entrar en espiral infinita de retries.
+    """
+    normalized = dict(out or {})
+    ok = bool(normalized.get("ok", False))
+
+    if (
+        kind == "nervous_cycle"
+        and isinstance(out, dict)
+        and normalized.get("error") in (None, "")
+        and "score" in normalized
+        and "points" in normalized
+    ):
+        normalized["cycle_ok"] = ok
+        normalized["ok"] = True
+        normalized["degraded"] = not ok
+        normalized["scheduler_note"] = (
+            "nervous_cycle_completed"
+            if ok
+            else "nervous_cycle_completed_with_degraded_score"
+        )
+        return normalized, True
+
+    if (
+        kind == "market_open_supervisor"
+        and isinstance(out, dict)
+        and normalized.get("error") in (None, "")
+        and "overall_severity" in normalized
+    ):
+        supervision_ok = bool(normalized.get("ok", False))
+        normalized["supervision_ok"] = supervision_ok
+        normalized["ok"] = True
+        normalized["degraded"] = normalized.get("overall_severity") not in ("ok", "warning")
+        normalized["scheduler_note"] = (
+            "market_open_supervisor_completed"
+            if supervision_ok
+            else "market_open_supervisor_completed_with_findings"
+        )
+        return normalized, True
+
+    return normalized, ok
 
 
 def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -26,6 +93,18 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
     name = job.get("name", "")
 
     try:
+        _append_scheduler_trace(
+            "run_job_sync_start",
+            {
+                "job_id": jid,
+                "name": name,
+                "kind_raw": job.get("kind"),
+                "kind_normalized": kind,
+                "payload_keys": sorted(list(payload.keys())) if isinstance(payload, dict) else [],
+                "runner_module": __name__,
+                "runner_file": __file__,
+            },
+        )
         if kind == "update_check":
             out = _run_update_check(payload)
         elif kind == "shell_command":
@@ -46,6 +125,8 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_ans_cycle(payload)
         elif kind == "nervous_cycle":
             out = _run_nervous_cycle(payload)
+        elif kind == "market_open_supervisor":
+            out = _run_market_open_supervisor(payload)
         elif kind == "makeplay_scanner":
             out = _run_makeplay_scanner(payload)
         elif kind == "repo_monitor_cycle":
@@ -80,9 +161,27 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             out = _run_cge_tick(payload)
         else:
             out = {"ok": True, "result": "no-op", "kind": kind}
+            _append_scheduler_trace(
+                "run_job_sync_noop_branch",
+                {
+                    "job_id": jid,
+                    "name": name,
+                    "kind_raw": job.get("kind"),
+                    "kind_normalized": kind,
+                },
+            )
     except Exception as e:
         _log.exception("Job %s run failed: %s", jid, e)
         ms = int((time.perf_counter() - t0) * 1000)
+        _append_scheduler_trace(
+            "run_job_sync_exception",
+            {
+                "job_id": jid,
+                "name": name,
+                "kind_normalized": kind,
+                "error": str(e),
+            },
+        )
         try:
             from modules.humanoid.metalearn.collector import \
                 record_scheduler_job
@@ -92,8 +191,8 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
             pass
         return {"ok": False, "result_json": None, "error": str(e), "ms": ms}
 
+    out, ok = _normalize_scheduler_result(kind, out)
     ms = int((time.perf_counter() - t0) * 1000)
-    ok = out.get("ok", False)
     try:
         from modules.humanoid.metalearn.collector import record_scheduler_job
 
@@ -104,6 +203,16 @@ def run_job_sync(job: Dict[str, Any]) -> Dict[str, Any]:
         json.dumps(out)
         if isinstance(out, dict)
         else json.dumps({"ok": ok, "raw": str(out)})
+    )
+    _append_scheduler_trace(
+        "run_job_sync_end",
+        {
+            "job_id": jid,
+            "name": name,
+            "kind_normalized": kind,
+            "ok": ok,
+            "result_json_head": result_json[:500],
+        },
     )
     return {"ok": ok, "result_json": result_json, "error": out.get("error"), "ms": ms}
 
@@ -294,6 +403,37 @@ def _run_shell_command(payload: Dict[str, Any]) -> Dict[str, Any]:
             command, cwd=cwd, timeout_sec=min(RUNNER_TIMEOUT_SEC, 60), actor=actor
         )
         return result
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _run_market_open_supervisor(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run the native ATLAS market-open supervisor without going through shell policy."""
+    label = (payload.get("label") or "scheduled").strip() or "scheduled"
+    emit_bitacora = bool(payload.get("emit_bitacora", True))
+    emit_telegram = bool(payload.get("emit_telegram", True))
+    try:
+        import importlib.util
+
+        base = Path(os.getenv("ATLAS_BASE", Path(__file__).resolve().parents[3]))
+        script_path = base / "scripts" / "atlas_market_open_supervisor.py"
+        spec = importlib.util.spec_from_file_location(
+            "atlas_market_open_supervisor_runtime", script_path
+        )
+        if spec is None or spec.loader is None:
+            return {"ok": False, "error": f"unable to load {script_path}"}
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        run_supervision = getattr(module, "run_supervision", None)
+        if not callable(run_supervision):
+            return {"ok": False, "error": "run_supervision not available"}
+
+        return run_supervision(
+            label=label,
+            emit_bitacora=emit_bitacora,
+            emit_telegram=emit_telegram,
+        )
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

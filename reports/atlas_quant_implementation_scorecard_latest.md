@@ -1,6 +1,6 @@
 # ATLAS Quant - Trading Implementation Scorecard
 
-- Generated at: `2026-04-01T18:03:57.872939+00:00`
+- Generated at: `2026-04-02T18:08:48.822353+00:00`
 - Process compliance: `97.5/100` (healthy)
 - Implementation usefulness: `55.0/100` (watch)
 
@@ -8,7 +8,7 @@
 
 - `process_compliance_score`: `97.5/100` (healthy) - Medir cuanto del marco metodologico ya esta realmente implantado por etapa.
 - `artifact_coverage_score`: `100.0/100` (healthy) - Medir si cada avance deja huella en protocolo, informes y archivos reutilizables.
-- `memory_persistence_score`: `12.21/100` (critical) - Medir si ATLAS esta reteniendo los cambios en memoria y bitacora.
+- `memory_persistence_score`: `65.01/100` (watch) - Medir si ATLAS esta reteniendo los cambios en memoria y bitacora.
 - `external_benchmark_coverage_score`: `100.0/100` (healthy) - Medir cuantas etapas auditadas estan respaldadas por confrontacion externa seria.
 - `observability_feedback_score`: `73.33/100` (workable) - Medir si Grafana, Prometheus y el chequeo operativo estan devolviendo feedback confiable para sostener disciplina.
 - `visual_benchmark_feedback_score`: `16.67/100` (critical) - Medir si el benchmark visual externo ya fue traducido a criterios reutilizables, reportes y controles reales de entrada.
@@ -19,7 +19,7 @@
 
 ## Supporting Indicators
 
-- `brain_delivery_ratio_pct`: `17.45`
+- `brain_delivery_ratio_pct`: `57.16`
 - `attributed_open_positions_pct`: `100.0`
 - `open_untracked_ratio_pct`: `0.0`
 - `recent_unattributed_count`: `0`

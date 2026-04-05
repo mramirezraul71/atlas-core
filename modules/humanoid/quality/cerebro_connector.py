@@ -66,6 +66,9 @@ class CerebroConnector:
         import urllib.request
 
         url = f"{self.base_url}{endpoint}"
+        effective_timeout = timeout
+        if endpoint == "/ans/evolution-log":
+            effective_timeout = min(timeout, 1)
 
         try:
             if data:
@@ -79,13 +82,16 @@ class CerebroConnector:
             else:
                 req = urllib.request.Request(url, method=method)
 
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.urlopen(req, timeout=effective_timeout) as resp:
                 return json.loads(resp.read().decode())
 
         except urllib.error.HTTPError as e:
             logger.warning(f"HTTP Error {e.code} on {endpoint}")
             return None
         except Exception as e:
+            if endpoint == "/ans/evolution-log":
+                logger.warning(f"ANS no disponible en startup: {e}. Continuando.")
+                return None
             logger.warning(f"Request failed to {endpoint}: {e}")
             return None
 

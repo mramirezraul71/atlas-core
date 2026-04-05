@@ -77,7 +77,7 @@ function _buildTopbar(app) {
     </div>
     <div class="topbar-center"></div>
     <div class="topbar-right">
-      <span class="topbar-version" id="topbar-version">v4.3.0</span>
+      <span class="topbar-version" id="topbar-version">v4.3.2-autonomy2</span>
       <span id="topbar-safe-mode" style="display:none;padding:3px 8px;border-radius:999px;border:1px solid rgba(248,81,73,.45);color:#f85149;font-size:11px;font-weight:700;">UI Safe Mode</span>
       <button class="topbar-btn" id="btn-theme" title="Cambiar tema">${SVG.theme}</button>
       <button class="topbar-btn" id="btn-home" title="Inicio">${SVG.home}</button>
@@ -203,7 +203,7 @@ function _openUpdatePanel() {
           log('  1. Cierra esta ventana y en una terminal ejecuta:');
           log('  2. cd ' + (window.location.pathname.startsWith('/ui') ? 'tu_carpeta_ATLAS_PUSH' : 'C:\\ATLAS_PUSH'));
           log('  3. powershell -ExecutionPolicy Bypass -File scripts\\restart_push_from_api.ps1');
-          log('  O mata el proceso en el puerto 8791 y vuelve a iniciar: python -m uvicorn atlas_adapter.atlas_http_api:app --host 0.0.0.0 --port 8791');
+          log('  O mata el proceso en el puerto 8791 y vuelve a iniciar: python -m uvicorn atlas_adapter.atlas_http_api:app --host 127.0.0.1 --port 8791');
         }
       }
     } catch (e) {

@@ -2,26 +2,53 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from datetime import datetime, timezone
+from importlib import import_module
+from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
 from modules.humanoid.core.event_bus import publish_event
 from modules.humanoid.core.event_handlers import register_default_event_handlers
 from .db import SchedulerDB
 from .locking import recover_stale_locks, try_acquire_lease
-from .runner import run_job_sync
 
 _log = logging.getLogger("humanoid.scheduler.engine")
 
 _sched_db: Optional[SchedulerDB] = None
 _loop_task: Optional[asyncio.Task] = None
+_owner_loop: Optional[asyncio.AbstractEventLoop] = None
 _running = 0
 _cancel_requested: Dict[str, bool] = {}
 _executor: Optional[Any] = None
 _known_job_ids: Set[str] = set()
 _last_job_statuses: Dict[str, str] = {}
+
+
+def _append_scheduler_trace(event: str, payload: Dict[str, Any]) -> None:
+    try:
+        base = Path(os.getenv("ATLAS_BASE", Path(__file__).resolve().parents[3]))
+        trace_dir = base / "state"
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        trace_path = trace_dir / "atlas_scheduler_trace.jsonl"
+        row = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "source": "engine",
+            "event": event,
+            **(payload or {}),
+        }
+        with trace_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _get_run_job_sync():
+    """Resolve runner lazily so the scheduler uses the live runner implementation."""
+    module = import_module("modules.humanoid.scheduler.runner")
+    return module.run_job_sync
 
 
 def _sched_enabled() -> bool:
@@ -153,6 +180,18 @@ async def _run_one_job(job: Dict[str, Any]) -> None:
     kind = job.get("kind", "")
     db = get_scheduler_db()
     loop = asyncio.get_event_loop()
+    run_job_sync = _get_run_job_sync()
+    _append_scheduler_trace(
+        "run_one_job_start",
+        {
+            "job_id": jid,
+            "kind_raw": job.get("kind"),
+            "kind_type": type(job.get("kind")).__name__,
+            "runner_module": getattr(run_job_sync, "__module__", None),
+            "runner_name": getattr(run_job_sync, "__name__", None),
+            "runner_file": getattr(getattr(run_job_sync, "__code__", None), "co_filename", None),
+        },
+    )
     if _executor is None:
         result = run_job_sync(job)
     else:
@@ -163,8 +202,28 @@ async def _run_one_job(job: Dict[str, Any]) -> None:
     ms = result.get("ms", 0)
     err = result.get("error")
     result_json = result.get("result_json")
+    _append_scheduler_trace(
+        "run_one_job_after_runner",
+        {
+            "job_id": jid,
+            "kind_raw": job.get("kind"),
+            "ok": ok,
+            "ms": ms,
+            "error": err,
+            "result_json_head": str(result_json)[:500] if result_json is not None else None,
+        },
+    )
 
     db.insert_run(jid, job.get("last_run_ts") or now, now, ok, ms, result_json, err)
+    _append_scheduler_trace(
+        "run_one_job_inserted_run",
+        {
+            "job_id": jid,
+            "kind_raw": job.get("kind"),
+            "ok": ok,
+            "ms": ms,
+        },
+    )
     _audit(
         "scheduler", "job_run_end", ok, {"job_id": jid, "kind": kind, "ms": ms}, err, ms
     )
@@ -355,17 +414,17 @@ async def _loop() -> None:
 
 def start_scheduler(executor: Optional[Any] = None) -> Optional[asyncio.Task]:
     """Start background scheduler loop. Returns the asyncio Task or None if disabled."""
-    global _loop_task, _executor
+    global _loop_task, _executor, _owner_loop
     if not _sched_enabled():
         _log.info("Scheduler disabled (SCHED_ENABLED=false)")
         return None
     register_default_event_handlers()
     _prime_scheduler_event_state(get_scheduler_db())
     _executor = executor
+    _owner_loop = asyncio.get_event_loop()
     if _loop_task is not None and not _loop_task.done():
         return _loop_task
-    loop = asyncio.get_event_loop()
-    _loop_task = loop.create_task(_loop())
+    _loop_task = _owner_loop.create_task(_loop())
     _log.info("Scheduler loop started")
     _audit("scheduler", "start", True, {})
     return _loop_task
@@ -377,6 +436,25 @@ def stop_scheduler() -> None:
         _loop_task.cancel()
     _loop_task = None
     _audit("scheduler", "stop", True, {})
+
+
+def request_scheduler_restart() -> bool:
+    """Request a scheduler restart on the owning event loop if available."""
+    global _owner_loop, _executor
+
+    def _restart_on_owner() -> None:
+        stop_scheduler()
+        start_scheduler(executor=_executor)
+
+    if _owner_loop is not None and _owner_loop.is_running():
+        _owner_loop.call_soon_threadsafe(_restart_on_owner)
+        return True
+    try:
+        loop = asyncio.get_event_loop()
+        loop.call_soon(_restart_on_owner)
+        return True
+    except Exception:
+        return False
 
 
 def is_scheduler_running() -> bool:

@@ -82,7 +82,8 @@ async def proxy_to_cuerpo(request: Request, path: str) -> Response:
             ):
                 try:
                     body = content.decode("utf-8", errors="replace")
-                    base_tag = '<base href="/cuerpo/">'
+                    route_prefix = "/robot/" if request.url.path.startswith("/robot") else "/cuerpo/"
+                    base_tag = f'<base href="{route_prefix}">'
                     if "<base " not in body.lower():
                         body = body.replace("<head>", "<head>" + base_tag, 1)
                         body = body.replace("<head ", "<head " + base_tag, 1)
