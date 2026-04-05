@@ -24,6 +24,9 @@ class TradierAccountSession:
     account_name: str | None
     base_url: str
     total_equity: float | None
+    cash_available: float | None
+    option_buying_power: float | None
+    current_requirement: float | None
     resolved_at: str
     raw_account: dict[str, Any]
 
@@ -35,6 +38,9 @@ class TradierAccountSession:
             "account_name": self.account_name,
             "base_url": self.base_url,
             "total_equity": self.total_equity,
+            "cash_available": self.cash_available,
+            "option_buying_power": self.option_buying_power,
+            "current_requirement": self.current_requirement,
             "resolved_at": self.resolved_at,
         }
 
@@ -91,6 +97,14 @@ def _parse_total_equity(balances: dict[str, Any]) -> float | None:
     return None
 
 
+def _parse_first_numeric(balances: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        value = _safe_float(balances.get(key), float("nan"))
+        if value == value:
+            return value
+    return None
+
+
 def resolve_account_session(
     *,
     account_scope: TradierScope | None = None,
@@ -121,6 +135,14 @@ def resolve_account_session(
         account_name=_account_name(account),
         base_url=client.base_url,
         total_equity=_parse_total_equity(balances),
+        cash_available=_parse_first_numeric(balances, "cash", "total_cash", "settled_cash"),
+        option_buying_power=_parse_first_numeric(balances, "option_buying_power"),
+        current_requirement=_parse_first_numeric(
+            balances,
+            "current_requirement",
+            "maintenance_requirement",
+            "regt_requirement",
+        ),
         resolved_at=datetime.utcnow().isoformat(),
         raw_account=account,
     )

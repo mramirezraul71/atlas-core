@@ -22,6 +22,9 @@ import math
 import time
 import logging
 import sys
+import threading
+from collections import defaultdict
+from copy import deepcopy
 from datetime import datetime
 
 # Ampliar thread pool: el default (min(32, cpu+4)) se satura cuando
@@ -51,6 +54,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.websockets import WebSocketState
 
 from api.decorators import require_live_confirmation
 from api.schemas import (
@@ -138,6 +142,17 @@ _OPERATION_CENTER = OperationCenter(
     ),
 )
 
+_SNAPSHOT_CACHE_LOCK = threading.Lock()
+_SNAPSHOT_CACHE: dict[str, dict[str, object]] = {}
+_SNAPSHOT_CACHE_AT: dict[str, float] = {}
+_SNAPSHOT_CACHE_WORKERS: dict[str, threading.Thread] = {}
+_SNAPSHOT_CACHE_ERRORS: dict[str, str] = {}
+_SNAPSHOT_CACHE_TTL_SEC = 5.0
+_SNAPSHOT_CACHE_MAX_STALE_SEC = 180.0
+_WS_CLIENT_LIMIT = 2
+_WS_CLIENT_CONNECTIONS: dict[str, set[WebSocket]] = defaultdict(set)
+_WS_CLIENT_LOCK = threading.Lock()
+
 app = FastAPI(
     title="Atlas Code-Quant API",
     description="Trading algorítmico con IA — Interfaz para Atlas/ROS2",
@@ -204,6 +219,7 @@ def _mark_startup_background(stage: str, *, error: str | None = None) -> None:
 @app.on_event("startup")
 async def preload_tradier_sessions() -> None:
     _JOURNAL.init_db()
+    _ensure_core_runtime_bootstrap()
     global _startup_services_task
     if _startup_services_task and not _startup_services_task.done():
         return
@@ -244,6 +260,22 @@ async def _start_background_services() -> None:
     global _auto_cycle_task
     _mark_startup_background("starting")
     try:
+        if _lightweight_startup_enabled():
+            logger.warning(
+                "QUANT lightweight startup enabled: skipping alert dispatcher, journal sync, scanner, learning loop and auto-cycle autostart"
+            )
+            _mark_startup_background("lightweight_preload")
+            if settings.startup_preload_sessions_in_background:
+                for scope, token in (("paper", settings.tradier_paper_token), ("live", settings.tradier_live_token)):
+                    if not token:
+                        continue
+                    try:
+                        await asyncio.to_thread(_ACCOUNT_MANAGER.resolve, account_scope=scope)  # type: ignore[arg-type]
+                        logger.info("Tradier %s session preloaded", scope)
+                    except Exception:
+                        logger.exception("Unable to preload Tradier %s session", scope)
+            _mark_startup_background("completed_lightweight")
+            return
         _mark_startup_background("preloading_sessions")
         if settings.startup_preload_sessions_in_background:
             for scope, token in (("paper", settings.tradier_paper_token), ("live", settings.tradier_live_token)):
@@ -294,6 +326,7 @@ async def _start_background_services() -> None:
                 _AUTO_CYCLE_STATE.get("loop_interval_sec"),
                 _AUTO_CYCLE_STATE.get("max_per_cycle"),
             )
+        _prewarm_quant_snapshot_caches()
         _mark_startup_background("completed")
     except asyncio.CancelledError:
         _mark_startup_background("cancelled")
@@ -359,6 +392,177 @@ _AUTO_CYCLE_STATE: dict = {
 _auto_cycle_task: asyncio.Task | None = None
 
 
+def _ensure_core_runtime_bootstrap() -> None:
+    global _portfolio, _strategies
+    if _portfolio is None:
+        from execution.portfolio import Portfolio
+
+        _portfolio = Portfolio(
+            initial_capital=10_000.0,
+            max_position_pct=settings.max_position_pct,
+            max_drawdown_pct=settings.max_drawdown_pct,
+        )
+        logger.info("Quant API bootstrap: internal portfolio initialized")
+    if "ma_cross" not in _strategies:
+        from strategies.ma_cross import MACrossStrategy
+
+        _strategies["ma_cross"] = MACrossStrategy(
+            name="ma_cross",
+            symbols=settings.assets,
+            timeframe=settings.primary_timeframe,
+            fast_period=10,
+            slow_period=50,
+        )
+        logger.info("Quant API bootstrap: default strategy registry initialized")
+
+
+def _lightweight_startup_enabled() -> bool:
+    return bool(settings.lightweight_startup)
+
+
+def _lightweight_live_update_payload(
+    *,
+    account_scope: str | None,
+    account_id: str | None,
+) -> dict[str, object]:
+    scope = str(account_scope or "paper").strip().lower() or "paper"
+    return {
+        "type": "quant.live_update",
+        "generated_at": datetime.utcnow().isoformat(),
+        "lightweight_mode": True,
+        "status": {
+            "ok": True,
+            "mode": "lightweight",
+            "account_scope": scope,
+            "account_id": account_id,
+        },
+        "canonical_snapshot": {
+            "account_scope": scope,
+            "account_id": account_id,
+            "source_label": "lightweight",
+            "balances": {},
+            "totals": {},
+            "positions": [],
+            "reconciliation": {"state": "deferred"},
+            "monitor_summary": {},
+            "simulators": {},
+        },
+        "monitor_summary": {},
+        "operation_status": {
+            "mode": "lightweight",
+            "account_scope": scope,
+            "auton_mode_active": False,
+            "failsafe": {
+                "active": False,
+                "reason": "lightweight_startup",
+            },
+        },
+        "scanner_report": {
+            "available": False,
+            "status": "deferred",
+            "reason": "lightweight_startup",
+            "activity": [],
+        },
+    }
+
+
+def _lightweight_operation_update_payload() -> dict[str, object]:
+    return {
+        "type": "quant.operation_update",
+        "generated_at": datetime.utcnow().isoformat(),
+        "lightweight_mode": True,
+        "operation_status": {
+            "mode": "lightweight",
+            "auton_mode_active": False,
+            "failsafe": {
+                "active": False,
+                "reason": "lightweight_startup",
+            },
+        },
+    }
+
+
+def _live_update_interval_sec() -> float:
+    # Protege el loop HTTP cuando el dashboard abre varias pestañas/conexiones.
+    return max(float(settings.tradier_live_update_interval_sec or 0), 5.0)
+
+
+def _lightweight_status_payload(
+    *,
+    account_scope: str | None,
+    account_id: str | None,
+) -> dict[str, object]:
+    scope = str(account_scope or "paper").strip().lower() or "paper"
+    return {
+        "account_scope": scope,
+        "account_id": account_id,
+        "uptime_sec": round(time.time() - _START_TIME, 1),
+        "active_strategies": _active_strategy_ids(),
+        "account_session": {
+            "account_scope": scope,
+            "account_id": account_id,
+            "mode": "lightweight",
+        },
+        "source": "lightweight",
+        "source_label": "Lightweight",
+        "balances": {},
+        "totals": {},
+        "pdt_status": {},
+        "reconciliation": {"state": "deferred"},
+        "lightweight_mode": True,
+    }
+
+
+def _lightweight_canonical_snapshot_payload(
+    *,
+    account_scope: str | None,
+    account_id: str | None,
+) -> dict[str, object]:
+    scope = str(account_scope or "paper").strip().lower() or "paper"
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "account_scope": scope,
+        "account_id": account_id,
+        "source": "lightweight",
+        "source_label": "Lightweight",
+        "balances": {},
+        "totals": {},
+        "positions": [],
+        "gross_exposure": 0.0,
+        "reconciliation": {"state": "deferred"},
+        "monitor_summary": {},
+        "simulators": {},
+        "lightweight_mode": True,
+    }
+
+
+def _lightweight_monitor_summary_payload(
+    *,
+    account_scope: str | None,
+    account_id: str | None,
+) -> dict[str, object]:
+    scope = str(account_scope or "paper").strip().lower() or "paper"
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "account_scope": scope,
+        "account_id": account_id,
+        "source": "lightweight",
+        "source_label": "Lightweight",
+        "account_session": {
+            "account_scope": scope,
+            "account_id": account_id,
+            "mode": "lightweight",
+        },
+        "balances": {},
+        "totals": {},
+        "alerts": [],
+        "strategies": [],
+        "reconciliation": {"state": "deferred"},
+        "simulators": {},
+        "lightweight_mode": True,
+    }
+
+
 def _auto_cycle_mark_stage(stage: str, **details: Any) -> None:
     timestamp = datetime.utcnow().isoformat()
     previous_stage = str(_AUTO_CYCLE_STATE.get("current_stage") or "idle")
@@ -383,6 +587,13 @@ def _auton_mode_requires_loop(config: dict[str, Any]) -> bool:
 def _ensure_auto_cycle_running() -> bool:
     global _auto_cycle_task
     if _AUTO_CYCLE_STATE.get("running") and _auto_cycle_task and not _auto_cycle_task.done():
+        return False
+    if _lightweight_startup_enabled() or not bool(settings.autocycle_auto_start):
+        logger.info(
+            "Auto-cycle autostart skipped: lightweight_startup=%s autocycle_auto_start=%s",
+            _lightweight_startup_enabled(),
+            bool(settings.autocycle_auto_start),
+        )
         return False
     op_config = _OPERATION_CENTER.get_config()
     if not _auton_mode_requires_loop(op_config):
@@ -472,6 +683,279 @@ def _active_strategy_ids() -> list[str]:
     return [k for k, v in _strategies.items() if getattr(v, "active", False)]
 
 
+def _snapshot_cache_key(kind: str, *, account_scope: str | None, account_id: str | None) -> str:
+    scope = str(account_scope or "paper").strip().lower() or "paper"
+    return f"{kind}:{scope}:{str(account_id or '').strip()}"
+
+
+def _snapshot_cache_get(cache_key: str) -> tuple[dict[str, object] | None, float | None, str | None]:
+    with _SNAPSHOT_CACHE_LOCK:
+        payload = deepcopy(_SNAPSHOT_CACHE.get(cache_key)) if cache_key in _SNAPSHOT_CACHE else None
+        ts = _SNAPSHOT_CACHE_AT.get(cache_key)
+        error = _SNAPSHOT_CACHE_ERRORS.get(cache_key)
+    age = (time.monotonic() - ts) if ts else None
+    return payload, age, error
+
+
+def _snapshot_cache_set(cache_key: str, payload: dict[str, object]) -> None:
+    with _SNAPSHOT_CACHE_LOCK:
+        _SNAPSHOT_CACHE[cache_key] = deepcopy(payload)
+        _SNAPSHOT_CACHE_AT[cache_key] = time.monotonic()
+        _SNAPSHOT_CACHE_ERRORS.pop(cache_key, None)
+
+
+def _snapshot_cache_set_error(cache_key: str, error: str) -> None:
+    with _SNAPSHOT_CACHE_LOCK:
+        _SNAPSHOT_CACHE_ERRORS[cache_key] = error
+
+
+def _snapshot_cache_mark(payload: dict[str, object], *, stale: bool, age_sec: float | None, error: str | None) -> dict[str, object]:
+    marked = deepcopy(payload)
+    marked["cache"] = {
+        "stale": bool(stale),
+        "age_sec": round(float(age_sec), 3) if age_sec is not None else None,
+        "last_error": error,
+    }
+    return marked
+
+
+def _websocket_client_key(websocket: WebSocket) -> str:
+    client = websocket.client
+    host = getattr(client, "host", None) or "unknown"
+    scope = str(websocket.query_params.get("account_scope") or "paper").strip().lower() or "paper"
+    return f"{host}:{scope}"
+
+
+async def _register_ws_connection(websocket: WebSocket) -> tuple[bool, str]:
+    client_key = _websocket_client_key(websocket)
+    stale: list[WebSocket] = []
+    with _WS_CLIENT_LOCK:
+        bucket = _WS_CLIENT_CONNECTIONS[client_key]
+        active = {ws for ws in bucket if getattr(ws, "application_state", None) != WebSocketState.DISCONNECTED}
+        if len(active) >= _WS_CLIENT_LIMIT:
+            stale = list(active)
+        else:
+            active.add(websocket)
+            _WS_CLIENT_CONNECTIONS[client_key] = active
+            return True, client_key
+
+    for ws in stale:
+        try:
+            await ws.close(code=1013, reason="Too many dashboard connections")
+        except Exception:
+            pass
+
+    with _WS_CLIENT_LOCK:
+        bucket = {ws for ws in _WS_CLIENT_CONNECTIONS.get(client_key, set()) if getattr(ws, "application_state", None) != WebSocketState.DISCONNECTED}
+        if len(bucket) >= _WS_CLIENT_LIMIT:
+            _WS_CLIENT_CONNECTIONS[client_key] = bucket
+            return False, client_key
+        bucket.add(websocket)
+        _WS_CLIENT_CONNECTIONS[client_key] = bucket
+    return True, client_key
+
+
+def _unregister_ws_connection(websocket: WebSocket, client_key: str | None) -> None:
+    if not client_key:
+        return
+    with _WS_CLIENT_LOCK:
+        bucket = _WS_CLIENT_CONNECTIONS.get(client_key)
+        if not bucket:
+            return
+        bucket.discard(websocket)
+        if bucket:
+            _WS_CLIENT_CONNECTIONS[client_key] = bucket
+        else:
+            _WS_CLIENT_CONNECTIONS.pop(client_key, None)
+
+
+def _snapshot_cache_start(cache_key: str, builder) -> threading.Thread | None:
+    with _SNAPSHOT_CACHE_LOCK:
+        current = _SNAPSHOT_CACHE_WORKERS.get(cache_key)
+        if current and current.is_alive():
+            return current
+
+        def _worker() -> None:
+            try:
+                payload = builder()
+                _snapshot_cache_set(cache_key, payload)
+            except Exception as exc:
+                logger.warning("Quant snapshot refresh failed for %s: %s", cache_key, exc)
+                _snapshot_cache_set_error(cache_key, str(exc))
+            finally:
+                with _SNAPSHOT_CACHE_LOCK:
+                    current_thread = _SNAPSHOT_CACHE_WORKERS.get(cache_key)
+                    if current_thread is threading.current_thread():
+                        _SNAPSHOT_CACHE_WORKERS.pop(cache_key, None)
+
+        worker = threading.Thread(target=_worker, name=f"quant-cache-{cache_key.replace(':', '-')}", daemon=True)
+        _SNAPSHOT_CACHE_WORKERS[cache_key] = worker
+        worker.start()
+        return worker
+
+
+async def _resolve_cached_payload(
+    *,
+    cache_key: str,
+    builder,
+    warmup_factory,
+    timeout_sec: float = 1.25,
+    ttl_sec: float = _SNAPSHOT_CACHE_TTL_SEC,
+    max_stale_sec: float = _SNAPSHOT_CACHE_MAX_STALE_SEC,
+) -> dict[str, object]:
+    cached, age_sec, error = _snapshot_cache_get(cache_key)
+    if cached is not None and age_sec is not None and age_sec <= ttl_sec:
+        return _snapshot_cache_mark(cached, stale=False, age_sec=age_sec, error=error)
+
+    _snapshot_cache_start(cache_key, builder)
+    if cached is not None and age_sec is not None and age_sec <= max_stale_sec:
+        return _snapshot_cache_mark(cached, stale=True, age_sec=age_sec, error=error)
+
+    try:
+        payload = await asyncio.wait_for(asyncio.to_thread(builder), timeout=timeout_sec)
+        _snapshot_cache_set(cache_key, payload)
+        return _snapshot_cache_mark(payload, stale=False, age_sec=0.0, error=None)
+    except Exception as exc:
+        logger.warning("Quant endpoint warmup fallback for %s: %s", cache_key, exc)
+        _snapshot_cache_set_error(cache_key, str(exc))
+        cached, age_sec, error = _snapshot_cache_get(cache_key)
+        if cached is not None:
+            return _snapshot_cache_mark(cached, stale=True, age_sec=age_sec, error=error)
+        return _snapshot_cache_mark(warmup_factory(), stale=True, age_sec=None, error=str(exc))
+
+
+def _prewarm_quant_snapshot_caches() -> None:
+    default_scope = "paper"
+    for kind, builder in (
+        ("status", lambda: _build_status_payload(account_scope=default_scope, account_id=None).model_dump()),
+        ("canonical", lambda: _canonical_snapshot_payload(account_scope=default_scope, account_id=None)),
+        ("positions", lambda: _tradier_positions_payload(account_scope=default_scope, account_id=None)),
+    ):
+        _snapshot_cache_start(_snapshot_cache_key(kind, account_scope=default_scope, account_id=None), builder)
+
+
+def _scope_account_type(account_scope: str | None) -> str | None:
+    scope = str(account_scope or "").strip().lower()
+    return scope if scope in {"paper", "live"} else None
+
+
+def _warmup_positions_payload(*, account_scope: str | None, account_id: str | None) -> dict[str, object]:
+    scope = str(account_scope or "paper").strip().lower() or "paper"
+    return {
+        "source": "warmup",
+        "source_label": "Tradier warmup",
+        "account_scope": scope,
+        "account_id": account_id,
+        "positions": [],
+        "open_positions": 0,
+        "total_pnl": 0.0,
+        "market_value": 0.0,
+        "gross_exposure": 0.0,
+        "reconciliation": {"state": "warming_up"},
+        "simulators": {},
+        "position_management": {"summary": {}, "watchlist": [], "alerts": []},
+        "exit_governance": {"summary": {}, "recommendations": [], "alerts": []},
+    }
+
+
+def _warmup_dashboard_overview_payload(*, account_scope: str | None, account_id: str | None) -> dict[str, object]:
+    scope = str(account_scope or "paper").strip().lower() or "paper"
+    return {
+        "equity": None,
+        "realized_pnl": 0.0,
+        "unrealized_pnl": 0.0,
+        "sharpe_ratio": None,
+        "win_rate_pct": None,
+        "profit_factor": None,
+        "expectancy": None,
+        "total_trades": 0,
+        "open_positions": 0,
+        "max_drawdown_pct": None,
+        "calmar_ratio": None,
+        "equity_curve": [],
+        "drawdown_curve": [],
+        "trade_pnls": [],
+        "monte_carlo": None,
+        "recent_trades": [],
+        "heatmap": [],
+        "daily_pnl_pct": None,
+        "source": "warmup",
+        "source_label": "Tradier warmup",
+        "account_scope": scope,
+        "account_id": account_id,
+        "balances": {},
+        "totals": {},
+        "reconciliation": {"state": "warming_up"},
+        "simulators": {},
+        "historical_source": {"label": f"Journal {scope}", "kind": "journal"},
+        "position_management": {"summary": {}, "watchlist": [], "alerts": []},
+        "exit_governance": {"summary": {}, "recommendations": [], "alerts": []},
+    }
+
+
+def _warmup_scanner_report_payload() -> dict[str, object]:
+    return {
+        "available": False,
+        "status": "warming_up",
+        "reason": "scanner_report_refresh_pending",
+        "activity": [],
+    }
+
+
+def _annotate_position_rows(
+    payload: dict[str, object],
+    *,
+    account_scope: str | None,
+) -> dict[str, object]:
+    account_type = _scope_account_type(account_scope)
+    position_management = _JOURNAL_PRO.position_management_snapshot(account_type=account_type, limit=20)
+    exit_governance = _JOURNAL_PRO.exit_governance_snapshot(account_type=account_type, limit=20)
+    watchlist_rows = {
+        str((item.get("symbol") or "")).strip().upper(): item
+        for item in (position_management.get("watchlist") or [])
+        if isinstance(item, dict) and str(item.get("symbol") or "").strip()
+    }
+    recommendation_rows = {
+        str((item.get("symbol") or "")).strip().upper(): item
+        for item in (exit_governance.get("recommendations") or [])
+        if isinstance(item, dict) and str(item.get("symbol") or "").strip()
+    }
+
+    positions: list[dict[str, object]] = []
+    for raw_position in payload.get("positions") or []:
+        if not isinstance(raw_position, dict):
+            continue
+        position = deepcopy(raw_position)
+        key = str(position.get("underlying") or position.get("symbol") or "").strip().upper()
+        watch = watchlist_rows.get(key, {})
+        recommendation = recommendation_rows.get(key, {})
+        position["management_status"] = watch.get("status") or "normal"
+        position["alert_reasons"] = list(watch.get("alert_reasons") or [])
+        position["holding_hours"] = watch.get("holding_hours")
+        position["open_r_multiple"] = watch.get("open_r_multiple")
+        position["thesis_drift_pct"] = watch.get("thesis_drift_pct")
+        position["risk_budget"] = watch.get("risk_budget")
+        position["symbol_heat_pct"] = watch.get("symbol_heat_pct")
+        position["exit_recommendation"] = recommendation.get("recommendation") or "hold"
+        position["exit_reason"] = recommendation.get("exit_reason") or "monitor_only"
+        position["exit_urgency"] = recommendation.get("urgency") or "low"
+        positions.append(position)
+
+    enriched = deepcopy(payload)
+    enriched["positions"] = positions
+    enriched["position_management"] = {
+        "summary": position_management.get("summary") or {},
+        "watchlist": position_management.get("watchlist") or [],
+        "alerts": position_management.get("alerts") or [],
+    }
+    enriched["exit_governance"] = {
+        "summary": exit_governance.get("summary") or {},
+        "recommendations": exit_governance.get("recommendations") or [],
+        "alerts": exit_governance.get("alerts") or [],
+    }
+    return enriched
+
+
 def _canonical_snapshot_payload(
     *,
     account_scope: str | None,
@@ -501,11 +985,12 @@ def _tradier_positions_payload(
     account_scope: str | None,
     account_id: str | None,
 ) -> dict[str, object]:
-    return _CANONICAL_SNAPSHOT.build_positions_payload(
+    payload = _CANONICAL_SNAPSHOT.build_positions_payload(
         account_scope=account_scope,
         account_id=account_id,
         internal_portfolio=_portfolio,
     )
+    return _annotate_position_rows(payload, account_scope=account_scope)
 
 
 def _equity_strategy_type_for_direction(direction: str | None) -> str:
@@ -553,6 +1038,53 @@ def _build_status_payload(
     return QuantStatusPayload.model_validate(payload)
 
 
+def _warmup_status_payload(*, account_scope: str | None, account_id: str | None) -> dict[str, object]:
+    payload = _lightweight_status_payload(account_scope=account_scope, account_id=account_id)
+    payload["source"] = "warmup"
+    payload["source_label"] = "Quant warmup"
+    payload["reconciliation"] = {"state": "warming_up"}
+    return payload
+
+
+async def _cached_status_payload(*, account_scope: str | None, account_id: str | None) -> dict[str, object]:
+    cache_key = _snapshot_cache_key("status", account_scope=account_scope, account_id=account_id)
+    return await _resolve_cached_payload(
+        cache_key=cache_key,
+        builder=lambda: _build_status_payload(account_scope=account_scope, account_id=account_id).model_dump(),
+        warmup_factory=lambda: _warmup_status_payload(account_scope=account_scope, account_id=account_id),
+    )
+
+
+async def _cached_canonical_snapshot_payload(*, account_scope: str | None, account_id: str | None) -> dict[str, object]:
+    cache_key = _snapshot_cache_key("canonical", account_scope=account_scope, account_id=account_id)
+    return await _resolve_cached_payload(
+        cache_key=cache_key,
+        builder=lambda: _canonical_snapshot_payload(account_scope=account_scope, account_id=account_id),
+        warmup_factory=lambda: _lightweight_canonical_snapshot_payload(account_scope=account_scope, account_id=account_id),
+    )
+
+
+async def _cached_positions_payload(*, account_scope: str | None, account_id: str | None) -> dict[str, object]:
+    cache_key = _snapshot_cache_key("positions", account_scope=account_scope, account_id=account_id)
+    return await _resolve_cached_payload(
+        cache_key=cache_key,
+        builder=lambda: _tradier_positions_payload(account_scope=account_scope, account_id=account_id),
+        warmup_factory=lambda: _warmup_positions_payload(account_scope=account_scope, account_id=account_id),
+    )
+
+
+async def _cached_scanner_report_payload() -> dict[str, object]:
+    cache_key = _snapshot_cache_key("scanner", account_scope="global", account_id=None)
+    return await _resolve_cached_payload(
+        cache_key=cache_key,
+        builder=lambda: _compact_scanner_report(_SCANNER.report(24)),
+        warmup_factory=_warmup_scanner_report_payload,
+        timeout_sec=1.0,
+        ttl_sec=10.0,
+        max_stale_sec=300.0,
+    )
+
+
 def _compact_monitor_summary(summary: dict[str, object]) -> dict[str, object]:
     strategies = []
     for item in list(summary.get("strategies") or [])[:8]:
@@ -589,6 +1121,29 @@ def _compact_monitor_summary(summary: dict[str, object]) -> dict[str, object]:
         "reconciliation": summary.get("reconciliation") or {},
         "simulators": summary.get("simulators") or {},
     }
+
+
+def _compact_live_canonical_snapshot(snapshot: dict[str, object]) -> dict[str, object]:
+    compact = deepcopy(snapshot)
+    positions = list(compact.get("positions") or [])
+    if positions:
+        compact["positions_count"] = len(positions)
+        compact["positions_truncated"] = True
+        compact["positions"] = []
+    compact["monitor_summary"] = _compact_monitor_summary(snapshot.get("monitor_summary") or {})
+    exit_governance = compact.get("exit_governance") or {}
+    if isinstance(exit_governance, dict):
+        compact["exit_governance"] = {
+            "summary": exit_governance.get("summary") or {},
+            "alerts": list(exit_governance.get("alerts") or [])[:8],
+        }
+    position_management = compact.get("position_management") or {}
+    if isinstance(position_management, dict):
+        compact["position_management"] = {
+            "summary": position_management.get("summary") or {},
+            "alerts": list(position_management.get("alerts") or [])[:8],
+        }
+    return compact
 
 
 def _compact_scanner_report(report: dict[str, object]) -> dict[str, object]:
@@ -640,8 +1195,11 @@ async def status(
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
-        payload = _build_status_payload(account_scope=account_scope, account_id=account_id)
-        return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
+        if _lightweight_startup_enabled():
+            payload = _lightweight_status_payload(account_scope=account_scope, account_id=account_id)
+            return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
+        payload = await _cached_status_payload(account_scope=account_scope, account_id=account_id)
+        return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as exc:
         logger.exception("Error building quant status")
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
@@ -657,7 +1215,10 @@ async def canonical_snapshot(
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
-        payload = _canonical_snapshot_payload(account_scope=account_scope, account_id=account_id)
+        if _lightweight_startup_enabled():
+            payload = _lightweight_canonical_snapshot_payload(account_scope=account_scope, account_id=account_id)
+            return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
+        payload = await _cached_canonical_snapshot_payload(account_scope=account_scope, account_id=account_id)
         return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as exc:
         logger.exception("Error building canonical snapshot")
@@ -832,16 +1393,18 @@ async def get_positions(
 ):
     """Retorna posiciones abiertas y resumen del portfolio."""
     _auth(x_api_key)
+    t0 = time.perf_counter()
     scope = str(account_scope or "").strip().lower()
     if scope in {"paper", "live"}:
         try:
-            return StdResponse(ok=True, data=_tradier_positions_payload(account_scope=scope, account_id=account_id))
+            payload = await _cached_positions_payload(account_scope=scope, account_id=account_id)
+            return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
         except Exception as exc:
             logger.exception("Error building Tradier positions payload")
-            return StdResponse(ok=False, error=str(exc))
+            return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
     if not _portfolio:
-        return StdResponse(ok=False, error="Portfolio no inicializado")
-    return StdResponse(ok=True, data=_portfolio.summary())
+        return StdResponse(ok=False, error="Portfolio no inicializado", ms=round((time.perf_counter() - t0) * 1000, 2))
+    return StdResponse(ok=True, data=_portfolio.summary(), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
 @app.get("/monitor/summary", response_model=StdResponse, tags=["Monitor"])
@@ -854,6 +1417,9 @@ async def monitor_summary(
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
+        if _lightweight_startup_enabled():
+            data = _lightweight_monitor_summary_payload(account_scope=account_scope, account_id=account_id)
+            return StdResponse(ok=True, data=data, ms=round((time.perf_counter() - t0) * 1000, 2))
         snapshot = _canonical_snapshot_payload(account_scope=account_scope, account_id=account_id)
         data = dict(snapshot.get("monitor_summary") or {})
         data["source"] = snapshot.get("source")
@@ -1088,7 +1654,27 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                             # strategy_type determina la dirección original de la posición
                             st = str(pos.get("strategy_type") or "equity_long").lower()
                             # long → cierre con sell; short → cierre con buy_to_cover
-                            close_side = "sell" if "long" in st else "buy_to_cover"
+                            if st not in {"equity_long", "equity_short", "untracked"}:
+                                logger.warning(
+                                    "[auto-cycle] exit candidate requires manual close build sym=%s strategy=%s reason=%s urgency=%s",
+                                    sym,
+                                    st,
+                                    pos.get("exit_reason"),
+                                    pos.get("urgency"),
+                                )
+                                try:
+                                    get_event_store().append("exit.manual_review_required", {
+                                        "symbol": sym,
+                                        "strategy_type": st,
+                                        "reason": pos.get("exit_reason"),
+                                        "urgency": pos.get("urgency"),
+                                        "journal_key": pos.get("journal_key"),
+                                        "recommendation": pos.get("recommendation"),
+                                    }, source="auto_cycle")
+                                except Exception:
+                                    pass
+                                continue
+                            close_side = "sell" if st != "equity_short" else "buy_to_cover"
                             close_order = OrderRequest(
                                 symbol=sym,
                                 side=close_side,  # type: ignore[arg-type]
@@ -2030,30 +2616,34 @@ async def _quant_live_updates_socket(websocket: WebSocket) -> None:
     if api_key != settings.api_key:
         await websocket.close(code=4401, reason="Invalid API key")
         return
+    allowed, client_key = await _register_ws_connection(websocket)
+    if not allowed:
+        await websocket.close(code=1013, reason="Too many dashboard connections")
+        return
     account_scope = websocket.query_params.get("account_scope")
     account_id = websocket.query_params.get("account_id")
     await websocket.accept()
     try:
         while True:
             try:
-                canonical_snapshot_payload = await asyncio.to_thread(
-                    _canonical_snapshot_payload,
+                if _lightweight_startup_enabled():
+                    await websocket.send_json(
+                        _lightweight_live_update_payload(
+                            account_scope=account_scope,
+                            account_id=account_id,
+                        )
+                    )
+                    await asyncio.sleep(_live_update_interval_sec())
+                    continue
+                canonical_snapshot_payload = await _cached_canonical_snapshot_payload(
                     account_scope=account_scope,
                     account_id=account_id,
                 )
-                status_payload = _build_status_payload(account_scope=account_scope, account_id=account_id)
-                operation_status_payload = _OPERATION_CENTER.status_lite()
-                scanner_report_payload = _compact_scanner_report(await asyncio.to_thread(_SCANNER.report, 24))
-                compact_monitor_summary = _compact_monitor_summary(canonical_snapshot_payload["monitor_summary"])
                 await websocket.send_json(
                     {
                         "type": "quant.live_update",
                         "generated_at": datetime.utcnow().isoformat(),
-                        "status": status_payload.model_dump(),
-                        "canonical_snapshot": canonical_snapshot_payload,
-                        "monitor_summary": compact_monitor_summary,
-                        "operation_status": operation_status_payload,
-                        "scanner_report": scanner_report_payload,
+                        "canonical_snapshot": _compact_live_canonical_snapshot(canonical_snapshot_payload),
                     }
                 )
             except Exception as exc:
@@ -2065,9 +2655,11 @@ async def _quant_live_updates_socket(websocket: WebSocket) -> None:
                         "error": str(exc),
                     }
                 )
-            await asyncio.sleep(max(settings.tradier_live_update_interval_sec, 2))
+            await asyncio.sleep(_live_update_interval_sec())
     except WebSocketDisconnect:
         return
+    finally:
+        _unregister_ws_connection(websocket, client_key)
 
 
 @app.websocket("/ws/live-updates")
@@ -2085,9 +2677,17 @@ async def _operation_stream_socket(websocket: WebSocket) -> None:
     if api_key != settings.api_key:
         await websocket.close(code=4401, reason="Invalid API key")
         return
+    allowed, client_key = await _register_ws_connection(websocket)
+    if not allowed:
+        await websocket.close(code=1013, reason="Too many dashboard connections")
+        return
     await websocket.accept()
     try:
         while True:
+            if _lightweight_startup_enabled():
+                await websocket.send_json(_lightweight_operation_update_payload())
+                await asyncio.sleep(_live_update_interval_sec())
+                continue
             payload = _OPERATION_CENTER.status_lite()
             await websocket.send_json(
                 {
@@ -2096,7 +2696,7 @@ async def _operation_stream_socket(websocket: WebSocket) -> None:
                     "operation_status": payload,
                 }
             )
-            await asyncio.sleep(max(settings.tradier_live_update_interval_sec, 2))
+            await asyncio.sleep(_live_update_interval_sec())
     except WebSocketDisconnect:
         return
     except Exception:
@@ -2105,6 +2705,8 @@ async def _operation_stream_socket(websocket: WebSocket) -> None:
             await websocket.close(code=1011, reason="Operation stream failure")
         except RuntimeError:
             pass
+    finally:
+        _unregister_ws_connection(websocket, client_key)
 
 
 @app.websocket("/ws/operation-stream")
@@ -2272,20 +2874,19 @@ async def dashboard_overview(
     """Agrega métricas de journal + posiciones para el dashboard de análisis gráfico."""
     _auth(x_api_key)
     t0 = time.perf_counter()
-    import math as _math
     import statistics as _stats
-    try:
+
+    def _build_dashboard_payload() -> dict[str, object]:
         scope = account_scope or "paper"
         canonical_snapshot = _canonical_snapshot_payload(account_scope=scope, account_id=account_id)
         canonical_balances = canonical_snapshot.get("balances") or {}
         canonical_totals = canonical_snapshot.get("totals") or {}
+        positions_payload = _tradier_positions_payload(account_scope=scope, account_id=account_id)
 
-        # Estadísticas del journal — estructura: {accounts: {live: {...}, paper: {...}}}
         j_stats = _JOURNAL.stats()
         accounts = j_stats.get("accounts", {}) if isinstance(j_stats, dict) else {}
         acct_stats = accounts.get(scope) or accounts.get("paper") or accounts.get("live") or {}
 
-        # Equity curve → formato {time: unix_sec, value}
         raw_curve = acct_stats.get("equity_curve") or []
         equity_curve = []
         initial_capital = 10_000.0
@@ -2299,25 +2900,20 @@ async def dashboard_overview(
             if unix:
                 equity_curve.append({"time": unix, "value": round(initial_capital + float(pt.get("equity", 0)), 2)})
 
-        # Drawdown desde equity curve
         drawdown_curve = []
         peak = initial_capital
         for pt in equity_curve:
-            v = pt["value"]
-            if v > peak:
-                peak = v
-            dd_pct = ((v - peak) / peak * 100) if peak > 0 else 0
+            value = pt["value"]
+            if value > peak:
+                peak = value
+            dd_pct = ((value - peak) / peak * 100) if peak > 0 else 0
             drawdown_curve.append({"time": pt["time"], "value": round(dd_pct, 4)})
 
-        # PnL list para histograma
         trade_pnls = [float(pt.get("pnl", 0)) for pt in raw_curve if pt.get("pnl") is not None]
-
-        # Calmar ratio
         realized_pnl = float(acct_stats.get("realized_pnl") or 0)
         max_dd = min((pt["value"] for pt in drawdown_curve), default=0)
         calmar = round(realized_pnl / abs(max_dd), 3) if max_dd < -0.001 else None
 
-        # Monte Carlo básico (bootstrap 200 paths de 50 steps)
         mc_data = None
         if len(trade_pnls) >= 5:
             import random as _rand
@@ -2326,11 +2922,11 @@ async def dashboard_overview(
             paths = []
             for _ in range(n_paths):
                 sample = _rand.choices(trade_pnls, k=n_steps)
-                cum = 0.0
+                cumulative = 0.0
                 path = []
                 for pnl in sample:
-                    cum += pnl
-                    path.append(round(cum, 2))
+                    cumulative += pnl
+                    path.append(round(cumulative, 2))
                 paths.append(path)
             transposed = list(zip(*paths))
             labels = list(range(1, n_steps + 1))
@@ -2338,16 +2934,26 @@ async def dashboard_overview(
             p05 = [round(sorted(step)[int(len(step) * 0.05)], 2) for step in transposed]
             p95 = [round(sorted(step)[int(len(step) * 0.95)], 2) for step in transposed]
             mc_var_95 = p05[-1] if p05 else None
-            mc_cvar_95 = round(sum(p for p in [pt[-1] for pt in paths] if p <= (mc_var_95 or 0)) / max(1, sum(1 for p in [pt[-1] for pt in paths] if p <= (mc_var_95 or 0))), 2) if mc_var_95 else None
-            mc_prob_profit = round(sum(1 for pt in paths if pt[-1] > 0) / n_paths * 100, 1)
-            mc_data = {"labels": labels, "median": median, "p05": p05, "p95": p95,
-                       "var_95": mc_var_95, "cvar_95": mc_cvar_95, "prob_profit": mc_prob_profit}
-
-        # Trades recientes para streak chart
-        recent_trades = [{"pnl": pt.get("pnl", 0)} for pt in raw_curve[-30:]]
-
-        # Heatmap de performance
-        heatmap = acct_stats.get("heatmap") or []
+            terminal_values = [path[-1] for path in paths]
+            mc_cvar_95 = (
+                round(
+                    sum(value for value in terminal_values if value <= (mc_var_95 or 0))
+                    / max(1, sum(1 for value in terminal_values if value <= (mc_var_95 or 0))),
+                    2,
+                )
+                if mc_var_95 is not None
+                else None
+            )
+            mc_prob_profit = round(sum(1 for path in paths if path[-1] > 0) / n_paths * 100, 1)
+            mc_data = {
+                "labels": labels,
+                "median": median,
+                "p05": p05,
+                "p95": p95,
+                "var_95": mc_var_95,
+                "cvar_95": mc_cvar_95,
+                "prob_profit": mc_prob_profit,
+            }
 
         payload = {
             "equity": round(float(canonical_balances.get("total_equity") or (initial_capital + realized_pnl)), 2),
@@ -2365,8 +2971,8 @@ async def dashboard_overview(
             "drawdown_curve": drawdown_curve,
             "trade_pnls": trade_pnls,
             "monte_carlo": mc_data,
-            "recent_trades": recent_trades,
-            "heatmap": heatmap,
+            "recent_trades": [{"pnl": pt.get("pnl", 0)} for pt in raw_curve[-30:]],
+            "heatmap": acct_stats.get("heatmap") or [],
             "daily_pnl_pct": None,
             "source": canonical_snapshot.get("source"),
             "source_label": canonical_snapshot.get("source_label"),
@@ -2380,7 +2986,19 @@ async def dashboard_overview(
                 "label": f"Journal {scope}",
                 "kind": "journal",
             },
+            "position_management": positions_payload.get("position_management") or {"summary": {}, "watchlist": [], "alerts": []},
+            "exit_governance": positions_payload.get("exit_governance") or {"summary": {}, "recommendations": [], "alerts": []},
         }
+        return payload
+
+    try:
+        cache_key = _snapshot_cache_key("overview", account_scope=account_scope, account_id=account_id)
+        payload = await _resolve_cached_payload(
+            cache_key=cache_key,
+            builder=_build_dashboard_payload,
+            warmup_factory=lambda: _warmup_dashboard_overview_payload(account_scope=account_scope, account_id=account_id),
+            timeout_sec=1.5,
+        )
         return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as e:
         logger.exception("Error en dashboard/overview")

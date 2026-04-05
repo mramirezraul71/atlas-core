@@ -82,6 +82,16 @@ def _effective_position_effect(body: OrderRequest) -> Literal["open", "close"]:
 def _normalize_option_side(side: str, *, position_effect: Literal["open", "close"]) -> str:
     normalized = side.lower()
     if normalized in _EXPLICIT_OPTION_SIDES:
+        if position_effect == "close":
+            if normalized == "buy_to_open":
+                return "buy_to_close"
+            if normalized == "sell_to_open":
+                return "sell_to_close"
+        elif position_effect == "open":
+            if normalized == "buy_to_close":
+                return "buy_to_open"
+            if normalized == "sell_to_close":
+                return "sell_to_open"
         return normalized
     if normalized == "buy":
         return "buy_to_open" if position_effect == "open" else "buy_to_close"
@@ -202,6 +212,28 @@ def route_order_to_tradier(body: OrderRequest) -> dict[str, Any]:
         account_id=body.account_id,
     )
     order_class, position_effect, payload = build_tradier_order_payload(body)
+
+    if position_effect == "open":
+        if order_class in {"option", "multileg", "combo"}:
+            option_buying_power = _safe_float(session.option_buying_power, 0.0)
+            if option_buying_power <= 0.0:
+                raise TradierOrderBlocked(
+                    "Option buying power is 0. Opening option order blocked.",
+                    payload={
+                        "account_session": session.to_dict(),
+                        "request_payload": payload,
+                    },
+                )
+        elif order_class == "equity":
+            cash_available = _safe_float(session.cash_available, 0.0)
+            if cash_available <= 0.0 and str(body.side or "").lower() in {"buy", "sell_short"}:
+                raise TradierOrderBlocked(
+                    "Cash buying power is 0. Opening equity order blocked.",
+                    payload={
+                        "account_session": session.to_dict(),
+                        "request_payload": payload,
+                    },
+                )
 
     pdt_status = None
     preview_probe = None

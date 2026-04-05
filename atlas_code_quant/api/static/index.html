@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Atlas Code-Quant · v1.0.0</title>
   <script>
-    const _QVER = '20260327e';
+    const _QVER = '20260403f';
     window.QUANT_ACCOUNT_SCOPE = 'paper';
     window.QUANT_ACCOUNT_ID = '';
     // Detecta la base de los assets según el puerto desde el que se sirve
@@ -226,6 +226,14 @@
             <span class="kpi-label">Circuit Breaker</span>
             <span class="kpi-value" id="pos-cb">OK</span>
           </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Exit Now</span>
+            <span class="kpi-value" id="pos-exit-now">0</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">De-risk</span>
+            <span class="kpi-value" id="pos-de-risk">0</span>
+          </div>
         </div>
         <div class="panel">
           <div class="panel-body">
@@ -233,10 +241,11 @@
               <thead><tr>
                 <th>Símbolo</th><th>Lado</th><th>Entrada</th><th>Actual</th>
                 <th>Unidades</th><th>PnL $</th><th>PnL %</th><th>Log Ret</th>
-                <th>SL</th><th>TP</th><th>ATR</th>
+                <th>SL</th><th>TP</th><th>ATR</th><th>R abierto</th>
+                <th>Salida</th><th>Urgencia</th><th>Criterio</th>
               </tr></thead>
               <tbody id="positions-body">
-                <tr class="empty-row"><td colspan="11">Sin posiciones abiertas</td></tr>
+                <tr class="empty-row"><td colspan="15">Sin posiciones abiertas</td></tr>
               </tbody>
             </table>
           </div>

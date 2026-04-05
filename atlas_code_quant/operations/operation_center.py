@@ -14,6 +14,7 @@ from api.schemas import OrderRequest, TradierOrderLeg
 from backtesting.winning_probability import SUPPORTED_STRATEGIES, StrategyLeg, _capital_at_risk, _safe_float, get_winning_probability
 from config.settings import settings
 from execution.tradier_controls import resolve_account_session
+from execution.tradier_execution import build_tradier_order_payload
 from learning.adaptive_policy import AdaptiveLearningService
 from learning.trading_implementation_scorecard import (
     build_trading_implementation_scorecard,
@@ -54,8 +55,8 @@ _LEVEL4_CREDIT_STRATEGIES: set[str] = {
 _DEFAULT_STATE = {
     "account_scope": "paper",
     "paper_only": True,
-    "auton_mode": "paper_autonomous",
-    "executor_mode": "paper_api",
+    "auton_mode": "off",
+    "executor_mode": "disabled",
     "vision_mode": "direct_nexus",
     "require_operator_present": False,
     "operator_present": True,
@@ -68,10 +69,10 @@ _DEFAULT_STATE = {
     "operational_error_limit": 10,
     "operational_error_count": 0,
     "operational_error_day": None,
-    "fail_safe_active": False,
-    "fail_safe_reason": None,
+    "fail_safe_active": True,
+    "fail_safe_reason": "safe_default_bootstrap",
     "last_operational_error": None,
-    "notes": "Plano de control orientado a simulada con camara directa robot",
+    "notes": "Default safe bootstrap: autonomy disabled until operator enables it.",
     "last_decision": None,
     "last_candidate": None,
     "attribution_integrity_alert_active": False,
@@ -758,6 +759,105 @@ class OperationCenter:
             return str(int(numeric))
         return f"{numeric:.8f}".rstrip("0").rstrip(".")
 
+    @staticmethod
+    def _estimate_equity_opening_notional(
+        order: OrderRequest,
+        *,
+        entry_validation: dict[str, Any],
+    ) -> float | None:
+        if not OperationCenter._is_opening_equity_order(order):
+            return None
+        quote = entry_validation.get("quote") or {}
+        reference_candidates = (
+            quote.get("basis_price"),
+            quote.get("mid"),
+            quote.get("last"),
+            quote.get("ask"),
+            order.entry_reference_price,
+        )
+        reference_price = 0.0
+        for candidate in reference_candidates:
+            price = _safe_float(candidate, 0.0)
+            if price > 0:
+                reference_price = price
+                break
+        if reference_price <= 0:
+            return None
+        quantity = abs(_safe_float(order.size, 0.0))
+        if quantity <= 0:
+            return None
+        return round(reference_price * quantity, 2)
+
+    @staticmethod
+    def _uses_option_buying_power(order: OrderRequest, strategy_type: str | None) -> bool:
+        asset_class = str(order.asset_class or "auto").strip().lower()
+        if asset_class in {"option", "multileg", "combo"}:
+            return True
+        if bool(order.option_symbol) or bool(order.legs):
+            return True
+        normalized_strategy = str(strategy_type or "").strip().lower()
+        return bool(normalized_strategy and normalized_strategy not in {"equity_long", "equity_short"})
+
+    @staticmethod
+    def _strategy_leg_side_map(position_effect: str) -> dict[str, str]:
+        normalized = str(position_effect or "open").strip().lower()
+        if normalized == "close":
+            return {"long": "sell_to_close", "short": "buy_to_close"}
+        return {"long": "buy_to_open", "short": "sell_to_open"}
+
+    def _build_execution_preflight(
+        self,
+        *,
+        order: OrderRequest,
+        action: Literal["evaluate", "preview", "submit"],
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "stage": "execution_preflight",
+            "status": "not_requested",
+            "blocked": False,
+            "critical_issues": [],
+            "warnings": [],
+            "route": {},
+        }
+        if action not in {"preview", "submit"}:
+            return payload
+        try:
+            order_class, position_effect, request_payload = build_tradier_order_payload(order)
+            payload["route"] = {
+                "order_class": order_class,
+                "position_effect": position_effect,
+                "request_payload": request_payload,
+            }
+            requested_effect = str(order.position_effect or "").strip().lower()
+            request_side = str(request_payload.get("side") or "").strip().lower()
+            request_leg_sides = [
+                str(value or "").strip().lower()
+                for key, value in request_payload.items()
+                if str(key).startswith("side[")
+            ]
+            if requested_effect == "close" and position_effect != "close":
+                payload["critical_issues"].append(
+                    "Execution preflight resolved an opening route for a close order."
+                )
+            if requested_effect == "close":
+                if request_side in {"buy_to_open", "sell_to_open"}:
+                    payload["critical_issues"].append(
+                        "Execution preflight produced an opening single-leg side for a close order."
+                    )
+                if any(side in {"buy_to_open", "sell_to_open"} for side in request_leg_sides):
+                    payload["critical_issues"].append(
+                        "Execution preflight produced opening multileg sides for a close order."
+                    )
+        except Exception as exc:
+            payload["critical_issues"].append(f"Execution preflight failed: {exc}")
+
+        if payload["critical_issues"]:
+            payload["blocked"] = True
+            payload["status"] = "blocked"
+        else:
+            payload["status"] = "ok"
+        return payload
+
     def _build_execution_quality(
         self,
         *,
@@ -1244,6 +1344,8 @@ class OperationCenter:
         monitor = self.tracker.build_summary(account_scope=scope)  # type: ignore[arg-type]
         evaluation_timings["monitor_summary_sec"] = round(time.perf_counter() - monitor_started, 4)
         balances = monitor.get("balances") or {}
+        option_bp = _safe_float(balances.get("option_buying_power"), 0.0)
+        cash = _safe_float(balances.get("cash"), 0.0)
         pdt_status = monitor.get("pdt_status") or {}
         reconciliation = self._load_reconciliation(account_scope=scope, account_id=order_copy.account_id)
         open_symbols = self._extract_open_symbols(monitor)
@@ -1295,6 +1397,24 @@ class OperationCenter:
         )
         reasons.extend(list(entry_validation.get("reasons") or []))
         warnings.extend(list(entry_validation.get("warnings") or []))
+        estimated_open_notional = self._estimate_equity_opening_notional(
+            order_copy,
+            entry_validation=entry_validation,
+        )
+        if (
+            opening_equity_order
+            and not is_close_order
+            and action in {"preview", "submit"}
+            and estimated_open_notional is not None
+        ):
+            available_buying_power = max(option_bp, cash, 0.0)
+            if available_buying_power <= 0:
+                reasons.append("Current buying power es 0. La apertura de equity queda bloqueada.")
+            elif estimated_open_notional > available_buying_power:
+                reasons.append(
+                    "Buying power insuficiente para la apertura de equity: "
+                    f"requiere {estimated_open_notional:.2f} y solo hay {available_buying_power:.2f}."
+                )
 
         market_context_gate = self._build_market_context_gate(
             order=order_copy,
@@ -1312,6 +1432,7 @@ class OperationCenter:
         risk_dollars = None
         bpr_pct = None
         legs: list = []
+        uses_option_bp = self._uses_option_buying_power(order_copy, strategy_type)
         if strategy_type and strategy_type in SUPPORTED_STRATEGIES:
             probability_started = time.perf_counter()
             precomputed_probability = dict(order_copy.probability_payload or {})
@@ -1347,10 +1468,7 @@ class OperationCenter:
             spot = _safe_float((probability_payload.get("market_snapshot") or {}).get("spot"), 0.0)
             risk_per_unit = _capital_at_risk(strategy_type, legs, spot) * 100.0
             risk_dollars = round(risk_per_unit * max(float(order_copy.size), 1.0), 4)
-            buying_power = max(
-                _safe_float(balances.get("option_buying_power"), 0.0),
-                _safe_float(balances.get("cash"), 0.0),
-            )
+            buying_power = max(option_bp, 0.0) if uses_option_bp else max(cash, option_bp, 0.0)
             bpr_pct = round((risk_dollars / buying_power) * 100.0, 2) if buying_power > 0 else None
             min_win_rate = _safe_float(config.get("min_auton_win_rate_pct"), 35.0)
             if _safe_float(probability_payload.get("win_rate_pct"), 0.0) < min_win_rate:
@@ -1397,6 +1515,14 @@ class OperationCenter:
         allowed = not reasons
         execution_result: dict[str, Any] | None = None
         operational_failure_reason: str | None = None
+        execution_preflight: dict[str, Any] = {
+            "stage": "execution_preflight",
+            "status": "not_requested",
+            "blocked": False,
+            "critical_issues": [],
+            "warnings": [],
+            "route": {},
+        }
         if allowed and action in {"preview", "submit"}:
             if scope != "paper" and bool(config.get("paper_only", True)):
                 allowed = False
@@ -1405,7 +1531,7 @@ class OperationCenter:
                 order_copy.preview = action != "submit"
                 if not order_copy.legs and strategy_type and strategy_type not in {"equity_long", "equity_short"}:
                     if legs and len(legs) >= 2:
-                        _side_map = {"long": "buy_to_open", "short": "sell_to_open"}
+                        _side_map = self._strategy_leg_side_map(order_copy.position_effect or "open")
                         order_copy.legs = [
                             TradierOrderLeg(
                                 option_symbol=leg.symbol,
@@ -1428,6 +1554,23 @@ class OperationCenter:
                         allowed = False
                         reasons.append(f"Estrategia {strategy_type} requiere legs pero el probability genero {len(legs)} (minimo 2).")
                         logger.warning("[evaluate_candidate] Insufficient legs (%d) for %s (%s) — blocking execution", len(legs), order_copy.symbol, strategy_type)
+                if allowed and not is_close_order and uses_option_bp and action in {"preview", "submit"}:
+                    if option_bp <= 0.0:
+                        allowed = False
+                        reasons.append("Option buying power es 0. La apertura de opciones queda bloqueada.")
+                    elif risk_dollars is not None and risk_dollars > option_bp:
+                        allowed = False
+                        reasons.append(
+                            f"Risk budget insuficiente: requiere {risk_dollars:.2f} y option buying power disponible es {option_bp:.2f}."
+                        )
+                if allowed:
+                    execution_preflight = self._build_execution_preflight(order=order_copy, action=action)
+                    warnings.extend(list(execution_preflight.get("warnings") or []))
+                    if execution_preflight.get("blocked"):
+                        allowed = False
+                        reasons.extend(
+                            [f"Execution preflight blocked: {issue}" for issue in (execution_preflight.get("critical_issues") or [])]
+                        )
                 if not allowed:
                     logger.info("[evaluate_candidate] Skipping executor — order already blocked for %s", order_copy.symbol)
                 else:
@@ -1455,10 +1598,8 @@ class OperationCenter:
         warnings.extend(list(execution_quality.get("warnings") or []))
 
         projected_position_count = len(monitor.get("strategies") or []) + (1 if action in {"preview", "submit"} and allowed else 0)
-        option_bp = _safe_float(balances.get("option_buying_power"), 0.0)
-        cash = _safe_float(balances.get("cash"), 0.0)
         equity = _safe_float(balances.get("total_equity"), _safe_float(balances.get("equity"), 0.0))
-        bp_base = max(option_bp, cash, 0.0)
+        bp_base = max(option_bp, 0.0) if (uses_option_bp and not is_close_order) else max(option_bp, cash, 0.0)
         projected_bp = max(bp_base - _safe_float(risk_dollars, 0.0), 0.0)
         projected_risk_usage_pct = round((_safe_float(risk_dollars, 0.0) / bp_base) * 100.0, 2) if bp_base > 0 else None
         approval_lane = "ligero"
@@ -1499,6 +1640,12 @@ class OperationCenter:
                     "status": entry_validation.get("status"),
                     "blocked": bool(entry_validation.get("blocked")),
                 },
+                "capital_guard": {
+                    "status": "evaluated" if estimated_open_notional is not None else "not_applicable",
+                    "estimated_open_notional": estimated_open_notional,
+                    "available_buying_power": round(max(option_bp, cash, 0.0), 2),
+                    "blocked": any("buying power" in str(reason).lower() for reason in reasons),
+                },
                 "market_context": {
                     "status": market_context_gate.get("status"),
                     "blocked": bool(market_context_gate.get("blocked")),
@@ -1507,6 +1654,10 @@ class OperationCenter:
                 "visual_entry_gate": {
                     "status": visual_entry_gate.get("status"),
                     "degraded": bool(visual_entry_gate.get("degraded")),
+                },
+                "execution_preflight": {
+                    "status": execution_preflight.get("status"),
+                    "blocked": bool(execution_preflight.get("blocked")),
                 },
                 "execution_quality": {
                     "status": execution_quality.get("status"),
@@ -1531,6 +1682,7 @@ class OperationCenter:
             "market_context": order_copy.market_context or {},
             "market_context_gate": market_context_gate,
             "visual_entry_gate": visual_entry_gate,
+            "execution_preflight": execution_preflight,
             "execution_quality": execution_quality,
             "evaluation_timings": evaluation_timings,
             "monitor_summary": {

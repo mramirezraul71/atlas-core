@@ -18,7 +18,7 @@ if (!localStorage.getItem('quant_api_key') && DEFAULT_LOCAL_API_KEY) {
 }
 
 // ── HTTP helper ────────────────────────────────────────────────────
-const _FETCH_TIMEOUT_MS = 5000;
+const _FETCH_TIMEOUT_MS = 12000;
 
 function _fetchWithTimeout(url, options = {}) {
   const ctrl = new AbortController();
@@ -142,9 +142,19 @@ class QuantWS {
     this._listeners = {};
     this._reconnectDelay = 2000;
     this._maxDelay = 30000;
+    this._connectTimer = null;
+    this._explicitlyClosed = false;
   }
 
   connect() {
+    if (document.visibilityState === 'hidden') return;
+    const readyState = this._ws?.readyState;
+    if (readyState === WebSocket.OPEN || readyState === WebSocket.CONNECTING) return;
+    this._explicitlyClosed = false;
+    if (this._connectTimer) {
+      clearTimeout(this._connectTimer);
+      this._connectTimer = null;
+    }
     const scope = window.QUANT_ACCOUNT_SCOPE || 'paper';
     const accountId = window.QUANT_ACCOUNT_ID || '';
     const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -160,6 +170,7 @@ class QuantWS {
 
     this._ws.onopen = () => {
       this._reconnectDelay = 2000;
+      window._quantWsConnected = true;
       document.getElementById('ws-dot')?.classList.add('connected');
       document.getElementById('ws-dot')?.classList.remove('error');
       this._emit('connected');
@@ -174,20 +185,36 @@ class QuantWS {
     };
 
     this._ws.onclose = () => {
+      window._quantWsConnected = false;
       document.getElementById('ws-dot')?.classList.remove('connected');
       this._emit('disconnected');
+      this._ws = null;
+      if (this._explicitlyClosed) return;
       // Si el backend está offline usa delay mayor para no saturar la consola
       const backendDown = window._backendOnline === false;
       this._reconnectDelay = Math.min(
         this._reconnectDelay * (backendDown ? 2 : 1.5),
         this._maxDelay
       );
-      setTimeout(() => this.connect(), this._reconnectDelay);
+      this._connectTimer = setTimeout(() => this.connect(), this._reconnectDelay);
     };
 
     this._ws.onerror = () => {
       document.getElementById('ws-dot')?.classList.add('error');
     };
+  }
+
+  close() {
+    this._explicitlyClosed = true;
+    window._quantWsConnected = false;
+    if (this._connectTimer) {
+      clearTimeout(this._connectTimer);
+      this._connectTimer = null;
+    }
+    if (this._ws && (this._ws.readyState === WebSocket.OPEN || this._ws.readyState === WebSocket.CONNECTING)) {
+      this._ws.close(1000, 'Dashboard hidden');
+    }
+    this._ws = null;
   }
 
   on(event, cb) {

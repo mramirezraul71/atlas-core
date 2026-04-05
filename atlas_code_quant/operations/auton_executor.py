@@ -14,10 +14,10 @@ from execution.tradier_execution import route_order_to_tradier
 
 
 _DEFAULT_STATE = {
-    "mode": "paper_api",
-    "kill_switch_active": False,
+    "mode": "disabled",
+    "kill_switch_active": True,
     "last_action": None,
-    "notes": "Ejecutor orientado a simulada. La automatizacion de escritorio solo esta en simulacion.",
+    "notes": "Safe default bootstrap: executor disabled until operator enables it.",
 }
 
 
