@@ -18,6 +18,9 @@ function initNav() {
 }
 
 function onViewActivated(view) {
+  if (window.AtlasCharts && view !== 'analytics') {
+    AtlasCharts.hide();
+  }
   switch (view) {
     case 'overview':   loadOverview(); break;
     case 'positions':  loadPositions(); break;
@@ -25,9 +28,17 @@ function onViewActivated(view) {
     case 'backtest':   /* user-triggered */ break;
     case 'journal':    loadJournal(); break;
     case 'rl':         loadRL(); break;
-    case 'visual':     /* user-triggered */ break;
+    case 'visual':     loadVisual(); break;
     case 'alerts':     loadAlerts(); break;
-    case 'analytics':  if (window.AtlasCharts) AtlasCharts.init(); break;
+    case 'analytics':
+      if (window.AtlasCharts) {
+        if (window.__atlasChartsStarted) AtlasCharts.show();
+        else {
+          window.__atlasChartsStarted = true;
+          AtlasCharts.init();
+        }
+      }
+      break;
   }
 }
 
@@ -66,6 +77,24 @@ const fmt = {
 
 const QUANT_SCOPE = window.QUANT_ACCOUNT_SCOPE || 'paper';
 const QUANT_ACCOUNT_ID = window.QUANT_ACCOUNT_ID || '';
+window._quantWsConnected = false;
+let _latestCanonicalSnapshot = null;
+let _lastViewRefreshAt = 0;
+let _healthRequest = null;
+let _overviewRequest = null;
+let _journalRequest = null;
+let _positionsRequest = null;
+let _scannerRequest = null;
+let _rlRequest = null;
+let _alertsRequest = null;
+let _visualRequest = null;
+let _latestPositionsSnapshot = null;
+let _latestScannerState = null;
+let _latestJournalState = null;
+let _latestAlertsState = null;
+let _latestVisualState = null;
+let _lastOverviewSuccessAt = 0;
+let _healthFailures = 0;
 
 function colorClass(val) {
   if (val == null) return '';
@@ -91,11 +120,15 @@ function simulatorSummary(simulators) {
 
 function renderCanonicalMeta(snapshot) {
   if (!snapshot) return;
+  _latestCanonicalSnapshot = snapshot;
   const totals = snapshot.totals || {};
   const balances = snapshot.balances || {};
   const reconciliation = snapshot.reconciliation || {};
+  const sourceLabel = snapshot.lightweight_mode
+    ? `${snapshot.source_label || 'Quant'} · lightweight`
+    : (snapshot.source_label || 'Tradier');
   document.getElementById('chip-source').textContent =
-    `${snapshot.source_label || 'Tradier'} · ${snapshot.account_scope || QUANT_SCOPE}`;
+    `${sourceLabel} · ${snapshot.account_scope || QUANT_SCOPE}`;
   document.getElementById('chip-sync').textContent = syncLabel(reconciliation);
   document.getElementById('chip-positions').textContent =
     `${totals.positions || 0} pos`;
@@ -112,11 +145,251 @@ function renderCanonicalMeta(snapshot) {
   if (posSync) posSync.textContent = syncLabel(reconciliation);
 }
 
+function isLightweightSnapshot(snapshot) {
+  return Boolean(snapshot?.lightweight_mode || snapshot?.source === 'lightweight');
+}
+
+function setEmptyRow(tbodyId, colspan, message) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  tbody.innerHTML = `<tr class="empty-row"><td colspan="${colspan}">${message}</td></tr>`;
+}
+
+function markDegradedChip(id, label) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = label;
+}
+
+function useCachedModuleState(message) {
+  toast(message, 'warning', 2500);
+}
+
+function notifyAtlas(method, ...args) {
+  try {
+    const notifier = window.AtlasNotifications;
+    if (!notifier || !notifier.enabled || typeof notifier[method] !== 'function') return false;
+    return Boolean(notifier[method](...args));
+  } catch (_) {
+    return false;
+  }
+}
+
+function hasInFlightModuleRequest() {
+  return Boolean(
+    _overviewRequest ||
+    _journalRequest ||
+    _positionsRequest ||
+    _scannerRequest ||
+    _rlRequest ||
+    _alertsRequest ||
+    _visualRequest
+  );
+}
+
+let _lightweightWarned = false;
+function maybeWarnLightweight(snapshot) {
+  if (!isLightweightSnapshot(snapshot) || _lightweightWarned) return;
+  _lightweightWarned = true;
+  toast('Quant está en modo lightweight: la analítica rica queda diferida hasta relanzar el motor completo.', 'error', 6000);
+}
+
+function exitRecommendationLabel(value) {
+  const normalized = String(value || 'hold').toLowerCase();
+  if (normalized === 'exit_now') return 'Salir ya';
+  if (normalized === 'de_risk') return 'Reducir';
+  if (normalized === 'take_profit') return 'Tomar profit';
+  return 'Mantener';
+}
+
+function urgencyLabel(value) {
+  const normalized = String(value || 'low').toLowerCase();
+  if (normalized === 'high') return 'Alta';
+  if (normalized === 'medium') return 'Media';
+  return 'Baja';
+}
+
+function exitReasonLabel(value, reasons = []) {
+  const normalized = String(value || '').toLowerCase();
+  if (normalized === 'hard_stop_loss_r') return 'Stop R';
+  if (normalized === 'hard_dollar_loss') return 'Pérdida USD';
+  if (normalized === 'thesis_invalidated') return 'Tesis rota';
+  if (normalized === 'time_stop') return 'Time stop';
+  if (normalized === 'profit_target') return 'Take profit';
+  if (normalized === 'book_concentration') return 'Concentración';
+  if (normalized === 'protect_open_profit') return 'Proteger ganancia';
+  if (Array.isArray(reasons) && reasons.length) return reasons.join(', ');
+  return '--';
+}
+
+function renderPositionsTable(snapshot) {
+  const positions = snapshot?.positions || [];
+  const tbody = document.getElementById('positions-body');
+  if (!tbody) return;
+  if (Array.isArray(snapshot?.positions)) {
+    _latestPositionsSnapshot = snapshot;
+  }
+
+  const exitSummary = snapshot?.exit_governance?.summary || {};
+  document.getElementById('pos-count').textContent = positions.length;
+  document.getElementById('pos-exit-now').textContent = exitSummary.exit_now_count || 0;
+  document.getElementById('pos-de-risk').textContent = exitSummary.de_risk_count || 0;
+
+  if (!positions.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="15">Sin posiciones abiertas</td></tr>';
+    document.getElementById('pos-unrealized').textContent = fmt.usd(0);
+    document.getElementById('pos-exposure').textContent = fmt.usd(snapshot?.gross_exposure || 0);
+    document.getElementById('pos-cb').textContent = syncLabel(snapshot?.reconciliation);
+    return;
+  }
+
+  let totalUnrealized = 0;
+  tbody.innerHTML = positions.map((p) => {
+    const pnl = p.unrealized_pnl || 0;
+    totalUnrealized += pnl;
+    const pnlCls = pnl >= 0 ? 'green' : 'red';
+    const recommendation = exitRecommendationLabel(p.exit_recommendation);
+    const urgency = urgencyLabel(p.exit_urgency);
+    const reason = exitReasonLabel(p.exit_reason, p.alert_reasons || []);
+    const openR = p.open_r_multiple == null ? '--' : fmt.num(p.open_r_multiple, 2);
+    const recommendationClass =
+      String(p.exit_recommendation || '').toLowerCase() === 'exit_now'
+        ? 'red'
+        : String(p.exit_recommendation || '').toLowerCase() === 'de_risk'
+          ? 'accent'
+          : String(p.exit_recommendation || '').toLowerCase() === 'take_profit'
+            ? 'green'
+            : '';
+    return `<tr>
+      <td class="accent">${p.symbol}</td>
+      <td>${p.side || '--'}</td>
+      <td>${fmt.usd(p.entry_price)}</td>
+      <td>${fmt.usd(p.current_price)}</td>
+      <td>${fmt.num(p.quantity, 4)}</td>
+      <td class="${pnlCls}">${fmt.usd(pnl)}</td>
+      <td class="${pnlCls}">${fmt.pct(p.pnl_pct)}</td>
+      <td>${fmt.num(p.log_return, 4)}</td>
+      <td class="red">${fmt.usd(p.stop_loss)}</td>
+      <td class="green">${fmt.usd(p.take_profit)}</td>
+      <td>${fmt.num(p.atr, 4)}</td>
+      <td>${openR}</td>
+      <td class="${recommendationClass}">${recommendation}</td>
+      <td>${urgency}</td>
+      <td title="${reason}">${reason}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('pos-unrealized').textContent = fmt.usd(totalUnrealized);
+  document.getElementById('pos-unrealized').className =
+    `kpi-value ${totalUnrealized >= 0 ? 'green' : 'red'}`;
+  document.getElementById('pos-exposure').textContent = fmt.usd(snapshot?.gross_exposure || 0);
+  document.getElementById('pos-cb').textContent = syncLabel(snapshot?.reconciliation);
+}
+
 function renderOverviewHistory(meta) {
   const ovHistory = document.getElementById('ov-history-badge');
   if (!ovHistory) return;
   const label = meta?.historical_source?.label || 'Histórico --';
   ovHistory.textContent = label;
+}
+
+function pickJournalAccount(statsPayload, scope = QUANT_SCOPE) {
+  const accounts = statsPayload?.accounts || {};
+  return accounts?.[scope] || accounts?.paper || accounts?.live || {};
+}
+
+function normalizeJournalEntries(entriesPayload) {
+  const items = Array.isArray(entriesPayload?.items)
+    ? entriesPayload.items
+    : Array.isArray(entriesPayload)
+      ? entriesPayload
+      : [];
+
+  return items.map((entry) => {
+    const realized = Number(entry?.realized_pnl ?? entry?.pnl ?? 0);
+    const unrealized = Number(entry?.unrealized_pnl ?? 0);
+    return {
+      ...entry,
+      strategy: entry?.strategy || entry?.strategy_id || entry?.strategy_type || '--',
+      side: entry?.side || '--',
+      pnl: Number.isFinite(realized) ? realized : 0,
+      total_pnl: (Number.isFinite(realized) ? realized : 0) + (Number.isFinite(unrealized) ? unrealized : 0),
+      closed_at: entry?.closed_at || entry?.exit_time || entry?.updated_at || entry?.entry_time || '',
+      duration_min: entry?.duration_min ?? null,
+      exit_reason: entry?.exit_reason || entry?.status || '--',
+    };
+  });
+}
+
+function buildOverviewFromJournal(statsPayload, chartPayload, canonicalData = null) {
+  const acct = pickJournalAccount(statsPayload, QUANT_SCOPE);
+  const trades = Array.isArray(chartPayload?.trades) ? chartPayload.trades : [];
+  const equityCurve = [];
+  const drawdownCurve = [];
+  const tradePnls = [];
+  let maxDrawdownPct = null;
+
+  trades.forEach((trade) => {
+    const exitTime = String(trade?.exit_time || '').trim();
+    if (!exitTime) return;
+    const parsed = new Date(exitTime);
+    if (Number.isNaN(parsed.getTime())) return;
+    const equityValue = Number(trade?.equity ?? 0);
+    const drawdownValue = Number(trade?.drawdown_pct ?? 0);
+    const pnlValue = Number(trade?.pnl ?? 0);
+    const unixTs = Math.floor(parsed.getTime() / 1000);
+    equityCurve.push({ time: unixTs, value: Number(equityValue.toFixed(2)) });
+    drawdownCurve.push({ time: unixTs, value: Number(drawdownValue.toFixed(4)) });
+    tradePnls.push(Number(pnlValue.toFixed(2)));
+    if (maxDrawdownPct == null || drawdownValue < maxDrawdownPct) {
+      maxDrawdownPct = drawdownValue;
+    }
+  });
+
+  const totals = canonicalData?.totals || {
+    positions: acct?.trades_open || 0,
+    open_pnl: acct?.unrealized_pnl || 0,
+  };
+  const balances = canonicalData?.balances || {};
+  const realizedPnl = Number(acct?.realized_pnl ?? 0);
+  const unrealizedPnl = Number(totals?.open_pnl ?? acct?.unrealized_pnl ?? 0);
+  let calmarRatio = null;
+  if (maxDrawdownPct != null && maxDrawdownPct < -0.001) {
+    calmarRatio = Number((realizedPnl / Math.abs(maxDrawdownPct)).toFixed(3));
+  }
+
+  return {
+    generated_at: canonicalData?.generated_at || chartPayload?.generated_at || new Date().toISOString(),
+    account_scope: QUANT_SCOPE,
+    account_id: QUANT_ACCOUNT_ID,
+    equity: balances?.total_equity ?? null,
+    realized_pnl: Number(realizedPnl.toFixed(2)),
+    unrealized_pnl: Number(unrealizedPnl.toFixed(2)),
+    sharpe_ratio: acct?.sharpe_ratio ?? null,
+    win_rate_pct: acct?.win_rate_pct ?? null,
+    profit_factor: acct?.profit_factor ?? null,
+    expectancy: acct?.expectancy ?? null,
+    total_trades: acct?.trades_closed ?? trades.length,
+    open_positions: totals?.positions ?? 0,
+    max_drawdown_pct: maxDrawdownPct != null ? Number(maxDrawdownPct.toFixed(3)) : null,
+    calmar_ratio: calmarRatio,
+    equity_curve: equityCurve,
+    drawdown_curve: drawdownCurve,
+    trade_pnls: tradePnls,
+    monte_carlo: null,
+    recent_trades: trades.slice(-30).map((trade) => ({ pnl: trade?.pnl ?? 0 })),
+    heatmap: acct?.heatmap || [],
+    daily_pnl_pct: null,
+    source: canonicalData?.source || 'journal_fallback',
+    source_label: canonicalData?.source_label || 'Journal fallback',
+    balances,
+    totals,
+    reconciliation: canonicalData?.reconciliation || { state: 'degraded', reason: 'overview_timeout' },
+    simulators: canonicalData?.simulators || {},
+    historical_source: { label: `Journal ${QUANT_SCOPE} + fallback`, kind: 'journal' },
+    position_management: canonicalData?.position_management || {},
+    exit_governance: canonicalData?.exit_governance || {},
+    monitor_summary: canonicalData?.monitor_summary || {},
+  };
 }
 
 function renderOverviewRealtime(snapshot, overview = null) {
@@ -147,44 +420,7 @@ function renderOverviewRealtime(snapshot, overview = null) {
 
 function renderPositionsRealtime(snapshot) {
   if (!snapshot) return;
-  const positions = snapshot.positions || [];
-  const tbody = document.getElementById('positions-body');
-  if (!tbody) return;
-
-  document.getElementById('pos-count').textContent = positions.length;
-  if (!positions.length) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="11">Sin posiciones abiertas</td></tr>';
-    document.getElementById('pos-unrealized').textContent = fmt.usd(0);
-    document.getElementById('pos-exposure').textContent = fmt.usd(snapshot.gross_exposure || 0);
-    document.getElementById('pos-cb').textContent = syncLabel(snapshot.reconciliation);
-    return;
-  }
-
-  let totalUnrealized = 0;
-  tbody.innerHTML = positions.map((p) => {
-    const pnl = p.unrealized_pnl || 0;
-    totalUnrealized += pnl;
-    const cls = pnl >= 0 ? 'green' : 'red';
-    return `<tr>
-      <td class="accent">${p.symbol}</td>
-      <td>${p.side || '--'}</td>
-      <td>${fmt.usd(p.entry_price)}</td>
-      <td>${fmt.usd(p.current_price)}</td>
-      <td>${fmt.num(p.quantity, 4)}</td>
-      <td class="${cls}">${fmt.usd(pnl)}</td>
-      <td class="${cls}">${fmt.pct(p.pnl_pct)}</td>
-      <td>${fmt.num(p.log_return, 4)}</td>
-      <td class="red">${fmt.usd(p.stop_loss)}</td>
-      <td class="green">${fmt.usd(p.take_profit)}</td>
-      <td>${fmt.num(p.atr, 4)}</td>
-    </tr>`;
-  }).join('');
-
-  document.getElementById('pos-unrealized').textContent = fmt.usd(totalUnrealized);
-  document.getElementById('pos-unrealized').className =
-    `kpi-value ${totalUnrealized >= 0 ? 'green' : 'red'}`;
-  document.getElementById('pos-exposure').textContent = fmt.usd(snapshot.gross_exposure || 0);
-  document.getElementById('pos-cb').textContent = syncLabel(snapshot.reconciliation);
+  renderPositionsTable(snapshot);
 }
 
 // ── Backend online/offline state ─────────────────────────────────
@@ -220,52 +456,109 @@ function _setBackendState(online) {
 
 // ── Health / topbar ───────────────────────────────────────────────
 async function pollHealth() {
+  if (_healthRequest) return _healthRequest;
   window._lastHealthAt = Date.now();
-  try {
-    const [health, status, canonical] = await Promise.all([
-      QuantAPI.health(),
-      QuantAPI.status(QUANT_SCOPE).catch(() => null),
-      QuantAPI.canonicalSnapshot(QUANT_SCOPE, QUANT_ACCOUNT_ID).catch(() => null),
-    ]);
-    _setBackendState(true);
-    document.getElementById('chip-uptime').textContent =
-      `${Math.floor((health.uptime_sec || 0) / 60)}m up`;
-    const canonicalData = canonical?.data || null;
-    if (canonicalData) renderCanonicalMeta(canonicalData);
-    const openPositions =
-      canonicalData?.totals?.positions ??
-      status?.data?.open_positions ??
-      health.open_positions ??
-      0;
-    document.getElementById('chip-positions').textContent =
-      `${openPositions || 0} pos`;
-    const totalEquity =
-      canonicalData?.balances?.total_equity ??
-      status?.data?.balances?.total_equity ??
-      status?.data?.account_session?.total_equity;
-    if (totalEquity != null) {
-      document.getElementById('chip-equity').textContent = fmt.usd(totalEquity);
+  _healthRequest = (async () => {
+    let backendReachable = false;
+    try {
+      const health = await QuantAPI.health();
+      if (health && (health.ok !== false || health.status)) {
+        backendReachable = true;
+        _healthFailures = 0;
+        _setBackendState(true);
+      }
+      const canonicalData = _latestCanonicalSnapshot;
+      if (canonicalData) {
+        renderCanonicalMeta(canonicalData);
+        const generatedAt = canonicalData?.generated_at ? new Date(canonicalData.generated_at).toLocaleTimeString() : null;
+        document.getElementById('chip-uptime').textContent =
+          generatedAt ? `sync ${generatedAt}` : 'sync ok';
+        const openPositions =
+          canonicalData?.totals?.positions ??
+          0;
+        document.getElementById('chip-positions').textContent =
+          `${openPositions || 0} pos`;
+        const totalEquity =
+          canonicalData?.balances?.total_equity;
+        if (totalEquity != null) {
+          document.getElementById('chip-equity').textContent = fmt.usd(totalEquity);
+        }
+      }
+    } catch (error) {
+      const recentlyRenderedOverview = _lastOverviewSuccessAt && (Date.now() - _lastOverviewSuccessAt) < 45000;
+      _healthFailures += 1;
+      if (window._quantWsConnected || backendReachable || recentlyRenderedOverview) {
+        _setBackendState(true);
+        return;
+      }
+      if (_healthFailures < 3) {
+        return;
+      }
+      console.error('pollHealth failed', error);
+      _setBackendState(false);
+    } finally {
+      _healthRequest = null;
     }
-  } catch (_) {
-    _setBackendState(false);
-  }
+  })();
+
+  return _healthRequest;
 }
 
 // ── OVERVIEW ──────────────────────────────────────────────────────
 let _equityChart = null, _ddChart = null;
 
 async function loadOverview() {
+  if (_overviewRequest) return _overviewRequest;
+  _overviewRequest = (async () => {
   try {
-    const health = await QuantAPI.health().catch(() => null);
-    if (!health) { _setBackendState(false); return; }
-    _setBackendState(true);
-    const [ov, canonical] = await Promise.all([
-      QuantAPI.dashboardOverview(QUANT_SCOPE, QUANT_ACCOUNT_ID).catch(() => null),
-      QuantAPI.canonicalSnapshot(QUANT_SCOPE, QUANT_ACCOUNT_ID).catch(() => null),
+    const overviewPromise = QuantAPI.dashboardOverview(QUANT_SCOPE, QUANT_ACCOUNT_ID).catch(() => null);
+    let canonicalData = _latestCanonicalSnapshot || null;
+    const canonicalPromise = canonicalData
+      ? Promise.resolve({ data: canonicalData })
+      : QuantAPI.canonicalSnapshot(QUANT_SCOPE, QUANT_ACCOUNT_ID)
+          .then((resp) => {
+            if (resp?.data) {
+              renderCanonicalMeta(resp.data);
+              return resp;
+            }
+            return null;
+          })
+          .catch(() => null);
+
+    const overviewResp = await overviewPromise;
+    const canonicalResp = canonicalData ? { data: canonicalData } : await Promise.race([
+      canonicalPromise,
+      new Promise((resolve) => window.setTimeout(() => resolve(null), 1600)),
     ]);
 
-    const m = ov?.data || {};
-    const canonicalData = canonical?.data || m;
+    canonicalData = canonicalResp?.data || _latestCanonicalSnapshot || null;
+    let m = overviewResp?.data || null;
+
+    if (!m) {
+      const statsResp = await QuantAPI.journalStats().catch(() => null);
+      const chartResp = await QuantAPI.journalChartData(500, QUANT_SCOPE).catch(() => null);
+      if (statsResp?.data || chartResp?.data) {
+        m = buildOverviewFromJournal(statsResp?.data, chartResp?.data, canonicalData);
+      }
+    }
+
+    if (!m) {
+      if (canonicalData) {
+        renderCanonicalMeta(canonicalData);
+        renderOverviewRealtime(canonicalData);
+        _lastOverviewSuccessAt = Date.now();
+        if (window._quantWsConnected || window._backendOnline !== false) {
+          _setBackendState(true);
+        }
+        return;
+      }
+      if (!window._quantWsConnected) _setBackendState(false);
+      return;
+    }
+
+    _setBackendState(true);
+    _lastOverviewSuccessAt = Date.now();
+    maybeWarnLightweight(m);
     const brokerEquity =
       canonicalData?.balances?.total_equity ??
       m?.balances?.total_equity ??
@@ -280,7 +573,7 @@ async function loadOverview() {
       0;
     const effectiveEquity = brokerEquity ?? m.equity;
     const effectiveUnrealized = brokerOpenPnl ?? m.unrealized_pnl;
-    renderCanonicalMeta(canonicalData);
+    renderCanonicalMeta(canonicalData || m);
     renderOverviewHistory(m);
 
     // ── KPIs ──
@@ -294,7 +587,7 @@ async function loadOverview() {
     setKPI('kpi-kelly',  '--');   // Kelly viene del backtest, no del journal
     setKPI('kpi-calmar', fmt.num(m.calmar_ratio, 2));
     document.getElementById('kpi-trades').textContent =
-      m.total_trades
+      m.total_trades != null
         ? `${m.total_trades || 0} trades`
         : `${brokerPositions || 0} pos abiertas`;
 
@@ -309,6 +602,7 @@ async function loadOverview() {
     // Actualizar topbar equity
     if (effectiveEquity != null) document.getElementById('chip-equity').textContent = fmt.usd(effectiveEquity);
     document.getElementById('chip-positions').textContent = `${brokerPositions || 0} pos`;
+    notifyAtlas('handleDashboardUpdate', canonicalData || m);
 
     // ── Equity curve (TradingView) ──
     const eq = m.equity_curve || [];
@@ -352,8 +646,14 @@ async function loadOverview() {
     }
 
   } catch (e) {
+    console.error('loadOverview failed', e);
     toast('Error cargando overview: ' + e.message, 'error');
+  } finally {
+    _overviewRequest = null;
   }
+  })();
+
+  return _overviewRequest;
 }
 
 function setKPI(id, val, subId) {
@@ -372,80 +672,119 @@ document.addEventListener('click', e => {
 
 // ── POSITIONS ─────────────────────────────────────────────────────
 async function loadPositions() {
-  try {
-    const r = await QuantAPI.positions(QUANT_SCOPE, QUANT_ACCOUNT_ID);
-    const positions = r.data?.positions || r.data || [];
-    if (r.data) renderCanonicalMeta(r.data);
-    document.getElementById('pos-count').textContent = positions.length;
+  if (_positionsRequest) return _positionsRequest;
+  _positionsRequest = (async () => {
+    try {
+      const cachedSnapshot = _latestPositionsSnapshot || _latestCanonicalSnapshot || null;
+      if (Array.isArray(cachedSnapshot?.positions) && cachedSnapshot.positions.length) {
+        renderCanonicalMeta(cachedSnapshot);
+        maybeWarnLightweight(cachedSnapshot);
+        renderPositionsTable({
+          ...cachedSnapshot,
+          gross_exposure: cachedSnapshot?.gross_exposure ?? cachedSnapshot?.balances?.gross_exposure ?? 0,
+        });
+      }
 
-    const tbody = document.getElementById('positions-body');
-    if (!positions.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="11">Sin posiciones abiertas</td></tr>';
-      return;
+      let positionsPayload = await QuantAPI.positions(QUANT_SCOPE, QUANT_ACCOUNT_ID).catch(() => null);
+      let data = positionsPayload?.data || cachedSnapshot || {};
+      if (!Array.isArray(data?.positions)) {
+        data = _latestCanonicalSnapshot || data || {};
+      }
+      if (!Array.isArray(data?.positions)) {
+        const canonical = await QuantAPI.canonicalSnapshot(QUANT_SCOPE, QUANT_ACCOUNT_ID).catch(() => null);
+        data = canonical?.data || data || cachedSnapshot || {};
+      }
+      const positions = data?.positions || [];
+      if (data) {
+        renderCanonicalMeta(data);
+        maybeWarnLightweight(data);
+      }
+      renderPositionsTable({
+        ...data,
+        positions,
+        gross_exposure: data?.gross_exposure ?? data?.balances?.gross_exposure ?? 0,
+      });
+    } catch (e) {
+      const cachedSnapshot = _latestPositionsSnapshot || _latestCanonicalSnapshot || null;
+      if (Array.isArray(cachedSnapshot?.positions)) {
+        renderCanonicalMeta(cachedSnapshot);
+        renderPositionsTable({
+          ...cachedSnapshot,
+          gross_exposure: cachedSnapshot?.gross_exposure ?? cachedSnapshot?.balances?.gross_exposure ?? 0,
+        });
+        useCachedModuleState('Posiciones degradadas: mostrando ultimo snapshot canonico.');
+      } else {
+        setEmptyRow('positions-body', 15, 'Posiciones no disponibles: backend degradado o sin respuesta.');
+        markDegradedChip('pos-source-badge', 'Fuente degradada');
+        markDegradedChip('pos-sync-badge', 'SYNC WARN');
+        toast('Error cargando posiciones: ' + e.message, 'error');
+      }
+    } finally {
+      _positionsRequest = null;
     }
+  })();
 
-    let totalUnrealized = 0;
-    tbody.innerHTML = positions.map(p => {
-      const pnl = p.unrealized_pnl || 0;
-      totalUnrealized += pnl;
-      const cls = pnl >= 0 ? 'green' : 'red';
-      return `<tr>
-        <td class="accent">${p.symbol}</td>
-        <td>${p.side || '--'}</td>
-        <td>${fmt.usd(p.entry_price)}</td>
-        <td>${fmt.usd(p.current_price)}</td>
-        <td>${fmt.num(p.quantity, 4)}</td>
-        <td class="${cls}">${fmt.usd(pnl)}</td>
-        <td class="${cls}">${fmt.pct(p.pnl_pct)}</td>
-        <td>${fmt.num(p.log_return, 4)}</td>
-        <td class="red">${fmt.usd(p.stop_loss)}</td>
-        <td class="green">${fmt.usd(p.take_profit)}</td>
-        <td>${fmt.num(p.atr, 4)}</td>
-      </tr>`;
-    }).join('');
-
-    document.getElementById('pos-unrealized').textContent = fmt.usd(totalUnrealized);
-    document.getElementById('pos-unrealized').className =
-      `kpi-value ${totalUnrealized >= 0 ? 'green' : 'red'}`;
-    if (r.data?.gross_exposure != null) {
-      document.getElementById('pos-exposure').textContent = fmt.usd(r.data.gross_exposure);
-    }
-    document.getElementById('pos-cb').textContent = syncLabel(r.data?.reconciliation);
-  } catch (e) {
-    toast('Error cargando posiciones: ' + e.message, 'error');
-  }
+  return _positionsRequest;
 }
 
 // ── SCANNER ───────────────────────────────────────────────────────
 async function loadScanner() {
-  try {
-    const [status, report] = await Promise.all([
-      QuantAPI.scannerStatus().catch(() => null),
-      QuantAPI.scannerReport().catch(() => null),
-    ]);
+  if (_scannerRequest) return _scannerRequest;
+  _scannerRequest = (async () => {
+    try {
+      const status = await QuantAPI.scannerStatus().catch(() => null);
+      const report = await QuantAPI.scannerReport().catch(() => null);
 
-    const st = status?.data || {};
-    document.getElementById('scanner-status-chip').textContent =
-      st.running ? 'ACTIVO' : 'INACTIVO';
+      const st = status?.data || _latestScannerState?.status || {};
+      document.getElementById('scanner-status-chip').textContent =
+        st.running ? 'ACTIVO' : (_latestScannerState ? 'CACHE' : 'INACTIVO');
 
-    const opps = report?.data?.opportunities || [];
-    const tbody = document.getElementById('scanner-body');
-    if (!opps.length) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Sin oportunidades detectadas</td></tr>';
-      return;
+      const opps = report?.data?.opportunities || report?.data?.candidates || _latestScannerState?.opportunities || [];
+      if (status?.data || report?.data) {
+        _latestScannerState = { status: st, opportunities: opps };
+      }
+      const tbody = document.getElementById('scanner-body');
+      if (!opps.length) {
+        tbody.innerHTML = `<tr class="empty-row"><td colspan="7">${_latestScannerState ? 'Sin oportunidades detectadas' : 'Scanner degradado o sin oportunidades'}</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = opps.map(o => `<tr>
+        <td class="accent">${o.symbol}</td>
+        <td>${o.strategy || o.strategy_type || '--'}</td>
+        <td class="${parseFloat(o.score ?? o.selection_score ?? 0) >= 0.7 ? 'accent' : ''}">${fmt.num(o.score ?? o.selection_score, 2)}</td>
+        <td>${o.signal || o.direction || '--'}</td>
+        <td>${fmt.pct(o.win_probability ?? o.win_rate_pct)}</td>
+        <td class="red">${fmt.pct(o.var_95)}</td>
+        <td>${fmt.ts(o.timestamp || o.generated_at)}</td>
+      </tr>`).join('');
+    } catch (e) {
+      const cached = _latestScannerState;
+      if (cached) {
+        document.getElementById('scanner-status-chip').textContent = 'CACHE';
+        const tbody = document.getElementById('scanner-body');
+        tbody.innerHTML = cached.opportunities.length
+          ? cached.opportunities.map(o => `<tr>
+        <td class="accent">${o.symbol}</td>
+        <td>${o.strategy || o.strategy_type || '--'}</td>
+        <td class="${parseFloat(o.score ?? o.selection_score ?? 0) >= 0.7 ? 'accent' : ''}">${fmt.num(o.score ?? o.selection_score, 2)}</td>
+        <td>${o.signal || o.direction || '--'}</td>
+        <td>${fmt.pct(o.win_probability ?? o.win_rate_pct)}</td>
+        <td class="red">${fmt.pct(o.var_95)}</td>
+        <td>${fmt.ts(o.timestamp || o.generated_at)}</td>
+      </tr>`).join('')
+          : '<tr class="empty-row"><td colspan="7">Sin oportunidades detectadas</td></tr>';
+        useCachedModuleState('Scanner degradado: mostrando el ultimo estado disponible.');
+      } else {
+        document.getElementById('scanner-status-chip').textContent = 'DEGRADED';
+        setEmptyRow('scanner-body', 7, 'Scanner no disponible: backend degradado o sin respuesta.');
+        toast('Error cargando scanner: ' + e.message, 'error');
+      }
+    } finally {
+      _scannerRequest = null;
     }
-    tbody.innerHTML = opps.map(o => `<tr>
-      <td class="accent">${o.symbol}</td>
-      <td>${o.strategy}</td>
-      <td class="${parseFloat(o.score || 0) >= 0.7 ? 'accent' : ''}">${fmt.num(o.score, 2)}</td>
-      <td>${o.signal || '--'}</td>
-      <td>${fmt.pct(o.win_probability)}</td>
-      <td class="red">${fmt.pct(o.var_95)}</td>
-      <td>${fmt.ts(o.timestamp)}</td>
-    </tr>`).join('');
-  } catch (e) {
-    toast('Error cargando scanner: ' + e.message, 'error');
-  }
+  })();
+
+  return _scannerRequest;
 }
 
 document.getElementById('scanner-start')?.addEventListener('click', async () => {
@@ -478,9 +817,21 @@ document.getElementById('bt-run')?.addEventListener('click', async () => {
 
   try {
     const r = await QuantAPI.runBacktest({
-      symbol, timeframe: tf, strategy_type: strategy,
-      initial_capital: capital, bars, walk_forward_folds: folds,
-      kelly_sizing: kelly, atr_stops: atr, monte_carlo: mc,
+      symbol,
+      source: symbol.includes('/') ? 'ccxt' : 'yfinance',
+      exchange: 'binance',
+      timeframe: tf,
+      strategy,
+      strategy_type: strategy,
+      capital,
+      initial_capital: capital,
+      limit: bars,
+      bars,
+      walk_forward_folds: folds,
+      kelly_sizing: kelly,
+      atr_stops: atr,
+      monte_carlo: mc,
+      period: tf === '1d' ? '2y' : '1y',
       generate_html: true,
     });
 
@@ -530,7 +881,7 @@ document.getElementById('bt-run')?.addEventListener('click', async () => {
       const rp = r.data.report_path;
       if (rp) {
         const link = document.getElementById('bt-report-link');
-        if (link) link.href = `/reports/${rp.split('/').pop()}`;
+        if (link) link.href = r.data.report_html || `/reports/${rp.split('/').pop()}`;
       }
 
       toast('Backtest completado', 'success');
@@ -551,26 +902,36 @@ function setBM(id, val) {
 
 // ── JOURNAL ───────────────────────────────────────────────────────
 async function loadJournal() {
+  if (_journalRequest) return _journalRequest;
+  _journalRequest = (async () => {
   try {
-    const [stats, entries] = await Promise.all([
-      QuantAPI.journalStats(),
-      QuantAPI.journalEntries(100),
-    ]);
+    const stats = await QuantAPI.journalStats().catch(() => null);
+    const entries = await QuantAPI.journalEntries(100, QUANT_SCOPE).catch(() => null);
 
-    const s = stats?.data || {};
+    const statsPayload = stats?.data || _latestJournalState?.statsPayload || {};
+    const s = pickJournalAccount(statsPayload, QUANT_SCOPE);
+    const list = normalizeJournalEntries(entries?.data || _latestJournalState?.entriesPayload || []);
+    if (stats?.data || entries?.data) {
+      _latestJournalState = {
+        statsPayload,
+        entriesPayload: entries?.data || _latestJournalState?.entriesPayload || [],
+      };
+    }
+    const totalPnl = Number(s?.realized_pnl || 0) + Number(s?.unrealized_pnl || 0);
+    const totalTrades = Number(s?.trades_closed || 0);
+    const avgPnl = totalTrades ? totalPnl / totalTrades : 0;
     const kpiRow = document.getElementById('journal-kpi');
     kpiRow.innerHTML = `
       <div class="kpi-card"><span class="kpi-label">Total PnL</span>
-        <span class="kpi-value ${(s.total_pnl || 0) >= 0 ? 'green' : 'red'}">${fmt.usd(s.total_pnl)}</span></div>
+        <span class="kpi-value ${totalPnl >= 0 ? 'green' : 'red'}">${fmt.usd(totalPnl)}</span></div>
       <div class="kpi-card"><span class="kpi-label">Win Rate</span>
-        <span class="kpi-value">${fmt.pct(s.win_rate_pct)}</span></div>
+        <span class="kpi-value">${fmt.pct(s?.win_rate_pct)}</span></div>
       <div class="kpi-card"><span class="kpi-label">Trades</span>
-        <span class="kpi-value">${s.total_trades || 0}</span></div>
+        <span class="kpi-value">${totalTrades}</span></div>
       <div class="kpi-card"><span class="kpi-label">Avg PnL</span>
-        <span class="kpi-value">${fmt.usd(s.avg_pnl)}</span></div>
+        <span class="kpi-value">${fmt.usd(avgPnl)}</span></div>
     `;
 
-    const list = entries?.data || [];
     QuantCharts.renderJournalPnlChart('chart-journal-pnl', list);
     QuantCharts.renderJournalStratChart('chart-journal-strat', list);
 
@@ -586,8 +947,46 @@ async function loadJournal() {
         </tr>`).join('')
       : '<tr class="empty-row"><td colspan="7">Sin entradas</td></tr>';
   } catch (e) {
-    toast('Error cargando journal: ' + e.message, 'error');
+    const cached = _latestJournalState;
+    if (cached) {
+      const s = pickJournalAccount(cached.statsPayload || {}, QUANT_SCOPE);
+      const list = normalizeJournalEntries(cached.entriesPayload || []);
+      const totalPnl = Number(s?.realized_pnl || 0) + Number(s?.unrealized_pnl || 0);
+      const totalTrades = Number(s?.trades_closed || 0);
+      const avgPnl = totalTrades ? totalPnl / totalTrades : 0;
+      const kpiRow = document.getElementById('journal-kpi');
+      kpiRow.innerHTML = `
+      <div class="kpi-card"><span class="kpi-label">Total PnL</span>
+        <span class="kpi-value ${totalPnl >= 0 ? 'green' : 'red'}">${fmt.usd(totalPnl)}</span></div>
+      <div class="kpi-card"><span class="kpi-label">Win Rate</span>
+        <span class="kpi-value">${fmt.pct(s?.win_rate_pct)}</span></div>
+      <div class="kpi-card"><span class="kpi-label">Trades</span>
+        <span class="kpi-value">${totalTrades}</span></div>
+      <div class="kpi-card"><span class="kpi-label">Avg PnL</span>
+        <span class="kpi-value">${fmt.usd(avgPnl)}</span></div>
+    `;
+      document.getElementById('journal-body').innerHTML = list.length
+        ? list.map(e => `<tr>
+          <td>${e.closed_at ? e.closed_at.slice(0, 16) : '--'}</td>
+          <td class="accent">${e.symbol}</td>
+          <td>${e.strategy || '--'}</td>
+          <td>${e.side || '--'}</td>
+          <td class="${(e.pnl || 0) >= 0 ? 'green' : 'red'}">${fmt.usd(e.pnl)}</td>
+          <td>${e.duration_min ? e.duration_min + 'm' : '--'}</td>
+          <td>${e.exit_reason || '--'}</td>
+        </tr>`).join('')
+        : '<tr class="empty-row"><td colspan="7">Sin entradas</td></tr>';
+      useCachedModuleState('Journal degradado: mostrando el ultimo estado disponible.');
+    } else {
+      setEmptyRow('journal-body', 7, 'Journal no disponible: backend degradado o sin respuesta.');
+      toast('Error cargando journal: ' + e.message, 'error');
+    }
+  } finally {
+    _journalRequest = null;
   }
+  })();
+
+  return _journalRequest;
 }
 
 document.getElementById('journal-refresh')?.addEventListener('click', loadJournal);
@@ -595,30 +994,36 @@ document.getElementById('journal-refresh')?.addEventListener('click', loadJourna
 // ── RL ENGINE ─────────────────────────────────────────────────────
 async function loadRL() {
   const symbol = document.getElementById('rl-symbol-sel')?.value || 'BTC/USDT';
-  try {
-    const r = await QuantAPI.retrainingStatus(symbol);
-    const d = r.data || {};
-    document.getElementById('rl-symbol').textContent = d.symbol || symbol;
-    document.getElementById('rl-state').textContent  = d.running ? 'ACTIVO' : 'INACTIVO';
-    document.getElementById('rl-last').textContent   = d.last_retrain_at
-      ? new Date(d.last_retrain_at * 1000).toLocaleString() : 'Nunca';
-    document.getElementById('rl-next').textContent   = d.next_retrain_in_h
-      ? `en ${d.next_retrain_in_h.toFixed(1)}h` : '--';
-    document.getElementById('rl-sharpe').textContent = fmt.num(d.best_sharpe, 3);
-    document.getElementById('rl-trials').textContent = d.optuna_trials || '--';
+  if (_rlRequest) return _rlRequest;
+  _rlRequest = (async () => {
+    try {
+      const r = await QuantAPI.retrainingStatus(symbol);
+      const d = r.data || {};
+      document.getElementById('rl-symbol').textContent = d.symbol || symbol;
+      document.getElementById('rl-state').textContent  = d.running ? 'ACTIVO' : 'INACTIVO';
+      document.getElementById('rl-last').textContent   = d.last_retrain_at
+        ? new Date(d.last_retrain_at * 1000).toLocaleString() : 'Nunca';
+      document.getElementById('rl-next').textContent   = d.next_retrain_in_h
+        ? `en ${d.next_retrain_in_h.toFixed(1)}h` : '--';
+      document.getElementById('rl-sharpe').textContent = fmt.num(d.best_sharpe, 3);
+      document.getElementById('rl-trials').textContent = d.optuna_trials || '--';
 
-    // Model list
-    const models = d.models || [];
-    const mlEl = document.getElementById('rl-models-list');
-    mlEl.innerHTML = models.length
-      ? models.map((m, i) => `<div class="model-entry ${i === 0 ? 'best' : ''}">
-          <span class="model-name">${m.name || m}</span>
-          <span class="model-sharpe">Sharpe ${fmt.num(m.sharpe, 3)}</span>
-        </div>`).join('')
-      : '<span class="empty-text">Sin modelos entrenados</span>';
-  } catch (e) {
-    toast('Error cargando RL status: ' + e.message, 'error');
-  }
+      const models = d.models || [];
+      const mlEl = document.getElementById('rl-models-list');
+      mlEl.innerHTML = models.length
+        ? models.map((m, i) => `<div class="model-entry ${i === 0 ? 'best' : ''}">
+            <span class="model-name">${m.name || m}</span>
+            <span class="model-sharpe">Sharpe ${fmt.num(m.sharpe, 3)}</span>
+          </div>`).join('')
+        : '<span class="empty-text">Sin modelos entrenados</span>';
+    } catch (e) {
+      toast('Error cargando RL status: ' + e.message, 'error');
+    } finally {
+      _rlRequest = null;
+    }
+  })();
+
+  return _rlRequest;
 }
 
 document.getElementById('rl-status-btn')?.addEventListener('click', loadRL);
@@ -635,53 +1040,110 @@ document.getElementById('rl-trigger-btn')?.addEventListener('click', async () =>
 });
 
 // ── VISUAL ────────────────────────────────────────────────────────
-document.getElementById('visual-capture')?.addEventListener('click', async () => {
-  try {
-    const r = await QuantAPI.visualState();
-    if (!r.ok) { toast('Error capturando visual: ' + r.error, 'error'); return; }
-    const d = r.data;
-    document.getElementById('vs-brightness').textContent = fmt.num(d.brightness, 1);
-    document.getElementById('vs-sharpness').textContent  = fmt.num(d.sharpness, 1);
-    document.getElementById('vs-screens').textContent    = d.screens_detected;
-    document.getElementById('vs-color').textContent      = d.chart_color || '--';
-    document.getElementById('vs-prices').textContent     = (d.ocr_prices || []).join(', ') || 'ninguno';
-    document.getElementById('vs-pattern').textContent    = d.pattern_detected || 'ninguno';
+async function loadVisual() {
+  if (_visualRequest) return _visualRequest;
+  _visualRequest = (async () => {
+    try {
+      const r = await QuantAPI.visualState();
+      if (!r.ok) { toast('Error capturando visual: ' + r.error, 'error'); return; }
+      const d = r.data || {};
+      _latestVisualState = d;
+      document.getElementById('vs-brightness').textContent = fmt.num(d.brightness, 1);
+      document.getElementById('vs-sharpness').textContent  = fmt.num(d.sharpness, 1);
+      document.getElementById('vs-screens').textContent    = d.screens_detected ?? '--';
+      document.getElementById('vs-color').textContent      = d.chart_color || '--';
+      document.getElementById('vs-prices').textContent     = (d.ocr_prices || []).join(', ') || 'ninguno';
+      document.getElementById('vs-pattern').textContent    = d.pattern_detected || 'ninguno';
 
-    const badge = document.getElementById('visual-safety-badge');
-    badge.textContent  = d.safe_mode ? 'SAFE MODE' : 'OK';
-    badge.className    = `mode-badge ${d.safe_mode ? 'safe' : 'ok'}`;
+      const badge = document.getElementById('visual-safety-badge');
+      badge.textContent  = d.safe_mode ? 'SAFE MODE' : 'OK';
+      badge.className    = `mode-badge ${d.safe_mode ? 'safe' : 'ok'}`;
 
-    if (d.feature_vector?.length) {
-      QuantCharts.renderVisualFeaturesChart('chart-visual-features', d.feature_vector);
+      if (d.feature_vector?.length) {
+        QuantCharts.renderVisualFeaturesChart('chart-visual-features', d.feature_vector);
+      }
+      return d;
+    } catch (e) {
+      const d = _latestVisualState;
+      if (d) {
+        document.getElementById('vs-brightness').textContent = fmt.num(d.brightness, 1);
+        document.getElementById('vs-sharpness').textContent  = fmt.num(d.sharpness, 1);
+        document.getElementById('vs-screens').textContent    = d.screens_detected ?? '--';
+        document.getElementById('vs-color').textContent      = d.chart_color || '--';
+        document.getElementById('vs-prices').textContent     = (d.ocr_prices || []).join(', ') || 'ninguno';
+        document.getElementById('vs-pattern').textContent    = d.pattern_detected || 'ninguno';
+        const badge = document.getElementById('visual-safety-badge');
+        badge.textContent = 'CACHE';
+        badge.className = 'mode-badge safe';
+        useCachedModuleState('Visual degradado: mostrando la ultima captura disponible.');
+        return d;
+      }
+      toast('Error: ' + e.message, 'error');
+      throw e;
+    } finally {
+      _visualRequest = null;
     }
-    toast('Estado visual capturado', 'success');
-  } catch (e) {
-    toast('Error: ' + e.message, 'error');
-  }
+  })();
+
+  return _visualRequest;
+}
+
+document.getElementById('visual-capture')?.addEventListener('click', async () => {
+  const data = await loadVisual().catch(() => null);
+  if (data) toast('Estado visual capturado', 'success');
 });
 
 // ── ALERTS ────────────────────────────────────────────────────────
 async function loadAlerts() {
-  try {
-    const r = await QuantAPI.alertsStatus();
-    const d = r.data || {};
-    document.getElementById('al-telegram').textContent  = d.telegram_enabled  ? 'ON' : 'OFF';
-    document.getElementById('al-whatsapp').textContent  = d.whatsapp_enabled  ? 'ON' : 'OFF';
-    document.getElementById('al-queue').textContent     = d.queue_size ?? '--';
-    document.getElementById('al-sent').textContent      = d.sent_today ?? '--';
-    document.getElementById('al-level').textContent     = d.min_level   || '--';
-    document.getElementById('al-cooldown').textContent  = d.cooldown_s ? `${d.cooldown_s}s` : '--';
-  } catch (e) {
-    toast('Error cargando alertas: ' + e.message, 'error');
-  }
+  if (_alertsRequest) return _alertsRequest;
+  _alertsRequest = (async () => {
+    try {
+      const r = await QuantAPI.alertsStatus();
+      const d = r.data || {};
+      _latestAlertsState = d;
+      document.getElementById('al-telegram').textContent  = d.telegram_enabled === true ? 'ON' : d.telegram_enabled === false ? 'OFF' : '--';
+      document.getElementById('al-whatsapp').textContent  = d.whatsapp_enabled === true ? 'ON' : d.whatsapp_enabled === false ? 'OFF' : '--';
+      document.getElementById('al-queue').textContent     = d.queue_size ?? '--';
+      document.getElementById('al-sent').textContent      = d.sent_today ?? d.sent_count ?? '--';
+      document.getElementById('al-level').textContent     = d.min_level || (d.worker_alive === true ? 'worker_alive' : d.worker_alive === false ? 'worker_down' : '--');
+  document.getElementById('al-cooldown').textContent  = d.cooldown_s ? `${d.cooldown_s}s` : (d.error_count != null ? `errors ${d.error_count}` : '--');
+      if (d.any_channel_enabled === false) {
+        appendLog('alerts-log', `[${new Date().toLocaleTimeString()}] Sin canales de alerta activos: revisa Telegram/WhatsApp en backend.`);
+      }
+    } catch (e) {
+      const d = _latestAlertsState;
+      if (d) {
+        document.getElementById('al-telegram').textContent  = d.telegram_enabled === true ? 'ON' : d.telegram_enabled === false ? 'OFF' : '--';
+        document.getElementById('al-whatsapp').textContent  = d.whatsapp_enabled === true ? 'ON' : d.whatsapp_enabled === false ? 'OFF' : '--';
+        document.getElementById('al-queue').textContent     = d.queue_size ?? '--';
+        document.getElementById('al-sent').textContent      = d.sent_today ?? d.sent_count ?? '--';
+        document.getElementById('al-level').textContent     = 'CACHE';
+        document.getElementById('al-cooldown').textContent  = d.cooldown_s ? `${d.cooldown_s}s` : (d.error_count != null ? `errors ${d.error_count}` : '--');
+        appendLog('alerts-log', `[${new Date().toLocaleTimeString()}] Estado degradado: se mantiene el ultimo snapshot disponible.`);
+        useCachedModuleState('Alertas degradadas: mostrando el ultimo estado disponible.');
+      } else {
+        document.getElementById('al-level').textContent = 'DEGRADED';
+        appendLog('alerts-log', `[${new Date().toLocaleTimeString()}] Alertas no disponibles: backend degradado o sin respuesta.`);
+        toast('Error cargando alertas: ' + e.message, 'error');
+      }
+    } finally {
+      _alertsRequest = null;
+    }
+  })();
+
+  return _alertsRequest;
 }
 
 document.getElementById('alerts-refresh-btn')?.addEventListener('click', loadAlerts);
 document.getElementById('alerts-test-btn')?.addEventListener('click', async () => {
   const r = await QuantAPI.alertsTest('Test desde Atlas Code-Quant Dashboard v1.0.0');
-  if (r.ok) {
-    appendLog('alerts-log', `[${new Date().toLocaleTimeString()}] Alerta de prueba enviada`);
-    toast('Alerta enviada', 'success');
+  if (r.ok && r.data?.delivered_any) {
+    appendLog('alerts-log', `[${new Date().toLocaleTimeString()}] Alerta de prueba entregada · Telegram=${r.data.telegram_delivered} WhatsApp=${r.data.whatsapp_delivered}`);
+    toast('Alerta entregada', 'success');
+    notifyAtlas('send', '🔔 Prueba local', 'El sistema local de notificaciones está funcionando.', 'success');
+  } else if (r.ok) {
+    appendLog('alerts-log', `[${new Date().toLocaleTimeString()}] Prueba sin entrega efectiva · Telegram=${r.data?.telegram_delivered} WhatsApp=${r.data?.whatsapp_delivered}`);
+    toast('Prueba ejecutada sin entrega efectiva', 'warning');
   } else {
     toast('Error: ' + (r.error || '?'), 'error');
   }
@@ -700,11 +1162,26 @@ function appendLog(id, line) {
 
 // ── WebSocket feed ────────────────────────────────────────────────
 function initWS() {
+  quantWS.on('connected', () => {
+    window._quantWsConnected = true;
+    _setBackendState(true);
+    pollHealth();
+  });
+
+  quantWS.on('disconnected', () => {
+    window._quantWsConnected = false;
+  });
+
   quantWS.on('quant.live_update', (msg) => {
     if (msg.canonical_snapshot) {
+      _setBackendState(true);
       renderCanonicalMeta(msg.canonical_snapshot);
       renderOverviewRealtime(msg.canonical_snapshot);
-      if (document.getElementById('view-positions')?.classList.contains('active')) {
+      notifyAtlas('handleDashboardUpdate', msg.canonical_snapshot);
+      const canRenderPositionsRealtime =
+        !msg.canonical_snapshot.positions_truncated &&
+        Array.isArray(msg.canonical_snapshot.positions);
+      if (canRenderPositionsRealtime && document.getElementById('view-positions')?.classList.contains('active')) {
         renderPositionsRealtime({
           ...msg.canonical_snapshot,
           gross_exposure: msg.canonical_snapshot?.balances?.gross_exposure ?? 0,
@@ -735,20 +1212,40 @@ function initWS() {
     if (msg.equity) {
       document.getElementById('chip-equity').textContent = fmt.usd(msg.equity);
     }
+    notifyAtlas('handleSignal', msg.symbol, msg.signal, msg.confidence || 0);
   });
 
   quantWS.on('trade', (msg) => {
     const dir = msg.side === 'BUY' ? 'compra' : 'venta';
     appendLog('rl-log-box', `[${new Date().toLocaleTimeString()}] Trade ${dir} ${msg.symbol} @ ${fmt.usd(msg.price)}`);
+    notifyAtlas('handleTrade', msg);
     pollHealth();
   });
 
   quantWS.connect();
 }
 
+function getActiveView() {
+  return document.querySelector('.nav-item.active')?.dataset?.view || 'overview';
+}
+
+async function refreshActiveView() {
+  _lastViewRefreshAt = Date.now();
+  const view = getActiveView();
+  if (view === 'overview') return loadOverview();
+  if (view === 'positions') return loadPositions();
+  if (view === 'scanner') return loadScanner();
+  if (view === 'journal') return loadJournal();
+  if (view === 'visual') return loadVisual();
+  if (view === 'alerts') return loadAlerts();
+  if (view === 'rl') return loadRL();
+  if (view === 'analytics' && window.AtlasCharts) return AtlasCharts.refresh();
+}
+
 // ── Emergency stop ────────────────────────────────────────────────
 document.getElementById('btn-emergency')?.addEventListener('click', () => {
   if (!confirm('¿Activar Emergency Stop? Cerrará todas las posiciones.')) return;
+  notifyAtlas('handleEmergencyStop');
   apiPost('/emergency/stop', { reason: 'manual_dashboard' }).then(r => {
     toast(r.ok ? 'Emergency Stop activado' : 'Error: ' + r.error, r.ok ? 'error' : 'error', 5000);
   });
@@ -760,20 +1257,48 @@ document.getElementById('pos-refresh')?.addEventListener('click', loadPositions)
 document.getElementById('ac-refresh')?.addEventListener('click', () => { if (window.AtlasCharts) AtlasCharts.refresh(); });
 
 // ── Init ──────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+function initDashboardApp() {
+  if (window.__atlasDashboardStarted) return;
+  window.__atlasDashboardStarted = true;
   initNav();
   startClock();
-  initWS();
   loadOverview();
 
   // Primer health check inmediato, luego adaptativo
   pollHealth();
-  // Cuando offline: sondear cada 2s. Cuando online: cada 10s como respaldo del WS.
+  setTimeout(initWS, 1200);
+  // Cuando offline: health cada 5s. Cuando online: health cada 15s como respaldo del WS.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      quantWS.close();
+      return;
+    }
+    quantWS.connect();
+    pollHealth();
+  });
+
   setInterval(() => {
-    const interval = _backendOnline === false ? 2_000 : 10_000;
-    if (!window._lastHealthAt || Date.now() - window._lastHealthAt >= interval) {
-      window._lastHealthAt = Date.now();
+    const now = Date.now();
+    const healthInterval = _backendOnline === false ? 5_000 : 15_000;
+    if (!hasInFlightModuleRequest() && (!window._lastHealthAt || now - window._lastHealthAt >= healthInterval)) {
       pollHealth();
     }
-  }, 2_000);
-});
+
+    const activeView = getActiveView();
+    const needsPollingView =
+      !window._quantWsConnected ||
+      ['scanner', 'journal', 'alerts', 'rl', 'analytics'].includes(activeView);
+    const viewRefreshInterval = window._quantWsConnected ? 60_000 : 30_000;
+    if (_backendOnline !== false && !hasInFlightModuleRequest() && needsPollingView && (!_lastViewRefreshAt || now - _lastViewRefreshAt >= viewRefreshInterval)) {
+      refreshActiveView();
+    }
+  }, 5_000);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initDashboardApp, { once: true });
+} else {
+  queueMicrotask(initDashboardApp);
+}
+
+setTimeout(initDashboardApp, 0);

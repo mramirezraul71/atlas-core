@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Atlas Code-Quant · v1.0.0</title>
   <script>
-    const _QVER = '20260327e';
+    const _QVER = '20260410f';
     window.QUANT_ACCOUNT_SCOPE = 'paper';
     window.QUANT_ACCOUNT_ID = '';
     // Detecta la base de los assets según el puerto desde el que se sirve
@@ -17,7 +17,7 @@
   <!-- TOPBAR -->
   <header class="topbar">
     <div class="topbar-brand">
-      <a href="javascript:void(0)" onclick="window.open('http://'+location.hostname+':8791/ui','_self')" class="back-btn" title="Volver a Atlas">
+      <a href="/atlas-ui" class="back-btn" title="Volver a Atlas">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
         Atlas
       </a>
@@ -226,6 +226,14 @@
             <span class="kpi-label">Circuit Breaker</span>
             <span class="kpi-value" id="pos-cb">OK</span>
           </div>
+          <div class="kpi-card">
+            <span class="kpi-label">Exit Now</span>
+            <span class="kpi-value" id="pos-exit-now">0</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-label">De-risk</span>
+            <span class="kpi-value" id="pos-de-risk">0</span>
+          </div>
         </div>
         <div class="panel">
           <div class="panel-body">
@@ -233,10 +241,11 @@
               <thead><tr>
                 <th>Símbolo</th><th>Lado</th><th>Entrada</th><th>Actual</th>
                 <th>Unidades</th><th>PnL $</th><th>PnL %</th><th>Log Ret</th>
-                <th>SL</th><th>TP</th><th>ATR</th>
+                <th>SL</th><th>TP</th><th>ATR</th><th>R abierto</th>
+                <th>Salida</th><th>Urgencia</th><th>Criterio</th>
               </tr></thead>
               <tbody id="positions-body">
-                <tr class="empty-row"><td colspan="11">Sin posiciones abiertas</td></tr>
+                <tr class="empty-row"><td colspan="15">Sin posiciones abiertas</td></tr>
               </tbody>
             </table>
           </div>
@@ -291,10 +300,10 @@
               </label>
               <label>Estrategia
                 <select class="select-sm" id="bt-strategy">
-                  <option value="momentum">Momentum</option>
-                  <option value="mean_reversion">Mean Reversion</option>
-                  <option value="rl">RL Agent</option>
-                  <option value="breakout">Breakout</option>
+                  <option value="ma_cross">Momentum MA Cross</option>
+                  <option value="ml_rf">ML Random Forest</option>
+                  <option value="ml_gb">ML Gradient Boost</option>
+                  <option value="rl_ppo">RL PPO</option>
                 </select>
               </label>
               <label>Capital inicial ($)
@@ -561,10 +570,25 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js" defer></script>
   <script>
-    const _S = (location.port !== '8791') ? '/static' : '/quant-static';
-    ['api','charts','atlas_charts','app'].forEach(f=>{
-      const s=document.createElement('script'); s.src=_S+'/js/'+f+'.js?v='+_QVER; s.defer=true; document.body.appendChild(s);
-    });
+    const _S = '/static';
+    const _MODULES = ['api', 'charts', 'atlas_charts', 'app', 'notifications'];
+
+    function loadAtlasScript(src) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.async = false;
+        s.onload = resolve;
+        s.onerror = reject;
+        document.body.appendChild(s);
+      });
+    }
+
+    window.addEventListener('load', async () => {
+      for (const f of _MODULES) {
+        await loadAtlasScript(`${_S}/js/${f}.js?v=${_QVER}`);
+      }
+    }, { once: true });
   </script>
 </body>
 </html>

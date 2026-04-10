@@ -15,20 +15,26 @@ const COLORS = {
   border:  '#1f2433',
 };
 
-// Chart.js defaults
-Chart.defaults.color          = COLORS.text;
-Chart.defaults.borderColor    = COLORS.grid;
-Chart.defaults.backgroundColor = 'transparent';
-Chart.defaults.font.family    = "'JetBrains Mono','Fira Code','Consolas',monospace";
-Chart.defaults.font.size      = 11;
+// CDN opcional (jsdelivr): si falla la red, el dashboard sigue cargando KPIs vía REST/WS.
+const CHART_JS = typeof Chart !== 'undefined' ? Chart : null;
+const LW = typeof LightweightCharts !== 'undefined' ? LightweightCharts : null;
+
+if (CHART_JS) {
+  CHART_JS.defaults.color = COLORS.text;
+  CHART_JS.defaults.borderColor = COLORS.grid;
+  CHART_JS.defaults.backgroundColor = 'transparent';
+  CHART_JS.defaults.font.family = "'JetBrains Mono','Fira Code','Consolas',monospace";
+  CHART_JS.defaults.font.size = 11;
+}
 
 // ── Lightweight Charts (TradingView) ──────────────────────────────
 function makeLWChart(containerId, opts = {}) {
+  if (!LW) return null;
   const container = document.getElementById(containerId);
   if (!container) return null;
   container.innerHTML = '';
 
-  const chart = LightweightCharts.createChart(container, {
+  const chart = LW.createChart(container, {
     width:  container.clientWidth  || 400,
     height: container.clientHeight || 180,
     layout: {
@@ -39,7 +45,7 @@ function makeLWChart(containerId, opts = {}) {
       vertLines:  { color: COLORS.grid },
       horzLines:  { color: COLORS.grid },
     },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    crosshair: { mode: LW.CrosshairMode.Normal },
     rightPriceScale: {
       borderColor: COLORS.border,
       textColor:   COLORS.text,
@@ -98,6 +104,7 @@ function renderDrawdownChart(containerId, data = []) {
 function renderPnlDistChart(canvasId, pnls = []) {
   const ctx = document.getElementById(canvasId);
   if (!ctx) return;
+  if (!CHART_JS) return;
 
   // Build histogram bins
   if (!pnls.length) return;
@@ -118,7 +125,7 @@ function renderPnlDistChart(canvasId, pnls = []) {
   });
 
   if (ctx._chartInstance) ctx._chartInstance.destroy();
-  ctx._chartInstance = new Chart(ctx, {
+  ctx._chartInstance = new CHART_JS(ctx, {
     type: 'bar',
     data: { labels, datasets: [{ data: counts, backgroundColor: colors, borderWidth: 0 }] },
     options: {
@@ -136,11 +143,12 @@ function renderPnlDistChart(canvasId, pnls = []) {
 function renderMonteCarloChart(canvasId, mcData = null) {
   const ctx = document.getElementById(canvasId);
   if (!ctx) return;
+  if (!CHART_JS) return;
 
   if (!mcData) {
     // Placeholder
     if (ctx._chartInstance) ctx._chartInstance.destroy();
-    ctx._chartInstance = new Chart(ctx, {
+    ctx._chartInstance = new CHART_JS(ctx, {
       type: 'line',
       data: { labels: [], datasets: [] },
       options: {
@@ -154,7 +162,7 @@ function renderMonteCarloChart(canvasId, mcData = null) {
 
   const { median, p05, p95, labels } = mcData;
   if (ctx._chartInstance) ctx._chartInstance.destroy();
-  ctx._chartInstance = new Chart(ctx, {
+  ctx._chartInstance = new CHART_JS(ctx, {
     type: 'line',
     data: {
       labels,
@@ -179,11 +187,12 @@ function renderMonteCarloChart(canvasId, mcData = null) {
 function renderStreakChart(canvasId, trades = []) {
   const ctx = document.getElementById(canvasId);
   if (!ctx) return;
+  if (!CHART_JS) return;
   const values = trades.map(t => t.pnl || 0);
   const colors = values.map(v => v >= 0 ? 'rgba(72,187,120,0.75)' : 'rgba(245,101,101,0.75)');
 
   if (ctx._chartInstance) ctx._chartInstance.destroy();
-  ctx._chartInstance = new Chart(ctx, {
+  ctx._chartInstance = new CHART_JS(ctx, {
     type: 'bar',
     data: {
       labels: values.map((_, i) => `#${i + 1}`),
@@ -204,6 +213,7 @@ function renderStreakChart(canvasId, trades = []) {
 function renderJournalPnlChart(canvasId, entries = []) {
   const ctx = document.getElementById(canvasId);
   if (!ctx) return;
+  if (!CHART_JS) return;
   let cum = 0;
   const labels = [], data = [];
   entries.forEach(e => {
@@ -213,7 +223,7 @@ function renderJournalPnlChart(canvasId, entries = []) {
   });
 
   if (ctx._chartInstance) ctx._chartInstance.destroy();
-  ctx._chartInstance = new Chart(ctx, {
+  ctx._chartInstance = new CHART_JS(ctx, {
     type: 'line',
     data: {
       labels,
@@ -242,6 +252,7 @@ function renderJournalPnlChart(canvasId, entries = []) {
 function renderJournalStratChart(canvasId, entries = []) {
   const ctx = document.getElementById(canvasId);
   if (!ctx) return;
+  if (!CHART_JS) return;
   const byStrat = {};
   entries.forEach(e => {
     const k = e.strategy || 'unknown';
@@ -251,7 +262,7 @@ function renderJournalStratChart(canvasId, entries = []) {
   const values = labels.map(k => parseFloat(byStrat[k].toFixed(2)));
 
   if (ctx._chartInstance) ctx._chartInstance.destroy();
-  ctx._chartInstance = new Chart(ctx, {
+  ctx._chartInstance = new CHART_JS(ctx, {
     type: 'bar',
     data: {
       labels,
@@ -277,10 +288,11 @@ function renderJournalStratChart(canvasId, entries = []) {
 function renderVisualFeaturesChart(canvasId, features = []) {
   const ctx = document.getElementById(canvasId);
   if (!ctx) return;
+  if (!CHART_JS) return;
   const labels = features.map((_, i) => `f${i}`);
 
   if (ctx._chartInstance) ctx._chartInstance.destroy();
-  ctx._chartInstance = new Chart(ctx, {
+  ctx._chartInstance = new CHART_JS(ctx, {
     type: 'bar',
     data: {
       labels,
@@ -306,6 +318,7 @@ function renderVisualFeaturesChart(canvasId, features = []) {
 function renderHeatmapChart(canvasId, heatmapData = []) {
   const ctx = document.getElementById(canvasId);
   if (!ctx) return;
+  if (!CHART_JS) return;
 
   const days   = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
   const hours  = Array.from({length: 24}, (_, i) => `${i}h`);
@@ -341,7 +354,7 @@ function renderHeatmapChart(canvasId, heatmapData = []) {
   }));
 
   if (ctx._chartInstance) ctx._chartInstance.destroy();
-  ctx._chartInstance = new Chart(ctx, {
+  ctx._chartInstance = new CHART_JS(ctx, {
     type: 'bubble',
     data: { datasets },
     options: {
@@ -378,6 +391,7 @@ function renderHeatmapChart(canvasId, heatmapData = []) {
 function renderRollingSharpeChart(canvasId, equityCurve = []) {
   const ctx = document.getElementById(canvasId);
   if (!ctx) return;
+  if (!CHART_JS) return;
 
   // Compute rolling log-returns and rolling Sharpe (20-period)
   const WINDOW = 20;
@@ -405,7 +419,7 @@ function renderRollingSharpeChart(canvasId, equityCurve = []) {
   }
 
   if (ctx._chartInstance) ctx._chartInstance.destroy();
-  ctx._chartInstance = new Chart(ctx, {
+  ctx._chartInstance = new CHART_JS(ctx, {
     type: 'line',
     data: {
       labels: sharpeLabels,
