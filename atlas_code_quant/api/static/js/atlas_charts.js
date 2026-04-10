@@ -33,6 +33,8 @@ const AtlasCharts = (() => {
     '#f43f5e', '#3b82f6', '#84cc16', '#14b8a6', '#e879f9',
   ];
 
+  const CHART_JS = typeof Chart !== 'undefined' ? Chart : null;
+
   // ── State ───────────────────────────────────────────────────────
   let _cache = { chartData: null, icSummary: null, lastFetch: 0 };
   const _instances = {};
@@ -112,7 +114,7 @@ const AtlasCharts = (() => {
       if (t.equity > trades[maxEqIdx].equity) maxEqIdx = i;
     });
 
-    _instances[containerId] = new Chart(canvas, {
+    _instances[containerId] = new CHART_JS(canvas, {
       type: 'line',
       data: {
         labels,
@@ -187,7 +189,7 @@ const AtlasCharts = (() => {
     const methodNames = Object.keys(methods);
 
     if (!methodNames.length) {
-      _instances[containerId] = new Chart(canvas, {
+      _instances[containerId] = new CHART_JS(canvas, {
         type: 'line',
         data: { labels: ['0'], datasets: [{ data: [0], borderColor: C.textMut, borderDash: [4, 4], pointRadius: 0 }] },
         options: _chartOpts({
@@ -216,7 +218,7 @@ const AtlasCharts = (() => {
       };
     });
 
-    _instances[containerId] = new Chart(canvas, {
+    _instances[containerId] = new CHART_JS(canvas, {
       type: 'bar',
       data: { labels: methodNames, datasets: [{
         data: methodNames.map(name => {
@@ -304,7 +306,7 @@ const AtlasCharts = (() => {
       return 'rgba(72,187,120,0.8)';
     });
 
-    _instances[containerId] = new Chart(canvas, {
+    _instances[containerId] = new CHART_JS(canvas, {
       type: 'bar',
       data: {
         labels,
@@ -356,7 +358,7 @@ const AtlasCharts = (() => {
     const methodNames = Object.keys(methods);
 
     if (!methodNames.length) {
-      _instances[containerId] = new Chart(canvas, {
+      _instances[containerId] = new CHART_JS(canvas, {
         type: 'bar',
         data: { labels: [], datasets: [] },
         options: _chartOpts({
@@ -385,7 +387,7 @@ const AtlasCharts = (() => {
       return `rgba(244,63,94,${0.3 + Math.min(Math.abs(v), 0.3) * 2})`;
     }
 
-    _instances[containerId] = new Chart(canvas, {
+    _instances[containerId] = new CHART_JS(canvas, {
       type: 'bubble',
       data: {
         datasets: [{
@@ -506,7 +508,7 @@ const AtlasCharts = (() => {
     const methodNames = Object.keys(methods);
 
     if (!methodNames.length) {
-      _instances[containerId] = new Chart(canvas, {
+      _instances[containerId] = new CHART_JS(canvas, {
         type: 'bar',
         data: { labels: [], datasets: [] },
         options: _chartOpts({
@@ -535,7 +537,7 @@ const AtlasCharts = (() => {
       C.rose + 'cc'
     );
 
-    _instances[containerId] = new Chart(canvas, {
+    _instances[containerId] = new CHART_JS(canvas, {
       type: 'bar',
       data: {
         labels: methodNames,
@@ -658,13 +660,19 @@ const AtlasCharts = (() => {
     const trades = chartData?.trades || [];
     const calendar = chartData?.calendar || [];
 
+    renderRobotStatus('ac-robot-status', chartData, icSummary);
+
+    if (!CHART_JS) {
+      _ts('update', document.getElementById('ac-last-update'));
+      return;
+    }
+
     renderEquityCurve('ac-equity-curve', trades);
     renderLearningCurve('ac-learning-curve', icSummary);
     renderRMultiple('ac-r-distribution', trades);
     renderICHeatmap('ac-ic-heatmap', icSummary);
     renderPnlCalendar('ac-pnl-calendar', calendar);
     renderPolicyEvolution('ac-policy-evolution', icSummary);
-    renderRobotStatus('ac-robot-status', chartData, icSummary);
 
     _ts('update', document.getElementById('ac-last-update'));
   }
