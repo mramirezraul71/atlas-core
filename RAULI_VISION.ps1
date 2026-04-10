@@ -15,18 +15,22 @@ function Write-Step([string]$msg) {
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $msg" -ForegroundColor Cyan
 }
 function Write-Ok([string]$msg) {
-    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] ✓ $msg" -ForegroundColor Green
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] OK $msg" -ForegroundColor Green
 }
 function Write-Warn([string]$msg) {
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] ! $msg" -ForegroundColor Yellow
 }
 
-# ── Verificar si el watchdog ya corre ─────────────────────────────────────────
-$wdRunning = Get-Process -Name "powershell" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -like "*rauli_vision_watchdog*" }
+# ── Verificar si el watchdog ya corre (Get-Process no expone CommandLine en WinPS 5.1)
+$wdRunning = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object {
+        ($_.Name -eq 'powershell.exe' -or $_.Name -eq 'pwsh.exe') -and
+        $_.CommandLine -and ($_.CommandLine -like '*rauli_vision_watchdog*')
+    }
 
 if ($wdRunning) {
-    Write-Ok "Watchdog ya está corriendo (PID=$($wdRunning.Id))"
+    $wdPids = @($wdRunning | ForEach-Object { $_.ProcessId }) -join ','
+    Write-Ok "Watchdog ya esta corriendo (PID=$wdPids)"
 } else {
     Write-Step "Lanzando watchdog en background..."
     Start-Process powershell.exe `
@@ -47,9 +51,9 @@ while ((Get-Date) -lt $deadline -and (-not ($espejoOk -and $dashOk))) {
     $espejoOk = (Get-NetTCPConnection -State Listen -LocalPort $EspejoPort -EA SilentlyContinue) -ne $null
     $proxyOk  = (Get-NetTCPConnection -State Listen -LocalPort $ProxyPort  -EA SilentlyContinue) -ne $null
     $dashOk   = (Get-NetTCPConnection -State Listen -LocalPort $DashPort   -EA SilentlyContinue) -ne $null
-    $eIcon = if ($espejoOk) { "✓" } else { "○" }
-    $pIcon = if ($proxyOk)  { "✓" } else { "○" }
-    $dIcon = if ($dashOk)   { "✓" } else { "○" }
+    $eIcon = if ($espejoOk) { '+' } else { '-' }
+    $pIcon = if ($proxyOk)  { '+' } else { '-' }
+    $dIcon = if ($dashOk)   { '+' } else { '-' }
     Write-Host "`r  Espejo :$EspejoPort $eIcon   Proxy :$ProxyPort $pIcon   Dashboard :$DashPort $dIcon   " -NoNewline
 }
 Write-Host ""
@@ -60,15 +64,15 @@ if ($espejoOk -and $dashOk) {
     Write-Host "  Abriendo RAULI-VISION..." -ForegroundColor Magenta
     Start-Process "http://localhost:$DashPort"
 } elseif ($dashOk) {
-    Write-Warn "Dashboard OK — espejo/proxy pueden tardar unos segundos más"
+    Write-Warn "Dashboard OK - espejo/proxy pueden tardar unos segundos mas"
     Start-Process "http://localhost:$DashPort"
 } else {
-    Write-Warn "Los servicios aún están iniciando, abre manualmente:"
-    Write-Host "  → http://localhost:$DashPort" -ForegroundColor Yellow
-    Write-Host "  → Log: $LogFile" -ForegroundColor DarkGray
+    Write-Warn "Los servicios aun estan iniciando, abre manualmente:"
+    Write-Host "  -> http://localhost:$DashPort" -ForegroundColor Yellow
+    Write-Host "  Log: $LogFile" -ForegroundColor DarkGray
 }
 
 Write-Host ""
-Write-Host "  RAULI-VISION se mantendrá activo automáticamente." -ForegroundColor DarkGray
+Write-Host "  RAULI-VISION se mantendra activo automaticamente." -ForegroundColor DarkGray
 Write-Host "  Para ver el log en tiempo real:" -ForegroundColor DarkGray
 Write-Host "  Get-Content $LogFile -Wait -Tail 30" -ForegroundColor DarkGray
