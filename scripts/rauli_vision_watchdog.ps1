@@ -77,7 +77,7 @@ function Kill-Port([int]$port) {
     if ($conn) {
         $pid_ = $conn | Select-Object -First 1 -ExpandProperty OwningProcess
         if ($pid_ -and $pid_ -ne $PID) {
-            Log "  → Matando proceso PID=$pid_ que ocupaba :$port" "Yellow"
+            Log "  >> Matando proceso PID=$pid_ que ocupaba :$port" "Yellow"
             Stop-Process -Id $pid_ -Force -ErrorAction SilentlyContinue
             Start-Sleep -Milliseconds 800
         }
@@ -163,7 +163,7 @@ function Start-Espejo {
             return $true
         }
     }
-    Log "WARN: espejo no respondió en 15s — puede seguir iniciando" "Yellow"
+    Log "WARN: espejo no respondio en 15s - puede seguir iniciando" "Yellow"
     return $true
 }
 
@@ -200,7 +200,7 @@ function Start-Proxy {
             return $true
         }
     }
-    Log "WARN: proxy API no respondió en 12s" "Yellow"
+    Log "WARN: proxy API no respondio en 12s" "Yellow"
     return $true
 }
 
@@ -235,7 +235,7 @@ function Start-Dashboard {
             return $true
         }
     }
-    Log "WARN: dashboard no respondió en 20s" "Yellow"
+    Log "WARN: dashboard no respondio en 20s" "Yellow"
     return $true
 }
 
@@ -244,7 +244,7 @@ function Register-StartupTask {
     $taskName = "RAULI-VISION-Watchdog"
     $existing = schtasks /query /tn $taskName 2>&1
     if ($LASTEXITCODE -eq 0) {
-        Log "Task Scheduler '$taskName' ya registrada — skip" "Green"
+        Log "Task Scheduler tarea $taskName ya registrada - skip" "Green"
         return
     }
     $scriptPath = $PSCommandPath
@@ -256,7 +256,7 @@ function Register-StartupTask {
         /rl   HIGHEST `
         /f | Out-Null
     if ($LASTEXITCODE -eq 0) {
-        Log "Task Scheduler registrada: '$taskName' (ONLOGON, admin)" "Green"
+        Log "Task Scheduler registrada: $taskName [ONLOGON elevado]" "Green"
     } else {
         Log "WARN: no se pudo registrar tarea (intenta ejecutar como Admin)" "Yellow"
     }
@@ -265,7 +265,7 @@ function Register-StartupTask {
 # ══════════════════════════════════════════════════════════════════════════════
 # INICIO
 # ══════════════════════════════════════════════════════════════════════════════
-Log "═══ RAULI-VISION Watchdog iniciado (intervalo=${CheckIntervalSec}s) ═══" "Magenta"
+Log "=== RAULI-VISION Watchdog iniciado (intervalo=${CheckIntervalSec}s) ===" "Magenta"
 Log "    Puertos: espejo=:$EspejoPort  proxy=:$ProxyPort  dashboard=:$DashPort" "DarkGray"
 
 if (-not $NoAutoRegister) { Register-StartupTask }
@@ -273,7 +273,7 @@ if (-not $NoAutoRegister) { Register-StartupTask }
 # Build inicial del dashboard si es necesario
 $buildOk = Build-Dashboard
 if (-not $buildOk) {
-    Log "Build falló — se usará npm run dev como fallback" "Yellow"
+    Log "Build fallo - se usara npm run dev como fallback" "Yellow"
 }
 
 # ── Primer arranque de los tres servicios ─────────────────────────────────────
@@ -281,14 +281,14 @@ if (-not (Test-Port $EspejoPort)) {
     Log "Iniciando espejo.exe en :$EspejoPort..." "Cyan"
     Start-Espejo | Out-Null
 } else {
-    Log "Espejo ya escucha en :$EspejoPort — skip" "Green"
+    Log "Espejo ya escucha en :$EspejoPort - skip" "Green"
 }
 
 if (-not (Test-Port $ProxyPort)) {
     Log "Iniciando proxy API en :$ProxyPort..." "Cyan"
     Start-Proxy | Out-Null
 } else {
-    Log "Proxy API ya escucha en :$ProxyPort — skip" "Green"
+    Log "Proxy API ya escucha en :$ProxyPort - skip" "Green"
 }
 
 if (-not (Test-Port $DashPort)) {
@@ -303,7 +303,7 @@ if (-not (Test-Port $DashPort)) {
         Log "Dashboard (dev fallback) iniciado en :$DashPort" "Yellow"
     }
 } else {
-    Log "Dashboard ya escucha en :$DashPort — skip" "Green"
+    Log "Dashboard ya escucha en :$DashPort - skip" "Green"
 }
 
 Start-Sleep -Seconds 3
