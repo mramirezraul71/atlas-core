@@ -1,6 +1,9 @@
 # Informe v2 — Correcciones tras auditoría (readiness semántico, fast vs diagnostic, warmup estable)
 
 **Repo:** `C:\ATLAS_PUSH` · **Fecha:** 2026-04-11  
+**Commit local (`variante/nueva`):** `af83c2f88`  
+**Commit GitHub (rama `push/quant-readiness-v2-20260411`):** `e7f806b8d`  
+**PR:** https://github.com/mramirezraul71/atlas-core/pull/new/push/quant-readiness-v2-20260411  
 
 ## Qué se corrigió (respuesta a hallazgos previos)
 
