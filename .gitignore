@@ -165,3 +165,11 @@ state/openclaw_atlas/
 # Playwright CLI recordings / temp scripts
 .playwright-cli/
 tmp_pwcode*.js
+
+# Local pytest temp dirs / detached worktrees
+.pytest_tmp/
+.pytest_basetemp/
+_wt_*/
+
+# Quant local runtime learning state
+atlas_code_quant/data/learning/learning_orchestrator_state.json
