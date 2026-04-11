@@ -47,7 +47,8 @@ param(
     [int]$CycleIntervalSec   = 120,
     [int]$MaxWaitSec         = 60,
     [switch]$LogOnly,
-    [switch]$EnableReload
+    [switch]$EnableReload,
+    [switch]$FullStartup
 )
 
 $ErrorActionPreference = "Stop"
@@ -191,6 +192,18 @@ _OpsLog "Iniciando ATLAS-Quant en puerto $Port (AutoCycle=$AutoCycle CycleInterv
 _DiagLog "START port=$Port AutoCycle=$AutoCycle"
 Write-Host "[quant-start] ATLAS-Quant startup -- puerto $Port"
 
+$lightweightRequested = $false
+if (-not $FullStartup -and -not $AutoCycle -and -not $env:QUANT_LIGHTWEIGHT_STARTUP) {
+    $env:QUANT_LIGHTWEIGHT_STARTUP = "true"
+    $lightweightRequested = $true
+    _OpsLog "Lightweight startup habilitado por defecto para estabilidad del dashboard"
+    Write-Host "[quant-start] Lightweight startup habilitado para estabilidad del dashboard."
+} elseif ($FullStartup -and -not $AutoCycle) {
+    $env:QUANT_LIGHTWEIGHT_STARTUP = "false"
+    _OpsLog "FullStartup solicitado; QUANT_LIGHTWEIGHT_STARTUP=false"
+    Write-Host "[quant-start] Full startup solicitado."
+}
+
 # ── Step 1: Check if already running ─────────────────────────────────────────
 $portOwners = Get-PortOwners -p $Port
 $quantCandidates = Get-QuantProcessCandidates -p $Port
@@ -257,7 +270,7 @@ if ($healthOk) {
         $uvicornArgs += "--reload"
     }
 
-    _OpsLog "Lanzando uvicorn en puerto $Port"
+    _OpsLog "Lanzando uvicorn en puerto $Port (LightweightStartup=$($env:QUANT_LIGHTWEIGHT_STARTUP))"
     Write-Host "[quant-start] Lanzando uvicorn -- puerto $Port"
     try {
         "" | Out-File -FilePath $_UVICORN_STDOUT -Encoding utf8
@@ -326,7 +339,7 @@ if ($opStatus) {
         _OpsLog "No se pudo obtener operation/loop/status durante startup" "warn"
     }
 
-    if ($autonMode -and $autonMode -ne "off" -and -not $loopRunning) {
+    if ($AutoCycle -and $autonMode -and $autonMode -ne "off" -and -not $loopRunning) {
         $reconcileBody = @{ interval_sec = $CycleIntervalSec; max_per_cycle = 1 }
         if ($selectorMode) {
             $reconcileBody["selector_session_mode"] = $selectorMode
@@ -340,6 +353,9 @@ if ($opStatus) {
             _OpsLog "Loop NO pudo reconciliarse en startup: $loopErr" "warn"
             Write-Warning "[quant-start] Loop reconcile error: $loopErr"
         }
+    } elseif (-not $AutoCycle) {
+        _OpsLog "AutoCycle no solicitado: no se reconcilia operation loop en startup"
+        Write-Host "[quant-start] AutoCycle no solicitado: no se inicia operation loop."
     }
 } else {
     _OpsLog "No se pudo obtener operation/status/lite (API key o endpoint no disponible)" "warn"
