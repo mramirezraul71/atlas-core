@@ -103,6 +103,7 @@ def main() -> int:
     try:
         from config.settings import settings
         from atlas_code_quant.operations.chart_execution import ChartExecutionService
+        from atlas_code_quant.operations.readiness_eval import readiness_http_body_ok
         from atlas_code_quant.operations.sensor_vision import SensorVisionService
     except Exception as exc:
         report["import_error"] = str(exc)
@@ -112,7 +113,7 @@ def main() -> int:
     svc = ChartExecutionService()
     chart_status = svc.status()
     vision = SensorVisionService()
-    vision_diag = vision.diagnose()
+    vision_status = vision.status(fast=False)
 
     report["quant_settings"] = {
         "api_port": int(getattr(settings, "api_port", 0)),
@@ -121,14 +122,14 @@ def main() -> int:
         "chart_open_cooldown_sec": int(getattr(settings, "chart_open_cooldown_sec", 0)),
     }
     report["chart_execution_status"] = chart_status
-    report["vision_diagnose"] = vision_diag
+    report["vision_status_local"] = vision_status
 
     report["behavior_contract"] = {
         "chart_browser_opens_only_when": [
             "Variable QUANT_CHART_AUTO_OPEN_ENABLED=true",
             "Una orden u operación construye chart_plan.targets (URLs)",
             "OperationCenter._build_visual_entry_gate llama ensure_chart_mission",
-            "Opcional en arranque API: QUANT_STARTUP_CHART_WARMUP=true (mismas URLs que StrategySelector._chart_plan)",
+            "Opcional en arranque API: QUANT_STARTUP_CHART_WARMUP=true (build_selector_chart_plan)",
             "Navegador resuelto (chart_launcher._chrome_path) y verificación tasklist si está activa",
         ],
         "camera_governed_by": [
@@ -139,6 +140,10 @@ def main() -> int:
             "StrategySelector alinea camera_plan.provider con el proveedor persistido",
         ],
         "atlas_quant_core_camera_start": "Solo si ejecutas ATLASQuantCore.setup() / live loop, no al levantar solo uvicorn.",
+        "readiness_http": (
+            "GET /operation/readiness = modo fast (liviano); ok y data.ready son semánticos. "
+            "Diagnóstico profundo: GET /operation/readiness/diagnostic."
+        ),
     }
 
     if args.http:
@@ -158,12 +163,20 @@ def main() -> int:
             if ok_r:
                 report["http_readiness_url_used"] = f"{base}{path}"
                 break
-        report["http_readiness_ok"] = ok_r
+        sem_ok = bool(ok_r and readiness_http_body_ok(readiness))
+        report["http_readiness_http_200"] = bool(ok_r)
+        report["http_readiness_semantic_ok"] = sem_ok
+        report["http_readiness_ok"] = sem_ok
         report["http_readiness"] = readiness
         if not ok_r:
             report["http_readiness_hint"] = (
                 "404 suele indicar proceso uvicorn antiguo: reinicia Quant desde el repo actual "
                 "o usa la ruta documentada en api/main.py."
+            )
+        elif ok_r and not sem_ok:
+            report["http_readiness_hint"] = (
+                "HTTP 200 pero ok=false o data.ready=false en JSON; el sistema no cumple el gate operativo mínimo "
+                "(revisa reasons_not_ready en data)."
             )
 
     print(json.dumps(report, indent=2, ensure_ascii=True))
@@ -183,8 +196,8 @@ def main() -> int:
         return 1
     if args.http and not args.http_health_only and not report.get("http_readiness_ok"):
         print(
-            "\n[FALLA] Readiness obligatorio con --http: /operation/readiness (o v2) no respondió OK. "
-            "Reinicia uvicorn con el api/main.py actual, o usa --http-health-only para omitir.",
+            "\n[FALLA] Readiness con --http: se exige HTTP 200 y cuerpo con ok=true y data.ready=true "
+            "(gate operativo). Ver http_readiness_hint en JSON. --http-health-only omite esta comprobación.",
             file=sys.stderr,
         )
         return 1

@@ -96,6 +96,7 @@ from operations.brain_bridge import QuantBrainBridge
 from operations.journal_pro import JournalProService
 from operations.operation_center import OperationCenter
 from operations.sensor_vision import SensorVisionService
+from operations.readiness_eval import evaluate_operational_readiness
 from operations.startup_visual_connect import apply_startup_visual_connections
 from operations.vision_calibration import VisionCalibrationService
 from scanner.opportunity_scanner import OpportunityScannerService
@@ -2117,8 +2118,47 @@ async def operation_vision_provider(
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
-def _operation_readiness_payload() -> dict[str, object]:
-    """Agregado pre-sesión: gráficos automáticos, visión gobernada, pipeline OCR/cámara."""
+def _quant_readiness_flags() -> dict[str, object]:
+    return {
+        "lightweight_startup": bool(getattr(settings, "lightweight_startup", False)),
+        "chart_auto_open_enabled": bool(getattr(settings, "chart_auto_open_enabled", False)),
+        "chart_verify_after_open": bool(getattr(settings, "chart_verify_after_open", True)),
+        "regime_hysteresis_enabled": bool(getattr(settings, "regime_hysteresis_enabled", True)),
+        "vision_ocr_crop_margin": float(getattr(settings, "vision_ocr_crop_margin", 0.0)),
+        "context_price_cycle_enabled": bool(getattr(settings, "context_price_cycle_enabled", True)),
+        "context_cycle_soft_gate": bool(getattr(settings, "context_cycle_soft_gate", False)),
+        "default_vision_provider_configured": bool(str(getattr(settings, "default_vision_provider", "") or "").strip()),
+        "startup_chart_warmup_enabled": bool(getattr(settings, "startup_chart_warmup_enabled", False)),
+        "chart_provider_default": str(getattr(settings, "chart_provider_default", "tradingview") or "tradingview"),
+    }
+
+
+def _operation_readiness_payload_fast() -> dict[str, object]:
+    """Readiness liviano: sin diagnose() ni VisualPipeline (gate / watchdog / CLI rápido)."""
+    chart = _OPERATION_CENTER.chart_execution.status()
+    vision_status = _VISION.status(fast=False)
+    ready, reasons = evaluate_operational_readiness(
+        chart_execution=chart,
+        vision_provider_ready=bool(vision_status.get("provider_ready")),
+        chart_auto_open_enabled=bool(getattr(settings, "chart_auto_open_enabled", False)),
+    )
+    return {
+        "ready": ready,
+        "reasons_not_ready": reasons,
+        "readiness_mode": "fast",
+        "chart_execution": chart,
+        "vision_status": vision_status,
+        "vision_diagnose": None,
+        "visual_pipeline": {
+            "omitted": True,
+            "detail": "Usa GET /operation/readiness/diagnostic para diagnose() + VisualPipeline.status().",
+        },
+        "quant_flags": _quant_readiness_flags(),
+    }
+
+
+def _operation_readiness_payload_diagnostic() -> dict[str, object]:
+    """Diagnóstico profundo: misma semántica ready + diagnose + pipeline OCR."""
     chart = _OPERATION_CENTER.chart_execution.status()
     vision_diag = _VISION.diagnose()
     vp_status: dict[str, object] = {}
@@ -2128,39 +2168,56 @@ def _operation_readiness_payload() -> dict[str, object]:
         vp_status = VisualPipeline.get_instance().status()
     except Exception as exc:
         vp_status = {"error": str(exc)}
+    ready, reasons = evaluate_operational_readiness(
+        chart_execution=chart,
+        vision_provider_ready=bool(vision_diag.get("provider_ready")),
+        chart_auto_open_enabled=bool(getattr(settings, "chart_auto_open_enabled", False)),
+    )
     return {
+        "ready": ready,
+        "reasons_not_ready": reasons,
+        "readiness_mode": "diagnostic",
         "chart_execution": chart,
+        "vision_status": None,
         "vision_diagnose": vision_diag,
         "visual_pipeline": vp_status,
-        "quant_flags": {
-            "lightweight_startup": bool(getattr(settings, "lightweight_startup", False)),
-            "chart_auto_open_enabled": bool(getattr(settings, "chart_auto_open_enabled", False)),
-            "chart_verify_after_open": bool(getattr(settings, "chart_verify_after_open", True)),
-            "regime_hysteresis_enabled": bool(getattr(settings, "regime_hysteresis_enabled", True)),
-            "vision_ocr_crop_margin": float(getattr(settings, "vision_ocr_crop_margin", 0.0)),
-            "context_price_cycle_enabled": bool(getattr(settings, "context_price_cycle_enabled", True)),
-            "context_cycle_soft_gate": bool(getattr(settings, "context_cycle_soft_gate", False)),
-            "default_vision_provider_configured": bool(str(getattr(settings, "default_vision_provider", "") or "").strip()),
-            "startup_chart_warmup_enabled": bool(getattr(settings, "startup_chart_warmup_enabled", False)),
-            "chart_provider_default": str(getattr(settings, "chart_provider_default", "tradingview") or "tradingview"),
-        },
+        "quant_flags": _quant_readiness_flags(),
     }
 
 
 @app.get("/operation/readiness", response_model=StdResponse, tags=["Operation"])
 async def operation_readiness_endpoint(x_api_key: str | None = Header(None)):
-    """Readiness operativa: navegador, auto-open de charts, visión Insta360/desktop y OCR."""
+    """Gate operativo liviano: `data.ready` + `StdResponse.ok` reflejan listo/no listo (no solo HTTP 200)."""
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
-        payload = await asyncio.to_thread(_operation_readiness_payload)
+        payload = await asyncio.to_thread(_operation_readiness_payload_fast)
+        ready = bool((payload or {}).get("ready"))
         return StdResponse(
-            ok=True,
+            ok=ready,
             data=payload,
             ms=round((time.perf_counter() - t0) * 1000, 2),
         )
     except Exception as exc:
         logger.exception("Error en operation readiness")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/operation/readiness/diagnostic", response_model=StdResponse, tags=["Operation"])
+async def operation_readiness_diagnostic_endpoint(x_api_key: str | None = Header(None)):
+    """Diagnóstico enriquecido (latencia mayor); mismo contrato semántico `ready` / `ok`."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = await asyncio.to_thread(_operation_readiness_payload_diagnostic)
+        ready = bool((payload or {}).get("ready"))
+        return StdResponse(
+            ok=ready,
+            data=payload,
+            ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+    except Exception as exc:
+        logger.exception("Error en operation readiness diagnostic")
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
@@ -2253,6 +2310,11 @@ async def operation_vision_provider_v2(body: VisionProviderRequest, x_api_key: s
 @app.get("/api/v2/quant/operation/readiness", response_model=StdResponse, tags=["V2"])
 async def operation_readiness_v2(x_api_key: str | None = Header(None)):
     return await operation_readiness_endpoint(x_api_key=x_api_key)
+
+
+@app.get("/api/v2/quant/operation/readiness/diagnostic", response_model=StdResponse, tags=["V2"])
+async def operation_readiness_diagnostic_v2(x_api_key: str | None = Header(None)):
+    return await operation_readiness_diagnostic_endpoint(x_api_key=x_api_key)
 
 
 @app.get("/vision/calibration/status", response_model=StdResponse, tags=["Operation"])

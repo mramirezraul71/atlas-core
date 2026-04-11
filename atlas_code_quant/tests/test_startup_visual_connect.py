@@ -30,3 +30,25 @@ def test_warmup_skipped_without_auto_open() -> None:
     out = apply_startup_visual_connections(vision_service=vision, operation_center=oc, settings=settings)
     assert "chart_warmup_skipped" in out
     oc.chart_execution.ensure_chart_mission.assert_not_called()
+
+
+def test_warmup_calls_ensure_chart_mission() -> None:
+    vision = MagicMock()
+    oc = MagicMock()
+    oc.chart_execution.ensure_chart_mission.return_value = {
+        "open_ok": True,
+        "execution_state": "manual_required",
+    }
+    settings = MagicMock()
+    settings.default_vision_provider = ""
+    settings.startup_chart_warmup_enabled = True
+    settings.chart_auto_open_enabled = True
+    settings.startup_chart_warmup_symbols = ["SPY"]
+    settings.startup_chart_warmup_timeframe = "1h"
+    settings.chart_provider_default = "tradingview"
+    out = apply_startup_visual_connections(vision_service=vision, operation_center=oc, settings=settings)
+    assert out.get("chart_warmup")
+    oc.chart_execution.ensure_chart_mission.assert_called_once()
+    call_kw = oc.chart_execution.ensure_chart_mission.call_args.kwargs
+    assert call_kw["symbol"] == "SPY"
+    assert call_kw["chart_plan"].get("targets")

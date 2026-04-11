@@ -136,58 +136,10 @@ def _timeframe_profile(timeframe: str) -> dict[str, float]:
     return mapping.get(str(timeframe or "").lower(), {"risk_pct": 0.75, "equity_stop_pct": 0.010, "camera_fit": 72.0})
 
 
-def _chart_interval(timeframe: str) -> str:
-    return {
-        "5m": "5",
-        "15m": "15",
-        "1h": "60",
-        "4h": "240",
-        "1d": "D",
-    }.get(str(timeframe or "").lower(), "60")
-
-
-def _chart_plan(symbol: str, timeframe: str, higher_timeframe: str | None, chart_provider: str) -> dict[str, Any]:
-    provider = str(chart_provider or "tradingview").lower()
-    base_symbol = str(symbol or "").upper()
-    primary_interval = _chart_interval(timeframe)
-    higher_interval = _chart_interval(higher_timeframe or "1h")
-    overview_interval = "D"
-    if provider == "yahoo":
-        primary_url = f"https://finance.yahoo.com/quote/{base_symbol}/chart"
-        higher_url = primary_url
-        overview_url = primary_url
-    else:
-        primary_url = f"https://www.tradingview.com/chart/?symbol=NASDAQ%3A{base_symbol}&interval={primary_interval}"
-        higher_url = f"https://www.tradingview.com/chart/?symbol=NASDAQ%3A{base_symbol}&interval={higher_interval}"
-        overview_url = f"https://www.tradingview.com/chart/?symbol=NASDAQ%3A{base_symbol}&interval={overview_interval}"
-    return {
-        "provider": provider,
-        "auto_open_supported": True,
-        "targets": [
-            {
-                "title": f"{base_symbol} disparo {timeframe}",
-                "timeframe": timeframe,
-                "url": primary_url,
-            },
-            {
-                "title": f"{base_symbol} confirmacion {higher_timeframe or '1h'}",
-                "timeframe": higher_timeframe or "1h",
-                "url": higher_url,
-            },
-            {
-                "title": f"{base_symbol} contexto diario",
-                "timeframe": "1d",
-                "url": overview_url,
-            },
-        ],
-        "steps": [
-            "abrir grafico principal del setup",
-            "abrir grafico de confirmacion superior",
-            "abrir grafico de contexto diario",
-            "centrar la zona de entrada en pantalla",
-            "validar con la camara antes del ticket",
-        ],
-    }
+try:
+    from atlas_code_quant.operations.chart_plan_builder import build_selector_chart_plan
+except ModuleNotFoundError:  # pragma: no cover - uvicorn cwd atlas_code_quant
+    from operations.chart_plan_builder import build_selector_chart_plan
 
 
 def _expected_visual_signature(candidate: dict[str, Any], strategy_type: str) -> dict[str, Any]:
@@ -1190,7 +1142,12 @@ class StrategySelectorService:
             probability_payload=probability_payload,
         )
         higher_timeframe = (candidate.get("confirmation") or {}).get("higher_timeframe")
-        chart_plan = _chart_plan(str(candidate.get("symbol") or ""), str(candidate.get("timeframe") or "1h"), higher_timeframe, chart_provider)
+        chart_plan = build_selector_chart_plan(
+            str(candidate.get("symbol") or ""),
+            str(candidate.get("timeframe") or "1h"),
+            higher_timeframe,
+            chart_provider,
+        )
         meta = _strategy_meta(strategy_type)
         camera_profile = _timeframe_profile(str(candidate.get("timeframe") or "1h"))
         camera_visual_fit_pct = round(camera_profile["camera_fit"] + (8.0 if meta["family"] == "equity" else 4.0 if meta["family"] in {"debit", "credit"} else 0.0), 1)
