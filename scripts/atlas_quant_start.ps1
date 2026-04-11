@@ -195,6 +195,7 @@ Write-Host "[quant-start] ATLAS-Quant startup -- puerto $Port"
 $lightweightRequested = $false
 if (-not $FullStartup -and -not $AutoCycle -and -not $env:QUANT_LIGHTWEIGHT_STARTUP) {
     $env:QUANT_LIGHTWEIGHT_STARTUP = "true"
+    $env:QUANT_STARTUP_VISUAL_CONNECT_ENABLED = "false"
     $lightweightRequested = $true
     _OpsLog "Lightweight startup habilitado por defecto para estabilidad del dashboard"
     Write-Host "[quant-start] Lightweight startup habilitado para estabilidad del dashboard."

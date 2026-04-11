@@ -215,6 +215,34 @@ class TradingConfig:
         "QUANT_STARTUP_PRELOAD_SESSIONS_IN_BACKGROUND",
         "true",
     ).strip().lower() not in {"0", "false", "no"}
+    startup_alert_dispatcher_enabled: bool = os.getenv(
+        "QUANT_STARTUP_ALERT_DISPATCHER_ENABLED",
+        "true",
+    ).strip().lower() not in {"0", "false", "no"}
+    startup_notifications_enabled: bool = os.getenv(
+        "QUANT_STARTUP_NOTIFICATIONS_ENABLED",
+        "true",
+    ).strip().lower() not in {"0", "false", "no"}
+    startup_journal_sync_enabled: bool = os.getenv(
+        "QUANT_STARTUP_JOURNAL_SYNC_ENABLED",
+        "true",
+    ).strip().lower() not in {"0", "false", "no"}
+    startup_scanner_enabled: bool = os.getenv(
+        "QUANT_STARTUP_SCANNER_ENABLED",
+        "true",
+    ).strip().lower() not in {"0", "false", "no"}
+    startup_learning_enabled: bool = os.getenv(
+        "QUANT_STARTUP_LEARNING_ENABLED",
+        "true",
+    ).strip().lower() not in {"0", "false", "no"}
+    startup_snapshot_prewarm_enabled: bool = os.getenv(
+        "QUANT_STARTUP_SNAPSHOT_PREWARM_ENABLED",
+        "true",
+    ).strip().lower() not in {"0", "false", "no"}
+    startup_visual_connect_enabled: bool = os.getenv(
+        "QUANT_STARTUP_VISUAL_CONNECT_ENABLED",
+        "true",
+    ).strip().lower() not in {"0", "false", "no"}
     startup_alert_dispatcher_delay_sec: int = _ienv("QUANT_STARTUP_ALERT_DISPATCHER_DELAY_SEC", 1)
     startup_journal_sync_delay_sec: int = _ienv("QUANT_STARTUP_JOURNAL_SYNC_DELAY_SEC", 8)
     startup_scanner_delay_sec: int = _ienv("QUANT_STARTUP_SCANNER_DELAY_SEC", 10)
@@ -350,6 +378,8 @@ class TradingConfig:
     api_host: str = "0.0.0.0"
     api_port: int = 8795
     api_key: str = os.getenv("QUANT_API_KEY", "atlas-quant-local")
+    # WebSocket dashboard: conexiones simultáneas por IP+scope (varias pestañas / reconexión)
+    quant_dashboard_ws_limit: int = _ienv("QUANT_DASHBOARD_WS_LIMIT", 8)
 
     # Paths
     data_dir: Path = BASE_DIR / "data" / "cache"
@@ -450,6 +480,7 @@ class TradingConfig:
             self.notify_render_mode = "telegram_html"
         if not self.journal_db_url:
             self.journal_db_url = f"sqlite:///{self.journal_db_path.as_posix()}"
+        self.quant_dashboard_ws_limit = max(2, min(self.quant_dashboard_ws_limit, 64))
 
 
 settings = TradingConfig()

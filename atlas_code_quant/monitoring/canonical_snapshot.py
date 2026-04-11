@@ -59,7 +59,11 @@ class CanonicalSnapshotService:
     ) -> dict[str, Any]:
         scope = _normalize_scope(account_scope)
         tracker_snapshot = self._tracker.snapshot(account_scope=scope, account_id=account_id)  # type: ignore[arg-type]
-        summary = self._tracker.build_summary(account_scope=scope, account_id=account_id)  # type: ignore[arg-type]
+        summary = self._tracker.build_summary(
+            account_scope=scope,
+            account_id=account_id,
+            snapshot=tracker_snapshot,
+        )  # type: ignore[arg-type]
         positions = self._build_positions_payload(tracker_snapshot)
         totals = self._build_totals(tracker_snapshot, positions)
         balances = self._build_balances(summary, totals, tracker_snapshot)

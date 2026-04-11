@@ -153,7 +153,7 @@ _SNAPSHOT_CACHE_WORKERS: dict[str, threading.Thread] = {}
 _SNAPSHOT_CACHE_ERRORS: dict[str, str] = {}
 _SNAPSHOT_CACHE_TTL_SEC = 5.0
 _SNAPSHOT_CACHE_MAX_STALE_SEC = 180.0
-_WS_CLIENT_LIMIT = 2
+_WS_CLIENT_LIMIT = max(2, min(int(settings.quant_dashboard_ws_limit), 64))
 _WS_CLIENT_CONNECTIONS: dict[str, set[WebSocket]] = defaultdict(set)
 _WS_CLIENT_LOCK = threading.Lock()
 
@@ -278,16 +278,19 @@ async def _start_background_services() -> None:
                         logger.info("Tradier %s session preloaded", scope)
                     except Exception:
                         logger.exception("Unable to preload Tradier %s session", scope)
-            try:
-                snap = await asyncio.to_thread(
-                    apply_startup_visual_connections,
-                    vision_service=_VISION,
-                    operation_center=_OPERATION_CENTER,
-                    settings=settings,
-                )
-                logger.info("Startup visual connect (lightweight): %s", snap)
-            except Exception:
-                logger.exception("Startup visual connect failed (lightweight)")
+            if settings.startup_visual_connect_enabled:
+                try:
+                    snap = await asyncio.to_thread(
+                        apply_startup_visual_connections,
+                        vision_service=_VISION,
+                        operation_center=_OPERATION_CENTER,
+                        settings=settings,
+                    )
+                    logger.info("Startup visual connect (lightweight): %s", snap)
+                except Exception:
+                    logger.exception("Startup visual connect failed (lightweight)")
+            else:
+                logger.info("Startup visual connect omitido en lightweight por QUANT_STARTUP_VISUAL_CONNECT_ENABLED=false")
             _mark_startup_background("completed_lightweight")
             return
         _mark_startup_background("preloading_sessions")
@@ -301,58 +304,72 @@ async def _start_background_services() -> None:
                 except Exception:
                     logger.exception("Unable to preload Tradier %s session", scope)
 
-        if settings.startup_alert_dispatcher_delay_sec > 0:
-            _mark_startup_background("waiting_alert_dispatcher")
-            await asyncio.sleep(settings.startup_alert_dispatcher_delay_sec)
-        _mark_startup_background("starting_alert_dispatcher")
-        try:
-            await get_alert_dispatcher().start()
-            logger.info("AlertDispatcher iniciado")
-        except Exception:
-            logger.exception("AlertDispatcher: fallo en startup (no critico)")
+        if settings.startup_alert_dispatcher_enabled:
+            if settings.startup_alert_dispatcher_delay_sec > 0:
+                _mark_startup_background("waiting_alert_dispatcher")
+                await asyncio.sleep(settings.startup_alert_dispatcher_delay_sec)
+            _mark_startup_background("starting_alert_dispatcher")
+            try:
+                await get_alert_dispatcher().start()
+                logger.info("AlertDispatcher iniciado")
+            except Exception:
+                logger.exception("AlertDispatcher: fallo en startup (no critico)")
+        else:
+            logger.info("AlertDispatcher omitido por QUANT_STARTUP_ALERT_DISPATCHER_ENABLED=false")
 
-        try:
-            from notifications.briefing_service import configure_operational_briefing
-            from notifications.scheduler import attach_exit_intelligence_bridge, start_notification_scheduler
+        if settings.startup_notifications_enabled:
+            try:
+                from notifications.briefing_service import configure_operational_briefing
+                from notifications.scheduler import attach_exit_intelligence_bridge, start_notification_scheduler
 
-            configure_operational_briefing(
-                operation_center=_OPERATION_CENTER,
-                scanner=_SCANNER,
-                canonical_service=_CANONICAL_SNAPSHOT,
-                vision_service=_VISION,
-                settings=settings,
-            )
-            attach_exit_intelligence_bridge()
-            if settings.notify_enabled:
-                start_notification_scheduler()
-                logger.info("Operational briefing: scheduler activo (QUANT_NOTIFY_ENABLED=true)")
-            else:
-                logger.info("Operational briefing: configurado; scheduler off (QUANT_NOTIFY_ENABLED=false)")
-        except Exception:
-            logger.exception("Operational notifications: fallo en startup (no crítico)")
+                configure_operational_briefing(
+                    operation_center=_OPERATION_CENTER,
+                    scanner=_SCANNER,
+                    canonical_service=_CANONICAL_SNAPSHOT,
+                    vision_service=_VISION,
+                    settings=settings,
+                )
+                attach_exit_intelligence_bridge()
+                if settings.notify_enabled:
+                    start_notification_scheduler()
+                    logger.info("Operational briefing: scheduler activo (QUANT_NOTIFY_ENABLED=true)")
+                else:
+                    logger.info("Operational briefing: configurado; scheduler off (QUANT_NOTIFY_ENABLED=false)")
+            except Exception:
+                logger.exception("Operational notifications: fallo en startup (no crítico)")
+        else:
+            logger.info("Operational notifications omitidas por QUANT_STARTUP_NOTIFICATIONS_ENABLED=false")
 
-        if settings.startup_journal_sync_delay_sec > 0:
-            _mark_startup_background("waiting_journal_sync")
-            await asyncio.sleep(settings.startup_journal_sync_delay_sec)
-        _mark_startup_background("starting_journal_sync")
-        await _JOURNAL_SYNC.start()
+        if settings.startup_journal_sync_enabled:
+            if settings.startup_journal_sync_delay_sec > 0:
+                _mark_startup_background("waiting_journal_sync")
+                await asyncio.sleep(settings.startup_journal_sync_delay_sec)
+            _mark_startup_background("starting_journal_sync")
+            await _JOURNAL_SYNC.start()
+        else:
+            logger.info("Journal sync omitido por QUANT_STARTUP_JOURNAL_SYNC_ENABLED=false")
 
-        if settings.scanner_auto_start and settings.scanner_enabled:
+        if settings.startup_scanner_enabled and settings.scanner_auto_start and settings.scanner_enabled:
             if settings.startup_scanner_delay_sec > 0:
                 _mark_startup_background("waiting_scanner")
                 await asyncio.sleep(settings.startup_scanner_delay_sec)
             _mark_startup_background("starting_scanner")
             await _SCANNER.start()
+        elif not settings.startup_scanner_enabled:
+            logger.info("Scanner omitido por QUANT_STARTUP_SCANNER_ENABLED=false")
 
-        if settings.startup_learning_delay_sec > 0:
-            _mark_startup_background("waiting_learning_loop")
-            await asyncio.sleep(settings.startup_learning_delay_sec)
-        _mark_startup_background("starting_learning_loop")
-        asyncio.create_task(
-            run_learning_loop(reconcile_interval_sec=300),
-            name="learning_orchestrator",
-        )
-        logger.info("LearningOrchestrator iniciado (reconcile cada 5 min)")
+        if settings.startup_learning_enabled:
+            if settings.startup_learning_delay_sec > 0:
+                _mark_startup_background("waiting_learning_loop")
+                await asyncio.sleep(settings.startup_learning_delay_sec)
+            _mark_startup_background("starting_learning_loop")
+            asyncio.create_task(
+                run_learning_loop(reconcile_interval_sec=300),
+                name="learning_orchestrator",
+            )
+            logger.info("LearningOrchestrator iniciado (reconcile cada 5 min)")
+        else:
+            logger.info("LearningOrchestrator omitido por QUANT_STARTUP_LEARNING_ENABLED=false")
         if _ensure_auto_cycle_running():
             logger.info(
                 "Auto-cycle iniciado en startup: mode=%s interval=%ss max_per_cycle=%s",
@@ -360,17 +377,23 @@ async def _start_background_services() -> None:
                 _AUTO_CYCLE_STATE.get("loop_interval_sec"),
                 _AUTO_CYCLE_STATE.get("max_per_cycle"),
             )
-        _prewarm_quant_snapshot_caches()
-        try:
-            snap = await asyncio.to_thread(
-                apply_startup_visual_connections,
-                vision_service=_VISION,
-                operation_center=_OPERATION_CENTER,
-                settings=settings,
-            )
-            logger.info("Startup visual connect: %s", snap)
-        except Exception:
-            logger.exception("Startup visual connect failed")
+        if settings.startup_snapshot_prewarm_enabled:
+            _prewarm_quant_snapshot_caches()
+        else:
+            logger.info("Snapshot prewarm omitido por QUANT_STARTUP_SNAPSHOT_PREWARM_ENABLED=false")
+        if settings.startup_visual_connect_enabled:
+            try:
+                snap = await asyncio.to_thread(
+                    apply_startup_visual_connections,
+                    vision_service=_VISION,
+                    operation_center=_OPERATION_CENTER,
+                    settings=settings,
+                )
+                logger.info("Startup visual connect: %s", snap)
+            except Exception:
+                logger.exception("Startup visual connect failed")
+        else:
+            logger.info("Startup visual connect omitido por QUANT_STARTUP_VISUAL_CONNECT_ENABLED=false")
         _mark_startup_background("completed")
     except asyncio.CancelledError:
         _mark_startup_background("cancelled")
@@ -771,32 +794,20 @@ def _websocket_client_key(websocket: WebSocket) -> str:
 
 
 async def _register_ws_connection(websocket: WebSocket) -> tuple[bool, str]:
+    """Registra el WS si hay cupo; si no, rechaza la nueva conexión (sin cerrar las demás).
+
+    Desalojar conexiones existentes provocaba bucles reconectar↔evicción y saturaba el event loop,
+    dejando HTTP (/health) sin responder.
+    """
     client_key = _websocket_client_key(websocket)
-    stale: list[WebSocket] = []
     with _WS_CLIENT_LOCK:
-        bucket = _WS_CLIENT_CONNECTIONS[client_key]
-        active = {ws for ws in bucket if getattr(ws, "application_state", None) != WebSocketState.DISCONNECTED}
+        bucket_all = set(_WS_CLIENT_CONNECTIONS.get(client_key, set()))
+        active = {ws for ws in bucket_all if getattr(ws, "application_state", None) != WebSocketState.DISCONNECTED}
         if len(active) >= _WS_CLIENT_LIMIT:
-            stale = list(active)
-        else:
-            active.add(websocket)
-            _WS_CLIENT_CONNECTIONS[client_key] = active
-            return True, client_key
-
-    for ws in stale:
-        try:
-            await ws.close(code=1013, reason="Too many dashboard connections")
-        except Exception:
-            pass
-
-    with _WS_CLIENT_LOCK:
-        bucket = {ws for ws in _WS_CLIENT_CONNECTIONS.get(client_key, set()) if getattr(ws, "application_state", None) != WebSocketState.DISCONNECTED}
-        if len(bucket) >= _WS_CLIENT_LIMIT:
-            _WS_CLIENT_CONNECTIONS[client_key] = bucket
             return False, client_key
-        bucket.add(websocket)
-        _WS_CLIENT_CONNECTIONS[client_key] = bucket
-    return True, client_key
+        active.add(websocket)
+        _WS_CLIENT_CONNECTIONS[client_key] = active
+        return True, client_key
 
 
 def _unregister_ws_connection(websocket: WebSocket, client_key: str | None) -> None:
@@ -838,6 +849,12 @@ def _snapshot_cache_start(cache_key: str, builder) -> threading.Thread | None:
         return worker
 
 
+def _snapshot_cache_worker_alive(cache_key: str) -> bool:
+    with _SNAPSHOT_CACHE_LOCK:
+        worker = _SNAPSHOT_CACHE_WORKERS.get(cache_key)
+        return bool(worker and worker.is_alive())
+
+
 async def _resolve_cached_payload(
     *,
     cache_key: str,
@@ -851,21 +868,27 @@ async def _resolve_cached_payload(
     if cached is not None and age_sec is not None and age_sec <= ttl_sec:
         return _snapshot_cache_mark(cached, stale=False, age_sec=age_sec, error=error)
 
-    _snapshot_cache_start(cache_key, builder)
+    worker = _snapshot_cache_start(cache_key, builder)
     if cached is not None and age_sec is not None and age_sec <= max_stale_sec:
         return _snapshot_cache_mark(cached, stale=True, age_sec=age_sec, error=error)
 
-    try:
-        payload = await asyncio.wait_for(asyncio.to_thread(builder), timeout=timeout_sec)
-        _snapshot_cache_set(cache_key, payload)
-        return _snapshot_cache_mark(payload, stale=False, age_sec=0.0, error=None)
-    except Exception as exc:
-        logger.warning("Quant endpoint warmup fallback for %s: %s", cache_key, exc)
-        _snapshot_cache_set_error(cache_key, str(exc))
+    deadline = time.perf_counter() + max(float(timeout_sec or 0.0), 0.0)
+    while time.perf_counter() < deadline:
         cached, age_sec, error = _snapshot_cache_get(cache_key)
         if cached is not None:
-            return _snapshot_cache_mark(cached, stale=True, age_sec=age_sec, error=error)
-        return _snapshot_cache_mark(warmup_factory(), stale=True, age_sec=None, error=str(exc))
+            return _snapshot_cache_mark(cached, stale=False, age_sec=age_sec, error=error)
+        if not _snapshot_cache_worker_alive(cache_key):
+            break
+        await asyncio.sleep(0.05)
+
+    cached, age_sec, error = _snapshot_cache_get(cache_key)
+    if cached is not None:
+        return _snapshot_cache_mark(cached, stale=True, age_sec=age_sec, error=error)
+
+    warmup_error = error or "refresh_pending"
+    if worker and worker.is_alive():
+        logger.warning("Quant endpoint warmup fallback for %s: %s", cache_key, warmup_error)
+    return _snapshot_cache_mark(warmup_factory(), stale=True, age_sec=None, error=warmup_error)
 
 
 def _prewarm_quant_snapshot_caches() -> None:
@@ -2805,8 +2828,12 @@ async def _quant_live_updates_socket(websocket: WebSocket) -> None:
                         "canonical_snapshot": _compact_live_canonical_snapshot(canonical_snapshot_payload),
                     }
                 )
+            except WebSocketDisconnect:
+                return
             except Exception as exc:
                 logger.exception("Error producing live update payload")
+                if getattr(websocket, "application_state", None) == WebSocketState.DISCONNECTED:
+                    return
                 await websocket.send_json(
                     {
                         "type": "quant.live_error",

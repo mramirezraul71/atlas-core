@@ -209,8 +209,9 @@ class StrategyTracker:
         *,
         account_scope: TradierScope | None = None,
         account_id: str | None = None,
+        snapshot: TrackerSnapshot | None = None,
     ) -> dict[str, Any]:
-        snapshot = self.snapshot(account_scope=account_scope, account_id=account_id)
+        snapshot = snapshot or self.snapshot(account_scope=account_scope, account_id=account_id)
         account_requirement = _account_requirement(snapshot.balances)
         model_bprs: dict[str, float] = {}
         total_model_bpr = 0.0
