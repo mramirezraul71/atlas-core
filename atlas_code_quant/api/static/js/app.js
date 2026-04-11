@@ -605,27 +605,23 @@ async function loadOverview() {
     notifyAtlas('handleDashboardUpdate', canonicalData || m);
 
     // ── Equity curve (TradingView) ──
-    const eq = m.equity_curve || [];
-    if (eq.length) {
-      if (!_equityChart) {
-        _equityChart = QuantCharts.renderEquityChart('chart-equity', eq);
-      } else {
-        _equityChart.series.setData(eq);
-      }
+    const eq = QuantCharts.normalizeSeriesData(m.equity_curve || []);
+    if (!_equityChart) {
+      _equityChart = QuantCharts.renderEquityChart('chart-equity', eq);
+    } else {
+      QuantCharts.safeSetSeriesData(_equityChart.series, eq);
     }
 
     // ── Drawdown ──
-    const dd = m.drawdown_curve || [];
-    if (dd.length) {
-      if (!_ddChart) {
-        _ddChart = QuantCharts.renderDrawdownChart('chart-drawdown', dd);
-      } else {
-        _ddChart.series.setData(dd);
-      }
+    const dd = QuantCharts.normalizeSeriesData(m.drawdown_curve || []);
+    if (!_ddChart) {
+      _ddChart = QuantCharts.renderDrawdownChart('chart-drawdown', dd);
+    } else {
+      QuantCharts.safeSetSeriesData(_ddChart.series, dd);
     }
 
     // ── PnL distribution ──
-    const pnls = m.trade_pnls || [];
+    const pnls = QuantCharts.normalizeNumericArray(m.trade_pnls || []);
     if (pnls.length) QuantCharts.renderPnlDistChart('chart-pnl-dist', pnls);
 
     // ── Monte Carlo ──
@@ -853,11 +849,9 @@ document.getElementById('bt-run')?.addEventListener('click', async () => {
       setBM('bm-kelly',     fmt.pct(m.kelly_quarter ? m.kelly_quarter * 100 : null));
 
       // Equity curve inside backtest panel
-      const eq = m.equity_curve || r.data.equity_curve || [];
-      if (eq.length) {
-        if (_btEquityChart) { _btEquityChart.series.setData(eq); }
-        else { _btEquityChart = QuantCharts.renderEquityChart('bt-chart-equity', eq); }
-      }
+      const eq = QuantCharts.normalizeSeriesData(m.equity_curve || r.data.equity_curve || []);
+      if (_btEquityChart) { QuantCharts.safeSetSeriesData(_btEquityChart.series, eq); }
+      else { _btEquityChart = QuantCharts.renderEquityChart('bt-chart-equity', eq); }
 
       // Trades table
       const trades = r.data.trades || [];

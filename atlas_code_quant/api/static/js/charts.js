@@ -67,6 +67,48 @@ function makeLWChart(containerId, opts = {}) {
   return chart;
 }
 
+function normalizeSeriesTime(rawTime) {
+  if (rawTime == null) return null;
+  if (typeof rawTime === 'string') {
+    const parsed = Date.parse(rawTime);
+    if (Number.isFinite(parsed)) {
+      return Math.floor(parsed / 1000);
+    }
+  }
+  const numeric = Number(rawTime);
+  if (!Number.isFinite(numeric)) return null;
+  if (numeric > 9999999999) {
+    return Math.floor(numeric / 1000);
+  }
+  return Math.floor(numeric);
+}
+
+function normalizeSeriesData(data = []) {
+  if (!Array.isArray(data)) return [];
+  const byTime = new Map();
+  data.forEach((point) => {
+    const time = normalizeSeriesTime(point?.time);
+    const value = Number(point?.value);
+    if (time == null || !Number.isFinite(value)) return;
+    byTime.set(time, { time, value });
+  });
+  return Array.from(byTime.values()).sort((a, b) => a.time - b.time);
+}
+
+function normalizeNumericArray(values = []) {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+}
+
+function safeSetSeriesData(series, data = []) {
+  if (!series) return [];
+  const normalized = normalizeSeriesData(data);
+  series.setData(normalized);
+  return normalized;
+}
+
 // ── Equity curve ──────────────────────────────────────────────────
 function renderEquityChart(containerId, data = []) {
   // data: [{time: unix_sec, value: number}, ...]
@@ -80,7 +122,7 @@ function renderEquityChart(containerId, data = []) {
     crosshairMarkerVisible: true,
     priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
   });
-  if (data.length) series.setData(data);
+  safeSetSeriesData(series, data);
   return { chart, series };
 }
 
@@ -96,7 +138,7 @@ function renderDrawdownChart(containerId, data = []) {
     priceFormat:  { type: 'percent' },
     invertFilledArea: true,
   });
-  if (data.length) series.setData(data);
+  safeSetSeriesData(series, data);
   return { chart, series };
 }
 
@@ -107,14 +149,15 @@ function renderPnlDistChart(canvasId, pnls = []) {
   if (!CHART_JS) return;
 
   // Build histogram bins
-  if (!pnls.length) return;
-  const min = Math.min(...pnls), max = Math.max(...pnls);
+  const normalizedPnls = normalizeNumericArray(pnls);
+  if (!normalizedPnls.length) return;
+  const min = Math.min(...normalizedPnls), max = Math.max(...normalizedPnls);
   const bins = 20;
   const width = (max - min) / bins || 1;
   const counts = new Array(bins).fill(0);
   const labels = [];
   for (let i = 0; i < bins; i++) labels.push((min + i * width).toFixed(1));
-  pnls.forEach(v => {
+  normalizedPnls.forEach(v => {
     const idx = Math.min(Math.floor((v - min) / width), bins - 1);
     counts[idx]++;
   });
@@ -451,6 +494,9 @@ function renderRollingSharpeChart(canvasId, equityCurve = []) {
 }
 
 window.QuantCharts = {
+  normalizeSeriesData,
+  normalizeNumericArray,
+  safeSetSeriesData,
   renderEquityChart,
   renderDrawdownChart,
   renderPnlDistChart,
