@@ -12,6 +12,7 @@ from notifications.payloads import gather_operational_context
 from notifications.prioritization import build_prioritized_eod, build_prioritized_premarket
 from notifications.renderers import render_eod, render_exit_intelligence, render_intraday, render_premarket
 from notifications.storage import NotificationAuditStore
+from operations.alert_dispatcher import get_alert_dispatcher
 
 logger = logging.getLogger("quant.notifications.briefing")
 
@@ -63,6 +64,10 @@ class OperationalBriefingService:
         return self._ctx()
 
     def status(self) -> dict[str, Any]:
+        try:
+            dispatcher_status = get_alert_dispatcher().status()
+        except Exception as exc:
+            dispatcher_status = {"error": str(exc)}
         return {
             "notify_enabled": bool(getattr(self.settings, "notify_enabled", False)),
             "premarket": bool(getattr(self.settings, "notify_premarket", True)),
@@ -70,6 +75,7 @@ class OperationalBriefingService:
             "intraday": bool(getattr(self.settings, "notify_intraday", True)),
             "exit_intelligence": bool(getattr(self.settings, "notify_exit_intelligence", True)),
             "channels": list(getattr(self.settings, "notify_channels", [])),
+            "dispatcher_status": dispatcher_status,
             "data_dir": str(self.settings.notifications_data_dir),
             "recent_snapshots": self._store.list_recent_snapshots(limit=10),
         }

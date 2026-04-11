@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from notifications.models import LearningPhase, PrioritizedBriefing, BriefingKind
 
@@ -14,6 +15,37 @@ def _safe_float(x: Any, d: float = 0.0) -> float:
         return float(x)
     except (TypeError, ValueError):
         return d
+
+
+def _configured_market_tz(settings: Any) -> tuple[object, str]:
+    tz_name = str(getattr(settings, "notify_tz", "") or "America/New_York").strip() or "America/New_York"
+    try:
+        return ZoneInfo(tz_name), tz_name
+    except Exception:
+        return timezone.utc, "UTC"
+
+
+def _daily_row_key(row: dict[str, Any]) -> str:
+    raw = str(row.get("day") or row.get("date") or "").strip()
+    return raw[:10] if raw else ""
+
+
+def _select_eod_day_row(daily_rows: list[dict[str, Any]], settings: Any) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    tzinfo, tz_name = _configured_market_tz(settings)
+    session_day = datetime.now(tzinfo).date().isoformat()
+    utc_day = datetime.now(timezone.utc).date().isoformat()
+    normalized = [(key, row) for row in daily_rows if isinstance(row, dict) for key in [_daily_row_key(row)] if key]
+
+    for key, row in normalized:
+        if key == session_day:
+            return row, {"session_day": session_day, "matched_day": key, "match_source": "session_day_exact", "timezone": tz_name}
+    for key, row in normalized:
+        if key == utc_day:
+            return row, {"session_day": session_day, "matched_day": key, "match_source": "utc_day_fallback", "timezone": tz_name}
+    if normalized:
+        key, row = max(normalized, key=lambda item: item[0])
+        return row, {"session_day": session_day, "matched_day": key, "match_source": "latest_row_fallback", "timezone": tz_name}
+    return None, {"session_day": session_day, "matched_day": None, "match_source": "no_daily_rows", "timezone": tz_name}
 
 
 def classify_learning_phase(
@@ -256,14 +288,17 @@ def build_prioritized_premarket(ctx: dict[str, Any], settings: Any) -> Prioritiz
 def build_prioritized_eod(ctx: dict[str, Any], settings: Any) -> PrioritizedBriefing:
     analytics = ctx.get("journal_analytics") or {}
     daily = list(analytics.get("daily_pnl") or [])
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    day_row = next((d for d in daily if str(d.get("day") or d.get("date") or "").startswith(today)), None)
+    day_row, day_match = _select_eod_day_row(daily, settings)
     pnl_day = _safe_float((day_row or {}).get("pnl") or (day_row or {}).get("daily_pnl"), 0.0)
     strat = list(analytics.get("strategy_performance") or [])
     best = max(strat, key=lambda s: _safe_float(s.get("profit_factor"), 0.0)) if strat else {}
     worst = min(strat, key=lambda s: _safe_float(s.get("profit_factor"), 999.0)) if strat else {}
     r_dist = analytics.get("r_distribution") or {}
     risks = build_risk_list(ctx, max_n=5)
+    if day_match["match_source"] != "session_day_exact":
+        risks.append(
+            "EoD: PnL diario estimado sin match exacto de sesion; revisar timezone/journal antes de usarlo contablemente."
+        )
     recommendations: list[str] = []
     if pnl_day < 0:
         recommendations.append("PnL diario negativo: reducir tamaño mañana y revisar estrategias con peor PF.")
@@ -291,10 +326,14 @@ def build_prioritized_eod(ctx: dict[str, Any], settings: Any) -> PrioritizedBrie
         open_close_criteria={},
         metrics={
             "pnl_day_estimate": round(pnl_day, 2),
+            "pnl_day_session_date": day_match["session_day"],
+            "pnl_day_matched_date": day_match["matched_day"],
+            "pnl_day_match_source": day_match["match_source"],
+            "pnl_day_timezone": day_match["timezone"],
             "trades_analytics_rows": int(analytics.get("row_count") or 0),
             "r_distribution_summary": str(r_dist)[:200] if r_dist else "",
         },
-        raw_refs={"analytics_generated_at": analytics.get("generated_at")},
+        raw_refs={"analytics_generated_at": analytics.get("generated_at"), "eod_day_match": day_match},
     )
 
 

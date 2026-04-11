@@ -4,13 +4,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import asyncio
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from notifications.briefing_service import OperationalBriefingService
 from notifications.dispatcher import OperationalNotificationDispatcher
 from notifications.prioritization import (
     adaptive_learning_headline,
+    build_prioritized_eod,
     build_prioritized_premarket,
     classify_learning_phase,
     rank_scanner_opportunities,
@@ -125,3 +128,116 @@ def test_build_prioritized_premarket_minimal_ctx() -> None:
     pb = build_prioritized_premarket(ctx, st)
     assert pb.opportunities
     assert pb.kind == BriefingKind.PREMARKET
+
+
+def test_build_prioritized_eod_uses_market_timezone_for_day_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    import notifications.prioritization as pr
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            base = datetime(2026, 4, 11, 1, 30, tzinfo=timezone.utc)
+            return base if tz is None else base.astimezone(tz)
+
+    monkeypatch.setattr(pr, "datetime", FixedDateTime)
+    st = MagicMock()
+    st.notify_tz = "America/New_York"
+    st.notify_max_positions = 3
+    ctx = {
+        "journal_analytics": {
+            "daily_pnl": [
+                {"date": "2026-04-10", "pnl": 125.5, "trades": 3},
+                {"date": "2026-04-11", "pnl": 999.0, "trades": 1},
+            ],
+            "strategy_performance": [],
+        },
+        "canonical_snapshot": {"positions": []},
+        "learning_orchestrator": {},
+        "adaptive_snapshot": {},
+    }
+    pb = build_prioritized_eod(ctx, st)
+    assert pb.metrics["pnl_day_estimate"] == 125.5
+    assert pb.metrics["pnl_day_session_date"] == "2026-04-10"
+    assert pb.metrics["pnl_day_match_source"] == "session_day_exact"
+
+
+def test_build_prioritized_eod_flags_fallback_without_exact_session_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    import notifications.prioritization as pr
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            base = datetime(2026, 4, 11, 20, 0, tzinfo=timezone.utc)
+            return base if tz is None else base.astimezone(tz)
+
+    monkeypatch.setattr(pr, "datetime", FixedDateTime)
+    st = MagicMock()
+    st.notify_tz = "America/New_York"
+    st.notify_max_positions = 2
+    ctx = {
+        "journal_analytics": {"daily_pnl": [{"date": "2026-04-10", "pnl": -42.0}]},
+        "canonical_snapshot": {"positions": []},
+        "learning_orchestrator": {},
+        "adaptive_snapshot": {},
+    }
+    pb = build_prioritized_eod(ctx, st)
+    assert pb.metrics["pnl_day_match_source"] == "latest_row_fallback"
+    assert any("sin match exacto de sesion" in risk for risk in pb.risks)
+
+
+def test_operational_briefing_status_includes_dispatcher_runtime(tmp_path: Path) -> None:
+    st = MagicMock()
+    st.notify_enabled = True
+    st.notify_premarket = True
+    st.notify_eod = True
+    st.notify_intraday = True
+    st.notify_exit_intelligence = True
+    st.notify_channels = ["telegram", "whatsapp"]
+    st.notifications_data_dir = tmp_path
+
+    with patch("notifications.briefing_service.get_alert_dispatcher") as ga:
+        ga.return_value.status.return_value = {
+            "telegram_enabled": True,
+            "whatsapp_enabled": False,
+            "worker_alive": True,
+        }
+        svc = OperationalBriefingService({"settings": st})
+        out = svc.status()
+
+    assert out["dispatcher_status"]["telegram_enabled"] is True
+    assert out["dispatcher_status"]["whatsapp_enabled"] is False
+
+
+def test_attach_exit_intelligence_bridge_triggers_only_for_trade_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+    import notifications.briefing_service as bs
+    import notifications.scheduler as sched
+    import operations.alert_dispatcher as ad
+    from config.settings import settings
+
+    class DummyDispatcher:
+        def __init__(self) -> None:
+            self._on_alert = None
+
+    class ImmediateLoop:
+        def create_task(self, coro):
+            asyncio.run(coro)
+            return None
+
+    dispatcher = DummyDispatcher()
+    svc = MagicMock()
+    svc.emit_exit_intelligence = AsyncMock()
+
+    monkeypatch.setattr(ad, "get_alert_dispatcher", lambda *args, **kwargs: dispatcher)
+    monkeypatch.setattr(bs, "get_operational_briefing_service", lambda: svc)
+    monkeypatch.setattr(settings, "notify_enabled", True)
+    monkeypatch.setattr(settings, "notify_exit_intelligence", True)
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: ImmediateLoop())
+
+    sched.attach_exit_intelligence_bridge()
+    dispatcher._on_alert(ad.AlertEvent(level="INFO", category="trade", title="ENTRADA LONG", body="body", symbol="SPY"))
+    svc.emit_exit_intelligence.assert_not_awaited()
+
+    dispatcher._on_alert(
+        ad.AlertEvent(level="INFO", category="trade", title="SALIDA", body="body", symbol="SPY", metadata={"x": 1})
+    )
+    svc.emit_exit_intelligence.assert_awaited_once()

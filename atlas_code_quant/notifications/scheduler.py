@@ -110,6 +110,7 @@ def start_notification_scheduler() -> asyncio.Task | None:
 
 def attach_exit_intelligence_bridge() -> None:
     from operations.alert_dispatcher import AlertEvent, get_alert_dispatcher
+    from notifications.briefing_service import get_operational_briefing_service
 
     from config.settings import settings
 
