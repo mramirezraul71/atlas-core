@@ -54,6 +54,7 @@ class AlertEvent:
     symbol: str = ""
     timestamp: datetime = field(default_factory=lambda: datetime.now(tz=timezone.utc))
     metadata: dict = field(default_factory=dict)
+    body_plain: str | None = None  # WhatsApp u otros canales sin HTML; si None se usa body sin tags
 
     def format_telegram(self) -> str:
         icon = {"INFO": "📊", "WARNING": "⚠️", "CRITICAL": "🚨"}.get(self.level, "ℹ️")
@@ -75,7 +76,12 @@ class AlertEvent:
     def format_whatsapp(self) -> str:
         icon = {"INFO": "📊", "WARNING": "⚠️", "CRITICAL": "🚨"}.get(self.level, "ℹ️")
         ts = self.timestamp.strftime("%H:%M UTC")
-        lines = [f"{icon} *[ATLAS Quant] {self.title}*", f"_{ts}_", "", self.body]
+        raw = (self.body_plain if self.body_plain is not None else self.body).strip()
+        if self.body_plain is None and "<" in raw and ">" in raw:
+            import re
+            raw = re.sub(r"<[^>]+>", "", raw)
+            raw = raw.replace("&nbsp;", " ").strip()
+        lines = [f"{icon} *[ATLAS Quant] {self.title}*", f"_{ts}_", "", raw]
         if self.symbol:
             lines.insert(2, f"Símbolo: {self.symbol}")
         return "\n".join(lines)
@@ -414,6 +420,66 @@ class AlertDispatcher:
         except Exception as exc:
             logger.debug("[Alerts] WhatsApp error: %s", exc)
             return False
+
+    async def operational_briefing(
+        self,
+        *,
+        title: str,
+        body_html: str,
+        body_plain: str,
+        category: str = "briefing",
+        level: str = LEVEL_INFO,
+        symbol: str = "",
+        metadata: dict | None = None,
+        cooldown_s: float | None = None,
+        channels: set[str] | None = None,
+    ) -> None:
+        """Briefings ejecutivos (pre-market / EoD): HTML en Telegram, texto plano en WhatsApp.
+
+        channels: subconjunto de {"telegram","whatsapp"}; None = ambos si están habilitados en el dispatcher.
+        """
+        event = AlertEvent(
+            level=level,
+            category=category,
+            title=title,
+            body=body_html,
+            body_plain=body_plain,
+            symbol=symbol,
+            metadata=metadata or {},
+        )
+        lvl_order = {LEVEL_INFO: 0, LEVEL_WARNING: 1, LEVEL_CRITICAL: 2}
+        if lvl_order.get(event.level, 0) < lvl_order.get(self.min_level, 0):
+            return
+        cd = cooldown_s if cooldown_s is not None else self.cooldown_s
+        key = f"{event.category}:{event.symbol or '__briefing__'}"
+        now = time.time()
+        last = self._last_alerts.get(key, 0.0)
+        if now - last < cd:
+            logger.debug("[Alerts] briefing cooldown %s", key)
+            return
+        self._last_alerts[key] = now
+        if self._on_alert:
+            try:
+                self._on_alert(event)
+            except Exception:
+                pass
+        await self._send_briefing_to_channels(event, channels)
+
+    async def _send_briefing_to_channels(self, event: AlertEvent, channels: set[str] | None) -> None:
+        want = channels or {"telegram", "whatsapp"}
+        tasks = []
+        if "telegram" in want and self.telegram_enabled:
+            tasks.append(self._send_telegram(event))
+        if "whatsapp" in want and self.whatsapp_enabled:
+            tasks.append(self._send_whatsapp(event))
+        if not tasks:
+            return
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        ok = sum(1 for r in results if r is True)
+        if ok:
+            self._sent_count += 1
+        else:
+            self._error_count += 1
 
 
 # ── Singleton global ──────────────────────────────────────────────────────────

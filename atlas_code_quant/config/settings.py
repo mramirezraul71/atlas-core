@@ -275,6 +275,26 @@ class TradingConfig:
     exit_governance_trailing_profit_floor_r: float = _fenv("QUANT_EXIT_GOVERNANCE_TRAILING_PROFIT_FLOOR_R", 0.35)
     exit_governance_hard_exit_loss_usd: float = _fenv("QUANT_EXIT_GOVERNANCE_HARD_EXIT_LOSS_USD", 200.0)
 
+    # Briefing operativo / notificaciones inteligentes (Telegram + WhatsApp vía AlertDispatcher)
+    notify_enabled: bool = os.getenv("QUANT_NOTIFY_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+    notify_premarket: bool = os.getenv("QUANT_NOTIFY_PREMARKET", "true").strip().lower() not in {"0", "false", "no"}
+    notify_eod: bool = os.getenv("QUANT_NOTIFY_EOD", "true").strip().lower() not in {"0", "false", "no"}
+    notify_intraday: bool = os.getenv("QUANT_NOTIFY_INTRADAY", "true").strip().lower() not in {"0", "false", "no"}
+    notify_exit_intelligence: bool = os.getenv("QUANT_NOTIFY_EXIT_INTEL", "true").strip().lower() not in {"0", "false", "no"}
+    notify_channels_raw: str = _clean_setting(os.getenv("QUANT_NOTIFY_CHANNELS"), "telegram,whatsapp")
+    notify_min_severity: str = _clean_setting(os.getenv("QUANT_NOTIFY_MIN_SEVERITY"), "INFO").upper()
+    notify_cooldown_sec: float = _fenv("QUANT_NOTIFY_COOLDOWN_SEC", 180.0)
+    notify_dedup_ttl_sec: float = _fenv("QUANT_NOTIFY_DEDUP_TTL_SEC", 600.0)
+    notify_max_opportunities: int = _ienv("QUANT_NOTIFY_MAX_OPPS", 5)
+    notify_max_positions: int = _ienv("QUANT_NOTIFY_MAX_POSITIONS", 8)
+    notify_render_mode: str = _clean_setting(os.getenv("QUANT_NOTIFY_RENDER"), "telegram_html")
+    notify_paper_only: bool = os.getenv("QUANT_NOTIFY_PAPER_ONLY", "false").strip().lower() in {"1", "true", "yes"}
+    notify_tz: str = _clean_setting(os.getenv("QUANT_NOTIFY_TZ"), "America/New_York")
+    notify_premarket_hhmm: str = _clean_setting(os.getenv("QUANT_NOTIFY_PREMARKET_HHMM"), "08:00")
+    notify_eod_hhmm: str = _clean_setting(os.getenv("QUANT_NOTIFY_EOD_HHMM"), "16:10")
+    notify_scheduler_poll_sec: int = _ienv("QUANT_NOTIFY_SCHEDULER_POLL_SEC", 45)
+    notify_intraday_min_interval_sec: float = _fenv("QUANT_NOTIFY_INTRADAY_MIN_SEC", 300.0)
+
     # AtlasLearningBrain — criterios de readiness y scoring híbrido
     learning_brain_enabled: bool = os.getenv("ATLAS_LEARNING_BRAIN_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     learning_brain_ml_weight: float = _fenv("ATLAS_LEARNING_ML_WEIGHT", 0.4)
@@ -341,6 +361,8 @@ class TradingConfig:
     atlas_brain_events_path: Path = BASE_DIR / "logs" / "quant_brain_bridge.jsonl"
     adaptive_learning_snapshot_path: Path = BASE_DIR / "data" / "learning" / "adaptive_policy_snapshot.json"
     scanner_universe_cache_path: Path = BASE_DIR / "data" / "scanner" / "us_equities_universe.json"
+    notify_channels: list[str] = field(default_factory=list)
+    notifications_data_dir: Path = field(default_factory=lambda: BASE_DIR / "data" / "notifications")
 
     def __post_init__(self) -> None:
         if self.tradier_default_scope not in {"live", "paper"}:
@@ -416,6 +438,16 @@ class TradingConfig:
         self.atlas_brain_events_path.parent.mkdir(parents=True, exist_ok=True)
         self.adaptive_learning_snapshot_path.parent.mkdir(parents=True, exist_ok=True)
         self.scanner_universe_cache_path.parent.mkdir(parents=True, exist_ok=True)
+        self.notifications_data_dir.mkdir(parents=True, exist_ok=True)
+        chans = [c.strip().lower() for c in self.notify_channels_raw.split(",") if c.strip()]
+        self.notify_channels = [c for c in chans if c in {"telegram", "whatsapp"}] or ["telegram"]
+        self.notify_cooldown_sec = max(30.0, min(self.notify_cooldown_sec, 3600.0))
+        self.notify_dedup_ttl_sec = max(60.0, min(self.notify_dedup_ttl_sec, 86400.0))
+        self.notify_max_opportunities = max(1, min(self.notify_max_opportunities, 25))
+        self.notify_max_positions = max(1, min(self.notify_max_positions, 40))
+        self.notify_scheduler_poll_sec = max(15, min(self.notify_scheduler_poll_sec, 600))
+        if self.notify_render_mode not in {"telegram_html", "plain"}:
+            self.notify_render_mode = "telegram_html"
         if not self.journal_db_url:
             self.journal_db_url = f"sqlite:///{self.journal_db_path.as_posix()}"
 

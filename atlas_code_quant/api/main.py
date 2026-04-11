@@ -98,6 +98,7 @@ from operations.operation_center import OperationCenter
 from operations.sensor_vision import SensorVisionService
 from operations.chart_plan_builder import chart_plan_probe_ok
 from operations.readiness_eval import evaluate_operational_readiness, startup_warmup_gate_satisfied
+from operations.readiness_payload_builder import build_readiness_fast_payload, quant_readiness_flags
 from operations.startup_visual_connect import apply_startup_visual_connections
 from operations.vision_calibration import VisionCalibrationService
 from scanner.opportunity_scanner import OpportunityScannerService
@@ -309,6 +310,26 @@ async def _start_background_services() -> None:
             logger.info("AlertDispatcher iniciado")
         except Exception:
             logger.exception("AlertDispatcher: fallo en startup (no critico)")
+
+        try:
+            from notifications.briefing_service import configure_operational_briefing
+            from notifications.scheduler import attach_exit_intelligence_bridge, start_notification_scheduler
+
+            configure_operational_briefing(
+                operation_center=_OPERATION_CENTER,
+                scanner=_SCANNER,
+                canonical_service=_CANONICAL_SNAPSHOT,
+                vision_service=_VISION,
+                settings=settings,
+            )
+            attach_exit_intelligence_bridge()
+            if settings.notify_enabled:
+                start_notification_scheduler()
+                logger.info("Operational briefing: scheduler activo (QUANT_NOTIFY_ENABLED=true)")
+            else:
+                logger.info("Operational briefing: configurado; scheduler off (QUANT_NOTIFY_ENABLED=false)")
+        except Exception:
+            logger.exception("Operational notifications: fallo en startup (no crítico)")
 
         if settings.startup_journal_sync_delay_sec > 0:
             _mark_startup_background("waiting_journal_sync")
@@ -2119,73 +2140,13 @@ async def operation_vision_provider(
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
-def _quant_readiness_flags() -> dict[str, object]:
-    return {
-        "lightweight_startup": bool(getattr(settings, "lightweight_startup", False)),
-        "chart_auto_open_enabled": bool(getattr(settings, "chart_auto_open_enabled", False)),
-        "chart_verify_after_open": bool(getattr(settings, "chart_verify_after_open", True)),
-        "regime_hysteresis_enabled": bool(getattr(settings, "regime_hysteresis_enabled", True)),
-        "vision_ocr_crop_margin": float(getattr(settings, "vision_ocr_crop_margin", 0.0)),
-        "context_price_cycle_enabled": bool(getattr(settings, "context_price_cycle_enabled", True)),
-        "context_cycle_soft_gate": bool(getattr(settings, "context_cycle_soft_gate", False)),
-        "default_vision_provider_configured": bool(str(getattr(settings, "default_vision_provider", "") or "").strip()),
-        "startup_chart_warmup_enabled": bool(getattr(settings, "startup_chart_warmup_enabled", False)),
-        "chart_provider_default": str(getattr(settings, "chart_provider_default", "tradingview") or "tradingview"),
-    }
-
-
 def _operation_readiness_payload_fast() -> dict[str, object]:
     """Readiness liviano: sin diagnose() ni VisualPipeline; visión vía status_for_gate() (solo proveedor activo)."""
-    chart = _OPERATION_CENTER.chart_execution.status()
-    vision_status = _VISION.status_for_gate()
-    auto_open = bool(getattr(settings, "chart_auto_open_enabled", False))
-    warmup_on = bool(getattr(settings, "startup_chart_warmup_enabled", False))
-    chart_plan_needed = auto_open or warmup_on
-    probe_detail = ""
-    if chart_plan_needed:
-        symbols = list(getattr(settings, "startup_chart_warmup_symbols", []) or [])
-        probe_sym = symbols[0] if symbols else "SPY"
-        tf = str(getattr(settings, "startup_chart_warmup_timeframe", "1h") or "1h")
-        pv = str(getattr(settings, "chart_provider_default", "tradingview") or "tradingview")
-        chart_plan_buildable, probe_detail = chart_plan_probe_ok(probe_sym, tf, pv)
-    else:
-        chart_plan_buildable = True
-    warm_ok = startup_warmup_gate_satisfied(
-        chart,
-        startup_chart_warmup_enabled=warmup_on,
-        chart_auto_open_enabled=auto_open,
+    return build_readiness_fast_payload(
+        operation_center=_OPERATION_CENTER,
+        vision_service=_VISION,
+        st=settings,
     )
-    ready, reasons = evaluate_operational_readiness(
-        chart_execution=chart,
-        vision_provider_ready=bool(vision_status.get("provider_ready")),
-        chart_auto_open_enabled=auto_open,
-        chart_plan_buildable=chart_plan_buildable,
-        startup_chart_warmup_enabled=warmup_on,
-        startup_warmup_satisfied=warm_ok,
-        visual_pipeline_ok=None,
-    )
-    return {
-        "ready": ready,
-        "reasons_not_ready": reasons,
-        "readiness_mode": "fast",
-        "chart_execution": chart,
-        "vision_status": vision_status,
-        "vision_diagnose": None,
-        "chart_plan_probe": {
-            "required": chart_plan_needed,
-            "ok": chart_plan_buildable,
-            "detail": probe_detail or None,
-        },
-        "startup_warmup_gate": {
-            "required": warmup_on and auto_open,
-            "satisfied": warm_ok,
-        },
-        "visual_pipeline": {
-            "omitted": True,
-            "detail": "Usa GET /operation/readiness/diagnostic para diagnose() + VisualPipeline.status().",
-        },
-        "quant_flags": _quant_readiness_flags(),
-    }
 
 
 def _operation_readiness_payload_diagnostic() -> dict[str, object]:
@@ -2243,7 +2204,7 @@ def _operation_readiness_payload_diagnostic() -> dict[str, object]:
             "satisfied": warm_ok,
         },
         "visual_pipeline": vp_status,
-        "quant_flags": _quant_readiness_flags(),
+        "quant_flags": quant_readiness_flags(settings),
     }
 
 
@@ -3235,6 +3196,111 @@ async def alerts_test(
         )
     except Exception as e:
         return StdResponse(ok=False, error=str(e), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+# ── Briefing operativo (notificaciones inteligentes) ──────────────────────────
+
+@app.get("/notifications/status", response_model=StdResponse, tags=["Notifications"])
+async def notifications_status_endpoint(x_api_key: str | None = Header(None)):
+    """Estado del módulo de briefing: flags, canales, snapshots recientes."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        from notifications.briefing_service import get_operational_briefing_service
+
+        data = get_operational_briefing_service().status()
+        return StdResponse(ok=True, data=data, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as e:
+        return StdResponse(ok=False, error=str(e), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/notifications/premarket/run", response_model=StdResponse, tags=["Notifications"])
+async def notifications_premarket_run(x_api_key: str | None = Header(None)):
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        from notifications.briefing_service import get_operational_briefing_service
+
+        out = await get_operational_briefing_service().run_premarket()
+        return StdResponse(ok=True, data=out, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as e:
+        logger.exception("notifications premarket")
+        return StdResponse(ok=False, error=str(e), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/notifications/eod/run", response_model=StdResponse, tags=["Notifications"])
+async def notifications_eod_run(x_api_key: str | None = Header(None)):
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        from notifications.briefing_service import get_operational_briefing_service
+
+        out = await get_operational_briefing_service().run_eod()
+        return StdResponse(ok=True, data=out, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as e:
+        logger.exception("notifications eod")
+        return StdResponse(ok=False, error=str(e), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.post("/notifications/test", response_model=StdResponse, tags=["Notifications"])
+async def notifications_test(
+    message: str = "Test briefing operativo",
+    x_api_key: str | None = Header(None),
+):
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        from notifications.briefing_service import get_operational_briefing_service
+
+        out = await get_operational_briefing_service().run_test(message)
+        return StdResponse(ok=True, data=out, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as e:
+        return StdResponse(ok=False, error=str(e), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/notifications/recent", response_model=StdResponse, tags=["Notifications"])
+async def notifications_recent(limit: int = 30, x_api_key: str | None = Header(None)):
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        from notifications.briefing_service import get_operational_briefing_service
+
+        svc = get_operational_briefing_service()
+        data = {
+            "snapshots": svc._store.list_recent_snapshots(limit=min(limit, 50)),
+            "events": svc._store.tail_events(limit=min(limit, 200)),
+        }
+        return StdResponse(ok=True, data=data, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as e:
+        return StdResponse(ok=False, error=str(e), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+@app.get("/api/v2/quant/notifications/status", response_model=StdResponse, tags=["V2"])
+async def notifications_status_v2(x_api_key: str | None = Header(None)):
+    return await notifications_status_endpoint(x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/notifications/premarket/run", response_model=StdResponse, tags=["V2"])
+async def notifications_premarket_v2(x_api_key: str | None = Header(None)):
+    return await notifications_premarket_run(x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/notifications/eod/run", response_model=StdResponse, tags=["V2"])
+async def notifications_eod_v2(x_api_key: str | None = Header(None)):
+    return await notifications_eod_run(x_api_key=x_api_key)
+
+
+@app.post("/api/v2/quant/notifications/test", response_model=StdResponse, tags=["V2"])
+async def notifications_test_v2(
+    message: str = "Test briefing operativo",
+    x_api_key: str | None = Header(None),
+):
+    return await notifications_test(message=message, x_api_key=x_api_key)
+
+
+@app.get("/api/v2/quant/notifications/recent", response_model=StdResponse, tags=["V2"])
+async def notifications_recent_v2(limit: int = 30, x_api_key: str | None = Header(None)):
+    return await notifications_recent(limit=limit, x_api_key=x_api_key)
 
 
 # ── Fase 3: Visión ────────────────────────────────────────────────────────────
