@@ -232,6 +232,13 @@ class TradingConfig:
     # Tras Popen del navegador: comprobar que exista proceso Chrome/Chromium (Windows: tasklist).
     chart_verify_after_open: bool = os.getenv("QUANT_CHART_VERIFY_AFTER_OPEN", "true").strip().lower() not in {"0", "false", "no"}
     chart_verify_delay_sec: float = _fenv("QUANT_CHART_VERIFY_DELAY_SEC", 1.25)
+    # Conexión arranque API: visión persistida + URLs TradingView iguales que StrategySelector
+    default_vision_provider: str = _clean_setting(os.getenv("QUANT_DEFAULT_VISION_PROVIDER"), "").strip().lower()
+    startup_chart_warmup_enabled: bool = os.getenv("QUANT_STARTUP_CHART_WARMUP", "false").strip().lower() not in {"0", "false", "no"}
+    startup_chart_warmup_symbols_raw: str = _clean_setting(os.getenv("QUANT_STARTUP_CHART_SYMBOLS"), "SPY")
+    startup_chart_warmup_timeframe: str = _clean_setting(os.getenv("QUANT_STARTUP_CHART_TIMEFRAME"), "1h")
+    chart_provider_default: str = _clean_setting(os.getenv("QUANT_CHART_PROVIDER"), "tradingview")
+    startup_chart_warmup_symbols: list[str] = field(default_factory=list)
     # Histéresis régimen ML: delta mínimo en prob. para cambiar de clase (evita flip-flop).
     regime_hysteresis_enabled: bool = os.getenv("QUANT_REGIME_HYSTERESIS_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     regime_hysteresis_margin: float = _fenv("QUANT_REGIME_HYSTERESIS_MARGIN", 0.08)
@@ -358,6 +365,11 @@ class TradingConfig:
         self.entry_max_adverse_drift_pct = max(0.01, min(self.entry_max_adverse_drift_pct, 10.0))
         self.entry_warn_drift_vs_expected_move_pct = max(1.0, min(self.entry_warn_drift_vs_expected_move_pct, 100.0))
         self.chart_open_cooldown_sec = max(10, min(self.chart_open_cooldown_sec, 3600))
+        self.startup_chart_warmup_symbols = [
+            s.strip().upper() for s in self.startup_chart_warmup_symbols_raw.split(",") if s.strip()
+        ][:8]
+        if self.chart_provider_default not in {"tradingview", "yahoo"}:
+            self.chart_provider_default = "tradingview"
         self.visual_gate_min_readiness_pct = max(0.0, min(self.visual_gate_min_readiness_pct, 100.0))
         self.position_management_max_symbol_heat_pct = max(1.0, min(self.position_management_max_symbol_heat_pct, 100.0))
         self.position_management_max_unrealized_loss_r = max(0.05, min(self.position_management_max_unrealized_loss_r, 10.0))

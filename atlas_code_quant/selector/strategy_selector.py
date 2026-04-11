@@ -20,6 +20,16 @@ from monitoring.strategy_tracker import StrategyTracker
 from operations.strategy_playbooks import build_strategy_playbook
 
 
+def _active_vision_provider() -> str:
+    """Proveedor persistido en sensor_vision_state.json (alineado con OperationCenter / POST vision)."""
+    try:
+        from operations.sensor_vision import SensorVisionService
+
+        return str(SensorVisionService().status(fast=True).get("provider") or "direct_nexus")
+    except Exception:
+        return "direct_nexus"
+
+
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
         result = float(value)
@@ -1191,7 +1201,7 @@ class StrategySelectorService:
             family=str(meta.get("family") or ""),
         )
         camera_plan = {
-            "provider": "direct_nexus",
+            "provider": _active_vision_provider(),
             "required": True,
             "visual_fit_pct": camera_visual_fit_pct,
             "expected_visual": expected_visual,
