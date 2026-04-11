@@ -24,6 +24,17 @@ def _parse_hhmm(raw: str) -> tuple[int, int]:
         return 8, 0
 
 
+def _is_trade_exit_event(ev: Any) -> bool:
+    if getattr(ev, "category", None) != "trade":
+        return False
+    meta = getattr(ev, "metadata", None) or {}
+    if bool(meta.get("is_exit")):
+        return True
+    if str(meta.get("trade_stage") or "").strip().lower() == "exit":
+        return True
+    return "SALIDA" in str(getattr(ev, "title", "") or "")
+
+
 async def _scheduler_tick() -> None:
     from notifications.briefing_service import get_operational_briefing_service
 
@@ -125,7 +136,7 @@ def attach_exit_intelligence_bridge() -> None:
                 pass
         if not settings.notify_enabled or not settings.notify_exit_intelligence:
             return
-        if ev.category != "trade" or "SALIDA" not in (ev.title or ""):
+        if not _is_trade_exit_event(ev):
             return
         try:
             loop = asyncio.get_running_loop()

@@ -198,7 +198,15 @@ class AlertDispatcher:
             title=f"Trade {action_str} — {symbol}",
             body="\n".join(body_lines),
             symbol=symbol,
-            metadata={"pnl": f"{pnl:+.4f}" if pnl is not None else None},
+            metadata={
+                "pnl": f"{pnl:+.4f}" if pnl is not None else None,
+                "trade_stage": "open" if is_open else "exit",
+                "is_exit": not is_open,
+                "side": side,
+                "reason": reason or None,
+                "entry_price": entry_price,
+                "exit_price": exit_price,
+            },
         ))
 
     async def drawdown_critical(

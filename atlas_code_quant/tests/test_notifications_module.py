@@ -238,6 +238,75 @@ def test_attach_exit_intelligence_bridge_triggers_only_for_trade_exit(monkeypatc
     svc.emit_exit_intelligence.assert_not_awaited()
 
     dispatcher._on_alert(
-        ad.AlertEvent(level="INFO", category="trade", title="SALIDA", body="body", symbol="SPY", metadata={"x": 1})
+        ad.AlertEvent(
+            level="INFO",
+            category="trade",
+            title="Cierre ejecutado",
+            body="body",
+            symbol="SPY",
+            metadata={"x": 1, "is_exit": True, "trade_stage": "exit"},
+        )
     )
     svc.emit_exit_intelligence.assert_awaited_once()
+
+
+def test_attach_exit_intelligence_bridge_keeps_legacy_title_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    import notifications.briefing_service as bs
+    import notifications.scheduler as sched
+    import operations.alert_dispatcher as ad
+    from config.settings import settings
+
+    class DummyDispatcher:
+        def __init__(self) -> None:
+            self._on_alert = None
+
+    class ImmediateLoop:
+        def create_task(self, coro):
+            asyncio.run(coro)
+            return None
+
+    dispatcher = DummyDispatcher()
+    svc = MagicMock()
+    svc.emit_exit_intelligence = AsyncMock()
+
+    monkeypatch.setattr(ad, "get_alert_dispatcher", lambda *args, **kwargs: dispatcher)
+    monkeypatch.setattr(bs, "get_operational_briefing_service", lambda: svc)
+    monkeypatch.setattr(settings, "notify_enabled", True)
+    monkeypatch.setattr(settings, "notify_exit_intelligence", True)
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: ImmediateLoop())
+
+    sched.attach_exit_intelligence_bridge()
+    dispatcher._on_alert(
+        ad.AlertEvent(level="INFO", category="trade", title="Trade SALIDA - SPY", body="body", symbol="SPY", metadata={})
+    )
+    svc.emit_exit_intelligence.assert_awaited_once()
+
+
+def test_trade_executed_emits_semantic_exit_metadata() -> None:
+    import operations.alert_dispatcher as ad
+
+    captured: list[ad.AlertEvent] = []
+    dispatcher = ad.AlertDispatcher(telegram_enabled=False, whatsapp_enabled=False)
+
+    async def _capture(event):
+        captured.append(event)
+
+    dispatcher._enqueue = _capture  # type: ignore[method-assign]
+
+    asyncio.run(
+        dispatcher.trade_executed(
+            symbol="SPY",
+            side="long",
+            entry_price=None,
+            exit_price=501.25,
+            size=1.0,
+            pnl=12.5,
+            reason="tp",
+        )
+    )
+
+    assert captured
+    event = captured[0]
+    assert event.metadata["is_exit"] is True
+    assert event.metadata["trade_stage"] == "exit"
+    assert event.metadata["exit_price"] == 501.25
