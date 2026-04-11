@@ -1,12 +1,17 @@
 """Chart mission execution service for selector-driven visual validation."""
 from __future__ import annotations
 
+import logging
 import subprocess
+import sys
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from config.settings import settings
+
+logger = logging.getLogger("quant.chart_execution")
 
 try:
     from atlas_code_quant.chart_launcher import _chrome_path
@@ -40,6 +45,8 @@ class ChartExecutionService:
         browser_path = self._detect_browser()
         return {
             "auto_open_enabled": bool(settings.chart_auto_open_enabled),
+            "verify_after_open": bool(settings.chart_verify_after_open),
+            "verify_delay_sec": float(settings.chart_verify_delay_sec),
             "browser_path": browser_path,
             "browser_available": bool(browser_path),
             "cooldown_sec": int(settings.chart_open_cooldown_sec),
@@ -50,6 +57,58 @@ class ChartExecutionService:
             ),
             "last_payload": self._last_payload or {},
         }
+
+    @staticmethod
+    def _browser_exe_candidates(browser_path: str | None) -> list[str]:
+        """Nombres de imagen Windows esperados según el ejecutable configurado."""
+        if not browser_path:
+            return ["chrome.exe", "msedge.exe"]
+        base = Path(browser_path).name.lower()
+        if "chrome" in base and "chromium" not in base:
+            return ["chrome.exe"]
+        if "chromium" in base:
+            return ["chrome.exe", "chromium.exe"]
+        if "msedge" in base or base == "edge.exe":
+            return ["msedge.exe"]
+        if "brave" in base:
+            return ["brave.exe"]
+        if "firefox" in base:
+            return ["firefox.exe"]
+        if "opera" in base:
+            return ["opera.exe"]
+        return ["chrome.exe", "msedge.exe", "firefox.exe"]
+
+    @classmethod
+    def _verify_browser_process_running(cls, browser_path: str | None) -> tuple[bool, str]:
+        """Comprueba que exista al menos un proceso del navegador usado (heurística post-apertura)."""
+        candidates = cls._browser_exe_candidates(browser_path)
+        if sys.platform == "win32":
+            try:
+                for exe in candidates:
+                    proc = subprocess.run(
+                        ["tasklist", "/FI", f"IMAGENAME eq {exe}", "/NH"],
+                        capture_output=True,
+                        text=True,
+                        timeout=8,
+                        check=False,
+                    )
+                    out = (proc.stdout or "").lower()
+                    if exe.lower() in out:
+                        return True, f"tasklist: {exe} presente"
+                return False, f"tasklist: sin proceso entre {candidates}"
+            except Exception as exc:
+                return False, f"tasklist error: {exc}"
+        try:
+            import psutil  # type: ignore
+
+            hints = tuple(x.replace(".exe", "") for x in candidates)
+            for p in psutil.process_iter(["name"]):
+                n = (p.info.get("name") or "").lower()
+                if any(h in n for h in hints):
+                    return True, f"psutil: {n}"
+        except Exception as exc:
+            logger.debug("verify_browser_process: psutil no disponible: %s", exc)
+        return True, "verify_skipped_non_windows_no_psutil"
 
     def ensure_chart_mission(
         self,
@@ -91,6 +150,8 @@ class ChartExecutionService:
             "execution_state": "not_requested",
             "readiness_score_pct": 100.0 if not targets else 0.0,
             "warnings": [],
+            "browser_verify_ok": None,
+            "browser_verify_detail": None,
         }
 
         if not targets:
@@ -124,6 +185,8 @@ class ChartExecutionService:
             payload["open_ok"] = True
             payload["execution_state"] = "cooldown_reuse"
             payload["readiness_score_pct"] = 90.0
+            payload["browser_verify_ok"] = True
+            payload["browser_verify_detail"] = "cooldown_reuse (sin relanzar navegador)"
             self._last_payload = dict(payload)
             return payload
 
@@ -136,6 +199,24 @@ class ChartExecutionService:
             payload["readiness_score_pct"] = 100.0
             self._last_signature = signature
             self._last_open_at = time.monotonic()
+
+            if bool(settings.chart_verify_after_open):
+                delay = max(0.0, float(settings.chart_verify_delay_sec))
+                if delay:
+                    time.sleep(delay)
+                ok_verify, detail = self._verify_browser_process_running(browser_path)
+                payload["browser_verify_ok"] = ok_verify
+                payload["browser_verify_detail"] = detail
+                if not ok_verify:
+                    payload["open_ok"] = False
+                    payload["readiness_score_pct"] = 55.0
+                    payload["manual_required"] = True
+                    payload["operator_review_required"] = True
+                    payload["execution_state"] = "verify_failed"
+                    payload["warnings"].append(
+                        "chart auto-open: proceso navegador no verificado; revisar Chrome o permisos."
+                    )
+                    logger.warning("Chart verify failed: %s", detail)
         except Exception as exc:
             payload["open_attempted"] = True
             payload["open_ok"] = False

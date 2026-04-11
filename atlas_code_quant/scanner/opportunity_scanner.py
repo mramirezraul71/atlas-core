@@ -467,6 +467,11 @@ class OpportunityScannerService:
                 return
             if not self._config.enabled:
                 return
+            with self._state_lock:
+                self._current_symbol = None
+                self._current_timeframe = (self._config.timeframes or [None])[0]
+                self._current_step = "arrancando"
+                self._last_error = None
             self._task = asyncio.create_task(self._loop(), name="quant-opportunity-scanner")
 
     async def stop(self) -> None:
@@ -511,9 +516,15 @@ class OpportunityScannerService:
             await asyncio.sleep(max(int(self._config.scan_interval_sec), 15))
 
     def _status_payload_locked(self) -> dict[str, Any]:
+        task_alive = bool(self._task and not self._task.done())
+        runtime_running = bool(self._running or task_alive)
+        summary = dict(self._report.get("summary") or {})
+        summary["running"] = runtime_running
+        summary["cycle_count"] = self._cycle_count
+        summary["timeframes"] = list(self._config.timeframes)
         return {
             "generated_at": _utcnow_iso(),
-            "running": self._running,
+            "running": runtime_running,
             "cycle_count": self._cycle_count,
             "last_cycle_at": self._last_cycle_at,
             "last_cycle_ms": self._last_cycle_ms,
@@ -522,7 +533,7 @@ class OpportunityScannerService:
             "current_step": self._current_step,
             "last_error": self._last_error,
             "config": self._config.to_dict(),
-            "summary": dict(self._report.get("summary") or {}),
+            "summary": summary,
             "learning": self.learning.status(account_scope=settings.tradier_default_scope),
         }
 
@@ -533,7 +544,20 @@ class OpportunityScannerService:
     def report(self, activity_limit: int = 60) -> dict[str, Any]:
         with self._state_lock:
             data = dict(self._report or self._empty_report())
-            data["status"] = self._status_payload_locked()
+            status = self._status_payload_locked()
+            data["status"] = status
+            data["summary"] = {
+                **dict(data.get("summary") or {}),
+                "running": status.get("running", False),
+                "cycle_count": status.get("cycle_count", 0),
+                "timeframes": list(self._config.timeframes),
+            }
+            data["current_work"] = {
+                **dict(data.get("current_work") or {}),
+                "symbol": status.get("current_symbol"),
+                "timeframe": status.get("current_timeframe"),
+                "step": status.get("current_step"),
+            }
             data["activity"] = list(self._activity[-max(1, activity_limit) :])
             return data
 
@@ -1280,6 +1304,8 @@ class OpportunityScannerService:
                 self._log("info", "Activo descartado por filtros", symbol=symbol, timeframe=timeframe, method=best["method"], reasons=rejection_reasons)
                 continue
             _asset_profile = classify_asset(symbol)
+            _closes_series = df["close"].dropna().tail(200)
+            _recent_closes = [round(float(x), 6) for x in _closes_series.tolist()]
             accepted.append({
                 "symbol": symbol,
                 "asset_class": _asset_profile.asset_class.value,
@@ -1287,6 +1313,7 @@ class OpportunityScannerService:
                 "timeframe": timeframe,
                 "direction": _direction_label(int(best["direction"])),
                 "price": round(float(best.get("price") or df["close"].iloc[-1]), 4),
+                "recent_closes": _recent_closes,
                 "strategy_key": best["method"],
                 "strategy_label": best["method_label"],
                 "strategy_family": best["family"],

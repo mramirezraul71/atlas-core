@@ -179,7 +179,7 @@ class TradingConfig:
     atlas_brain_source: str = _clean_setting(os.getenv("ATLAS_BRAIN_SOURCE"), "quant_brain")
 
     # Opportunity scanner
-    scanner_auto_start: bool = os.getenv("QUANT_SCANNER_AUTO_START", "true").strip().lower() not in {"0", "false", "no"}
+    scanner_auto_start: bool = os.getenv("QUANT_SCANNER_AUTO_START", "false").strip().lower() not in {"0", "false", "no"}
     scanner_enabled: bool = os.getenv("QUANT_SCANNER_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     scanner_source: str = _clean_setting(os.getenv("QUANT_SCANNER_SOURCE"), "yfinance").lower()
     scanner_scan_interval_sec: int = _ienv("QUANT_SCANNER_INTERVAL_SEC", 180)
@@ -219,14 +219,33 @@ class TradingConfig:
     startup_journal_sync_delay_sec: int = _ienv("QUANT_STARTUP_JOURNAL_SYNC_DELAY_SEC", 8)
     startup_scanner_delay_sec: int = _ienv("QUANT_STARTUP_SCANNER_DELAY_SEC", 10)
     startup_learning_delay_sec: int = _ienv("QUANT_STARTUP_LEARNING_DELAY_SEC", 10)
+    lightweight_startup: bool = os.getenv("QUANT_LIGHTWEIGHT_STARTUP", "false").strip().lower() in {"1", "true", "yes"}
+    autocycle_auto_start: bool = os.getenv("QUANT_AUTOCYCLE_AUTO_START", "true").strip().lower() not in {"0", "false", "no"}
 
     # Entry validation
     entry_validation_enabled: bool = os.getenv("QUANT_ENTRY_VALIDATION_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     entry_max_equity_spread_pct: float = _fenv("QUANT_ENTRY_MAX_EQUITY_SPREAD_PCT", 1.50)
-    entry_max_adverse_drift_pct: float = _fenv("QUANT_ENTRY_MAX_ADVERSE_DRIFT_PCT", 2.00)
+    entry_max_adverse_drift_pct: float = _fenv("QUANT_ENTRY_MAX_ADVERSE_DRIFT_PCT", 1.00)
     entry_warn_drift_vs_expected_move_pct: float = _fenv("QUANT_ENTRY_WARN_DRIFT_SHARE_EXPECTED_MOVE_PCT", 25.0)
     chart_auto_open_enabled: bool = os.getenv("QUANT_CHART_AUTO_OPEN_ENABLED", "false").strip().lower() not in {"0", "false", "no"}
     chart_open_cooldown_sec: int = _ienv("QUANT_CHART_OPEN_COOLDOWN_SEC", 90)
+    # Tras Popen del navegador: comprobar que exista proceso Chrome/Chromium (Windows: tasklist).
+    chart_verify_after_open: bool = os.getenv("QUANT_CHART_VERIFY_AFTER_OPEN", "true").strip().lower() not in {"0", "false", "no"}
+    chart_verify_delay_sec: float = _fenv("QUANT_CHART_VERIFY_DELAY_SEC", 1.25)
+    # Histéresis régimen ML: delta mínimo en prob. para cambiar de clase (evita flip-flop).
+    regime_hysteresis_enabled: bool = os.getenv("QUANT_REGIME_HYSTERESIS_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+    regime_hysteresis_margin: float = _fenv("QUANT_REGIME_HYSTERESIS_MARGIN", 0.08)
+    # Recorte central del frame antes de OCR (0 = desactivado; 0.12 = quitar 12% por borde).
+    vision_ocr_crop_margin: float = max(0.0, min(0.45, _fenv("QUANT_VISION_OCR_CROP_MARGIN", 0.0)))
+    # Histéresis del régimen *contextual* (heurístico): puntos de score para cambiar primary_regime.
+    context_regime_score_hysteresis: float = max(0.0, min(40.0, _fenv("QUANT_CONTEXT_REGIME_SCORE_HYSTERESIS", 10.0)))
+    context_regime_strong_score: float = max(50.0, min(100.0, _fenv("QUANT_CONTEXT_REGIME_STRONG_SCORE", 72.0)))
+    context_price_cycle_enabled: bool = os.getenv("QUANT_CONTEXT_PRICE_CYCLE_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+    # Degradar gate (no bloquear) si ciclos ~ruido y confianza contextual baja; desactivado por defecto.
+    context_cycle_soft_gate: bool = os.getenv("QUANT_CONTEXT_CYCLE_SOFT_GATE", "false").strip().lower() in {"1", "true", "yes"}
+    context_cycle_soft_gate_max_regime_confidence: float = max(
+        0.0, min(95.0, _fenv("QUANT_CONTEXT_CYCLE_SOFT_GATE_MAX_REGIME_CONF", 50.0))
+    )
     visual_gate_min_readiness_pct: float = _fenv("QUANT_VISUAL_GATE_MIN_READINESS_PCT", 75.0)
     visual_gate_fail_closed: bool = os.getenv("QUANT_VISUAL_GATE_FAIL_CLOSED", "true").strip().lower() not in {"0", "false", "no"}
     visual_gate_supervised_manual_chart_preview: bool = os.getenv(
@@ -270,6 +289,8 @@ class TradingConfig:
     adaptive_learning_min_strategy_samples: int = _ienv("QUANT_ADAPTIVE_LEARNING_MIN_STRATEGY_SAMPLES", 4)
     adaptive_learning_min_symbol_samples: int = _ienv("QUANT_ADAPTIVE_LEARNING_MIN_SYMBOL_SAMPLES", 3)
     adaptive_learning_epoch_start: str = _clean_setting(os.getenv("QUANT_ADAPTIVE_LEARNING_EPOCH_START"), "2026-03-30")
+    adaptive_learning_exclude_untracked: bool = os.getenv("QUANT_ADAPTIVE_LEARNING_EXCLUDE_UNTRACKED", "true").strip().lower() not in {"0", "false", "no"}
+    adaptive_learning_require_trade_context: bool = os.getenv("QUANT_ADAPTIVE_LEARNING_REQUIRE_TRADE_CONTEXT", "true").strip().lower() not in {"0", "false", "no"}
 
     # Risk management — v2 logarítmico (Grok/xAI criterio)
     max_position_pct: float = 0.05             # Fallback si no hay Kelly

@@ -2095,6 +2095,50 @@ async def operation_vision_provider(
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
+def _operation_readiness_payload() -> dict[str, object]:
+    """Agregado pre-sesión: gráficos automáticos, visión gobernada, pipeline OCR/cámara."""
+    chart = _OPERATION_CENTER.chart_execution.status()
+    vision_diag = _VISION.diagnose()
+    vp_status: dict[str, object] = {}
+    try:
+        from atlas_code_quant.vision.visual_pipeline import VisualPipeline
+
+        vp_status = VisualPipeline.get_instance().status()
+    except Exception as exc:
+        vp_status = {"error": str(exc)}
+    return {
+        "chart_execution": chart,
+        "vision_diagnose": vision_diag,
+        "visual_pipeline": vp_status,
+        "quant_flags": {
+            "lightweight_startup": bool(getattr(settings, "lightweight_startup", False)),
+            "chart_auto_open_enabled": bool(getattr(settings, "chart_auto_open_enabled", False)),
+            "chart_verify_after_open": bool(getattr(settings, "chart_verify_after_open", True)),
+            "regime_hysteresis_enabled": bool(getattr(settings, "regime_hysteresis_enabled", True)),
+            "vision_ocr_crop_margin": float(getattr(settings, "vision_ocr_crop_margin", 0.0)),
+            "context_price_cycle_enabled": bool(getattr(settings, "context_price_cycle_enabled", True)),
+            "context_cycle_soft_gate": bool(getattr(settings, "context_cycle_soft_gate", False)),
+        },
+    }
+
+
+@app.get("/operation/readiness", response_model=StdResponse, tags=["Operation"])
+async def operation_readiness_endpoint(x_api_key: str | None = Header(None)):
+    """Readiness operativa: navegador, auto-open de charts, visión Insta360/desktop y OCR."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = await asyncio.to_thread(_operation_readiness_payload)
+        return StdResponse(
+            ok=True,
+            data=payload,
+            ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+    except Exception as exc:
+        logger.exception("Error en operation readiness")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
 # ── Vision chart analyze (Insta360 / desktop OCR) ─────────────────────────────
 
 @app.get("/vision/chart/analyze", response_model=StdResponse, tags=["Operation"])
@@ -2179,6 +2223,11 @@ async def operation_vision_v2(x_api_key: str | None = Header(None)):
 @app.post("/api/v2/quant/operation/vision/provider", response_model=StdResponse, tags=["V2"])
 async def operation_vision_provider_v2(body: VisionProviderRequest, x_api_key: str | None = Header(None)):
     return await operation_vision_provider(body=body, x_api_key=x_api_key)
+
+
+@app.get("/api/v2/quant/operation/readiness", response_model=StdResponse, tags=["V2"])
+async def operation_readiness_v2(x_api_key: str | None = Header(None)):
+    return await operation_readiness_endpoint(x_api_key=x_api_key)
 
 
 @app.get("/vision/calibration/status", response_model=StdResponse, tags=["Operation"])

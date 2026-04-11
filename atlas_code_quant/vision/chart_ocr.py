@@ -18,6 +18,11 @@ import numpy as np
 
 logger = logging.getLogger("atlas.vision.chart_ocr")
 
+try:
+    from config.settings import settings as _quant_settings
+except Exception:  # pragma: no cover
+    _quant_settings = None  # type: ignore[assignment]
+
 _PRICE_RE = re.compile(r"\d{1,6}(?:[.,]\d{1,4})?")
 
 _BULLISH_KW = {"breakout", "buy", "long", "bull", "support", "bounce", "up", "alcista"}
@@ -62,6 +67,13 @@ class ChartOCR:
         self._reader = None
         self._ocr_ok = False
         self._use_gpu = use_gpu
+        self._ocr_crop_margin = 0.0
+        if _quant_settings is not None:
+            try:
+                self._ocr_crop_margin = float(getattr(_quant_settings, "vision_ocr_crop_margin", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                self._ocr_crop_margin = 0.0
+        self._ocr_crop_margin = max(0.0, min(0.45, self._ocr_crop_margin))
         self._try_init_ocr()
 
     def _try_init_ocr(self) -> None:
@@ -78,14 +90,27 @@ class ChartOCR:
 
     # ── API publica ────────────────────────────────────────────────────────────
 
+    def _crop_center(self, frame: np.ndarray) -> np.ndarray:
+        """Recorte central para reducir ruido de bordes (UI / marco Insta360)."""
+        m = self._ocr_crop_margin
+        if m <= 0:
+            return frame
+        h, w = frame.shape[:2]
+        y0, y1 = int(h * m), int(h * (1.0 - m))
+        x0, x1 = int(w * m), int(w * (1.0 - m))
+        if y1 <= y0 + 8 or x1 <= x0 + 8:
+            return frame
+        return frame[y0:y1, x0:x1]
+
     def analyze(self, frame: np.ndarray) -> VisualOCRResult:
         """Analiza el frame y devuelve VisualOCRResult."""
-        result = VisualOCRResult(frame_shape=tuple(frame.shape[:2]))
+        work = self._crop_center(frame)
+        result = VisualOCRResult(frame_shape=tuple(work.shape[:2]))
         try:
-            result.chart_color = self._detect_color(frame)
+            result.chart_color = self._detect_color(work)
 
             if self._ocr_ok and self._reader is not None:
-                texts = self._run_ocr(frame)
+                texts = self._run_ocr(work)
                 result.raw_texts = texts
                 result.prices = self._extract_prices(texts)
                 result.pattern_detected = self._detect_pattern(texts, result.chart_color)

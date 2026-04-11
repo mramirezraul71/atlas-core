@@ -3,6 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+try:
+    from config.settings import settings as _quant_settings
+except Exception:  # pragma: no cover
+    _quant_settings = None  # type: ignore[assignment]
+
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
@@ -32,6 +37,35 @@ class MarketRegimeClassifier:
     candidate payload produced by the scanner/selector and emits a normalized
     market regime view that can be used as a hard gate before evaluation.
     """
+
+    def __init__(self) -> None:
+        if _quant_settings is not None:
+            self._hyst_margin = float(getattr(_quant_settings, "context_regime_score_hysteresis", 10.0))
+            self._strong_score = float(getattr(_quant_settings, "context_regime_strong_score", 72.0))
+        else:
+            self._hyst_margin = 10.0
+            self._strong_score = 72.0
+        self._last_primary_label: str | None = None
+        self._last_primary_score: float = 0.0
+
+    def reset_hysteresis(self) -> None:
+        self._last_primary_label = None
+        self._last_primary_score = 0.0
+
+    def _stabilize_primary(self, label_new: str, score_new: float) -> tuple[str, bool]:
+        """Evita saltar de régimen por diferencias pequeñas de score entre candidatos."""
+        if self._last_primary_label is None:
+            self._last_primary_label = label_new
+            self._last_primary_score = score_new
+            return label_new, False
+        if label_new == self._last_primary_label:
+            self._last_primary_score = max(self._last_primary_score, score_new)
+            return label_new, False
+        if score_new - self._last_primary_score >= self._hyst_margin or score_new >= self._strong_score:
+            self._last_primary_label = label_new
+            self._last_primary_score = score_new
+            return label_new, False
+        return self._last_primary_label, True
 
     def classify(self, candidate: dict[str, Any]) -> dict[str, Any]:
         direction = str(candidate.get("direction") or "").strip().lower()
@@ -126,7 +160,15 @@ class MarketRegimeClassifier:
             signals.append(RegimeSignal("trending" if direction == "alcista" else "sideways", 50.0, "fallback"))
 
         ranked = sorted(signals, key=lambda item: item.score_pct, reverse=True)
-        primary = ranked[0]
+        winner = ranked[0]
+        stable_label, hyst_applied = self._stabilize_primary(winner.label, winner.score_pct)
+        primary = next((s for s in ranked if s.label == stable_label), None)
+        if primary is None:
+            primary = RegimeSignal(
+                stable_label,
+                self._last_primary_score,
+                f"hysteresis_hold(raw={winner.label}@{winner.score_pct:.1f})",
+            )
         confidence = _clip(
             primary.score_pct * 0.55
             + selection_score * 0.2
@@ -151,6 +193,8 @@ class MarketRegimeClassifier:
         return {
             "generated_at": None,
             "primary_regime": primary.label,
+            "primary_regime_raw": winner.label,
+            "context_hysteresis_applied": hyst_applied,
             "confidence_pct": round(confidence, 2),
             "signals": [
                 {
