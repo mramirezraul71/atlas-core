@@ -42,6 +42,11 @@ except ImportError:
     _TORCH_OK = False
     logger.warning("torch no instalado — LSTM deshabilitado")
 
+try:
+    from config.settings import settings as _quant_settings
+except Exception:  # pragma: no cover
+    _quant_settings = None  # type: ignore[assignment]
+
 
 # ── Enumeración de régimen ────────────────────────────────────────────────────
 
@@ -60,6 +65,8 @@ class RegimeOutput:
     proba_bear: float = 0.0
     proba_sideways: float = 0.0
     lstm_embedding: Optional[list[float]] = None
+    regime_raw: Optional[MarketRegime] = None  # clase argmax antes de histéresis (si aplica)
+    hysteresis_applied: bool = False          # True si se mantuvo régimen previo por margen
 
 
 # ── LSTM Embedding ────────────────────────────────────────────────────────────
@@ -127,10 +134,31 @@ class RegimeClassifier:
         self._lstm: Optional[object] = None
         self._device = "cuda" if (use_gpu and _TORCH_OK and
                                    __import__("torch").cuda.is_available()) else "cpu"
+        if _quant_settings is not None:
+            self._hysteresis_enabled = bool(getattr(_quant_settings, "regime_hysteresis_enabled", True))
+            try:
+                self._hysteresis_margin = float(getattr(_quant_settings, "regime_hysteresis_margin", 0.08))
+            except (TypeError, ValueError):
+                self._hysteresis_margin = 0.08
+        else:
+            import os
+            self._hysteresis_enabled = os.getenv(
+                "QUANT_REGIME_HYSTERESIS_ENABLED", "true"
+            ).strip().lower() not in {"0", "false", "no"}
+            try:
+                self._hysteresis_margin = float(os.getenv("QUANT_REGIME_HYSTERESIS_MARGIN", "0.08"))
+            except (ValueError, TypeError):
+                self._hysteresis_margin = 0.08
+        self._hysteresis_margin = max(0.0, min(0.5, self._hysteresis_margin))
+        self._last_stable_regime: Optional[MarketRegime] = None
         self._feature_names = [
             "adx_14", "return_20d", "hurst", "iv_rank", "cvd_slope_5m",
             "rsi_14", "macd_hist", "atr_norm", "volume_ratio",
         ]
+
+    def reset_hysteresis(self) -> None:
+        """Reinicia el régimen estable (backtests o cambio de sesión)."""
+        self._last_stable_regime = None
 
     # ── Carga / entrenamiento ─────────────────────────────────────────────────
 
@@ -434,14 +462,57 @@ class RegimeClassifier:
         else:
             regime = self.CLASSES[best_idx]
 
-        return RegimeOutput(
+        out = RegimeOutput(
             regime          = regime,
             confidence      = confidence,
             proba_bull      = float(proba[0]),
             proba_bear      = float(proba[1]),
             proba_sideways  = float(proba[2]),
             lstm_embedding  = embedding,
+            regime_raw      = regime,
+            hysteresis_applied = False,
         )
+        return self._apply_hysteresis(out, proba, best_idx)
+
+    def _apply_hysteresis(
+        self,
+        out: RegimeOutput,
+        proba: np.ndarray,
+        best_idx: int,
+    ) -> RegimeOutput:
+        """Mantiene el régimen previo salvo que la nueva clase supere en prob. al margen configurado."""
+        if not self._hysteresis_enabled or out.regime == MarketRegime.FLAT:
+            return out
+
+        prev = self._last_stable_regime
+        if prev is None or prev == out.regime:
+            self._last_stable_regime = out.regime
+            return out
+
+        try:
+            prev_idx = self.CLASSES.index(prev)
+        except ValueError:
+            self._last_stable_regime = out.regime
+            return out
+
+        p_new = float(proba[best_idx])
+        p_prev = float(proba[prev_idx])
+        if p_new - p_prev >= self._hysteresis_margin:
+            self._last_stable_regime = out.regime
+            return out
+
+        # Conservar régimen estable anterior (menos flip-flop cerca del umbral).
+        stuck = RegimeOutput(
+            regime=prev,
+            confidence=float(proba[prev_idx]),
+            proba_bull=float(proba[0]),
+            proba_bear=float(proba[1]),
+            proba_sideways=float(proba[2]),
+            lstm_embedding=out.lstm_embedding,
+            regime_raw=out.regime,
+            hysteresis_applied=True,
+        )
+        return stuck
 
     # ── Utilidades estáticas de indicadores ──────────────────────────────────
 

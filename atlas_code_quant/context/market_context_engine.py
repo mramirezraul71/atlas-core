@@ -5,10 +5,14 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from atlas_code_quant.config.settings import settings
     from atlas_code_quant.context.market_regime_classifier import MarketRegimeClassifier
+    from atlas_code_quant.context.price_cycle_analysis import analyze_price_cycles
     from atlas_code_quant.knowledge.knowledge_base import get_knowledge_base
 except ModuleNotFoundError:  # pragma: no cover - uvicorn cwd fallback
+    from config.settings import settings
     from context.market_regime_classifier import MarketRegimeClassifier
+    from context.price_cycle_analysis import analyze_price_cycles
     from knowledge.knowledge_base import get_knowledge_base
 
 
@@ -48,6 +52,19 @@ class MarketContextEngine:
         event_near = bool(candidate.get("event_near") or candidate.get("earnings_near"))
         regime_payload = self.classifier.classify(candidate)
         regime_payload["generated_at"] = datetime.utcnow().isoformat()
+
+        if bool(getattr(settings, "context_price_cycle_enabled", True)):
+            rc = candidate.get("recent_closes")
+            if isinstance(rc, list) and len(rc) >= 48:
+                try:
+                    closes_f = [float(x) for x in rc if x is not None]
+                    regime_payload["price_cycles"] = analyze_price_cycles(closes_f)
+                except Exception as exc:
+                    regime_payload["price_cycles"] = {"available": False, "reason": str(exc)}
+            else:
+                regime_payload["price_cycles"] = {"available": False, "reason": "no_recent_closes"}
+        else:
+            regime_payload["price_cycles"] = {"available": False, "reason": "disabled"}
 
         advisory = self.knowledge.advisory_context(
             method=method,
@@ -313,6 +330,26 @@ class MarketContextEngine:
         elif risk_assessment["clarity_score_pct"] < 70.0:
             degraded = True
             reasons.append("contexto util pero no limpio; exigir confirmacion extra")
+
+        # Soft gate opcional: ciclo tipo ruido + baja confianza del régimen contextual (no bloquea).
+        if (
+            bool(getattr(settings, "context_cycle_soft_gate", False))
+            and not blocked
+            and not regime["states"]["risk_extreme"]
+            and not regime["states"]["macro_event"]
+        ):
+            pc = regime.get("price_cycles") if isinstance(regime.get("price_cycles"), dict) else {}
+            if pc.get("available") and str(pc.get("cycle_hint") or "") == "noise_like":
+                conf_thr = float(getattr(settings, "context_cycle_soft_gate_max_regime_confidence", 50.0))
+                if _safe_float(regime.get("confidence_pct"), 100.0) < conf_thr:
+                    degraded = True
+                    reasons.append(
+                        "ciclos: estructura tipo ruido y confianza de regimen contextual baja; "
+                        "revisar antes de automatizar envios"
+                    )
+                    warnings.append(
+                        "price_cycle_soft_gate: cycle_hint=noise_like y confidence_pct bajo umbral"
+                    )
 
         if blocked:
             action = "block"
