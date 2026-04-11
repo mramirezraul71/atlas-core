@@ -36,10 +36,13 @@ def apply_startup_visual_connections(
         tf = str(getattr(settings, "startup_chart_warmup_timeframe", "1h") or "1h")
         chart_pv = str(getattr(settings, "chart_provider_default", "tradingview") or "tradingview")
         try:
-            from selector.strategy_selector import _chart_plan
+            try:
+                from atlas_code_quant.operations.chart_plan_builder import build_selector_chart_plan
+            except ModuleNotFoundError:
+                from operations.chart_plan_builder import build_selector_chart_plan
         except Exception as exc:
-            out["chart_warmup_error"] = f"import _chart_plan: {exc}"
-            logger.exception("Chart warmup import failed")
+            out["chart_warmup_error"] = f"import chart_plan_builder: {exc}"
+            logger.exception("Chart warmup: fallo import chart_plan_builder (revisar PYTHONPATH/cwd)")
             return out
 
         chart_exec = operation_center.chart_execution
@@ -49,7 +52,7 @@ def apply_startup_visual_connections(
             if not sym_u:
                 continue
             try:
-                cp = _chart_plan(sym_u, tf, None, chart_pv)
+                cp = build_selector_chart_plan(sym_u, tf, None, chart_pv)
                 payload = chart_exec.ensure_chart_mission(
                     chart_plan=cp,
                     camera_plan={},
