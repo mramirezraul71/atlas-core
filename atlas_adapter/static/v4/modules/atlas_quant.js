@@ -3405,7 +3405,7 @@ export default {
           <div style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span class="chip blue" style="font-size:10px">v0.1.0</span>
             <span class="live-badge" id="aq-header-live">EN LINEA</span>
-            <a href="/v4/static/quant/index.html" target="_blank"
+            <a href="/quant-ui" target="_blank"
                style="display:inline-flex;align-items:center;gap:4px;text-decoration:none;
                       padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;
                       background:rgba(0,212,170,0.15);border:1px solid rgba(0,212,170,0.4);
@@ -3491,7 +3491,7 @@ export default {
               <button class="action-btn" data-quant-view-btn="diario">Diario</button>
               <button class="action-btn" data-quant-view-btn="real">Cuenta real</button>
               <button class="action-btn" data-quant-view-btn="ejecucion">Ejecucion</button>
-              <a href="/v4/static/quant/index.html" target="_blank" class="action-btn" style="display:inline-flex;align-items:center;gap:5px;text-decoration:none;background:rgba(0,212,170,0.12);border-color:rgba(0,212,170,0.4);color:#00d4aa;margin-left:auto">
+              <a href="/quant-ui" target="_blank" class="action-btn" style="display:inline-flex;align-items:center;gap:5px;text-decoration:none;background:rgba(0,212,170,0.12);border-color:rgba(0,212,170,0.4);color:#00d4aa;margin-left:auto">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                 Dashboard Gr&#225;fico &#8599;
               </a>
