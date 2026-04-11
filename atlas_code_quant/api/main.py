@@ -96,6 +96,7 @@ from operations.brain_bridge import QuantBrainBridge
 from operations.journal_pro import JournalProService
 from operations.operation_center import OperationCenter
 from operations.sensor_vision import SensorVisionService
+from operations.startup_visual_connect import apply_startup_visual_connections
 from operations.vision_calibration import VisionCalibrationService
 from scanner.opportunity_scanner import OpportunityScannerService
 from selector.strategy_selector import StrategySelectorService
@@ -274,6 +275,16 @@ async def _start_background_services() -> None:
                         logger.info("Tradier %s session preloaded", scope)
                     except Exception:
                         logger.exception("Unable to preload Tradier %s session", scope)
+            try:
+                snap = await asyncio.to_thread(
+                    apply_startup_visual_connections,
+                    vision_service=_VISION,
+                    operation_center=_OPERATION_CENTER,
+                    settings=settings,
+                )
+                logger.info("Startup visual connect (lightweight): %s", snap)
+            except Exception:
+                logger.exception("Startup visual connect failed (lightweight)")
             _mark_startup_background("completed_lightweight")
             return
         _mark_startup_background("preloading_sessions")
@@ -327,6 +338,16 @@ async def _start_background_services() -> None:
                 _AUTO_CYCLE_STATE.get("max_per_cycle"),
             )
         _prewarm_quant_snapshot_caches()
+        try:
+            snap = await asyncio.to_thread(
+                apply_startup_visual_connections,
+                vision_service=_VISION,
+                operation_center=_OPERATION_CENTER,
+                settings=settings,
+            )
+            logger.info("Startup visual connect: %s", snap)
+        except Exception:
+            logger.exception("Startup visual connect failed")
         _mark_startup_background("completed")
     except asyncio.CancelledError:
         _mark_startup_background("cancelled")
@@ -1817,6 +1838,7 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         candidate=dict(cand),
                         account_scope="paper",
                         options_session_mode=selector_session_mode,
+                        chart_provider=str(getattr(settings, "chart_provider_default", "tradingview") or "tradingview"),
                     )
                     order_seed = dict(proposal.get("order_seed") or {})
                     if not order_seed:
@@ -2118,6 +2140,9 @@ def _operation_readiness_payload() -> dict[str, object]:
             "vision_ocr_crop_margin": float(getattr(settings, "vision_ocr_crop_margin", 0.0)),
             "context_price_cycle_enabled": bool(getattr(settings, "context_price_cycle_enabled", True)),
             "context_cycle_soft_gate": bool(getattr(settings, "context_cycle_soft_gate", False)),
+            "default_vision_provider_configured": bool(str(getattr(settings, "default_vision_provider", "") or "").strip()),
+            "startup_chart_warmup_enabled": bool(getattr(settings, "startup_chart_warmup_enabled", False)),
+            "chart_provider_default": str(getattr(settings, "chart_provider_default", "tradingview") or "tradingview"),
         },
     }
 
