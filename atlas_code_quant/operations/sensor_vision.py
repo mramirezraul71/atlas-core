@@ -143,14 +143,14 @@ class SensorVisionService:
         if repo_root_str not in sys.path:
             sys.path.insert(0, repo_root_str)
 
-    def _direct_nexus_available(self) -> bool:
+    def _direct_nexus_available(self, *, timeout_sec: float = 3.0) -> bool:
         try:
             req = urlrequest.Request(
                 url=f"{self._robot_base_url()}/api/health",
                 method="GET",
                 headers={"Accept": "application/json"},
             )
-            with urlrequest.urlopen(req, timeout=3) as response:
+            with urlrequest.urlopen(req, timeout=timeout_sec) as response:
                 raw = response.read().decode("utf-8", errors="replace")
                 payload = json.loads(raw) if raw else {}
                 if int(response.status) != 200:
@@ -214,8 +214,12 @@ class SensorVisionService:
             record["capture_error"] = str(exc)
             return record
 
-    def _atlas_push_bridge_status(self) -> dict[str, Any]:
-        ok, status, payload, error = self._request_json("GET", "/api/trading/quant/vision-bridge/status")
+    def _atlas_push_bridge_status(self, *, timeout_sec: int | None = None) -> dict[str, Any]:
+        ok, status, payload, error = self._request_json(
+            "GET",
+            "/api/trading/quant/vision-bridge/status",
+            timeout_sec=timeout_sec,
+        )
         result = payload if isinstance(payload, dict) else {}
         return {
             **result,
@@ -362,6 +366,62 @@ class SensorVisionService:
             return pipeline._capture.source_available() != "none"
         except Exception:
             return False
+
+    def status_for_gate(
+        self,
+        *,
+        nexus_timeout_sec: float = 1.5,
+        push_bridge_timeout_sec: int = 2,
+    ) -> dict[str, Any]:
+        """Comprueba solo el proveedor activo (sin sondas cruzadas p. ej. Insta360 si el modo es direct_nexus).
+
+        Pensado para GET /operation/readiness: latencia baja frente a status(fast=False), que antes ejecutaba
+        _insta360_available() siempre. El bridge PUSH usa timeout acotado (no el timeout operativo largo).
+        """
+        state = self._load()
+        provider = str(state.get("provider") or "direct_nexus")
+        bridge_status: dict[str, Any] | None = None
+        desktop_ok = False
+        insta360_ok = False
+        nexus_ok = False
+
+        if provider in {"off", "manual"}:
+            provider_ready = True
+        elif provider == "desktop_capture":
+            desktop_ok = self._desktop_capture_available()
+            provider_ready = desktop_ok
+        elif provider == "direct_nexus":
+            nexus_ok = self._direct_nexus_available(timeout_sec=nexus_timeout_sec)
+            provider_ready = nexus_ok
+        elif provider == "insta360":
+            insta360_ok = self._insta360_available()
+            provider_ready = insta360_ok
+        elif provider == "atlas_push_bridge":
+            bridge_status = self._atlas_push_bridge_status(timeout_sec=push_bridge_timeout_sec)
+            nexus_ok = self._direct_nexus_available(timeout_sec=nexus_timeout_sec)
+            provider_ready = bool((bridge_status or {}).get("ok")) or nexus_ok
+        else:
+            provider_ready = False
+
+        dn_fallback: bool | None
+        if provider == "direct_nexus":
+            dn_fallback = nexus_ok
+        elif provider == "atlas_push_bridge":
+            dn_fallback = nexus_ok
+        else:
+            dn_fallback = None
+
+        return {
+            **state,
+            "supported_modes": ["off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge", "insta360"],
+            "desktop_capture_available": desktop_ok if provider == "desktop_capture" else None,
+            "insta360_available": insta360_ok if provider == "insta360" else None,
+            "atlas_push_bridge_status": bridge_status,
+            "atlas_push_bridge_available": bool((bridge_status or {}).get("ok")) if bridge_status is not None else None,
+            "direct_nexus_fallback_available": dn_fallback,
+            "provider_ready": provider_ready,
+            "status_mode": "gate",
+        }
 
     def status(self, *, fast: bool = False) -> dict[str, Any]:
         state = self._load()

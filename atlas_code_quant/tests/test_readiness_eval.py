@@ -5,6 +5,7 @@ import pytest
 from atlas_code_quant.operations.readiness_eval import (
     evaluate_operational_readiness,
     readiness_http_body_ok,
+    startup_warmup_gate_satisfied,
 )
 
 
@@ -54,3 +55,38 @@ def test_readiness_http_body_ok(body: object, expected: bool) -> None:
 
 def test_readiness_http_body_ok_missing_data() -> None:
     assert readiness_http_body_ok({"ok": True}) is False
+
+
+def test_evaluate_not_ready_when_chart_plan_not_buildable() -> None:
+    ok, reasons = evaluate_operational_readiness(
+        chart_execution={"browser_available": True},
+        vision_provider_ready=True,
+        chart_auto_open_enabled=False,
+        chart_plan_buildable=False,
+    )
+    assert ok is False
+    assert any("chart_plan" in r.lower() for r in reasons)
+
+
+def test_evaluate_not_ready_when_visual_pipeline_false() -> None:
+    ok, reasons = evaluate_operational_readiness(
+        chart_execution={"browser_available": True},
+        vision_provider_ready=True,
+        chart_auto_open_enabled=False,
+        visual_pipeline_ok=False,
+    )
+    assert ok is False
+    assert any("visual_pipeline" in r for r in reasons)
+
+
+def test_startup_warmup_gate_requires_last_payload() -> None:
+    assert startup_warmup_gate_satisfied(
+        {"last_payload": {}},
+        startup_chart_warmup_enabled=True,
+        chart_auto_open_enabled=True,
+    ) is False
+    assert startup_warmup_gate_satisfied(
+        {"last_payload": {"open_ok": True, "execution_state": "opened"}},
+        startup_chart_warmup_enabled=True,
+        chart_auto_open_enabled=True,
+    ) is True

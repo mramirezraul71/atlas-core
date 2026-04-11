@@ -14,6 +14,31 @@ def chart_interval_for_timeframe(timeframe: str) -> str:
     }.get(str(timeframe or "").lower(), "60")
 
 
+def chart_plan_probe_ok(
+    symbol: str,
+    timeframe: str,
+    chart_provider: str,
+) -> tuple[bool, str]:
+    """Validación barata para readiness: plan generable con 3 URLs https (TradingView/Yahoo)."""
+    sym = str(symbol or "").strip().upper()
+    if not sym or len(sym) > 32:
+        return False, "símbolo vacío o demasiado largo para chart_plan"
+    try:
+        plan = build_selector_chart_plan(sym, str(timeframe or "1h"), None, chart_provider)
+    except Exception as exc:  # pragma: no cover - build es pura string
+        return False, f"build_selector_chart_plan: {exc}"
+    targets = plan.get("targets") or []
+    if len(targets) < 3:
+        return False, "chart_plan incompleto (<3 targets)"
+    for t in targets:
+        if not isinstance(t, dict):
+            return False, "target inválido en chart_plan"
+        url = str(t.get("url") or "").strip()
+        if not url.startswith("https://"):
+            return False, f"URL de gráfico inválida o no https: {url!r}"
+    return True, ""
+
+
 def build_selector_chart_plan(
     symbol: str,
     timeframe: str,

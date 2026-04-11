@@ -96,7 +96,8 @@ from operations.brain_bridge import QuantBrainBridge
 from operations.journal_pro import JournalProService
 from operations.operation_center import OperationCenter
 from operations.sensor_vision import SensorVisionService
-from operations.readiness_eval import evaluate_operational_readiness
+from operations.chart_plan_builder import chart_plan_probe_ok
+from operations.readiness_eval import evaluate_operational_readiness, startup_warmup_gate_satisfied
 from operations.startup_visual_connect import apply_startup_visual_connections
 from operations.vision_calibration import VisionCalibrationService
 from scanner.opportunity_scanner import OpportunityScannerService
@@ -2134,13 +2135,34 @@ def _quant_readiness_flags() -> dict[str, object]:
 
 
 def _operation_readiness_payload_fast() -> dict[str, object]:
-    """Readiness liviano: sin diagnose() ni VisualPipeline (gate / watchdog / CLI rápido)."""
+    """Readiness liviano: sin diagnose() ni VisualPipeline; visión vía status_for_gate() (solo proveedor activo)."""
     chart = _OPERATION_CENTER.chart_execution.status()
-    vision_status = _VISION.status(fast=False)
+    vision_status = _VISION.status_for_gate()
+    auto_open = bool(getattr(settings, "chart_auto_open_enabled", False))
+    warmup_on = bool(getattr(settings, "startup_chart_warmup_enabled", False))
+    chart_plan_needed = auto_open or warmup_on
+    probe_detail = ""
+    if chart_plan_needed:
+        symbols = list(getattr(settings, "startup_chart_warmup_symbols", []) or [])
+        probe_sym = symbols[0] if symbols else "SPY"
+        tf = str(getattr(settings, "startup_chart_warmup_timeframe", "1h") or "1h")
+        pv = str(getattr(settings, "chart_provider_default", "tradingview") or "tradingview")
+        chart_plan_buildable, probe_detail = chart_plan_probe_ok(probe_sym, tf, pv)
+    else:
+        chart_plan_buildable = True
+    warm_ok = startup_warmup_gate_satisfied(
+        chart,
+        startup_chart_warmup_enabled=warmup_on,
+        chart_auto_open_enabled=auto_open,
+    )
     ready, reasons = evaluate_operational_readiness(
         chart_execution=chart,
         vision_provider_ready=bool(vision_status.get("provider_ready")),
-        chart_auto_open_enabled=bool(getattr(settings, "chart_auto_open_enabled", False)),
+        chart_auto_open_enabled=auto_open,
+        chart_plan_buildable=chart_plan_buildable,
+        startup_chart_warmup_enabled=warmup_on,
+        startup_warmup_satisfied=warm_ok,
+        visual_pipeline_ok=None,
     )
     return {
         "ready": ready,
@@ -2149,6 +2171,15 @@ def _operation_readiness_payload_fast() -> dict[str, object]:
         "chart_execution": chart,
         "vision_status": vision_status,
         "vision_diagnose": None,
+        "chart_plan_probe": {
+            "required": chart_plan_needed,
+            "ok": chart_plan_buildable,
+            "detail": probe_detail or None,
+        },
+        "startup_warmup_gate": {
+            "required": warmup_on and auto_open,
+            "satisfied": warm_ok,
+        },
         "visual_pipeline": {
             "omitted": True,
             "detail": "Usa GET /operation/readiness/diagnostic para diagnose() + VisualPipeline.status().",
@@ -2168,10 +2199,32 @@ def _operation_readiness_payload_diagnostic() -> dict[str, object]:
         vp_status = VisualPipeline.get_instance().status()
     except Exception as exc:
         vp_status = {"error": str(exc)}
+    auto_open = bool(getattr(settings, "chart_auto_open_enabled", False))
+    warmup_on = bool(getattr(settings, "startup_chart_warmup_enabled", False))
+    chart_plan_needed = auto_open or warmup_on
+    probe_detail = ""
+    if chart_plan_needed:
+        symbols = list(getattr(settings, "startup_chart_warmup_symbols", []) or [])
+        probe_sym = symbols[0] if symbols else "SPY"
+        tf = str(getattr(settings, "startup_chart_warmup_timeframe", "1h") or "1h")
+        pv = str(getattr(settings, "chart_provider_default", "tradingview") or "tradingview")
+        chart_plan_buildable, probe_detail = chart_plan_probe_ok(probe_sym, tf, pv)
+    else:
+        chart_plan_buildable = True
+    warm_ok = startup_warmup_gate_satisfied(
+        chart,
+        startup_chart_warmup_enabled=warmup_on,
+        chart_auto_open_enabled=auto_open,
+    )
+    vp_semantic_ok = not (isinstance(vp_status, dict) and "error" in vp_status)
     ready, reasons = evaluate_operational_readiness(
         chart_execution=chart,
         vision_provider_ready=bool(vision_diag.get("provider_ready")),
-        chart_auto_open_enabled=bool(getattr(settings, "chart_auto_open_enabled", False)),
+        chart_auto_open_enabled=auto_open,
+        chart_plan_buildable=chart_plan_buildable,
+        startup_chart_warmup_enabled=warmup_on,
+        startup_warmup_satisfied=warm_ok,
+        visual_pipeline_ok=vp_semantic_ok,
     )
     return {
         "ready": ready,
@@ -2180,6 +2233,15 @@ def _operation_readiness_payload_diagnostic() -> dict[str, object]:
         "chart_execution": chart,
         "vision_status": None,
         "vision_diagnose": vision_diag,
+        "chart_plan_probe": {
+            "required": chart_plan_needed,
+            "ok": chart_plan_buildable,
+            "detail": probe_detail or None,
+        },
+        "startup_warmup_gate": {
+            "required": warmup_on and auto_open,
+            "satisfied": warm_ok,
+        },
         "visual_pipeline": vp_status,
         "quant_flags": _quant_readiness_flags(),
     }
