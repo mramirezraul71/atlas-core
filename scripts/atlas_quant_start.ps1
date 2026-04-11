@@ -196,6 +196,8 @@ $lightweightRequested = $false
 if (-not $FullStartup -and -not $AutoCycle -and -not $env:QUANT_LIGHTWEIGHT_STARTUP) {
     $env:QUANT_LIGHTWEIGHT_STARTUP = "true"
     $env:QUANT_STARTUP_VISUAL_CONNECT_ENABLED = "false"
+    if (-not $env:QUANT_DASHBOARD_WS_LIMIT) { $env:QUANT_DASHBOARD_WS_LIMIT = "2" }
+    if (-not $env:TRADIER_LIVE_UPDATE_INTERVAL_SEC) { $env:TRADIER_LIVE_UPDATE_INTERVAL_SEC = "10" }
     $lightweightRequested = $true
     _OpsLog "Lightweight startup habilitado por defecto para estabilidad del dashboard"
     Write-Host "[quant-start] Lightweight startup habilitado para estabilidad del dashboard."
@@ -362,15 +364,26 @@ if ($opStatus) {
     _OpsLog "No se pudo obtener operation/status/lite (API key o endpoint no disponible)" "warn"
 }
 
-# Vision diagnose
-$visionDiag = Invoke-QuantApi -method "GET" -path "/api/v2/quant/operation/vision"
-if ($visionDiag -and $visionDiag.data) {
-    $providerReady = $visionDiag.data.status.provider_ready
-    $provider      = $visionDiag.data.status.provider
+# Vision status
+$visionStatus = $null
+if ($opStatus -and $opStatus.data -and $opStatus.data.vision) {
+    $visionStatus = $opStatus.data.vision
+}
+if ($visionStatus) {
+    $providerReady = $visionStatus.provider_ready
+    $provider      = $visionStatus.provider
     _OpsLog "Vision -- provider=$provider provider_ready=$providerReady"
     Write-Host "[quant-start] Vision: provider=$provider  ready=$providerReady"
-    if (-not $providerReady -and $visionDiag.data.diagnose.suggestion) {
-        Write-Host "[quant-start] Sugerencia vision: $($visionDiag.data.diagnose.suggestion)"
+} elseif (-not $lightweightRequested -and -not ($env:QUANT_LIGHTWEIGHT_STARTUP -eq "true")) {
+    $visionDiag = Invoke-QuantApi -method "GET" -path "/api/v2/quant/operation/vision"
+    if ($visionDiag -and $visionDiag.data) {
+        $providerReady = $visionDiag.data.status.provider_ready
+        $provider      = $visionDiag.data.status.provider
+        _OpsLog "Vision -- provider=$provider provider_ready=$providerReady"
+        Write-Host "[quant-start] Vision: provider=$provider  ready=$providerReady"
+        if (-not $providerReady -and $visionDiag.data.diagnose.suggestion) {
+            Write-Host "[quant-start] Sugerencia vision: $($visionDiag.data.diagnose.suggestion)"
+        }
     }
 }
 

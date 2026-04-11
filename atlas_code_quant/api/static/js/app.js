@@ -75,6 +75,11 @@ const fmt = {
   ts:  v => v ? new Date(v).toLocaleTimeString() : '--',
 };
 
+function setElText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
 const QUANT_SCOPE = window.QUANT_ACCOUNT_SCOPE || 'paper';
 const QUANT_ACCOUNT_ID = window.QUANT_ACCOUNT_ID || '';
 window._quantWsConnected = false;
@@ -95,6 +100,7 @@ let _latestAlertsState = null;
 let _latestVisualState = null;
 let _lastOverviewSuccessAt = 0;
 let _healthFailures = 0;
+let _forcePollingMode = false;
 
 function colorClass(val) {
   if (val == null) return '';
@@ -127,13 +133,11 @@ function renderCanonicalMeta(snapshot) {
   const sourceLabel = snapshot.lightweight_mode
     ? `${snapshot.source_label || 'Quant'} · lightweight`
     : (snapshot.source_label || 'Tradier');
-  document.getElementById('chip-source').textContent =
-    `${sourceLabel} · ${snapshot.account_scope || QUANT_SCOPE}`;
-  document.getElementById('chip-sync').textContent = syncLabel(reconciliation);
-  document.getElementById('chip-positions').textContent =
-    `${totals.positions || 0} pos`;
+  setElText('chip-source', `${sourceLabel} · ${snapshot.account_scope || QUANT_SCOPE}`);
+  setElText('chip-sync', syncLabel(reconciliation));
+  setElText('chip-positions', `${totals.positions || 0} pos`);
   if (balances.total_equity != null) {
-    document.getElementById('chip-equity').textContent = fmt.usd(balances.total_equity);
+    setElText('chip-equity', fmt.usd(balances.total_equity));
   }
   const ovSource = document.getElementById('ov-source-badge');
   if (ovSource) ovSource.textContent = `Operativa ${snapshot.source_label || 'Tradier'}`;
@@ -164,6 +168,15 @@ function useCachedModuleState(message) {
   toast(message, 'warning', 2500);
 }
 
+function enablePollingOnlyMode(reason = 'lightweight_mode') {
+  if (_forcePollingMode) return;
+  _forcePollingMode = true;
+  try {
+    quantWS.close();
+  } catch (_) {}
+  console.warn(`Atlas dashboard switched to polling-only mode: ${reason}`);
+}
+
 function notifyAtlas(method, ...args) {
   try {
     const notifier = window.AtlasNotifications;
@@ -189,6 +202,7 @@ function hasInFlightModuleRequest() {
 let _lightweightWarned = false;
 function maybeWarnLightweight(snapshot) {
   if (!isLightweightSnapshot(snapshot) || _lightweightWarned) return;
+  enablePollingOnlyMode('lightweight_snapshot');
   _lightweightWarned = true;
   toast('Quant está en modo lightweight: la analítica rica queda diferida hasta relanzar el motor completo.', 'error', 6000);
 }
@@ -429,6 +443,7 @@ let _backendOnline = null;
 
 function _setBackendState(online) {
   if (_backendOnline === online) return;
+  const wasExplicitlyOffline = _backendOnline === false;
   _backendOnline = online;
   window._backendOnline = online;
   let banner = document.getElementById('offline-banner');
@@ -449,8 +464,10 @@ function _setBackendState(online) {
   } else {
     banner?.remove();
     document.getElementById('chip-uptime')?.removeAttribute('data-offline');
-    // Recargar overview al volver online
-    loadOverview();
+    // Evitar doble loadOverview al arranque (null → true); solo refrescar tras caída real
+    if (wasExplicitlyOffline) {
+      loadOverview();
+    }
   }
 }
 
@@ -471,17 +488,15 @@ async function pollHealth() {
       if (canonicalData) {
         renderCanonicalMeta(canonicalData);
         const generatedAt = canonicalData?.generated_at ? new Date(canonicalData.generated_at).toLocaleTimeString() : null;
-        document.getElementById('chip-uptime').textContent =
-          generatedAt ? `sync ${generatedAt}` : 'sync ok';
+        setElText('chip-uptime', generatedAt ? `sync ${generatedAt}` : 'sync ok');
         const openPositions =
           canonicalData?.totals?.positions ??
           0;
-        document.getElementById('chip-positions').textContent =
-          `${openPositions || 0} pos`;
+        setElText('chip-positions', `${openPositions || 0} pos`);
         const totalEquity =
           canonicalData?.balances?.total_equity;
         if (totalEquity != null) {
-          document.getElementById('chip-equity').textContent = fmt.usd(totalEquity);
+          setElText('chip-equity', fmt.usd(totalEquity));
         }
       }
     } catch (error) {
@@ -600,8 +615,8 @@ async function loadOverview() {
     }
 
     // Actualizar topbar equity
-    if (effectiveEquity != null) document.getElementById('chip-equity').textContent = fmt.usd(effectiveEquity);
-    document.getElementById('chip-positions').textContent = `${brokerPositions || 0} pos`;
+    if (effectiveEquity != null) setElText('chip-equity', fmt.usd(effectiveEquity));
+    setElText('chip-positions', `${brokerPositions || 0} pos`);
     notifyAtlas('handleDashboardUpdate', canonicalData || m);
 
     // ── Equity curve (TradingView) ──
@@ -1156,6 +1171,8 @@ function appendLog(id, line) {
 
 // ── WebSocket feed ────────────────────────────────────────────────
 function initWS() {
+  if (window.__quantWsHandlersBound) return;
+  window.__quantWsHandlersBound = true;
   quantWS.on('connected', () => {
     window._quantWsConnected = true;
     _setBackendState(true);
@@ -1168,6 +1185,9 @@ function initWS() {
 
   quantWS.on('quant.live_update', (msg) => {
     if (msg.canonical_snapshot) {
+      if (isLightweightSnapshot(msg.canonical_snapshot)) {
+        enablePollingOnlyMode('lightweight_live_update');
+      }
       _setBackendState(true);
       renderCanonicalMeta(msg.canonical_snapshot);
       renderOverviewRealtime(msg.canonical_snapshot);
@@ -1204,7 +1224,7 @@ function initWS() {
 
     // update topbar equity chip if available
     if (msg.equity) {
-      document.getElementById('chip-equity').textContent = fmt.usd(msg.equity);
+      setElText('chip-equity', fmt.usd(msg.equity));
     }
     notifyAtlas('handleSignal', msg.symbol, msg.signal, msg.confidence || 0);
   });
@@ -1216,7 +1236,9 @@ function initWS() {
     pollHealth();
   });
 
-  quantWS.connect();
+  if (!_forcePollingMode) {
+    quantWS.connect();
+  }
 }
 
 function getActiveView() {
@@ -1267,11 +1289,14 @@ function initDashboardApp() {
       quantWS.close();
       return;
     }
-    quantWS.connect();
+    if (!_forcePollingMode) {
+      quantWS.connect();
+    }
     pollHealth();
   });
 
   setInterval(() => {
+    if (document.visibilityState === 'hidden') return;
     const now = Date.now();
     const healthInterval = _backendOnline === false ? 5_000 : 15_000;
     if (!hasInFlightModuleRequest() && (!window._lastHealthAt || now - window._lastHealthAt >= healthInterval)) {
@@ -1294,5 +1319,3 @@ if (document.readyState === 'loading') {
 } else {
   queueMicrotask(initDashboardApp);
 }
-
-setTimeout(initDashboardApp, 0);
