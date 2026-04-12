@@ -233,8 +233,10 @@ def _position_notional(position: dict[str, Any], price_key: str) -> float:
     if price <= 0 or qty <= 0:
         return 0.0
     multiplier = 100.0 if str(position.get("asset_class") or "option") == "option" else 1.0
-    sign = 1.0 if str(position.get("side") or "").lower() in {"long", "buy"} else -1.0
-    return price * qty * multiplier * sign
+    # FIX 2026-04-12: entry_price siempre positivo independiente del lado (long/short).
+    # El signo direccional solo aplica al PnL, no al precio de entrada en el journal.
+    # Antes: sign=-1 en shorts → entry_price negativo en journal → contaminación masiva.
+    return price * qty * multiplier
 
 
 def _strategy_notional(strategy: dict[str, Any], price_key: str) -> float:
@@ -1280,7 +1282,7 @@ class TradingJournalService:
                 symbol=str(strategy.get("underlying") or ""),
                 legs_signature=signature,
                 legs_details=_json_dump(strategy.get("positions") or []),
-                entry_price=entry_flow if entry_flow not in {None, 0.0} else _strategy_notional(strategy, "entry_price"),
+                entry_price=abs(entry_flow) if entry_flow not in {None, 0.0} else abs(_strategy_notional(strategy, "entry_price")),
                 fees=open_fees,
                 win_rate_at_entry=_safe_float(strategy.get("win_rate_pct"), float("nan")),
                 current_win_rate_pct=_safe_float(strategy.get("win_rate_pct"), float("nan")),
@@ -1464,6 +1466,27 @@ class TradingJournalService:
 
             with session_scope() as db:
                 for strategy in strategies:
+                    # FIX 2026-04-12: Guard contra estrategias fantasma.
+                    # El tracker puede devolver entradas de su universo de búsqueda
+                    # que no son posiciones reales (sin qty válida o notional=0).
+                    # Rechazarlas aquí previene contaminación masiva del journal.
+                    underlying = str(strategy.get("underlying") or "").strip()
+                    positions = strategy.get("positions") or []
+                    has_valid_qty = any(
+                        abs(_safe_float(p.get("signed_qty"), 0.0)) > 0
+                        for p in positions
+                    )
+                    has_valid_price = any(
+                        abs(_safe_float(p.get("entry_price"), 0.0)) > 0
+                        for p in positions
+                    )
+                    if not underlying or not positions or not has_valid_qty or not has_valid_price:
+                        logger.debug(
+                            "sync_scope: skipping phantom strategy underlying=%s "
+                            "(no underlying, no positions, or zero qty/price)",
+                            underlying or "<empty>",
+                        )
+                        continue
                     matched = _matching_events(trade_events, strategy)
                     strategy_id, created_now = self._upsert_open_entry(db, account, client, strategy, matched)
                     seen_ids.add(strategy_id)
