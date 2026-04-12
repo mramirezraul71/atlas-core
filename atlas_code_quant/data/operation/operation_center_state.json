@@ -13,45 +13,39 @@
   "max_level4_bpr_pct": 20.0,
   "auto_pause_on_operational_errors": true,
   "operational_error_limit": 10,
-  "operational_error_count": 3,
-  "operational_error_day": "2026-04-02",
+  "operational_error_count": 0,
+  "operational_error_day": "2026-04-12",
   "fail_safe_active": false,
   "fail_safe_reason": null,
-  "last_operational_error": {
-    "reason": "executor_exception:Order type 'debit' requires price",
-    "timestamp": "2026-04-02T04:50:19.776148"
-  },
+  "last_operational_error": null,
   "notes": "",
-  "last_decision": {
-    "decision": "submit_ready",
-    "allowed": true,
-    "timestamp": "2026-04-02T21:27:19.857599",
-    "reason": "ok"
-  },
-  "last_candidate": {
-    "symbol": "HLT",
-    "strategy_type": "put_credit_condor",
-    "scope": "paper",
-    "action": "submit"
-  },
+  "last_decision": null,
+  "last_candidate": null,
   "attribution_integrity_alert_active": true,
   "attribution_integrity_last_count": 10,
   "attribution_integrity_last_event_at": "2026-04-01T13:31:02.970081",
   "visual_gate_stats": {
-    "evaluated_count": 1790,
-    "applies_count": 1473,
-    "blocked_count": 1473,
+    "evaluated_count": 0,
+    "applies_count": 0,
+    "blocked_count": 0,
     "passed_count": 0,
-    "manual_review_count": 1473,
+    "manual_review_count": 0,
     "last_status": "not_requested",
     "last_blocked": false,
     "last_manual_required": false,
     "last_readiness_score_pct": 100.0,
     "last_alignment_score_pct": null,
-    "last_updated_at": "2026-04-02T21:27:19.857661",
-    "last_symbol": "HLT",
-    "last_action": "submit",
+    "last_updated_at": null,
+    "last_symbol": null,
+    "last_action": null,
     "last_blocking_reason": null
   },
-  "last_options_strategy_governance": {}
+  "last_options_strategy_governance": {},
+  "post_journal_rebuild_guard": {
+    "active": true,
+    "scope": "paper",
+    "activated_at": "2026-04-12T04:06:46.115802",
+    "expires_at": "2026-04-12T16:06:46.115802",
+    "reason": "journal_rebuild_reset"
+  }
 }

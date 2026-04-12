@@ -173,3 +173,14 @@ _wt_*/
 
 # Quant local runtime learning state
 atlas_code_quant/data/learning/learning_orchestrator_state.json
+
+# Archivos grandes - no subir a GitHub
+atlas_code_quant/logs/*.jsonl
+atlas_code_quant/data/journal/*.sqlite3
+atlas_code_quant/data/journal/*.sqlite3-wal
+atlas_code_quant/data/journal/*.sqlite3-shm
+atlas_code_quant/data/*.db
+atlas_code_quant/data/*.db-wal
+atlas_code_quant/data/*.db-shm
+output/
+*.py.tmp
