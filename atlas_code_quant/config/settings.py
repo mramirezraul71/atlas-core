@@ -184,13 +184,13 @@ class TradingConfig:
     scanner_source: str = _clean_setting(os.getenv("QUANT_SCANNER_SOURCE"), "yfinance").lower()
     scanner_scan_interval_sec: int = _ienv("QUANT_SCANNER_INTERVAL_SEC", 180)
     scanner_min_signal_strength: float = _fenv("QUANT_SCANNER_MIN_SIGNAL_STRENGTH", 0.55)
-    scanner_min_local_win_rate_pct: float = _fenv("QUANT_SCANNER_MIN_LOCAL_WIN_RATE_PCT", 53.0)
+    scanner_min_local_win_rate_pct: float = _fenv("QUANT_SCANNER_MIN_LOCAL_WIN_RATE_PCT", 40.0)
     scanner_min_local_profit_factor: float = _fenv("QUANT_SCANNER_MIN_LOCAL_PROFIT_FACTOR", 1.05)
-    scanner_min_backtest_sample: int = _ienv("QUANT_SCANNER_MIN_BACKTEST_SAMPLE", 12)
-    scanner_min_selection_score: float = _fenv("QUANT_SCANNER_MIN_SELECTION_SCORE", 65.0)
+    scanner_min_backtest_sample: int = _ienv("QUANT_SCANNER_MIN_BACKTEST_SAMPLE", 5)
+    scanner_min_selection_score: float = _fenv("QUANT_SCANNER_MIN_SELECTION_SCORE", 52.0)
     scanner_max_candidates: int = _ienv("QUANT_SCANNER_MAX_CANDIDATES", 8)
     scanner_activity_limit: int = _ienv("QUANT_SCANNER_ACTIVITY_LIMIT", 160)
-    scanner_require_higher_tf_confirmation: bool = os.getenv("QUANT_SCANNER_REQUIRE_HIGHER_TF", "true").strip().lower() not in {"0", "false", "no"}
+    scanner_require_higher_tf_confirmation: bool = os.getenv("QUANT_SCANNER_REQUIRE_HIGHER_TF", "false").strip().lower() not in {"0", "false", "no"}
     scanner_universe_mode: str = _clean_setting(os.getenv("QUANT_SCANNER_UNIVERSE_MODE"), "us_equities_rotating").lower()
     scanner_universe_batch_size: int = _ienv("QUANT_SCANNER_UNIVERSE_BATCH_SIZE", 80)
     scanner_prefilter_count: int = _ienv("QUANT_SCANNER_PREFILTER_COUNT", 20)
