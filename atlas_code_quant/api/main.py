@@ -98,6 +98,7 @@ from selector.strategy_selector import StrategySelectorService
 
 # ── OptionStrat ───────────────────────────────────────────────────────────────
 from api.routes.options import router as options_router
+from api.routers.xgboost_router import router as xgboost_router
 
 # ── Fase 3: alertas, visión, retraining ──────────────────────────────────────
 from operations.alert_dispatcher import get_alert_dispatcher
@@ -176,6 +177,7 @@ async def options_ui():
     raise HTTPException(status_code=404, detail="OptionStrat UI not found")
 
 app.include_router(options_router)
+app.include_router(xgboost_router)
 
 _startup_services_task: asyncio.Task | None = None
 _STARTUP_BACKGROUND_STATE: dict[str, object] = {
