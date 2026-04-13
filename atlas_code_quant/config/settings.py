@@ -179,7 +179,7 @@ class TradingConfig:
     atlas_brain_source: str = _clean_setting(os.getenv("ATLAS_BRAIN_SOURCE"), "quant_brain")
 
     # Opportunity scanner
-    scanner_auto_start: bool = os.getenv("QUANT_SCANNER_AUTO_START", "false").strip().lower() not in {"0", "false", "no"}
+    scanner_auto_start: bool = os.getenv("QUANT_SCANNER_AUTO_START", "true").strip().lower() not in {"0", "false", "no"}
     scanner_enabled: bool = os.getenv("QUANT_SCANNER_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     scanner_source: str = _clean_setting(os.getenv("QUANT_SCANNER_SOURCE"), "yfinance").lower()
     scanner_scan_interval_sec: int = _ienv("QUANT_SCANNER_INTERVAL_SEC", 180)
