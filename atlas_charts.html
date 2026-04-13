@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ATLAS — Elite Command Center</title>
+  <script src="https://s3.tradingview.com/tv.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d1117;
+      --s1:       #161b22;
+      --s2:       #1c2128;
+      --border:   #30363d;
+      --text:     #e6edf3;
+      --muted:    #8b949e;
+      --green:    #39d353;
+      --red:      #f85149;
+      --amber:    #e3b341;
+      --accent:   #58a6ff;
+      --purple:   #bc8cff;
+      --font:     'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-x: hidden;
+    }
+
+    /* ─── HEADER ─────────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 20px;
+      background: var(--s1);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 200;
+      gap: 12px;
+    }
+
+    .header-left { display: flex; align-items: center; gap: 14px; }
+
+    .atlas-logo { display: flex; align-items: center; gap: 7px; }
+    .atlas-logo svg { width: 26px; height: 26px; flex-shrink: 0; }
+    .atlas-wordmark {
+      font-size: 15px; font-weight: 700;
+      letter-spacing: 0.14em; color: var(--accent); text-transform: uppercase;
+    }
+
+    .hdiv { width: 1px; height: 20px; background: var(--border); }
+
+    .session-tag {
+      font-size: 11px; color: var(--muted); letter-spacing: 0.04em;
+    }
+    .session-tag strong { color: var(--text); font-weight: 600; }
+
+    /* market pill */
+    .market-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 9px; border-radius: 4px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+      transition: background 0.3s, border-color 0.3s, color 0.3s;
+    }
+    .market-pill::before {
+      content: ''; width: 6px; height: 6px; border-radius: 50%;
+      animation: blink 1.4s ease-in-out infinite;
+    }
+    .pill-open   { background: rgba(57,211,83,.13); border:1px solid rgba(57,211,83,.3); color:var(--green); }
+    .pill-open::before { background: var(--green); }
+    .pill-pre    { background: rgba(227,179,65,.13); border:1px solid rgba(227,179,65,.3); color:var(--amber); }
+    .pill-pre::before  { background: var(--amber); }
+    .pill-closed { background: rgba(139,148,158,.13); border:1px solid rgba(139,148,158,.3); color:var(--muted); }
+    .pill-closed::before { background: var(--muted); animation: none; }
+
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.15} }
+
+    /* countdown */
+    .countdown-block { display:flex; align-items:center; gap:7px; }
+    .countdown-label { font-size:10px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; }
+    #countdown { font-size:13px; font-weight:700; color:var(--amber); letter-spacing:.06em; font-variant-numeric:tabular-nums; }
+    #countdown.open-color { color:var(--green); }
+
+    /* clock */
+    .clock-block { display:flex; align-items:center; gap:7px; }
+    .clock-label { font-size:10px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; }
+    #live-clock { font-size:14px; font-weight:700; color:var(--green); letter-spacing:.08em; font-variant-numeric:tabular-nums; }
+
+    /* ─── STATUS BAR ──────────────────────────────────────────── */
+    #status-bar {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 0 20px;
+      background: var(--s2);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      white-space: nowrap;
+      height: 36px;
+    }
+
+    .sb-item {
+      display: flex; align-items: center; gap: 6px;
+      padding: 0 16px;
+      border-right: 1px solid var(--border);
+      font-size: 11px; color: var(--muted);
+      flex-shrink: 0;
+    }
+    .sb-item:first-child { padding-left: 0; }
+    .sb-item label { font-size: 9px; letter-spacing: .07em; text-transform: uppercase; }
+    .sb-val { font-weight: 700; }
+    .ok    { color: var(--green); }
+    .warn  { color: var(--amber); }
+    .crit  { color: var(--red);   }
+    .info  { color: var(--accent); }
+    .purple { color: var(--purple); }
+
+    .dot-live { width:6px; height:6px; border-radius:50%; animation:blink 1.4s ease-in-out infinite; background:var(--green); }
+
+    /* ─── LAYOUT ──────────────────────────────────────────────── */
+    .workspace {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      grid-template-rows: 1fr;
+      height: calc(100vh - 72px);  /* header + statusbar */
+      overflow: hidden;
+    }
+
+    /* charts area */
+    .charts-area {
+      overflow-y: auto;
+      padding: 14px 14px 14px 14px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto auto auto;
+      gap: 12px;
+      align-content: start;
+    }
+
+    /* ─── CHART CARD ──────────────────────────────────────────── */
+    .chart-card {
+      background: var(--s1);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      transition: border-color .2s;
+    }
+    .chart-card:hover { border-color: #484f58; }
+
+    .chart-card-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(13,17,23,.5);
+    }
+
+    .chart-meta { display:flex; align-items:center; gap:8px; }
+
+    .badge {
+      display:inline-flex; align-items:center; gap:3px;
+      padding:2px 7px; border-radius:4px;
+      font-size:9px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+    }
+    .badge-long  { background:rgba(57,211,83,.14); border:1px solid rgba(57,211,83,.35); color:var(--green); }
+    .badge-short { background:rgba(248,81,73,.14);  border:1px solid rgba(248,81,73,.35);  color:var(--red); }
+    .badge-long::before  { content:'▲'; font-size:7px; }
+    .badge-short::before { content:'▼'; font-size:7px; }
+
+    .chart-symbol { font-size:14px; font-weight:700; letter-spacing:.05em; }
+    .chart-exch   { font-size:10px; color:var(--muted); }
+
+    .ind-chips { display:flex; gap:4px; }
+    .ic {
+      font-size:9px; padding:2px 5px; border-radius:3px;
+      background:rgba(88,166,255,.1); border:1px solid rgba(88,166,255,.2); color:var(--accent);
+    }
+
+    .chart-container { height: 340px; width: 100%; }
+
+    /* ─── SIDE PANEL ──────────────────────────────────────────── */
+    .side-panel {
+      border-left: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+
+    .panel-section {
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .panel-title {
+      padding: 8px 14px;
+      font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+      color: var(--muted);
+      background: rgba(13,17,23,.4);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .panel-title .dot-live { flex-shrink:0; }
+
+    /* ATLAS state grid */
+    .state-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 1px; background: var(--border);
+    }
+    .sg-cell {
+      background: var(--s1);
+      padding: 9px 12px;
+    }
+    .sg-label { font-size:9px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; margin-bottom:3px; }
+    .sg-val   { font-size:13px; font-weight:700; }
+
+    /* candidates list */
+    .cand-list { padding: 8px; display:flex; flex-direction:column; gap:4px; }
+    .cand-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 8px; border-radius: 5px;
+      background: var(--s2); border: 1px solid var(--border);
+      transition: border-color .15s;
+    }
+    .cand-row:hover { border-color: #484f58; }
+    .cand-sym  { font-size:12px; font-weight:700; }
+    .cand-strat { font-size:9px; color:var(--muted); margin-top:1px; }
+    .cand-action { font-size:9px; font-weight:700; padding:2px 7px; border-radius:3px; }
+    .a-submit { background:rgba(57,211,83,.15); color:var(--green); border:1px solid rgba(57,211,83,.3); }
+    .a-hold   { background:rgba(139,148,158,.1); color:var(--muted); border:1px solid rgba(139,148,158,.2); }
+
+    /* trades table */
+    .trades-scroll { overflow-y: auto; flex: 1; }
+    .trades-table { width:100%; border-collapse:collapse; }
+    .trades-table th {
+      font-size:9px; color:var(--muted); letter-spacing:.07em; text-transform:uppercase;
+      padding:6px 10px; text-align:left;
+      background: rgba(13,17,23,.4);
+      border-bottom:1px solid var(--border);
+      position:sticky; top:0;
+    }
+    .trades-table td { padding:6px 10px; border-bottom:1px solid rgba(48,54,61,.5); vertical-align:top; }
+    .trades-table tr:hover td { background:rgba(88,166,255,.03); }
+    .pnl-pos { color:var(--green); font-weight:700; }
+    .pnl-neg { color:var(--red);   font-weight:700; }
+    .pnl-zero{ color:var(--muted); }
+    .status-open   { color:var(--amber); }
+    .status-closed { color:var(--muted); }
+
+    /* last-updated bar */
+    #last-update {
+      padding:5px 14px; font-size:9px; color:var(--muted); letter-spacing:.04em;
+      border-top:1px solid var(--border); background:rgba(13,17,23,.3);
+      flex-shrink:0;
+    }
+
+    /* error overlay */
+    #mcp-error {
+      display:none; align-items:center; gap:8px;
+      padding:6px 14px;
+      background:rgba(248,81,73,.1); border-bottom:1px solid rgba(248,81,73,.3);
+      font-size:10px; color:var(--red);
+    }
+
+    /* ─── SCROLLBAR ───────────────────────────────────────────── */
+    ::-webkit-scrollbar { width:4px; height:4px; }
+    ::-webkit-scrollbar-track { background:var(--bg); }
+    ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+  </style>
+</head>
+<body>
+
+<!-- ══ HEADER ══════════════════════════════════════════════════ -->
+<header>
+  <div class="header-left">
+    <div class="atlas-logo">
+      <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2"  y="2"  width="10" height="10" rx="2" fill="#58a6ff" opacity=".9"/>
+        <rect x="16" y="2"  width="10" height="10" rx="2" fill="#39d353" opacity=".7"/>
+        <rect x="2"  y="16" width="10" height="10" rx="2" fill="#39d353" opacity=".7"/>
+        <rect x="16" y="16" width="10" height="10" rx="2" fill="#f85149" opacity=".7"/>
+        <line x1="12" y1="7"  x2="16" y2="7"  stroke="#58a6ff" stroke-width="1.5" opacity=".5"/>
+        <line x1="7"  y1="12" x2="7"  y2="16" stroke="#58a6ff" stroke-width="1.5" opacity=".5"/>
+        <line x1="12" y1="21" x2="16" y2="21" stroke="#39d353" stroke-width="1.5" opacity=".5"/>
+        <line x1="21" y1="12" x2="21" y2="16" stroke="#39d353" stroke-width="1.5" opacity=".5"/>
+      </svg>
+      <span class="atlas-wordmark">ATLAS</span>
+    </div>
+    <div class="hdiv"></div>
+    <div class="session-tag"><strong>Elite Command Center</strong>&ensp;·&ensp;13 Abr 2026</div>
+    <span id="market-pill" class="market-pill pill-pre">Pre-Market</span>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:20px;">
+    <div class="countdown-block">
+      <span class="countdown-label" id="countdown-label">Apertura en</span>
+      <span id="countdown">--:--</span>
+    </div>
+    <div class="hdiv"></div>
+    <div class="clock-block">
+      <span class="clock-label">EDT</span>
+      <span id="live-clock">--:--:--</span>
+    </div>
+  </div>
+</header>
+
+<!-- ══ STATUS BAR ═══════════════════════════════════════════════ -->
+<div id="status-bar">
+  <div class="sb-item">
+    <span class="dot-live"></span>
+    <label>Modo</label>
+    <span class="sb-val purple" id="sb-mode">—</span>
+  </div>
+  <div class="sb-item">
+    <label>Fail-Safe</label>
+    <span class="sb-val" id="sb-failsafe">—</span>
+  </div>
+  <div class="sb-item">
+    <label>Errores Op.</label>
+    <span class="sb-val" id="sb-errors">—</span>
+  </div>
+  <div class="sb-item">
+    <label>Guard Rebuild</label>
+    <span class="sb-val" id="sb-guard">—</span>
+  </div>
+  <div class="sb-item">
+    <label>Trades Hoy</label>
+    <span class="sb-val info" id="sb-trades">—</span>
+  </div>
+  <div class="sb-item">
+    <label>Wins Hoy</label>
+    <span class="sb-val ok" id="sb-wins">—</span>
+  </div>
+  <div class="sb-item">
+    <label>PnL Día</label>
+    <span class="sb-val" id="sb-pnl">—</span>
+  </div>
+  <div class="sb-item">
+    <label>Último Candidato</label>
+    <span class="sb-val info" id="sb-cand">—</span>
+  </div>
+  <div class="sb-item">
+    <label>Última Decisión</label>
+    <span class="sb-val" id="sb-decision">—</span>
+  </div>
+  <div class="sb-item">
+    <label>MCP</label>
+    <span class="sb-val" id="sb-mcp">—</span>
+  </div>
+</div>
+
+<!-- ══ ERROR BANNER ═════════════════════════════════════════════ -->
+<div id="mcp-error">⚠ MCP server no responde — tunnel posiblemente caído. Verificar cloudflared.</div>
+
+<!-- ══ WORKSPACE ════════════════════════════════════════════════ -->
+<div class="workspace">
+
+  <!-- ── CHARTS GRID ─────────────────────────────────────────── -->
+  <div class="charts-area">
+
+    <!-- POWL — Long -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <div class="chart-meta">
+          <span class="badge badge-long">Long</span>
+          <span class="chart-symbol">POWL</span>
+          <span class="chart-exch">NASDAQ · 15m</span>
+        </div>
+        <div class="ind-chips">
+          <span class="ic">EMA 20</span><span class="ic">EMA 50</span><span class="ic">EMA 200</span><span class="ic">VOL</span>
+        </div>
+      </div>
+      <div class="chart-container" id="chart_POWL"></div>
+    </div>
+
+    <!-- UVIX — Long  (fix: CBOE:UVIX) -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <div class="chart-meta">
+          <span class="badge badge-long">Long</span>
+          <span class="chart-symbol">UVIX</span>
+          <span class="chart-exch">CBOE · 15m</span>
+        </div>
+        <div class="ind-chips">
+          <span class="ic">EMA 20</span><span class="ic">EMA 50</span><span class="ic">EMA 200</span><span class="ic">VOL</span>
+        </div>
+      </div>
+      <div class="chart-container" id="chart_UVIX"></div>
+    </div>
+
+    <!-- SMH — Short  (fix: NASDAQ:SMH) -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <div class="chart-meta">
+          <span class="badge badge-short">Short</span>
+          <span class="chart-symbol">SMH</span>
+          <span class="chart-exch">NASDAQ · 15m</span>
+        </div>
+        <div class="ind-chips">
+          <span class="ic">EMA 20</span><span class="ic">EMA 50</span><span class="ic">EMA 200</span><span class="ic">VOL</span>
+        </div>
+      </div>
+      <div class="chart-container" id="chart_SMH"></div>
+    </div>
+
+    <!-- MPC — Long -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <div class="chart-meta">
+          <span class="badge badge-long">Long</span>
+          <span class="chart-symbol">MPC</span>
+          <span class="chart-exch">NYSE · 15m</span>
+        </div>
+        <div class="ind-chips">
+          <span class="ic">EMA 20</span><span class="ic">EMA 50</span><span class="ic">EMA 200</span><span class="ic">VOL</span>
+        </div>
+      </div>
+      <div class="chart-container" id="chart_MPC"></div>
+    </div>
+
+    <!-- PH — Short -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <div class="chart-meta">
+          <span class="badge badge-short">Short</span>
+          <span class="chart-symbol">PH</span>
+          <span class="chart-exch">NYSE · 15m</span>
+        </div>
+        <div class="ind-chips">
+          <span class="ic">EMA 20</span><span class="ic">EMA 50</span><span class="ic">EMA 200</span><span class="ic">VOL</span>
+        </div>
+      </div>
+      <div class="chart-container" id="chart_PH"></div>
+    </div>
+
+    <!-- OS — Long -->
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <div class="chart-meta">
+          <span class="badge badge-long">Long</span>
+          <span class="chart-symbol">OS</span>
+          <span class="chart-exch">NYSE · 15m</span>
+        </div>
+        <div class="ind-chips">
+          <span class="ic">EMA 20</span><span class="ic">EMA 50</span><span class="ic">EMA 200</span><span class="ic">VOL</span>
+        </div>
+      </div>
+      <div class="chart-container" id="chart_OS"></div>
+    </div>
+
+  </div><!-- /charts-area -->
+
+  <!-- ── SIDE PANEL ──────────────────────────────────────────── -->
+  <div class="side-panel">
+
+    <!-- ATLAS State -->
+    <div class="panel-section">
+      <div class="panel-title">
+        <span class="dot-live"></span>
+        Estado ATLAS
+      </div>
+      <div class="state-grid">
+        <div class="sg-cell">
+          <div class="sg-label">Modo</div>
+          <div class="sg-val purple" id="st-mode">—</div>
+        </div>
+        <div class="sg-cell">
+          <div class="sg-label">Fail-Safe</div>
+          <div class="sg-val" id="st-fs">—</div>
+        </div>
+        <div class="sg-cell">
+          <div class="sg-label">Errores Op.</div>
+          <div class="sg-val" id="st-err">—</div>
+        </div>
+        <div class="sg-cell">
+          <div class="sg-label">Guard</div>
+          <div class="sg-val" id="st-guard">—</div>
+        </div>
+        <div class="sg-cell">
+          <div class="sg-label">Signal Valid.</div>
+          <div class="sg-val" id="st-sv">—</div>
+        </div>
+        <div class="sg-cell">
+          <div class="sg-label">VAR Monitor</div>
+          <div class="sg-val" id="st-var">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Candidatos -->
+    <div class="panel-section">
+      <div class="panel-title">Candidatos Activos</div>
+      <div class="cand-list" id="cand-list">
+        <div style="color:var(--muted);font-size:10px;padding:4px 0;">Cargando…</div>
+      </div>
+    </div>
+
+    <!-- Trades del día -->
+    <div class="panel-title" style="border-bottom:1px solid var(--border);">
+      <span class="dot-live"></span>
+      Trades Hoy
+    </div>
+    <div class="trades-scroll">
+      <table class="trades-table">
+        <thead>
+          <tr>
+            <th>Símbolo</th>
+            <th>Entry $</th>
+            <th>PnL</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="trades-body">
+          <tr><td colspan="4" style="color:var(--muted);text-align:center;padding:12px;">Sin trades reales aún</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div id="last-update">Actualizando…</div>
+
+  </div><!-- /side-panel -->
+</div><!-- /workspace -->
+
+
+<!-- ══ SCRIPTS ══════════════════════════════════════════════════ -->
+<script>
+/* ─── MCP CONFIG ──────────────────────────────────────────────── */
+const MCP_URL   = "https://activities-person-off-discussions.trycloudflare.com/execute";
+const MCP_TOKEN = "atlas_mcp_2026";
+const DB        = "C:\\ATLAS_PUSH\\atlas_code_quant\\data\\journal\\trading_journal.sqlite3";
+const POLL_MS   = 15000;  // poll cada 15s
+
+/* ─── CLOCK & COUNTDOWN ───────────────────────────────────────── */
+function getEDT() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+}
+
+function marketStatus(edt) {
+  const h = edt.getHours(), m = edt.getMinutes(), d = edt.getDay();
+  if (d === 0 || d === 6) return 'closed';
+  const t = h * 60 + m;
+  if (t < 240) return 'closed';        // before 4:00
+  if (t < 570) return 'pre';           // 4:00 – 9:29
+  if (t <= 960) return 'open';         // 9:30 – 16:00
+  if (t <= 1200) return 'after';       // 16:01 – 20:00
+  return 'closed';
+}
+
+function updateClock() {
+  const edt = getEDT();
+  const h = String(edt.getHours()).padStart(2,'0');
+  const m = String(edt.getMinutes()).padStart(2,'0');
+  const s = String(edt.getSeconds()).padStart(2,'0');
+  document.getElementById('live-clock').textContent = `${h}:${m}:${s}`;
+
+  const status = marketStatus(edt);
+  const pill   = document.getElementById('market-pill');
+  const cdEl   = document.getElementById('countdown');
+  const cdLbl  = document.getElementById('countdown-label');
+
+  if (status === 'open') {
+    pill.className = 'market-pill pill-open';
+    pill.textContent = 'Market Open';
+    cdEl.className = 'open-color';
+    // countdown to close 16:00
+    const close = new Date(edt); close.setHours(16,0,0,0);
+    const diff = Math.max(0, close - edt);
+    const rm = Math.floor(diff/60000), rs = Math.floor((diff%60000)/1000);
+    cdLbl.textContent = 'Cierre en';
+    cdEl.textContent = `${String(rm).padStart(2,'0')}:${String(rs).padStart(2,'0')}`;
+  } else if (status === 'pre') {
+    pill.className = 'market-pill pill-pre';
+    pill.textContent = 'Pre-Market';
+    cdEl.className = '';
+    const open = new Date(edt); open.setHours(9,30,0,0);
+    const diff = Math.max(0, open - edt);
+    const rm = Math.floor(diff/60000), rs = Math.floor((diff%60000)/1000);
+    cdLbl.textContent = 'Apertura en';
+    cdEl.textContent = `${String(rm).padStart(2,'0')}:${String(rs).padStart(2,'0')}`;
+  } else {
+    pill.className = 'market-pill pill-closed';
+    pill.textContent = status === 'after' ? 'After Hours' : 'Cerrado';
+    cdLbl.textContent = '';
+    cdEl.textContent = '—';
+  }
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+/* ─── MCP HELPERS ─────────────────────────────────────────────── */
+async function mcpPost(body) {
+  const r = await fetch(MCP_URL, {
+    method:'POST',
+    headers:{ 'X-Token': MCP_TOKEN, 'Content-Type':'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(8000)
+  });
+  return r.json();
+}
+
+async function mcpQuery(sql) {
+  return mcpPost({ action:'query_db', params:{ db:DB, sql } });
+}
+
+/* ─── STATIC CANDIDATES (from last scanner snapshot) ─────────── */
+const STATIC_CANDIDATES = [
+  { sym:'POWL', strat:'equity_long',  action:'submit' },
+  { sym:'UVIX', strat:'equity_long',  action:'submit' },
+  { sym:'SMH',  strat:'equity_short', action:'submit' },
+  { sym:'MPC',  strat:'equity_long',  action:'submit' },
+  { sym:'PH',   strat:'equity_short', action:'submit' },
+  { sym:'OS',   strat:'equity_long',  action:'submit' },
+];
+
+function renderCandidates(cands) {
+  const list = document.getElementById('cand-list');
+  if (!cands || !cands.length) {
+    list.innerHTML = '<div style="color:var(--muted);font-size:10px;padding:4px 0;">Sin candidatos activos</div>';
+    return;
+  }
+  list.innerHTML = cands.map(c => {
+    const isLong  = c.strat && c.strat.includes('long');
+    const isShort = c.strat && c.strat.includes('short');
+    const badgeCls = isLong ? 'badge-long' : isShort ? 'badge-short' : '';
+    const dir = isLong ? '▲' : isShort ? '▼' : '·';
+    const acCls = c.action === 'submit' ? 'a-submit' : 'a-hold';
+    return `
+      <div class="cand-row">
+        <div>
+          <div class="cand-sym" style="${isLong?'color:var(--green)':isShort?'color:var(--red)':''}">${dir} ${c.sym}</div>
+          <div class="cand-strat">${c.strat || '—'}</div>
+        </div>
+        <span class="cand-action ${acCls}">${c.action || '—'}</span>
+      </div>`;
+  }).join('');
+}
+renderCandidates(STATIC_CANDIDATES);
+
+/* ─── STATE POLLER ────────────────────────────────────────────── */
+let lastState = null;
+
+async function pollState() {
+  try {
+    const r = await mcpPost({ action:'get_state' });
+    document.getElementById('mcp-error').style.display = 'none';
+
+    if (r.ok && r.data && r.data.state) {
+      const s = r.data.state;
+      lastState = s;
+
+      // Status bar
+      document.getElementById('sb-mcp').textContent = 'OK';
+      document.getElementById('sb-mcp').className = 'sb-val ok';
+
+      // Mode
+      const mode = s.auton_mode || '—';
+      document.getElementById('sb-mode').textContent = mode;
+      document.getElementById('st-mode').textContent = mode;
+
+      // Fail-safe
+      const fs = s.fail_safe_active;
+      const fsEl = document.getElementById('sb-failsafe');
+      const fsEl2 = document.getElementById('st-fs');
+      fsEl.textContent = fsEl2.textContent = fs ? 'ACTIVO' : 'Inactivo';
+      fsEl.className = fs ? 'sb-val crit' : 'sb-val ok';
+      fsEl2.className = fs ? 'sg-val crit' : 'sg-val ok';
+
+      // Errors
+      const ec = s.operational_error_count ?? 0;
+      const ecEl = document.getElementById('sb-errors');
+      const ecEl2 = document.getElementById('st-err');
+      ecEl.textContent = ecEl2.textContent = ec;
+      ecEl.className = ec > 0 ? 'sb-val warn' : 'sb-val ok';
+      ecEl2.className = ec > 0 ? 'sg-val warn' : 'sg-val ok';
+
+      // Guard rebuild
+      const guard = s.post_journal_rebuild_guard;
+      const guardActive = guard && guard.active && guard.expires_at && new Date(guard.expires_at) > new Date();
+      const guardTxt = guardActive ? `Activo → ${guard.expires_at.slice(11,16)}` : 'Inactivo';
+      document.getElementById('sb-guard').textContent = guardTxt;
+      document.getElementById('sb-guard').className = guardActive ? 'sb-val warn' : 'sb-val ok';
+      document.getElementById('st-guard').textContent = guardTxt;
+      document.getElementById('st-guard').className = guardActive ? 'sg-val warn' : 'sg-val ok';
+
+      // Signal validator & VAR
+      const sv = s.signal_validator_enabled;
+      const svEl = document.getElementById('st-sv');
+      svEl.textContent = sv ? 'ON' : 'OFF';
+      svEl.className = sv ? 'sg-val ok' : 'sg-val warn';
+
+      const vr = s.var_monitor_enabled;
+      const vrEl = document.getElementById('st-var');
+      vrEl.textContent = vr ? 'ON' : 'OFF';
+      vrEl.className = vr ? 'sg-val ok' : 'sg-val warn';
+
+      // Last candidate & decision
+      if (s.last_candidate) {
+        const lc = s.last_candidate;
+        document.getElementById('sb-cand').textContent = `${lc.symbol} / ${lc.strategy_type}`;
+      }
+      if (s.last_decision) {
+        const ld = s.last_decision;
+        const decEl = document.getElementById('sb-decision');
+        decEl.textContent = ld.decision;
+        decEl.className = ld.decision === 'submit_ready' ? 'sb-val ok' : 'sb-val warn';
+      }
+    }
+  } catch(e) {
+    document.getElementById('mcp-error').style.display = 'flex';
+    document.getElementById('sb-mcp').textContent = 'CAÍDO';
+    document.getElementById('sb-mcp').className = 'sb-val crit';
+  }
+}
+
+/* ─── TRADES POLLER ───────────────────────────────────────────── */
+async function pollTrades() {
+  try {
+    const r = await mcpQuery(
+      `SELECT strategy_type, symbol, entry_price, exit_price, realized_pnl, status, entry_time, broker_order_ids_json
+       FROM trading_journal
+       WHERE DATE(entry_time) = DATE('now')
+         AND broker_order_ids_json NOT IN ('{}', '[]', 'null')
+         AND broker_order_ids_json IS NOT NULL
+       ORDER BY entry_time DESC LIMIT 20`
+    );
+
+    // Stats query
+    const rs = await mcpQuery(
+      `SELECT COUNT(*) as total,
+              SUM(CASE WHEN realized_pnl > 0 THEN 1 ELSE 0 END) as wins,
+              ROUND(SUM(realized_pnl),2) as pnl
+       FROM trading_journal
+       WHERE DATE(entry_time) = DATE('now')
+         AND broker_order_ids_json NOT IN ('{}', '[]', 'null')
+         AND broker_order_ids_json IS NOT NULL`
+    );
+
+    if (rs.ok && rs.data && rs.data.rows && rs.data.rows[0]) {
+      const st = rs.data.rows[0];
+      document.getElementById('sb-trades').textContent = st.total ?? 0;
+      document.getElementById('sb-wins').textContent   = st.wins  ?? 0;
+      const pnl = st.pnl ?? 0;
+      const pnlEl = document.getElementById('sb-pnl');
+      pnlEl.textContent = `$${pnl >= 0 ? '+' : ''}${pnl}`;
+      pnlEl.className   = pnl > 0 ? 'sb-val ok' : pnl < 0 ? 'sb-val crit' : 'sb-val muted';
+    }
+
+    if (r.ok && r.data && r.data.rows) {
+      const rows = r.data.rows;
+      const tbody = document.getElementById('trades-body');
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:12px;">Sin trades reales aún</td></tr>';
+      } else {
+        tbody.innerHTML = rows.map(t => {
+          const pnl = t.realized_pnl ?? 0;
+          const pnlCls = pnl > 0 ? 'pnl-pos' : pnl < 0 ? 'pnl-neg' : 'pnl-zero';
+          const pnlStr = `$${pnl >= 0 ? '+':''}${pnl.toFixed(2)}`;
+          const stCls  = t.status === 'open' ? 'status-open' : 'status-closed';
+          const isLong = (t.strategy_type||'').includes('long');
+          const dir    = isLong ? '▲' : '▼';
+          const dirCol = isLong ? 'color:var(--green)' : 'color:var(--red)';
+          const time   = t.entry_time ? t.entry_time.slice(11,16) : '—';
+          return `<tr>
+            <td><span style="${dirCol}">${dir}</span> <strong>${t.symbol}</strong><br><span style="color:var(--muted);font-size:9px;">${time}</span></td>
+            <td>$${t.entry_price ? Number(t.entry_price).toFixed(2) : '—'}</td>
+            <td class="${pnlCls}">${pnlStr}</td>
+            <td class="${stCls}">${t.status}</td>
+          </tr>`;
+        }).join('');
+      }
+    }
+
+    document.getElementById('last-update').textContent =
+      `Actualizado: ${getEDT().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit'})} EDT`;
+
+  } catch(e) {
+    document.getElementById('last-update').textContent = '⚠ Error consultando journal';
+  }
+}
+
+/* ─── POLL LOOP ───────────────────────────────────────────────── */
+async function pollAll() {
+  await Promise.allSettled([pollState(), pollTrades()]);
+}
+pollAll();
+setInterval(pollAll, POLL_MS);
+
+/* ─── TRADINGVIEW WIDGETS ─────────────────────────────────────── */
+const COMMON = {
+  width:  "100%",
+  height:  340,
+  interval: "15",
+  timezone: "America/New_York",
+  theme:    "dark",
+  style:    "1",
+  locale:   "en",
+  toolbar_bg:        "#0d1117",
+  enable_publishing:  false,
+  withdateranges:     true,
+  hide_side_toolbar:  false,
+  save_image:         false,
+  studies: [
+    "EMA@tv-basicstudies",
+    "EMA@tv-basicstudies",
+    "EMA@tv-basicstudies",
+    "Volume@tv-basicstudies"
+  ],
+  overrides: {
+    "mainSeriesProperties.candleStyle.upColor":         "#39d353",
+    "mainSeriesProperties.candleStyle.downColor":       "#f85149",
+    "mainSeriesProperties.candleStyle.borderUpColor":   "#39d353",
+    "mainSeriesProperties.candleStyle.borderDownColor": "#f85149",
+    "mainSeriesProperties.candleStyle.wickUpColor":     "#39d353",
+    "mainSeriesProperties.candleStyle.wickDownColor":   "#f85149",
+    "paneProperties.background":                        "#0d1117",
+    "paneProperties.vertGridProperties.color":          "#1c2128",
+    "paneProperties.horzGridProperties.color":          "#1c2128",
+    "scalesProperties.textColor":                       "#8b949e",
+  }
+};
+
+function mw(symbol, id) {
+  return new TradingView.widget({ ...COMMON, symbol, container_id: id });
+}
+
+mw("NASDAQ:POWL", "chart_POWL");
+mw("CBOE:UVIX",   "chart_UVIX");   // ← fix: era NASDAQ:UVIX
+mw("NASDAQ:SMH",  "chart_SMH");    // ← fix: era AMEX:SMH
+mw("NYSE:MPC",    "chart_MPC");
+mw("NYSE:PH",     "chart_PH");
+mw("NYSE:OS",     "chart_OS");
+</script>
+</body>
+</html>
