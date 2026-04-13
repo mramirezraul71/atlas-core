@@ -191,6 +191,15 @@ class OperationCenter:
             round(_safe_float(alignment, 0.0), 2) if alignment is not None else None
         )
         state["visual_gate_stats"] = normalized_visual_gate
+        # Auto-expire post_journal_rebuild_guard si su TTL ya venció
+        rebuild_guard = state.get("post_journal_rebuild_guard")
+        if isinstance(rebuild_guard, dict) and bool(rebuild_guard.get("active")):
+            try:
+                expires_at = datetime.fromisoformat(str(rebuild_guard.get("expires_at") or ""))
+                if expires_at <= datetime.utcnow():
+                    state["post_journal_rebuild_guard"] = deepcopy(_DEFAULT_STATE["post_journal_rebuild_guard"])
+            except (ValueError, TypeError):
+                state["post_journal_rebuild_guard"] = deepcopy(_DEFAULT_STATE["post_journal_rebuild_guard"])
         return state
 
     def _save(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -910,6 +919,9 @@ class OperationCenter:
             state["operational_error_count"] = 0
             state["last_operational_error"] = None
             self.executor.clear_emergency_stop()
+        if payload.get("reset_journal_rebuild_guard"):
+            # Permite limpiar manualmente el post_journal_rebuild_guard expirado o activo
+            state["post_journal_rebuild_guard"] = deepcopy(_DEFAULT_STATE["post_journal_rebuild_guard"])
         if "operator_present" in payload or "screen_integrity_ok" in payload or "notes" in payload or "vision_mode" in payload:
             self.vision.update(
                 provider=payload.get("vision_mode"),
@@ -1428,6 +1440,32 @@ class OperationCenter:
                         allowed = False
                         reasons.append(f"Estrategia {strategy_type} requiere legs pero el probability genero {len(legs)} (minimo 2).")
                         logger.warning("[evaluate_candidate] Insufficient legs (%d) for %s (%s) — blocking execution", len(legs), order_copy.symbol, strategy_type)
+                # En paper mode: si option_bp == 0 pero hay cash, no bloquear — usar cash como
+                # fallback de buying power. Tradier sandbox a veces reporta option_bp = 0 aunque
+                # haya fondos disponibles en la cuenta paper.
+                _uses_opt_bp = self._uses_option_buying_power(order_copy, strategy_type)
+                _opt_bp_now = _safe_float(balances.get("option_buying_power"), 0.0)
+                _cash_now = _safe_float(balances.get("cash"), 0.0)
+                if allowed and not is_close_order and _uses_opt_bp and action in {"preview", "submit"}:
+                    if _opt_bp_now <= 0.0:
+                        if scope == "paper" and _cash_now > 0.0:
+                            # Paper mode: usar cash como proxy de option_bp
+                            warnings.append(
+                                f"option_buying_power es 0 en paper — usando cash ({_cash_now:.2f}) como fallback de buying power."
+                            )
+                        else:
+                            allowed = False
+                            reasons.append("Option buying power es 0. La apertura de opciones queda bloqueada.")
+                    elif risk_dollars is not None and risk_dollars > _opt_bp_now:
+                        if scope == "paper" and _cash_now >= risk_dollars:
+                            warnings.append(
+                                f"option_buying_power insuficiente en paper ({_opt_bp_now:.2f}) — usando cash ({_cash_now:.2f}) como fallback."
+                            )
+                        else:
+                            allowed = False
+                            reasons.append(
+                                f"Risk budget insuficiente: requiere {risk_dollars:.2f} y option buying power disponible es {_opt_bp_now:.2f}."
+                            )
                 if not allowed:
                     logger.info("[evaluate_candidate] Skipping executor — order already blocked for %s", order_copy.symbol)
                 else:

@@ -298,6 +298,7 @@ class OperationConfigPayload(BaseModel):
     notes: str = ""
     kill_switch_active: bool = False
     reset_fail_safe: bool = False
+    reset_journal_rebuild_guard: bool = False  # Limpia post_journal_rebuild_guard activo o expirado
 
 
 class OperationCycleRequest(BaseModel):
