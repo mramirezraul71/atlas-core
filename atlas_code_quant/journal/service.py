@@ -1271,6 +1271,28 @@ class TradingJournalService:
             incoming_strategy_type = str(entry.strategy_type or incoming_strategy_type)
         opened_at, entry_flow, open_fees = _open_event_details(matched_events)
         iv_rank = _estimate_iv_rank(client, str(strategy.get("underlying") or ""), _extract_avg_iv(strategy))
+        # FIX 2026-04-13: Guard anti-phantom post-purge.
+        # Si ya existe un registro cerrado con este strategy_id cuyo post_mortem_text
+        # contiene "[PURGE", NO re-insertar como open — la posición fue purgada
+        # intencionalmente y Tradier sigue reportándola físicamente en el snapshot.
+        if entry is None:
+            purged_closed = db.execute(
+                select(TradingJournal).where(
+                    TradingJournal.account_type == account.scope,
+                    TradingJournal.account_id == account.account_id,
+                    TradingJournal.strategy_id == strategy_id,
+                    TradingJournal.status == "closed",
+                    TradingJournal.post_mortem_text.like("%[PURGE%"),
+                )
+            ).scalars().first()
+            if purged_closed is not None:
+                logger.warning(
+                    "sync_scope: skipping re-insertion of purged strategy_id=%s symbol=%s "
+                    "(already closed with PURGE post_mortem — Tradier still holds physical position)",
+                    strategy_id,
+                    str(strategy.get("underlying") or ""),
+                )
+                return strategy_id, False
         if entry is None:
             entry = TradingJournal(
                 journal_key=f"{account.scope}:{account.account_id}:{strategy_id}:{int(datetime.utcnow().timestamp())}",
