@@ -639,7 +639,8 @@ def _build_butterfly_legs(
     low = _contract_to_leg(contracts[low_idx], wing_side, expiration=expiration, dte=dte)
     body = _contract_to_leg(contracts[body_idx], body_side, expiration=expiration, dte=dte)
     high = _contract_to_leg(contracts[high_idx], wing_side, expiration=expiration, dte=dte)
-    return [low, body, _contract_to_leg(contracts[body_idx], body_side, expiration=expiration, dte=dte), high]
+    # fix(pricing): body leg was constructed twice causing duplicated legs and distorted net_premium
+    return [low, body, high]
 
 
 def _build_condor_legs(
@@ -981,7 +982,8 @@ def _capital_at_risk(strategy_type: StrategyType, legs: list[StrategyLeg], spot:
         "call_diagonal_debit_spread",
         "put_diagonal_debit_spread",
     }:
-        return max(net_debit, 1e-6)
+        # fix(pricing): use abs() so net_debit<0 (sandbox premium_mid inflation) doesn't collapse to 1e-6 causing ROI overflow
+        return max(abs(net_debit), 1e-6)
     if strategy_type == "covered_call":
         return max(spot + min(net_debit, 0.0), 1e-6)
     if strategy_type == "cash_secured_put":
@@ -1045,6 +1047,8 @@ def _evaluate_probability(
     capital_at_risk = _capital_at_risk(strategy_type, legs, spot)
     expected_pnl = float(np.mean(payoffs))
     expected_roi_pct = float((expected_pnl / max(capital_at_risk, 1e-6)) * 100.0)
+    # fix(pricing): clamp ROI to ±500% to prevent overflow when capital_at_risk is near-zero
+    expected_roi_pct = max(min(expected_roi_pct, 500.0), -500.0)
     horizon_dte = max(min((leg.dte for leg in legs if leg.dte is not None), default=dte), 1)
 
     return WinningProbabilityResult(
