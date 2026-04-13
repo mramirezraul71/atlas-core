@@ -381,6 +381,13 @@ class TradingConfig:
     # WebSocket dashboard: conexiones simultáneas por IP+scope (varias pestañas / reconexión)
     quant_dashboard_ws_limit: int = _ienv("QUANT_DASHBOARD_WS_LIMIT", 8)
 
+    # XGBoost Signal Module (opt-in; por defecto desactivado)
+    xgboost_enabled: bool = os.getenv("QUANT_XGBOOST_ENABLED", "false").strip().lower() not in {"0", "false", "no"}
+    xgboost_min_trades_to_train: int = _ienv("QUANT_XGBOOST_MIN_TRADES", 30)
+    xgboost_block_threshold: float = _fenv("QUANT_XGBOOST_BLOCK_THRESHOLD", 0.35)
+    xgboost_warn_threshold: float = _fenv("QUANT_XGBOOST_WARN_THRESHOLD", 0.50)
+    xgboost_exit_alert_threshold: float = _fenv("QUANT_XGBOOST_EXIT_ALERT_THRESHOLD", 0.55)
+
     # Paths
     data_dir: Path = BASE_DIR / "data" / "cache"
     models_dir: Path = BASE_DIR / "models" / "saved"
@@ -393,6 +400,8 @@ class TradingConfig:
     scanner_universe_cache_path: Path = BASE_DIR / "data" / "scanner" / "us_equities_universe.json"
     notify_channels: list[str] = field(default_factory=list)
     notifications_data_dir: Path = field(default_factory=lambda: BASE_DIR / "data" / "notifications")
+    xgboost_model_dir: Path = field(init=False)
+    xgboost_audit_path: Path = field(init=False)
 
     def __post_init__(self) -> None:
         if self.tradier_default_scope not in {"live", "paper"}:
@@ -481,6 +490,20 @@ class TradingConfig:
         if not self.journal_db_url:
             self.journal_db_url = f"sqlite:///{self.journal_db_path.as_posix()}"
         self.quant_dashboard_ws_limit = max(2, min(self.quant_dashboard_ws_limit, 64))
+
+        _xgb_dir = _clean_setting(os.getenv("QUANT_XGBOOST_MODEL_PATH"))
+        if _xgb_dir:
+            p = Path(_xgb_dir)
+            self.xgboost_model_dir = p if p.is_absolute() else (BASE_DIR / p).resolve()
+        else:
+            self.xgboost_model_dir = BASE_DIR / "learning" / "xgboost_signal" / "models"
+        self.xgboost_model_dir.mkdir(parents=True, exist_ok=True)
+        _aud = _clean_setting(os.getenv("QUANT_XGBOOST_AUDIT_PATH"))
+        if _aud:
+            ap = Path(_aud)
+            self.xgboost_audit_path = ap if ap.is_absolute() else (BASE_DIR / ap).resolve()
+        else:
+            self.xgboost_audit_path = self.xgboost_model_dir / "audit_report.json"
 
 
 settings = TradingConfig()
