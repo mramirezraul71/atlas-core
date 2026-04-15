@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
-from atlas_code_quant.api import main
-
-
-def test_auton_mode_requires_loop() -> None:
+def test_auton_mode_requires_loop(api_main_module) -> None:
+    main = api_main_module
     assert main._auton_mode_requires_loop({"auton_mode": "paper_autonomous"}) is True
     assert main._auton_mode_requires_loop({"auton_mode": "paper_supervised"}) is True
     assert main._auton_mode_requires_loop({"auton_mode": "off"}) is False
@@ -21,7 +19,8 @@ async def _drain_task(task: asyncio.Task | None) -> None:
         pass
 
 
-def test_ensure_auto_cycle_running_starts_task_when_mode_enabled(monkeypatch) -> None:
+def test_ensure_auto_cycle_running_starts_task_when_mode_enabled(monkeypatch, api_main_module) -> None:
+    main = api_main_module
     started: dict[str, object] = {}
 
     async def _fake_loop(interval_sec: int, max_per_cycle: int) -> None:
