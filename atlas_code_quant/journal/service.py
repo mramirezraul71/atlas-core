@@ -6,11 +6,14 @@ import json
 import logging
 import math
 import threading
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import delete, func, or_, select
 
 from backtesting.winning_probability import TradierClient, _compute_realized_vol, _safe_float
 from execution.tradier_controls import (
@@ -21,15 +24,26 @@ from execution.tradier_controls import (
     _event_timestamp,
     resolve_account_session,
 )
+try:
+    from atlas_code_quant.data.signal_validator import SignalValidator, ValidationResult
+except ModuleNotFoundError:  # pragma: no cover - runtime fallback for package imports
+    from data.signal_validator import SignalValidator, ValidationResult
+try:
+    from atlas_code_quant.data.var_monitor import VarMonitor
+except ModuleNotFoundError:  # pragma: no cover - runtime fallback for package imports
+    from data.var_monitor import VarMonitor
 from atlas_code_quant.journal.db import init_db, session_scope
 from atlas_code_quant.journal.models import TradingJournal
 from config.settings import settings
 from learning.adaptive_policy import AdaptiveLearningService
 from learning.ic_signal_tracker import ICSignalTracker, get_ic_tracker
+from learning.journal_data_quality import build_journal_quality_scorecard, filter_closed_entries, row_quality_flags
 from monitoring.strategy_tracker import StrategyTracker
 from operations.brain_bridge import QuantBrainBridge
 
 logger = logging.getLogger("quant.journal")
+
+_SAFE_ADAPTIVE_REBUILD_DATE = date(2026, 4, 11)
 
 LEVEL4_STRATEGIES = {
     "bear_call_credit_spread",
@@ -109,6 +123,113 @@ def _coerce_list_payload(value: Any) -> list[Any]:
     if isinstance(value, dict):
         return [value] if value else []
     return [value]
+
+
+def _extract_broker_order_id(value: Any) -> str | None:
+    if isinstance(value, dict):
+        candidate = value.get("id") or value.get("order_id") or value.get("broker_order_id")
+        if candidate not in {None, ""}:
+            return str(candidate)
+    elif isinstance(value, list):
+        for item in value:
+            if item in {None, ""}:
+                continue
+            return str(item)
+    elif value not in {None, ""}:
+        return str(value)
+    return None
+
+
+def _normalize_broker_position(position: dict[str, Any]) -> dict[str, Any]:
+    symbol = str(position.get("symbol") or position.get("underlying") or "").strip().upper()
+    quantity = abs(
+        _safe_float(
+            position.get("quantity")
+            or position.get("qty")
+            or position.get("size")
+            or position.get("shares"),
+            0.0,
+        )
+    )
+    broker_id = _extract_broker_order_id(
+        position.get("id")
+        or position.get("order_id")
+        or position.get("broker_order_id")
+        or position.get("broker_id")
+    )
+    return {
+        "symbol": symbol,
+        "quantity": quantity,
+        "broker_id": broker_id,
+        "raw": position,
+    }
+
+
+def _is_recent_entry(entry_time: datetime | None, days: int = 1) -> bool:
+    """True when the entry was created within the last `days`."""
+    if entry_time is None:
+        return False
+    if entry_time.tzinfo is not None:
+        now = datetime.now(entry_time.tzinfo)
+    else:
+        now = datetime.utcnow()
+    age = now - entry_time
+    return age <= timedelta(days=max(days, 0))
+
+
+def _entry_quantity(entry: TradingJournal) -> float:
+    legs = _json_load(entry.legs_details, [])
+    if isinstance(legs, list) and legs:
+        total = 0.0
+        for leg in legs:
+            if not isinstance(leg, dict):
+                continue
+            signed_qty = _safe_float(leg.get("signed_qty"), float("nan"))
+            if signed_qty == signed_qty and signed_qty != 0:
+                total += abs(signed_qty)
+                continue
+            qty = _safe_float(leg.get("quantity"), float("nan"))
+            if qty == qty and qty != 0:
+                total += abs(qty)
+        if total > 0:
+            return total
+    return 1.0
+
+
+def _sanitize_rebuilt_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    valid_rows: list[dict[str, Any]] = []
+    invalid_rows: list[dict[str, Any]] = []
+    for row in rows:
+        flags = row_quality_flags(SimpleNamespace(**row))
+        negative_flags = [flag for flag in flags if flag in {"negative_entry_price", "negative_exit_price"}]
+        if negative_flags:
+            invalid_rows.append(
+                {
+                    "journal_key": row.get("journal_key"),
+                    "symbol": row.get("symbol"),
+                    "strategy_type": row.get("strategy_type"),
+                    "flags": negative_flags,
+                }
+            )
+            continue
+        valid_rows.append(row)
+    return valid_rows, invalid_rows
+
+
+def _refresh_adaptive_snapshot_after_rebuild(*, min_cutoff_date: date) -> dict[str, Any]:
+    return AdaptiveLearningService().refresh(
+        force=True,
+        min_cutoff=datetime.combine(min_cutoff_date, datetime.min.time()),
+    )
+
+
+def _reset_post_rebuild_operational_state(*, account_scope: str) -> dict[str, Any]:
+    try:
+        from operations.operation_center import OperationCenter
+    except ModuleNotFoundError:  # pragma: no cover - runtime fallback for package imports
+        from atlas_code_quant.operations.operation_center import OperationCenter
+
+    return OperationCenter().reset_after_journal_rebuild(account_scope=account_scope)
 
 
 def _is_bad_strategy_type(value: Any) -> bool:
@@ -266,6 +387,248 @@ def _estimate_iv_rank(client: TradierClient, symbol: str, current_iv: float | No
     except Exception:
         logger.exception("Unable to estimate IV rank for %s", symbol)
         return None
+
+
+def _recorded_price(value: Any) -> float | None:
+    out = _safe_float(value, float("nan"))
+    if out != out:
+        return None
+    return round(abs(out), 4)
+
+
+def _normalized_symbol_filter(symbols: list[str] | None) -> set[str]:
+    return {str(symbol).strip().upper() for symbol in (symbols or []) if str(symbol).strip()}
+
+
+def _rebuild_journal_rows_from_events(
+    events: list[dict[str, Any]],
+    *,
+    account_scope: str,
+    account_id: str,
+    symbols: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    allowed_symbols = _normalized_symbol_filter(symbols)
+    open_lots: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    closed_rows: list[dict[str, Any]] = []
+    counters: Counter[str] = Counter()
+
+    for event in sorted(events, key=lambda item: item.get("timestamp") or datetime.min):
+        symbol = str(event.get("symbol") or "").strip().upper()
+        action = str(event.get("action") or "").strip().lower()
+        timestamp = event.get("timestamp")
+        quantity = abs(_safe_float(event.get("quantity"), 0.0))
+        price = _recorded_price(event.get("price"))
+        commission = round(_safe_float(event.get("commission"), 0.0), 4)
+        if not symbol or (allowed_symbols and symbol not in allowed_symbols):
+            continue
+        if not isinstance(timestamp, datetime) or quantity <= 0 or price is None or price <= 0:
+            counters["ignored_invalid_event"] += 1
+            continue
+
+        long_key = (symbol, "long")
+        short_key = (symbol, "short")
+
+        def _append_open(side: str) -> None:
+            open_lots[(symbol, side)].append(
+                {
+                    "symbol": symbol,
+                    "side": side,
+                    "timestamp": timestamp,
+                    "price": price,
+                    "quantity": quantity,
+                    "commission": commission,
+                }
+            )
+            counters[f"open_{side}"] += 1
+
+        def _close_fifo(side: str) -> bool:
+            queue = open_lots[(symbol, side)]
+            if not queue:
+                return False
+            remaining = quantity
+            close_commission_per_share = commission / quantity if quantity > 0 else 0.0
+            while remaining > 0 and queue:
+                lot = queue[0]
+                matched_qty = min(remaining, float(lot["quantity"]))
+                open_commission_per_share = float(lot["commission"]) / float(lot["quantity"]) if float(lot["quantity"]) > 0 else 0.0
+                total_fees = round((open_commission_per_share + close_commission_per_share) * matched_qty, 4)
+                entry_price = float(lot["price"])
+                exit_price = float(price)
+                realized_pnl = (
+                    (exit_price - entry_price) * matched_qty
+                    if side == "long"
+                    else (entry_price - exit_price) * matched_qty
+                ) - total_fees
+                strategy_type = "equity_long" if side == "long" else "equity_short"
+                ts_key = int(float(lot["timestamp"].timestamp()))
+                exit_key = int(float(timestamp.timestamp()))
+                closed_rows.append(
+                    {
+                        "journal_key": f"rebuild:{account_scope}:{account_id}:{strategy_type}:{symbol}:{ts_key}:{exit_key}:{len(closed_rows) + 1}",
+                        "account_type": account_scope,
+                        "account_id": account_id,
+                        "strategy_id": f"rebuild:{strategy_type}:{symbol}",
+                        "tracker_strategy_id": f"rebuild:{strategy_type}:{symbol}",
+                        "strategy_type": strategy_type,
+                        "symbol": symbol,
+                        "legs_signature": f"equity:{symbol}:{side}",
+                        "legs_details": _json_dump(
+                            [
+                                {
+                                    "symbol": symbol,
+                                    "asset_class": "equity",
+                                    "side": side,
+                                    "signed_qty": matched_qty if side == "long" else -matched_qty,
+                                    "entry_price": round(entry_price, 4),
+                                    "current_price": round(exit_price, 4),
+                                }
+                            ]
+                        ),
+                        "entry_price": round(entry_price, 4),
+                        "exit_price": round(exit_price, 4),
+                        "fees": total_fees,
+                        "entry_time": lot["timestamp"],
+                        "exit_time": timestamp,
+                        "status": "closed",
+                        "is_level4": False,
+                        "realized_pnl": round(realized_pnl, 4),
+                        "unrealized_pnl": 0.0,
+                        "mark_price": round(exit_price, 4),
+                        "spot_price": round(exit_price, 4),
+                        "entry_notional": round(entry_price * matched_qty, 4),
+                        "risk_at_entry": round(entry_price * matched_qty, 4),
+                        "thesis_rich_text": "Rebuilt from broker trade history.",
+                        "greeks_json": "{}",
+                        "attribution_json": "{}",
+                        "post_mortem_json": "{}",
+                        "post_mortem_text": "Rebuilt from broker trade history.",
+                        "broker_order_ids_json": "[]",
+                        "raw_entry_payload_json": _json_dump({"source": "broker_history_rebuild"}),
+                        "raw_exit_payload_json": _json_dump([event.get("raw") or {}]),
+                    }
+                )
+                remaining -= matched_qty
+                lot["quantity"] = round(float(lot["quantity"]) - matched_qty, 8)
+                if float(lot["quantity"]) <= 0:
+                    queue.pop(0)
+            counters[f"close_{side}"] += 1
+            return True
+
+        if action == "open_long":
+            _append_open("long")
+            continue
+        if action == "open_short":
+            _append_open("short")
+            continue
+        if action == "close_long":
+            if not _close_fifo("long"):
+                counters["orphan_close_long"] += 1
+            continue
+        if action == "close_short":
+            if not _close_fifo("short"):
+                counters["orphan_close_short"] += 1
+            continue
+        if action == "buy":
+            if not _close_fifo("short"):
+                _append_open("long")
+            continue
+        if action == "sell":
+            if not _close_fifo("long"):
+                _append_open("short")
+            continue
+
+    return closed_rows
+
+
+def _parse_broker_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _rebuild_journal_rows_from_closed_positions(
+    closed_positions: list[dict[str, Any]],
+    *,
+    account_scope: str,
+    account_id: str,
+    symbols: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    allowed_symbols = _normalized_symbol_filter(symbols)
+    rows: list[dict[str, Any]] = []
+
+    for index, item in enumerate(closed_positions, start=1):
+        symbol = str(item.get("symbol") or "").strip().upper()
+        quantity = abs(_safe_float(item.get("quantity"), 0.0))
+        cost = _recorded_price(item.get("cost"))
+        proceeds = _recorded_price(item.get("proceeds"))
+        realized_pnl = round(_safe_float(item.get("gain_loss"), 0.0), 4)
+        entry_time = _parse_broker_datetime(item.get("open_date"))
+        exit_time = _parse_broker_datetime(item.get("close_date"))
+
+        if not symbol or (allowed_symbols and symbol not in allowed_symbols):
+            continue
+        if quantity <= 0 or cost is None or cost <= 0 or proceeds is None or proceeds <= 0:
+            continue
+        if entry_time is None or exit_time is None or exit_time < entry_time:
+            continue
+
+        entry_price = round(cost / quantity, 4)
+        exit_price = round(proceeds / quantity, 4)
+        strategy_type = "rebuild_option_closed" if len(symbol) > 10 else "rebuild_equity_closed"
+        ts_key = int(float(entry_time.timestamp()))
+        exit_key = int(float(exit_time.timestamp()))
+
+        rows.append(
+            {
+                "journal_key": f"rebuild:gainloss:{account_scope}:{account_id}:{symbol}:{ts_key}:{exit_key}:{index}",
+                "account_type": account_scope,
+                "account_id": account_id,
+                "strategy_id": f"rebuild:gainloss:{strategy_type}:{symbol}",
+                "tracker_strategy_id": f"rebuild:gainloss:{strategy_type}:{symbol}",
+                "strategy_type": strategy_type,
+                "symbol": symbol,
+                "legs_signature": f"rebuild:{symbol}",
+                "legs_details": _json_dump(
+                    [
+                        {
+                            "symbol": symbol,
+                            "asset_class": "option" if len(symbol) > 10 else "equity",
+                            "side": "unknown",
+                            "signed_qty": quantity,
+                            "entry_price": entry_price,
+                            "current_price": exit_price,
+                        }
+                    ]
+                ),
+                "entry_price": entry_price,
+                "exit_price": exit_price,
+                "fees": 0.0,
+                "entry_time": entry_time,
+                "exit_time": exit_time,
+                "status": "closed",
+                "is_level4": False,
+                "realized_pnl": realized_pnl,
+                "unrealized_pnl": 0.0,
+                "mark_price": exit_price,
+                "spot_price": exit_price,
+                "entry_notional": cost,
+                "risk_at_entry": cost,
+                "thesis_rich_text": "Rebuilt from broker gain/loss closed positions.",
+                "greeks_json": "{}",
+                "attribution_json": "{}",
+                "post_mortem_json": "{}",
+                "post_mortem_text": "Rebuilt from broker gain/loss closed positions.",
+                "broker_order_ids_json": "[]",
+                "raw_entry_payload_json": _json_dump({"source": "broker_gainloss_rebuild"}),
+                "raw_exit_payload_json": _json_dump([item]),
+            }
+        )
+
+    return rows
 
 
 def _build_thesis(strategy: dict[str, Any], iv_rank: float | None) -> str:
@@ -457,6 +820,7 @@ def build_position_management_snapshot(
 ) -> dict[str, Any]:
     generated_at = (now or datetime.utcnow()).isoformat()
     active_now = now or datetime.utcnow()
+    var_monitor = VarMonitor()
     filtered = [
         entry
         for entry in open_entries
@@ -469,6 +833,7 @@ def build_position_management_snapshot(
         "max_unrealized_loss_r": float(settings.position_management_max_unrealized_loss_r),
         "max_thesis_drift_pct": float(settings.position_management_max_thesis_drift_pct),
         "max_stale_hours": int(settings.position_management_max_stale_hours),
+        "var_monitor_enabled": bool(var_monitor.is_enabled()),
     }
     if not filtered:
         return {
@@ -488,9 +853,36 @@ def build_position_management_snapshot(
                 "watchlist_count": 0,
                 "max_symbol_heat_pct": 0.0,
                 "max_strategy_heat_pct": 0.0,
+                "var_95_usd": 0.0,
+                "cvar_95_usd": 0.0,
+                "var_95_pct_of_book": 0.0,
+                "var_status": "disabled" if not thresholds["var_monitor_enabled"] else "ok",
+                "var_method": "disabled" if not thresholds["var_monitor_enabled"] else "monte_carlo_portfolio",
             },
             "alerts": [],
             "concentrations": {"by_symbol": [], "by_strategy_type": []},
+            "var_monitor": {
+                "enabled": thresholds["var_monitor_enabled"],
+                "method": "disabled" if not thresholds["var_monitor_enabled"] else "monte_carlo_portfolio",
+                "simulation_count": int(settings.position_management_var_mc_scenarios),
+                "confidence_level_pct": float(settings.position_management_var_confidence_pct),
+                "horizon_days": int(settings.position_management_var_horizon_days),
+                "var_95_usd": 0.0,
+                "cvar_95_usd": 0.0,
+                "var_95_pct_of_book": 0.0,
+                "threshold_usd": 0.0,
+                "status": "disabled" if not thresholds["var_monitor_enabled"] else "ok",
+                "drivers": [],
+                "diversified_risk_usd": 0.0,
+                "gross_risk_usd": 0.0,
+                "concentration_multiplier": 1.0,
+                "loss_multiplier": 1.0,
+                "monte_carlo_var_usd": 0.0,
+                "monte_carlo_cvar_usd": 0.0,
+                "expected_loss_usd": 0.0,
+                "worst_case_loss_usd": 0.0,
+                "net_directional_exposure_pct": 0.0,
+            },
             "watchlist": [],
             "thresholds": thresholds,
         }
@@ -560,6 +952,14 @@ def build_position_management_snapshot(
     )
     max_symbol_heat_pct = round(max((_safe_float(row.get("risk_share_pct"), 0.0) for row in symbol_concentrations), default=0.0), 4)
     max_strategy_heat_pct = round(max((_safe_float(row.get("risk_share_pct"), 0.0) for row in strategy_concentrations), default=0.0), 4)
+    var_snapshot = var_monitor.compute(
+        position_rows,
+        total_risk_budget=total_risk_budget,
+        total_entry_notional=total_entry_notional,
+        max_symbol_heat_pct=max_symbol_heat_pct,
+        adverse_positions_count=adverse_count,
+        total_unrealized_pnl=total_unrealized_pnl,
+    )
 
     alerts: list[dict[str, Any]] = []
     if max_symbol_heat_pct > float(settings.position_management_max_symbol_heat_pct):
@@ -608,6 +1008,20 @@ def build_position_management_snapshot(
                 "threshold": float(settings.position_management_max_thesis_drift_pct),
             }
         )
+    if var_snapshot.enabled and var_snapshot.status in {"warning", "critical"}:
+        alerts.append(
+            {
+                "level": "critical" if var_snapshot.status == "critical" else "warning",
+                "code": "portfolio_var_limit",
+                "message": (
+                    f"VaR dinamico 95% estimado en {var_snapshot.var_95_usd:.2f} USD "
+                    f"({var_snapshot.var_95_pct_of_book:.2f}% del libro abierto)."
+                ),
+                "value": var_snapshot.var_95_usd,
+                "threshold": var_snapshot.threshold_usd,
+                "drivers": list(var_snapshot.drivers),
+            }
+        )
 
     watchlist = [row for row in position_rows if row["alert_reasons"]]
     watchlist.sort(
@@ -635,11 +1049,38 @@ def build_position_management_snapshot(
             "watchlist_count": len(watchlist),
             "max_symbol_heat_pct": max_symbol_heat_pct,
             "max_strategy_heat_pct": max_strategy_heat_pct,
+            "var_95_usd": var_snapshot.var_95_usd,
+            "cvar_95_usd": var_snapshot.cvar_95_usd,
+            "var_95_pct_of_book": var_snapshot.var_95_pct_of_book,
+            "var_status": var_snapshot.status,
+            "var_method": var_snapshot.method,
         },
         "alerts": alerts,
         "concentrations": {
             "by_symbol": symbol_concentrations[: capped_limit // 2 if capped_limit > 1 else 1],
             "by_strategy_type": strategy_concentrations[: capped_limit // 2 if capped_limit > 1 else 1],
+        },
+        "var_monitor": {
+            "enabled": var_snapshot.enabled,
+            "method": var_snapshot.method,
+            "simulation_count": var_snapshot.simulation_count,
+            "confidence_level_pct": var_snapshot.confidence_level_pct,
+            "horizon_days": var_snapshot.horizon_days,
+            "var_95_usd": var_snapshot.var_95_usd,
+            "cvar_95_usd": var_snapshot.cvar_95_usd,
+            "var_95_pct_of_book": var_snapshot.var_95_pct_of_book,
+            "threshold_usd": var_snapshot.threshold_usd,
+            "status": var_snapshot.status,
+            "drivers": list(var_snapshot.drivers),
+            "diversified_risk_usd": var_snapshot.diversified_risk_usd,
+            "gross_risk_usd": var_snapshot.gross_risk_usd,
+            "concentration_multiplier": var_snapshot.concentration_multiplier,
+            "loss_multiplier": var_snapshot.loss_multiplier,
+            "monte_carlo_var_usd": var_snapshot.monte_carlo_var_usd,
+            "monte_carlo_cvar_usd": var_snapshot.monte_carlo_cvar_usd,
+            "expected_loss_usd": var_snapshot.expected_loss_usd,
+            "worst_case_loss_usd": var_snapshot.worst_case_loss_usd,
+            "net_directional_exposure_pct": var_snapshot.net_directional_exposure_pct,
         },
         "watchlist": watchlist[:capped_limit],
         "thresholds": thresholds,
@@ -676,6 +1117,11 @@ def build_exit_governance_snapshot(
         "take_profit": 0,
         "hold": 0,
     }
+    portfolio_var = dict(position_management.get("var_monitor") or {})
+    portfolio_var_status = str(portfolio_var.get("status") or "ok")
+    portfolio_var_enabled = bool(portfolio_var.get("enabled"))
+    portfolio_var_95_usd = _safe_float(portfolio_var.get("var_95_usd"), 0.0)
+    portfolio_var_method = str(portfolio_var.get("method") or "unknown")
 
     for row in position_management.get("watchlist") or []:
         reasons = set(str(reason) for reason in row.get("alert_reasons") or [])
@@ -716,6 +1162,14 @@ def build_exit_governance_snapshot(
         elif open_r_multiple >= float(settings.exit_governance_trailing_profit_floor_r) and thesis_drift_pct == thesis_drift_pct and thesis_drift_pct < 0:
             recommendation = "de_risk"
             exit_reason = "protect_open_profit"
+            urgency = "medium"
+        elif portfolio_var_enabled and portfolio_var_status == "critical":
+            recommendation = "de_risk"
+            exit_reason = "portfolio_var_limit"
+            urgency = "high"
+        elif portfolio_var_enabled and portfolio_var_status == "warning" and open_r_multiple > 0:
+            recommendation = "de_risk"
+            exit_reason = "portfolio_var_pressure"
             urgency = "medium"
 
         action_counts[recommendation] += 1
@@ -765,6 +1219,19 @@ def build_exit_governance_snapshot(
                 "value": action_counts["take_profit"],
             }
         )
+    if portfolio_var_enabled and portfolio_var_status in {"warning", "critical"}:
+        alerts.append(
+            {
+                "level": "critical" if portfolio_var_status == "critical" else "warning",
+                "code": "portfolio_var_exit_pressure",
+                "message": (
+                    f"Exit governance entra en modo defensivo porque el libro marca VaR {portfolio_var_status} "
+                    f"({portfolio_var_95_usd:.2f} USD)."
+                ),
+                "value": portfolio_var_95_usd,
+                "method": portfolio_var_method,
+            }
+        )
 
     return {
         "generated_at": position_management.get("generated_at"),
@@ -776,6 +1243,9 @@ def build_exit_governance_snapshot(
             "de_risk_count": action_counts["de_risk"],
             "take_profit_count": action_counts["take_profit"],
             "hold_count": action_counts["hold"],
+            "var_status": portfolio_var_status,
+            "var_method": portfolio_var_method,
+            "var_95_usd": portfolio_var_95_usd,
         },
         "alerts": alerts,
         "recommendations": candidates[: max(1, min(int(limit), 20))],
@@ -1221,13 +1691,16 @@ class TradingJournalService:
         brain: QuantBrainBridge | None = None,
         learning: AdaptiveLearningService | None = None,
         ic_tracker: ICSignalTracker | None = None,
+        signal_validator: SignalValidator | None = None,
     ) -> None:
         self.tracker = tracker or StrategyTracker()
         self.brain = brain or QuantBrainBridge()
         self.learning = learning or AdaptiveLearningService()
         self.ic_tracker = ic_tracker or get_ic_tracker()
+        self.signal_validator = signal_validator or SignalValidator()
         self._sync_lock_guard = threading.Lock()
         self._sync_locks: dict[str, threading.Lock] = {}
+        self._last_close_attempt_at: dict[str, datetime] = {}
 
     def _scope_sync_lock(self, scope: str) -> threading.Lock:
         normalized = str(scope or "paper").strip().lower() or "paper"
@@ -1241,8 +1714,50 @@ class TradingJournalService:
         start = date.today() - timedelta(days=settings.tradier_journal_history_days)
         return _normalize_trade_events(client.account_history(account_id, history_type="trade", start=start, end=date.today()))
 
-    def _upsert_open_entry(self, db: Any, account: TradierAccountSession, client: TradierClient, strategy: dict[str, Any], matched_events: list[dict[str, Any]]) -> tuple[str, bool]:
+    def _closed_positions(self, client: TradierClient, account_id: str) -> list[dict[str, Any]]:
+        gainloss_fetch = getattr(client, "gainloss", None)
+        if not callable(gainloss_fetch):
+            return []
+        try:
+            payload = gainloss_fetch(account_id) or {}
+        except Exception:
+            logger.exception("Unable to fetch closed positions from broker gain/loss for %s", account_id)
+            return []
+        closed_positions = payload.get("closed_position") or []
+        if isinstance(closed_positions, dict):
+            return [closed_positions]
+        if isinstance(closed_positions, list):
+            return [item for item in closed_positions if isinstance(item, dict)]
+        return []
+
+    @staticmethod
+    def _log_validation_result(result: ValidationResult, *, context: str, payload: dict[str, Any]) -> None:
+        level = logging.WARNING if result.severity == "warn" else logging.ERROR
+        logger.log(level, "%s rejected by signal validator: %s | payload=%s", context, result.reason, payload)
+
+    @staticmethod
+    def _validation_trade_payload(
+        *,
+        strategy: dict[str, Any],
+        strategy_type: str,
+        entry_price: float | None,
+    ) -> dict[str, Any]:
+        return {
+            "symbol": str(strategy.get("underlying") or strategy.get("symbol") or ""),
+            "underlying": str(strategy.get("underlying") or strategy.get("symbol") or ""),
+            "strategy_type": strategy_type,
+            "signed_qty": strategy.get("signed_qty"),
+            "quantity": strategy.get("quantity"),
+            "positions": strategy.get("positions") or [],
+            "entry_price": entry_price,
+        }
+
+    def _upsert_open_entry(self, db: Any, account: TradierAccountSession, client: TradierClient, strategy: dict[str, Any], matched_events: list[dict[str, Any]]) -> tuple[str, bool, bool]:
         strategy_id, signature = _stable_strategy_id(strategy)
+        # PATCH: skip sandbox-restricted symbols (OS, AA) — phantom prevention
+        _SYNC_BLOCKED: frozenset = frozenset({"OS", "AA"})
+        if str(strategy.get("underlying") or "") in _SYNC_BLOCKED:
+            return strategy_id, False, True  # skip, not created, skipped=True
         incoming_strategy_type = str(strategy.get("strategy_type") or "unknown")
         existing_open_entries = db.execute(
             select(TradingJournal).where(
@@ -1269,6 +1784,37 @@ class TradingJournalService:
             incoming_strategy_type = str(entry.strategy_type or incoming_strategy_type)
         opened_at, entry_flow, open_fees = _open_event_details(matched_events)
         iv_rank = _estimate_iv_rank(client, str(strategy.get("underlying") or ""), _extract_avg_iv(strategy))
+        normalized_entry_price = _recorded_price(
+            entry_flow if entry_flow not in {None, 0.0} else _strategy_notional(strategy, "entry_price")
+        )
+        normalized_entry_notional = _recorded_price(_strategy_notional(strategy, "entry_price"))
+        trade_payload = self._validation_trade_payload(
+            strategy=strategy,
+            strategy_type=incoming_strategy_type,
+            entry_price=normalized_entry_price,
+        )
+        trade_result = self.signal_validator.validate_trade_entry(trade_payload)
+        if not trade_result.is_valid:
+            self._log_validation_result(trade_result, context="journal_trade_entry", payload=trade_payload)
+            return strategy_id, False, True
+        journal_result = self.signal_validator.validate_journal_write(
+            {
+                "symbol": trade_payload["symbol"],
+                "underlying": trade_payload["underlying"],
+                "entry_price": normalized_entry_price,
+            }
+        )
+        if not journal_result.is_valid:
+            self._log_validation_result(
+                journal_result,
+                context="journal_write",
+                payload={
+                    "strategy_id": strategy_id,
+                    "symbol": trade_payload["symbol"],
+                    "entry_price": normalized_entry_price,
+                },
+            )
+            return strategy_id, False, True
         if entry is None:
             entry = TradingJournal(
                 journal_key=f"{account.scope}:{account.account_id}:{strategy_id}:{int(datetime.utcnow().timestamp())}",
@@ -1280,7 +1826,7 @@ class TradingJournalService:
                 symbol=str(strategy.get("underlying") or ""),
                 legs_signature=signature,
                 legs_details=_json_dump(strategy.get("positions") or []),
-                entry_price=entry_flow if entry_flow not in {None, 0.0} else _strategy_notional(strategy, "entry_price"),
+                entry_price=normalized_entry_price,
                 fees=open_fees,
                 win_rate_at_entry=_safe_float(strategy.get("win_rate_pct"), float("nan")),
                 current_win_rate_pct=_safe_float(strategy.get("win_rate_pct"), float("nan")),
@@ -1293,7 +1839,7 @@ class TradingJournalService:
                 unrealized_pnl=_safe_float(strategy.get("open_pnl"), 0.0),
                 mark_price=_strategy_notional(strategy, "current_price"),
                 spot_price=_safe_float(strategy.get("spot"), 0.0),
-                entry_notional=abs(_strategy_notional(strategy, "entry_price")),
+                entry_notional=normalized_entry_notional,
                 risk_at_entry=abs(_safe_float(strategy.get("bpr_model"), 0.0)),
                 greeks_json=_json_dump({"delta": strategy.get("net_delta"), "gamma": strategy.get("net_gamma"), "theta": strategy.get("theta_daily"), "vega": strategy.get("net_vega")}),
                 attribution_json=_json_dump(strategy.get("attribution") or {}),
@@ -1303,7 +1849,7 @@ class TradingJournalService:
             )
             db.add(entry)
             db.flush()
-            return strategy_id, True
+            return strategy_id, True, False
 
         entry.strategy_id = strategy_id
         entry.tracker_strategy_id = str(strategy.get("strategy_id") or entry.tracker_strategy_id or "")
@@ -1315,6 +1861,8 @@ class TradingJournalService:
         entry.unrealized_pnl = _safe_float(strategy.get("open_pnl"), 0.0)
         entry.mark_price = _strategy_notional(strategy, "current_price")
         entry.spot_price = _safe_float(strategy.get("spot"), 0.0)
+        entry.entry_price = normalized_entry_price if normalized_entry_price is not None else entry.entry_price
+        entry.entry_notional = normalized_entry_notional if normalized_entry_notional is not None else entry.entry_notional
         entry.iv_rank = iv_rank if iv_rank is not None else entry.iv_rank
         entry.fees = max(_safe_float(entry.fees, 0.0), open_fees)
         entry.is_level4 = str(strategy.get("strategy_type") or "") in LEVEL4_STRATEGIES
@@ -1322,13 +1870,21 @@ class TradingJournalService:
         entry.attribution_json = _json_dump(strategy.get("attribution") or {})
         entry.raw_entry_payload_json = _json_dump(strategy.get("win_rate_details") or {})
         entry.last_synced_at = datetime.utcnow()
-        return strategy_id, False
+        return strategy_id, False, False
 
-    def _close_entry(self, entry: TradingJournal, matched_events: list[dict[str, Any]]) -> None:
+    def _close_entry(self, entry: TradingJournal, matched_events: list[dict[str, Any]]) -> bool:
         closed_at, exit_flow, close_fees, close_events = _close_event_details(matched_events)
+        if not close_events:
+            entry.last_synced_at = datetime.utcnow()
+            logger.warning(
+                "Journal close skipped without broker close evidence for %s (%s)",
+                entry.journal_key,
+                entry.symbol,
+            )
+            return False
         entry.status = "closed"
         entry.exit_time = closed_at or datetime.utcnow()
-        entry.exit_price = exit_flow if exit_flow not in {None, 0.0} else entry.mark_price
+        entry.exit_price = _recorded_price(exit_flow if exit_flow not in {None, 0.0} else entry.mark_price)
         entry.fees = round(_safe_float(entry.fees, 0.0) + close_fees, 4)
         if entry.entry_price is not None and entry.exit_price is not None:
             # FIX 2026-03-30: fórmula corregida — direction * (|exit| - |entry_per_share|) * qty
@@ -1364,6 +1920,7 @@ class TradingJournalService:
                 f"Driver dominante: {driver}. Diagnostico principal: {root_cause}."
             )
         entry.last_synced_at = datetime.utcnow()
+        return True
 
     def _sync_closed_entry_learning(self, entry_payload: dict[str, Any]) -> dict[str, Any]:
         symbol = str(entry_payload.get("symbol") or "").upper().strip()
@@ -1409,6 +1966,33 @@ class TradingJournalService:
         except Exception:
             logger.exception("Unable to refresh adaptive learning after journal sync for scope=%s", scope)
         return outcomes
+
+    def _should_guard_mass_close(
+        self,
+        *,
+        scope: str,
+        strategies_count: int,
+        open_entries_count: int,
+        unseen_entries_count: int,
+    ) -> bool:
+        if not settings.journal_sync_partial_snapshot_guard_enabled:
+            return False
+        if open_entries_count < settings.journal_sync_mass_close_min_positions:
+            return False
+        if unseen_entries_count <= 0:
+            return False
+        ratio_pct = (unseen_entries_count / max(open_entries_count, 1)) * 100.0
+        if ratio_pct < settings.journal_sync_mass_close_ratio_pct:
+            return False
+        if strategies_count >= open_entries_count:
+            return False
+        last_attempt = self._last_close_attempt_at.get(scope)
+        if last_attempt is not None:
+            elapsed = (datetime.utcnow() - last_attempt).total_seconds()
+            if elapsed < settings.journal_sync_close_debounce_sec:
+                return True
+        self._last_close_attempt_at[scope] = datetime.utcnow()
+        return True
 
     def sync_scope(self, scope: str) -> dict[str, Any]:
         sync_lock = self._scope_sync_lock(scope)
@@ -1456,17 +2040,29 @@ class TradingJournalService:
                 }
 
             trade_events = self._trade_events(client, account.account_id)
+            try:
+                broker_positions = [
+                    _normalize_broker_position(position)
+                    for position in (client.positions(account.account_id) or [])
+                ]
+            except Exception:
+                logger.exception("Unable to fetch broker positions for scope=%s account=%s", scope, account.account_id)
+                broker_positions = []
             created = 0
             updated = 0
             closed = 0
+            invalid_skipped = 0
             seen_ids: set[str] = set()
             closed_entries: list[dict[str, Any]] = []
 
             with session_scope() as db:
                 for strategy in strategies:
                     matched = _matching_events(trade_events, strategy)
-                    strategy_id, created_now = self._upsert_open_entry(db, account, client, strategy, matched)
+                    strategy_id, created_now, skipped_now = self._upsert_open_entry(db, account, client, strategy, matched)
                     seen_ids.add(strategy_id)
+                    if skipped_now:
+                        invalid_skipped += 1
+                        continue
                     if created_now:
                         created += 1
                     else:
@@ -1479,15 +2075,131 @@ class TradingJournalService:
                         TradingJournal.status == "open",
                     )
                 ).scalars().all()
-                for entry in open_entries:
-                    if entry.strategy_id in seen_ids:
-                        continue
+                unseen_entries = [entry for entry in open_entries if entry.strategy_id not in seen_ids]
+                if self._should_guard_mass_close(
+                    scope=scope,
+                    strategies_count=len(strategies),
+                    open_entries_count=len(open_entries),
+                    unseen_entries_count=len(unseen_entries),
+                ):
+                    logger.warning(
+                        "Journal partial snapshot guard preserved %s/%s open entries for scope=%s (strategies=%s)",
+                        len(unseen_entries),
+                        len(open_entries),
+                        scope,
+                        len(strategies),
+                    )
+                    return {
+                        "scope": scope,
+                        "account_id": account.account_id,
+                        "created": created,
+                        "updated": updated,
+                        "closed": 0,
+                        "active_strategies": len(strategies),
+                        "trade_events_seen": len(trade_events),
+                        "learning_outcomes": [],
+                        "skipped": True,
+                        "reason": "partial_strategy_snapshot_guard",
+                        "open_entries_preserved": len(unseen_entries),
+                        "open_entries_total": len(open_entries),
+                    }
+                for entry in unseen_entries:
                     strategy_stub = {"underlying": entry.symbol, "positions": _json_load(entry.legs_details, [])}
-                    self._close_entry(entry, _matching_events(trade_events, strategy_stub))
-                    closed_entries.append(_entry_payload(entry))
-                    closed += 1
+                    if self._close_entry(entry, _matching_events(trade_events, strategy_stub)):
+                        closed_entries.append(_entry_payload(entry))
+                        closed += 1
+
+                open_entries_after_sync = db.execute(
+                    select(TradingJournal).where(
+                        TradingJournal.account_type == account.scope,
+                        TradingJournal.account_id == account.account_id,
+                        TradingJournal.status == "open",
+                    )
+                ).scalars().all()
 
             learning_outcomes = self._process_closed_entry_payloads(scope, closed_entries)
+            matched: list[dict[str, Any]] = []
+            unmatched_journal: list[dict[str, Any]] = []
+            unmatched_broker: list[dict[str, Any]] = []
+            used_broker_indexes: set[int] = set()
+
+            for entry in open_entries_after_sync:
+                entry_order_id = _extract_broker_order_id(_json_load(entry.broker_order_ids_json, []))
+                entry_symbol = str(entry.symbol or "").strip().upper()
+                entry_qty = _entry_quantity(entry)
+                resolved_match: dict[str, Any] | None = None
+                resolved_idx: int | None = None
+                match_method = "none"
+
+                if entry_order_id:
+                    for idx, broker_pos in enumerate(broker_positions):
+                        if idx in used_broker_indexes:
+                            continue
+                        broker_id = str(broker_pos.get("broker_id") or "").strip()
+                        if broker_id and broker_id == entry_order_id:
+                            resolved_match = broker_pos
+                            resolved_idx = idx
+                            match_method = "broker_order_id"
+                            break
+
+                if resolved_match is None:
+                    for idx, broker_pos in enumerate(broker_positions):
+                        if idx in used_broker_indexes:
+                            continue
+                        if str(broker_pos.get("symbol") or "") != entry_symbol:
+                            continue
+                        broker_qty = abs(_safe_float(broker_pos.get("quantity"), 0.0))
+                        qty_close = entry_qty <= 0 or broker_qty <= 0 or abs(entry_qty - broker_qty) <= 1e-6
+                        if qty_close and _is_recent_entry(entry.entry_time, days=1):
+                            resolved_match = broker_pos
+                            resolved_idx = idx
+                            match_method = "symbol_entry_time_fallback"
+                            logger.info(
+                                "Matched %s by (symbol, entry_date) fallback (broker_order_id was missing)",
+                                entry_symbol,
+                            )
+                            break
+
+                if resolved_match is None:
+                    unmatched_journal.append(
+                        {
+                            "journal_key": entry.journal_key,
+                            "symbol": entry_symbol,
+                            "broker_order_id": entry_order_id,
+                            "entry_time": entry.entry_time.isoformat() if entry.entry_time else None,
+                        }
+                    )
+                    continue
+
+                if resolved_idx is not None:
+                    used_broker_indexes.add(resolved_idx)
+                matched.append(
+                    {
+                        "journal_key": entry.journal_key,
+                        "symbol": entry_symbol,
+                        "broker_order_id": entry_order_id,
+                        "broker_symbol": resolved_match.get("symbol"),
+                        "broker_id": resolved_match.get("broker_id"),
+                        "match_method": match_method,
+                    }
+                )
+
+            for idx, broker_pos in enumerate(broker_positions):
+                if idx in used_broker_indexes:
+                    continue
+                unmatched_broker.append(broker_pos)
+                logger.error(
+                    "PHANTOM DETECTED: Broker position %s qty=%s not in journal",
+                    broker_pos.get("symbol"),
+                    broker_pos.get("quantity"),
+                )
+
+            if not unmatched_broker and not unmatched_journal:
+                reconciliation_status = "OK"
+            elif unmatched_broker:
+                reconciliation_status = "PARTIAL_UNMATCHED_BROKER"
+            else:
+                reconciliation_status = "PARTIAL_UNMATCHED_JOURNAL"
 
             return {
                 "scope": scope,
@@ -1497,7 +2209,22 @@ class TradingJournalService:
                 "closed": closed,
                 "active_strategies": len(strategies),
                 "trade_events_seen": len(trade_events),
+                "invalid_skipped": invalid_skipped,
                 "learning_outcomes": learning_outcomes,
+                "broker_positions": broker_positions,
+                "journal_entries": [
+                    {
+                        "journal_key": entry.journal_key,
+                        "symbol": str(entry.symbol or "").strip().upper(),
+                        "entry_time": entry.entry_time.isoformat() if entry.entry_time else None,
+                        "broker_order_id": _extract_broker_order_id(_json_load(entry.broker_order_ids_json, [])),
+                    }
+                    for entry in open_entries_after_sync
+                ],
+                "matched": matched,
+                "unmatched_broker": unmatched_broker,
+                "unmatched_journal": unmatched_journal,
+                "reconciliation_status": reconciliation_status,
             }
         finally:
             sync_lock.release()
@@ -1519,6 +2246,17 @@ class TradingJournalService:
                 "expectancy_gap": round(_safe_float(live_stats.get("expectancy"), 0.0) - _safe_float(paper_stats.get("expectancy"), 0.0), 4),
             },
         }
+
+    def account_summary(self, *, account_scope: str = "paper") -> dict[str, Any]:
+        scope = str(account_scope or "paper").strip().lower() or "paper"
+        with session_scope() as db:
+            entries = db.execute(
+                select(TradingJournal).where(TradingJournal.account_type == scope)
+            ).scalars().all()
+        payload = _account_stats(entries)
+        payload["generated_at"] = datetime.utcnow().isoformat()
+        payload["account_scope"] = scope
+        return payload
 
     def entries(self, *, limit: int = 24, status: str | None = None) -> dict[str, Any]:
         capped_limit = max(1, min(int(limit), 100))
@@ -1543,13 +2281,15 @@ class TradingJournalService:
                 select(TradingJournal)
                 .where(TradingJournal.status == "closed")
                 .where(TradingJournal.account_type == account_scope)
-                .order_by(TradingJournal.exit_time.asc(), TradingJournal.id.asc())
+                .order_by(TradingJournal.exit_time.desc(), TradingJournal.id.desc())
                 .limit(capped)
             ).scalars().all()
+        quality = build_journal_quality_scorecard(rows)
+        rows = list(reversed(filter_closed_entries(rows, scorecard=quality, include_outlier_days=False)))
 
         trades: list[dict] = []
-        equity = 0.0
-        peak = 0.0
+        equity = 10_000.0
+        peak = equity
         for row in rows:
             pnl = _safe_float(row.realized_pnl, 0.0)
             equity += pnl
@@ -1595,7 +2335,12 @@ class TradingJournalService:
         return {
             "generated_at": datetime.utcnow().isoformat(),
             "account_scope": account_scope,
+            "quality": quality,
             "total_trades": len(trades),
+            "source_closed_trades": int(quality.get("total_closed_count") or 0),
+            "excluded_trades": max(0, int(quality.get("total_closed_count") or 0) - len(trades)),
+            "window_limit": capped,
+            "window_mode": "latest_closed_trades",
             "trades": trades,
             "calendar": calendar,
         }
@@ -1639,3 +2384,133 @@ class TradingJournalService:
                 query = query.where(TradingJournal.account_type == account_type)
             rows = db.execute(query.order_by(TradingJournal.updated_at.desc(), TradingJournal.id.desc())).scalars().all()
         return build_options_governance_adoption_snapshot(rows, account_type=account_type, limit=limit)
+
+
+def rebuild_from_broker_history(
+    *,
+    start_date: str,
+    end_date: str | None = None,
+    symbols: list[str] | None = None,
+    account_scope: str = "paper",
+    validate_quality: bool = True,
+    quality_threshold_pct: float = 80.0,
+    persist: bool = True,
+    export_dir: Path | None = None,
+) -> dict[str, Any]:
+    service = TradingJournalService()
+    service.init_db()
+    start = datetime.fromisoformat(start_date).date()
+    end = datetime.fromisoformat(end_date).date() if end_date else datetime.utcnow().date()
+    client, account = resolve_account_session(account_scope=account_scope)  # type: ignore[arg-type]
+    raw_events = service._trade_events(client, account.account_id)
+    filtered_events = []
+    allowed_symbols = _normalized_symbol_filter(symbols)
+    for event in raw_events:
+        timestamp = event.get("timestamp")
+        symbol = str(event.get("symbol") or "").strip().upper()
+        if not isinstance(timestamp, datetime):
+            continue
+        if timestamp.date() < start or timestamp.date() > end:
+            continue
+        if allowed_symbols and symbol not in allowed_symbols:
+            continue
+        filtered_events.append(event)
+
+    closed_positions = service._closed_positions(client, account.account_id)
+    filtered_closed_positions: list[dict[str, Any]] = []
+    for item in closed_positions:
+        symbol = str(item.get("symbol") or "").strip().upper()
+        close_time = _parse_broker_datetime(item.get("close_date"))
+        if close_time is None:
+            continue
+        if close_time.date() < start or close_time.date() > end:
+            continue
+        if allowed_symbols and symbol not in allowed_symbols:
+            continue
+        filtered_closed_positions.append(item)
+
+    source_mode = "trade_events"
+    rebuilt_rows = _rebuild_journal_rows_from_events(
+        filtered_events,
+        account_scope=account.scope,
+        account_id=account.account_id,
+        symbols=sorted(allowed_symbols) if allowed_symbols else None,
+    )
+    if not rebuilt_rows and filtered_closed_positions:
+        rebuilt_rows = _rebuild_journal_rows_from_closed_positions(
+            filtered_closed_positions,
+            account_scope=account.scope,
+            account_id=account.account_id,
+            symbols=sorted(allowed_symbols) if allowed_symbols else None,
+        )
+        source_mode = "gainloss_closed_positions"
+    rebuilt_rows, invalid_rebuilt_rows = _sanitize_rebuilt_rows(rebuilt_rows)
+    quality_input = [SimpleNamespace(**row) for row in rebuilt_rows]
+    quality = build_journal_quality_scorecard(quality_input)
+    quality_score = float(quality.get("score_pct") or 0.0)
+    if validate_quality and quality_score < quality_threshold_pct:
+        raise RuntimeError(
+            f"Rebuild quality score {quality_score:.2f} is below required threshold {quality_threshold_pct:.2f}"
+        )
+
+    deleted_existing = 0
+    invalidated_negative_price_rows = 0
+    adaptive_snapshot: dict[str, Any] | None = None
+    operation_reset: dict[str, Any] | None = None
+    if persist:
+        with session_scope() as db:
+            delete_query = delete(TradingJournal).where(
+                TradingJournal.account_type == account.scope,
+                TradingJournal.status == "closed",
+                TradingJournal.entry_time >= datetime.combine(start, datetime.min.time()),
+                TradingJournal.entry_time <= datetime.combine(end, datetime.max.time()),
+            )
+            if allowed_symbols:
+                delete_query = delete_query.where(TradingJournal.symbol.in_(sorted(allowed_symbols)))
+            result = db.execute(delete_query)
+            deleted_existing = int(getattr(result, "rowcount", 0) or 0)
+            invalid_query = delete(TradingJournal).where(
+                TradingJournal.account_type == account.scope,
+                TradingJournal.status == "closed",
+                or_(
+                    TradingJournal.entry_price < 0,
+                    TradingJournal.exit_price < 0,
+                ),
+            )
+            if allowed_symbols:
+                invalid_query = invalid_query.where(TradingJournal.symbol.in_(sorted(allowed_symbols)))
+            invalid_result = db.execute(invalid_query)
+            invalidated_negative_price_rows = int(getattr(invalid_result, "rowcount", 0) or 0)
+            for row in rebuilt_rows:
+                db.add(TradingJournal(**row))
+        adaptive_snapshot = _refresh_adaptive_snapshot_after_rebuild(min_cutoff_date=_SAFE_ADAPTIVE_REBUILD_DATE)
+        operation_reset = _reset_post_rebuild_operational_state(account_scope=account.scope)
+
+    export_root = export_dir or (settings.data_dir / "journal_rebuild")
+    export_root.mkdir(parents=True, exist_ok=True)
+    export_path = export_root / f"journal_rebuild_{account.scope}_{start.isoformat()}_{end.isoformat()}.json"
+    ml_enabled = bool(rebuilt_rows) and quality_score >= quality_threshold_pct and bool(quality.get("learning_allowed", False))
+    payload = {
+        "account_scope": account.scope,
+        "account_id": account.account_id,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "symbols": sorted(allowed_symbols),
+        "events_considered": len(filtered_events),
+        "closed_positions_considered": len(filtered_closed_positions),
+        "history_source": source_mode,
+        "journal_rebuilt": len(rebuilt_rows),
+        "invalid_rebuilt_rows": len(invalid_rebuilt_rows),
+        "invalid_rebuilt_row_samples": invalid_rebuilt_rows[:10],
+        "deleted_existing": deleted_existing,
+        "invalidated_negative_price_rows": invalidated_negative_price_rows,
+        "score_calidad": quality_score,
+        "ml_habilitado": ml_enabled,
+        "quality": quality,
+        "adaptive_snapshot_cutoff": _SAFE_ADAPTIVE_REBUILD_DATE.isoformat(),
+        "adaptive_snapshot_sample_count": int((adaptive_snapshot or {}).get("sample_count") or 0),
+        "operation_reset": operation_reset,
+        "export_path": str(export_path),
+    }
+    export_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    return payload
