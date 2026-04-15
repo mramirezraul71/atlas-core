@@ -65,6 +65,7 @@ _STATE: dict[str, Any] = {
     "policy_updates": 0,
     "last_ic_by_method": {},
     "last_readiness_report": None,
+    "last_reconciliation_status": None,
     "running": False,
     "errors": [],
 }
@@ -190,6 +191,38 @@ def _build_trade_event_from_journal(entry: Any) -> Any | None:
     except Exception as e:
         logger.debug("[orchestrator] build_trade_event failed: %s", e)
         return None
+
+
+def _reconciliation_status_for_learning_gate() -> str:
+    """Resolve reconciliation status for learning gate logging."""
+    try:
+        from operations.operation_center import OperationCenter
+    except Exception:
+        try:
+            from atlas_code_quant.operations.operation_center import OperationCenter
+        except Exception:
+            return "UNKNOWN"
+
+    try:
+        snapshot = OperationCenter().status_lite()
+    except Exception:
+        logger.debug("[orchestrator] unable to pull operation status for reconciliation gate", exc_info=True)
+        return "UNKNOWN"
+
+    monitor = snapshot.get("monitor_summary") or {}
+    reconciliation = monitor.get("reconciliation") or {}
+    raw_status = (
+        reconciliation.get("reconciliation_status")
+        or reconciliation.get("status")
+        or reconciliation.get("state")
+        or ""
+    )
+    normalized = str(raw_status).strip().lower()
+    if normalized in {"ok", "healthy"}:
+        return "OK"
+    if not normalized:
+        return "UNKNOWN"
+    return normalized.upper()
 
 
 # ── Reconciliación de posiciones cerradas ─────────────────────────────────────
@@ -487,6 +520,12 @@ async def run_learning_loop(
             _STATE["reconcile_count"] += 1
             _STATE["trades_processed_total"] += recon_result.get("reconciled", 0)
             _STATE["ic_updates_total"] += recon_result.get("ic_updated", 0)
+            reconciliation_status = _reconciliation_status_for_learning_gate()
+            _STATE["last_reconciliation_status"] = reconciliation_status
+            if reconciliation_status != "OK":
+                logger.error("Learning blocked: reconciliation_status = %s", reconciliation_status)
+            else:
+                logger.info("Reconciliation OK, learning enabled")
 
             if recon_result.get("ic_updated", 0) > 0:
                 # Hubo nuevos outcomes → actualizar políticas IC
@@ -540,6 +579,7 @@ def get_orchestrator_status() -> dict[str, Any]:
         "last_daily_analysis_date": _STATE["last_daily_analysis_date"],
         "last_ic_by_method": _STATE["last_ic_by_method"],
         "last_readiness_report": _STATE["last_readiness_report"],
+        "last_reconciliation_status": _STATE["last_reconciliation_status"],
         "recent_errors": _STATE["errors"][-5:] if _STATE["errors"] else [],
     }
 

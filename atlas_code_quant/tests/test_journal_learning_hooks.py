@@ -276,3 +276,181 @@ def test_sync_scope_preserves_open_entries_when_strategy_snapshot_is_empty(monke
     assert outcome["skipped"] is True
     assert outcome["reason"] == "empty_strategy_snapshot"
     assert outcome["open_entries_preserved"] == 1
+
+
+def test_close_entry_requires_broker_close_evidence() -> None:
+    service = TradingJournalService(
+        tracker=object(),  # type: ignore[arg-type]
+        brain=_Brain(),
+        learning=_Learning(),  # type: ignore[arg-type]
+    )
+    entry = TradingJournal(
+        journal_key="paper:ACC:equity_long:AAOI:1",
+        account_type="paper",
+        account_id="ACC",
+        strategy_id="equity_long:AAOI:test",
+        tracker_strategy_id="equity_long:AAOI:test",
+        strategy_type="equity_long",
+        symbol="AAOI",
+        legs_signature="equity:AAOI",
+        legs_details='[{"symbol":"AAOI","asset_class":"equity","side":"long","signed_qty":1.0}]',
+        entry_price=416.0,
+        mark_price=392.84,
+        status="open",
+    )
+
+    closed = service._close_entry(entry, [])
+
+    assert closed is False
+    assert entry.status == "open"
+    assert entry.exit_time is None
+
+
+def test_sync_scope_partial_snapshot_guard_skips_mass_close(monkeypatch) -> None:
+    class _Tracker:
+        def build_summary(self, **_: object) -> dict:
+            return {
+                "strategies": [
+                    {
+                        "strategy_id": "equity_long:AAOI:test",
+                        "strategy_type": "equity_long",
+                        "underlying": "AAOI",
+                        "positions": [
+                            {
+                                "symbol": "AAOI",
+                                "asset_class": "equity",
+                                "side": "long",
+                                "signed_qty": 1.0,
+                                "entry_price": 10.0,
+                                "current_price": 11.0,
+                            }
+                        ],
+                    }
+                ]
+            }
+
+    class _Account:
+        scope = "paper"
+        account_id = "ACC"
+
+    open_entries = []
+    for idx in range(40):
+        symbol = f"S{idx}"
+        open_entries.append(
+            TradingJournal(
+                journal_key=f"paper:ACC:equity_long:{symbol}:{idx}",
+                account_type="paper",
+                account_id="ACC",
+                strategy_id=f"equity_long:{symbol}:id{idx}",
+                tracker_strategy_id=f"equity_long:{symbol}:id{idx}",
+                strategy_type="equity_long",
+                symbol=symbol,
+                legs_signature=f"equity:{symbol}",
+                legs_details=f'[{{"symbol":"{symbol}","asset_class":"equity","side":"long","signed_qty":1.0}}]',
+                status="open",
+            )
+        )
+
+    class _FakeResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return list(self._rows)
+
+    class _FakeDb:
+        def __init__(self):
+            self.added = []
+
+        def execute(self, _query):
+            return _FakeResult(open_entries)
+
+        def add(self, item):
+            self.added.append(item)
+
+        def flush(self):
+            return None
+
+    @contextmanager
+    def _fake_session_scope():
+        yield _FakeDb()
+
+    monkeypatch.setattr(journal_service_module, "resolve_account_session", lambda **_: (object(), _Account()))
+    monkeypatch.setattr(journal_service_module, "session_scope", _fake_session_scope)
+    monkeypatch.setattr(journal_service_module.TradingJournalService, "_trade_events", lambda self, client, account_id: [])
+    monkeypatch.setattr(journal_service_module, "_estimate_iv_rank", lambda *args, **kwargs: None)
+
+    service = TradingJournalService(
+        tracker=_Tracker(),  # type: ignore[arg-type]
+        brain=_Brain(),
+        learning=_Learning(),  # type: ignore[arg-type]
+    )
+
+    outcome = service.sync_scope("paper")
+
+    assert outcome["skipped"] is True
+    assert outcome["reason"] == "partial_strategy_snapshot_guard"
+    assert outcome["open_entries_preserved"] >= 39
+
+
+def test_upsert_open_entry_normalizes_signed_prices(monkeypatch) -> None:
+    class _Db:
+        def __init__(self):
+            self.added = []
+
+        def execute(self, _query):
+            class _Result:
+                def scalars(self_inner):
+                    return self_inner
+
+                def all(self_inner):
+                    return []
+
+            return _Result()
+
+        def add(self, item):
+            self.added.append(item)
+
+        def flush(self):
+            return None
+
+    class _Account:
+        scope = "paper"
+        account_id = "ACC"
+
+    service = TradingJournalService(
+        tracker=object(),  # type: ignore[arg-type]
+        brain=_Brain(),
+        learning=_Learning(),  # type: ignore[arg-type]
+    )
+    monkeypatch.setattr(journal_service_module, "_estimate_iv_rank", lambda *args, **kwargs: None)
+    db = _Db()
+    strategy = {
+        "strategy_id": "equity_short:XYZ:test",
+        "strategy_type": "equity_short",
+        "underlying": "XYZ",
+        "positions": [
+            {
+                "symbol": "XYZ",
+                "asset_class": "equity",
+                "side": "short",
+                "signed_qty": -1.0,
+                "entry_price": 45.91,
+                "current_price": 45.82,
+            }
+        ],
+        "open_pnl": 0.09,
+        "spot": 45.82,
+        "bpr_model": 45.91,
+    }
+
+    _strategy_id, created_now, skipped_now = service._upsert_open_entry(db, _Account(), object(), strategy, [])
+
+    assert created_now is True
+    assert isinstance(skipped_now, bool)
+    entry = db.added[0]
+    assert entry.entry_price == 45.91
+    assert entry.entry_notional == 45.91
