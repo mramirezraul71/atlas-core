@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import threading
 import time
@@ -215,6 +216,13 @@ def _direction_label(direction: int) -> str:
 def _timeframes_sorted(values: list[str]) -> list[str]:
     order = {name: idx for idx, name in enumerate(TIMEFRAME_ORDER)}
     return sorted(values, key=lambda item: order.get(item, 99))
+
+
+def _stable_symbol_mix(symbols: list[str]) -> list[str]:
+    """Desordena símbolos de forma determinista para evitar sesgo alfabético."""
+    if len(symbols) <= 1:
+        return symbols
+    return sorted(symbols, key=lambda item: hashlib.sha1(item.encode("utf-8")).hexdigest())
 
 
 @dataclass(slots=True)
@@ -627,7 +635,7 @@ class OpportunityScannerService:
             return symbols, meta
 
         catalog = self._catalog.get_us_equities()
-        symbols = list(catalog.get("symbols") or [])
+        symbols = _stable_symbol_mix(list(catalog.get("symbols") or []))
         if not symbols:
             fallback = list(self._config.universe)
             meta = {

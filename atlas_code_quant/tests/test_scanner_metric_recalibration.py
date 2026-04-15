@@ -11,7 +11,7 @@ QUANT_ROOT = ROOT / "atlas_code_quant"
 if str(QUANT_ROOT) not in sys.path:
     sys.path.insert(0, str(QUANT_ROOT))
 
-from scanner.opportunity_scanner import OpportunityScannerService  # noqa: E402
+from scanner.opportunity_scanner import OpportunityScannerService, _stable_symbol_mix  # noqa: E402
 
 
 def _sample_df(rows: int = 260) -> pd.DataFrame:
@@ -109,3 +109,13 @@ def test_report_does_not_deadlock_when_status_snapshot_is_embedded() -> None:
     assert "status" in report
     assert report["status"]["running"] is False
     assert isinstance(report["activity"], list)
+
+
+def test_stable_symbol_mix_breaks_alphabetical_front_bias() -> None:
+    grouped = [f"A{i:03d}" for i in range(120)] + [f"B{i:03d}" for i in range(120)]
+    mixed = _stable_symbol_mix(grouped)
+    first_window = mixed[:80]
+
+    assert len(first_window) == 80
+    assert any(symbol.startswith("A") for symbol in first_window)
+    assert any(symbol.startswith("B") for symbol in first_window)
