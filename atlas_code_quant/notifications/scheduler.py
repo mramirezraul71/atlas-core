@@ -35,6 +35,156 @@ def _is_trade_exit_event(ev: Any) -> bool:
     return "SALIDA" in str(getattr(ev, "title", "") or "")
 
 
+def _direction_bias(raw: Any) -> str:
+    v = str(raw or "").strip().lower()
+    if v in {"alcista", "bullish", "long", "up", "compra"}:
+        return "alcista"
+    if v in {"bajista", "bearish", "short", "down", "venta"}:
+        return "bajista"
+    return "neutral"
+
+
+def _safe_float(raw: Any, default: float = 0.0) -> float:
+    try:
+        return float(raw)
+    except Exception:
+        return default
+
+
+def _strategy_recommendation(candidate: dict[str, Any], urgency: str | None = None) -> str:
+    direction = _direction_bias(candidate.get("direction"))
+    method_key = str(candidate.get("strategy_key") or candidate.get("method") or candidate.get("primary_method") or "").strip()
+    method_label = str(candidate.get("strategy_label") or candidate.get("method_label") or method_key or "setup técnico").strip()
+    family = str(candidate.get("strategy_family") or "").strip().lower()
+    urgency = str(urgency or "").strip().upper()
+
+    if urgency == "ALTA":
+        execution_hint = "Si confirma trigger de entrada, se puede ejecutar sin demorar."
+    elif urgency == "BAJA":
+        execution_hint = "Priorizar paciencia: esperar confirmación adicional o reducir tamaño."
+    else:
+        execution_hint = "Aplicar confirmación estándar y mantener gestión de riesgo disciplinada."
+
+    if direction == "alcista":
+        base = f"Estrategia sugerida: enfoque LONG con {method_label}"
+        if family in {"trend", "momentum", "breakout"}:
+            return f"{base}, buscando continuidad/pullback con confirmación. {execution_hint}"
+        return f"{base}, validando confirmación antes de ampliar tamaño. {execution_hint}"
+    if direction == "bajista":
+        base = f"Estrategia sugerida: enfoque SHORT/PUT con {method_label}"
+        if family in {"trend", "momentum", "breakout"}:
+            return f"{base}, priorizando rupturas fallidas o rechazos en resistencia. {execution_hint}"
+        return f"{base}, con ejecución defensiva y control de riesgo. {execution_hint}"
+    return (
+        f"Estrategia sugerida: sesgo neutral con {method_label}; "
+        f"esperar ruptura confirmada o usar tamaño reducido. {execution_hint}"
+    )
+
+
+def _tactical_plan(candidate: dict[str, Any], urgency: str) -> str:
+    direction = _direction_bias(candidate.get("direction"))
+    urgency = str(urgency or "").strip().upper()
+    price = _safe_float(candidate.get("price"), 0.0)
+    predicted_move_pct = abs(_safe_float(candidate.get("predicted_move_pct"), 0.0))
+    avg_loss_pct = abs(_safe_float(candidate.get("local_avg_loss_pct"), 0.0))
+
+    if price <= 0:
+        return (
+            "Plan táctico: Entrada en trigger del setup | Invalidación al romper estructura "
+            "opuesta | Objetivo en primer tramo de continuación."
+        )
+
+    if predicted_move_pct <= 0:
+        predicted_move_pct = 1.2
+    if avg_loss_pct <= 0:
+        avg_loss_pct = 0.8
+
+    # Ajuste de agresividad por urgencia.
+    if urgency == "ALTA":
+        target_factor = 0.75
+        risk_factor = 1.00
+    elif urgency == "BAJA":
+        target_factor = 0.45
+        risk_factor = 0.80
+    else:
+        target_factor = 0.60
+        risk_factor = 0.90
+
+    objective_pct = predicted_move_pct * target_factor
+    invalidation_pct = avg_loss_pct * risk_factor
+
+    if direction == "alcista":
+        entry = price
+        invalidation = price * (1.0 - invalidation_pct / 100.0)
+        target = price * (1.0 + objective_pct / 100.0)
+    elif direction == "bajista":
+        entry = price
+        invalidation = price * (1.0 + invalidation_pct / 100.0)
+        target = price * (1.0 - objective_pct / 100.0)
+    else:
+        entry = price
+        invalidation = price * (1.0 - (invalidation_pct * 0.7) / 100.0)
+        target = price * (1.0 + (objective_pct * 0.7) / 100.0)
+
+    risk = abs(entry - invalidation)
+    reward = abs(target - entry)
+    rr = (reward / risk) if risk > 0 else 0.0
+
+    return (
+        f"Plan táctico: Entrada ≈ {entry:.2f} | Invalidación ≈ {invalidation:.2f} "
+        f"| Objetivo ≈ {target:.2f} | R:R ≈ {rr:.2f}"
+    )
+
+
+def _ic_alignment_text(orchestrator: dict[str, Any], method_key: str) -> str:
+    method_key = str(method_key or "").strip()
+    ic_by_method = orchestrator.get("last_ic_by_method") or {}
+    method_ic = ic_by_method.get(method_key) if method_key else None
+    if not isinstance(method_ic, dict):
+        return (
+            "IC (Information Coefficient) mide si el método anticipa la dirección futura. "
+            "No hay muestra reciente para este setup; tratar señal como táctica y usar tamaño conservador."
+        )
+    try:
+        ic_val = float(method_ic.get("ic") or 0.0)
+    except Exception:
+        ic_val = 0.0
+    try:
+        n_obs = int(method_ic.get("n") or 0)
+    except Exception:
+        n_obs = 0
+    if n_obs < 10:
+        status = "aún no concluyente"
+        action = "validar manualmente contexto y no escalar tamaño agresivo."
+    elif ic_val >= 0.10:
+        status = "fuerte y favorable"
+        action = "permite ejecutar con confianza táctica si el resto del contexto acompaña."
+    elif ic_val >= 0.05:
+        status = "positivo"
+        action = "apoya la señal, pero mantener disciplina de confirmación y riesgo."
+    elif ic_val <= -0.05:
+        status = "negativo"
+        action = "contradice la señal; conviene reducir tamaño o evitar entrada."
+    else:
+        status = "cercano a neutral"
+        action = "el edge estadístico es débil; priorizar confirmaciones extra."
+    return f"Alineación con IC ({method_key}): IC={ic_val:+.3f} con n={n_obs}, {status}; {action}"
+
+
+def _urgency_level(candidate: dict[str, Any], selection_score: float) -> tuple[str, str]:
+    direction = _direction_bias(candidate.get("direction"))
+    confirmation = candidate.get("confirmation") if isinstance(candidate.get("confirmation"), dict) else {}
+    higher_dir = _direction_bias(confirmation.get("direction"))
+    higher_conf = float(confirmation.get("confidence_pct") or 0.0)
+    aligned_context = direction in {"alcista", "bajista"} and higher_dir == direction and higher_conf >= 60.0
+
+    if selection_score >= 85.0 and aligned_context:
+        return "ALTA", "score alto y contexto superior alineado"
+    if selection_score >= 75.0:
+        return "MEDIA", "señal válida, pero requiere confirmación de ejecución"
+    return "BAJA", "convicción limitada; conviene esperar mejor confirmación"
+
+
 async def _scheduler_tick() -> None:
     from notifications.briefing_service import get_operational_briefing_service
 
@@ -86,11 +236,32 @@ async def _scheduler_tick() -> None:
                     if _state["last_intraday_fp"] != fp:
                         _state["last_intraday_fp"] = fp
                         _state["last_intraday_ts"] = _time.time()
+                        direction = _direction_bias(best.get("direction"))
+                        method_key = str(best.get("strategy_key") or best.get("method") or best.get("primary_method") or "").strip()
+                        method_label = str(best.get("strategy_label") or best.get("method_label") or method_key or "setup técnico").strip()
+                        confirmation = best.get("confirmation") if isinstance(best.get("confirmation"), dict) else {}
+                        higher_tf = str(confirmation.get("higher_timeframe") or "N/D").strip()
+                        higher_dir = _direction_bias(confirmation.get("direction"))
+                        higher_conf = float(confirmation.get("confidence_pct") or 0.0)
+                        urgency, urgency_reason = _urgency_level(best, sc)
                         await svc.emit_intraday(
                             "Scanner — alta convicción",
                             [
-                                f"Candidato destacado {sym} score={sc:.1f}",
-                                "Revisar alineación con IC y contexto antes de tamaño.",
+                                "Qué veo:",
+                                (
+                                    f"{sym} con score {sc:.1f}/100, sesgo {direction}, "
+                                    f"método {method_label}."
+                                ),
+                                (
+                                    f"Contexto superior ({higher_tf}): sesgo {higher_dir} "
+                                    f"con {higher_conf:.1f}% de confianza."
+                                ),
+                                f"Nivel de urgencia: {urgency} ({urgency_reason}).",
+                                "Qué significa:",
+                                _ic_alignment_text(ctx.get('learning_orchestrator') or {}, method_key),
+                                "Qué haría ahora:",
+                                _strategy_recommendation(best, urgency=urgency),
+                                _tactical_plan(best, urgency),
                             ],
                         )
         except Exception:
