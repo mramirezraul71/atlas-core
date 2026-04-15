@@ -655,6 +655,18 @@ class OpportunityScannerService:
                 "prefilter_selected": len(selected),
             }
 
+        # Fast-path defensivo: en universo rotativo grande, el batch OHLCV de Yahoo
+        # puede bloquearse y dejar el escáner sin ciclos completados ni señales.
+        # Seleccionamos una ventana determinista y dejamos el scoring fino al
+        # análisis multi-timeframe posterior.
+        if self._config.universe_mode == "us_equities_rotating" and len(symbols) >= 40:
+            selected = symbols[: self._config.prefilter_count]
+            return selected, {
+                "prefilter_source": "rotating_fastpath",
+                "prefilter_scored": len(selected),
+                "prefilter_selected": len(selected),
+            }
+
         self._current_symbol = None
         self._current_timeframe = "1d"
         self._current_step = "prefiltrando_universo"

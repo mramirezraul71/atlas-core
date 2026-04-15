@@ -3,18 +3,45 @@
    Wrapper REST + WebSocket para todos los endpoints del backend
    ================================================================ */
 
-// Si se sirve desde Atlas (8791), las llamadas van directamente a 8795.
+// Si se sirve desde Atlas (8791/443), enruta al API quant en 8795 usando el
+// mismo hostname del navegador para soportar localhost, LAN IP o dominio.
 // Si se sirve desde el propio servidor quant (8795), same-origin funciona igual.
+const QUANT_API_ORIGIN = `${location.protocol}//${location.hostname}:8795`;
 const API_BASE = (location.port === '8791' || location.port === '443')
-  ? 'http://127.0.0.1:8795'
+  ? QUANT_API_ORIGIN
   : '';
-const DEFAULT_LOCAL_API_KEY =
-  (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
-    ? 'atlas-quant-local'
-    : '';
-const API_KEY  = localStorage.getItem('quant_api_key') || DEFAULT_LOCAL_API_KEY;
+const IS_LOCALHOST =
+  location.hostname === '127.0.0.1' || location.hostname === 'localhost';
+const DEFAULT_LOCAL_API_KEY = IS_LOCALHOST ? 'atlas-quant-local' : '';
+let API_KEY = localStorage.getItem('quant_api_key') || DEFAULT_LOCAL_API_KEY;
 if (!localStorage.getItem('quant_api_key') && DEFAULT_LOCAL_API_KEY) {
   localStorage.setItem('quant_api_key', DEFAULT_LOCAL_API_KEY);
+}
+
+function persistApiKey(value) {
+  API_KEY = (value || '').trim();
+  try {
+    if (API_KEY) {
+      localStorage.setItem('quant_api_key', API_KEY);
+    } else {
+      localStorage.removeItem('quant_api_key');
+    }
+  } catch (_) {}
+  return API_KEY;
+}
+
+function buildAuthHeaders(extraHeaders = {}) {
+  return {
+    'Accept': 'application/json',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
+    ...extraHeaders,
+  };
+}
+
+function shouldRetryWithLocalKey(response) {
+  return response?.status === 401 && IS_LOCALHOST && DEFAULT_LOCAL_API_KEY && API_KEY !== DEFAULT_LOCAL_API_KEY;
 }
 
 // ── HTTP helper ────────────────────────────────────────────────────
@@ -23,7 +50,7 @@ const _FETCH_TIMEOUT_MS = 5000;
 function _fetchWithTimeout(url, options = {}) {
   const ctrl = new AbortController();
   const tid = setTimeout(() => ctrl.abort(), _FETCH_TIMEOUT_MS);
-  return fetch(url, { ...options, signal: ctrl.signal })
+  return fetch(url, { cache: 'no-store', ...options, signal: ctrl.signal })
     .finally(() => clearTimeout(tid));
 }
 
@@ -44,22 +71,32 @@ async function _parseResponse(r) {
 async function apiGet(path, params = {}) {
   const url = new URL(API_BASE + path, window.location.origin);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const r = await _fetchWithTimeout(url, {
-    headers: { 'x-api-key': API_KEY, 'Accept': 'application/json' }
+  let r = await _fetchWithTimeout(url, {
+    headers: buildAuthHeaders()
   });
+  if (shouldRetryWithLocalKey(r)) {
+    persistApiKey(DEFAULT_LOCAL_API_KEY);
+    r = await _fetchWithTimeout(url, {
+      headers: buildAuthHeaders()
+    });
+  }
   return _parseResponse(r);
 }
 
 async function apiPost(path, body = {}) {
-  const r = await _fetchWithTimeout(API_BASE + path, {
+  let r = await _fetchWithTimeout(API_BASE + path, {
     method: 'POST',
-    headers: {
-      'x-api-key': API_KEY,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
+    headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body)
   });
+  if (shouldRetryWithLocalKey(r)) {
+    persistApiKey(DEFAULT_LOCAL_API_KEY);
+    r = await _fetchWithTimeout(API_BASE + path, {
+      method: 'POST',
+      headers: buildAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body)
+    });
+  }
   return _parseResponse(r);
 }
 
@@ -142,6 +179,10 @@ class QuantWS {
     this._listeners = {};
     this._reconnectDelay = 2000;
     this._maxDelay = 30000;
+    this._connectTimer = null;
+    this._explicitlyClosed = false;
+    this._everOpened = false;
+    this._failedConnects = 0;
   }
 
   connect() {
@@ -149,17 +190,21 @@ class QuantWS {
     const accountId = window.QUANT_ACCOUNT_ID || '';
     const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
     const wsHost = (location.port === '8791' || location.port === '443')
-      ? '127.0.0.1:8795'
+      ? `${location.hostname}:8795`
       : location.host;
     const wsUrl = new URL(`${protocol}://${wsHost}/ws/live-updates`);
     if (API_KEY) wsUrl.searchParams.set('api_key', API_KEY);
     if (scope) wsUrl.searchParams.set('account_scope', scope);
     if (accountId) wsUrl.searchParams.set('account_id', accountId);
     const url = wsUrl.toString();
+    this._everOpened = false;
     this._ws = new WebSocket(url);
 
     this._ws.onopen = () => {
       this._reconnectDelay = 2000;
+      this._everOpened = true;
+      this._failedConnects = 0;
+      window._quantWsConnected = true;
       document.getElementById('ws-dot')?.classList.add('connected');
       document.getElementById('ws-dot')?.classList.remove('error');
       this._emit('connected');
@@ -176,13 +221,25 @@ class QuantWS {
     this._ws.onclose = () => {
       document.getElementById('ws-dot')?.classList.remove('connected');
       this._emit('disconnected');
+      this._ws = null;
+      if (this._explicitlyClosed) return;
+      if (!this._everOpened) {
+        this._failedConnects += 1;
+      } else {
+        this._failedConnects = 0;
+      }
       // Si el backend está offline usa delay mayor para no saturar la consola
       const backendDown = window._backendOnline === false;
       this._reconnectDelay = Math.min(
         this._reconnectDelay * (backendDown ? 2 : 1.5),
         this._maxDelay
       );
-      setTimeout(() => this.connect(), this._reconnectDelay);
+      if (this._failedConnects >= 5) {
+        this._connectTimer = setTimeout(() => this.connect(), this._maxDelay);
+        return;
+      }
+      const jitter = Math.floor(Math.random() * 900);
+      this._connectTimer = setTimeout(() => this.connect(), this._reconnectDelay + jitter);
     };
 
     this._ws.onerror = () => {
