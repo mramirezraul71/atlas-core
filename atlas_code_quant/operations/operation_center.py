@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 import threading
+import pytz
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Literal
 
@@ -27,6 +29,7 @@ from operations.brain_bridge import QuantBrainBridge
 from operations.chart_execution import ChartExecutionService
 from operations.journal_pro import JournalProService
 from operations.sensor_vision import SensorVisionService
+from scanner.asset_classifier import AssetClass, classify_asset
 
 logger = logging.getLogger("quant.operation_center")
 
@@ -69,6 +72,8 @@ _DEFAULT_STATE = {
     "operational_error_limit": 10,
     "operational_error_count": 0,
     "operational_error_day": None,
+    "signal_validator_enabled": True,
+    "var_monitor_enabled": True,
     "fail_safe_active": True,
     "fail_safe_reason": "safe_default_bootstrap",
     "last_operational_error": None,
@@ -95,6 +100,13 @@ _DEFAULT_STATE = {
         "last_blocking_reason": None,
     },
     "last_options_strategy_governance": {},
+    "post_journal_rebuild_guard": {
+        "active": False,
+        "scope": None,
+        "activated_at": None,
+        "expires_at": None,
+        "reason": None,
+    },
 }
 
 
@@ -192,6 +204,13 @@ class OperationCenter:
             round(_safe_float(alignment, 0.0), 2) if alignment is not None else None
         )
         state["visual_gate_stats"] = normalized_visual_gate
+        rebuild_guard = state.get("post_journal_rebuild_guard")
+        if not isinstance(rebuild_guard, dict):
+            rebuild_guard = {}
+        normalized_rebuild_guard = deepcopy(_DEFAULT_STATE["post_journal_rebuild_guard"])
+        normalized_rebuild_guard.update(rebuild_guard)
+        normalized_rebuild_guard["active"] = bool(normalized_rebuild_guard.get("active"))
+        state["post_journal_rebuild_guard"] = normalized_rebuild_guard
         return state
 
     def _save(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -202,10 +221,117 @@ class OperationCenter:
         self._invalidate_status_cache()
         return merged
 
+    def _check_market_hours(self, symbol: str, account_scope: str) -> tuple[bool, str]:
+        """Validate market hours for a symbol and scope."""
+        symbol_upper = str(symbol or "").strip().upper()
+        if not symbol_upper:
+            return False, "missing_symbol"
+        scope = str(account_scope or "paper").strip().lower() or "paper"
+        if scope not in {"paper", "live"}:
+            scope = "paper"
+
+        if symbol_upper in {"BTC", "ETH", "SOL", "ADA", "DOT", "MATIC", "AVAX", "LINK", "UNI", "DOGE", "XRP", "BNB"}:
+            return True, "crypto_market_24h"
+
+        try:
+            profile = classify_asset(symbol_upper)
+            if profile.asset_class == AssetClass.CRYPTO:
+                return True, "crypto_market_24h"
+        except Exception:
+            logger.debug("Asset classifier failed for market hours check: %s", symbol_upper, exc_info=True)
+
+        et = pytz.timezone("America/New_York")
+        now_et = datetime.now(et)
+        weekday = now_et.weekday()
+        if weekday > 4:
+            return False, "market_closed_weekend"
+
+        open_dt = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+        close_dt = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
+        if now_et < open_dt:
+            mins_to_open = int(max((open_dt - now_et).total_seconds(), 0) // 60)
+            return False, f"market_not_open_yet ({mins_to_open}min_to_open)"
+        if now_et > close_dt:
+            return False, "market_closed_for_day"
+        return True, "market_hours_ok"
+
+    def market_hours_readiness(self, *, symbol: str | None = None, account_scope: str = "paper") -> dict[str, Any]:
+        check_symbol = str(symbol or "SPY").strip().upper() or "SPY"
+        normalized_scope = str(account_scope or "paper").strip().lower() or "paper"
+        ok, reason = self._check_market_hours(check_symbol, normalized_scope)
+        blocked = bool((not ok) and normalized_scope == "live")
+        degraded = bool((not ok) and normalized_scope == "paper")
+        status = "OK" if ok else ("DEGRADED" if degraded else "BLOCKED")
+        return {
+            "symbol": check_symbol,
+            "account_scope": normalized_scope,
+            "status": status,
+            "market_hours_ok": ok,
+            "market_hours_reason": reason,
+            "blocked": blocked,
+            "degraded": degraded,
+        }
+
     def _invalidate_status_cache(self) -> None:
         with self._status_cache_lock:
             self._status_cache_payload = None
             self._status_cache_at = 0.0
+
+    def reset_after_journal_rebuild(self, *, account_scope: str = "paper", guard_hours: float = 12.0) -> dict[str, Any]:
+        state = self._load()
+        state["last_decision"] = None
+        state["last_candidate"] = None
+        state["visual_gate_stats"] = deepcopy(_DEFAULT_STATE["visual_gate_stats"])
+        now = datetime.utcnow()
+        state["post_journal_rebuild_guard"] = {
+            "active": str(account_scope or "").lower() == "paper",
+            "scope": str(account_scope or "paper").lower() or "paper",
+            "activated_at": now.isoformat(),
+            "expires_at": (now + timedelta(hours=max(_safe_float(guard_hours, 12.0), 0.25))).isoformat(),
+            "reason": "journal_rebuild_reset",
+        }
+        saved = self._save(state)
+        with self._monitor_summary_lock:
+            self._monitor_summary_cache.clear()
+            self._monitor_summary_cache_at.clear()
+            self._monitor_summary_errors.clear()
+        with self._scorecard_lock:
+            self._scorecard_cache = None
+            self._scorecard_cache_at = 0.0
+            self._scorecard_error = None
+        return {
+            "ok": True,
+            "account_scope": str(account_scope or "paper").lower() or "paper",
+            "post_journal_rebuild_guard": saved.get("post_journal_rebuild_guard"),
+            "last_decision": saved.get("last_decision"),
+            "last_candidate": saved.get("last_candidate"),
+        }
+
+    def paper_rebuild_guard_active(
+        self,
+        *,
+        account_scope: str,
+        reconciliation: dict[str, Any] | None = None,
+    ) -> bool:
+        scope = str(account_scope or "").lower()
+        if scope != "paper":
+            return False
+        state = self._load()
+        guard = state.get("post_journal_rebuild_guard") or {}
+        if not isinstance(guard, dict):
+            return False
+        if not bool(guard.get("active")) or str(guard.get("scope") or "").lower() != "paper":
+            return False
+        try:
+            expires_at = datetime.fromisoformat(str(guard.get("expires_at") or ""))
+        except ValueError:
+            return False
+        if expires_at <= datetime.utcnow():
+            state["post_journal_rebuild_guard"] = deepcopy(_DEFAULT_STATE["post_journal_rebuild_guard"])
+            self._save(state)
+            return False
+        reconciliation_state = str((reconciliation or {}).get("state") or "").lower()
+        return reconciliation_state != "healthy"
 
     def _record_visual_gate_metrics(
         self,
@@ -1131,6 +1257,233 @@ class OperationCenter:
                 "limit": limit,
             }
 
+    def _build_portfolio_risk_guard(
+        self,
+        *,
+        scope: str,
+        action: Literal["evaluate", "preview", "submit"],
+        is_close_order: bool,
+    ) -> dict[str, Any]:
+        payload = {
+            "status": "not_applicable" if is_close_order else "ok",
+            "blocked": False,
+            "degraded": False,
+            "reasons": [],
+            "warnings": [],
+            "position_management": {},
+            "exit_governance": {},
+        }
+        if is_close_order:
+            return payload
+        try:
+            position_management = self.journal.position_management_snapshot(account_type=scope, limit=10)
+        except Exception as exc:
+            payload["status"] = "fallback"
+            payload["warnings"].append(f"Portfolio risk guard no pudo cargar position management: {exc}")
+            return payload
+        try:
+            exit_governance = self.journal.exit_governance_snapshot(account_type=scope, limit=10)
+        except Exception as exc:
+            exit_governance = {"enabled": False, "summary": {}, "alerts": [], "recommendations": []}
+            payload["warnings"].append(f"Portfolio risk guard no pudo cargar exit governance: {exc}")
+
+        payload["position_management"] = {
+            "summary": deepcopy(position_management.get("summary") or {}),
+            "var_monitor": deepcopy(position_management.get("var_monitor") or {}),
+        }
+        payload["exit_governance"] = {
+            "summary": deepcopy(exit_governance.get("summary") or {}),
+            "alerts": deepcopy(exit_governance.get("alerts") or []),
+        }
+
+        pm_summary = position_management.get("summary") or {}
+        var_monitor = position_management.get("var_monitor") or {}
+        var_status = str(var_monitor.get("status") or pm_summary.get("var_status") or "ok").lower()
+        var_value = _safe_float(var_monitor.get("var_95_usd"), _safe_float(pm_summary.get("var_95_usd"), 0.0))
+        exit_summary = exit_governance.get("summary") or {}
+        exit_now_count = int(_safe_float(exit_summary.get("exit_now_count"), 0.0))
+        de_risk_count = int(_safe_float(exit_summary.get("de_risk_count"), 0.0))
+
+        if action == "submit":
+            if exit_now_count > 0:
+                payload["blocked"] = True
+                payload["status"] = "blocked"
+                payload["reasons"].append(
+                    f"Portfolio risk guard blocked submit: hay {exit_now_count} posiciones con criterio de exit_now antes de sumar exposicion."
+                )
+            elif var_status == "critical":
+                payload["blocked"] = True
+                payload["status"] = "blocked"
+                payload["reasons"].append(
+                    f"Portfolio risk guard blocked submit: VaR Monte Carlo del libro esta en CRITICAL ({var_value:.2f} USD)."
+                )
+            elif var_status == "warning" and de_risk_count > 0:
+                payload["blocked"] = True
+                payload["status"] = "blocked"
+                payload["reasons"].append(
+                    f"Portfolio risk guard blocked submit: VaR en WARNING con {de_risk_count} recomendaciones activas de de-risk."
+                )
+        else:
+            if exit_now_count > 0:
+                payload["degraded"] = True
+                payload["status"] = "warning"
+                payload["warnings"].append(
+                    f"Portfolio risk guard: hay {exit_now_count} posiciones en exit_now; revisar cierres antes de ejecutar."
+                )
+            elif var_status in {"warning", "critical"}:
+                payload["degraded"] = True
+                payload["status"] = "warning"
+                payload["warnings"].append(
+                    f"Portfolio risk guard: VaR del libro en {var_status.upper()} ({var_value:.2f} USD)."
+                )
+        return payload
+
+    def _build_vision_pipeline_snapshot(
+        self,
+        *,
+        vision_status: dict[str, Any],
+        visual_gate_metrics: dict[str, Any],
+    ) -> dict[str, Any]:
+        provider = str(vision_status.get("provider") or "unknown")
+        provider_ready = bool(vision_status.get("provider_ready"))
+        provider_active = provider not in {"off", "manual", "unknown", ""}
+        supported_modes = list(
+            vision_status.get("supported_modes")
+            or ["off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge", "insta360"]
+        )
+        last_capture_at = vision_status.get("last_capture_at")
+        last_capture_age_sec: float | None = None
+        last_capture_fresh: bool | None = None
+        if last_capture_at:
+            try:
+                capture_dt = datetime.fromisoformat(str(last_capture_at).replace("Z", "+00:00"))
+                if capture_dt.tzinfo is not None:
+                    capture_dt = capture_dt.astimezone().replace(tzinfo=None)
+                last_capture_age_sec = round(max((datetime.utcnow() - capture_dt).total_seconds(), 0.0), 2)
+                last_capture_fresh = last_capture_age_sec <= 900.0
+            except ValueError:
+                last_capture_age_sec = None
+                last_capture_fresh = None
+
+        evaluated_count = int(visual_gate_metrics.get("evaluated_count") or 0)
+        applies_count = int(visual_gate_metrics.get("applies_count") or 0)
+        blocked_count = int(visual_gate_metrics.get("blocked_count") or 0)
+        passed_count = int(visual_gate_metrics.get("passed_count") or 0)
+        manual_review_count = int(visual_gate_metrics.get("manual_review_count") or 0)
+
+        trade_coverage_pct = round((applies_count / evaluated_count) * 100.0, 2) if evaluated_count > 0 else 0.0
+        pass_rate_pct = round((passed_count / applies_count) * 100.0, 2) if applies_count > 0 else 0.0
+        block_rate_pct = round((blocked_count / applies_count) * 100.0, 2) if applies_count > 0 else 0.0
+        manual_review_rate_pct = round((manual_review_count / applies_count) * 100.0, 2) if applies_count > 0 else 0.0
+
+        if not provider_active:
+            activation_status = "disabled"
+        elif not provider_ready:
+            activation_status = "degraded"
+        elif evaluated_count == 0:
+            activation_status = "warming_up"
+        else:
+            activation_status = "active"
+
+        if activation_status in {"disabled", "degraded"}:
+            coverage_status = activation_status
+        elif evaluated_count == 0:
+            coverage_status = "warming_up"
+        elif trade_coverage_pct >= 80.0:
+            coverage_status = "healthy"
+        else:
+            coverage_status = "partial"
+
+        return {
+            "provider": provider,
+            "provider_active": provider_active,
+            "provider_ready": provider_ready,
+            "supported_modes": supported_modes,
+            "activation_status": activation_status,
+            "coverage_status": coverage_status,
+            "kpi_target_trade_coverage_pct": 80.0,
+            "trade_coverage_pct": trade_coverage_pct,
+            "pass_rate_pct": pass_rate_pct,
+            "block_rate_pct": block_rate_pct,
+            "manual_review_rate_pct": manual_review_rate_pct,
+            "evaluated_count": evaluated_count,
+            "applies_count": applies_count,
+            "blocked_count": blocked_count,
+            "passed_count": passed_count,
+            "manual_review_count": manual_review_count,
+            "last_capture_at": last_capture_at,
+            "last_capture_age_sec": last_capture_age_sec,
+            "last_capture_fresh": last_capture_fresh,
+            "last_capture_note": vision_status.get("last_capture_note"),
+            "notes": vision_status.get("notes"),
+            "last_status": visual_gate_metrics.get("last_status"),
+            "last_blocked": bool(visual_gate_metrics.get("last_blocked")),
+            "last_manual_required": bool(visual_gate_metrics.get("last_manual_required")),
+            "last_readiness_score_pct": visual_gate_metrics.get("last_readiness_score_pct"),
+            "last_alignment_score_pct": visual_gate_metrics.get("last_alignment_score_pct"),
+            "last_updated_at": visual_gate_metrics.get("last_updated_at"),
+            "last_symbol": visual_gate_metrics.get("last_symbol"),
+            "last_action": visual_gate_metrics.get("last_action"),
+            "last_blocking_reason": visual_gate_metrics.get("last_blocking_reason"),
+        }
+
+    def _build_brain_council_snapshot(self, *, brain_status: dict[str, Any]) -> dict[str, Any]:
+        claude_configured = any(
+            str(os.getenv(key) or "").strip()
+            for key in ("ANTHROPIC_API_KEY", "AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION")
+        )
+        deepseek_local_url = str(os.getenv("ATLAS_OLLAMA_URL") or "").strip()
+        deepseek_configured = bool(deepseek_local_url)
+        atlas_brain_enabled = bool(brain_status.get("enabled", True))
+        atlas_brain_available = atlas_brain_enabled and brain_status.get("last_memory_ok") is not False
+
+        members = [
+            {
+                "member": "claude",
+                "role": "reasoning",
+                "configured": claude_configured,
+                "available": claude_configured,
+                "status": "ready" if claude_configured else "missing_config",
+            },
+            {
+                "member": "deepseek_local",
+                "role": "fast_local",
+                "configured": deepseek_configured,
+                "available": deepseek_configured,
+                "status": "ready" if deepseek_configured else "missing_config",
+                "endpoint": deepseek_local_url or None,
+            },
+            {
+                "member": "atlas_brain",
+                "role": "memory_execution_context",
+                "configured": atlas_brain_enabled,
+                "available": atlas_brain_available,
+                "status": "ready" if atlas_brain_available else "degraded",
+                "last_error": brain_status.get("last_error") or "",
+            },
+        ]
+        available_members_count = sum(1 for item in members if item.get("available"))
+        quorum_required = 2
+        quorum_ready = available_members_count >= quorum_required
+        if quorum_ready:
+            activation_status = "active"
+        elif available_members_count == 1:
+            activation_status = "warming_up"
+        else:
+            activation_status = "degraded"
+
+        return {
+            "enabled": True,
+            "consensus_mode": "2_of_3",
+            "quorum_required": quorum_required,
+            "available_members_count": available_members_count,
+            "quorum_ready": quorum_ready,
+            "activation_status": activation_status,
+            "members": members,
+            "last_event_kind": brain_status.get("last_event_kind"),
+            "last_event_at": brain_status.get("last_event_at"),
+        }
+
     def status(self) -> dict[str, Any]:
         ttl_sec = 2.0
         now = time.monotonic()
@@ -1181,6 +1534,12 @@ class OperationCenter:
         )
         visual_benchmark = self._load_visual_benchmark_snapshot(scorecard)
         visual_gate_metrics = deepcopy(config.get("visual_gate_stats") or {})
+        vision_pipeline = self._build_vision_pipeline_snapshot(
+            vision_status=vision_status,
+            visual_gate_metrics=visual_gate_metrics,
+        )
+        brain_status = self.brain.status()
+        brain_council = self._build_brain_council_snapshot(brain_status=brain_status)
         selector_session = self._selector_session_payload()
         options_strategy_governance = deepcopy(config.get("last_options_strategy_governance") or {})
         options_governance_adoption = self._safe_journal_payload(
@@ -1216,8 +1575,10 @@ class OperationCenter:
                 "note": "Puntaje manual para pruebas simuladas hasta integrar el sentimiento de Grok.",
             },
             "vision": vision_status,
+            "vision_pipeline": vision_pipeline,
             "executor": executor_status,
-            "brain": self.brain.status(),
+            "brain": brain_status,
+            "brain_council": brain_council,
             "chart_execution": self.chart_execution.status(),
             "learning": self.learning.status(account_scope=scope),
             "journal": {
@@ -1348,6 +1709,7 @@ class OperationCenter:
         cash = _safe_float(balances.get("cash"), 0.0)
         pdt_status = monitor.get("pdt_status") or {}
         reconciliation = self._load_reconciliation(account_scope=scope, account_id=order_copy.account_id)
+        rebuild_guard_active = self.paper_rebuild_guard_active(account_scope=scope, reconciliation=reconciliation)
         open_symbols = self._extract_open_symbols(monitor)
         vision_status = self.vision.status()
         executor_status = self.executor.status()
@@ -1378,8 +1740,28 @@ class OperationCenter:
         if opening_equity_order and not strategy_type:
             reasons.append("strategy_type is required for autonomous equity orders.")
         symbol_upper = str(order_copy.symbol or "").strip().upper()
+        market_hours_ok = True
+        market_hours_reason = "market_hours_not_checked"
+        market_hours_blocked = False
+        market_hours_degraded = False
+        if action in {"preview", "submit"} and symbol_upper:
+            market_hours_ok, market_hours_reason = self._check_market_hours(symbol_upper, scope)
+            if not market_hours_ok:
+                if scope == "paper":
+                    market_hours_degraded = True
+                    warnings.append(
+                        f"[paper bypass] Market hours gate would block {action}: {market_hours_reason}."
+                    )
+                else:
+                    market_hours_blocked = True
+                    reasons.append(f"Market hours gate blocked {action}: {market_hours_reason}.")
         if opening_equity_order and symbol_upper and symbol_upper in open_symbols:
-            reasons.append(f"Open-symbol guard blocked re-entry for {symbol_upper}.")
+            if rebuild_guard_active:
+                warnings.append(
+                    f"Open-symbol guard bypassed in paper mode for {symbol_upper} after journal rebuild while reconciliation stabilizes."
+                )
+            else:
+                reasons.append(f"Open-symbol guard blocked re-entry for {symbol_upper}.")
         reconciliation_state = str((reconciliation or {}).get("state") or "").lower()
         if opening_equity_order and action == "submit" and reconciliation_state and reconciliation_state != "healthy":
             # In paper mode, the paper_local simulator always reports 0 positions,
@@ -1387,7 +1769,12 @@ class OperationCenter:
             if scope != "paper":
                 reasons.append(f"Reconciliation gate blocked submit because state is '{reconciliation_state}'.")
             else:
-                warnings.append(f"Reconciliation degraded (state='{reconciliation_state}') — bypassed in paper mode.")
+                if rebuild_guard_active:
+                    warnings.append(
+                        f"Reconciliation temporarily bypassed in paper mode after journal rebuild (state='{reconciliation_state}')."
+                    )
+                else:
+                    warnings.append(f"Reconciliation degraded (state='{reconciliation_state}') — bypassed in paper mode.")
 
         entry_validation = self._build_entry_validation(
             order=order_copy,
@@ -1415,6 +1802,14 @@ class OperationCenter:
                     "Buying power insuficiente para la apertura de equity: "
                     f"requiere {estimated_open_notional:.2f} y solo hay {available_buying_power:.2f}."
                 )
+
+        portfolio_risk_guard = self._build_portfolio_risk_guard(
+            scope=scope,
+            action=action,
+            is_close_order=is_close_order,
+        )
+        reasons.extend(list(portfolio_risk_guard.get("reasons") or []))
+        warnings.extend(list(portfolio_risk_guard.get("warnings") or []))
 
         market_context_gate = self._build_market_context_gate(
             order=order_copy,
@@ -1646,10 +2041,21 @@ class OperationCenter:
                     "available_buying_power": round(max(option_bp, cash, 0.0), 2),
                     "blocked": any("buying power" in str(reason).lower() for reason in reasons),
                 },
+                "portfolio_risk_guard": {
+                    "status": portfolio_risk_guard.get("status"),
+                    "blocked": bool(portfolio_risk_guard.get("blocked")),
+                    "degraded": bool(portfolio_risk_guard.get("degraded")),
+                },
                 "market_context": {
                     "status": market_context_gate.get("status"),
                     "blocked": bool(market_context_gate.get("blocked")),
                     "degraded": bool(market_context_gate.get("degraded")),
+                },
+                "market_hours": {
+                    "status": "ok" if market_hours_ok else ("degraded" if market_hours_degraded else "blocked"),
+                    "blocked": market_hours_blocked,
+                    "degraded": market_hours_degraded,
+                    "reason": market_hours_reason,
                 },
                 "visual_entry_gate": {
                     "status": visual_entry_gate.get("status"),
@@ -1679,6 +2085,7 @@ class OperationCenter:
             "probability_source": probability_source,
             "vision_snapshot": context_snapshot,
             "entry_validation": entry_validation,
+            "portfolio_risk_guard": portfolio_risk_guard,
             "market_context": order_copy.market_context or {},
             "market_context_gate": market_context_gate,
             "visual_entry_gate": visual_entry_gate,

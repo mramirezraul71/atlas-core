@@ -61,6 +61,12 @@ def build_readiness_fast_payload(
         startup_warmup_satisfied=warm_ok,
         visual_pipeline_ok=None,
     )
+    readiness_scope = str(operation_center.get_config().get("account_scope") or "paper").strip().lower() or "paper"
+    readiness_symbol = probe_sym if chart_plan_needed else "SPY"
+    market_hours = operation_center.market_hours_readiness(
+        symbol=readiness_symbol,
+        account_scope=readiness_scope,
+    )
     return {
         "ready": ready,
         "reasons_not_ready": reasons,
@@ -77,6 +83,9 @@ def build_readiness_fast_payload(
             "required": warmup_on and auto_open,
             "satisfied": warm_ok,
         },
+        "market_hours_ok": bool(market_hours.get("market_hours_ok")),
+        "market_hours_reason": str(market_hours.get("market_hours_reason") or ""),
+        "market_hours": market_hours,
         "visual_pipeline": {
             "omitted": True,
             "detail": "Usa GET /operation/readiness/diagnostic para diagnose() + VisualPipeline.status().",
