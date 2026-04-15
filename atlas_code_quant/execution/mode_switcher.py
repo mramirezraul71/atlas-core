@@ -2,7 +2,7 @@
 """Toggle seguro entre modo paper y modo live con confirmación física.
 
 Proceso de activación de modo LIVE:
-  1. Verificar equity mínimo ($25,000 PDT requirement)
+  1. Verificar equity mínimo operacional (post-PDT)
   2. Verificar posiciones abiertas = 0
   3. Verificar circuit breaker = inactive
   4. Confirmación verbal sintetizada (TTS): "Modo LIVE activado"
@@ -42,7 +42,8 @@ except ImportError:
 
 
 # ── Constantes de seguridad ───────────────────────────────────────────────────
-_MIN_EQUITY_LIVE   = 25_000.0   # PDT minimum para cuentas margin
+_MIN_EQUITY_LIVE_OPERATIONAL   = 500.0     # mínimo operativo (no regulatorio)
+_MIN_EQUITY_LIVE_RECOMMENDED   = 2_000.0   # recomendado para estabilidad
 _CIRCLE_RADIUS_PX  = 80         # radio del círculo de confirmación
 _CIRCLE_STEPS      = 36         # pasos del círculo (360°/10°)
 _SWITCH_COOLDOWN_S = 60.0       # mínimo tiempo entre toggles
@@ -149,8 +150,16 @@ def _validate_live_activation(risk_engine=None) -> tuple[bool, str]:
     if risk_engine is not None:
         state = risk_engine.state()
         equity = state.current_equity
-        if equity < _MIN_EQUITY_LIVE:
-            return False, f"equity ${equity:,.0f} < mínimo PDT ${_MIN_EQUITY_LIVE:,.0f}"
+        if equity < _MIN_EQUITY_LIVE_OPERATIONAL:
+            return False, (
+                f"equity ${equity:,.0f} < mínimo operacional ${_MIN_EQUITY_LIVE_OPERATIONAL:,.0f}"
+            )
+        if equity < _MIN_EQUITY_LIVE_RECOMMENDED:
+            logger.warning(
+                "equity %.2f below recommended operational threshold %.2f",
+                equity,
+                _MIN_EQUITY_LIVE_RECOMMENDED,
+            )
 
         # Circuit breaker activo
         if state.circuit_breaker_active:

@@ -36,13 +36,6 @@ class TradierOrderBlocked(Exception):
         self.payload = payload or {}
 
 
-def _extract_preview_day_trades(preview_response: dict[str, Any]) -> int | None:
-    value = _safe_float((preview_response or {}).get("day_trades"), float("nan"))
-    if value == value and value >= 0:
-        return int(value)
-    return None
-
-
 def should_route_to_tradier(body: OrderRequest) -> bool:
     return any(
         (
@@ -389,35 +382,7 @@ def route_order_to_tradier(body: OrderRequest) -> dict[str, Any]:
 
     if position_effect == "open" and session.classification == "live":
         pdt_status = check_pdt_status(client, session)
-        if pdt_status.get("blocked_opening"):
-            reason = str(pdt_status.get("reason") or "PDT guard rail blocked opening order")
-            raise TradierOrderBlocked(
-                reason,
-                payload={
-                    "account_session": session.to_dict(),
-                    "pdt_status": pdt_status,
-                },
-            )
-        if not body.preview and session.total_equity is not None and session.total_equity < settings.tradier_pdt_min_equity:
-            preview_probe = client.place_order(session.account_id, {**payload, "preview": "true"})
-            broker_day_trades = _extract_preview_day_trades(preview_probe)
-            if broker_day_trades is not None:
-                pdt_status = {
-                    **(pdt_status or {}),
-                    "broker_preview_day_trades": broker_day_trades,
-                }
-                if broker_day_trades >= settings.tradier_pdt_max_day_trades:
-                    raise TradierOrderBlocked(
-                        (
-                            f"Tradier preview reports {broker_day_trades} day trades "
-                            f"for a live account below {settings.tradier_pdt_min_equity:.0f}"
-                        ),
-                        payload={
-                            "account_session": session.to_dict(),
-                            "pdt_status": pdt_status,
-                            "tradier_preview": preview_probe,
-                        },
-                    )
+        logger.info("PDT checks deprecated; using operational gates only for %s", session.account_id)
 
     response = _execute_with_fallback(
         client=client,

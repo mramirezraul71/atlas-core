@@ -109,6 +109,16 @@ _DEFAULT_STATE = {
     },
 }
 
+PDT_RULE_REMOVAL_DATE = "2026-04-14"
+MIN_CAPITAL_OPERATIONAL = 500.0
+MIN_CAPITAL_RECOMMENDED = 2000.0
+MAX_DAILY_TRADES_LIVE = 50
+MAX_DAILY_TRADES_PAPER = 100
+MAX_INTRADAY_EXPOSURE_PCT = 0.50
+MAX_INTRADAY_DRAWDOWN_PCT = 0.10
+CONSECUTIVE_LOSS_COOLDOWN_STREAK = 3
+CONSECUTIVE_LOSS_LOOKBACK = 5
+
 
 def _utc_day() -> str:
     return datetime.utcnow().date().isoformat()
@@ -271,6 +281,171 @@ class OperationCenter:
             "blocked": blocked,
             "degraded": degraded,
         }
+
+    @staticmethod
+    def _extract_equity_value(account: Any) -> float:
+        if isinstance(account, dict):
+            return _safe_float(account.get("equity"), _safe_float(account.get("total_equity"), 0.0))
+        return _safe_float(getattr(account, "equity", None), _safe_float(getattr(account, "total_equity", None), 0.0))
+
+    def check_pdt_limit(self, account_id: str) -> tuple[bool, str]:
+        """Deprecated gate kept for compatibility after PDT removal."""
+        logger.warning(
+            "check_pdt_limit() deprecated: PDT rule removed effective %s (account_id=%s)",
+            PDT_RULE_REMOVAL_DATE,
+            account_id,
+        )
+        return True, "pdt_limit_removed"
+
+    def validate_account_capital(self, account: Any) -> tuple[bool, str]:
+        """Operational capital validation (non-regulatory)."""
+        equity = self._extract_equity_value(account)
+        if equity < MIN_CAPITAL_OPERATIONAL:
+            logger.warning(
+                "Account capital %.2f below operational minimum %.2f",
+                equity,
+                MIN_CAPITAL_OPERATIONAL,
+            )
+        if equity < MIN_CAPITAL_RECOMMENDED:
+            logger.warning(
+                "Account capital %.2f below recommended minimum %.2f",
+                equity,
+                MIN_CAPITAL_RECOMMENDED,
+            )
+        return True, "capital_sufficient"
+
+    @staticmethod
+    def _entry_day(entry: dict[str, Any]) -> str | None:
+        ts = str(entry.get("exit_time") or entry.get("entry_time") or "").strip()
+        if len(ts) >= 10:
+            return ts[:10]
+        return None
+
+    @staticmethod
+    def _entry_realized_pnl(entry: dict[str, Any]) -> float:
+        return _safe_float(entry.get("realized_pnl"), _safe_float(entry.get("pnl"), 0.0))
+
+    def _journal_recent_items(self, *, limit: int = 400) -> list[dict[str, Any]]:
+        try:
+            snapshot = self.journal.snapshot(limit=limit)
+        except Exception as exc:
+            logger.warning("Unable to load journal snapshot for operational gates: %s", exc)
+            return []
+        items = snapshot.get("items")
+        if not isinstance(items, list):
+            items = snapshot.get("recent_entries")
+        if not isinstance(items, list):
+            return []
+        return [item for item in items if isinstance(item, dict)]
+
+    def _journal_items_today(self) -> list[dict[str, Any]]:
+        today = datetime.utcnow().date().isoformat()
+        return [item for item in self._journal_recent_items() if self._entry_day(item) == today]
+
+    def check_daily_trade_limit(self, *, account_scope: str) -> tuple[bool, str, dict[str, Any]]:
+        today_items = self._journal_items_today()
+        trade_count = len(today_items)
+        scope = str(account_scope or "paper").strip().lower()
+        limit = MAX_DAILY_TRADES_PAPER if scope == "paper" else MAX_DAILY_TRADES_LIVE
+        if trade_count > limit:
+            return False, f"daily_trade_limit_reached_{limit}", {
+                "trade_count_today": trade_count,
+                "trade_limit": limit,
+                "remaining": 0,
+            }
+        return True, "daily_trade_limit_ok", {
+            "trade_count_today": trade_count,
+            "trade_limit": limit,
+            "remaining": max(limit - trade_count, 0),
+        }
+
+    def check_intraday_exposure(self, *, equity: float, current_exposure: float, proposed_exposure: float) -> tuple[bool, str, dict[str, Any]]:
+        total_exposure = max(current_exposure, 0.0) + max(proposed_exposure, 0.0)
+        max_exposure = max(equity, 0.0) * MAX_INTRADAY_EXPOSURE_PCT
+        if total_exposure > max_exposure and max_exposure > 0:
+            return (
+                False,
+                f"intraday_exposure_limit_exceeded_{total_exposure:.2f}_{max_exposure:.2f}",
+                {
+                    "current_exposure": round(current_exposure, 2),
+                    "proposed_exposure": round(proposed_exposure, 2),
+                    "total_exposure": round(total_exposure, 2),
+                    "max_exposure": round(max_exposure, 2),
+                },
+            )
+        return True, "intraday_exposure_ok", {
+            "current_exposure": round(current_exposure, 2),
+            "proposed_exposure": round(proposed_exposure, 2),
+            "total_exposure": round(total_exposure, 2),
+            "max_exposure": round(max_exposure, 2),
+        }
+
+    def check_intraday_drawdown(self, *, opening_equity: float | None, current_equity: float) -> tuple[bool, str, dict[str, Any]]:
+        if opening_equity is None or opening_equity <= 0:
+            return True, "intraday_drawdown_skipped_missing_opening_equity", {
+                "opening_equity": opening_equity,
+                "current_equity": round(current_equity, 2),
+                "drawdown_pct": 0.0,
+                "max_intraday_drawdown_pct": MAX_INTRADAY_DRAWDOWN_PCT * 100.0,
+            }
+        drawdown_pct = max((opening_equity - current_equity) / opening_equity, 0.0)
+        if drawdown_pct > MAX_INTRADAY_DRAWDOWN_PCT:
+            return (
+                False,
+                f"intraday_drawdown_exceeded_{drawdown_pct:.2%}_{MAX_INTRADAY_DRAWDOWN_PCT:.2%}",
+                {
+                    "opening_equity": round(opening_equity, 2),
+                    "current_equity": round(current_equity, 2),
+                    "drawdown_pct": round(drawdown_pct * 100.0, 2),
+                    "max_intraday_drawdown_pct": MAX_INTRADAY_DRAWDOWN_PCT * 100.0,
+                },
+            )
+        return True, "intraday_drawdown_ok", {
+            "opening_equity": round(opening_equity, 2),
+            "current_equity": round(current_equity, 2),
+            "drawdown_pct": round(drawdown_pct * 100.0, 2),
+            "max_intraday_drawdown_pct": MAX_INTRADAY_DRAWDOWN_PCT * 100.0,
+        }
+
+    def check_consecutive_loss_cooldown(self) -> tuple[bool, str, dict[str, Any]]:
+        today_items = self._journal_items_today()
+        recent = today_items[-CONSECUTIVE_LOSS_LOOKBACK:]
+        losses = [self._entry_realized_pnl(item) for item in recent if self._entry_realized_pnl(item) < 0]
+        consecutive_losses = 0
+        for item in reversed(recent):
+            if self._entry_realized_pnl(item) < 0:
+                consecutive_losses += 1
+            else:
+                break
+        if consecutive_losses >= CONSECUTIVE_LOSS_COOLDOWN_STREAK:
+            logger.error("COOLDOWN: %s consecutive losses detected", consecutive_losses)
+            return False, "consecutive_loss_cooldown_active", {
+                "recent_trade_count": len(recent),
+                "recent_losses_count": len(losses),
+                "consecutive_losses": consecutive_losses,
+                "cooldown_threshold": CONSECUTIVE_LOSS_COOLDOWN_STREAK,
+            }
+        return True, "loss_cooldown_ok", {
+            "recent_trade_count": len(recent),
+            "recent_losses_count": len(losses),
+            "consecutive_losses": consecutive_losses,
+            "cooldown_threshold": CONSECUTIVE_LOSS_COOLDOWN_STREAK,
+        }
+
+    def _resolve_intraday_opening_equity(self, *, state: dict[str, Any], account_scope: str, current_equity: float) -> float | None:
+        if current_equity <= 0:
+            return None
+        scope = str(account_scope or "paper").strip().lower() or "paper"
+        day_key = datetime.utcnow().date().isoformat()
+        anchors = state.get("intraday_equity_anchor")
+        if not isinstance(anchors, dict):
+            anchors = {}
+        anchor = anchors.get(scope)
+        if not isinstance(anchor, dict) or str(anchor.get("day")) != day_key:
+            anchor = {"day": day_key, "equity": round(current_equity, 2)}
+            anchors[scope] = anchor
+            state["intraday_equity_anchor"] = anchors
+        return _safe_float(anchor.get("equity"), current_equity)
 
     def _invalidate_status_cache(self) -> None:
         with self._status_cache_lock:
@@ -1708,6 +1883,14 @@ class OperationCenter:
         option_bp = _safe_float(balances.get("option_buying_power"), 0.0)
         cash = _safe_float(balances.get("cash"), 0.0)
         pdt_status = monitor.get("pdt_status") or {}
+        equity = _safe_float(balances.get("total_equity"), _safe_float(balances.get("equity"), 0.0))
+        opening_equity_anchor = self._resolve_intraday_opening_equity(
+            state=config,
+            account_scope=scope,
+            current_equity=equity,
+        )
+        _deprecated_pdt_ok, deprecated_pdt_reason = self.check_pdt_limit(order_copy.account_id or "unknown")
+        _capital_ok, capital_reason = self.validate_account_capital({"equity": equity})
         reconciliation = self._load_reconciliation(account_scope=scope, account_id=order_copy.account_id)
         rebuild_guard_active = self.paper_rebuild_guard_active(account_scope=scope, reconciliation=reconciliation)
         open_symbols = self._extract_open_symbols(monitor)
@@ -1735,8 +1918,10 @@ class OperationCenter:
                 warnings.append("Vision: screen_integrity_ok es false (no bloquea en paper).")
         if action == "submit" and str(config.get("auton_mode") or "off") == "off":
             reasons.append("El modo autonomo esta apagado.")
-        if pdt_status.get("blocked_opening"):
-            reasons.append(str(pdt_status.get("reason") or "PDT blocked opening trades."))
+        warnings.append(
+            f"PDT gate deprecated ({PDT_RULE_REMOVAL_DATE}): {deprecated_pdt_reason}."
+        )
+        warnings.append(f"Capital gate migrated to operational mode: {capital_reason}.")
         if opening_equity_order and not strategy_type:
             reasons.append("strategy_type is required for autonomous equity orders.")
         symbol_upper = str(order_copy.symbol or "").strip().upper()
@@ -1755,6 +1940,43 @@ class OperationCenter:
                 else:
                     market_hours_blocked = True
                     reasons.append(f"Market hours gate blocked {action}: {market_hours_reason}.")
+        daily_trade_limit = {"status": "not_applicable", "blocked": False, "reason": "not_checked"}
+        loss_cooldown = {"status": "not_applicable", "blocked": False, "reason": "not_checked"}
+        intraday_drawdown_gate = {"status": "not_applicable", "blocked": False, "reason": "not_checked"}
+        intraday_exposure_gate = {"status": "not_applicable", "blocked": False, "reason": "not_checked"}
+        if not is_close_order and action in {"preview", "submit"}:
+            daily_ok, daily_reason, daily_meta = self.check_daily_trade_limit(account_scope=scope)
+            daily_trade_limit = {
+                "status": "ok" if daily_ok else "blocked",
+                "blocked": not daily_ok,
+                "reason": daily_reason,
+                **daily_meta,
+            }
+            if not daily_ok:
+                reasons.append(f"Operational gate blocked {action}: {daily_reason}.")
+
+            cooldown_ok, cooldown_reason, cooldown_meta = self.check_consecutive_loss_cooldown()
+            loss_cooldown = {
+                "status": "ok" if cooldown_ok else "blocked",
+                "blocked": not cooldown_ok,
+                "reason": cooldown_reason,
+                **cooldown_meta,
+            }
+            if not cooldown_ok:
+                reasons.append(f"Operational gate blocked {action}: {cooldown_reason}.")
+
+            drawdown_ok, drawdown_reason, drawdown_meta = self.check_intraday_drawdown(
+                opening_equity=opening_equity_anchor,
+                current_equity=equity,
+            )
+            intraday_drawdown_gate = {
+                "status": "ok" if drawdown_ok else "blocked",
+                "blocked": not drawdown_ok,
+                "reason": drawdown_reason,
+                **drawdown_meta,
+            }
+            if not drawdown_ok:
+                reasons.append(f"Operational gate blocked {action}: {drawdown_reason}.")
         if opening_equity_order and symbol_upper and symbol_upper in open_symbols:
             if rebuild_guard_active:
                 warnings.append(
@@ -1802,6 +2024,29 @@ class OperationCenter:
                     "Buying power insuficiente para la apertura de equity: "
                     f"requiere {estimated_open_notional:.2f} y solo hay {available_buying_power:.2f}."
                 )
+            current_exposure = 0.0
+            for strategy in monitor.get("strategies") or []:
+                if not isinstance(strategy, dict):
+                    continue
+                current_exposure += abs(
+                    _safe_float(
+                        strategy.get("open_notional"),
+                        _safe_float(strategy.get("risk_at_entry"), 0.0),
+                    )
+                )
+            exposure_ok, exposure_reason, exposure_meta = self.check_intraday_exposure(
+                equity=equity,
+                current_exposure=current_exposure,
+                proposed_exposure=_safe_float(estimated_open_notional, 0.0),
+            )
+            intraday_exposure_gate = {
+                "status": "ok" if exposure_ok else "blocked",
+                "blocked": not exposure_ok,
+                "reason": exposure_reason,
+                **exposure_meta,
+            }
+            if not exposure_ok:
+                reasons.append(f"Operational gate blocked {action}: {exposure_reason}.")
 
         portfolio_risk_guard = self._build_portfolio_risk_guard(
             scope=scope,
@@ -1993,7 +2238,6 @@ class OperationCenter:
         warnings.extend(list(execution_quality.get("warnings") or []))
 
         projected_position_count = len(monitor.get("strategies") or []) + (1 if action in {"preview", "submit"} and allowed else 0)
-        equity = _safe_float(balances.get("total_equity"), _safe_float(balances.get("equity"), 0.0))
         bp_base = max(option_bp, 0.0) if (uses_option_bp and not is_close_order) else max(option_bp, cash, 0.0)
         projected_bp = max(bp_base - _safe_float(risk_dollars, 0.0), 0.0)
         projected_risk_usage_pct = round((_safe_float(risk_dollars, 0.0) / bp_base) * 100.0, 2) if bp_base > 0 else None
@@ -2025,6 +2269,11 @@ class OperationCenter:
             "gates": {
                 "scope": scope,
                 "pdt_status": pdt_status,
+                "pdt_migration": {
+                    "status": "deprecated",
+                    "effective_date": PDT_RULE_REMOVAL_DATE,
+                    "reason": deprecated_pdt_reason,
+                },
                 "win_rate_pct": probability_payload.get("win_rate_pct") if probability_payload else None,
                 "min_win_rate_pct": config.get("min_auton_win_rate_pct"),
                 "risk_dollars": risk_dollars,
@@ -2057,6 +2306,10 @@ class OperationCenter:
                     "degraded": market_hours_degraded,
                     "reason": market_hours_reason,
                 },
+                "daily_trade_limit": daily_trade_limit,
+                "intraday_exposure": intraday_exposure_gate,
+                "intraday_drawdown": intraday_drawdown_gate,
+                "loss_cooldown": loss_cooldown,
                 "visual_entry_gate": {
                     "status": visual_entry_gate.get("status"),
                     "degraded": bool(visual_entry_gate.get("degraded")),
