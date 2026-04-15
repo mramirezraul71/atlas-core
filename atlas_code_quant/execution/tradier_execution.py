@@ -4,11 +4,13 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 from typing import Any, Literal
 
 from api.schemas import OrderRequest, TradierOrderLeg
+from backtesting.winning_probability import TradierClient
 from config.settings import settings
-from execution.tradier_controls import check_pdt_status, resolve_account_session
+from execution.tradier_controls import TradierAccountSession, check_pdt_status, resolve_account_session
 from execution.tradier_pdt_ledger import record_live_order_intent
 from backtesting.winning_probability import _safe_float
 
@@ -195,6 +197,169 @@ def build_tradier_order_payload(body: OrderRequest) -> tuple[TradierOrderClass, 
     return order_class, position_effect, payload
 
 
+def _extract_order_id(response: dict[str, Any] | None) -> str | None:
+    if not isinstance(response, dict):
+        return None
+    for key in ("id", "order_id", "broker_order_id"):
+        value = response.get(key)
+        if value not in {None, ""}:
+            return str(value)
+    nested = response.get("order")
+    if isinstance(nested, dict):
+        for key in ("id", "order_id", "broker_order_id"):
+            value = nested.get(key)
+            if value not in {None, ""}:
+                return str(value)
+    return None
+
+
+def _extract_broker_order_ids(response: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(response, dict):
+        return {}
+    order_id = _extract_order_id(response)
+    if order_id:
+        return {"id": order_id}
+    raw = response.get("raw_response")
+    if isinstance(raw, dict):
+        raw_id = _extract_order_id(raw)
+        if raw_id:
+            return {"id": raw_id}
+    return {}
+
+
+def _match_order(broker_order: dict[str, Any], payload: dict[str, Any]) -> bool:
+    broker_symbol = str(broker_order.get("symbol") or "").strip().upper()
+    payload_symbol = str(payload.get("symbol") or "").strip().upper()
+    if broker_symbol and payload_symbol and broker_symbol != payload_symbol:
+        return False
+
+    broker_side = str(broker_order.get("side") or "").strip().lower()
+    payload_side = str(payload.get("side") or payload.get("side[0]") or "").strip().lower()
+    if broker_side and payload_side and broker_side != payload_side:
+        return False
+
+    broker_qty = _safe_float(
+        broker_order.get("quantity")
+        or broker_order.get("qty")
+        or broker_order.get("exec_quantity")
+        or broker_order.get("filled_quantity"),
+        float("nan"),
+    )
+    payload_qty = _safe_float(payload.get("quantity") or payload.get("quantity[0]"), float("nan"))
+    if broker_qty == broker_qty and payload_qty == payload_qty and abs(broker_qty - payload_qty) > 1e-9:
+        return False
+
+    broker_type = str(broker_order.get("type") or "").strip().lower()
+    payload_type = str(payload.get("type") or "").strip().lower()
+    if broker_type and payload_type and broker_type != payload_type:
+        return False
+
+    return True
+
+
+def _stream_order_confirmation(
+    client: TradierClient,
+    session: TradierAccountSession,
+    payload: dict[str, Any],
+    timeout_sec: int,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    response = client.place_order(session.account_id, payload)
+    order_id = _extract_order_id(response)
+    if order_id:
+        return {
+            "order_id": order_id,
+            "status": str(response.get("status") or "accepted"),
+            "filled_qty": _safe_float(response.get("exec_quantity") or response.get("filled_quantity"), 0.0),
+            "method_used": "stream_confirmation",
+            "raw_response": response,
+        }
+    elapsed = time.perf_counter() - started
+    if elapsed >= float(timeout_sec):
+        raise TimeoutError(f"stream confirmation timeout after {timeout_sec}s")
+    raise TimeoutError("stream confirmation missing order_id")
+
+
+def _polling_get_orders(
+    client: TradierClient,
+    session: TradierAccountSession,
+    payload: dict[str, Any],
+    timeout_sec: int,
+) -> dict[str, Any]:
+    submitted = client.place_order(session.account_id, payload)
+    submitted_id = _extract_order_id(submitted)
+    deadline = time.time() + max(float(timeout_sec), 0.5)
+    while time.time() <= deadline:
+        broker_orders = client.orders(session.account_id)
+        for broker_order in broker_orders:
+            broker_order_id = _extract_order_id(broker_order)
+            if submitted_id and broker_order_id and broker_order_id == submitted_id:
+                return {
+                    "order_id": broker_order_id,
+                    "status": str(broker_order.get("status") or "accepted"),
+                    "filled_qty": _safe_float(broker_order.get("exec_quantity") or broker_order.get("filled_quantity"), 0.0),
+                    "method_used": "polling_get_orders",
+                    "raw_response": broker_order,
+                    "submitted_response": submitted,
+                }
+            if _match_order(broker_order, payload):
+                return {
+                    "order_id": broker_order_id or "",
+                    "status": str(broker_order.get("status") or "accepted"),
+                    "filled_qty": _safe_float(broker_order.get("exec_quantity") or broker_order.get("filled_quantity"), 0.0),
+                    "method_used": "polling_get_orders",
+                    "raw_response": broker_order,
+                    "submitted_response": submitted,
+                }
+        time.sleep(0.5)
+    raise TimeoutError(f"polling could not find matching order after {timeout_sec}s")
+
+
+def _execute_with_fallback(
+    client: TradierClient,
+    session: TradierAccountSession,
+    payload: dict[str, Any],
+    primary_method: str = "stream_confirmation",
+    fallback_method: str = "polling_get_orders",
+    max_retries: int = 3,
+    timeout_sec: int = 5,
+) -> dict[str, Any]:
+    primary_map = {
+        "stream_confirmation": _stream_order_confirmation,
+    }
+    fallback_map = {
+        "polling_get_orders": _polling_get_orders,
+    }
+    primary = primary_map.get(primary_method)
+    fallback = fallback_map.get(fallback_method)
+    if primary is None:
+        raise ValueError(f"Unsupported primary method '{primary_method}'")
+    if fallback is None:
+        raise ValueError(f"Unsupported fallback method '{fallback_method}'")
+
+    retries = max(1, int(max_retries))
+    last_error: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            return primary(client=client, session=session, payload=payload, timeout_sec=timeout_sec)
+        except Exception as exc:
+            last_error = exc
+            logger.warning(
+                "Stream confirmation failed (attempt %s/%s), falling back... %s",
+                attempt,
+                retries,
+                exc,
+            )
+    try:
+        response = fallback(client=client, session=session, payload=payload, timeout_sec=timeout_sec)
+        logger.info("Fallback successful: found order_id via polling")
+        return response
+    except Exception as exc:
+        logger.error("Failed to execute order with all retry strategies")
+        detail = f"{last_error}; fallback={exc}" if last_error is not None else str(exc)
+        raise RuntimeError(f"Failed to execute order with fallback strategies: {detail}") from exc
+
+
 def route_order_to_tradier(body: OrderRequest) -> dict[str, Any]:
     effective_scope = body.account_scope or settings.tradier_default_scope
     client, session = resolve_account_session(
@@ -254,7 +419,22 @@ def route_order_to_tradier(body: OrderRequest) -> dict[str, Any]:
                         },
                     )
 
-    response = client.place_order(session.account_id, payload)
+    response = _execute_with_fallback(
+        client=client,
+        session=session,
+        payload=payload,
+        primary_method="stream_confirmation",
+        fallback_method="polling_get_orders",
+        max_retries=3,
+        timeout_sec=max(int(settings.tradier_timeout_sec), 1),
+    )
+    broker_order_ids = _extract_broker_order_ids(response)
+    if not broker_order_ids or not broker_order_ids.get("id"):
+        raise ValueError(
+            "CRITICAL: Failed to extract broker_order_id. "
+            "Order may be placed in broker but is not trackable locally. "
+            f"Response: {response}"
+        )
     ledger_entry = record_live_order_intent(
         account_id=session.account_id,
         scope=session.scope,
@@ -264,6 +444,7 @@ def route_order_to_tradier(body: OrderRequest) -> dict[str, Any]:
         broker_response=response,
     )
     return {
+        "status": "sent",
         "provider": "tradier",
         "route": "tradier",
         "mode": "preview" if body.preview else "submit",
@@ -276,4 +457,7 @@ def route_order_to_tradier(body: OrderRequest) -> dict[str, Any]:
         "tradier_preview": preview_probe,
         "pdt_ledger_entry": ledger_entry,
         "tradier_response": response,
+        "broker_order_ids_json": broker_order_ids,
+        "method_used": str(response.get("method_used") or "unknown"),
+        "order_response": response,
     }
