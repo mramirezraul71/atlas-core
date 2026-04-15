@@ -1,4 +1,4 @@
-"""Tradier account resolution and PDT guard rails."""
+"""Tradier account resolution and post-PDT operational compatibility."""
 from __future__ import annotations
 
 import logging
@@ -306,102 +306,37 @@ def check_pdt_status(
     reference_day: date | None = None,
 ) -> dict[str, Any]:
     today = reference_day or datetime.utcnow().date()
-    result = {
-        "applicable": session.classification == "live",
-        "scope": session.scope,
-        "account_id": session.account_id,
-        "total_equity": session.total_equity,
-        "min_equity_required": settings.tradier_pdt_min_equity,
-        "max_day_trades_before_block": settings.tradier_pdt_max_day_trades,
-        "window_business_days": settings.tradier_pdt_window_days,
-        "day_trades_last_window": 0,
-        "day_trades_remaining": settings.tradier_pdt_max_day_trades,
-        "day_trade_details": [],
-        "broker_day_trades_last_window": 0,
-        "broker_day_trade_details": [],
-        "filled_events_analyzed": 0,
-        "ledger_day_trades_today": 0,
-        "ledger_day_trade_details": [],
-        "combined_day_trades_last_window": 0,
-        "blocked_opening": False,
-        "can_open": True,
-        "reason": None,
-        "fail_closed": settings.tradier_pdt_fail_closed,
-    }
-    if session.classification != "live":
-        result["reason"] = "PDT guard rail only applies to live accounts"
-        return result
-
-    if session.total_equity is None:
-        if settings.tradier_pdt_fail_closed:
-            result["blocked_opening"] = True
-            result["can_open"] = False
-            result["reason"] = "Unable to determine live account equity"
-        else:
-            result["reason"] = "Unable to determine live account equity"
-        return result
-
-    if session.total_equity >= settings.tradier_pdt_min_equity:
-        result["reason"] = "Account equity is above PDT minimum"
-        return result
-
-    start_day = today - timedelta(days=max(60, settings.tradier_pdt_window_days * 4))
-    try:
-        history_events = client.account_history(
-            session.account_id,
-            history_type="trade",
-            start=start_day,
-            end=today,
-        )
-        current_orders = client.orders(session.account_id)
-    except Exception as exc:
-        logger.exception("Unable to evaluate PDT status for %s", session.account_id)
-        if settings.tradier_pdt_fail_closed:
-            result["blocked_opening"] = True
-            result["can_open"] = False
-        result["reason"] = f"PDT evaluation failed: {exc}"
-        return result
-
-    recent_filled_events = _recent_filled_events(
-        history_events + current_orders,
-        limit=settings.tradier_pdt_history_fill_limit,
-    )
-    broker_day_trade_count, broker_day_trade_details, parse_ok = _count_day_trades(
-        recent_filled_events,
-        reference_day=today,
+    logger.warning(
+        "check_pdt_status() deprecated: PDT rule removed effective 2026-04-14 for account %s",
+        session.account_id,
     )
     ledger_day_trade_count, ledger_day_trade_details = count_intraday_day_trades(
         account_id=session.account_id,
         reference_day=today,
     )
-    broker_prior_days = sum(1 for item in broker_day_trade_details if str(item.get("date") or "") != today.isoformat())
-    broker_today = sum(1 for item in broker_day_trade_details if str(item.get("date") or "") == today.isoformat())
-    combined_day_trade_count = broker_prior_days + max(broker_today, ledger_day_trade_count)
-
-    result["broker_day_trades_last_window"] = broker_day_trade_count
-    result["broker_day_trade_details"] = broker_day_trade_details
-    result["filled_events_analyzed"] = len(recent_filled_events)
-    result["ledger_day_trades_today"] = ledger_day_trade_count
-    result["ledger_day_trade_details"] = ledger_day_trade_details
-    result["combined_day_trades_last_window"] = combined_day_trade_count
-    result["day_trades_last_window"] = combined_day_trade_count
-    result["day_trades_remaining"] = max(0, settings.tradier_pdt_max_day_trades - combined_day_trade_count)
-    result["day_trade_details"] = broker_day_trade_details + ledger_day_trade_details
-
-    if not parse_ok and settings.tradier_pdt_fail_closed:
-        result["blocked_opening"] = True
-        result["can_open"] = False
-        result["reason"] = "Unable to parse Tradier trade history safely"
-        return result
-
-    if combined_day_trade_count >= settings.tradier_pdt_max_day_trades:
-        result["blocked_opening"] = True
-        result["can_open"] = False
-        result["reason"] = (
-            f"Live account below {settings.tradier_pdt_min_equity:.0f} with "
-            f"{combined_day_trade_count} day trades in the last {settings.tradier_pdt_window_days} business days"
-        )
-        return result
-
-    result["reason"] = "PDT threshold not reached"
+    # Compat payload: keep shape stable for monitor/api consumers.
+    result = {
+        "applicable": False,
+        "scope": session.scope,
+        "account_id": session.account_id,
+        "total_equity": session.total_equity,
+        "min_equity_required": 0.0,
+        "max_day_trades_before_block": 0,
+        "window_business_days": 0,
+        "day_trades_last_window": ledger_day_trade_count,
+        "day_trades_remaining": None,
+        "day_trade_details": ledger_day_trade_details,
+        "broker_day_trades_last_window": 0,
+        "broker_day_trade_details": [],
+        "filled_events_analyzed": 0,
+        "ledger_day_trades_today": ledger_day_trade_count,
+        "ledger_day_trade_details": ledger_day_trade_details,
+        "combined_day_trades_last_window": ledger_day_trade_count,
+        "blocked_opening": False,
+        "can_open": True,
+        "reason": "pdt_rule_removed_2026_04_14",
+        "fail_closed": False,
+        "deprecated": True,
+        "effective_date": "2026-04-14",
+    }
     return result
