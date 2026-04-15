@@ -8,7 +8,7 @@ Cubre:
   - session_summary: resumen correcto
   - Integración: open → DT → summary
 
-Todos los tests usan mock para evitar depender del ledger real de Tradier.
+Los tests que esperan **bloqueos** históricos activan ``ATLAS_PDT_LEGACY_BLOCKS=1``.
 """
 
 from __future__ import annotations
@@ -28,6 +28,12 @@ from atlas_code_quant.execution.pdt_controller import (
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def legacy_pdt_blocks(monkeypatch):
+    """Activa la lógica de bloqueo PDT previa a 2026-04-14."""
+    monkeypatch.setenv("ATLAS_PDT_LEGACY_BLOCKS", "1")
+
 
 def make_pdt(mode="live", max_dt=2, min_score=0.75, account_id="TEST123") -> PDTController:
     """Crea PDTController con ledger mockeado (siempre devuelve 0 DTs broker)."""
@@ -125,7 +131,7 @@ class TestOpenGateLive:
         assert dec.day_trades_used == 0
         assert dec.day_trades_remaining == 2
 
-    def test_blocks_when_dt_budget_exhausted(self):
+    def test_blocks_when_dt_budget_exhausted(self, legacy_pdt_blocks):
         ctrl = make_pdt(mode="live", max_dt=2)
         with _mock_ledger_count(2):
             dec = ctrl.can_open("AAPL", signal_score=0.90)
@@ -133,7 +139,7 @@ class TestOpenGateLive:
         assert dec.day_trades_remaining == 0
         assert "agotado" in dec.reason or "limit" in dec.reason.lower()
 
-    def test_blocks_repeat_symbol_today(self):
+    def test_blocks_repeat_symbol_today(self, legacy_pdt_blocks):
         ctrl = make_pdt(mode="live", max_dt=2)
         # Simular que AAPL ya fue day-traded hoy
         ctrl._state.dt_symbols_today.add("AAPL")
@@ -142,7 +148,7 @@ class TestOpenGateLive:
         assert dec.allowed is False
         assert "AAPL" in dec.reason
 
-    def test_blocks_low_score_near_limit(self):
+    def test_blocks_low_score_near_limit(self, legacy_pdt_blocks):
         ctrl = make_pdt(mode="live", max_dt=2, min_score=0.75)
         with _mock_ledger_count(1):  # 1 DT usado → 1 restante
             dec = ctrl.can_open("AAPL", signal_score=0.60)  # score insuficiente
@@ -157,7 +163,7 @@ class TestOpenGateLive:
         assert dec.allowed is True
         assert dec.day_trades_remaining == 1
 
-    def test_blocks_today_counter_increments(self):
+    def test_blocks_today_counter_increments(self, legacy_pdt_blocks):
         ctrl = make_pdt(mode="live", max_dt=0)
         with _mock_ledger_count(2):
             ctrl.can_open("AAPL", signal_score=0.90)
@@ -175,7 +181,7 @@ class TestCloseGateLive:
             dec = ctrl.can_close("AAPL", signal_kind="CLOSE_TP")
         assert dec.allowed is True
 
-    def test_tp_close_same_day_blocked_when_dt_exhausted(self):
+    def test_tp_close_same_day_blocked_when_dt_exhausted(self, legacy_pdt_blocks):
         ctrl = make_pdt(mode="live", max_dt=2)
         ctrl.record_open("AAPL")   # abierta hoy
         with _mock_ledger_count(2):  # presupuesto agotado
@@ -292,7 +298,7 @@ class TestSessionSummary:
 class TestIntegration:
     """Tests de flujo completo: open → DT → summary → límite."""
 
-    def test_full_flow_two_dt_then_blocked(self):
+    def test_full_flow_two_dt_then_blocked(self, legacy_pdt_blocks):
         """Flujo completo: 2 DTs usados → 3er intento bloqueado."""
         ctrl = make_pdt(mode="live", max_dt=2, min_score=0.75)
 
@@ -316,7 +322,7 @@ class TestIntegration:
         assert not dec3.allowed
         assert dec3.day_trades_remaining == 0
 
-    def test_risk_close_after_dt_limit_still_allowed(self):
+    def test_risk_close_after_dt_limit_still_allowed(self, legacy_pdt_blocks):
         """Después de agotar DTs, los SL siguen ejecutándose."""
         ctrl = make_pdt(mode="live", max_dt=1)
         ctrl.record_open("AAPL")
@@ -407,7 +413,7 @@ class TestPDTExemption:
             dec = ctrl.can_open("BTC/USDT", signal_score=0.8, asset_class="crypto")
         assert dec.allowed is True
 
-    def test_can_open_equity_blocked_when_limit_exhausted(self):
+    def test_can_open_equity_blocked_when_limit_exhausted(self, legacy_pdt_blocks):
         ctrl = make_pdt(mode="live", max_dt=2)
         with _mock_ledger_count(2):
             dec = ctrl.can_open("AAPL", signal_score=0.9, asset_class="equity_stock")
@@ -418,3 +424,34 @@ class TestPDTExemption:
         with _mock_ledger_count(2):
             dec = ctrl.can_open("NDX", signal_score=0.85, asset_class="index_option")
         assert "exempt" in dec.reason.lower()
+
+
+# ── Post-PDT default (sin legacy) ─────────────────────────────────────────────
+
+class TestPostPDTDefaultNoLegacy:
+    """Sin ATLAS_PDT_LEGACY_BLOCKS, live no bloquea por presupuesto PDT."""
+
+    def test_equity_open_allowed_when_limit_exhausted(self, monkeypatch):
+        monkeypatch.delenv("ATLAS_PDT_LEGACY_BLOCKS", raising=False)
+        ctrl = make_pdt(mode="live", max_dt=2)
+        with _mock_ledger_count(2):
+            dec = ctrl.can_open("AAPL", signal_score=0.5, asset_class="equity_stock")
+        assert dec.allowed is True
+        assert "pdt_rule_removed_trading_2026" in dec.reason
+
+    def test_voluntary_close_allowed_when_limit_exhausted(self, monkeypatch):
+        monkeypatch.delenv("ATLAS_PDT_LEGACY_BLOCKS", raising=False)
+        ctrl = make_pdt(mode="live", max_dt=2)
+        ctrl.record_open("AAPL")
+        with _mock_ledger_count(2):
+            dec = ctrl.can_close("AAPL", signal_kind="CLOSE_TP")
+        assert dec.allowed is True
+        assert "pdt_rule_removed_trading_2026" in dec.reason
+
+    def test_no_block_counter_when_legacy_off(self, monkeypatch):
+        monkeypatch.delenv("ATLAS_PDT_LEGACY_BLOCKS", raising=False)
+        ctrl = make_pdt(mode="live", max_dt=0)
+        with _mock_ledger_count(2):
+            ctrl.can_open("AAPL", signal_score=0.90)
+            ctrl.can_open("MSFT", signal_score=0.90)
+        assert ctrl._state.blocks_by_pdt == 0

@@ -1,40 +1,24 @@
 """Módulo PDT-Aware Controller — ATLAS-Quant v0.7
 
-Pattern Day Trader compliance layer para cuentas reales y simuladas.
+Capa histórica de presupuesto de day trades. Tras la eliminación operativa de la
+regla PDT (efectiva 2026-04-14 en este stack), **por defecto no bloquea** aperturas
+ni cierres voluntarios en modo live: solo sigue contabilizando y exponiendo métricas.
 
-Regla FINRA PDT:
-  - 4+ day trades en 5 días laborables → cuenta marcada como PDT → margin call.
-  - Cuentas < $25 000: máximo 3 day trades / ventana de 5 días.
-  - Cuentas >= $25 000: sin límite, pero aplicamos límites propios de riesgo.
+Para restaurar la lógica de bloqueo previa (simulación / auditoría), definir::
+
+    ATLAS_PDT_LEGACY_BLOCKS=1
 
 Un "day trade" = apertura Y cierre del mismo valor el mismo día calendario.
 
 Comportamiento por modo:
   paper : Nunca bloquear. Registrar y simular conteo PDT en logs / diario.
-  live  : Bloquear entradas cuando el presupuesto PDT se agota o se acerca
-          al límite. Cierres de riesgo (SL/trailing/EOD) siempre permitidos.
+  live  : Sin ``ATLAS_PDT_LEGACY_BLOCKS``: no bloquear; con legacy activo: mismo comportamiento conservador que antes (presupuesto, score, símbolo repetido).
 
 Variables de entorno:
-  ATLAS_PDT_MAX_DAY_TRADES       int,   default 2  (límite conservador; FINRA = 3)
-  ATLAS_PDT_MIN_SCORE_NEAR_LIMIT float, default 0.75  (score mínimo al quedar 1 DT)
+  ATLAS_PDT_LEGACY_BLOCKS       1/true/yes → aplicar bloqueos históricos en live
+  ATLAS_PDT_MAX_DAY_TRADES       int,   default 2  (solo si legacy)
+  ATLAS_PDT_MIN_SCORE_NEAR_LIMIT float, default 0.75  (solo si legacy)
   ATLAS_PDT_WINDOW_DAYS          int,   default 5
-
-Uso::
-
-    pdt = PDTController(mode="live", account_id="TRD123456")
-    dec = pdt.can_open("AAPL", signal_score=0.82, is_swing=False)
-    if not dec.allowed:
-        logger.warning("PDT bloqueado: %s", dec.reason)
-        return None
-
-    # … ejecutar orden …
-    pdt.record_open("AAPL")
-
-    # Al cerrar:
-    dec = pdt.can_close("AAPL", is_risk_close=False)
-    if dec.allowed:
-        # ejecutar cierre
-        pdt.record_close("AAPL")
 """
 
 from __future__ import annotations
@@ -52,6 +36,11 @@ logger = logging.getLogger("atlas.execution.pdt")
 _MAX_DAY_TRADES    = int(os.getenv("ATLAS_PDT_MAX_DAY_TRADES",       "2"))
 _MIN_SCORE_NEAR    = float(os.getenv("ATLAS_PDT_MIN_SCORE_NEAR_LIMIT", "0.75"))
 _WINDOW_DAYS       = int(os.getenv("ATLAS_PDT_WINDOW_DAYS",           "5"))
+
+
+def _pdt_legacy_blocks_enabled() -> bool:
+    v = os.getenv("ATLAS_PDT_LEGACY_BLOCKS", "").strip().lower()
+    return v in ("1", "true", "yes")
 
 # Tipos de cierre que siempre se consideran "cierres de riesgo"
 # (protectores — nunca bloqueados por PDT):
@@ -114,9 +103,15 @@ class PDTController:
         self._lock           = threading.Lock()
 
         logger.info(
-            "PDTController iniciado — modo=%s cuenta=%s max_DT=%d score_near=%.2f",
+            "PDTController iniciado — modo=%s cuenta=%s max_DT=%d score_near=%.2f legacy_blocks=%s",
             self.mode.upper(), account_id or "(sin cuenta)", max_day_trades, min_score_near,
+            _pdt_legacy_blocks_enabled(),
         )
+        if self.mode == "live" and not _pdt_legacy_blocks_enabled():
+            logger.info(
+                "PDTController: bloqueos PDT desactivados (post-2026). "
+                "Export ATLAS_PDT_LEGACY_BLOCKS=1 para lógica histórica."
+            )
 
     # ── API principal ─────────────────────────────────────────────────────────
 
@@ -189,7 +184,16 @@ class PDTController:
                     day_trades_used=dt_used, day_trades_remaining=dt_remaining,
                 )
 
-            # ── Verificaciones intraday ──────────────────────────────────────
+            if not _pdt_legacy_blocks_enabled():
+                self._state.allowed_by_pdt += 1
+                return PDTDecision(
+                    allowed=True,
+                    reason="pdt_rule_removed_trading_2026",
+                    day_trades_used=dt_used,
+                    day_trades_remaining=dt_remaining,
+                )
+
+            # ── Verificaciones intraday (solo ATLAS_PDT_LEGACY_BLOCKS) ───────
 
             # 1. Límite PDT agotado
             if dt_remaining <= 0:
@@ -305,15 +309,22 @@ class PDTController:
 
             # Este cierre SÍ crea un day trade
             if dt_remaining <= 0:
-                self._state.blocks_by_pdt += 1
-                reason = (
-                    f"PDT limit agotado — cierre de {symbol} crearía DT "
-                    f"({dt_used}/{self._max_day_trades}). Use SL para cierre de riesgo."
-                )
-                logger.warning("[PDT] BLOQUEADO cierre voluntario %s: %s", symbol, reason)
+                if _pdt_legacy_blocks_enabled():
+                    self._state.blocks_by_pdt += 1
+                    reason = (
+                        f"PDT limit agotado — cierre de {symbol} crearía DT "
+                        f"({dt_used}/{self._max_day_trades}). Use SL para cierre de riesgo."
+                    )
+                    logger.warning("[PDT] BLOQUEADO cierre voluntario %s: %s", symbol, reason)
+                    return PDTDecision(
+                        allowed=False, reason=reason,
+                        day_trades_used=dt_used, day_trades_remaining=0,
+                    )
                 return PDTDecision(
-                    allowed=False, reason=reason,
-                    day_trades_used=dt_used, day_trades_remaining=0,
+                    allowed=True,
+                    reason="pdt_rule_removed_trading_2026_voluntary_close",
+                    day_trades_used=dt_used,
+                    day_trades_remaining=dt_remaining,
                 )
 
             return PDTDecision(
@@ -416,7 +427,7 @@ class PDTController:
         return max(ledger_count, self._state.session_dt_count)
 
     def _notify_if_near_limit(self) -> None:
-        """Alerta cuando quedan 1 o 0 DTs disponibles."""
+        """Registro en log cuando quedan 1 o 0 DTs (métricas legacy; sin Telegram)."""
         dt_used      = self._count_dt_total()
         dt_remaining = self._max_day_trades - dt_used
         if dt_remaining <= 1:
@@ -426,8 +437,3 @@ class PDTController:
                 f"{'Solo señales de alta calidad.' if dt_remaining == 1 else 'Sin más day trades disponibles.'}"
             )
             logger.warning(msg)
-            try:
-                from atlas_code_quant.production.telegram_alerts import TelegramAlerts
-                TelegramAlerts.send_static(msg)
-            except Exception:
-                pass
