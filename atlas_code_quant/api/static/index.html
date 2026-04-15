@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Atlas Code-Quant · v1.0.0</title>
   <script>
-    const _QVER = '20260411d';
+    const _QVER = '20260415a';
     window.QUANT_ACCOUNT_SCOPE = 'paper';
     window.QUANT_ACCOUNT_ID = '';
     // Detecta la base de los assets según el puerto desde el que se sirve
@@ -18,7 +18,7 @@
   <!-- TOPBAR -->
   <header class="topbar">
     <div class="topbar-brand">
-      <a href="/atlas-ui" class="back-btn" title="Volver a Atlas">
+      <a href="/ui" class="back-btn" title="Volver a Atlas">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
         Atlas
       </a>
@@ -69,7 +69,7 @@
         <li class="nav-item" data-view="analytics">
           <span class="nav-icon">&#9672;</span><span class="nav-label">Analytics</span>
         </li>
-        <li class="nav-item" onclick="window.open('/options/ui','_self')" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
+        <li class="nav-item" onclick="window.open('http://'+location.hostname+':8795/options/ui','_self')" style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
           <span class="nav-icon" style="color:var(--accent)">&#9651;</span><span class="nav-label" style="color:var(--accent)">OptionStrat ↗</span>
         </li>
       </ul>
@@ -571,7 +571,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js" defer></script>
   <script>
-    const _S = '/static';
+    const _S = _QBASE;
     const _MODULES = ['api', 'charts', 'atlas_charts', 'app'];
 
     function loadAtlasScript(src) {

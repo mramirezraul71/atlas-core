@@ -161,6 +161,9 @@ class MarketFeed:
         interval, period = self._yfinance_interval_period(timeframe)
         out: dict[str, pd.DataFrame] = {}
         chunk_size = 20 if timeframe == "1d" else 10
+        # Limita fallback individual para evitar ciclos del scanner bloqueados
+        # cuando Yahoo no responde para muchos símbolos del batch.
+        max_symbol_fallback = 4
         for chunk in _iter_chunks(symbols, chunk_size):
             try:
                 raw = yf.download(
@@ -177,6 +180,13 @@ class MarketFeed:
             except Exception as exc:
                 logger.warning("Fallo descarga agrupada de %s simbolos: %s", len(chunk), exc)
             missing = [symbol for symbol in chunk if symbol not in out]
+            if len(missing) > max_symbol_fallback:
+                logger.warning(
+                    "Fallback individual truncado (%s/%s símbolos) para evitar bloqueo",
+                    max_symbol_fallback,
+                    len(missing),
+                )
+                missing = missing[:max_symbol_fallback]
             for symbol in missing:
                 try:
                     out[symbol] = self._ohlcv_yfinance(symbol, timeframe, limit, None)

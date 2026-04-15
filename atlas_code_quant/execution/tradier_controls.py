@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -14,6 +15,11 @@ from atlas_code_quant.execution.tradier_pdt_ledger import count_intraday_day_tra
 logger = logging.getLogger("quant.execution.tradier_controls")
 
 _SESSION_CACHE: dict[tuple[str, str], "TradierAccountSession"] = {}
+_SESSION_CACHE_TS: dict[tuple[str, str], float] = {}
+_SESSION_CACHE_TTL_SEC = max(
+    0.0,
+    float(getattr(settings, "tradier_account_session_cache_ttl_sec", 5.0) or 5.0),
+)
 
 
 @dataclass
@@ -116,8 +122,10 @@ def resolve_account_session(
     scope: TradierScope = account_scope or settings.tradier_default_scope  # type: ignore[assignment]
     cache_key = (scope, (account_id or "").strip())
     if not force_refresh and cache_key in _SESSION_CACHE:
-        client = TradierClient(scope=scope, token=tradier_token, base_url=tradier_base_url)
-        return client, _SESSION_CACHE[cache_key]
+        cache_age = time.monotonic() - _SESSION_CACHE_TS.get(cache_key, 0.0)
+        if cache_age <= _SESSION_CACHE_TTL_SEC:
+            client = TradierClient(scope=scope, token=tradier_token, base_url=tradier_base_url)
+            return client, _SESSION_CACHE[cache_key]
 
     client = TradierClient(scope=scope, token=tradier_token, base_url=tradier_base_url)
     accounts = client.accounts()
@@ -147,6 +155,7 @@ def resolve_account_session(
         raw_account=account,
     )
     _SESSION_CACHE[cache_key] = session
+    _SESSION_CACHE_TS[cache_key] = time.monotonic()
     return client, session
 
 
