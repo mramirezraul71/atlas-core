@@ -264,3 +264,44 @@ class TestOperationCenterMarketHours:
         assert isinstance(payload["market_hours_ok"], bool)
         assert isinstance(payload["market_hours_reason"], str)
         assert isinstance(payload["blocked"], bool)
+
+    def test_paper_market_hours_strict_blocks_submit_outside_rth(self, monkeypatch, center: OperationCenter) -> None:
+        center.update_config({"paper_market_hours_strict": True, "reset_fail_safe": True})
+        _freeze_et(monkeypatch, year=2026, month=4, day=13, hour=18, minute=0)
+        monkeypatch.setattr(operation_center_module, "classify_asset", lambda symbol: SimpleNamespace(asset_class=AssetClass.EQUITY_STOCK))
+        payload = center.evaluate_candidate(
+            order=OrderRequest(
+                symbol="SPY",
+                side="buy",
+                size=1,
+                order_type="market",
+                asset_class="equity",
+                account_scope="paper",
+                strategy_type="equity_long",
+            ),
+            action="submit",
+            capture_context=False,
+        )
+        assert payload["allowed"] is False
+        assert payload["gates"]["market_hours"]["blocked"] is True
+        assert any("paper_market_hours_strict" in str(r) for r in payload["reasons"])
+
+    def test_paper_close_exempt_from_market_hours_strict(self, monkeypatch, center: OperationCenter) -> None:
+        center.update_config({"paper_market_hours_strict": True, "reset_fail_safe": True})
+        _freeze_et(monkeypatch, year=2026, month=4, day=13, hour=18, minute=0)
+        monkeypatch.setattr(operation_center_module, "classify_asset", lambda symbol: SimpleNamespace(asset_class=AssetClass.EQUITY_STOCK))
+        payload = center.evaluate_candidate(
+            order=OrderRequest(
+                symbol="SPY",
+                side="sell",
+                size=1,
+                order_type="market",
+                asset_class="equity",
+                account_scope="paper",
+                strategy_type="equity_long",
+                position_effect="close",
+            ),
+            action="submit",
+            capture_context=False,
+        )
+        assert payload["gates"]["market_hours"]["reason"] == "close_order_exempt_paper"

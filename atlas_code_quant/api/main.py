@@ -1804,7 +1804,7 @@ async def operation_config(
     _auth(x_api_key)
     t0 = time.perf_counter()
     try:
-        _OPERATION_CENTER.update_config(body.model_dump())
+        _OPERATION_CENTER.update_config(body.model_dump(exclude_unset=True))
         payload = _operation_config_snapshot_payload(await asyncio.to_thread(_OPERATION_CENTER.get_config))
         return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as exc:
@@ -1864,6 +1864,15 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                 op_config = await asyncio.to_thread(_OPERATION_CENTER.get_config)
                 auton_mode = str(op_config.get("auton_mode") or "paper_supervised")
                 action = "submit" if auton_mode not in {"off", "paper_supervised"} else "preview"
+                entry_action = action
+                if (
+                    action == "submit"
+                    and str(op_config.get("account_scope") or "paper") == "paper"
+                    and bool(op_config.get("paper_market_hours_strict"))
+                ):
+                    rth_open = await asyncio.to_thread(_OPERATION_CENTER.is_us_equity_rth_open)
+                    if not rth_open:
+                        entry_action = "preview"
 
                 # ── 1. EXIT PASS: cerrar posiciones que cumplen criterio de salida ─────
                 exits_sent = 0
@@ -1961,13 +1970,13 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     _auto_cycle_mark_stage("journal_sync_skipped", action=action)
 
                 # ── 3. ENTRY PASS: evaluar nuevas entradas ────────────────────────────
-                _auto_cycle_mark_stage("scanner_report", action=action)
+                _auto_cycle_mark_stage("scanner_report", action=entry_action, configured_action=action)
                 report = await asyncio.to_thread(_SCANNER.report, 24)
                 candidates = list(report.get("candidates") or [])
                 if not candidates:
                     _AUTO_CYCLE_STATE["last_cycle_at"] = datetime.utcnow().isoformat()
                     _AUTO_CYCLE_STATE["cycle_count"] += 1
-                    _auto_cycle_mark_stage("cycle_complete", action=action, candidates=0, exits_sent=exits_sent)
+                    _auto_cycle_mark_stage("cycle_complete", action=entry_action, candidates=0, exits_sent=exits_sent)
                     logger.debug("[auto-cycle] Ciclo %d — sin candidatos (exits_sent=%d)",
                                  _AUTO_CYCLE_STATE["cycle_count"], exits_sent)
                     continue
@@ -1990,7 +1999,7 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                 _recon_source = str((positions_payload.get("source") or "")).lower()
                 _recon_has_data = bool(positions_payload.get("positions"))
                 _recon_healthy = _reconciliation_is_healthy(positions_payload)
-                if action == "submit" and not _recon_healthy:
+                if entry_action == "submit" and not _recon_healthy:
                     if _recon_source == "tradier" and _recon_has_data:
                         # Tradier responded with positions — paper_local mismatch is expected, proceed
                         logger.info("[auto-cycle] reconciliation degraded (paper_local mismatch) but Tradier OK — proceeding")
@@ -2025,30 +2034,30 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     _auto_cycle_mark_stage(
                         "candidate_selected",
                         symbol=symbol,
-                        action=action,
+                        action=entry_action,
                         selector_session_mode=selector_session_mode,
                     )
                     if selector_session_mode == "options_only" and require_optionable and not bool(cand.get("has_options")):
                         last_result = {
                             "symbol": symbol,
-                            "action": action,
+                            "action": entry_action,
                             "blocked": True,
                             "reasons": [f"Options-only session skipped {symbol.upper()} because has_options is false."],
                             "selection_score": cand.get("selection_score"),
                             "win_rate_pct": None,
                         }
-                        logger.info("[auto-cycle] symbol=%s action=%s blocked=options_only_requires_options", symbol, action)
+                        logger.info("[auto-cycle] symbol=%s action=%s blocked=options_only_requires_options", symbol, entry_action)
                         continue
                     if symbol.upper() in open_symbols and not rebuild_guard_active:
                         last_result = {
                             "symbol": symbol,
-                            "action": action,
+                            "action": entry_action,
                             "blocked": True,
                             "reasons": [f"Open-symbol guard blocked re-entry for {symbol.upper()}."],
                             "selection_score": cand.get("selection_score"),
                             "win_rate_pct": None,
                         }
-                        logger.info("[auto-cycle] symbol=%s action=%s blocked=open_symbol_guard", symbol, action)
+                        logger.info("[auto-cycle] symbol=%s action=%s blocked=open_symbol_guard", symbol, entry_action)
                         continue
                     if symbol.upper() in open_symbols and rebuild_guard_active:
                         logger.warning(
@@ -2057,7 +2066,7 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         )
                     direction = str(cand.get("direction") or "long").lower()
                     fallback_side = "buy" if direction in {"long", "bull", "up"} else "sell_short"
-                    _auto_cycle_mark_stage("selector_proposal", symbol=symbol, action=action)
+                    _auto_cycle_mark_stage("selector_proposal", symbol=symbol, action=entry_action)
                     proposal = _SELECTOR.proposal(
                         candidate=dict(cand),
                         account_scope="paper",
@@ -2075,7 +2084,7 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                             "order_type": "market",
                             "asset_class": asset_class,
                             "account_scope": "paper",
-                            "preview": (action == "preview"),
+                            "preview": (entry_action == "preview"),
                             "strategy_type": _equity_strategy_type_for_direction(direction) if asset_class == "equity" else None,
                             "entry_reference_price": float(cand.get("price") or 0.0) or None,
                             "entry_expected_move_pct": float(cand.get("predicted_move_pct") or 0.0) or None,
@@ -2085,23 +2094,23 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     if asset_class == "equity" and not order_seed.get("strategy_type"):
                         order_seed["strategy_type"] = _equity_strategy_type_for_direction(direction)
                     side = str(order_seed.get("side") or fallback_side).lower()
-                    order_seed["preview"] = (action == "preview")
+                    order_seed["preview"] = (entry_action == "preview")
                     order = OrderRequest(**order_seed)
                     _auto_cycle_mark_stage(
                         "operation_center_evaluate",
                         symbol=symbol,
-                        action=action,
+                        action=entry_action,
                         side=side,
                         asset_class=asset_class,
                     )
                     result = await asyncio.to_thread(
                         _OPERATION_CENTER.evaluate_candidate,
                         order=order,
-                        action=action,
+                        action=entry_action,
                         capture_context=bool(order.chart_plan or order.camera_plan),  # type: ignore[call-arg]
                     )
                     last_result = {
-                        "symbol": symbol, "action": action,
+                        "symbol": symbol, "action": entry_action,
                         "blocked": bool(result.get("blocked")),
                         "reasons": (result.get("reasons") or []),
                         "selection_score": cand.get("selection_score"),
@@ -2128,7 +2137,7 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         except Exception as _ic_err:
                             logger.debug("[auto-cycle] ic_tracker.record_signal skipped: %s", _ic_err)
                     # Knowledge advisory — contexto académico no bloqueante
-                    if not last_result["blocked"] and action == "submit":
+                    if not last_result["blocked"] and entry_action == "submit":
                         try:
                             _kb_ctx = get_knowledge_base().advisory_context(
                                 method=str(cand.get("method") or cand.get("strategy_type") or ""),
@@ -2148,14 +2157,14 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         except Exception as _kb_err:
                             logger.debug("[auto-cycle] knowledge_advisory skipped: %s", _kb_err)
                     logger.info("[auto-cycle] ENTRY %s symbol=%s action=%s blocked=%s score=%.1f",
-                                side.upper(), symbol, action, last_result["blocked"],
+                                side.upper(), symbol, entry_action, last_result["blocked"],
                                 float(cand.get("selection_score") or 0))
                     # Event Store: registrar señal/orden para replay y auditoría
                     try:
                         _es = get_event_store()
                         _es_topic = "order.submitted" if not last_result["blocked"] else "signal.blocked"
                         _es.append(_es_topic, {
-                            "symbol": symbol, "side": side, "action": action,
+                            "symbol": symbol, "side": side, "action": entry_action,
                             "blocked": last_result["blocked"],
                             "selection_score": float(cand.get("selection_score") or 0),
                             "reasons": last_result.get("reasons", []),
@@ -2183,6 +2192,7 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     "last_cycle_at": datetime.utcnow().isoformat(),
                     "last_candidate_symbol": sorted_cands[0].get("symbol") if sorted_cands else None,
                     "last_action": action,
+                    "entry_action_last": entry_action,
                     "last_result": last_result,
                     "exits_sent_last_cycle": exits_sent,
                 })
@@ -2213,7 +2223,8 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
 
                 _auto_cycle_mark_stage(
                     "cycle_complete",
-                    action=action,
+                    action=entry_action,
+                    configured_action=action,
                     candidates=len(sorted_cands),
                     exits_sent=exits_sent,
                     blocked=bool((last_result or {}).get("blocked")),

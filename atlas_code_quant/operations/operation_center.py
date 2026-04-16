@@ -23,12 +23,14 @@ from learning.trading_implementation_scorecard import (
     write_trading_implementation_scorecard_json,
     write_trading_implementation_scorecard_report,
 )
+from learning.trading_self_audit_protocol import read_trading_self_audit_protocol
 from monitoring.strategy_tracker import StrategyTracker
 from operations.auton_executor import AutonExecutorService
 from operations.brain_bridge import QuantBrainBridge
 from operations.chart_execution import ChartExecutionService
 from operations.journal_pro import JournalProService
 from operations.sensor_vision import SensorVisionService
+from scanner.options_flow_provider import MarketTelemetryStore
 from scanner.asset_classifier import AssetClass, classify_asset
 
 logger = logging.getLogger("quant.operation_center")
@@ -107,6 +109,16 @@ _DEFAULT_STATE = {
         "expires_at": None,
         "reason": None,
     },
+    # --- Paper-only governance toggles (aditivo / seguro) ---
+    # Permite que ciertas guardas de riesgo que bloquean "submit" en live
+    # se degraden a warning en paper para mantener el loop activo.
+    "paper_bypass_exit_now_guard": False,
+    # Permite degradar bloqueos de entry validation (spread/drift) a warning en paper.
+    "paper_bypass_entry_validation_guard": False,
+    # Si True (paper): bloquea submit fuera de sesión regular US (9:30–16:00 ET); no afecta preview.
+    "paper_market_hours_strict": False,
+    # Telegram al enviar órdenes paper y seguimiento de fills (si hay token/chat).
+    "paper_telegram_trade_alerts": True,
 }
 
 PDT_RULE_REMOVAL_DATE = "2026-04-14"
@@ -221,7 +233,102 @@ class OperationCenter:
         normalized_rebuild_guard.update(rebuild_guard)
         normalized_rebuild_guard["active"] = bool(normalized_rebuild_guard.get("active"))
         state["post_journal_rebuild_guard"] = normalized_rebuild_guard
+
+        # Paper-only governance toggles
+        state["paper_bypass_exit_now_guard"] = bool(state.get("paper_bypass_exit_now_guard", False))
+        state["paper_bypass_entry_validation_guard"] = bool(state.get("paper_bypass_entry_validation_guard", False))
+        state["paper_market_hours_strict"] = bool(state.get("paper_market_hours_strict", False))
+        state["paper_telegram_trade_alerts"] = bool(state.get("paper_telegram_trade_alerts", True))
+
+        # ---- Autonomy Orchestrator compatibility (paper_autonomous) ----
+        # Keys expected by atlas_core/autonomy/adapters/quant_adapter.py
+        state.setdefault("autonomy_mode", "semi")
+        if state.get("autonomy_mode") is None:
+            state["autonomy_mode"] = "semi"
+
+        max_risk_default = 0.02
+        raw_max_risk = state.get("max_risk_per_trade_pct", max_risk_default)
+        try:
+            state["max_risk_per_trade_pct"] = float(raw_max_risk)
+        except Exception:
+            state["max_risk_per_trade_pct"] = max_risk_default
+
         return state
+
+    @staticmethod
+    def _apply_paper_risk_guard_bypass(
+        *,
+        scope: str,
+        action: str,
+        config: dict[str, Any],
+        portfolio_risk_guard: dict[str, Any],
+        reasons: list[str],
+        warnings: list[str],
+    ) -> None:
+        """
+        En paper, permite degradar ciertos bloqueos a warnings para no congelar el loop.
+        NO afecta a live.
+        """
+        if scope != "paper" or action != "submit":
+            return
+        if not bool(config.get("paper_bypass_exit_now_guard", False)):
+            return
+        guard_reasons = list(portfolio_risk_guard.get("reasons") or [])
+        if not guard_reasons:
+            return
+        # Identifica el bloqueo específico por exit_now
+        exit_now_reasons = [r for r in guard_reasons if "exit_now" in str(r).lower()]
+        if not exit_now_reasons:
+            return
+
+        # Remueve del listado de razones finales y lo convierte en warning
+        for r in exit_now_reasons:
+            if r in reasons:
+                reasons.remove(r)
+            warnings.append(f"[paper bypass] {r}")
+
+        portfolio_risk_guard["blocked"] = False
+        portfolio_risk_guard["degraded"] = True
+        portfolio_risk_guard["status"] = "warning"
+        portfolio_risk_guard["paper_bypass_exit_now_guard"] = True
+
+    @staticmethod
+    def _apply_paper_entry_validation_bypass(
+        *,
+        scope: str,
+        action: str,
+        config: dict[str, Any],
+        entry_validation: dict[str, Any],
+        reasons: list[str],
+        warnings: list[str],
+    ) -> None:
+        """
+        En paper, degrada bloqueos de spread/drift a warning para mantener
+        la continuidad de simulación en mercados volátiles.
+        """
+        if scope != "paper" or action != "submit":
+            return
+        if not bool(config.get("paper_bypass_entry_validation_guard", False)):
+            return
+
+        ev_reasons = list(entry_validation.get("reasons") or [])
+        if not ev_reasons:
+            return
+        bypassable = [
+            r for r in ev_reasons
+            if ("spread is" in str(r).lower()) or ("adverse drift is" in str(r).lower())
+        ]
+        if not bypassable:
+            return
+
+        for r in bypassable:
+            if r in reasons:
+                reasons.remove(r)
+            warnings.append(f"[paper bypass] {r}")
+
+        entry_validation["blocked"] = False
+        entry_validation["status"] = "warning"
+        entry_validation["paper_bypass_entry_validation_guard"] = True
 
     def _save(self, payload: dict[str, Any]) -> dict[str, Any]:
         merged = deepcopy(_DEFAULT_STATE)
@@ -256,6 +363,7 @@ class OperationCenter:
         if weekday > 4:
             return False, "market_closed_weekend"
 
+        # Sesión regular US: 09:30–16:00 ET (sin extended hours).
         open_dt = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
         close_dt = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
         if now_et < open_dt:
@@ -268,9 +376,17 @@ class OperationCenter:
     def market_hours_readiness(self, *, symbol: str | None = None, account_scope: str = "paper") -> dict[str, Any]:
         check_symbol = str(symbol or "SPY").strip().upper() or "SPY"
         normalized_scope = str(account_scope or "paper").strip().lower() or "paper"
+        cfg = self._load()
+        strict = bool(cfg.get("paper_market_hours_strict"))
         ok, reason = self._check_market_hours(check_symbol, normalized_scope)
-        blocked = bool((not ok) and normalized_scope == "live")
-        degraded = bool((not ok) and normalized_scope == "paper")
+        blocked = bool(
+            (not ok)
+            and (
+                normalized_scope == "live"
+                or (normalized_scope == "paper" and strict)
+            )
+        )
+        degraded = bool((not ok) and normalized_scope == "paper" and not strict)
         status = "OK" if ok else ("DEGRADED" if degraded else "BLOCKED")
         return {
             "symbol": check_symbol,
@@ -280,7 +396,13 @@ class OperationCenter:
             "market_hours_reason": reason,
             "blocked": blocked,
             "degraded": degraded,
+            "paper_market_hours_strict": strict,
         }
+
+    def is_us_equity_rth_open(self) -> bool:
+        """True si la sesión regular US (referencia SPY) está abierta (ET)."""
+        ok, _reason = self._check_market_hours("SPY", "paper")
+        return ok
 
     @staticmethod
     def _extract_equity_value(account: Any) -> float:
@@ -1302,6 +1424,12 @@ class OperationCenter:
             "auto_pause_on_operational_errors",
             "operational_error_limit",
             "notes",
+            "paper_bypass_exit_now_guard",
+            "paper_bypass_entry_validation_guard",
+            "paper_market_hours_strict",
+            "paper_telegram_trade_alerts",
+            "autonomy_mode",
+            "max_risk_per_trade_pct",
         ):
             if key in payload and payload[key] is not None:
                 state[key] = payload[key]
@@ -1355,10 +1483,25 @@ class OperationCenter:
             "vision": vision_status,
             "executor": executor_status,
             "brain": self.brain.status(),
+            "market_telemetry": self._market_telemetry_snapshot(),
             "monitor_summary": {
                 "account_session": monitor.get("account_session"),
                 "balances": monitor.get("balances") or {},
                 "totals": monitor.get("totals") or {},
+            },
+        }
+
+    def _market_telemetry_snapshot(self) -> dict[str, Any]:
+        telemetry = MarketTelemetryStore().status()
+        return {
+            "scanner_options_flow_enabled": bool(settings.scanner_options_flow_enabled),
+            "runtime_mode": "hybrid_options_intradia" if settings.scanner_options_flow_enabled else "proxy_intradia",
+            "telemetry": telemetry,
+            "config": {
+                "min_dte": int(settings.scanner_options_flow_min_dte),
+                "max_dte": int(settings.scanner_options_flow_max_dte),
+                "expirations": int(settings.scanner_options_flow_expirations),
+                "cache_ttl_sec": int(settings.scanner_options_flow_cache_ttl_sec),
             },
         }
 
@@ -1754,6 +1897,7 @@ class OperationCenter:
             "executor": executor_status,
             "brain": brain_status,
             "brain_council": brain_council,
+            "market_telemetry": self._market_telemetry_snapshot(),
             "chart_execution": self.chart_execution.status(),
             "learning": self.learning.status(account_scope=scope),
             "journal": {
@@ -1796,14 +1940,7 @@ class OperationCenter:
 
     def _load_visual_benchmark_snapshot(self, scorecard: dict[str, Any]) -> dict[str, Any]:
         protocol_path = self.root_path / "reports/trading_self_audit_protocol.json"
-        protocol: dict[str, Any] = {}
-        try:
-            if protocol_path.exists():
-                payload = json.loads(protocol_path.read_text(encoding="utf-8"))
-                if isinstance(payload, dict):
-                    protocol = payload
-        except Exception:
-            protocol = {}
+        protocol = read_trading_self_audit_protocol(protocol_path)
         focus = protocol.get("visual_entry_benchmark_focus") or {}
         indicators = scorecard.get("supporting_indicators") or {}
         metric = (scorecard.get("metrics") or {}).get("visual_benchmark_feedback_score") or {}
@@ -1930,13 +2067,23 @@ class OperationCenter:
         market_hours_blocked = False
         market_hours_degraded = False
         if action in {"preview", "submit"} and symbol_upper:
-            market_hours_ok, market_hours_reason = self._check_market_hours(symbol_upper, scope)
+            if is_close_order and scope == "paper":
+                market_hours_ok, market_hours_reason = True, "close_order_exempt_paper"
+            else:
+                market_hours_ok, market_hours_reason = self._check_market_hours(symbol_upper, scope)
             if not market_hours_ok:
                 if scope == "paper":
-                    market_hours_degraded = True
-                    warnings.append(
-                        f"[paper bypass] Market hours gate would block {action}: {market_hours_reason}."
-                    )
+                    strict_mh = bool(config.get("paper_market_hours_strict"))
+                    if action == "submit" and strict_mh:
+                        market_hours_blocked = True
+                        reasons.append(
+                            f"Market hours gate blocked submit (paper_market_hours_strict): {market_hours_reason}."
+                        )
+                    else:
+                        market_hours_degraded = True
+                        warnings.append(
+                            f"[paper bypass] Market hours gate would block {action}: {market_hours_reason}."
+                        )
                 else:
                     market_hours_blocked = True
                     reasons.append(f"Market hours gate blocked {action}: {market_hours_reason}.")
@@ -2006,6 +2153,14 @@ class OperationCenter:
         )
         reasons.extend(list(entry_validation.get("reasons") or []))
         warnings.extend(list(entry_validation.get("warnings") or []))
+        self._apply_paper_entry_validation_bypass(
+            scope=scope,
+            action=action,
+            config=config,
+            entry_validation=entry_validation,
+            reasons=reasons,
+            warnings=warnings,
+        )
         estimated_open_notional = self._estimate_equity_opening_notional(
             order_copy,
             entry_validation=entry_validation,
@@ -2055,6 +2210,14 @@ class OperationCenter:
         )
         reasons.extend(list(portfolio_risk_guard.get("reasons") or []))
         warnings.extend(list(portfolio_risk_guard.get("warnings") or []))
+        self._apply_paper_risk_guard_bypass(
+            scope=scope,
+            action=action,
+            config=config,
+            portfolio_risk_guard=portfolio_risk_guard,
+            reasons=reasons,
+            warnings=warnings,
+        )
 
         market_context_gate = self._build_market_context_gate(
             order=order_copy,
@@ -2223,6 +2386,18 @@ class OperationCenter:
                             block_reason = str(execution_result.get("reason") or "El ejecutor bloqueo la operacion.")
                             reasons.append(block_reason)
                             operational_failure_reason = block_reason
+                        elif (
+                            scope == "paper"
+                            and action == "submit"
+                            and bool(config.get("paper_telegram_trade_alerts", True))
+                            and execution_result.get("decision") == "paper_submit_sent"
+                        ):
+                            try:
+                                from operations.paper_trade_telegram import notify_paper_submission
+
+                                notify_paper_submission(order_copy, execution_result)
+                            except Exception as _tg_err:
+                                logger.debug("paper telegram notify skipped: %s", _tg_err)
                     except Exception as exc:
                         allowed = False
                         operational_failure_reason = f"executor_exception:{exc}"

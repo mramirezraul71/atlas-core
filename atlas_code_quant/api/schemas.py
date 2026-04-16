@@ -298,6 +298,12 @@ class OperationConfigPayload(BaseModel):
     notes: str = ""
     kill_switch_active: bool = False
     reset_fail_safe: bool = False
+    paper_bypass_exit_now_guard: bool = False
+    paper_bypass_entry_validation_guard: bool = False
+    paper_market_hours_strict: bool = False
+    paper_telegram_trade_alerts: bool = True
+    autonomy_mode: str = "semi"
+    max_risk_per_trade_pct: float = 0.02
 
     @model_validator(mode="before")
     @classmethod
