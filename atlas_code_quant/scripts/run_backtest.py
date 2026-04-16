@@ -1,112 +1,84 @@
-"""Atlas Code-Quant — CLI de backtesting.
-
-Uso:
-    python scripts/run_backtest.py --symbol BTC/USDT --timeframe 1h --limit 500
-    python scripts/run_backtest.py --symbol AAPL --source yfinance --period 1y
-    python scripts/run_backtest.py --symbol BTC/USDT --strategy ml_rf --model-name rf
-
-Genera informe HTML en reports/ y exporta JSON.
-"""
+"""CLI para ejecutar AtlasBacktester (validacion Fase 2)."""
 from __future__ import annotations
 
 import argparse
+import json
+import logging
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+QUANT_ROOT = ROOT / "atlas_code_quant"
+if str(QUANT_ROOT) not in sys.path:
+    sys.path.insert(0, str(QUANT_ROOT))
 
-import logging
+from atlas_code_quant.backtester import AtlasBacktester  # noqa: E402
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("quant.cli")
+logger = logging.getLogger("quant.backtest.cli")
 
 
-def parse_args():
-    p = argparse.ArgumentParser(description="Atlas Code-Quant — Backtesting CLI")
-    p.add_argument("--symbol",     default="BTC/USDT",    help="Par/ticker (ej: BTC/USDT, AAPL)")
-    p.add_argument("--source",     default="ccxt",        choices=["ccxt", "yfinance"])
-    p.add_argument("--exchange",   default="binance",     help="Exchange ccxt (ej: binance)")
-    p.add_argument("--timeframe",  default="1h",          help="Timeframe (ej: 1h, 4h, 1d)")
-    p.add_argument("--limit",      default=500,  type=int, help="Número de velas")
-    p.add_argument("--period",     default="1y",           help="Período yfinance (ej: 1y, 2y)")
-    p.add_argument("--strategy",   default="ma_cross",    choices=["ma_cross", "ml_rf", "ml_gb"])
-    p.add_argument("--fast",       default=10,   type=int, help="MA rápida (ma_cross)")
-    p.add_argument("--slow",       default=50,   type=int, help="MA lenta (ma_cross)")
-    p.add_argument("--capital",    default=10_000, type=float, help="Capital inicial")
-    p.add_argument("--commission", default=0.001, type=float, help="Comisión (0.001 = 0.1%)")
-    p.add_argument("--no-report",  action="store_true",   help="Omitir HTML report")
-    p.add_argument("--model-name", default="rf",          help="Nombre modelo ML")
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="ATLAS Backtester - validacion Fase 2")
+    p.add_argument("--start-date", required=True, help="Inicio YYYY-MM-DD")
+    p.add_argument("--end-date", required=True, help="Fin YYYY-MM-DD")
+    p.add_argument("--symbols", default="AAPL,MSFT,GOOGL,TSLA,NVDA", help="Lista separada por coma")
+    p.add_argument("--timeframe", default="1h", help="Temporalidad (1h,4h,1d)")
+    p.add_argument("--capital", type=float, default=10_000.0)
+    p.add_argument("--risk-per-trade", type=float, default=0.02)
+    p.add_argument("--max-trades-per-cycle", type=int, default=5)
+    p.add_argument("--disable-search", action="store_true")
+    p.add_argument("--report-path", default="", help="Ruta HTML de salida")
+    p.add_argument("--json-out", default="", help="Ruta JSON resumen")
     return p.parse_args()
 
 
-def main():
-    args = parse_args()
-    reports_dir = Path(__file__).resolve().parent.parent / "reports"
-    reports_dir.mkdir(parents=True, exist_ok=True)
-
-    # ── Cargar datos ─────────────────────────────────────────────────────────
-    logger.info("Descargando datos: %s [%s] — %d velas", args.symbol, args.timeframe, args.limit)
-    from data.feed import MarketFeed
-    feed = MarketFeed(exchange_id=args.exchange)
-
-    if args.source == "ccxt":
-        df = feed.ohlcv_ccxt(args.symbol, args.timeframe, limit=args.limit)
-    else:
-        df = feed.ohlcv_yfinance(args.symbol, period=args.period, interval=args.timeframe)
-
-    if df is None or df.empty:
-        logger.error("No se pudo obtener datos para %s", args.symbol)
-        sys.exit(1)
-
-    logger.info("Datos obtenidos: %d velas", len(df))
-
-    # ── Seleccionar estrategia ────────────────────────────────────────────────
-    if args.strategy == "ma_cross":
-        from strategies.ma_cross import MACrossStrategy
-        strategy = MACrossStrategy(
-            "ma_cross", [args.symbol],
-            timeframe=args.timeframe,
-            fast_period=args.fast,
-            slow_period=args.slow,
-        )
-    else:
-        from models.signals import MLSignalStrategy
-        model_name = "rf" if args.strategy == "ml_rf" else "gb"
-        strategy = MLSignalStrategy(
-            f"ml_{model_name}", [args.symbol],
-            model_name=model_name,
-        )
-
-    # ── Ejecutar backtest ─────────────────────────────────────────────────────
-    from backtesting.engine import BacktestConfig, BacktestEngine
-    config = BacktestConfig(
-        initial_capital=args.capital,
-        commission_pct=args.commission,
+def _print_metrics(metrics: dict) -> None:
+    logger.info(
+        "[METRICS] Win rate: %.2f%% | Sharpe: %.2f | Max DD: %.2f%% | PF: %.2f | Trades: %d",
+        float(metrics.get("win_rate_pct", 0.0)),
+        float(metrics.get("sharpe_ratio", 0.0)),
+        float(metrics.get("max_drawdown_pct", 0.0)),
+        float(metrics.get("profit_factor", 0.0)),
+        int(metrics.get("total_trades", 0)),
     )
-    engine = BacktestEngine(strategy=strategy, config=config)
 
-    logger.info("Ejecutando backtest…")
-    result = engine.run(df, args.symbol)
 
-    # ── Mostrar resumen ───────────────────────────────────────────────────────
-    from backtesting.reporter import print_summary
-    print_summary(result)
+def main() -> int:
+    args = parse_args()
+    symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
+    bt = AtlasBacktester(
+        start_date=args.start_date,
+        end_date=args.end_date,
+        initial_capital=args.capital,
+        max_trades_per_cycle=args.max_trades_per_cycle,
+        risk_per_trade=args.risk_per_trade,
+        search_mode=not args.disable_search,
+        timeframe=args.timeframe,
+    )
 
-    # ── Exportar resultados ───────────────────────────────────────────────────
-    safe_sym = args.symbol.replace("/", "-")
-    json_path = reports_dir / f"backtest_{safe_sym}_{args.strategy}.json"
-    from backtesting.reporter import export_json
-    export_json(result, json_path)
-    logger.info("JSON guardado: %s", json_path)
+    logger.info("Running backtest for %s symbols in %s", len(symbols), args.timeframe)
+    result = bt.run(symbols=symbols, timeframe=args.timeframe)
+    metrics = result["metrics"]
+    _print_metrics(metrics)
+    decision = result["decision"]
+    if decision["go_live_approved"]:
+        logger.info("[DECISION] GO-LIVE PHASE 2 APPROVED")
+    else:
+        logger.warning("[DECISION] PARAMETER SEARCH REQUIRED - reasons: %s", ", ".join(decision["reasons"]))
+    html_out = bt.generate_backtest_report(output_path=args.report_path or None)
+    logger.info("[REPORT] Generated: %s", html_out)
 
-    if not args.no_report:
-        html_path = reports_dir / f"backtest_{safe_sym}_{args.strategy}.html"
-        try:
-            from backtesting.reporter import generate_html_report
-            generate_html_report(result, html_path)
-            logger.info("Informe HTML: %s", html_path)
-        except ImportError:
-            logger.warning("plotly no instalado — omitiendo HTML report")
+    if args.json_out:
+        payload = {"result": result, "report_html": html_out}
+        Path(args.json_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.json_out).write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        logger.info("JSON summary: %s", args.json_out)
+    logger.info("[OK] Backtest completed")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
