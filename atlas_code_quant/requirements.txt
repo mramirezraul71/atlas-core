@@ -40,10 +40,8 @@ pyautogui>=0.9.54          # chart_launcher.py — abrir TradingView en Chrome (
 # alpaca-py>=0.20.0         # Alpaca SDK — opcional si se usa acceso directo WS
 
 # ── Fase 3 — escáner (CNN-LSTM, Prophet, on-chain, fundamentales) ─────────────
-# Instalación típica:
-#   pip install tensorflow prophet yfinance
-# On-chain pagado (opcional): pip install glassnode-api
-# tensorflow>=2.14.0
-# prophet>=1.1.0
+# Nota: en PyPI el cliente ligero es "glassnode", no "glassnode-api".
+tensorflow>=2.14.0
+prophet>=1.1.0
 yfinance>=0.2.40
-# glassnode-api # opcional — métricas on-chain con API key
+glassnode>=0.0.2

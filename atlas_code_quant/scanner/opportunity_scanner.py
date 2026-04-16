@@ -421,6 +421,21 @@ class OpportunityScannerService:
         self._tradier_market_scope: str | None = None
         self._cnn_lstm_model: Any = None
         self._prophet_signal_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
+        # Prophet: degradación — si no hay módulo o falla en runtime, se deja de usar sin mutar settings global.
+        self._prophet_module_available: bool = False
+        self._prophet_runtime_disabled: bool = False
+        # Degradación Fase 3: CNN mantiene settings ON sin modelo (_cnn_lstm_model=None).
+        # Prophet: sin paquete → no soft signals; error en prophet_soft_signals → off hasta reiniciar proceso.
+        if settings.scanner_prophet_enabled:
+            try:
+                import prophet  # noqa: F401
+
+                self._prophet_module_available = True
+            except ImportError:
+                self._log(
+                    "warn",
+                    "Prophet no instalado; soft signals Fase 3 desactivados (pip install prophet)",
+                )
         if settings.scanner_cnn_lstm_enabled:
             try:
                 from learning.cnn_lstm_pattern import load_trained_model
@@ -1577,7 +1592,12 @@ class OpportunityScannerService:
                         selection_score = round(selection_score + b, 2)
                 except Exception as exc:
                     self._log("debug", "cnn_lstm_score", reason=str(exc))
-            if settings.scanner_prophet_enabled and len(df) >= int(settings.scanner_prophet_min_bars):
+            if (
+                settings.scanner_prophet_enabled
+                and self._prophet_module_available
+                and not self._prophet_runtime_disabled
+                and len(df) >= int(settings.scanner_prophet_min_bars)
+            ):
                 try:
                     from forecasting.prophet_detector import prophet_soft_signals
 
@@ -1602,7 +1622,12 @@ class OpportunityScannerService:
                             f"Prophet: breakpoint tendencia (Δ {float(sig.get('breakpoint_magnitude') or 0.0):.2f})"
                         )
                 except Exception as exc:
-                    self._log("debug", "prophet_score", reason=str(exc))
+                    self._prophet_runtime_disabled = True
+                    self._log(
+                        "warn",
+                        "Prophet: desactivado tras error en tiempo de ejecución (sin soft gate hasta reiniciar)",
+                        reason=str(exc),
+                    )
             if phase3_ctx.get("fundamental_downweight"):
                 selection_score = round(selection_score * 0.9, 2)
                 phase3_notes.append("Fundamentales débiles: score ×0.9")
