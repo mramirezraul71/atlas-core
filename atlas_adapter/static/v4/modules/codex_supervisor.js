@@ -31,7 +31,7 @@ export default {
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="action-btn" id="cs-refresh">Refrescar</button>
-            <button class="action-btn" id="cs-open-workspace" title="Abre el panel canónico de NEXUS">Ir a NEXUS</button>
+            <button class="action-btn" id="cs-open-workspace" title="Abre el Workspace de ATLAS">Ir a Workspace</button>
             <button class="action-btn" id="cs-link-claude">Vincular suscripción Claude</button>
             <a class="action-btn" href="https://console.anthropic.com/" target="_blank" rel="noopener">Anthropic Console</a>
             <a class="action-btn" href="#/config">AI Config</a>
@@ -102,7 +102,7 @@ export default {
     }
 
     container.querySelector('#cs-refresh')?.addEventListener('click', refresh);
-    container.querySelector('#cs-open-workspace')?.addEventListener('click', () => window.open('/nexus', '_blank'));
+    container.querySelector('#cs-open-workspace')?.addEventListener('click', () => window.open('/workspace', '_blank'));
     container.querySelector('#cs-link-claude')?.addEventListener('click', () => {
       elClaudeBox.style.display = elClaudeBox.style.display === 'none' ? 'block' : 'none';
     });

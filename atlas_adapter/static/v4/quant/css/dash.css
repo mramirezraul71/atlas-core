@@ -154,6 +154,8 @@ body {
   white-space: nowrap;
 }
 .stat-chip.accent { color: var(--accent); border-color: rgba(0,212,170,0.3); }
+.stat-chip.warn { color: var(--yellow); border-color: rgba(246,201,14,0.45); }
+.stat-chip.danger { color: var(--red); border-color: rgba(245,101,101,0.45); }
 
 /* ── Shell layout ────────────────────────────────────────────────── */
 .shell {

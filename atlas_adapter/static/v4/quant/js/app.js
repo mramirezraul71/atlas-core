@@ -43,8 +43,19 @@ function setKPI(id, value) {
   if (el) el.textContent = value;
 }
 
-function syncLabel(reconciliation) {
+function isLightweightSnapshot(snapshot) {
+  return Boolean(
+    snapshot?.lightweight_mode ||
+    snapshot?.source === 'lightweight' ||
+    String(snapshot?.source_label || '').toLowerCase().includes('lightweight')
+  );
+}
+
+function syncLabel(reconciliation, snapshot = null) {
   const state = reconciliation?.state || 'unknown';
+  if (isLightweightSnapshot(snapshot) && (state === 'failed' || state === 'stale' || state === 'unknown')) {
+    return 'SYNC LITE';
+  }
   if (state === 'healthy') return 'SYNC OK';
   if (state === 'degraded') return 'SYNC WARN';
   if (state === 'failed') return 'SYNC FAIL';
@@ -52,12 +63,23 @@ function syncLabel(reconciliation) {
   return 'SYNC --';
 }
 
+function applySyncChipState(label) {
+  const el = document.getElementById('chip-sync');
+  if (!el) return;
+  let cls = 'stat-chip';
+  if (label.includes('OK')) cls = 'stat-chip accent';
+  else if (label.includes('LITE') || label.includes('WARN')) cls = 'stat-chip warn';
+  else if (label.includes('FAIL') || label.includes('STALE')) cls = 'stat-chip danger';
+  el.className = cls;
+  el.textContent = label;
+}
+
 function renderCanonicalMeta(snapshot) {
   if (!snapshot) return;
   const balances = snapshot.balances || {};
   const totals = snapshot.totals || {};
   setText('chip-source', `${snapshot.source_label || 'Tradier'} · ${snapshot.account_scope || QUANT_SCOPE}`);
-  setText('chip-sync', syncLabel(snapshot.reconciliation));
+  applySyncChipState(syncLabel(snapshot.reconciliation, snapshot));
   setText('chip-positions', `${totals.positions || 0} pos`);
   if (balances.total_equity != null) setText('chip-equity', fmt.usd(balances.total_equity));
 }
@@ -71,7 +93,7 @@ function renderPositionsRealtime(snapshot) {
   setText('pos-mode-badge', String(snapshot.account_scope || QUANT_SCOPE).toUpperCase());
   setText('pos-unrealized', fmt.usd(snapshot.total_pnl ?? 0));
   setText('pos-exposure', fmt.usd(snapshot.gross_exposure ?? 0));
-  setText('pos-cb', syncLabel(snapshot.reconciliation));
+  setText('pos-cb', syncLabel(snapshot.reconciliation, snapshot));
   if (!positions.length) {
     tbody.innerHTML = '<tr class="empty-row"><td colspan="11">Sin posiciones abiertas</td></tr>';
     return;

@@ -215,6 +215,7 @@ class QuantWS {
       window._quantWsConnected = true;
       document.getElementById('ws-dot')?.classList.add('connected');
       document.getElementById('ws-dot')?.classList.remove('error');
+      document.getElementById('ws-dot')?.classList.remove('polling');
       this._emit('connected');
     };
 
@@ -229,6 +230,9 @@ class QuantWS {
     this._ws.onclose = () => {
       window._quantWsConnected = false;
       document.getElementById('ws-dot')?.classList.remove('connected');
+      if (!window._quantPollingMode) {
+        document.getElementById('ws-dot')?.classList.remove('polling');
+      }
       this._emit('disconnected');
       this._ws = null;
       if (this._explicitlyClosed) return;
@@ -267,6 +271,9 @@ class QuantWS {
       this._ws.close(1000, 'Dashboard hidden');
     }
     this._ws = null;
+    if (!window._quantPollingMode) {
+      document.getElementById('ws-dot')?.classList.remove('polling');
+    }
   }
 
   on(event, cb) {

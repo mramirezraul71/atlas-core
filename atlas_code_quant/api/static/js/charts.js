@@ -22,6 +22,26 @@ const CHART_MIN_HEIGHT = 180;
 const CHART_MAX_HEIGHT = 320;
 const CHART_DEFAULT_HEIGHT = 260;
 
+function renderEmptyStateChart(ctx, message) {
+  if (!ctx || !CHART_JS) return;
+  if (ctx._chartInstance) ctx._chartInstance.destroy();
+  ctx._chartInstance = new CHART_JS(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        title: { display: true, text: message, color: COLORS.text },
+      },
+      scales: {
+        x: { display: false, grid: { display: false } },
+        y: { display: false, grid: { display: false } },
+      },
+    },
+  });
+}
+
 if (CHART_JS) {
   CHART_JS.defaults.color = COLORS.text;
   CHART_JS.defaults.borderColor = COLORS.grid;
@@ -178,7 +198,10 @@ function renderPnlDistChart(canvasId, pnls = []) {
 
   // Build histogram bins
   const normalizedPnls = normalizeNumericArray(pnls);
-  if (!normalizedPnls.length) return;
+  if (!normalizedPnls.length) {
+    renderEmptyStateChart(ctx, 'Sin operaciones cerradas para distribución PnL');
+    return;
+  }
   const min = Math.min(...normalizedPnls), max = Math.max(...normalizedPnls);
   const bins = 20;
   const width = (max - min) / bins || 1;
@@ -259,6 +282,10 @@ function renderStreakChart(canvasId, trades = []) {
   const ctx = document.getElementById(canvasId);
   if (!ctx) return;
   if (!CHART_JS) return;
+  if (!Array.isArray(trades) || trades.length === 0) {
+    renderEmptyStateChart(ctx, 'Sin trades recientes para calcular racha');
+    return;
+  }
   const values = trades.map(t => t.pnl || 0);
   const colors = values.map(v => v >= 0 ? 'rgba(72,187,120,0.75)' : 'rgba(245,101,101,0.75)');
 
@@ -390,6 +417,10 @@ function renderHeatmapChart(canvasId, heatmapData = []) {
   const ctx = document.getElementById(canvasId);
   if (!ctx) return;
   if (!CHART_JS) return;
+  if (!Array.isArray(heatmapData) || heatmapData.length === 0) {
+    renderEmptyStateChart(ctx, 'Sin histórico suficiente para heatmap');
+    return;
+  }
 
   const days   = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
   const hours  = Array.from({length: 24}, (_, i) => `${i}h`);
@@ -466,7 +497,10 @@ function renderRollingSharpeChart(canvasId, equityCurve = []) {
 
   // Compute rolling log-returns and rolling Sharpe (20-period)
   const WINDOW = 20;
-  if (equityCurve.length < WINDOW + 1) return;
+  if (!Array.isArray(equityCurve) || equityCurve.length < WINDOW + 1) {
+    renderEmptyStateChart(ctx, 'Se requieren al menos 21 puntos para Sharpe rolling');
+    return;
+  }
 
   const values = equityCurve.map(p => p.value);
   const labels = equityCurve.map(p => {

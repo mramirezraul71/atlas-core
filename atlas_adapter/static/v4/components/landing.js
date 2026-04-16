@@ -271,7 +271,7 @@ export function render(container) {
 
   const CHIP_ROUTES = {
     health:    { hash: '/health' },
-    workspace: { href: '/nexus', newTab: true },
+    workspace: { href: '/workspace', newTab: true },
     bitacora:  { hash: '/bitacora' },
     'rauli-vision': { hash: '/apps/vision' },
     'rauli-panaderia': { hash: '/apps/panaderia' },
@@ -316,7 +316,7 @@ export function render(container) {
 
   const TILE_ROUTES = {
     'assistant':    { hash: '/chat' },
-    'workspace-ext':{ href: '/nexus', newTab: true },
+    'workspace-ext':{ href: '/workspace', newTab: true },
     'governance':   { hash: '/autonomy' },
     'approvals':    { hash: '/approvals' },
     'monitor':      { hash: '/health' },

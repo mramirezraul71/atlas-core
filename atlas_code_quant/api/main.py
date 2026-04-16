@@ -3291,22 +3291,32 @@ async def dashboard_overview(
             )
             if math.isfinite(pnl_value)
         ]
-        wins = [pnl for pnl in trade_pnls if pnl > 0]
-        losses = [pnl for pnl in trade_pnls if pnl < 0]
-        realized_pnl = float(sum(trade_pnls))
+        signal_threshold = 1e-9
+        informative_trade_pnls = [pnl for pnl in trade_pnls if abs(pnl) > signal_threshold]
+        has_statistical_signal = len(informative_trade_pnls) >= 2
+        if not has_statistical_signal:
+            # Evita curvas/plots engañosos cuando el journal solo aporta cierres flat (pnl=0).
+            equity_curve = []
+            drawdown_curve = []
+        wins = [pnl for pnl in informative_trade_pnls if pnl > 0]
+        losses = [pnl for pnl in informative_trade_pnls if pnl < 0]
+        realized_pnl = float(sum(informative_trade_pnls))
         profit_factor = round(sum(wins) / abs(sum(losses)), 4) if losses else None
-        expectancy = round(realized_pnl / len(trade_pnls), 4) if trade_pnls else None
-        win_rate_pct = round(len(wins) / len(trade_pnls) * 100.0, 2) if trade_pnls else None
+        expectancy = round(realized_pnl / len(informative_trade_pnls), 4) if informative_trade_pnls else None
+        win_rate_pct = round(len(wins) / len(informative_trade_pnls) * 100.0, 2) if informative_trade_pnls else None
         sharpe_ratio = None
-        if len(trade_pnls) >= 2:
-            sigma = _stats.stdev(trade_pnls)
+        if len(informative_trade_pnls) >= 2:
+            sigma = _stats.stdev(informative_trade_pnls)
             if sigma > 1e-9:
-                sharpe_ratio = round((_stats.mean(trade_pnls) / sigma) * math.sqrt(len(trade_pnls)), 4)
+                sharpe_ratio = round((_stats.mean(informative_trade_pnls) / sigma) * math.sqrt(len(informative_trade_pnls)), 4)
         max_dd = min((pt["value"] for pt in drawdown_curve), default=0)
         calmar = round(realized_pnl / abs(max_dd), 3) if max_dd < -0.001 else None
 
         heatmap_buckets: dict[tuple[int, int], dict[str, int]] = {}
         for trade in chart_trades:
+            pnl_value = float(trade.get("pnl", 0) or 0)
+            if abs(pnl_value) <= signal_threshold:
+                continue
             ts = trade.get("exit_time")
             if not ts:
                 continue
@@ -3318,7 +3328,7 @@ async def dashboard_overview(
             key = (int(dt.weekday()), int(dt.hour))
             bucket = heatmap_buckets.setdefault(key, {"trades": 0, "wins": 0})
             bucket["trades"] += 1
-            if float(trade.get("pnl", 0) or 0) > 0:
+            if pnl_value > 0:
                 bucket["wins"] += 1
         heatmap = [
             {
@@ -3332,13 +3342,13 @@ async def dashboard_overview(
         ]
 
         mc_data = None
-        if len(trade_pnls) >= 5:
+        if len(informative_trade_pnls) >= 5:
             import random as _rand
             _rand.seed(42)
-            n_paths, n_steps = 200, min(50, len(trade_pnls))
+            n_paths, n_steps = 200, min(50, len(informative_trade_pnls))
             paths = []
             for _ in range(n_paths):
-                sample = _rand.choices(trade_pnls, k=n_steps)
+                sample = _rand.choices(informative_trade_pnls, k=n_steps)
                 cumulative = 0.0
                 path = []
                 for pnl in sample:
@@ -3380,17 +3390,19 @@ async def dashboard_overview(
             "win_rate_pct": win_rate_pct,
             "profit_factor": profit_factor,
             "expectancy": expectancy,
-            "total_trades": len(chart_trades),
+            "total_trades": len(informative_trade_pnls),
+            "raw_total_trades": len(chart_trades),
             "open_positions": int(canonical_totals.get("positions") or 0),
             "max_drawdown_pct": round(max_dd, 3) if drawdown_curve else None,
             "calmar_ratio": calmar,
             "equity_curve": equity_curve,
             "drawdown_curve": drawdown_curve,
-            "trade_pnls": trade_pnls,
+            "trade_pnls": informative_trade_pnls,
             "monte_carlo": mc_data,
-            "recent_trades": [{"pnl": trade.get("pnl", 0)} for trade in chart_trades[-30:]],
+            "recent_trades": [{"pnl": pnl} for pnl in informative_trade_pnls[-30:]],
             "heatmap": heatmap,
             "daily_pnl_pct": None,
+            "stats_signal_ok": has_statistical_signal,
             "source": canonical_snapshot.get("source"),
             "source_label": canonical_snapshot.get("source_label"),
             "account_scope": canonical_snapshot.get("account_scope"),

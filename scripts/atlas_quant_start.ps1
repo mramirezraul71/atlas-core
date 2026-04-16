@@ -34,10 +34,17 @@
 .PARAMETER EnableReload
     Activa uvicorn --reload para desarrollo interactivo. Por defecto desactivado en runbooks operacionales.
 
+.PARAMETER FullStartup
+    Equivalente a forzar QUANT_LIGHTWEIGHT_STARTUP=false (arranque completo).
+
+.PARAMETER Lightweight
+    Activa QUANT_LIGHTWEIGHT_STARTUP=true (boot mínimo). El dashboard puede mostrar métricas incompletas o SYNC degradado hasta warm-up.
+
 .EXAMPLE
     .\atlas_quant_start.ps1
     .\atlas_quant_start.ps1 -Port 8795 -AutoCycle -CycleIntervalSec 90
     .\atlas_quant_start.ps1 -LogOnly
+    .\atlas_quant_start.ps1 -Lightweight
 #>
 param(
     [string]$RepoRoot        = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
@@ -48,7 +55,8 @@ param(
     [int]$MaxWaitSec         = 60,
     [switch]$LogOnly,
     [switch]$EnableReload,
-    [switch]$FullStartup
+    [switch]$FullStartup,
+    [switch]$Lightweight
 )
 
 $ErrorActionPreference = "Stop"
@@ -192,20 +200,23 @@ _OpsLog "Iniciando ATLAS-Quant en puerto $Port (AutoCycle=$AutoCycle CycleInterv
 _DiagLog "START port=$Port AutoCycle=$AutoCycle"
 Write-Host "[quant-start] ATLAS-Quant startup -- puerto $Port"
 
-$lightweightRequested = $false
-if (-not $FullStartup -and -not $AutoCycle -and -not $env:QUANT_LIGHTWEIGHT_STARTUP) {
+if ($FullStartup) {
+    $env:QUANT_LIGHTWEIGHT_STARTUP = "false"
+    _OpsLog "FullStartup solicitado; QUANT_LIGHTWEIGHT_STARTUP=false"
+    Write-Host "[quant-start] Full startup solicitado."
+} elseif ($Lightweight) {
     $env:QUANT_LIGHTWEIGHT_STARTUP = "true"
     $env:QUANT_STARTUP_VISUAL_CONNECT_ENABLED = "false"
     if (-not $env:QUANT_DASHBOARD_WS_LIMIT) { $env:QUANT_DASHBOARD_WS_LIMIT = "2" }
     if (-not $env:TRADIER_LIVE_UPDATE_INTERVAL_SEC) { $env:TRADIER_LIVE_UPDATE_INTERVAL_SEC = "10" }
-    $lightweightRequested = $true
-    _OpsLog "Lightweight startup habilitado por defecto para estabilidad del dashboard"
-    Write-Host "[quant-start] Lightweight startup habilitado para estabilidad del dashboard."
-} elseif ($FullStartup -and -not $AutoCycle) {
+    _OpsLog "Lightweight startup explícito (-Lightweight)"
+    Write-Host "[quant-start] Modo -Lightweight: boot rápido; métricas ricas pueden verse incompletas hasta que termine el warm-up."
+} elseif (-not $env:QUANT_LIGHTWEIGHT_STARTUP) {
     $env:QUANT_LIGHTWEIGHT_STARTUP = "false"
-    _OpsLog "FullStartup solicitado; QUANT_LIGHTWEIGHT_STARTUP=false"
-    Write-Host "[quant-start] Full startup solicitado."
+    _OpsLog "Arranque estándar: QUANT_LIGHTWEIGHT_STARTUP=false (métricas canónicas)"
+    Write-Host "[quant-start] Arranque estándar (métricas completas). Usa -Lightweight solo si necesitas boot mínimo."
 }
+$lightweightRequested = ($env:QUANT_LIGHTWEIGHT_STARTUP -eq "true")
 
 # ── Step 1: Check if already running ─────────────────────────────────────────
 $portOwners = Get-PortOwners -p $Port

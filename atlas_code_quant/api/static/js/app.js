@@ -101,14 +101,24 @@ let _latestVisualState = null;
 let _lastOverviewSuccessAt = 0;
 let _healthFailures = 0;
 let _forcePollingMode = false;
+window._quantPollingMode = false;
+let _lastSnapshotWasLightweight = false;
+let _lastReconciliation = null;
+let _lastCanonicalGeneratedAt = null;
+let _realtimeEquityCurve = [];
+const _realtimeMaxPoints = 360;
 
 function colorClass(val) {
   if (val == null) return '';
   return parseFloat(val) >= 0 ? 'green' : 'red';
 }
 
-function syncLabel(reconciliation) {
+function syncLabel(reconciliation, snapshot = null) {
   const state = reconciliation?.state || 'unknown';
+  const lightweight = isLightweightSnapshot(snapshot);
+  if (lightweight && (state === 'failed' || state === 'stale' || state === 'unknown')) {
+    return 'SYNC LITE';
+  }
   if (state === 'healthy') return 'SYNC OK';
   if (state === 'degraded') return 'SYNC WARN';
   if (state === 'failed') return 'SYNC FAIL';
@@ -134,6 +144,7 @@ function isSparseOperationalSnapshot(snapshot) {
 
 function renderCanonicalMeta(snapshot) {
   if (!snapshot) return;
+  _lastSnapshotWasLightweight = isLightweightSnapshot(snapshot);
   const sparseSnapshot = isSparseOperationalSnapshot(snapshot);
   if (!sparseSnapshot) {
     _latestCanonicalSnapshot = snapshot;
@@ -151,11 +162,14 @@ function renderCanonicalMeta(snapshot) {
   const totals = snapshot.totals || {};
   const balances = snapshot.balances || {};
   const reconciliation = snapshot.reconciliation || {};
+  _lastReconciliation = reconciliation;
+  _lastCanonicalGeneratedAt = snapshot.generated_at || _lastCanonicalGeneratedAt;
   const sourceLabel = snapshot.lightweight_mode
     ? `${snapshot.source_label || 'Quant'} · lightweight`
     : (snapshot.source_label || 'Tradier');
   setElText('chip-source', `${sourceLabel} · ${snapshot.account_scope || QUANT_SCOPE}`);
-  setElText('chip-sync', syncLabel(reconciliation));
+  updateSyncChipState(syncLabel(reconciliation, snapshot));
+  updateWsModeChip();
   setElText('chip-positions', `${totals.positions || 0} pos`);
   if (balances.total_equity != null) {
     setElText('chip-equity', fmt.usd(balances.total_equity));
@@ -167,11 +181,108 @@ function renderCanonicalMeta(snapshot) {
   const posSource = document.getElementById('pos-source-badge');
   if (posSource) posSource.textContent = `Fuente ${snapshot.source_label || 'Tradier'}`;
   const posSync = document.getElementById('pos-sync-badge');
-  if (posSync) posSync.textContent = syncLabel(reconciliation);
+  if (posSync) posSync.textContent = syncLabel(reconciliation, snapshot);
 }
 
 function isLightweightSnapshot(snapshot) {
   return Boolean(snapshot?.lightweight_mode || snapshot?.source === 'lightweight');
+}
+
+function updateWsModeChip() {
+  const chip = document.getElementById('chip-ws-mode');
+  if (!chip) return;
+  let text = 'WS: --';
+  let klass = 'stat-chip';
+  const inferredLitePolling = !window._quantWsConnected && _lastSnapshotWasLightweight;
+  if (window._quantPollingMode || inferredLitePolling) {
+    text = _lastSnapshotWasLightweight ? 'WS: POLLING (LITE)' : 'WS: POLLING';
+    klass = 'stat-chip warn';
+    const wsDot = document.getElementById('ws-dot');
+    if (wsDot && !wsDot.classList.contains('connected')) {
+      wsDot.classList.remove('error');
+      wsDot.classList.add('polling');
+      wsDot.title = 'Modo polling activo';
+    }
+  } else if (window._quantWsConnected) {
+    text = 'WS: LIVE';
+    klass = 'stat-chip accent';
+  } else {
+    text = 'WS: RECONNECT';
+  }
+  chip.className = klass;
+  chip.textContent = text;
+  updateSyncChipState();
+}
+
+function updateSyncChipState(nextText = null) {
+  const chip = document.getElementById('chip-sync');
+  if (!chip) return;
+
+  let text = String(nextText || chip.textContent || 'SYNC --').trim() || 'SYNC --';
+  let klass = 'stat-chip';
+
+  if (_backendOnline === false) {
+    text = 'SYNC OFFLINE';
+    klass = 'stat-chip danger';
+  } else if (window._quantPollingMode) {
+    if (_lastSnapshotWasLightweight && (text === 'SYNC --' || text === 'SYNC FAIL' || text === 'SYNC STALE')) {
+      text = 'SYNC LITE';
+    } else if (!_lastSnapshotWasLightweight && text === 'SYNC --') {
+      text = 'SYNC WARN';
+    }
+    klass = 'stat-chip warn';
+  } else {
+    if (text === 'SYNC --' && window._quantWsConnected) {
+      text = 'SYNC OK';
+    }
+    if (text.includes('FAIL') || text.includes('OFFLINE') || text.includes('STALE')) {
+      klass = 'stat-chip danger';
+    } else if (text.includes('WARN') || text.includes('LITE')) {
+      klass = 'stat-chip warn';
+    } else if (text.includes('OK')) {
+      klass = 'stat-chip accent';
+    }
+  }
+
+  chip.className = klass;
+  chip.textContent = text;
+  chip.title = buildSyncChipTooltip(text);
+}
+
+function buildSyncChipTooltip(syncText) {
+  const rec = _lastReconciliation || {};
+  if (_backendOnline === false) {
+    return 'Backend offline en puerto 8795. Reintentando health-check y reconexion WS.';
+  }
+
+  const details = [];
+  details.push(`Estado: ${syncText}`);
+
+  if (window._quantPollingMode) {
+    details.push(_lastSnapshotWasLightweight ? 'Transporte: polling (lightweight)' : 'Transporte: polling');
+  } else if (window._quantWsConnected) {
+    details.push('Transporte: websocket live');
+  } else {
+    details.push('Transporte: reconnect');
+  }
+
+  if (rec.state) details.push(`Reconciliation: ${rec.state}`);
+  const reason = rec.reason || rec.reason_code || rec.message;
+  if (reason) details.push(`Motivo: ${reason}`);
+
+  const lagCandidate = rec.lag_ms ?? rec.staleness_ms ?? rec.age_ms;
+  const lagValue = Number(lagCandidate);
+  if (Number.isFinite(lagValue)) details.push(`Lag: ${Math.round(lagValue)} ms`);
+
+  const updatedAt = rec.updated_at || rec.generated_at || rec.last_success_at || _lastCanonicalGeneratedAt;
+  if (updatedAt) {
+    const parsed = new Date(updatedAt);
+    if (!Number.isNaN(parsed.getTime())) {
+      details.push(`Actualizado: ${parsed.toLocaleString()}`);
+    }
+  }
+
+  return details.join(' | ');
 }
 
 function setEmptyRow(tbodyId, colspan, message) {
@@ -192,6 +303,15 @@ function useCachedModuleState(message) {
 function enablePollingOnlyMode(reason = 'lightweight_mode') {
   if (_forcePollingMode) return;
   _forcePollingMode = true;
+  window._quantPollingMode = true;
+  _lastSnapshotWasLightweight = true;
+  const wsDot = document.getElementById('ws-dot');
+  if (wsDot) {
+    wsDot.classList.remove('connected', 'error');
+    wsDot.classList.add('polling');
+    wsDot.title = 'Modo polling activo (WS deshabilitado por snapshot lightweight)';
+  }
+  updateWsModeChip();
   try {
     quantWS.close();
   } catch (_) {}
@@ -273,7 +393,7 @@ function renderPositionsTable(snapshot) {
     tbody.innerHTML = '<tr class="empty-row"><td colspan="15">Sin posiciones abiertas</td></tr>';
     document.getElementById('pos-unrealized').textContent = fmt.usd(0);
     document.getElementById('pos-exposure').textContent = fmt.usd(snapshot?.gross_exposure || 0);
-    document.getElementById('pos-cb').textContent = syncLabel(snapshot?.reconciliation);
+    document.getElementById('pos-cb').textContent = syncLabel(snapshot?.reconciliation, snapshot);
     return;
   }
 
@@ -317,7 +437,7 @@ function renderPositionsTable(snapshot) {
   document.getElementById('pos-unrealized').className =
     `kpi-value ${totalUnrealized >= 0 ? 'green' : 'red'}`;
   document.getElementById('pos-exposure').textContent = fmt.usd(snapshot?.gross_exposure || 0);
-  document.getElementById('pos-cb').textContent = syncLabel(snapshot?.reconciliation);
+  document.getElementById('pos-cb').textContent = syncLabel(snapshot?.reconciliation, snapshot);
 }
 
 function renderOverviewHistory(meta) {
@@ -461,6 +581,59 @@ function renderOverviewRealtime(snapshot, overview = null) {
   } else if (monitorSummary.generated_at) {
     renderOverviewHistory({ historical_source: { label: 'Histórico journal + operativa Tradier' } });
   }
+
+  const hasHistoricalSignal = Boolean(
+    overview &&
+    overview.stats_signal_ok !== false &&
+    Array.isArray(overview.equity_curve) &&
+    overview.equity_curve.length > 1
+  );
+  const rtCurve = recordRealtimeEquityPoint(snapshot);
+  if (!hasHistoricalSignal && rtCurve.length > 1) {
+    if (!_equityChart) {
+      _equityChart = QuantCharts.renderEquityChart('chart-equity', rtCurve);
+    } else {
+      QuantCharts.safeSetSeriesData(_equityChart.series, rtCurve);
+    }
+    const rtDrawdown = deriveDrawdownFromCurve(rtCurve);
+    if (!_ddChart) {
+      _ddChart = QuantCharts.renderDrawdownChart('chart-drawdown', rtDrawdown);
+    } else {
+      QuantCharts.safeSetSeriesData(_ddChart.series, rtDrawdown);
+    }
+  }
+}
+
+function recordRealtimeEquityPoint(snapshot) {
+  const equity = Number(snapshot?.balances?.total_equity);
+  if (!Number.isFinite(equity)) return _realtimeEquityCurve;
+  const tsRaw = snapshot?.generated_at || new Date().toISOString();
+  const tsParsed = Date.parse(tsRaw);
+  let unix = Number.isFinite(tsParsed) ? Math.floor(tsParsed / 1000) : Math.floor(Date.now() / 1000);
+  if (_realtimeEquityCurve.length) {
+    const last = _realtimeEquityCurve[_realtimeEquityCurve.length - 1];
+    if (unix < last.time) unix = last.time;
+    if (unix === last.time) {
+      last.value = Number(equity.toFixed(2));
+      return _realtimeEquityCurve;
+    }
+  }
+  _realtimeEquityCurve.push({ time: unix, value: Number(equity.toFixed(2)) });
+  if (_realtimeEquityCurve.length > _realtimeMaxPoints) {
+    _realtimeEquityCurve = _realtimeEquityCurve.slice(-_realtimeMaxPoints);
+  }
+  return _realtimeEquityCurve;
+}
+
+function deriveDrawdownFromCurve(curve = []) {
+  if (!Array.isArray(curve) || curve.length === 0) return [];
+  let peak = Number(curve[0]?.value || 0);
+  return curve.map((point) => {
+    const value = Number(point?.value || 0);
+    if (value > peak) peak = value;
+    const dd = peak > 0 ? ((value - peak) / peak) * 100 : 0;
+    return { time: point.time, value: Number(dd.toFixed(4)) };
+  });
 }
 
 function renderPositionsRealtime(snapshot) {
@@ -492,9 +665,11 @@ function _setBackendState(online) {
       document.body.prepend(banner);
     }
     document.getElementById('chip-uptime')?.setAttribute('data-offline', '1');
+    updateSyncChipState('SYNC OFFLINE');
   } else {
     banner?.remove();
     document.getElementById('chip-uptime')?.removeAttribute('data-offline');
+    updateSyncChipState();
     // Evitar doble loadOverview al arranque (null → true); solo refrescar tras caída real
     if (wasExplicitlyOffline) {
       loadOverview();
@@ -654,7 +829,10 @@ async function loadOverview() {
     notifyAtlas('handleDashboardUpdate', canonicalData || m);
 
     // ── Equity curve (TradingView) ──
-    const eq = QuantCharts.normalizeSeriesData(m.equity_curve || []);
+    const hasHistoricalSignal = m?.stats_signal_ok !== false && Array.isArray(m?.equity_curve) && m.equity_curve.length > 1;
+    const eq = hasHistoricalSignal
+      ? QuantCharts.normalizeSeriesData(m.equity_curve || [])
+      : QuantCharts.normalizeSeriesData(_realtimeEquityCurve || []);
     if (!_equityChart) {
       _equityChart = QuantCharts.renderEquityChart('chart-equity', eq);
     } else {
@@ -662,7 +840,9 @@ async function loadOverview() {
     }
 
     // ── Drawdown ──
-    const dd = QuantCharts.normalizeSeriesData(m.drawdown_curve || []);
+    const dd = hasHistoricalSignal
+      ? QuantCharts.normalizeSeriesData(m.drawdown_curve || [])
+      : QuantCharts.normalizeSeriesData(deriveDrawdownFromCurve(eq));
     if (!_ddChart) {
       _ddChart = QuantCharts.renderDrawdownChart('chart-drawdown', dd);
     } else {
@@ -671,24 +851,20 @@ async function loadOverview() {
 
     // ── PnL distribution ──
     const pnls = QuantCharts.normalizeNumericArray(m.trade_pnls || []);
-    if (pnls.length) QuantCharts.renderPnlDistChart('chart-pnl-dist', pnls);
+    QuantCharts.renderPnlDistChart('chart-pnl-dist', pnls);
 
     // ── Monte Carlo ──
     QuantCharts.renderMonteCarloChart('chart-mc', m.monte_carlo || null);
 
     // ── Win/Loss streak ──
     const trades = m.recent_trades || [];
-    if (trades.length) QuantCharts.renderStreakChart('chart-streak', trades);
+    QuantCharts.renderStreakChart('chart-streak', trades);
 
     // ── Heatmap de performance (día × hora) ──
-    if (m.heatmap?.length) {
-      QuantCharts.renderHeatmapChart('chart-heatmap', m.heatmap);
-    }
+    QuantCharts.renderHeatmapChart('chart-heatmap', m.heatmap || []);
 
     // ── Rolling Sharpe ──
-    if (eq.length > 22) {
-      QuantCharts.renderRollingSharpeChart('chart-rolling-sharpe', eq);
-    }
+    QuantCharts.renderRollingSharpeChart('chart-rolling-sharpe', eq);
 
   } catch (e) {
     console.error('loadOverview failed', e);
@@ -1208,13 +1384,21 @@ function initWS() {
   if (window.__quantWsHandlersBound) return;
   window.__quantWsHandlersBound = true;
   quantWS.on('connected', () => {
+    window._quantPollingMode = false;
+    const wsDot = document.getElementById('ws-dot');
+    if (wsDot) {
+      wsDot.classList.remove('polling');
+      wsDot.title = 'WebSocket conectado';
+    }
     window._quantWsConnected = true;
+    updateWsModeChip();
     _setBackendState(true);
     pollHealth();
   });
 
   quantWS.on('disconnected', () => {
     window._quantWsConnected = false;
+    updateWsModeChip();
   });
 
   quantWS.on('quant.live_update', (msg) => {
@@ -1310,6 +1494,8 @@ document.getElementById('ac-refresh')?.addEventListener('click', () => { if (win
 function initDashboardApp() {
   if (window.__atlasDashboardStarted) return;
   window.__atlasDashboardStarted = true;
+  updateWsModeChip();
+  updateSyncChipState();
   initNav();
   startClock();
   loadOverview();
