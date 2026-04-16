@@ -24,6 +24,11 @@ _DEFAULT_STATE = {
     "notes": "Modo de camara directa robot para pruebas simuladas.",
 }
 
+_SUPPORTED_MODES = ["off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge", "insta360"]
+_PROVIDER_ALIASES = {
+    "insta360_pending": "insta360",
+}
+
 
 class SensorVisionService:
     def __init__(self, state_path: Path | None = None) -> None:
@@ -45,6 +50,7 @@ class SensorVisionService:
             if isinstance(data, dict):
                 merged = deepcopy(_DEFAULT_STATE)
                 merged.update(data)
+                merged["provider"] = self._normalize_provider(merged.get("provider"))
                 return merged
         except Exception:
             pass
@@ -59,6 +65,13 @@ class SensorVisionService:
     @staticmethod
     def _clean(value: str | None) -> str:
         return (value or "").strip().rstrip("/")
+
+    @staticmethod
+    def _normalize_provider(value: Any) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return "direct_nexus"
+        return _PROVIDER_ALIASES.get(raw, raw)
 
     def _push_base_url(self) -> str:
         return self._clean(os.getenv("ATLAS_PUSH_BASE_URL")) or "http://127.0.0.1:8791"
@@ -338,7 +351,7 @@ class SensorVisionService:
     ) -> dict[str, Any]:
         state = self._load()
         if provider is not None:
-            state["provider"] = str(provider)
+            state["provider"] = self._normalize_provider(provider)
         if operator_present is not None:
             state["operator_present"] = bool(operator_present)
         if screen_integrity_ok is not None:
@@ -379,7 +392,7 @@ class SensorVisionService:
         _insta360_available() siempre. El bridge PUSH usa timeout acotado (no el timeout operativo largo).
         """
         state = self._load()
-        provider = str(state.get("provider") or "direct_nexus")
+        provider = self._normalize_provider(state.get("provider"))
         bridge_status: dict[str, Any] | None = None
         desktop_ok = False
         insta360_ok = False
@@ -413,7 +426,7 @@ class SensorVisionService:
 
         return {
             **state,
-            "supported_modes": ["off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge", "insta360"],
+            "supported_modes": list(_SUPPORTED_MODES),
             "desktop_capture_available": desktop_ok if provider == "desktop_capture" else None,
             "insta360_available": insta360_ok if provider == "insta360" else None,
             "atlas_push_bridge_status": bridge_status,
@@ -425,12 +438,12 @@ class SensorVisionService:
 
     def status(self, *, fast: bool = False) -> dict[str, Any]:
         state = self._load()
-        provider = str(state.get("provider") or "direct_nexus")
+        provider = self._normalize_provider(state.get("provider"))
         if fast:
             provider_ready = provider in {"off", "manual"} or bool(state.get("screen_integrity_ok"))
             return {
                 **state,
-                "supported_modes": ["off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge", "insta360"],
+                "supported_modes": list(_SUPPORTED_MODES),
                 "desktop_capture_available": provider == "desktop_capture",
                 "insta360_available": provider == "insta360",
                 "atlas_push_bridge_status": None,
@@ -453,7 +466,7 @@ class SensorVisionService:
         )
         return {
             **state,
-            "supported_modes": ["off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge", "insta360"],
+            "supported_modes": list(_SUPPORTED_MODES),
             "desktop_capture_available": self._desktop_capture_available(),
             "insta360_available": insta360_ok,
             "atlas_push_bridge_status": bridge_status,
@@ -466,7 +479,7 @@ class SensorVisionService:
     def diagnose(self) -> dict[str, Any]:
         """Diagnóstico detallado del proveedor de visión — incluye causas de provider_ready=False."""
         state = self._load()
-        provider = str(state.get("provider") or "direct_nexus")
+        provider = self._normalize_provider(state.get("provider"))
         checks: list[dict[str, Any]] = []
 
         # NEXUS robot check (port 8002)
@@ -562,7 +575,7 @@ class SensorVisionService:
     def capture_context_snapshot(self, *, label: str = "operation") -> dict[str, Any]:
         state = self._load()
         timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        provider = str(state.get("provider") or "direct_nexus")
+        provider = self._normalize_provider(state.get("provider"))
         record: dict[str, Any] = {
             "captured_at": datetime.utcnow().isoformat(),
             "provider": provider,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 from datetime import datetime
 from typing import Any
@@ -14,10 +15,16 @@ try:
     from atlas_code_quant.context.market_context_engine import MarketContextEngine
 except ModuleNotFoundError:  # pragma: no cover - runtime fallback for uvicorn launched from atlas_code_quant cwd
     from context.market_context_engine import MarketContextEngine
+try:
+    from atlas_code_quant.data.signal_validator import SignalValidator, ValidationResult
+except ModuleNotFoundError:  # pragma: no cover - uvicorn cwd atlas_code_quant
+    from data.signal_validator import SignalValidator, ValidationResult
 from execution.option_selector import describe_strategy_governance, pick_strategy
 from learning.adaptive_policy import AdaptiveLearningService
 from monitoring.strategy_tracker import StrategyTracker
 from operations.strategy_playbooks import build_strategy_playbook
+
+logger = logging.getLogger("quant.strategy_selector")
 
 
 def _active_vision_provider() -> str:
@@ -253,10 +260,30 @@ class StrategySelectorService:
         tracker: StrategyTracker,
         learning: AdaptiveLearningService | None = None,
         context_engine: MarketContextEngine | None = None,
+        signal_validator: SignalValidator | None = None,
     ):
         self.tracker = tracker
         self.learning = learning or AdaptiveLearningService()
         self.context_engine = context_engine or MarketContextEngine()
+        self.signal_validator = signal_validator or SignalValidator()
+
+    @staticmethod
+    def _log_validation_result(result: ValidationResult, *, context: str, payload: dict[str, Any]) -> None:
+        level = logging.WARNING if result.severity == "warn" else logging.ERROR
+        logger.log(level, "%s rejected by signal validator: %s | payload=%s", context, result.reason, payload)
+
+    def _validate_candidate_for_scoring(self, candidate: dict[str, Any]) -> None:
+        result = self.signal_validator.validate_price_data(
+            candidate.get("symbol"),
+            candidate.get("price"),
+            candidate.get("volume") if candidate.get("volume") is not None else candidate.get("bar_volume"),
+            candidate.get("bid"),
+            candidate.get("ask"),
+        )
+        if result.is_valid:
+            return
+        self._log_validation_result(result, context="selector_candidate", payload=candidate)
+        raise ValueError(f"Signal validator rejected candidate: {result.reason}")
 
     def _legs_from_probability(self, probability_payload: dict[str, Any] | None) -> list[StrategyLeg]:
         if not probability_payload:
@@ -940,6 +967,7 @@ class StrategySelectorService:
         candidate: dict[str, Any],
         selected: dict[str, Any],
         probability_payload: dict[str, Any] | None,
+        account_scope: str = "paper",
     ) -> dict[str, Any]:
         timeframe = str(candidate.get("timeframe") or "1h")
         direction = str(candidate.get("direction") or "").lower()
@@ -965,6 +993,9 @@ class StrategySelectorService:
             "4h": 0.35,
             "1d": 0.45,
         }.get(timeframe.lower(), 0.25)
+        if str(account_scope or "").lower() == "paper":
+            max_adverse_drift_pct = 2.0
+            max_spread_pct = 0.5
         if strategy_type in {"equity_long", "equity_short"}:
             entry_style = "ruptura confirmada en cierre" if timeframe in {"5m", "15m"} else "entrada en continuidad con confirmacion superior"
             trigger = "rompimiento del maximo/minimo de la vela señal" if timeframe in {"5m", "15m"} else "continuacion tras mantener soporte/resistencia"
@@ -1098,6 +1129,7 @@ class StrategySelectorService:
         risk_budget_pct: float = 0.75,
     ) -> dict[str, Any]:
         options_session_mode = _normalize_options_session_mode(options_session_mode)
+        self._validate_candidate_for_scoring(candidate)
         summary = self.tracker.build_summary(account_scope=account_scope, account_id=account_id)  # type: ignore[arg-type]
         balances = summary.get("balances") or {}
         account_session = summary.get("account_session") or {}
@@ -1115,6 +1147,25 @@ class StrategySelectorService:
         selected = dict(candidate_structures[0])
         probability_payload = None
         warnings: list[str] = []
+        option_bp = _safe_float(balances.get("option_buying_power"), 0.0)
+        if (
+            str(selected.get("strategy_type") or "") not in {"equity_long", "equity_short"}
+            and option_bp <= 0.0
+            and allow_equity
+        ):
+            equity_fallback = next(
+                (
+                    dict(item)
+                    for item in candidate_structures
+                    if str(item.get("strategy_type") or "").startswith("equity_")
+                ),
+                None,
+            )
+            if equity_fallback is not None:
+                selected = equity_fallback
+                warnings.append(
+                    "Option buying power es 0; el selector prioriza una alternativa equity para evitar bloqueo operativo."
+                )
         strategy_type = str(selected["strategy_type"])
         if strategy_type not in {"equity_long", "equity_short"}:
             try:
@@ -1122,7 +1173,6 @@ class StrategySelectorService:
                     symbol=str(candidate.get("symbol") or ""),
                     strategy_type=strategy_type,  # type: ignore[arg-type]
                     account_scope=account_scope,  # type: ignore[arg-type]
-                    account_id=account_id,
                 ).to_dict()
                 selected["probability_win_rate_pct"] = probability_payload.get("win_rate_pct")
                 selected["score"] = round(
@@ -1176,6 +1226,7 @@ class StrategySelectorService:
             candidate=candidate,
             selected=selected,
             probability_payload=probability_payload,
+            account_scope=account_scope,
         )
         adaptive_context = self.learning.context(
             symbol=str(candidate.get("symbol") or "").upper(),

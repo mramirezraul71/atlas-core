@@ -410,17 +410,15 @@ class AlertDispatcher:
             return False
 
     async def _send_whatsapp(self, event: AlertEvent) -> bool:
-        """Envía alerta por WhatsApp via ATLAS HTTP API (/api/comms/send)."""
+        """Envía alerta por WhatsApp vía el endpoint operativo real de Atlas."""
         try:
             import httpx
             payload = {
-                "message": event.format_whatsapp(),
-                "channel": "whatsapp",
-                "priority": "high" if event.level == LEVEL_CRITICAL else "normal",
+                "text": event.format_whatsapp(),
             }
             async with httpx.AsyncClient(timeout=8.0) as client:
                 resp = await client.post(
-                    f"{self.atlas_api_url}/api/comms/send",
+                    f"{self.atlas_api_url}/api/comms/whatsapp/send",
                     json=payload,
                     headers={"x-api-key": os.getenv("ATLAS_API_KEY", "atlas-internal")},
                 )

@@ -36,6 +36,13 @@ def _service() -> StrategySelectorService:
     return StrategySelectorService(_TrackerStub(), _LearningStub())  # type: ignore[arg-type]
 
 
+class _ZeroOptionBPTrackerStub(_TrackerStub):
+    def build_summary(self, account_scope: str = "paper", account_id: str | None = None) -> dict:
+        payload = super().build_summary(account_scope=account_scope, account_id=account_id)
+        payload["balances"]["option_buying_power"] = 0.0
+        return payload
+
+
 def test_candidate_structures_promotes_call_diagonal_for_bull_time_spread() -> None:
     service = _service()
     candidate = {
@@ -122,6 +129,34 @@ def test_option_first_session_promotes_governed_option_over_equity() -> None:
 
     assert balanced[0]["strategy_type"] == "equity_long"
     assert option_first[0]["strategy_type"] == "call_diagonal_debit_spread"
+
+
+def test_entry_plan_uses_paper_thresholds_for_equity_entries() -> None:
+    service = _service()
+    candidate = {
+        "symbol": "AAOI",
+        "direction": "alcista",
+        "timeframe": "15m",
+        "price": 150.6,
+        "selection_score": 83.17,
+        "local_win_rate_pct": 56.41,
+        "predicted_move_pct": 2.31,
+        "relative_strength_pct": 100.0,
+        "confirmation": {"direction": "alcista", "higher_timeframe": "1h", "confidence_pct": 100.0},
+        "has_options": True,
+        "order_flow": {"direction": "alcista", "confidence_pct": 75.0, "score_pct": 70.0},
+    }
+
+    proposal = service.proposal(
+        candidate=candidate,
+        account_scope="paper",
+        chart_provider="tradingview",
+    )
+
+    assert proposal["entry_plan"]["max_adverse_drift_pct"] == 2.0
+    assert proposal["entry_plan"]["max_spread_pct"] == 0.5
+    assert proposal["order_seed"]["max_entry_drift_pct"] == 2.0
+    assert proposal["order_seed"]["max_entry_spread_pct"] == 0.5
 
 
 def test_options_only_session_removes_equity_candidates() -> None:
@@ -426,3 +461,117 @@ def test_proposal_includes_market_context_and_degrades_when_context_is_weak(monk
     assert proposal["market_context"]["decision_gate"]["action"] in {"block", "degrade"}
     assert proposal["order_seed"]["market_context"]["symbol"] == "TSLA"
     assert proposal["automation_ready"]["context_gate"] in {"blocked", "degraded"}
+
+
+def test_proposal_does_not_pass_unsupported_account_id_to_probability(monkeypatch) -> None:
+    def _probability_without_account_id(symbol: str, strategy_type: str, account_scope: str = "paper"):
+        return _ProbabilityResult(
+            {
+                "symbol": symbol,
+                "strategy_type": strategy_type,
+                "win_rate_pct": 71.0,
+                "expected_pnl": 1.4,
+                "expected_roi_pct": 14.0,
+                "market_snapshot": {"spot": 100.0},
+                "markov_snapshot": {},
+                "assumptions": {},
+                "net_premium": 1.9,
+                "selected_contract": {"symbol": f"{symbol}_OPT"},
+                "selected_legs": [
+                    {
+                        "side": "short",
+                        "option_type": "put",
+                        "strike": 95.0,
+                        "premium_mid": 1.2,
+                        "expiration": "2026-04-17",
+                        "dte": 17,
+                        "symbol": f"{symbol}260417P00095000",
+                        "bid": 1.1,
+                        "ask": 1.3,
+                        "volume": 100,
+                        "open_interest": 200,
+                        "implied_volatility": 0.24,
+                    },
+                    {
+                        "side": "long",
+                        "option_type": "put",
+                        "strike": 90.0,
+                        "premium_mid": 0.7,
+                        "expiration": "2026-04-17",
+                        "dte": 17,
+                        "symbol": f"{symbol}260417P00090000",
+                        "bid": 0.6,
+                        "ask": 0.8,
+                        "volume": 100,
+                        "open_interest": 200,
+                        "implied_volatility": 0.22,
+                    },
+                ],
+            }
+        )
+
+    monkeypatch.setattr(selector_module, "get_winning_probability", _probability_without_account_id)
+    service = _service()
+    candidate = {
+        "symbol": "AAOI",
+        "direction": "alcista",
+        "timeframe": "15m",
+        "strategy_key": "trend_ema_stack",
+        "selection_score": 83.17,
+        "local_win_rate_pct": 56.41,
+        "predicted_move_pct": 2.31,
+        "confirmation": {"direction": "alcista", "higher_timeframe": "1h"},
+        "iv_rank": 35.0,
+        "iv_hv_ratio": 1.0,
+        "liquidity_score": 0.8,
+        "term_structure_slope": 1.0,
+        "skew_pct": 0.0,
+        "price": 100.0,
+        "has_options": True,
+        "order_flow": {"direction": "neutral", "confidence_pct": 0.0, "score_pct": 50.0},
+    }
+
+    proposal = service.proposal(
+        candidate=candidate,
+        account_scope="paper",
+        account_id="VA9201365",
+        allow_equity=False,
+        allow_credit=True,
+    )
+
+    assert proposal["probability"]["win_rate_pct"] == 71.0
+    assert not any("unexpected keyword argument 'account_id'" in warning for warning in proposal["warnings"])
+
+
+def test_proposal_falls_back_to_equity_when_option_buying_power_is_zero(monkeypatch) -> None:
+    monkeypatch.setattr(selector_module, "get_winning_probability", _fake_probability)
+    service = StrategySelectorService(_ZeroOptionBPTrackerStub(), _LearningStub())  # type: ignore[arg-type]
+    candidate = {
+        "symbol": "AAOI",
+        "direction": "alcista",
+        "timeframe": "15m",
+        "strategy_key": "trend_ema_stack",
+        "selection_score": 83.17,
+        "local_win_rate_pct": 56.41,
+        "predicted_move_pct": 2.31,
+        "confirmation": {"direction": "alcista", "higher_timeframe": "1h"},
+        "iv_rank": 35.0,
+        "iv_hv_ratio": 1.0,
+        "liquidity_score": 0.8,
+        "term_structure_slope": 1.0,
+        "skew_pct": 0.0,
+        "price": 100.0,
+        "has_options": True,
+        "order_flow": {"direction": "neutral", "confidence_pct": 0.0, "score_pct": 50.0},
+    }
+
+    proposal = service.proposal(
+        candidate=candidate,
+        account_scope="paper",
+        allow_equity=True,
+        allow_credit=True,
+    )
+
+    assert proposal["selected"]["strategy_type"] == "equity_long"
+    assert proposal["order_seed"]["strategy_type"] == "equity_long"
+    assert any("Option buying power es 0" in warning for warning in proposal["warnings"])

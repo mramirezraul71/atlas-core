@@ -648,6 +648,101 @@ def test_operation_status_exposes_visual_gate_metrics_snapshot(tmp_path: Path):
     assert payload["visual_gate_metrics"]["last_readiness_score_pct"] == 68.5
 
 
+class _VisionWithCapture:
+    def status(self) -> dict:
+        return {
+            "provider": "insta360",
+            "provider_ready": True,
+            "supported_modes": ["off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge", "insta360"],
+            "last_capture_at": "2026-03-28T00:00:00",
+            "last_capture_note": "Ultima captura guardada correctamente.",
+            "notes": "Vision activa en modo Insta360.",
+        }
+
+
+def test_operation_status_exposes_vision_pipeline_snapshot(tmp_path: Path):
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=_Journal(),
+        vision=_VisionWithCapture(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+    state = center._load()
+    state["visual_gate_stats"] = {
+        "evaluated_count": 10,
+        "applies_count": 8,
+        "blocked_count": 2,
+        "passed_count": 6,
+        "manual_review_count": 3,
+        "last_status": "visual_ready",
+        "last_blocked": False,
+        "last_manual_required": False,
+        "last_readiness_score_pct": 92.0,
+        "last_alignment_score_pct": 88.0,
+        "last_updated_at": "2026-03-28T00:00:00",
+        "last_symbol": "AAPL",
+        "last_action": "submit",
+        "last_blocking_reason": None,
+    }
+    center._save(state)
+
+    payload = center.status()
+
+    assert payload["vision_pipeline"]["provider"] == "insta360"
+    assert payload["vision_pipeline"]["provider_active"] is True
+    assert payload["vision_pipeline"]["provider_ready"] is True
+    assert payload["vision_pipeline"]["activation_status"] == "active"
+    assert payload["vision_pipeline"]["coverage_status"] == "healthy"
+    assert payload["vision_pipeline"]["trade_coverage_pct"] == 80.0
+    assert payload["vision_pipeline"]["pass_rate_pct"] == 75.0
+    assert payload["vision_pipeline"]["block_rate_pct"] == 25.0
+    assert payload["vision_pipeline"]["manual_review_rate_pct"] == 37.5
+    assert payload["vision_pipeline"]["last_symbol"] == "AAPL"
+
+
+def test_operation_status_exposes_brain_council_snapshot(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic")
+    monkeypatch.setenv("ATLAS_OLLAMA_URL", "http://localhost:11434/api/generate")
+
+    class _BrainCouncilReady(_Brain):
+        def status(self) -> dict:
+            return {
+                "enabled": True,
+                "last_memory_ok": True,
+                "last_error": "",
+                "last_event_kind": "operation_cycle",
+                "last_event_at": "2026-03-28T00:00:00",
+            }
+
+    center = OperationCenter(
+        tracker=_JournalingFastTracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_BrainCouncilReady(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+
+    payload = center.status()
+
+    assert payload["brain_council"]["enabled"] is True
+    assert payload["brain_council"]["consensus_mode"] == "2_of_3"
+    assert payload["brain_council"]["available_members_count"] == 3
+    assert payload["brain_council"]["quorum_ready"] is True
+    assert payload["brain_council"]["activation_status"] == "active"
+    assert {member["member"] for member in payload["brain_council"]["members"]} == {
+        "claude",
+        "deepseek_local",
+        "atlas_brain",
+    }
+
+
 def test_operation_status_exposes_options_strategy_governance_snapshot(tmp_path: Path):
     center = OperationCenter(
         tracker=_JournalingFastTracker(),

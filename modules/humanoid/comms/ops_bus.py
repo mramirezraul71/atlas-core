@@ -26,6 +26,13 @@ _TG_CHAT_CACHE_PATH = Path(
 _AUDIO_LAST: Dict[str, float] = {}  # message_key -> ts (dedupe)
 _DEDUP_LAST: Dict[str, float] = {}  # key -> last_ts
 _RATE_1M: Dict[str, Deque[float]] = {}  # subsystem -> timestamps (sec)
+_LEVEL_RANK = {
+    "info": 10,
+    "low": 20,
+    "med": 30,
+    "high": 40,
+    "critical": 50,
+}
 
 _RE_SESSION_STARTED = re.compile(
     r"(listo para trabajar).*(sesión iniciada)", re.IGNORECASE
@@ -41,6 +48,28 @@ def _bool(name: str, default: bool) -> bool:
     if not v:
         return default
     return v in ("1", "true", "yes", "y", "on")
+
+
+def _normalize_level(value: str | None, default: str = "info") -> str:
+    raw = (value or default).strip().lower()
+    if raw == "medium":
+        raw = "med"
+    if raw == "warn":
+        raw = "med"
+    if raw not in _LEVEL_RANK:
+        return default
+    return raw
+
+
+def _min_channel_level(name: str, default: str) -> str:
+    return _normalize_level(os.getenv(name), default=default)
+
+
+def _meets_level(level: str, minimum: str) -> bool:
+    return _LEVEL_RANK.get(_normalize_level(level), 10) >= _LEVEL_RANK.get(
+        _normalize_level(minimum),
+        10,
+    )
 
 
 def _telegram_chat_id() -> str:
@@ -208,6 +237,9 @@ def status() -> Dict[str, Any]:
         "audio_enabled": _bool("OPS_AUDIO_ENABLED", True),
         "telegram_enabled": _bool("OPS_TELEGRAM_ENABLED", True),
         "whatsapp_enabled": _bool("OPS_WHATSAPP_ENABLED", False),
+        "audio_min_level": _min_channel_level("OPS_AUDIO_MIN_LEVEL", "med"),
+        "telegram_min_level": _min_channel_level("OPS_TELEGRAM_MIN_LEVEL", "med"),
+        "whatsapp_min_level": _min_channel_level("OPS_WHATSAPP_MIN_LEVEL", "high"),
         "recent_count": len(_RECENT),
         "log_path": str(_LOG_PATH),
     }
@@ -251,13 +283,7 @@ def emit(
         load_vault_env(override=False)
     except Exception:
         pass
-    lvl = (level or "info").strip().lower()
-    if lvl == "medium":
-        lvl = "med"
-    if lvl == "warn":
-        lvl = "med"
-    if lvl not in ("info", "low", "med", "high", "critical"):
-        lvl = "info"
+    lvl = _normalize_level(level, default="info")
     msg = (message or "").strip()
     if not msg:
         return {"ok": True, "skipped": "empty"}
@@ -310,12 +336,16 @@ def emit(
         "message_human": msg_human[:1200],
         "data": data or {},
         "evidence_path": evidence_path or "",
+        "delivery": {},
     }
     _RECENT.append(ev)
     _append_log(f"{ev['ts']} [{ev['level']}] {ev['subsystem']}: {ev['message']}")
 
     # Audio PC - Solo para niveles med, high, critical (evitar spam de eventos rutinarios)
-    if _bool("OPS_AUDIO_ENABLED", True) and lvl in ("med", "high", "critical"):
+    if _bool("OPS_AUDIO_ENABLED", True) and _meets_level(
+        lvl,
+        _min_channel_level("OPS_AUDIO_MIN_LEVEL", "med"),
+    ):
         try:
             from modules.humanoid.voice.tts import speak
 
@@ -331,12 +361,18 @@ def emit(
             if now - last >= 8.0:
                 _AUDIO_LAST[key] = now
                 speak(speak_text)
+                ev["delivery"]["audio"] = {"attempted": True, "ok": True}
+            else:
+                ev["delivery"]["audio"] = {"attempted": True, "ok": True, "detail": "deduped"}
         except Exception:
-            pass
+            ev["delivery"]["audio"] = {"attempted": True, "ok": False}
 
     # Telegram (mensaje + evidencia si hay)
     # Solo enviar a Telegram si el nivel es med, high o critical (evitar spam de info/low)
-    if _bool("OPS_TELEGRAM_ENABLED", True) and lvl in ("med", "high", "critical"):
+    if _bool("OPS_TELEGRAM_ENABLED", True) and _meets_level(
+        lvl,
+        _min_channel_level("OPS_TELEGRAM_MIN_LEVEL", "med"),
+    ):
         chat_id = _telegram_chat_id()
         if chat_id:
             try:
@@ -349,20 +385,35 @@ def emit(
                 if evidence_path and str(evidence_path).lower().endswith(
                     (".png", ".jpg", ".jpeg", ".webp")
                 ):
-                    bridge.send_photo(chat_id, str(evidence_path), caption=text[:900])
+                    result = bridge.send_photo(chat_id, str(evidence_path), caption=text[:900])
                 else:
-                    bridge.send(chat_id, text)
-            except Exception:
-                pass
+                    result = bridge.send(chat_id, text)
+                ev["delivery"]["telegram"] = {
+                    "attempted": True,
+                    "ok": bool((result or {}).get("ok")),
+                    "error": (result or {}).get("error"),
+                }
+            except Exception as exc:
+                ev["delivery"]["telegram"] = {"attempted": True, "ok": False, "error": str(exc)}
+        else:
+            ev["delivery"]["telegram"] = {"attempted": False, "ok": False, "error": "missing_chat_id"}
 
     # WhatsApp (Twilio opcional) - Solo para niveles altos
     # WhatsApp se reserva para alertas críticas únicamente
-    if _bool("OPS_WHATSAPP_ENABLED", False) and lvl in ("high", "critical"):
+    if _bool("OPS_WHATSAPP_ENABLED", False) and _meets_level(
+        lvl,
+        _min_channel_level("OPS_WHATSAPP_MIN_LEVEL", "high"),
+    ):
         try:
             from modules.humanoid.comms.whatsapp_bridge import send_text
 
-            send_text(f"[ATLAS OPS] {ev['subsystem']} {ev['level']}: {ev['message']}")
-        except Exception:
-            pass
+            result = send_text(f"[ATLAS OPS] {ev['subsystem']} {ev['level']}: {ev['message']}")
+            ev["delivery"]["whatsapp"] = {
+                "attempted": True,
+                "ok": bool((result or {}).get("ok")),
+                "error": (result or {}).get("error"),
+            }
+        except Exception as exc:
+            ev["delivery"]["whatsapp"] = {"attempted": True, "ok": False, "error": str(exc)}
 
-    return {"ok": True}
+    return {"ok": True, "delivery": ev.get("delivery", {})}

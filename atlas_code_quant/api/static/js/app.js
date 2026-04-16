@@ -124,9 +124,30 @@ function simulatorSummary(simulators) {
   return `${paperText} | ${optText}`;
 }
 
+function isSparseOperationalSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return true;
+  const hasBalances = snapshot?.balances && Object.keys(snapshot.balances).length > 0;
+  const hasTotals = snapshot?.totals && Object.keys(snapshot.totals).length > 0;
+  const hasPositions = Array.isArray(snapshot?.positions) && snapshot.positions.length > 0;
+  return !hasBalances && !hasTotals && !hasPositions;
+}
+
 function renderCanonicalMeta(snapshot) {
   if (!snapshot) return;
-  _latestCanonicalSnapshot = snapshot;
+  const sparseSnapshot = isSparseOperationalSnapshot(snapshot);
+  if (!sparseSnapshot) {
+    _latestCanonicalSnapshot = snapshot;
+  } else if (_latestCanonicalSnapshot && !isSparseOperationalSnapshot(_latestCanonicalSnapshot)) {
+    snapshot = {
+      ..._latestCanonicalSnapshot,
+      ...snapshot,
+      balances: _latestCanonicalSnapshot.balances,
+      totals: _latestCanonicalSnapshot.totals,
+      positions: _latestCanonicalSnapshot.positions,
+      simulators: snapshot.simulators || _latestCanonicalSnapshot.simulators,
+      reconciliation: snapshot.reconciliation || _latestCanonicalSnapshot.reconciliation,
+    };
+  }
   const totals = snapshot.totals || {};
   const balances = snapshot.balances || {};
   const reconciliation = snapshot.reconciliation || {};
@@ -406,6 +427,16 @@ function buildOverviewFromJournal(statsPayload, chartPayload, canonicalData = nu
   };
 }
 
+function isWarmupOverviewPayload(payload) {
+  if (!payload || typeof payload !== 'object') return true;
+  if (payload.source === 'warmup') return true;
+  if (payload.cache?.last_error === 'refresh_pending') return true;
+  const hasSeries = Array.isArray(payload.equity_curve) && payload.equity_curve.length > 0;
+  const hasTrades = Number(payload.total_trades || 0) > 0;
+  const hasPositions = Number(payload.open_positions || 0) > 0;
+  return !hasSeries && !hasTrades && !hasPositions;
+}
+
 function renderOverviewRealtime(snapshot, overview = null) {
   if (!snapshot) return;
   const balances = snapshot.balances || {};
@@ -547,9 +578,12 @@ async function loadOverview() {
     ]);
 
     canonicalData = canonicalResp?.data || _latestCanonicalSnapshot || null;
+    if (isSparseOperationalSnapshot(canonicalData) && _latestCanonicalSnapshot && !isSparseOperationalSnapshot(_latestCanonicalSnapshot)) {
+      canonicalData = _latestCanonicalSnapshot;
+    }
     let m = overviewResp?.data || null;
 
-    if (!m) {
+    if (isWarmupOverviewPayload(m)) {
       const statsResp = await QuantAPI.journalStats().catch(() => null);
       const chartResp = await QuantAPI.journalChartData(500, QUANT_SCOPE).catch(() => null);
       if (statsResp?.data || chartResp?.data) {

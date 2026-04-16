@@ -342,9 +342,13 @@ class LiveLoop:
     # ── Loop principal ────────────────────────────────────────────────────────
 
     def _run(self) -> None:
-        # Capturar señales OS
-        signal.signal(signal.SIGINT,  lambda s, f: self.emergency_stop())
-        signal.signal(signal.SIGTERM, lambda s, f: self.stop("SIGTERM"))
+        # Capturar señales OS solo en el hilo principal (Windows: falla en worker thread)
+        if threading.current_thread() is threading.main_thread():
+            try:
+                signal.signal(signal.SIGINT, lambda s, f: self.emergency_stop())
+                signal.signal(signal.SIGTERM, lambda s, f: self.stop("SIGTERM"))
+            except (ValueError, OSError) as exc:
+                logger.debug("LiveLoop: señales OS no registradas: %s", exc)
 
         while self._running and not self._stop_event.is_set():
             if self._paused:

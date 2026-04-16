@@ -13,6 +13,7 @@ from typing import Dict, List, Tuple
 _MAX_EVOLUTION_ENTRIES = 500
 _evolution_entries: deque = deque(maxlen=_MAX_EVOLUTION_ENTRIES)
 _DEDUP_LAST: Dict[Tuple[str, str], float] = {}  # (source, message) -> last_ts
+_NOTIFY_SKIP_SOURCES = {"telegram", "whatsapp", "audio", "comms", "ops", "bitacora"}
 
 
 def _bitacora_path() -> Path:
@@ -54,6 +55,36 @@ def _save_to_disk() -> None:
         pass
 
 
+def _bool_env(name: str, default: bool) -> bool:
+    raw = (os.getenv(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "y", "on"}
+
+
+def _emit_notification(message: str, ok: bool, source: str) -> None:
+    if not _bool_env("EVOLUTION_BITACORA_NOTIFY_ENABLED", False):
+        return
+    src = (source or "").strip().lower()
+    if src in _NOTIFY_SKIP_SOURCES:
+        return
+    severity = (
+        os.getenv("EVOLUTION_BITACORA_NOTIFY_OK_SEVERITY", "low")
+        if ok
+        else os.getenv("EVOLUTION_BITACORA_NOTIFY_ERROR_SEVERITY", "high")
+    )
+    try:
+        from modules.humanoid.ans.reporter import notify_all
+
+        notify_all(
+            message=f"BITÁCORA [{source}] {message[:300]}",
+            severity=str(severity or "low"),
+            subsystem="bitacora",
+        )
+    except Exception:
+        pass
+
+
 # Carga inicial desde disco
 _load_from_disk()
 
@@ -84,6 +115,7 @@ def append_evolution_log(
     }
     _evolution_entries.append(entry)
     _save_to_disk()
+    _emit_notification(msg, ok, src)
 
 
 def get_evolution_entries(limit: int = 100) -> List[Dict]:

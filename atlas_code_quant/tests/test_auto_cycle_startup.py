@@ -46,3 +46,17 @@ def test_ensure_auto_cycle_running_starts_task_when_mode_enabled(monkeypatch) ->
         main._auto_cycle_task = None
 
     asyncio.run(_run())
+
+
+def test_auto_cycle_inactive_reasons_expose_startup_blockers(monkeypatch) -> None:
+    monkeypatch.setattr(main.settings, "lightweight_startup", True)
+    monkeypatch.setattr(main.settings, "autocycle_auto_start", False)
+    monkeypatch.setattr(main.settings, "scanner_enabled", True)
+    monkeypatch.setattr(main.settings, "scanner_auto_start", False)
+
+    reasons = main._auto_cycle_inactive_reasons({"auton_mode": "off"})
+
+    assert "lightweight_startup_enabled" in reasons
+    assert "autocycle_auto_start_disabled" in reasons
+    assert "scanner_auto_start_disabled" in reasons
+    assert "auton_mode_off" in reasons

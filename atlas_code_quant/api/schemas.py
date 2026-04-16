@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 try:
     from atlas_code_quant.backtesting.winning_probability import StrategyType
@@ -285,7 +285,7 @@ class OperationConfigPayload(BaseModel):
     paper_only: bool = True
     auton_mode: Literal["off", "paper_supervised", "paper_autonomous"] = "paper_supervised"
     executor_mode: Literal["disabled", "paper_api", "desktop_dry_run"] = "paper_api"
-    vision_mode: Literal["off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge", "insta360_pending"] = "direct_nexus"
+    vision_mode: Literal["off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge", "insta360"] = "direct_nexus"
     require_operator_present: bool = False
     operator_present: bool = True
     screen_integrity_ok: bool = True
@@ -299,11 +299,32 @@ class OperationConfigPayload(BaseModel):
     kill_switch_active: bool = False
     reset_fail_safe: bool = False
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_vision_mode_aliases(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        if payload.get("vision_mode") == "insta360_pending":
+            payload["vision_mode"] = "insta360"
+        return payload
+
 
 class OperationCycleRequest(BaseModel):
     order: OrderRequest
     action: Literal["evaluate", "preview", "submit"] = "evaluate"
     capture_context: bool = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_order_seed_alias(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if data.get("order") is None and isinstance(data.get("order_seed"), dict):
+            payload = dict(data)
+            payload["order"] = payload["order_seed"]
+            return payload
+        return data
 
 
 class EmergencyStopRequest(BaseModel):
@@ -488,8 +509,18 @@ class LoopStartRequest(BaseModel):
 class VisionProviderRequest(BaseModel):
     """POST /operation/vision/provider â€” Cambia el proveedor de visiÃ³n activo."""
     provider: str = Field(...,
-        description="Uno de: off, manual, desktop_capture, direct_nexus, atlas_push_bridge")
+        description="Uno de: off, manual, desktop_capture, direct_nexus, atlas_push_bridge, insta360")
     notes: str | None = None
+    
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_provider_aliases(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        payload = dict(data)
+        if payload.get("provider") == "insta360_pending":
+            payload["provider"] = "insta360"
+        return payload
 
 
 class ScannerConfigPayload(BaseModel):

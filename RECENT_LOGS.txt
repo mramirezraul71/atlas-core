@@ -1,0 +1,19 @@
+Source: atlas_code_quant/logs/quant.log
+Window: last ~200 lines
+
+Highlights:
+- Repeated yfinance JSONDecodeError for many tickers (e.g. BSMR, BSMS, BTAL, BTBT, BTC* family).
+- Batch failures often reported as "20 Failed downloads".
+- DuckDB analytics still executing successfully between data-source failures.
+
+Representative lines:
+2026-04-13 12:03:27,673 [INFO] atlas.analytics.duckdb — DuckDB journal loaded: 7220 rows in 59.5ms
+2026-04-13 12:03:27,719 [INFO] atlas.analytics.duckdb — Full analytics generated in 106.1ms (7220 rows)
+2026-04-13 12:03:28,138 [ERROR] yfinance — ['BSMR']: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')
+2026-04-13 12:05:06,818 [ERROR] yfinance — ['BSY', 'BSMV', 'BSMW', 'BTAL', ...]: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')
+2026-04-13 12:06:31,477 [INFO] atlas.analytics.duckdb — Full analytics generated in 96.8ms (7220 rows)
+2026-04-13 12:07:29,014 [ERROR] yfinance — ['BTGO', 'BTCZ', 'BTCT', 'BTCL', ...]: JSONDecodeError('Expecting value: line 1 column 1 (char 0)')
+
+Technical reading:
+- Data-source instability appears external/intermittent (transport or provider response body issues).
+- Internal analytics pipeline remains alive and responsive.

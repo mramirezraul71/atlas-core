@@ -32,9 +32,9 @@ def mock_journal_service():
 
 
 def test_chart_data_equity_accumulation(mock_journal_service):
-    rows = [_make_row(pnl=50.0, exit_offset_days=0),
+    rows = [_make_row(pnl=30.0, exit_offset_days=2),
             _make_row(pnl=-20.0, exit_offset_days=1),
-            _make_row(pnl=30.0, exit_offset_days=2)]
+            _make_row(pnl=50.0, exit_offset_days=0)]
     with patch("journal.service.session_scope") as mock_ss:
         mock_db = MagicMock()
         mock_db.execute.return_value.scalars.return_value.all.return_value = rows
@@ -44,16 +44,16 @@ def test_chart_data_equity_accumulation(mock_journal_service):
 
     trades = result["trades"]
     assert len(trades) == 3
-    assert trades[0]["equity"] == 50.0
-    assert trades[1]["equity"] == 30.0   # 50 - 20
-    assert trades[2]["equity"] == 60.0   # 30 + 30
+    assert trades[0]["equity"] == 10050.0
+    assert trades[1]["equity"] == 10030.0   # 10050 - 20
+    assert trades[2]["equity"] == 10060.0   # 10030 + 30
     assert trades[0]["n"] == 1
     assert trades[2]["n"] == 3
 
 
 def test_chart_data_drawdown_calculation(mock_journal_service):
-    rows = [_make_row(pnl=100.0, exit_offset_days=0),
-            _make_row(pnl=-40.0, exit_offset_days=1)]
+    rows = [_make_row(pnl=-40.0, exit_offset_days=1),
+            _make_row(pnl=100.0, exit_offset_days=0)]
     with patch("journal.service.session_scope") as mock_ss:
         mock_db = MagicMock()
         mock_db.execute.return_value.scalars.return_value.all.return_value = rows
@@ -62,13 +62,13 @@ def test_chart_data_drawdown_calculation(mock_journal_service):
         result = mock_journal_service.chart_data(account_scope="paper", limit=500)
 
     trades = result["trades"]
-    assert trades[0]["drawdown_pct"] == 0.0  # peak = 100, equity = 100
-    assert trades[1]["drawdown_pct"] == -40.0  # (60-100)/100 * 100
+    assert trades[0]["drawdown_pct"] == 0.0
+    assert trades[1]["drawdown_pct"] == -0.4
 
 
 def test_chart_data_r_multiple(mock_journal_service):
-    rows = [_make_row(pnl=200.0, risk=100.0, exit_offset_days=0),
-            _make_row(pnl=-50.0, risk=100.0, exit_offset_days=1)]
+    rows = [_make_row(pnl=-50.0, risk=100.0, exit_offset_days=1),
+            _make_row(pnl=200.0, risk=100.0, exit_offset_days=0)]
     with patch("journal.service.session_scope") as mock_ss:
         mock_db = MagicMock()
         mock_db.execute.return_value.scalars.return_value.all.return_value = rows
@@ -128,9 +128,9 @@ def test_chart_data_empty(mock_journal_service):
 
 
 def test_chart_data_win_flag(mock_journal_service):
-    rows = [_make_row(pnl=10.0, exit_offset_days=0),
+    rows = [_make_row(pnl=0.0, exit_offset_days=2),
             _make_row(pnl=-5.0, exit_offset_days=1),
-            _make_row(pnl=0.0, exit_offset_days=2)]
+            _make_row(pnl=10.0, exit_offset_days=0)]
     with patch("journal.service.session_scope") as mock_ss:
         mock_db = MagicMock()
         mock_db.execute.return_value.scalars.return_value.all.return_value = rows
@@ -141,3 +141,26 @@ def test_chart_data_win_flag(mock_journal_service):
     assert result["trades"][0]["win"] is True
     assert result["trades"][1]["win"] is False
     assert result["trades"][2]["win"] is False
+
+
+def test_chart_data_excludes_objectively_invalid_rows(mock_journal_service):
+    rows = [
+        _make_row(pnl=20.0, exit_offset_days=2),
+        _make_row(pnl=10.0, exit_offset_days=1),
+        _make_row(pnl=99.0, exit_offset_days=0),
+    ]
+    rows[1].entry_price = -5.0
+    rows[2].entry_time = rows[2].exit_time - timedelta(seconds=3)
+
+    with patch("journal.service.session_scope") as mock_ss:
+        mock_db = MagicMock()
+        mock_db.execute.return_value.scalars.return_value.all.return_value = rows
+        mock_ss.return_value.__enter__ = lambda s: mock_db
+        mock_ss.return_value.__exit__ = MagicMock(return_value=False)
+        result = mock_journal_service.chart_data(account_scope="paper", limit=500)
+
+    assert result["source_closed_trades"] == 3
+    assert result["excluded_trades"] == 2
+    assert result["total_trades"] == 1
+    assert result["trades"][0]["pnl"] == 20.0
+    assert result["quality"]["metrics"]["negative_entry_price_count"] == 1

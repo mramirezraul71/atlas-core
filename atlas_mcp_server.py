@@ -105,6 +105,27 @@ def execute_action(action, params):
         return _get_state()
     if action == "get_logs":
         return _get_logs(params.get("n", 50))
+    if action == "purge_journal":
+        db_path = params.get("db", str(DEFAULT_DB))
+        sql = params.get("sql", "")
+        if not sql:
+            return {"error": "sql required"}
+        import sqlite3
+        conn = sqlite3.connect(db_path, timeout=15)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=10000")
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM trading_journal")
+        before = cur.fetchone()[0]
+        cur.execute(sql)
+        deleted = cur.rowcount
+        conn.commit()
+        cur.execute("SELECT COUNT(*) FROM trading_journal")
+        after = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM trading_journal WHERE entry_price < 0")
+        neg = cur.fetchone()[0]
+        conn.close()
+        return {"before": before, "deleted": deleted, "after": after, "neg_prices": neg}
     raise ValueError(f"Unsupported action: {action}")
 
 
@@ -134,7 +155,8 @@ class AtlasMCPHandler(BaseHTTPRequestHandler):
             raw_body = self.rfile.read(length).decode("utf-8")
             payload = json.loads(raw_body or "{}")
             action = payload["action"]
-            params = payload.get("params", {})
+            # fix: tolerar sql/db tanto en params:{} como en payload raíz
+            params = {**payload, **payload.get("params", {})}
             result = execute_action(action, params)
             self._send_json(200, {"ok": True, "action": action, "data": result})
         except Exception as exc:

@@ -1,0 +1,37 @@
+Pytest collect-only inventory
+Timestamp: 2026-04-15
+Command: pytest atlas_code_quant/tests/ --collect-only -q
+
+Total collected: 884 tests
+
+Sample inventory (head):
+atlas_code_quant/tests/test_adaptive_policy_quality_gate.py::test_adaptive_learning_blocks_when_journal_quality_is_critical
+atlas_code_quant/tests/test_adaptive_policy_status.py::test_adaptive_policy_fast_status_uses_cached_snapshot
+atlas_code_quant/tests/test_advanced_monitor_grouping.py::test_infer_groups_classifies_single_long_equity
+atlas_code_quant/tests/test_advanced_monitor_grouping.py::test_infer_groups_classifies_single_short_equity
+atlas_code_quant/tests/test_alpaca_paper.py::TestIsConfigured::test_configured_with_both_keys
+atlas_code_quant/tests/test_alpaca_paper.py::TestIsConfigured::test_not_configured_empty_key
+atlas_code_quant/tests/test_alpaca_paper.py::TestIsConfigured::test_not_configured_empty_secret
+atlas_code_quant/tests/test_alpaca_paper.py::TestIsConfigured::test_not_configured_both_empty
+atlas_code_quant/tests/test_alpaca_paper.py::TestHealthCheck::test_health_ok
+atlas_code_quant/tests/test_alpaca_paper.py::TestHealthCheck::test_health_http_error
+atlas_code_quant/tests/test_alpaca_paper.py::TestHealthCheck::test_health_connection_error
+atlas_code_quant/tests/test_alpaca_paper.py::TestHealthCheck::test_health_caches_result
+atlas_code_quant/tests/test_api_learning_knowledge_v2_routes.py::test_knowledge_v2_routes_present
+atlas_code_quant/tests/test_api_learning_knowledge_v2_routes.py::test_learning_orchestrator_v2_routes_present
+atlas_code_quant/tests/test_api_learning_knowledge_v2_routes.py::test_operation_status_lite_v2_route_present
+atlas_code_quant/tests/test_api_schemas.py::test_operation_cycle_request_accepts_order_seed_alias
+atlas_code_quant/tests/test_asset_classifier.py::TestClassifyAsset::test_spy_is_etf
+atlas_code_quant/tests/test_asset_classifier.py::TestClassifyAsset::test_qqq_is_etf
+atlas_code_quant/tests/test_asset_classifier.py::TestClassifyAsset::test_spx_is_index_option
+atlas_code_quant/tests/test_asset_classifier.py::TestClassifyAsset::test_ndx_is_index_option
+
+Sample inventory (tail):
+atlas_code_quant/tests/test_var_monitor.py::test_var_monitor_monte_carlo_penalizes_concentration_more_than_diversified_book
+atlas_code_quant/tests/test_var_monitor.py::test_position_management_snapshot_exposes_var_monitor_payload
+atlas_code_quant/tests/test_vision_calibration_alignment.py::test_evaluate_entry_alignment_returns_ready_when_calibration_exists
+atlas_code_quant/tests/test_vision_calibration_alignment.py::test_evaluate_entry_alignment_is_neutral_without_calibration
+
+Notes:
+- Full raw collection output was generated during execution.
+- This file is intentionally condensed for senior audit readability.

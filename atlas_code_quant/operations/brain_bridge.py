@@ -100,6 +100,12 @@ class QuantBrainBridge:
             with self.events_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record, ensure_ascii=True) + "\n")
 
+    def _dispatch_async(self, task_name: str, callback: Any, /, *args: Any, **kwargs: Any) -> None:
+        def _runner() -> None:
+            callback(*args, **kwargs)
+
+        threading.Thread(target=_runner, name=f"brain-bridge-{task_name}", daemon=True).start()
+
     def _headers(self, content_type: str = "application/json") -> dict[str, str]:
         headers = {"Content-Type": content_type}
         if self.api_key:
@@ -129,6 +135,39 @@ class QuantBrainBridge:
         with request.urlopen(req, timeout=effective_timeout) as response:
             raw = response.read().decode("utf-8", errors="ignore")
         return json.loads(raw) if raw else {"ok": True}
+
+    def _record_bitacora_delivery(self, *, ok: bool, error_message: str = "") -> None:
+        with self._state_lock:
+            state = self._load_state()
+            state["last_bitacora_ok"] = ok
+            state["last_delivery_ok"] = bool(ok) or bool(state.get("last_memory_ok"))
+            current_errors = [
+                chunk
+                for chunk in str(state.get("last_error") or "").split(" | ")
+                if chunk and not chunk.startswith("bitacora:")
+            ]
+            if ok:
+                state["last_error"] = " | ".join(current_errors)
+            else:
+                current_errors.append(f"bitacora: {error_message}")
+                state["last_error"] = " | ".join(current_errors)
+            self._save_state(state)
+
+    def _deliver_bitacora_async(self, *, message: str, level: str, data: dict[str, Any]) -> None:
+        try:
+            self._post_json(
+                "/bitacora/log",
+                {
+                    "message": message[:500],
+                    "level": level,
+                    "source": self.source,
+                    "data": data or {},
+                },
+            )
+        except (error.URLError, error.HTTPError, TimeoutError, ValueError) as exc:
+            self._record_bitacora_delivery(ok=False, error_message=str(exc))
+        else:
+            self._record_bitacora_delivery(ok=True)
 
     def status(self) -> dict[str, Any]:
         state = self._load_state()
@@ -187,20 +226,20 @@ class QuantBrainBridge:
             bitacora_ok = None
             memory_ok = None
             errors: list[str] = []
+            bitacora_queued = False
             if self.enabled:
                 if self.bitacora_enabled:
                     try:
-                        self._post_json(
-                            "/bitacora/log",
-                            {
-                                "message": message[:500],
-                                "level": level,
-                                "source": self.source,
-                                "data": data or {},
-                            },
+                        self._dispatch_async(
+                            "bitacora",
+                            self._deliver_bitacora_async,
+                            message=message,
+                            level=level,
+                            data=data or {},
                         )
+                        bitacora_queued = True
                         bitacora_ok = True
-                    except (error.URLError, error.HTTPError, TimeoutError, ValueError) as exc:
+                    except Exception as exc:
                         bitacora_ok = False
                         errors.append(f"bitacora: {exc}")
                 if self.memory_enabled and memorize:
@@ -228,7 +267,12 @@ class QuantBrainBridge:
             state["delivered_events"] = int(state.get("delivered_events") or 0) + (1 if delivered_ok else 0)
             state["queued_local_only_events"] = int(state.get("total_events") or 0) - int(state.get("delivered_events") or 0)
             self._save_state(state)
-            return {"ok": delivered_ok, "record": record, "error": state["last_error"]}
+            return {
+                "ok": delivered_ok,
+                "record": record,
+                "error": state["last_error"],
+                "bitacora_queued": bitacora_queued,
+            }
 
     def record_selector_proposal(self, payload: dict[str, Any]) -> dict[str, Any]:
         candidate = payload.get("candidate") or {}

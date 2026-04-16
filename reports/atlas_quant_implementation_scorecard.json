@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-02T18:08:48.822353+00:00",
+  "generated_at": "2026-04-16T01:19:34.113479+00:00",
   "topic": "atlas_quant_trading_implementation_scorecard",
   "summary": "Scorecard operativo para medir dos cosas separadas: cuanto del metodo ya esta implantado y cuanta evidencia real existe de que esa implantacion esta sirviendo.",
   "metric_catalog": [
@@ -91,13 +91,13 @@
     },
     "memory_persistence_score": {
       "name": "memory_persistence_score",
-      "value": 65.01,
-      "status": "watch",
+      "value": 74.16,
+      "status": "workable",
       "details": {
-        "delivered_events": 862,
-        "total_events": 1508,
-        "queued_local_only_events": 646,
-        "delivery_ratio_pct": 57.16,
+        "delivered_events": 1550,
+        "total_events": 2207,
+        "queued_local_only_events": 657,
+        "delivery_ratio_pct": 70.23,
         "last_memory_ok": true,
         "last_bitacora_ok": true,
         "protocol_note_events": 0,
@@ -148,7 +148,7 @@
         "reload_resilience_pct": 66.67,
         "foundation_score_pct": 100.0,
         "freshness_pct": 0.0,
-        "age_hours": 128.01
+        "age_hours": 447.19
       }
     },
     "visual_benchmark_feedback_score": {
@@ -203,14 +203,14 @@
       "status": "watch",
       "details": {
         "journal_available": true,
-        "open_total": 470,
+        "open_total": 56,
         "open_untracked": 0,
         "open_untracked_ratio_pct": 0.0,
         "attributed_open_positions_pct": 100.0,
-        "closed_total": 77480,
+        "closed_total": 7420,
         "evidence_sufficiency_score": 100.0,
-        "open_pnl": -2761.02,
-        "realized_pnl": -33035586.48,
+        "open_pnl": 1236.91,
+        "realized_pnl": -85161.98,
         "post_mortem_coverage_pct": 100.0,
         "recent_attribution_pct": 100.0,
         "recent_unattributed_count": 0,
@@ -218,17 +218,17 @@
         "recent_sample_size": 100,
         "external_learning_translation_score": 100.0,
         "signal_ic_quality_score": 5.0,
-        "paper_outcome_quality_score": 20.0,
+        "paper_outcome_quality_score": 0.0,
         "paper_outcome_quality": {
-          "sample_count": 2000,
-          "win_rate_pct": 18.0,
-          "profit_factor": 0.218,
-          "expectancy_pct": -81.893,
-          "sample_score": 100.0,
+          "sample_count": 0,
+          "win_rate_pct": 0.0,
+          "profit_factor": 0.0,
+          "expectancy_pct": 0.0,
+          "sample_score": 0.0,
           "win_rate_score": 0.0,
           "profit_factor_score": 0.0,
           "expectancy_score": 0.0,
-          "paper_outcome_quality_score": 20.0,
+          "paper_outcome_quality_score": 0.0,
           "available": true
         },
         "usefulness_cap_reason": "paper_outcome_quality_weak",
@@ -241,7 +241,7 @@
       "status": "insufficient_data",
       "details": {
         "ic_tracker_available": true,
-        "total_signals": 243,
+        "total_signals": 342,
         "signals_with_outcome": 0,
         "min_required": 5,
         "note": "Solo 0 se\u00f1ales con outcome. Se necesitan al menos 5 para calcular IC, 30 para se\u00f1al meaningfully \u00fatil."
@@ -249,7 +249,7 @@
     }
   },
   "supporting_indicators": {
-    "brain_delivery_ratio_pct": 57.16,
+    "brain_delivery_ratio_pct": 70.23,
     "attributed_open_positions_pct": 100.0,
     "open_untracked_ratio_pct": 0.0,
     "recent_unattributed_count": 0,

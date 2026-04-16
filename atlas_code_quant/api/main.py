@@ -26,6 +26,7 @@ import threading
 from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime
+from typing import Any
 
 # Ampliar thread pool: el default (min(32, cpu+4)) se satura cuando
 # yfinance/Yahoo Finance hace múltiples HTTP requests bloqueantes.
@@ -268,7 +269,7 @@ async def _start_background_services() -> None:
     try:
         if _lightweight_startup_enabled():
             logger.warning(
-                "QUANT lightweight startup enabled: skipping alert dispatcher, journal sync, scanner, learning loop and auto-cycle autostart"
+                "QUANT lightweight startup enabled: skipping learning loop and auto-cycle autostart; preserving lightweight data feeders and communication stack when enabled"
             )
             _mark_startup_background("lightweight_preload")
             if settings.startup_preload_sessions_in_background:
@@ -293,6 +294,57 @@ async def _start_background_services() -> None:
                     logger.exception("Startup visual connect failed (lightweight)")
             else:
                 logger.info("Startup visual connect omitido en lightweight por QUANT_STARTUP_VISUAL_CONNECT_ENABLED=false")
+            if settings.startup_alert_dispatcher_enabled:
+                try:
+                    _mark_startup_background("lightweight_starting_alert_dispatcher")
+                    await get_alert_dispatcher().start()
+                    logger.info("AlertDispatcher iniciado (lightweight)")
+                except Exception:
+                    logger.exception("AlertDispatcher: fallo en startup lightweight (no critico)")
+            else:
+                logger.info("AlertDispatcher omitido en lightweight por QUANT_STARTUP_ALERT_DISPATCHER_ENABLED=false")
+            if settings.startup_notifications_enabled:
+                try:
+                    from notifications.briefing_service import configure_operational_briefing
+                    from notifications.scheduler import attach_exit_intelligence_bridge, start_notification_scheduler
+
+                    configure_operational_briefing(
+                        operation_center=_OPERATION_CENTER,
+                        scanner=_SCANNER,
+                        canonical_service=_CANONICAL_SNAPSHOT,
+                        vision_service=_VISION,
+                        settings=settings,
+                    )
+                    attach_exit_intelligence_bridge()
+                    if settings.notify_enabled:
+                        start_notification_scheduler()
+                        logger.info("Operational briefing: scheduler activo en lightweight")
+                    else:
+                        logger.info("Operational briefing: configurado en lightweight; scheduler off (QUANT_NOTIFY_ENABLED=false)")
+                except Exception:
+                    logger.exception("Operational notifications: fallo en startup lightweight (no critico)")
+            else:
+                logger.info("Operational notifications omitidas en lightweight por QUANT_STARTUP_NOTIFICATIONS_ENABLED=false")
+            if settings.startup_journal_sync_enabled:
+                if settings.startup_journal_sync_delay_sec > 0:
+                    _mark_startup_background("lightweight_waiting_journal_sync")
+                    await asyncio.sleep(settings.startup_journal_sync_delay_sec)
+                _mark_startup_background("lightweight_starting_journal_sync")
+                await _JOURNAL_SYNC.start()
+            else:
+                logger.info("Journal sync omitido en lightweight por QUANT_STARTUP_JOURNAL_SYNC_ENABLED=false")
+            if settings.startup_scanner_enabled and settings.scanner_auto_start and settings.scanner_enabled:
+                if settings.startup_scanner_delay_sec > 0:
+                    _mark_startup_background("lightweight_waiting_scanner")
+                    await asyncio.sleep(settings.startup_scanner_delay_sec)
+                _mark_startup_background("lightweight_starting_scanner")
+                await _SCANNER.start()
+            elif not settings.startup_scanner_enabled:
+                logger.info("Scanner omitido en lightweight por QUANT_STARTUP_SCANNER_ENABLED=false")
+            if settings.startup_snapshot_prewarm_enabled:
+                _prewarm_quant_snapshot_caches()
+            else:
+                logger.info("Snapshot prewarm omitido en lightweight por QUANT_STARTUP_SNAPSHOT_PREWARM_ENABLED=false")
             _mark_startup_background("completed_lightweight")
             return
         _mark_startup_background("preloading_sessions")
@@ -441,6 +493,10 @@ _strategies: dict = {}
 _portfolio = None
 
 # ── Auto-cycle loop (scanner → operation_center bridge) ──────────────────────
+# Symbols that Tradier sandbox cannot trade (asset class restricted).
+# These are excluded from both exit_pass and entry_pass in the auto-cycle.
+_SANDBOX_RESTRICTED_SYMBOLS: frozenset[str] = frozenset({"OS", "AA"})
+
 _AUTO_CYCLE_STATE: dict = {
     "running": False,
     "cycle_count": 0,
@@ -459,6 +515,14 @@ _AUTO_CYCLE_STATE: dict = {
     "stage_history": [],
 }
 _auto_cycle_task: asyncio.Task | None = None
+
+
+def _safe_float_or_none(value: object) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 def _ensure_core_runtime_bootstrap() -> None:
@@ -630,6 +694,91 @@ def _lightweight_monitor_summary_payload(
         "simulators": {},
         "lightweight_mode": True,
     }
+
+
+def _auto_cycle_inactive_reasons(config: dict[str, Any] | None = None) -> list[str]:
+    reasons: list[str] = []
+    if _lightweight_startup_enabled():
+        reasons.append("lightweight_startup_enabled")
+    if not bool(settings.autocycle_auto_start):
+        reasons.append("autocycle_auto_start_disabled")
+    if not bool(settings.scanner_enabled):
+        reasons.append("scanner_disabled")
+    elif not bool(settings.scanner_auto_start):
+        reasons.append("scanner_auto_start_disabled")
+    op_config = config or _OPERATION_CENTER.get_config()
+    if not _auton_mode_requires_loop(op_config):
+        reasons.append("auton_mode_off")
+    return reasons
+
+
+def _rebased_recent_equity_curve(
+    chart_trades: list[dict[str, object]],
+    *,
+    canonical_balances: dict[str, object],
+    canonical_totals: dict[str, object],
+) -> list[dict[str, float | int]]:
+    """Rebase the latest closed-trade window to the current account equity."""
+
+    import dateutil.parser as _dp
+
+    parsed_points: list[tuple[int, float]] = []
+    last_unix: int | None = None
+    for trade in chart_trades:
+        ts = trade.get("exit_time")
+        try:
+            parsed_ts = _dp.parse(ts).timestamp() if ts else None
+            unix = int(round(parsed_ts)) if parsed_ts is not None and math.isfinite(parsed_ts) else None
+        except Exception:
+            unix = None
+        pnl = _safe_float_or_none(trade.get("pnl"))
+        if unix is None or pnl is None:
+            continue
+        if last_unix is not None and unix <= last_unix:
+            unix = last_unix + 1
+        parsed_points.append((unix, pnl))
+        last_unix = unix
+
+    if not parsed_points:
+        return []
+
+    current_total_equity = _safe_float_or_none(canonical_balances.get("total_equity"))
+    current_open_pnl = _safe_float_or_none(canonical_totals.get("open_pnl")) or 0.0
+    endpoint_equity = (
+        current_total_equity - current_open_pnl
+        if current_total_equity is not None
+        else None
+    )
+
+    cumulative_window_pnl = sum(pnl for _, pnl in parsed_points)
+    if endpoint_equity is None:
+        legacy_tail = _safe_float_or_none((chart_trades[-1] if chart_trades else {}).get("equity"))
+        base_equity = (legacy_tail - cumulative_window_pnl) if legacy_tail is not None else 10_000.0
+    else:
+        base_equity = endpoint_equity - cumulative_window_pnl
+
+    running_equity = base_equity
+    equity_curve: list[dict[str, float | int]] = []
+    for unix, pnl in parsed_points:
+        running_equity += pnl
+        equity_curve.append({"time": unix, "value": round(running_equity, 2)})
+    return equity_curve
+
+
+def _drawdown_curve_from_equity(
+    equity_curve: list[dict[str, float | int]],
+) -> list[dict[str, float | int]]:
+    if not equity_curve:
+        return []
+    peak = float(equity_curve[0]["value"])
+    drawdown_curve: list[dict[str, float | int]] = []
+    for point in equity_curve:
+        value = float(point["value"])
+        if value > peak:
+            peak = value
+        dd_pct = ((value - peak) / peak * 100.0) if peak > 0 else 0.0
+        drawdown_curve.append({"time": int(point["time"]), "value": round(max(dd_pct, -100.0), 4)})
+    return drawdown_curve
 
 
 def _auto_cycle_mark_stage(stage: str, **details: Any) -> None:
@@ -1265,7 +1414,11 @@ async def status(
     t0 = time.perf_counter()
     try:
         if _lightweight_startup_enabled():
-            payload = _lightweight_status_payload(account_scope=account_scope, account_id=account_id)
+            payload = await _cached_status_payload(account_scope=account_scope, account_id=account_id)
+            payload["lightweight_mode"] = True
+            session = dict(payload.get("account_session") or {})
+            session.setdefault("mode", "lightweight")
+            payload["account_session"] = session
             return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
         payload = await _cached_status_payload(account_scope=account_scope, account_id=account_id)
         return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
@@ -1285,7 +1438,8 @@ async def canonical_snapshot(
     t0 = time.perf_counter()
     try:
         if _lightweight_startup_enabled():
-            payload = _lightweight_canonical_snapshot_payload(account_scope=account_scope, account_id=account_id)
+            payload = await _cached_canonical_snapshot_payload(account_scope=account_scope, account_id=account_id)
+            payload["lightweight_mode"] = True
             return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
         payload = await _cached_canonical_snapshot_payload(account_scope=account_scope, account_id=account_id)
         return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
@@ -1487,7 +1641,16 @@ async def monitor_summary(
     t0 = time.perf_counter()
     try:
         if _lightweight_startup_enabled():
-            data = _lightweight_monitor_summary_payload(account_scope=account_scope, account_id=account_id)
+            snapshot = await _cached_canonical_snapshot_payload(account_scope=account_scope, account_id=account_id)
+            data = dict(snapshot.get("monitor_summary") or {})
+            data["generated_at"] = snapshot.get("generated_at")
+            data["account_scope"] = snapshot.get("account_scope") or account_scope or "paper"
+            data["account_id"] = snapshot.get("account_id") or account_id
+            data["source"] = snapshot.get("source")
+            data["source_label"] = snapshot.get("source_label")
+            data["reconciliation"] = snapshot.get("reconciliation")
+            data["simulators"] = snapshot.get("simulators")
+            data["lightweight_mode"] = True
             return StdResponse(ok=True, data=data, ms=round((time.perf_counter() - t0) * 1000, 2))
         snapshot = _canonical_snapshot_payload(account_scope=account_scope, account_id=account_id)
         data = dict(snapshot.get("monitor_summary") or {})
@@ -1720,6 +1883,10 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                             sym = str(pos.get("symbol") or "").strip().upper()
                             if not sym:
                                 continue
+                            # Symbols restricted in Tradier sandbox — skip exit and entry
+                            if sym in _SANDBOX_RESTRICTED_SYMBOLS:
+                                logger.debug("[auto-cycle] skip sandbox-restricted symbol=%s", sym)
+                                continue
                             # strategy_type determina la dirección original de la posición
                             st = str(pos.get("strategy_type") or "equity_long").lower()
                             # long → cierre con sell; short → cierre con buy_to_cover
@@ -1806,13 +1973,17 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     continue
 
                 sorted_cands = sorted(
-                    candidates,
+                    [c for c in candidates if str(c.get("symbol") or "").strip().upper() not in _SANDBOX_RESTRICTED_SYMBOLS],
                     key=lambda c: float(c.get("selection_score") or 0),
                     reverse=True,
                 )
 
                 positions_payload = _tradier_positions_payload(account_scope="paper", account_id=None)
                 open_symbols = _open_symbols_from_positions_payload(positions_payload)
+                rebuild_guard_active = _OPERATION_CENTER.paper_rebuild_guard_active(
+                    account_scope="paper",
+                    reconciliation=positions_payload.get("reconciliation") if isinstance(positions_payload, dict) else None,
+                )
 
                 # Reconciliation gate: in paper mode, only block if Tradier didn't respond
                 # (the paper_local simulator always reports 0 positions, causing false failures)
@@ -1868,7 +2039,7 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         }
                         logger.info("[auto-cycle] symbol=%s action=%s blocked=options_only_requires_options", symbol, action)
                         continue
-                    if symbol.upper() in open_symbols:
+                    if symbol.upper() in open_symbols and not rebuild_guard_active:
                         last_result = {
                             "symbol": symbol,
                             "action": action,
@@ -1879,6 +2050,11 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         }
                         logger.info("[auto-cycle] symbol=%s action=%s blocked=open_symbol_guard", symbol, action)
                         continue
+                    if symbol.upper() in open_symbols and rebuild_guard_active:
+                        logger.warning(
+                            "[auto-cycle] open-symbol guard bypassed post journal rebuild for %s while reconciliation stabilizes",
+                            symbol,
+                        )
                     direction = str(cand.get("direction") or "long").lower()
                     fallback_side = "buy" if direction in {"long", "bull", "up"} else "sell_short"
                     _auto_cycle_mark_stage("selector_proposal", symbol=symbol, action=action)
@@ -1986,9 +2162,20 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         }, source="auto_cycle")
                     except Exception:
                         pass  # event store is non-critical
-                    if not last_result["blocked"]:
+                    # FIX 2026-04-13: count executor_exception as consumed slot
+                    # When executor raises (e.g. Tradier timeout), the order may have
+                    # been sent. Counting as executed prevents runaway batch entries.
+                    _executor_attempted = any(
+                        str(r).startswith("Fallo operativo del ejecutor") or "executor_exception" in str(r)
+                        for r in (last_result.get("reasons") or [])
+                    )
+                    if not last_result["blocked"] or _executor_attempted:
                         executed_count += 1
                         if executed_count >= max_per_cycle:
+                            logger.info(
+                                "[auto-cycle] max_per_cycle=%d reached (attempted=%s) — stopping entry pass",
+                                max_per_cycle, _executor_attempted,
+                            )
                             break
 
                 _AUTO_CYCLE_STATE.update({
@@ -2110,6 +2297,10 @@ async def operation_loop_status(x_api_key: str | None = Header(None)):
     t0 = time.perf_counter()
     state = dict(_AUTO_CYCLE_STATE)
     state["task_alive"] = bool(_auto_cycle_task and not _auto_cycle_task.done())
+    op_config = _OPERATION_CENTER.get_config()
+    state["configured_auton_mode"] = op_config.get("auton_mode")
+    if not state["running"] and not state["task_alive"]:
+        state["inactive_reasons"] = _auto_cycle_inactive_reasons(op_config)
     return StdResponse(ok=True, data=state, ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
@@ -3062,45 +3253,83 @@ async def dashboard_overview(
     """Agrega métricas de journal + posiciones para el dashboard de análisis gráfico."""
     _auth(x_api_key)
     t0 = time.perf_counter()
+    import math
     import statistics as _stats
 
     def _build_dashboard_payload() -> dict[str, object]:
         scope = account_scope or "paper"
-        canonical_snapshot = _canonical_snapshot_payload(account_scope=scope, account_id=account_id)
+        canonical_cache_key = _snapshot_cache_key("canonical", account_scope=scope, account_id=account_id)
+        cached_canonical, _, _ = _snapshot_cache_get(canonical_cache_key)
+        if isinstance(cached_canonical, dict):
+            canonical_snapshot = cached_canonical
+        else:
+            try:
+                canonical_snapshot = _canonical_snapshot_payload(account_scope=scope, account_id=account_id)
+            except Exception:
+                _snapshot_cache_start(
+                    canonical_cache_key,
+                    lambda: _canonical_snapshot_payload(account_scope=scope, account_id=account_id),
+                )
+                canonical_snapshot = {}
         canonical_balances = canonical_snapshot.get("balances") or {}
         canonical_totals = canonical_snapshot.get("totals") or {}
-        positions_payload = _tradier_positions_payload(account_scope=scope, account_id=account_id)
 
-        j_stats = _JOURNAL.stats()
-        accounts = j_stats.get("accounts", {}) if isinstance(j_stats, dict) else {}
-        acct_stats = accounts.get(scope) or accounts.get("paper") or accounts.get("live") or {}
+        chart_data = _JOURNAL.chart_data(account_scope=scope, limit=500)
+        chart_trades = list(chart_data.get("trades") or [])
+        equity_curve = _rebased_recent_equity_curve(
+            chart_trades,
+            canonical_balances=canonical_balances,
+            canonical_totals=canonical_totals,
+        )
+        drawdown_curve = _drawdown_curve_from_equity(equity_curve)
 
-        raw_curve = acct_stats.get("equity_curve") or []
-        equity_curve = []
-        initial_capital = 10_000.0
-        for pt in raw_curve:
-            ts = pt.get("timestamp")
-            try:
-                import dateutil.parser as _dp
-                unix = int(_dp.parse(ts).timestamp()) if ts else None
-            except Exception:
-                unix = None
-            if unix:
-                equity_curve.append({"time": unix, "value": round(initial_capital + float(pt.get("equity", 0)), 2)})
-
-        drawdown_curve = []
-        peak = initial_capital
-        for pt in equity_curve:
-            value = pt["value"]
-            if value > peak:
-                peak = value
-            dd_pct = ((value - peak) / peak * 100) if peak > 0 else 0
-            drawdown_curve.append({"time": pt["time"], "value": round(dd_pct, 4)})
-
-        trade_pnls = [float(pt.get("pnl", 0)) for pt in raw_curve if pt.get("pnl") is not None]
-        realized_pnl = float(acct_stats.get("realized_pnl") or 0)
+        trade_pnls = [
+            pnl_value
+            for pnl_value in (
+                float(trade.get("pnl", 0) or 0)
+                for trade in chart_trades
+            )
+            if math.isfinite(pnl_value)
+        ]
+        wins = [pnl for pnl in trade_pnls if pnl > 0]
+        losses = [pnl for pnl in trade_pnls if pnl < 0]
+        realized_pnl = float(sum(trade_pnls))
+        profit_factor = round(sum(wins) / abs(sum(losses)), 4) if losses else None
+        expectancy = round(realized_pnl / len(trade_pnls), 4) if trade_pnls else None
+        win_rate_pct = round(len(wins) / len(trade_pnls) * 100.0, 2) if trade_pnls else None
+        sharpe_ratio = None
+        if len(trade_pnls) >= 2:
+            sigma = _stats.stdev(trade_pnls)
+            if sigma > 1e-9:
+                sharpe_ratio = round((_stats.mean(trade_pnls) / sigma) * math.sqrt(len(trade_pnls)), 4)
         max_dd = min((pt["value"] for pt in drawdown_curve), default=0)
         calmar = round(realized_pnl / abs(max_dd), 3) if max_dd < -0.001 else None
+
+        heatmap_buckets: dict[tuple[int, int], dict[str, int]] = {}
+        for trade in chart_trades:
+            ts = trade.get("exit_time")
+            if not ts:
+                continue
+            try:
+                import dateutil.parser as _dp
+                dt = _dp.parse(ts)
+            except Exception:
+                continue
+            key = (int(dt.weekday()), int(dt.hour))
+            bucket = heatmap_buckets.setdefault(key, {"trades": 0, "wins": 0})
+            bucket["trades"] += 1
+            if float(trade.get("pnl", 0) or 0) > 0:
+                bucket["wins"] += 1
+        heatmap = [
+            {
+                "weekday": weekday,
+                "hour": hour,
+                "trades": bucket["trades"],
+                "wins": bucket["wins"],
+                "success_rate_pct": round(bucket["wins"] / bucket["trades"] * 100.0, 2) if bucket["trades"] else 0.0,
+            }
+            for (weekday, hour), bucket in sorted(heatmap_buckets.items())
+        ]
 
         mc_data = None
         if len(trade_pnls) >= 5:
@@ -3144,14 +3373,14 @@ async def dashboard_overview(
             }
 
         payload = {
-            "equity": round(float(canonical_balances.get("total_equity") or (initial_capital + realized_pnl)), 2),
+            "equity": round(float(canonical_balances.get("total_equity") or 0.0), 2) if canonical_balances.get("total_equity") is not None else None,
             "realized_pnl": round(realized_pnl, 2),
-            "unrealized_pnl": round(float(canonical_totals.get("open_pnl") or acct_stats.get("unrealized_pnl") or 0), 2),
-            "sharpe_ratio": acct_stats.get("sharpe_ratio"),
-            "win_rate_pct": acct_stats.get("win_rate_pct"),
-            "profit_factor": acct_stats.get("profit_factor"),
-            "expectancy": acct_stats.get("expectancy"),
-            "total_trades": acct_stats.get("trades_closed", 0),
+            "unrealized_pnl": round(float(canonical_totals.get("open_pnl") or 0), 2),
+            "sharpe_ratio": sharpe_ratio,
+            "win_rate_pct": win_rate_pct,
+            "profit_factor": profit_factor,
+            "expectancy": expectancy,
+            "total_trades": len(chart_trades),
             "open_positions": int(canonical_totals.get("positions") or 0),
             "max_drawdown_pct": round(max_dd, 3) if drawdown_curve else None,
             "calmar_ratio": calmar,
@@ -3159,8 +3388,8 @@ async def dashboard_overview(
             "drawdown_curve": drawdown_curve,
             "trade_pnls": trade_pnls,
             "monte_carlo": mc_data,
-            "recent_trades": [{"pnl": pt.get("pnl", 0)} for pt in raw_curve[-30:]],
-            "heatmap": acct_stats.get("heatmap") or [],
+            "recent_trades": [{"pnl": trade.get("pnl", 0)} for trade in chart_trades[-30:]],
+            "heatmap": heatmap,
             "daily_pnl_pct": None,
             "source": canonical_snapshot.get("source"),
             "source_label": canonical_snapshot.get("source_label"),
@@ -3171,22 +3400,17 @@ async def dashboard_overview(
             "reconciliation": canonical_snapshot.get("reconciliation"),
             "simulators": canonical_snapshot.get("simulators"),
             "historical_source": {
-                "label": f"Journal {scope}",
-                "kind": "journal",
+                "label": f"Journal {scope} reciente",
+                "kind": "journal_recent",
+                "curve_basis": "rebased_recent_closed_trades",
             },
-            "position_management": positions_payload.get("position_management") or {"summary": {}, "watchlist": [], "alerts": []},
-            "exit_governance": positions_payload.get("exit_governance") or {"summary": {}, "recommendations": [], "alerts": []},
+            "position_management": canonical_snapshot.get("position_management") or {"summary": {}, "watchlist": [], "alerts": []},
+            "exit_governance": canonical_snapshot.get("exit_governance") or {"summary": {}, "recommendations": [], "alerts": []},
         }
         return payload
 
     try:
-        cache_key = _snapshot_cache_key("overview", account_scope=account_scope, account_id=account_id)
-        payload = await _resolve_cached_payload(
-            cache_key=cache_key,
-            builder=_build_dashboard_payload,
-            warmup_factory=lambda: _warmup_dashboard_overview_payload(account_scope=account_scope, account_id=account_id),
-            timeout_sec=1.5,
-        )
+        payload = await asyncio.to_thread(_build_dashboard_payload)
         return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as e:
         logger.exception("Error en dashboard/overview")

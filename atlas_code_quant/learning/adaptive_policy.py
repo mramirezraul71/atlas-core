@@ -11,6 +11,7 @@ from sqlalchemy import select
 from config.settings import settings
 from atlas_code_quant.journal.db import session_scope
 from atlas_code_quant.journal.models import TradingJournal
+from learning.journal_data_quality import build_journal_quality_scorecard, filter_closed_entries
 
 _BULLISH_STRATEGIES = {
     "equity_long",
@@ -30,6 +31,24 @@ _BEARISH_STRATEGIES = {
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _parse_cutoff_value(value: datetime | str | None) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo is not None else value
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        try:
+            parsed = datetime.fromisoformat(f"{raw}T00:00:00")
+        except ValueError:
+            return None
+    return parsed.replace(tzinfo=None) if parsed.tzinfo is not None else parsed
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -75,6 +94,24 @@ def _empty_scope_snapshot(scope: str) -> dict[str, Any]:
     }
 
 
+def _empty_quality_snapshot() -> dict[str, Any]:
+    return {
+        "status": "watch",
+        "score_pct": 100.0,
+        "learning_allowed": True,
+        "total_closed_count": 0,
+        "row_level_clean_count": 0,
+        "trusted_closed_count": 0,
+        "row_level_clean_ratio_pct": 0.0,
+        "trusted_ratio_pct": 0.0,
+        "blocked_reasons": [],
+        "row_reason_counts": {},
+        "metrics": {},
+        "outlier_days": [],
+        "strategy_anomalies": [],
+    }
+
+
 class AdaptiveLearningService:
     """Conservative, explainable learning overlay fed by the trading journal."""
 
@@ -112,8 +149,11 @@ class AdaptiveLearningService:
         return {
             "generated_at": _utcnow_iso(),
             "enabled": self.enabled,
+            "learning_allowed": self.enabled,
             "window_days": self.window_days,
             "sample_count": 0,
+            "raw_sample_count": 0,
+            "quality": _empty_quality_snapshot(),
             "scopes": {
                 "all": _empty_scope_snapshot("all"),
                 "paper": _empty_scope_snapshot("paper"),
@@ -254,7 +294,7 @@ class AdaptiveLearningService:
             "top_negative": [item for item in sorted(ranked, key=lambda item: float(item.get("bias_score") or 0.0)) if float(item.get("bias_score") or 0.0) < 0][:4],
         }
 
-    def _compute_snapshot(self) -> dict[str, Any]:
+    def _compute_snapshot(self, *, min_cutoff: datetime | str | None = None) -> dict[str, Any]:
         if not self.enabled:
             return self._empty_snapshot()
         cutoff = datetime.utcnow() - timedelta(days=self.window_days)
@@ -267,6 +307,9 @@ class AdaptiveLearningService:
             pass
         if epoch_start is not None and epoch_start > cutoff:
             cutoff = epoch_start
+        rebuild_cutoff = _parse_cutoff_value(min_cutoff)
+        if rebuild_cutoff is not None and rebuild_cutoff > cutoff:
+            cutoff = rebuild_cutoff
 
         with session_scope() as session:
             rows = list(
@@ -282,21 +325,29 @@ class AdaptiveLearningService:
             return dt.replace(tzinfo=None) if dt is not None and dt.tzinfo is not None else dt
 
         rows = [row for row in rows if (_naive(row.exit_time) or _naive(row.updated_at) or _naive(row.entry_time) or cutoff) >= cutoff]
+        quality = build_journal_quality_scorecard(rows)
+        effective_rows = filter_closed_entries(rows, scorecard=quality, include_outlier_days=True)
+        if not quality.get("learning_allowed", False):
+            effective_rows = []
         return {
             "generated_at": _utcnow_iso(),
             "enabled": self.enabled,
+            "learning_allowed": bool(self.enabled and quality.get("learning_allowed", False)),
             "window_days": self.window_days,
-            "sample_count": len(rows),
+            "effective_cutoff": cutoff.isoformat(),
+            "sample_count": len(effective_rows),
+            "raw_sample_count": len(rows),
+            "quality": quality,
             "scopes": {
-                "all": self._scope_snapshot(rows, "all"),
-                "paper": self._scope_snapshot(rows, "paper"),
-                "live": self._scope_snapshot(rows, "live"),
+                "all": self._scope_snapshot(effective_rows, "all"),
+                "paper": self._scope_snapshot(effective_rows, "paper"),
+                "live": self._scope_snapshot(effective_rows, "live"),
             },
         }
 
-    def refresh(self, force: bool = False) -> dict[str, Any]:
-        if force or self._is_stale(self._snapshot):
-            return self._save_snapshot(self._compute_snapshot())
+    def refresh(self, force: bool = False, *, min_cutoff: datetime | str | None = None) -> dict[str, Any]:
+        if force or min_cutoff is not None or self._is_stale(self._snapshot):
+            return self._save_snapshot(self._compute_snapshot(min_cutoff=min_cutoff))
         return self._snapshot
 
     def _select_scope(self, account_scope: str | None, payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -313,16 +364,19 @@ class AdaptiveLearningService:
         scope_data = self._select_scope(account_scope, payload=payload)
         return {
             "enabled": bool(payload.get("enabled", False)),
+            "learning_allowed": bool(payload.get("learning_allowed", payload.get("enabled", False))),
             "generated_at": payload.get("generated_at"),
             "window_days": payload.get("window_days"),
             "scope": scope_data.get("scope"),
             "sample_count": scope_data.get("sample_count", 0),
+            "raw_sample_count": payload.get("raw_sample_count", payload.get("sample_count", 0)),
             "win_rate_pct": scope_data.get("win_rate_pct", 0.0),
             "profit_factor": scope_data.get("profit_factor", 0.0),
             "expectancy_pct": scope_data.get("expectancy_pct", 0.0),
             "risk_multiplier": scope_data.get("risk_multiplier", 1.0),
             "top_positive": scope_data.get("top_positive", []),
             "top_negative": scope_data.get("top_negative", []),
+            "quality": payload.get("quality") or _empty_quality_snapshot(),
             "status_mode": "fast_cached" if fast else "full",
         }
 
@@ -372,8 +426,13 @@ class AdaptiveLearningService:
             notes.append("el diario reciente enfriÃ³ este setup y reduce convicciÃ³n")
         if status.get("sample_count", 0) < 6:
             notes.append("aprendizaje con pocas muestras; se usa como ajuste ligero")
+        quality = status.get("quality") or {}
+        if not status.get("learning_allowed", True):
+            reasons = ", ".join(str(reason) for reason in (quality.get("blocked_reasons") or []))
+            notes.append(f"aprendizaje bloqueado por calidad del journal: {reasons or 'motivo no especificado'}")
         return {
             "enabled": status.get("enabled", False),
+            "learning_allowed": status.get("learning_allowed", status.get("enabled", False)),
             "generated_at": status.get("generated_at"),
             "scope": status.get("scope"),
             "sample_count": status.get("sample_count", 0),
@@ -384,6 +443,7 @@ class AdaptiveLearningService:
             "total_bias": total_bias,
             "top_positive": status.get("top_positive", []),
             "top_negative": status.get("top_negative", []),
+            "quality": quality,
             "notes": notes,
         }
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+from atlas_code_quant.data.var_monitor import VarSnapshot
+from atlas_code_quant.journal import service as journal_service
 from atlas_code_quant.journal.service import (
     build_exit_governance_snapshot,
     build_position_management_snapshot,
@@ -132,6 +134,74 @@ def test_build_exit_governance_snapshot_classifies_recommendations() -> None:
     assert snapshot["alerts"]
     assert snapshot["recommendations"][0]["recommendation"] == "exit_now"
     assert snapshot["recommendations"][0]["exit_reason"] in {"hard_stop_loss_r", "thesis_invalidated"}
+
+
+def test_build_exit_governance_snapshot_surfaces_portfolio_var_pressure(monkeypatch) -> None:
+    class _CriticalVarMonitor:
+        def is_enabled(self) -> bool:
+            return True
+
+        def compute(self, *_: object, **__: object) -> VarSnapshot:
+            return VarSnapshot(
+                enabled=True,
+                method="monte_carlo_portfolio",
+                simulation_count=750,
+                confidence_level_pct=95.0,
+                horizon_days=1,
+                var_95_usd=620.0,
+                cvar_95_usd=760.0,
+                var_95_pct_of_book=8.6,
+                threshold_usd=400.0,
+                status="critical",
+                drivers=["symbol_concentration"],
+                diversified_risk_usd=320.0,
+                gross_risk_usd=540.0,
+                concentration_multiplier=1.4,
+                loss_multiplier=1.2,
+                monte_carlo_var_usd=700.0,
+                monte_carlo_cvar_usd=820.0,
+                expected_loss_usd=210.0,
+                worst_case_loss_usd=980.0,
+                net_directional_exposure_pct=68.0,
+            )
+
+    monkeypatch.setattr(journal_service, "VarMonitor", lambda: _CriticalVarMonitor())
+    now = datetime(2026, 3, 28, 16, 0, 0)
+    entries = [
+        _entry(
+            symbol="AAPL",
+            strategy_type="equity_long",
+            hours_ago=80,
+            unrealized_pnl=-5.0,
+            risk_at_entry=200.0,
+            entry_notional=2500.0,
+            win_rate_at_entry=60.0,
+            current_win_rate_pct=60.0,
+        ),
+    ]
+    entries.extend(
+        [
+            _entry(
+                symbol=symbol,
+                strategy_type="equity_long",
+                hours_ago=12,
+                unrealized_pnl=10.0,
+                risk_at_entry=200.0,
+                entry_notional=2200.0,
+                win_rate_at_entry=59.0,
+                current_win_rate_pct=57.0,
+            )
+            for symbol in ("MSFT", "NVDA", "AMZN", "META", "TSLA", "AMD", "GOOGL", "QQQ")
+        ]
+    )
+
+    snapshot = build_exit_governance_snapshot(entries, account_type="paper", limit=6, now=now)
+
+    assert snapshot["summary"]["var_status"] == "critical"
+    assert snapshot["summary"]["var_method"] == "monte_carlo_portfolio"
+    assert snapshot["summary"]["var_95_usd"] == 620.0
+    assert any(alert["code"] == "portfolio_var_exit_pressure" for alert in snapshot["alerts"])
+    assert any(item["exit_reason"] == "portfolio_var_limit" for item in snapshot["recommendations"])
 
 
 def test_build_post_trade_learning_snapshot_surfaces_policy_candidates() -> None:

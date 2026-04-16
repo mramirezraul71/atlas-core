@@ -182,5 +182,20 @@ atlas_code_quant/data/journal/*.sqlite3-shm
 atlas_code_quant/data/*.db
 atlas_code_quant/data/*.db-wal
 atlas_code_quant/data/*.db-shm
+atlas_code_quant/data/*.sqlite3
+atlas_code_quant/data/*.sqlite3-wal
+atlas_code_quant/data/*.sqlite3-shm
+atlas_code_quant/data/notifications/
 output/
 *.py.tmp
+
+# Scratch / forensics helpers generados localmente
+/changed.py
+/check_*.py
+/do_git*.py
+/find_*.py
+/git_push.bat
+/inspect_*.py
+/purge.py
+/read_*.py
+/regen*.py

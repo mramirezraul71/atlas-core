@@ -8,10 +8,38 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_TRADIER_CREDENTIALS_FILE = Path(r"C:\dev\credenciales.txt")
+DEFAULT_ATLAS_ENV_FILE = BASE_DIR.parent / "config" / "atlas.env"
 
 
 def _clean_setting(value: str | None, default: str = "") -> str:
     return (value or default).strip()
+
+
+def _load_env_file(path: Path, *, override: bool = False) -> None:
+    """Carga pares KEY=VALUE básicos sin depender de bootstrap de Atlas.
+
+    Quant puede arrancar como proceso independiente; por eso necesita ver atlas.env
+    aunque no se inicie a través del adaptador principal.
+    """
+    try:
+        if not path.exists() or not path.is_file():
+            return
+        for raw_line in path.read_text(encoding="utf-8-sig", errors="ignore").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if not key:
+                continue
+            if override or key not in os.environ:
+                os.environ[key] = value
+    except Exception:
+        pass
+
+
+_load_env_file(DEFAULT_ATLAS_ENV_FILE, override=False)
 
 
 def _default_tradier_credentials_file() -> str:
@@ -179,7 +207,7 @@ class TradingConfig:
     atlas_brain_source: str = _clean_setting(os.getenv("ATLAS_BRAIN_SOURCE"), "quant_brain")
 
     # Opportunity scanner
-    scanner_auto_start: bool = os.getenv("QUANT_SCANNER_AUTO_START", "false").strip().lower() not in {"0", "false", "no"}
+    scanner_auto_start: bool = os.getenv("QUANT_SCANNER_AUTO_START", "true").strip().lower() not in {"0", "false", "no"}
     scanner_enabled: bool = os.getenv("QUANT_SCANNER_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     scanner_source: str = _clean_setting(os.getenv("QUANT_SCANNER_SOURCE"), "yfinance").lower()
     scanner_scan_interval_sec: int = _ienv("QUANT_SCANNER_INTERVAL_SEC", 180)
@@ -192,7 +220,71 @@ class TradingConfig:
     scanner_activity_limit: int = _ienv("QUANT_SCANNER_ACTIVITY_LIMIT", 160)
     scanner_require_higher_tf_confirmation: bool = os.getenv("QUANT_SCANNER_REQUIRE_HIGHER_TF", "true").strip().lower() not in {"0", "false", "no"}
     scanner_universe_mode: str = _clean_setting(os.getenv("QUANT_SCANNER_UNIVERSE_MODE"), "us_equities_rotating").lower()
-    scanner_universe_batch_size: int = _ienv("QUANT_SCANNER_UNIVERSE_BATCH_SIZE", 80)
+    scanner_universe_batch_size: int = _ienv("QUANT_SCANNER_UNIVERSE_BATCH_SIZE", 120)
+    # Pesos del selection_score (suma ≈ 1.0; normalización en __post_init__ si hace falta)
+    scanner_weight_lq: float = _fenv("QUANT_SCANNER_WEIGHT_LQ", 0.25)
+    scanner_weight_rs: float = _fenv("QUANT_SCANNER_WEIGHT_RS", 0.12)
+    scanner_weight_strength: float = _fenv("QUANT_SCANNER_WEIGHT_STRENGTH", 0.12)
+    scanner_weight_alignment: float = _fenv("QUANT_SCANNER_WEIGHT_ALIGNMENT", 0.10)
+    scanner_weight_evidence: float = _fenv("QUANT_SCANNER_WEIGHT_EVIDENCE", 0.06)
+    scanner_weight_order_flow: float = _fenv("QUANT_SCANNER_WEIGHT_ORDER_FLOW", 0.15)
+    scanner_weight_ofa: float = _fenv("QUANT_SCANNER_WEIGHT_OFA", 0.07)
+    scanner_weight_xgboost_conf: float = _fenv("QUANT_SCANNER_WEIGHT_XGBOOST_CONF", 0.05)
+    scanner_weight_ichimoku_conf: float = _fenv("QUANT_SCANNER_WEIGHT_ICHIMOKU_CONF", 0.05)
+    scanner_weight_adx_adjust: float = _fenv("QUANT_SCANNER_WEIGHT_ADX_ADJUST", 0.04)
+    # Fase 2 — contexto de mercado
+    scanner_vix_enabled: bool = os.getenv("QUANT_SCANNER_VIX_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+    scanner_vix_panic_skip_cycle: bool = os.getenv("QUANT_SCANNER_VIX_PANIC_SKIP", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+    scanner_regime_adapt_enabled: bool = os.getenv("QUANT_SCANNER_REGIME_ADAPT", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+    # MACD divergencia contraria al setup — dos modos (elegir uno vía env):
+    # Opción 1 (recomendada para validar Fase 2 / paper 7d): mode=points, penalty en PUNTOS de selection_score.
+    # Opción 2 (tras paper OK, optimizar): mode=percent, penalty = fracción (0.10 = restar 10% multiplicando score).
+    # Env: QUANT_SCANNER_MACD_DIV_MODE=points|percent  · QUANT_SCANNER_MACD_DIV_PENALTY=<float>
+    scanner_macd_divergence_mode: str = _clean_setting(os.getenv("QUANT_SCANNER_MACD_DIV_MODE"), "points").lower()
+    scanner_macd_divergence_penalty: float = _fenv("QUANT_SCANNER_MACD_DIV_PENALTY", 10.0)
+    scanner_stochastic_enabled: bool = os.getenv("QUANT_SCANNER_STOCHASTIC_ENABLED", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+    # Fase 3 — CNN + Prophet activos por defecto; desactivar con QUANT_SCANNER_*_ENABLED=false si faltan deps.
+    # On-chain / fundamental siguen en false por defecto (API o red).
+    scanner_cnn_lstm_enabled: bool = os.getenv("QUANT_SCANNER_CNN_LSTM_ENABLED", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+    scanner_cnn_lstm_pattern_threshold: float = _fenv("QUANT_SCANNER_CNN_PATTERN_THRESHOLD", 0.65)
+    scanner_cnn_lstm_model_path: str = _clean_setting(
+        os.getenv("QUANT_CNN_LSTM_MODEL"),
+        str(BASE_DIR / "models" / "saved" / "cnn_lstm_trained.h5"),
+    )
+    scanner_prophet_enabled: bool = os.getenv("QUANT_SCANNER_PROPHET_ENABLED", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+    scanner_prophet_min_bars: int = _ienv("QUANT_SCANNER_PROPHET_MIN_BARS", 80)
+    scanner_onchain_enabled: bool = os.getenv("QUANT_SCANNER_ONCHAIN_ENABLED", "false").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+    scanner_fundamental_enabled: bool = os.getenv("QUANT_SCANNER_FUNDAMENTAL_ENABLED", "false").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+    scanner_fundamental_min_accept: float = _fenv("QUANT_SCANNER_FUNDAMENTAL_MIN_ACCEPT", 25.0)
+    scanner_fundamental_reject_below: float = _fenv("QUANT_SCANNER_FUNDAMENTAL_REJECT_BELOW", 15.0)
     scanner_prefilter_count: int = _ienv("QUANT_SCANNER_PREFILTER_COUNT", 20)
     scanner_prefilter_min_price: float = _fenv("QUANT_SCANNER_PREFILTER_MIN_PRICE", 5.0)
     scanner_prefilter_min_dollar_volume_millions: float = _fenv("QUANT_SCANNER_PREFILTER_MIN_DOLLAR_VOLUME_M", 10.0)
@@ -294,6 +386,9 @@ class TradingConfig:
     position_management_max_unrealized_loss_r: float = _fenv("QUANT_POSITION_MGMT_MAX_UNREALIZED_LOSS_R", 0.35)
     position_management_max_thesis_drift_pct: float = _fenv("QUANT_POSITION_MGMT_MAX_THESIS_DRIFT_PCT", 15.0)
     position_management_max_stale_hours: int = _ienv("QUANT_POSITION_MGMT_MAX_STALE_HOURS", 72)
+    position_management_var_mc_scenarios: int = _ienv("QUANT_POSITION_MGMT_VAR_MC_SCENARIOS", 750)
+    position_management_var_confidence_pct: float = _fenv("QUANT_POSITION_MGMT_VAR_CONFIDENCE_PCT", 95.0)
+    position_management_var_horizon_days: int = _ienv("QUANT_POSITION_MGMT_VAR_HORIZON_DAYS", 1)
 
     # Exit governance
     exit_governance_enabled: bool = os.getenv("QUANT_EXIT_GOVERNANCE_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
@@ -346,6 +441,15 @@ class TradingConfig:
     adaptive_learning_epoch_start: str = _clean_setting(os.getenv("QUANT_ADAPTIVE_LEARNING_EPOCH_START"), "2026-03-30")
     adaptive_learning_exclude_untracked: bool = os.getenv("QUANT_ADAPTIVE_LEARNING_EXCLUDE_UNTRACKED", "true").strip().lower() not in {"0", "false", "no"}
     adaptive_learning_require_trade_context: bool = os.getenv("QUANT_ADAPTIVE_LEARNING_REQUIRE_TRADE_CONTEXT", "true").strip().lower() not in {"0", "false", "no"}
+    journal_quality_min_score_pct: float = _fenv("QUANT_JOURNAL_QUALITY_MIN_SCORE_PCT", 85.0)
+    journal_quality_min_duration_sec: float = _fenv("QUANT_JOURNAL_QUALITY_MIN_DURATION_SEC", 5.0)
+    journal_quality_outlier_day_share_pct: float = _fenv("QUANT_JOURNAL_QUALITY_OUTLIER_DAY_SHARE_PCT", 20.0)
+    journal_quality_max_negative_price_ratio_pct: float = _fenv("QUANT_JOURNAL_QUALITY_MAX_NEGATIVE_PRICE_RATIO_PCT", 0.5)
+    journal_quality_strategy_anomaly_min_samples: int = _ienv("QUANT_JOURNAL_QUALITY_STRATEGY_ANOMALY_MIN_SAMPLES", 250)
+    journal_sync_partial_snapshot_guard_enabled: bool = os.getenv("QUANT_JOURNAL_SYNC_PARTIAL_GUARD", "true").strip().lower() not in {"0", "false", "no"}
+    journal_sync_mass_close_ratio_pct: float = _fenv("QUANT_JOURNAL_SYNC_MASS_CLOSE_RATIO_PCT", 25.0)
+    journal_sync_mass_close_min_positions: int = _ienv("QUANT_JOURNAL_SYNC_MASS_CLOSE_MIN_POSITIONS", 25)
+    journal_sync_close_debounce_sec: int = _ienv("QUANT_JOURNAL_SYNC_CLOSE_DEBOUNCE_SEC", 60)
 
     # Risk management — v2 logarítmico (Grok/xAI criterio)
     max_position_pct: float = 0.05             # Fallback si no hay Kelly
@@ -417,6 +521,38 @@ class TradingConfig:
         self.scanner_activity_limit = max(20, min(self.scanner_activity_limit, 1000))
         self.scanner_universe_mode = self.scanner_universe_mode if self.scanner_universe_mode in {"manual", "us_equities_rotating"} else "us_equities_rotating"
         self.scanner_universe_batch_size = max(20, min(self.scanner_universe_batch_size, 500))
+        _w_keys = (
+            "scanner_weight_lq",
+            "scanner_weight_rs",
+            "scanner_weight_strength",
+            "scanner_weight_alignment",
+            "scanner_weight_evidence",
+            "scanner_weight_order_flow",
+            "scanner_weight_ofa",
+            "scanner_weight_xgboost_conf",
+            "scanner_weight_ichimoku_conf",
+            "scanner_weight_adx_adjust",
+        )
+        for _k in _w_keys:
+            _v = float(getattr(self, _k))
+            setattr(self, _k, max(0.0, min(_v, 1.0)))
+        _w_sum = sum(float(getattr(self, k)) for k in _w_keys)
+        if _w_sum <= 0:
+            raise ValueError("Los pesos del escáner deben sumar un valor positivo.")
+        if not (0.99 <= _w_sum <= 1.01):
+            _scale = 1.0 / _w_sum
+            for _k in _w_keys:
+                setattr(self, _k, round(float(getattr(self, _k)) * _scale, 6))
+        _mdiv_mode = self.scanner_macd_divergence_mode if self.scanner_macd_divergence_mode in {"points", "percent"} else "points"
+        self.scanner_macd_divergence_mode = _mdiv_mode
+        if _mdiv_mode == "percent":
+            self.scanner_macd_divergence_penalty = max(0.0, min(self.scanner_macd_divergence_penalty, 0.5))
+        else:
+            self.scanner_macd_divergence_penalty = max(0.0, min(self.scanner_macd_divergence_penalty, 15.0))
+        self.scanner_cnn_lstm_pattern_threshold = max(0.5, min(self.scanner_cnn_lstm_pattern_threshold, 0.95))
+        self.scanner_prophet_min_bars = max(40, min(self.scanner_prophet_min_bars, 500))
+        self.scanner_fundamental_min_accept = max(0.0, min(self.scanner_fundamental_min_accept, 50.0))
+        self.scanner_fundamental_reject_below = max(0.0, min(self.scanner_fundamental_reject_below, self.scanner_fundamental_min_accept))
         self.scanner_prefilter_count = max(8, min(self.scanner_prefilter_count, 80))
         self.scanner_prefilter_count = min(self.scanner_prefilter_count, self.scanner_universe_batch_size)
         self.scanner_prefilter_min_price = max(0.5, min(self.scanner_prefilter_min_price, 1000.0))
@@ -436,6 +572,9 @@ class TradingConfig:
         self.position_management_max_unrealized_loss_r = max(0.05, min(self.position_management_max_unrealized_loss_r, 10.0))
         self.position_management_max_thesis_drift_pct = max(1.0, min(self.position_management_max_thesis_drift_pct, 100.0))
         self.position_management_max_stale_hours = max(1, min(self.position_management_max_stale_hours, 24 * 30))
+        self.position_management_var_mc_scenarios = max(250, min(self.position_management_var_mc_scenarios, 10000))
+        self.position_management_var_confidence_pct = max(80.0, min(self.position_management_var_confidence_pct, 99.5))
+        self.position_management_var_horizon_days = max(1, min(self.position_management_var_horizon_days, 10))
         self.exit_governance_hard_exit_loss_r = max(0.05, min(self.exit_governance_hard_exit_loss_r, 10.0))
         self.exit_governance_take_profit_r = max(0.05, min(self.exit_governance_take_profit_r, 20.0))
         self.exit_governance_time_stop_hours = max(1, min(self.exit_governance_time_stop_hours, 24 * 60))
@@ -445,6 +584,14 @@ class TradingConfig:
         self.adaptive_learning_window_days = max(30, min(self.adaptive_learning_window_days, 730))
         self.adaptive_learning_min_strategy_samples = max(2, min(self.adaptive_learning_min_strategy_samples, 50))
         self.adaptive_learning_min_symbol_samples = max(2, min(self.adaptive_learning_min_symbol_samples, 50))
+        self.journal_quality_min_score_pct = max(0.0, min(self.journal_quality_min_score_pct, 100.0))
+        self.journal_quality_min_duration_sec = max(0.0, min(self.journal_quality_min_duration_sec, 3600.0))
+        self.journal_quality_outlier_day_share_pct = max(1.0, min(self.journal_quality_outlier_day_share_pct, 95.0))
+        self.journal_quality_max_negative_price_ratio_pct = max(0.0, min(self.journal_quality_max_negative_price_ratio_pct, 100.0))
+        self.journal_quality_strategy_anomaly_min_samples = max(25, min(self.journal_quality_strategy_anomaly_min_samples, 100000))
+        self.journal_sync_mass_close_ratio_pct = max(1.0, min(self.journal_sync_mass_close_ratio_pct, 100.0))
+        self.journal_sync_mass_close_min_positions = max(1, min(self.journal_sync_mass_close_min_positions, 100000))
+        self.journal_sync_close_debounce_sec = max(0, min(self.journal_sync_close_debounce_sec, 86400))
         self.scanner_universe = [item.strip().upper() for item in self.scanner_universe_raw.split(",") if item.strip()]
         self.scanner_timeframes = [item.strip() for item in self.scanner_timeframes_raw.split(",") if item.strip()]
         # Inject multi-asset symbols into universe (deduplicated, order preserved)

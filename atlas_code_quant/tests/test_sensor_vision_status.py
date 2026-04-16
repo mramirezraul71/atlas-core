@@ -80,3 +80,14 @@ def test_status_for_gate_push_bridge_uses_short_request_timeout(tmp_path, monkey
     assert mock_rj.called
     _args, kwargs = mock_rj.call_args
     assert kwargs.get("timeout_sec") == 2
+
+
+def test_sensor_vision_normalizes_insta360_pending_alias(tmp_path):
+    service = SensorVisionService(state_path=tmp_path / "sensor_vision_state.json")
+
+    updated = service.update(provider="insta360_pending")
+    payload = service.status(fast=True)
+
+    assert updated["provider"] == "insta360"
+    assert payload["provider"] == "insta360"
+    assert "insta360" in payload["supported_modes"]

@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from math import isfinite
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -16,9 +17,20 @@ import pandas as pd
 from backtesting.winning_probability import TradierClient
 from config.settings import settings
 from data.feed import MarketFeed
+from indicators.adx import add_adx_columns
+from indicators.ichimoku import add_ichimoku_columns, last_ichimoku_confidence
+from indicators.macd import add_macd_columns, macd_divergence
+from indicators.stochastic import (
+    add_stochastic_columns,
+    stochastic,
+    stochastic_pullback_bear,
+    stochastic_pullback_bull,
+)
+from market_context.regime_detector import adapt_thresholds_by_regime, detect_regime_from_frame
+from market_context.vix_handler import build_vix_context
 from learning.adaptive_policy import AdaptiveLearningService
 from scanner.universe_catalog import ScannerUniverseCatalog
-from scanner.asset_classifier import classify_asset
+from scanner.asset_classifier import AssetClass, classify_asset
 
 logger = logging.getLogger("quant.scanner")
 
@@ -32,6 +44,17 @@ HIGHER_TIMEFRAME_MAP = {
 }
 HORIZON_BARS = {"5m": 3, "15m": 4, "1h": 6, "4h": 4, "1d": 3}
 METHOD_ORDER = ["trend_ema_stack", "breakout_donchian", "rsi_pullback_trend", "ml_directional"]
+
+
+def _method_order_for_regime(regime: str) -> list[str]:
+    """Prioridad de métodos según régimen (resumen Fase 2)."""
+    if not settings.scanner_regime_adapt_enabled:
+        return list(METHOD_ORDER)
+    if regime == "trending_strong":
+        return ["breakout_donchian", "trend_ema_stack", "rsi_pullback_trend", "ml_directional"]
+    if regime == "consolidating":
+        return ["rsi_pullback_trend", "trend_ema_stack", "breakout_donchian", "ml_directional"]
+    return list(METHOD_ORDER)
 EVIDENCE_LIBRARY: dict[str, dict[str, Any]] = {
     "trend_ema_stack": {
         "label": "Tendencia estructural",
@@ -225,6 +248,57 @@ def _stable_symbol_mix(symbols: list[str]) -> list[str]:
     return sorted(symbols, key=lambda item: hashlib.sha1(item.encode("utf-8")).hexdigest())
 
 
+def calculate_selection_score(
+    *,
+    weight_lq: float,
+    weight_rs: float,
+    weight_strength: float,
+    weight_alignment: float,
+    weight_evidence: float,
+    weight_order_flow: float,
+    weight_ofa: float,
+    weight_xgboost_conf: float,
+    weight_ichimoku_conf: float,
+    weight_adx_adjust: float,
+    local_quality_score_pct: float,
+    relative_strength_pct: float,
+    strength: float,
+    alignment_score: float,
+    evidence_score: float,
+    order_flow_score_pct: float,
+    order_flow_alignment_score: float,
+    xgboost_confidence: float,
+    ichimoku_confidence: float,
+    adx_adjustment: float,
+    adaptive_bias: float,
+) -> float:
+    """Score 0–100+ (bias puede desplazar); pesos lineales deben sumar ~1.0 en configuración."""
+    core = (
+        float(local_quality_score_pct) * weight_lq
+        + float(relative_strength_pct) * weight_rs
+        + float(strength) * 100.0 * weight_strength
+        + float(alignment_score) * weight_alignment
+        + float(evidence_score) * 100.0 * weight_evidence
+        + float(order_flow_score_pct) * weight_order_flow
+        + float(order_flow_alignment_score) * weight_ofa
+        + float(xgboost_confidence) * 100.0 * weight_xgboost_conf
+        + float(ichimoku_confidence) * 100.0 * weight_ichimoku_conf
+        + float(adx_adjustment) * 100.0 * weight_adx_adjust
+    )
+    return round(core + float(adaptive_bias), 2)
+
+
+def _scanner_indicator_extras_from_df(df: pd.DataFrame) -> tuple[float, float]:
+    """Ichimoku 0–1 y ajuste ADX −1…1 desde la última fila enriquecida."""
+    ichi = 0.5
+    if {"tenkan", "kijun", "senkou_a", "senkou_b"}.issubset(df.columns):
+        ichi = last_ichimoku_confidence(df)
+    adx_adj = 0.0
+    if "adx" in df.columns and len(df) and pd.notna(df["adx"].iloc[-1]):
+        adx_adj = _clip((float(df["adx"].iloc[-1]) - 25.0) / 40.0, -1.0, 1.0)
+    return ichi, adx_adj
+
+
 @dataclass(slots=True)
 class ScannerConfig:
     enabled: bool
@@ -243,6 +317,16 @@ class ScannerConfig:
     universe: list[str]
     timeframes: list[str]
     activity_limit: int
+    weight_lq: float
+    weight_rs: float
+    weight_strength: float
+    weight_alignment: float
+    weight_evidence: float
+    weight_order_flow: float
+    weight_ofa: float
+    weight_xgboost_conf: float
+    weight_ichimoku_conf: float
+    weight_adx_adjust: float
     notes: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -263,6 +347,16 @@ class ScannerConfig:
             "universe": list(self.universe),
             "timeframes": list(self.timeframes),
             "activity_limit": self.activity_limit,
+            "weight_lq": self.weight_lq,
+            "weight_rs": self.weight_rs,
+            "weight_strength": self.weight_strength,
+            "weight_alignment": self.weight_alignment,
+            "weight_evidence": self.weight_evidence,
+            "weight_order_flow": self.weight_order_flow,
+            "weight_ofa": self.weight_ofa,
+            "weight_xgboost_conf": self.weight_xgboost_conf,
+            "weight_ichimoku_conf": self.weight_ichimoku_conf,
+            "weight_adx_adjust": self.weight_adx_adjust,
             "notes": self.notes,
         }
 
@@ -288,6 +382,16 @@ class OpportunityScannerService:
             universe=list(settings.scanner_universe),
             timeframes=_timeframes_sorted(list(settings.scanner_timeframes)),
             activity_limit=settings.scanner_activity_limit,
+            weight_lq=settings.scanner_weight_lq,
+            weight_rs=settings.scanner_weight_rs,
+            weight_strength=settings.scanner_weight_strength,
+            weight_alignment=settings.scanner_weight_alignment,
+            weight_evidence=settings.scanner_weight_evidence,
+            weight_order_flow=settings.scanner_weight_order_flow,
+            weight_ofa=settings.scanner_weight_ofa,
+            weight_xgboost_conf=settings.scanner_weight_xgboost_conf,
+            weight_ichimoku_conf=settings.scanner_weight_ichimoku_conf,
+            weight_adx_adjust=settings.scanner_weight_adx_adjust,
             notes="fase paper: escáner explicable y no ejecutor",
         )
         self._feed: MarketFeed | None = None
@@ -315,6 +419,65 @@ class OpportunityScannerService:
         self._last_universe_meta: dict[str, Any] = {}
         self._tradier_market_client: TradierClient | None = None
         self._tradier_market_scope: str | None = None
+        self._cnn_lstm_model: Any = None
+        self._prophet_signal_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
+        if settings.scanner_cnn_lstm_enabled:
+            try:
+                from learning.cnn_lstm_pattern import load_trained_model
+
+                mp = Path(settings.scanner_cnn_lstm_model_path)
+                self._cnn_lstm_model = load_trained_model(mp)
+                if self._cnn_lstm_model is None:
+                    self._log("warn", "CNN-LSTM habilitado pero modelo no encontrado", path=str(mp))
+            except Exception as exc:
+                self._log("warn", "CNN-LSTM no disponible", reason=str(exc))
+
+    def _ticker_for_fundamentals(self, symbol: str) -> str:
+        s = symbol.strip().upper()
+        if ":" in s:
+            return s.split(":")[-1]
+        if "/" in s:
+            return s.split("/")[0]
+        return s
+
+    def _phase3_symbol_gates(self, symbol: str, asset_prof: Any) -> dict[str, Any]:
+        """Preflight Fase 3: fundamentales (equities) y on-chain (cripto)."""
+        ctx: dict[str, Any] = {
+            "hard_reject": False,
+            "reasons": [],
+            "fundamental_downweight": False,
+            "fundamental_score": None,
+            "onchain_bonus": 0.0,
+        }
+        if settings.scanner_fundamental_enabled and asset_prof.asset_class in (
+            AssetClass.EQUITY_STOCK,
+            AssetClass.EQUITY_ETF,
+        ):
+            from market_context.fundamental_score import apply_fundamental_filter, calculate_fundamental_score
+
+            tick = self._ticker_for_fundamentals(symbol)
+            fs = float(calculate_fundamental_score(tick))
+            ctx["fundamental_score"] = fs
+            action = apply_fundamental_filter(
+                fs,
+                min_score=float(settings.scanner_fundamental_min_accept),
+                reject_below=float(settings.scanner_fundamental_reject_below),
+            )
+            if action == "reject":
+                ctx["hard_reject"] = True
+                ctx["reasons"].append(f"fundamental {fs:.1f}/50 < {settings.scanner_fundamental_reject_below:.0f}")
+            elif action == "downweight":
+                ctx["fundamental_downweight"] = True
+        if settings.scanner_onchain_enabled and asset_prof.asset_class == AssetClass.CRYPTO:
+            from market_context.onchain_metrics import bundle_for_symbol
+
+            b = bundle_for_symbol(symbol)
+            if not bool(b.get("gate", {}).get("gate_pass", True)):
+                ctx["hard_reject"] = True
+                ctx["reasons"].extend(list(b.get("gate", {}).get("reasons") or []))
+            else:
+                ctx["onchain_bonus"] = float(b.get("bonus") or 0.0)
+        return ctx
 
     def _base_universe_summary(self) -> tuple[dict[str, Any], dict[str, Any]]:
         if self._config.source == "yfinance" and self._config.universe_mode == "us_equities_rotating":
@@ -780,7 +943,7 @@ class OpportunityScannerService:
                     if df is None or df.empty:
                         raise ValueError("sin datos")
                     df = df.dropna(subset=["open", "high", "low", "close"]).copy()
-                    frames[symbol][timeframe] = df
+                    frames[symbol][timeframe] = self._enrich_scanner_ohlcv(df)
                 except Exception as exc:
                     self._log(
                         "warn",
@@ -790,6 +953,34 @@ class OpportunityScannerService:
                         reason=str(exc),
                     )
         return frames
+
+    def _enrich_scanner_ohlcv(self, df: pd.DataFrame) -> pd.DataFrame:
+        """ADX, Ichimoku, estocástico y MACD sobre OHLCV antes de evaluar criterios."""
+        try:
+            out = df
+            if len(out) >= 30:
+                out = add_adx_columns(out, period=14)
+            if len(out) >= 120:
+                out = add_ichimoku_columns(out)
+            if settings.scanner_stochastic_enabled and len(out) >= 25:
+                out = add_stochastic_columns(out)
+            if len(out) >= 40:
+                out = add_macd_columns(out)
+            if settings.scanner_cnn_lstm_enabled and self._cnn_lstm_model is not None and len(out) >= 22:
+                try:
+                    from learning.cnn_lstm_pattern import prepare_candlestick_image, predict_pattern_confidence
+
+                    img = prepare_candlestick_image(out)
+                    pred = predict_pattern_confidence(img, self._cnn_lstm_model)
+                    out = out.copy()
+                    prev_attrs = dict(getattr(out, "attrs", {}) or {})
+                    out.attrs = {**prev_attrs, "cnn_pattern": pred}
+                except Exception as exc:
+                    self._log("debug", "cnn_lstm_enrich", reason=str(exc))
+            return out
+        except Exception as exc:
+            self._log("debug", "indicadores_scanner_ohlcv", reason=str(exc))
+            return df
 
     def _relative_strength_percentiles(self, frames: dict[str, dict[str, pd.DataFrame]]) -> dict[str, float]:
         scores: list[tuple[str, float]] = []
@@ -1020,23 +1211,48 @@ class OpportunityScannerService:
                 return {"direction": 0, "strength": 0.0, "reason": "rsi_pullback_needs_more_history"}
             ema50 = df["close"].ewm(span=50, adjust=False).mean()
             ema200 = df["close"].ewm(span=200, adjust=False).mean()
-            rsi2 = _rsi(df["close"], 2)
             bullish = price > float(ema50.iloc[-1]) > float(ema200.iloc[-1])
             bearish = price < float(ema50.iloc[-1]) < float(ema200.iloc[-1])
-            if bullish and float(rsi2.iloc[-2]) < 10 <= float(rsi2.iloc[-1]):
-                strength = 0.56 + min((float(rsi2.iloc[-1]) - float(rsi2.iloc[-2])) / 100.0, 0.24)
+            if not settings.scanner_stochastic_enabled:
+                rsi2 = _rsi(df["close"], 2)
+                if bullish and float(rsi2.iloc[-2]) < 10 <= float(rsi2.iloc[-1]):
+                    strength = 0.56 + min((float(rsi2.iloc[-1]) - float(rsi2.iloc[-2])) / 100.0, 0.24)
+                    return {
+                        "direction": 1,
+                        "strength": min(strength, 0.88),
+                        "reasons": ["pullback corto resuelto al alza dentro de tendencia", f"rsi2 {float(rsi2.iloc[-1]):.1f}"],
+                        "price": price,
+                    }
+                if bearish and float(rsi2.iloc[-2]) > 90 >= float(rsi2.iloc[-1]):
+                    strength = 0.56 + min((float(rsi2.iloc[-2]) - float(rsi2.iloc[-1])) / 100.0, 0.24)
+                    return {
+                        "direction": -1,
+                        "strength": min(strength, 0.88),
+                        "reasons": ["pullback corto resuelto a la baja dentro de tendencia", f"rsi2 {float(rsi2.iloc[-1]):.1f}"],
+                        "price": price,
+                    }
+                return {"direction": 0, "strength": 0.0, "reason": "sin_pullback_util"}
+            if "stoch_k" in df.columns and "stoch_d" in df.columns:
+                k_ser, d_ser = df["stoch_k"], df["stoch_d"]
+            else:
+                k_ser, d_ser = stochastic(df["high"], df["low"], df["close"])
+            k_prev = float(k_ser.iloc[-2])
+            k_now = float(k_ser.iloc[-1])
+            d_now = float(d_ser.iloc[-1])
+            if bullish and stochastic_pullback_bull(k_prev, k_now, d_now):
+                strength = 0.56 + min((k_now - k_prev) / 100.0, 0.24)
                 return {
                     "direction": 1,
                     "strength": min(strength, 0.88),
-                    "reasons": ["pullback corto resuelto al alza dentro de tendencia", f"rsi2 {float(rsi2.iloc[-1]):.1f}"],
+                    "reasons": ["pullback estocástico al alza en tendencia", f"stoch_k {k_now:.1f}"],
                     "price": price,
                 }
-            if bearish and float(rsi2.iloc[-2]) > 90 >= float(rsi2.iloc[-1]):
-                strength = 0.56 + min((float(rsi2.iloc[-2]) - float(rsi2.iloc[-1])) / 100.0, 0.24)
+            if bearish and stochastic_pullback_bear(k_prev, k_now, d_now):
+                strength = 0.56 + min((k_prev - k_now) / 100.0, 0.24)
                 return {
                     "direction": -1,
                     "strength": min(strength, 0.88),
-                    "reasons": ["pullback corto resuelto a la baja dentro de tendencia", f"rsi2 {float(rsi2.iloc[-1]):.1f}"],
+                    "reasons": ["pullback estocástico a la baja en tendencia", f"stoch_k {k_now:.1f}"],
                     "price": price,
                 }
             return {"direction": 0, "strength": 0.0, "reason": "sin_pullback_util"}
@@ -1169,21 +1385,43 @@ class OpportunityScannerService:
         tf_frames: dict[str, pd.DataFrame],
         relative_strength_pct: float,
         order_flow: dict[str, Any] | None = None,
+        *,
+        vix_context: dict[str, Any] | None = None,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         accepted: list[dict[str, Any]] = []
         rejected: list[dict[str, Any]] = []
         consensus_map: dict[str, dict[str, Any]] = {}
         order_flow = order_flow or {}
+        vix_context = vix_context or {"gate": "normal", "multiplier": 1.0, "ok": True}
+        asset_prof = classify_asset(symbol)
+        phase3_ctx = self._phase3_symbol_gates(symbol, asset_prof)
+        if phase3_ctx["hard_reject"]:
+            rejected.append({
+                "symbol": symbol,
+                "timeframe": "*",
+                "reason": "; ".join(phase3_ctx["reasons"]) or "phase3_gate",
+                "stage": "phase3_gate",
+            })
+            self._log("info", "Fase 3: símbolo descartado", symbol=symbol, reasons=phase3_ctx["reasons"])
+            return accepted, rejected
         for timeframe in _timeframes_sorted(list(tf_frames)):
             df = tf_frames.get(timeframe)
             if df is None or df.empty:
                 rejected.append({"symbol": symbol, "timeframe": timeframe, "reason": "sin datos cargados", "stage": "load"})
                 continue
+            phase3_notes: list[str] = []
             self._current_symbol = symbol
             self._current_timeframe = timeframe
             self._current_step = "evaluando_criterios"
+            regime = detect_regime_from_frame(df)
+            adapt = adapt_thresholds_by_regime(regime)
+            eff_min_wr = float(self._config.min_local_win_rate_pct)
+            of_scale = 1.0
+            if settings.scanner_regime_adapt_enabled:
+                eff_min_wr = _clip(eff_min_wr + float(adapt["min_win_rate_delta"]), 45.0, 72.0)
+                of_scale = float(adapt["order_flow_weight_scale"])
             evaluations: list[dict[str, Any]] = []
-            for method in METHOD_ORDER:
+            for method in _method_order_for_regime(regime):
                 raw = self._method_signal(method, df, symbol, timeframe)
                 if int(raw.get("direction") or 0) == 0 or float(raw.get("strength") or 0.0) < self._config.min_signal_strength:
                     continue
@@ -1234,8 +1472,8 @@ class OpportunityScannerService:
                 else:
                     alignment_score = 0.0
                     rejection_reasons.append(f"{higher_tf} contradice la dirección {_direction_label(int(best['direction']))}")
-            if float(best["local_win_rate_pct"]) < self._config.min_local_win_rate_pct:
-                rejection_reasons.append(f"win rate local {best['local_win_rate_pct']:.2f}% < mínimo {self._config.min_local_win_rate_pct:.2f}%")
+            if float(best["local_win_rate_pct"]) < eff_min_wr:
+                rejection_reasons.append(f"win rate local {best['local_win_rate_pct']:.2f}% < mínimo {eff_min_wr:.2f}% (régimen {regime})")
             if float(best["local_profit_factor"]) < self._config.min_local_profit_factor:
                 rejection_reasons.append(
                     f"profit factor local {best['local_profit_factor']:.2f} < mínimo {self._config.min_local_profit_factor:.2f}"
@@ -1261,18 +1499,115 @@ class OpportunityScannerService:
                     order_flow_alignment_score = 48.0
                 else:
                     order_flow_alignment_score = max(25.0 - (order_flow_confidence * 0.15), 0.0)
+            order_flow_score = _clip(order_flow_score * of_scale, 0.0, 100.0)
+            order_flow_alignment_score = _clip(order_flow_alignment_score * of_scale, 0.0, 100.0)
             local_quality_score = float(best.get("local_quality_score_pct") or 0.0)
-            selection_score = round(
-                (local_quality_score * 0.44)
-                + (float(relative_strength_pct) * 0.14)
-                + (float(best["strength"]) * 100.0 * 0.12)
-                + (alignment_score * 0.10)
-                + (float(best["evidence_score"]) * 100.0 * 0.06)
-                + (order_flow_score * 0.08)
-                + (order_flow_alignment_score * 0.06)
-                + adaptive_bias,
-                2,
+            ichimoku_conf, adx_adjustment = _scanner_indicator_extras_from_df(df)
+            xgb_conf = 0.0
+            if self._config.weight_xgboost_conf > 1e-9 and str(best.get("method")) == "ml_directional":
+                xgb_conf = _clip(float(best.get("strength") or 0.0), 0.0, 1.0)
+            selection_score = calculate_selection_score(
+                weight_lq=self._config.weight_lq,
+                weight_rs=self._config.weight_rs,
+                weight_strength=self._config.weight_strength,
+                weight_alignment=self._config.weight_alignment,
+                weight_evidence=self._config.weight_evidence,
+                weight_order_flow=self._config.weight_order_flow,
+                weight_ofa=self._config.weight_ofa,
+                weight_xgboost_conf=self._config.weight_xgboost_conf,
+                weight_ichimoku_conf=self._config.weight_ichimoku_conf,
+                weight_adx_adjust=self._config.weight_adx_adjust,
+                local_quality_score_pct=local_quality_score,
+                relative_strength_pct=float(relative_strength_pct),
+                strength=float(best["strength"]),
+                alignment_score=alignment_score,
+                evidence_score=float(best["evidence_score"]),
+                order_flow_score_pct=order_flow_score,
+                order_flow_alignment_score=order_flow_alignment_score,
+                xgboost_confidence=xgb_conf,
+                ichimoku_confidence=ichimoku_conf,
+                adx_adjustment=adx_adjustment,
+                adaptive_bias=adaptive_bias,
             )
+            if settings.scanner_vix_enabled:
+                selection_score = round(selection_score * float(vix_context.get("multiplier") or 1.0), 2)
+            if "macd" in df.columns and len(df) > 6:
+                div = macd_divergence(df["close"], df["macd"])
+                pen = float(settings.scanner_macd_divergence_penalty)
+                ddir = int(best.get("direction") or 0)
+                if settings.scanner_macd_divergence_mode == "percent":
+                    pen = _clip(pen, 0.0, 0.5)
+                    if div == "bearish_divergence" and ddir == 1:
+                        selection_score = round(selection_score * max(0.0, 1.0 - pen), 2)
+                    elif div == "bullish_divergence" and ddir == -1:
+                        selection_score = round(selection_score * max(0.0, 1.0 - pen), 2)
+                else:
+                    pen_pts = _clip(pen, 0.0, 15.0)
+                    if div == "bearish_divergence" and ddir == 1:
+                        selection_score = round(selection_score - pen_pts, 2)
+                    elif div == "bullish_divergence" and ddir == -1:
+                        selection_score = round(selection_score - pen_pts, 2)
+            selection_score = round(selection_score + float(phase3_ctx.get("onchain_bonus") or 0.0), 2)
+            if float(phase3_ctx.get("onchain_bonus") or 0.0) > 0:
+                phase3_notes.append(f"On-chain: +{float(phase3_ctx['onchain_bonus']):.1f} pts confluencia")
+            if settings.scanner_cnn_lstm_enabled and self._cnn_lstm_model is not None:
+                try:
+                    from learning.cnn_lstm_pattern import (
+                        pattern_boost_points,
+                        predict_pattern_confidence,
+                        prepare_candlestick_image,
+                    )
+
+                    pred = None
+                    attrs = getattr(df, "attrs", None)
+                    if isinstance(attrs, dict):
+                        pred = attrs.get("cnn_pattern")
+                    if not isinstance(pred, dict) and len(df) >= 22:
+                        pred = predict_pattern_confidence(prepare_candlestick_image(df), self._cnn_lstm_model)
+                    if isinstance(pred, dict):
+                        b = pattern_boost_points(
+                            pred,
+                            int(best.get("direction") or 0),
+                            float(settings.scanner_cnn_lstm_pattern_threshold),
+                        )
+                        if b > 0:
+                            phase3_notes.append(
+                                f"CNN patrón: boost +{b:.2f} (bull {pred.get('bullish_pattern', 0):.2f} / bear {pred.get('bearish_pattern', 0):.2f})"
+                            )
+                        selection_score = round(selection_score + b, 2)
+                except Exception as exc:
+                    self._log("debug", "cnn_lstm_score", reason=str(exc))
+            if settings.scanner_prophet_enabled and len(df) >= int(settings.scanner_prophet_min_bars):
+                try:
+                    from forecasting.prophet_detector import prophet_soft_signals
+
+                    pk = (symbol, timeframe, str(df.index[-1]))
+                    sig = self._prophet_signal_cache.get(pk)
+                    if sig is None:
+                        sig = prophet_soft_signals(df["close"])
+                        self._prophet_signal_cache[pk] = sig
+                    bonus = float(sig.get("score_bonus_low_vol") or 0.0)
+                    selection_score = round(selection_score + bonus, 2)
+                    if bonus > 0:
+                        phase3_notes.append("Prophet: baja volatilidad prevista (+2)")
+                    if bool(sig.get("breakpoint")) and float(sig.get("breakpoint_magnitude") or 0.0) > 0.5:
+                        self._log(
+                            "warning",
+                            "Prophet: posible breakpoint de tendencia",
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            magnitude=sig.get("breakpoint_magnitude"),
+                        )
+                        phase3_notes.append(
+                            f"Prophet: breakpoint tendencia (Δ {float(sig.get('breakpoint_magnitude') or 0.0):.2f})"
+                        )
+                except Exception as exc:
+                    self._log("debug", "prophet_score", reason=str(exc))
+            if phase3_ctx.get("fundamental_downweight"):
+                selection_score = round(selection_score * 0.9, 2)
+                phase3_notes.append("Fundamentales débiles: score ×0.9")
+            if settings.scanner_vix_enabled and vix_context.get("gate") == "caution" and int(best.get("direction") or 0) == 1:
+                rejection_reasons.append("VIX en cautela (>30): solo dirección bajista")
             if (
                 bool(order_flow.get("available"))
                 and timeframe in {"5m", "15m", "1h"}
@@ -1284,6 +1619,7 @@ class OpportunityScannerService:
             if selection_score < self._config.min_selection_score:
                 rejection_reasons.append(f"selection score {selection_score:.2f} < mínimo {self._config.min_selection_score:.2f}")
             reasons = list(best.get("reasons") or [])
+            reasons.extend(phase3_notes)
             reasons.append(
                 "calidad local "
                 f"{local_quality_score:.1f} | pf {float(best.get('local_profit_factor') or 0.0):.2f} | "
@@ -1293,6 +1629,11 @@ class OpportunityScannerService:
             reasons.append(f"fuerza relativa {relative_strength_pct:.1f}% del universo")
             if higher_tf:
                 reasons.append(f"confirmación {higher_tf}: {higher_consensus.get('label', 'neutral')}")
+            reasons.append(f"régimen {regime} · umbral WR {eff_min_wr:.1f}%")
+            if settings.scanner_vix_enabled and vix_context.get("current") is not None:
+                reasons.append(
+                    f"VIX {float(vix_context['current']):.2f} · gate {vix_context.get('gate', 'normal')} · ×{float(vix_context.get('multiplier') or 1.0):.2f}"
+                )
             if bool(order_flow.get("available")):
                 reasons.append(
                     f"order flow {order_flow.get('direction', 'neutral')} {order_flow_score:.1f}% · presión {float(order_flow.get('net_pressure_pct') or 0.0):.1f}%"
@@ -1339,6 +1680,12 @@ class OpportunityScannerService:
                 "strategy_family": best["family"],
                 "selection_score": selection_score,
                 "adaptive_context": adaptive_context,
+                "market_regime": regime,
+                "vix_context": {
+                    "current": vix_context.get("current"),
+                    "gate": vix_context.get("gate"),
+                    "multiplier": vix_context.get("multiplier"),
+                },
                 "signal_strength_pct": round(float(best["strength"]) * 100.0, 2),
                 "local_win_rate_pct": best["local_win_rate_pct"],
                 "local_profit_factor": best["local_profit_factor"],
@@ -1374,6 +1721,52 @@ class OpportunityScannerService:
         try:
             batch_symbols, universe_meta = self._resolve_scan_batch()
             selected_symbols, prefilter_meta = self._prefilter_batch(batch_symbols)
+            vix_context: dict[str, Any] = {"gate": "normal", "multiplier": 1.0, "ok": True}
+            if settings.scanner_vix_enabled:
+                try:
+                    vix_context = build_vix_context()
+                except Exception:
+                    vix_context = {"gate": "normal", "multiplier": 1.0, "ok": False, "reason": "vix_build_error"}
+            if (
+                settings.scanner_vix_enabled
+                and settings.scanner_vix_panic_skip_cycle
+                and vix_context.get("gate") == "panic"
+            ):
+                cycle_ms = round((time.perf_counter() - start) * 1000.0, 2)
+                with self._state_lock:
+                    self._cycle_count += 1
+                    self._last_cycle_at = _utcnow_iso()
+                    self._last_cycle_ms = cycle_ms
+                    self._current_step = "vix_panic_hold"
+                    self._report = {
+                        "generated_at": self._last_cycle_at,
+                        "summary": {
+                            "running": True,
+                            "cycle_count": self._cycle_count,
+                            "accepted": 0,
+                            "rejected": 0,
+                            "universe_size": int(universe_meta.get("universe_total") or len(batch_symbols)),
+                            "universe_mode": universe_meta.get("mode", self._config.universe_mode),
+                            "vix_panic": True,
+                            "vix": vix_context,
+                            "prefilter_selected": int(prefilter_meta.get("prefilter_selected") or len(selected_symbols)),
+                            "deep_scan_symbols": 0,
+                            "provisional_candidates": 0,
+                            "dynamic_min_selection_score": float(self._config.min_selection_score),
+                            "timeframes": list(self._config.timeframes),
+                            "scan_interval_sec": self._config.scan_interval_sec,
+                            "last_cycle_ms": cycle_ms,
+                        },
+                        "criteria": self.criteria_catalog(),
+                        "learning": self.learning.status(account_scope=settings.tradier_default_scope),
+                        "universe": {**universe_meta, **prefilter_meta, "selected_symbols": []},
+                        "candidates": [],
+                        "rejections": [{"reason": "vix_panic_gate", "vix": vix_context}],
+                        "activity": list(self._activity[-20:]),
+                        "current_work": {"symbol": None, "timeframe": None, "step": self._current_step},
+                    }
+                self._log("warn", "Ciclo omitido: VIX en pánico", vix=vix_context.get("current"))
+                return self.report()
             frames = self._load_universe_frames(selected_symbols)
             relative_strength = self._relative_strength_percentiles(frames)
             order_flow_batch = self._order_flow_batch(frames)
@@ -1388,6 +1781,7 @@ class OpportunityScannerService:
                     tf_frames,
                     relative_strength.get(symbol, 50.0),
                     order_flow_batch.get(symbol),
+                    vix_context=vix_context,
                 )
                 accepted.extend(symbol_accept)
                 rejected.extend(symbol_reject)
@@ -1439,6 +1833,7 @@ class OpportunityScannerService:
                         "timeframes": list(self._config.timeframes),
                         "scan_interval_sec": self._config.scan_interval_sec,
                         "last_cycle_ms": cycle_ms,
+                        "vix": vix_context if settings.scanner_vix_enabled else None,
                     },
                     "criteria": self.criteria_catalog(),
                     "learning": self.learning.status(account_scope=settings.tradier_default_scope),

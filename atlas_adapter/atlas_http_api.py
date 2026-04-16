@@ -59,7 +59,7 @@ _logs = str(LOGS_DIR)
 
 from fastapi import FastAPI, File, Header, Request, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field, field_validator
 import psutil
 
@@ -17223,6 +17223,12 @@ async def quant_ui_root():
                             headers={"Cache-Control": "no-cache"})
     from fastapi import HTTPException
     raise HTTPException(status_code=404, detail="Code-Quant dashboard not built")
+
+
+@app.get("/atlas-ui", include_in_schema=False)
+async def atlas_ui_legacy_redirect():
+    """Alias legado del dashboard principal; redirige a /ui para compatibilidad."""
+    return RedirectResponse(url="/ui", status_code=302)
 
 
 @app.get("/quant-static/{file_path:path}", include_in_schema=False)

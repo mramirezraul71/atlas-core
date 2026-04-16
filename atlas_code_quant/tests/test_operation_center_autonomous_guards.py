@@ -53,8 +53,20 @@ class _Journal:
         return {
             "enabled": True,
             "account_type": account_type,
-            "summary": {"open_positions": 0, "watchlist_count": 0},
+            "summary": {
+                "open_positions": 0,
+                "watchlist_count": 0,
+                "var_status": "ok",
+                "var_method": "monte_carlo_portfolio",
+                "var_95_usd": 0.0,
+            },
             "alerts": [],
+            "var_monitor": {
+                "enabled": True,
+                "method": "monte_carlo_portfolio",
+                "status": "ok",
+                "var_95_usd": 0.0,
+            },
             "watchlist": [],
             "limit": limit,
         }
@@ -63,7 +75,14 @@ class _Journal:
         return {
             "enabled": True,
             "account_type": account_type,
-            "summary": {"exit_now_count": 0, "de_risk_count": 0, "take_profit_count": 0},
+            "summary": {
+                "exit_now_count": 0,
+                "de_risk_count": 0,
+                "take_profit_count": 0,
+                "var_status": "ok",
+                "var_method": "monte_carlo_portfolio",
+                "var_95_usd": 0.0,
+            },
             "alerts": [],
             "recommendations": [],
             "limit": limit,
@@ -140,6 +159,64 @@ class _Vision:
                 "chart_color": self.chart_color or "neutral",
                 "prices": list(self.prices),
             }
+        return payload
+
+
+class _RiskGuardJournal(_Journal):
+    def __init__(
+        self,
+        *,
+        var_status: str = "ok",
+        var_95_usd: float = 0.0,
+        exit_now_count: int = 0,
+        de_risk_count: int = 0,
+    ) -> None:
+        self.var_status = var_status
+        self.var_95_usd = var_95_usd
+        self.exit_now_count = exit_now_count
+        self.de_risk_count = de_risk_count
+
+    def position_management_snapshot(self, account_type: str | None = None, limit: int = 12) -> dict:
+        payload = super().position_management_snapshot(account_type=account_type, limit=limit)
+        payload["summary"].update(
+            {
+                "open_positions": max(self.exit_now_count + self.de_risk_count, 1),
+                "watchlist_count": max(self.exit_now_count + self.de_risk_count, 1),
+                "var_status": self.var_status,
+                "var_method": "monte_carlo_portfolio",
+                "var_95_usd": self.var_95_usd,
+            }
+        )
+        payload["var_monitor"].update(
+            {
+                "enabled": True,
+                "method": "monte_carlo_portfolio",
+                "status": self.var_status,
+                "var_95_usd": self.var_95_usd,
+            }
+        )
+        return payload
+
+    def exit_governance_snapshot(self, account_type: str | None = None, limit: int = 10) -> dict:
+        payload = super().exit_governance_snapshot(account_type=account_type, limit=limit)
+        payload["summary"].update(
+            {
+                "exit_now_count": self.exit_now_count,
+                "de_risk_count": self.de_risk_count,
+                "take_profit_count": 0,
+                "var_status": self.var_status,
+                "var_method": "monte_carlo_portfolio",
+                "var_95_usd": self.var_95_usd,
+            }
+        )
+        if self.exit_now_count > 0:
+            payload["alerts"] = [
+                {
+                    "level": "warning",
+                    "code": "exit_now_candidates_present",
+                    "message": "Hay posiciones con criterio de salida inmediata.",
+                }
+            ]
         return payload
 
 
@@ -236,6 +313,10 @@ def _quote_provider_factory(payload: dict[str, object]):
     return _provider
 
 
+def _enable_paper_autonomy(center: OperationCenter, *, mode: str = "paper_autonomous") -> None:
+    center.update_config({"auton_mode": mode, "reset_fail_safe": True})
+
+
 def test_blocks_missing_strategy_type_for_autonomous_equity_orders(tmp_path: Path) -> None:
     executor = _Executor()
     center = OperationCenter(
@@ -263,7 +344,7 @@ def test_blocks_missing_strategy_type_for_autonomous_equity_orders(tmp_path: Pat
 
     assert payload["allowed"] is False
     assert payload["blocked"] is True
-    assert "strategy_type is required" in payload["reasons"][0]
+    assert any("strategy_type is required" in reason for reason in payload["reasons"])
     assert executor.calls == 0
 
 
@@ -305,6 +386,77 @@ def test_blocks_reentry_when_symbol_is_already_open(tmp_path: Path) -> None:
     assert executor.calls == 0
 
 
+def test_reset_after_journal_rebuild_arms_paper_guard_and_clears_runtime_state(tmp_path: Path) -> None:
+    center = OperationCenter(
+        tracker=_Tracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+    )
+    center.update_config(
+        {
+            "auton_mode": "paper_autonomous",
+            "reset_fail_safe": True,
+        }
+    )
+
+    result = center.reset_after_journal_rebuild(account_scope="paper", guard_hours=1.0)
+    state = center.get_config()
+
+    assert result["ok"] is True
+    assert state["last_decision"] is None
+    assert state["last_candidate"] is None
+    assert state["post_journal_rebuild_guard"]["active"] is True
+    assert state["post_journal_rebuild_guard"]["scope"] == "paper"
+
+
+def test_open_symbol_guard_is_bypassed_temporarily_after_journal_rebuild(tmp_path: Path) -> None:
+    executor = _Executor()
+    center = OperationCenter(
+        tracker=_Tracker(
+            strategies=[
+                {
+                    "underlying": "AAPL",
+                    "positions": [{"symbol": "AAPL", "asset_class": "equity"}],
+                }
+            ]
+        ),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=executor,
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        reconciliation_provider=lambda **_: {"reconciliation": {"state": "failed", "max_positions_gap": 3}},
+        quote_provider=_quote_provider_factory({"symbol": "AAPL", "bid": 100.0, "ask": 100.2, "last": 100.1}),
+    )
+    center.update_config({"auton_mode": "paper_autonomous", "reset_fail_safe": True})
+    center.reset_after_journal_rebuild(account_scope="paper", guard_hours=1.0)
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="AAPL",
+            side="buy",
+            size=1,
+            order_type="market",
+            asset_class="equity",
+            account_scope="paper",
+            strategy_type="equity_long",
+            entry_reference_price=100.0,
+            max_entry_drift_pct=2.0,
+            max_entry_spread_pct=0.5,
+        ),
+        action="preview",
+        capture_context=False,
+    )
+
+    assert not any("Open-symbol guard blocked" in reason for reason in payload["reasons"])
+    assert any("Open-symbol guard bypassed" in warning for warning in payload["warnings"])
+
+
 def test_blocks_submit_when_reconciliation_is_not_healthy_and_uses_total_equity(tmp_path: Path) -> None:
     executor = _Executor()
     center = OperationCenter(
@@ -337,7 +489,7 @@ def test_blocks_submit_when_reconciliation_is_not_healthy_and_uses_total_equity(
     assert payload["what_if"]["current_equity"] == 123456.0
 
 
-def test_market_context_gate_blocks_submit_when_context_is_explicitly_blocked(tmp_path: Path) -> None:
+def test_market_context_gate_warns_in_paper_when_context_is_explicitly_blocked(tmp_path: Path) -> None:
     executor = _Executor()
     center = OperationCenter(
         tracker=_Tracker(),
@@ -348,6 +500,7 @@ def test_market_context_gate_blocks_submit_when_context_is_explicitly_blocked(tm
         learning=_Learning(),
         state_path=tmp_path / "operation_center_state.json",
     )
+    _enable_paper_autonomy(center)
 
     payload = center.evaluate_candidate(
         order=OrderRequest(
@@ -376,10 +529,11 @@ def test_market_context_gate_blocks_submit_when_context_is_explicitly_blocked(tm
         capture_context=False,
     )
 
-    assert payload["allowed"] is False
+    assert payload["allowed"] is True
+    assert payload["blocked"] is False
     assert payload["market_context_gate"]["blocked"] is True
-    assert any("Market context blocked submit" in reason for reason in payload["reasons"])
-    assert executor.calls == 0
+    assert any("Market context blocked submit" in warning for warning in payload["warnings"])
+    assert executor.calls == 1
 
 
 def test_blocks_submit_when_adverse_entry_drift_is_too_high(tmp_path: Path) -> None:
@@ -463,6 +617,7 @@ def test_execution_quality_detects_missing_route_payload(tmp_path: Path) -> None
         state_path=tmp_path / "operation_center_state.json",
         quote_provider=_quote_provider_factory({"symbol": "AAPL", "bid": 100.0, "ask": 100.1, "last": 100.05}),
     )
+    _enable_paper_autonomy(center)
 
     payload = center.evaluate_candidate(
         order=OrderRequest(
@@ -518,6 +673,7 @@ def test_execution_quality_confirms_matching_route_payload(tmp_path: Path) -> No
         state_path=tmp_path / "operation_center_state.json",
         quote_provider=_quote_provider_factory({"symbol": "MSFT", "bid": 100.0, "ask": 100.05, "last": 100.02}),
     )
+    _enable_paper_autonomy(center)
 
     payload = center.evaluate_candidate(
         order=OrderRequest(
@@ -552,6 +708,7 @@ def test_visual_entry_gate_warns_when_camera_validation_is_skipped(tmp_path: Pat
         chart_execution=_ChartExecution(open_ok=True),
         state_path=tmp_path / "operation_center_state.json",
     )
+    _enable_paper_autonomy(center)
 
     payload = center.evaluate_candidate(
         order=OrderRequest(
@@ -574,13 +731,13 @@ def test_visual_entry_gate_warns_when_camera_validation_is_skipped(tmp_path: Pat
         capture_context=False,
     )
 
-    assert payload["allowed"] is False
-    assert payload["blocked"] is True
+    assert payload["allowed"] is True
+    assert payload["blocked"] is False
     assert payload["visual_entry_gate"]["degraded"] is True
     assert payload["visual_entry_gate"]["status"] == "manual_review"
     assert payload["visual_entry_gate"]["blocking_ready"] is False
     assert payload["visual_entry_gate"]["operator_review_required"] is True
-    assert any("Visual gate blocked submit" in reason for reason in payload["reasons"])
+    assert any("Visual gate would block submit" in warning for warning in payload["visual_entry_gate"]["warnings"])
     assert any("capture_context=False" in warning for warning in payload["visual_entry_gate"]["warnings"])
 
 
@@ -596,6 +753,7 @@ def test_visual_entry_gate_reports_chart_execution_when_context_is_enabled(tmp_p
         state_path=tmp_path / "operation_center_state.json",
         quote_provider=_quote_provider_factory({"symbol": "AAPL", "bid": 100.0, "ask": 100.05, "last": 100.02}),
     )
+    _enable_paper_autonomy(center)
 
     payload = center.evaluate_candidate(
         order=OrderRequest(
@@ -639,6 +797,7 @@ def test_visual_entry_gate_requires_manual_review_when_chart_mission_needs_manua
         chart_execution=_ChartExecution(open_ok=False, open_mode="manual_required", manual_required=True, readiness_score_pct=35.0),
         state_path=tmp_path / "operation_center_state.json",
     )
+    _enable_paper_autonomy(center)
 
     payload = center.evaluate_candidate(
         order=OrderRequest(
@@ -660,13 +819,14 @@ def test_visual_entry_gate_requires_manual_review_when_chart_mission_needs_manua
         capture_context=False,
     )
 
-    assert payload["allowed"] is False
+    assert payload["allowed"] is True
+    assert payload["blocked"] is False
     assert payload["visual_entry_gate"]["status"] == "manual_required"
     assert payload["visual_entry_gate"]["manual_required"] is True
     assert payload["visual_entry_gate"]["blocking_ready"] is False
     assert payload["visual_entry_gate"]["blocking_reason"] == "chart mission requires manual opening"
     assert payload["visual_entry_gate"]["readiness_score_pct"] == 35.0
-    assert any("Visual gate blocked submit" in reason for reason in payload["reasons"])
+    assert any("Visual gate would block submit" in warning for warning in payload["visual_entry_gate"]["warnings"])
 
 
 def test_visual_entry_gate_allows_supervised_preview_when_chart_open_is_manual(tmp_path: Path) -> None:
@@ -680,6 +840,7 @@ def test_visual_entry_gate_allows_supervised_preview_when_chart_open_is_manual(t
         chart_execution=_ChartExecution(open_ok=False, open_mode="manual_required", manual_required=True, readiness_score_pct=35.0),
         state_path=tmp_path / "operation_center_state.json",
     )
+    _enable_paper_autonomy(center, mode="paper_supervised")
 
     payload = center.evaluate_candidate(
         order=OrderRequest(
@@ -722,6 +883,7 @@ def test_visual_entry_gate_marks_chart_pending_when_symbol_match_is_not_confirme
         chart_execution=_ChartExecution(open_ok=True, open_mode="opened", symbol_match=False, readiness_score_pct=60.0),
         state_path=tmp_path / "operation_center_state.json",
     )
+    _enable_paper_autonomy(center)
 
     payload = center.evaluate_candidate(
         order=OrderRequest(
@@ -747,7 +909,8 @@ def test_visual_entry_gate_marks_chart_pending_when_symbol_match_is_not_confirme
     assert payload["visual_entry_gate"]["status"] == "manual_review"
     assert payload["visual_entry_gate"]["blocking_ready"] is False
     assert any("symbol match" in warning for warning in payload["visual_entry_gate"]["warnings"])
-    assert any("Visual gate blocked submit" in reason for reason in payload["reasons"])
+    assert payload["allowed"] is True
+    assert any("Visual gate would block submit" in warning for warning in payload["visual_entry_gate"]["warnings"])
 
 
 def test_visual_entry_gate_blocks_when_camera_capture_fails(tmp_path: Path) -> None:
@@ -761,6 +924,7 @@ def test_visual_entry_gate_blocks_when_camera_capture_fails(tmp_path: Path) -> N
         chart_execution=_ChartExecution(open_ok=True, open_mode="opened", readiness_score_pct=100.0),
         state_path=tmp_path / "operation_center_state.json",
     )
+    _enable_paper_autonomy(center)
 
     payload = center.evaluate_candidate(
         order=OrderRequest(
@@ -783,12 +947,12 @@ def test_visual_entry_gate_blocks_when_camera_capture_fails(tmp_path: Path) -> N
         capture_context=True,
     )
 
-    assert payload["allowed"] is False
-    assert payload["blocked"] is True
+    assert payload["allowed"] is True
+    assert payload["blocked"] is False
     assert payload["visual_entry_gate"]["status"] == "camera_unavailable"
     assert payload["visual_entry_gate"]["blocking_reason"] == "visual context capture failed"
     assert payload["visual_entry_gate"]["context_evidence"]["capture_ok"] is False
-    assert any("Visual gate blocked submit" in reason for reason in payload["reasons"])
+    assert any("Visual gate would block submit" in warning for warning in payload["visual_entry_gate"]["warnings"])
 
 
 def test_visual_entry_gate_blocks_when_visual_fit_is_too_low(tmp_path: Path) -> None:
@@ -1019,3 +1183,113 @@ def test_preview_reuses_precomputed_probability_payload_without_recomputing(tmp_
     assert payload["evaluation_profile"]["dominant_stage"] in payload["evaluation_timings"]
     assert payload["evaluation_profile"]["captured_stage_count"] >= 1
     assert "monitor_summary_sec" in payload["evaluation_timings"]
+
+
+def test_portfolio_risk_guard_blocks_submit_when_exit_now_candidates_exist(tmp_path: Path) -> None:
+    executor = _Executor()
+    center = OperationCenter(
+        tracker=_Tracker(),
+        journal=_RiskGuardJournal(exit_now_count=2, var_status="warning", var_95_usd=430.0),
+        vision=_Vision(),
+        executor=executor,
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        quote_provider=_quote_provider_factory({"symbol": "AAPL", "bid": 100.0, "ask": 100.1, "last": 100.05}),
+    )
+    center.update_config({"auton_mode": "paper_autonomous", "reset_fail_safe": True})
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="AAPL",
+            side="buy",
+            size=1,
+            order_type="market",
+            asset_class="equity",
+            account_scope="paper",
+            strategy_type="equity_long",
+            entry_reference_price=100.0,
+            max_entry_drift_pct=2.0,
+            max_entry_spread_pct=0.5,
+        ),
+        action="submit",
+        capture_context=False,
+    )
+
+    assert payload["blocked"] is True
+    assert payload["portfolio_risk_guard"]["blocked"] is True
+    assert payload["gates"]["portfolio_risk_guard"]["blocked"] is True
+    assert any("Portfolio risk guard blocked submit" in reason for reason in payload["reasons"])
+    assert executor.calls == 0
+
+
+def test_portfolio_risk_guard_blocks_submit_when_var_is_critical(tmp_path: Path) -> None:
+    executor = _Executor()
+    center = OperationCenter(
+        tracker=_Tracker(),
+        journal=_RiskGuardJournal(var_status="critical", var_95_usd=640.0),
+        vision=_Vision(),
+        executor=executor,
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        quote_provider=_quote_provider_factory({"symbol": "MSFT", "bid": 100.0, "ask": 100.1, "last": 100.05}),
+    )
+    center.update_config({"auton_mode": "paper_autonomous", "reset_fail_safe": True})
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="MSFT",
+            side="buy",
+            size=1,
+            order_type="market",
+            asset_class="equity",
+            account_scope="paper",
+            strategy_type="equity_long",
+            entry_reference_price=100.0,
+            max_entry_drift_pct=2.0,
+            max_entry_spread_pct=0.5,
+        ),
+        action="submit",
+        capture_context=False,
+    )
+
+    assert payload["blocked"] is True
+    assert payload["portfolio_risk_guard"]["status"] == "blocked"
+    assert any("VaR Monte Carlo del libro esta en CRITICAL" in reason for reason in payload["reasons"])
+    assert executor.calls == 0
+
+
+def test_portfolio_risk_guard_does_not_block_close_orders(tmp_path: Path) -> None:
+    executor = _ExecutorWithResponse({"decision": "paper_submit_sent", "route": {"side": "sell", "quantity": 1}})
+    center = OperationCenter(
+        tracker=_Tracker(),
+        journal=_RiskGuardJournal(exit_now_count=3, var_status="critical", var_95_usd=700.0),
+        vision=_Vision(),
+        executor=executor,
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        quote_provider=_quote_provider_factory({"symbol": "NVDA", "bid": 100.0, "ask": 100.1, "last": 100.05}),
+    )
+    center.update_config({"auton_mode": "paper_autonomous", "reset_fail_safe": True})
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="NVDA",
+            side="sell",
+            size=1,
+            order_type="market",
+            asset_class="equity",
+            account_scope="paper",
+            strategy_type="equity_long",
+            position_effect="close",
+        ),
+        action="submit",
+        capture_context=False,
+    )
+
+    assert payload["portfolio_risk_guard"]["status"] == "not_applicable"
+    assert payload["portfolio_risk_guard"]["blocked"] is False
+    assert payload["gates"]["portfolio_risk_guard"]["blocked"] is False
+    assert not any("Portfolio risk guard blocked submit" in reason for reason in payload["reasons"])

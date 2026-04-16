@@ -1,0 +1,65 @@
+┌─────────────────────────────────────────────────────────────────┐
+│ ATLAS CODE QUANT FLOW                                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│ INGESTA DATOS                                                   │
+│ ├─ yfinance / Tradier API / snapshots internos                 │
+│ └─ Validación primaria (signal_validator)                      │
+│                ↓                                                │
+│ SCANNER                                                         │
+│ ├─ universe_catalog + prefilter por liquidez/precio            │
+│ ├─ multi-timeframe scan (5m/15m/1h/4h/1d)                     │
+│ └─ score + justificación + confirmación HTF                    │
+│                ↓                                                │
+│ CONTEXTO / RÉGIMEN                                              │
+│ ├─ market_context_engine + market_regime_classifier            │
+│ └─ hysteresis y gates contextuales                             │
+│                ↓                                                │
+│ SIGNAL / SELECTOR                                               │
+│ ├─ strategy.signal_generator                                    │
+│ ├─ selector.strategy_selector                                   │
+│ ├─ options governance (pick_strategy / option_selector)        │
+│ └─ proposal con plan de entrada/salida y confidence breakdown  │
+│                ↓                                                │
+│ RISK MANAGER (PRE-TRADE)                                        │
+│ ├─ Kelly / sizing / VaR monitor                                │
+│ ├─ PDT guards / entry drift / spread gates                     │
+│ └─ operation_center preflight                                  │
+│                ↓                                                │
+│ EXECUTION ENGINE                                                 │
+│ ├─ tradier_execution (equity/option/multileg/combo)           │
+│ ├─ signal_executor / live_loop                                  │
+│ └─ mode switch paper/live + emergency controls                 │
+│                ↓                                                │
+│ FILL / POSITION MANAGEMENT                                       │
+│ ├─ position_manager (SL/TP/trailing/time exit/reverse)         │
+│ ├─ pdt_controller + ledger                                      │
+│ └─ chart_execution + visual checks                              │
+│                ↓                                                │
+│ JOURNAL PERSISTENCE                                              │
+│ ├─ journal.service + journal.models (SQLAlchemy)               │
+│ ├─ sync_scope + rebuild_from_broker_history                     │
+│ └─ stats/chart_data/attribution integrity snapshots             │
+│                ↓                                                │
+│ RECONCILIATION CHECK                                             │
+│ ├─ canonical_snapshot broker-first                              │
+│ ├─ operation_center execution quality                            │
+│ └─ safeguards: partial snapshot guard / mass-close guard        │
+│                ↓                                                │
+│ LEARNING / MODEL UPDATE                                          │
+│ ├─ learning_orchestrator (IC + policy update)                  │
+│ ├─ adaptive_policy + atlas_learning_brain                      │
+│ ├─ xgboost_signal (opt-in)                                      │
+│ └─ post-trade learning + readiness eval                         │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+Métricas por sesión (modelo N→M→K→L→J→I→H):
+- N = candidatos scanner
+- M = con signal/proposal
+- K = pasados risk/preflight
+- L = órdenes enviadas
+- J = fills confirmados
+- I = posiciones abiertas
+- H = cierres registrados
+- Reconciliation status = OK / FAILED / BLOCKED

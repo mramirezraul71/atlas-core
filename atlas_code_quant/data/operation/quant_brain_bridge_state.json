@@ -7,10 +7,10 @@
   "last_bitacora_ok": true,
   "last_memory_ok": true,
   "last_event_kind": "operation_cycle",
-  "last_event_at": "2026-04-02T21:27:19.870237",
+  "last_event_at": "2026-04-13T20:23:02.887619",
   "last_error": "",
-  "total_events": 1729,
-  "delivered_events": 1072,
+  "total_events": 2207,
+  "delivered_events": 1550,
   "queued_local_only_events": 657,
   "emitted_journal_keys": [
     "paper:VA9201365:bear_put_debit_spread:MRVL:cf7e43cb662b0e:1775152113",

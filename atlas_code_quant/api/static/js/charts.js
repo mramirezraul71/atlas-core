@@ -18,6 +18,9 @@ const COLORS = {
 // CDN opcional (jsdelivr): si falla la red, el dashboard sigue cargando KPIs vía REST/WS.
 const CHART_JS = typeof Chart !== 'undefined' ? Chart : null;
 const LW = typeof LightweightCharts !== 'undefined' ? LightweightCharts : null;
+const CHART_MIN_HEIGHT = 180;
+const CHART_MAX_HEIGHT = 320;
+const CHART_DEFAULT_HEIGHT = 260;
 
 if (CHART_JS) {
   CHART_JS.defaults.color = COLORS.text;
@@ -34,9 +37,25 @@ function makeLWChart(containerId, opts = {}) {
   if (!container) return null;
   container.innerHTML = '';
 
+  const resolveSize = (entry = null) => {
+    const rect = entry?.contentRect;
+    const measuredWidth = Number(rect?.width || container.clientWidth || container.offsetWidth || 0);
+    const measuredHeight = Number(rect?.height || container.clientHeight || container.offsetHeight || 0);
+    const width = Math.max(320, Math.round(measuredWidth || 400));
+    const unclampedHeight = measuredHeight > 0 ? measuredHeight : CHART_DEFAULT_HEIGHT;
+    const height = Math.max(CHART_MIN_HEIGHT, Math.min(Math.round(unclampedHeight), CHART_MAX_HEIGHT));
+    return { width, height };
+  };
+
+  const initialSize = resolveSize();
+  container.style.height = `${initialSize.height}px`;
+  container.style.minHeight = `${initialSize.height}px`;
+  container.style.maxHeight = `${initialSize.height}px`;
+  container.style.overflow = 'hidden';
+
   const chart = LW.createChart(container, {
-    width:  container.clientWidth  || 400,
-    height: container.clientHeight || 180,
+    width: initialSize.width,
+    height: initialSize.height,
     layout: {
       background: { color: COLORS.bg },
       textColor:  COLORS.text,
@@ -59,8 +78,17 @@ function makeLWChart(containerId, opts = {}) {
   });
 
   // Auto-resize
+  let lastWidth = initialSize.width;
+  let lastHeight = initialSize.height;
   const ro = new ResizeObserver(() => {
-    chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+    const nextSize = resolveSize();
+    if (nextSize.width === lastWidth && nextSize.height === lastHeight) return;
+    lastWidth = nextSize.width;
+    lastHeight = nextSize.height;
+    container.style.height = `${nextSize.height}px`;
+    container.style.minHeight = `${nextSize.height}px`;
+    container.style.maxHeight = `${nextSize.height}px`;
+    chart.applyOptions(nextSize);
   });
   ro.observe(container);
 

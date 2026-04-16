@@ -1,0 +1,131 @@
+PROMPT MAESTRO PARA CODEX — ATLAS ELITE IMPLEMENTATION
+Contexto completo del sistema y plan de ejecución por fases
+QUIÉN ERES Y QUÉ DEBES HACER
+Eres el implementador principal de ATLAS-PUSH, un sistema de trading algorítmico autónomo en
+paper mode. Tienes acceso completo al repositorio (228 módulos, 73,919 líneas de código Python).
+Tu misión es ejecutar el Plan Élite ATLAS por fases, empezando por Fase 0 hoy mismo.
+El plan fue elaborado por Perplexity Computer (agente IA externo conectado via MCP server en
+localhost:8799) comparando ATLAS con Renaissance Medallion, Jane Street, XTX Markets y Citadel.
+Repositorio: https://github.com/mramirezraul71/atlas-core
+Branch de trabajo: fix/journal-purge-mcp-20260412
+Ruta local Windows: C:\ATLAS_PUSH\atlas_code_quant\
+MCP Server: localhost:8799 (token: atlas_mcp_2026)
+Estado actual: Paper autonomous, journal limpio (1,783 trades cerrados), 0 errores operacionales
+EL PLAN ÉLITE — 7 PILARES, 4 FASES
+DIAGNÓSTICO DE BRECHA (lo que falta)
+FÓRMULA DE SEÑAL ACTUAL (a reemplazar progresivamente)
+signal_score = 0.25×motif_edge + 0.35×TIN + 0.20×MTF_coherence + 0.20×regime_conf
+ROADMAP DE IMPLEMENTACIÓN
+FASE 0 — ESTABILIZACIÓN (Semanas 1-4, Abril 2026)
+Objetivo: Base sólida con historial limpio
+KPI: 100 trades limpios, WR > 40%, PF > 1.2, 0 errores de sistema
+FASE 1 — CONSTRUCCIÓN (Meses 2-3, Mayo-Junio 2026)
+Objetivo: Stack técnico de nivel institucional
+KPI: WR > 50%, PF > 1.5, Sharpe > 1.0, visión activa
+Ensemble ML: XGBoost + LSTM entrenados con trades del journal
+VaR dinámico completo con Monte Carlo diario
+Activar vision pipeline (vision_mode: off → on)
+TimescaleDB para series temporales
+Alternative data: options flow (Unusual Whales)
+Brain Council v1 (Claude + DeepSeek local en consenso 2/3)
+FASE 2 — ÉLITE (Meses 4-6, Julio-Septiembre 2026)
+Objetivo: Sistema autónomo con RL en producción
+KPI: WR > 55%, PF > 1.8, Sharpe > 1.5, 3 meses live profitables
+PPO-RL (Proximal Policy Optimization) en paper
+ATLAS DOCTOR 2.0 con auto-reparación
+Strategy Incubator (backtesting automático cada domingo)
+Fine-tuning modelo propio con 1000+ trades de ATLAS
+Primeras semanas LIVE con 25% del capital
+FASE 3 — DOMINANCIA (Meses 7-12, Oct 2026-Abr 2027)
+Objetivo: Sistema de clase mundial
+KPI: Sharpe > 2.0, max drawdown < 10%, comparable a fondos quant tier-1
+TAREA INMEDIATA — FASE 0, SEMANA 1
+Implementa los siguientes dos módulos en el orden indicado:
+MÓDULO 1: SIGNAL VALIDATOR
+Archivo: atlas_code_quant/data/signal_validator.py
+Integración: llamar desde journal/service.py antes de cualquier upsert, y desde el brain bridge antes de pasar datos al scoring
+Qué debe hacer:
+class SignalValidator:
+    """
+    Rechaza datos corruptos ANTES de que lleguen al modelo.
+    Inspirado en sistemas institucionales que filtran señales antes del ML.
+    """
+    def validate_price_data(self, symbol, price, volume, bid, ask) -> ValidationResult:
+        # Rechazar si: price <= 0, price < 0, spread > 5%, volumen = 0 en horario de mercado
+        # Rechazar si: gap vs precio anterior > 15% en una barra
+        # Rechazar si: bid > ask (crossed market)
+        
+    def validate_trade_entry(self, entry) -> ValidationResult:
+        # Rechazar si: entry_price <= 0
+        # Rechazar si: symbol vacío o None
+        # Rechazar si: strategy_type no reconocido
+        # Rechazar si: signed_qty == 0
+        
+    def validate_journal_write(self, record) -> ValidationResult:
+        # Última línea de defensa antes de escribir al SQLite
+        # Rechazar cualquier record con entry_price < 0
+        # Rechazar records sin underlying válido
+ValidationResult debe incluir: is_valid: bool, reason: str, severity: str (warn/error/critical)
+Log: cada rechazo debe loguear con nivel WARNING o ERROR en el logger del módulo que llama.
+KPI: después de implementar, 0 registros con entry_price < 0 deben poder entrar al journal.
+MÓDULO 2: VAR DINÁMICO BÁSICO
+Archivo: atlas_code_quant/risk/var_monitor.py
+Integración: llamar desde operation_center.py al inicio de cada sesión y cada hora durante el mercado
+Qué debe hacer:
+class VaRMonitor:
+    """
+    Value at Risk dinámico con ventana rolling.
+    No requiere Monte Carlo en Fase 0 — usar método histórico paramétrico.
+    """
+    def calculate_daily_var(self, confidence=0.95, window_days=30) -> float:
+        # Leer los últimos N trades cerrados del journal
+        # Calcular distribución de PnL diario
+        # VaR = percentil (1-confidence) de la distribución
+        # Retornar valor absoluto en dólares
+        
+    def check_var_breach(self, current_daily_pnl: float) -> bool:
+        # Si pérdida del día > VaR calculado → True (breach)
+        # Si breach: enviar alerta al operation_center (fail_safe warning)
+        
+    def get_var_report(self) -> dict:
+        # Retornar: var_95, var_99, current_exposure, days_in_window, breach_today
+Circuit Breakers mínimos a implementar en Fase 0:
+Por trade: si riesgo individual > 2% del capital → rechazar
+Por portfolio: si drawdown diario > 5% → activar fail_safe_active = True automáticamente
+Drawdown control: si drawdown acumulado > 3% → reducir position sizing 50%
+Fuente de datos: trading_journal.sqlite3 — los trades cerrados ya tienen realized_pnl
+Guardar estado en: data/risk/var_state.json (crear si no existe)
+REGLAS DE IMPLEMENTACIÓN
+No romper lo que funciona. ATLAS está en paper_autonomous corriendo. Cualquier módulo nuevo debe ser aditivo, no modificar la lógica existente de ejecución.
+Feature flags. Cada nuevo módulo debe tener un flag en el state JSON (signal_validator_enabled: true, var_monitor_enabled: true) para poder desactivarlo sin tocar código.
+Tests primero. Antes de integrar, crear tests/test_signal_validator.py y tests/test_var_monitor.py con casos de borde: precios negativos, símbolos vacíos, journal vacío.
+DATE localtime. Todas las queries SQLite sobre el journal deben usar DATE('now','localtime') no DATE('now') (UTC offset issue ya corregido en el repo).
+Commit por módulo. Un commit por módulo completado con mensaje descriptivo. Branch: feat/elite-fase0-semana1.
+Secrets en .env. Las credenciales están en C:\ATLAS_PUSH\.env. No hardcodear tokens.
+Reportar progreso. Al terminar cada módulo, ejecutar el test correspondiente y mostrar el resultado.
+CONTEXTO TÉCNICO DEL REPO
+Archivos clave:
+atlas_code_quant/journal/service.py — journal service (ya parchado para entry_price negativo)
+atlas_code_quant/operations/operation_center.py — centro de control principal
+atlas_code_quant/brain/brain_bridge.py — puente entre señales y ejecución
+atlas_code_quant/strategy/strategy_selector.py — selección de estrategias
+atlas_code_quant/data/operation/operation_center_state.json — estado del sistema
+Signal score actual (en strategy_selector.py líneas ~969-971):
+signal_score = 0.25*motif_edge + 0.35*TIN + 0.20*MTF_coherence + 0.20*regime_conf
+paper_drift = 2.0  # ya implementado
+spread = 0.5       # ya implementado
+Base de datos:
+Journal: data/journal/trading_journal.sqlite3
+Paper account: data/paper_account.db
+State: data/operation/operation_center_state.json
+Adaptive policy: data/learning/adaptive_policy_snapshot.json
+Hardware disponible para ML:
+Intel i9, RTX 4070 Super 12GB VRAM, 64GB RAM
+Ollama en localhost:11434 con DeepSeek Coder V2 16B y Qwen2.5-coder:7b
+Cursor IDE + VS Code + Continue extension
+PREGUNTA FINAL A CODEX
+Una vez leído este contexto, responde:
+¿Tienes acceso al repo y puedes ver atlas_code_quant/journal/service.py?
+Confirma que entiendes la prioridad: Signal Validator primero, VaR segundo
+¿Empezamos con el Signal Validator ahora?
+Cuando confirmes, procede directamente con la implementación sin más preguntas.

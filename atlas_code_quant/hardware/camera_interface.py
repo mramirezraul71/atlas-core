@@ -243,26 +243,36 @@ class CameraInterface:
 
     def _init_models(self) -> None:
         """Carga YOLOv8, EasyOCR y opcionalmente Qwen2-VL en GPU/CPU."""
-        device = "cuda" if (self.use_gpu and _YOLO_OK) else "cpu"
+        cuda_available = False
+        if self.use_gpu:
+            try:
+                import torch
+                cuda_available = bool(torch.cuda.is_available())
+            except Exception:
+                cuda_available = False
+        if self.use_gpu and not cuda_available:
+            logger.info("use_gpu=True pero CUDA no disponible — usando CPU para visión")
+        yolo_device = "cuda" if (self.use_gpu and _YOLO_OK and cuda_available) else "cpu"
+        ocr_gpu = bool(self.use_gpu and _EASYOCR_OK and cuda_available)
 
         if _YOLO_OK:
             self._yolo = _YOLO(self.yolo_model_path)
-            self._yolo.to(device)  # type: ignore[union-attr]
-            logger.info("YOLOv8 cargado en %s", device)
+            self._yolo.to(yolo_device)  # type: ignore[union-attr]
+            logger.info("YOLOv8 cargado en %s", yolo_device)
 
         if _EASYOCR_OK:
-            gpu_flag = self.use_gpu
-            self._ocr_reader = easyocr.Reader(self.ocr_languages, gpu=gpu_flag)  # type: ignore[attr-defined]
-            logger.info("EasyOCR listo (gpu=%s)", gpu_flag)
+            self._ocr_reader = easyocr.Reader(self.ocr_languages, gpu=ocr_gpu)  # type: ignore[attr-defined]
+            logger.info("EasyOCR listo (gpu=%s)", ocr_gpu)
 
         if _QWEN_OK and self.qwen_model:
             try:
                 import torch
+                qwen_gpu = bool(self.use_gpu and cuda_available)
                 self._qwen_processor = AutoProcessor.from_pretrained(self.qwen_model)
                 self._qwen_model_obj = AutoModelForVision2Seq.from_pretrained(
                     self.qwen_model,
-                    torch_dtype=torch.float16 if self.use_gpu else torch.float32,
-                    device_map="auto" if self.use_gpu else "cpu",
+                    torch_dtype=torch.float16 if qwen_gpu else torch.float32,
+                    device_map="auto" if qwen_gpu else "cpu",
                 )
                 logger.info("Qwen2-VL cargado: %s", self.qwen_model)
             except Exception as exc:
