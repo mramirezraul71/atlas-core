@@ -14,10 +14,10 @@ from __future__ import annotations
 
 import json
 import threading
-from dataclasses import dataclass, field, asdict
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import date, datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -134,6 +134,13 @@ class PortfolioAnalyzer:
         self._storage_path = storage_path
         self._delta_limit = delta_limit_per_underlying
         self._vega_limit = vega_limit_total
+        self._last_sync_at: Optional[str] = None
+        self._last_sync_stats: Dict[str, int] = {
+            "added": 0,
+            "updated": 0,
+            "closed": 0,
+            "active": 0,
+        }
 
         if storage_path and storage_path.exists():
             self._load()
@@ -175,6 +182,7 @@ class PortfolioAnalyzer:
             for e in self._entries:
                 if e.name == strategy_name and e.status == "open":
                     e.status = "closed"
+                    e.strategy.metadata["closed_at"] = datetime.utcnow().isoformat()
                     self._save()
                     return True
         return False
@@ -182,6 +190,118 @@ class PortfolioAnalyzer:
     def get_open_entries(self) -> List[PortfolioEntry]:
         with self._lock:
             return [e for e in self._entries if e.status == "open"]
+
+    def get_closed_entries(self) -> List[PortfolioEntry]:
+        with self._lock:
+            return [e for e in self._entries if e.status == "closed"]
+
+    def history(self, limit: int = 200) -> List[Dict[str, Any]]:
+        closed = self.get_closed_entries()
+        closed.sort(key=lambda entry: entry.opened_at, reverse=True)
+        items: List[Dict[str, Any]] = []
+        for entry in closed[: max(1, int(limit))]:
+            metadata = entry.strategy.metadata or {}
+            items.append(
+                {
+                    "name": entry.name,
+                    "underlying": entry.underlying,
+                    "status": entry.status,
+                    "opened_at": entry.opened_at.isoformat(),
+                    "closed_at": metadata.get("closed_at"),
+                    "source": metadata.get("source", "manual"),
+                    "sync_key": metadata.get("sync_key"),
+                    "bias": metadata.get("bias", "unknown"),
+                    "tags": entry.tags,
+                }
+            )
+        return items
+
+    def sync_from_broker_groups(
+        self,
+        groups: List[dict[str, Any]],
+        quote_index: Optional[Dict[str, dict[str, Any]]] = None,
+        *,
+        source: str = "tradier",
+    ) -> Dict[str, int]:
+        """Sincroniza la cartera OptionStrat con grupos reales de broker.
+
+        - Crea entradas nuevas para posiciones activas de opciones.
+        - Actualiza las existentes (mismo sync_key).
+        - Marca como cerradas las que desaparecieron del broker.
+        """
+        quote_index = quote_index or {}
+        with self._lock:
+            current_synced_open: Dict[str, PortfolioEntry] = {}
+            for entry in self._entries:
+                if entry.status != "open":
+                    continue
+                metadata = entry.strategy.metadata or {}
+                sync_key = str(metadata.get("sync_key") or "").strip()
+                if metadata.get("source") == source and sync_key:
+                    current_synced_open[sync_key] = entry
+
+            active_sync_keys: set[str] = set()
+            added = 0
+            updated = 0
+            closed = 0
+
+            for group in groups:
+                strategy = _strategy_from_broker_group(group, quote_index=quote_index, source=source)
+                if strategy is None:
+                    continue
+                metadata = strategy.metadata or {}
+                sync_key = str(metadata.get("sync_key") or "").strip()
+                if not sync_key:
+                    continue
+                active_sync_keys.add(sync_key)
+
+                existing = current_synced_open.get(sync_key)
+                if existing is not None:
+                    existing.strategy = strategy
+                    if existing.status != "open":
+                        existing.status = "open"
+                    updated += 1
+                    continue
+
+                spot = _best_effort_spot(strategy)
+                market = MarketSnapshot(underlying_price=max(spot, 0.01))
+                S_grid = np.linspace(max(0.01, market.underlying_price * 0.6), market.underlying_price * 1.4, 500)
+                risk = strategy_risk_summary(strategy, market, S_grid)
+                self._entries.append(
+                    PortfolioEntry(
+                        strategy=strategy,
+                        quantity=1,
+                        notes="auto-sync broker",
+                        tags=[source, "auto-sync"],
+                        initial_risk_summary=risk,
+                    )
+                )
+                added += 1
+
+            closed_at = datetime.utcnow().isoformat()
+            for sync_key, entry in current_synced_open.items():
+                if sync_key in active_sync_keys:
+                    continue
+                entry.status = "closed"
+                entry.strategy.metadata["closed_at"] = closed_at
+                closed += 1
+
+            self._last_sync_at = closed_at
+            self._last_sync_stats = {
+                "added": added,
+                "updated": updated,
+                "closed": closed,
+                "active": len(active_sync_keys),
+            }
+            if added or updated or closed:
+                self._save()
+
+            return {
+                "added": added,
+                "updated": updated,
+                "closed": closed,
+                "active": len(active_sync_keys),
+            }
 
     # ------------------------------------------------------------------
     # Análisis de cartera
@@ -374,10 +494,14 @@ class PortfolioAnalyzer:
     def status(self) -> Dict:
         with self._lock:
             open_entries = [e for e in self._entries if e.status == "open"]
+            closed_entries = [e for e in self._entries if e.status == "closed"]
         return {
             "n_open": len(open_entries),
+            "n_closed": len(closed_entries),
             "n_total": len(self._entries),
             "strategies": [e.name for e in open_entries],
+            "last_sync_at": self._last_sync_at,
+            "last_sync_stats": dict(self._last_sync_stats),
         }
 
 
@@ -417,3 +541,106 @@ def _dominant_asset_class(strategy: Strategy) -> str:
     if linear_classes:
         return linear_classes[0]
     return "unknown"
+
+
+def _pos_attr(position: Any, key: str, default: Any = None) -> Any:
+    if isinstance(position, dict):
+        return position.get(key, default)
+    return getattr(position, key, default)
+
+
+def _coerce_iso_date(raw_value: Any) -> str:
+    value = str(raw_value or "").strip()
+    if not value:
+        return date.today().isoformat()
+    if "T" in value:
+        value = value.split("T", 1)[0]
+    try:
+        date.fromisoformat(value)
+        return value
+    except Exception:
+        return date.today().isoformat()
+
+
+def _strategy_from_broker_group(
+    group: dict[str, Any],
+    *,
+    quote_index: Dict[str, dict[str, Any]],
+    source: str,
+) -> Strategy | None:
+    positions = list(group.get("positions") or [])
+    has_options = any(str(_pos_attr(position, "asset_class", "")).lower() == "option" for position in positions)
+    if not positions or not has_options:
+        return None
+
+    strategy_id = str(group.get("strategy_id") or group.get("group_id") or "").strip()
+    if not strategy_id:
+        strategy_id = f"group:{abs(hash(str(positions))) % 1_000_000_000}"
+    sync_key = f"{source}:{strategy_id}"
+
+    underlying = str(group.get("underlying") or _pos_attr(positions[0], "underlying", "") or "UNKNOWN").upper()
+    quote = quote_index.get(underlying, {})
+    spot = float(quote.get("last") or quote.get("close") or 0.0)
+    if spot <= 0:
+        spot = float(_pos_attr(positions[0], "current_price", 0.0) or 0.0)
+
+    legs: list[dict[str, Any]] = []
+    for position in positions:
+        asset_class = str(_pos_attr(position, "asset_class", "equity")).lower()
+        signed_qty = float(_pos_attr(position, "signed_qty", 0.0) or 0.0)
+        quantity = max(1, int(round(abs(signed_qty))))
+        side = "long" if signed_qty >= 0 else "short"
+
+        if asset_class == "option":
+            strike = float(_pos_attr(position, "strike", 0.0) or 0.0)
+            if strike <= 0:
+                continue
+            legs.append(
+                {
+                    "leg_type": "option",
+                    "underlying_symbol": str(_pos_attr(position, "underlying", underlying) or underlying).upper(),
+                    "expiry": _coerce_iso_date(_pos_attr(position, "expiration", "")),
+                    "strike": strike,
+                    "option_type": str(_pos_attr(position, "option_type", "call") or "call").lower(),
+                    "side": side,
+                    "quantity": quantity,
+                    "premium": float(_pos_attr(position, "entry_price", 0.0) or 0.0),
+                    "multiplier": 100,
+                    "iv": float((_pos_attr(position, "greeks", {}) or {}).get("iv", 0.25) or 0.25),
+                    "underlying_price": max(spot, 0.0),
+                }
+            )
+            continue
+
+        symbol = str(_pos_attr(position, "symbol", underlying) or underlying).upper()
+        legs.append(
+            {
+                "leg_type": "linear",
+                "symbol": symbol,
+                "asset_class": "stock" if asset_class == "equity" else "stock",
+                "side": side,
+                "quantity": quantity,
+                "entry_price": float(_pos_attr(position, "entry_price", 0.0) or 0.0),
+                "multiplier": 1.0,
+            }
+        )
+
+    if not legs:
+        return None
+
+    strategy_type = str(group.get("strategy_type") or "broker_strategy")
+    display_name = f"{strategy_type}:{underlying}:{strategy_id[-6:]}"
+    payload = {
+        "name": display_name,
+        "underlying": underlying,
+        "legs": legs,
+        "metadata": {
+            "source": source,
+            "sync_key": sync_key,
+            "strategy_id": strategy_id,
+            "strategy_type": strategy_type,
+            "bias": str(group.get("bias") or "unknown"),
+            "auto_synced": True,
+        },
+    }
+    return strategy_from_dict(payload)

@@ -16,6 +16,7 @@ import math
 import numpy as np
 import pytest
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 from atlas_code_quant.options.strategy_engine import (
     _norm_cdf,
@@ -703,3 +704,75 @@ class TestPortfolioAnalyzer:
         # With delta_limit=10, a single ATM call (delta ~50) should flag
         # (flag depends on computed delta * multiplier)
         assert isinstance(summary.risk_flags, list)
+
+    def test_sync_from_broker_groups_creates_open_entry(self):
+        analyzer = PortfolioAnalyzer(storage_path=None)
+        group = {
+            "strategy_id": "spread:SPY:abc123",
+            "strategy_type": "vertical",
+            "underlying": "SPY",
+            "bias": "bullish",
+            "positions": [
+                SimpleNamespace(
+                    symbol="SPY260620C00500000",
+                    underlying="SPY",
+                    asset_class="option",
+                    signed_qty=1.0,
+                    strike=500.0,
+                    option_type="call",
+                    expiration=(date.today() + timedelta(days=30)).isoformat(),
+                    entry_price=5.2,
+                    current_price=5.0,
+                    greeks={"iv": 0.22},
+                ),
+            ],
+        }
+        stats = analyzer.sync_from_broker_groups(
+            groups=[group],
+            quote_index={"SPY": {"last": 510.0}},
+            source="tradier_paper",
+        )
+        assert stats["added"] == 1
+        status = analyzer.status()
+        assert status["n_open"] == 1
+        assert status["n_closed"] == 0
+
+    def test_sync_from_broker_groups_closes_missing_entries_and_keeps_history(self):
+        analyzer = PortfolioAnalyzer(storage_path=None)
+        group = {
+            "strategy_id": "iron:SPY:xyz987",
+            "strategy_type": "iron_condor",
+            "underlying": "SPY",
+            "positions": [
+                SimpleNamespace(
+                    symbol="SPY260620C00500000",
+                    underlying="SPY",
+                    asset_class="option",
+                    signed_qty=1.0,
+                    strike=500.0,
+                    option_type="call",
+                    expiration=(date.today() + timedelta(days=30)).isoformat(),
+                    entry_price=4.0,
+                    current_price=3.8,
+                    greeks={"iv": 0.20},
+                ),
+            ],
+        }
+        analyzer.sync_from_broker_groups(
+            groups=[group],
+            quote_index={"SPY": {"last": 505.0}},
+            source="tradier_paper",
+        )
+        stats = analyzer.sync_from_broker_groups(
+            groups=[],
+            quote_index={},
+            source="tradier_paper",
+        )
+        assert stats["closed"] == 1
+        status = analyzer.status()
+        assert status["n_open"] == 0
+        assert status["n_closed"] == 1
+        history = analyzer.history(limit=20)
+        assert len(history) == 1
+        assert history[0]["source"] == "tradier_paper"
+        assert history[0]["closed_at"] is not None

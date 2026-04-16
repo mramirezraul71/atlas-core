@@ -300,6 +300,7 @@ body {
 }
 .badge-open   { background: rgba(0,212,170,0.15); color: var(--accent); }
 .badge-closed { background: rgba(74,85,104,0.3);  color: var(--text-muted); }
+.badge-warn   { background: rgba(246,201,14,0.18); color: var(--yellow); }
 .live-badge {
   font-size: 9px; font-weight: 700; color: var(--accent); text-transform: uppercase;
   letter-spacing: 0.1em; background: var(--accent-dim);

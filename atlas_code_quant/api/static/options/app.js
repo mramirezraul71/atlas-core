@@ -18,6 +18,10 @@ const State = {
   selectedTemplate: null,
   currentStrategy: null,   // last preview result
   previewBuilt: false,
+  portfolioPollHandle: null,
+  loadingPortfolio: false,
+  optionstratConfig: { mirror_only: false },
+  mirrorStatus: null,
 };
 
 // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -91,18 +95,93 @@ function initNav() {
   // API health
   checkApiStatus();
   setInterval(checkApiStatus, 30000);
+  State.portfolioPollHandle = setInterval(() => {
+    const isPortfolioActive = document.getElementById('view-portfolio')?.classList.contains('active');
+    if (isPortfolioActive) loadPortfolio();
+  }, 10000);
 }
 
 async function checkApiStatus() {
   try {
-    await apiGet('/options/portfolio/status');
+    const status = await apiGet('/options/portfolio/status');
     const el = document.getElementById('api-status');
     el.className = 'badge badge-open';
     el.textContent = 'API OK';
+    renderBrokerMirrorBadge(status);
+    if (typeof status?.mirror_only === 'boolean') {
+      State.optionstratConfig = { ...State.optionstratConfig, mirror_only: status.mirror_only };
+      applyOptionstratModeUI();
+    }
   } catch {
     const el = document.getElementById('api-status');
     el.className = 'badge badge-closed';
     el.textContent = 'API --';
+    renderBrokerMirrorBadge(null);
+  }
+}
+
+function renderBrokerMirrorBadge(status) {
+  const badge = document.getElementById('mirror-status');
+  if (!badge) return;
+  State.mirrorStatus = status || null;
+  if (!status || !status.mirror_only) {
+    badge.className = 'badge badge-closed';
+    badge.textContent = 'BROKER MIRROR: OFF';
+    badge.title = 'Mirror mode desactivado';
+    return;
+  }
+
+  const lastSyncRaw = status.last_sync_at;
+  const lastSyncTs = lastSyncRaw ? Date.parse(lastSyncRaw) : NaN;
+  const now = Date.now();
+  const ageSec = Number.isFinite(lastSyncTs) ? Math.max(0, Math.floor((now - lastSyncTs) / 1000)) : Infinity;
+  const isFresh = ageSec <= 45;
+  const isStale = ageSec > 45 && ageSec <= 180;
+  const stats = status.last_sync_stats || {};
+  const scope = status.tradier_scope || State.optionstratConfig?.tradier_scope || '--';
+  const tooltip = [
+    `Scope: ${scope}`,
+    `Open: ${status.n_open ?? '--'} | Closed: ${status.n_closed ?? '--'} | Total: ${status.n_total ?? '--'}`,
+    `Last sync: ${lastSyncRaw || '--'}`,
+    `Delta ciclo: +${stats.added || 0} / ~${stats.updated || 0} / -${stats.closed || 0}`,
+    `Activas broker: ${stats.active ?? '--'}`,
+  ].join('\n');
+  badge.title = tooltip;
+
+  if (isFresh) {
+    badge.className = 'badge badge-open';
+    badge.textContent = `BROKER MIRROR: ON · ${ageSec}s`;
+    return;
+  }
+  if (isStale) {
+    badge.className = 'badge badge-warn';
+    badge.textContent = `BROKER MIRROR: STALE · ${ageSec}s`;
+    return;
+  }
+  badge.className = 'badge badge-closed';
+  badge.textContent = 'BROKER MIRROR: OFFLINE';
+}
+
+async function loadOptionstratConfig() {
+  try {
+    const cfg = await apiGet('/options/config');
+    State.optionstratConfig = cfg || { mirror_only: false, tradier_scope: '--' };
+    applyOptionstratModeUI();
+    renderBrokerMirrorBadge(State.mirrorStatus);
+  } catch {
+    State.optionstratConfig = { mirror_only: false, tradier_scope: '--' };
+    applyOptionstratModeUI();
+    renderBrokerMirrorBadge(State.mirrorStatus);
+  }
+}
+
+function applyOptionstratModeUI() {
+  const mirrorOnly = !!State.optionstratConfig?.mirror_only;
+  const addBtn = document.getElementById('btn-add-to-portfolio');
+  if (addBtn) {
+    addBtn.disabled = mirrorOnly;
+    addBtn.title = mirrorOnly ? 'Modo espejo broker: alta manual bloqueada' : '';
+    addBtn.textContent = mirrorOnly ? '⛔ Solo espejo broker' : '＋ Añadir a cartera';
   }
 }
 
@@ -458,6 +537,10 @@ function clearBuilder() {
 
 // â”€â”€ Add to portfolio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function addToPortfolio() {
+  if (State.optionstratConfig?.mirror_only) {
+    toast('Modo espejo broker activo: alta manual deshabilitada', 'err');
+    return;
+  }
   if (!State.previewBuilt || !State.legs.length) {
     toast('Calcula la estrategia primero', 'err'); return;
   }
@@ -673,6 +756,8 @@ function renderHeatmap(data) {
 
 // â”€â”€ Portfolio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loadPortfolio() {
+  if (State.loadingPortfolio) return;
+  State.loadingPortfolio = true;
   const btn = document.getElementById('btn-port-refresh');
   btn.innerHTML = '<span class="spinner"></span>';
   try {
@@ -686,6 +771,7 @@ async function loadPortfolio() {
     toast('Error portfolio: ' + e.message, 'err');
   } finally {
     btn.innerHTML = 'â†º Actualizar';
+    State.loadingPortfolio = false;
   }
 }
 
@@ -700,6 +786,11 @@ function parseMarketPrices() {
 }
 
 function renderPortfolio(data) {
+  if (typeof data.mirror_only === 'boolean') {
+    State.optionstratConfig = { ...State.optionstratConfig, mirror_only: data.mirror_only };
+    applyOptionstratModeUI();
+  }
+  renderPortfolioSync(data.sync);
   // Total PnL
   const pnlEl = document.getElementById('pg-total-pnl');
   pnlEl.textContent = '$' + fmtSign(data.total_pnl);
@@ -747,7 +838,7 @@ function renderPortfolio(data) {
         <td class="td-pos">${mp}</td>
         <td class="td-neg">${ml}</td>
         <td class="td-muted">${opened}</td>
-        <td><button class="btn-danger" data-close="${e.name}">âœ• Cerrar</button></td>
+        <td><button class="btn-danger" data-close="${e.name}" ${State.optionstratConfig?.mirror_only ? 'disabled title="Modo espejo broker"' : ''}>âœ• Cerrar</button></td>
       </tr>`;
     }).join('');
     tbody.querySelectorAll('[data-close]').forEach(btn => {
@@ -757,9 +848,47 @@ function renderPortfolio(data) {
 
   // Charts
   renderPortfolioCharts(data);
+  renderPortfolioHistory(data.history || []);
+}
+
+function renderPortfolioSync(sync) {
+  const badge = document.getElementById('port-sync-badge');
+  if (!badge) return;
+  if (!sync) {
+    badge.className = 'badge badge-closed';
+    badge.textContent = 'SYNC --';
+    return;
+  }
+  const changed = (sync.added || 0) + (sync.updated || 0) + (sync.closed || 0);
+  badge.className = changed > 0 ? 'badge badge-open' : 'badge badge-closed';
+  badge.textContent = `SYNC +${sync.added || 0}/~${sync.updated || 0}/-${sync.closed || 0}`;
+}
+
+function renderPortfolioHistory(historyRows) {
+  const tbody = document.getElementById('portfolio-history-body');
+  if (!tbody) return;
+  if (!historyRows.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Sin historial de cierres</td></tr>';
+    return;
+  }
+  tbody.innerHTML = historyRows.map(row => {
+    const opened = row.opened_at ? new Date(row.opened_at).toLocaleString('es-ES') : '--';
+    const closed = row.closed_at ? new Date(row.closed_at).toLocaleString('es-ES') : '--';
+    return `<tr>
+      <td>${row.name || '--'}</td>
+      <td>${row.underlying || '--'}</td>
+      <td>${row.source || 'manual'}</td>
+      <td class="td-muted">${opened}</td>
+      <td class="td-muted">${closed}</td>
+    </tr>`;
+  }).join('');
 }
 
 async function closeStrategy(name) {
+  if (State.optionstratConfig?.mirror_only) {
+    toast('Modo espejo broker activo: cierre manual deshabilitado', 'err');
+    return;
+  }
   if (!confirm(`Â¿Cerrar estrategia "${name}"?`)) return;
   try {
     await apiDelete('/options/portfolio/' + encodeURIComponent(name));
@@ -868,6 +997,7 @@ function initEvents() {
 document.addEventListener('DOMContentLoaded', () => {
   initNav();
   initEvents();
+  loadOptionstratConfig();
   // Seed a default leg to show UI
   addOptionLeg('call', 'long');
   addOptionLeg('put', 'long');

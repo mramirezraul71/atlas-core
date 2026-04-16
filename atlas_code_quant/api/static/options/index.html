@@ -25,6 +25,7 @@
       <span class="version-badge">v1.0.0</span>
     </div>
     <div class="topbar-right">
+      <span id="mirror-status" class="badge badge-closed">BROKER MIRROR: --</span>
       <span id="api-status" class="badge badge-closed">API --</span>
     </div>
   </header>
@@ -346,6 +347,7 @@
         <div class="view-header">
           <h1 class="view-title">Portfolio de Opciones</h1>
           <div class="view-actions">
+            <span class="badge badge-open" id="port-sync-badge">SYNC --</span>
             <input class="input-sm" id="port-spot-input" placeholder="SPY:500,QQQ:400" style="width:200px" title="Precios actuales {sym:precio,...}" />
             <button class="btn-sm" id="btn-port-refresh">↺ Actualizar</button>
           </div>
@@ -403,6 +405,22 @@
               </tr></thead>
               <tbody id="portfolio-body">
                 <tr class="empty-row"><td colspan="10">Sin estrategias abiertas</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-title">Historial de cerradas</span>
+          </div>
+          <div class="panel-body">
+            <table class="data-tbl">
+              <thead><tr>
+                <th>Nombre</th><th>Subyacente</th><th>Origen</th><th>Apertura</th><th>Cierre</th>
+              </tr></thead>
+              <tbody id="portfolio-history-body">
+                <tr class="empty-row"><td colspan="5">Sin historial de cierres</td></tr>
               </tbody>
             </table>
           </div>

@@ -174,6 +174,7 @@ class TradingConfig:
     options_min_oi:           int   = _ienv("ATLAS_OPTIONS_MIN_OI", 100)
     options_max_bpr_pct:      float = _fenv("ATLAS_OPTIONS_MAX_BPR_PCT", 0.02)
     options_width_pct:        float = _fenv("ATLAS_OPTIONS_WIDTH_PCT", 0.03)
+    optionstrat_broker_mirror_only: bool = os.getenv("OPTIONSTRAT_BROKER_MIRROR_ONLY", "true").strip().lower() not in {"0", "false", "no"}
     # ── Multi-asset: ETF ──────────────────────────────────────────────────────
     etf_options_enabled:      bool  = os.getenv("ATLAS_ETF_OPTIONS_ENABLED", "false").strip().lower() not in {"0", "false", "no"}
     etf_universe_raw:         str   = _clean_setting(os.getenv("ATLAS_ETF_UNIVERSE"), "SPY,QQQ,IWM,GLD,TLT,XLF,XLE,XLK")

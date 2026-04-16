@@ -21,6 +21,8 @@ from typing import Dict, List, Optional
 import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from atlas_code_quant.config.settings import settings
+from atlas_code_quant.monitoring.strategy_tracker import StrategyTracker
 
 try:
     from options.strategy_engine import (
@@ -46,6 +48,7 @@ router = APIRouter(prefix="/options", tags=["OptionStrat"])
 # Instancia global del analizador de cartera
 _PORTFOLIO_PATH = Path("data/options_portfolio.json")
 _portfolio = PortfolioAnalyzer(storage_path=_PORTFOLIO_PATH)
+_tracker = StrategyTracker()
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +161,24 @@ def _make_grid(spot: float, pct: float, n: int) -> np.ndarray:
     lo = max(0.01, spot * (1 - pct))
     hi = spot * (1 + pct)
     return np.linspace(lo, hi, n)
+
+
+def _sync_optionstrat_from_broker() -> Dict[str, int]:
+    """Sincroniza OptionStrat con posiciones reales del broker (best-effort)."""
+    try:
+        snapshot = _tracker.snapshot(account_scope=settings.tradier_default_scope)
+        return _portfolio.sync_from_broker_groups(
+            groups=snapshot.groups,
+            quote_index=snapshot.quote_index,
+            source=f"tradier_{settings.tradier_default_scope}",
+        )
+    except Exception as exc:
+        logger.debug("OptionStrat broker sync skipped: %s", exc)
+        return {"added": 0, "updated": 0, "closed": 0, "active": 0}
+
+
+def _mirror_only_enabled() -> bool:
+    return bool(settings.optionstrat_broker_mirror_only)
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +294,11 @@ async def compute_scenario(req: ScenarioRequest):
 @router.post("/portfolio/add")
 async def add_to_portfolio(req: AddToPortfolioRequest):
     """Añade una estrategia a la cartera activa."""
+    if _mirror_only_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail="OptionStrat en modo espejo broker: alta manual deshabilitada",
+        )
     try:
         strategy = _build_strategy(req.strategy)
         market   = _build_market(req.market)
@@ -299,6 +325,11 @@ async def add_to_portfolio(req: AddToPortfolioRequest):
 @router.delete("/portfolio/{strategy_name}")
 async def close_strategy(strategy_name: str):
     """Cierra (marca como closed) una estrategia en la cartera."""
+    if _mirror_only_enabled():
+        raise HTTPException(
+            status_code=403,
+            detail="OptionStrat en modo espejo broker: cierre manual deshabilitado",
+        )
     removed = _portfolio.remove_strategy(strategy_name)
     if not removed:
         raise HTTPException(status_code=404, detail=f"Estrategia '{strategy_name}' no encontrada o ya cerrada")
@@ -309,11 +340,16 @@ async def close_strategy(strategy_name: str):
 async def portfolio_summary(req: PortfolioSummaryRequest):
     """Resumen completo de la cartera: PnL, griegas, distribución, risk flags."""
     try:
+        sync_stats = _sync_optionstrat_from_broker()
         summary = _portfolio.compute_summary(
             market_prices=req.market_prices,
             risk_free_rate=req.risk_free_rate,
         )
-        return {"ok": True, "data": summary.to_dict()}
+        payload = summary.to_dict()
+        payload["history"] = _portfolio.history(limit=200)
+        payload["sync"] = sync_stats
+        payload["mirror_only"] = _mirror_only_enabled()
+        return {"ok": True, "data": payload}
     except Exception as exc:
         logger.exception("portfolio_summary error")
         raise HTTPException(status_code=400, detail=str(exc))
@@ -323,6 +359,7 @@ async def portfolio_summary(req: PortfolioSummaryRequest):
 async def portfolio_greeks(req: PortfolioSummaryRequest):
     """Griegas totales de la cartera (respuesta rápida sin PnL completo)."""
     try:
+        _sync_optionstrat_from_broker()
         g = _portfolio.compute_aggregate_greeks(
             market_prices=req.market_prices,
             risk_free_rate=req.risk_free_rate,
@@ -335,4 +372,25 @@ async def portfolio_greeks(req: PortfolioSummaryRequest):
 @router.get("/portfolio/status")
 async def portfolio_status():
     """Estado rápido de la cartera (sin cálculos pesados)."""
-    return {"ok": True, "data": _portfolio.status()}
+    _sync_optionstrat_from_broker()
+    payload = _portfolio.status()
+    payload["mirror_only"] = _mirror_only_enabled()
+    payload["tradier_scope"] = settings.tradier_default_scope
+    return {"ok": True, "data": payload}
+
+
+@router.get("/portfolio/history")
+async def portfolio_history(limit: int = 200):
+    """Histórico de estrategias cerradas (persistente)."""
+    return {"ok": True, "data": _portfolio.history(limit=limit)}
+
+
+@router.get("/config")
+async def optionstrat_config():
+    return {
+        "ok": True,
+        "data": {
+            "mirror_only": _mirror_only_enabled(),
+            "tradier_scope": settings.tradier_default_scope,
+        },
+    }

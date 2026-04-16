@@ -67,7 +67,10 @@ class CanonicalSnapshotService:
         positions = self._build_positions_payload(tracker_snapshot)
         totals = self._build_totals(tracker_snapshot, positions)
         balances = self._build_balances(summary, totals, tracker_snapshot)
-        simulators = self._build_simulators(internal_portfolio=internal_portfolio)
+        simulators = self._build_simulators(
+            tracker_snapshot=tracker_snapshot,
+            internal_portfolio=internal_portfolio,
+        )
         reconciliation = self._build_reconciliation(
             canonical_balances=balances,
             canonical_totals=totals,
@@ -233,10 +236,15 @@ class CanonicalSnapshotService:
         balances["open_pnl"] = _safe_float(totals.get("open_pnl"), 0.0)
         return balances
 
-    def _build_simulators(self, *, internal_portfolio: Any = None) -> dict[str, Any]:
+    def _build_simulators(
+        self,
+        *,
+        tracker_snapshot: TrackerSnapshot,
+        internal_portfolio: Any = None,
+    ) -> dict[str, Any]:
         return {
             "paper_local": self._paper_local_snapshot(),
-            "optionstrat": self._optionstrat_snapshot(),
+            "optionstrat": self._optionstrat_snapshot(tracker_snapshot),
             "atlas_internal": self._atlas_internal_snapshot(internal_portfolio),
         }
 
@@ -267,8 +275,13 @@ class CanonicalSnapshotService:
                 "error": str(exc),
             }
 
-    def _optionstrat_snapshot(self) -> dict[str, Any]:
+    def _optionstrat_snapshot(self, tracker_snapshot: TrackerSnapshot) -> dict[str, Any]:
         try:
+            self._optionstrat.sync_from_broker_groups(
+                groups=tracker_snapshot.groups,
+                quote_index=tracker_snapshot.quote_index,
+                source=f"tradier_{tracker_snapshot.session.scope}",
+            )
             status = self._optionstrat.status()
             return {
                 "role": "design",
