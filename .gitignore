@@ -199,3 +199,17 @@ output/
 /purge.py
 /read_*.py
 /regen*.py
+
+# Backtest artifacts (local cache/output)
+atlas_code_quant/data/backtest/AAPL_*.csv
+atlas_code_quant/data/backtest/MSFT_*.csv
+atlas_code_quant/data/backtest/backtest_results/iron_butterfly/
+atlas_code_quant/data/backtest/backtest_results/iron_butterfly_fixed_6m/
+atlas_code_quant/data/backtest/backtest_results/trades_*.csv
+atlas_code_quant/reports/backtest_*.html
+atlas_code_quant/reports/backtest_*.json
+atlas_code_quant/reports/backtest_metrics_*.json
+
+# Keep scorecard snapshots local by default
+reports/*_scorecard.json
+reports/*_scorecard_latest.md
