@@ -1287,6 +1287,43 @@ def _market_open_operational_config_snapshot() -> dict[str, object]:
     }
 
 
+def _attach_operational_self_audit_summary(payload: dict[str, object]) -> None:
+    """Añade resumen de self-audit operativo al payload de readiness (paper-first; no bloquea submit)."""
+    if not settings.operational_self_audit_enabled():
+        return
+    try:
+        from learning.trading_self_audit_protocol import read_trading_self_audit_protocol
+        from operations.operational_self_audit import OperationalSelfAuditContext, run_operational_self_audit
+
+        protocol = read_trading_self_audit_protocol(_REPO_ROOT / "reports" / "trading_self_audit_protocol.json")
+        oc = _OPERATION_CENTER.get_config()
+        if not isinstance(oc, dict):
+            oc = {}
+        scope_raw = str(oc.get("account_scope") or settings.tradier_default_scope or "paper").strip().lower()
+        scope_lit = "live" if scope_raw == "live" else "paper"
+        market_snap = payload.get("market_open_operational")
+        if not isinstance(market_snap, dict):
+            market_snap = {}
+        ctx = OperationalSelfAuditContext(
+            settings=settings,
+            operation_config=oc,
+            market_open_snapshot=market_snap,
+            protocol=protocol,
+            positions_summary=None,
+            scope=scope_lit,
+        )
+        result = run_operational_self_audit(ctx)
+        payload["self_audit_summary"] = {
+            "overall_severity": result.overall_severity,
+            "passed": result.passed,
+            "checks_count": len(result.checks),
+            "ts_utc": result.ts_utc,
+            "scope": result.scope,
+        }
+    except Exception as exc:
+        logger.warning("operational_self_audit: adjunto a readiness falló: %s", exc)
+
+
 def _tradier_positions_payload(
     *,
     account_scope: str | None,
@@ -2521,6 +2558,7 @@ def _operation_readiness_payload_fast() -> dict[str, object]:
         st=settings,
     )
     payload["market_open_operational"] = _market_open_operational_config_snapshot()
+    _attach_operational_self_audit_summary(payload)
     return payload
 
 
@@ -2562,7 +2600,7 @@ def _operation_readiness_payload_diagnostic() -> dict[str, object]:
         startup_warmup_satisfied=warm_ok,
         visual_pipeline_ok=vp_semantic_ok,
     )
-    return {
+    payload: dict[str, object] = {
         "ready": ready,
         "reasons_not_ready": reasons,
         "readiness_mode": "diagnostic",
@@ -2582,6 +2620,8 @@ def _operation_readiness_payload_diagnostic() -> dict[str, object]:
         "quant_flags": quant_readiness_flags(settings),
         "market_open_operational": _market_open_operational_config_snapshot(),
     }
+    _attach_operational_self_audit_summary(payload)
+    return payload
 
 
 @app.get("/operation/readiness", response_model=StdResponse, tags=["Operation"])
