@@ -1,0 +1,10 @@
+{
+  "description": "Módulos del núcleo atlas_core que deben importarse sin error (smoke de integridad).",
+  "modules": [
+    "atlas_core",
+    "atlas_core.autonomy",
+    "atlas_core.brain",
+    "atlas_core.adapters",
+    "atlas_core.runtime"
+  ]
+}

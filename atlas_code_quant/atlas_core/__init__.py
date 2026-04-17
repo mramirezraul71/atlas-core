@@ -1,7 +1,7 @@
-"""Shim legado: redirige a atlas_core canónico en raíz.
+"""Shim: redirige imports a `atlas_core/` en la raíz del repositorio (núcleo canónico).
 
-Implementación real en:
-    C:\\ATLAS_PUSH\\atlas_core
+Documentación y lista de módulos obligatorios: `atlas_core/CANONICAL.md`, `atlas_core/MANIFEST.json`.
+Verificación local: `python atlas_code_quant/scripts/verify_atlas_core_manifest.py`.
 """
 
 from __future__ import annotations
