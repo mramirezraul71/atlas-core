@@ -75,6 +75,22 @@ class TrainResult:
     message: str = ""
 
 
+def _safe_stratify_labels(y: Any) -> Any | None:
+    series = pd.Series(y)
+    counts = series.value_counts(dropna=False)
+    if len(counts.index) < 2:
+        return None
+    if int(counts.min()) < 2:
+        return None
+    return y
+
+
+def _class_distribution(y: Any) -> dict[str, int]:
+    series = pd.Series(y)
+    counts = series.value_counts(dropna=False).to_dict()
+    return {str(k): int(v) for k, v in counts.items()}
+
+
 def _load_journal_closed(conn: sqlite3.Connection) -> pd.DataFrame:
     q = """
     SELECT id, journal_key, strategy_type, symbol, win_rate_at_entry, current_win_rate_pct,
@@ -100,6 +116,11 @@ def _save_xgb_model(clf: Any, path: Path) -> None:
         _write(est)
     else:
         _write(clf)
+
+
+def _write_meta(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def train_if_ready(
@@ -148,13 +169,48 @@ def train_if_ready(
 
         X = df[feature_cols].fillna(0.0).values
         y = df["target_win"].astype(int).values
+        class_distribution = _class_distribution(y)
+        stratify_labels = _safe_stratify_labels(y)
+
+        model_dir = Path(cfg.xgboost_model_dir)
+        model_dir.mkdir(parents=True, exist_ok=True)
+        model_path = model_dir / "xgboost_model.json"
+        meta_path = model_dir / "xgboost_model_meta.json"
+
+        if stratify_labels is None:
+            message = (
+                "Dataset sin diversidad suficiente de target_win para entrenar XGBoost. "
+                f"class_distribution={class_distribution}"
+            )
+            meta = {
+                "feature_names": feature_cols,
+                "phase": phase,
+                "n_real_trades": n,
+                "class_distribution": class_distribution,
+                "training_status": "insufficient_class_diversity",
+                "training_status_reason": message,
+                "beats_baseline": False,
+                "train_auc": 0.0,
+                "test_auc": 0.0,
+                "baseline_auc": 0.0,
+                "walk_forward": wf.to_dict(),
+            }
+            _write_meta(meta_path, meta)
+            return TrainResult(
+                phase=phase,
+                n_real_trades=n,
+                model_path=None,
+                meta_path=str(meta_path),
+                metrics={"class_distribution": class_distribution},
+                message=message,
+            )
 
         X_train, X_test, y_train, y_test = train_test_split(
             X,
             y,
             test_size=0.25,
             random_state=42,
-            stratify=y if len(set(y)) > 1 else None,
+            stratify=stratify_labels,
         )
 
         base = xgb.XGBClassifier(
@@ -185,18 +241,13 @@ def train_if_ready(
         try:
             bfeat = df["local_win_rate_pct"].fillna(0.0).values.reshape(-1, 1)
             bx_train, bx_test, by_train, by_test = train_test_split(
-                bfeat, y, test_size=0.25, random_state=42, stratify=y if len(set(y)) > 1 else None
+                bfeat, y, test_size=0.25, random_state=42, stratify=stratify_labels
             )
             lr = LogisticRegression(max_iter=300)
             lr.fit(bx_train, by_train)
             baseline_auc = float(roc_auc_score(by_test, lr.predict_proba(bx_test)[:, 1]))
         except Exception:
             baseline_auc = 0.0
-
-        model_dir = Path(cfg.xgboost_model_dir)
-        model_dir.mkdir(parents=True, exist_ok=True)
-        model_path = model_dir / "xgboost_model.json"
-        meta_path = model_dir / "xgboost_model_meta.json"
 
         _save_xgb_model(clf, model_path)
 
@@ -205,13 +256,15 @@ def train_if_ready(
             "feature_names": feature_cols,
             "phase": phase,
             "n_real_trades": n,
+            "class_distribution": class_distribution,
+            "training_status": "trained",
             "train_auc": train_auc,
             "test_auc": test_auc,
             "baseline_auc": baseline_auc,
             "beats_baseline": beats_baseline,
             "walk_forward": wf.to_dict(),
         }
-        meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        _write_meta(meta_path, meta)
 
         return TrainResult(
             phase=phase,

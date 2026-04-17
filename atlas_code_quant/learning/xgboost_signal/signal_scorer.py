@@ -107,11 +107,12 @@ class XGBoostSignalScorer:
 
         self.loader.load()
         if not self.loader.is_loaded():
+            reason = str(self.loader.meta.get("training_status_reason") or "Modelo no disponible.")
             return {
                 "score": None,
                 "phase": phase,
                 "action": "pass",
-                "reason": "Modelo no disponible.",
+                "reason": reason,
                 "n_real_trades": n_real,
             }
 

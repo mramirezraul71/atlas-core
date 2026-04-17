@@ -57,8 +57,14 @@ async def get_status() -> dict[str, Any]:
             phase = get_training_phase(n_real)
         finally:
             conn.close()
-    meta = loader.meta if loader.is_loaded() else {}
+    meta = loader.meta if isinstance(loader.meta, dict) else {}
     slim = {k: meta[k] for k in ("test_auc", "baseline_auc", "beats_baseline", "phase") if k in meta}
+    if "training_status" in meta:
+        slim["training_status"] = meta.get("training_status")
+    if "training_status_reason" in meta:
+        slim["training_status_reason"] = meta.get("training_status_reason")
+    if "class_distribution" in meta:
+        slim["class_distribution"] = meta.get("class_distribution")
     return {
         "enabled": settings.xgboost_enabled,
         "phase": phase,

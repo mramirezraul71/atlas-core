@@ -53,18 +53,26 @@ class XGBoostModelLoader:
             return True
         mp = self.model_path()
         mt = self.meta_path()
+        self.meta = {}
+        self.feature_names = []
+        self.phase = 0
+        if mt.is_file():
+            try:
+                self.meta = json.loads(mt.read_text(encoding="utf-8"))
+                self.feature_names = list(self.meta.get("feature_names") or [])
+                self.phase = int(self.meta.get("phase") or 0)
+            except Exception as e:
+                logger.error("XGBoost meta load failed: %s", e)
+                self.meta = {}
+                self.feature_names = []
+                self.phase = 0
         if not mp.is_file():
             self._model = None
-            self.feature_names = []
             return False
         try:
             clf = xgb.XGBClassifier()
             clf.load_model(str(mp))
             self._model = clf
-            if mt.is_file():
-                self.meta = json.loads(mt.read_text(encoding="utf-8"))
-                self.feature_names = list(self.meta.get("feature_names") or [])
-                self.phase = int(self.meta.get("phase") or 0)
             self._loaded_at = time.time()
             return True
         except Exception as e:

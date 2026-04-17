@@ -22,8 +22,10 @@ from learning.xgboost_signal.feature_builder import FeatureBuilder, OptionsFeatu
 from learning.xgboost_signal.model_loader import XGBoostModelLoader  # noqa: E402
 from learning.xgboost_signal.model_trainer import (  # noqa: E402
     _count_real_trades,
+    _safe_stratify_labels,
     ensure_xgboost_feature_log_table,
     get_training_phase,
+    train_if_ready,
 )
 from learning.xgboost_signal.signal_scorer import XGBoostSignalScorer  # noqa: E402
 from learning.xgboost_signal.exit_advisor import XGBoostExitAdvisor  # noqa: E402
@@ -195,3 +197,75 @@ def test_walk_forward_synthetic_df() -> None:
     df = pd.DataFrame(rows)
     wf = run_walk_forward(df, phase=1)
     assert wf.folds is not None
+
+
+def test_safe_stratify_labels_handles_rare_class() -> None:
+    assert _safe_stratify_labels([0, 0, 0, 1]) is None
+    assert _safe_stratify_labels([0, 0, 1, 1]) is not None
+
+
+def test_train_if_ready_handles_insufficient_class_diversity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "j.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        """CREATE TABLE trading_journal (
+        id INTEGER PRIMARY KEY,
+        journal_key TEXT,
+        strategy_type TEXT,
+        symbol TEXT,
+        win_rate_at_entry REAL,
+        current_win_rate_pct REAL,
+        iv_rank REAL,
+        realized_pnl REAL,
+        entry_time TEXT,
+        exit_time TEXT,
+        status TEXT,
+        entry_notional REAL,
+        unrealized_pnl REAL,
+        attribution_json TEXT,
+        post_mortem_json TEXT,
+        broker_order_ids_json TEXT
+    )"""
+    )
+    rows = [
+        (
+            i,
+            f"jk-{i}",
+            "equity_long",
+            "SPY",
+            60.0,
+            60.0,
+            40.0,
+            1.0 if i == 0 else -1.0,
+            "2026-04-01T10:00:00",
+            "2026-04-01T15:00:00",
+            "closed",
+            1000.0,
+            0.0,
+            "{}",
+            "{}",
+            "[]",
+        )
+        for i in range(30)
+    ]
+    conn.executemany(
+        "INSERT INTO trading_journal VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        rows,
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(settings, "journal_db_path", db)
+    monkeypatch.setattr(settings, "xgboost_enabled", True)
+    monkeypatch.setattr(settings, "xgboost_model_dir", tmp_path / "models")
+    settings.xgboost_model_dir.mkdir(parents=True, exist_ok=True)
+
+    result = train_if_ready()
+
+    assert result is not None
+    assert result.model_path is None
+    assert result.meta_path is not None
+    assert "insufficient_class_diversity" in Path(result.meta_path).read_text(encoding="utf-8")

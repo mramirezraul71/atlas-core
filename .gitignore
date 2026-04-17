@@ -219,3 +219,11 @@ atlas_code_quant/data/operation/snapshots/
 atlas_code_quant/data/market/
 atlas_code_quant/data/operation/brain_audit_log.jsonl
 atlas_code_quant/data/operation/quant_brain_bridge_state_pending.json
+
+# Autonomy / runtime dumps en raíz (no versionar)
+state/atlas_*.json
+state/atlas_*.jsonl
+
+# Informes locales generados con fecha en nombre
+reports/ATLAS_PUSH_ESTRUCTURA_GENERAL_*.md
+reports/atlas_quant_implementation_scorecard_20*.md
