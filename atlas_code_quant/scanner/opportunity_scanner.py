@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import os
 import threading
 import time
 from dataclasses import dataclass
@@ -29,6 +30,8 @@ from indicators.stochastic import (
 from market_context.regime_detector import adapt_thresholds_by_regime, detect_regime_from_frame
 from market_context.vix_handler import build_vix_context
 from learning.adaptive_policy import AdaptiveLearningService
+from learning.ml_signal_ranker import MLSignalRanker
+from learning.trade_events import SignalContext
 from scanner.options_flow_provider import MarketTelemetryStore, OptionsFlowProvider
 from scanner.universe_catalog import ScannerUniverseCatalog
 from scanner.asset_classifier import AssetClass, classify_asset
@@ -45,6 +48,144 @@ HIGHER_TIMEFRAME_MAP = {
 }
 HORIZON_BARS = {"5m": 3, "15m": 4, "1h": 6, "4h": 4, "1d": 3}
 METHOD_ORDER = ["trend_ema_stack", "breakout_donchian", "rsi_pullback_trend", "ml_directional"]
+_ML_RANKER_MODEL_PATH = Path(__file__).resolve().parents[1] / "data" / "ml_signal_ranker.pkl"
+
+
+def _runtime_ml_ranker_enabled(account_scope: str | None = None) -> bool:
+    scope = str(account_scope or settings.tradier_default_scope or "paper").strip().lower()
+    env_key = "QUANT_ML_RANKER_ENABLED_LIVE" if scope == "live" else "QUANT_ML_RANKER_ENABLED_PAPER"
+    default = "false" if scope == "live" else "true"
+    return os.getenv(env_key, default).strip().lower() not in {"0", "false", "no"}
+
+
+def _runtime_ml_ranker_model_path() -> Path:
+    raw = os.getenv("QUANT_ML_RANKER_MODEL_PATH", "").strip()
+    if not raw:
+        return _ML_RANKER_MODEL_PATH
+    path = Path(raw)
+    if path.is_absolute():
+        return path
+    return Path(__file__).resolve().parents[2] / path
+
+
+def _normalize_candidate_regime(candidate: dict[str, Any]) -> str:
+    regime = str(candidate.get("market_regime") or "").strip().lower()
+    if regime in {"bull", "bullish", "uptrend", "trending_strong"}:
+        return "BULL"
+    if regime in {"bear", "bearish", "downtrend"}:
+        return "BEAR"
+    if regime in {"volatile", "high_vol", "panic"}:
+        return "VOLATILE"
+    return "SIDEWAYS"
+
+
+def _candidate_side(candidate: dict[str, Any]) -> str:
+    direction = str(candidate.get("direction") or "").strip().lower()
+    if "baj" in direction or direction in {"sell", "short", "down"}:
+        return "sell"
+    return "buy"
+
+
+def _candidate_to_signal_context(candidate: dict[str, Any]) -> SignalContext | None:
+    try:
+        price = float(candidate.get("price") or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if price <= 0:
+        return None
+
+    try:
+        atr = float(candidate.get("atr") or 0.0)
+    except (TypeError, ValueError):
+        atr = 0.0
+    if atr <= 0:
+        predicted_move_pct = 0.0
+        try:
+            predicted_move_pct = float(candidate.get("predicted_move_pct") or 0.0)
+        except (TypeError, ValueError):
+            predicted_move_pct = 0.0
+        atr = max(price * max(predicted_move_pct, 0.5) / 100.0, price * 0.005)
+
+    side = _candidate_side(candidate)
+    stop_loss_price = price - atr if side == "buy" else price + atr
+    r_initial = max(abs(price - stop_loss_price), 0.01)
+    order_flow = candidate.get("order_flow") if isinstance(candidate.get("order_flow"), dict) else {}
+
+    return SignalContext(
+        symbol=str(candidate.get("symbol") or ""),
+        asset_class=str(candidate.get("asset_class") or "unknown"),
+        side=side,
+        setup_type=str(candidate.get("strategy_key") or candidate.get("strategy_type") or "unknown"),
+        regime=_normalize_candidate_regime(candidate),
+        timeframe=str(candidate.get("timeframe") or "1h"),
+        entry_price=price,
+        stop_loss_price=stop_loss_price,
+        r_initial=r_initial,
+        rsi=float(candidate.get("rsi") or 0.0),
+        macd_hist=float(candidate.get("macd_hist") or 0.0),
+        atr=atr,
+        bb_pct=float(candidate.get("bb_pct") or 0.0),
+        volume_ratio=float(candidate.get("volume_ratio") or 1.0),
+        cvd=float(order_flow.get("net_pressure_pct") or 0.0),
+        iv_rank=float(candidate.get("iv_rank") or 0.0),
+        iv_hv_ratio=float(candidate.get("iv_hv_ratio") or 1.0),
+        capital=float(candidate.get("capital") or 100000.0),
+        position_size=float(candidate.get("position_size") or 0.0),
+        signal_time=datetime.now(timezone.utc),
+        extra={"selection_score": candidate.get("selection_score")},
+    )
+
+
+def _runtime_candidate_sort_key(candidate: dict[str, Any]) -> tuple[float, float]:
+    base = float(candidate.get("selection_score") or 0.0)
+    ml_score = candidate.get("ml_score")
+    ml = float(ml_score) if ml_score is not None else -1.0
+    return (base, ml)
+
+
+def _apply_runtime_ml_ranker(
+    candidates: list[dict[str, Any]],
+    *,
+    ranker: Any | None,
+    enabled: bool,
+    logger_: logging.Logger | None = None,
+) -> list[dict[str, Any]]:
+    if not enabled or not candidates:
+        return [dict(item) for item in candidates]
+
+    if ranker is None:
+        out: list[dict[str, Any]] = []
+        for item in candidates:
+            enriched = dict(item)
+            enriched["ml_score"] = None
+            enriched["ml_ranker_reason"] = "ml_ranker_unavailable"
+            out.append(enriched)
+        return out
+
+    out = []
+    for item in candidates:
+        enriched = dict(item)
+        ctx = _candidate_to_signal_context(enriched)
+        if ctx is None:
+            enriched["ml_score"] = None
+            enriched["ml_ranker_reason"] = "ml_signal_context_invalid"
+            out.append(enriched)
+            continue
+
+        score, reason = ranker.score_runtime(ctx)
+        enriched["ml_score"] = round(float(score), 6) if score is not None else None
+        enriched["ml_ranker_reason"] = reason
+        if logger_ is not None:
+            logger_.info(
+                "scanner ml runtime symbol=%s selection_score=%.2f ml_score=%s reason=%s",
+                enriched.get("symbol"),
+                float(enriched.get("selection_score") or 0.0),
+                enriched.get("ml_score"),
+                reason,
+            )
+        out.append(enriched)
+
+    return sorted(out, key=_runtime_candidate_sort_key, reverse=True)
 
 
 def _method_order_for_regime(regime: str) -> list[str]:
@@ -437,6 +578,10 @@ class OpportunityScannerService:
         self._tradier_market_scope: str | None = None
         self._options_flow_provider: OptionsFlowProvider | None = None
         self._options_flow_provider_error: str | None = None
+        self._runtime_ml_ranker: MLSignalRanker | None = None
+        self._runtime_ml_ranker_path = _runtime_ml_ranker_model_path()
+        self._runtime_ml_enabled = _runtime_ml_ranker_enabled(settings.tradier_default_scope)
+        self._runtime_ml_status: str = "ml_ranker_disabled" if not self._runtime_ml_enabled else "ml_ranker_unavailable"
         self._cnn_lstm_model: Any = None
         self._prophet_signal_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
         # Prophet: degradación — si no hay módulo o falla en runtime, se deja de usar sin mutar settings global.
@@ -471,6 +616,26 @@ class OpportunityScannerService:
             except Exception as exc:
                 self._options_flow_provider_error = str(exc)
                 self._log("warn", "Options flow provider no disponible", reason=str(exc))
+        self._refresh_runtime_ml_ranker()
+
+    def _refresh_runtime_ml_ranker(self) -> None:
+        self._runtime_ml_enabled = _runtime_ml_ranker_enabled(settings.tradier_default_scope)
+        if not self._runtime_ml_enabled:
+            self._runtime_ml_ranker = None
+            self._runtime_ml_status = "ml_ranker_disabled"
+            return
+        try:
+            if self._runtime_ml_ranker is None:
+                self._runtime_ml_ranker = MLSignalRanker(model_path=self._runtime_ml_ranker_path)
+            elif not self._runtime_ml_ranker.runtime_ready() and self._runtime_ml_ranker_path.exists():
+                self._runtime_ml_ranker = MLSignalRanker(model_path=self._runtime_ml_ranker_path)
+            self._runtime_ml_status = (
+                "ready" if self._runtime_ml_ranker.runtime_ready() else "ml_ranker_unavailable"
+            )
+        except Exception as exc:
+            self._runtime_ml_ranker = None
+            self._runtime_ml_status = "ml_ranker_error"
+            self._log("warn", "MLSignalRanker runtime no disponible", reason=str(exc))
 
     def _ticker_for_fundamentals(self, symbol: str) -> str:
         s = symbol.strip().upper()
@@ -1943,6 +2108,7 @@ class OpportunityScannerService:
             order_flow_batch = self._order_flow_batch(frames)
             accepted: list[dict[str, Any]] = []
             rejected: list[dict[str, Any]] = []
+            self._refresh_runtime_ml_ranker()
             for symbol, tf_frames in frames.items():
                 self._current_symbol = symbol
                 self._current_timeframe = None
@@ -1976,7 +2142,13 @@ class OpportunityScannerService:
                     "why": item.get("why_selected") or [],
                     "stage": "dynamic_threshold",
                 })
-            accepted = sorted(dynamically_filtered, key=lambda item: float(item["selection_score"]), reverse=True)[: self._config.max_candidates]
+            ml_enriched = _apply_runtime_ml_ranker(
+                dynamically_filtered,
+                ranker=self._runtime_ml_ranker,
+                enabled=self._runtime_ml_enabled,
+                logger_=logger,
+            )
+            accepted = sorted(ml_enriched, key=_runtime_candidate_sort_key, reverse=True)[: self._config.max_candidates]
             cycle_ms = round((time.perf_counter() - start) * 1000.0, 2)
             with self._state_lock:
                 self._cycle_count += 1
@@ -2005,6 +2177,8 @@ class OpportunityScannerService:
                         "scan_interval_sec": self._config.scan_interval_sec,
                         "last_cycle_ms": cycle_ms,
                         "vix": vix_context if settings.scanner_vix_enabled else None,
+                        "ml_ranker_enabled": self._runtime_ml_enabled,
+                        "ml_ranker_status": self._runtime_ml_status,
                     },
                     "criteria": self.criteria_catalog(),
                     "order_flow_system": self._order_flow_system_snapshot(),

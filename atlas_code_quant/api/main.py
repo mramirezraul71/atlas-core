@@ -1445,6 +1445,7 @@ def _compact_scanner_report(report: dict[str, object]) -> dict[str, object]:
                 "symbol": item.get("symbol"),
                 "strategy_type": item.get("strategy_type") or item.get("strategy"),
                 "selection_score": item.get("selection_score") or item.get("score"),
+                "ml_score": item.get("ml_score"),
                 "win_rate_pct": item.get("win_rate_pct") or item.get("win_probability"),
                 "var_95": item.get("var_95") or item.get("risk_pct"),
                 "direction": item.get("direction") or item.get("signal") or item.get("side"),
@@ -2089,7 +2090,10 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
 
                 sorted_cands = sorted(
                     [c for c in candidates if str(c.get("symbol") or "").strip().upper() not in _SANDBOX_RESTRICTED_SYMBOLS],
-                    key=lambda c: float(c.get("selection_score") or 0),
+                    key=lambda c: (
+                        float(c.get("selection_score") or 0),
+                        float(c.get("ml_score")) if c.get("ml_score") is not None else -1.0,
+                    ),
                     reverse=True,
                 )
 

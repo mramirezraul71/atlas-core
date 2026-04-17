@@ -353,6 +353,22 @@ class MLSignalRanker:
             logger.warning("MLSignalRanker.score_batch error: %s", exc)
             return [0.5] * len(contexts)
 
+    def runtime_ready(self) -> bool:
+        """Indica si el ranker está listo para scoring en runtime."""
+        return bool(self.is_trained and self.model is not None)
+
+    def score_runtime(self, ctx: SignalContext) -> tuple[float | None, str]:
+        """Score seguro para runtime con razón explícita de degradación."""
+        if not self.runtime_ready():
+            return None, "ml_ranker_unavailable"
+        try:
+            features = extract_features_from_signal(ctx)
+            prob = self.model.predict_proba([features])[0][1]
+            return float(prob), "scored"
+        except Exception as exc:
+            logger.warning("MLSignalRanker.score_runtime error: %s", exc)
+            return None, "ml_ranker_error"
+
     # ------------------------------------------------------------------
     # Persistencia
     # ------------------------------------------------------------------
