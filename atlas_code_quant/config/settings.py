@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+
+logger = logging.getLogger("quant.config.settings")
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -132,6 +135,86 @@ def _fenv(key: str, default: float) -> float:
         return float(os.getenv(key, str(default)))
     except (ValueError, TypeError):
         return default
+
+
+def _env_explicit(key: str) -> bool:
+    """True si la variable de entorno está definida y no vacía (tras strip)."""
+    v = os.getenv(key)
+    return v is not None and str(v).strip() != ""
+
+
+def _hhmm_valid(value: object) -> bool:
+    raw = str(value or "").strip()
+    if len(raw) != 5 or raw[2] != ":":
+        return False
+    try:
+        h, m = raw.split(":", 1)
+        hi, mi = int(h), int(m)
+    except (ValueError, TypeError):
+        return False
+    return 0 <= hi <= 23 and 0 <= mi <= 59
+
+
+def _risk_float_clamped(
+    value: object,
+    *,
+    lo: float,
+    hi: float,
+    default: float,
+    field_name: str,
+) -> float:
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        logger.warning("market_open_config: %s inválido (%r), usando default=%s", field_name, value, default)
+        return default
+    if not (lo <= x <= hi):
+        logger.warning(
+            "market_open_config: %s fuera de rango [%s, %s] (%s), usando default=%s",
+            field_name,
+            lo,
+            hi,
+            x,
+            default,
+        )
+        return default
+    return x
+
+
+def _risk_int_clamped(
+    value: object,
+    *,
+    lo: int,
+    hi: int,
+    default: int,
+    field_name: str,
+) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        logger.warning("market_open_config: %s inválido (%r), usando default=%s", field_name, value, default)
+        return default
+    if not (lo <= n <= hi):
+        logger.warning(
+            "market_open_config: %s fuera de rango [%s, %s] (%s), usando default=%s",
+            field_name,
+            lo,
+            hi,
+            n,
+            default,
+        )
+        return default
+    return n
+
+
+def _finalize_market_open_operational_clamps(cfg: "TradingConfig") -> None:
+    """Aplica topes finales a campos operativos cargados desde JSON/env."""
+    cfg.kelly_fraction = max(0.0, min(float(cfg.kelly_fraction), 1.0))
+    cfg.kelly_max_position_pct = max(0.0, min(float(cfg.kelly_max_position_pct), 1.0))
+    cfg.equity_kelly_max_risk_per_trade_pct = max(0.0, min(float(cfg.equity_kelly_max_risk_per_trade_pct), 1.0))
+    cfg.market_open_max_positions = max(1, min(int(cfg.market_open_max_positions), 20))
+    cfg.market_open_scan_interval_min = max(1, min(int(cfg.market_open_scan_interval_min), 240))
+    cfg.market_open_daily_loss_limit_pct = max(0.0001, min(float(cfg.market_open_daily_loss_limit_pct), 0.99))
 
 
 @dataclass
@@ -472,6 +555,10 @@ class TradingConfig:
     kelly_fraction: float = _fenv("QUANT_KELLY_FRACTION", 0.25)        # Quarter-Kelly
     kelly_max_position_pct: float = _fenv("QUANT_KELLY_MAX_PCT", 0.20)
     kelly_min_samples: int = _ienv("QUANT_KELLY_MIN_SAMPLES", 6)
+    equity_kelly_paper_enabled: bool = os.getenv("QUANT_EQUITY_KELLY_PAPER_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+    equity_kelly_live_enabled: bool = os.getenv("QUANT_EQUITY_KELLY_LIVE_ENABLED", "false").strip().lower() not in {"0", "false", "no"}
+    equity_kelly_max_risk_per_trade_pct: float = _fenv("QUANT_EQUITY_KELLY_MAX_RISK_PCT", 0.01)
+    equity_kelly_min_qty: int = _ienv("QUANT_EQUITY_KELLY_MIN_QTY", 1)
     # ATR stops dinámicos
     atr_stops_enabled: bool = os.getenv("QUANT_ATR_STOPS_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     atr_sl_multiplier: float = _fenv("QUANT_ATR_SL_MULT", 1.5)        # SL = entry - ATR*1.5
@@ -520,36 +607,154 @@ class TradingConfig:
     notify_channels: list[str] = field(default_factory=list)
     notifications_data_dir: Path = field(default_factory=lambda: BASE_DIR / "data" / "notifications")
     market_open_config_path: Path = BASE_DIR / "config" / "market_open_config.json"
-    market_open_schedule_open_et: str = "09:30"
-    market_open_schedule_close_et: str = "16:00"
-    market_open_max_positions: int = 3
+    # Horario NYSE: env > JSON > default (ver _apply_market_open_operational_config).
+    market_open_schedule_open_et: str = field(
+        default_factory=lambda: _clean_setting(os.getenv("QUANT_MARKET_OPEN_SCHEDULE_OPEN_ET")) or "09:30"
+    )
+    market_open_schedule_close_et: str = field(
+        default_factory=lambda: _clean_setting(os.getenv("QUANT_MARKET_OPEN_SCHEDULE_CLOSE_ET")) or "16:00"
+    )
+    market_open_max_positions: int = _ienv("QUANT_MARKET_OPEN_MAX_POSITIONS", 3)
+    market_open_scan_interval_min: int = _ienv("QUANT_MARKET_OPEN_SCAN_INTERVAL_MIN", 5)
+    market_open_daily_loss_limit_pct: float = _fenv("QUANT_MARKET_OPEN_DAILY_LOSS_LIMIT", 0.02)
+    market_open_config_loaded: bool = False
     xgboost_model_dir: Path = field(init=False)
     xgboost_audit_path: Path = field(init=False)
 
-    def _apply_market_open_config(self) -> None:
+    def _apply_market_open_operational_config(self) -> None:
+        """Carga operativa desde market_open_config.json (riesgo + schedule).
+
+        Precedencia por campo (documentación de auditoría / operación):
+          1) Variable de entorno explícita (no vacía) para ese campo
+          2) Valor en market_open_config.json si es válido
+          3) Valor ya resuelto en el dataclass (defaults + _fenv / _ienv en la definición del campo)
+
+        JSON ausente, ilegible o parcial: no lanza; registra warning y conserva defaults.
+        Campos inválidos aislados: se ignoran con warning y se mantiene el valor actual/default.
+        """
+        self.market_open_config_loaded = False
+        self._sync_risk_fields_from_explicit_env()
         path = self.market_open_config_path
         if not path.exists() or not path.is_file():
+            logger.warning("market_open_config: archivo no encontrado (%s), usando defaults/env", path)
+            _finalize_market_open_operational_clamps(self)
             return
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
+            raw = path.read_text(encoding="utf-8")
+            payload = json.loads(raw)
+        except Exception as exc:
+            logger.warning("market_open_config: no se pudo leer o parsear (%s): %s", path, exc)
+            _finalize_market_open_operational_clamps(self)
             return
         if not isinstance(payload, dict):
+            logger.warning("market_open_config: raíz no es objeto JSON, usando defaults/env")
+            _finalize_market_open_operational_clamps(self)
             return
-        schedule = payload.get("schedule_et") or {}
-        risk = payload.get("risk") or {}
-        open_et = str(schedule.get("market_open") or "").strip()
-        close_et = str(schedule.get("market_close") or "").strip()
-        if len(open_et) == 5 and ":" in open_et:
-            self.market_open_schedule_open_et = open_et
-        if len(close_et) == 5 and ":" in close_et:
-            self.market_open_schedule_close_et = close_et
-        max_positions = risk.get("max_positions")
-        try:
-            if max_positions is not None:
-                self.market_open_max_positions = int(max_positions)
-        except (TypeError, ValueError):
-            pass
+
+        self.market_open_config_loaded = True
+        schedule = payload.get("schedule_et") if isinstance(payload.get("schedule_et"), dict) else {}
+        risk = payload.get("risk") if isinstance(payload.get("risk"), dict) else {}
+
+        if not _env_explicit("QUANT_MARKET_OPEN_SCHEDULE_OPEN_ET"):
+            open_et = str(schedule.get("market_open") or "").strip()
+            if _hhmm_valid(open_et):
+                self.market_open_schedule_open_et = open_et
+            elif open_et:
+                logger.warning("market_open_config: schedule_et.market_open inválido (%r), se ignora", open_et)
+
+        if not _env_explicit("QUANT_MARKET_OPEN_SCHEDULE_CLOSE_ET"):
+            close_et = str(schedule.get("market_close") or "").strip()
+            if _hhmm_valid(close_et):
+                self.market_open_schedule_close_et = close_et
+            elif close_et:
+                logger.warning("market_open_config: schedule_et.market_close inválido (%r), se ignora", close_et)
+
+        if not _env_explicit("QUANT_MARKET_OPEN_SCAN_INTERVAL_MIN"):
+            raw_scan = schedule.get("scan_interval_min")
+            if raw_scan is not None:
+                self.market_open_scan_interval_min = _risk_int_clamped(
+                    raw_scan,
+                    lo=1,
+                    hi=1440,
+                    default=self.market_open_scan_interval_min,
+                    field_name="schedule_et.scan_interval_min",
+                )
+
+        if not _env_explicit("QUANT_MARKET_OPEN_MAX_POSITIONS"):
+            if risk.get("max_positions") is not None:
+                self.market_open_max_positions = _risk_int_clamped(
+                    risk.get("max_positions"),
+                    lo=1,
+                    hi=50,
+                    default=self.market_open_max_positions,
+                    field_name="risk.max_positions",
+                )
+
+        if not _env_explicit("QUANT_KELLY_FRACTION"):
+            if risk.get("kelly_fraction") is not None:
+                self.kelly_fraction = _risk_float_clamped(
+                    risk.get("kelly_fraction"),
+                    lo=0.0,
+                    hi=1.0,
+                    default=self.kelly_fraction,
+                    field_name="risk.kelly_fraction",
+                )
+
+        if not _env_explicit("QUANT_EQUITY_KELLY_MAX_RISK_PCT"):
+            if risk.get("max_risk_per_trade") is not None:
+                self.equity_kelly_max_risk_per_trade_pct = _risk_float_clamped(
+                    risk.get("max_risk_per_trade"),
+                    lo=0.0,
+                    hi=1.0,
+                    default=self.equity_kelly_max_risk_per_trade_pct,
+                    field_name="risk.max_risk_per_trade",
+                )
+
+        if not _env_explicit("QUANT_KELLY_MAX_PCT"):
+            if risk.get("max_position_pct") is not None:
+                self.kelly_max_position_pct = _risk_float_clamped(
+                    risk.get("max_position_pct"),
+                    lo=0.0,
+                    hi=1.0,
+                    default=self.kelly_max_position_pct,
+                    field_name="risk.max_position_pct",
+                )
+
+        if not _env_explicit("QUANT_MARKET_OPEN_DAILY_LOSS_LIMIT"):
+            if risk.get("daily_loss_limit") is not None:
+                self.market_open_daily_loss_limit_pct = _risk_float_clamped(
+                    risk.get("daily_loss_limit"),
+                    lo=0.0,
+                    hi=0.5,
+                    default=self.market_open_daily_loss_limit_pct,
+                    field_name="risk.daily_loss_limit",
+                )
+
+        _finalize_market_open_operational_clamps(self)
+
+    def _sync_risk_fields_from_explicit_env(self) -> None:
+        """Re-aplica overrides por env en tiempo de `__post_init__` (los defaults del dataclass se fijan al import)."""
+        if _env_explicit("QUANT_KELLY_FRACTION"):
+            self.kelly_fraction = _fenv("QUANT_KELLY_FRACTION", float(self.kelly_fraction))
+        if _env_explicit("QUANT_EQUITY_KELLY_MAX_RISK_PCT"):
+            self.equity_kelly_max_risk_per_trade_pct = _fenv(
+                "QUANT_EQUITY_KELLY_MAX_RISK_PCT",
+                float(self.equity_kelly_max_risk_per_trade_pct),
+            )
+        if _env_explicit("QUANT_KELLY_MAX_PCT"):
+            self.kelly_max_position_pct = _fenv("QUANT_KELLY_MAX_PCT", float(self.kelly_max_position_pct))
+        if _env_explicit("QUANT_MARKET_OPEN_MAX_POSITIONS"):
+            self.market_open_max_positions = _ienv("QUANT_MARKET_OPEN_MAX_POSITIONS", int(self.market_open_max_positions))
+        if _env_explicit("QUANT_MARKET_OPEN_SCAN_INTERVAL_MIN"):
+            self.market_open_scan_interval_min = _ienv(
+                "QUANT_MARKET_OPEN_SCAN_INTERVAL_MIN",
+                int(self.market_open_scan_interval_min),
+            )
+        if _env_explicit("QUANT_MARKET_OPEN_DAILY_LOSS_LIMIT"):
+            self.market_open_daily_loss_limit_pct = _fenv(
+                "QUANT_MARKET_OPEN_DAILY_LOSS_LIMIT",
+                float(self.market_open_daily_loss_limit_pct),
+            )
 
     def exit_governance_runtime_enabled(self, *, account_type: str | None = None) -> bool:
         scope = str(account_type or "").strip().lower()
@@ -558,7 +763,7 @@ class TradingConfig:
         return bool(self.exit_governance_enabled)
 
     def __post_init__(self) -> None:
-        self._apply_market_open_config()
+        self._apply_market_open_operational_config()
         if self.tradier_default_scope not in {"live", "paper"}:
             self.tradier_default_scope = "paper" if self.paper_trading else "live"
         self.scanner_source = self.scanner_source if self.scanner_source in {"yfinance", "ccxt"} else "yfinance"
@@ -639,6 +844,10 @@ class TradingConfig:
         self.adaptive_learning_window_days = max(30, min(self.adaptive_learning_window_days, 730))
         self.adaptive_learning_min_strategy_samples = max(2, min(self.adaptive_learning_min_strategy_samples, 50))
         self.adaptive_learning_min_symbol_samples = max(2, min(self.adaptive_learning_min_symbol_samples, 50))
+        self.kelly_fraction = max(0.0, min(self.kelly_fraction, 1.0))
+        self.kelly_max_position_pct = max(0.0, min(self.kelly_max_position_pct, 1.0))
+        self.equity_kelly_max_risk_per_trade_pct = max(0.0, min(self.equity_kelly_max_risk_per_trade_pct, 1.0))
+        self.equity_kelly_min_qty = max(1, min(self.equity_kelly_min_qty, 1_000_000))
         self.journal_quality_min_score_pct = max(0.0, min(self.journal_quality_min_score_pct, 100.0))
         self.journal_quality_min_duration_sec = max(0.0, min(self.journal_quality_min_duration_sec, 3600.0))
         self.journal_quality_outlier_day_share_pct = max(1.0, min(self.journal_quality_outlier_day_share_pct, 95.0))
@@ -713,3 +922,8 @@ class TradingConfig:
 
 
 settings = TradingConfig()
+
+
+def refresh_market_open_operational_config() -> None:
+    """Re-lee `market_open_config.json` y actualiza el singleton `settings` (p. ej. tras editar el archivo)."""
+    settings._apply_market_open_operational_config()

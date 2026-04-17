@@ -1,5 +1,6 @@
 {
   "_comment": "ATLAS-Quant — Configuración Morning Market Open Test 2026-03-23",
+  "_precedence": "Por campo: variable de entorno explícita (no vacía) > este JSON > default en config/settings.py. Ver TradingConfig._apply_market_open_operational_config.",
   "session": {
     "name": "Morning Market Open Test — 2026-03-23",
     "mode": "paper",

@@ -308,7 +308,7 @@ class OperationCenter:
         if state.get("autonomy_mode") is None:
             state["autonomy_mode"] = "semi"
 
-        max_risk_default = 0.02
+        max_risk_default = float(getattr(settings, "equity_kelly_max_risk_per_trade_pct", 0.02) or 0.02)
         raw_max_risk = state.get("max_risk_per_trade_pct", max_risk_default)
         try:
             state["max_risk_per_trade_pct"] = float(raw_max_risk)
@@ -1381,11 +1381,18 @@ class OperationCenter:
         route_payload = response if isinstance(response, dict) else {}
         request_payload = route_payload.get("request_payload") or {}
         tradier_response = route_payload.get("tradier_response") or {}
+        broker_order_ids = route_payload.get("broker_order_ids_json") or {}
         expected_preview = action != "submit"
         expected_quantity = self._stringify_order_size(float(order.size))
 
-        order_id = tradier_response.get("id")
-        partner_id = tradier_response.get("partner_id")
+        order_id = (
+            tradier_response.get("id")
+            or broker_order_ids.get("id")
+            or broker_order_ids.get("order_id")
+            or broker_order_ids.get("broker_order_id")
+            or ((route_payload.get("order_response") or {}).get("id") if isinstance(route_payload.get("order_response"), dict) else None)
+        )
+        partner_id = tradier_response.get("partner_id") or broker_order_ids.get("partner_id")
         broker_status = str(tradier_response.get("status") or "").lower()
         route_mode = str(route_payload.get("mode") or "").lower()
         route_preview = route_payload.get("preview")
@@ -1411,6 +1418,7 @@ class OperationCenter:
             "position_effect": route_payload.get("position_effect"),
             "request_payload": request_payload,
             "tradier_response": tradier_response,
+            "broker_order_ids_json": broker_order_ids,
             "broker_status": broker_status or None,
             "order_id": order_id,
             "partner_id": partner_id,

@@ -1269,6 +1269,24 @@ def _entry_pass_runtime_gate(
     return payload
 
 
+def _market_open_operational_config_snapshot() -> dict[str, object]:
+    """Valores efectivos tras resolver env > market_open_config.json > defaults (ver settings)."""
+    return {
+        "config_path": str(settings.market_open_config_path),
+        "config_loaded": bool(getattr(settings, "market_open_config_loaded", False)),
+        "schedule_open_et": str(getattr(settings, "market_open_schedule_open_et", "09:30") or "09:30"),
+        "schedule_close_et": str(getattr(settings, "market_open_schedule_close_et", "16:00") or "16:00"),
+        "scan_interval_min": int(getattr(settings, "market_open_scan_interval_min", 5) or 5),
+        "max_positions": int(getattr(settings, "market_open_max_positions", 3) or 3),
+        "kelly_fraction": float(getattr(settings, "kelly_fraction", 0.25) or 0.25),
+        "kelly_max_position_pct": float(getattr(settings, "kelly_max_position_pct", 0.20) or 0.20),
+        "equity_kelly_max_risk_per_trade_pct": float(
+            getattr(settings, "equity_kelly_max_risk_per_trade_pct", 0.01) or 0.01
+        ),
+        "daily_loss_limit_pct": float(getattr(settings, "market_open_daily_loss_limit_pct", 0.02) or 0.02),
+    }
+
+
 def _tradier_positions_payload(
     *,
     account_scope: str | None,
@@ -2497,11 +2515,13 @@ async def operation_vision_provider(
 
 def _operation_readiness_payload_fast() -> dict[str, object]:
     """Readiness liviano: sin diagnose() ni VisualPipeline; visión vía status_for_gate() (solo proveedor activo)."""
-    return build_readiness_fast_payload(
+    payload = build_readiness_fast_payload(
         operation_center=_OPERATION_CENTER,
         vision_service=_VISION,
         st=settings,
     )
+    payload["market_open_operational"] = _market_open_operational_config_snapshot()
+    return payload
 
 
 def _operation_readiness_payload_diagnostic() -> dict[str, object]:
@@ -2560,6 +2580,7 @@ def _operation_readiness_payload_diagnostic() -> dict[str, object]:
         },
         "visual_pipeline": vp_status,
         "quant_flags": quant_readiness_flags(settings),
+        "market_open_operational": _market_open_operational_config_snapshot(),
     }
 
 
