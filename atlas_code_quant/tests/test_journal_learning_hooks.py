@@ -68,6 +68,45 @@ def test_process_closed_entry_payloads_updates_ic_and_learning(tmp_path):
     assert brain.outcomes == closed_entries
 
 
+def test_process_closed_entry_payloads_updates_ic_when_signal_method_is_unknown(tmp_path):
+    tracker = ICSignalTracker(tracker_path=tmp_path / "ic_tracker.json")
+    signal_id = tracker.record_signal(
+        symbol="AAPL",
+        method="unknown",
+        predicted_move_pct=2.0,
+        entry_price=100.0,
+        timeframe="1h",
+        selection_score=88.0,
+    )
+    tracker._state["signals"][signal_id]["recorded_at"] = "2026-03-28T10:00:00+00:00"
+    tracker._save()
+
+    brain = _Brain()
+    learning = _Learning()
+    service = TradingJournalService(
+        tracker=object(),  # type: ignore[arg-type]
+        brain=brain,
+        learning=learning,  # type: ignore[arg-type]
+        ic_tracker=tracker,
+    )
+
+    closed_entries = [{
+        "journal_key": "paper:test:AAPL:1",
+        "symbol": "AAPL",
+        "strategy_type": "equity_long",
+        "entry_price": 100.0,
+        "exit_price": 103.0,
+        "entry_time": "2026-03-28T10:01:00+00:00",
+    }]
+
+    outcomes = service._process_closed_entry_payloads("paper", closed_entries)
+
+    assert outcomes[0]["ic_updated"] is True
+    assert outcomes[0]["signal_id"] == signal_id
+    assert tracker._state["signals"][signal_id]["outcome_available"] is True
+    assert tracker._state["signals"][signal_id]["actual_return_pct"] == 3.0
+
+
 def test_process_closed_entry_payloads_handles_empty_batch(tmp_path):
     service = TradingJournalService(
         tracker=object(),  # type: ignore[arg-type]

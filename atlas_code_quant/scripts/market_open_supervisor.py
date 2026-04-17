@@ -28,11 +28,19 @@ from typing import Any, Dict, Optional, Tuple
 import pytz
 import requests
 
-
 # Asegurar imports si se ejecuta como script suelto
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+try:
+    from atlas_code_quant.operations.operation_state_contract import (
+        quant_operation_state_path,
+        read_json,
+        update_quant_state,
+    )
+except ModuleNotFoundError:  # pragma: no cover - fallback for script suelto
+    from operations.operation_state_contract import quant_operation_state_path, read_json, update_quant_state
 
 
 LOG_PATH = Path(r"C:\ATLAS_PUSH\logs\market_open_supervisor.log")
@@ -172,9 +180,9 @@ def run_checks() -> Dict[str, Any]:
     # Gobernanza paper premarket: habilitar bypass seguro en ventana de apertura
     if is_market_open_window():
         try:
-            state_path = Path(r"C:\ATLAS_PUSH\atlas_code_quant\data\operation\operation_center_state.json")
+            state_path = quant_operation_state_path(_ROOT)
             if state_path.exists():
-                state = json.loads(state_path.read_text(encoding="utf-8"))
+                state = read_json(state_path)
                 if isinstance(state, dict):
                     # Activa bypass de exit_now SOLO en paper (mantiene live intacto)
                     state.setdefault("paper_bypass_exit_now_guard", True)
@@ -184,7 +192,12 @@ def run_checks() -> Dict[str, Any]:
                         state["paper_bypass_entry_validation_guard"] = True
                         # Solo enviar órdenes paper en sesión regular (9:30–16:00 ET); el loop usa preview fuera de hora.
                         state["paper_market_hours_strict"] = True
-                    state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+                    update_quant_state(
+                        state,
+                        quant_state_path=state_path,
+                        source_module="atlas_market_open_supervisor",
+                        ensure_ascii=False,
+                    )
         except Exception as exc:
             logger.warning("No se pudo aplicar gobernanza premarket en operation_center_state.json: %s", exc)
 

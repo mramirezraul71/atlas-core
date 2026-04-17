@@ -64,9 +64,14 @@ def main() -> int:
     )
     json_path = write_trading_implementation_scorecard_json(payload, ROOT / args.json_out)
     report_path = write_trading_implementation_scorecard_report(payload, ROOT / args.report_out)
+    latest_report_path = write_trading_implementation_scorecard_report(
+        payload,
+        ROOT / "reports/atlas_quant_implementation_scorecard_latest.md",
+    )
 
     print(f"scorecard_json={json_path}")
     print(f"scorecard_report={report_path}")
+    print(f"scorecard_latest_report={latest_report_path}")
     print(f"process_score={payload['headline']['atlas_process_compliance_score']}")
     print(f"usefulness_score={payload['headline']['atlas_implementation_usefulness_score']}")
     print(f"observability_score={payload['metrics']['observability_feedback_score']['value']}")

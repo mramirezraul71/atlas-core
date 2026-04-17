@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -19,18 +20,30 @@ _REPO_ROOT = _QUANT_ROOT.parent
 if str(_QUANT_ROOT) not in sys.path:
     sys.path.insert(0, str(_QUANT_ROOT))
 
+try:
+    from atlas_code_quant.operations.operation_state_contract import combined_operation_state
+except ModuleNotFoundError:  # pragma: no cover - fallback for cwd=atlas_code_quant
+    from operations.operation_state_contract import combined_operation_state
+
 logger = logging.getLogger("atlas.paper_report")
 
 
 def _read_operation_state() -> dict[str, Any]:
-    path = _QUANT_ROOT / "data" / "operation" / "operation_center_state.json"
-    if not path.exists():
-        return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        payload = combined_operation_state()
     except Exception as exc:
         logger.warning("No se pudo leer operation_center_state: %s", exc)
         return {}
+    return payload.get("state") if isinstance(payload.get("state"), dict) else {}
+
+
+def _read_core_state() -> dict[str, Any]:
+    try:
+        payload = combined_operation_state()
+    except Exception as exc:
+        logger.warning("No se pudo leer core operation contract: %s", exc)
+        return {}
+    return payload.get("core_state") if isinstance(payload.get("core_state"), dict) else {}
 
 
 def _read_last_gate_snapshot() -> dict[str, Any]:
@@ -44,6 +57,7 @@ def _read_last_gate_snapshot() -> dict[str, Any]:
 
 def generate_daily_report(day_number: int) -> dict[str, Any]:
     state = _read_operation_state()
+    core_state = _read_core_state()
     vg = state.get("visual_gate_stats") if isinstance(state.get("visual_gate_stats"), dict) else {}
 
     report: dict[str, Any] = {
@@ -78,6 +92,14 @@ def generate_daily_report(day_number: int) -> dict[str, Any]:
         },
         "system_health": {
             "operation_state_path": str(_QUANT_ROOT / "data" / "operation" / "operation_center_state.json"),
+            "core_operation_state_path": str(_REPO_ROOT / "data" / "operation" / "operation_center_state.json"),
+            "core_contract_source": core_state.get("source_module"),
+            "core_contract_updated_at": core_state.get("updated_at"),
+            "core_quant_alignment": {
+                "auton_mode_match": state.get("auton_mode") == core_state.get("auton_mode"),
+                "autonomy_mode_match": state.get("autonomy_mode") == core_state.get("autonomy_mode"),
+                "fail_safe_match": bool(state.get("fail_safe_active")) == bool(core_state.get("fail_safe_active")),
+            },
             "state_excerpt": _read_last_gate_snapshot(),
         },
         "observations": [],

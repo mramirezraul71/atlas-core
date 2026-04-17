@@ -30,6 +30,7 @@ from pathlib import Path
 from atlas_code_quant.learning.trading_implementation_scorecard import build_trading_implementation_scorecard
 from atlas_code_quant.monitoring.canonical_snapshot import CanonicalSnapshotService
 from atlas_code_quant.monitoring.strategy_tracker import StrategyTracker
+from atlas_code_quant.operations.operation_state_contract import quant_operation_state_path
 
 logger = logging.getLogger("atlas.production.grafana")
 
@@ -796,7 +797,7 @@ class GrafanaDashboard:
             logger.debug("Error sincronizando scorecard a Prometheus: %s", exc)
             return None
         self._apply_scorecard_snapshot(scorecard)
-        self._apply_visual_gate_snapshot(base_path / "atlas_code_quant/data/operation/operation_center_state.json")
+        self._apply_visual_gate_snapshot(quant_operation_state_path(base_path))
         return scorecard
 
     def _apply_scorecard_snapshot(self, scorecard: dict) -> None:

@@ -102,18 +102,12 @@ def get_logs_payload(n: int = 30) -> dict | None:
 
 
 def _set_fail_safe(active: bool) -> bool:
-    payload = get_state_payload()
-    if not payload:
-        return False
-    state = payload.get("state", {})
-    path = payload.get("path", STATE_PATH)
-    state["fail_safe_active"] = active
-    state["fail_safe_reason"] = "Pausado manualmente via Telegram" if active else None
     result = mcp(
         {
-            "action": "edit_file",
-            "path": path,
-            "content": json.dumps(state, indent=2, ensure_ascii=False),
+            "action": "set_state",
+            "key": "fail_safe_active",
+            "value": active,
+            "reason": "Pausado manualmente via Telegram" if active else None,
         }
     )
     return result is not None

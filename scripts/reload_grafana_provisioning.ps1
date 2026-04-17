@@ -1,5 +1,5 @@
 param(
-    [string]$GrafanaUrl = "http://127.0.0.1:3003",
+    [string]$GrafanaUrl = "",
     [string]$User = "admin",
     [string]$Password = "atlas2026",
     [switch]$SkipProvisioningRebuild,
@@ -11,6 +11,73 @@ $Root = "C:\ATLAS_PUSH"
 $VenvPy = "$Root\venv\Scripts\python.exe"
 
 Set-Location $Root
+
+function Test-GrafanaHealthUrl([string]$BaseUrl, [hashtable]$Headers) {
+    if ([string]::IsNullOrWhiteSpace($BaseUrl)) {
+        return $false
+    }
+    $probeUrl = "$($BaseUrl.TrimEnd('/'))/api/health"
+    try {
+        $response = Invoke-RestMethod -Uri $probeUrl -Method "GET" -Headers $Headers -UseBasicParsing -TimeoutSec 5
+        return ($null -ne $response.version -or $null -ne $response.database)
+    } catch {
+        return $false
+    }
+}
+
+function Resolve-GrafanaUrl([string]$PreferredUrl, [hashtable]$Headers) {
+    $candidates = New-Object System.Collections.Generic.List[string]
+
+    foreach ($candidate in @(
+        $PreferredUrl,
+        $env:GRAFANA_URL,
+        $env:ATLAS_GRAFANA_URL,
+        "http://127.0.0.1:3003",
+        "http://127.0.0.1:3002",
+        "http://127.0.0.1:3001",
+        "http://localhost:3003",
+        "http://localhost:3002",
+        "http://localhost:3001"
+    )) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and -not $candidates.Contains($candidate)) {
+            $candidates.Add($candidate)
+        }
+    }
+
+    $customIniPath = Join-Path $Root "grafana\local\custom.ini"
+    if (Test-Path $customIniPath) {
+        $httpPort = ""
+        $rootUrl = ""
+        foreach ($line in Get-Content $customIniPath) {
+            if ($line -match "^\s*http_port\s*=\s*(.+?)\s*$") {
+                $httpPort = $matches[1].Trim()
+            }
+            if ($line -match "^\s*root_url\s*=\s*(.+?)\s*$") {
+                $rootUrl = $matches[1].Trim()
+            }
+        }
+        foreach ($candidate in @(
+            $rootUrl,
+            $(if ($httpPort) { "http://127.0.0.1:$httpPort" } else { $null }),
+            $(if ($httpPort) { "http://localhost:$httpPort" } else { $null })
+        )) {
+            if (-not [string]::IsNullOrWhiteSpace($candidate) -and -not $candidates.Contains($candidate)) {
+                $candidates.Add($candidate)
+            }
+        }
+    }
+
+    foreach ($candidate in $candidates) {
+        if (Test-GrafanaHealthUrl -BaseUrl $candidate -Headers $Headers) {
+            return $candidate.TrimEnd('/')
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($PreferredUrl)) {
+        return $PreferredUrl.TrimEnd('/')
+    }
+    return "http://127.0.0.1:3003"
+}
 
 function New-BasicAuthHeader([string]$Username, [string]$Secret) {
     $token = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${Username}:${Secret}"))
@@ -77,6 +144,7 @@ function New-StepResult {
 }
 
 $headers = New-BasicAuthHeader -Username $User -Secret $Password
+$GrafanaUrl = Resolve-GrafanaUrl -PreferredUrl $GrafanaUrl -Headers $headers
 $telegramEnvReady = -not [string]::IsNullOrWhiteSpace($env:TELEGRAM_BOT_TOKEN) -and -not [string]::IsNullOrWhiteSpace($env:TELEGRAM_ADMIN_CHAT_ID)
 
 $provisioningRebuild = [ordered]@{

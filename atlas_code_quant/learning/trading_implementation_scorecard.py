@@ -9,8 +9,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from atlas_code_quant.learning.trading_self_audit_protocol import IMPLEMENTATION_SCORECARD_METRICS
-from atlas_code_quant.operations.brain_bridge import QuantBrainBridge
+from atlas_code_quant.learning.trading_self_audit_protocol import (
+    IMPLEMENTATION_SCORECARD_METRICS,
+    read_trading_self_audit_protocol,
+)
+from atlas_code_quant.operations.brain_bridge import normalize_brain_bridge_state_payload
 
 
 def _utcnow_iso() -> str:
@@ -68,6 +71,17 @@ def _parse_datetime(value: Any) -> datetime | None:
 
 def _glob_exists(root: Path, pattern: str) -> bool:
     return any(root.glob(pattern))
+
+
+def _read_text(path: Path) -> str:
+    if not path.exists():
+        return ""
+    for encoding in ("utf-8", "utf-8-sig"):
+        try:
+            return path.read_text(encoding=encoding, errors="ignore")
+        except OSError:
+            return ""
+    return ""
 
 
 def _count_event_kinds(log_path: Path, interesting_kinds: set[str]) -> dict[str, int]:
@@ -143,12 +157,17 @@ def _compute_artifact_coverage(root: Path) -> dict[str, Any]:
 
 
 def _compute_memory_persistence(root: Path, brain_state: dict[str, Any]) -> dict[str, Any]:
-    total_events = int(brain_state.get("total_events") or 0)
-    delivered_events = int(brain_state.get("delivered_events") or 0)
-    delivery_ratio_pct = _ratio_pct(delivered_events, total_events)
+    normalized_state = normalize_brain_bridge_state_payload(brain_state)
+    total_events = int(normalized_state.get("total_events") or 0)
+    delivered_events = int(normalized_state.get("delivered_events") or 0)
+    active_pending_events = int(normalized_state.get("pending_replay_events") or 0)
+    historical_local_only_events = int(normalized_state.get("historical_local_only_events") or 0)
+    effective_total = delivered_events + active_pending_events
+    delivery_ratio_pct = _ratio_pct(delivered_events, effective_total)
     last_memory_ok = bool(brain_state.get("last_memory_ok"))
     last_bitacora_ok = bool(brain_state.get("last_bitacora_ok"))
-    events_path = Path(str(brain_state.get("events_path") or root / "atlas_code_quant/logs/quant_brain_bridge.jsonl"))
+    replay_tracking_ready = int(normalized_state.get("delivery_tracking_version") or 0) >= 2
+    events_path = Path(str(normalized_state.get("events_path") or root / "atlas_code_quant/logs/quant_brain_bridge.jsonl"))
     note_counts = _count_event_kinds(
         events_path,
         {"trading_self_audit_protocol", "trading_implementation_scorecard"},
@@ -167,10 +186,13 @@ def _compute_memory_persistence(root: Path, brain_state: dict[str, Any]) -> dict
         "details": {
             "delivered_events": delivered_events,
             "total_events": total_events,
-            "queued_local_only_events": int(brain_state.get("queued_local_only_events") or 0),
+            "queued_local_only_events": active_pending_events,
+            "active_pending_events": active_pending_events,
+            "historical_local_only_events": historical_local_only_events,
             "delivery_ratio_pct": delivery_ratio_pct,
             "last_memory_ok": last_memory_ok,
             "last_bitacora_ok": last_bitacora_ok,
+            "replay_tracking_ready": replay_tracking_ready,
             "protocol_note_events": note_counts["trading_self_audit_protocol"],
             "scorecard_note_events": note_counts["trading_implementation_scorecard"],
         },
@@ -541,6 +563,64 @@ def _compute_journal_operational_indicators(
     }
 
 
+def _compute_hybrid_order_flow_feedback(root: Path) -> dict[str, Any]:
+    provider_module = root / "atlas_code_quant/scanner/options_flow_provider.py"
+    scanner_module = root / "atlas_code_quant/scanner/opportunity_scanner.py"
+    settings_module = root / "atlas_code_quant/config/settings.py"
+    operation_center_module = root / "atlas_code_quant/operations/operation_center.py"
+    provider_test = root / "atlas_code_quant/tests/test_options_flow_provider.py"
+    scanner_status_test = root / "atlas_code_quant/tests/test_scanner_order_flow_status.py"
+
+    provider_text = _read_text(provider_module)
+    scanner_text = _read_text(scanner_module)
+    settings_text = _read_text(settings_module)
+    operation_center_text = _read_text(operation_center_module)
+
+    provider_ready = provider_module.exists() and "class OptionsFlowProvider" in provider_text and "class MarketTelemetryStore" in provider_text
+    scanner_hybrid_ready = scanner_module.exists() and "hybrid_options_intradia" in scanner_text and "_order_flow_system_snapshot" in scanner_text
+    settings_ready = settings_module.exists() and "scanner_options_flow_enabled" in settings_text and "market_telemetry_backend" in settings_text
+    operation_center_ready = operation_center_module.exists() and "market_telemetry" in operation_center_text
+    tests_ready = provider_test.exists() and scanner_status_test.exists()
+
+    telemetry_dir = root / "atlas_code_quant/data/market"
+    telemetry_dir_ready = telemetry_dir.exists()
+    sqlite_store_exists = (telemetry_dir / "market_telemetry.sqlite3").exists()
+
+    foundation_pct = _ratio_pct(sum(1 for ok in (provider_ready, scanner_hybrid_ready, settings_ready) if ok), 3)
+    governance_pct = _ratio_pct(sum(1 for ok in (operation_center_ready, tests_ready) if ok), 2)
+    telemetry_backend_ready_pct = 100.0 if telemetry_dir_ready else 0.0
+    runtime_store_pct = 100.0 if sqlite_store_exists else 50.0 if telemetry_dir_ready else 0.0
+    translation_pct = _ratio_pct(
+        sum(1 for ok in (provider_ready, scanner_hybrid_ready, settings_ready, operation_center_ready, tests_ready) if ok),
+        5,
+    )
+    score = _clamp_pct(
+        (foundation_pct * 0.35)
+        + (governance_pct * 0.25)
+        + (telemetry_backend_ready_pct * 0.20)
+        + (runtime_store_pct * 0.20)
+    )
+    return {
+        "name": "hybrid_order_flow_feedback_score",
+        "value": score,
+        "status": _score_status(score),
+        "details": {
+            "provider_module_present": provider_ready,
+            "scanner_hybrid_runtime_present": scanner_hybrid_ready,
+            "settings_present": settings_ready,
+            "operation_center_present": operation_center_ready,
+            "guardrail_tests_present": tests_ready,
+            "telemetry_dir_present": telemetry_dir_ready,
+            "telemetry_sqlite_store_present": sqlite_store_exists,
+            "foundation_pct": foundation_pct,
+            "governance_pct": governance_pct,
+            "telemetry_backend_ready_pct": telemetry_backend_ready_pct,
+            "runtime_store_pct": runtime_store_pct,
+            "translation_pct": translation_pct,
+        },
+    }
+
+
 def _journal_has_column(cur: Any, table: str, column: str) -> bool:
     """Verifica si una columna existe en la tabla del journal."""
     try:
@@ -790,6 +870,7 @@ def _build_next_actions(metric_map: dict[str, dict[str, Any]]) -> list[str]:
     memory = metric_map["memory_persistence_score"]
     process = metric_map["process_compliance_score"]
     observability = metric_map.get("observability_feedback_score")
+    hybrid_order_flow = metric_map.get("hybrid_order_flow_feedback_score")
 
     if usefulness["details"].get("open_untracked_ratio_pct", 0.0) > 0:
         actions.append("Cerrar la brecha de estrategia no atribuida: el libro abierto no debe seguir en untracked.")
@@ -803,6 +884,14 @@ def _build_next_actions(metric_map: dict[str, dict[str, Any]]) -> list[str]:
         actions.append("Subir la confiabilidad de observabilidad: Grafana/Prometheus aun no devuelven feedback lo bastante robusto.")
     if observability and observability["details"].get("reload_resilience_pct", 0.0) < 100.0:
         actions.append("Investigar por que alguna recarga Admin API de Grafana sigue siendo fragil aunque los dashboards esten visibles.")
+    if hybrid_order_flow and hybrid_order_flow["value"] < 80.0:
+        actions.append(
+            "Terminar de traducir el order flow hibrido a score operacional completo: faltan provider, telemetry o tests guardrail."
+        )
+    if hybrid_order_flow and not hybrid_order_flow["details"].get("telemetry_sqlite_store_present"):
+        actions.append(
+            "Generar telemetria local del order flow hibrido en data/market para validar persistencia real y no solo integracion estructural."
+        )
     ic_metric = metric_map.get("signal_ic_quality_score")
     if ic_metric:
         ic_status = ic_metric.get("status", "")
@@ -853,7 +942,7 @@ def build_trading_implementation_scorecard(
     grafana_check_path: Path | None = None,
     pytest_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    protocol = _read_json(protocol_path)
+    protocol = read_trading_self_audit_protocol(protocol_path)
     brain_state = _read_json(brain_state_path)
     grafana_check = _read_json(grafana_check_path) if grafana_check_path else {}
 
@@ -864,6 +953,7 @@ def build_trading_implementation_scorecard(
     observability_feedback = _compute_observability_feedback(grafana_check)
     visual_benchmark_feedback = _compute_visual_benchmark_feedback(root, protocol)
     options_strategy_governance_feedback = _compute_options_strategy_governance_feedback(root, protocol)
+    hybrid_order_flow_feedback = _compute_hybrid_order_flow_feedback(root)
     test_guardrails = _compute_test_guardrail_score(root, pytest_result)
     signal_ic_quality = _compute_signal_ic_quality(root)
     usefulness = _compute_journal_operational_indicators(
@@ -881,6 +971,7 @@ def build_trading_implementation_scorecard(
         observability_feedback,
         visual_benchmark_feedback,
         options_strategy_governance_feedback,
+        hybrid_order_flow_feedback,
         test_guardrails,
         usefulness,
         signal_ic_quality,
@@ -921,6 +1012,9 @@ def build_trading_implementation_scorecard(
             "options_strategy_governance_feedback_score": options_strategy_governance_feedback["value"],
             "options_governance_source_count": options_strategy_governance_feedback["details"].get("options_source_count", 0),
             "options_governance_translation_pct": options_strategy_governance_feedback["details"].get("translation_pct", 0.0),
+            "hybrid_order_flow_feedback_score": hybrid_order_flow_feedback["value"],
+            "hybrid_order_flow_translation_pct": hybrid_order_flow_feedback["details"].get("translation_pct", 0.0),
+            "market_telemetry_backend_ready_pct": hybrid_order_flow_feedback["details"].get("telemetry_backend_ready_pct", 0.0),
             "grafana_reload_resilience_pct": observability_feedback["details"].get("reload_resilience_pct", 0.0),
             "grafana_alerting_ready_pct": 100.0 if observability_feedback["details"].get("alerting_ready") else 0.0,
             "signal_ic_quality_score": signal_ic_quality["value"],
@@ -960,6 +1054,7 @@ def format_trading_implementation_scorecard_markdown(payload: dict[str, Any]) ->
         "observability_feedback_score",
         "visual_benchmark_feedback_score",
         "options_strategy_governance_feedback_score",
+        "hybrid_order_flow_feedback_score",
         "test_guardrail_score",
         "implementation_usefulness_score",
         "signal_ic_quality_score",
@@ -993,6 +1088,9 @@ def format_trading_implementation_scorecard_markdown(payload: dict[str, Any]) ->
             f"- `options_strategy_governance_feedback_score`: `{indicators['options_strategy_governance_feedback_score']}`",
             f"- `options_governance_source_count`: `{indicators['options_governance_source_count']}`",
             f"- `options_governance_translation_pct`: `{indicators['options_governance_translation_pct']}`",
+            f"- `hybrid_order_flow_feedback_score`: `{indicators['hybrid_order_flow_feedback_score']}`",
+            f"- `hybrid_order_flow_translation_pct`: `{indicators['hybrid_order_flow_translation_pct']}`",
+            f"- `market_telemetry_backend_ready_pct`: `{indicators['market_telemetry_backend_ready_pct']}`",
             f"- `grafana_reload_resilience_pct`: `{indicators['grafana_reload_resilience_pct']}`",
             f"- `grafana_alerting_ready_pct`: `{indicators['grafana_alerting_ready_pct']}`",
             f"- `signal_ic_quality_score`: `{indicators['signal_ic_quality_score']}` (IC={indicators['ic_overall']}, status={indicators['ic_status']}, n={indicators['ic_tracker_signals_with_outcome']})",
@@ -1004,6 +1102,7 @@ def format_trading_implementation_scorecard_markdown(payload: dict[str, Any]) ->
             f"- La observabilidad va por `{metrics['observability_feedback_score']['value']}/100`: esto mide si el tablero operativo realmente esta devolviendo feedback confiable para vigilar la implantacion.",
             f"- El benchmark visual va por `{metrics['visual_benchmark_feedback_score']['value']}/100`: esto mide si la investigacion visual externa ya fue aterrizada a controles reutilizables en ATLAS.",
             f"- La gobernanza de opciones va por `{metrics['options_strategy_governance_feedback_score']['value']}/100`: esto mide si el benchmark externo de estructuras con opciones ya fue traducido a familias, reglas y restricciones reutilizables.",
+            f"- El order flow hibrido va por `{metrics['hybrid_order_flow_feedback_score']['value']}/100`: esto mide si la fusion intradia + opciones ya existe como modulo reusable, observable y persistente.",
             f"- La calidad de señal IC va por `{metrics['signal_ic_quality_score']['value']}/100`: esto mide el poder predictivo real del scanner (IC Grinold-Kahn). 0=sin datos, 100=IC>=0.10 significativo.",
             "",
             "## Next Actions",

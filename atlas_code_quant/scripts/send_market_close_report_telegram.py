@@ -9,6 +9,8 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+from atlas_code_quant.operations.operation_state_contract import combined_operation_state
+
 
 def _safe_json(path: Path) -> dict:
     try:
@@ -38,8 +40,10 @@ def build_message(label: str = "CIERRE_MERCADO") -> str:
     paper = _http_json(f"{base}/paper/account", headers=headers)
     op_lite = _http_json(f"{base}/operation/status/lite", headers=headers)
 
+    state_bundle = combined_operation_state()
     data_dir = Path(r"C:\ATLAS_PUSH\atlas_code_quant\data\operation")
-    oc = _safe_json(data_dir / "operation_center_state.json")
+    oc = state_bundle.get("state") if isinstance(state_bundle.get("state"), dict) else {}
+    core_state = state_bundle.get("core_state") if isinstance(state_bundle.get("core_state"), dict) else {}
     ex = _safe_json(data_dir / "auton_executor_state.json")
 
     now = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M:%S %Z")
@@ -63,6 +67,7 @@ def build_message(label: str = "CIERRE_MERCADO") -> str:
         f"• Posiciones abiertas: {open_positions if open_positions is not None else 'n/d'}",
         f"• Equity paper: ${equity:,.2f}" if isinstance(equity, (int, float)) else "• Equity paper: n/d",
         f"• Modo: {oc.get('auton_mode', 'n/d')} | Executor: {oc.get('executor_mode', 'n/d')}",
+        f"• Core contract: {core_state.get('source_module', 'n/d')} @ {str(core_state.get('updated_at', 'n/d'))[:19]}",
         f"• Último candidato: {last_candidate.get('symbol', 'n/d')} / {last_candidate.get('strategy_type', 'n/d')} / {last_candidate.get('action', 'n/d')}",
         f"• Última decisión: {last_decision.get('decision', 'n/d')} | allowed={last_decision.get('allowed', 'n/d')}",
         f"• Motivo: {last_decision.get('reason', 'n/d')}",

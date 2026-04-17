@@ -648,6 +648,26 @@ def test_operation_status_exposes_visual_gate_metrics_snapshot(tmp_path: Path):
     assert payload["visual_gate_metrics"]["last_readiness_score_pct"] == 68.5
 
 
+def test_operation_status_exposes_market_telemetry_snapshot(tmp_path: Path) -> None:
+    center = OperationCenter(
+        tracker=_SlowTracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=_Executor(),
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        scorecard_provider=_scorecard_payload,
+    )
+
+    payload = center.status()
+
+    assert payload["market_telemetry"]["scanner_options_flow_enabled"] in {True, False}
+    assert payload["market_telemetry"]["runtime_mode"] in {"hybrid_options_intradia", "proxy_intradia"}
+    assert "telemetry" in payload["market_telemetry"]
+    assert "active_backend" in payload["market_telemetry"]["telemetry"]
+
+
 class _VisionWithCapture:
     def status(self) -> dict:
         return {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -410,6 +411,33 @@ EXTERNAL_BENCHMARK_SOURCE_REGISTRY: list[dict[str, Any]] = [
         ],
     },
     {
+        "title": "Credit vs. Debit Spreads: Let Volatility Guide You",
+        "url": "https://www.schwab.com/learn/story/credit-vs-debit-spreads-let-volatility-guide-you",
+        "domain": "schwab.com",
+        "source_type": "broker_guide",
+        "used_for": [
+            "options_strategy_governance",
+        ],
+    },
+    {
+        "title": "Guide to Collars Transcript",
+        "url": "https://www.fidelity.com/bin-public/060_www_fidelity_com/documents/learning-center/Transcript_Guide%20to%20collars_v2.pdf",
+        "domain": "fidelity.com",
+        "source_type": "broker_guide",
+        "used_for": [
+            "options_strategy_governance",
+        ],
+    },
+    {
+        "title": "The OCC Options Strategies",
+        "url": "https://www.theocc.com/strategies",
+        "domain": "theocc.com",
+        "source_type": "industry_guide",
+        "used_for": [
+            "options_strategy_governance",
+        ],
+    },
+    {
         "title": "Trend Following with Managed Futures: Historical Perspectives",
         "url": "https://www.cmegroup.com/content/dam/cmegroup/education/files/trend-following-with-managed-futures-historical-perspectives.pdf",
         "domain": "cmegroup.com",
@@ -603,6 +631,13 @@ IMPLEMENTATION_SCORECARD_METRICS: list[dict[str, str]] = [
     {
         "name": "options_strategy_governance_feedback_score",
         "goal": "Medir si el benchmark externo de estructuras con opciones ya fue traducido a taxonomia, constraints y reglas reutilizables.",
+    },
+    {
+        "name": "hybrid_order_flow_feedback_score",
+        "goal": (
+            "Medir si el order flow hibrido (microestructura intradia + superficie de opciones) "
+            "ya fue traducido a proveedor reusable, telemetria degradable, status operativo y tests."
+        ),
     },
     {
         "name": "test_guardrail_score",
@@ -1235,6 +1270,104 @@ def build_trading_self_audit_note() -> dict[str, Any]:
     }
 
 
+def _merge_protocol_focus(default_focus: dict[str, Any], payload_focus: Any) -> dict[str, Any]:
+    merged = deepcopy(default_focus)
+    if not isinstance(payload_focus, dict):
+        return merged
+    for key, value in payload_focus.items():
+        if value in (None, "", [], {}):
+            continue
+        merged[key] = deepcopy(value)
+    return merged
+
+
+def _merge_protocol_sources(default_sources: list[dict[str, Any]], payload_sources: Any) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    payload_list = payload_sources if isinstance(payload_sources, list) else []
+
+    def _register(source: Any) -> None:
+        if not isinstance(source, dict):
+            return
+        title = str(source.get("title") or "").strip().lower()
+        url = str(source.get("url") or "").strip().lower()
+        if title or url:
+            identity = (title, url)
+        else:
+            identity = ("__source__", json.dumps(source, sort_keys=True, ensure_ascii=True))
+        if identity in seen:
+            return
+        seen.add(identity)
+        merged.append(deepcopy(source))
+
+    for source in payload_list:
+        _register(source)
+
+    def _has_used_for(sources: list[Any], target: str) -> bool:
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            used_for = {str(item) for item in (source.get("used_for") or [])}
+            if target in used_for:
+                return True
+        return False
+
+    for target in ("visual_entry_optimization", "options_strategy_governance"):
+        if _has_used_for(payload_list, target):
+            continue
+        for source in default_sources:
+            used_for = {str(item) for item in (source.get("used_for") or [])}
+            if target in used_for:
+                _register(source)
+    return merged
+
+
+def normalize_trading_self_audit_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
+    defaults = build_trading_self_audit_note()
+    if not isinstance(payload, dict):
+        return defaults
+
+    merged = deepcopy(defaults)
+    for key, value in payload.items():
+        if key in {
+            "external_benchmark_sources",
+            "visual_entry_benchmark_focus",
+            "options_strategy_governance_focus",
+        }:
+            continue
+        if value in (None, "", [], {}):
+            continue
+        merged[key] = deepcopy(value)
+
+    merged["external_benchmark_sources"] = _merge_protocol_sources(
+        defaults.get("external_benchmark_sources") or [],
+        payload.get("external_benchmark_sources"),
+    )
+    merged["visual_entry_benchmark_focus"] = _merge_protocol_focus(
+        defaults.get("visual_entry_benchmark_focus") or {},
+        payload.get("visual_entry_benchmark_focus"),
+    )
+    merged["options_strategy_governance_focus"] = _merge_protocol_focus(
+        defaults.get("options_strategy_governance_focus") or {},
+        payload.get("options_strategy_governance_focus"),
+    )
+    return merged
+
+
+def read_trading_self_audit_protocol(path: str | Path) -> dict[str, Any]:
+    target = Path(path)
+    if not target.exists():
+        return build_trading_self_audit_note()
+
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except UnicodeDecodeError:
+        payload = json.loads(target.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return build_trading_self_audit_note()
+    return normalize_trading_self_audit_payload(payload if isinstance(payload, dict) else {})
+
+
 def persist_trading_self_audit_note(
     *,
     bridge: QuantBrainBridge | None = None,
@@ -1272,6 +1405,6 @@ def persist_trading_self_audit_note(
 def write_trading_self_audit_protocol(path: str | Path) -> Path:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    payload = build_trading_self_audit_note()
+    payload = normalize_trading_self_audit_payload(build_trading_self_audit_note())
     target.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
     return target

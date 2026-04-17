@@ -215,6 +215,55 @@ class ICSignalTracker:
         self._save()
         return True
 
+    @staticmethod
+    def _normalize_method(method: str | None) -> str | None:
+        normalized = str(method or "").strip()
+        return normalized or None
+
+    @classmethod
+    def _method_is_unknown(cls, method: str | None) -> bool:
+        normalized = (cls._normalize_method(method) or "").lower()
+        return normalized in {"", "unknown", "untracked", "n/a", "na", "none", "null"}
+
+    @classmethod
+    def _method_matches(
+        cls,
+        *,
+        candidate_method: str | None,
+        target_method: str | None,
+        allow_unknown_fallback: bool = False,
+    ) -> bool:
+        candidate = cls._normalize_method(candidate_method)
+        target = cls._normalize_method(target_method)
+        if target is None:
+            return True
+        if candidate == target:
+            return True
+        if not allow_unknown_fallback:
+            return False
+        return cls._method_is_unknown(candidate) or cls._method_is_unknown(target)
+
+    @staticmethod
+    def _candidate_sort_key(
+        *,
+        sig: dict[str, Any],
+        target_entry_price: float,
+        target_recorded_at: datetime | None,
+    ) -> tuple[float, float]:
+        price_diff = abs(
+            _safe_float(sig.get("entry_price"), 0.0) - _safe_float(target_entry_price, 0.0)
+        )
+        time_diff = 0.0
+        if target_recorded_at is not None:
+            try:
+                rec = datetime.fromisoformat(str(sig.get("recorded_at", "")).replace("Z", "+00:00"))
+                if rec.tzinfo is None:
+                    rec = rec.replace(tzinfo=timezone.utc)
+                time_diff = abs((target_recorded_at - rec).total_seconds())
+            except ValueError:
+                time_diff = float("inf")
+        return (price_diff, time_diff)
+
     def find_pending_signal_id(
         self,
         *,
@@ -237,36 +286,42 @@ class ICSignalTracker:
         target_entry_price = abs(_safe_float(entry_price, 0.0))
         target_recorded_at = _parse_iso_utc(recorded_near)
 
-        candidates: list[tuple[float, str]] = []
         signals = self._state.get("signals") or {}
+        strict_candidates: list[tuple[tuple[float, float], str]] = []
+        relaxed_candidates: list[tuple[tuple[float, float], str]] = []
+
         for signal_id, sig in signals.items():
             if sig.get("outcome_available"):
                 continue
             if str(sig.get("symbol") or "").upper().strip() != target_symbol:
                 continue
-            if target_method and str(sig.get("method") or "").strip() != target_method:
+
+            sort_key = self._candidate_sort_key(
+                sig=sig,
+                target_entry_price=target_entry_price,
+                target_recorded_at=target_recorded_at,
+            )
+            if self._method_matches(
+                candidate_method=sig.get("method"),
+                target_method=target_method,
+                allow_unknown_fallback=False,
+            ):
+                strict_candidates.append((sort_key, signal_id))
                 continue
+            if self._method_matches(
+                candidate_method=sig.get("method"),
+                target_method=target_method,
+                allow_unknown_fallback=True,
+            ):
+                relaxed_candidates.append((sort_key, signal_id))
 
-            recorded_at = _parse_iso_utc(sig.get("recorded_at"))
-            time_penalty = 0.0
-            if target_recorded_at and recorded_at:
-                time_penalty = abs((recorded_at - target_recorded_at).total_seconds())
-            elif target_recorded_at or recorded_at:
-                time_penalty = 10**9
-
-            price_penalty = 0.0
-            signal_entry = abs(_safe_float(sig.get("entry_price"), 0.0))
-            if target_entry_price > 0 and signal_entry > 0:
-                price_penalty = abs(signal_entry - target_entry_price)
-            elif target_entry_price > 0 or signal_entry > 0:
-                price_penalty = 10**6
-
-            candidates.append((time_penalty + price_penalty, signal_id))
-
-        if not candidates:
-            return None
-        candidates.sort(key=lambda item: item[0])
-        return candidates[0][1]
+        if strict_candidates:
+            strict_candidates.sort(key=lambda item: item[0])
+            return strict_candidates[0][1]
+        if relaxed_candidates:
+            relaxed_candidates.sort(key=lambda item: item[0])
+            return relaxed_candidates[0][1]
+        return None
 
     def update_pending_outcome(
         self,
@@ -296,44 +351,16 @@ class ICSignalTracker:
         Returns:
             signal_id actualizado, o None si no se encontró candidato.
         """
-        signals = self._state.get("signals") or {}
-        sym_upper = str(symbol).upper()
-        try:
-            target_dt = datetime.fromisoformat(
-                str(recorded_near).replace("Z", "+00:00")
-            )
-            if target_dt.tzinfo is None:
-                target_dt = target_dt.replace(tzinfo=timezone.utc)
-        except ValueError:
-            target_dt = None
-
-        candidates = [
-            sig for sig in signals.values()
-            if not sig.get("outcome_available")
-            and str(sig.get("symbol") or "").upper() == sym_upper
-            and str(sig.get("method") or "") == str(method)
-        ]
-        if not candidates:
+        matched_signal_id = self.find_pending_signal_id(
+            symbol=symbol,
+            method=method,
+            entry_price=entry_price,
+            recorded_near=recorded_near,
+        )
+        if not matched_signal_id:
             return None
-
-        def _sort_key(sig: dict) -> tuple[float, float]:
-            price_diff = abs(_safe_float(sig.get("entry_price"), 0.0) - _safe_float(entry_price, 0.0))
-            time_diff = 0.0
-            if target_dt is not None:
-                try:
-                    rec = datetime.fromisoformat(
-                        str(sig.get("recorded_at", "")).replace("Z", "+00:00")
-                    )
-                    if rec.tzinfo is None:
-                        rec = rec.replace(tzinfo=timezone.utc)
-                    time_diff = abs((target_dt - rec).total_seconds())
-                except ValueError:
-                    time_diff = float("inf")
-            return (price_diff, time_diff)
-
-        best = min(candidates, key=_sort_key)
-        updated = self.update_outcome(signal_id=best["signal_id"], exit_price=exit_price)
-        return best["signal_id"] if updated else None
+        updated = self.update_outcome(signal_id=matched_signal_id, exit_price=exit_price)
+        return matched_signal_id if updated else None
 
     def compute_ic(
         self,

@@ -1,13 +1,3 @@
-apiVersion: 1
-contactPoints:
-  - orgId: 1
-    name: atlas-telegram
-    receivers:
-      - uid: atlas_telegram_main
-        type: telegram
-        disableResolveMessage: false
-        settings:
-          chatid: $TELEGRAM_ADMIN_CHAT_ID
-          uploadImage: false
-        secure_settings:
-          bottoken: $TELEGRAM_BOT_TOKEN
+﻿apiVersion: 1
+contactPoints: []
+

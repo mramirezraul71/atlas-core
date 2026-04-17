@@ -247,6 +247,15 @@ class MLSignalRanker:
     # Entrenamiento
     # ------------------------------------------------------------------
 
+    def _training_backend_order(self) -> List[str]:
+        if self.backend == "lightgbm":
+            return ["lightgbm", "xgboost", "sklearn"]
+        if self.backend == "xgboost":
+            return ["xgboost", "sklearn"]
+        if self.backend == "sklearn":
+            return ["sklearn"]
+        return []
+
     def train(self, trades: List[TradeEvent]) -> Dict[str, Any]:
         """Entrena el modelo con la lista de TradeEvent.
 
@@ -267,36 +276,50 @@ class MLSignalRanker:
         X = [extract_features_from_trade(t) for t in trades]
         y = [1 if t.is_winner else 0 for t in trades]
 
-        try:
-            if self.backend == "lightgbm":
-                self.model = _build_lightgbm(X, y)
-            elif self.backend == "xgboost":
-                self.model = _build_xgboost(X, y)
-            else:
-                self.model = _build_sklearn(X, y)
+        builders = {
+            "lightgbm": _build_lightgbm,
+            "xgboost": _build_xgboost,
+            "sklearn": _build_sklearn,
+        }
+        backend_errors: Dict[str, str] = {}
+        win_rate = sum(y) / len(y) if y else 0
 
-            self.is_trained = True
-            self.n_training_samples = len(trades)
+        for backend_name in self._training_backend_order():
+            builder = builders.get(backend_name)
+            if builder is None:
+                continue
+            try:
+                self.model = builder(X, y)
+                self.backend = backend_name
+                self.is_trained = True
+                self.n_training_samples = len(trades)
 
-            if self.model_path:
-                self._save(self.model_path)
+                if self.model_path:
+                    self._save(self.model_path)
 
-            win_rate = sum(y) / len(y) if y else 0
-            logger.info(
-                "MLSignalRanker entrenado: backend=%s, n=%d, winrate_base=%.2f",
-                self.backend, len(trades), win_rate
-            )
-            return {
-                "trained": True,
-                "backend": self.backend,
-                "n_samples": len(trades),
-                "base_winrate": round(win_rate, 4),
-            }
+                logger.info(
+                    "MLSignalRanker entrenado: backend=%s, n=%d, winrate_base=%.2f",
+                    self.backend, len(trades), win_rate
+                )
+                return {
+                    "trained": True,
+                    "backend": self.backend,
+                    "n_samples": len(trades),
+                    "base_winrate": round(win_rate, 4),
+                }
+            except Exception as exc:
+                backend_errors[backend_name] = str(exc)
+                logger.warning(
+                    "MLSignalRanker.train backend %s failed: %s",
+                    backend_name,
+                    exc,
+                )
 
-        except Exception as exc:
-            logger.error("MLSignalRanker.train error: %s", exc)
-            self.is_trained = False
-            return {"trained": False, "reason": str(exc)}
+        self.model = None
+        self.is_trained = False
+        reason = "; ".join(f"{name}: {error}" for name, error in backend_errors.items()) or "no_backend_succeeded"
+        logger.error("MLSignalRanker.train error: %s", reason)
+        return {"trained": False, "reason": reason, "backend_errors": backend_errors}
 
     # ------------------------------------------------------------------
     # Scoring

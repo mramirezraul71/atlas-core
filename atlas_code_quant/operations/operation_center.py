@@ -28,6 +28,11 @@ from monitoring.strategy_tracker import StrategyTracker
 from operations.auton_executor import AutonExecutorService
 from operations.brain_bridge import QuantBrainBridge
 from operations.chart_execution import ChartExecutionService
+from operations.operation_state_contract import (
+    CORE_STATE_CONTRACT_KEYS,
+    build_core_contract_payload,
+    write_json_atomic as write_contract_json_atomic,
+)
 from operations.journal_pro import JournalProService
 from operations.sensor_vision import SensorVisionService
 from scanner.options_flow_provider import MarketTelemetryStore
@@ -147,6 +152,7 @@ class OperationCenter:
         brain: QuantBrainBridge | None = None,
         learning: AdaptiveLearningService | None = None,
         state_path: Path | None = None,
+        core_state_path: Path | None = None,
         reconciliation_provider: Callable[..., dict[str, Any]] | None = None,
         quote_provider: Callable[..., dict[str, Any] | None] | None = None,
         scorecard_provider: Callable[[], dict[str, Any]] | None = None,
@@ -156,6 +162,9 @@ class OperationCenter:
         base_dir.mkdir(parents=True, exist_ok=True)
         self.state_path = state_path or (base_dir / "operation_center_state.json")
         self.root_path = Path(__file__).resolve().parents[2]
+        self.core_state_path = core_state_path
+        if self.core_state_path is None and state_path is None:
+            self.core_state_path = self.root_path / "data" / "operation" / "operation_center_state.json"
         self.tracker = tracker or StrategyTracker()
         self.journal = journal or JournalProService()
         self.vision = vision or SensorVisionService()
@@ -192,10 +201,63 @@ class OperationCenter:
             if isinstance(data, dict):
                 merged = deepcopy(_DEFAULT_STATE)
                 merged.update(data)
-                return self._normalize_runtime_state(merged)
+                normalized = self._normalize_runtime_state(merged)
+                return self._merge_core_contract(normalized)
         except Exception:
             pass
-        return self._normalize_runtime_state(deepcopy(_DEFAULT_STATE))
+        return self._merge_core_contract(self._normalize_runtime_state(deepcopy(_DEFAULT_STATE)))
+
+    def _core_contract_path(self) -> Path | None:
+        if self.core_state_path is None:
+            return None
+        try:
+            if self.core_state_path.resolve() == self.state_path.resolve():
+                return None
+        except Exception:
+            if self.core_state_path == self.state_path:
+                return None
+        return self.core_state_path
+
+    def _load_core_contract(self) -> dict[str, Any]:
+        path = self._core_contract_path()
+        if path is None or not path.exists():
+            return {}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            logger.warning("Unable to read core operation contract: %s", path, exc_info=True)
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        if payload.get("source_module") != "atlas_core" or int(payload.get("contract_version") or 0) < 1:
+            return {}
+        return payload
+
+    def _merge_core_contract(self, state: dict[str, Any]) -> dict[str, Any]:
+        contract = self._load_core_contract()
+        if not contract:
+            return state
+        merged = dict(state)
+        for key in CORE_STATE_CONTRACT_KEYS:
+            if key in contract and contract[key] is not None:
+                merged[key] = contract[key]
+        return self._normalize_runtime_state(merged)
+
+    def _core_contract_payload(self, state: dict[str, Any]) -> dict[str, Any]:
+        return build_core_contract_payload(state, source_module="atlas_code_quant")
+
+    @staticmethod
+    def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+        write_contract_json_atomic(path, payload, ensure_ascii=True)
+
+    def _publish_core_contract(self, state: dict[str, Any]) -> None:
+        path = self._core_contract_path()
+        if path is None:
+            return
+        try:
+            self._write_json_atomic(path, self._core_contract_payload(state))
+        except Exception:
+            logger.warning("Unable to publish core operation contract: %s", path, exc_info=True)
 
     def _normalize_runtime_state(self, state: dict[str, Any]) -> dict[str, Any]:
         today = _utc_day()
@@ -334,7 +396,8 @@ class OperationCenter:
         merged = deepcopy(_DEFAULT_STATE)
         merged.update(payload or {})
         merged = self._normalize_runtime_state(merged)
-        self.state_path.write_text(json.dumps(merged, ensure_ascii=True, indent=2), encoding="utf-8")
+        self._write_json_atomic(self.state_path, merged)
+        self._publish_core_contract(merged)
         self._invalidate_status_cache()
         return merged
 

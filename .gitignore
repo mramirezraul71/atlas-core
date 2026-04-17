@@ -213,3 +213,9 @@ atlas_code_quant/reports/backtest_metrics_*.json
 # Keep scorecard snapshots local by default
 reports/*_scorecard.json
 reports/*_scorecard_latest.md
+
+# Paper / runtime churn under quant data (no versionar)
+atlas_code_quant/data/operation/snapshots/
+atlas_code_quant/data/market/
+atlas_code_quant/data/operation/brain_audit_log.jsonl
+atlas_code_quant/data/operation/quant_brain_bridge_state_pending.json

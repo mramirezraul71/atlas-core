@@ -3,6 +3,7 @@ from atlas_code_quant.learning.trading_self_audit_protocol import (
     TRADING_PROCESS_GUARDRAILS,
     build_stage_audit_blueprint,
     build_trading_self_audit_note,
+    normalize_trading_self_audit_payload,
 )
 
 
@@ -44,3 +45,30 @@ def test_stage_blueprint_reuses_common_analysis_schema() -> None:
     assert blueprint["analysis_schema"] == TRADING_ANALYSIS_SCHEMA
     assert "policy promotion" in " ".join(blueprint["external_benchmark_focus"]).lower()
     assert len(blueprint["guardrails"]) >= 3
+
+
+def test_normalize_trading_self_audit_payload_restores_visual_and_options_defaults() -> None:
+    payload = {
+        "lifecycle": [
+            {"stage": "scanner_selection", "status": "baseline_hardened"},
+            {"stage": "post_trade_learning", "status": "active_focus"},
+        ],
+        "external_benchmark_sources": [
+            {"title": "legacy scanner source", "url": "https://example.com/scanner", "used_for": ["scanner_selection"]},
+        ],
+        "visual_entry_benchmark_focus": {},
+        "options_strategy_governance_focus": {},
+    }
+
+    normalized = normalize_trading_self_audit_payload(payload)
+
+    assert normalized["visual_entry_benchmark_focus"]["current_focus"] == "visual_entry_optimization"
+    assert normalized["options_strategy_governance_focus"]["current_focus"] == "options_strategy_governance"
+    assert any(
+        "visual_entry_optimization" in (source.get("used_for") or [])
+        for source in normalized["external_benchmark_sources"]
+    )
+    assert any(
+        "options_strategy_governance" in (source.get("used_for") or [])
+        for source in normalized["external_benchmark_sources"]
+    )

@@ -233,6 +233,15 @@ class TradingConfig:
     scanner_weight_xgboost_conf: float = _fenv("QUANT_SCANNER_WEIGHT_XGBOOST_CONF", 0.05)
     scanner_weight_ichimoku_conf: float = _fenv("QUANT_SCANNER_WEIGHT_ICHIMOKU_CONF", 0.05)
     scanner_weight_adx_adjust: float = _fenv("QUANT_SCANNER_WEIGHT_ADX_ADJUST", 0.04)
+    scanner_options_flow_enabled: bool = os.getenv("QUANT_SCANNER_OPTIONS_FLOW_ENABLED", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+    }
+    scanner_options_flow_min_dte: int = _ienv("QUANT_SCANNER_OPTIONS_FLOW_MIN_DTE", 7)
+    scanner_options_flow_max_dte: int = _ienv("QUANT_SCANNER_OPTIONS_FLOW_MAX_DTE", 45)
+    scanner_options_flow_expirations: int = _ienv("QUANT_SCANNER_OPTIONS_FLOW_EXPIRATIONS", 2)
+    scanner_options_flow_cache_ttl_sec: int = _ienv("QUANT_SCANNER_OPTIONS_FLOW_CACHE_TTL_SEC", 120)
     # Fase 2 — contexto de mercado
     scanner_vix_enabled: bool = os.getenv("QUANT_SCANNER_VIX_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
     scanner_vix_panic_skip_cycle: bool = os.getenv("QUANT_SCANNER_VIX_PANIC_SKIP", "true").strip().lower() not in {
@@ -499,6 +508,10 @@ class TradingConfig:
     logs_dir: Path = BASE_DIR / "logs"
     journal_db_path: Path = BASE_DIR / "data" / "journal" / "trading_journal.sqlite3"
     journal_db_url: str = os.getenv("TRADIER_JOURNAL_DB_URL", "").strip()
+    market_telemetry_enabled: bool = os.getenv("ATLAS_MARKET_TELEMETRY_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+    market_telemetry_backend: str = _clean_setting(os.getenv("ATLAS_MARKET_TELEMETRY_BACKEND"), "sqlite").lower()
+    market_telemetry_sqlite_path: Path = BASE_DIR / "data" / "market" / "market_telemetry.sqlite3"
+    market_telemetry_timescaledb_dsn: str = _clean_setting(os.getenv("ATLAS_MARKET_TELEMETRY_TIMESCALEDB_DSN"))
     atlas_brain_state_path: Path = BASE_DIR / "data" / "operation" / "quant_brain_bridge_state.json"
     atlas_brain_events_path: Path = BASE_DIR / "logs" / "quant_brain_bridge.jsonl"
     adaptive_learning_snapshot_path: Path = BASE_DIR / "data" / "learning" / "adaptive_policy_snapshot.json"
@@ -559,6 +572,10 @@ class TradingConfig:
         self.scanner_prefilter_min_price = max(0.5, min(self.scanner_prefilter_min_price, 1000.0))
         self.scanner_prefilter_min_dollar_volume_millions = max(0.1, min(self.scanner_prefilter_min_dollar_volume_millions, 5000.0))
         self.scanner_universe_cache_ttl_sec = max(3600, min(self.scanner_universe_cache_ttl_sec, 604800))
+        self.scanner_options_flow_min_dte = max(0, min(self.scanner_options_flow_min_dte, 120))
+        self.scanner_options_flow_max_dte = max(self.scanner_options_flow_min_dte, min(self.scanner_options_flow_max_dte, 365))
+        self.scanner_options_flow_expirations = max(1, min(self.scanner_options_flow_expirations, 4))
+        self.scanner_options_flow_cache_ttl_sec = max(15, min(self.scanner_options_flow_cache_ttl_sec, 3600))
         self.entry_max_equity_spread_pct = max(0.01, min(self.entry_max_equity_spread_pct, 5.0))
         self.entry_max_adverse_drift_pct = max(0.01, min(self.entry_max_adverse_drift_pct, 10.0))
         self.entry_warn_drift_vs_expected_move_pct = max(1.0, min(self.entry_warn_drift_vs_expected_move_pct, 100.0))
@@ -617,10 +634,13 @@ class TradingConfig:
                 pass
         if _extra:
             self.scanner_universe = self.scanner_universe + _extra
+        if self.market_telemetry_backend not in {"sqlite", "timescaledb"}:
+            self.market_telemetry_backend = "sqlite"
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.models_dir.mkdir(parents=True, exist_ok=True)
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         self.journal_db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.market_telemetry_sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         self.atlas_brain_state_path.parent.mkdir(parents=True, exist_ok=True)
         self.atlas_brain_events_path.parent.mkdir(parents=True, exist_ok=True)
         self.adaptive_learning_snapshot_path.parent.mkdir(parents=True, exist_ok=True)

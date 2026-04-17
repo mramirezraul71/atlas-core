@@ -29,6 +29,7 @@ from indicators.stochastic import (
 from market_context.regime_detector import adapt_thresholds_by_regime, detect_regime_from_frame
 from market_context.vix_handler import build_vix_context
 from learning.adaptive_policy import AdaptiveLearningService
+from scanner.options_flow_provider import MarketTelemetryStore, OptionsFlowProvider
 from scanner.universe_catalog import ScannerUniverseCatalog
 from scanner.asset_classifier import AssetClass, classify_asset
 
@@ -327,6 +328,11 @@ class ScannerConfig:
     weight_xgboost_conf: float
     weight_ichimoku_conf: float
     weight_adx_adjust: float
+    options_flow_enabled: bool
+    options_flow_min_dte: int
+    options_flow_max_dte: int
+    options_flow_expirations: int
+    options_flow_cache_ttl_sec: int
     notes: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -357,6 +363,11 @@ class ScannerConfig:
             "weight_xgboost_conf": self.weight_xgboost_conf,
             "weight_ichimoku_conf": self.weight_ichimoku_conf,
             "weight_adx_adjust": self.weight_adx_adjust,
+            "options_flow_enabled": self.options_flow_enabled,
+            "options_flow_min_dte": self.options_flow_min_dte,
+            "options_flow_max_dte": self.options_flow_max_dte,
+            "options_flow_expirations": self.options_flow_expirations,
+            "options_flow_cache_ttl_sec": self.options_flow_cache_ttl_sec,
             "notes": self.notes,
         }
 
@@ -392,6 +403,11 @@ class OpportunityScannerService:
             weight_xgboost_conf=settings.scanner_weight_xgboost_conf,
             weight_ichimoku_conf=settings.scanner_weight_ichimoku_conf,
             weight_adx_adjust=settings.scanner_weight_adx_adjust,
+            options_flow_enabled=settings.scanner_options_flow_enabled,
+            options_flow_min_dte=settings.scanner_options_flow_min_dte,
+            options_flow_max_dte=settings.scanner_options_flow_max_dte,
+            options_flow_expirations=settings.scanner_options_flow_expirations,
+            options_flow_cache_ttl_sec=settings.scanner_options_flow_cache_ttl_sec,
             notes="fase paper: escáner explicable y no ejecutor",
         )
         self._feed: MarketFeed | None = None
@@ -419,6 +435,8 @@ class OpportunityScannerService:
         self._last_universe_meta: dict[str, Any] = {}
         self._tradier_market_client: TradierClient | None = None
         self._tradier_market_scope: str | None = None
+        self._options_flow_provider: OptionsFlowProvider | None = None
+        self._options_flow_provider_error: str | None = None
         self._cnn_lstm_model: Any = None
         self._prophet_signal_cache: dict[tuple[str, str, str], dict[str, Any]] = {}
         # Prophet: degradación — si no hay módulo o falla en runtime, se deja de usar sin mutar settings global.
@@ -446,6 +464,13 @@ class OpportunityScannerService:
                     self._log("warn", "CNN-LSTM habilitado pero modelo no encontrado", path=str(mp))
             except Exception as exc:
                 self._log("warn", "CNN-LSTM no disponible", reason=str(exc))
+        if settings.scanner_options_flow_enabled:
+            try:
+                self._options_flow_provider = OptionsFlowProvider()
+                self._options_flow_provider_error = None
+            except Exception as exc:
+                self._options_flow_provider_error = str(exc)
+                self._log("warn", "Options flow provider no disponible", reason=str(exc))
 
     def _ticker_for_fundamentals(self, symbol: str) -> str:
         s = symbol.strip().upper()
@@ -576,24 +601,63 @@ class OpportunityScannerService:
                 "timeframe": None,
                 "step": "inactivo",
             },
+            "order_flow_system": self._order_flow_system_snapshot(),
             "learning": self.learning.status(account_scope=settings.tradier_default_scope),
         }
 
     def criteria_catalog(self) -> list[dict[str, Any]]:
+        order_flow_system = self._order_flow_system_snapshot()
         items = []
         for key in METHOD_ORDER + ["relative_strength_overlay", "order_flow_proxy", "multi_timeframe_confirmation"]:
             raw = EVIDENCE_LIBRARY[key]
+            label = raw["label"]
+            description = raw["description"]
+            runtime_mode = "static"
+            telemetry_backend = None
+            if key == "order_flow_proxy":
+                runtime_mode = str(order_flow_system.get("runtime_mode") or "proxy_intradia")
+                telemetry_backend = (order_flow_system.get("telemetry") or {}).get("active_backend")
+                if bool(order_flow_system.get("hybrid_enabled")):
+                    label = "Order flow híbrido"
+                    description = (
+                        "Combina microestructura intradía con superficie de opciones "
+                        "y telemetría temporal degradable."
+                    )
             items.append(
                 {
                     "key": key,
-                    "label": raw["label"],
+                    "label": label,
                     "family": raw["family"],
-                    "description": raw["description"],
+                    "description": description,
                     "evidence_score": round(float(raw["evidence_score"]) * 100, 1),
                     "sources": raw["sources"],
+                    "runtime_mode": runtime_mode,
+                    "telemetry_backend": telemetry_backend,
                 }
             )
         return items
+
+    def _order_flow_system_snapshot(self) -> dict[str, Any]:
+        provider = getattr(self, "_options_flow_provider", None)
+        telemetry = (
+            provider.telemetry_status()
+            if provider is not None
+            else MarketTelemetryStore().status()
+        )
+        provider_ready = provider is not None
+        return {
+            "hybrid_enabled": bool(self._config.options_flow_enabled),
+            "provider_ready": provider_ready,
+            "provider_error": getattr(self, "_options_flow_provider_error", None),
+            "runtime_mode": "hybrid_options_intradia" if provider_ready else "proxy_intradia",
+            "telemetry": telemetry,
+            "config": {
+                "min_dte": self._config.options_flow_min_dte,
+                "max_dte": self._config.options_flow_max_dte,
+                "expirations": self._config.options_flow_expirations,
+                "cache_ttl_sec": self._config.options_flow_cache_ttl_sec,
+            },
+        }
 
     def _log(self, level: str, message: str, **context: Any) -> None:
         entry = {
@@ -720,6 +784,7 @@ class OpportunityScannerService:
             "last_error": self._last_error,
             "config": self._config.to_dict(),
             "summary": summary,
+            "order_flow_system": self._order_flow_system_snapshot(),
             "learning": self.learning.status(account_scope=settings.tradier_default_scope),
         }
 
@@ -1016,7 +1081,7 @@ class OpportunityScannerService:
             percentiles.setdefault(symbol, 50.0)
         return percentiles
 
-    def _order_flow_snapshot(self, symbol: str, price_hint: float = 0.0) -> dict[str, Any]:
+    def _intraday_order_flow_snapshot(self, symbol: str, price_hint: float = 0.0) -> dict[str, Any]:
         scope = self._market_data_scope()
         snapshot = {
             "available": False,
@@ -1141,6 +1206,86 @@ class OpportunityScannerService:
             }
         )
         return snapshot
+
+    def _merge_order_flow_snapshots(
+        self,
+        intraday_snapshot: dict[str, Any],
+        options_snapshot: dict[str, Any],
+    ) -> dict[str, Any]:
+        intraday_available = bool(intraday_snapshot.get("available"))
+        options_available = bool(options_snapshot.get("available"))
+        if intraday_available and options_available:
+            intraday_weight = 0.45
+            options_weight = 0.55
+            score_pct = (
+                (_safe_float(intraday_snapshot.get("score_pct"), 50.0) * intraday_weight)
+                + (_safe_float(options_snapshot.get("score_pct"), 50.0) * options_weight)
+            ) / (intraday_weight + options_weight)
+            confidence_pct = (
+                (_safe_float(intraday_snapshot.get("confidence_pct"), 0.0) * intraday_weight)
+                + (_safe_float(options_snapshot.get("confidence_pct"), 0.0) * options_weight)
+            ) / (intraday_weight + options_weight)
+            merged = dict(intraday_snapshot)
+            merged.update(
+                {
+                    "available": True,
+                    "mode": "hybrid_options_intradia",
+                    "score_pct": round(score_pct, 2),
+                    "confidence_pct": round(confidence_pct, 2),
+                    "direction": _direction_label(1 if score_pct >= 55.0 else -1 if score_pct <= 45.0 else 0),
+                    "put_call_volume_ratio": options_snapshot.get("put_call_volume_ratio"),
+                    "put_call_oi_ratio": options_snapshot.get("put_call_oi_ratio"),
+                    "iv_term_structure_slope_pct": options_snapshot.get("iv_term_structure_slope_pct"),
+                    "atm_skew_pct": options_snapshot.get("atm_skew_pct"),
+                    "gamma_bias_pct": options_snapshot.get("gamma_bias_pct"),
+                    "front_dte": options_snapshot.get("front_dte"),
+                    "back_dte": options_snapshot.get("back_dte"),
+                    "expirations_used": list(options_snapshot.get("expirations_used") or []),
+                    "contracts_evaluated": int(options_snapshot.get("contracts_evaluated") or 0),
+                    "options_flow": options_snapshot,
+                    "intraday_flow": intraday_snapshot,
+                    "reason": "hybrid_order_flow_ok",
+                }
+            )
+            return merged
+        if options_available:
+            merged = dict(options_snapshot)
+            merged.setdefault("intraday_flow", intraday_snapshot)
+            merged.setdefault("net_pressure_pct", _safe_float(intraday_snapshot.get("net_pressure_pct"), 0.0))
+            merged.setdefault("price_vs_vwap_pct", _safe_float(intraday_snapshot.get("price_vs_vwap_pct"), 0.0))
+            merged.setdefault("spread_bps", _safe_float(intraday_snapshot.get("spread_bps"), 0.0))
+            merged.setdefault("quote_imbalance_pct", _safe_float(intraday_snapshot.get("quote_imbalance_pct"), 0.0))
+            return merged
+        merged = dict(intraday_snapshot)
+        merged["options_flow"] = options_snapshot
+        return merged
+
+    def _order_flow_snapshot(self, symbol: str, price_hint: float = 0.0) -> dict[str, Any]:
+        intraday_snapshot = self._intraday_order_flow_snapshot(symbol, price_hint=price_hint)
+        if self._options_flow_provider is None:
+            return intraday_snapshot
+        client = self._tradier_client_for_market_data()
+        if client is None:
+            return intraday_snapshot
+        try:
+            options_snapshot = self._options_flow_provider.build_snapshot(
+                symbol=symbol,
+                client=client,
+                scope=self._market_data_scope(),
+                price_hint=_safe_float(intraday_snapshot.get("last_price"), price_hint),
+            )
+        except Exception as exc:
+            self._log("debug", "options_flow_snapshot_error", symbol=symbol, reason=str(exc))
+            options_snapshot = {
+                "available": False,
+                "scope": self._market_data_scope(),
+                "mode": "options_flow",
+                "direction": "neutral",
+                "score_pct": 50.0,
+                "confidence_pct": 0.0,
+                "reason": f"options_flow_error:{exc}",
+            }
+        return self._merge_order_flow_snapshots(intraday_snapshot, options_snapshot)
 
     def _order_flow_batch(self, frames: dict[str, dict[str, pd.DataFrame]]) -> dict[str, dict[str, Any]]:
         out: dict[str, dict[str, Any]] = {}
@@ -1783,6 +1928,7 @@ class OpportunityScannerService:
                             "last_cycle_ms": cycle_ms,
                         },
                         "criteria": self.criteria_catalog(),
+                        "order_flow_system": self._order_flow_system_snapshot(),
                         "learning": self.learning.status(account_scope=settings.tradier_default_scope),
                         "universe": {**universe_meta, **prefilter_meta, "selected_symbols": []},
                         "candidates": [],
@@ -1861,6 +2007,7 @@ class OpportunityScannerService:
                         "vix": vix_context if settings.scanner_vix_enabled else None,
                     },
                     "criteria": self.criteria_catalog(),
+                    "order_flow_system": self._order_flow_system_snapshot(),
                     "learning": self.learning.status(account_scope=settings.tradier_default_scope),
                     "universe": {
                         **universe_meta,

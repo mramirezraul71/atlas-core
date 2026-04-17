@@ -31,12 +31,31 @@ def _build_minimal_repo(root: Path) -> tuple[Path, Path, Path]:
     _write_text(root / "reports/atlas_quant_external_benchmark_confrontation_20260328.md", "# external\n")
     _write_text(root / "reports/atlas_quant_visual_benchmark_confrontation_20260329.md", "# visual benchmark\n")
     _write_text(root / "reports/atlas_quant_options_strategy_governance_20260329.md", "# options governance\n")
+    _write_text(
+        root / "atlas_code_quant/scanner/options_flow_provider.py",
+        "class MarketTelemetryStore:\n    pass\n\nclass OptionsFlowProvider:\n    pass\n",
+    )
+    _write_text(
+        root / "atlas_code_quant/scanner/opportunity_scanner.py",
+        "MODE='hybrid_options_intradia'\n\ndef _order_flow_system_snapshot():\n    return {'market_telemetry': True}\n",
+    )
+    _write_text(
+        root / "atlas_code_quant/config/settings.py",
+        "scanner_options_flow_enabled = True\nmarket_telemetry_backend = 'sqlite'\n",
+    )
+    _write_text(
+        root / "atlas_code_quant/operations/operation_center.py",
+        "market_telemetry = {'active': True}\n",
+    )
     _write_text(root / "atlas_code_quant/tests/test_trading_self_audit_protocol.py", "def test_placeholder():\n    assert True\n")
     _write_text(root / "atlas_code_quant/tests/test_trading_implementation_scorecard.py", "def test_placeholder():\n    assert True\n")
     _write_text(root / "atlas_code_quant/tests/test_position_management_snapshot.py", "def test_placeholder():\n    assert True\n")
     _write_text(root / "atlas_code_quant/tests/test_scanner_metric_recalibration.py", "def test_placeholder():\n    assert True\n")
     _write_text(root / "atlas_code_quant/tests/test_operation_center_status.py", "def test_placeholder():\n    assert True\n")
     _write_text(root / "atlas_code_quant/tests/test_operation_center_autonomous_guards.py", "def test_placeholder():\n    assert True\n")
+    _write_text(root / "atlas_code_quant/tests/test_options_flow_provider.py", "def test_placeholder():\n    assert True\n")
+    _write_text(root / "atlas_code_quant/tests/test_scanner_order_flow_status.py", "def test_placeholder():\n    assert True\n")
+    (root / "atlas_code_quant/data/market").mkdir(parents=True, exist_ok=True)
 
     protocol = {
         "lifecycle": [
@@ -167,7 +186,49 @@ def test_build_trading_implementation_scorecard_computes_headline_and_indicators
     assert payload["supporting_indicators"]["grafana_alerting_ready_pct"] == 100.0
     assert payload["supporting_indicators"]["visual_benchmark_source_count"] == 5
     assert payload["supporting_indicators"]["options_governance_source_count"] == 3
+    assert payload["metrics"]["hybrid_order_flow_feedback_score"]["value"] == 90.0
+    assert payload["supporting_indicators"]["hybrid_order_flow_feedback_score"] == 90.0
+    assert payload["supporting_indicators"]["hybrid_order_flow_translation_pct"] == 100.0
+    assert payload["supporting_indicators"]["market_telemetry_backend_ready_pct"] == 100.0
     assert payload["metrics"]["implementation_usefulness_score"]["details"]["signal_ic_quality_score"] == 0.0
     assert payload["metrics"]["implementation_usefulness_score"]["details"]["paper_outcome_quality_score"] == 0.0
     assert payload["metrics"]["implementation_usefulness_score"]["details"]["usefulness_cap_reason"] == "paper_outcome_quality_weak"
     assert payload["next_actions"]
+
+
+def test_build_trading_implementation_scorecard_recovers_missing_visual_and_options_protocol_sections(tmp_path: Path) -> None:
+    protocol_path, journal_path, brain_state_path = _build_minimal_repo(tmp_path)
+    degraded_protocol = {
+        "lifecycle": [
+            {"stage": "scanner_selection", "status": "baseline_hardened"},
+            {"stage": "entry_validation", "status": "baseline_hardened"},
+            {"stage": "execution_quality", "status": "baseline_hardened"},
+            {"stage": "position_management", "status": "baseline_hardened"},
+            {"stage": "exit_governance", "status": "baseline_hardened"},
+            {"stage": "post_trade_learning", "status": "active_focus"},
+        ],
+        "external_benchmark_sources": [
+            {"used_for": ["scanner_selection"]},
+            {"used_for": ["entry_validation"]},
+            {"used_for": ["execution_quality"]},
+            {"used_for": ["position_management"]},
+            {"used_for": ["exit_governance"]},
+            {"used_for": ["post_trade_learning"]},
+        ],
+    }
+    protocol_path.write_text(json.dumps(degraded_protocol), encoding="utf-8")
+
+    payload = build_trading_implementation_scorecard(
+        root=tmp_path,
+        protocol_path=protocol_path,
+        journal_db_path=journal_path,
+        brain_state_path=brain_state_path,
+        grafana_check_path=tmp_path / "reports/atlas_grafana_provisioning_check_latest.json",
+        pytest_result=None,
+    )
+
+    assert payload["metrics"]["visual_benchmark_feedback_score"]["value"] == 100.0
+    assert payload["metrics"]["options_strategy_governance_feedback_score"]["value"] == 100.0
+    assert payload["metrics"]["hybrid_order_flow_feedback_score"]["value"] == 90.0
+    assert payload["supporting_indicators"]["visual_benchmark_source_count"] >= 3
+    assert payload["supporting_indicators"]["options_governance_source_count"] >= 3

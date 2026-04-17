@@ -5,13 +5,24 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from atlas_code_quant.operations.operation_state_contract import (
+    CORE_STATE_CONTRACT_KEYS,
+    combined_operation_state,
+    core_operation_state_path,
+    quant_operation_state_path,
+    read_json,
+    update_quant_state,
+)
+
 
 HOST = "0.0.0.0"
 PORT = 8799
 AUTH_TOKEN = "atlas_mcp_2026"
 ROOT = Path(r"C:\ATLAS_PUSH")
-DEFAULT_DB = Path(r"C:\ATLAS_PUSH\atlas_code_quant\data\trading_journal.sqlite3")
-STATE_PATH = Path(r"C:\ATLAS_PUSH\atlas_code_quant\data\operation\operation_center_state.json")
+DEFAULT_DB = ROOT / "atlas_code_quant" / "data" / "journal" / "trading_journal.sqlite3"
+LEGACY_DB = ROOT / "atlas_code_quant" / "data" / "trading_journal.sqlite3"
+QUANT_STATE_PATH = quant_operation_state_path(ROOT)
+CORE_STATE_PATH = core_operation_state_path(ROOT)
 LOG_PATH = Path(r"C:\ATLAS_PUSH\atlas_code_quant\logs\quant_brain_bridge.jsonl")
 TAIL_LIMIT = 3000
 
@@ -30,6 +41,14 @@ def _write_text(path, content):
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text(content, encoding="utf-8")
     return {"path": str(file_path), "bytes": len(content.encode("utf-8"))}
+
+
+def _resolve_db_path(db_path=None):
+    if db_path:
+        return Path(db_path)
+    if DEFAULT_DB.exists():
+        return DEFAULT_DB
+    return LEGACY_DB
 
 
 def _run_script(file_path):
@@ -51,7 +70,7 @@ def _run_script(file_path):
 
 
 def _query_db(sql, db_path=None):
-    database = Path(db_path) if db_path else DEFAULT_DB
+    database = _resolve_db_path(db_path)
     with sqlite3.connect(str(database)) as connection:
         connection.row_factory = sqlite3.Row
         cursor = connection.cursor()
@@ -73,12 +92,36 @@ def _query_db(sql, db_path=None):
 
 
 def _get_state():
-    content = _read_text(STATE_PATH)
-    try:
-        data = json.loads(content)
-    except json.JSONDecodeError:
-        data = {"raw": content}
-    return {"path": str(STATE_PATH), "state": data}
+    return combined_operation_state(
+        quant_state_path=QUANT_STATE_PATH,
+        core_state_path=CORE_STATE_PATH,
+    )
+
+
+def _set_state(key, value, reason=None):
+    state = read_json(QUANT_STATE_PATH)
+    state[key] = value
+
+    if key == "fail_safe_active":
+        active = bool(value)
+        state[key] = active
+        if active:
+            state["fail_safe_reason"] = reason or "manual_operator_pause"
+        elif reason is not None:
+            state["fail_safe_reason"] = reason
+        else:
+            state["fail_safe_reason"] = None
+
+    if key == "fail_safe_reason" and value is None:
+        state[key] = None
+
+    return update_quant_state(
+        state,
+        quant_state_path=QUANT_STATE_PATH,
+        core_state_path=CORE_STATE_PATH,
+        source_module="atlas_operator_interface",
+        ensure_ascii=False,
+    )
 
 
 def _get_logs(n=50):
@@ -103,10 +146,14 @@ def execute_action(action, params):
         return _query_db(params["sql"], params.get("db"))
     if action == "get_state":
         return _get_state()
+    if action == "get_core_state":
+        return {"path": str(CORE_STATE_PATH), "state": read_json(CORE_STATE_PATH)}
+    if action == "set_state":
+        return _set_state(params["key"], params.get("value"), params.get("reason"))
     if action == "get_logs":
         return _get_logs(params.get("n", 50))
     if action == "purge_journal":
-        db_path = params.get("db", str(DEFAULT_DB))
+        db_path = params.get("db", str(_resolve_db_path()))
         sql = params.get("sql", "")
         if not sql:
             return {"error": "sql required"}

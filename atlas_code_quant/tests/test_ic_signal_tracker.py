@@ -160,6 +160,25 @@ class TestICSignalTracker:
         assert tmp_tracker._state["signals"][newer_sid]["outcome_available"] is True
         assert tmp_tracker._state["signals"][older_sid]["outcome_available"] is False
 
+    def test_update_pending_outcome_accepts_unknown_method_fallback(self, tmp_tracker):
+        signal_id = tmp_tracker.record_signal(
+            symbol="AAPL", method="unknown",
+            predicted_move_pct=2.0, entry_price=100.0,
+        )
+        tmp_tracker._state["signals"][signal_id]["recorded_at"] = "2026-03-28T12:00:00+00:00"
+        tmp_tracker._save()
+
+        matched_sid = tmp_tracker.update_pending_outcome(
+            symbol="AAPL",
+            method="equity_long",
+            entry_price=100.0,
+            recorded_near="2026-03-28T12:01:00+00:00",
+            exit_price=102.5,
+        )
+
+        assert matched_sid == signal_id
+        assert tmp_tracker._state["signals"][signal_id]["outcome_available"] is True
+
     def test_update_outcome_zero_entry(self, tmp_tracker):
         sid = tmp_tracker.record_signal(
             symbol="SPY", method="momentum",

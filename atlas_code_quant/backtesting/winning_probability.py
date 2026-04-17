@@ -387,6 +387,14 @@ class TradierClient:
         options = self._as_dict(payload.get("options")).get("option") or []
         return options if isinstance(options, list) else [options]
 
+    def get_option_expirations(self, symbol: str, scope: str | None = None) -> list[str]:
+        del scope
+        return self.expirations(symbol)
+
+    def get_option_chain(self, symbol: str, expiration: str, scope: str | None = None) -> list[dict[str, Any]]:
+        del scope
+        return self.chain(symbol, expiration)
+
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:

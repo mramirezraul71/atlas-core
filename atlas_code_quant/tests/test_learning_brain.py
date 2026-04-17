@@ -465,6 +465,31 @@ class TestMLSignalRanker:
             score = ranker.score(ctx)
             assert 0.0 <= score <= 1.0
 
+    def test_train_falls_back_when_preferred_backend_breaks(self, monkeypatch):
+        class _FakeModel:
+            def predict_proba(self, X):
+                return [[0.4, 0.6] for _ in X]
+
+        ranker = MLSignalRanker()
+        ranker.backend = "xgboost"
+        trades = _make_n_trades(60, winrate=0.6)
+
+        monkeypatch.setattr(
+            "atlas_code_quant.learning.ml_signal_ranker._build_xgboost",
+            lambda X, y: (_ for _ in ()).throw(TypeError("force_all_finite incompatible")),
+        )
+        monkeypatch.setattr(
+            "atlas_code_quant.learning.ml_signal_ranker._build_sklearn",
+            lambda X, y: _FakeModel(),
+        )
+
+        result = ranker.train(trades)
+
+        assert result["trained"] is True
+        assert result["backend"] == "sklearn"
+        assert ranker.is_trained is True
+        assert ranker.backend == "sklearn"
+
     def test_score_batch_untrained(self):
         ranker = MLSignalRanker()
         ctxs = [_make_signal_ctx() for _ in range(3)]
