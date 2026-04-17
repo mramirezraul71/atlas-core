@@ -10,6 +10,7 @@ import pytest
 
 import atlas_code_quant.journal.service as journal_service_module
 from atlas_code_quant.journal.service import TradingJournalService, _is_recent_entry
+from atlas_code_quant.learning.ic_signal_tracker import ICSignalTracker
 
 
 class _Tracker:
@@ -289,6 +290,126 @@ class TestSyncScopeFallback:
         assert "PHANTOM DETECTED" in caplog.text
         assert "QQQ" in caplog.text
         assert "42" in caplog.text
+
+    def test_post_fill_reconciliation(self, monkeypatch) -> None:
+        rows = [_entry(strategy_id="s1", symbol="SPY", broker_order_ids_json="[]", signed_qty=100)]
+        service = _install_service_basics(
+            monkeypatch,
+            positions=[{"id": "OID-RECOVERED", "symbol": "SPY", "quantity": 100}],
+            rows=rows,
+            strategies=[{"strategy_id": "s1", "underlying": "SPY", "positions": [{"symbol": "SPY"}]}],
+        )
+
+        result = service.sync_scope("paper")
+
+        assert result["recovered_broker_order_ids"] == 1
+        assert json.loads(rows[0].broker_order_ids_json) == ["OID-RECOVERED"]
+        assert result["journal_entries"][0]["broker_order_id"] == "OID-RECOVERED"
+
+    def test_post_fill_reconciliation_rejects_ambiguous_broker_matches(self, monkeypatch) -> None:
+        rows = [_entry(strategy_id="s1", symbol="SPY", broker_order_ids_json="[]", signed_qty=100)]
+        service = _install_service_basics(
+            monkeypatch,
+            positions=[
+                {"id": "OID-RECOVERED-1", "symbol": "SPY", "quantity": 100},
+                {"id": "OID-RECOVERED-2", "symbol": "SPY", "quantity": 100},
+            ],
+            rows=rows,
+            strategies=[{"strategy_id": "s1", "underlying": "SPY", "positions": [{"symbol": "SPY"}]}],
+        )
+
+        result = service.sync_scope("paper")
+
+        assert result["recovered_broker_order_ids"] == 0
+        assert json.loads(rows[0].broker_order_ids_json) == []
+        assert result["journal_entries"][0]["broker_order_id"] is None
+
+    def test_ic_tracker_closed_loop(self, monkeypatch, tmp_path) -> None:
+        tracker = ICSignalTracker(tracker_path=tmp_path / "ic_tracker.json")
+        signal_id = tracker.record_signal(
+            symbol="AAPL",
+            method="equity_long",
+            predicted_move_pct=2.0,
+            entry_price=100.0,
+            timeframe="1h",
+            selection_score=86.0,
+        )
+        tracker._state["signals"][signal_id]["recorded_at"] = "2026-04-17T13:50:00+00:00"
+        tracker._save()
+
+        rows = [
+            _entry(
+                strategy_id="s1",
+                symbol="AAPL",
+                broker_order_ids_json="[]",
+                signed_qty=1,
+                entry_time=datetime(2026, 4, 17, 14, 0, 0),
+            )
+        ]
+        _install_session(monkeypatch, rows)
+        monkeypatch.setattr(
+            journal_service_module,
+            "resolve_account_session",
+            lambda **kwargs: (_Client([{"id": "OID-AAPL-1", "symbol": "AAPL", "quantity": 1}]), _Account()),
+        )
+        monkeypatch.setattr(TradingJournalService, "_trade_events", lambda self, client, account_id: [])
+        monkeypatch.setattr(
+            TradingJournalService,
+            "_upsert_open_entry",
+            lambda self, db, account, client, strategy, matched: (strategy["strategy_id"], False, False),
+        )
+        monkeypatch.setattr(TradingJournalService, "_should_guard_mass_close", lambda self, **kwargs: False)
+        monkeypatch.setattr(TradingJournalService, "_close_entry", lambda self, entry, matched_events: False)
+
+        class _TrackedBrain(_Brain):
+            def __init__(self) -> None:
+                self.outcomes: list[dict] = []
+
+            def record_journal_outcome(self, payload: dict) -> dict:
+                self.outcomes.append(payload)
+                return {"ok": True, "journal_key": payload.get("journal_key")}
+
+        brain = _TrackedBrain()
+
+        class _TrackedLearning(_Learning):
+            def __init__(self) -> None:
+                self.calls: list[bool] = []
+
+            def refresh(self, force: bool = False) -> dict:
+                self.calls.append(force)
+                return {"ok": True, "force": force}
+
+        learning = _TrackedLearning()
+        service = TradingJournalService(
+            tracker=_Tracker(strategies=[{"strategy_id": "s1", "underlying": "AAPL", "positions": [{"symbol": "AAPL"}]}]),  # type: ignore[arg-type]
+            brain=brain,
+            learning=learning,  # type: ignore[arg-type]
+            ic_tracker=tracker,
+        )
+
+        result = service.sync_scope("paper")
+        assert result["recovered_broker_order_ids"] == 1
+        assert json.loads(rows[0].broker_order_ids_json) == ["OID-AAPL-1"]
+
+        outcomes = service._process_closed_entry_payloads(
+            "paper",
+            [
+                {
+                    "journal_key": "paper:test:AAPL:1",
+                    "symbol": "AAPL",
+                    "strategy_type": "equity_long",
+                    "entry_price": 100.0,
+                    "exit_price": 103.0,
+                    "entry_time": "2026-04-17T14:00:00+00:00",
+                }
+            ],
+        )
+
+        assert outcomes[0]["ic_updated"] is True
+        assert outcomes[0]["signal_id"] == signal_id
+        assert tracker._state["signals"][signal_id]["outcome_available"] is True
+        assert learning.calls == [True]
+        assert len(brain.outcomes) == 1
 
 
 @pytest.mark.unit

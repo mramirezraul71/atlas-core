@@ -1,6 +1,7 @@
 """Atlas Code-Quant central configuration."""
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -518,10 +519,46 @@ class TradingConfig:
     scanner_universe_cache_path: Path = BASE_DIR / "data" / "scanner" / "us_equities_universe.json"
     notify_channels: list[str] = field(default_factory=list)
     notifications_data_dir: Path = field(default_factory=lambda: BASE_DIR / "data" / "notifications")
+    market_open_config_path: Path = BASE_DIR / "config" / "market_open_config.json"
+    market_open_schedule_open_et: str = "09:30"
+    market_open_schedule_close_et: str = "16:00"
+    market_open_max_positions: int = 3
     xgboost_model_dir: Path = field(init=False)
     xgboost_audit_path: Path = field(init=False)
 
+    def _apply_market_open_config(self) -> None:
+        path = self.market_open_config_path
+        if not path.exists() or not path.is_file():
+            return
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        if not isinstance(payload, dict):
+            return
+        schedule = payload.get("schedule_et") or {}
+        risk = payload.get("risk") or {}
+        open_et = str(schedule.get("market_open") or "").strip()
+        close_et = str(schedule.get("market_close") or "").strip()
+        if len(open_et) == 5 and ":" in open_et:
+            self.market_open_schedule_open_et = open_et
+        if len(close_et) == 5 and ":" in close_et:
+            self.market_open_schedule_close_et = close_et
+        max_positions = risk.get("max_positions")
+        try:
+            if max_positions is not None:
+                self.market_open_max_positions = int(max_positions)
+        except (TypeError, ValueError):
+            pass
+
+    def exit_governance_runtime_enabled(self, *, account_type: str | None = None) -> bool:
+        scope = str(account_type or "").strip().lower()
+        if scope == "paper":
+            return True
+        return bool(self.exit_governance_enabled)
+
     def __post_init__(self) -> None:
+        self._apply_market_open_config()
         if self.tradier_default_scope not in {"live", "paper"}:
             self.tradier_default_scope = "paper" if self.paper_trading else "live"
         self.scanner_source = self.scanner_source if self.scanner_source in {"yfinance", "ccxt"} else "yfinance"
@@ -652,6 +689,7 @@ class TradingConfig:
         self.notify_dedup_ttl_sec = max(60.0, min(self.notify_dedup_ttl_sec, 86400.0))
         self.notify_max_opportunities = max(1, min(self.notify_max_opportunities, 25))
         self.notify_max_positions = max(1, min(self.notify_max_positions, 40))
+        self.market_open_max_positions = max(1, min(int(self.market_open_max_positions), 20))
         self.notify_scheduler_poll_sec = max(15, min(self.notify_scheduler_poll_sec, 600))
         if self.notify_render_mode not in {"telegram_html", "plain"}:
             self.notify_render_mode = "telegram_html"

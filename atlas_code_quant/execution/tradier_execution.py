@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import time
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from api.schemas import OrderRequest, TradierOrderLeg
@@ -260,6 +261,112 @@ def _match_order(broker_order: dict[str, Any], payload: dict[str, Any]) -> bool:
     return True
 
 
+def _parse_broker_order_timestamp(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(value), tz=timezone.utc)
+        except Exception:
+            return None
+    if not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    normalized = raw.replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+        try:
+            return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _broker_order_timestamp(broker_order: dict[str, Any]) -> datetime | None:
+    for key in ("create_date", "created_at", "transaction_date", "submitted_at", "last_fill_date", "date"):
+        parsed = _parse_broker_order_timestamp(broker_order.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _find_recent_reconciled_order(
+    broker_orders: list[dict[str, Any]],
+    *,
+    payload: dict[str, Any],
+    submitted_at: datetime,
+    window_sec: int = 180,
+) -> dict[str, Any] | None:
+    timestamped_matches: list[dict[str, Any]] = []
+    for broker_order in broker_orders:
+        if not _match_order(broker_order, payload):
+            continue
+        if not _extract_order_id(broker_order):
+            continue
+        order_ts = _broker_order_timestamp(broker_order)
+        if order_ts is None:
+            continue
+        age_sec = (order_ts - submitted_at).total_seconds()
+        if 0.0 <= age_sec <= max(int(window_sec), 1):
+            timestamped_matches.append(broker_order)
+    if len(timestamped_matches) == 1:
+        return timestamped_matches[0]
+    return None
+
+
+def _is_timeout_recoverable_error(exc: Exception) -> bool:
+    return isinstance(exc, TimeoutError)
+
+
+def _reconcile_recent_order_after_timeout(
+    client: TradierClient,
+    session: TradierAccountSession,
+    *,
+    payload: dict[str, Any],
+    submitted_at: datetime,
+    attempts: int = 2,
+    backoff_sec: float = 0.75,
+    window_sec: int = 180,
+) -> dict[str, Any] | None:
+    max_attempts = max(1, int(attempts))
+    for attempt in range(1, max_attempts + 1):
+        try:
+            broker_orders = client.orders(session.account_id)
+        except Exception as exc:
+            logger.warning("Recent-orders reconciliation failed for %s: %s", payload.get("symbol"), exc)
+            return None
+        match = _find_recent_reconciled_order(
+            broker_orders,
+            payload=payload,
+            submitted_at=submitted_at,
+            window_sec=window_sec,
+        )
+        if match is not None:
+            broker_order_id = _extract_order_id(match)
+            logger.warning(
+                "Recovered broker_order_id via recent-orders reconciliation for %s after execution timeout: %s",
+                payload.get("symbol"),
+                broker_order_id,
+            )
+            return {
+                "order_id": broker_order_id or "",
+                "status": str(match.get("status") or "accepted"),
+                "filled_qty": _safe_float(match.get("exec_quantity") or match.get("filled_quantity"), 0.0),
+                "method_used": "recent_orders_reconciliation",
+                "raw_response": match,
+                "reconciliation_attempts": attempt,
+            }
+        if attempt < max_attempts:
+            time.sleep(max(float(backoff_sec), 0.1) * attempt)
+    return None
+
+
 def _stream_order_confirmation(
     client: TradierClient,
     session: TradierAccountSession,
@@ -360,6 +467,12 @@ def _execute_with_fallback(
     except Exception as exc:
         logger.error("Failed to execute order with all retry strategies")
         detail = f"{last_error}; fallback={exc}" if last_error is not None else str(exc)
+        if (
+            last_error is not None
+            and _is_timeout_recoverable_error(last_error)
+            and _is_timeout_recoverable_error(exc)
+        ):
+            raise TimeoutError(f"Failed to confirm order with timeout-only failures: {detail}") from exc
         raise RuntimeError(f"Failed to execute order with fallback strategies: {detail}") from exc
 
 
@@ -416,15 +529,31 @@ def route_order_to_tradier(body: OrderRequest) -> dict[str, Any]:
         pdt_status = check_pdt_status(client, session)
         logger.info("PDT checks deprecated; using operational gates only for %s", session.account_id)
 
-    response = _execute_with_fallback(
-        client=client,
-        session=session,
-        payload=payload,
-        primary_method="stream_confirmation",
-        fallback_method="polling_get_orders",
-        max_retries=3,
-        timeout_sec=max(int(settings.tradier_timeout_sec), 1),
-    )
+    submitted_at = datetime.now(timezone.utc)
+    try:
+        response = _execute_with_fallback(
+            client=client,
+            session=session,
+            payload=payload,
+            primary_method="stream_confirmation",
+            fallback_method="polling_get_orders",
+            max_retries=3,
+            timeout_sec=max(int(settings.tradier_timeout_sec), 1),
+        )
+    except Exception as exc:
+        recovered = None
+        if _is_timeout_recoverable_error(exc):
+            recovered = _reconcile_recent_order_after_timeout(
+                client,
+                session,
+                payload=payload,
+                submitted_at=submitted_at,
+                attempts=2,
+                backoff_sec=0.75,
+            )
+        if recovered is None:
+            raise
+        response = recovered
     broker_order_ids = _extract_broker_order_ids(response)
     if not broker_order_ids or not broker_order_ids.get("id"):
         raise ValueError(

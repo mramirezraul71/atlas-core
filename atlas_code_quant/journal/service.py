@@ -140,6 +140,51 @@ def _extract_broker_order_id(value: Any) -> str | None:
     return None
 
 
+def _collect_strategy_broker_order_ids(
+    *,
+    strategy: dict[str, Any],
+    matched_events: list[dict[str, Any]],
+    existing_payload: str | None = None,
+) -> list[str]:
+    ids: set[str] = set()
+    for event in matched_events:
+        if not isinstance(event, dict):
+            continue
+        raw = event.get("raw") if isinstance(event.get("raw"), dict) else {}
+        extracted = _extract_broker_order_id(raw)
+        if extracted:
+            ids.add(extracted)
+    for position in strategy.get("positions") or []:
+        if not isinstance(position, dict):
+            continue
+        extracted = _extract_broker_order_id(
+            position.get("broker_order_id")
+            or position.get("broker_id")
+            or position.get("order_id")
+            or position.get("id")
+        )
+        if extracted:
+            ids.add(extracted)
+    for existing in _coerce_list_payload(_json_load(existing_payload, [])):
+        extracted = _extract_broker_order_id(existing)
+        if extracted:
+            ids.add(extracted)
+    return sorted(ids)
+
+
+def _merge_broker_order_ids(existing_payload: str | None, *broker_ids: Any) -> list[str]:
+    merged: set[str] = set()
+    for existing in _coerce_list_payload(_json_load(existing_payload, [])):
+        extracted = _extract_broker_order_id(existing)
+        if extracted:
+            merged.add(extracted)
+    for raw in broker_ids:
+        extracted = _extract_broker_order_id(raw)
+        if extracted:
+            merged.add(extracted)
+    return sorted(merged)
+
+
 def _normalize_broker_position(position: dict[str, Any]) -> dict[str, Any]:
     symbol = str(position.get("symbol") or position.get("underlying") or "").strip().upper()
     quantity = abs(
@@ -1101,7 +1146,7 @@ def build_exit_governance_snapshot(
         now=now,
     )
     thresholds = {
-        "exit_governance_enabled": bool(settings.exit_governance_enabled),
+        "exit_governance_enabled": bool(settings.exit_governance_runtime_enabled(account_type=account_type)),
         "hard_exit_loss_r": float(settings.exit_governance_hard_exit_loss_r),
         "take_profit_r": float(settings.exit_governance_take_profit_r),
         "time_stop_hours": int(settings.exit_governance_time_stop_hours),
@@ -1816,6 +1861,10 @@ class TradingJournalService:
             )
             return strategy_id, False, True
         if entry is None:
+            broker_order_ids = _collect_strategy_broker_order_ids(
+                strategy=strategy,
+                matched_events=matched_events,
+            )
             entry = TradingJournal(
                 journal_key=f"{account.scope}:{account.account_id}:{strategy_id}:{int(datetime.utcnow().timestamp())}",
                 account_type=account.scope,
@@ -1843,7 +1892,7 @@ class TradingJournalService:
                 risk_at_entry=abs(_safe_float(strategy.get("bpr_model"), 0.0)),
                 greeks_json=_json_dump({"delta": strategy.get("net_delta"), "gamma": strategy.get("net_gamma"), "theta": strategy.get("theta_daily"), "vega": strategy.get("net_vega")}),
                 attribution_json=_json_dump(strategy.get("attribution") or {}),
-                broker_order_ids_json=_json_dump(sorted({event["raw"].get("id") for event in matched_events if event.get("raw") and event["raw"].get("id")})),
+                broker_order_ids_json=_json_dump(broker_order_ids),
                 raw_entry_payload_json=_json_dump(strategy.get("win_rate_details") or {}),
                 last_synced_at=datetime.utcnow(),
             )
@@ -1868,6 +1917,13 @@ class TradingJournalService:
         entry.is_level4 = str(strategy.get("strategy_type") or "") in LEVEL4_STRATEGIES
         entry.greeks_json = _json_dump({"delta": strategy.get("net_delta"), "gamma": strategy.get("net_gamma"), "theta": strategy.get("theta_daily"), "vega": strategy.get("net_vega")})
         entry.attribution_json = _json_dump(strategy.get("attribution") or {})
+        entry.broker_order_ids_json = _json_dump(
+            _collect_strategy_broker_order_ids(
+                strategy=strategy,
+                matched_events=matched_events,
+                existing_payload=entry.broker_order_ids_json,
+            )
+        )
         entry.raw_entry_payload_json = _json_dump(strategy.get("win_rate_details") or {})
         entry.last_synced_at = datetime.utcnow()
         return strategy_id, False, False
@@ -2052,6 +2108,7 @@ class TradingJournalService:
             updated = 0
             closed = 0
             invalid_skipped = 0
+            recovered_broker_order_ids = 0
             seen_ids: set[str] = set()
             closed_entries: list[dict[str, Any]] = []
 
@@ -2143,6 +2200,7 @@ class TradingJournalService:
                             break
 
                 if resolved_match is None:
+                    fallback_candidates: list[tuple[int, dict[str, Any]]] = []
                     for idx, broker_pos in enumerate(broker_positions):
                         if idx in used_broker_indexes:
                             continue
@@ -2151,14 +2209,20 @@ class TradingJournalService:
                         broker_qty = abs(_safe_float(broker_pos.get("quantity"), 0.0))
                         qty_close = entry_qty <= 0 or broker_qty <= 0 or abs(entry_qty - broker_qty) <= 1e-6
                         if qty_close and _is_recent_entry(entry.entry_time, days=1):
-                            resolved_match = broker_pos
-                            resolved_idx = idx
-                            match_method = "symbol_entry_time_fallback"
-                            logger.info(
-                                "Matched %s by (symbol, entry_date) fallback (broker_order_id was missing)",
-                                entry_symbol,
-                            )
-                            break
+                            fallback_candidates.append((idx, broker_pos))
+                    if len(fallback_candidates) == 1:
+                        resolved_idx, resolved_match = fallback_candidates[0]
+                        match_method = "symbol_entry_time_fallback"
+                        logger.info(
+                            "Matched %s by (symbol, entry_date) fallback (broker_order_id was missing)",
+                            entry_symbol,
+                        )
+                    elif len(fallback_candidates) > 1:
+                        logger.warning(
+                            "Ambiguous broker fallback for %s (%s candidates); broker_order_id left unchanged",
+                            entry.journal_key,
+                            len(fallback_candidates),
+                        )
 
                 if resolved_match is None:
                     unmatched_journal.append(
@@ -2173,6 +2237,23 @@ class TradingJournalService:
 
                 if resolved_idx is not None:
                     used_broker_indexes.add(resolved_idx)
+                recovered_broker_id = str(resolved_match.get("broker_id") or "").strip()
+                if recovered_broker_id and recovered_broker_id != entry_order_id:
+                    merged_broker_ids = _merge_broker_order_ids(
+                        entry.broker_order_ids_json,
+                        recovered_broker_id,
+                    )
+                    if merged_broker_ids:
+                        entry.broker_order_ids_json = _json_dump(merged_broker_ids)
+                        entry.last_synced_at = datetime.utcnow()
+                        entry_order_id = recovered_broker_id
+                        recovered_broker_order_ids += 1
+                        logger.info(
+                            "Recovered broker_order_id for %s via %s match: %s",
+                            entry.journal_key,
+                            match_method,
+                            recovered_broker_id,
+                        )
                 matched.append(
                     {
                         "journal_key": entry.journal_key,
@@ -2210,6 +2291,7 @@ class TradingJournalService:
                 "active_strategies": len(strategies),
                 "trade_events_seen": len(trade_events),
                 "invalid_skipped": invalid_skipped,
+                "recovered_broker_order_ids": recovered_broker_order_ids,
                 "learning_outcomes": learning_outcomes,
                 "broker_positions": broker_positions,
                 "journal_entries": [

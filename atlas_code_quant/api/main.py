@@ -27,6 +27,7 @@ from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 # Ampliar thread pool: el default (min(32, cpu+4)) se satura cuando
 # yfinance/Yahoo Finance hace múltiples HTTP requests bloqueantes.
@@ -120,6 +121,7 @@ from learning.strategy_evolver import StrategyEvolver
 from knowledge.knowledge_base import get_knowledge_base
 
 logger = logging.getLogger("quant.api")
+_NEW_YORK_TZ = ZoneInfo("America/New_York")
 _START_TIME = time.time()
 _ACCOUNT_MANAGER = AccountManager()
 _BRAIN_BRIDGE = QuantBrainBridge()
@@ -1198,6 +1200,75 @@ def _broker_open_positions_count(
     return int((snapshot.get("totals") or {}).get("positions") or 0)
 
 
+def _hhmm_to_minutes(value: str, *, fallback: str) -> int:
+    raw = str(value or fallback).strip() or fallback
+    try:
+        hour_str, minute_str = raw.split(":", 1)
+        hour = max(0, min(int(hour_str), 23))
+        minute = max(0, min(int(minute_str), 59))
+        return (hour * 60) + minute
+    except (TypeError, ValueError):
+        fallback_hour, fallback_minute = fallback.split(":", 1)
+        return (int(fallback_hour) * 60) + int(fallback_minute)
+
+
+def _entry_pass_runtime_gate(
+    *,
+    action: str,
+    account_scope: str | None,
+    account_id: str | None,
+    now_et: datetime | None = None,
+) -> dict[str, object]:
+    normalized_action = str(action or "").strip().lower()
+    open_positions = _broker_open_positions_count(account_scope=account_scope, account_id=account_id)
+    max_open_positions = max(1, int(getattr(settings, "market_open_max_positions", 3) or 3))
+    payload: dict[str, object] = {
+        "action": normalized_action,
+        "skip_entry_pass": False,
+        "reason": None,
+        "reason_detail": None,
+        "open_positions": open_positions,
+        "max_open_positions": max_open_positions,
+        "market_open": True,
+    }
+    if normalized_action != "submit":
+        return payload
+
+    current_et = now_et or datetime.now(_NEW_YORK_TZ)
+    if current_et.tzinfo is None:
+        current_et = current_et.replace(tzinfo=_NEW_YORK_TZ)
+    else:
+        current_et = current_et.astimezone(_NEW_YORK_TZ)
+    open_minutes = _hhmm_to_minutes(settings.market_open_schedule_open_et, fallback="09:30")
+    close_minutes = _hhmm_to_minutes(settings.market_open_schedule_close_et, fallback="16:00")
+    current_minutes = (current_et.hour * 60) + current_et.minute
+
+    if current_et.weekday() > 4:
+        payload.update({
+            "skip_entry_pass": True,
+            "reason": "market_closed",
+            "reason_detail": "market_closed_weekend",
+            "market_open": False,
+        })
+        return payload
+    if current_minutes < open_minutes or current_minutes >= close_minutes:
+        payload.update({
+            "skip_entry_pass": True,
+            "reason": "market_closed",
+            "reason_detail": f"market_closed_schedule:{settings.market_open_schedule_open_et}-{settings.market_open_schedule_close_et}",
+            "market_open": False,
+        })
+        return payload
+    if open_positions >= max_open_positions:
+        payload.update({
+            "skip_entry_pass": True,
+            "reason": "max_open_positions",
+            "reason_detail": f"open_positions={open_positions} max_open_positions={max_open_positions}",
+        })
+        return payload
+    return payload
+
+
 def _tradier_positions_payload(
     *,
     account_scope: str | None,
@@ -1865,14 +1936,6 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                 auton_mode = str(op_config.get("auton_mode") or "paper_supervised")
                 action = "submit" if auton_mode not in {"off", "paper_supervised"} else "preview"
                 entry_action = action
-                if (
-                    action == "submit"
-                    and str(op_config.get("account_scope") or "paper") == "paper"
-                    and bool(op_config.get("paper_market_hours_strict"))
-                ):
-                    rth_open = await asyncio.to_thread(_OPERATION_CENTER.is_us_equity_rth_open)
-                    if not rth_open:
-                        entry_action = "preview"
 
                 # ── 1. EXIT PASS: cerrar posiciones que cumplen criterio de salida ─────
                 exits_sent = 0
@@ -1970,6 +2033,49 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     _auto_cycle_mark_stage("journal_sync_skipped", action=action)
 
                 # ── 3. ENTRY PASS: evaluar nuevas entradas ────────────────────────────
+                entry_gate = await asyncio.to_thread(
+                    _entry_pass_runtime_gate,
+                    action=entry_action,
+                    account_scope="paper",
+                    account_id=None,
+                )
+                current_open_positions = int(entry_gate.get("open_positions") or 0)
+                max_open_positions = int(entry_gate.get("max_open_positions") or 3)
+                if bool(entry_gate.get("skip_entry_pass")):
+                    reason = str(entry_gate.get("reason") or "entry_pass_skipped")
+                    reason_detail = str(entry_gate.get("reason_detail") or reason)
+                    _AUTO_CYCLE_STATE.update({
+                        "cycle_count": _AUTO_CYCLE_STATE["cycle_count"] + 1,
+                        "last_cycle_at": datetime.utcnow().isoformat(),
+                        "last_action": action,
+                        "entry_action_last": entry_action,
+                        "last_result": {
+                            "action": entry_action,
+                            "blocked": True,
+                            "reasons": [reason_detail],
+                            "exits_sent": exits_sent,
+                            "open_positions": current_open_positions,
+                            "max_open_positions": max_open_positions,
+                        },
+                        "exits_sent_last_cycle": exits_sent,
+                    })
+                    if reason == "market_closed":
+                        _auto_cycle_mark_stage("entry_skipped_market_closed", action=entry_action, detail=reason_detail)
+                        logger.info("[auto-cycle] market closed, skipping entry pass (%s)", reason_detail)
+                    else:
+                        _auto_cycle_mark_stage(
+                            "entry_skipped_max_open_positions",
+                            action=entry_action,
+                            open_positions=current_open_positions,
+                            max_open_positions=max_open_positions,
+                        )
+                        logger.info(
+                            "[auto-cycle] max_open_positions guard triggered, skipping entry pass (%s/%s)",
+                            current_open_positions,
+                            max_open_positions,
+                        )
+                    continue
+
                 _auto_cycle_mark_stage("scanner_report", action=entry_action, configured_action=action)
                 report = await asyncio.to_thread(_SCANNER.report, 24)
                 candidates = list(report.get("candidates") or [])
@@ -2028,6 +2134,24 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                 ).lower()
                 require_optionable = bool(settings.selector_options_require_available)
                 for cand in sorted_cands:
+                    if entry_action == "submit" and current_open_positions + executed_count >= max_open_positions:
+                        last_result = {
+                            "action": entry_action,
+                            "blocked": True,
+                            "reasons": [
+                                f"Max open positions guard blocked new entry ({current_open_positions + executed_count}/{max_open_positions})."
+                            ],
+                            "exits_sent": exits_sent,
+                            "open_positions": current_open_positions,
+                            "max_open_positions": max_open_positions,
+                        }
+                        logger.info(
+                            "[auto-cycle] max_open_positions=%d reached (open=%d attempted=%d) - stopping entry pass",
+                            max_open_positions,
+                            current_open_positions,
+                            executed_count,
+                        )
+                        break
                     symbol = str(cand.get("symbol") or "").strip()
                     if not symbol:
                         continue
