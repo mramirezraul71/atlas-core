@@ -227,3 +227,7 @@ state/atlas_*.jsonl
 # Informes locales generados con fecha en nombre
 reports/ATLAS_PUSH_ESTRUCTURA_GENERAL_*.md
 reports/atlas_quant_implementation_scorecard_20*.md
+
+# Auditorías locales del modelo XGBoost (generadas al entrenar/scorear)
+atlas_code_quant/learning/xgboost_signal/models/audit_report.json
+atlas_code_quant/learning/xgboost_signal/models/audit_report.md
