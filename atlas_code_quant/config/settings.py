@@ -762,6 +762,12 @@ class TradingConfig:
             return True
         return bool(self.exit_governance_enabled)
 
+    def operational_self_audit_enabled(self) -> bool:
+        """Self-audit operativo en readiness; env explícito o solo paper por defecto."""
+        from operations.operational_self_audit import operational_self_audit_enabled as _op_audit_enabled
+
+        return _op_audit_enabled(self)
+
     def __post_init__(self) -> None:
         self._apply_market_open_operational_config()
         if self.tradier_default_scope not in {"live", "paper"}:
