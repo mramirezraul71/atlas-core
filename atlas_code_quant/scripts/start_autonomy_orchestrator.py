@@ -6,9 +6,9 @@ import ctypes
 from pathlib import Path
 from typing import IO
 
-from atlas_code_quant.atlas_core.autonomy.adapters.quant_adapter import QuantAutonomyAdapter
-from atlas_code_quant.atlas_core.autonomy.adapters.robot_adapter import RobotAutonomyAdapter
-from atlas_code_quant.atlas_core.autonomy.orchestrator import AutonomyOrchestrator
+from atlas_core.autonomy.adapters.quant_adapter import QuantAutonomyAdapter
+from atlas_core.autonomy.adapters.robot_adapter import RobotAutonomyAdapter
+from atlas_core.autonomy.orchestrator import AutonomyOrchestrator
 
 
 def _acquire_single_instance_lock(lock_path: Path) -> IO[bytes] | None:
