@@ -2002,6 +2002,10 @@ class OpportunityScannerService:
             _asset_profile = classify_asset(symbol)
             _closes_series = df["close"].dropna().tail(200)
             _recent_closes = [round(float(x), 6) for x in _closes_series.tolist()]
+            _latest = df.iloc[-1]
+            _atr_value = round(float(_atr(df, 14).iloc[-1]), 6) if len(df) >= 20 else 0.0
+            _volume_base = float(df["volume"].tail(20).mean()) if "volume" in df.columns and len(df) >= 20 else 0.0
+            _volume_ratio = (float(_latest.get("volume", 0.0)) / _volume_base) if _volume_base > 0 else 1.0
             accepted.append({
                 "symbol": symbol,
                 "asset_class": _asset_profile.asset_class.value,
@@ -2022,6 +2026,13 @@ class OpportunityScannerService:
                     "multiplier": vix_context.get("multiplier"),
                 },
                 "signal_strength_pct": round(float(best["strength"]) * 100.0, 2),
+                "rsi": round(float(_latest.get("rsi_14", 0.0) or 0.0), 4),
+                "macd_hist": round(float(_latest.get("macd_hist", 0.0) or 0.0), 6),
+                "bb_pct": round(float(_latest.get("bb_pct", 0.0) or 0.0), 6),
+                "atr": _atr_value,
+                "volume_ratio": round(float(_volume_ratio), 6),
+                "iv_rank": round(float(order_flow.get("iv_rank") or 0.0), 4),
+                "iv_hv_ratio": round(float(order_flow.get("iv_hv_ratio") or 1.0), 4),
                 "local_win_rate_pct": best["local_win_rate_pct"],
                 "local_profit_factor": best["local_profit_factor"],
                 "local_expectancy_pct": best["local_expectancy_pct"],
