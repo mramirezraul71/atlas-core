@@ -1,16 +1,20 @@
 """Paquete core Atlas (integraciones transversales)."""
 
 from atlas.core import (
+    AutoCloseConfig,
+    AutoCloseRule,
+    OptionsAutoCloseEngine,
+    OptionsAutoCloser,
     AtlasOptionsAutoPlanner,
     AtlasOptionsPlannerService,
     AtlasOptionsRiskError,
     AtlasOptionsService,
-    AtlasOptionsLiveService,
     MarketContext,
     MarketContextBuilder,
-    OptionStratBridge,
     OptionsIntentRouter,
+    OptionStratBridge,
     OptionsLiveExecutor,
+    AtlasOptionsLiveService,
     OptionsMetrics,
     OptionsReporter,
     OptionsStatePublisher,
@@ -19,6 +23,10 @@ from atlas.core import (
 )
 
 __all__ = [
+    "AutoCloseConfig",
+    "AutoCloseRule",
+    "OptionsAutoCloseEngine",
+    "OptionsAutoCloser",
     "AtlasOptionsAutoPlanner",
     "AtlasOptionsPlannerService",
     "MarketContextBuilder",

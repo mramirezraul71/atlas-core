@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .options_autoclose import OptionsAutoCloser
 from .options_client import AtlasOptionsRiskError, AtlasOptionsService
 from .options_live import AtlasOptionsLiveService
 from .options_planner import AtlasOptionsPlannerService, MarketContext, Trend
@@ -23,6 +24,7 @@ _KNOWN_INTENTS: frozenset[str] = frozenset(
         "options_mark_all",
         "options_get_position",
         "options_send_sandbox_order",
+        "options_auto_close",
     }
 )
 
@@ -39,10 +41,12 @@ class OptionsIntentRouter:
         planner_service: AtlasOptionsPlannerService,
         options_service: AtlasOptionsService,
         live_service: AtlasOptionsLiveService | None = None,
+        auto_closer: OptionsAutoCloser | None = None,
     ) -> None:
         self._planner = planner_service
         self._options = options_service
         self._live = live_service
+        self._auto_closer = auto_closer
 
     def handle_intent(self, payload: dict[str, Any]) -> dict[str, Any]:
         intent = payload.get("intent")
@@ -64,6 +68,8 @@ class OptionsIntentRouter:
                 return self._handle_get_position(payload)
             if intent == "options_send_sandbox_order":
                 return self._handle_send_sandbox_order(payload)
+            if intent == "options_auto_close":
+                return self._handle_auto_close(payload)
         except AtlasOptionsRiskError as e:
             return {
                 "status": "risk_error",
@@ -193,6 +199,19 @@ class OptionsIntentRouter:
         if action == "open":
             return self._live.send_open_sandbox(position_id, preview=preview)
         return self._live.send_close_sandbox(position_id, preview=preview)
+
+    def _handle_auto_close(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self._auto_closer is None:
+            return {
+                "status": "error",
+                "error": "auto_closer_not_configured",
+                "message": "OptionsAutoCloser no inyectado en OptionsIntentRouter",
+            }
+        preview = payload.get("preview", True)
+        if not isinstance(preview, bool):
+            preview = bool(preview)
+        results = self._auto_closer.close_candidates(preview=preview)
+        return {"status": "ok", "results": results}
 
     @staticmethod
     def _validate_required(

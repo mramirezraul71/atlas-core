@@ -75,6 +75,21 @@ class StubOptionsService:
         return self.positions[position_id]
 
 
+class StubAutoCloser:
+    def __init__(self) -> None:
+        self.last_preview: bool | None = None
+
+    def close_candidates(self, *, preview: bool = True) -> list[dict]:
+        self.last_preview = preview
+        return [
+            {
+                "position_id": "auto-1",
+                "preview": preview,
+                "status": "ok",
+            }
+        ]
+
+
 class StubLiveService:
     """Sustituto mínimo de AtlasOptionsLiveService para intents sandbox."""
 
@@ -225,6 +240,27 @@ class TestOptionsIntentRouter(unittest.TestCase):
         self.assertEqual(out["status"], "ok")
         self.assertEqual(out["action"], "open")
         self.assertEqual(stub_live.open_calls, [("pos-99", True)])
+
+    def test_auto_close_not_configured(self) -> None:
+        out = self.router.handle_intent(
+            {"intent": "options_auto_close", "preview": True}
+        )
+        self.assertEqual(out["status"], "error")
+        self.assertEqual(out["error"], "auto_closer_not_configured")
+
+    def test_auto_close_delegates(self) -> None:
+        ac = StubAutoCloser()
+        router = OptionsIntentRouter(
+            self.stub_planner,  # type: ignore[arg-type]
+            self.stub_options,  # type: ignore[arg-type]
+            auto_closer=ac,  # type: ignore[arg-type]
+        )
+        out = router.handle_intent(
+            {"intent": "options_auto_close", "preview": False}
+        )
+        self.assertEqual(out["status"], "ok")
+        self.assertEqual(len(out["results"]), 1)
+        self.assertIs(ac.last_preview, False)
 
     def test_send_sandbox_invalid_action(self) -> None:
         stub_live = StubLiveService()
