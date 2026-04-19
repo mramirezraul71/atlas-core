@@ -10,6 +10,11 @@ POST /options/portfolio/add         — Añadir estrategia a cartera
 DELETE /options/portfolio/{name}    — Cerrar estrategia
 GET  /options/portfolio/summary     — Resumen de cartera + greeks agregadas
 POST /options/portfolio/greeks      — Griegas totales con precios actuales
+GET  /options/iv-rank               — IV Rank proxy (paper): ATM IV vs rango RV histórico
+POST /options/briefing             — Briefing de sesión Fase A (JSON, paper/test)
+GET  /options/close-candidates     — Reporte paper de candidatos a cierre (sin órdenes)
+POST /options/intent               — Intent operativo pre-selector (paper/test)
+POST /options/paper-session-plan   — Pipeline paper: briefing + intent + plan de entrada (sin órdenes)
 """
 from __future__ import annotations
 
@@ -127,6 +132,46 @@ class AddToPortfolioRequest(BaseModel):
 class PortfolioSummaryRequest(BaseModel):
     market_prices: Dict[str, float]   # {symbol: price}
     risk_free_rate: float = 0.05
+
+
+class SessionBriefingRequest(BaseModel):
+    """Briefing cuantitativo mínimo (paper); no ejecuta órdenes."""
+
+    symbol: str
+    direction: str = "neutral"
+    regime: str = "ranging"
+    gamma_regime: Optional[str] = None
+    dte_mode: Optional[str] = None
+    days_to_event: Optional[int] = None
+    event_near: bool = False
+    spot: Optional[float] = None
+    support_levels: Optional[List[float]] = None
+    resistance_levels: Optional[List[float]] = None
+    breach_context: Optional[Dict] = None
+
+
+class OptionsIntentRequest(BaseModel):
+    briefing: Dict
+    manual_overrides: Optional[Dict] = None
+
+
+class PaperSessionPlanRequest(BaseModel):
+    """Plan de sesión paper-only (briefing → intent → entry plan). Sin ejecución ni broker live."""
+
+    symbol: str
+    direction: Optional[str] = None
+    regime: Optional[str] = None
+    gamma_regime: Optional[str] = None
+    dte_mode: Optional[str] = None
+    days_to_event: Optional[int] = None
+    event_near: Optional[bool] = None
+    spot: Optional[float] = None
+    support_levels: Optional[List[float]] = None
+    resistance_levels: Optional[List[float]] = None
+    breach_context: Optional[Dict] = None
+    capital: Optional[float] = None
+    manual_intent_overrides: Optional[Dict] = None
+    manual_entry_overrides: Optional[Dict] = None
 
 
 # ---------------------------------------------------------------------------
@@ -394,3 +439,157 @@ async def optionstrat_config():
             "tradier_scope": settings.tradier_default_scope,
         },
     }
+
+
+@router.post("/briefing")
+async def session_briefing_endpoint(req: SessionBriefingRequest):
+    """Briefing de sesión Fase A: IV, expected move 1σ, estrategia sugerida (``pick_strategy``). Paper/test."""
+    try:
+        from backtesting.winning_probability import TradierClient
+        from execution.option_chain_cache import OptionChainCache
+        from options.iv_rank_calculator import IVRankCalculator
+        from options.session_briefing import SessionBriefingEngine
+    except ModuleNotFoundError:
+        from atlas_code_quant.backtesting.winning_probability import TradierClient
+        from atlas_code_quant.execution.option_chain_cache import OptionChainCache
+        from atlas_code_quant.options.iv_rank_calculator import IVRankCalculator
+        from atlas_code_quant.options.session_briefing import SessionBriefingEngine
+
+    sym = (req.symbol or "").strip().upper()
+    if not sym:
+        raise HTTPException(status_code=400, detail="symbol is required")
+
+    client = TradierClient(scope="paper")
+    calc = IVRankCalculator(client, chain_cache=OptionChainCache(), scope="paper")
+    engine = SessionBriefingEngine(calc)
+    try:
+        payload = engine.build_briefing(
+            sym,
+            direction=req.direction,
+            regime=req.regime,
+            gamma_regime=req.gamma_regime,
+            dte_mode=req.dte_mode,
+            days_to_event=req.days_to_event,
+            event_near=req.event_near,
+            spot=req.spot,
+            support_levels=req.support_levels,
+            resistance_levels=req.resistance_levels,
+            breach_context=req.breach_context,
+        )
+    except Exception as exc:
+        logger.exception("session_briefing error")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"ok": True, "data": payload}
+
+
+@router.get("/close-candidates")
+async def close_candidates_report(include_hold: bool = False):
+    """Reporte paper-only de candidatos a cierre. No ejecuta órdenes ni muta broker."""
+    try:
+        from execution.auto_close_engine import AutoCloseEngine
+        from options.auto_close_adapter import AutoCloseReportBuilder
+    except ModuleNotFoundError:
+        from atlas_code_quant.execution.auto_close_engine import AutoCloseEngine
+        from atlas_code_quant.options.auto_close_adapter import AutoCloseReportBuilder
+
+    builder = AutoCloseReportBuilder(_portfolio, AutoCloseEngine())
+    payload = builder.build_report(include_hold=include_hold)
+    return {"ok": True, "data": payload}
+
+
+@router.post("/intent")
+async def options_intent_endpoint(req: OptionsIntentRequest):
+    """Intent operativo pre-selector. Solo analítico (paper), sin ejecución."""
+    try:
+        from options.options_intent_router import OptionsIntentRouter
+    except ModuleNotFoundError:
+        from atlas_code_quant.options.options_intent_router import OptionsIntentRouter
+
+    router_intent = OptionsIntentRouter()
+    payload = router_intent.build_intent(
+        req.briefing,
+        manual_overrides=req.manual_overrides,
+    )
+    return {"ok": True, "data": payload}
+
+
+@router.post("/paper-session-plan")
+async def paper_session_plan_endpoint(req: PaperSessionPlanRequest):
+    """Pipeline único paper-only: briefing enriquecido, intent y plan de entrada. Sin órdenes ni live."""
+    try:
+        from backtesting.winning_probability import TradierClient
+        from execution.option_chain_cache import OptionChainCache
+        from options.iv_rank_calculator import IVRankCalculator
+        from options.session_briefing import SessionBriefingEngine
+        from options.paper_entry_planner import PaperEntryPlanner
+        from options.paper_session_orchestrator import PaperSessionOrchestrator
+        from options.options_intent_router import OptionsIntentRouter
+    except ModuleNotFoundError:
+        from atlas_code_quant.backtesting.winning_probability import TradierClient
+        from atlas_code_quant.execution.option_chain_cache import OptionChainCache
+        from atlas_code_quant.options.iv_rank_calculator import IVRankCalculator
+        from atlas_code_quant.options.session_briefing import SessionBriefingEngine
+        from atlas_code_quant.options.paper_entry_planner import PaperEntryPlanner
+        from atlas_code_quant.options.paper_session_orchestrator import PaperSessionOrchestrator
+        from atlas_code_quant.options.options_intent_router import OptionsIntentRouter
+
+    sym = (req.symbol or "").strip().upper()
+    if not sym:
+        raise HTTPException(status_code=400, detail="symbol is required")
+
+    client = TradierClient(scope="paper")
+    calc = IVRankCalculator(client, chain_cache=OptionChainCache(), scope="paper")
+    engine = SessionBriefingEngine(calc)
+    orchestrator = PaperSessionOrchestrator(
+        engine,
+        OptionsIntentRouter(),
+        PaperEntryPlanner(),
+    )
+    try:
+        payload = orchestrator.build_session_plan(
+            symbol=sym,
+            direction=req.direction,
+            regime=req.regime,
+            gamma_regime=req.gamma_regime,
+            dte_mode=req.dte_mode,
+            days_to_event=req.days_to_event,
+            event_near=req.event_near,
+            spot=req.spot,
+            support_levels=req.support_levels,
+            resistance_levels=req.resistance_levels,
+            breach_context=req.breach_context,
+            capital=req.capital,
+            manual_intent_overrides=req.manual_intent_overrides,
+            manual_entry_overrides=req.manual_entry_overrides,
+        )
+    except Exception as exc:
+        logger.exception("paper_session_plan error")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"ok": True, "data": payload}
+
+
+@router.get("/iv-rank")
+async def iv_rank_query(symbol: str, dte_target: Optional[int] = None):
+    """IV Rank proxy (ATM IV vs rango histórico de vol realizada). Solo paper/sandbox."""
+    try:
+        from backtesting.winning_probability import TradierClient
+        from execution.option_chain_cache import OptionChainCache
+        from options.iv_rank_calculator import IVRankCalculator
+    except ModuleNotFoundError:
+        from atlas_code_quant.backtesting.winning_probability import TradierClient
+        from atlas_code_quant.execution.option_chain_cache import OptionChainCache
+        from atlas_code_quant.options.iv_rank_calculator import IVRankCalculator
+
+    sym = (symbol or "").strip().upper()
+    if not sym:
+        raise HTTPException(status_code=400, detail="symbol is required")
+
+    # Fase A: solo lectura paper — no exponer a cuentas live desde este endpoint.
+    client = TradierClient(scope="paper")
+    calc = IVRankCalculator(client, chain_cache=OptionChainCache(), scope="paper")
+    try:
+        payload = calc.get_iv_rank(sym, dte_target=dte_target)
+    except Exception as exc:
+        logger.exception("iv_rank_query error")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"ok": True, "data": payload}
