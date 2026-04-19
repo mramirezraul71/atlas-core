@@ -1,0 +1,247 @@
+{
+  "uid": "atlas-options-health",
+  "title": "Options Engine — Health",
+  "description": "Paper-only options pipeline health (P0). Provisioning file alongside atlas.json.",
+  "tags": ["atlas", "options", "paper", "health"],
+  "timezone": "UTC",
+  "schemaVersion": 38,
+  "version": 3,
+  "refresh": "5s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {
+      "id": 101,
+      "title": "H-01 Session GO/NO-GO (0/0.5/1)",
+      "type": "gauge",
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "atlas_options_session_go_nogo", "refId": "A"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "yellow", "value": 0.25},
+            {"color": "green", "value": 0.75}
+          ]}
+        }
+      }
+    },
+    {
+      "id": 102,
+      "title": "H-02 GO/NO-GO decisions (counter)",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 18, "x": 6, "y": 0},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "sum by (decision)(atlas_options_session_go_nogo_count)", "legendFormat": "{{decision}}", "refId": "A"}]
+    },
+    {
+      "id": 103,
+      "title": "H-03 Pipeline module status",
+      "type": "timeseries",
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 6},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "atlas_options_pipeline_module_status", "legendFormat": "{{module}}", "refId": "A"}]
+    },
+    {
+      "id": 104,
+      "title": "H-04 Pipeline module last run age (s)",
+      "type": "timeseries",
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 6},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "atlas_options_pipeline_module_last_run_seconds", "legendFormat": "{{module}}", "refId": "A"}]
+    },
+    {
+      "id": 105,
+      "title": "H-05 Journal events today",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 13},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "atlas_options_journal_events_today", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "id": 106,
+      "title": "H-06 Journal sessions today",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 13},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "atlas_options_journal_sessions_today", "refId": "A"}],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "id": 107,
+      "title": "H-07 Journal last write age (s)",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 13},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "atlas_options_journal_last_write_age_seconds", "refId": "A"}],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [
+        {"color": "green", "value": null},
+        {"color": "yellow", "value": 300},
+        {"color": "red", "value": 3600}
+      ]}}}
+    },
+    {
+      "id": 108,
+      "title": "H-08 Journal file size (bytes)",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 4, "x": 12, "y": 13},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "atlas_options_journal_file_size_bytes", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "bytes"}}
+    },
+    {
+      "id": 109,
+      "title": "H-09 Paper trades open / closed / phantom",
+      "type": "stat",
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 13},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "atlas_options_paper_trades_open", "legendFormat": "open", "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "atlas_options_paper_trades_closed_today", "legendFormat": "closed_today", "refId": "B"},
+        {"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "atlas_options_paper_trades_phantom_today", "legendFormat": "phantom", "refId": "C"}
+      ],
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "id": 110,
+      "title": "H-10 AutoClose triggers & errors",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 17},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "sum by (reason)(atlas_options_autoclose_triggers_total)", "legendFormat": "close:{{reason}}", "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "sum by (type)(atlas_options_errors_total)", "legendFormat": "err:{{type}}", "refId": "B"}
+      ]
+    },
+    {
+      "id": 111,
+      "title": "H-11 IV rank payload quality (briefing)",
+      "type": "gauge",
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 25},
+      "targets": [
+        {
+          "datasource": {"type": "prometheus", "uid": "atlas-prom"},
+          "expr": "atlas_options_iv_rank_quality_score",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.45},
+              {"color": "green", "value": 0.9}
+            ]
+          }
+        }
+      },
+      "options": {"showThresholdLabels": true, "showThresholdMarkers": true}
+    },
+    {
+      "id": 112,
+      "title": "H-12 Sentinel: metrics freshness (core pipeline)",
+      "type": "gauge",
+      "gridPos": {"h": 5, "w": 5, "x": 0, "y": 30},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "atlas_options_sentinel_metrics_freshness", "refId": "A"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "orange", "value": 0.26},
+            {"color": "yellow", "value": 0.51},
+            {"color": "green", "value": 0.76}
+          ]}
+        }
+      },
+      "description": "1=max edad reciente en briefing/intent/entry/journal; bajo si pipeline parado."
+    },
+    {
+      "id": 113,
+      "title": "H-13 Sentinel: journal heartbeat",
+      "type": "gauge",
+      "gridPos": {"h": 5, "w": 5, "x": 5, "y": 30},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "atlas_options_sentinel_journal_heartbeat", "refId": "A"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "orange", "value": 0.26},
+            {"color": "yellow", "value": 0.51},
+            {"color": "green", "value": 0.76}
+          ]}
+        }
+      },
+      "description": "1=escritura journal reciente; bajo si journal sin actividad."
+    },
+    {
+      "id": 114,
+      "title": "H-14 Sentinel: AutoClose activity (best-effort)",
+      "type": "gauge",
+      "gridPos": {"h": 5, "w": 5, "x": 10, "y": 30},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "atlas_options_sentinel_autoclose_activity", "refId": "A"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "orange", "value": 0.26},
+            {"color": "yellow", "value": 0.51},
+            {"color": "green", "value": 0.76}
+          ]}
+        }
+      },
+      "description": "Silencio sospechoso si hay trades abiertos; umbrales heurísticos (ver docs)."
+    },
+    {
+      "id": 115,
+      "title": "H-15 Sentinel: options flow / scanner",
+      "type": "gauge",
+      "gridPos": {"h": 5, "w": 5, "x": 15, "y": 30},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "atlas_options_sentinel_options_flow", "refId": "A"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "orange", "value": 0.26},
+            {"color": "yellow", "value": 0.51},
+            {"color": "green", "value": 0.76}
+          ]}
+        }
+      },
+      "description": "0.25=bridge desactivado (N/A); 1=snapshot coherente; 0=bridge on sin payload válido."
+    },
+    {
+      "id": 116,
+      "title": "H-16 Sentinel: IV rank quality",
+      "type": "gauge",
+      "gridPos": {"h": 5, "w": 4, "x": 20, "y": 30},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "atlas_options_sentinel_iv_rank_quality", "refId": "A"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "orange", "value": 0.26},
+            {"color": "yellow", "value": 0.51},
+            {"color": "green", "value": 0.76}
+          ]}
+        }
+      },
+      "description": "Derivado del último IV quality score del briefing (degradación explícita)."
+    }
+  ],
+  "templating": {"list": []},
+  "annotations": {"list": []}
+}

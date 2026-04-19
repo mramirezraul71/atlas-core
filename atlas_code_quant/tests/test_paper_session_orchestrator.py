@@ -4,6 +4,9 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from atlas_code_quant.operations.operational_self_audit import SelfAuditCheck, SelfAuditResult
+from atlas_code_quant.options import options_engine_metrics as oem
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -123,6 +126,129 @@ class TestPaperSessionOrchestrator:
         assert out["intent"]["allow_entry"] is False
         assert out["entry_plan"]["entry"] == "none"
         assert out["entry_allowed"] is False
+
+
+class TestOptionsSelfAuditHook:
+    """Self-audit operativo en ``build_session_plan`` (observacional, no bloquea)."""
+
+    def test_self_audit_present_after_real_run(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("QUANT_OPERATIONAL_SELF_AUDIT_ENABLED", raising=False)
+        iv = MagicMock()
+        iv.get_iv_rank.return_value = _iv_ok()
+        engine = SessionBriefingEngine(iv, pick_strategy_fn=lambda *a, **k: "iron_condor")
+        orch = PaperSessionOrchestrator(engine, OptionsIntentRouter(), PaperEntryPlanner())
+        out = orch.build_session_plan(
+            symbol="SPX",
+            direction="neutral",
+            regime="ranging",
+            gamma_regime="long_gamma",
+            dte_mode="8to21",
+            capital=25_000.0,
+        )
+        sa = out.get("options_self_audit")
+        assert isinstance(sa, dict)
+        assert sa.get("source") == "operational_self_audit"
+        assert sa.get("status") == "ok"
+        assert "timestamp" in sa
+        assert "findings_count" in sa
+        assert "blocking_findings" in sa
+        assert oem.get_last_options_self_audit() is not None
+        assert oem.get_last_options_self_audit().get("status") == "ok"
+
+    def test_self_audit_skipped_when_disabled(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("QUANT_OPERATIONAL_SELF_AUDIT_ENABLED", "0")
+        iv = MagicMock()
+        iv.get_iv_rank.return_value = _iv_ok()
+        engine = SessionBriefingEngine(iv, pick_strategy_fn=lambda *a, **k: "iron_condor")
+        orch = PaperSessionOrchestrator(engine, OptionsIntentRouter(), PaperEntryPlanner())
+        out = orch.build_session_plan(
+            symbol="SPX",
+            direction="neutral",
+            regime="ranging",
+            gamma_regime="long_gamma",
+            dte_mode="8to21",
+        )
+        sa = out.get("options_self_audit")
+        assert sa.get("status") == "skipped"
+        assert sa.get("passed") is None
+
+    def test_self_audit_warn_findings(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("QUANT_OPERATIONAL_SELF_AUDIT_ENABLED", raising=False)
+
+        def _fake_run(ctx):
+            return SelfAuditResult(
+                passed=True,
+                overall_severity="WARN",
+                checks=[
+                    SelfAuditCheck(
+                        id="risk.test",
+                        category="risk",
+                        severity="WARN",
+                        message="warn",
+                    )
+                ],
+                ts_utc="2026-04-01T12:00:00+00:00",
+                scope="paper",
+            )
+
+        monkeypatch.setattr(
+            "atlas_code_quant.options.paper_session_orchestrator.run_operational_self_audit",
+            _fake_run,
+        )
+        iv = MagicMock()
+        iv.get_iv_rank.return_value = _iv_ok()
+        engine = SessionBriefingEngine(iv, pick_strategy_fn=lambda *a, **k: "iron_condor")
+        orch = PaperSessionOrchestrator(engine, OptionsIntentRouter(), PaperEntryPlanner())
+        out = orch.build_session_plan(
+            symbol="SPX",
+            direction="neutral",
+            regime="ranging",
+            gamma_regime="long_gamma",
+            dte_mode="8to21",
+        )
+        sa = out.get("options_self_audit")
+        assert sa.get("status") == "ok"
+        assert sa.get("overall_severity") == "WARN"
+        assert sa.get("findings_count") == 1
+        pytest.importorskip("prometheus_client")
+        from prometheus_client import REGISTRY
+
+        assert REGISTRY.get_sample_value("atlas_options_self_audit_state") == pytest.approx(0.72)
+
+    def test_self_audit_exception_degraded(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("QUANT_OPERATIONAL_SELF_AUDIT_ENABLED", raising=False)
+
+        def _boom(ctx):
+            raise RuntimeError("audit failed")
+
+        monkeypatch.setattr(
+            "atlas_code_quant.options.paper_session_orchestrator.run_operational_self_audit",
+            _boom,
+        )
+        iv = MagicMock()
+        iv.get_iv_rank.return_value = _iv_ok()
+        engine = SessionBriefingEngine(iv, pick_strategy_fn=lambda *a, **k: "iron_condor")
+        orch = PaperSessionOrchestrator(engine, OptionsIntentRouter(), PaperEntryPlanner())
+        out = orch.build_session_plan(
+            symbol="SPX",
+            direction="neutral",
+            regime="ranging",
+            gamma_regime="long_gamma",
+            dte_mode="8to21",
+        )
+        assert out.get("symbol") == "SPX"
+        sa = out.get("options_self_audit")
+        assert sa.get("status") == "error"
+        assert "error" in sa
+        assert oem.get_last_options_self_audit().get("status") == "error"
+        pytest.importorskip("prometheus_client")
+        from prometheus_client import REGISTRY
+
+        assert REGISTRY.get_sample_value("atlas_options_self_audit_state") == pytest.approx(0.0)
 
 
 class TestPaperSessionPlanEndpoint:
