@@ -3414,7 +3414,7 @@ export default {
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
               Dashboard Completo &#8599;
             </a>
-            <a href="javascript:void(0)" onclick="const u='http://'+location.hostname+':3003/d/atlas-quant-pro-2026/7def89ea-334f-564c-b9c7-d190c3f6f69d'; const w=window.open(u,'_blank','noopener'); if(!w) window.location.href=u; return false;"
+            <a href="javascript:void(0)" onclick="const u='http://'+location.hostname+':3002/d/atlas-quant-pro-2026/7def89ea-334f-564c-b9c7-d190c3f6f69d'; const w=window.open(u,'_blank','noopener'); if(!w) window.location.href=u; return false;"
                style="display:inline-flex;align-items:center;gap:4px;text-decoration:none;
                       padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;
                       background:rgba(244,104,0,0.12);border:1px solid rgba(244,104,0,0.35);

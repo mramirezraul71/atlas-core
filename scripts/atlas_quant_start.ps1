@@ -40,6 +40,9 @@
 .PARAMETER Lightweight
     Activa QUANT_LIGHTWEIGHT_STARTUP=true (boot mínimo). El dashboard puede mostrar métricas incompletas o SYNC degradado hasta warm-up.
 
+.PARAMETER SkipMonitoring
+    Omite asegurar la cadena Prometheus/Grafana tras levantar Quant.
+
 .EXAMPLE
     .\atlas_quant_start.ps1
     .\atlas_quant_start.ps1 -Port 8795 -AutoCycle -CycleIntervalSec 90
@@ -56,7 +59,8 @@ param(
     [switch]$LogOnly,
     [switch]$EnableReload,
     [switch]$FullStartup,
-    [switch]$Lightweight
+    [switch]$Lightweight,
+    [switch]$SkipMonitoring
 )
 
 $ErrorActionPreference = "Stop"
@@ -74,6 +78,7 @@ if ($env:PYTHONPATH) { $_PYTHONPATH_PARTS += $env:PYTHONPATH }
 $_QUANT_PYTHONPATH = [string]::Join(";", ($_PYTHONPATH_PARTS | Where-Object { $_ -and $_.Trim() -ne "" } | Select-Object -Unique))
 $_API_BASE   = "http://127.0.0.1:$Port"
 $_API_HEALTH = "$_API_BASE/health"
+$_START_MONITORING = Join-Path $RepoRoot "scripts\start_monitoring.ps1"
 
 if (-not (Test-Path $_LOG_DIR)) { New-Item -ItemType Directory -Path $_LOG_DIR -Force | Out-Null }
 
@@ -409,6 +414,22 @@ if ($AutoCycle) {
         $loopErr = if ($loopResp) { $loopResp.error } else { "sin respuesta" }
         _OpsLog "Auto-cycle NO pudo activarse: $loopErr" "warn"
         Write-Warning "[quant-start] Auto-cycle error: $loopErr"
+    }
+}
+
+if (-not $SkipMonitoring -and -not $LogOnly) {
+    if (Test-Path $_START_MONITORING) {
+        try {
+            _OpsLog "Asegurando monitoring stack (Prometheus/Grafana)..."
+            Write-Host "[quant-start] Asegurando monitoring stack..."
+            & $_START_MONITORING -QuantPort $Port -GrafanaPort 3002 -SkipOpenBrowser
+            _OpsLog "Monitoring stack verificado"
+        } catch {
+            _OpsLog ("Monitoring stack con incidencias: {0}" -f $_.Exception.Message) "warn"
+            Write-Warning "[quant-start] Monitoring stack con incidencias: $($_.Exception.Message)"
+        }
+    } else {
+        _OpsLog "Script start_monitoring.ps1 no encontrado; se omite verificacion de monitoring" "warn"
     }
 }
 

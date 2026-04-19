@@ -267,7 +267,7 @@ export function render(container) {
   }
   // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  const GRAFANA_PRO_URL = `http://${location.hostname}:3003/d/atlas-quant-pro-2026/7def89ea-334f-564c-b9c7-d190c3f6f69d`;
+  const GRAFANA_PRO_URL = `http://${location.hostname}:3002/d/atlas-quant-pro-2026/7def89ea-334f-564c-b9c7-d190c3f6f69d`;
 
   const CHIP_ROUTES = {
     health:    { hash: '/health' },

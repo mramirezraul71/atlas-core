@@ -495,8 +495,7 @@
         "overrides": [
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 0
+              "id": "byFrameRefID", "options": "A"
             },
             "properties": [
               {
@@ -510,8 +509,7 @@
           },
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 1
+              "id": "byFrameRefID", "options": "B"
             },
             "properties": [
               {
@@ -687,8 +685,7 @@
         "overrides": [
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 0
+              "id": "byFrameRefID", "options": "A"
             },
             "properties": [
               {
@@ -702,8 +699,7 @@
           },
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 1
+              "id": "byFrameRefID", "options": "B"
             },
             "properties": [
               {
@@ -717,8 +713,7 @@
           },
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 2
+              "id": "byFrameRefID", "options": "C"
             },
             "properties": [
               {
@@ -814,8 +809,7 @@
         "overrides": [
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 0
+              "id": "byFrameRefID", "options": "A"
             },
             "properties": [
               {
@@ -829,8 +823,7 @@
           },
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 1
+              "id": "byFrameRefID", "options": "B"
             },
             "properties": [
               {
@@ -844,8 +837,7 @@
           },
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 2
+              "id": "byFrameRefID", "options": "C"
             },
             "properties": [
               {
@@ -945,8 +937,7 @@
         "overrides": [
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 0
+              "id": "byFrameRefID", "options": "A"
             },
             "properties": [
               {
@@ -960,8 +951,7 @@
           },
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 1
+              "id": "byFrameRefID", "options": "B"
             },
             "properties": [
               {
@@ -1048,8 +1038,7 @@
         "overrides": [
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 0
+              "id": "byFrameRefID", "options": "A"
             },
             "properties": [
               {
@@ -1063,8 +1052,7 @@
           },
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 1
+              "id": "byFrameRefID", "options": "B"
             },
             "properties": [
               {
@@ -1231,8 +1219,7 @@
         "overrides": [
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 0
+              "id": "byFrameRefID", "options": "A"
             },
             "properties": [
               {
@@ -1246,8 +1233,7 @@
           },
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 1
+              "id": "byFrameRefID", "options": "B"
             },
             "properties": [
               {
@@ -1334,8 +1320,7 @@
         "overrides": [
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 0
+              "id": "byFrameRefID", "options": "A"
             },
             "properties": [
               {
@@ -1349,8 +1334,7 @@
           },
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 1
+              "id": "byFrameRefID", "options": "B"
             },
             "properties": [
               {
@@ -2326,8 +2310,7 @@
         "overrides": [
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 0
+              "id": "byFrameRefID", "options": "A"
             },
             "properties": [
               {
@@ -2341,8 +2324,7 @@
           },
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 1
+              "id": "byFrameRefID", "options": "B"
             },
             "properties": [
               {
@@ -2356,8 +2338,7 @@
           },
           {
             "matcher": {
-              "id": "bySeriesIndex",
-              "options": 2
+              "id": "byFrameRefID", "options": "C"
             },
             "properties": [
               {

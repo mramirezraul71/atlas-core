@@ -1,23 +1,28 @@
-# ATLAS — Arranca Prometheus + Atlas-Quant metrics
+# ATLAS - Arranca Prometheus + Grafana para Atlas Quant
 # Ejecutar desde C:\ATLAS_PUSH (no requiere Admin)
 #
-# Puertos:
-#   :9090  — metrics endpoint Python (prometheus_client)
-#   :9091  — Prometheus server UI + query API
-#   :3003  — Grafana local workspace
+# Topologia operativa:
+#   :8795  - Atlas Quant API con /metrics embebido
+#   :9090  - Prometheus UI + query API
+#   :3002  - Grafana workspace activo
 
-param()
+param(
+    [int]$QuantPort = 8795,
+    [int]$PrometheusPort = 9090,
+    [int]$GrafanaPort = 3002,
+    [switch]$SkipOpenBrowser
+)
+
 $ErrorActionPreference = "Stop"
-$Root    = "C:\ATLAS_PUSH"
+$Root = "C:\ATLAS_PUSH"
 $PromDir = "$Root\tools\prometheus"
 $PromExe = "$PromDir\prometheus.exe"
-$PromCfg = "$Root\docker\prometheus\prometheus.yml"
-$PromLocalCfg = "$PromDir\prometheus.local.yml"
+$PromCfg = "$PromDir\prometheus.atlas-local.yml"
 $PromVer = "2.51.2"
-$VenvPy  = "$Root\venv\Scripts\python.exe"
-$GrafanaPort = 3003
 $GrafanaUrl = "http://localhost:$GrafanaPort"
 $GrafanaCfg = "$Root\grafana\local\custom.ini"
+$HealthUrl = "http://127.0.0.1:$QuantPort/health"
+$MetricsUrl = "http://127.0.0.1:$QuantPort/metrics"
 
 Set-Location $Root
 
@@ -39,86 +44,101 @@ function Get-GrafanaHome {
     return $null
 }
 
-function Wait-GrafanaReady([string]$Url, [int]$Attempts = 20) {
+function Wait-HttpOk([string]$Url, [int]$Attempts = 20, [int]$DelaySec = 2) {
     for ($i = 0; $i -lt $Attempts; $i++) {
         try {
-            Invoke-WebRequest -Uri "$Url/api/health" -UseBasicParsing -TimeoutSec 3 | Out-Null
+            Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 3 | Out-Null
             return $true
         } catch {
-            Start-Sleep -Seconds 2
+            Start-Sleep -Seconds $DelaySec
         }
     }
     return $false
 }
 
-# ── [1] Descargar Prometheus si no existe ─────────────────────────
+function Test-Listening([int]$Port) {
+    return [bool](Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+}
+
+function Ensure-GrafanaConfig([string]$Path, [int]$Port) {
+    if (-not (Test-Path $Path)) {
+        New-Item -ItemType Directory -Path (Split-Path $Path) -Force | Out-Null
+        @"
+[server]
+http_port = $Port
+root_url = http://localhost:$Port
+
+[security]
+admin_user = admin
+admin_password = atlas2026
+
+[users]
+allow_sign_up = false
+
+[dashboards]
+default_home_dashboard_path = C:\ATLAS_PUSH\grafana\dashboards\atlas_pro_2026.json
+"@ | Set-Content -Path $Path -Encoding UTF8
+        return
+    }
+
+    $content = Get-Content $Path -Raw
+    $content = [regex]::Replace($content, '(?m)^http_port\s*=.*$', "http_port = $Port")
+    $content = [regex]::Replace($content, '(?m)^root_url\s*=.*$', "root_url = http://localhost:$Port")
+    Set-Content -Path $Path -Value $content -Encoding UTF8
+}
+
+Write-Host "[1/5] Verificando Atlas Quant en :$QuantPort ..." -ForegroundColor Cyan
+if (-not (Wait-HttpOk -Url $HealthUrl -Attempts 8 -DelaySec 2)) {
+    throw "Atlas Quant no responde en $HealthUrl"
+}
+if (-not (Wait-HttpOk -Url $MetricsUrl -Attempts 8 -DelaySec 2)) {
+    throw "Atlas Quant no expone /metrics en $MetricsUrl"
+}
+Write-Host "  Quant OK: $HealthUrl y $MetricsUrl" -ForegroundColor Gray
+
 if (-not (Test-Path $PromExe)) {
-    Write-Host "[1/4] Descargando Prometheus $PromVer..." -ForegroundColor Cyan
+    Write-Host "[2/5] Descargando Prometheus $PromVer..." -ForegroundColor Cyan
     $zip = "$env:TEMP\prometheus.zip"
     $url = "https://github.com/prometheus/prometheus/releases/download/v$PromVer/prometheus-$PromVer.windows-amd64.zip"
     Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
     New-Item -ItemType Directory -Path $PromDir -Force | Out-Null
     Expand-Archive -Path $zip -DestinationPath "$env:TEMP\prom_extract" -Force
     $src = Get-ChildItem "$env:TEMP\prom_extract" -Filter "prometheus-*" | Select-Object -First 1
-    Copy-Item "$($src.FullName)\prometheus.exe" $PromExe
+    Copy-Item "$($src.FullName)\prometheus.exe" $PromExe -Force
     Remove-Item $zip -Force
-    Write-Host "  OK: $PromExe" -ForegroundColor Gray
 } else {
-    Write-Host "[1/4] Prometheus ya existe." -ForegroundColor Gray
+    Write-Host "[2/5] Prometheus ya existe." -ForegroundColor Gray
 }
 
-# ── [2] Servidor de metricas Python en :9090 ─────────────────────
-Write-Host "[2/4] Iniciando servidor de metricas Atlas en :9090..." -ForegroundColor Cyan
-$port9090 = netstat -ano | Select-String "0.0.0.0:9090 " | Select-String "LISTENING"
-if ($port9090) {
-    Write-Host "  :9090 ya escucha." -ForegroundColor Gray
-} else {
-    $pyCode = "from atlas_code_quant.production.grafana_dashboard import GrafanaDashboard; import time; gd=GrafanaDashboard(); gd.start_metrics_server(9090);`nwhile True:`n    gd.sync_from_canonical(account_scope='paper')`n    time.sleep(2)"
-    Start-Process -FilePath $VenvPy `
-        -ArgumentList "-c", $pyCode `
-        -WorkingDirectory $Root `
-        -WindowStyle Minimized
-    Start-Sleep -Seconds 3
-    Write-Host "  Metricas disponibles en http://localhost:9090/metrics" -ForegroundColor Gray
-}
-
-# ── [3] Prometheus en :9091 ───────────────────────────────────────
-Write-Host "[3/4] Iniciando Prometheus en :9091..." -ForegroundColor Cyan
-$port9091 = netstat -ano | Select-String "0.0.0.0:9091 " | Select-String "LISTENING"
-if ($port9091) {
-    Write-Host "  :9091 ya escucha." -ForegroundColor Gray
-} else {
-    @"
+@"
 global:
-  scrape_interval: 2s
-  evaluation_interval: 2s
+  scrape_interval: 5s
+  evaluation_interval: 5s
 
 scrape_configs:
   - job_name: atlas-quant
+    scrape_interval: 5s
+    scrape_timeout: 4s
     static_configs:
       - targets:
-          - localhost:9090
+          - localhost:$QuantPort
     metrics_path: /metrics
-    scrape_timeout: 4s
-"@ | Set-Content -Path $PromLocalCfg -Encoding UTF8
+"@ | Set-Content -Path $PromCfg -Encoding UTF8
 
+Write-Host "[3/5] Verificando Prometheus en :$PrometheusPort ..." -ForegroundColor Cyan
+if (-not (Test-Listening -Port $PrometheusPort)) {
     Start-Process -FilePath $PromExe `
-        -ArgumentList "--config.file=$PromLocalCfg", "--web.listen-address=:9091", "--storage.tsdb.path=$PromDir\data", "--storage.tsdb.retention.time=7d" `
+        -ArgumentList "--config.file=$PromCfg", "--web.listen-address=:$PrometheusPort", "--storage.tsdb.path=$PromDir\data", "--storage.tsdb.retention.time=7d" `
         -WorkingDirectory $PromDir `
-        -WindowStyle Minimized
-    Start-Sleep -Seconds 3
-    Write-Host "  Prometheus en http://localhost:9091" -ForegroundColor Gray
+        -WindowStyle Minimized | Out-Null
 }
+if (-not (Wait-HttpOk -Url "http://127.0.0.1:$PrometheusPort/-/ready" -Attempts 15 -DelaySec 1)) {
+    throw "Prometheus no respondio en http://127.0.0.1:$PrometheusPort/-/ready"
+}
+Write-Host "  Prometheus OK en http://localhost:$PrometheusPort" -ForegroundColor Gray
 
-# ── [4] Grafana local en :3003 ─────────────────────────────────────
-Write-Host "[4/5] Iniciando Grafana local en :$GrafanaPort..." -ForegroundColor Cyan
-$portGrafana = netstat -ano | Select-String "0.0.0.0:$GrafanaPort " | Select-String "LISTENING"
-if ($portGrafana) {
-    Write-Host "  :$GrafanaPort ya escucha." -ForegroundColor Gray
-} else {
-    if (-not (Test-Path $GrafanaCfg)) {
-        throw "No se encontro la configuracion local de Grafana: $GrafanaCfg"
-    }
+Write-Host "[4/5] Verificando Grafana en :$GrafanaPort ..." -ForegroundColor Cyan
+if (-not (Test-Listening -Port $GrafanaPort)) {
     $grafanaHome = Get-GrafanaHome
     if (-not $grafanaHome) {
         throw "No se encontro grafana-server.exe. Instala Grafana antes de ejecutar este script."
@@ -126,43 +146,58 @@ if ($portGrafana) {
     New-Item -ItemType Directory -Path "$Root\grafana\local\data" -Force | Out-Null
     New-Item -ItemType Directory -Path "$Root\grafana\local\logs" -Force | Out-Null
     New-Item -ItemType Directory -Path "$Root\grafana\local\plugins" -Force | Out-Null
+    Ensure-GrafanaConfig -Path $GrafanaCfg -Port $GrafanaPort
     Start-Process -FilePath (Join-Path $grafanaHome "bin\grafana-server.exe") `
         -ArgumentList @("--config", $GrafanaCfg, "--homepath", $grafanaHome) `
         -WorkingDirectory $grafanaHome `
-        -WindowStyle Minimized
-    if (-not (Wait-GrafanaReady -Url $GrafanaUrl)) {
-        throw "Grafana local no respondio en $GrafanaUrl"
-    }
-    Write-Host "  Grafana local disponible en $GrafanaUrl" -ForegroundColor Gray
+        -WindowStyle Minimized | Out-Null
 }
+if (-not (Wait-HttpOk -Url "$GrafanaUrl/api/health" -Attempts 20 -DelaySec 2)) {
+    throw "Grafana no respondio en $GrafanaUrl"
+}
+Write-Host "  Grafana OK en $GrafanaUrl" -ForegroundColor Gray
 
-# ── [5] Configurar datasource + dashboards via API ────────────────
-Write-Host "[5/5] Configurando datasource e importando dashboards..." -ForegroundColor Cyan
-$creds   = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("admin:atlas2026"))
+Write-Host "[5/5] Configurando datasources e importando dashboards..." -ForegroundColor Cyan
+$creds = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("admin:atlas2026"))
 $headers = @{ "Authorization" = "Basic $creds"; "Content-Type" = "application/json" }
-$body    = '{"name":"atlas-prometheus","uid":"atlas-prom","type":"prometheus","url":"http://localhost:9091","access":"proxy","isDefault":true,"editable":true,"jsonData":{"httpMethod":"GET","timeInterval":"2s"}}'
 
-try {
-    Invoke-RestMethod -Uri "$GrafanaUrl/api/datasources" -Method POST -Headers $headers -Body $body | Out-Null
-    Write-Host "  Datasource creado OK." -ForegroundColor Green
-} catch {
+function Save-GrafanaDatasource([string]$Name, [string]$Uid, [int]$Id) {
+    $payload = @{
+        id        = $Id
+        uid       = $Uid
+        orgId     = 1
+        name      = $Name
+        type      = "prometheus"
+        access    = "proxy"
+        url       = "http://localhost:$PrometheusPort"
+        isDefault = ($Uid -eq "atlas-prom")
+        editable  = $true
+        basicAuth = $false
+        jsonData  = @{
+            httpMethod   = "GET"
+            timeInterval = "2s"
+        }
+    } | ConvertTo-Json -Depth 6 -Compress
+
     try {
-        $ds = Invoke-RestMethod -Uri "$GrafanaUrl/api/datasources/name/atlas-prometheus" -Headers $headers
-        Invoke-RestMethod -Uri "$GrafanaUrl/api/datasources/$($ds.id)" -Method PUT -Headers $headers -Body $body | Out-Null
-        Write-Host "  Datasource actualizado OK." -ForegroundColor Green
+        Invoke-RestMethod -Uri "$GrafanaUrl/api/datasources/$Id" -Method PUT -Headers $headers -Body $payload | Out-Null
     } catch {
-        Write-Host "  AVISO: configura el datasource manualmente en Grafana > Connections" -ForegroundColor Yellow
-        Write-Host "  URL: http://localhost:9091" -ForegroundColor Yellow
+        try {
+            Invoke-RestMethod -Uri "$GrafanaUrl/api/datasources" -Method POST -Headers $headers -Body $payload | Out-Null
+        } catch {
+            Write-Host "  AVISO: no se pudo guardar datasource $Name ($Uid)" -ForegroundColor Yellow
+        }
     }
 }
+
+Save-GrafanaDatasource -Name "atlas-prometheus" -Uid "atlas-prom" -Id 1
+Save-GrafanaDatasource -Name "atlas-prometheus-local" -Uid "atlas-prom-local" -Id 4
 
 function Import-GrafanaDashboard([string]$jsonPath) {
     if (-not (Test-Path $jsonPath)) {
-        Write-Host "  AVISO: dashboard no encontrado: $jsonPath" -ForegroundColor Yellow
         return
     }
     $pyCode = @"
-import base64
 import json
 import pathlib
 import sys
@@ -191,51 +226,32 @@ req = urllib.request.Request(
     },
 )
 
-try:
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        print(resp.read().decode("utf-8", errors="ignore"))
-except urllib.error.HTTPError as exc:
-    body = exc.read().decode("utf-8", errors="ignore")
-    raise SystemExit(f"HTTP {exc.code}: {body}")
+with urllib.request.urlopen(req, timeout=20) as resp:
+    print(resp.read().decode("utf-8", errors="ignore"))
 "@
-    $authHeader = "Basic $creds"
-    $result = $pyCode | & $VenvPy - $jsonPath $GrafanaUrl $authHeader 2>&1
+    $result = $pyCode | & "$Root\venv\Scripts\python.exe" - $jsonPath $GrafanaUrl ("Basic $creds") 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw ($result | Out-String).Trim()
     }
 }
 
-try {
-    Import-GrafanaDashboard "$Root\grafana\dashboards\atlas.json"
-    Import-GrafanaDashboard "$Root\grafana\dashboards\atlas_pro_2026.json"
-    Write-Host "  Dashboards importados/actualizados OK." -ForegroundColor Green
-} catch {
-    Write-Host "  AVISO: no se pudieron importar dashboards actuales." -ForegroundColor Yellow
-    Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Yellow
-}
-
-# ── Resumen ───────────────────────────────────────────────────────
-Write-Host "[6/6] Verificando provisioning y alerting de Grafana..." -ForegroundColor Cyan
-$GrafanaCheckScript = "$Root\scripts\reload_grafana_provisioning.ps1"
-if (Test-Path $GrafanaCheckScript) {
-    try {
-        & $GrafanaCheckScript -GrafanaUrl $GrafanaUrl | Out-Null
-        Write-Host "  Provisioning verificado OK." -ForegroundColor Green
-    } catch {
-        Write-Host "  AVISO: verificacion de provisioning con incidencias." -ForegroundColor Yellow
-        Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Yellow
-    }
-} else {
-    Write-Host "  AVISO: script de verificacion no encontrado: $GrafanaCheckScript" -ForegroundColor Yellow
-}
+Import-GrafanaDashboard "$Root\grafana\dashboards\atlas.json"
+Import-GrafanaDashboard "$Root\grafana\dashboards\atlas_pro_2026.json"
+Import-GrafanaDashboard "$Root\grafana\dashboards\atlas-options-health.json"
+Import-GrafanaDashboard "$Root\grafana\dashboards\atlas-options-signals-intent.json"
+Import-GrafanaDashboard "$Root\grafana\dashboards\atlas-options-paper-performance.json"
 
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Green
 Write-Host "  ATLAS Monitoring Stack LISTO" -ForegroundColor Green
 Write-Host "============================================" -ForegroundColor Green
-Write-Host "  Metrics Python : http://localhost:9090/metrics"
-Write-Host "  Prometheus UI  : http://localhost:9091"
+Write-Host "  Quant API      : http://localhost:$QuantPort"
+Write-Host "  Quant metrics  : http://localhost:$QuantPort/metrics"
+Write-Host "  Prometheus UI  : http://localhost:$PrometheusPort"
 Write-Host "  Grafana        : $GrafanaUrl"
-Write-Host "  Login/API      : admin / atlas2026 (acceso visual anonimo activo)"
+Write-Host "  Login/API      : admin / atlas2026"
 Write-Host "============================================" -ForegroundColor Green
-Start-Process $GrafanaUrl
+
+if (-not $SkipOpenBrowser) {
+    Start-Process $GrafanaUrl
+}

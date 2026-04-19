@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import math
+import os
 import time
 import logging
 import sys
@@ -51,7 +52,7 @@ for _path in (str(_REPO_ROOT), str(_QUANT_ROOT)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from fastapi import FastAPI, HTTPException, Header, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Header, WebSocket, WebSocketDisconnect, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -109,6 +110,15 @@ from selector.strategy_selector import StrategySelectorService
 # ── OptionStrat ───────────────────────────────────────────────────────────────
 from api.routes.options import router as options_router
 from api.routers.xgboost_router import router as xgboost_router
+from production.grafana_dashboard import GrafanaDashboard
+
+try:
+    from prometheus_client import REGISTRY, generate_latest
+    _PROM_EXPORT_OK = True
+except Exception:
+    REGISTRY = None
+    generate_latest = None
+    _PROM_EXPORT_OK = False
 
 # ── Fase 3: alertas, visión, retraining ──────────────────────────────────────
 from operations.alert_dispatcher import get_alert_dispatcher
@@ -136,6 +146,7 @@ _JOURNAL_PRO = JournalProService(_JOURNAL)
 _SCANNER = OpportunityScannerService(_ADAPTIVE_LEARNING)
 _VISION_CALIBRATION = VisionCalibrationService()
 _SELECTOR = StrategySelectorService(_STRATEGY_TRACKER, _ADAPTIVE_LEARNING)
+_GRAFANA_METRICS = GrafanaDashboard() if _PROM_EXPORT_OK else None
 _OPERATION_CENTER = OperationCenter(
     tracker=_STRATEGY_TRACKER,
     journal=_JOURNAL_PRO,
@@ -190,6 +201,17 @@ async def dashboard_ui():
     raise HTTPException(status_code=404, detail="Dashboard not found")
 
 
+@app.get("/metrics", include_in_schema=False)
+async def prometheus_metrics() -> Response:
+    """Expone el registro Prometheus del proceso Quant en el propio puerto 8795."""
+    if not _PROM_EXPORT_OK or REGISTRY is None or generate_latest is None:
+        raise HTTPException(status_code=503, detail="prometheus_export_unavailable")
+    return Response(
+        content=generate_latest(REGISTRY),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
+
+
 @app.get("/options/ui", include_in_schema=False)
 async def options_ui():
     """OptionStrat UI — constructor y analizador de estrategias de opciones"""
@@ -202,6 +224,7 @@ app.include_router(options_router)
 app.include_router(xgboost_router)
 
 _startup_services_task: asyncio.Task | None = None
+_metrics_sync_task: asyncio.Task | None = None
 _STARTUP_BACKGROUND_STATE: dict[str, object] = {
     "running": False,
     "stage": "idle",
@@ -225,11 +248,53 @@ def _mark_startup_background(stage: str, *, error: str | None = None) -> None:
         _STARTUP_BACKGROUND_STATE["last_error"] = error
 
 
+def _quant_prometheus_enabled() -> bool:
+    raw = str(os.environ.get("QUANT_PROMETHEUS_ENABLED", "true")).strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+async def _run_quant_metrics_loop() -> None:
+    if _GRAFANA_METRICS is None:
+        logger.info("Quant Prometheus bridge omitido: GrafanaDashboard/prometheus_client no disponible")
+        return
+
+    interval_raw = str(os.environ.get("QUANT_PROMETHEUS_SYNC_INTERVAL_SEC", "5")).strip()
+    try:
+        interval_sec = max(2.0, float(interval_raw))
+    except Exception:
+        interval_sec = 5.0
+
+    try:
+        _GRAFANA_METRICS.enable_embedded_metrics()
+        logger.info("Quant Prometheus bridge activo en /metrics (interval=%ss)", interval_sec)
+    except Exception:
+        logger.exception("No se pudo habilitar Quant Prometheus bridge")
+        return
+
+    while True:
+        try:
+            await asyncio.to_thread(
+                _GRAFANA_METRICS.sync_from_canonical,
+                account_scope="paper",
+                internal_portfolio=_portfolio,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug("Quant Prometheus bridge sync skipped", exc_info=True)
+        await asyncio.sleep(interval_sec)
+
+
 @app.on_event("startup")
 async def preload_tradier_sessions() -> None:
     _JOURNAL.init_db()
     _ensure_core_runtime_bootstrap()
-    global _startup_services_task
+    global _startup_services_task, _metrics_sync_task
+    if _quant_prometheus_enabled() and (_metrics_sync_task is None or _metrics_sync_task.done()):
+        _metrics_sync_task = asyncio.create_task(
+            _run_quant_metrics_loop(),
+            name="quant-prometheus-sync",
+        )
     if _startup_services_task and not _startup_services_task.done():
         return
     _startup_services_task = asyncio.create_task(
@@ -461,7 +526,14 @@ async def _start_background_services() -> None:
 
 @app.on_event("shutdown")
 async def stop_background_services() -> None:
-    global _auto_cycle_task, _startup_services_task
+    global _auto_cycle_task, _startup_services_task, _metrics_sync_task
+    if _metrics_sync_task and not _metrics_sync_task.done():
+        _metrics_sync_task.cancel()
+        try:
+            await _metrics_sync_task
+        except asyncio.CancelledError:
+            pass
+        _metrics_sync_task = None
     if _startup_services_task and not _startup_services_task.done():
         _startup_services_task.cancel()
         try:

@@ -670,6 +670,20 @@ class GrafanaDashboard:
             logger.error("Error iniciando servidor Prometheus: %s", exc)
             return False
 
+    def enable_embedded_metrics(self) -> bool:
+        """Habilita actualización de métricas sin levantar un HTTP server dedicado.
+
+        Se usa cuando otro servidor ASGI/WSGI expone ``/metrics`` con el registro
+        global de ``prometheus_client`` y solo necesitamos que este objeto deje de
+        bloquear ``update()`` / ``sync_from_canonical()`` por el flag interno
+        ``_started``.
+        """
+        if not _PROM_OK:
+            logger.warning("prometheus_client no disponible")
+            return False
+        self._started = True
+        return True
+
     # ── Actualización de métricas ─────────────────────────────────────────────
 
     def update(
@@ -726,6 +740,17 @@ class GrafanaDashboard:
         )
         self._apply_canonical_snapshot(snapshot)
         self.sync_from_scorecard(root_path=Path.cwd())
+        try:
+            from atlas_code_quant.options.options_engine_metrics import (
+                default_journal_path,
+                refresh_journal_from_disk,
+                tick_pipeline_ages,
+            )
+
+            refresh_journal_from_disk(default_journal_path())
+            tick_pipeline_ages()
+        except Exception:
+            logger.debug("options_engine_metrics sync skipped", exc_info=True)
         return snapshot
 
     def _apply_canonical_snapshot(self, snapshot: dict) -> None:
