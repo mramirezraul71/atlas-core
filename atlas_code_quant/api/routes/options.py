@@ -15,10 +15,13 @@ POST /options/briefing             — Briefing de sesión Fase A (JSON, paper/t
 GET  /options/close-candidates     — Reporte paper de candidatos a cierre (sin órdenes)
 POST /options/intent               — Intent operativo pre-selector (paper/test)
 POST /options/paper-session-plan   — Pipeline paper: briefing + intent + plan de entrada (sin órdenes)
+GET  /options/paper-performance    — KPIs paper performance desde OptionsPaperJournal (interno)
 """
 from __future__ import annotations
 
 import logging
+import os
+import threading
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -28,6 +31,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from atlas_code_quant.config.settings import settings
 from atlas_code_quant.monitoring.strategy_tracker import StrategyTracker
+from atlas_code_quant.options.options_engine_metrics import default_journal_path, record_options_error
+from atlas_code_quant.options.paper_journal_stats import OptionsPaperJournalStats
 
 try:
     from options.strategy_engine import (
@@ -224,6 +229,57 @@ def _sync_optionstrat_from_broker() -> Dict[str, int]:
 
 def _mirror_only_enabled() -> bool:
     return bool(settings.optionstrat_broker_mirror_only)
+
+
+def _resolve_paper_journal_path() -> Path:
+    raw = str(os.environ.get("QUANT_OPTIONS_RUNTIME_JOURNAL_PATH", "")).strip()
+    if raw:
+        return Path(raw)
+    return default_journal_path()
+
+
+_PAPER_PERF_CACHE_TTL_SEC = 10.0
+_paper_perf_cache_lock = threading.Lock()
+_paper_perf_cache_payload: dict | None = None
+_paper_perf_cache_expires_at: float = 0.0
+
+
+def _paper_perf_cache_ttl_seconds() -> float:
+    raw = str(os.environ.get("QUANT_OPTIONS_PERF_CACHE_TTL_SEC", "")).strip()
+    if not raw:
+        return _PAPER_PERF_CACHE_TTL_SEC
+    try:
+        ttl = float(raw)
+    except Exception:
+        return _PAPER_PERF_CACHE_TTL_SEC
+    return min(15.0, max(5.0, ttl))
+
+
+def get_paper_performance_snapshot() -> dict:
+    """Snapshot interno paper-only para hub/UI/dashboards internos."""
+    global _paper_perf_cache_payload, _paper_perf_cache_expires_at
+    now = time.time()
+    ttl = _paper_perf_cache_ttl_seconds()
+    with _paper_perf_cache_lock:
+        if _paper_perf_cache_payload is not None and now < _paper_perf_cache_expires_at:
+            cached = dict(_paper_perf_cache_payload)
+            cached["cache_hit"] = True
+            cached["cache_ttl_seconds"] = ttl
+            logger.debug("paper-performance cache hit")
+            return cached
+
+    journal_path = _resolve_paper_journal_path()
+    stats = OptionsPaperJournalStats.load_from_file(journal_path)
+    payload = stats.to_api_dict()
+    payload["journal_path"] = str(journal_path)
+    payload["cache_hit"] = False
+    payload["cache_ttl_seconds"] = ttl
+
+    with _paper_perf_cache_lock:
+        _paper_perf_cache_payload = dict(payload)
+        _paper_perf_cache_expires_at = now + ttl
+    logger.debug("paper-performance cache refresh")
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -568,13 +624,30 @@ async def paper_session_plan_endpoint(req: PaperSessionPlanRequest):
     except Exception as exc:
         logger.exception("paper_session_plan error")
         try:
-            from atlas_code_quant.options.options_engine_metrics import record_options_error
-
             record_options_error("paper_session_plan_api")
         except Exception:
             pass
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"ok": True, "data": payload}
+
+
+@router.get("/paper-performance")
+async def options_paper_performance():
+    """Endpoint interno Paper Fase 0: KPIs de performance desde OptionsPaperJournal."""
+    try:
+        return get_paper_performance_snapshot()
+    except Exception as exc:
+        logger.exception("options_paper_performance error")
+        try:
+            record_options_error("paper_performance_endpoint")
+        except Exception:
+            pass
+        return {
+            "ok": False,
+            "error": "paper_performance_unavailable",
+            "message": str(exc),
+            "generated_at_utc": "",
+        }
 
 
 @router.get("/iv-rank")
