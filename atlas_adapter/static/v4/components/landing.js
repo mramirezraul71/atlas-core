@@ -82,6 +82,112 @@ export function render(container) {
           50%       { opacity: .6; transform: translateY(-50%) scale(1.15); }
         }
         .search-container { position: relative; }
+        .landing-options-card {
+          margin: 20px auto 0;
+          width: min(980px, 100%);
+          border: 1px solid rgba(0, 212, 170, 0.18);
+          background: linear-gradient(180deg, rgba(8,15,22,0.95), rgba(10,18,27,0.92));
+          border-radius: 18px;
+          padding: 16px 18px;
+          box-shadow: 0 18px 48px rgba(0,0,0,0.24);
+        }
+        .landing-options-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 12px;
+          flex-wrap: wrap;
+        }
+        .landing-options-title { font-size: 18px; font-weight: 700; color: #dcefff; }
+        .landing-options-sub { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+        .landing-options-badge {
+          display: inline-flex;
+          align-items: center;
+          padding: 6px 11px;
+          border-radius: 999px;
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: .06em;
+          text-transform: uppercase;
+          border: 1px solid transparent;
+        }
+        .landing-options-badge.go { color: #7ee787; background: rgba(46,160,67,.16); border-color: rgba(46,160,67,.35); }
+        .landing-options-badge.no-go { color: #ff7b72; background: rgba(248,81,73,.16); border-color: rgba(248,81,73,.35); }
+        .landing-options-badge.degraded { color: #f2cc60; background: rgba(210,153,34,.16); border-color: rgba(210,153,34,.35); }
+        .landing-options-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+          gap: 10px;
+          margin-bottom: 12px;
+        }
+        .landing-options-stat {
+          border: 1px solid rgba(82, 97, 121, 0.28);
+          border-radius: 12px;
+          background: rgba(12, 20, 29, 0.86);
+          padding: 10px 12px;
+        }
+        .landing-options-stat span {
+          display: block;
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: .05em;
+          color: var(--text-muted);
+          margin-bottom: 6px;
+        }
+        .landing-options-stat strong { font-size: 16px; color: #f6fbff; }
+        .landing-options-note {
+          border: 1px solid rgba(82, 97, 121, 0.22);
+          background: rgba(12, 20, 29, 0.9);
+          color: #d0dae6;
+          border-radius: 12px;
+          padding: 10px 12px;
+          font-size: 13px;
+          margin-bottom: 12px;
+        }
+        .landing-options-note.warn {
+          color: #f2cc60;
+          border-color: rgba(210,153,34,.35);
+          background: rgba(210,153,34,.08);
+        }
+        .landing-options-meta {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: var(--text-muted);
+          font-size: 12px;
+          margin: -2px 0 12px;
+        }
+        .landing-options-dot {
+          width: 9px;
+          height: 9px;
+          border-radius: 50%;
+          background: #f2cc60;
+          box-shadow: 0 0 0 2px rgba(255,255,255,.03);
+          flex: 0 0 auto;
+        }
+        .landing-options-dot.go { background: #7ee787; }
+        .landing-options-dot.warm,
+        .landing-options-dot.degraded { background: #f2cc60; }
+        .landing-options-dot.stale,
+        .landing-options-dot.no-go { background: #ff7b72; }
+        .landing-options-links {
+          display: flex;
+          gap: 10px;
+          flex-wrap: wrap;
+        }
+        .landing-options-links a {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 8px 12px;
+          border-radius: 10px;
+          text-decoration: none;
+          border: 1px solid rgba(88,166,255,.22);
+          background: rgba(88,166,255,.06);
+          color: #8bc2ff;
+          font-size: 13px;
+        }
       </style>
 
       <div class="quick-actions">
@@ -104,6 +210,35 @@ export function render(container) {
         <div class="quick-chip" data-action="live-diagnostic">${SVG.health} Diagnostico Live</div>
         <div class="quick-chip" data-action="atlas-nexus">â¬¡ Atlas Nexus</div>
         <div class="quick-chip" data-action="robot-3d">ðŸ¤– Robot 3D</div>
+      </div>
+
+      <div class="landing-options-card" id="landing-options-card">
+        <div class="landing-options-head">
+          <div>
+            <div class="landing-options-title">Options Engine</div>
+            <div class="landing-options-sub" id="landing-options-sub">paper_only · pending</div>
+          </div>
+          <span class="landing-options-badge degraded" id="landing-options-badge">Cargando</span>
+        </div>
+        <div class="landing-options-grid" id="landing-options-grid">
+          <div class="landing-options-stat"><span>IV Rank</span><strong>pending</strong></div>
+          <div class="landing-options-stat"><span>Journal hoy</span><strong>pending</strong></div>
+          <div class="landing-options-stat"><span>Sesiones</span><strong>pending</strong></div>
+          <div class="landing-options-stat"><span>Cerrados hoy</span><strong>pending</strong></div>
+          <div class="landing-options-stat"><span>Meta</span><strong>pending</strong></div>
+          <div class="landing-options-stat"><span>WR / PF</span><strong>pending</strong></div>
+        </div>
+        <div class="landing-options-note" id="landing-options-note">Cargando estado operativo...</div>
+        <div class="landing-options-meta" id="landing-options-meta">
+          <span class="landing-options-dot degraded" id="landing-options-dot"></span>
+          <span id="landing-options-refresh-text">Esperando primer snapshot...</span>
+        </div>
+        <div class="landing-options-links">
+          <a href="#" id="landing-options-health" target="_blank" rel="noopener">Health</a>
+          <a href="#" id="landing-options-signals" target="_blank" rel="noopener">Signals</a>
+          <a href="#" id="landing-options-performance" target="_blank" rel="noopener">Performance</a>
+          <a href="/quant-ui" id="landing-options-ui" target="_blank" rel="noopener">Options UI</a>
+        </div>
       </div>
 
       <div class="apps-grid">
@@ -354,7 +489,149 @@ export function render(container) {
     if (el) el.textContent = `Model: ${m || '--'}`;
   });
 
-  return () => { unsubHealth(); unsubModel(); };
+  function optionsStatusClass(status) {
+    if (status === 'GO') return 'go';
+    if (status === 'NO_GO' || status === 'NO-GO') return 'no-go';
+    return 'degraded';
+  }
+
+  function safeMetric(value, formatter) {
+    if (value === null || value === undefined || value === '' || Number.isNaN(value)) return 'pending';
+    return formatter ? formatter(value) : String(value);
+  }
+
+  function deriveGrafanaUrl(seed, uid, slug) {
+    if (!seed) return '#';
+    try {
+      const u = new URL(seed, location.origin);
+      return `${u.origin}/d/${uid}/${slug}`;
+    } catch {
+      return '#';
+    }
+  }
+
+  function formatRefreshTime(isoValue) {
+    if (!isoValue) return 'Last refresh pending';
+    const d = new Date(isoValue);
+    if (Number.isNaN(d.getTime())) return 'Last refresh pending';
+    return `Last refresh ${d.toLocaleTimeString([], { hour12: false })}`;
+  }
+
+  function journalFreshnessState(ageSeconds) {
+    if (typeof ageSeconds !== 'number' || Number.isNaN(ageSeconds)) {
+      return { label: 'Journal pending', dot: 'degraded' };
+    }
+    if (ageSeconds <= 300) return { label: 'Journal fresh', dot: 'go' };
+    if (ageSeconds <= 900) return { label: 'Journal warm', dot: 'warm' };
+    return { label: 'Journal stale', dot: 'stale' };
+  }
+
+  async function loadOptionsStatus() {
+    const badgeEl = container.querySelector('#landing-options-badge');
+    const subEl = container.querySelector('#landing-options-sub');
+    const gridEl = container.querySelector('#landing-options-grid');
+    const noteEl = container.querySelector('#landing-options-note');
+    const dotEl = container.querySelector('#landing-options-dot');
+    const refreshTextEl = container.querySelector('#landing-options-refresh-text');
+    const healthEl = container.querySelector('#landing-options-health');
+    const signalsEl = container.querySelector('#landing-options-signals');
+    const perfEl = container.querySelector('#landing-options-performance');
+    const uiEl = container.querySelector('#landing-options-ui');
+    if (!badgeEl || !subEl || !gridEl || !noteEl || !dotEl || !refreshTextEl) return false;
+    try {
+      const r = await fetch('/api/options-engine-status');
+      const d = await r.json();
+      if (!r.ok || d.ok === false) throw new Error(d.error || `HTTP ${r.status}`);
+
+      const status = d.status || d.go_nogo_label || 'DEGRADED';
+      const loopMode = d.loop_mode || 'metrics unavailable';
+      const automationMode = d.automation_mode || 'paper_only';
+      const closedToday = d.paper_trades_closed_today ?? d.trades_closed_today ?? 0;
+      const completedTotal = d.trades_completed_total ?? closedToday;
+      const target = d.paper_trades_target ?? null;
+      const stale = typeof d.journal_last_write_age_seconds === 'number' && d.journal_last_write_age_seconds > 300;
+      const freshness = journalFreshnessState(d.journal_last_write_age_seconds);
+      const wrpf = (d.wr_basic != null || d.pf_basic != null)
+        ? `WR ${safeMetric(d.wr_basic, v => Number(v).toFixed(2))} · PF ${safeMetric(d.pf_basic, v => Number(v).toFixed(2))}`
+        : 'pending';
+
+      badgeEl.className = `landing-options-badge ${optionsStatusClass(status)}`;
+      badgeEl.textContent = String(status).replace(/_/g, '-');
+      subEl.textContent = `${automationMode} · ${loopMode}`;
+      gridEl.innerHTML = [
+        ['IV Rank', safeMetric(d.iv_rank_current, v => Number(v).toFixed(2))],
+        ['Journal hoy', safeMetric(d.journal_events_today, v => parseInt(v, 10))],
+        ['Sesiones', safeMetric(d.journal_sessions_today, v => parseInt(v, 10))],
+        ['Cerrados hoy', safeMetric(closedToday, v => parseInt(v, 10))],
+        ['Meta', target != null ? `${completedTotal}/${target}` : String(completedTotal)],
+        ['WR / PF', wrpf],
+      ].map(([label, value]) => `
+        <div class="landing-options-stat">
+          <span>${label}</span>
+          <strong>${value}</strong>
+        </div>
+      `).join('');
+
+      noteEl.className = `landing-options-note${stale ? ' warn' : ''}`;
+      noteEl.textContent = stale
+        ? `${d.notes || 'sin datos aun'} · Journal stale`
+        : (d.notes || 'sin datos aun');
+
+      if (healthEl) healthEl.href = d.grafana_health_dashboard_url || '#';
+      if (signalsEl) signalsEl.href = d.grafana_signals_dashboard_url || deriveGrafanaUrl(d.grafana_health_dashboard_url, 'atlas-options-signals-intent', 'options-engine-signals-intent');
+      if (perfEl) perfEl.href = d.grafana_paper_performance_dashboard_url || deriveGrafanaUrl(d.grafana_health_dashboard_url, 'atlas-options-paper-performance', 'options-engine-paper-performance');
+      dotEl.className = `landing-options-dot ${freshness.dot}`;
+      refreshTextEl.textContent = `${formatRefreshTime(d.last_updated_utc)} Â· ${freshness.label}`;
+      if (uiEl) uiEl.href = d.options_ui_url || '/quant-ui';
+      container.__optionsLastOk = true;
+      return true;
+    } catch (err) {
+      if (container.__optionsLastOk) {
+        noteEl.className = 'landing-options-note warn';
+        dotEl.className = 'landing-options-dot warm';
+        refreshTextEl.textContent = `${refreshTextEl.textContent || 'Last refresh pending'} Â· refresh delayed`;
+        noteEl.textContent = `${noteEl.textContent || 'Estado previo conservado'} Â· metrics refresh delayed`;
+        return false;
+      }
+      badgeEl.className = 'landing-options-badge degraded';
+      badgeEl.textContent = 'DEGRADED';
+      subEl.textContent = 'paper_only · metrics unavailable';
+      gridEl.innerHTML = [
+        ['IV Rank', 'pending'],
+        ['Journal hoy', 'pending'],
+        ['Sesiones', 'pending'],
+        ['Cerrados hoy', 'pending'],
+        ['Meta', 'pending'],
+        ['WR / PF', 'pending'],
+      ].map(([label, value]) => `
+        <div class="landing-options-stat">
+          <span>${label}</span>
+          <strong>${value}</strong>
+        </div>
+      `).join('');
+      noteEl.className = 'landing-options-note warn';
+      dotEl.className = 'landing-options-dot warm';
+      refreshTextEl.textContent = `${refreshTextEl.textContent || 'Last refresh pending'} · refresh delayed`;
+      noteEl.textContent = `metrics unavailable · ${String(err)}`;
+    }
+  }
+
+  loadOptionsStatus().then(ok => { if (ok) container.__optionsLastOk = true; });
+  if (container.__optionsRefreshTimer) clearInterval(container.__optionsRefreshTimer);
+  container.__optionsRefreshTimer = window.setInterval(() => {
+    loadOptionsStatus().then(ok => {
+      if (ok) container.__optionsLastOk = true;
+    });
+  }, 30000);
+
+  return () => {
+    unsubHealth();
+    unsubModel();
+    if (container.__optionsRefreshTimer) {
+      clearInterval(container.__optionsRefreshTimer);
+      container.__optionsRefreshTimer = null;
+    }
+  };
 }
 
 window.AtlasLanding = { render };
