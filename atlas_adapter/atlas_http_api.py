@@ -17229,6 +17229,12 @@ async def quant_ui_root():
 async def options_engine_status():
     """Snapshot ligero del Options Engine paper para el hub 8791."""
     try:
+        repo_root = str(BASE_DIR)
+        quant_root = str(BASE_DIR / "atlas_code_quant")
+        if repo_root not in sys.path:
+            sys.path.insert(0, repo_root)
+        if quant_root not in sys.path:
+            sys.path.insert(0, quant_root)
         from atlas_code_quant.options.options_engine_metrics import get_ui_snapshot
 
         return get_ui_snapshot()
