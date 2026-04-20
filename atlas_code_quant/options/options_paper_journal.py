@@ -186,6 +186,9 @@ class OptionsPaperJournal:
             "journal_version": _JOURNAL_VERSION,
             "notes": list(notes) if notes else [],
             "structure_type": None,
+            "strategy_type": None,
+            "gamma_regime": None,
+            "dte_mode": None,
             "dte_at_entry": None,
             "legs": [],
             "entry_credit": None,
@@ -300,6 +303,7 @@ class OptionsPaperJournal:
         rec["structure_type"] = exec_row.get("structure") or planned_row.get("structure") or planned_row.get(
             "recommended_strategy"
         )
+        rec["strategy_type"] = rec["structure_type"]
         rec["dte_at_entry"] = _to_int_or_none(exec_row.get("dte") if exec_row.get("dte") is not None else planned_row.get("dte"))
         rec["legs"] = _legs_from_entry_payload(exec_row) or _legs_from_entry_payload(planned_row)
         rec["entry_credit"] = _to_float_or_none(
@@ -370,6 +374,9 @@ class OptionsPaperJournal:
         autoclose_applied: bool = False,
         close_type: str | None = None,
         close_reason: str | None = None,
+        strategy_type: str | None = None,
+        gamma_regime: str | None = None,
+        dte_mode: str | None = None,
         pnl_pct: float | None = None,
         notes: list[str] | None = None,
     ) -> None:
@@ -391,6 +398,15 @@ class OptionsPaperJournal:
         rec["close_debit"] = _to_float_or_none(close_row.get("close_debit") if close_row.get("close_debit") is not None else close_row.get("debit"))
         rec["close_credit"] = _to_float_or_none(close_row.get("close_credit") if close_row.get("close_credit") is not None else close_row.get("credit"))
         rec["close_mid"] = _to_float_or_none(close_row.get("close_mid") if close_row.get("close_mid") is not None else close_row.get("exit_mid"))
+        rec["strategy_type"] = (
+            strategy_type
+            or close_row.get("strategy_type")
+            or close_row.get("structure_type")
+            or rec.get("structure_type")
+        )
+        rec["structure_type"] = rec["strategy_type"] or rec.get("structure_type")
+        rec["gamma_regime"] = gamma_regime or close_row.get("gamma_regime")
+        rec["dte_mode"] = dte_mode or close_row.get("dte_mode")
         rec["pnl_usd"] = _to_float_or_none(pnl_realized if pnl_realized is not None else close_row.get("pnl_usd"))
         rec["pnl_pct"] = _to_float_or_none(pnl_pct if pnl_pct is not None else close_row.get("pnl_pct"))
         rec["payload"] = {

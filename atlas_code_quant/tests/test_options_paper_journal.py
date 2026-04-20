@@ -123,6 +123,9 @@ class TestOptionsPaperJournal:
             close_timestamp=ts,
             executed_close={"avg_price": 0.5},
             pnl_realized=120.5,
+            strategy_type="iron_condor",
+            gamma_regime="long_gamma",
+            dte_mode="8to21",
             notes=["paper_close"],
         )
         rows = _read_jsonl(p)
@@ -134,6 +137,10 @@ class TestOptionsPaperJournal:
         assert rows[1]["status"] == "closed"
         assert rows[1]["pnl_usd"] == pytest.approx(120.5)
         assert rows[1]["close_type"] == "full"
+        assert rows[1]["strategy_type"] == "iron_condor"
+        assert rows[1]["structure_type"] == "iron_condor"
+        assert rows[1]["gamma_regime"] == "long_gamma"
+        assert rows[1]["dte_mode"] == "8to21"
         assert rows[1]["journal_version"] == "1.0"
 
     def test_all_lines_valid_jsonl(self, tmp_path: Path):
