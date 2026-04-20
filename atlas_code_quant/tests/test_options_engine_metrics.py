@@ -36,9 +36,12 @@ def test_get_ui_snapshot_ok_keys():
     assert "grafana_signals_intent_dashboard_url" in snap
     assert "grafana_paper_performance_dashboard_url" in snap
     assert "iv_rank_quality_score" in snap
+    assert "iv_rank_quality_tier" in snap
     assert "options_self_audit" in snap
     assert "sentinel_snapshot" in snap
     assert "paper_performance_summary" in snap
+    assert "options_engine" in snap
+    assert "status" in (snap.get("options_engine") or {})
 
 
 def test_get_ui_snapshot_sentinel_matches_get_last_sentinel_snapshot():
@@ -77,6 +80,10 @@ def test_get_ui_snapshot_win_rate_matches_paper_performance(tmp_path: Path, monk
     assert snap.get("win_rate_approx") == pytest.approx(float(perf["win_rate_ratio"]))
     assert snap.get("paper_performance_summary") is not None
     assert snap["paper_performance_summary"]["win_rate_ratio"] == pytest.approx(float(perf["win_rate_ratio"]))
+    oe = snap.get("options_engine") or {}
+    assert oe.get("trades_target") == 100
+    assert "status" in oe
+    assert "trades_closed_today" in oe
 
 
 def test_iv_rank_quality_ok_no_flags():
@@ -116,11 +123,13 @@ def test_iv_rank_quality_iv_source_error():
 
 def test_record_session_plan_sets_last_iv_score():
     pytest.importorskip("prometheus_client")
+    from prometheus_client import REGISTRY
+
     plan = {
         "automation_mode": "paper_only",
         "symbol": "SPX",
         "entry_allowed": True,
-        "briefing": {"iv_rank_payload_quality": "ok", "quality_flags": [], "iv_source": {"quality": "ok"}},
+        "briefing": {"iv_rank_payload_quality": "ok", "quality_flags": [], "iv_source": {"quality": "ok"}, "iv_rank": 42.0},
         "intent": {"allow_entry": True, "force_no_trade": False},
         "entry_plan": {"entry": "proposed"},
         "pipeline_notes": [],
@@ -128,6 +137,8 @@ def test_record_session_plan_sets_last_iv_score():
     }
     oem.record_session_plan(plan, journal_path=None)
     assert oem.get_last_iv_rank_quality_score() == pytest.approx(1.0)
+    assert REGISTRY.get_sample_value("atlas_options_iv_rank_quality") == pytest.approx(2.0)
+    assert REGISTRY.get_sample_value("atlas_options_iv_rank_value") == pytest.approx(42.0)
 
 
 def test_orchestrator_updates_metrics_without_error(tmp_path: Path, monkeypatch):

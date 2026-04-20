@@ -29,6 +29,7 @@ _PIPELINE_MODULES = ("briefing", "intent_router", "entry_planner", "journal", "a
 _state: dict[str, Any] = {
     "last_session_plan": None,
     "last_journal_path": None,
+    "last_iv_rank_value": None,
     "last_iv_rank_quality_score": None,
     "last_options_flow": None,
     "last_visual_signal": None,
@@ -101,6 +102,23 @@ def get_last_iv_rank_quality_score() -> float | None:
     """Último score calculado (útil en tests y depuración)."""
     v = _state.get("last_iv_rank_quality_score")
     return float(v) if isinstance(v, (int, float)) else None
+
+
+def _iv_rank_quality_tier(briefing: dict[str, Any] | None) -> int:
+    """Tier 0/1/2 para dashboard Health: 2=ok, 1=approx, 0=insufficient/error."""
+    if not briefing:
+        return 0
+    iv_src = briefing.get("iv_source")
+    if isinstance(iv_src, dict) and iv_src.get("error"):
+        return 0
+    q_top = str(briefing.get("iv_rank_payload_quality") or "").strip().lower()
+    q_inner = str(iv_src.get("quality") or "").strip().lower() if isinstance(iv_src, dict) else ""
+    raw = q_top or q_inner
+    if raw == "ok":
+        return 2
+    if raw in ("approx", "insufficient_history"):
+        return 1
+    return 0
 
 
 def _utc_day() -> str:
@@ -554,17 +572,34 @@ def get_last_sentinel_snapshot() -> dict[str, float] | None:
 
 
 def _ensure_iv_rank_quality_gauge() -> None:
-    """Registra el gauge IV si el proceso arrancó con un ``_m`` antiguo sin esta clave."""
+    """Registra gauges IV si el proceso arrancó con un ``_m`` antiguo sin estas claves."""
     global _m
-    if not _PROM_OK or not _m or "iv_rank_quality_score" in _m:
+    if not _PROM_OK or not _m:
         return
-    try:
-        _m["iv_rank_quality_score"] = Gauge(
-            "atlas_options_iv_rank_quality_score",
-            "Calidad IV rank briefing: 1 ok 0.5 degradado 0.25 desconocido 0 error iv_source",
-        )
-    except Exception as exc:
-        logger.debug("_ensure_iv_rank_quality_gauge: %s", exc)
+    if "iv_rank_quality_score" not in _m:
+        try:
+            _m["iv_rank_quality_score"] = Gauge(
+                "atlas_options_iv_rank_quality_score",
+                "Calidad IV rank briefing: 1 ok 0.5 degradado 0.25 desconocido 0 error iv_source",
+            )
+        except Exception as exc:
+            logger.debug("_ensure_iv_rank_quality_gauge quality_score: %s", exc)
+    if "iv_rank_value" not in _m:
+        try:
+            _m["iv_rank_value"] = Gauge(
+                "atlas_options_iv_rank_value",
+                "IV Rank observado en briefing/session plan (paper).",
+            )
+        except Exception as exc:
+            logger.debug("_ensure_iv_rank_quality_gauge value: %s", exc)
+    if "iv_rank_quality" not in _m:
+        try:
+            _m["iv_rank_quality"] = Gauge(
+                "atlas_options_iv_rank_quality",
+                "Calidad IV Rank: 2=ok 1=approx 0=insufficient/error.",
+            )
+        except Exception as exc:
+            logger.debug("_ensure_iv_rank_quality_gauge tier: %s", exc)
 
 
 def _init_prom() -> None:
@@ -637,6 +672,14 @@ def _init_prom() -> None:
             "atlas_options_iv_rank_quality_score",
             "Calidad IV rank briefing: 1 ok 0.5 degradado 0.25 desconocido 0 error iv_source",
         )
+        _m["iv_rank_value"] = Gauge(
+            "atlas_options_iv_rank_value",
+            "IV Rank observado en briefing/session plan (paper).",
+        )
+        _m["iv_rank_quality"] = Gauge(
+            "atlas_options_iv_rank_quality",
+            "Calidad IV Rank: 2=ok 1=approx 0=insufficient/error.",
+        )
         _m["self_audit_state"] = Gauge(
             "atlas_options_self_audit_state",
             "Self-audit operativo paper: 0 error 0.1 sin bloque 0.25 skipped 0.35 failed 0.72 WARN 1.0 INFO limpio",
@@ -678,6 +721,8 @@ def _init_prom() -> None:
         _m["paper_phantom"].set(0.0)
         _m["paper_debit_no_stop"].set(0.0)
         _m["iv_rank_quality_score"].set(0.25)
+        _m["iv_rank_value"].set(0.0)
+        _m["iv_rank_quality"].set(0.0)
         _m["self_audit_state"].set(0.25)
         _m["sentinel_metrics_freshness"].set(0.25)
         _m["sentinel_journal_heartbeat"].set(0.25)
@@ -840,10 +885,16 @@ def record_session_plan(plan: dict[str, Any], *, journal_path: str | Path | None
 
     briefing_for_iv = plan.get("briefing") if isinstance(plan.get("briefing"), dict) else {}
     iv_score = compute_iv_rank_quality_score(briefing_for_iv)
+    iv_tier = _iv_rank_quality_tier(briefing_for_iv)
+    iv_rank_raw = _finite_float(briefing_for_iv.get("iv_rank"))
+    _state["last_iv_rank_value"] = iv_rank_raw
     _state["last_iv_rank_quality_score"] = iv_score
     if _m:
         try:
             _m["iv_rank_quality_score"].set(float(iv_score))
+            _m["iv_rank_quality"].set(float(iv_tier))
+            if iv_rank_raw is not None:
+                _m["iv_rank_value"].set(float(iv_rank_raw))
         except Exception as exc:
             logger.debug("iv_rank_quality_score: %s", exc)
 
@@ -993,7 +1044,7 @@ def refresh_journal_from_disk(path: Path | None = None) -> None:
             row = json.loads(line)
         except json.JSONDecodeError:
             continue
-        ts = str(row.get("timestamp") or "")[:10]
+        ts = str(row.get("timestamp_utc") or row.get("timestamp") or "")[:10]
         et = str(row.get("event_type") or "")
         tid = str(row.get("trace_id") or "")
         if ts == today:
@@ -1008,7 +1059,9 @@ def refresh_journal_from_disk(path: Path | None = None) -> None:
             traces_close.add(tid)
         if et == "close_execution":
             payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
-            raw_pnl = payload.get("pnl_realized")
+            raw_pnl = row.get("pnl_usd")
+            if raw_pnl is None:
+                raw_pnl = payload.get("pnl_realized")
             if raw_pnl is not None:
                 try:
                     pv = float(raw_pnl)
@@ -1088,6 +1141,20 @@ def get_ui_snapshot() -> dict[str, Any]:
         wr = perf.get("win_rate_ratio")
         if isinstance(wr, (int, float)) and math.isfinite(float(wr)):
             win_rate_approx = float(wr)
+    iv_quality_tier = _iv_rank_quality_tier(briefing)
+    trades_completed_total = closed
+    if isinstance(paper_performance_summary, dict):
+        n_closes = paper_performance_summary.get("n_closes")
+        if isinstance(n_closes, (int, float)):
+            trades_completed_total = int(n_closes)
+    if force_no:
+        status = "NO-GO"
+    elif entry_allowed and len(plan.get("pipeline_quality_flags") or []) > 4:
+        status = "DEGRADED"
+    elif entry_allowed:
+        status = "GO"
+    else:
+        status = "NO-GO"
 
     grafana_url = os.environ.get("ATLAS_GRAFANA_BASE_URL", "http://localhost:3002").rstrip("/")
     dashboard_uid = "atlas-options-health"
@@ -1109,6 +1176,7 @@ def get_ui_snapshot() -> dict[str, Any]:
         ),
         "symbol": plan.get("symbol"),
         "iv_rank_current": iv_rank,
+        "iv_rank_quality_tier": iv_quality_tier,
         "iv_rank_quality_score": get_last_iv_rank_quality_score(),
         "win_rate_approx": win_rate_approx,
         "paper_performance_summary": paper_performance_summary,
@@ -1121,4 +1189,15 @@ def get_ui_snapshot() -> dict[str, Any]:
         "last_updated_utc": datetime.now(timezone.utc).isoformat(),
         "options_self_audit": get_last_options_self_audit(),
         "sentinel_snapshot": get_last_sentinel_snapshot(),
+        "options_engine": {
+            "status": status,
+            "trades_completed_total": trades_completed_total,
+            "trades_closed_today": closed,
+            "trades_target": target,
+            "wr_basic": None if paper_performance_summary is None else paper_performance_summary.get("win_rate_ratio"),
+            "pf_basic": None if paper_performance_summary is None else paper_performance_summary.get("profit_factor"),
+            "iv_rank_current": iv_rank if isinstance(iv_rank, (int, float)) else None,
+            "iv_rank_quality_tier": iv_quality_tier,
+            "iv_rank_quality_score": get_last_iv_rank_quality_score(),
+        },
     }

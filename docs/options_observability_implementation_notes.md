@@ -1,6 +1,14 @@
 # Options Engine observability — notas de implementación (sprint P0)
 
-El documento de diseño `observability_architecture.md` **no está en este repositorio** (se asume en máquina local, p. ej. `~/Downloads/`). Esta entrega sigue la especificación funcional del ticket (métricas P0 Health, dashboard UID `atlas-options-health`, bloque UI en `8791`).
+El documento de diseño está versionado en `docs/observability_architecture.md`. Esta entrega sigue la especificación funcional del ticket (métricas P0 Health, dashboard UID `atlas-options-health`, bloque UI en `8791`).
+
+## Addendum — contrato canónico `OptionsPaperJournal` (P0)
+
+- **Versión de contrato:** `journal_version="1.0"` en cada evento JSONL.
+- **Campos identitarios comunes:** `trace_id`, `timestamp_utc` (se mantiene alias legado `timestamp`), `mode`, `source`, `status`, `autoclose_applied`, `notes`.
+- **Campos de reconstrucción de trade:** `underlying`, `structure_type`, `dte_at_entry`, `legs`, `entry_credit|entry_debit|entry_mid`, `max_loss|max_profit`, `close_type`, `close_reason`, `close_debit|close_credit|close_mid`, `pnl_usd`, `pnl_pct`.
+- **Compatibilidad:** se conservan `symbol` y `payload` para readers existentes.
+- **Reader mínimo:** `OptionsPaperJournal.read_events()` para reconstrucción offline sin dependencias externas.
 
 ## `market_open_config.json` → runtime paper options
 
@@ -38,6 +46,8 @@ El documento de diseño `observability_architecture.md` **no está en este repos
 | `atlas_options_paper_debit_positions_no_stop` | Gauge | Placeholder `0` |
 | `atlas_options_autoclose_triggers_total{reason}` | Counter | Razones al cerrar (`take_profit`, `dte_gate`, …) |
 | `atlas_options_errors_total{type}` | Counter | Ej.: `paper_session_plan_api` |
+| `atlas_options_iv_rank_value` | Gauge | Último IV Rank del briefing (0..100) |
+| `atlas_options_iv_rank_quality` | Gauge | Tier canónico de calidad IV: **2=ok**, **1=approx**, **0=insufficient/error** |
 | `atlas_options_iv_rank_quality_score` | Gauge | Calidad IV del briefing: **1.0** ok neto, **0.5** aprox / flags IV, **0.25** desconocido, **0.0** `iv_source.error` |
 | `atlas_options_flow_payload_available{symbol}` | Gauge | **1** si el snapshot de flow es coherente (`available` y numéricos clave); **0** si falta, incompleto o no interpretable |
 | `atlas_options_flow_put_call_volume_ratio{symbol}` | Gauge | Ratio put/call volumen (front). **-1** = sin dato útil (no tratar como señal neutral) |
@@ -99,6 +109,11 @@ El documento de diseño `observability_architecture.md` **no está en este repos
 - Sin snapshot, no-dict, `available != True`, o falta alguno de `put_call_volume_ratio`, `gamma_bias_pct`, `score_pct`, `confidence_pct` como float finito → `payload_available=0`, ratios/score en **-1**, `confidence_pct=0`.
 - No se reutilizan los defaults “neutral” del provider (p. ej. 50 score, 1.0 PCR) cuando el payload no es válido: el centinela **-1** indica explícitamente “no usar como señal”.
 - `expected_move` no está en el snapshot actual del provider → **no** hay métrica dedicada en esta ronda.
+
+**IV Rank quality canónico + legacy (conservador)**
+
+- `atlas_options_iv_rank_quality` (**canónico para dashboards operativos P0**): 2=ok, 1=approx, 0=insufficient/error.
+- `atlas_options_iv_rank_quality_score` (**legacy soportado**): escala 0..1 conservadora para compatibilidad con consumidores existentes.
 
 **Mapping `atlas_options_iv_rank_quality_score` (conservador)**
 
