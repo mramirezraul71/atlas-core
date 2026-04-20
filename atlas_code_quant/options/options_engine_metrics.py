@@ -661,6 +661,29 @@ def _init_prom() -> None:
             "atlas_options_sentinel_iv_rank_quality",
             "Sentinela: degradación IV rank quality",
         )
+        # Preinicializa series con labels para que los dashboards de Options
+        # muestren estado base en arranque en frio y no "No data".
+        _m["go_nogo"].set(0.0)
+        for decision in ("go", "no_go", "force_no_trade"):
+            _m["go_nogo_count"].labels(decision=decision).inc(0)
+        for module in _PIPELINE_MODULES:
+            _m["pipe_status"].labels(module=module).set(0.0)
+            _m["pipe_last_run"].labels(module=module).set(1e9)
+        _m["journal_events"].set(0.0)
+        _m["journal_sessions"].set(0.0)
+        _m["journal_write_age"].set(1e9)
+        _m["journal_size"].set(0.0)
+        _m["paper_open"].set(0.0)
+        _m["paper_closed"].set(0.0)
+        _m["paper_phantom"].set(0.0)
+        _m["paper_debit_no_stop"].set(0.0)
+        _m["iv_rank_quality_score"].set(0.25)
+        _m["self_audit_state"].set(0.25)
+        _m["sentinel_metrics_freshness"].set(0.25)
+        _m["sentinel_journal_heartbeat"].set(0.25)
+        _m["sentinel_autoclose_activity"].set(0.5)
+        _m["sentinel_options_flow"].set(0.25)
+        _m["sentinel_iv_rank_quality"].set(0.25)
     except Exception as exc:  # pragma: no cover
         logger.warning("options_engine_metrics init: %s", exc)
         _m.clear()

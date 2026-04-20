@@ -33,7 +33,7 @@
       "title": "H-02 GO/NO-GO decisions (counter)",
       "type": "timeseries",
       "gridPos": {"h": 6, "w": 18, "x": 6, "y": 0},
-      "targets": [{"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "sum by (decision)(atlas_options_session_go_nogo_count)", "legendFormat": "{{decision}}", "refId": "A"}]
+      "targets": [{"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "sum by (decision)(atlas_options_session_go_nogo_count_total)", "legendFormat": "{{decision}}", "refId": "A"}]
     },
     {
       "id": 103,
@@ -103,8 +103,8 @@
       "type": "timeseries",
       "gridPos": {"h": 8, "w": 24, "x": 0, "y": 17},
       "targets": [
-        {"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "sum by (reason)(atlas_options_autoclose_triggers_total)", "legendFormat": "close:{{reason}}", "refId": "A"},
-        {"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "sum by (type)(atlas_options_errors_total)", "legendFormat": "err:{{type}}", "refId": "B"}
+        {"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "sum(atlas_options_autoclose_triggers_total) or vector(0)", "legendFormat": "close_total", "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "atlas-prom"}, "expr": "sum(atlas_options_errors_total) or vector(0)", "legendFormat": "error_total", "refId": "B"}
       ]
     },
     {
@@ -197,7 +197,7 @@
           ]}
         }
       },
-      "description": "Silencio sospechoso si hay trades abiertos; umbrales heurísticos (ver docs)."
+      "description": "Silencio sospechoso si hay trades abiertos; umbrales heurÃ­sticos (ver docs)."
     },
     {
       "id": 115,
@@ -218,7 +218,7 @@
           ]}
         }
       },
-      "description": "0.25=bridge desactivado (N/A); 1=snapshot coherente; 0=bridge on sin payload válido."
+      "description": "0.25=bridge desactivado (N/A); 1=snapshot coherente; 0=bridge on sin payload vÃ¡lido."
     },
     {
       "id": 116,
@@ -239,7 +239,7 @@
           ]}
         }
       },
-      "description": "Derivado del último IV quality score del briefing (degradación explícita)."
+      "description": "Derivado del Ãºltimo IV quality score del briefing (degradaciÃ³n explÃ­cita)."
     }
   ],
   "templating": {"list": []},
