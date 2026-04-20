@@ -106,6 +106,10 @@ from operations.startup_visual_connect import apply_startup_visual_connections
 from operations.vision_calibration import VisionCalibrationService
 from scanner.opportunity_scanner import OpportunityScannerService
 from selector.strategy_selector import StrategySelectorService
+from atlas_code_quant.options.paper_runtime_loop import (
+    build_default_options_runtime_loop,
+    options_runtime_loop_enabled,
+)
 
 # ── OptionStrat ───────────────────────────────────────────────────────────────
 from api.routes.options import router as options_router
@@ -225,6 +229,7 @@ app.include_router(xgboost_router)
 
 _startup_services_task: asyncio.Task | None = None
 _metrics_sync_task: asyncio.Task | None = None
+_options_runtime_task: asyncio.Task | None = None
 _STARTUP_BACKGROUND_STATE: dict[str, object] = {
     "running": False,
     "stage": "idle",
@@ -285,15 +290,36 @@ async def _run_quant_metrics_loop() -> None:
         await asyncio.sleep(interval_sec)
 
 
+async def _run_options_runtime_loop() -> None:
+    """Loop residente paper-only del Options Engine (briefing→entry→autoclose→journal)."""
+    if not options_runtime_loop_enabled():
+        logger.info("Options runtime loop omitido: QUANT_OPTIONS_RUNTIME_LOOP_ENABLED=false")
+        return
+    loop = build_default_options_runtime_loop()
+    try:
+        await loop.run_forever()
+    except asyncio.CancelledError:
+        loop.stop()
+        raise
+    except Exception:
+        logger.exception("Options runtime loop stopped by error")
+        raise
+
+
 @app.on_event("startup")
 async def preload_tradier_sessions() -> None:
     _JOURNAL.init_db()
     _ensure_core_runtime_bootstrap()
-    global _startup_services_task, _metrics_sync_task
+    global _startup_services_task, _metrics_sync_task, _options_runtime_task
     if _quant_prometheus_enabled() and (_metrics_sync_task is None or _metrics_sync_task.done()):
         _metrics_sync_task = asyncio.create_task(
             _run_quant_metrics_loop(),
             name="quant-prometheus-sync",
+        )
+    if _options_runtime_task is None or _options_runtime_task.done():
+        _options_runtime_task = asyncio.create_task(
+            _run_options_runtime_loop(),
+            name="options-paper-runtime-loop",
         )
     if _startup_services_task and not _startup_services_task.done():
         return
@@ -526,7 +552,14 @@ async def _start_background_services() -> None:
 
 @app.on_event("shutdown")
 async def stop_background_services() -> None:
-    global _auto_cycle_task, _startup_services_task, _metrics_sync_task
+    global _auto_cycle_task, _startup_services_task, _metrics_sync_task, _options_runtime_task
+    if _options_runtime_task and not _options_runtime_task.done():
+        _options_runtime_task.cancel()
+        try:
+            await _options_runtime_task
+        except asyncio.CancelledError:
+            pass
+        _options_runtime_task = None
     if _metrics_sync_task and not _metrics_sync_task.done():
         _metrics_sync_task.cancel()
         try:
