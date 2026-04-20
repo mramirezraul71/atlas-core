@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ATLAS Hub — Central UI</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0d1117; color: #e6edf3; margin: 0; padding: 1.5rem; }
+    h1 { font-size: 1.25rem; margin-bottom: 1rem; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; max-width: 42rem; }
+    .card h2 { margin: 0 0 0.75rem; font-size: 1rem; color: #58a6ff; }
+    .row { margin: 0.35rem 0; font-size: 0.9rem; }
+    .muted { color: #8b949e; }
+    a { color: #58a6ff; }
+    #options-engine-root .err { color: #f85149; }
+  </style>
+</head>
+<body>
+  <h1>ATLAS — UI central (8791)</h1>
+  <p class="muted">Vista mínima funcional. El hub completo puede coexistir con <code>dashboard.html.backup</code>.</p>
+
+  <div class="card" id="options-engine-root">
+    <h2>OPTIONS ENGINE [paper only]</h2>
+    <div id="options-engine-body" class="muted">Cargando estado…</div>
+  </div>
+
+  <script>
+    (function () {
+      var el = document.getElementById("options-engine-body");
+      fetch("/api/options-engine-status")
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) {
+            el.className = "err";
+            el.textContent = "Error: " + (d.error || "unknown");
+            return;
+          }
+          var lines = [
+            "<strong>GO/NO-GO:</strong> " + (d.go_nogo_label || "—"),
+            "<strong>Símbolo (última sesión):</strong> " + (d.symbol || "—"),
+            "<strong>IV Rank (briefing):</strong> " + (d.iv_rank_current != null ? d.iv_rank_current : "— (sin sesión aún)"),
+            "<strong>WR aprox:</strong> " + (d.win_rate_approx != null ? d.win_rate_approx : "— (pendiente métrica)"),
+            "<strong>Paper cierres hoy / meta:</strong> " + (d.paper_trades_closed_today || 0) + " / " + (d.paper_trades_target || 100) +
+              " (" + (d.paper_trades_progress_pct != null ? d.paper_trades_progress_pct.toFixed(1) : "0") + "%)",
+            "<strong>Grafana Health:</strong> <a href=\"" + (d.grafana_health_dashboard_url || "#") + "\" target=\"_blank\" rel=\"noopener\">abrir dashboard</a>",
+            "<span class=\"muted\">Actualizado (UTC): " + (d.last_updated_utc || "") + "</span>"
+          ];
+          el.className = "";
+          el.innerHTML = lines.join("<br/>");
+        })
+        .catch(function (e) {
+          el.className = "err";
+          el.textContent = "Fallo de red: " + e;
+        });
+    })();
+  </script>
+</body>
+</html>

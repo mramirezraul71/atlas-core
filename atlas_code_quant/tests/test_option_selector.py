@@ -8,6 +8,7 @@ import pytest
 from atlas_code_quant.execution.option_selector import (
     ContractSelection,
     describe_strategy_governance,
+    evaluate_expected_move_policy,
     pick_strategy,
     pick_expiration,
     pick_expiration_pair,
@@ -218,6 +219,24 @@ class TestBuildLegsForStrategy:
         # With identical options, bull_call_debit_spread may return single or empty
         calls = _make_chain_options(spot=450, option_type="call", n=15)
         puts  = _make_chain_options(spot=450, option_type="put",  n=15)
+
+    def test_iron_butterfly_uses_shared_center_and_symmetric_wings(self):
+        calls = _make_chain_options(spot=450, option_type="call", n=15)
+        puts = _make_chain_options(spot=450, option_type="put", n=15)
+        legs = build_legs_for_strategy("iron_butterfly", calls, puts, spot=450, expiration="2024-06-19")
+
+        assert len(legs) == 4
+        short_call = next(leg for leg in legs if leg["option_type"] == "call" and leg["side"] == "short")
+        short_put = next(leg for leg in legs if leg["option_type"] == "put" and leg["side"] == "short")
+        long_call = next(leg for leg in legs if leg["option_type"] == "call" and leg["side"] == "long")
+        long_put = next(leg for leg in legs if leg["option_type"] == "put" and leg["side"] == "long")
+
+        assert short_call["strike"] == short_put["strike"]
+        assert long_call["strike"] > short_call["strike"]
+        assert long_put["strike"] < short_put["strike"]
+        assert pytest.approx(long_call["strike"] - short_call["strike"], rel=0.0, abs=1e-6) == (
+            short_put["strike"] - long_put["strike"]
+        )
         legs = build_legs_for_strategy("bull_call_debit_spread", calls, puts, spot=450, expiration="2024-06-19")
         # May be 1 or 2 legs depending on available strikes
         assert isinstance(legs, list)
@@ -334,6 +353,130 @@ class TestSelectOptionContract:
         assert result.is_valid is True
         assert result.strategy_type == "call_calendar_spread"
         assert result.governance["front_expiration"] != result.governance["back_expiration"]
+
+
+class TestPhaseAGammaDteExpectedMove:
+    def test_defaults_none_no_change_to_base_strategy(self):
+        base = pick_strategy("BUY", "BULL", iv_rank=55, iv_hv_ratio=1.4)
+        assert pick_strategy("BUY", "BULL", iv_rank=55, iv_hv_ratio=1.4, gamma_regime=None, dte_mode=None) == base
+
+    def test_long_gamma_promotes_credit_on_high_iv_bull(self):
+        assert (
+            pick_strategy(
+                "BUY",
+                "BULL",
+                iv_rank=55,
+                iv_hv_ratio=1.4,
+                gamma_regime="long_gamma",
+            )
+            == "bull_put_credit_spread"
+        )
+
+    def test_short_gamma_demotes_iron_condor_to_directional_debit(self):
+        strat = pick_strategy(
+            "BUY",
+            "SIDEWAYS",
+            iv_rank=75,
+            iv_hv_ratio=1.5,
+            gamma_regime="short_gamma",
+        )
+        assert strat == "bull_call_debit_spread"
+
+    def test_flip_zone_iron_butterfly_to_iron_condor(self):
+        strat = pick_strategy(
+            "BUY",
+            "SIDEWAYS",
+            iv_rank=82,
+            iv_hv_ratio=1.5,
+            skew_pct=0.03,
+            liquidity_score=0.9,
+            thesis="neutral_income",
+            gamma_regime="flip_zone",
+        )
+        assert strat == "iron_condor"
+
+    def test_dte_mode_0dte_blocks_calendar_for_sideways_time_spread(self):
+        strat = pick_strategy(
+            "BUY",
+            "SIDEWAYS",
+            iv_rank=34,
+            iv_hv_ratio=1.0,
+            thesis="time_spread",
+            term_structure_slope=1.08,
+            liquidity_score=0.8,
+            dte_mode="0dte",
+        )
+        assert strat == "iron_condor"
+        assert strat not in {
+            "call_calendar_spread",
+            "put_calendar_spread",
+            "call_diagonal_debit_spread",
+            "put_diagonal_debit_spread",
+        }
+
+    def test_expected_move_policy_flags_short_inside_band(self):
+        spot = 450.0
+        em = 10.0
+        legs = [
+            {"side": "short", "option_type": "call", "strike": spot + 5.0},
+            {"side": "short", "option_type": "put", "strike": spot - 5.0},
+            {"side": "long", "option_type": "call", "strike": spot + 25.0},
+            {"side": "long", "option_type": "put", "strike": spot - 25.0},
+        ]
+        meta = evaluate_expected_move_policy("iron_condor", legs, spot, em)
+        assert meta["em_policy_ok"] is False
+
+    def test_expected_move_policy_ok_when_shorts_outside_band(self):
+        spot = 450.0
+        em = 10.0
+        legs = [
+            {"side": "short", "option_type": "call", "strike": spot + 15.0},
+            {"side": "short", "option_type": "put", "strike": spot - 15.0},
+        ]
+        meta = evaluate_expected_move_policy("iron_condor", legs, spot, em)
+        assert meta["em_policy_ok"] is True
+
+    def test_build_legs_em_metadata_populated(self):
+        calls = _make_chain_options(spot=450, option_type="call", n=15)
+        puts = _make_chain_options(spot=450, option_type="put", n=15)
+        em_meta: dict = {}
+        build_legs_for_strategy(
+            "iron_condor",
+            calls,
+            puts,
+            spot=450,
+            expiration="2024-06-19",
+            expected_move=5.0,
+            em_metadata=em_meta,
+        )
+        assert "em_policy_ok" in em_meta
+
+    def test_select_option_contract_governance_includes_phase_a_fields(self):
+        exps = _make_expirations()
+        chain = {
+            exp: {
+                "calls": _make_chain_options(option_type="call"),
+                "puts": _make_chain_options(option_type="put"),
+            }
+            for exp in exps
+        }
+        result = select_option_contract(
+            "SPY",
+            "BUY",
+            450,
+            60,
+            1.3,
+            "BULL",
+            exps,
+            chain,
+            gamma_regime="long_gamma",
+            expected_move=12.0,
+            dte_mode="8to21",
+        )
+        assert result.governance.get("gamma_regime") == "long_gamma"
+        assert result.governance.get("dte_mode") == "8to21"
+        assert result.governance.get("expected_move") == 12.0
+        assert "em_policy_ok" in result.governance
 
 
 class TestStrategyGovernance:

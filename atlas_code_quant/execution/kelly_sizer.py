@@ -159,6 +159,7 @@ class KellySizer:
         price: float,
         result: KellyResult,
         atr: float | None = None,
+        max_risk_per_trade_pct: float = 0.01,
     ) -> float:
         """Calcula el número de unidades a comprar dado el capital y Kelly result.
 
@@ -175,18 +176,42 @@ class KellySizer:
         Returns:
             Número de unidades a comprar (float).
         """
+        return self.max_units(
+            capital=capital,
+            price=price,
+            atr=atr,
+            position_pct=result.position_pct,
+            max_risk_per_trade_pct=max_risk_per_trade_pct,
+        )
+
+    def max_units(
+        self,
+        capital: float,
+        price: float,
+        atr: float | None = None,
+        position_pct: float | None = None,
+        max_risk_per_trade_pct: float = 0.01,
+    ) -> float:
+        """Devuelve el máximo de unidades permitido por capital, Kelly y riesgo.
+
+        Esta helper permite reutilizar el mismo cap conservador tanto para
+        sizing Kelly puro como para fallbacks seguros cuando no hay suficiente
+        historial estadístico.
+        """
         if price <= 0 or capital <= 0:
             return 0.0
 
-        usd_to_risk = capital * result.position_pct
-        units = usd_to_risk / price
+        effective_pct = self.max_position_pct if position_pct is None else float(position_pct)
+        effective_pct = max(0.0, min(effective_pct, self.max_position_pct))
 
-        # Verificación adicional por ATR: riesgo por unidad = atr * sl_mult
-        # Nunca arriesgar más del 1% del capital por operación
-        if atr and atr > 0:
+        usd_to_allocate = capital * effective_pct
+        units = usd_to_allocate / price
+
+        if atr and atr > 0 and max_risk_per_trade_pct > 0:
             risk_per_unit = atr * self.atr_sl_multiplier
-            max_units_by_risk = (capital * 0.01) / risk_per_unit
-            units = min(units, max_units_by_risk)
+            if risk_per_unit > 0:
+                max_units_by_risk = (capital * max_risk_per_trade_pct) / risk_per_unit
+                units = min(units, max_units_by_risk)
 
         return max(0.0, units)
 

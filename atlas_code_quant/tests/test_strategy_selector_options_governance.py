@@ -236,6 +236,50 @@ def test_candidate_structures_promotes_iron_butterfly_for_high_iv_sideways() -> 
     assert structures[0]["vehicle_type"] == "neutral_theta"
 
 
+def test_spx_balanced_session_auto_promotes_option_first_and_avoids_equity() -> None:
+    service = _service()
+    candidate = {
+        "symbol": "SPX",
+        "direction": "alcista",
+        "timeframe": "1d",
+        "price": 5200.0,
+        "strategy_key": "range_compression",
+        "selection_score": 74.0,
+        "local_win_rate_pct": 58.0,
+        "predicted_move_pct": 1.3,
+        "confirmation": {"direction": "alcista", "higher_timeframe": "1d"},
+        "regime": "SIDEWAYS",
+        "iv_rank": 82.0,
+        "iv_hv_ratio": 1.5,
+        "liquidity_score": 0.95,
+        "term_structure_slope": 1.01,
+        "skew_pct": 0.03,
+        "options_thesis": "neutral_income",
+        "has_options": True,
+        "order_flow": {
+            "direction": "neutral",
+            "confidence_pct": 30.0,
+            "score_pct": 48.0,
+        },
+    }
+
+    proposal = service.proposal(
+        candidate=candidate,
+        account_scope="paper",
+        options_session_mode="balanced",
+        allow_equity=True,
+        allow_credit=True,
+        prefer_defined_risk=True,
+    )
+
+    assert proposal["selector_session"]["mode"] == "option_first"
+    assert proposal["selected"]["strategy_type"] == "iron_butterfly"
+    assert not any(
+        row["strategy_type"].startswith("equity_")
+        for row in proposal["alternatives"]
+    )
+
+
 def test_candidate_structures_keep_governance_driven_alternatives_visible() -> None:
     service = _service()
     candidate = {

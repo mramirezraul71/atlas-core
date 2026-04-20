@@ -614,6 +614,9 @@ class TradingConfig:
     market_open_schedule_close_et: str = field(
         default_factory=lambda: _clean_setting(os.getenv("QUANT_MARKET_OPEN_SCHEDULE_CLOSE_ET")) or "16:00"
     )
+    # Ventana extendida (NYSE ET) desde schedule_et si existe; vacío = no definido en JSON.
+    market_open_schedule_warmup_et: str = ""
+    market_open_schedule_premarket_scan_et: str = ""
     market_open_max_positions: int = _ienv("QUANT_MARKET_OPEN_MAX_POSITIONS", 3)
     market_open_scan_interval_min: int = _ienv("QUANT_MARKET_OPEN_SCAN_INTERVAL_MIN", 5)
     market_open_daily_loss_limit_pct: float = _fenv("QUANT_MARKET_OPEN_DAILY_LOSS_LIMIT", 0.02)
@@ -637,6 +640,8 @@ class TradingConfig:
         path = self.market_open_config_path
         if not path.exists() or not path.is_file():
             logger.warning("market_open_config: archivo no encontrado (%s), usando defaults/env", path)
+            self.market_open_schedule_warmup_et = ""
+            self.market_open_schedule_premarket_scan_et = ""
             _finalize_market_open_operational_clamps(self)
             return
         try:
@@ -644,16 +649,23 @@ class TradingConfig:
             payload = json.loads(raw)
         except Exception as exc:
             logger.warning("market_open_config: no se pudo leer o parsear (%s): %s", path, exc)
+            self.market_open_schedule_warmup_et = ""
+            self.market_open_schedule_premarket_scan_et = ""
             _finalize_market_open_operational_clamps(self)
             return
         if not isinstance(payload, dict):
             logger.warning("market_open_config: raíz no es objeto JSON, usando defaults/env")
+            self.market_open_schedule_warmup_et = ""
+            self.market_open_schedule_premarket_scan_et = ""
             _finalize_market_open_operational_clamps(self)
             return
 
         self.market_open_config_loaded = True
         schedule = payload.get("schedule_et") if isinstance(payload.get("schedule_et"), dict) else {}
         risk = payload.get("risk") if isinstance(payload.get("risk"), dict) else {}
+        # Evita arrastre entre refrescos si el JSON deja de definir warmup/premarket.
+        self.market_open_schedule_warmup_et = ""
+        self.market_open_schedule_premarket_scan_et = ""
 
         if not _env_explicit("QUANT_MARKET_OPEN_SCHEDULE_OPEN_ET"):
             open_et = str(schedule.get("market_open") or "").strip()
@@ -669,6 +681,18 @@ class TradingConfig:
             elif close_et:
                 logger.warning("market_open_config: schedule_et.market_close inválido (%r), se ignora", close_et)
 
+        warmup = str(schedule.get("warmup_start") or "").strip()
+        if warmup and _hhmm_valid(warmup):
+            self.market_open_schedule_warmup_et = warmup
+        elif warmup:
+            logger.warning("market_open_config: schedule_et.warmup_start inválido (%r), se ignora", warmup)
+
+        pre = str(schedule.get("premarket_scan") or "").strip()
+        if pre and _hhmm_valid(pre):
+            self.market_open_schedule_premarket_scan_et = pre
+        elif pre:
+            logger.warning("market_open_config: schedule_et.premarket_scan inválido (%r), se ignora", pre)
+
         if not _env_explicit("QUANT_MARKET_OPEN_SCAN_INTERVAL_MIN"):
             raw_scan = schedule.get("scan_interval_min")
             if raw_scan is not None:
@@ -681,13 +705,16 @@ class TradingConfig:
                 )
 
         if not _env_explicit("QUANT_MARKET_OPEN_MAX_POSITIONS"):
-            if risk.get("max_positions") is not None:
+            raw_max = risk.get("max_positions")
+            if raw_max is None and risk.get("max_open_positions") is not None:
+                raw_max = risk.get("max_open_positions")
+            if raw_max is not None:
                 self.market_open_max_positions = _risk_int_clamped(
-                    risk.get("max_positions"),
+                    raw_max,
                     lo=1,
                     hi=50,
                     default=self.market_open_max_positions,
-                    field_name="risk.max_positions",
+                    field_name="risk.max_positions|max_open_positions",
                 )
 
         if not _env_explicit("QUANT_KELLY_FRACTION"):
@@ -927,7 +954,35 @@ class TradingConfig:
             self.xgboost_audit_path = self.xgboost_model_dir / "audit_report.json"
 
 
+def build_options_engine_market_open_runtime(cfg: TradingConfig) -> dict[str, Any]:
+    """Valores efectivos ya resueltos (env > JSON > defaults en ``cfg``) para el pipeline paper options.
+
+    Sin efectos secundarios; útil en tests con un ``TradingConfig`` aislado.
+    """
+    return {
+        "config_path": str(Path(cfg.market_open_config_path).resolve()),
+        "config_loaded": bool(cfg.market_open_config_loaded),
+        "max_open_positions": int(cfg.market_open_max_positions),
+        "kelly_fraction": float(cfg.kelly_fraction),
+        "max_risk_per_trade": float(cfg.equity_kelly_max_risk_per_trade_pct),
+        "kelly_max_position_pct": float(cfg.kelly_max_position_pct),
+        "daily_loss_limit_pct": float(cfg.market_open_daily_loss_limit_pct),
+        "scan_interval_min": int(cfg.market_open_scan_interval_min),
+        "schedule_et": {
+            "market_open": cfg.market_open_schedule_open_et,
+            "market_close": cfg.market_open_schedule_close_et,
+            "warmup_start": cfg.market_open_schedule_warmup_et or None,
+            "premarket_scan": cfg.market_open_schedule_premarket_scan_et or None,
+        },
+    }
+
+
 settings = TradingConfig()
+
+
+def get_options_engine_market_open_runtime() -> dict[str, Any]:
+    """Snapshot desde el singleton ``settings`` para adjuntar al session plan (options runtime)."""
+    return build_options_engine_market_open_runtime(settings)
 
 
 def refresh_market_open_operational_config() -> None:

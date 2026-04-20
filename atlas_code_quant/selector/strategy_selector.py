@@ -23,6 +23,7 @@ from execution.option_selector import describe_strategy_governance, pick_strateg
 from learning.adaptive_policy import AdaptiveLearningService
 from monitoring.strategy_tracker import StrategyTracker
 from operations.strategy_playbooks import build_strategy_playbook
+from scanner.asset_classifier import AssetClass, classify_asset
 
 logger = logging.getLogger("quant.strategy_selector")
 
@@ -56,6 +57,24 @@ def _normalize_options_session_mode(value: str | None) -> str:
     if mode in {"balanced", "option_first", "options_only"}:
         return mode
     return "balanced"
+
+
+def _effective_options_session_mode(candidate: dict[str, Any], requested_mode: str | None) -> str:
+    mode = _normalize_options_session_mode(requested_mode)
+    symbol = str(candidate.get("symbol") or "").strip().upper()
+    if not symbol:
+        return mode
+    try:
+        asset_profile = classify_asset(symbol)
+    except Exception:
+        return mode
+    # Index products like SPX/SPXW/XSP are option-only vehicles in our stack.
+    # Even when the session is "balanced", promote them to option-first so the
+    # selector does not rank impossible equity structures ahead of executable
+    # index option structures.
+    if asset_profile.asset_class == AssetClass.INDEX_OPTION and mode == "balanced" and asset_profile.has_options:
+        return "option_first"
+    return mode
 
 
 def _strategy_meta(strategy_type: str) -> dict[str, str]:
@@ -501,7 +520,7 @@ class StrategySelectorService:
         prefer_defined_risk: bool,
         options_session_mode: str = "balanced",
     ) -> list[dict[str, Any]]:
-        options_session_mode = _normalize_options_session_mode(options_session_mode)
+        options_session_mode = _effective_options_session_mode(candidate, options_session_mode)
         direction = str(candidate.get("direction") or "").lower()
         bullish = direction == "alcista"
         timeframe = str(candidate.get("timeframe") or "1h")
@@ -530,6 +549,13 @@ class StrategySelectorService:
         event_near = bool(candidate.get("event_near") or candidate.get("earnings_near"))
         options_thesis = str(candidate.get("options_thesis") or candidate.get("thesis") or "").strip().lower() or None
         has_options = bool(candidate.get("has_options")) if candidate.get("has_options") is not None else True
+        try:
+            asset_profile = classify_asset(symbol)
+        except Exception:
+            asset_profile = None
+        is_index_option_underlying = bool(
+            asset_profile is not None and asset_profile.asset_class == AssetClass.INDEX_OPTION
+        )
 
         learning_context = self.learning.context(
             symbol=symbol,
@@ -575,7 +601,11 @@ class StrategySelectorService:
         low_iv = iv_rank <= 25 and iv_hv_ratio <= 1.0
         balanced_skew = abs(skew_pct) <= 0.12
         unique_options: dict[str, dict[str, Any]] = {}
-        allow_equity = bool(allow_equity and options_session_mode != "options_only")
+        allow_equity = bool(
+            allow_equity
+            and options_session_mode != "options_only"
+            and not is_index_option_underlying
+        )
         option_mode_active = options_session_mode in {"option_first", "options_only"} and has_options
 
         def _adaptive_bias_for(strategy_type: str) -> float:
@@ -675,6 +705,8 @@ class StrategySelectorService:
                 family_bonus += 4.0 if balanced_skew else -5.0
                 family_bonus += 3.0 if not event_near else -9.0
                 family_bonus += 3.0 if liquidity_score >= 0.65 else -6.0
+                if is_index_option_underlying:
+                    family_bonus += 6.0
                 camera_precision = round(profile["camera_fit"] - 2.0, 1)
                 vehicle_type = "neutral_theta"
                 why = [
@@ -689,6 +721,8 @@ class StrategySelectorService:
                 family_bonus += 2.0 if prefer_defined_risk else 0.0
                 if event_near:
                     family_bonus -= 8.0
+                if is_index_option_underlying:
+                    family_bonus += 2.0
                 camera_precision = round(profile["camera_fit"] - 2.0, 1)
                 vehicle_type = "defined_risk_credit"
                 why = [
@@ -1128,7 +1162,7 @@ class StrategySelectorService:
         options_session_mode: str = "balanced",
         risk_budget_pct: float = 0.75,
     ) -> dict[str, Any]:
-        options_session_mode = _normalize_options_session_mode(options_session_mode)
+        options_session_mode = _effective_options_session_mode(candidate, options_session_mode)
         self._validate_candidate_for_scoring(candidate)
         summary = self.tracker.build_summary(account_scope=account_scope, account_id=account_id)  # type: ignore[arg-type]
         balances = summary.get("balances") or {}

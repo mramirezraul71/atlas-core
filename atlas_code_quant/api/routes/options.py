@@ -523,6 +523,7 @@ async def paper_session_plan_endpoint(req: PaperSessionPlanRequest):
         from options.session_briefing import SessionBriefingEngine
         from options.paper_entry_planner import PaperEntryPlanner
         from options.paper_session_orchestrator import PaperSessionOrchestrator
+        from options.options_paper_journal import OptionsPaperJournal
         from options.options_intent_router import OptionsIntentRouter
     except ModuleNotFoundError:
         from atlas_code_quant.backtesting.winning_probability import TradierClient
@@ -531,6 +532,7 @@ async def paper_session_plan_endpoint(req: PaperSessionPlanRequest):
         from atlas_code_quant.options.session_briefing import SessionBriefingEngine
         from atlas_code_quant.options.paper_entry_planner import PaperEntryPlanner
         from atlas_code_quant.options.paper_session_orchestrator import PaperSessionOrchestrator
+        from atlas_code_quant.options.options_paper_journal import OptionsPaperJournal
         from atlas_code_quant.options.options_intent_router import OptionsIntentRouter
 
     sym = (req.symbol or "").strip().upper()
@@ -544,6 +546,7 @@ async def paper_session_plan_endpoint(req: PaperSessionPlanRequest):
         engine,
         OptionsIntentRouter(),
         PaperEntryPlanner(),
+        journal=OptionsPaperJournal(),
     )
     try:
         payload = orchestrator.build_session_plan(
@@ -564,6 +567,12 @@ async def paper_session_plan_endpoint(req: PaperSessionPlanRequest):
         )
     except Exception as exc:
         logger.exception("paper_session_plan error")
+        try:
+            from atlas_code_quant.options.options_engine_metrics import record_options_error
+
+            record_options_error("paper_session_plan_api")
+        except Exception:
+            pass
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"ok": True, "data": payload}
 

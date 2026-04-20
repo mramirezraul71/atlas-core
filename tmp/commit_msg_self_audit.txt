@@ -1,0 +1,13 @@
+feat(ops): integrate operational self-audit into paper cycle
+
+Add operational_self_audit runner (paper-first): validates risk/config
+coherence and optional reconciliation snapshot; logs WARN/ERROR without
+blocking submit.
+
+- New operations/operational_self_audit.py with OperationalSelfAuditContext,
+  SelfAuditCheck, SelfAuditResult, run_operational_self_audit.
+- Readiness fast + diagnostic: optional self_audit_summary when enabled
+  (QUANT_OPERATIONAL_SELF_AUDIT_ENABLED or default on for paper scope).
+- settings: operational_self_audit_enabled() delegating to runner helper.
+
+Does not modify _entry_pass_runtime_gate, execution, journal, Kelly, ML, or scanner.

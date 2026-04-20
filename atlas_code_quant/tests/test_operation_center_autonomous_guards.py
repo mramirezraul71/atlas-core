@@ -697,6 +697,67 @@ def test_execution_quality_confirms_matching_route_payload(tmp_path: Path) -> No
     assert payload["execution_quality"]["checks"]["broker_status_ok"] is True
 
 
+def test_execution_quality_accepts_broker_ids_from_route_payload_when_tradier_response_has_no_id(tmp_path: Path) -> None:
+    executor = _ExecutorWithResponse(
+        {
+            "decision": "paper_submit_sent",
+            "executor_mode": "paper_api",
+            "response": {
+                "provider": "tradier",
+                "route": "tradier",
+                "mode": "submit",
+                "preview": False,
+                "order_class": "equity",
+                "position_effect": "open",
+                "request_payload": {
+                    "symbol": "MSFT",
+                    "side": "buy",
+                    "quantity": "1",
+                },
+                "tradier_response": {
+                    "status": "ok",
+                },
+                "broker_order_ids_json": {
+                    "id": "OID-123",
+                },
+            },
+        }
+    )
+    center = OperationCenter(
+        tracker=_Tracker(),
+        journal=_Journal(),
+        vision=_Vision(),
+        executor=executor,
+        brain=_Brain(),
+        learning=_Learning(),
+        state_path=tmp_path / "operation_center_state.json",
+        quote_provider=_quote_provider_factory({"symbol": "MSFT", "bid": 100.0, "ask": 100.05, "last": 100.02}),
+    )
+    _enable_paper_autonomy(center)
+
+    payload = center.evaluate_candidate(
+        order=OrderRequest(
+            symbol="MSFT",
+            side="buy",
+            size=1,
+            order_type="market",
+            asset_class="equity",
+            account_scope="paper",
+            strategy_type="equity_long",
+            entry_reference_price=100.0,
+        ),
+        action="submit",
+        capture_context=False,
+    )
+
+    assert payload["allowed"] is True
+    assert payload["execution_quality"]["checks"]["order_id_present"] is True
+    assert not any(
+        "broker order identifiers" in warning.lower()
+        for warning in payload["execution_quality"]["warnings"]
+    )
+
+
 def test_visual_entry_gate_warns_when_camera_validation_is_skipped(tmp_path: Path) -> None:
     center = OperationCenter(
         tracker=_Tracker(),

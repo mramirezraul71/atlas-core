@@ -100,6 +100,14 @@ class AutoCloseEngine:
         priority = "high" if any(reason in high_priority_reasons for reason in reasons) else "normal"
         recommended_action = "close" if should_close else "hold"
 
+        if should_close and reasons:
+            try:
+                from atlas_code_quant.options.options_engine_metrics import record_autoclose_triggers
+
+                record_autoclose_triggers(reasons)
+            except Exception:
+                pass
+
         return {
             "position_id": normalized["position_id"],
             "should_close": should_close,

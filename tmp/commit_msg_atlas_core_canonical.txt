@@ -1,0 +1,9 @@
+docs(core): canonical atlas_core manifest and reproducibility scaffolding
+
+- Add atlas_core/CANONICAL.md describing the canonical core layout and shim.
+- Add atlas_core/MANIFEST.json listing importable core modules.
+- Add atlas_code_quant/scripts/verify_atlas_core_manifest.py for CI/local checks.
+- Add tests for manifest presence and imports; verify shim resolves to repo atlas_core/.
+- Clarify atlas_code_quant/atlas_core/__init__.py docstring (no path hardcoding).
+
+No trading, Kelly, ML, paper safety, or market_open_config logic changes.

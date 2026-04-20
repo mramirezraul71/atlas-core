@@ -37,6 +37,7 @@ class NormalizedPosition:
     symbol: str
     underlying: str
     asset_class: str
+    broker_order_id: str | None
     signed_qty: float
     quantity_abs: float
     side: str
@@ -133,6 +134,14 @@ def _normalize_positions(positions: list[dict[str, Any]]) -> list[NormalizedPosi
                 symbol=symbol,
                 underlying=(option_meta or {}).get("underlying") or symbol,
                 asset_class="option" if option_meta else "equity",
+                broker_order_id=str(
+                    raw.get("id")
+                    or raw.get("order_id")
+                    or raw.get("broker_order_id")
+                    or raw.get("broker_id")
+                    or ""
+                ).strip()
+                or None,
                 signed_qty=signed_qty,
                 quantity_abs=quantity_abs,
                 side="short" if signed_qty < 0 else "long",

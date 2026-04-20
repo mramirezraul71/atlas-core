@@ -266,6 +266,7 @@ class StrategyTracker:
                     {
                         "symbol": position.symbol,
                         "asset_class": position.asset_class,
+                        "broker_order_id": position.broker_order_id,
                         "side": position.side,
                         "signed_qty": position.signed_qty,
                         "entry_price": round(position.entry_price, 4),

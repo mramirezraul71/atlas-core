@@ -22,9 +22,9 @@
       "timeframe": "4h",
       "selection_score": 73.72,
       "recorded_at": "2026-04-01T17:54:03.470092+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 298.890969,
+      "measured_at": "2026-04-17T05:07:59.175029+00:00",
+      "outcome_available": true
     },
     "8e4ea0f7-2c2c-45b0-b16a-1eca4c255100": {
       "signal_id": "8e4ea0f7-2c2c-45b0-b16a-1eca4c255100",
@@ -35,9 +35,9 @@
       "timeframe": "4h",
       "selection_score": 71.54,
       "recorded_at": "2026-04-01T17:56:39.637199+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 200.222818,
+      "measured_at": "2026-04-17T05:07:59.167586+00:00",
+      "outcome_available": true
     },
     "d640b949-bd43-44ea-a621-a8b4ab727983": {
       "signal_id": "d640b949-bd43-44ea-a621-a8b4ab727983",
@@ -48,9 +48,9 @@
       "timeframe": "1d",
       "selection_score": 66.13,
       "recorded_at": "2026-04-01T18:01:41.119485+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 598.618386,
+      "measured_at": "2026-04-17T05:07:59.187102+00:00",
+      "outcome_available": true
     },
     "d979370a-301d-436e-a6ff-fca168c048ba": {
       "signal_id": "d979370a-301d-436e-a6ff-fca168c048ba",
@@ -61,9 +61,9 @@
       "timeframe": "1d",
       "selection_score": 70.49,
       "recorded_at": "2026-04-01T18:04:55.978891+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 400.140972,
+      "measured_at": "2026-04-17T05:07:59.197516+00:00",
+      "outcome_available": true
     },
     "562e71da-e7d2-4a88-89b9-24a2d1bbe860": {
       "signal_id": "562e71da-e7d2-4a88-89b9-24a2d1bbe860",
@@ -74,9 +74,9 @@
       "timeframe": "1d",
       "selection_score": 68.05,
       "recorded_at": "2026-04-01T18:07:31.351976+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 501.811169,
+      "measured_at": "2026-04-17T05:07:59.202962+00:00",
+      "outcome_available": true
     },
     "0c022bc9-817f-42ab-8326-dfedc6c8a3bd": {
       "signal_id": "0c022bc9-817f-42ab-8326-dfedc6c8a3bd",
@@ -87,9 +87,9 @@
       "timeframe": "5m",
       "selection_score": 73.99,
       "recorded_at": "2026-04-01T18:12:36.214858+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 1800.0,
+      "measured_at": "2026-04-17T05:18:00.188740+00:00",
+      "outcome_available": true
     },
     "7b85a088-9bf8-4833-b53f-af54611df7d9": {
       "signal_id": "7b85a088-9bf8-4833-b53f-af54611df7d9",
@@ -191,9 +191,9 @@
       "timeframe": "1h",
       "selection_score": 87.43,
       "recorded_at": "2026-04-01T18:44:53.391609+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 2380.227385,
+      "measured_at": "2026-04-17T05:12:59.854598+00:00",
+      "outcome_available": true
     },
     "7a6b492f-6ff0-4917-931f-3da294e3bfc9": {
       "signal_id": "7a6b492f-6ff0-4917-931f-3da294e3bfc9",
@@ -204,9 +204,9 @@
       "timeframe": "4h",
       "selection_score": 73.9,
       "recorded_at": "2026-04-01T18:53:37.861067+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": -0.174691,
+      "measured_at": "2026-04-17T05:07:59.368863+00:00",
+      "outcome_available": true
     },
     "01a36c5d-e2fe-46fd-b62b-3e77c38f96be": {
       "signal_id": "01a36c5d-e2fe-46fd-b62b-3e77c38f96be",
@@ -243,9 +243,9 @@
       "timeframe": "1h",
       "selection_score": 72.69,
       "recorded_at": "2026-04-01T19:08:58.676015+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 400.374859,
+      "measured_at": "2026-04-17T05:07:59.389416+00:00",
+      "outcome_available": true
     },
     "da3e6c97-de58-48ae-b277-bf9daa3e60bf": {
       "signal_id": "da3e6c97-de58-48ae-b277-bf9daa3e60bf",
@@ -256,9 +256,9 @@
       "timeframe": "1h",
       "selection_score": 71.84,
       "recorded_at": "2026-04-01T19:13:10.359119+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 1197.802463,
+      "measured_at": "2026-04-17T05:07:59.397692+00:00",
+      "outcome_available": true
     },
     "bf2c418f-7494-48b8-bba0-13aa661c5a06": {
       "signal_id": "bf2c418f-7494-48b8-bba0-13aa661c5a06",
@@ -282,9 +282,9 @@
       "timeframe": "1d",
       "selection_score": 72.37,
       "recorded_at": "2026-04-01T19:32:34.830074+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 2098.957346,
+      "measured_at": "2026-04-17T05:07:59.422704+00:00",
+      "outcome_available": true
     },
     "6bf902a6-e160-4849-87d4-dac98fc0d5ea": {
       "signal_id": "6bf902a6-e160-4849-87d4-dac98fc0d5ea",
@@ -373,9 +373,9 @@
       "timeframe": "4h",
       "selection_score": 73.61,
       "recorded_at": "2026-04-01T20:05:27.462226+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 3402.039627,
+      "measured_at": "2026-04-17T05:12:59.942481+00:00",
+      "outcome_available": true
     },
     "e311cd3e-4b60-4349-8172-db52cbb7b8ed": {
       "signal_id": "e311cd3e-4b60-4349-8172-db52cbb7b8ed",
@@ -594,9 +594,9 @@
       "timeframe": "1d",
       "selection_score": 77.23,
       "recorded_at": "2026-04-01T21:25:09.036412+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 7400.0,
+      "measured_at": "2026-04-17T05:13:00.023263+00:00",
+      "outcome_available": true
     },
     "df404a9d-d950-4f18-bf06-82c6985d7842": {
       "signal_id": "df404a9d-d950-4f18-bf06-82c6985d7842",
@@ -685,9 +685,9 @@
       "timeframe": "5m",
       "selection_score": 68.05,
       "recorded_at": "2026-04-01T22:03:37.815510+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": -54.594104,
+      "measured_at": "2026-04-17T05:13:00.064976+00:00",
+      "outcome_available": true
     },
     "cfd5e982-84c8-4f18-bafc-85eb2de3f67e": {
       "signal_id": "cfd5e982-84c8-4f18-bafc-85eb2de3f67e",
@@ -698,9 +698,9 @@
       "timeframe": "5m",
       "selection_score": 68.05,
       "recorded_at": "2026-04-01T22:06:42.921014+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": -54.594104,
+      "measured_at": "2026-04-17T05:07:59.595919+00:00",
+      "outcome_available": true
     },
     "6e572ae5-2ffb-4386-aa00-482a14b22b7c": {
       "signal_id": "6e572ae5-2ffb-4386-aa00-482a14b22b7c",
@@ -711,9 +711,9 @@
       "timeframe": "15m",
       "selection_score": 90.98,
       "recorded_at": "2026-04-01T22:09:04.989641+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 882.65896,
+      "measured_at": "2026-04-17T05:18:00.375891+00:00",
+      "outcome_available": true
     },
     "3d3ebd81-cd27-4448-ae19-a2ab08875662": {
       "signal_id": "3d3ebd81-cd27-4448-ae19-a2ab08875662",
@@ -724,9 +724,9 @@
       "timeframe": "15m",
       "selection_score": 90.98,
       "recorded_at": "2026-04-01T22:11:29.440387+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 882.65896,
+      "measured_at": "2026-04-17T05:13:00.074565+00:00",
+      "outcome_available": true
     },
     "475a06c9-009d-4d98-b411-9cd9522ff31f": {
       "signal_id": "475a06c9-009d-4d98-b411-9cd9522ff31f",
@@ -763,9 +763,9 @@
       "timeframe": "15m",
       "selection_score": 75.0,
       "recorded_at": "2026-04-01T22:29:35.780672+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 627.669638,
+      "measured_at": "2026-04-17T05:12:59.791625+00:00",
+      "outcome_available": true
     },
     "bfa5d7d4-841f-46f6-b259-7fcc6b41080a": {
       "signal_id": "bfa5d7d4-841f-46f6-b259-7fcc6b41080a",
@@ -776,9 +776,9 @@
       "timeframe": "15m",
       "selection_score": 75.0,
       "recorded_at": "2026-04-01T22:32:03.931380+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 360.857437,
+      "measured_at": "2026-04-17T05:07:59.148724+00:00",
+      "outcome_available": true
     },
     "08e602c3-6d3b-4983-b400-b8ad09a554c9": {
       "signal_id": "08e602c3-6d3b-4983-b400-b8ad09a554c9",
@@ -789,9 +789,9 @@
       "timeframe": "15m",
       "selection_score": 68.4,
       "recorded_at": "2026-04-01T22:34:31.305812+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 3387.326982,
+      "measured_at": "2026-04-17T05:07:59.155807+00:00",
+      "outcome_available": true
     },
     "0fcfa6c0-ec2b-414b-9ded-361bb4fa86dc": {
       "signal_id": "0fcfa6c0-ec2b-414b-9ded-361bb4fa86dc",
@@ -802,9 +802,9 @@
       "timeframe": "15m",
       "selection_score": 68.4,
       "recorded_at": "2026-04-01T22:36:54.994697+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 1453.118821,
+      "measured_at": "2026-04-17T05:07:59.152379+00:00",
+      "outcome_available": true
     },
     "83cfa4b8-f93a-4902-b74e-b79c26f7e8db": {
       "signal_id": "83cfa4b8-f93a-4902-b74e-b79c26f7e8db",
@@ -893,9 +893,9 @@
       "timeframe": "15m",
       "selection_score": 80.85,
       "recorded_at": "2026-04-01T23:03:13.474111+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 86.784964,
+      "measured_at": "2026-04-17T05:12:59.787211+00:00",
+      "outcome_available": true
     },
     "f1265a25-9077-4143-8549-8a0835a75eb0": {
       "signal_id": "f1265a25-9077-4143-8549-8a0835a75eb0",
@@ -906,9 +906,9 @@
       "timeframe": "15m",
       "selection_score": 80.85,
       "recorded_at": "2026-04-01T23:07:02.885422+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 86.784964,
+      "measured_at": "2026-04-17T05:07:59.137783+00:00",
+      "outcome_available": true
     },
     "ef6e208c-c56a-4f89-af8d-b24f0e4c9262": {
       "signal_id": "ef6e208c-c56a-4f89-af8d-b24f0e4c9262",
@@ -919,9 +919,9 @@
       "timeframe": "1d",
       "selection_score": 66.83,
       "recorded_at": "2026-04-01T23:09:55.799419+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 3627.491166,
+      "measured_at": "2026-04-20T13:22:42.138935+00:00",
+      "outcome_available": true
     },
     "f53f942e-def3-4b85-8534-61cbbc448e29": {
       "signal_id": "f53f942e-def3-4b85-8534-61cbbc448e29",
@@ -932,9 +932,9 @@
       "timeframe": "4h",
       "selection_score": 75.5,
       "recorded_at": "2026-04-01T23:18:39.127086+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": -4.484017,
+      "measured_at": "2026-04-20T13:22:42.150230+00:00",
+      "outcome_available": true
     },
     "b79f59c7-ef75-4570-9ef3-fa30b08dc226": {
       "signal_id": "b79f59c7-ef75-4570-9ef3-fa30b08dc226",
@@ -971,9 +971,9 @@
       "timeframe": "1h",
       "selection_score": 73.18,
       "recorded_at": "2026-04-01T23:38:55.177281+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 2661.802398,
+      "measured_at": "2026-04-20T13:27:42.543952+00:00",
+      "outcome_available": true
     },
     "6fd49dd9-2dd3-4eaa-8da1-6d551209814e": {
       "signal_id": "6fd49dd9-2dd3-4eaa-8da1-6d551209814e",
@@ -984,9 +984,9 @@
       "timeframe": "1h",
       "selection_score": 73.18,
       "recorded_at": "2026-04-01T23:41:12.422648+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 2661.802398,
+      "measured_at": "2026-04-20T13:22:42.186219+00:00",
+      "outcome_available": true
     },
     "353feadd-8f85-4ada-af05-8ed57f72a19b": {
       "signal_id": "353feadd-8f85-4ada-af05-8ed57f72a19b",
@@ -997,9 +997,9 @@
       "timeframe": "5m",
       "selection_score": 69.4,
       "recorded_at": "2026-04-01T23:43:52.045721+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 88.430375,
+      "measured_at": "2026-04-20T13:27:42.550375+00:00",
+      "outcome_available": true
     },
     "9b916252-6145-4804-b81b-f6d4d805cfda": {
       "signal_id": "9b916252-6145-4804-b81b-f6d4d805cfda",
@@ -1010,9 +1010,9 @@
       "timeframe": "5m",
       "selection_score": 69.4,
       "recorded_at": "2026-04-01T23:46:36.313397+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 88.430375,
+      "measured_at": "2026-04-20T13:22:42.193859+00:00",
+      "outcome_available": true
     },
     "5834db2d-8f61-4c2c-a193-7b913bc48607": {
       "signal_id": "5834db2d-8f61-4c2c-a193-7b913bc48607",
@@ -1023,9 +1023,9 @@
       "timeframe": "5m",
       "selection_score": 76.51,
       "recorded_at": "2026-04-01T23:49:00.327243+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 223.306157,
+      "measured_at": "2026-04-17T05:07:59.125795+00:00",
+      "outcome_available": true
     },
     "25539958-355a-4d8e-bcb8-d8030fffe74c": {
       "signal_id": "25539958-355a-4d8e-bcb8-d8030fffe74c",
@@ -1075,9 +1075,9 @@
       "timeframe": "4h",
       "selection_score": 68.56,
       "recorded_at": "2026-04-02T00:17:53.813099+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 8455.695682,
+      "measured_at": "2026-04-20T13:32:42.918913+00:00",
+      "outcome_available": true
     },
     "da2e9b2c-c6f8-48ea-b2b7-2461bfa2cb94": {
       "signal_id": "da2e9b2c-c6f8-48ea-b2b7-2461bfa2cb94",
@@ -1088,9 +1088,9 @@
       "timeframe": "4h",
       "selection_score": 68.56,
       "recorded_at": "2026-04-02T00:20:11.185621+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 8455.695682,
+      "measured_at": "2026-04-20T13:27:42.597109+00:00",
+      "outcome_available": true
     },
     "aee7ef18-e089-493b-928e-d2f809532f5e": {
       "signal_id": "aee7ef18-e089-493b-928e-d2f809532f5e",
@@ -1101,9 +1101,9 @@
       "timeframe": "4h",
       "selection_score": 68.56,
       "recorded_at": "2026-04-02T00:22:27.389501+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 8455.695682,
+      "measured_at": "2026-04-20T13:22:42.257879+00:00",
+      "outcome_available": true
     },
     "ca1e22f1-7660-46cd-a758-adb58351b43c": {
       "signal_id": "ca1e22f1-7660-46cd-a758-adb58351b43c",
@@ -1140,9 +1140,9 @@
       "timeframe": "15m",
       "selection_score": 76.03,
       "recorded_at": "2026-04-02T00:48:30.020327+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 40.080546,
+      "measured_at": "2026-04-20T13:27:42.615372+00:00",
+      "outcome_available": true
     },
     "7d23e6cd-845f-4c76-b1be-feb24d3498f2": {
       "signal_id": "7d23e6cd-845f-4c76-b1be-feb24d3498f2",
@@ -1153,9 +1153,9 @@
       "timeframe": "15m",
       "selection_score": 76.03,
       "recorded_at": "2026-04-02T00:51:02.789765+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 40.080546,
+      "measured_at": "2026-04-20T13:22:42.281603+00:00",
+      "outcome_available": true
     },
     "e26dafcc-9a26-4af3-a785-5b6b5c072f8a": {
       "signal_id": "e26dafcc-9a26-4af3-a785-5b6b5c072f8a",
@@ -1166,9 +1166,9 @@
       "timeframe": "15m",
       "selection_score": 82.98,
       "recorded_at": "2026-04-02T01:13:52.103473+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 76.217204,
+      "measured_at": "2026-04-17T05:07:59.140895+00:00",
+      "outcome_available": true
     },
     "bed20059-09ec-4501-a614-94b63cb4c8d5": {
       "signal_id": "bed20059-09ec-4501-a614-94b63cb4c8d5",
@@ -1179,9 +1179,9 @@
       "timeframe": "5m",
       "selection_score": 70.16,
       "recorded_at": "2026-04-02T01:33:31.830082+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": -20.886076,
+      "measured_at": "2026-04-20T13:22:42.330263+00:00",
+      "outcome_available": true
     },
     "c8415624-5272-46d6-a881-8b2720b08918": {
       "signal_id": "c8415624-5272-46d6-a881-8b2720b08918",
@@ -1192,9 +1192,9 @@
       "timeframe": "5m",
       "selection_score": 67.55,
       "recorded_at": "2026-04-02T01:40:06.690786+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 182.685512,
+      "measured_at": "2026-04-20T13:27:42.667958+00:00",
+      "outcome_available": true
     },
     "27f8c3dd-d7ba-45dd-a8f6-410aa8205843": {
       "signal_id": "27f8c3dd-d7ba-45dd-a8f6-410aa8205843",
@@ -1205,9 +1205,9 @@
       "timeframe": "5m",
       "selection_score": 67.55,
       "recorded_at": "2026-04-02T01:43:04.128672+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 182.685512,
+      "measured_at": "2026-04-20T13:22:42.341652+00:00",
+      "outcome_available": true
     },
     "279806c6-d862-4bab-82a4-a02db72150ec": {
       "signal_id": "279806c6-d862-4bab-82a4-a02db72150ec",
@@ -2739,9 +2739,9 @@
       "timeframe": "1d",
       "selection_score": 78.0,
       "recorded_at": "2026-04-02T12:19:04.942452+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 7400.0,
+      "measured_at": "2026-04-17T05:07:59.559050+00:00",
+      "outcome_available": true
     },
     "9fe31181-5103-44c5-9cd0-63cd95d540a9": {
       "signal_id": "9fe31181-5103-44c5-9cd0-63cd95d540a9",
@@ -2791,9 +2791,9 @@
       "timeframe": "15m",
       "selection_score": 89.87,
       "recorded_at": "2026-04-02T13:07:51.941085+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 882.65896,
+      "measured_at": "2026-04-17T05:07:59.605265+00:00",
+      "outcome_available": true
     },
     "3c020700-a13a-43bd-93ab-3d77e6273ee5": {
       "signal_id": "3c020700-a13a-43bd-93ab-3d77e6273ee5",
@@ -2830,9 +2830,9 @@
       "timeframe": "15m",
       "selection_score": 73.5,
       "recorded_at": "2026-04-02T13:30:35.980096+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 627.669638,
+      "measured_at": "2026-04-17T05:07:59.144588+00:00",
+      "outcome_available": true
     },
     "bd808006-19a9-45c3-abf3-24a78236717a": {
       "signal_id": "bd808006-19a9-45c3-abf3-24a78236717a",
@@ -2843,9 +2843,9 @@
       "timeframe": "15m",
       "selection_score": 74.73,
       "recorded_at": "2026-04-02T13:35:28.258370+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 1019.373509,
+      "measured_at": "2026-04-20T13:27:42.478127+00:00",
+      "outcome_available": true
     },
     "37c8a8b1-4ee6-4dff-a473-a0fd83a81a13": {
       "signal_id": "37c8a8b1-4ee6-4dff-a473-a0fd83a81a13",
@@ -2856,9 +2856,9 @@
       "timeframe": "15m",
       "selection_score": 74.73,
       "recorded_at": "2026-04-02T13:38:50.141753+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 1019.373509,
+      "measured_at": "2026-04-20T13:22:42.109714+00:00",
+      "outcome_available": true
     },
     "fdc1190f-300f-4470-95d2-db7e1079890f": {
       "signal_id": "fdc1190f-300f-4470-95d2-db7e1079890f",
@@ -3506,9 +3506,9 @@
       "timeframe": "1h",
       "selection_score": 88.78,
       "recorded_at": "2026-04-13T17:10:44.635085+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 422.108871,
+      "measured_at": "2026-04-17T05:07:59.179197+00:00",
+      "outcome_available": true
     },
     "437c0ad9-af86-490b-aaba-3b3fffb3a851": {
       "signal_id": "437c0ad9-af86-490b-aaba-3b3fffb3a851",
@@ -3519,9 +3519,9 @@
       "timeframe": "1h",
       "selection_score": 77.74,
       "recorded_at": "2026-04-13T17:13:24.556779+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 175.301988,
+      "measured_at": "2026-04-17T05:07:59.171242+00:00",
+      "outcome_available": true
     },
     "60d4052a-467c-453c-9a16-04788c3e76c2": {
       "signal_id": "60d4052a-467c-453c-9a16-04788c3e76c2",
@@ -3532,9 +3532,9 @@
       "timeframe": "1h",
       "selection_score": 80.32,
       "recorded_at": "2026-04-13T17:16:09.128273+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 91.077731,
+      "measured_at": "2026-04-17T05:12:59.809602+00:00",
+      "outcome_available": true
     },
     "8f8ee9f6-0461-4d61-8f9f-e4da552fc172": {
       "signal_id": "8f8ee9f6-0461-4d61-8f9f-e4da552fc172",
@@ -3584,9 +3584,9 @@
       "timeframe": "4h",
       "selection_score": 87.71,
       "recorded_at": "2026-04-13T17:26:42.703239+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 1526.33315,
+      "measured_at": "2026-04-17T05:12:59.827491+00:00",
+      "outcome_available": true
     },
     "73113370-6af8-4878-9d0d-b75eaf958e19": {
       "signal_id": "73113370-6af8-4878-9d0d-b75eaf958e19",
@@ -3636,9 +3636,9 @@
       "timeframe": "4h",
       "selection_score": 76.08,
       "recorded_at": "2026-04-13T17:38:08.630280+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 209.105892,
+      "measured_at": "2026-04-17T05:07:59.317563+00:00",
+      "outcome_available": true
     },
     "63fb16be-46e2-46f6-9f85-67fea4dbb9ec": {
       "signal_id": "63fb16be-46e2-46f6-9f85-67fea4dbb9ec",
@@ -3649,9 +3649,9 @@
       "timeframe": "4h",
       "selection_score": 88.77,
       "recorded_at": "2026-04-13T17:43:12.766416+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 69.485763,
+      "measured_at": "2026-04-17T05:12:59.845603+00:00",
+      "outcome_available": true
     },
     "14d2d4be-bcd5-4acb-b8e3-5a054c56a34f": {
       "signal_id": "14d2d4be-bcd5-4acb-b8e3-5a054c56a34f",
@@ -3701,9 +3701,9 @@
       "timeframe": "1h",
       "selection_score": 87.57,
       "recorded_at": "2026-04-13T18:06:27.033448+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 375.396391,
+      "measured_at": "2026-04-17T05:07:59.158773+00:00",
+      "outcome_available": true
     },
     "58631f65-68e2-4a29-9eaf-f913d0b15330": {
       "signal_id": "58631f65-68e2-4a29-9eaf-f913d0b15330",
@@ -3727,9 +3727,9 @@
       "timeframe": "1h",
       "selection_score": 89.45,
       "recorded_at": "2026-04-13T18:11:12.015472+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 425.463646,
+      "measured_at": "2026-04-17T05:12:59.806658+00:00",
+      "outcome_available": true
     },
     "10ef9ab3-ec31-4873-b380-f8b2ee1a10ee": {
       "signal_id": "10ef9ab3-ec31-4873-b380-f8b2ee1a10ee",
@@ -3740,9 +3740,9 @@
       "timeframe": "1h",
       "selection_score": 83.34,
       "recorded_at": "2026-04-13T18:13:41.763038+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 90.675441,
+      "measured_at": "2026-04-17T05:07:59.183217+00:00",
+      "outcome_available": true
     },
     "61b21a8a-fc21-4483-8049-d2e8b6e76cdc": {
       "signal_id": "61b21a8a-fc21-4483-8049-d2e8b6e76cdc",
@@ -3792,9 +3792,9 @@
       "timeframe": "15m",
       "selection_score": 80.66,
       "recorded_at": "2026-04-13T18:24:27.818833+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 68.976787,
+      "measured_at": "2026-04-17T05:07:59.247202+00:00",
+      "outcome_available": true
     },
     "89483b3b-6c13-46bd-a9f5-2967b21655fe": {
       "signal_id": "89483b3b-6c13-46bd-a9f5-2967b21655fe",
@@ -3805,9 +3805,9 @@
       "timeframe": "4h",
       "selection_score": 87.21,
       "recorded_at": "2026-04-13T18:27:07.487356+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 1505.154639,
+      "measured_at": "2026-04-17T05:07:59.270250+00:00",
+      "outcome_available": true
     },
     "68327d94-5746-43ee-8627-419a5e72aca2": {
       "signal_id": "68327d94-5746-43ee-8627-419a5e72aca2",
@@ -3870,9 +3870,9 @@
       "timeframe": "4h",
       "selection_score": 85.08,
       "recorded_at": "2026-04-13T18:39:10.739296+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 87.125506,
+      "measured_at": "2026-04-17T05:07:59.329857+00:00",
+      "outcome_available": true
     },
     "e72ec3a5-9def-4d42-b061-00f55f93d3ce": {
       "signal_id": "e72ec3a5-9def-4d42-b061-00f55f93d3ce",
@@ -3883,9 +3883,9 @@
       "timeframe": "4h",
       "selection_score": 90.64,
       "recorded_at": "2026-04-13T18:41:28.932469+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 65.867184,
+      "measured_at": "2026-04-17T05:07:59.336220+00:00",
+      "outcome_available": true
     },
     "8118c062-27f6-49cd-806f-bb5fe98c0d1e": {
       "signal_id": "8118c062-27f6-49cd-806f-bb5fe98c0d1e",
@@ -3922,9 +3922,9 @@
       "timeframe": "1h",
       "selection_score": 86.73,
       "recorded_at": "2026-04-13T18:48:23.674131+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 2195.288198,
+      "measured_at": "2026-04-17T05:07:59.346504+00:00",
+      "outcome_available": true
     },
     "9e63bee7-a6e8-4f1c-b681-89ebbbe3650d": {
       "signal_id": "9e63bee7-a6e8-4f1c-b681-89ebbbe3650d",
@@ -3974,9 +3974,9 @@
       "timeframe": "1d",
       "selection_score": 76.39,
       "recorded_at": "2026-04-13T18:57:58.390103+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 54.212739,
+      "measured_at": "2026-04-17T05:07:59.373833+00:00",
+      "outcome_available": true
     },
     "43627647-2259-41f7-832c-9b157da11f54": {
       "signal_id": "43627647-2259-41f7-832c-9b157da11f54",
@@ -4013,9 +4013,9 @@
       "timeframe": "4h",
       "selection_score": 83.29,
       "recorded_at": "2026-04-13T19:04:55.961031+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 571.823381,
+      "measured_at": "2026-04-17T05:07:59.379525+00:00",
+      "outcome_available": true
     },
     "7a758b54-8010-4ce9-8f0c-e5e01b1ae83f": {
       "signal_id": "7a758b54-8010-4ce9-8f0c-e5e01b1ae83f",
@@ -4026,9 +4026,9 @@
       "timeframe": "1d",
       "selection_score": 81.35,
       "recorded_at": "2026-04-13T19:07:07.458599+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 501.423641,
+      "measured_at": "2026-04-17T05:07:59.384197+00:00",
+      "outcome_available": true
     },
     "40318ddd-6a54-41dc-857c-448284353d21": {
       "signal_id": "40318ddd-6a54-41dc-857c-448284353d21",
@@ -4039,9 +4039,9 @@
       "timeframe": "4h",
       "selection_score": 85.99,
       "recorded_at": "2026-04-13T19:09:19.795403+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 93.425957,
+      "measured_at": "2026-04-17T05:07:59.393505+00:00",
+      "outcome_available": true
     },
     "4d4e1cc7-b450-41b6-b80d-04474fedf4be": {
       "signal_id": "4d4e1cc7-b450-41b6-b80d-04474fedf4be",
@@ -4052,9 +4052,9 @@
       "timeframe": "4h",
       "selection_score": 82.62,
       "recorded_at": "2026-04-13T19:11:32.316561+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 53.770387,
+      "measured_at": "2026-04-17T05:07:59.405143+00:00",
+      "outcome_available": true
     },
     "d6b3d0dc-241c-4f3e-ae7e-8d357cfdcce8": {
       "signal_id": "d6b3d0dc-241c-4f3e-ae7e-8d357cfdcce8",
@@ -4104,9 +4104,9 @@
       "timeframe": "1h",
       "selection_score": 81.75,
       "recorded_at": "2026-04-13T19:21:14.062551+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 467.001306,
+      "measured_at": "2026-04-17T05:07:59.416283+00:00",
+      "outcome_available": true
     },
     "dc5d6543-243a-4799-8d76-7c60065e73b5": {
       "signal_id": "dc5d6543-243a-4799-8d76-7c60065e73b5",
@@ -4143,9 +4143,9 @@
       "timeframe": "4h",
       "selection_score": 87.06,
       "recorded_at": "2026-04-13T19:27:48.074392+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 79.503459,
+      "measured_at": "2026-04-17T05:07:59.433078+00:00",
+      "outcome_available": true
     },
     "29347419-a5ca-4c68-a61d-7f638d554f4c": {
       "signal_id": "29347419-a5ca-4c68-a61d-7f638d554f4c",
@@ -4260,9 +4260,9 @@
       "timeframe": "1d",
       "selection_score": 82.53,
       "recorded_at": "2026-04-13T19:47:47.300296+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 220.384488,
+      "measured_at": "2026-04-17T05:07:59.481610+00:00",
+      "outcome_available": true
     },
     "62b1bc5f-f49a-4510-ada4-b34f552757fc": {
       "signal_id": "62b1bc5f-f49a-4510-ada4-b34f552757fc",
@@ -4286,9 +4286,9 @@
       "timeframe": "1d",
       "selection_score": 77.59,
       "recorded_at": "2026-04-13T19:52:13.983917+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 485.378916,
+      "measured_at": "2026-04-17T05:07:59.491668+00:00",
+      "outcome_available": true
     },
     "a8b0824a-93bc-429c-952d-e9cb12e9b267": {
       "signal_id": "a8b0824a-93bc-429c-952d-e9cb12e9b267",
@@ -4299,9 +4299,9 @@
       "timeframe": "4h",
       "selection_score": 75.99,
       "recorded_at": "2026-04-13T19:54:29.804827+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 3189.272031,
+      "measured_at": "2026-04-17T05:07:59.488402+00:00",
+      "outcome_available": true
     },
     "3f2153cc-cd50-45cd-af26-a196ff9c97b4": {
       "signal_id": "3f2153cc-cd50-45cd-af26-a196ff9c97b4",
@@ -4312,9 +4312,9 @@
       "timeframe": "4h",
       "selection_score": 85.43,
       "recorded_at": "2026-04-13T19:56:51.348716+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 304.320079,
+      "measured_at": "2026-04-17T05:07:59.499060+00:00",
+      "outcome_available": true
     },
     "2c071907-03f4-4285-b099-093144e3ccb1": {
       "signal_id": "2c071907-03f4-4285-b099-093144e3ccb1",
@@ -4338,9 +4338,9 @@
       "timeframe": "4h",
       "selection_score": 81.21,
       "recorded_at": "2026-04-13T20:01:20.741541+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 184.721125,
+      "measured_at": "2026-04-17T05:07:59.503245+00:00",
+      "outcome_available": true
     },
     "4bc37b74-3d8b-47b5-953e-7a02bc00744a": {
       "signal_id": "4bc37b74-3d8b-47b5-953e-7a02bc00744a",
@@ -4377,9 +4377,9 @@
       "timeframe": "1d",
       "selection_score": 74.99,
       "recorded_at": "2026-04-13T20:08:16.337583+00:00",
-      "actual_return_pct": null,
-      "measured_at": null,
-      "outcome_available": false
+      "actual_return_pct": 262.633333,
+      "measured_at": "2026-04-17T05:07:59.508432+00:00",
+      "outcome_available": true
     },
     "c25301da-4cdd-4806-a8ef-1b706844ce08": {
       "signal_id": "c25301da-4cdd-4806-a8ef-1b706844ce08",
@@ -4447,5 +4447,5 @@
       "outcome_available": false
     }
   },
-  "updated_at": "2026-04-13T20:23:02.907442+00:00"
+  "updated_at": "2026-04-20T13:32:42.918920+00:00"
 }

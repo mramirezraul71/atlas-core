@@ -17225,6 +17225,17 @@ async def quant_ui_root():
     raise HTTPException(status_code=404, detail="Code-Quant dashboard not built")
 
 
+@app.get("/api/options-engine-status", include_in_schema=False)
+async def options_engine_status():
+    """Snapshot ligero del Options Engine paper para el hub 8791."""
+    try:
+        from atlas_code_quant.options.options_engine_metrics import get_ui_snapshot
+
+        return get_ui_snapshot()
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "automation_mode": "paper_only"}
+
+
 @app.get("/atlas-ui", include_in_schema=False)
 async def atlas_ui_legacy_redirect():
     """Alias legado del dashboard principal; redirige a /ui para compatibilidad."""

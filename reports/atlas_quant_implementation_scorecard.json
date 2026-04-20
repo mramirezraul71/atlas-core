@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-16T01:19:34.113479+00:00",
+  "generated_at": "2026-04-20T13:41:29.385870+00:00",
   "topic": "atlas_quant_trading_implementation_scorecard",
   "summary": "Scorecard operativo para medir dos cosas separadas: cuanto del metodo ya esta implantado y cuanta evidencia real existe de que esa implantacion esta sirviendo.",
   "metric_catalog": [
@@ -30,6 +30,10 @@
     {
       "name": "options_strategy_governance_feedback_score",
       "goal": "Medir si el benchmark externo de estructuras con opciones ya fue traducido a taxonomia, constraints y reglas reutilizables."
+    },
+    {
+      "name": "hybrid_order_flow_feedback_score",
+      "goal": "Medir si el order flow hibrido (microestructura intradia + superficie de opciones) ya fue traducido a proveedor reusable, telemetria degradable, status operativo y tests."
     },
     {
       "name": "test_guardrail_score",
@@ -91,16 +95,19 @@
     },
     "memory_persistence_score": {
       "name": "memory_persistence_score",
-      "value": 74.16,
-      "status": "workable",
+      "value": 100.0,
+      "status": "healthy",
       "details": {
-        "delivered_events": 1550,
-        "total_events": 2207,
-        "queued_local_only_events": 657,
-        "delivery_ratio_pct": 70.23,
+        "delivered_events": 1717,
+        "total_events": 2374,
+        "queued_local_only_events": 0,
+        "active_pending_events": 0,
+        "historical_local_only_events": 657,
+        "delivery_ratio_pct": 100.0,
         "last_memory_ok": true,
         "last_bitacora_ok": true,
-        "protocol_note_events": 0,
+        "replay_tracking_ready": true,
+        "protocol_note_events": 2,
         "scorecard_note_events": 0
       }
     },
@@ -125,7 +132,7 @@
           "post_trade_learning",
           "scanner_selection"
         ],
-        "registered_source_count": 16,
+        "registered_source_count": 23,
         "stage_coverage_pct": 100.0,
         "source_depth_pct": 100.0,
         "translation_pct": 100.0
@@ -133,8 +140,8 @@
     },
     "observability_feedback_score": {
       "name": "observability_feedback_score",
-      "value": 73.33,
-      "status": "workable",
+      "value": 95.0,
+      "status": "healthy",
       "details": {
         "report_available": true,
         "overall_status": "ready",
@@ -145,38 +152,57 @@
         "dashboards_ok": true,
         "alerting_ready": true,
         "provisioning_rebuild_ok": true,
-        "reload_resilience_pct": 66.67,
+        "reload_resilience_pct": 100.0,
         "foundation_score_pct": 100.0,
-        "freshness_pct": 0.0,
-        "age_hours": 447.19
+        "freshness_pct": 75.0,
+        "age_hours": 16.08
       }
     },
     "visual_benchmark_feedback_score": {
       "name": "visual_benchmark_feedback_score",
-      "value": 16.67,
-      "status": "critical",
+      "value": 100.0,
+      "status": "healthy",
       "details": {
         "report_available": true,
-        "visual_source_count": 0,
-        "focus_defined": false,
-        "human_best_practice_defined": false,
-        "automation_translation_defined": false,
-        "recommended_metrics_defined": false,
-        "web_feedback_loop_defined": false
+        "visual_source_count": 4,
+        "focus_defined": true,
+        "human_best_practice_defined": true,
+        "automation_translation_defined": true,
+        "recommended_metrics_defined": true,
+        "web_feedback_loop_defined": true
       }
     },
     "options_strategy_governance_feedback_score": {
       "name": "options_strategy_governance_feedback_score",
-      "value": 16.67,
-      "status": "critical",
+      "value": 100.0,
+      "status": "healthy",
       "details": {
         "report_available": true,
-        "options_source_count": 0,
-        "focus_defined": false,
-        "human_best_practice_defined": false,
-        "automation_translation_defined": false,
-        "recommended_metrics_defined": false,
-        "web_feedback_loop_defined": false
+        "options_source_count": 3,
+        "focus_defined": true,
+        "human_best_practice_defined": true,
+        "automation_translation_defined": true,
+        "recommended_metrics_defined": true,
+        "web_feedback_loop_defined": true
+      }
+    },
+    "hybrid_order_flow_feedback_score": {
+      "name": "hybrid_order_flow_feedback_score",
+      "value": 100.0,
+      "status": "healthy",
+      "details": {
+        "provider_module_present": true,
+        "scanner_hybrid_runtime_present": true,
+        "settings_present": true,
+        "operation_center_present": true,
+        "guardrail_tests_present": true,
+        "telemetry_dir_present": true,
+        "telemetry_sqlite_store_present": true,
+        "foundation_pct": 100.0,
+        "governance_pct": 100.0,
+        "telemetry_backend_ready_pct": 100.0,
+        "runtime_store_pct": 100.0,
+        "translation_pct": 100.0
       }
     },
     "test_guardrail_score": {
@@ -203,13 +229,13 @@
       "status": "watch",
       "details": {
         "journal_available": true,
-        "open_total": 56,
+        "open_total": 135,
         "open_untracked": 0,
         "open_untracked_ratio_pct": 0.0,
         "attributed_open_positions_pct": 100.0,
         "closed_total": 7420,
         "evidence_sufficiency_score": 100.0,
-        "open_pnl": 1236.91,
+        "open_pnl": 6313.64,
         "realized_pnl": -85161.98,
         "post_mortem_coverage_pct": 100.0,
         "recent_attribution_pct": 100.0,
@@ -217,7 +243,7 @@
         "recent_unattributed_ratio_pct": 0.0,
         "recent_sample_size": 100,
         "external_learning_translation_score": 100.0,
-        "signal_ic_quality_score": 5.0,
+        "signal_ic_quality_score": 20.0,
         "paper_outcome_quality_score": 0.0,
         "paper_outcome_quality": {
           "sample_count": 0,
@@ -237,19 +263,35 @@
     },
     "signal_ic_quality_score": {
       "name": "signal_ic_quality_score",
-      "value": 5.0,
-      "status": "insufficient_data",
+      "value": 20.0,
+      "status": "critical",
       "details": {
         "ic_tracker_available": true,
         "total_signals": 342,
-        "signals_with_outcome": 0,
-        "min_required": 5,
-        "note": "Solo 0 se\u00f1ales con outcome. Se necesitan al menos 5 para calcular IC, 30 para se\u00f1al meaningfully \u00fatil."
+        "signals_with_outcome": 71,
+        "overall_ic": -0.244473,
+        "overall_t_stat": -2.0943,
+        "ic_status": "negative",
+        "by_method": {
+          "unknown": {
+            "ic": -0.244473,
+            "t_stat": -2.0943,
+            "n": 71,
+            "status": "negative"
+          }
+        },
+        "benchmark": {
+          "ic_meaningful": 0.05,
+          "ic_strong": 0.1,
+          "t_stat_min": 2.0,
+          "source": "Grinold & Kahn \u2014 Active Portfolio Management (2000)"
+        },
+        "note": "IC negativo (-0.2445, t=-2.09, significativo (t\u22652)): la se\u00f1al predice en direcci\u00f3n contraria al resultado. Revisar criterio de direcci\u00f3n o filtro de r\u00e9gimen."
       }
     }
   },
   "supporting_indicators": {
-    "brain_delivery_ratio_pct": 70.23,
+    "brain_delivery_ratio_pct": 100.0,
     "attributed_open_positions_pct": 100.0,
     "open_untracked_ratio_pct": 0.0,
     "recent_unattributed_count": 0,
@@ -257,25 +299,24 @@
     "post_mortem_coverage_pct": 100.0,
     "recent_attribution_pct": 100.0,
     "external_learning_translation_score": 100.0,
-    "observability_feedback_score": 73.33,
-    "visual_benchmark_feedback_score": 16.67,
-    "visual_benchmark_source_count": 0,
+    "observability_feedback_score": 95.0,
+    "visual_benchmark_feedback_score": 100.0,
+    "visual_benchmark_source_count": 4,
     "visual_benchmark_translation_pct": 0.0,
-    "options_strategy_governance_feedback_score": 16.67,
-    "options_governance_source_count": 0,
+    "options_strategy_governance_feedback_score": 100.0,
+    "options_governance_source_count": 3,
     "options_governance_translation_pct": 0.0,
-    "grafana_reload_resilience_pct": 66.67,
+    "hybrid_order_flow_feedback_score": 100.0,
+    "hybrid_order_flow_translation_pct": 100.0,
+    "market_telemetry_backend_ready_pct": 100.0,
+    "grafana_reload_resilience_pct": 100.0,
     "grafana_alerting_ready_pct": 100.0,
-    "signal_ic_quality_score": 5.0,
-    "ic_tracker_signals_with_outcome": 0,
-    "ic_overall": null,
-    "ic_status": "insufficient_data"
+    "signal_ic_quality_score": 20.0,
+    "ic_tracker_signals_with_outcome": 71,
+    "ic_overall": -0.244473,
+    "ic_status": "negative"
   },
   "next_actions": [
-    "Mejorar la entrega a memoria/bitacora: la absorcion real del aprendizaje todavia es irregular.",
-    "Subir la confiabilidad de observabilidad: Grafana/Prometheus aun no devuelven feedback lo bastante robusto.",
-    "Investigar por que alguna recarga Admin API de Grafana sigue siendo fragil aunque los dashboards esten visibles.",
-    "Acumular outcomes en ICSignalTracker (0 actuales, se necesitan >=5): asegurarse de que update_outcome() se llama al cerrar posiciones.",
     "La calidad paper sigue debil: no declarar utilidad alta mientras profit_factor/expectancy sigan en zona pobre.",
     "El paper book aun no tiene profit factor >= 1.0: revisar reconciliacion, sizing y calidad de se\u00f1al antes de escalar.",
     "La expectancy paper sigue no positiva: exigir mejora real de payoff antes de considerar que la implantacion ya sirve."

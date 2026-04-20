@@ -91,6 +91,9 @@ class SignalExecutor:
         self._kelly = KellySizer(
             fraction=settings.kelly_fraction,
             max_position_pct=settings.kelly_max_position_pct,
+            min_samples=settings.kelly_min_samples,
+            atr_sl_multiplier=settings.atr_sl_multiplier,
+            atr_tp_multiplier=settings.atr_tp_multiplier,
         )
         self._exec_history: list[ExecutionResult] = []
 
@@ -370,7 +373,17 @@ class SignalExecutor:
 
     def _resolve_quantity(self, sig: dict, capital: float | None) -> int:
         """Usa Kelly del signal si ya viene calculado, o recalcula."""
-        qty = int(sig.get("position_size", 0))
+        qty = int(sig.get("position_size", 0) or 0)
+        current_mode = os.getenv("ATLAS_MODE", self.mode).strip().lower()
+
+        if self._should_use_equity_kelly(sig, current_mode=current_mode):
+            resolved_qty, reason = self._resolve_equity_kelly_quantity(sig, capital, planned_qty=qty)
+            logger.info(
+                "EQUITY/KELLY %s qty=%d planned=%d reason=%s",
+                sig.get("symbol", ""), resolved_qty, qty, reason,
+            )
+            return resolved_qty
+
         if qty > 0:
             return qty
 
@@ -383,11 +396,102 @@ class SignalExecutor:
             result = self._kelly.compute(
                 sig.get("symbol", ""), sig.get("strategy", "momentum"), []
             )
-            qty = self._kelly.position_size(cap, price, atr, result)
+            qty = int(self._kelly.position_size(cap, price, result, atr))
         except Exception:
             qty = max(1, int(cap * 0.01 / max(atr, 0.01)))
 
         return max(0, qty)
+
+    def _should_use_equity_kelly(self, sig: dict, *, current_mode: str) -> bool:
+        if self._is_exit_signal(sig):
+            return False
+        if sig.get("use_options") or sig.get("option_strategy_type"):
+            return False
+        if current_mode == "paper":
+            return bool(getattr(settings, "equity_kelly_paper_enabled", True))
+        return bool(getattr(settings, "equity_kelly_live_enabled", False))
+
+    @staticmethod
+    def _is_exit_signal(sig: dict) -> bool:
+        signal_type = str(sig.get("signal_type", "")).upper()
+        if signal_type == "EXIT":
+            return True
+        if str(sig.get("position_effect", "")).strip().lower() == "close":
+            return True
+        if sig.get("exit_reason"):
+            return True
+        signal_kind = str(sig.get("signal_kind", "")).strip().lower()
+        return "close" in signal_kind or "exit" in signal_kind
+
+    def _resolve_equity_kelly_quantity(
+        self,
+        sig: dict,
+        capital: float | None,
+        *,
+        planned_qty: int,
+    ) -> tuple[int, str]:
+        cap = self._safe_float(capital if capital is not None else sig.get("capital"))
+        price = self._safe_float(sig.get("entry_price"))
+        atr = self._safe_float(sig.get("atr"))
+        min_qty = max(1, int(getattr(settings, "equity_kelly_min_qty", 1) or 1))
+        risk_pct = float(getattr(settings, "equity_kelly_max_risk_per_trade_pct", 0.01) or 0.01)
+        pnl_history = self._extract_pnl_history(sig)
+
+        if cap <= 0 or price <= 0:
+            return 0, "missing_capital_or_price"
+
+        symbol = str(sig.get("symbol", "")).strip()
+        strategy = str(sig.get("strategy") or sig.get("strategy_type") or "equity").strip()
+
+        if len(pnl_history) >= self._kelly.min_samples:
+            kelly_result = self._kelly.compute(symbol, strategy, pnl_history)
+            max_units = self._kelly.position_size(
+                capital=cap,
+                price=price,
+                result=kelly_result,
+                atr=atr,
+                max_risk_per_trade_pct=risk_pct,
+            )
+            reason = "kelly_history"
+        elif planned_qty > 0:
+            max_units = self._kelly.max_units(
+                capital=cap,
+                price=price,
+                atr=atr,
+                position_pct=self._kelly.max_position_pct,
+                max_risk_per_trade_pct=risk_pct,
+            )
+            reason = "fallback_cap_only"
+        else:
+            return 0, "insufficient_history_no_seed"
+
+        resolved_qty = int(max_units)
+        if planned_qty > 0:
+            resolved_qty = min(planned_qty, resolved_qty)
+        if resolved_qty < min_qty:
+            return 0, f"qty_below_min:{resolved_qty}"
+        return max(0, resolved_qty), reason
+
+    @staticmethod
+    def _safe_float(value: Any) -> float:
+        try:
+            out = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        return out if out > 0 else 0.0
+
+    @staticmethod
+    def _extract_pnl_history(sig: dict) -> list[float]:
+        raw = sig.get("pnl_history")
+        if not isinstance(raw, (list, tuple)):
+            return []
+        history: list[float] = []
+        for item in raw:
+            try:
+                history.append(float(item))
+            except (TypeError, ValueError):
+                continue
+        return history
 
     # ── Construcción de OrderRequest ──────────────────────────────────────────
 

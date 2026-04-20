@@ -119,6 +119,106 @@ def bs_greeks(
     return {"delta": delta, "gamma": gamma, "theta": theta, "vega": vega, "rho": rho}
 
 
+def implied_vol(
+    spot: float,
+    strike: float,
+    time_to_expiry: float,
+    rate: float,
+    option_price: float,
+    option_type: str = "call",
+    *,
+    tol: float = 1e-6,
+    max_iter: int = 100,
+) -> float | None:
+    """Invierte Black–Scholes: encuentra :math:`\\sigma` tal que ``bs_price(...) ≈ option_price``.
+
+    Usa **bisección** en un rango fijo de volatilidades ``[1e-4, 5.0]`` (anualizada).
+    En cada iteración se reutiliza :func:`bs_price` (mismo modelo europeo, sin dividendos).
+
+    **Método numérico:** búsqueda binaria sobre :math:`\\sigma` porque el precio BS
+    crece monótonamente con la volatilidad (vega > 0) para calls y puts europeos.
+
+    **Limitaciones (documentadas):**
+
+    - Tolerancia ``tol`` se aplica al **error en precio** :math:`|C(\\sigma) - C^*|`,
+      no directamente a :math:`|\\sigma - \\sigma^*|`.
+    - Sin dividendos; coherente con :func:`bs_price`.
+    - Si el precio de mercado está fuera del rango de precios alcanzables con
+      :math:`\\sigma \\in [10^{-4}, 5]` (vía BS), se devuelve ``None`` — no se
+      extrapola fuera del intervalo de volatilidad.
+    - ``time_to_expiry`` debe ser **> 0** (años). Si ``T <= 0``, se devuelve ``None``.
+
+    Args:
+        spot: Precio spot del subyacente (> 0).
+        strike: Strike (> 0).
+        time_to_expiry: Tiempo hasta vencimiento en **años** (> 0).
+        rate: Tasa libre de riesgo anual continua.
+        option_price: Precio de mercado de la opción (una unidad, mismo que BS).
+        option_type: ``call`` o ``put`` (insensible a mayúsculas).
+        tol: Criterio de parada sobre :math:`|C(\\sigma) - C^*|`.
+        max_iter: Máximo de iteraciones de bisección.
+
+    Returns:
+        Volatilidad implícita anualizada, o ``None`` si no hay solución razonable
+        en el rango o los argumentos son inválidos.
+    """
+    if time_to_expiry <= 0.0:
+        return None
+    if spot <= 0.0 or strike <= 0.0 or option_price < 0.0:
+        return None
+
+    ot = str(option_type).strip().lower()
+    if ot not in ("call", "put"):
+        return None
+
+    disc = math.exp(-rate * time_to_expiry)
+    if ot == "call":
+        price_floor = max(0.0, spot - strike * disc)
+        price_ceil = spot
+    else:
+        price_floor = max(0.0, strike * disc - spot)
+        price_ceil = strike * disc
+
+    # Cotas libres de arbitraje (europeo); precios fuera no admiten solución BS positiva.
+    if option_price < price_floor - 1e-8 or option_price > price_ceil + 1e-8:
+        return None
+
+    sig_lo = 1e-4
+    sig_hi = 5.0
+    p_lo = bs_price(spot, strike, time_to_expiry, rate, sig_lo, ot)
+    p_hi = bs_price(spot, strike, time_to_expiry, rate, sig_hi, ot)
+
+    if p_lo > p_hi:
+        p_lo, p_hi = p_hi, p_lo
+
+    if abs(p_lo - option_price) < tol:
+        return float(sig_lo)
+    if abs(p_hi - option_price) < tol:
+        return float(sig_hi)
+
+    # Precio objetivo fuera de lo alcanzable en [sig_lo, sig_hi] con BS monótono.
+    if option_price < p_lo - tol * 10.0 or option_price > p_hi + tol * 10.0:
+        return None
+
+    lo_b, hi_b = sig_lo, sig_hi
+    for _ in range(max(1, max_iter)):
+        mid = 0.5 * (lo_b + hi_b)
+        pm = bs_price(spot, strike, time_to_expiry, rate, mid, ot)
+        diff = pm - option_price
+        if abs(diff) < tol:
+            return float(mid)
+        if diff > 0.0:
+            hi_b = mid
+        else:
+            lo_b = mid
+
+    final = 0.5 * (lo_b + hi_b)
+    p_final = bs_price(spot, strike, time_to_expiry, rate, final, ot)
+    if abs(p_final - option_price) < tol * 100.0:
+        return float(final)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Dataclasses de legs
 # ---------------------------------------------------------------------------

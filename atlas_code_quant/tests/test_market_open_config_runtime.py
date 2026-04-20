@@ -14,7 +14,7 @@ if str(QUANT_ROOT) not in sys.path:
     sys.path.insert(0, str(QUANT_ROOT))
 
 from atlas_code_quant.api import main
-from atlas_code_quant.config.settings import TradingConfig
+from atlas_code_quant.config.settings import TradingConfig, build_options_engine_market_open_runtime
 from atlas_code_quant.execution.kelly_sizer import KellySizer
 
 
@@ -145,3 +145,59 @@ def test_env_overrides_json_for_kelly(monkeypatch: pytest.MonkeyPatch, tmp_path:
     cfg_path = _write_config(tmp_path, {"schedule_et": {}, "risk": {"kelly_fraction": 0.11}})
     cfg = TradingConfig(market_open_config_path=cfg_path)
     assert cfg.kelly_fraction == pytest.approx(0.4)
+
+
+def test_market_open_config_alias_max_open_positions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("QUANT_MARKET_OPEN_MAX_POSITIONS", raising=False)
+    cfg_path = _write_config(
+        tmp_path,
+        {
+            "schedule_et": {"market_open": "09:30", "market_close": "16:00"},
+            "risk": {"max_open_positions": 4},
+        },
+    )
+    cfg = TradingConfig(market_open_config_path=cfg_path)
+    assert cfg.market_open_max_positions == 4
+
+
+def test_market_open_config_schedule_warmup_premarket(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("QUANT_MARKET_OPEN_SCHEDULE_OPEN_ET", raising=False)
+    monkeypatch.delenv("QUANT_MARKET_OPEN_SCHEDULE_CLOSE_ET", raising=False)
+    cfg_path = _write_config(
+        tmp_path,
+        {
+            "schedule_et": {
+                "warmup_start": "08:00",
+                "premarket_scan": "08:30",
+                "market_open": "09:30",
+                "market_close": "16:00",
+            },
+            "risk": {},
+        },
+    )
+    cfg = TradingConfig(market_open_config_path=cfg_path)
+    assert cfg.market_open_schedule_warmup_et == "08:00"
+    assert cfg.market_open_schedule_premarket_scan_et == "08:30"
+
+
+def test_build_options_engine_market_open_runtime_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("QUANT_MARKET_OPEN_MAX_POSITIONS", raising=False)
+    cfg_path = _write_config(
+        tmp_path,
+        {"schedule_et": {"market_open": "09:30", "market_close": "16:00"}, "risk": {"max_positions": 2, "kelly_fraction": 0.2}},
+    )
+    cfg = TradingConfig(market_open_config_path=cfg_path)
+    snap = build_options_engine_market_open_runtime(cfg)
+    assert snap["config_loaded"] is True
+    assert snap["max_open_positions"] == 2
+    assert snap["kelly_fraction"] == pytest.approx(0.2)
+    assert "schedule_et" in snap
+    assert snap["schedule_et"]["market_open"] == "09:30"
+
+
+def test_malformed_json_skips_parse(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.json"
+    bad.write_text("{ not json", encoding="utf-8")
+    cfg = TradingConfig(market_open_config_path=bad)
+    assert cfg.market_open_config_loaded is False
+    assert cfg.market_open_schedule_warmup_et == ""
