@@ -14,14 +14,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from atlas_code_quant.options.paper_journal_stats import OptionsPaperJournalStats
+
 logger = logging.getLogger("atlas.options.engine_metrics")
 
 try:
-    from prometheus_client import Counter, Gauge
+    from prometheus_client import Counter, Gauge, Histogram
 
     _PROM_OK = True
 except ImportError:  # pragma: no cover
-    Counter = Gauge = None  # type: ignore[misc, assignment]
+    Counter = Gauge = Histogram = None  # type: ignore[misc, assignment]
     _PROM_OK = False
 
 _PIPELINE_MODULES = ("briefing", "intent_router", "entry_planner", "journal", "autoclose")
@@ -42,6 +44,8 @@ _state: dict[str, Any] = {
     "module_last_ts": {m: 0.0 for m in _PIPELINE_MODULES},
     "module_status": {m: 0.0 for m in _PIPELINE_MODULES},
     "last_sentinel_snapshot": None,
+    "paper_closed_total_counter_value": 0,
+    "paper_trade_hist_seen": set(),
 }
 
 _m: dict[str, Any] = {}
@@ -797,31 +801,122 @@ def _ensure_self_audit_gauge() -> None:
 
 def _ensure_paper_performance_gauges() -> None:
     global _m
-    if not _PROM_OK or not _m or "paper_win_rate_ratio" in _m:
+    if not _PROM_OK or not _m:
         return
     try:
-        _m["paper_win_rate_ratio"] = Gauge(
-            "atlas_options_paper_win_rate_ratio",
-            "Win rate cierres paper (journal): 0..1; -1 muestra insuficiente (<2 cierres con PnL)",
-        )
-        _m["paper_profit_factor"] = Gauge(
-            "atlas_options_paper_profit_factor",
-            "PF bruto wins/abs(losses); -1 no calculable; 99 tope si no hay pérdidas en muestra",
-        )
-        _m["paper_net_realized_pnl_usd"] = Gauge(
-            "atlas_options_paper_net_realized_pnl_usd",
-            "Suma pnl_realized en close_execution (journal)",
-        )
-        _m["paper_max_drawdown_usd"] = Gauge(
-            "atlas_options_paper_max_drawdown_usd",
-            "Peor caída desde equity peak acumulada (USD, ≥0)",
-        )
-        _m["paper_perf_close_count"] = Gauge(
-            "atlas_options_paper_performance_close_count",
-            "Número de close_execution con pnl_realized numérico usado en performance",
-        )
+        if "paper_win_rate_ratio" not in _m:
+            _m["paper_win_rate_ratio"] = Gauge(
+                "atlas_options_paper_win_rate_ratio",
+                "Compatibilidad legacy 0..1 derivado de WR global.",
+            )
+        if "paper_profit_factor" not in _m:
+            _m["paper_profit_factor"] = Gauge(
+                "atlas_options_paper_profit_factor",
+                "Profit factor global paper desde journal.",
+            )
+        if "paper_net_realized_pnl_usd" not in _m:
+            _m["paper_net_realized_pnl_usd"] = Gauge(
+                "atlas_options_paper_net_realized_pnl_usd",
+                "Compatibilidad legacy: pnl total realizado (USD).",
+            )
+        if "paper_max_drawdown_usd" not in _m:
+            _m["paper_max_drawdown_usd"] = Gauge(
+                "atlas_options_paper_max_drawdown_usd",
+                "Compatibilidad legacy: máximo drawdown histórico (USD).",
+            )
+        if "paper_perf_close_count" not in _m:
+            _m["paper_perf_close_count"] = Gauge(
+                "atlas_options_paper_performance_close_count",
+                "Compatibilidad legacy: número de close_execution usados en performance.",
+            )
+        # Métricas canónicas Paper Performance (observability_architecture.md).
+        if "paper_equity_usd" not in _m:
+            _m["paper_equity_usd"] = Gauge(
+                "atlas_options_paper_equity_usd",
+                "Capital paper acumulado (capital inicial + pnl total).",
+            )
+        if "paper_drawdown_pct" not in _m:
+            _m["paper_drawdown_pct"] = Gauge(
+                "atlas_options_paper_drawdown_pct",
+                "Drawdown actual desde máximo previo (porcentaje, <= 0).",
+            )
+        if "paper_win_rate_pct" not in _m:
+            _m["paper_win_rate_pct"] = Gauge(
+                "atlas_options_paper_win_rate_pct",
+                "Win rate global paper en porcentaje.",
+            )
+        if "paper_avg_pnl_usd" not in _m:
+            _m["paper_avg_pnl_usd"] = Gauge(
+                "atlas_options_paper_avg_pnl_usd",
+                "PnL promedio por trade cerrado (USD).",
+            )
+        if "paper_total_pnl_usd" not in _m:
+            _m["paper_total_pnl_usd"] = Gauge(
+                "atlas_options_paper_total_pnl_usd",
+                "PnL total acumulado paper (USD).",
+            )
+        if "paper_win_rate_rolling_7d" not in _m:
+            _m["paper_win_rate_rolling_7d"] = Gauge(
+                "atlas_options_paper_win_rate_rolling_7d",
+                "Win rate rolling 7 días (porcentaje).",
+            )
+        if "paper_profit_factor_rolling_7d" not in _m:
+            _m["paper_profit_factor_rolling_7d"] = Gauge(
+                "atlas_options_paper_profit_factor_rolling_7d",
+                "Profit factor rolling 7 días.",
+            )
+        if "paper_closed_total" not in _m:
+            _m["paper_closed_total"] = Counter(
+                "atlas_options_paper_closed_total",
+                "Total histórico de trades paper cerrados (Fase 0).",
+            )
+            _m["paper_closed_total"].inc(0.0)
+        if "paper_trade_pnl_hist" not in _m:
+            _m["paper_trade_pnl_hist"] = Histogram(
+                "atlas_options_paper_trade_pnl_usd",
+                "Histograma de PnL por trade paper cerrado.",
+                ["strategy", "close_reason", "gamma_regime", "dte_mode"],
+                buckets=(
+                    -1000.0,
+                    -500.0,
+                    -250.0,
+                    -100.0,
+                    -50.0,
+                    -20.0,
+                    -10.0,
+                    -5.0,
+                    0.0,
+                    5.0,
+                    10.0,
+                    20.0,
+                    50.0,
+                    100.0,
+                    250.0,
+                    500.0,
+                    1000.0,
+                ),
+            )
+            _m["paper_trade_pnl_hist"].labels(
+                strategy="unknown",
+                close_reason="unknown",
+                gamma_regime="unknown",
+                dte_mode="unknown",
+            )
+        if "paper_win_rate_by_strategy_regime" not in _m:
+            _m["paper_win_rate_by_strategy_regime"] = Gauge(
+                "atlas_options_paper_win_rate_by_strategy_regime",
+                "WR paper (%) por combinación strategy x gamma_regime.",
+                ["strategy", "gamma_regime"],
+            )
     except Exception as exc:
         logger.debug("_ensure_paper_performance_gauges: %s", exc)
+
+
+def _metric_label(value: Any, *, fallback: str = "unknown", max_len: int = 80) -> str:
+    s = str(value or "").strip().lower().replace(" ", "_")
+    if not s:
+        s = fallback
+    return s[:max_len]
 
 
 def _apply_paper_performance_gauges(metrics: dict[str, Any]) -> None:
@@ -836,6 +931,13 @@ def _apply_paper_performance_gauges(metrics: dict[str, Any]) -> None:
         _m["paper_net_realized_pnl_usd"].set(float(metrics["net_realized_pnl_usd"]))
         _m["paper_max_drawdown_usd"].set(float(metrics["max_drawdown_usd"]))
         _m["paper_perf_close_count"].set(float(metrics["n_closes"]))
+        _m["paper_equity_usd"].set(float(metrics["equity_usd"]))
+        _m["paper_drawdown_pct"].set(float(metrics["drawdown_pct"]))
+        _m["paper_win_rate_pct"].set(float(metrics["win_rate_pct"]))
+        _m["paper_avg_pnl_usd"].set(float(metrics["pnl_avg_usd"]))
+        _m["paper_total_pnl_usd"].set(float(metrics["pnl_total_usd"]))
+        _m["paper_win_rate_rolling_7d"].set(float(metrics["rolling_7d_win_rate_pct"]))
+        _m["paper_profit_factor_rolling_7d"].set(float(metrics["rolling_7d_profit_factor"]))
     except Exception as exc:
         logger.debug("_apply_paper_performance_gauges: %s", exc)
 
@@ -1010,78 +1112,41 @@ def record_options_error(error_type: str) -> None:
 
 
 def refresh_journal_from_disk(path: Path | None = None) -> None:
-    """Relee JSONL: conteos del día UTC, trades abiertos, cierres hoy, tamaño, edad escritura, performance paper."""
+    """Relee JSONL y publica estado/performace paper usando el agregador canónico de journal."""
     _init_prom()
-    p = path or Path(_state.get("last_journal_path") or "")
-    if not p or not p.is_file():
-        if _m:
-            try:
-                _m["journal_size"].set(0.0)
-            except Exception:
-                pass
-        _apply_paper_performance_gauges(compute_paper_performance_from_pnls([]))
-        update_options_engine_sentinels()
-        return
-    today = _utc_day()
-    events_today = 0
-    sessions_today = 0
-    closed_today = 0
-    traces_entry: set[str] = set()
-    traces_close: set[str] = set()
+    _ensure_paper_performance_gauges()
+    p = path or Path(_state.get("last_journal_path") or default_journal_path())
+    stats = OptionsPaperJournalStats.load_from_file(p)
+    g = stats.to_dict_global()
+    _state["journal_events_today"] = int(g.get("events_today") or 0)
+    _state["journal_sessions_today"] = int(g.get("sessions_today") or 0)
+    _state["paper_closed_today"] = int(g.get("closed_today") or 0)
+    _state["paper_open_trades"] = int(g.get("open_trades_count") or 0)
+    _state["last_journal_path"] = str(stats.journal_path)
+    _state["last_journal_write_ts"] = float(stats.last_write_ts or 0.0)
+
+    perf_payload = {
+        "n_closes": int(g.get("closed_trades_total") or 0),
+        "win_rate_ratio": float(g.get("win_rate_ratio") or 0.0),
+        "win_rate_pct": float(g.get("win_rate_pct") or 0.0),
+        "profit_factor": float(g.get("profit_factor") or 0.0),
+        "pnl_total_usd": float(g.get("pnl_total_usd") or 0.0),
+        "net_realized_pnl_usd": float(g.get("net_realized_pnl_usd") or 0.0),
+        "pnl_avg_usd": float(g.get("pnl_avg_usd") or 0.0),
+        "equity_usd": float(g.get("equity_usd") or 0.0),
+        "drawdown_pct": float(g.get("drawdown_pct") or 0.0),
+        "max_drawdown_usd": float(g.get("max_drawdown_usd") or 0.0),
+        "rolling_7d_win_rate_pct": float((stats.rolling_7d or {}).get("win_rate_pct") or 0.0),
+        "rolling_7d_profit_factor": float((stats.rolling_7d or {}).get("profit_factor") or 0.0),
+    }
+    _apply_paper_performance_gauges(perf_payload)
+
+    # Debug JSON consumible por API interna o revisión manual.
     try:
-        text = p.read_text(encoding="utf-8")
-    except OSError as exc:
-        logger.debug("refresh_journal_from_disk read: %s", exc)
-        _apply_paper_performance_gauges(compute_paper_performance_from_pnls([]))
-        update_options_engine_sentinels()
-        return
-    close_pnls: list[float] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        ts = str(row.get("timestamp_utc") or row.get("timestamp") or "")[:10]
-        et = str(row.get("event_type") or "")
-        tid = str(row.get("trace_id") or "")
-        if ts == today:
-            events_today += 1
-            if et == "session_plan":
-                sessions_today += 1
-            if et == "close_execution":
-                closed_today += 1
-        if et == "entry_execution" and tid:
-            traces_entry.add(tid)
-        if et == "close_execution" and tid:
-            traces_close.add(tid)
-        if et == "close_execution":
-            payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
-            raw_pnl = row.get("pnl_usd")
-            if raw_pnl is None:
-                raw_pnl = payload.get("pnl_realized")
-            if raw_pnl is not None:
-                try:
-                    pv = float(raw_pnl)
-                except (TypeError, ValueError):
-                    pv = None
-                else:
-                    if math.isfinite(pv):
-                        close_pnls.append(pv)
-    _apply_paper_performance_gauges(compute_paper_performance_from_pnls(close_pnls))
-    open_cnt = len(traces_entry - traces_close)
-    _state["journal_events_today"] = events_today
-    _state["journal_sessions_today"] = sessions_today
-    _state["paper_closed_today"] = closed_today
-    _state["paper_open_trades"] = open_cnt
-    _state["last_journal_path"] = str(p)
-    try:
-        mtime = p.stat().st_mtime
-        _state["last_journal_write_ts"] = mtime
-    except OSError:
-        pass
+        stats.write_debug_json(stats.journal_path.parent / "options_paper_stats.json")
+    except Exception as exc:
+        logger.debug("refresh_journal_from_disk write debug stats: %s", exc)
+
     if not _m:
         update_options_engine_sentinels()
         return
@@ -1089,14 +1154,52 @@ def refresh_journal_from_disk(path: Path | None = None) -> None:
         now = time.time()
         lw = float(_state.get("last_journal_write_ts") or 0.0)
         age = max(0.0, now - lw) if lw > 0 else 1e9
-        _m["journal_events"].set(float(events_today))
-        _m["journal_sessions"].set(float(sessions_today))
+        _m["journal_events"].set(float(g.get("events_today") or 0.0))
+        _m["journal_sessions"].set(float(g.get("sessions_today") or 0.0))
         _m["journal_write_age"].set(age)
-        _m["journal_size"].set(float(p.stat().st_size))
-        _m["paper_open"].set(float(open_cnt))
-        _m["paper_closed"].set(float(closed_today))
-        _m["paper_phantom"].set(0.0)
+        _m["journal_size"].set(float(stats.journal_path.stat().st_size) if stats.journal_path.is_file() else 0.0)
+        _m["paper_open"].set(float(g.get("open_trades_count") or 0.0))
+        _m["paper_closed"].set(float(g.get("closed_today") or 0.0))
+        _m["paper_phantom"].set(float(g.get("phantom_today") or 0.0))
         _m["paper_debit_no_stop"].set(0.0)
+
+        closed_total = int(g.get("closed_trades_total") or 0)
+        prev_total = int(_state.get("paper_closed_total_counter_value") or 0)
+        if closed_total >= prev_total:
+            delta = closed_total - prev_total
+            if delta > 0:
+                _m["paper_closed_total"].inc(float(delta))
+            _state["paper_closed_total_counter_value"] = closed_total
+        else:
+            # Journal truncado/rotado: mantenemos monotonicidad del counter.
+            _state["paper_closed_total_counter_value"] = closed_total
+
+        seen: set[str] = _state.setdefault("paper_trade_hist_seen", set())
+        for trade in stats.closed_trades:
+            hist_key = f"{trade.get('trace_id')}|{trade.get('closed_at')}|{trade.get('pnl_usd')}"
+            if hist_key in seen:
+                continue
+            _m["paper_trade_pnl_hist"].labels(
+                strategy=_metric_label(trade.get("strategy")),
+                close_reason=_metric_label(trade.get("close_reason")),
+                gamma_regime=_metric_label(trade.get("gamma_regime")),
+                dte_mode=_metric_label(trade.get("dte_mode")),
+            ).observe(float(trade.get("pnl_usd") or 0.0))
+            seen.add(hist_key)
+
+        # Exporta heatmap WR por strategy x gamma_regime.
+        by_regime = stats.to_dict_by_strategy_regime()
+        for strategy, regimes in by_regime.items():
+            for gamma_regime, wr_pct in regimes.items():
+                _m["paper_win_rate_by_strategy_regime"].labels(
+                    strategy=_metric_label(strategy),
+                    gamma_regime=_metric_label(gamma_regime),
+                ).set(float(wr_pct))
+        if not by_regime:
+            _m["paper_win_rate_by_strategy_regime"].labels(
+                strategy="unknown",
+                gamma_regime="unknown",
+            ).set(0.0)
     except Exception as exc:
         logger.debug("refresh_journal_from_disk gauges: %s", exc)
     update_options_engine_sentinels()
