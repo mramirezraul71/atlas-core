@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field, model_validator
 
 try:
     from atlas_code_quant.backtesting.winning_probability import StrategyType
-except Module
+except ModuleNotFoundError:  # pragma: no cover - runtime fallback for uvicorn launched from atlas_code_quant cwd
+    from backtesting.winning_probability import StrategyType
 
 OrderStrategyType = StrategyType | Literal["equity_long", "equity_short"]
 

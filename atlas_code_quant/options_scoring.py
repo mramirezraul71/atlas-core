@@ -1,12 +1,5 @@
-from dataclasses import dataclass
-from typing import Dict, Any, List, Literal
-from datetime import datetime, timedelta
+"""Backward-compatible export surface for options scoring.
 
-import pandas as pd
-import yfinance as yf
-from pydantic import BaseModel, Field, field_validator
-
-
-@dataclass
-class VolData:
-    iv_rank
+Canonical implementation lives in ``atlas_code_quant.options.options_scoring``.
+"""
+from atlas_code_quant.options.options_scoring import *  # noqa: F401,F403
