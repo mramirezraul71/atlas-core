@@ -4,6 +4,11 @@ from __future__ import annotations
 from typing import Any
 
 from journal.service import TradingJournalService
+from local_models.integrations import (
+    analyze_dashboard_screenshot,
+    classify_journal_event,
+    semantic_journal_search,
+)
 
 
 class JournalProService:
@@ -34,3 +39,17 @@ class JournalProService:
 
     def options_governance_adoption_snapshot(self, *, account_type: str | None = None, limit: int = 10) -> dict[str, Any]:
         return self.journal.options_governance_adoption_snapshot(account_type=account_type, limit=limit)
+
+    def semantic_retrieval(self, query: str, *, limit: int = 5) -> dict[str, Any]:
+        """Semantic retrieval over recent journal entries using local embeddings."""
+        recent = self.journal.entries(limit=max(limit * 4, 24))
+        items = list(recent.get("items", [])) if isinstance(recent, dict) else []
+        return semantic_journal_search(query, items, top_k=limit)
+
+    def lightweight_event_review(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Quick local review/classification for journal events."""
+        return classify_journal_event(payload)
+
+    def vision_screenshot_review(self, screenshot_path: str, *, prompt: str | None = None, premium: bool = False) -> dict[str, Any]:
+        """Analyze dashboard screenshot with local vision model."""
+        return analyze_dashboard_screenshot(screenshot_path, prompt=prompt, premium=premium)
