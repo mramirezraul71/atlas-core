@@ -25,7 +25,9 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 REPO_ROOT = os.path.abspath(os.path.join(BASE_DIR, "..", "..", ".."))
 if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
+    # Keep backend-local packages (api/, brain/, vision/) ahead of repo root
+    # to avoid resolving imports against atlas_code_quant/api by mistake.
+    sys.path.append(REPO_ROOT)
 
 # Import camera service routes
 from api.camera_service_routes import router as camera_router
@@ -110,6 +112,10 @@ class DetectionResponse(BaseModel):
     total_objects: int
     processing_time: float
     image_shape: List[int]
+
+
+class CameraRetestRequest(BaseModel):
+    device_index: int | None = None
 
 
 # Estado del robot
@@ -315,6 +321,74 @@ class LiveCameraManager:
         }
 
 live_camera = LiveCameraManager(camera_index=int(os.getenv("NEXUS_CAMERA_INDEX", "0")))
+
+
+def _configured_camera_index() -> int:
+    for env_key in ("NEXUS_CAMERA_INDEX", "CAMERA_INDEX"):
+        raw = os.getenv(env_key)
+        if raw is None:
+            continue
+        try:
+            return int(raw)
+        except ValueError:
+            logger.warning("Invalid %s=%r. Falling back to 0.", env_key, raw)
+    return 0
+
+
+def check_camera_available(device_index: int | None = None) -> dict[str, Any]:
+    """Verifica acceso real a cámara con OpenCV y libera el handle al finalizar."""
+    index = _configured_camera_index() if device_index is None else int(device_index)
+    cap = None
+    try:
+        cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            return {
+                "available": False,
+                "device_index": index,
+                "error": f"cannot_open_device_{index}",
+            }
+        ret, frame = cap.read()
+        if not ret or frame is None:
+            return {
+                "available": False,
+                "device_index": index,
+                "error": "frame_read_failed",
+            }
+        return {"available": True, "device_index": index, "error": None}
+    except Exception as exc:
+        return {"available": False, "device_index": index, "error": str(exc)}
+    finally:
+        if cap is not None:
+            try:
+                cap.release()
+            except Exception:
+                logger.debug("Ignoring camera release error for index %s", index, exc_info=True)
+
+
+def evaluate_camera_status(device_index: int | None = None, try_start_manager: bool = True) -> dict[str, Any]:
+    """Evalúa disponibilidad de cámara reutilizando el manager live + sondeo OpenCV."""
+    index = _configured_camera_index() if device_index is None else int(device_index)
+    live_camera._index = index
+
+    manager_ok = bool(live_camera._running and live_camera._frame is not None)
+    if try_start_manager and not live_camera._running:
+        manager_ok = bool(live_camera.start()) or manager_ok
+    if try_start_manager and live_camera._running and live_camera._frame is not None:
+        manager_ok = True
+
+    probe = check_camera_available(index) if not manager_ok else {
+        "available": True,
+        "device_index": index,
+        "error": None,
+    }
+    available = bool(manager_ok or probe.get("available"))
+
+    return {
+        "available": available,
+        "device_index": index if available else probe.get("device_index"),
+        "error": None if available else probe.get("error"),
+        "manager_running": bool(live_camera._running),
+    }
 
 # ── Serial Controller (Arduino/ESP32 auto-detect) ────────────────────────────
 import importlib.util as _ilu
@@ -1053,36 +1127,60 @@ async def camera_yolo_detect():
 @app.get("/api/camera/test")
 async def test_camera():
     """Test de cámara real — usa LiveCameraManager si ya está corriendo."""
-    try:
-        # Si el LiveCameraManager ya tiene la cámara abierta, usar ese
-        if live_camera._running and live_camera._frame is not None:
-            jpeg = live_camera.get_jpeg()
-            if jpeg and len(jpeg) > 0:
-                logger.info("Camera test OK via LiveCameraManager (frame %d bytes)", len(jpeg))
-                return {"status": "success", "hw_detected": True,
-                        "resolution": "1280x720", "frame_ok": True,
-                        "camera_index": live_camera._index}
-        # Fallback: abrir directamente (solo si LiveCamera no está corriendo)
-        camera_index = int(os.getenv("NEXUS_CAMERA_INDEX", "0"))
-        cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
-        if not cap.isOpened():
-            logger.warning("Camera test: no device at index %d", camera_index)
-            return {"status": "error", "hw_detected": False,
-                    "message": f"No camera at index {camera_index}"}
-        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        ret, frame = cap.read()
-        cap.release()
-        if ret and frame is not None:
-            logger.info("Camera test OK: %dx%d at index %d", w, h, camera_index)
-            return {"status": "success", "hw_detected": True,
-                    "resolution": f"{w}x{h}", "frame_ok": True,
-                    "camera_index": camera_index}
-        return {"status": "error", "hw_detected": True,
-                "message": "Camera opened but frame read failed"}
-    except Exception as e:
-        logger.error("Camera test error: %s", e)
-        return {"status": "error", "message": str(e)}
+    camera_state = await asyncio.to_thread(evaluate_camera_status, None, True)
+    if camera_state["available"]:
+        logger.info(
+            "Camera test OK on index %s (manager_running=%s)",
+            camera_state["device_index"],
+            camera_state["manager_running"],
+        )
+        return {
+            "status": "success",
+            "hw_detected": True,
+            "frame_ok": True,
+            "camera_index": camera_state["device_index"],
+            "manager_running": camera_state["manager_running"],
+        }
+    logger.warning(
+        "Camera test failed on index %s: %s",
+        camera_state["device_index"],
+        camera_state["error"],
+    )
+    return {
+        "status": "error",
+        "hw_detected": False,
+        "camera_index": camera_state["device_index"],
+        "message": camera_state["error"] or "camera_unavailable",
+    }
+
+
+@app.post("/modules/camera/retest")
+@app.post("/api/modules/camera/retest")
+async def retest_camera_module(body: CameraRetestRequest | None = None):
+    """Reintenta detección de cámara y actualiza flags de módulos relacionados."""
+    requested_index = None if body is None else body.device_index
+    camera_state = await asyncio.to_thread(evaluate_camera_status, requested_index, True)
+    available = bool(camera_state["available"])
+
+    robot_status["modules"]["camera"] = available
+    robot_status["modules"]["sensors"] = available
+
+    if available:
+        logger.info("camera_retest_success device_index=%s", camera_state["device_index"])
+    else:
+        logger.warning(
+            "camera_retest_failure device_index=%s reason=%s",
+            camera_state["device_index"],
+            camera_state["error"],
+        )
+
+    return {
+        "ok": available,
+        "camera_available": available,
+        "error": None if available else (camera_state["error"] or "camera_unavailable"),
+        "device_index": camera_state["device_index"],
+        "timestamp_utc": datetime.utcnow().isoformat() + "Z",
+    }
 
 
 @app.get("/ai/test")
@@ -1443,15 +1541,15 @@ async def _initialize_robot_background() -> None:
         update_uptime.start_time = datetime.now()
 
         _mark_startup_stage("camera_manager")
-        cam_ok = await asyncio.to_thread(live_camera.start)
+        camera_state = await asyncio.to_thread(evaluate_camera_status, None, True)
+        cam_ok = bool(camera_state["available"])
         if cam_ok:
             logger.info("LiveCameraManager started — Insta360 capturing at 10fps")
         else:
             logger.warning("LiveCameraManager failed to start — no camera available")
 
         _mark_startup_stage("camera_test")
-        camera_test = await test_camera()
-        robot_status["modules"]["camera"] = camera_test["status"] == "success" or cam_ok
+        robot_status["modules"]["camera"] = cam_ok
 
         _mark_startup_stage("ai_test")
         ai_test = await test_ai()
