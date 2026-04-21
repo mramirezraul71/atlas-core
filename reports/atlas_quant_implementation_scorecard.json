@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-20T13:43:31.503676+00:00",
+  "generated_at": "2026-04-21T12:34:06.097057+00:00",
   "topic": "atlas_quant_trading_implementation_scorecard",
   "summary": "Scorecard operativo para medir dos cosas separadas: cuanto del metodo ya esta implantado y cuanta evidencia real existe de que esa implantacion esta sirviendo.",
   "metric_catalog": [
@@ -140,7 +140,7 @@
     },
     "observability_feedback_score": {
       "name": "observability_feedback_score",
-      "value": 95.0,
+      "value": 88.0,
       "status": "healthy",
       "details": {
         "report_available": true,
@@ -154,8 +154,8 @@
         "provisioning_rebuild_ok": true,
         "reload_resilience_pct": 100.0,
         "foundation_score_pct": 100.0,
-        "freshness_pct": 75.0,
-        "age_hours": 16.11
+        "freshness_pct": 40.0,
+        "age_hours": 38.96
       }
     },
     "visual_benchmark_feedback_score": {
@@ -235,7 +235,7 @@
         "attributed_open_positions_pct": 100.0,
         "closed_total": 7420,
         "evidence_sufficiency_score": 100.0,
-        "open_pnl": 6313.64,
+        "open_pnl": 6643.29,
         "realized_pnl": -85161.98,
         "post_mortem_coverage_pct": 100.0,
         "recent_attribution_pct": 100.0,
@@ -299,7 +299,7 @@
     "post_mortem_coverage_pct": 100.0,
     "recent_attribution_pct": 100.0,
     "external_learning_translation_score": 100.0,
-    "observability_feedback_score": 95.0,
+    "observability_feedback_score": 88.0,
     "visual_benchmark_feedback_score": 100.0,
     "visual_benchmark_source_count": 4,
     "visual_benchmark_translation_pct": 0.0,

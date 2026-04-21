@@ -38,6 +38,7 @@ from atlas_adapter.routes.trading_quant import build_router as build_trading_qua
 from atlas_adapter.services.nexus_robot_runtime import (
     get_robot_status,
 )
+from atlas_adapter.services.update_center import UpdateCenterService
 
 
 def _ts_to_epoch(ts_str: str) -> float:
@@ -10124,6 +10125,9 @@ class ToolsWatchdogBody(BaseModel):
 class ToolsUpdateBody(BaseModel):
     tool_id: str = Field(..., min_length=2, max_length=80)
     background: Optional[bool] = True
+    origin: Optional[str] = "manual"
+    include_manual_review: Optional[bool] = True
+    include_blocked: Optional[bool] = False
 
 
 class ToolsBootstrapBody(BaseModel):
@@ -10133,6 +10137,9 @@ class ToolsBootstrapBody(BaseModel):
 class ToolsUpdateAllBody(BaseModel):
     background: Optional[bool] = True
     include_critical: Optional[bool] = True
+    origin: Optional[str] = "manual"
+    include_manual_review: Optional[bool] = True
+    include_blocked: Optional[bool] = False
 
 
 class ToolsDiscoverySearchBody(BaseModel):
@@ -10176,6 +10183,9 @@ def _tools_update_error(payload: dict) -> str:
 
 _TOOLS_REGISTRY_FILE = (BASE_DIR / "atlas_master_registry.json").resolve()
 _TOOLS_DISCOVERY_CACHE_FILE = (BASE_DIR / "logs" / "atlas_tools_discovery_cache.json").resolve()
+_UPDATE_CENTER = UpdateCenterService(BASE_DIR)
+_UPDATE_CENTER_AUTO_LOCK = threading.Lock()
+_UPDATE_CENTER_AUTO_RUNNING = False
 
 
 def _env_int(name: str, default: int, min_value: int = 1) -> int:
@@ -10283,9 +10293,268 @@ def _spawn_tools_discovery_refresh() -> bool:
     return True
 
 
+def _update_center_policy_allows(
+    row: dict,
+    *,
+    origin: str = "manual",
+    include_manual_review: bool = True,
+    include_blocked: bool = False,
+) -> tuple[bool, str]:
+    policy_class = str(row.get("policy_class") or "").strip().lower()
+    if include_blocked:
+        return True, ""
+    if policy_class in {"never_auto_update"}:
+        return False, row.get("policy_reason") or "policy_never_auto_update"
+    if policy_class in {"security_critical"} and origin != "manual":
+        return False, row.get("policy_reason") or "policy_security_critical_manual_only"
+    if policy_class in {"manual_review_required"} and (origin != "manual" or not include_manual_review):
+        return False, row.get("policy_reason") or "policy_manual_review_required"
+    return True, ""
+
+
+def _annotate_tools_payload(payload: dict, source: str = "scan") -> dict:
+    if not isinstance(payload, dict):
+        return payload
+    return _UPDATE_CENTER.refresh_surface_state("tools", payload, source=source)
+
+
+def _annotate_software_payload(payload: dict, source: str = "scan") -> dict:
+    if not isinstance(payload, dict):
+        return payload
+    return _UPDATE_CENTER.refresh_surface_state("software", payload, source=source)
+
+
+def _select_tool_targets_with_policy(
+    tools_rows: list[dict],
+    *,
+    include_critical: bool,
+    origin: str,
+    include_manual_review: bool,
+    include_blocked: bool,
+) -> tuple[list[str], list[dict]]:
+    selected: list[str] = []
+    blocked: list[dict] = []
+    for t in tools_rows:
+        if not isinstance(t, dict):
+            continue
+        if not bool(t.get("update_ready")):
+            continue
+        if not t.get("update_script"):
+            continue
+        if (not include_critical) and bool(t.get("critical")):
+            continue
+        allowed, reason = _update_center_policy_allows(
+            t,
+            origin=origin,
+            include_manual_review=include_manual_review,
+            include_blocked=include_blocked,
+        )
+        tid = str(t.get("id") or "").strip()
+        if not tid:
+            continue
+        if not allowed:
+            blocked.append({"id": tid, "reason": reason, "policy_class": t.get("policy_class")})
+            continue
+        selected.append(tid)
+    return sorted(set(selected)), blocked
+
+
+def _select_software_targets_with_policy(
+    payload: dict,
+    *,
+    include_optional: bool,
+    origin: str,
+    include_manual_review: bool,
+    include_blocked: bool,
+) -> tuple[list[dict], list[dict]]:
+    software_rows = payload.get("software") if isinstance(payload, dict) else []
+    software_rows = software_rows if isinstance(software_rows, list) else []
+    candidates_rows = payload.get("network_candidates") if isinstance(payload, dict) else []
+    candidates_rows = candidates_rows if isinstance(candidates_rows, list) else []
+    targets: list[dict] = []
+    blocked: list[dict] = []
+    seen = set()
+    for row in software_rows:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("id") or "").strip()
+        if not sid or sid in seen:
+            continue
+        method = str(row.get("install_method") or "").strip().lower()
+        target = str(row.get("install_target") or "").strip()
+        if not method or not target:
+            continue
+        critical = bool(row.get("critical"))
+        needs = (not bool(row.get("installed"))) or bool(row.get("update_ready"))
+        if not needs:
+            continue
+        if (not include_optional) and (not critical):
+            continue
+        allowed, reason = _update_center_policy_allows(
+            row,
+            origin=origin,
+            include_manual_review=include_manual_review,
+            include_blocked=include_blocked,
+        )
+        if not allowed:
+            blocked.append({"id": sid, "reason": reason, "policy_class": row.get("policy_class")})
+            continue
+        targets.append(
+            {
+                "id": sid,
+                "name": str(row.get("name") or sid),
+                "critical": critical,
+                "install_method": method,
+                "install_target": target,
+                "source": "software",
+            }
+        )
+        seen.add(sid)
+
+    for row in candidates_rows:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("id") or "").strip()
+        if not sid or sid in seen:
+            continue
+        if not bool(row.get("network_available")):
+            continue
+        method = str(row.get("install_method") or "").strip().lower()
+        target = str(row.get("install_target") or "").strip()
+        if not method or not target:
+            continue
+        critical = bool(row.get("critical"))
+        if (not include_optional) and (not critical):
+            continue
+        allowed, reason = _update_center_policy_allows(
+            row,
+            origin=origin,
+            include_manual_review=include_manual_review,
+            include_blocked=include_blocked,
+        )
+        if not allowed:
+            blocked.append({"id": sid, "reason": reason, "policy_class": row.get("policy_class")})
+            continue
+        targets.append(
+            {
+                "id": sid,
+                "name": str(row.get("name") or sid),
+                "critical": critical,
+                "install_method": method,
+                "install_target": target,
+                "source": "network",
+            }
+        )
+        seen.add(sid)
+    return targets, blocked
+
+
+def _ensure_update_center_auto_scheduler() -> None:
+    global _UPDATE_CENTER_AUTO_RUNNING
+    with _UPDATE_CENTER_AUTO_LOCK:
+        if _UPDATE_CENTER_AUTO_RUNNING:
+            return
+        _UPDATE_CENTER_AUTO_RUNNING = True
+
+    def _worker() -> None:
+        while True:
+            try:
+                _run_update_center_auto_cycle_if_due()
+            except Exception:
+                pass
+            time.sleep(20)
+
+    threading.Thread(target=_worker, name="atlas-update-center-auto", daemon=True).start()
+
+
+def _run_update_center_auto_cycle_if_due() -> None:
+    cfg = _UPDATE_CENTER.load_config()
+    if not _UPDATE_CENTER.should_run_cycle():
+        return
+    _UPDATE_CENTER.set_auto_cycle(True, reason="scheduled")
+    _UPDATE_CENTER.record_event("maintenance.cycle.started", "system", {"origin": "auto", "config": cfg})
+    try:
+        ok_tools, payload_tools = _run_tools_watchdog_scan(force=True, timeout=180)
+        if ok_tools:
+            _annotate_tools_payload(payload_tools, source="auto_scan")
+            _UPDATE_CENTER.record_event("tools.scan.completed", "tools", {"origin": "auto"})
+        else:
+            _UPDATE_CENTER.record_event("tools.scan.failed", "tools", {"origin": "auto", "error": payload_tools.get("error")})
+
+        ok_sw, payload_sw = _run_software_watchdog_scan(force=True, timeout=240)
+        if ok_sw:
+            _annotate_software_payload(payload_sw, source="auto_scan")
+            _UPDATE_CENTER.record_event("software.scan.completed", "software", {"origin": "auto"})
+        else:
+            _UPDATE_CENTER.record_event("software.scan.failed", "software", {"origin": "auto", "error": payload_sw.get("error")})
+
+        if bool(cfg.get("dry_run", True)):
+            _UPDATE_CENTER.record_event("maintenance.cycle.completed", "system", {"origin": "auto", "dry_run": True})
+            return
+
+        max_updates = max(1, int(cfg.get("max_updates_per_cycle", 3) or 3))
+        include_manual = False
+        include_blocked = False
+
+        tools_rows = payload_tools.get("tools") if isinstance(payload_tools, dict) else []
+        tools_rows = _UPDATE_CENTER.annotate_rows(tools_rows if isinstance(tools_rows, list) else [], "tools")
+        tool_targets, _blocked_tools = _select_tool_targets_with_policy(
+            tools_rows,
+            include_critical=False,
+            origin="auto",
+            include_manual_review=include_manual,
+            include_blocked=include_blocked,
+        )
+        tool_targets = tool_targets[:max_updates]
+        if tool_targets:
+            tools_update_all(
+                ToolsUpdateAllBody(
+                    background=True,
+                    include_critical=False,
+                    origin="auto",
+                    include_manual_review=False,
+                    include_blocked=False,
+                )
+            )
+
+        targets_sw, _blocked_sw = _select_software_targets_with_policy(
+            payload_sw if isinstance(payload_sw, dict) else {},
+            include_optional=False,
+            origin="auto",
+            include_manual_review=False,
+            include_blocked=False,
+        )
+        targets_sw = targets_sw[:max_updates]
+        if targets_sw:
+            software_apply_all(
+                SoftwareApplyAllBody(
+                    background=True,
+                    include_optional=False,
+                    origin="auto",
+                    include_manual_review=False,
+                    include_blocked=False,
+                )
+            )
+        _UPDATE_CENTER.record_event(
+            "maintenance.cycle.completed",
+            "system",
+            {
+                "origin": "auto",
+                "dry_run": False,
+                "tool_targets": len(tool_targets),
+                "software_targets": len(targets_sw),
+            },
+        )
+    except Exception as e:
+        _UPDATE_CENTER.record_event("maintenance.cycle.failed", "system", {"origin": "auto", "error": str(e)})
+    finally:
+        _UPDATE_CENTER.set_auto_cycle(False, reason="scheduled")
+
+
 @app.get("/api/tools/menu", tags=["Tools"])
 def tools_menu_inventory(refresh: bool = False):
     """Inventario de herramientas (rápido): usa cache local y refresca en background."""
+    _ensure_update_center_auto_scheduler()
     t0 = time.perf_counter()
     now_ts = time.time()
     payload = _read_json_dict(_TOOLS_REGISTRY_FILE)
@@ -10302,6 +10571,7 @@ def tools_menu_inventory(refresh: bool = False):
         if stale:
             _spawn_tools_watchdog_refresh(force=False)
         out = dict(payload)
+        out = _annotate_tools_payload(out, source="menu_cache")
         out["cache"] = {
             "stale": stale,
             "age_sec": age_sec,
@@ -10313,6 +10583,7 @@ def tools_menu_inventory(refresh: bool = False):
     ok, fresh = _run_tools_watchdog_scan(force=bool(refresh), timeout=120)
     if ok:
         out = dict(fresh)
+        out = _annotate_tools_payload(out, source="menu_fresh")
         out["cache"] = {
             "stale": False,
             "age_sec": 0,
@@ -10327,6 +10598,7 @@ def tools_menu_inventory(refresh: bool = False):
         if age_sec > _TOOLS_MENU_STALE_SEC:
             _spawn_tools_watchdog_refresh(force=True)
         out = dict(payload)
+        out = _annotate_tools_payload(out, source="menu_stale_cache")
         out["cache"] = {
             "stale": True,
             "age_sec": age_sec,
@@ -10371,6 +10643,7 @@ def tools_discovery_search(force: bool = False):
     ok, payload = _run_tools_discovery_scan(timeout=180)
     if ok:
         out = dict(payload)
+        _UPDATE_CENTER.record_event("tools.discovery.completed", "tools", {"force": bool(force)})
         out["_cached_at"] = datetime.now(timezone.utc).isoformat()
         _write_json_dict(_TOOLS_DISCOVERY_CACHE_FILE, out)
         out["cache"] = {
@@ -10648,10 +10921,16 @@ def tools_watchdog_scan(body: Optional[ToolsWatchdogBody] = None):
             f"watchdog script missing: {script}",
         )
     force = bool(body.force) if body else False
+    _UPDATE_CENTER.record_event("tools.scan.started", "tools", {"force": force})
     cmd = [sys.executable, str(script)]
     if force:
         cmd.append("--force")
     ok, payload, _tail = _run_local_json_cmd(cmd, timeout=180)
+    if ok and isinstance(payload, dict):
+        payload = _annotate_tools_payload(payload, source="manual_scan")
+        _UPDATE_CENTER.record_event("tools.scan.completed", "tools", {"force": force})
+    else:
+        _UPDATE_CENTER.record_event("tools.scan.failed", "tools", {"force": force, "error": payload.get("error") if isinstance(payload, dict) else "scan_failed"})
     ms = int((time.perf_counter() - t0) * 1000)
     return _std_resp(ok, payload, ms, None if ok else payload.get("error"))
 
@@ -10775,6 +11054,35 @@ def tools_update_single(body: ToolsUpdateBody):
             f"update script missing: {script}",
         )
     if bool(body.background):
+        inv_payload = _read_json_dict(_TOOLS_REGISTRY_FILE) or {}
+        inv_rows = inv_payload.get("tools") if isinstance(inv_payload, dict) else []
+        inv_rows = _UPDATE_CENTER.annotate_rows(inv_rows if isinstance(inv_rows, list) else [], "tools")
+        tool_row = next((r for r in inv_rows if str(r.get("id") or "").strip().lower() == str(body.tool_id).strip().lower()), None)
+        if isinstance(tool_row, dict):
+            allowed, reason = _update_center_policy_allows(
+                tool_row,
+                origin=str(body.origin or "manual"),
+                include_manual_review=bool(body.include_manual_review if body.include_manual_review is not None else True),
+                include_blocked=bool(body.include_blocked if body.include_blocked is not None else False),
+            )
+            if not allowed:
+                _UPDATE_CENTER.record_event(
+                    "tools.update.blocked_by_policy",
+                    "tools",
+                    {"tool_id": body.tool_id, "reason": reason, "policy_class": tool_row.get("policy_class"), "origin": body.origin or "manual"},
+                )
+                return _std_resp(
+                    False,
+                    {
+                        "ok": False,
+                        "tool": body.tool_id,
+                        "status": "blocked",
+                        "policy_class": tool_row.get("policy_class"),
+                        "policy_reason": reason,
+                    },
+                    int((time.perf_counter() - t0) * 1000),
+                    "blocked_by_policy",
+                )
         if not bg_script.exists():
             return _std_resp(
                 False,
@@ -10829,6 +11137,14 @@ def tools_update_single(body: ToolsUpdateBody):
                 cwd=BASE_DIR,
                 runner_log=runner_log,
             )
+            _UPDATE_CENTER.register_job(
+                job_id,
+                "tools",
+                "update_one",
+                str(body.origin or "manual"),
+                {"tool": body.tool_id},
+            )
+            _UPDATE_CENTER.record_event("tools.update.started", "tools", {"job_id": job_id, "tool_id": body.tool_id, "origin": body.origin or "manual"})
             ms = int((time.perf_counter() - t0) * 1000)
             return _std_resp(
                 True,
@@ -10890,6 +11206,9 @@ def tools_update_all(body: Optional[ToolsUpdateAllBody] = None):
         )
 
     include_critical = True if body is None else bool(body.include_critical)
+    include_manual_review = True if body is None else bool(body.include_manual_review if body.include_manual_review is not None else True)
+    include_blocked = False if body is None else bool(body.include_blocked if body.include_blocked is not None else False)
+    origin = "manual" if body is None else str(body.origin or "manual")
     ok_inv, payload_inv, _tail = _run_local_json_cmd(
         [sys.executable, str(watchdog_script)], timeout=180
     )
@@ -10904,20 +11223,14 @@ def tools_update_all(body: Optional[ToolsUpdateAllBody] = None):
     tools = payload_inv.get("tools") if isinstance(payload_inv, dict) else []
     if not isinstance(tools, list):
         tools = []
-    target_tools: list[str] = []
-    for t in tools:
-        if not isinstance(t, dict):
-            continue
-        if not bool(t.get("update_ready")):
-            continue
-        if not t.get("update_script"):
-            continue
-        if (not include_critical) and bool(t.get("critical")):
-            continue
-        tid = str(t.get("id") or "").strip()
-        if tid:
-            target_tools.append(tid)
-    target_tools = sorted(set(target_tools))
+    tools = _UPDATE_CENTER.annotate_rows(tools, "tools")
+    target_tools, blocked_by_policy = _select_tool_targets_with_policy(
+        tools,
+        include_critical=include_critical,
+        origin=origin,
+        include_manual_review=include_manual_review,
+        include_blocked=include_blocked,
+    )
     if not target_tools:
         return _std_resp(
             True,
@@ -10928,6 +11241,7 @@ def tools_update_all(body: Optional[ToolsUpdateAllBody] = None):
                 "status": "noop",
                 "message": "No hay herramientas con upgrade_ready",
                 "tools": [],
+                "blocked_by_policy": blocked_by_policy,
             },
             int((time.perf_counter() - t0) * 1000),
             None,
@@ -10984,6 +11298,18 @@ def tools_update_all(body: Optional[ToolsUpdateAllBody] = None):
             cwd=BASE_DIR,
             runner_log=runner_log,
         )
+        _UPDATE_CENTER.register_job(
+            job_id,
+            "tools",
+            "update_all",
+            origin,
+            {"tools": target_tools, "blocked_by_policy": blocked_by_policy},
+        )
+        _UPDATE_CENTER.record_event(
+            "tools.update.started",
+            "tools",
+            {"job_id": job_id, "origin": origin, "count": len(target_tools), "blocked_count": len(blocked_by_policy)},
+        )
         ms = int((time.perf_counter() - t0) * 1000)
         return _std_resp(
             True,
@@ -10994,6 +11320,7 @@ def tools_update_all(body: Optional[ToolsUpdateAllBody] = None):
                 "tool": "all",
                 "status": "queued",
                 "tools": target_tools,
+                "blocked_by_policy": blocked_by_policy,
                 "total": len(target_tools),
                 "status_url": f"/api/tools/job/status/{job_id}",
                 "runner_log": str(runner_log),
@@ -11140,6 +11467,25 @@ def tools_update_status(job_id: str):
                 json.dumps(payload, ensure_ascii=False),
                 encoding="utf-8",
             )
+    except Exception:
+        pass
+    try:
+        synced = _UPDATE_CENTER.sync_job(safe_job_id, payload if isinstance(payload, dict) else {"status": "unknown"})
+        st = str((synced or {}).get("status") or "").lower()
+        if st in {"done", "done_with_errors", "failed"} and not bool((synced or {}).get("_terminal_event_emitted")):
+            event_name = "tools.update.succeeded" if st == "done" else "tools.update.failed"
+            _UPDATE_CENTER.record_event(
+                event_name,
+                "tools",
+                {
+                    "job_id": safe_job_id,
+                    "status": st,
+                    "failed": int((synced or {}).get("failed") or 0),
+                    "error": (synced or {}).get("error"),
+                },
+            )
+            synced["_terminal_event_emitted"] = True
+            payload = _UPDATE_CENTER.sync_job(safe_job_id, synced)
     except Exception:
         pass
     return _std_resp(True, payload, int((time.perf_counter() - t0) * 1000), None)
@@ -11953,11 +12299,36 @@ class SoftwareWatchdogBody(BaseModel):
 class SoftwareApplyAllBody(BaseModel):
     background: Optional[bool] = True
     include_optional: Optional[bool] = True
+    origin: Optional[str] = "manual"
+    include_manual_review: Optional[bool] = True
+    include_blocked: Optional[bool] = False
 
 
 class SoftwareMaintenanceBody(BaseModel):
     background: Optional[bool] = True
     apply_repo: Optional[bool] = False
+
+
+class SoftwareApplyOneBody(BaseModel):
+    item_id: str = Field(..., min_length=2, max_length=120)
+    background: Optional[bool] = True
+    origin: Optional[str] = "manual"
+    include_manual_review: Optional[bool] = True
+    include_blocked: Optional[bool] = False
+
+
+class UpdateCenterConfigBody(BaseModel):
+    enabled: Optional[bool] = None
+    dry_run: Optional[bool] = None
+    scan_interval_sec: Optional[int] = None
+    max_updates_per_cycle: Optional[int] = None
+    window_start: Optional[str] = None
+    window_end: Optional[str] = None
+
+
+class UpdateCenterActionBody(BaseModel):
+    surface: Optional[str] = "all"
+    force: Optional[bool] = True
 
 
 _SOFTWARE_HUB_DIR = (BASE_DIR / "software_hub").resolve()
@@ -12009,6 +12380,7 @@ def _spawn_software_watchdog_refresh(force: bool = False) -> bool:
 @app.get("/api/software/menu", tags=["Software"])
 def software_menu_inventory(refresh: bool = False):
     """Inventario extendido de software (instalado + red + drivers + stack dev)."""
+    _ensure_update_center_auto_scheduler()
     t0 = time.perf_counter()
     now_ts = time.time()
     payload = _read_json_dict(_SOFTWARE_REGISTRY_FILE)
@@ -12025,6 +12397,7 @@ def software_menu_inventory(refresh: bool = False):
         if stale:
             _spawn_software_watchdog_refresh(force=False)
         out = dict(payload)
+        out = _annotate_software_payload(out, source="menu_cache")
         out["cache"] = {
             "stale": stale,
             "age_sec": age_sec,
@@ -12036,6 +12409,7 @@ def software_menu_inventory(refresh: bool = False):
     ok, fresh = _run_software_watchdog_scan(force=bool(refresh), timeout=240)
     if ok:
         out = dict(fresh)
+        out = _annotate_software_payload(out, source="menu_fresh")
         out["cache"] = {
             "stale": False,
             "age_sec": 0,
@@ -12049,6 +12423,7 @@ def software_menu_inventory(refresh: bool = False):
         if age_sec > _SOFTWARE_MENU_STALE_SEC:
             _spawn_software_watchdog_refresh(force=True)
         out = dict(payload)
+        out = _annotate_software_payload(out, source="menu_stale_cache")
         out["cache"] = {
             "stale": True,
             "age_sec": age_sec,
@@ -12070,7 +12445,13 @@ def software_menu_inventory(refresh: bool = False):
 def software_watchdog_scan(body: Optional[SoftwareWatchdogBody] = None):
     t0 = time.perf_counter()
     force = bool(body.force) if body else False
+    _UPDATE_CENTER.record_event("software.scan.started", "software", {"force": force})
     ok, payload = _run_software_watchdog_scan(force=force, timeout=240)
+    if ok and isinstance(payload, dict):
+        payload = _annotate_software_payload(payload, source="manual_scan")
+        _UPDATE_CENTER.record_event("software.scan.completed", "software", {"force": force})
+    else:
+        _UPDATE_CENTER.record_event("software.scan.failed", "software", {"force": force, "error": payload.get("error") if isinstance(payload, dict) else "scan_failed"})
     return _std_resp(ok, payload, int((time.perf_counter() - t0) * 1000), None if ok else payload.get("error"))
 
 
@@ -12078,6 +12459,7 @@ def software_watchdog_scan(body: Optional[SoftwareWatchdogBody] = None):
 def software_discovery_search(force: bool = False):
     """Lista de software detectado en red para instalar/activar."""
     t0 = time.perf_counter()
+    _UPDATE_CENTER.record_event("software.discovery.started", "software", {"force": bool(force)})
     payload = _read_json_dict(_SOFTWARE_REGISTRY_FILE)
     if force or not payload:
         ok, payload = _run_software_watchdog_scan(force=force, timeout=240)
@@ -12090,6 +12472,7 @@ def software_discovery_search(force: bool = False):
             )
     rows = payload.get("network_candidates") if isinstance(payload, dict) else []
     rows = rows if isinstance(rows, list) else []
+    rows = _UPDATE_CENTER.annotate_rows(rows, "software")
     summary = payload.get("summary") if isinstance(payload, dict) else {}
     data = {
         "ok": True,
@@ -12102,7 +12485,151 @@ def software_discovery_search(force: bool = False):
         },
         "candidates": rows,
     }
+    _UPDATE_CENTER.record_event("software.discovery.completed", "software", {"force": bool(force), "available": int(data["summary"]["available"])})
     return _std_resp(True, data, int((time.perf_counter() - t0) * 1000), None)
+
+
+@app.post("/api/software/apply-one", tags=["Software"])
+def software_apply_one(body: SoftwareApplyOneBody):
+    """Instala/actualiza un ítem de software en background con policy guardrails."""
+    t0 = time.perf_counter()
+    if not bool(body.background):
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "software_apply_one_requires_background")
+
+    payload = _read_json_dict(_SOFTWARE_REGISTRY_FILE)
+    if not payload:
+        ok, payload = _run_software_watchdog_scan(force=True, timeout=240)
+        if not ok:
+            return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), payload.get("error") or "software_watchdog_failed")
+    payload = _annotate_software_payload(payload, source="apply_one_pre")
+    rows = []
+    for k in ("software", "network_candidates"):
+        val = payload.get(k) if isinstance(payload, dict) else []
+        if isinstance(val, list):
+            rows.extend(val)
+    target_row = next(
+        (
+            r
+            for r in rows
+            if isinstance(r, dict)
+            and str(r.get("id") or "").strip().lower() == str(body.item_id or "").strip().lower()
+        ),
+        None,
+    )
+    if not isinstance(target_row, dict):
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "software_item_not_found")
+
+    method = str(target_row.get("install_method") or "").strip().lower()
+    target = str(target_row.get("install_target") or "").strip()
+    if not method or not target:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "software_item_missing_install_metadata")
+
+    allowed, reason = _update_center_policy_allows(
+        target_row,
+        origin=str(body.origin or "manual"),
+        include_manual_review=bool(body.include_manual_review if body.include_manual_review is not None else True),
+        include_blocked=bool(body.include_blocked if body.include_blocked is not None else False),
+    )
+    if not allowed:
+        _UPDATE_CENTER.record_event(
+            "software.update.blocked_by_policy",
+            "software",
+            {"item_id": body.item_id, "reason": reason, "policy_class": target_row.get("policy_class"), "origin": body.origin or "manual"},
+        )
+        return _std_resp(
+            False,
+            {
+                "ok": False,
+                "item_id": body.item_id,
+                "status": "blocked",
+                "policy_class": target_row.get("policy_class"),
+                "policy_reason": reason,
+            },
+            int((time.perf_counter() - t0) * 1000),
+            "blocked_by_policy",
+        )
+
+    bg_script = (BASE_DIR / "scripts" / "atlas_software_apply_item_background.ps1").resolve()
+    if not bg_script.exists():
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), f"missing script: {bg_script}")
+
+    try:
+        jobs_dir = (BASE_DIR / "logs" / "software_update_jobs").resolve()
+        jobs_dir.mkdir(parents=True, exist_ok=True)
+        job_id = uuid.uuid4().hex[:12]
+        status_file = jobs_dir / f"{job_id}.json"
+        runner_log = jobs_dir / f"{job_id}.runner.log"
+        status_file.write_text(
+            json.dumps(
+                {
+                    "ok": True,
+                    "job_id": job_id,
+                    "scope": "software",
+                    "source": "software_apply_one",
+                    "status": "queued",
+                    "queued_at": datetime.now(timezone.utc).isoformat(),
+                    "item_id": body.item_id,
+                    "total": 1,
+                    "done": 0,
+                    "failed": 0,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        powershell_exe = str(
+            (
+                Path(os.environ.get("SystemRoot", r"C:\Windows"))
+                / "System32"
+                / "WindowsPowerShell"
+                / "v1.0"
+                / "powershell.exe"
+            ).resolve()
+        )
+        cmd_bg = [
+            powershell_exe,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(bg_script),
+            "-RepoRoot",
+            str(BASE_DIR),
+            "-JobFile",
+            str(status_file),
+            "-ItemId",
+            str(body.item_id),
+            "-InstallMethod",
+            method,
+            "-InstallTarget",
+            target,
+        ]
+        _spawn_detached_job(cmd_bg, cwd=BASE_DIR, runner_log=runner_log)
+        _UPDATE_CENTER.register_job(
+            job_id,
+            "software",
+            "apply_one",
+            str(body.origin or "manual"),
+            {"item_id": body.item_id},
+        )
+        _UPDATE_CENTER.record_event("software.update.started", "software", {"job_id": job_id, "item_id": body.item_id, "origin": body.origin or "manual"})
+        return _std_resp(
+            True,
+            {
+                "ok": True,
+                "queued": True,
+                "job_id": job_id,
+                "scope": "software",
+                "status": "queued",
+                "item_id": body.item_id,
+                "status_url": f"/api/software/job/status/{job_id}",
+                "runner_log": str(runner_log),
+            },
+            int((time.perf_counter() - t0) * 1000),
+            None,
+        )
+    except Exception as e:
+        return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
 
 
 @app.post("/api/software/apply-all", tags=["Software"])
@@ -12133,68 +12660,25 @@ def software_apply_all(body: Optional[SoftwareApplyAllBody] = None):
             )
 
     include_optional = True if body is None else bool(body.include_optional)
-    software_rows = payload.get("software") if isinstance(payload, dict) else []
-    software_rows = software_rows if isinstance(software_rows, list) else []
-    candidates_rows = payload.get("network_candidates") if isinstance(payload, dict) else []
-    candidates_rows = candidates_rows if isinstance(candidates_rows, list) else []
+    include_manual_review = True if body is None else bool(body.include_manual_review if body.include_manual_review is not None else True)
+    include_blocked = False if body is None else bool(body.include_blocked if body.include_blocked is not None else False)
+    origin = "manual" if body is None else str(body.origin or "manual")
+    payload = _annotate_software_payload(payload, source="apply_all_pre")
+    targets, blocked_by_policy = _select_software_targets_with_policy(
+        payload,
+        include_optional=include_optional,
+        origin=origin,
+        include_manual_review=include_manual_review,
+        include_blocked=include_blocked,
+    )
 
-    targets: list[dict] = []
-    seen = set()
-
-    for row in software_rows:
-        if not isinstance(row, dict):
-            continue
-        sid = str(row.get("id") or "").strip()
-        if not sid or sid in seen:
-            continue
-        method = str(row.get("install_method") or "").strip().lower()
-        target = str(row.get("install_target") or "").strip()
-        if not method or not target:
-            continue
-        critical = bool(row.get("critical"))
-        needs = (not bool(row.get("installed"))) or bool(row.get("update_ready"))
-        if not needs:
-            continue
-        if (not include_optional) and (not critical):
-            continue
-        targets.append(
-            {
-                "id": sid,
-                "name": str(row.get("name") or sid),
-                "critical": critical,
-                "install_method": method,
-                "install_target": target,
-                "source": "software",
-            }
+    if not targets and blocked_by_policy:
+        return _std_resp(
+            True,
+            {"ok": True, "queued": False, "status": "noop", "message": "Todos los targets fueron bloqueados por política", "items": [], "blocked_by_policy": blocked_by_policy},
+            int((time.perf_counter() - t0) * 1000),
+            None,
         )
-        seen.add(sid)
-
-    for row in candidates_rows:
-        if not isinstance(row, dict):
-            continue
-        sid = str(row.get("id") or "").strip()
-        if not sid or sid in seen:
-            continue
-        if not bool(row.get("network_available")):
-            continue
-        method = str(row.get("install_method") or "").strip().lower()
-        target = str(row.get("install_target") or "").strip()
-        if not method or not target:
-            continue
-        critical = bool(row.get("critical"))
-        if (not include_optional) and (not critical):
-            continue
-        targets.append(
-            {
-                "id": sid,
-                "name": str(row.get("name") or sid),
-                "critical": critical,
-                "install_method": method,
-                "install_target": target,
-                "source": "network",
-            }
-        )
-        seen.add(sid)
 
     if not targets:
         return _std_resp(
@@ -12255,6 +12739,18 @@ def software_apply_all(body: Optional[SoftwareApplyAllBody] = None):
             str(manifest_file),
         ]
         _spawn_detached_job(cmd_bg, cwd=BASE_DIR, runner_log=runner_log)
+        _UPDATE_CENTER.register_job(
+            job_id,
+            "software",
+            "apply_all",
+            origin,
+            {"items": [str(t.get("id") or "") for t in targets], "blocked_by_policy": blocked_by_policy},
+        )
+        _UPDATE_CENTER.record_event(
+            "software.update.started",
+            "software",
+            {"job_id": job_id, "origin": origin, "count": len(targets), "blocked_count": len(blocked_by_policy)},
+        )
         return _std_resp(
             True,
             {
@@ -12264,6 +12760,7 @@ def software_apply_all(body: Optional[SoftwareApplyAllBody] = None):
                 "scope": "software",
                 "status": "queued",
                 "items": [str(t.get("id") or "") for t in targets],
+                "blocked_by_policy": blocked_by_policy,
                 "total": len(targets),
                 "status_url": f"/api/software/job/status/{job_id}",
                 "runner_log": str(runner_log),
@@ -12379,6 +12876,26 @@ def software_job_status(job_id: str):
     except Exception:
         pass
 
+    try:
+        synced = _UPDATE_CENTER.sync_job(safe_job_id, payload if isinstance(payload, dict) else {"status": "unknown"})
+        st = str((synced or {}).get("status") or "").lower()
+        if st in {"done", "done_with_errors", "failed"} and not bool((synced or {}).get("_terminal_event_emitted")):
+            event_name = "software.update.succeeded" if st == "done" else "software.update.failed"
+            _UPDATE_CENTER.record_event(
+                event_name,
+                "software",
+                {
+                    "job_id": safe_job_id,
+                    "status": st,
+                    "failed": int((synced or {}).get("failed") or 0),
+                    "error": (synced or {}).get("error"),
+                },
+            )
+            synced["_terminal_event_emitted"] = True
+            payload = _UPDATE_CENTER.sync_job(safe_job_id, synced)
+    except Exception:
+        pass
+
     return _std_resp(True, payload, int((time.perf_counter() - t0) * 1000), None)
 
 
@@ -12449,6 +12966,7 @@ def software_maintenance_cycle(body: Optional[SoftwareMaintenanceBody] = None):
 
     apply_repo = bool(body.apply_repo) if body else False
     background = bool(body.background) if body else True
+    _UPDATE_CENTER.record_event("maintenance.cycle.requested", "software", {"origin": "manual", "apply_repo": apply_repo, "background": background})
 
     if not background:
         cmd = [sys.executable, str(script)]
@@ -12483,6 +13001,8 @@ def software_maintenance_cycle(body: Optional[SoftwareMaintenanceBody] = None):
         if apply_repo:
             cmd.append("--apply-repo")
         _spawn_detached_job(cmd, cwd=BASE_DIR, runner_log=runner_log)
+        _UPDATE_CENTER.register_job(job_id, "software", "maintenance_cycle", "manual", {"apply_repo": apply_repo})
+        _UPDATE_CENTER.record_event("maintenance.cycle.started", "software", {"job_id": job_id, "origin": "manual", "apply_repo": apply_repo})
         return _std_resp(
             True,
             {
@@ -12511,6 +13031,16 @@ def software_maintenance_status(job_id: str):
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), "job_not_found")
     try:
         payload = json.loads(status_file.read_text(encoding="utf-8-sig", errors="replace"))
+        _UPDATE_CENTER.sync_job(safe_job_id, payload if isinstance(payload, dict) else {"status": "unknown"})
+        st = str((payload or {}).get("status") or "").lower()
+        if st in {"done", "done_with_errors", "failed"} and not bool((payload or {}).get("_terminal_event_emitted")):
+            _UPDATE_CENTER.record_event(
+                "maintenance.cycle.completed" if st in {"done", "done_with_errors"} else "maintenance.cycle.failed",
+                "software",
+                {"job_id": safe_job_id, "status": st, "error": (payload or {}).get("error")},
+            )
+            payload["_terminal_event_emitted"] = True
+            _UPDATE_CENTER.sync_job(safe_job_id, payload)
         return _std_resp(True, payload, int((time.perf_counter() - t0) * 1000), None)
     except Exception as e:
         return _std_resp(False, None, int((time.perf_counter() - t0) * 1000), str(e))
@@ -12528,6 +13058,112 @@ def software_maintenance_latest():
             None,
         )
     return _std_resp(True, {"ok": True, "found": True, "report": payload}, int((time.perf_counter() - t0) * 1000), None)
+
+
+@app.post("/api/tools/reconcile", tags=["Tools"])
+def tools_reconcile():
+    """Reconcilia inventario + discovery + jobs activos para Tools Menu."""
+    t0 = time.perf_counter()
+    _UPDATE_CENTER.record_event("tools.reconcile.started", "tools", {"origin": "manual"})
+    inv = tools_menu_inventory(refresh=True)
+    disc = tools_discovery_search(force=True)
+    latest = tools_job_latest()
+    _UPDATE_CENTER.record_event("tools.reconcile.completed", "tools", {"origin": "manual"})
+    return _std_resp(
+        True,
+        {
+            "ok": True,
+            "inventory": inv.get("data"),
+            "discovery": disc.get("data"),
+            "latest_job": latest.get("data"),
+        },
+        int((time.perf_counter() - t0) * 1000),
+        None,
+    )
+
+
+@app.post("/api/software/reconcile", tags=["Software"])
+def software_reconcile():
+    """Reconcilia inventario + discovery + jobs activos para Software Center."""
+    t0 = time.perf_counter()
+    _UPDATE_CENTER.record_event("software.reconcile.started", "software", {"origin": "manual"})
+    inv = software_menu_inventory(refresh=True)
+    disc = software_discovery_search(force=True)
+    latest = software_job_latest()
+    maint = software_maintenance_latest()
+    _UPDATE_CENTER.record_event("software.reconcile.completed", "software", {"origin": "manual"})
+    return _std_resp(
+        True,
+        {
+            "ok": True,
+            "inventory": inv.get("data"),
+            "discovery": disc.get("data"),
+            "latest_job": latest.get("data"),
+            "latest_maintenance": maint.get("data"),
+        },
+        int((time.perf_counter() - t0) * 1000),
+        None,
+    )
+
+
+@app.get("/api/update-center/state", tags=["Software", "Tools"])
+def update_center_state(events_limit: int = 80):
+    """Estado unificado de auto-update, jobs y eventos para UI viva."""
+    _ensure_update_center_auto_scheduler()
+    t0 = time.perf_counter()
+    state = _UPDATE_CENTER.get_state(events_limit=events_limit)
+    return _std_resp(True, state, int((time.perf_counter() - t0) * 1000), None)
+
+
+@app.get("/api/update-center/config", tags=["Software", "Tools"])
+def update_center_get_config():
+    t0 = time.perf_counter()
+    cfg = _UPDATE_CENTER.load_config()
+    return _std_resp(True, cfg, int((time.perf_counter() - t0) * 1000), None)
+
+
+@app.post("/api/update-center/config", tags=["Software", "Tools"])
+def update_center_set_config(body: UpdateCenterConfigBody):
+    t0 = time.perf_counter()
+    patch: dict[str, Any] = body.model_dump(exclude_none=True)
+    cfg = _UPDATE_CENTER.save_config(patch)
+    return _std_resp(True, cfg, int((time.perf_counter() - t0) * 1000), None)
+
+
+@app.post("/api/update-center/scan", tags=["Software", "Tools"])
+def update_center_scan(body: Optional[UpdateCenterActionBody] = None):
+    t0 = time.perf_counter()
+    body = body or UpdateCenterActionBody()
+    surface = str(body.surface or "all").strip().lower()
+    force = bool(body.force)
+    out: dict[str, Any] = {"ok": True, "surface": surface, "force": force}
+    if surface in {"all", "tools"}:
+        out["tools"] = tools_watchdog_scan(ToolsWatchdogBody(force=force)).get("data")
+    if surface in {"all", "software"}:
+        out["software"] = software_watchdog_scan(SoftwareWatchdogBody(force=force)).get("data")
+    return _std_resp(True, out, int((time.perf_counter() - t0) * 1000), None)
+
+
+@app.post("/api/update-center/discovery", tags=["Software", "Tools"])
+def update_center_discovery(body: Optional[UpdateCenterActionBody] = None):
+    t0 = time.perf_counter()
+    body = body or UpdateCenterActionBody()
+    surface = str(body.surface or "all").strip().lower()
+    force = bool(body.force)
+    out: dict[str, Any] = {"ok": True, "surface": surface, "force": force}
+    if surface in {"all", "tools"}:
+        out["tools"] = tools_discovery_search(force=force).get("data")
+    if surface in {"all", "software"}:
+        out["software"] = software_discovery_search(force=force).get("data")
+    return _std_resp(True, out, int((time.perf_counter() - t0) * 1000), None)
+
+
+@app.post("/api/update-center/auto-cycle/run", tags=["Software", "Tools"])
+def update_center_auto_cycle_run():
+    """Fuerza una ejecución del ciclo auto-update guardado (respeta config/policy)."""
+    t0 = time.perf_counter()
+    _run_update_center_auto_cycle_if_due()
+    return _std_resp(True, {"ok": True, "triggered": True}, int((time.perf_counter() - t0) * 1000), None)
 
 
 @app.get("/cluster/nodes", tags=["Cluster"])

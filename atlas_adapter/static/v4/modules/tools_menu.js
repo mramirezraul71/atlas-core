@@ -5,7 +5,9 @@
 import { poll, stop } from '../lib/polling.js';
 
 const POLL_ID = 'tools-menu-module';
+const UPDATE_CENTER_POLL_ID = 'tools-menu-update-center';
 const MENU_ENDPOINT = '/api/tools/menu';
+const UPDATE_CENTER_ENDPOINT = '/api/update-center/state?events_limit=30';
 const JOB_KEY = 'atlas-tools-menu-active-job';
 const AUTO_RECONCILE_COOLDOWN_MS = 15000;
 
@@ -113,6 +115,7 @@ export default {
           </div>
 
           <div id="tm-alerts"></div>
+          <div id="tm-auto-state" style="margin:6px 0 10px;"></div>
           <div id="tm-progress"></div>
           <div id="tm-action" style="margin: 10px 0 14px;"></div>
 
@@ -180,10 +183,14 @@ export default {
     poll(POLL_ID, MENU_ENDPOINT, 30000, (data) => {
       if (data) _applyData(container, _payload(data));
     });
+    poll(UPDATE_CENTER_POLL_ID, UPDATE_CENTER_ENDPOINT, 8000, (data) => {
+      if (data) _syncUpdateCenterState(container, _payload(data));
+    });
   },
 
   destroy() {
     stop(POLL_ID);
+    stop(UPDATE_CENTER_POLL_ID);
   },
 };
 
@@ -278,9 +285,13 @@ function _renderTools(container) {
     const cls = t.status === 'ok' ? 'active' : t.status === 'warn' ? 'degraded' : 'down';
     const dot = _statusDot(t.status);
     const canUpdate = !!(t.update_script && String(t.update_script).trim());
-    const blocked = protectedBlock && canUpdate;
+    const policyLabel = String(t.policy_status_label || '').toUpperCase();
+    const policyClass = String(t.policy_class || '');
+    const policyBlocked = policyLabel === 'BLOQUEADO' || policyClass === 'never_auto_update';
+    const blocked = (protectedBlock || policyBlocked) && canUpdate;
     const upgradeChip = t.update_ready ? '<span class="chip orange">UPGRADE_READY</span>' : '';
     const criticalChip = t.critical ? '<span class="chip blue">ESENCIAL</span>' : '';
+    const policyChip = policyLabel ? `<span class="chip ${policyLabel === 'AUTO' ? 'green' : (policyLabel === 'MANUAL' ? 'blue' : (policyLabel === 'CRITICO' ? 'orange' : 'red'))}">${_esc(policyLabel)}</span>` : '';
     const toolProgress = _toolProgressState(js, t.id);
     const progressChip = toolProgress ? `<span class="chip ${toolProgress.cls}">${_esc(toolProgress.label)}</span>` : '';
     const latest = t.latest_version ? `<div class="provider-role">Latest: ${_esc(t.latest_version)}</div>` : '';
@@ -297,10 +308,12 @@ function _renderTools(container) {
       <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
         ${upgradeChip}
         ${criticalChip}
+        ${policyChip}
         ${progressChip}
       </div>
       <div style="font-size:11px;color:var(--text-muted);margin-top:8px;min-height:30px">
         ${_esc(_fmt(t.details))}
+        ${t.policy_reason ? `<div style="margin-top:4px;color:var(--text-muted)">Policy: ${_esc(t.policy_reason)}</div>` : ''}
       </div>
       <div style="margin-top:12px;display:flex;gap:6px">
         <button class="action-btn ${t.update_ready ? 'primary' : ''}" data-action="update" data-tool="${_esc(t.id)}" data-critical="${t.critical ? '1' : '0'}" ${canUpdate && !blocked ? '' : 'disabled'}>
@@ -341,16 +354,22 @@ async function _scanNow(container) {
 async function _reconcileStates(container) {
   _setAction(container, '<div class="codebox" style="font-size:11px">Reconciliando estado global (inventario + jobs + discovery)...</div>');
   try {
-    await _scanNow(container);
-    await _refresh(container);
-    await _runDiscovery(container);
-
-    const r = await fetch('/api/tools/job/latest');
+    const r = await fetch('/api/tools/reconcile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
     const d = await r.json().catch(() => ({}));
     const p = _payload(d) || {};
-    if (r.ok && d.ok !== false && p.found && p.job && p.job.job_id) {
-      _updateJobState(container, p.job);
-      _setAction(container, `<div class="chip orange">Job activo detectado: ${_esc(String(p.job.job_id))}</div>`);
+    if (!r.ok || d.ok === false) throw new Error(d.error || p.error || `HTTP ${r.status}`);
+    if (p.inventory) _applyData(container, p.inventory);
+    if (p.discovery) {
+      container.__discoveryData = p.discovery;
+      _renderDiscovery(container);
+    }
+    const latest = p.latest_job || {};
+    if (latest.found && latest.job && latest.job.job_id) {
+      _updateJobState(container, latest.job);
+      _setAction(container, `<div class="chip orange">Job activo detectado: ${_esc(String(latest.job.job_id))}</div>`);
     } else {
       container.__jobState = null;
       _renderProgress(container);
@@ -1049,6 +1068,30 @@ function _txt(container, selector, value) {
 function _setAction(container, html) {
   const el = container.querySelector('#tm-action');
   if (el) el.innerHTML = html || '';
+}
+
+function _syncUpdateCenterState(container, state) {
+  if (!state) return;
+  container.__updateCenterState = state;
+  const cfg = state.config || {};
+  const cyc = state.auto_cycle || {};
+  const tools = (state.surfaces || {}).tools || {};
+  const policy = tools.policy_summary || {};
+  const el = container.querySelector('#tm-auto-state');
+  if (!el) return;
+  const enabled = !!cfg.enabled;
+  const dryRun = !!cfg.dry_run;
+  const running = !!cyc.running;
+  const chips = [
+    `<span class="chip ${enabled ? 'green' : 'red'}">AUTO-UPDATE ${enabled ? 'ON' : 'OFF'}</span>`,
+    `<span class="chip ${dryRun ? 'orange' : 'green'}">${dryRun ? 'DRY-RUN' : 'APPLY'}</span>`,
+    `<span class="chip ${running ? 'blue' : 'green'}">${running ? 'CICLO_CORRIENDO' : 'CICLO_IDLE'}</span>`,
+    `<span class="chip green">AUTO:${Number(policy.auto_update_safe || 0)}</span>`,
+    `<span class="chip blue">MANUAL:${Number(policy.manual_review_required || 0)}</span>`,
+    `<span class="chip red">BLOQ:${Number(policy.never_auto_update || 0)}</span>`,
+  ];
+  const last = tools.updated_at || '--';
+  el.innerHTML = `<div class="tools-alert-box">${chips.join(' ')}<span style="margin-left:8px;font-size:11px;color:var(--text-muted)">Update Center: ${_esc(String(last))}</span></div>`;
 }
 
 async function _autoReconcileAfterJob(container, reason = '') {

@@ -5,8 +5,10 @@
 import { poll, stop } from '../lib/polling.js';
 
 const POLL_ID = 'software-center-module';
+const UPDATE_CENTER_POLL_ID = 'software-center-update-center';
 const MENU_ENDPOINT = '/api/software/menu';
 const DISCOVERY_ENDPOINT = '/api/software/discovery/search';
+const UPDATE_CENTER_ENDPOINT = '/api/update-center/state?events_limit=30';
 const JOB_KEY = 'atlas-software-center-active-job';
 const MAINT_KEY = 'atlas-software-center-active-maintenance-job';
 
@@ -150,9 +152,13 @@ export default {
               <button class="action-btn" id="sc-btn-discovery">Buscar en Red</button>
               <button class="action-btn" id="sc-btn-apply-all">Actualizar / Instalar Todo</button>
               <button class="action-btn" id="sc-btn-maintenance">Ciclo de Mantenimiento</button>
+              <button class="action-btn" id="sc-btn-reconcile">Reconciliar estados</button>
+              <button class="action-btn" id="sc-btn-auto-toggle">Auto-update ON/OFF</button>
+              <button class="action-btn" id="sc-btn-auto-cycle">Auto ciclo ahora</button>
               <button class="action-btn" id="sc-btn-open-tools">Ir a Tools Menu</button>
             </div>
             <div id="sc-alerts"></div>
+            <div id="sc-auto-state" style="margin:6px 0 8px;"></div>
             <div class="sc-runtime-block">
               <div id="sc-progress"></div>
               <div id="sc-maint-progress"></div>
@@ -203,6 +209,9 @@ export default {
     container.querySelector('#sc-btn-discovery')?.addEventListener('click', () => _discovery(container, true));
     container.querySelector('#sc-btn-apply-all')?.addEventListener('click', () => _applyAll(container));
     container.querySelector('#sc-btn-maintenance')?.addEventListener('click', () => _maintenance(container));
+    container.querySelector('#sc-btn-reconcile')?.addEventListener('click', () => _reconcile(container));
+    container.querySelector('#sc-btn-auto-toggle')?.addEventListener('click', () => _toggleAutoUpdate(container));
+    container.querySelector('#sc-btn-auto-cycle')?.addEventListener('click', () => _runAutoCycle(container));
     container.querySelector('#sc-btn-open-tools')?.addEventListener('click', () => {
       location.hash = '/tools-menu';
     });
@@ -212,10 +221,14 @@ export default {
     poll(POLL_ID, MENU_ENDPOINT, 30000, (data) => {
       if (data) _applyData(container, _payload(data));
     });
+    poll(UPDATE_CENTER_POLL_ID, UPDATE_CENTER_ENDPOINT, 8000, (data) => {
+      if (data) _syncUpdateCenterState(container, _payload(data));
+    });
   },
 
   destroy() {
     stop(POLL_ID);
+    stop(UPDATE_CENTER_POLL_ID);
   },
 };
 
@@ -275,6 +288,10 @@ function _cardForSoftware(row) {
   const installed = !!row.installed;
   const net = row.network_available ? `latencia ${row.latency_ms || '--'}ms` : 'sin red';
   const cardClass = _cardClass(status);
+  const policyLabel = String(row.policy_status_label || '').toUpperCase();
+  const policyReason = String(row.policy_reason || '').trim();
+  const policyBlocked = policyLabel === 'BLOQUEADO' || String(row.policy_class || '') === 'never_auto_update';
+  const canApply = !!(row.install_method && row.install_target);
   return `
     <article class="tool-card ${cardClass}">
       <div class="tool-head">
@@ -296,9 +313,16 @@ function _cardForSoftware(row) {
         <span class="chip ${statusColor}">${_esc(status.toUpperCase() || 'UNKNOWN')}</span>
         ${row.update_ready ? '<span class="chip orange">UPGRADE_READY</span>' : ''}
         ${installed ? '<span class="chip green">INSTALADA</span>' : '<span class="chip blue">PENDIENTE</span>'}
+        ${policyLabel ? `<span class="chip ${policyLabel === 'AUTO' ? 'green' : (policyLabel === 'MANUAL' ? 'blue' : (policyLabel === 'CRITICO' ? 'orange' : 'red'))}">${_esc(policyLabel)}</span>` : ''}
       </div>
       ${_detailMarkup(details, 'Sin observaciones', 3)}
+      ${policyReason ? `<div class="tool-network-line">Policy: ${_esc(policyReason)}</div>` : ''}
       <div class="tool-network-line">${_esc(net)}</div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="action-btn ${row.update_ready ? 'primary' : ''}" data-action="apply-one" data-item="${_esc(row.id || '')}" ${canApply && !policyBlocked ? '' : 'disabled'}>
+          ${policyBlocked ? 'BLOQUEADO' : 'ACTUALIZAR'}
+        </button>
+      </div>
     </article>
   `;
 }
@@ -401,6 +425,9 @@ function _renderSoftware(container) {
     return;
   }
   grid.innerHTML = rows.map(_cardForSoftware).join('');
+  grid.querySelectorAll('[data-action="apply-one"]').forEach((btn) => {
+    btn.addEventListener('click', () => _applyOne(container, btn.getAttribute('data-item') || ''));
+  });
 }
 
 function _renderDrivers(container) {
@@ -504,6 +531,36 @@ async function _applyAll(container) {
   }
 }
 
+async function _applyOne(container, itemId) {
+  const id = String(itemId || '').trim();
+  if (!id) return;
+  if (!confirm(`¿Actualizar/instalar "${id}" en background?`)) return;
+  _setAction(container, `Encolando update individual: ${_esc(id)}...`);
+  try {
+    const r = await fetch('/api/software/apply-one', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_id: id, background: true, origin: 'manual' }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      _setAction(container, `<span style="color:var(--accent-red)">Error apply-one: ${_esc(j.error || r.status)}</span>`);
+      return;
+    }
+    const data = _payload(j) || {};
+    if (!data.queued) {
+      _setAction(container, `<span style="color:var(--accent-orange)">Sin cola para ${_esc(id)}</span>`);
+      return;
+    }
+    container.__softwareJob = data;
+    localStorage.setItem(JOB_KEY, String(data.job_id || ''));
+    _setAction(container, `Job individual iniciado: ${_esc(data.job_id)}`);
+    _watchSoftwareJob(container);
+  } catch (e) {
+    _setAction(container, `<span style="color:var(--accent-red)">Error apply-one: ${_esc(e.message)}</span>`);
+  }
+}
+
 async function _maintenance(container) {
   if (!confirm('¿Ejecutar ciclo de mantenimiento (triada + MakePlay + repo + refresh)?')) return;
   _setAction(container, 'Encolando ciclo de mantenimiento...');
@@ -525,6 +582,68 @@ async function _maintenance(container) {
     _watchMaintenanceJob(container);
   } catch (e) {
     _setAction(container, `<span style="color:var(--accent-red)">Error maintenance: ${_esc(e.message)}</span>`);
+  }
+}
+
+async function _reconcile(container) {
+  _setAction(container, 'Reconciliando estado de software...');
+  try {
+    const r = await fetch('/api/software/reconcile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      _setAction(container, `<span style="color:var(--accent-red)">Error reconcile: ${_esc(j.error || r.status)}</span>`);
+      return;
+    }
+    const data = _payload(j) || {};
+    if (data.inventory) _applyData(container, data.inventory);
+    _setAction(container, '<span style="color:var(--accent-green)">Reconciliación completada</span>');
+  } catch (e) {
+    _setAction(container, `<span style="color:var(--accent-red)">Error reconcile: ${_esc(e.message)}</span>`);
+  }
+}
+
+async function _toggleAutoUpdate(container) {
+  const state = container.__updateCenterState || {};
+  const cfg = state.config || {};
+  const nextEnabled = !Boolean(cfg.enabled);
+  _setAction(container, `Actualizando config auto-update -> ${nextEnabled ? 'ON' : 'OFF'}...`);
+  try {
+    const r = await fetch('/api/update-center/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: nextEnabled }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      _setAction(container, `<span style="color:var(--accent-red)">Error config: ${_esc(j.error || r.status)}</span>`);
+      return;
+    }
+    _setAction(container, `<span style="color:var(--accent-green)">Auto-update ${nextEnabled ? 'habilitado' : 'deshabilitado'}</span>`);
+    await _syncUpdateCenter(container);
+  } catch (e) {
+    _setAction(container, `<span style="color:var(--accent-red)">Error config: ${_esc(e.message)}</span>`);
+  }
+}
+
+async function _runAutoCycle(container) {
+  _setAction(container, 'Ejecutando auto ciclo guardado...');
+  try {
+    const r = await fetch('/api/update-center/auto-cycle/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      _setAction(container, `<span style="color:var(--accent-red)">Error auto ciclo: ${_esc(j.error || r.status)}</span>`);
+      return;
+    }
+    _setAction(container, '<span style="color:var(--accent-green)">Auto ciclo disparado</span>');
+    await _syncUpdateCenter(container);
+  } catch (e) {
+    _setAction(container, `<span style="color:var(--accent-red)">Error auto ciclo: ${_esc(e.message)}</span>`);
   }
 }
 
@@ -663,6 +782,35 @@ function _renderMaintenanceProgress(container) {
 function _setAction(container, html) {
   const el = container.querySelector('#sc-action');
   if (el) el.innerHTML = html || '';
+}
+
+async function _syncUpdateCenter(container) {
+  try {
+    const r = await fetch(UPDATE_CENTER_ENDPOINT);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) return;
+    _syncUpdateCenterState(container, _payload(j));
+  } catch {}
+}
+
+function _syncUpdateCenterState(container, state) {
+  if (!state) return;
+  container.__updateCenterState = state;
+  const cfg = state.config || {};
+  const cyc = state.auto_cycle || {};
+  const sw = (state.surfaces || {}).software || {};
+  const policy = sw.policy_summary || {};
+  const el = container.querySelector('#sc-auto-state');
+  if (!el) return;
+  const chips = [
+    `<span class="chip ${cfg.enabled ? 'green' : 'red'}">AUTO-UPDATE ${cfg.enabled ? 'ON' : 'OFF'}</span>`,
+    `<span class="chip ${cfg.dry_run ? 'orange' : 'green'}">${cfg.dry_run ? 'DRY-RUN' : 'APPLY'}</span>`,
+    `<span class="chip ${cyc.running ? 'blue' : 'green'}">${cyc.running ? 'CICLO_CORRIENDO' : 'CICLO_IDLE'}</span>`,
+    `<span class="chip green">AUTO:${Number(policy.auto_update_safe || 0)}</span>`,
+    `<span class="chip blue">MANUAL:${Number(policy.manual_review_required || 0)}</span>`,
+    `<span class="chip red">BLOQ:${Number(policy.never_auto_update || 0)}</span>`,
+  ];
+  el.innerHTML = `<div class="tools-alert-box">${chips.join(' ')}</div>`;
 }
 
 window.AtlasModuleSoftwareCenter = { id: 'software-center' };

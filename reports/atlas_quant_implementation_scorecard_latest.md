@@ -1,6 +1,6 @@
 # ATLAS Quant - Trading Implementation Scorecard
 
-- Generated at: `2026-04-20T13:43:31.503676+00:00`
+- Generated at: `2026-04-21T12:34:06.097057+00:00`
 - Process compliance: `97.5/100` (healthy)
 - Implementation usefulness: `55.0/100` (watch)
 
@@ -10,7 +10,7 @@
 - `artifact_coverage_score`: `100.0/100` (healthy) - Medir si cada avance deja huella en protocolo, informes y archivos reutilizables.
 - `memory_persistence_score`: `100.0/100` (healthy) - Medir si ATLAS esta reteniendo los cambios en memoria y bitacora.
 - `external_benchmark_coverage_score`: `100.0/100` (healthy) - Medir cuantas etapas auditadas estan respaldadas por confrontacion externa seria.
-- `observability_feedback_score`: `95.0/100` (healthy) - Medir si Grafana, Prometheus y el chequeo operativo estan devolviendo feedback confiable para sostener disciplina.
+- `observability_feedback_score`: `88.0/100` (healthy) - Medir si Grafana, Prometheus y el chequeo operativo estan devolviendo feedback confiable para sostener disciplina.
 - `visual_benchmark_feedback_score`: `100.0/100` (healthy) - Medir si el benchmark visual externo ya fue traducido a criterios reutilizables, reportes y controles reales de entrada.
 - `options_strategy_governance_feedback_score`: `100.0/100` (healthy) - Medir si el benchmark externo de estructuras con opciones ya fue traducido a taxonomia, constraints y reglas reutilizables.
 - `hybrid_order_flow_feedback_score`: `100.0/100` (healthy) - Medir si el order flow hibrido (microestructura intradia + superficie de opciones) ya fue traducido a proveedor reusable, telemetria degradable, status operativo y tests.
@@ -28,7 +28,7 @@
 - `post_mortem_coverage_pct`: `100.0`
 - `recent_attribution_pct`: `100.0`
 - `external_learning_translation_score`: `100.0`
-- `observability_feedback_score`: `95.0`
+- `observability_feedback_score`: `88.0`
 - `visual_benchmark_feedback_score`: `100.0`
 - `visual_benchmark_source_count`: `4`
 - `visual_benchmark_translation_pct`: `0.0`
@@ -46,7 +46,7 @@
 
 - El proceso va por `97.5/100`: esto mide implantacion metodologica, no edge de mercado.
 - La utilidad va por `55.0/100`: esto mide si ya hay evidencia suficiente de que lo implementado esta mejorando el sistema vivo.
-- La observabilidad va por `95.0/100`: esto mide si el tablero operativo realmente esta devolviendo feedback confiable para vigilar la implantacion.
+- La observabilidad va por `88.0/100`: esto mide si el tablero operativo realmente esta devolviendo feedback confiable para vigilar la implantacion.
 - El benchmark visual va por `100.0/100`: esto mide si la investigacion visual externa ya fue aterrizada a controles reutilizables en ATLAS.
 - La gobernanza de opciones va por `100.0/100`: esto mide si el benchmark externo de estructuras con opciones ya fue traducido a familias, reglas y restricciones reutilizables.
 - El order flow hibrido va por `100.0/100`: esto mide si la fusion intradia + opciones ya existe como modulo reusable, observable y persistente.
