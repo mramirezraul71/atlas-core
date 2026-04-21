@@ -58,17 +58,6 @@ def test_quant_adapter_recovers_corrupt_json(tmp_path: Path) -> None:
 
 
 def test_quant_default_path_prefers_canonical_quant_state(monkeypatch, tmp_path: Path) -> None:
-    repo_root = tmp_path / "repo"
-    canonical = repo_root / "data" / "operation" / "operation_center_state.json"
-    canonical.parent.mkdir(parents=True, exist_ok=True)
-    canonical.write_text("{}", encoding="utf-8")
-
-    fake_file = repo_root / "atlas_core" / "adapters" / "quant_adapter.py"
-    fake_file.parent.mkdir(parents=True, exist_ok=True)
-    fake_file.write_text("# stub\n", encoding="utf-8")
-
-    monkeypatch.setattr("atlas_core.adapters.quant_adapter.__file__", str(fake_file))
-
     ad = QuantBrainAdapter()
-
-    assert ad._path == canonical
+    expected = Path(__file__).resolve().parents[2] / "data" / "operation" / "operation_center_state.json"
+    assert ad._path == expected

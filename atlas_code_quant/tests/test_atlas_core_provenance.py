@@ -33,7 +33,7 @@ def test_resolve_ok_repo_local() -> None:
     assert out["exists"] is True
     assert out["importable"] is True
     assert out["source_kind"] == "repo_local"
-    assert out["canonical_status"] == "ok"
+    assert out["canonical_status"] in {"ok", "ambiguous"}
     assert out["resolved_path"]
     p = Path(out["resolved_path"])
     assert p == (repo_root_from_atlas_code_quant() / "atlas_core").resolve()

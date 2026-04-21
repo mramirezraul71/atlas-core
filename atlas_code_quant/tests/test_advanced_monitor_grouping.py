@@ -8,6 +8,7 @@ def _equity(symbol: str, signed_qty: float) -> NormalizedPosition:
         symbol=symbol,
         underlying=symbol,
         asset_class="equity",
+        broker_order_id=None,
         signed_qty=signed_qty,
         quantity_abs=abs(signed_qty),
         side="short" if signed_qty < 0 else "long",
