@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import hashlib
 import math
 import os
 import time
@@ -100,6 +101,13 @@ from operations.journal_pro import JournalProService
 from operations.operation_center import OperationCenter
 from operations.sensor_vision import SensorVisionService
 from operations.chart_plan_builder import chart_plan_probe_ok
+from operations.decision_shadow import (
+    build_advisory_shadow,
+    build_baseline_decision,
+    record_shadow_triplet,
+    resolve_final_paper_decision,
+)
+from operations.paper_visual_pipeline import collect_visual_evidence
 from operations.readiness_eval import evaluate_operational_readiness, startup_warmup_gate_satisfied
 from operations.readiness_payload_builder import build_readiness_fast_payload, quant_readiness_flags
 from operations.startup_visual_connect import apply_startup_visual_connections
@@ -114,6 +122,7 @@ from atlas_code_quant.options.options_pipeline_runtime import (
     build_default_options_pipeline_scheduler,
     options_pipeline_runtime_enabled,
 )
+from atlas_code_quant.options.options_engine_metrics import record_paper_aggressive_decision
 
 # ── OptionStrat ───────────────────────────────────────────────────────────────
 from api.routes.options import router as options_router
@@ -963,6 +972,35 @@ def _auto_cycle_mark_stage(stage: str, **details: Any) -> None:
 
 def _auton_mode_requires_loop(config: dict[str, Any]) -> bool:
     return str(config.get("auton_mode") or "off").strip().lower() != "off"
+
+
+def _auton_mode_execution_policy(auton_mode: str, *, requested_max_per_cycle: int) -> dict[str, Any]:
+    mode = str(auton_mode or "off").strip().lower()
+    action = "submit" if mode not in {"off", "paper_supervised"} else "preview"
+    aggressive = mode == "paper_aggressive"
+    # Aggressive paper explores wider opportunity set while staying paper-only.
+    if aggressive:
+        max_per_cycle = max(int(requested_max_per_cycle or 1), min(int(requested_max_per_cycle or 1) * 2, 10))
+    else:
+        max_per_cycle = max(1, int(requested_max_per_cycle or 1))
+    return {
+        "mode": mode,
+        "action": action,
+        "entry_action": action,
+        "aggressive": aggressive,
+        "effective_max_per_cycle": max_per_cycle,
+    }
+
+
+def _opportunity_trace_ids(candidate: dict[str, Any], *, action: str, auton_mode: str) -> tuple[str, str]:
+    symbol = str(candidate.get("symbol") or "").strip().upper()
+    timeframe = str(candidate.get("timeframe") or "intraday")
+    method = str(candidate.get("method") or candidate.get("strategy_type") or "unknown")
+    regime = str(candidate.get("market_regime") or candidate.get("regime") or "unknown")
+    score = float(candidate.get("selection_score") or 0.0)
+    seed = f"{symbol}|{timeframe}|{method}|{regime}|{score:.6f}|{action}|{auton_mode}"
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()
+    return (f"opp_{digest[:16]}", f"tr_{digest[16:32]}")
 
 
 def _ensure_auto_cycle_running() -> bool:
@@ -2150,9 +2188,15 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
             try:
                 _auto_cycle_mark_stage("config_refresh")
                 op_config = await asyncio.to_thread(_OPERATION_CENTER.get_config)
-                auton_mode = str(op_config.get("auton_mode") or "paper_supervised")
-                action = "submit" if auton_mode not in {"off", "paper_supervised"} else "preview"
-                entry_action = action
+                policy = _auton_mode_execution_policy(
+                    str(op_config.get("auton_mode") or "paper_supervised"),
+                    requested_max_per_cycle=max_per_cycle,
+                )
+                auton_mode = str(policy["mode"])
+                action = str(policy["action"])
+                entry_action = str(policy["entry_action"])
+                effective_max_per_cycle = int(policy["effective_max_per_cycle"])
+                _AUTO_CYCLE_STATE["effective_max_per_cycle"] = effective_max_per_cycle
 
                 # ── 1. EXIT PASS: cerrar posiciones que cumplen criterio de salida ─────
                 exits_sent = 0
@@ -2375,6 +2419,11 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     symbol = str(cand.get("symbol") or "").strip()
                     if not symbol:
                         continue
+                    opportunity_id, trace_id = _opportunity_trace_ids(
+                        dict(cand),
+                        action=entry_action,
+                        auton_mode=auton_mode,
+                    )
                     _auto_cycle_mark_stage(
                         "candidate_selected",
                         symbol=symbol,
@@ -2382,6 +2431,63 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         selector_session_mode=selector_session_mode,
                     )
                     if selector_session_mode == "options_only" and require_optionable and not bool(cand.get("has_options")):
+                        visual_evidence = (
+                            collect_visual_evidence(
+                                symbol=symbol,
+                                timeframe=str(cand.get("timeframe") or "5m"),
+                                opportunity_id=opportunity_id,
+                                trace_id=trace_id,
+                                chart_source=str(getattr(settings, "chart_provider_default", "tradingview") or "tradingview"),
+                                candidate=dict(cand),
+                                chart_plan=dict(cand.get("chart_plan") or {}),
+                                camera_plan=dict(cand.get("camera_plan") or {}),
+                            )
+                            if auton_mode == "paper_aggressive"
+                            else {}
+                        )
+                        baseline = build_baseline_decision(
+                            candidate=dict(cand),
+                            order_seed={"symbol": symbol},
+                            action=entry_action,
+                            auton_mode=auton_mode,
+                            opportunity_id=opportunity_id,
+                            trace_id=trace_id,
+                            visual_context=visual_evidence,
+                        )
+                        advisory = build_advisory_shadow(baseline=baseline, candidate=dict(cand))
+                        final_decision = resolve_final_paper_decision(
+                            baseline=baseline,
+                            advisory=advisory,
+                            evaluate_result=None,
+                            skip_reason="options_only_requires_options",
+                        )
+                        try:
+                            record_shadow_triplet(
+                                event_store=get_event_store(),
+                                baseline=baseline,
+                                advisory=advisory,
+                                final=final_decision,
+                            )
+                        except Exception:
+                            pass
+                        try:
+                            record_paper_aggressive_decision(
+                                decision_path="final",
+                                mode=auton_mode,
+                                pre_trade_score=float(cand.get("selection_score") or 0.0),
+                                executed=False,
+                                session=str(cand.get("timeframe") or "intraday"),
+                                regime=str(cand.get("market_regime") or cand.get("regime") or "unknown"),
+                                strategy=str(cand.get("strategy_type") or "unknown"),
+                                model_path=str(advisory.get("requested_model") or "none"),
+                                policy_variant=str(final_decision.get("policy_variant") or "baseline_v1"),
+                                cohort_id=str(final_decision.get("cohort_id") or "cohort_unknown"),
+                                error_taxonomy_v2=final_decision.get("error_taxonomy_v2"),
+                                realism=final_decision.get("paper_realism"),
+                                visual_evidence=final_decision.get("visual_evidence"),
+                            )
+                        except Exception:
+                            pass
                         last_result = {
                             "symbol": symbol,
                             "action": entry_action,
@@ -2389,10 +2495,70 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                             "reasons": [f"Options-only session skipped {symbol.upper()} because has_options is false."],
                             "selection_score": cand.get("selection_score"),
                             "win_rate_pct": None,
+                            "opportunity_id": opportunity_id,
+                            "trace_id": trace_id,
+                            "decision_id": baseline.get("decision_id"),
                         }
                         logger.info("[auto-cycle] symbol=%s action=%s blocked=options_only_requires_options", symbol, entry_action)
                         continue
                     if symbol.upper() in open_symbols and not rebuild_guard_active:
+                        visual_evidence = (
+                            collect_visual_evidence(
+                                symbol=symbol,
+                                timeframe=str(cand.get("timeframe") or "5m"),
+                                opportunity_id=opportunity_id,
+                                trace_id=trace_id,
+                                chart_source=str(getattr(settings, "chart_provider_default", "tradingview") or "tradingview"),
+                                candidate=dict(cand),
+                                chart_plan=dict(cand.get("chart_plan") or {}),
+                                camera_plan=dict(cand.get("camera_plan") or {}),
+                            )
+                            if auton_mode == "paper_aggressive"
+                            else {}
+                        )
+                        baseline = build_baseline_decision(
+                            candidate=dict(cand),
+                            order_seed={"symbol": symbol},
+                            action=entry_action,
+                            auton_mode=auton_mode,
+                            opportunity_id=opportunity_id,
+                            trace_id=trace_id,
+                            visual_context=visual_evidence,
+                        )
+                        advisory = build_advisory_shadow(baseline=baseline, candidate=dict(cand))
+                        final_decision = resolve_final_paper_decision(
+                            baseline=baseline,
+                            advisory=advisory,
+                            evaluate_result=None,
+                            skip_reason="open_symbol_guard",
+                        )
+                        try:
+                            record_shadow_triplet(
+                                event_store=get_event_store(),
+                                baseline=baseline,
+                                advisory=advisory,
+                                final=final_decision,
+                            )
+                        except Exception:
+                            pass
+                        try:
+                            record_paper_aggressive_decision(
+                                decision_path="final",
+                                mode=auton_mode,
+                                pre_trade_score=float(cand.get("selection_score") or 0.0),
+                                executed=False,
+                                session=str(cand.get("timeframe") or "intraday"),
+                                regime=str(cand.get("market_regime") or cand.get("regime") or "unknown"),
+                                strategy=str(cand.get("strategy_type") or "unknown"),
+                                model_path=str(advisory.get("requested_model") or "none"),
+                                policy_variant=str(final_decision.get("policy_variant") or "baseline_v1"),
+                                cohort_id=str(final_decision.get("cohort_id") or "cohort_unknown"),
+                                error_taxonomy_v2=final_decision.get("error_taxonomy_v2"),
+                                realism=final_decision.get("paper_realism"),
+                                visual_evidence=final_decision.get("visual_evidence"),
+                            )
+                        except Exception:
+                            pass
                         last_result = {
                             "symbol": symbol,
                             "action": entry_action,
@@ -2400,6 +2566,9 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                             "reasons": [f"Open-symbol guard blocked re-entry for {symbol.upper()}."],
                             "selection_score": cand.get("selection_score"),
                             "win_rate_pct": None,
+                            "opportunity_id": opportunity_id,
+                            "trace_id": trace_id,
+                            "decision_id": baseline.get("decision_id"),
                         }
                         logger.info("[auto-cycle] symbol=%s action=%s blocked=open_symbol_guard", symbol, entry_action)
                         continue
@@ -2453,6 +2622,92 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         action=entry_action,
                         capture_context=bool(order.chart_plan or order.camera_plan),  # type: ignore[call-arg]
                     )
+                    visual_evidence = (
+                        collect_visual_evidence(
+                            symbol=symbol,
+                            timeframe=str(cand.get("timeframe") or "5m"),
+                            opportunity_id=opportunity_id,
+                            trace_id=trace_id,
+                            chart_source=str(getattr(settings, "chart_provider_default", "tradingview") or "tradingview"),
+                            candidate=dict(cand),
+                            chart_plan=dict(order_seed.get("chart_plan") or cand.get("chart_plan") or {}),
+                            camera_plan=dict(order_seed.get("camera_plan") or cand.get("camera_plan") or {}),
+                        )
+                        if auton_mode == "paper_aggressive"
+                        else {}
+                    )
+                    baseline = build_baseline_decision(
+                        candidate=dict(cand),
+                        order_seed=dict(order_seed),
+                        action=entry_action,
+                        auton_mode=auton_mode,
+                        opportunity_id=opportunity_id,
+                        trace_id=trace_id,
+                        visual_context=visual_evidence,
+                    )
+                    advisory = build_advisory_shadow(baseline=baseline, candidate=dict(cand))
+                    final_decision = resolve_final_paper_decision(
+                        baseline=baseline,
+                        advisory=advisory,
+                        evaluate_result=result,
+                    )
+                    try:
+                        record_shadow_triplet(
+                            event_store=get_event_store(),
+                            baseline=baseline,
+                            advisory=advisory,
+                            final=final_decision,
+                        )
+                    except Exception as _shadow_err:
+                        logger.debug("[auto-cycle] shadow triplet skipped: %s", _shadow_err)
+                    if auton_mode == "paper_aggressive":
+                        try:
+                            get_event_store().append(
+                                "visual.evidence",
+                                {
+                                    "symbol": symbol,
+                                    "timeframe": str(cand.get("timeframe") or "5m"),
+                                    "opportunity_id": opportunity_id,
+                                    "trace_id": trace_id,
+                                    "decision_id": baseline.get("decision_id"),
+                                    "provider_used": visual_evidence.get("provider_used"),
+                                    "used_fallback": visual_evidence.get("used_fallback"),
+                                    "fallback_reason": visual_evidence.get("fallback_reason"),
+                                    "screenshot_path": visual_evidence.get("screenshot_path"),
+                                    "meta_path": visual_evidence.get("meta_path"),
+                                    "chart_bias": visual_evidence.get("chart_bias"),
+                                    "confluence_score": visual_evidence.get("confluence_score"),
+                                    "confluence_bucket": visual_evidence.get("confluence_bucket"),
+                                    "fusion_decision_reason": visual_evidence.get("fusion_decision_reason"),
+                                    "recommended_action": visual_evidence.get("recommended_action"),
+                                    "visual_confidence": visual_evidence.get("visual_confidence"),
+                                    "visual_decision_context": visual_evidence.get("visual_decision_context"),
+                                    "seasonality_context": visual_evidence.get("seasonality_context"),
+                                    "multi_timeframe_view": visual_evidence.get("multi_timeframe_view"),
+                                    "operational_context": visual_evidence.get("operational_context"),
+                                },
+                                source="auto_cycle",
+                            )
+                        except Exception:
+                            pass
+                    try:
+                        record_paper_aggressive_decision(
+                            decision_path="final",
+                            mode=auton_mode,
+                            pre_trade_score=float(cand.get("selection_score") or 0.0),
+                            executed=bool(final_decision.get("executed_in_paper")),
+                            session=str(cand.get("timeframe") or "intraday"),
+                            regime=str(cand.get("market_regime") or cand.get("regime") or "unknown"),
+                            strategy=str(order_seed.get("strategy_type") or cand.get("strategy_type") or "unknown"),
+                            model_path=str(advisory.get("requested_model") or "none"),
+                            policy_variant=str(final_decision.get("policy_variant") or "baseline_v1"),
+                            cohort_id=str(final_decision.get("cohort_id") or "cohort_unknown"),
+                            error_taxonomy_v2=final_decision.get("error_taxonomy_v2"),
+                            realism=final_decision.get("paper_realism"),
+                            visual_evidence=final_decision.get("visual_evidence"),
+                        )
+                    except Exception as _metrics_err:
+                        logger.debug("[auto-cycle] aggressive decision metrics skipped: %s", _metrics_err)
                     last_result = {
                         "symbol": symbol, "action": entry_action,
                         "blocked": bool(result.get("blocked")),
@@ -2460,6 +2715,14 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                         "selection_score": cand.get("selection_score"),
                         "win_rate_pct": (result.get("probability") or {}).get("win_rate_pct"),
                         "exits_sent": exits_sent,
+                        "decision_id": baseline.get("decision_id"),
+                        "opportunity_id": baseline.get("opportunity_id"),
+                        "trace_id": baseline.get("trace_id"),
+                        "policy_variant": final_decision.get("policy_variant"),
+                        "cohort_id": final_decision.get("cohort_id"),
+                        "baseline_decision": final_decision.get("baseline_decision"),
+                        "advisory_decision": final_decision.get("advisory_decision"),
+                        "final_decision": final_decision.get("final_decision"),
                     }
                     # IC Signal Tracker: registrar señal para medir poder predictivo del scanner
                     _ic_signal_id: str | None = None
@@ -2512,6 +2775,11 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                             "blocked": last_result["blocked"],
                             "selection_score": float(cand.get("selection_score") or 0),
                             "reasons": last_result.get("reasons", []),
+                            "opportunity_id": baseline.get("opportunity_id"),
+                            "trace_id": baseline.get("trace_id"),
+                            "decision_id": baseline.get("decision_id"),
+                            "cohort_id": final_decision.get("cohort_id"),
+                            "policy_variant": final_decision.get("policy_variant"),
                         }, source="auto_cycle")
                     except Exception:
                         pass  # event store is non-critical
@@ -2524,10 +2792,10 @@ async def _auto_cycle_loop(interval_sec: int, max_per_cycle: int) -> None:
                     )
                     if not last_result["blocked"] or _executor_attempted:
                         executed_count += 1
-                        if executed_count >= max_per_cycle:
+                        if executed_count >= effective_max_per_cycle:
                             logger.info(
                                 "[auto-cycle] max_per_cycle=%d reached (attempted=%s) — stopping entry pass",
-                                max_per_cycle, _executor_attempted,
+                                effective_max_per_cycle, _executor_attempted,
                             )
                             break
 
@@ -2596,6 +2864,7 @@ async def operation_loop_start(
     """Inicia el ciclo autónomo: toma candidatos del scanner y los envía a OperationCenter.
     En modo paper_supervised ejecuta preview (evalúa sin enviar orden).
     En modo paper_autonomous ejecuta submit (envía a paper trading).
+    En modo paper_aggressive ejecuta submit con mayor cobertura por ciclo (paper-only).
     """
     _auth(x_api_key)
     global _auto_cycle_task
