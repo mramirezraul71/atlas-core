@@ -31,19 +31,16 @@ if ($AppImport -and $AppImport.Trim().Length -gt 0) {
   exit (Try-Run $AppImport)
 }
 
-# autodetección basada en el repo conocido
-$preferred = @(
-  "atlas_adapter.atlas_http_api:app",
-  "bridge.server:app",
-  "bridge.atlas_api_min:app",
-  "modules.atlas_remote_api:app"
-)
+# Punto de entrada vivo único (ver docs/atlas_push/ARCHITECTURE.md).
+# Los antiguos candidatos (bridge.server:app, bridge.atlas_api_min:app,
+# modules.atlas_remote_api:app) han sido retirados de la cascada en el
+# PR A2; los archivados correspondientes viven en legacy/ y no forman
+# parte del perímetro vivo. Si se necesita arrancar uno de ellos de
+# forma puntual, usar -AppImport <modulo:app> como override manual.
+$LiveApp = "atlas_adapter.atlas_http_api:app"
 
-foreach ($cand in $preferred) {
-  $code = Try-Run $cand
-  if ($code -eq 0) { exit 0 }
-  Write-Host "Falló $cand (code=$code). Probando siguiente..." -ForegroundColor DarkYellow
-}
+$code = Try-Run $LiveApp
+if ($code -eq 0) { exit 0 }
 
-Write-Error "No pude arrancar ATLAS. Especifica -AppImport con el módulo correcto, ej: -AppImport atlas_adapter.atlas_http_api:app"
+Write-Error "No pude arrancar ATLAS con $LiveApp (code=$code). Revisa el entorno (venv, dependencias, puerto $AtlasPort) o usa -AppImport <modulo:app> para un override manual."
 exit 1
