@@ -36,6 +36,8 @@ mem0_repo/
 *.env
 **/.env
 **/*.env
+local_settings.py
+*.secret.json
 snapshots/**/config/.env
 snapshots/**/.env
 __pycache__/
@@ -72,6 +74,7 @@ snapshots/**
 
 # API keys guardadas desde el dashboard (nunca subir)
 config/provider_api_keys.json
+grafana/local/custom.ini
 
 # Audit DB (local)
 logs/*.sqlite
