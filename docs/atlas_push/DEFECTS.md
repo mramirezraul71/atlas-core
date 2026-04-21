@@ -17,8 +17,11 @@
 - **Decisión**: el archivo está fuera de servicio. **No se corrige**
   dentro de esta reestructuración. Será archivado junto con el
   resto de interfaces legadas en una fase posterior, no en los
+  pasos A–E. Ratificado en Paso C: el `chore(atlas_push): clean
+  atlas_http_api wiring (C)` deliberadamente **no** toca
+  `modules/atlas_remote_api.py` (ver `PLAN_STEP_C.md` §4 y §9).
+- **Estado**: documentado, sin acción. Se archivará fuera de los
   pasos A–E.
-- **Estado**: documentado, sin acción.
 
 ## D-002 · Endpoints duplicados en `atlas_adapter/atlas_http_api.py`
 
@@ -35,7 +38,14 @@
 - **Decisión**: **se aborda en el Paso C** del plan de refactor, no
   antes. Motivo: queremos tener ya definida la firma futura de
   `IntentRouter` para que la limpieza sea coherente con el destino.
-- **Estado**: documentado, pendiente de Paso C.
+- **Estado**: **cerrado en Paso C** (PR `chore(atlas_push): clean
+  atlas_http_api wiring (C)`, commit C1). Las dos definiciones
+  `@app.get("/modules")` se consolidan en una sola, la `@app.post("/intent")`
+  v1 eco se elimina y los imports duplicados (`BaseModel`,
+  `Optional`, `Any`, `time`) quedan en un único bloque. El invariante
+  `test_no_duplicate_handlers` en
+  `tests/unit/test_http_api_contract.py` blinda la regresión a
+  futuro. Ver `PLAN_STEP_C.md` §5 y §6.
 
 ## D-003 · Carga del router con ruta Windows absoluta
 
@@ -51,7 +61,17 @@
   el mismo archivo.
 - **Decisión**: **se aborda en el Paso C** del plan de refactor,
   consolidando todo a `from modules.command_router import handle`.
-- **Estado**: documentado, pendiente de Paso C.
+- **Estado**: **cerrado en Paso C** (PR `chore(atlas_push): clean
+  atlas_http_api wiring (C)`, commit C1). Se eliminan
+  `import importlib.util`, `from pathlib import Path`, las
+  constantes `ATLAS_ROOT`/`ROUTER_PATH` y la función
+  `load_handle()`. El router se resuelve con
+  `from modules.command_router import handle`, que funciona con
+  `uvicorn atlas_adapter.atlas_http_api:app` desde la raíz del
+  repo (tal como lo arranca `03_run_atlas_api.ps1`). El invariante
+  `test_source_has_no_importlib_or_windows_paths` en
+  `tests/unit/test_http_api_contract.py` blinda la regresión a
+  futuro. Ver `PLAN_STEP_C.md` §5 y §6.
 
 ## D-004 · `core/scheduler.py` es huérfano
 
