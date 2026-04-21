@@ -1,30 +1,41 @@
-"""ATLAS HTTP API adapter
-Expone /status /tools /execute usando el command_router.handle de C:\ATLAS\modules\command_router.py
+"""ATLAS HTTP API adapter.
+
+Expone /status, /tools, /modules, /execute, /intent usando
+``modules.command_router.handle`` directamente, y envolviendo /intent
+con ``atlas_push.intents.IntentRouter`` (ver
+``docs/atlas_push/PLAN_STEP_B.md`` y ``docs/atlas_push/PLAN_STEP_C.md``).
 """
+from typing import Any, Optional
+import time
+
 from fastapi import FastAPI
 from pydantic import BaseModel
-import importlib.util
-from pathlib import Path
 
-ATLAS_ROOT = Path(r"C:\ATLAS")
-ROUTER_PATH = ATLAS_ROOT / "modules" / "command_router.py"
+from modules.command_router import handle
+from atlas_push.intents import IntentRouter
 
-def load_handle():
-    spec = importlib.util.spec_from_file_location("command_router", str(ROUTER_PATH))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore
-    return mod.handle  # type: ignore
-
-handle = load_handle()
 app = FastAPI(title="ATLAS Adapter", version="1.0.0")
+
+# Instancia única a nivel de módulo: IntentRouter es stateless, se
+# puede reutilizar entre requests. Ver docs/atlas_push/PLAN_STEP_B.md.
+_intent_router = IntentRouter()
+
 
 class Step(BaseModel):
     tool: str
     args: dict = {}
 
+
+class IntentIn(BaseModel):
+    user: str = "raul"
+    text: str
+    meta: Optional[dict[str, Any]] = None
+
+
 @app.get("/status")
 def status():
     return {"ok": True, "atlas": handle("/status")}
+
 
 @app.get("/tools")
 def tools():
@@ -32,6 +43,7 @@ def tools():
         "atlas.status","atlas.doctor","atlas.modules","atlas.snapshot",
         "atlas.note.create","atlas.note.append","atlas.note.view","atlas.inbox"
     ]}
+
 
 @app.post("/execute")
 def execute(step: Step):
@@ -50,17 +62,6 @@ def execute(step: Step):
     out = handle(cmd)
     return {"ok": True, "tool": t, "output": out}
 
-@app.get("/modules")
-def modules():
-    return {
-        "ok": True,
-        "modules": [
-            {"name": "vision", "enabled": False},
-            {"name": "voice", "enabled": False},
-            {"name": "agent_router", "enabled": False},
-            {"name": "telegram", "enabled": True},
-        ]
-    }
 
 @app.get("/modules")
 def modules():
@@ -73,44 +74,7 @@ def modules():
             {"name": "telegram", "enabled": True},
         ]
     }
-from pydantic import BaseModel
-from typing import Any, Optional
-import time
 
-class IntentIn(BaseModel):
-    user: str = "raul"
-    text: str
-    meta: Optional[dict[str, Any]] = None
-
-@app.post("/intent")
-def intent(payload: IntentIn):
-    # Respuesta mínima (v1): eco + timestamp.
-    # Luego conectamos command_router/agent_router.
-    return {
-        "ok": True,
-        "received": payload.model_dump(),
-        "result": {
-            "message": "Intent recibido",
-            "ts": time.time(),
-        }
-    }
-# --- Canonical Intent API (v1) ---
-from pydantic import BaseModel
-from typing import Any, Optional
-import time
-
-# B2: el endpoint /intent delega ahora en atlas_push.intents.IntentRouter,
-# que envuelve modules.command_router.handle. La forma JSON de la
-# respuesta se preserva byte-a-byte (paridad estricta): ok sigue
-# siendo True salvo excepción. Ver docs/atlas_push/PLAN_STEP_B.md.
-from atlas_push.intents import IntentRouter
-
-_intent_router = IntentRouter()
-
-class IntentIn(BaseModel):
-    user: str = "raul"
-    text: str
-    meta: Optional[dict[str, Any]] = None
 
 @app.post("/intent")
 def intent(payload: IntentIn):
