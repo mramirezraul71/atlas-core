@@ -26,6 +26,23 @@ def test_policy_summary_counts_by_class(tmp_path):
     assert summary["security_critical"] == 1
 
 
+def test_runtime_and_datascience_tools_are_manual_not_blocked(tmp_path):
+    svc = UpdateCenterService(tmp_path)
+    node = svc.classify_item({"id": "node", "name": "Node Runtime", "category": "dependency"}, "tools")
+    pandas = svc.classify_item({"id": "pandas", "name": "Pandas", "category": "dependency"}, "tools")
+    assert node["policy_class"] == "manual_review_required"
+    assert node["policy_status_label"] == "MANUAL"
+    assert pandas["policy_class"] == "manual_review_required"
+    assert pandas["policy_status_label"] == "MANUAL"
+
+
+def test_ccxt_stays_blocked_for_live_sensitivity(tmp_path):
+    svc = UpdateCenterService(tmp_path)
+    ccxt = svc.classify_item({"id": "ccxt", "name": "CCXT Trading API", "category": "dependency"}, "tools")
+    assert ccxt["policy_class"] == "never_auto_update"
+    assert ccxt["policy_status_label"] == "BLOQUEADO"
+
+
 def test_auto_cycle_due_after_interval(tmp_path):
     svc = UpdateCenterService(tmp_path)
     svc.save_config({"enabled": True, "scan_interval_sec": 60})

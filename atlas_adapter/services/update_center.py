@@ -38,16 +38,47 @@ class UpdateCenterService:
         "xgboost",
     }
 
-    NEVER_AUTO_KEYWORDS = (
-        "trading",
-        "broker",
-        "execution",
-        "live",
-        "runtime",
-        "risk",
-        "order",
-        "portfolio",
+    NEVER_AUTO_IDS = {
+        "ccxt",
         "tradier",
+        "tradier_client",
+        "live_order_router",
+        "order_execution_core",
+        "portfolio_risk_engine",
+    }
+
+    NEVER_AUTO_KEYWORDS = (
+        "trading-runtime",
+        "trading_core",
+        "trading-core",
+        "tradier",
+        "live_order",
+        "order_execution",
+        "broker_execution",
+        "portfolio_risk",
+        "kill_switch",
+        "live_trading",
+    )
+
+    MANUAL_KEYWORDS = (
+        "runtime",
+        "framework",
+        "dependency",
+        "python",
+        "pip",
+        "node",
+        "ollama",
+        "numpy",
+        "pandas",
+        "scipy",
+        "xgboost",
+        "lightgbm",
+        "sklearn",
+        "statsmodels",
+        "yfinance",
+        "gymnasium",
+        "backtrader",
+        "stable-baselines",
     )
 
     def __init__(self, base_dir: Path) -> None:
@@ -153,7 +184,7 @@ class UpdateCenterService:
         reason = "Componente apto para auto-update guardado."
         tags: List[str] = []
 
-        if any(k in haystack for k in self.NEVER_AUTO_KEYWORDS):
+        if item_id in self.NEVER_AUTO_IDS or any(k in haystack for k in self.NEVER_AUTO_KEYWORDS):
             policy_class = "never_auto_update"
             policy_label = "BLOQUEADO"
             reason = "Componente runtime/live-sensitive; auto-update bloqueado."
@@ -163,7 +194,7 @@ class UpdateCenterService:
             policy_label = "CRITICO"
             reason = "Driver o capa de sistema crítica; requiere revisión manual."
             tags.append("security_critical")
-        elif critical or item_id in self.MANUAL_REVIEW_IDS or "framework" in category:
+        elif critical or item_id in self.MANUAL_REVIEW_IDS or "framework" in category or any(k in haystack for k in self.MANUAL_KEYWORDS):
             policy_class = "manual_review_required"
             policy_label = "MANUAL"
             reason = "Framework/base crítica; actualización solo con validación manual."
