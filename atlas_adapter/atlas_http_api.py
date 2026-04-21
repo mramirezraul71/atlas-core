@@ -99,7 +99,13 @@ from pydantic import BaseModel
 from typing import Any, Optional
 import time
 
-from modules.command_router import handle as route_command
+# B2: el endpoint /intent delega ahora en atlas_push.intents.IntentRouter,
+# que envuelve modules.command_router.handle. La forma JSON de la
+# respuesta se preserva byte-a-byte (paridad estricta): ok sigue
+# siendo True salvo excepción. Ver docs/atlas_push/PLAN_STEP_B.md.
+from atlas_push.intents import IntentRouter
+
+_intent_router = IntentRouter()
 
 class IntentIn(BaseModel):
     user: str = "raul"
@@ -109,16 +115,17 @@ class IntentIn(BaseModel):
 @app.post("/intent")
 def intent(payload: IntentIn):
     """
-    Endpoint canónico: recibe intención (texto) y la resuelve con command_router.
+    Endpoint canónico: recibe intención (texto) y la resuelve a través
+    del IntentRouter (que delega en command_router.handle por dentro).
     Ejemplos: "/status", "/modules", "hola", etc.
     """
     t0 = time.time()
     try:
-        out = route_command(payload.text)
+        result = _intent_router.handle(payload.text)
         return {
             "ok": True,
             "input": payload.model_dump(),
-            "output": out,
+            "output": result.output,
             "ms": int((time.time() - t0) * 1000),
         }
     except Exception as e:
