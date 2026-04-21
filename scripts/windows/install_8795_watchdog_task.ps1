@@ -22,8 +22,13 @@ if (-not (Test-Path $watchdogScript)) {
   Write-Error "No existe el watchdog script: $watchdogScript"
   exit 1
 }
+$hiddenLauncher = Join-Path $RepoPath "scripts\windows\run_hidden_powershell.vbs"
+if (-not (Test-Path $hiddenLauncher)) {
+  Write-Error "No existe launcher oculto: $hiddenLauncher"
+  exit 1
+}
 
-$taskCommand = "powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdogScript`" -Silent"
+$taskCommand = "wscript.exe //B //NoLogo `"$hiddenLauncher`" `"$watchdogScript`" -Silent"
 $args = @(
   "/Create",
   "/TN", $TaskName,
