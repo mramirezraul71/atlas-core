@@ -7,8 +7,16 @@ from atlas_code_quant.api import main
 
 def test_auton_mode_requires_loop() -> None:
     assert main._auton_mode_requires_loop({"auton_mode": "paper_autonomous"}) is True
+    assert main._auton_mode_requires_loop({"auton_mode": "paper_aggressive"}) is True
     assert main._auton_mode_requires_loop({"auton_mode": "paper_supervised"}) is True
     assert main._auton_mode_requires_loop({"auton_mode": "off"}) is False
+
+
+def test_auton_mode_execution_policy_aggressive() -> None:
+    policy = main._auton_mode_execution_policy("paper_aggressive", requested_max_per_cycle=2)
+    assert policy["mode"] == "paper_aggressive"
+    assert policy["action"] == "submit"
+    assert policy["effective_max_per_cycle"] >= 2
 
 
 async def _drain_task(task: asyncio.Task | None) -> None:

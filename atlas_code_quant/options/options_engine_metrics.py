@@ -47,6 +47,12 @@ _state: dict[str, Any] = {
     "paper_closed_total_counter_value": 0,
     "paper_go_blocked_total_counter_value": 0,
     "paper_trade_hist_seen": set(),
+    "aggr_signals_total": 0,
+    "aggr_trades_total": 0,
+    "aggr_realized_pairs": 0,
+    "aggr_score_outcome_sum": 0.0,
+    "aggr_uplift_ratio": 0.0,
+    "aggr_path_delta": {},
 }
 
 _m: dict[str, Any] = {}
@@ -721,6 +727,130 @@ def _init_prom() -> None:
             "atlas_options_sentinel_iv_rank_quality",
             "Sentinela: degradación IV rank quality",
         )
+        _m["aggr_opportunities_total"] = Counter(
+            "atlas_paper_aggressive_opportunities_total",
+            "Total de oportunidades evaluadas en modo paper aggressive.",
+            ["mode", "decision_path"],
+        )
+        _m["aggr_trades_total"] = Counter(
+            "atlas_paper_aggressive_trades_total",
+            "Total de decisiones ejecutadas en paper aggressive.",
+            ["mode", "decision_path"],
+        )
+        _m["aggr_signal_to_trade_ratio"] = Gauge(
+            "atlas_paper_signal_to_trade_conversion_ratio",
+            "Conversión señal->trade en paper aggressive (0..1).",
+        )
+        _m["aggr_pre_trade_score_vs_outcome"] = Gauge(
+            "atlas_paper_pre_trade_score_vs_realized_outcome",
+            "Relación agregada score pre-trade vs outcome realizado.",
+        )
+        _m["aggr_mae_mfe_capture"] = Histogram(
+            "atlas_paper_mae_mfe_capture_ratio",
+            "Ratio MFE/MAE por outcomes paper (si disponible).",
+            ["strategy", "regime"],
+            buckets=(-5.0, -2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0, 5.0, 10.0),
+        )
+        _m["aggr_holding_time_hist"] = Histogram(
+            "atlas_paper_holding_time_minutes",
+            "Holding time en minutos por trade paper.",
+            ["strategy", "session"],
+            buckets=(1, 5, 15, 30, 60, 120, 240, 480, 1440, float("inf")),
+        )
+        _m["aggr_exit_quality"] = Gauge(
+            "atlas_paper_exit_quality_score",
+            "Score agregado de calidad de salida (0..1).",
+        )
+        _m["aggr_outcome_by_cohort"] = Gauge(
+            "atlas_paper_outcome_by_session_regime_strategy",
+            "Outcome agregado (media) por cohorte session/regime/strategy.",
+            ["session", "regime", "strategy"],
+        )
+        _m["aggr_advisory_uplift"] = Gauge(
+            "atlas_paper_advisory_uplift_ratio",
+            "Uplift advisory vs baseline en paper aggressive.",
+        )
+        _m["aggr_advisory_path_delta"] = Gauge(
+            "atlas_paper_advisory_path_winrate_delta",
+            "Delta de winrate por path de advisory/modelo.",
+            ["model_path"],
+        )
+        _m["aggr_policy_cohort_total"] = Counter(
+            "atlas_paper_policy_cohort_decisions_total",
+            "Decisiones paper aggressive por policy_variant y cohort_id.",
+            ["policy_variant", "cohort_id", "decision"],
+        )
+        _m["aggr_taxonomy_total"] = Counter(
+            "atlas_paper_error_taxonomy_v2_total",
+            "Conteo de errores taxonomía v2 en paper aggressive.",
+            ["bucket"],
+        )
+        _m["aggr_realism_slippage_bps"] = Histogram(
+            "atlas_paper_estimated_slippage_bps",
+            "Slippage estimado (bps) para análisis de realismo en paper.",
+            ["fee_model", "fill_quality_assumption"],
+            buckets=(1, 2, 5, 10, 15, 20, 30, 40, 60, 100),
+        )
+        _m["aggr_realism_partial_fill_risk"] = Gauge(
+            "atlas_paper_partial_fill_risk",
+            "Riesgo supuesto de fill parcial (0..1) por cohorte.",
+            ["policy_variant", "cohort_id"],
+        )
+        _m["aggr_visual_confirmation_ratio"] = Gauge(
+            "atlas_paper_visual_confirmation_ratio",
+            "Ratio de decisiones con confirmación visual útil en paper aggressive.",
+        )
+        _m["aggr_visual_confluence_hist"] = Histogram(
+            "atlas_paper_visual_confluence_score",
+            "Confluence score proveniente de análisis visual chart/camera.",
+            ["provider_used", "chart_bias"],
+            buckets=(0.0, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 1.0),
+        )
+        _m["aggr_fusion_confluence_bucket_total"] = Counter(
+            "atlas_paper_fusion_confluence_bucket_count",
+            "Conteo de decisiones paper por bucket de confluencia visual.",
+            ["bucket"],
+        )
+        _m["aggr_fusion_score_hist"] = Histogram(
+            "atlas_paper_fusion_score",
+            "Distribución de fusion_score (confluence_score) en paper aggressive.",
+            ["bucket"],
+            buckets=(0.0, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 0.9, 1.0),
+        )
+        _m["aggr_recommended_action_total"] = Counter(
+            "atlas_paper_recommended_action_count",
+            "Conteo de recomendaciones de la capa de fusion Fase B.",
+            ["action"],
+        )
+        _m["aggr_seasonal_bias_total"] = Counter(
+            "atlas_paper_seasonal_bias_count",
+            "Conteo por sesgo estacional observado.",
+            ["bias"],
+        )
+        _m["aggr_mtf_alignment_total"] = Counter(
+            "atlas_paper_mtf_alignment_count",
+            "Conteo por alineacion multi-timeframe.",
+            ["alignment"],
+        )
+        _m["aggr_operational_reliability_total"] = Counter(
+            "atlas_paper_operational_reliability_count",
+            "Conteo por bucket de confiabilidad operativa visual.",
+            ["bucket"],
+        )
+        _m["live_runtime_mode_resolved_total"] = Counter(
+            "atlas_live_runtime_mode_resolved_total",
+            "Conteo de resolucion de runtime mode.",
+            ["requested_mode", "effective_mode"],
+        )
+        _m["live_switch_effective_enabled"] = Gauge(
+            "atlas_live_switch_effective_enabled",
+            "1 si live esta efectivamente habilitado, 0 en caso contrario.",
+        )
+        _m["live_switch_block_reason_total"] = Counter(
+            "atlas_live_switch_block_reason_total",
+            "Bloqueos del live switch por razon.",
+            ["reason"],
+        )
         # Preinicializa series con labels para que los dashboards de Options
         # muestren estado base en arranque en frio y no "No data".
         _m["go_nogo"].set(0.0)
@@ -749,6 +879,31 @@ def _init_prom() -> None:
         _m["sentinel_autoclose_activity"].set(0.5)
         _m["sentinel_options_flow"].set(0.25)
         _m["sentinel_iv_rank_quality"].set(0.25)
+        _m["aggr_signal_to_trade_ratio"].set(0.0)
+        _m["aggr_pre_trade_score_vs_outcome"].set(0.0)
+        _m["aggr_exit_quality"].set(0.0)
+        _m["aggr_advisory_uplift"].set(0.0)
+        _m["aggr_visual_confirmation_ratio"].set(0.0)
+        _m["aggr_opportunities_total"].labels(mode="paper_aggressive", decision_path="baseline").inc(0.0)
+        _m["aggr_opportunities_total"].labels(mode="paper_aggressive", decision_path="advisory").inc(0.0)
+        _m["aggr_trades_total"].labels(mode="paper_aggressive", decision_path="final").inc(0.0)
+        _m["aggr_policy_cohort_total"].labels(
+            policy_variant="baseline_v1",
+            cohort_id="cohort_unknown",
+            decision="accept",
+        ).inc(0.0)
+        _m["aggr_taxonomy_total"].labels(bucket="timing_error").inc(0.0)
+        _m["aggr_fusion_confluence_bucket_total"].labels(bucket="unknown").inc(0.0)
+        _m["aggr_recommended_action_total"].labels(action="manual_review").inc(0.0)
+        _m["aggr_seasonal_bias_total"].labels(bias="unknown").inc(0.0)
+        _m["aggr_mtf_alignment_total"].labels(alignment="unknown").inc(0.0)
+        _m["aggr_operational_reliability_total"].labels(bucket="critical").inc(0.0)
+        _m["live_runtime_mode_resolved_total"].labels(
+            requested_mode="paper_aggressive",
+            effective_mode="paper_aggressive",
+        ).inc(0.0)
+        _m["live_switch_effective_enabled"].set(0.0)
+        _m["live_switch_block_reason_total"].labels(reason="full_live_globally_locked").inc(0.0)
     except Exception as exc:  # pragma: no cover
         logger.warning("options_engine_metrics init: %s", exc)
         _m.clear()
@@ -1141,6 +1296,227 @@ def record_options_error(error_type: str) -> None:
         _m["errors"].labels(type=str(error_type)[:120]).inc()
     except Exception as exc:
         logger.debug("record_options_error: %s", exc)
+
+
+def _label(value: Any, *, fallback: str = "unknown", max_len: int = 64) -> str:
+    s = str(value or "").strip().lower().replace(" ", "_")
+    if not s:
+        s = fallback
+    return s[:max_len]
+
+
+def record_paper_aggressive_decision(
+    *,
+    decision_path: str,
+    mode: str,
+    pre_trade_score: float,
+    executed: bool,
+    session: str,
+    regime: str,
+    strategy: str,
+    model_path: str | None = None,
+    policy_variant: str | None = None,
+    cohort_id: str | None = None,
+    error_taxonomy_v2: dict[str, int] | None = None,
+    realism: dict[str, Any] | None = None,
+    visual_evidence: dict[str, Any] | None = None,
+) -> None:
+    """Record phase-1 paper aggressive decision metrics."""
+    _init_prom()
+    if not _m:
+        return
+    mode_l = _label(mode, fallback="paper_aggressive")
+    path_l = _label(decision_path, fallback="final")
+    session_l = _label(session, fallback="unknown")
+    regime_l = _label(regime, fallback="unknown")
+    strategy_l = _label(strategy, fallback="unknown")
+    policy_l = _label(policy_variant, fallback="baseline_v1")
+    cohort_l = _label(cohort_id, fallback="cohort_unknown")
+    try:
+        _m["aggr_opportunities_total"].labels(mode=mode_l, decision_path=path_l).inc()
+        _state["aggr_signals_total"] = int(_state.get("aggr_signals_total") or 0) + 1
+        _m["aggr_policy_cohort_total"].labels(
+            policy_variant=policy_l,
+            cohort_id=cohort_l,
+            decision="accept" if executed else "discard",
+        ).inc()
+        if executed:
+            _m["aggr_trades_total"].labels(mode=mode_l, decision_path="final").inc()
+            _state["aggr_trades_total"] = int(_state.get("aggr_trades_total") or 0) + 1
+        sig = max(1, int(_state.get("aggr_signals_total") or 0))
+        trd = int(_state.get("aggr_trades_total") or 0)
+        _m["aggr_signal_to_trade_ratio"].set(float(trd) / float(sig))
+        # Pending relation until outcome is known; keep score context by cohort.
+        _m["aggr_outcome_by_cohort"].labels(
+            session=session_l,
+            regime=regime_l,
+            strategy=strategy_l,
+        ).set(float(pre_trade_score) if executed else 0.0)
+        if model_path:
+            _m["aggr_advisory_path_delta"].labels(model_path=_label(model_path)).set(0.0)
+        if isinstance(error_taxonomy_v2, dict):
+            for bucket, count in error_taxonomy_v2.items():
+                n = max(0, int(count or 0))
+                if n > 0:
+                    _m["aggr_taxonomy_total"].labels(bucket=_label(bucket)).inc(float(n))
+        if isinstance(realism, dict):
+            fee_model = _label(realism.get("fee_model"), fallback="paper_flat")
+            fill_quality = _label(realism.get("fill_quality_assumption"), fallback="normal")
+            slippage = max(0.0, float(realism.get("estimated_slippage_bps") or 0.0))
+            partial_fill_risk = max(0.0, min(1.0, float(realism.get("partial_fill_risk") or 0.0)))
+            _m["aggr_realism_slippage_bps"].labels(
+                fee_model=fee_model,
+                fill_quality_assumption=fill_quality,
+            ).observe(slippage)
+            _m["aggr_realism_partial_fill_risk"].labels(
+                policy_variant=policy_l,
+                cohort_id=cohort_l,
+            ).set(partial_fill_risk)
+        if isinstance(visual_evidence, dict):
+            visual_ctx = (
+                visual_evidence.get("visual_decision_context")
+                if isinstance(visual_evidence.get("visual_decision_context"), dict)
+                else {}
+            )
+            conf = max(0.0, min(1.0, float(visual_evidence.get("visual_confidence") or 0.0)))
+            confluence_raw = (
+                visual_ctx.get("confluence_score")
+                if isinstance(visual_ctx, dict) and visual_ctx.get("confluence_score") is not None
+                else visual_evidence.get("confluence_score")
+            )
+            confluence = max(0.0, min(1.0, float(confluence_raw or 0.0)))
+            confluence_bucket = _label(
+                (visual_ctx.get("confluence_bucket") if isinstance(visual_ctx, dict) else None)
+                or visual_evidence.get("confluence_bucket"),
+                fallback="unknown",
+            )
+            provider_used = _label(visual_evidence.get("provider_used"), fallback="none")
+            chart_bias = _label(visual_evidence.get("chart_bias"), fallback="neutral")
+            if conf >= 0.55:
+                confirmed = int(_state.get("aggr_visual_confirmed_total") or 0) + 1
+                _state["aggr_visual_confirmed_total"] = confirmed
+            total_visual = int(_state.get("aggr_signals_total") or 0)
+            confirmed_visual = int(_state.get("aggr_visual_confirmed_total") or 0)
+            if total_visual > 0:
+                _m["aggr_visual_confirmation_ratio"].set(float(confirmed_visual) / float(total_visual))
+            _m["aggr_visual_confluence_hist"].labels(
+                provider_used=provider_used,
+                chart_bias=chart_bias,
+            ).observe(confluence)
+            _m["aggr_fusion_confluence_bucket_total"].labels(bucket=confluence_bucket).inc()
+            _m["aggr_fusion_score_hist"].labels(bucket=confluence_bucket).observe(confluence)
+            recommended_action = _label(
+                (visual_ctx.get("recommended_action") if isinstance(visual_ctx, dict) else None)
+                or visual_evidence.get("recommended_action"),
+                fallback="manual_review",
+            )
+            seasonal_bias = _label(
+                ((visual_ctx.get("seasonality_context") or {}).get("seasonal_bias") if isinstance(visual_ctx, dict) else None),
+                fallback="unknown",
+            )
+            mtf_alignment = _label(
+                ((visual_ctx.get("multi_timeframe_view") or {}).get("alignment") if isinstance(visual_ctx, dict) else None),
+                fallback="unknown",
+            )
+            op_rel_bucket = _label(
+                ((visual_ctx.get("fusion_components") or {}).get("operational_reliability_bucket") if isinstance(visual_ctx, dict) else None),
+                fallback="critical",
+            )
+            _m["aggr_recommended_action_total"].labels(action=recommended_action).inc()
+            _m["aggr_seasonal_bias_total"].labels(bias=seasonal_bias).inc()
+            _m["aggr_mtf_alignment_total"].labels(alignment=mtf_alignment).inc()
+            _m["aggr_operational_reliability_total"].labels(bucket=op_rel_bucket).inc()
+    except Exception as exc:
+        logger.debug("record_paper_aggressive_decision: %s", exc)
+
+
+def record_paper_aggressive_outcome(
+    *,
+    pre_trade_score: float,
+    realized_outcome: float,
+    session: str,
+    regime: str,
+    strategy: str,
+    mae: float | None = None,
+    mfe: float | None = None,
+    holding_time_minutes: float | None = None,
+    exit_quality: float | None = None,
+) -> None:
+    """Record post-outcome metrics for paper aggressive learning loop."""
+    _init_prom()
+    if not _m:
+        return
+    session_l = _label(session, fallback="unknown")
+    regime_l = _label(regime, fallback="unknown")
+    strategy_l = _label(strategy, fallback="unknown")
+    try:
+        _state["aggr_realized_pairs"] = int(_state.get("aggr_realized_pairs") or 0) + 1
+        _state["aggr_score_outcome_sum"] = float(_state.get("aggr_score_outcome_sum") or 0.0) + (
+            float(pre_trade_score) * float(realized_outcome)
+        )
+        pairs = max(1, int(_state.get("aggr_realized_pairs") or 0))
+        _m["aggr_pre_trade_score_vs_outcome"].set(
+            float(_state.get("aggr_score_outcome_sum") or 0.0) / float(pairs)
+        )
+        _m["aggr_outcome_by_cohort"].labels(
+            session=session_l,
+            regime=regime_l,
+            strategy=strategy_l,
+        ).set(float(realized_outcome))
+        if holding_time_minutes is not None:
+            _m["aggr_holding_time_hist"].labels(strategy=strategy_l, session=session_l).observe(
+                max(0.0, float(holding_time_minutes))
+            )
+        if mae is not None and mfe is not None:
+            denom = abs(float(mae)) if abs(float(mae)) > 1e-9 else 1.0
+            _m["aggr_mae_mfe_capture"].labels(strategy=strategy_l, regime=regime_l).observe(float(mfe) / denom)
+        if exit_quality is not None:
+            _m["aggr_exit_quality"].set(float(exit_quality))
+    except Exception as exc:
+        logger.debug("record_paper_aggressive_outcome: %s", exc)
+
+
+def update_advisory_uplift_metrics(payload: dict[str, Any] | None) -> None:
+    """Publish uplift aggregates from learning loop summaries."""
+    _init_prom()
+    if not _m or not isinstance(payload, dict):
+        return
+    try:
+        uplift = float(payload.get("advisory_uplift_ratio") or 0.0)
+        _state["aggr_uplift_ratio"] = uplift
+        _m["aggr_advisory_uplift"].set(uplift)
+        by_path = payload.get("by_model_path")
+        if isinstance(by_path, dict):
+            for model_path, delta in by_path.items():
+                _m["aggr_advisory_path_delta"].labels(model_path=_label(model_path)).set(float(delta or 0.0))
+    except Exception as exc:
+        logger.debug("update_advisory_uplift_metrics: %s", exc)
+
+
+def record_live_transition_state(
+    *,
+    runtime_resolution: dict[str, Any] | None,
+    live_switch_state: dict[str, Any] | None,
+) -> None:
+    _init_prom()
+    if not _m:
+        return
+    runtime_payload = dict(runtime_resolution or {})
+    switch_payload = dict(live_switch_state or {})
+    requested = _label(runtime_payload.get("requested_mode"), fallback="unknown")
+    effective = _label(runtime_payload.get("effective_mode"), fallback="unknown")
+    enabled = bool(switch_payload.get("effective_live_enabled", False))
+    reasons = list(switch_payload.get("blocking_reasons") or [])
+    try:
+        _m["live_runtime_mode_resolved_total"].labels(
+            requested_mode=requested,
+            effective_mode=effective,
+        ).inc()
+        _m["live_switch_effective_enabled"].set(1.0 if enabled else 0.0)
+        for reason in reasons:
+            _m["live_switch_block_reason_total"].labels(reason=_label(reason)).inc()
+    except Exception as exc:
+        logger.debug("record_live_transition_state: %s", exc)
 
 
 def refresh_journal_from_disk(path: Path | None = None) -> None:

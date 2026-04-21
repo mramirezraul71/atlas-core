@@ -28,6 +28,11 @@ from monitoring.strategy_tracker import StrategyTracker
 from operations.auton_executor import AutonExecutorService
 from operations.brain_bridge import QuantBrainBridge
 from operations.chart_execution import ChartExecutionService
+from operations.kill_switch import kill_switch_health
+from operations.live_order_routing import guarded_route_to_payload, resolve_guarded_order_route
+from operations.live_switch import live_switch_state_to_payload, resolve_live_switch_state
+from operations.runtime_config_v4 import validate_runtime_config_v4
+from operations.runtime_mode import RuntimeMode, resolve_runtime_mode, runtime_resolution_to_event
 from operations.operation_state_contract import (
     CORE_STATE_CONTRACT_KEYS,
     build_core_contract_payload,
@@ -124,6 +129,28 @@ _DEFAULT_STATE = {
     "paper_market_hours_strict": False,
     # Telegram al enviar órdenes paper y seguimiento de fills (si hay token/chat).
     "paper_telegram_trade_alerts": True,
+    # ---- Runtime mode v4 / transition to live (live-capable, live-locked) ----
+    "deployment_mode": "dev",
+    "allowed_runtime_modes": [
+        "paper_baseline",
+        "paper_aggressive",
+        "supervised_live",
+        "guarded_live",
+    ],
+    "live_unlock_policy": "human_approval_required",
+    "runtime_mode_requested": "paper_aggressive",
+    "strategy_mode_overrides": {},
+    "symbol_mode_overrides": {},
+    "require_human_unlock": True,
+    "require_dual_confirmation": False,
+    "full_live_globally_locked": True,
+    "live_capable": True,
+    "live_ready": False,
+    "live_unlock_requested": False,
+    "live_unlock_approved": False,
+    "live_guardrails_healthy": True,
+    "live_switch_state": {},
+    "runtime_mode_resolved": {},
 }
 
 PDT_RULE_REMOVAL_DATE = "2026-04-14"
@@ -301,6 +328,43 @@ class OperationCenter:
         state["paper_bypass_entry_validation_guard"] = bool(state.get("paper_bypass_entry_validation_guard", False))
         state["paper_market_hours_strict"] = bool(state.get("paper_market_hours_strict", False))
         state["paper_telegram_trade_alerts"] = bool(state.get("paper_telegram_trade_alerts", True))
+        state["deployment_mode"] = str(state.get("deployment_mode") or "dev").strip().lower()
+        state["allowed_runtime_modes"] = list(state.get("allowed_runtime_modes") or _DEFAULT_STATE["allowed_runtime_modes"])
+        state["live_unlock_policy"] = str(state.get("live_unlock_policy") or "human_approval_required")
+        state["runtime_mode_requested"] = str(state.get("runtime_mode_requested") or "paper_aggressive")
+        state["strategy_mode_overrides"] = dict(state.get("strategy_mode_overrides") or {})
+        state["symbol_mode_overrides"] = dict(state.get("symbol_mode_overrides") or {})
+        state["require_human_unlock"] = bool(state.get("require_human_unlock", True))
+        state["require_dual_confirmation"] = bool(state.get("require_dual_confirmation", False))
+        state["full_live_globally_locked"] = bool(state.get("full_live_globally_locked", True))
+        state["live_capable"] = bool(state.get("live_capable", True))
+        state["live_ready"] = bool(state.get("live_ready", False))
+        state["live_unlock_requested"] = bool(state.get("live_unlock_requested", False))
+        state["live_unlock_approved"] = bool(state.get("live_unlock_approved", False))
+        state["live_guardrails_healthy"] = bool(state.get("live_guardrails_healthy", True))
+        state["runtime_mode_resolved"] = dict(state.get("runtime_mode_resolved") or {})
+        state["live_switch_state"] = dict(state.get("live_switch_state") or {})
+        try:
+            validated_v4 = validate_runtime_config_v4(
+                {
+                    "deployment_mode": state["deployment_mode"],
+                    "allowed_runtime_modes": state["allowed_runtime_modes"],
+                    "live_unlock_policy": state["live_unlock_policy"],
+                    "strategy_mode_overrides": state["strategy_mode_overrides"],
+                    "symbol_mode_overrides": state["symbol_mode_overrides"],
+                    "require_human_unlock": state["require_human_unlock"],
+                    "require_dual_confirmation": state["require_dual_confirmation"],
+                    "full_live_globally_locked": state["full_live_globally_locked"],
+                }
+            )
+            state["allowed_runtime_modes"] = list(validated_v4.allowed_runtime_modes)
+        except Exception:
+            state["allowed_runtime_modes"] = list(_DEFAULT_STATE["allowed_runtime_modes"])
+            state["deployment_mode"] = "dev"
+        auton_mode = str(state.get("auton_mode") or "off").strip().lower()
+        if auton_mode not in {"off", "paper_supervised", "paper_autonomous", "paper_aggressive"}:
+            auton_mode = "off"
+        state["auton_mode"] = auton_mode
 
         # ---- Autonomy Orchestrator compatibility (paper_autonomous) ----
         # Keys expected by atlas_core/autonomy/adapters/quant_adapter.py
@@ -1501,6 +1565,20 @@ class OperationCenter:
             "paper_telegram_trade_alerts",
             "autonomy_mode",
             "max_risk_per_trade_pct",
+            "deployment_mode",
+            "allowed_runtime_modes",
+            "live_unlock_policy",
+            "runtime_mode_requested",
+            "strategy_mode_overrides",
+            "symbol_mode_overrides",
+            "require_human_unlock",
+            "require_dual_confirmation",
+            "full_live_globally_locked",
+            "live_capable",
+            "live_ready",
+            "live_unlock_requested",
+            "live_unlock_approved",
+            "live_guardrails_healthy",
         ):
             if key in payload and payload[key] is not None:
                 state[key] = payload[key]
@@ -1550,7 +1628,12 @@ class OperationCenter:
                 "executor_mode": executor_status.get("mode"),
                 "vision_mode": vision_status.get("provider"),
                 "kill_switch_active": bool(executor_status.get("kill_switch_active", False)),
+                "deployment_mode": config.get("deployment_mode"),
+                "live_capable": bool(config.get("live_capable", False)),
+                "live_ready": bool(config.get("live_ready", False)),
             },
+            "runtime_mode_resolved": config.get("runtime_mode_resolved") or {},
+            "live_switch_state": config.get("live_switch_state") or {},
             "vision": vision_status,
             "executor": executor_status,
             "brain": self.brain.status(),
@@ -2083,6 +2166,38 @@ class OperationCenter:
         if not order_copy.account_scope:
             order_copy.account_scope = str(config.get("account_scope") or "paper")  # type: ignore[assignment]
         scope = str(order_copy.account_scope or "paper")
+        runtime_resolution = resolve_runtime_mode(
+            requested_mode=str(config.get("runtime_mode_requested") or config.get("auton_mode") or "paper_baseline"),
+            policy_variant=str(order_copy.market_context.get("policy_variant") or order_copy.strategy_type or "baseline_v1"),
+            symbol=str(order_copy.symbol or ""),
+            account_scope=scope,
+            deployment_scope=str(config.get("deployment_mode") or "dev"),
+            allowed_runtime_modes=list(config.get("allowed_runtime_modes") or []),
+            strategy_mode_overrides=dict(config.get("strategy_mode_overrides") or {}),
+            symbol_mode_overrides=dict(config.get("symbol_mode_overrides") or {}),
+        )
+        kill_state = kill_switch_health(
+            active=bool(self.executor.status().get("kill_switch_active", False)),
+            available=True,
+            last_error=None,
+        )
+        live_switch_state = resolve_live_switch_state(
+            runtime_mode=runtime_resolution.effective_mode,
+            live_capable=bool(config.get("live_capable", True)),
+            live_ready=bool(config.get("live_ready", False)),
+            live_unlock_requested=bool(config.get("live_unlock_requested", False)),
+            live_unlock_approved=bool(config.get("live_unlock_approved", False)),
+            guardrails_healthy=bool(config.get("live_guardrails_healthy", True)),
+            kill_switch_active=bool(kill_state.get("active", False)),
+            require_human_unlock=bool(config.get("require_human_unlock", True)),
+            full_live_globally_locked=bool(config.get("full_live_globally_locked", True)),
+        )
+        guarded_route = resolve_guarded_order_route(
+            runtime_mode=runtime_resolution.effective_mode,
+            effective_live_enabled=bool(live_switch_state.effective_live_enabled),
+        )
+        config["runtime_mode_resolved"] = runtime_resolution_to_event(runtime_resolution)
+        config["live_switch_state"] = live_switch_state_to_payload(live_switch_state)
         opening_equity_order = self._is_opening_equity_order(order_copy)
         monitor_started = time.perf_counter()
         monitor = self.tracker.build_summary(account_scope=scope)  # type: ignore[arg-type]
@@ -2111,7 +2226,7 @@ class OperationCenter:
         strategy_type = str(order_copy.strategy_type or order_copy.probability_gate.strategy_type) if order_copy.probability_gate and order_copy.strategy_type is None else (str(order_copy.strategy_type) if order_copy.strategy_type else None)
 
         is_close_order = str(order_copy.position_effect or "").lower() == "close"
-        if bool(config.get("paper_only", True)) and scope != "paper":
+        if bool(config.get("paper_only", True)) and scope != "paper" and guarded_route.route == "live_execution":
             reasons.append("El plano de control esta bloqueado en modo solo simulada.")
         if not is_close_order and executor_status.get("kill_switch_active"):
             reasons.append("La parada de emergencia esta activa.")
@@ -2398,6 +2513,13 @@ class OperationCenter:
             "route": {},
         }
         if allowed and action in {"preview", "submit"}:
+            if guarded_route.route != "live_execution":
+                if scope != "paper":
+                    warnings.append(
+                        f"[live-locked] Guarded routing activo: {guarded_route.route} ({guarded_route.reason})."
+                    )
+                scope = "paper"
+                order_copy.account_scope = "paper"  # type: ignore[assignment]
             if scope != "paper" and bool(config.get("paper_only", True)):
                 allowed = False
                 reasons.append("La ejecucion real sigue deshabilitada mientras solo simulada este activa.")
@@ -2512,8 +2634,14 @@ class OperationCenter:
             "action": action,
             "reasons": reasons,
             "warnings": warnings,
+            "runtime_mode_resolved": runtime_resolution_to_event(runtime_resolution),
+            "live_switch_state": live_switch_state_to_payload(live_switch_state),
+            "guarded_order_route": guarded_route_to_payload(guarded_route),
             "gates": {
                 "scope": scope,
+                "runtime_mode": runtime_resolution_to_event(runtime_resolution),
+                "live_switch": live_switch_state_to_payload(live_switch_state),
+                "guarded_order_route": guarded_route_to_payload(guarded_route),
                 "pdt_status": pdt_status,
                 "pdt_migration": {
                     "status": "deprecated",
@@ -2568,6 +2696,7 @@ class OperationCenter:
                     "status": execution_quality.get("status"),
                     "degraded": bool(execution_quality.get("degraded")),
                 },
+                "kill_switch_health": kill_state,
             },
             "what_if": {
                 "current_equity": round(equity, 2),
@@ -2641,6 +2770,15 @@ class OperationCenter:
             "captured_stage_count": len(stage_timings),
         }
         self._save(config)
+        try:
+            from atlas_code_quant.options.options_engine_metrics import record_live_transition_state
+
+            record_live_transition_state(
+                runtime_resolution=runtime_resolution_to_event(runtime_resolution),
+                live_switch_state=live_switch_state_to_payload(live_switch_state),
+            )
+        except Exception:
+            logger.debug("live transition metrics update skipped", exc_info=True)
         payload["operation_status"] = self._lightweight_operation_status(
             scope=scope,
             config=config,
@@ -2934,7 +3072,7 @@ class OperationCenter:
 
         supervised_manual_chart_preview = (
             action == "preview"
-            and str(auton_mode or "").lower() in {"paper_supervised", "paper_autonomous"}
+            and str(auton_mode or "").lower() in {"paper_supervised", "paper_autonomous", "paper_aggressive"}
             and bool(settings.visual_gate_supervised_manual_chart_preview)
             and str(payload.get("blocking_reason") or "") == "chart mission requires manual opening"
         )

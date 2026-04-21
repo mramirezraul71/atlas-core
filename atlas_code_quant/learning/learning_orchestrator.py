@@ -66,6 +66,7 @@ _STATE: dict[str, Any] = {
     "last_ic_by_method": {},
     "last_readiness_report": None,
     "last_reconciliation_status": None,
+    "last_advisory_uplift": None,
     "running": False,
     "errors": [],
 }
@@ -223,6 +224,329 @@ def _reconciliation_status_for_learning_gate() -> str:
     if not normalized:
         return "UNKNOWN"
     return normalized.upper()
+
+
+def compute_advisory_uplift(window_days: int = 7) -> dict[str, Any]:
+    """Compute baseline/advisory/final paper decision deltas from EventStore."""
+    from atlas_code_quant.learning.event_store import get_event_store
+
+    since = (_utcnow() - timedelta(days=max(1, int(window_days)))).isoformat()
+    events = get_event_store().query(topic="decision.final", since=since, limit=5000)
+    total = 0
+    executed = 0
+    baseline_accept = 0
+    advisory_accept = 0
+    fallback_used = 0
+    traceable = 0
+    visual_confirmed = 0
+    visual_decisions = 0
+    by_path: dict[str, dict[str, float]] = {}
+    setup_stats: dict[str, dict[str, int]] = {}
+    cohort_stats: dict[str, dict[str, Any]] = {}
+    reason_buckets = {
+        "timing_error": 0,
+        "exit_error": 0,
+        "validation_error": 0,
+        "selection_error": 0,
+        "sizing_error": 0,
+        "regime_mismatch": 0,
+        "advisory_conflict": 0,
+        "missed_opportunity": 0,
+    }
+    confluence_bucket_counts = {"high": 0, "medium": 0, "low": 0, "unknown": 0}
+    seasonal_bias_counts = {"favorable": 0, "neutral": 0, "hostile": 0, "unknown": 0}
+    mtf_alignment_counts = {
+        "aligned_bullish": 0,
+        "aligned_bearish": 0,
+        "mixed": 0,
+        "unknown": 0,
+    }
+    recommended_action_counts = {
+        "execute": 0,
+        "reduce_aggressiveness": 0,
+        "postpone": 0,
+        "discard": 0,
+        "manual_review": 0,
+    }
+    outcome_by_seasonal_bias: dict[str, dict[str, float]] = {}
+    outcome_by_mtf_alignment: dict[str, dict[str, float]] = {}
+    outcome_by_recommended_action: dict[str, dict[str, float]] = {}
+    for ev in events:
+        data = ev.get("data") if isinstance(ev.get("data"), dict) else {}
+        total += 1
+        if str(data.get("baseline_decision") or "") == "accept":
+            baseline_accept += 1
+        if str(data.get("advisory_decision") or "") == "accept":
+            advisory_accept += 1
+        if bool(data.get("executed_in_paper")):
+            executed += 1
+        if bool(data.get("used_fallback")):
+            fallback_used += 1
+        if data.get("visual_confirmation") is not None:
+            visual_decisions += 1
+            if bool(data.get("visual_confirmation")):
+                visual_confirmed += 1
+        if data.get("opportunity_id") and data.get("trace_id") and data.get("decision_id"):
+            traceable += 1
+        confluence_bucket = str(
+            data.get("confluence_bucket")
+            or ((data.get("visual_context") or {}).get("confluence_bucket") if isinstance(data.get("visual_context"), dict) else None)
+            or ((data.get("visual_evidence") or {}).get("confluence_bucket") if isinstance(data.get("visual_evidence"), dict) else None)
+            or "unknown"
+        ).lower()
+        if confluence_bucket not in confluence_bucket_counts:
+            confluence_bucket = "unknown"
+        confluence_bucket_counts[confluence_bucket] += 1
+        seasonal_bias = str(
+            data.get("seasonality_context", {}).get("seasonal_bias")
+            if isinstance(data.get("seasonality_context"), dict)
+            else (
+                (data.get("visual_context") or {}).get("seasonality_context", {}).get("seasonal_bias")
+                if isinstance(data.get("visual_context"), dict)
+                else "unknown"
+            )
+        ).lower()
+        if seasonal_bias not in seasonal_bias_counts:
+            seasonal_bias = "unknown"
+        seasonal_bias_counts[seasonal_bias] += 1
+
+        mtf_alignment = str(
+            data.get("multi_timeframe_view", {}).get("alignment")
+            if isinstance(data.get("multi_timeframe_view"), dict)
+            else (
+                (data.get("visual_context") or {}).get("multi_timeframe_view", {}).get("alignment")
+                if isinstance(data.get("visual_context"), dict)
+                else "unknown"
+            )
+        ).lower()
+        if mtf_alignment not in mtf_alignment_counts:
+            mtf_alignment = "unknown"
+        mtf_alignment_counts[mtf_alignment] += 1
+
+        recommended_action = str(data.get("recommended_action") or "manual_review").lower()
+        if recommended_action not in recommended_action_counts:
+            recommended_action = "manual_review"
+        recommended_action_counts[recommended_action] += 1
+
+        for key, table, label in (
+            (seasonal_bias, outcome_by_seasonal_bias, "seasonal_bias"),
+            (mtf_alignment, outcome_by_mtf_alignment, "mtf_alignment"),
+            (recommended_action, outcome_by_recommended_action, "recommended_action"),
+        ):
+            row = table.setdefault(key, {"segment": key, "n": 0.0, "exec": 0.0, "label": label})
+            row["n"] += 1.0
+            if bool(data.get("executed_in_paper")):
+                row["exec"] += 1.0
+        strategy = str(data.get("strategy_hint") or data.get("strategy") or "unknown")
+        ss = setup_stats.setdefault(strategy, {"n": 0, "exec": 0})
+        ss["n"] += 1
+        if bool(data.get("executed_in_paper")):
+            ss["exec"] += 1
+        tax = data.get("error_taxonomy_v2")
+        if isinstance(tax, dict):
+            for bucket in reason_buckets:
+                reason_buckets[bucket] += max(0, int(tax.get(bucket) or 0))
+        else:
+            for r in [str(x).lower() for x in (data.get("reasons") or [])]:
+                if "timing" in r or "market_closed" in r:
+                    reason_buckets["timing_error"] += 1
+                if "exit" in r or "de_risk" in r:
+                    reason_buckets["exit_error"] += 1
+                if "validation" in r or "spread" in r or "drift" in r:
+                    reason_buckets["validation_error"] += 1
+                if "open_symbol_guard" in r or "options_only_requires_options" in r:
+                    reason_buckets["selection_error"] += 1
+                    reason_buckets["missed_opportunity"] += 1
+                if "size" in r or "max open positions" in r:
+                    reason_buckets["sizing_error"] += 1
+                if "regime" in r:
+                    reason_buckets["regime_mismatch"] += 1
+                if "advisory" in r:
+                    reason_buckets["advisory_conflict"] += 1
+        cohort_id = str(data.get("cohort_id") or "cohort_unknown")
+        policy_variant = str(data.get("policy_variant") or "baseline_v1")
+        regime = str(data.get("regime") or "unknown")
+        cohort_key = f"{policy_variant}|{cohort_id}|{regime}"
+        cstats = cohort_stats.setdefault(
+            cohort_key,
+            {"policy_variant": policy_variant, "cohort_id": cohort_id, "regime": regime, "n": 0, "exec": 0},
+        )
+        cstats["n"] += 1
+        if bool(data.get("executed_in_paper")):
+            cstats["exec"] += 1
+        path = str(data.get("requested_model") or "none")
+        row = by_path.setdefault(path, {"n": 0.0, "exec": 0.0})
+        row["n"] += 1.0
+        if bool(data.get("executed_in_paper")):
+            row["exec"] += 1.0
+    baseline_rate = (baseline_accept / total) if total > 0 else 0.0
+    advisory_rate = (advisory_accept / total) if total > 0 else 0.0
+    exec_rate = (executed / total) if total > 0 else 0.0
+    by_model_path = {
+        model: ((vals["exec"] / vals["n"]) - baseline_rate) if vals["n"] > 0 else 0.0
+        for model, vals in by_path.items()
+    }
+    cohort_metrics = []
+    for row in cohort_stats.values():
+        n = int(row["n"])
+        exec_rate_local = (int(row["exec"]) / n) if n > 0 else 0.0
+        cohort_metrics.append(
+            {
+                "policy_variant": row["policy_variant"],
+                "cohort_id": row["cohort_id"],
+                "regime": row["regime"],
+                "samples": n,
+                "execution_rate": exec_rate_local,
+                "delta_vs_baseline": exec_rate_local - baseline_rate,
+            }
+        )
+    cohort_metrics.sort(key=lambda item: (item["delta_vs_baseline"], item["samples"]), reverse=True)
+    setup_ranked = sorted(
+        (
+            {
+                "strategy": strategy,
+                "samples": vals["n"],
+                "execution_rate": (vals["exec"] / vals["n"]) if vals["n"] else 0.0,
+            }
+            for strategy, vals in setup_stats.items()
+        ),
+        key=lambda row: (row["execution_rate"], row["samples"]),
+        reverse=True,
+    )
+    return {
+        "window_days": max(1, int(window_days)),
+        "total_decisions": total,
+        "executed_total": executed,
+        "baseline_accept_rate": baseline_rate,
+        "advisory_accept_rate": advisory_rate,
+        "execution_rate": exec_rate,
+        "advisory_uplift_ratio": advisory_rate - baseline_rate,
+        "fallback_rate": (fallback_used / total) if total > 0 else 0.0,
+        "traceability_coverage_ratio": (traceable / total) if total > 0 else 0.0,
+        "visual_confirmation_ratio": (visual_confirmed / visual_decisions) if visual_decisions > 0 else 0.0,
+        "by_model_path": by_model_path,
+        "cohort_metrics": cohort_metrics,
+        "confluence_bucket_counts": confluence_bucket_counts,
+        "seasonal_bias_counts": seasonal_bias_counts,
+        "mtf_alignment_counts": mtf_alignment_counts,
+        "recommended_action_counts": recommended_action_counts,
+        "outcome_by_seasonal_bias": [
+            {
+                "seasonal_bias": key,
+                "samples": int(vals["n"]),
+                "execution_rate": (vals["exec"] / vals["n"]) if vals["n"] > 0 else 0.0,
+            }
+            for key, vals in outcome_by_seasonal_bias.items()
+        ],
+        "outcome_by_mtf_alignment": [
+            {
+                "mtf_alignment": key,
+                "samples": int(vals["n"]),
+                "execution_rate": (vals["exec"] / vals["n"]) if vals["n"] > 0 else 0.0,
+            }
+            for key, vals in outcome_by_mtf_alignment.items()
+        ],
+        "outcome_by_recommended_action": [
+            {
+                "recommended_action": key,
+                "samples": int(vals["n"]),
+                "execution_rate": (vals["exec"] / vals["n"]) if vals["n"] > 0 else 0.0,
+            }
+            for key, vals in outcome_by_recommended_action.items()
+        ],
+        "strong_setups": setup_ranked[:3],
+        "weak_setups": list(reversed(setup_ranked[-3:])),
+        "error_buckets": reason_buckets,
+    }
+
+
+def build_transition_readiness_insights(uplift_payload: dict[str, Any] | None) -> dict[str, Any]:
+    payload = dict(uplift_payload or {})
+    total = int(payload.get("total_decisions") or 0)
+    confluence = payload.get("confluence_bucket_counts") if isinstance(payload.get("confluence_bucket_counts"), dict) else {}
+    seasonality = payload.get("seasonal_bias_counts") if isinstance(payload.get("seasonal_bias_counts"), dict) else {}
+    mtf = payload.get("mtf_alignment_counts") if isinstance(payload.get("mtf_alignment_counts"), dict) else {}
+    actions = payload.get("recommended_action_counts") if isinstance(payload.get("recommended_action_counts"), dict) else {}
+    errors = payload.get("error_buckets") if isinstance(payload.get("error_buckets"), dict) else {}
+    fallback_rate = float(payload.get("fallback_rate") or 0.0)
+
+    def _ratio(count: float | int) -> float:
+        if total <= 0:
+            return 0.0
+        return float(count) / float(total)
+
+    visual_reliability = 1.0 - _ratio(confluence.get("unknown", 0))
+    temporal_consistency = 1.0 - _ratio(errors.get("timing_error", 0))
+    seasonality_conflict_rate = _ratio(seasonality.get("hostile", 0))
+    mtf_conflict_rate = _ratio(mtf.get("mixed", 0))
+    low_confluence_execution_rate = _ratio(confluence.get("low", 0))
+    hostile_execution_rate = seasonality_conflict_rate
+    mixed_execution_rate = mtf_conflict_rate
+    realism_penalty_score = min(
+        1.0,
+        (fallback_rate * 0.35)
+        + (seasonality_conflict_rate * 0.25)
+        + (mtf_conflict_rate * 0.20)
+        + (low_confluence_execution_rate * 0.20),
+    )
+    execution_ratio = float(payload.get("execution_rate") or 0.0)
+    runtime_stability_score = max(0.0, 1.0 - float(payload.get("fallback_rate") or 0.0))
+    recommended_manual_ratio = _ratio(actions.get("manual_review", 0))
+    return {
+        "runtime_stability_score": round(runtime_stability_score, 4),
+        "visual_reliability_ratio": round(visual_reliability, 4),
+        "temporal_consistency_score": round(temporal_consistency, 4),
+        "seasonality_conflict_rate": round(seasonality_conflict_rate, 4),
+        "mtf_conflict_rate": round(mtf_conflict_rate, 4),
+        "low_confluence_execution_rate": round(low_confluence_execution_rate, 4),
+        "seasonal_hostile_execution_rate": round(hostile_execution_rate, 4),
+        "mtf_mixed_execution_rate": round(mixed_execution_rate, 4),
+        "realism_penalty_score": round(realism_penalty_score, 4),
+        "error_taxonomy_rate": round(_ratio(sum(float(v or 0.0) for v in errors.values())), 4),
+        "manual_review_ratio": round(recommended_manual_ratio, 4),
+        "execution_ratio": round(execution_ratio, 4),
+        "transition_ready_variants": [
+            row.get("policy_variant")
+            for row in (payload.get("cohort_metrics") or [])
+            if isinstance(row, dict) and float(row.get("delta_vs_baseline") or 0.0) > 0.03 and int(row.get("samples") or 0) >= 20
+        ],
+    }
+
+
+def build_live_readiness_events(
+    *,
+    promotion: dict[str, Any],
+    readiness_insights: dict[str, Any],
+    guardrails: dict[str, Any],
+) -> list[dict[str, Any]]:
+    events = [
+        {
+            "topic": "live.readiness.assessment",
+            "data": {
+                "insights": readiness_insights,
+                "guardrails": guardrails,
+                "recommendation": promotion.get("recommendation"),
+                "ready_for_supervised_live": bool(promotion.get("ready_for_supervised_live")),
+                "ready_for_guarded_live": bool(promotion.get("ready_for_guarded_live")),
+                "ready_for_full_live": bool(promotion.get("ready_for_full_live")),
+            },
+        }
+    ]
+    if bool(promotion.get("ready_for_supervised_live")) or bool(promotion.get("ready_for_guarded_live")):
+        events.append(
+            {
+                "topic": "live.readiness.ready_candidate",
+                "data": {
+                    "current_stage": promotion.get("current_stage"),
+                    "target_stage": promotion.get("target_stage"),
+                    "recommendation": promotion.get("recommendation"),
+                    "readiness_score": (promotion.get("scorecard") or {}).get("readiness_score"),
+                    "blocking_reasons": promotion.get("blocking_reasons") or [],
+                    "warnings": promotion.get("warnings") or [],
+                },
+            }
+        )
+    return events
 
 
 # ── Reconciliación de posiciones cerradas ─────────────────────────────────────
@@ -453,6 +777,12 @@ def apply_ic_to_policy() -> dict[str, Any]:
 async def run_daily_analysis() -> dict[str, Any]:
     """Ejecuta el análisis diario completo: métricas, patrones, readiness."""
     brain = _get_learning_brain()
+    from atlas_code_quant.learning.event_store import get_event_store
+    from atlas_code_quant.operations.authority_transition_contract import (
+        build_authority_transition_assessment,
+    )
+    from atlas_code_quant.operations.live_guardrails import evaluate_live_guardrails
+    from atlas_code_quant.operations.promotion_framework import evaluate_promotion_stage
 
     try:
         report = await asyncio.to_thread(brain.run_daily_analysis)
@@ -462,6 +792,43 @@ async def run_daily_analysis() -> dict[str, Any]:
 
         _STATE["last_daily_analysis_at"] = _utcnow().isoformat()
         _STATE["last_daily_analysis_date"] = date.today().isoformat()
+        uplift = _STATE.get("last_advisory_uplift") if isinstance(_STATE.get("last_advisory_uplift"), dict) else {}
+        readiness_insights = build_transition_readiness_insights(uplift)
+        promotion = evaluate_promotion_stage(
+            metrics={
+                "n_trades_analyzed": report.n_trades_analyzed,
+                "n_trades_evaluated": readiness.n_trades_evaluated,
+                "profit_factor": report.global_metrics.profit_factor,
+                "stability_score": report.stability_score,
+                "win_rate_pct": float(getattr(report.global_metrics, "win_rate_pct", 0.0) or 0.0),
+                "fallback_rate": float(
+                    ((uplift or {}).get("fallback_rate", 0.0))  # backward-safe
+                ),
+                "cohort_metrics": ((uplift or {}).get("cohort_metrics") or []),
+                **readiness_insights,
+            },
+            stage="paper_aggressive",
+        )
+        guardrail_snapshot = evaluate_live_guardrails(
+            {
+                "fallback_rate": float((uplift or {}).get("fallback_rate", 0.0)),
+                "visual_reliability_ratio": float(readiness_insights.get("visual_reliability_ratio", 0.0)),
+                "seasonality_conflict_rate": float(readiness_insights.get("seasonality_conflict_rate", 0.0)),
+                "mtf_conflict_rate": float(readiness_insights.get("mtf_conflict_rate", 0.0)),
+                "realism_penalty_score": float(readiness_insights.get("realism_penalty_score", 0.0)),
+                "error_taxonomy_rate": float(readiness_insights.get("error_taxonomy_rate", 0.0)),
+            }
+        )
+        authority_assessment = build_authority_transition_assessment(
+            initiator="system",
+            authority_level="paper_aggressive",
+            recommendation=str(promotion.get("recommendation") or "stay_paper"),
+            transition_reason="daily_promotion_assessment",
+            rollback_ready=bool(guardrail_snapshot.get("rollback_ready")),
+            emergency_stop_ready=bool(guardrail_snapshot.get("emergency_stop_ready")),
+            required_human_ack=True,
+            additional_checks=["operator_ack_required", "guardrail_pause_conditions_review"],
+        )
         _STATE["last_readiness_report"] = {
             "is_ready": readiness.ready,
             "criteria_passed": readiness.passed,
@@ -469,7 +836,43 @@ async def run_daily_analysis() -> dict[str, Any]:
             "n_trades_evaluated": readiness.n_trades_evaluated,
             "summary": readiness.summary,
             "next_step": readiness.next_step,
+            "promotion_framework": promotion,
+            "guardrails": guardrail_snapshot,
+            "authority_transition_assessment": authority_assessment,
+            "transition_readiness_insights": readiness_insights,
         }
+        try:
+            es = get_event_store()
+            es.append(
+                "promotion.scorecard",
+                {
+                    "current_stage": promotion.get("current_stage"),
+                    "target_stage": promotion.get("target_stage"),
+                    "recommendation": promotion.get("recommendation"),
+                    "scorecard": promotion.get("scorecard"),
+                    "passed_checks": promotion.get("passed_checks"),
+                    "failed_checks": promotion.get("failed_checks"),
+                    "warnings": promotion.get("warnings"),
+                },
+                source="learning_orchestrator",
+            )
+            es.append(
+                "authority.transition.assessment",
+                authority_assessment,
+                source="learning_orchestrator",
+            )
+            for ev in build_live_readiness_events(
+                promotion=promotion,
+                readiness_insights=readiness_insights,
+                guardrails=guardrail_snapshot,
+            ):
+                es.append(
+                    ev["topic"],
+                    ev["data"],
+                    source="learning_orchestrator",
+                )
+        except Exception:
+            logger.debug("[orchestrator] event_store append for transition readiness failed", exc_info=True)
 
         logger.info(
             "[orchestrator] daily_analysis: n_trades=%d PF=%.2f stability=%.2f "
@@ -488,6 +891,10 @@ async def run_daily_analysis() -> dict[str, Any]:
             "proposed_policies": len(report.proposed_policies),
             "n_trades_evaluated": readiness.n_trades_evaluated,
             "is_ready_for_live": readiness.ready,
+            "promotion_framework": promotion,
+            "transition_readiness_insights": readiness_insights,
+            "authority_transition_assessment": authority_assessment,
+            "guardrails": guardrail_snapshot,
         }
     except Exception as e:
         logger.warning("[orchestrator] daily_analysis failed: %s", e)
@@ -536,6 +943,15 @@ async def run_learning_loop(
                     ic_result.get("disabled_setups", []),
                 )
 
+            uplift = await asyncio.to_thread(compute_advisory_uplift, 7)
+            _STATE["last_advisory_uplift"] = uplift
+            try:
+                from atlas_code_quant.options.options_engine_metrics import update_advisory_uplift_metrics
+
+                update_advisory_uplift_metrics(uplift)
+            except Exception:
+                pass
+
             # ── Análisis diario (una vez por día a la hora configurada) ───
             now_utc = _utcnow()
             last_analysis_date = _STATE.get("last_daily_analysis_date")
@@ -580,6 +996,7 @@ def get_orchestrator_status() -> dict[str, Any]:
         "last_ic_by_method": _STATE["last_ic_by_method"],
         "last_readiness_report": _STATE["last_readiness_report"],
         "last_reconciliation_status": _STATE["last_reconciliation_status"],
+        "last_advisory_uplift": _STATE["last_advisory_uplift"],
         "recent_errors": _STATE["errors"][-5:] if _STATE["errors"] else [],
     }
 

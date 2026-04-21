@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 CONTRACT_VERSION = 1
+ALLOWED_AUTON_MODES = {"off", "paper_supervised", "paper_autonomous", "paper_aggressive"}
 CORE_STATE_CONTRACT_KEYS = (
     "account_scope",
     "paper_only",
@@ -68,6 +69,8 @@ def write_json_atomic(path: Path, payload: dict[str, Any], *, ensure_ascii: bool
 
 def build_core_contract_payload(state: dict[str, Any], *, source_module: str) -> dict[str, Any]:
     payload = {key: state.get(key) for key in CORE_STATE_CONTRACT_KEYS}
+    auton_mode = str(payload.get("auton_mode") or "off").strip().lower()
+    payload["auton_mode"] = auton_mode if auton_mode in ALLOWED_AUTON_MODES else "off"
     payload["contract_version"] = CONTRACT_VERSION
     payload["source_module"] = source_module
     payload["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")

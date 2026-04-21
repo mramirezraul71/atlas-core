@@ -283,7 +283,7 @@ class JournalEntriesPayload(BaseModel):
 class OperationConfigPayload(BaseModel):
     account_scope: Literal["paper", "live"] = "paper"
     paper_only: bool = True
-    auton_mode: Literal["off", "paper_supervised", "paper_autonomous"] = "paper_supervised"
+    auton_mode: Literal["off", "paper_supervised", "paper_autonomous", "paper_aggressive"] = "paper_supervised"
     executor_mode: Literal["disabled", "paper_api", "desktop_dry_run"] = "paper_api"
     vision_mode: Literal["off", "manual", "desktop_capture", "direct_nexus", "atlas_push_bridge", "insta360"] = "direct_nexus"
     require_operator_present: bool = False
@@ -304,6 +304,26 @@ class OperationConfigPayload(BaseModel):
     paper_telegram_trade_alerts: bool = True
     autonomy_mode: str = "semi"
     max_risk_per_trade_pct: float = 0.02
+    deployment_mode: Literal["dev", "test", "staging", "prod"] = "dev"
+    runtime_mode_requested: Literal[
+        "paper_baseline",
+        "paper_aggressive",
+        "supervised_live",
+        "guarded_live",
+        "full_live",
+    ] = "paper_aggressive"
+    allowed_runtime_modes: list[str] = Field(default_factory=list)
+    live_unlock_policy: str = "human_approval_required"
+    strategy_mode_overrides: dict[str, str] = Field(default_factory=dict)
+    symbol_mode_overrides: dict[str, str] = Field(default_factory=dict)
+    require_human_unlock: bool = True
+    require_dual_confirmation: bool = False
+    full_live_globally_locked: bool = True
+    live_capable: bool = True
+    live_ready: bool = False
+    live_unlock_requested: bool = False
+    live_unlock_approved: bool = False
+    live_guardrails_healthy: bool = True
 
     @model_validator(mode="before")
     @classmethod

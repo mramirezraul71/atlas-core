@@ -37,6 +37,15 @@ def test_operation_center_publishes_core_contract(tmp_path: Path) -> None:
     assert payload["fail_safe_active"] is False
 
 
+def test_operation_center_contract_accepts_paper_aggressive(tmp_path: Path) -> None:
+    quant_state = tmp_path / "quant" / "operation_center_state.json"
+    core_state = tmp_path / "core" / "operation_center_state.json"
+    center = OperationCenter(state_path=quant_state, core_state_path=core_state)
+    center.update_config({"auton_mode": "paper_aggressive", "reset_fail_safe": True})
+    payload = json.loads(core_state.read_text(encoding="utf-8"))
+    assert payload["auton_mode"] == "paper_aggressive"
+
+
 def test_operation_center_imports_core_contract_on_load(tmp_path: Path) -> None:
     quant_state = tmp_path / "quant" / "operation_center_state.json"
     core_state = tmp_path / "core" / "operation_center_state.json"
