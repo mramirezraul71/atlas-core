@@ -9,7 +9,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypedDict
 
 
 GROK_SYSTEM_PROMPT = (
@@ -39,6 +39,18 @@ class TransientGrokError(RuntimeError):
     """Error transitorio: timeout, 429, 5xx o fallo de red recuperable."""
 
 
+class GrokReviewResult(TypedDict):
+    provider: str
+    status: str
+    verdict: str
+    score_adjustment: float | None
+    contracts_multiplier: float | None
+    prefer_strategy: str | None
+    confidence: float | None
+    rationale: str
+    error: str | None
+
+
 @dataclass(slots=True)
 class GrokReviewConfig:
     api_key_env: str = "XAI_API_KEY"
@@ -58,10 +70,16 @@ class GrokReviewConfig:
 
 
 class GrokExpertReviewProvider:
+    """Thin xAI adapter for advisory paper-only options reviews.
+
+    The provider is intentionally side-effect free: it accepts a JSON-safe
+    decision pack and returns a normalized review or a neutral fallback.
+    """
+
     def __init__(self, config: GrokReviewConfig | None = None) -> None:
         self.config = config or GrokReviewConfig()
 
-    def review_trade(self, decision_pack: dict[str, Any]) -> dict[str, Any]:
+    def review_trade(self, decision_pack: dict[str, Any]) -> GrokReviewResult:
         if not self.config.enabled:
             return self._safe_fallback("grok_review_disabled")
         if not self.config.api_key:
@@ -173,7 +191,7 @@ class GrokExpertReviewProvider:
         except json.JSONDecodeError:
             return None
 
-    def _normalize_review(self, parsed: dict[str, Any]) -> dict[str, Any]:
+    def _normalize_review(self, parsed: dict[str, Any]) -> GrokReviewResult:
         verdict_raw = str(parsed.get("verdict") or "neutral").strip().lower()
         verdict = verdict_raw if verdict_raw in {"approve", "reject", "neutral"} else "neutral"
         score_adjustment = self._safe_float(parsed.get("score_adjustment"))
@@ -207,7 +225,7 @@ class GrokExpertReviewProvider:
     def _sleep(self, seconds: float) -> None:
         time.sleep(max(0.0, seconds))
 
-    def _safe_fallback(self, reason: str) -> dict[str, Any]:
+    def _safe_fallback(self, reason: str) -> GrokReviewResult:
         return {
             "provider": "grok",
             "status": "fallback",

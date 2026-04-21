@@ -293,6 +293,7 @@ class PaperAtlasOptionsAdapter:
         payload["exit_rules"] = dict(exit_rules or {})
         payload["mode"] = "paper"
         payload["owner"] = "autoclose_engine"
+        payload["paper_only"] = True
         payload["status"] = "open"
         payload["position_id"] = f"paper-opt-{len(self._positions)+1}"
         self._positions.append(payload)
@@ -340,15 +341,34 @@ def run_options_pipeline_cycle(
 ) -> dict[str, Any]:
     cfg = dict(config or build_options_pipeline_runtime_config())
     now_utc = datetime.now(timezone.utc)
+    cycle_id = now_utc.replace(second=0, microsecond=0).isoformat()
     cycle_started = time.perf_counter()
     dedupe_impl = dedupe or _LocalSignalDedupe()
     wrapped = _AtlasDedupeWrapper(atlas, dedupe_impl)
     wrapped.set_cycle_anchor(now_utc)
+    if not bool(cfg.get("paper_only", True)):
+        atlas.log_event(
+            {
+                "event_type": "options_pipeline_cycle_failed",
+                "timestamp": now_utc.isoformat(),
+                "cycle_id": cycle_id,
+                "paper_only": False,
+                "error": "options_pipeline_runtime_requires_paper_only",
+            }
+        )
+        return {
+            "ok": False,
+            "cycle_id": cycle_id,
+            "error": "options_pipeline_runtime_requires_paper_only",
+            "duration_ms": 0.0,
+        }
 
     started_event = {
         "event_type": "options_pipeline_cycle_started",
         "timestamp": now_utc.isoformat(),
+        "cycle_id": cycle_id,
         "paper_only": bool(cfg.get("paper_only", True)),
+        "market_phase": _market_phase_et(now_utc),
         "limits": _build_limits_from_config(cfg),
     }
     atlas.log_event(started_event)
@@ -358,6 +378,7 @@ def run_options_pipeline_cycle(
         finished_event = {
             "event_type": "options_pipeline_cycle_finished",
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "cycle_id": cycle_id,
             "duration_ms": duration_ms,
             "symbols_evaluated": int(result.get("universe_size") or 0),
             "opportunities_generated": int(result.get("opportunities") or 0),
@@ -365,13 +386,14 @@ def run_options_pipeline_cycle(
             "entries_blocked": int(result.get("blocked") or 0),
         }
         atlas.log_event(finished_event)
-        return {"ok": True, **result, "duration_ms": duration_ms}
+        return {"ok": True, **result, "cycle_id": cycle_id, "duration_ms": duration_ms}
     except Exception as exc:
         duration_ms = round((time.perf_counter() - cycle_started) * 1000.0, 3)
         atlas.log_event(
             {
                 "event_type": "options_pipeline_cycle_failed",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
+                "cycle_id": cycle_id,
                 "duration_ms": duration_ms,
                 "symbols_evaluated": 0,
                 "opportunities_generated": 0,
@@ -380,7 +402,7 @@ def run_options_pipeline_cycle(
                 "error": str(exc),
             }
         )
-        return {"ok": False, "error": str(exc), "duration_ms": duration_ms}
+        return {"ok": False, "cycle_id": cycle_id, "error": str(exc), "duration_ms": duration_ms}
 
 
 class OptionsPipelineRuntimeScheduler:

@@ -228,6 +228,29 @@ async def options_ui():
         return FileResponse(str(idx))
     raise HTTPException(status_code=404, detail="OptionStrat UI not found")
 
+
+@app.get("/options/runtime-status")
+async def options_runtime_status() -> dict[str, Any]:
+    """Estado operativo resumido del runtime paper de opciones.
+
+    Expone únicamente el wiring del runtime paper y del scheduler multi-activo
+    para facilitar observabilidad y validación por API, sin tocar lógica live.
+    """
+    return {
+        "ok": True,
+        "paper_runtime": {
+            "enabled": bool(options_runtime_loop_enabled()),
+            "running": bool(_options_runtime_task and not _options_runtime_task.done()),
+            "task_name": getattr(_options_runtime_task, "get_name", lambda: None)(),
+        },
+        "multi_asset_pipeline_runtime": {
+            "enabled": bool(options_pipeline_runtime_enabled()),
+            "running": bool(_options_pipeline_runtime_task and not _options_pipeline_runtime_task.done()),
+            "task_name": getattr(_options_pipeline_runtime_task, "get_name", lambda: None)(),
+        },
+        "paper_performance_endpoint": "/options/paper-performance",
+    }
+
 app.include_router(options_router)
 app.include_router(xgboost_router)
 

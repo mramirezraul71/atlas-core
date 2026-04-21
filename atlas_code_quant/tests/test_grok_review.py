@@ -132,6 +132,8 @@ def test_build_decision_pack_is_json_safe_smoke():
         "entry_reason": "score=84.7 family=ETF",
         "earnings_days": 999,
         "feature_snapshot": {"vol": {"iv_rank": 64.0}},
+        "session_id": "sess-123",
+        "run_id": "run-456",
     }
     pack = build_decision_pack(
         opportunity,
@@ -142,6 +144,9 @@ def test_build_decision_pack_is_json_safe_smoke():
     assert pack["symbol"] == "SPY"
     assert pack["strategy"] == "IRON_CONDOR"
     assert isinstance(pack["legs"], list)
+    assert pack["session_id"] == "sess-123"
+    assert pack["run_id"] == "run-456"
+    assert pack["paper_only"] is True
     json.dumps(pack)
 
 

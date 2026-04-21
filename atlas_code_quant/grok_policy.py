@@ -1,9 +1,23 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypedDict
 
 
-def apply_grok_review_policy(opportunity: dict[str, Any], review: dict[str, Any]) -> dict[str, Any]:
+class GrokPolicyResult(TypedDict):
+    blocked: bool
+    block_reason: str | None
+    opportunity: dict[str, Any]
+
+
+def apply_grok_review_policy(opportunity: dict[str, Any], review: dict[str, Any]) -> GrokPolicyResult:
+    """Apply Grok's advisory review without granting direct execution control.
+
+    Supported advisory effects:
+    - ``reject`` -> soft-veto for the entry
+    - ``score_adjustment`` -> additive score tweak
+    - ``contracts_multiplier`` -> size cap in ``[0, 1]``
+    - ``prefer_strategy`` -> informational tag only
+    """
     updated = dict(opportunity)
     verdict = str(review.get("verdict") or "neutral").strip().lower()
     score_adjustment = _safe_float(review.get("score_adjustment"))

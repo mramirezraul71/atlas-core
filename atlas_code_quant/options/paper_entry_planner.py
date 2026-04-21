@@ -20,6 +20,8 @@ class PaperEntryPlanner:
         "bear_call_credit_spread": 220.0,
     }
 
+    _DEFAULT_ENTRY_OWNER = "autoclose_engine"
+
     def build_entry_plan(
         self,
         intent: dict[str, Any],
@@ -28,6 +30,12 @@ class PaperEntryPlanner:
         capital: float | None = None,
         manual_entry_overrides: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        """Construye un plan de entrada paper-only, sin I/O ni ejecución.
+
+        El resultado es deliberadamente descriptivo: conserva señales de
+        seguridad como ``entry_owner`` y ``exit_rules`` para que el runtime
+        paper pueda aplicarlas de forma consistente sin inferencias extra.
+        """
         intent = intent or {}
         notes: list[str] = ["paper_only_proposal_not_an_order"]
         flags: list[str] = []
@@ -41,6 +49,10 @@ class PaperEntryPlanner:
             allow = False
             notes.append("manual_force_no_entry")
 
+        entry_owner = self._resolve_entry_owner(intent=intent, manual_entry_overrides=manual_entry_overrides)
+        exit_rules = self._resolve_exit_rules(intent=intent, manual_entry_overrides=manual_entry_overrides)
+        safety_flags = self._resolve_safety_flags(intent=intent, manual_entry_overrides=manual_entry_overrides)
+
         selector_inputs = deepcopy(intent.get("selector_inputs") or {})
 
         base: dict[str, Any] = {
@@ -53,6 +65,9 @@ class PaperEntryPlanner:
             "preferred_families": list(intent.get("preferred_families") or []),
             "blocked_families": list(intent.get("blocked_families") or []),
             "strategy_candidates": list(intent.get("strategy_candidates") or []),
+            "entry_owner": entry_owner,
+            "exit_rules": exit_rules,
+            "safety_flags": safety_flags,
             "entry_notes": [],
             "entry_quality_flags": [],
         }
@@ -71,6 +86,9 @@ class PaperEntryPlanner:
                     "position_size_units": 0,
                     "max_risk_budget_pct": 0.0,
                     "max_risk_budget_dollars": 0.0,
+                    "entry_owner": entry_owner,
+                    "exit_rules": exit_rules,
+                    "safety_flags": safety_flags,
                     "entry_notes": self._dedup(notes + list(intent.get("intent_notes") or [])[:3]),
                     "entry_quality_flags": self._dedup(flags),
                 }
@@ -141,11 +159,54 @@ class PaperEntryPlanner:
                 "risk_per_unit_dollars": risk_per_unit,
                 "max_risk_budget_pct": max_pct,
                 "max_risk_budget_dollars": max_dollars,
+                "entry_owner": entry_owner,
+                "exit_rules": exit_rules,
+                "safety_flags": safety_flags,
                 "entry_notes": self._dedup(notes),
                 "entry_quality_flags": self._dedup(flags),
             }
         )
         return base
+
+    def _resolve_entry_owner(
+        self,
+        *,
+        intent: dict[str, Any],
+        manual_entry_overrides: dict[str, Any] | None,
+    ) -> str:
+        candidates = [
+            (manual_entry_overrides or {}).get("entry_owner"),
+            intent.get("entry_owner"),
+            self._DEFAULT_ENTRY_OWNER,
+        ]
+        for raw in candidates:
+            owner = str(raw or "").strip()
+            if owner:
+                return owner
+        return self._DEFAULT_ENTRY_OWNER
+
+    def _resolve_exit_rules(
+        self,
+        *,
+        intent: dict[str, Any],
+        manual_entry_overrides: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        for raw in ((manual_entry_overrides or {}).get("exit_rules"), intent.get("exit_rules")):
+            if isinstance(raw, dict):
+                return deepcopy(raw)
+        return {}
+
+    def _resolve_safety_flags(
+        self,
+        *,
+        intent: dict[str, Any],
+        manual_entry_overrides: dict[str, Any] | None,
+    ) -> list[str]:
+        merged: list[str] = []
+        for raw in ((manual_entry_overrides or {}).get("safety_flags"), intent.get("safety_flags")):
+            if isinstance(raw, list):
+                merged.extend(str(x) for x in raw if str(x).strip())
+        return self._dedup(merged)
 
     def _resolve_risk_per_unit(
         self,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypedDict
 
 
 def _jsonable(value: Any) -> Any:
@@ -17,12 +17,39 @@ def _jsonable(value: Any) -> Any:
     return str(value)
 
 
+class GrokDecisionPack(TypedDict):
+    symbol: str | None
+    strategy: str | None
+    asset_family: str | None
+    sector: str | None
+    price: Any
+    score: Any
+    direction: str | None
+    expiry: Any
+    legs: list[Any]
+    entry_reason: Any
+    earnings_days: Any
+    feature_snapshot: dict[str, Any]
+    regime: Any
+    portfolio_state: Any
+    recent_journal_summary: Any
+    session_id: str | None
+    run_id: str | None
+    paper_only: bool
+
+
 def build_decision_pack(
     opportunity: dict[str, Any],
     global_regime: Any,
     portfolio_state: dict[str, Any] | None,
     recent_journal_summary: dict[str, Any] | None,
-) -> dict[str, Any]:
+) -> GrokDecisionPack:
+    """Build a JSON-safe advisory payload for Grok.
+
+    The payload is intentionally read-only and self-contained: it contains the
+    minimum context needed for advisory review without performing I/O or
+    persisting anything outside the options flow.
+    """
     structure = opportunity.get("structure")
     legs = []
     expiry = opportunity.get("expiry")
@@ -51,4 +78,7 @@ def build_decision_pack(
         "regime": _jsonable(regime_payload),
         "portfolio_state": _jsonable(portfolio_payload),
         "recent_journal_summary": _jsonable(journal_payload),
+        "session_id": str(opportunity.get("session_id") or "") or None,
+        "run_id": str(opportunity.get("run_id") or "") or None,
+        "paper_only": True,
     }
