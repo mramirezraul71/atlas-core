@@ -4,13 +4,19 @@ param(
     [string]$HealthPath = "/health",
     [string]$FallbackHealthPath = "/api/health",
     [string]$FunctionalPath = "/ui",
+    [bool]$StrictFunctionalCheck = $false,
     [string]$BindHost = "0.0.0.0",
     [int]$Port = 8795,
     [string]$AppModule = "atlas_code_quant.api.main:app",
     [string]$PythonExe = "python",
     [int]$HealthTimeoutSec = 5,
-    [int]$PostStartRetries = 30,
+    [int]$HealthProbeAttempts = 3,
+    [int]$HealthProbeDelayMs = 500,
+    [string]$WatchdogMutexName = "Global\\ATLAS_8795_Watchdog_Mutex",
+    [int]$PostStartRetries = 90,
     [int]$PostStartDelaySeconds = 2,
+    [int]$ConsecutiveHealthyChecks = 1,
+    [int]$ConsecutiveHealthyDelaySeconds = 1,
     [int]$MaxLogSizeMb = 25,
     [int]$MaxLogArchives = 8,
     [switch]$Silent,
@@ -18,6 +24,41 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+$lightKeepalive = Join-Path $PSScriptRoot "atlas_quant_8795_keepalive.ps1"
+if (Test-Path $lightKeepalive) {
+    & powershell -ExecutionPolicy Bypass -File $lightKeepalive
+    exit $LASTEXITCODE
+}
+
+$script:WatchdogMutex = $null
+
+function Acquire-WatchdogMutex([string]$Name) {
+    try {
+        $mutex = New-Object System.Threading.Mutex($false, $Name)
+        if (-not $mutex.WaitOne(0)) {
+            return $null
+        }
+        return $mutex
+    } catch {
+        return $null
+    }
+}
+
+function Release-WatchdogMutex {
+    try {
+        if ($script:WatchdogMutex -ne $null) {
+            $script:WatchdogMutex.ReleaseMutex() | Out-Null
+            $script:WatchdogMutex.Dispose()
+            $script:WatchdogMutex = $null
+        }
+    } catch {}
+}
+
+function Exit-WithCode([int]$Code) {
+    Release-WatchdogMutex
+    exit $Code
+}
 
 function Write-Info([string]$Message) {
     if ($Silent) {
@@ -124,6 +165,25 @@ function Test-Health([string]$Url, [int]$TimeoutSec) {
     }
 }
 
+function Test-HealthWithRetries {
+    param(
+        [string]$Url,
+        [int]$TimeoutSec,
+        [int]$Attempts,
+        [int]$DelayMs
+    )
+    $tries = [Math]::Max(1, $Attempts)
+    for ($i = 1; $i -le $tries; $i++) {
+        if (Test-Health -Url $Url -TimeoutSec $TimeoutSec) {
+            return $true
+        }
+        if ($i -lt $tries) {
+            Start-Sleep -Milliseconds ([Math]::Max(0, $DelayMs))
+        }
+    }
+    return $false
+}
+
 function Test-PortListening([int]$TargetPort) {
     try {
         $client = New-Object System.Net.Sockets.TcpClient
@@ -147,15 +207,41 @@ function Test-ServiceHealthy {
         [string]$PrimaryUrl,
         [string]$SecondaryUrl,
         [string]$FunctionalUrl,
-        [int]$TimeoutSec
+        [int]$TimeoutSec,
+        [int]$HealthAttempts,
+        [int]$HealthDelayMs
     )
     if (-not (Test-PortListening -TargetPort $TargetPort)) {
         return $false
     }
 
-    $healthOk = Test-Health -Url $PrimaryUrl -TimeoutSec $TimeoutSec
+    $listenerPid = Get-ListenerPid -TargetPort $TargetPort
+    if (-not $listenerPid) {
+        return $false
+    }
+    try {
+        $proc = Get-Process -Id $listenerPid -ErrorAction Stop
+        if (-not $proc) { return $false }
+    } catch {
+        return $false
+    }
+
+    $healthOk = Test-HealthWithRetries -Url $PrimaryUrl -TimeoutSec $TimeoutSec -Attempts $HealthAttempts -DelayMs $HealthDelayMs
     if (-not $healthOk -and -not [string]::IsNullOrWhiteSpace($SecondaryUrl)) {
-        $healthOk = Test-Health -Url $SecondaryUrl -TimeoutSec $TimeoutSec
+        $healthOk = Test-HealthWithRetries -Url $SecondaryUrl -TimeoutSec $TimeoutSec -Attempts $HealthAttempts -DelayMs $HealthDelayMs
+    }
+    if (-not $healthOk) {
+        # Fallback explícito a 127.0.0.1 por si localhost resuelve lento o inconsistente.
+        try {
+            $primary127 = $PrimaryUrl -replace "localhost", "127.0.0.1"
+            $secondary127 = $SecondaryUrl -replace "localhost", "127.0.0.1"
+            $healthOk = Test-HealthWithRetries -Url $primary127 -TimeoutSec $TimeoutSec -Attempts $HealthAttempts -DelayMs $HealthDelayMs
+            if (-not $healthOk -and -not [string]::IsNullOrWhiteSpace($secondary127)) {
+                $healthOk = Test-HealthWithRetries -Url $secondary127 -TimeoutSec $TimeoutSec -Attempts $HealthAttempts -DelayMs $HealthDelayMs
+            }
+        } catch {
+            $healthOk = $false
+        }
     }
     if (-not $healthOk) {
         return $false
@@ -164,7 +250,48 @@ function Test-ServiceHealthy {
     if ([string]::IsNullOrWhiteSpace($FunctionalUrl)) {
         return $true
     }
-    return (Test-Health -Url $FunctionalUrl -TimeoutSec $TimeoutSec)
+    $functionalOk = Test-HealthWithRetries -Url $FunctionalUrl -TimeoutSec $TimeoutSec -Attempts $HealthAttempts -DelayMs $HealthDelayMs
+    if (-not $functionalOk) {
+        try {
+            $functional127 = $FunctionalUrl -replace "localhost", "127.0.0.1"
+            $functionalOk = Test-HealthWithRetries -Url $functional127 -TimeoutSec $TimeoutSec -Attempts $HealthAttempts -DelayMs $HealthDelayMs
+        } catch {
+            $functionalOk = $false
+        }
+    }
+    if ($functionalOk) {
+        return $true
+    }
+    if ($StrictFunctionalCheck) {
+        return $false
+    }
+    # El endpoint funcional es señal secundaria; si /health está OK no bloqueamos
+    # recuperación del servicio en modo no estricto.
+    return $true
+}
+
+function Confirm-ServiceHealthy {
+    param(
+        [int]$TargetPort,
+        [string]$PrimaryUrl,
+        [string]$SecondaryUrl,
+        [string]$FunctionalUrl,
+        [int]$TimeoutSec,
+        [int]$HealthAttempts,
+        [int]$HealthDelayMs,
+        [int]$ConsecutiveChecks,
+        [int]$DelaySeconds
+    )
+    $required = [Math]::Max(1, $ConsecutiveChecks)
+    for ($i = 1; $i -le $required; $i++) {
+        if (-not (Test-ServiceHealthy -TargetPort $TargetPort -PrimaryUrl $PrimaryUrl -SecondaryUrl $SecondaryUrl -FunctionalUrl $FunctionalUrl -TimeoutSec $TimeoutSec -HealthAttempts $HealthAttempts -HealthDelayMs $HealthDelayMs)) {
+            return $false
+        }
+        if ($i -lt $required) {
+            Start-Sleep -Seconds ([Math]::Max(0, $DelaySeconds))
+        }
+    }
+    return $true
 }
 
 function Get-ListenerPid([int]$TargetPort) {
@@ -216,15 +343,20 @@ $fallbackUrl = "{0}{1}" -f $BaseUrl.TrimEnd("/"), $FallbackHealthPath
 $functionalUrl = "{0}{1}" -f $BaseUrl.TrimEnd("/"), $FunctionalPath
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
 $resolvedPythonExe = Resolve-PythonExe -RepoRoot $repoRoot -RequestedPythonExe $PythonExe
-
-if (Test-ServiceHealthy -TargetPort $Port -PrimaryUrl $healthUrl -SecondaryUrl $fallbackUrl -FunctionalUrl $functionalUrl -TimeoutSec $HealthTimeoutSec) {
-    Write-Info "Servicio 8795 saludable (puerto + health + funcional: $functionalUrl)."
+$script:WatchdogMutex = Acquire-WatchdogMutex -Name $WatchdogMutexName
+if ($null -eq $script:WatchdogMutex) {
+    Write-Info "watchdog_mutex_busy -> otra instancia ya está ejecutándose; se omite este ciclo."
     exit 0
+}
+
+if (Confirm-ServiceHealthy -TargetPort $Port -PrimaryUrl $healthUrl -SecondaryUrl $fallbackUrl -FunctionalUrl $functionalUrl -TimeoutSec $HealthTimeoutSec -HealthAttempts $HealthProbeAttempts -HealthDelayMs $HealthProbeDelayMs -ConsecutiveChecks $ConsecutiveHealthyChecks -DelaySeconds $ConsecutiveHealthyDelaySeconds) {
+    Write-Info "Servicio 8795 saludable (puerto + health + funcional: $functionalUrl)."
+    Exit-WithCode 0
 }
 
 if ($CheckOnly) {
     Write-Info "CheckOnly activo: servicio no saludable, sin reinicio."
-    exit 1
+    Exit-WithCode 1
 }
 
 Write-Info "Servicio 8795 no saludable. Ejecutando recuperacion automatica."
@@ -263,9 +395,9 @@ Write-Info "Nuevo uvicorn PID=$($process.Id). Esperando health check."
 
 for ($attempt = 1; $attempt -le $PostStartRetries; $attempt++) {
     Start-Sleep -Seconds $PostStartDelaySeconds
-    if (Test-ServiceHealthy -TargetPort $Port -PrimaryUrl $healthUrl -SecondaryUrl $fallbackUrl -FunctionalUrl $functionalUrl -TimeoutSec $HealthTimeoutSec) {
+    if (Confirm-ServiceHealthy -TargetPort $Port -PrimaryUrl $healthUrl -SecondaryUrl $fallbackUrl -FunctionalUrl $functionalUrl -TimeoutSec $HealthTimeoutSec -HealthAttempts $HealthProbeAttempts -HealthDelayMs $HealthProbeDelayMs -ConsecutiveChecks $ConsecutiveHealthyChecks -DelaySeconds $ConsecutiveHealthyDelaySeconds) {
         Write-Info "Recuperacion OK. Servicio activo en intento $attempt."
-        exit 0
+        Exit-WithCode 0
     }
     Write-Info "Sin health check aun (intento $attempt/$PostStartRetries)."
 }
@@ -273,7 +405,11 @@ for ($attempt = 1; $attempt -le $PostStartRetries; $attempt++) {
 Write-Info "Fallo de recuperacion. Revisa logs:"
 Write-Info "STDOUT: $outLog"
 Write-Info "STDERR: $errLog"
-exit 2
+if (Confirm-ServiceHealthy -TargetPort $Port -PrimaryUrl $healthUrl -SecondaryUrl $fallbackUrl -FunctionalUrl $functionalUrl -TimeoutSec $HealthTimeoutSec -HealthAttempts $HealthProbeAttempts -HealthDelayMs $HealthProbeDelayMs -ConsecutiveChecks $ConsecutiveHealthyChecks -DelaySeconds $ConsecutiveHealthyDelaySeconds) {
+    Write-Info "Servicio recuperado tardíamente tras agotar reintentos iniciales."
+    Exit-WithCode 0
+}
+Exit-WithCode 2
 
 # Uso manual:
 #   powershell -ExecutionPolicy Bypass -File .\scripts\windows\atlas_quant_8795_watchdog.ps1
