@@ -6,6 +6,17 @@
 > Este documento describe qué hay **hoy**. No describe el objetivo
 > (eso vive en `ARCHITECTURE.md`).
 
+> **Nota post‑A2 (no reescribe este documento).**
+> Este texto refleja el estado **anterior** al PR A2. Tras la fusión
+> de A2, algunos de los archivos mencionados aquí por su ruta original
+> han sido **movidos a `legacy/`** (ver `legacy/README.md`). En
+> particular: `atlas.py`, `atlas_runtime.py`, `bridge/atlas_api_min.py`
+> y `atlas_adapter/run_atlas_api.cmd`. Las rutas listadas más abajo
+> se conservan intactas deliberadamente para no desvirtuar el
+> snapshot histórico; la descripción del perímetro vivo posterior
+> a A2 se mantendrá en `ARCHITECTURE.md` y, a partir del paso B, en
+> un apartado dedicado de ese documento.
+
 ## 1. Perímetro analizado
 
 Incluido en el análisis (por decisión del owner):
