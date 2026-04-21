@@ -45,6 +45,7 @@ _state: dict[str, Any] = {
     "module_status": {m: 0.0 for m in _PIPELINE_MODULES},
     "last_sentinel_snapshot": None,
     "paper_closed_total_counter_value": 0,
+    "paper_go_blocked_total_counter_value": 0,
     "paper_trade_hist_seen": set(),
 }
 
@@ -658,9 +659,21 @@ def _init_prom() -> None:
             "atlas_options_paper_trades_phantom_today",
             "Phantoms paper hoy (placeholder hasta regla formal)",
         )
+        _m["paper_go_blocked_today"] = Gauge(
+            "atlas_options_paper_sessions_go_blocked_today",
+            "Sesiones GO paper bloqueadas por sizing no ejecutable (hoy UTC).",
+        )
+        _m["paper_go_blocked_ratio_today"] = Gauge(
+            "atlas_options_paper_sessions_go_blocked_ratio_today",
+            "Ratio sesiones GO bloqueadas hoy (blocked/go).",
+        )
         _m["paper_debit_no_stop"] = Gauge(
             "atlas_options_paper_debit_positions_no_stop",
             "Posiciones débito sin stop (placeholder)",
+        )
+        _m["paper_go_blocked_total"] = Counter(
+            "atlas_options_paper_sessions_go_blocked_total",
+            "Total histórico de sesiones GO bloqueadas por sizing no ejecutable.",
         )
         _m["autoclose_triggers"] = Counter(
             "atlas_options_autoclose_triggers_total",
@@ -723,7 +736,10 @@ def _init_prom() -> None:
         _m["paper_open"].set(0.0)
         _m["paper_closed"].set(0.0)
         _m["paper_phantom"].set(0.0)
+        _m["paper_go_blocked_today"].set(0.0)
+        _m["paper_go_blocked_ratio_today"].set(0.0)
         _m["paper_debit_no_stop"].set(0.0)
+        _m["paper_go_blocked_total"].inc(0.0)
         _m["iv_rank_quality_score"].set(0.25)
         _m["iv_rank_value"].set(0.0)
         _m["iv_rank_quality"].set(0.0)
@@ -908,6 +924,22 @@ def _ensure_paper_performance_gauges() -> None:
                 "WR paper (%) por combinación strategy x gamma_regime.",
                 ["strategy", "gamma_regime"],
             )
+        if "paper_go_blocked_today" not in _m:
+            _m["paper_go_blocked_today"] = Gauge(
+                "atlas_options_paper_sessions_go_blocked_today",
+                "Sesiones GO paper bloqueadas por sizing no ejecutable (hoy UTC).",
+            )
+        if "paper_go_blocked_ratio_today" not in _m:
+            _m["paper_go_blocked_ratio_today"] = Gauge(
+                "atlas_options_paper_sessions_go_blocked_ratio_today",
+                "Ratio sesiones GO bloqueadas hoy (blocked/go).",
+            )
+        if "paper_go_blocked_total" not in _m:
+            _m["paper_go_blocked_total"] = Counter(
+                "atlas_options_paper_sessions_go_blocked_total",
+                "Total histórico de sesiones GO bloqueadas por sizing no ejecutable.",
+            )
+            _m["paper_go_blocked_total"].inc(0.0)
     except Exception as exc:
         logger.debug("_ensure_paper_performance_gauges: %s", exc)
 
@@ -1161,6 +1193,11 @@ def refresh_journal_from_disk(path: Path | None = None) -> None:
         _m["paper_open"].set(float(g.get("open_trades_count") or 0.0))
         _m["paper_closed"].set(float(g.get("closed_today") or 0.0))
         _m["paper_phantom"].set(float(g.get("phantom_today") or 0.0))
+        go_today = float(g.get("go_sessions_today") or 0.0)
+        blocked_today = float(g.get("blocked_sessions_today") or 0.0)
+        blocked_ratio = (blocked_today / go_today) if go_today > 0 else 0.0
+        _m["paper_go_blocked_today"].set(blocked_today)
+        _m["paper_go_blocked_ratio_today"].set(blocked_ratio)
         _m["paper_debit_no_stop"].set(0.0)
 
         closed_total = int(g.get("closed_trades_total") or 0)
@@ -1173,6 +1210,15 @@ def refresh_journal_from_disk(path: Path | None = None) -> None:
         else:
             # Journal truncado/rotado: mantenemos monotonicidad del counter.
             _state["paper_closed_total_counter_value"] = closed_total
+        blocked_total = int(g.get("blocked_sessions_total") or 0)
+        prev_blocked_total = int(_state.get("paper_go_blocked_total_counter_value") or 0)
+        if blocked_total >= prev_blocked_total:
+            delta_blocked = blocked_total - prev_blocked_total
+            if delta_blocked > 0:
+                _m["paper_go_blocked_total"].inc(float(delta_blocked))
+            _state["paper_go_blocked_total_counter_value"] = blocked_total
+        else:
+            _state["paper_go_blocked_total_counter_value"] = blocked_total
 
         seen: set[str] = _state.setdefault("paper_trade_hist_seen", set())
         for trade in stats.closed_trades:

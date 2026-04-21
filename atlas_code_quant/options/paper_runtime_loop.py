@@ -55,6 +55,7 @@ class RuntimeOpenPosition:
     close_after_sec: float
     planned_entry: dict[str, Any]
     last_plan: dict[str, Any]
+    position_size_units: int
 
     def to_autoclose_position(self, *, now_ts: float) -> dict[str, Any]:
         elapsed = max(0.0, now_ts - self.opened_at_ts)
@@ -68,6 +69,8 @@ class RuntimeOpenPosition:
             "remaining_dte": 30,
             "is_0dte": self.dte_mode == "0dte",
             "is_credit": True,
+            "position_size_units": self.position_size_units,
+            "entry_executable": self.position_size_units >= 1,
         }
 
 
@@ -192,6 +195,7 @@ class OptionsPaperRuntimeLoop:
                     close_after_sec=self._close_after_sec,
                     planned_entry=planned_entry,
                     last_plan=payload.get("last_plan") if isinstance(payload.get("last_plan"), dict) else {},
+                    position_size_units=max(1, int(row.get("position_size_units") or 1)),
                 )
             elif et == "close_execution":
                 closed.add(tid)
@@ -215,7 +219,27 @@ class OptionsPaperRuntimeLoop:
             record_pipeline_module(module="intent_router", status=1.0)
             record_pipeline_module(module="entry_planner", status=1.0)
             if plan.get("entry_allowed") and trace_id not in self._open_positions:
-                self._log_entry_execution(plan, trace_id=trace_id)
+                entry_plan = plan.get("entry_plan") if isinstance(plan.get("entry_plan"), dict) else {}
+                size_units = int(entry_plan.get("position_size_units") or 0)
+                if size_units >= 1:
+                    self._log_entry_execution(plan, trace_id=trace_id)
+                else:
+                    briefing = plan.get("briefing") if isinstance(plan.get("briefing"), dict) else {}
+                    blocked_reason = str(entry_plan.get("size_blocked_reason") or "planner_no_executable_size")
+                    self._journal.log_entry_blocked(
+                        trace_id=trace_id,
+                        symbol=self._symbol,
+                        timestamp=_utc_now(),
+                        blocked_reason=blocked_reason,
+                        strategy_type=str(entry_plan.get("recommended_strategy") or ""),
+                        gamma_regime=str(briefing.get("gamma_regime") or ""),
+                        dte_mode=str(briefing.get("dte_mode") or ""),
+                        planned_entry=entry_plan,
+                        mode="paper",
+                        source="runtime_loop",
+                        status="canceled",
+                        notes=["paper_runtime_loop_entry_blocked"],
+                    )
             refresh_journal_from_disk(self._journal_path)
             logger.info(
                 "[options-runtime] session tick symbol=%s entry_allowed=%s open_positions=%d",
@@ -232,6 +256,7 @@ class OptionsPaperRuntimeLoop:
 
     def _log_entry_execution(self, plan: dict[str, Any], *, trace_id: str) -> None:
         entry_plan = plan.get("entry_plan") if isinstance(plan.get("entry_plan"), dict) else {}
+        size_units = int(entry_plan.get("position_size_units") or 0)
         strategy_type = str(entry_plan.get("recommended_strategy") or "paper_runtime_strategy")
         risk_hint = float(entry_plan.get("max_risk_budget_dollars") or 100.0)
         entry_credit = max(0.25, min(5.0, risk_hint / 200.0))
@@ -240,6 +265,7 @@ class OptionsPaperRuntimeLoop:
             "entry_credit": round(entry_credit, 4),
             "entry_mid": round(entry_credit, 4),
             "dte": (plan.get("briefing") or {}).get("dte"),
+            "position_size_units": size_units,
         }
         self._journal.log_entry_execution(
             trace_id=trace_id,
@@ -256,13 +282,14 @@ class OptionsPaperRuntimeLoop:
             trace_id=trace_id,
             symbol=self._symbol,
             strategy_type=strategy_type,
-                    gamma_regime=str((plan.get("briefing") or {}).get("gamma_regime") or ""),
+            gamma_regime=str((plan.get("briefing") or {}).get("gamma_regime") or ""),
             opened_at_ts=time.time(),
             entry_credit=entry_credit,
             dte_mode=str((plan.get("briefing") or {}).get("dte_mode") or ""),
             close_after_sec=self._close_after_sec,
             planned_entry=entry_plan,
             last_plan=plan,
+            position_size_units=size_units,
         )
 
     async def _run_autoclose_tick(self) -> None:
@@ -307,6 +334,8 @@ class OptionsPaperRuntimeLoop:
                         "close_reason": reason,
                         "close_mid": close_mid,
                         "debit": close_mid,
+                        "position_size_units": pos.position_size_units,
+                        "entry_executable": True,
                     },
                     pnl_realized=pnl_realized,
                     mode="paper",
@@ -315,9 +344,9 @@ class OptionsPaperRuntimeLoop:
                     autoclose_applied=True,
                     close_type="full",
                     close_reason=reason,
-                            strategy_type=pos.strategy_type,
-                            gamma_regime=pos.gamma_regime,
-                            dte_mode=pos.dte_mode,
+                    strategy_type=pos.strategy_type,
+                    gamma_regime=pos.gamma_regime,
+                    dte_mode=pos.dte_mode,
                     notes=["paper_runtime_loop_close_execution"],
                 )
                 self._open_positions.pop(tid, None)

@@ -9,6 +9,16 @@ class PaperEntryPlanner:
     """Traduce ``intent`` en un plan de entrada paper-only (no ejecuta órdenes)."""
 
     _DEFAULT_MAX_RISK_PCT = 2.0
+    _DEFAULT_RISK_PER_UNIT = 200.0
+    _RISK_PER_UNIT_BY_STRATEGY = {
+        "bull_call_debit_spread": 150.0,
+        "long_call": 120.0,
+        "call_calendar_spread": 180.0,
+        "iron_condor": 250.0,
+        "iron_butterfly": 250.0,
+        "bull_put_credit_spread": 220.0,
+        "bear_call_credit_spread": 220.0,
+    }
 
     def build_entry_plan(
         self,
@@ -81,10 +91,12 @@ class PaperEntryPlanner:
                 flags.append("max_risk_budget_pct_override_invalid")
 
         max_dollars = None
+        capital_value = None
         if capital is not None:
             try:
                 c = float(capital)
                 if c > 0:
+                    capital_value = c
                     max_dollars = round(c * (max_pct / 100.0), 2)
             except (TypeError, ValueError):
                 flags.append("capital_parse_failed")
@@ -106,12 +118,27 @@ class PaperEntryPlanner:
         if briefing.get("event_risk_flag"):
             notes.append("event_risk_flag_true_size_conservatively")
 
+        risk_per_unit = self._resolve_risk_per_unit(
+            strategy=rec,
+            manual_entry_overrides=manual_entry_overrides,
+        )
+        size, blocked_reason = self._compute_executable_size(
+            capital_value=capital_value,
+            max_risk_budget_dollars=max_dollars,
+            risk_per_unit_dollars=risk_per_unit,
+            manual_entry_overrides=manual_entry_overrides,
+        )
+        if blocked_reason:
+            notes.append(f"entry_blocked:{blocked_reason}")
+            flags.append(f"entry_blocked:{blocked_reason}")
         base.update(
             {
-                "entry": "proposed",
-                "reason": None,
+                "entry": "proposed" if size >= 1 else "blocked",
+                "reason": None if size >= 1 else blocked_reason,
                 "recommended_strategy": rec,
-                "position_size_units": None,
+                "position_size_units": int(size) if size >= 1 else None,
+                "size_blocked_reason": blocked_reason,
+                "risk_per_unit_dollars": risk_per_unit,
                 "max_risk_budget_pct": max_pct,
                 "max_risk_budget_dollars": max_dollars,
                 "entry_notes": self._dedup(notes),
@@ -119,6 +146,53 @@ class PaperEntryPlanner:
             }
         )
         return base
+
+    def _resolve_risk_per_unit(
+        self,
+        *,
+        strategy: Any,
+        manual_entry_overrides: dict[str, Any] | None,
+    ) -> float:
+        if manual_entry_overrides and manual_entry_overrides.get("risk_per_unit_dollars") is not None:
+            try:
+                v = float(manual_entry_overrides["risk_per_unit_dollars"])
+                if v > 0:
+                    return v
+            except (TypeError, ValueError):
+                pass
+        skey = str(strategy or "").strip().lower()
+        return float(self._RISK_PER_UNIT_BY_STRATEGY.get(skey, self._DEFAULT_RISK_PER_UNIT))
+
+    def _compute_executable_size(
+        self,
+        *,
+        capital_value: float | None,
+        max_risk_budget_dollars: float | None,
+        risk_per_unit_dollars: float,
+        manual_entry_overrides: dict[str, Any] | None,
+    ) -> tuple[int, str | None]:
+        if manual_entry_overrides and manual_entry_overrides.get("position_size_units") is not None:
+            try:
+                forced = int(float(manual_entry_overrides["position_size_units"]))
+                if forced >= 1:
+                    return forced, None
+            except (TypeError, ValueError):
+                return 0, "manual_position_size_invalid"
+            return 0, "manual_position_size_invalid"
+        if capital_value is None or capital_value <= 0:
+            return 0, "insufficient_capital"
+        if max_risk_budget_dollars is None or max_risk_budget_dollars <= 0:
+            return 0, "risk_budget_unavailable"
+        if risk_per_unit_dollars <= 0:
+            return 0, "risk_model_invalid"
+        max_by_risk = int(max_risk_budget_dollars // risk_per_unit_dollars)
+        max_by_capital = int(capital_value // risk_per_unit_dollars)
+        size = min(max_by_risk, max_by_capital)
+        if size >= 1:
+            return size, None
+        if max_risk_budget_dollars < risk_per_unit_dollars:
+            return 0, "min_contract_not_reached"
+        return 0, "insufficient_capital"
 
     @staticmethod
     def _dedup(items: list[Any]) -> list[Any]:

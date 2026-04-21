@@ -113,3 +113,27 @@ def test_stats_prefers_direct_close_execution_fields(tmp_path: Path):
     )
     by_regime = stats.to_dict_by_strategy_regime()
     assert by_regime["iron_condor"]["short_gamma"] == 50.0
+
+
+def test_stats_excludes_non_executable_closes_and_counts_blocked_sessions(tmp_path: Path):
+    p = tmp_path / "options_paper_journal.jsonl"
+    _write_jsonl(
+        p,
+        [
+            '{"event_type":"session_plan","trace_id":"t1","timestamp_utc":"2026-04-20T09:00:00Z","payload":{"session_plan":{"entry_allowed":true,"intent":{"force_no_trade":false}}}}',
+            '{"event_type":"entry_blocked","trace_id":"t1","timestamp_utc":"2026-04-20T09:00:01Z","entry_executable":false,"position_size_units":0,"payload":{"blocked_reason":"min_contract_not_reached"}}',
+            '{"event_type":"close_execution","trace_id":"t1","timestamp_utc":"2026-04-20T09:00:02Z","entry_executable":false,"position_size_units":0,"pnl_usd":999.0}',
+            '{"event_type":"close_execution","trace_id":"t2","timestamp_utc":"2026-04-20T09:05:00Z","entry_executable":true,"position_size_units":1,"strategy_type":"iron_condor","gamma_regime":"long_gamma","pnl_usd":10.0}',
+        ],
+    )
+    stats = OptionsPaperJournalStats.load_from_file(
+        p,
+        initial_capital=10_000.0,
+        now_utc=datetime(2026, 4, 20, 16, 0, tzinfo=timezone.utc),
+    )
+    g = stats.to_dict_global()
+    assert g["closed_trades_total"] == 1
+    assert g["blocked_sessions_today"] == 1
+    assert g["go_sessions_today"] == 1
+    api = stats.to_api_dict()
+    assert api["summary"]["closed_trades_total"] == 1

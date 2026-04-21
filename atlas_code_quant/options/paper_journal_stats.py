@@ -109,7 +109,10 @@ class OptionsPaperJournalStats:
     now_utc: datetime
     events_today: int
     sessions_today: int
+    go_sessions_today: int
     closed_today: int
+    blocked_sessions_today: int
+    blocked_sessions_total: int
     open_trades_count: int
     phantom_today: int
     last_write_ts: float
@@ -138,7 +141,10 @@ class OptionsPaperJournalStats:
 
         events_today = 0
         sessions_today = 0
+        go_sessions_today = 0
         closed_today = 0
+        blocked_sessions_today = 0
+        blocked_sessions_total = 0
         parse_warnings = 0
         last_write_ts = 0.0
 
@@ -175,8 +181,17 @@ class OptionsPaperJournalStats:
                     events_today += 1
                     if et == "session_plan":
                         sessions_today += 1
+                        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+                        plan = payload.get("session_plan") if isinstance(payload.get("session_plan"), dict) else {}
+                        intent = plan.get("intent") if isinstance(plan.get("intent"), dict) else {}
+                        if bool(plan.get("entry_allowed")) and not bool(intent.get("force_no_trade")):
+                            go_sessions_today += 1
                     elif et == "close_execution":
                         closed_today += 1
+                    elif et == "entry_blocked":
+                        blocked_sessions_today += 1
+            if et == "entry_blocked":
+                blocked_sessions_total += 1
 
             if not tid:
                 continue
@@ -239,6 +254,17 @@ class OptionsPaperJournalStats:
                     exec_close.get("close_reason"),
                     ctx.get("close_reason"),
                 )
+                entry_exec_raw = row.get("entry_executable")
+                if entry_exec_raw is None:
+                    entry_exec_raw = exec_close.get("entry_executable")
+                size_raw = row.get("position_size_units")
+                if size_raw is None:
+                    size_raw = exec_close.get("position_size_units")
+                size_val = _to_float(size_raw)
+                if entry_exec_raw is None:
+                    is_executable = True if size_val is None else size_val >= 1.0
+                else:
+                    is_executable = bool(entry_exec_raw)
                 close_rows.append(
                     {
                         "trace_id": tid,
@@ -262,17 +288,20 @@ class OptionsPaperJournalStats:
                             exec_close.get("dte_mode"),
                             ctx.get("dte_mode"),
                         ),
+                        "position_size_units": int(size_val) if size_val is not None else None,
+                        "entry_executable": bool(is_executable),
                         "pnl_usd": float(pnl),
                     }
                 )
                 trace_close.add(tid)
 
         close_rows.sort(key=lambda x: x["closed_at_dt"])
-        pnls = [float(x["pnl_usd"]) for x in close_rows]
+        executable_close_rows = [x for x in close_rows if bool(x.get("entry_executable"))]
+        pnls = [float(x["pnl_usd"]) for x in executable_close_rows]
         global_stats = _summarize_pnls(pnls, initial_capital=base_capital)
 
         cutoff = now - timedelta(days=7)
-        rolling_rows = [x for x in close_rows if x["closed_at_dt"] >= cutoff]
+        rolling_rows = [x for x in executable_close_rows if x["closed_at_dt"] >= cutoff]
         rolling = _summarize_pnls([float(x["pnl_usd"]) for x in rolling_rows], initial_capital=base_capital)
         rolling_7d = {
             "closed_trades": int(rolling["closed_trades_total"]),
@@ -282,7 +311,7 @@ class OptionsPaperJournalStats:
 
         by_strategy_rows: dict[str, list[float]] = {}
         by_regime_rows: dict[tuple[str, str], list[float]] = {}
-        for row in close_rows:
+        for row in executable_close_rows:
             strategy = _coalesce(row.get("strategy"))
             gamma_regime = _coalesce(row.get("gamma_regime"))
             by_strategy_rows.setdefault(strategy, []).append(float(row["pnl_usd"]))
@@ -314,7 +343,10 @@ class OptionsPaperJournalStats:
             now_utc=now,
             events_today=events_today,
             sessions_today=sessions_today,
+            go_sessions_today=go_sessions_today,
             closed_today=closed_today,
+            blocked_sessions_today=blocked_sessions_today,
+            blocked_sessions_total=blocked_sessions_total,
             open_trades_count=open_trades_count,
             phantom_today=phantom_today,
             last_write_ts=last_write_ts,
@@ -330,7 +362,10 @@ class OptionsPaperJournalStats:
         out = dict(self.global_stats)
         out["events_today"] = int(self.events_today)
         out["sessions_today"] = int(self.sessions_today)
+        out["go_sessions_today"] = int(self.go_sessions_today)
         out["closed_today"] = int(self.closed_today)
+        out["blocked_sessions_today"] = int(self.blocked_sessions_today)
+        out["blocked_sessions_total"] = int(self.blocked_sessions_total)
         out["open_trades_count"] = int(self.open_trades_count)
         out["phantom_today"] = int(self.phantom_today)
         out["last_write_age_seconds"] = max(0.0, self.now_utc.timestamp() - self.last_write_ts) if self.last_write_ts > 0 else 1e9
@@ -366,6 +401,8 @@ class OptionsPaperJournalStats:
             "pnl_avg_usd",
             "equity_usd",
             "drawdown_pct",
+            "go_sessions_today",
+            "blocked_sessions_today",
         )
         summary = {k: g.get(k) for k in summary_keys}
         out = {
@@ -377,7 +414,12 @@ class OptionsPaperJournalStats:
             "generated_at_utc": self.now_utc.isoformat().replace("+00:00", "Z"),
         }
         if int(g.get("closed_trades_total") or 0) <= 0:
-            out["message"] = "no trades yet"
+            blocked_today = int(g.get("blocked_sessions_today") or 0)
+            blocked_total = int(g.get("blocked_sessions_total") or 0)
+            if blocked_today > 0 or blocked_total > 0:
+                out["message"] = "no executable entries today"
+            else:
+                out["message"] = "no trades yet"
         return out
 
     def write_debug_json(self, target_path: str | Path) -> Path:

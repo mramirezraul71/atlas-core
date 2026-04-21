@@ -26,6 +26,28 @@ class _FakeOrchestrator:
                 "entry": "proposed",
                 "recommended_strategy": "iron_condor",
                 "max_risk_budget_dollars": 120.0,
+                "position_size_units": 1,
+            },
+            "pipeline_quality_flags": [],
+        }
+
+
+class _BlockedOrchestrator:
+    def build_session_plan(self, *, symbol: str, capital: float) -> dict:
+        return {
+            "automation_mode": "paper_only",
+            "symbol": symbol,
+            "entry_allowed": True,
+            "briefing": {
+                "gamma_regime": "unknown",
+                "dte_mode": "8to21",
+            },
+            "intent": {"allow_entry": True, "force_no_trade": False},
+            "entry_plan": {
+                "entry": "blocked",
+                "recommended_strategy": "iron_condor",
+                "position_size_units": None,
+                "size_blocked_reason": "min_contract_not_reached",
             },
             "pipeline_quality_flags": [],
         }
@@ -82,3 +104,25 @@ def test_options_runtime_enabled_flag(monkeypatch):
     assert options_runtime_loop_enabled() is False
     monkeypatch.setenv("QUANT_OPTIONS_RUNTIME_LOOP_ENABLED", "true")
     assert options_runtime_loop_enabled() is True
+
+
+def test_runtime_writes_entry_blocked_when_size_not_executable(tmp_path: Path):
+    jpath = tmp_path / "options_paper_journal.jsonl"
+    runtime = OptionsPaperRuntimeLoop(
+        symbol="IWM",
+        capital=10_000.0,
+        session_interval_sec=60.0,
+        autoclose_interval_sec=15.0,
+        close_after_sec=45.0,
+        journal_path=jpath,
+        orchestrator=_BlockedOrchestrator(),
+    )
+    asyncio.run(runtime._run_session_tick())
+    rows = _read_jsonl(jpath)
+    events = [r.get("event_type") for r in rows]
+    assert "session_plan" in events
+    assert "entry_blocked" in events
+    assert "entry_execution" not in events
+    blocked = next(r for r in rows if r.get("event_type") == "entry_blocked")
+    assert blocked.get("entry_executable") is False
+    assert blocked.get("position_size_units") == 0

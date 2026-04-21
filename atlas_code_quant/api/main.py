@@ -110,6 +110,10 @@ from atlas_code_quant.options.paper_runtime_loop import (
     build_default_options_runtime_loop,
     options_runtime_loop_enabled,
 )
+from atlas_code_quant.options.options_pipeline_runtime import (
+    build_default_options_pipeline_scheduler,
+    options_pipeline_runtime_enabled,
+)
 
 # ── OptionStrat ───────────────────────────────────────────────────────────────
 from api.routes.options import router as options_router
@@ -230,6 +234,7 @@ app.include_router(xgboost_router)
 _startup_services_task: asyncio.Task | None = None
 _metrics_sync_task: asyncio.Task | None = None
 _options_runtime_task: asyncio.Task | None = None
+_options_pipeline_runtime_task: asyncio.Task | None = None
 _STARTUP_BACKGROUND_STATE: dict[str, object] = {
     "running": False,
     "stage": "idle",
@@ -306,11 +311,27 @@ async def _run_options_runtime_loop() -> None:
         raise
 
 
+async def _run_options_pipeline_scheduler_loop() -> None:
+    """Scheduler residente para ejecutar el pipeline multi-activo en paper."""
+    if not options_pipeline_runtime_enabled():
+        logger.info("Options pipeline scheduler omitido: QUANT_OPTIONS_PIPELINE_RUNTIME_ENABLED=false")
+        return
+    scheduler = build_default_options_pipeline_scheduler()
+    try:
+        await scheduler.run_forever()
+    except asyncio.CancelledError:
+        scheduler.stop()
+        raise
+    except Exception:
+        logger.exception("Options pipeline scheduler stopped by error")
+        raise
+
+
 @app.on_event("startup")
 async def preload_tradier_sessions() -> None:
     _JOURNAL.init_db()
     _ensure_core_runtime_bootstrap()
-    global _startup_services_task, _metrics_sync_task, _options_runtime_task
+    global _startup_services_task, _metrics_sync_task, _options_runtime_task, _options_pipeline_runtime_task
     if _quant_prometheus_enabled() and (_metrics_sync_task is None or _metrics_sync_task.done()):
         _metrics_sync_task = asyncio.create_task(
             _run_quant_metrics_loop(),
@@ -320,6 +341,11 @@ async def preload_tradier_sessions() -> None:
         _options_runtime_task = asyncio.create_task(
             _run_options_runtime_loop(),
             name="options-paper-runtime-loop",
+        )
+    if _options_pipeline_runtime_task is None or _options_pipeline_runtime_task.done():
+        _options_pipeline_runtime_task = asyncio.create_task(
+            _run_options_pipeline_scheduler_loop(),
+            name="options-pipeline-runtime-loop",
         )
     if _startup_services_task and not _startup_services_task.done():
         return
@@ -552,7 +578,14 @@ async def _start_background_services() -> None:
 
 @app.on_event("shutdown")
 async def stop_background_services() -> None:
-    global _auto_cycle_task, _startup_services_task, _metrics_sync_task, _options_runtime_task
+    global _auto_cycle_task, _startup_services_task, _metrics_sync_task, _options_runtime_task, _options_pipeline_runtime_task
+    if _options_pipeline_runtime_task and not _options_pipeline_runtime_task.done():
+        _options_pipeline_runtime_task.cancel()
+        try:
+            await _options_pipeline_runtime_task
+        except asyncio.CancelledError:
+            pass
+        _options_pipeline_runtime_task = None
     if _options_runtime_task and not _options_runtime_task.done():
         _options_runtime_task.cancel()
         try:

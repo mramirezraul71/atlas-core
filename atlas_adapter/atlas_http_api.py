@@ -17310,6 +17310,8 @@ async def options_engine_status():
         pf_basic = _series_value("atlas_options_paper_profit_factor")
         closed_today_i = int(closed_today or 0)
         trades_completed_total = closed_today_i
+        blocked_sessions_today = 0
+        go_sessions_today = 0
         perf_snapshot: dict[str, Any] | None = None
         perf_ok = False
         try:
@@ -17322,6 +17324,8 @@ async def options_engine_status():
                     trades_completed_total = int(summary.get("closed_trades_total") or trades_completed_total)
                     wr_basic = summary.get("win_rate_pct")
                     pf_basic = summary.get("profit_factor")
+                    blocked_sessions_today = int(summary.get("blocked_sessions_today") or 0)
+                    go_sessions_today = int(summary.get("go_sessions_today") or 0)
         except Exception:
             perf_ok = False
 
@@ -17359,6 +17363,10 @@ async def options_engine_status():
             pf_basic = None
         if not perf_ok:
             notes.append("paper performance metrics unavailable; using fallback metrics")
+        elif blocked_sessions_today > 0:
+            notes.append(f"go sessions blocked by sizing today={blocked_sessions_today}")
+            if status == "GO":
+                status = "DEGRADED"
 
         grafana_url = os.environ.get("ATLAS_GRAFANA_BASE_URL", "http://localhost:3002").rstrip("/")
         target = 100
@@ -17378,6 +17386,8 @@ async def options_engine_status():
             "journal_events_today": journal_events_i,
             "journal_sessions_today": journal_sessions_i,
             "journal_last_write_age_seconds": journal_age,
+            "go_sessions_today": go_sessions_today,
+            "blocked_sessions_today": blocked_sessions_today,
             "go_nogo_label": status.replace("_", "-"),
             "go_nogo_gauge_hint": go_nogo,
             "symbol": None,

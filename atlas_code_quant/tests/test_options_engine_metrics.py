@@ -384,6 +384,23 @@ def test_refresh_journal_from_disk_sets_paper_performance_state(tmp_path: Path, 
     assert st["net_realized_pnl_usd"] == pytest.approx(40.0)
 
 
+def test_refresh_journal_tracks_go_blocked_sessions_metrics(tmp_path: Path, monkeypatch):
+    pytest.importorskip("prometheus_client")
+    from prometheus_client import REGISTRY
+    from datetime import datetime, timezone
+
+    monkeypatch.chdir(tmp_path)
+    jpath = tmp_path / "pj_blocked.jsonl"
+    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    jpath.write_text(
+        f'{{"event_type":"session_plan","trace_id":"t1","timestamp":"{now_iso}","payload":{{"session_plan":{{"entry_allowed":true,"intent":{{"force_no_trade":false}}}}}}}}\n'
+        f'{{"event_type":"entry_blocked","trace_id":"t1","timestamp":"{now_iso}","entry_executable":false,"position_size_units":0}}\n',
+        encoding="utf-8",
+    )
+    oem.refresh_journal_from_disk(jpath)
+    assert REGISTRY.get_sample_value("atlas_options_paper_sessions_go_blocked_today") == pytest.approx(1.0)
+
+
 def test_auto_close_metrics_hook_no_crash():
     """``evaluate_position`` llama a ``record_autoclose_triggers`` sin romper si Prometheus no está."""
     from atlas_code_quant.execution.auto_close_engine import AutoCloseEngine

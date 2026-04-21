@@ -72,6 +72,24 @@ def test_paper_performance_endpoint_mixed_wins_losses(tmp_path: Path, monkeypatc
     assert payload["by_strategy_regime"]["iron_condor"]["short_gamma"] == 0.0
 
 
+def test_paper_performance_endpoint_reports_no_executable_entries_when_blocked(tmp_path: Path, monkeypatch):
+    _reset_cache()
+    journal = tmp_path / "options_paper_journal.jsonl"
+    _write_jsonl(
+        journal,
+        [
+            '{"event_type":"session_plan","trace_id":"t1","timestamp_utc":"2026-04-20T12:00:00Z","payload":{"session_plan":{"entry_allowed":true,"intent":{"force_no_trade":false}}}}',
+            '{"event_type":"entry_blocked","trace_id":"t1","timestamp_utc":"2026-04-20T12:01:00Z","entry_executable":false,"position_size_units":0,"payload":{"blocked_reason":"insufficient_capital"}}',
+        ],
+    )
+    monkeypatch.setenv("QUANT_OPTIONS_RUNTIME_JOURNAL_PATH", str(journal))
+    client = _build_client()
+    payload = client.get("/options/paper-performance").json()
+    assert payload["ok"] is True
+    assert payload["summary"]["closed_trades_total"] == 0
+    assert payload.get("message") == "no executable entries today"
+
+
 def test_paper_performance_cache_hit_within_ttl(tmp_path: Path, monkeypatch):
     _reset_cache()
     journal = tmp_path / "options_paper_journal.jsonl"

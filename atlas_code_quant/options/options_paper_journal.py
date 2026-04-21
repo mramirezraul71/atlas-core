@@ -203,6 +203,8 @@ class OptionsPaperJournal:
             "close_mid": None,
             "pnl_usd": None,
             "pnl_pct": None,
+            "position_size_units": None,
+            "entry_executable": None,
         }
 
     def _append(self, record: dict[str, Any]) -> None:
@@ -313,6 +315,13 @@ class OptionsPaperJournal:
             exec_row.get("entry_debit") if exec_row.get("entry_debit") is not None else exec_row.get("debit")
         )
         rec["entry_mid"] = _to_float_or_none(exec_row.get("entry_mid") if exec_row.get("entry_mid") is not None else exec_row.get("mid"))
+        size_raw = (
+            exec_row.get("position_size_units")
+            if exec_row.get("position_size_units") is not None
+            else planned_row.get("position_size_units")
+        )
+        rec["position_size_units"] = _to_int_or_none(size_raw)
+        rec["entry_executable"] = bool((rec["position_size_units"] or 0) >= 1)
         rec["max_loss"] = _to_float_or_none(
             exec_row.get("max_loss") if exec_row.get("max_loss") is not None else planned_row.get("max_loss")
         )
@@ -322,6 +331,46 @@ class OptionsPaperJournal:
         rec["payload"] = {
             "planned_entry": planned_entry,
             "executed_entry": executed_entry,
+        }
+        self._append(rec)
+
+    def log_entry_blocked(
+        self,
+        *,
+        trace_id: str,
+        symbol: str,
+        timestamp: datetime,
+        blocked_reason: str,
+        strategy_type: str | None = None,
+        gamma_regime: str | None = None,
+        dte_mode: str | None = None,
+        planned_entry: dict[str, Any] | None = None,
+        mode: str = "paper",
+        source: str = "runtime_loop",
+        status: str = "canceled",
+        notes: list[str] | None = None,
+    ) -> None:
+        sym = str(symbol or "").strip().upper()
+        rec = self._build_base_record(
+            event_type="entry_blocked",
+            trace_id=str(trace_id),
+            timestamp=timestamp,
+            symbol=sym,
+            mode=mode,
+            source=source,
+            status=status,
+            autoclose_applied=False,
+            notes=notes,
+        )
+        rec["strategy_type"] = strategy_type
+        rec["structure_type"] = strategy_type
+        rec["gamma_regime"] = gamma_regime
+        rec["dte_mode"] = dte_mode
+        rec["entry_executable"] = False
+        rec["position_size_units"] = 0
+        rec["payload"] = {
+            "blocked_reason": str(blocked_reason or "entry_blocked"),
+            "planned_entry": planned_entry if isinstance(planned_entry, dict) else None,
         }
         self._append(rec)
 
@@ -407,6 +456,10 @@ class OptionsPaperJournal:
         rec["structure_type"] = rec["strategy_type"] or rec.get("structure_type")
         rec["gamma_regime"] = gamma_regime or close_row.get("gamma_regime")
         rec["dte_mode"] = dte_mode or close_row.get("dte_mode")
+        size_raw = close_row.get("position_size_units")
+        rec["position_size_units"] = _to_int_or_none(size_raw)
+        entry_exec_raw = close_row.get("entry_executable")
+        rec["entry_executable"] = bool(entry_exec_raw) if entry_exec_raw is not None else None
         rec["pnl_usd"] = _to_float_or_none(pnl_realized if pnl_realized is not None else close_row.get("pnl_usd"))
         rec["pnl_pct"] = _to_float_or_none(pnl_pct if pnl_pct is not None else close_row.get("pnl_pct"))
         rec["payload"] = {
