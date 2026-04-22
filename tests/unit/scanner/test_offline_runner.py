@@ -93,6 +93,10 @@ def test_run_offline_scan_ranked_symbols_are_sorted() -> None:
 def test_run_offline_scan_ranked_symbols_include_explanations() -> None:
     result = run_offline_scan()
     assert all(item.explanation for item in result.ranked_symbols)
+    if result.ranked_symbols:
+        first = result.ranked_symbols[0]
+        assert isinstance(first.component_explanations, dict)
+        assert isinstance(first.top_reasons, tuple)
 
 
 def test_run_offline_scan_populates_candidate_opportunities() -> None:
@@ -103,6 +107,9 @@ def test_run_offline_scan_populates_candidate_opportunities() -> None:
         first = result.candidate_opportunities[0]
         assert first.symbol == result.ranked_symbols[0].symbol_snapshot.symbol
         assert first.vol_features is not None
+        assert isinstance(first.meta, dict)
+        assert "component_explanations" in first.meta
+        assert "top_reasons" in first.meta
 
 
 def test_run_offline_scan_uses_config_scoring() -> None:
@@ -160,4 +167,78 @@ def test_run_offline_scan_uses_vol_gamma_scoring_when_features_present(monkeypat
     assert result.ranked_symbols[0].component_scores["vol"] > 0.0
     assert result.ranked_symbols[0].component_scores["gamma"] > 0.0
     assert result.candidate_opportunities[0].total_score == result.ranked_symbols[0].score
+
+
+def test_run_offline_scan_uses_price_macro_scoring_when_features_present(monkeypatch) -> None:
+    snapshot_symbol = SymbolSnapshot(
+        symbol="QQQ",
+        asset_type="etf",
+        base_currency="USD",
+        ref_price=500.0,
+        volatility_lookback=0.20,
+        liquidity_score=0.1,
+        meta={
+            "volume_20d": 50_000_000,
+            "bid_ask_spread": 0.20,
+            "event_risk": 0.2,
+            "adx_14": 18.0,
+            "trend_state": "RANGING",
+            "distance_to_vwap": 0.005,
+            "macro_regime": "risk_on",
+            "vix": 16.0,
+            "seasonal_factor": 1.8,
+        },
+    )
+    mocked_snapshot = ScanSnapshot(
+        snapshot_id="offline-default-1",
+        created_at=OFFLINE_REFERENCE_DATETIME.isoformat(),
+        universe_name="default",
+        symbols=(snapshot_symbol,),
+        config_version=SCORING_CONFIG.config_version,
+        meta={},
+    )
+
+    def _fake_build_snapshot(*args, **kwargs):
+        return mocked_snapshot
+
+    monkeypatch.setattr("atlas_scanner.runner.offline.build_offline_snapshot", _fake_build_snapshot)
+    result = run_offline_scan()
+    assert len(result.ranked_symbols) == 1
+    assert result.ranked_symbols[0].component_scores["price"] > 0.7
+    assert result.ranked_symbols[0].component_scores["macro"] > 0.7
+
+
+def test_run_offline_scan_uses_oi_flow_scoring_when_features_present(monkeypatch) -> None:
+    snapshot_symbol = SymbolSnapshot(
+        symbol="IWM",
+        asset_type="etf",
+        base_currency="USD",
+        ref_price=200.0,
+        volatility_lookback=0.25,
+        liquidity_score=0.2,
+        meta={
+            "volume_20d": 30_000_000,
+            "bid_ask_spread": 0.2,
+            "event_risk": 0.2,
+            "oi_change_1d_pct": 12.0,
+            "call_put_volume_ratio": 3.0,
+            "volume_imbalance": 0.7,
+        },
+    )
+    mocked_snapshot = ScanSnapshot(
+        snapshot_id="offline-default-1",
+        created_at=OFFLINE_REFERENCE_DATETIME.isoformat(),
+        universe_name="default",
+        symbols=(snapshot_symbol,),
+        config_version=SCORING_CONFIG.config_version,
+        meta={},
+    )
+
+    def _fake_build_snapshot(*args, **kwargs):
+        return mocked_snapshot
+
+    monkeypatch.setattr("atlas_scanner.runner.offline.build_offline_snapshot", _fake_build_snapshot)
+    result = run_offline_scan()
+    assert len(result.ranked_symbols) == 1
+    assert result.ranked_symbols[0].component_scores["oi_flow"] > 0.7
 

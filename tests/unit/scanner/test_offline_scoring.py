@@ -65,10 +65,16 @@ def test_score_symbol_returns_components_and_score_in_range() -> None:
         "spread",
         "vol",
         "gamma",
+        "oi_flow",
+        "macro",
     }
     for component in result.component_scores.values():
         assert 0.0 <= component <= 1.0
     assert isinstance(result.explanation, str)
+    assert isinstance(result.component_explanations, dict)
+    assert isinstance(result.top_reasons, tuple)
+    assert "vol" in result.component_explanations
+    assert "oi_flow" in result.component_explanations
     assert isinstance(result.strengths, tuple)
     assert isinstance(result.penalties, tuple)
 
@@ -159,6 +165,7 @@ def test_score_symbol_uses_vol_gamma_components_when_available() -> None:
     assert scored.component_scores["vol"] > 0.0
     assert scored.component_scores["gamma"] > 0.0
     assert scored.score > scored.component_scores["liquidity"]
+    assert any("gamma" in reason.lower() for reason in scored.top_reasons)
 
 
 def test_component_weighted_score_renormalizes_available_components() -> None:
@@ -166,19 +173,46 @@ def test_component_weighted_score_renormalizes_available_components() -> None:
     both = compute_component_weighted_score(
         vol_score=90.0,
         gamma_score=50.0,
+        oi_flow_score=80.0,
+        price_score=70.0,
+        macro_score=40.0,
         component_weights=config.component_weights,
     )
     vol_only = compute_component_weighted_score(
         vol_score=90.0,
         gamma_score=None,
+        oi_flow_score=None,
+        price_score=None,
+        macro_score=None,
+        component_weights=config.component_weights,
+    )
+    price_only = compute_component_weighted_score(
+        vol_score=None,
+        gamma_score=None,
+        oi_flow_score=None,
+        price_score=80.0,
+        macro_score=None,
+        component_weights=config.component_weights,
+    )
+    oi_only = compute_component_weighted_score(
+        vol_score=None,
+        gamma_score=None,
+        oi_flow_score=65.0,
+        price_score=None,
+        macro_score=None,
         component_weights=config.component_weights,
     )
     none = compute_component_weighted_score(
         vol_score=None,
         gamma_score=None,
+        oi_flow_score=None,
+        price_score=None,
+        macro_score=None,
         component_weights=config.component_weights,
     )
-    assert both == pytest.approx(76.6666666667)
+    assert both == pytest.approx(74.0)
     assert vol_only == 90.0
+    assert price_only == 80.0
+    assert oi_only == 65.0
     assert none == 0.0
 

@@ -59,6 +59,9 @@ def test_scan_offline_and_explain_truncates_ranked_symbols_when_top_n_given() ->
     assert isinstance(result, OfflineScanResult)
     assert len(result.ranked_symbols) <= 2
     assert all(item.explanation for item in result.ranked_symbols)
+    if result.ranked_symbols:
+        assert isinstance(result.ranked_symbols[0].component_explanations, dict)
+        assert isinstance(result.ranked_symbols[0].top_reasons, tuple)
     assert result.meta.get("top_n") == 2
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 
 from atlas_scanner.config_loader import ScanConfig, build_default_scan_config_offline
@@ -93,6 +93,13 @@ def _candidate_from_scored(
         strengths=scored.strengths,
         penalties=scored.penalties,
         explanation=scored.explanation,
+        meta={
+            "component_explanations": {
+                name: asdict(explanation)
+                for name, explanation in scored.component_explanations.items()
+            },
+            "top_reasons": tuple(scored.top_reasons),
+        },
     )
     return enrich_candidate_with_features(
         candidate,
