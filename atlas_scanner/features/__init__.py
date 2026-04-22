@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from .builders import build_gamma_features, build_vol_features
+from .builders import (
+    GammaFeatureInput,
+    VolFeatureInput,
+    build_gamma_features,
+    build_vol_features,
+    enrich_candidate_with_features,
+)
 from .flow import compute_flow
 from .gamma import (
     GammaRegime,
@@ -25,6 +31,9 @@ from .volatility import (
 __all__ = [
     "build_vol_features",
     "build_gamma_features",
+    "VolFeatureInput",
+    "GammaFeatureInput",
+    "enrich_candidate_with_features",
     "compute_volatility",
     "compute_iv_rank",
     "compute_iv_percentile",

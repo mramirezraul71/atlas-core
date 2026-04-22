@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
 from collections.abc import Mapping, Sequence
 
 from atlas_scanner.features.gamma import (
@@ -14,7 +15,26 @@ from atlas_scanner.features.volatility import (
     compute_iv_rank,
     compute_vrp,
 )
-from atlas_scanner.models.domain_models import GammaFeatures, StrikeLevel, VolFeatures
+from atlas_scanner.models.domain_models import (
+    CandidateOpportunity,
+    GammaFeatures,
+    StrikeLevel,
+    VolFeatures,
+)
+
+
+@dataclass(frozen=True)
+class VolFeatureInput:
+    iv_current: float | None = None
+    iv_history: Sequence[float] | None = None
+    rv_annualized: Mapping[str, float] | None = None
+
+
+@dataclass(frozen=True)
+class GammaFeatureInput:
+    strike_gamma: Sequence[StrikeGamma] | None = None
+    net_gamma: float | None = None
+    neutral_threshold: float = 0.0
 
 
 def _mapping_float(value: object) -> float | None:
@@ -108,4 +128,31 @@ def build_gamma_features(
         call_wall_nearest=call_wall,
         put_wall_nearest=put_wall,
     )
+
+
+def enrich_candidate_with_features(
+    candidate: CandidateOpportunity,
+    *,
+    vol_input: VolFeatureInput | None = None,
+    gamma_input: GammaFeatureInput | None = None,
+) -> CandidateOpportunity:
+    next_vol = (
+        build_vol_features(
+            iv_current=vol_input.iv_current,
+            iv_history=vol_input.iv_history,
+            rv_annualized=vol_input.rv_annualized,
+        )
+        if vol_input is not None
+        else candidate.vol_features
+    )
+    next_gamma = (
+        build_gamma_features(
+            strike_gamma=gamma_input.strike_gamma,
+            net_gamma=gamma_input.net_gamma,
+            neutral_threshold=gamma_input.neutral_threshold,
+        )
+        if gamma_input is not None
+        else candidate.gamma_features
+    )
+    return replace(candidate, vol_features=next_vol, gamma_features=next_gamma)
 

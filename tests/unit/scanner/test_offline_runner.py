@@ -94,6 +94,16 @@ def test_run_offline_scan_ranked_symbols_include_explanations() -> None:
     assert all(item.explanation for item in result.ranked_symbols)
 
 
+def test_run_offline_scan_populates_candidate_opportunities() -> None:
+    result = run_offline_scan()
+    assert len(result.candidate_opportunities) == len(result.ranked_symbols)
+    assert result.meta["candidate_features_enriched"] is True
+    if result.candidate_opportunities:
+        first = result.candidate_opportunities[0]
+        assert first.symbol == result.ranked_symbols[0].symbol_snapshot.symbol
+        assert first.vol_features is not None
+
+
 def test_run_offline_scan_uses_config_scoring() -> None:
     config = build_scan_config_offline(scoring_config=SCORING_CONFIG, universe_name="default")
     custom_scoring = OfflineScoringConfig(

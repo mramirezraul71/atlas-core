@@ -42,8 +42,10 @@ class OfflineScanner:
             return result
         if top_n <= 0:
             trimmed_ranked: tuple[ScoredSymbol, ...] = ()
+            trimmed_candidates = ()
         else:
             trimmed_ranked = result.ranked_symbols[:top_n]
+            trimmed_candidates = result.candidate_opportunities[:top_n]
 
         next_meta = dict(result.meta)
         next_meta["top_n"] = top_n
@@ -56,6 +58,7 @@ class OfflineScanner:
             universe_name=result.universe_name,
             data_source_path=result.data_source_path,
             meta=next_meta,
+            candidate_opportunities=trimmed_candidates,
         )
 
 
