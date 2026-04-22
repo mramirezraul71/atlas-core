@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import pytest
+
 from atlas_scanner.config_loader import (
     OfflineScoringConfig,
     OfflineScoringThresholds,
     OfflineScoringWeights,
 )
+from atlas_scanner.features.gamma import StrikeGamma
 from atlas_scanner.models import SymbolSnapshot
-from atlas_scanner.scoring.offline import normalize_value, rank_symbols, score_symbol
+from atlas_scanner.scoring.offline import (
+    compute_component_weighted_score,
+    normalize_value,
+    rank_symbols,
+    score_symbol,
+)
 
 
 def _snapshot(
@@ -55,6 +63,8 @@ def test_score_symbol_returns_components_and_score_in_range() -> None:
         "price",
         "event_risk",
         "spread",
+        "vol",
+        "gamma",
     }
     for component in result.component_scores.values():
         assert 0.0 <= component <= 1.0
@@ -121,4 +131,54 @@ def test_score_symbol_accepts_runtime_scoring_config() -> None:
     scored = score_symbol(snapshot, scoring_config=config)
     assert scored.score == scored.component_scores["liquidity"]
     assert scored.explanation != ""
+
+
+def test_score_symbol_uses_vol_gamma_components_when_available() -> None:
+    snapshot = SymbolSnapshot(
+        symbol="PRO",
+        asset_type="equity",
+        base_currency="USD",
+        ref_price=200.0,
+        volatility_lookback=0.35,
+        liquidity_score=0.2,
+        meta={
+            "event_risk": 1.0,
+            "bid_ask_spread": 0.2,
+            "iv_current": 40.0,
+            "iv_history": [10.0, 20.0, 30.0, 40.0, 50.0],
+            "rv_annualized": {"20d": 30.0},
+            "net_gamma": -500_000.0,
+            "strike_gamma": [
+                StrikeGamma(strike=3900.0, call_gamma=100.0, put_gamma=-20.0),
+                StrikeGamma(strike=3950.0, call_gamma=300.0, put_gamma=-40.0),
+                StrikeGamma(strike=4000.0, call_gamma=150.0, put_gamma=-400.0),
+            ],
+        },
+    )
+    scored = score_symbol(snapshot)
+    assert scored.component_scores["vol"] > 0.0
+    assert scored.component_scores["gamma"] > 0.0
+    assert scored.score > scored.component_scores["liquidity"]
+
+
+def test_component_weighted_score_renormalizes_available_components() -> None:
+    config = OfflineScoringConfig()
+    both = compute_component_weighted_score(
+        vol_score=90.0,
+        gamma_score=50.0,
+        component_weights=config.component_weights,
+    )
+    vol_only = compute_component_weighted_score(
+        vol_score=90.0,
+        gamma_score=None,
+        component_weights=config.component_weights,
+    )
+    none = compute_component_weighted_score(
+        vol_score=None,
+        gamma_score=None,
+        component_weights=config.component_weights,
+    )
+    assert both == pytest.approx(76.6666666667)
+    assert vol_only == 90.0
+    assert none == 0.0
 

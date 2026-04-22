@@ -10,6 +10,7 @@ from atlas_scanner.config_loader import (
     build_scan_config_offline,
 )
 from atlas_scanner.fixtures.offline import OFFLINE_EXTENDED_SYMBOLS, OFFLINE_REFERENCE_DATETIME
+from atlas_scanner.models import ScanSnapshot, SymbolSnapshot
 from atlas_scanner.runner.offline import run_offline_scan
 from atlas_scanner.universe.offline import select_offline_universe
 
@@ -121,4 +122,42 @@ def test_run_offline_scan_uses_config_scoring() -> None:
     top_symbol = result.ranked_symbols[0].symbol_snapshot.symbol
     assert top_symbol == "SPX"
     assert result.ranked_symbols[0].component_scores["event_risk"] == 1.0
+
+
+def test_run_offline_scan_uses_vol_gamma_scoring_when_features_present(monkeypatch) -> None:
+    snapshot_symbol = SymbolSnapshot(
+        symbol="SPY",
+        asset_type="etf",
+        base_currency="USD",
+        ref_price=500.0,
+        volatility_lookback=0.30,
+        liquidity_score=0.1,
+        meta={
+            "volume_20d": 100_000_000,
+            "bid_ask_spread": 0.25,
+            "event_risk": 1.0,
+            "iv_current": 40.0,
+            "iv_history": [10.0, 20.0, 30.0, 40.0, 50.0],
+            "rv_annualized": {"20d": 30.0},
+            "net_gamma": -500_000.0,
+        },
+    )
+    mocked_snapshot = ScanSnapshot(
+        snapshot_id="offline-default-1",
+        created_at=OFFLINE_REFERENCE_DATETIME.isoformat(),
+        universe_name="default",
+        symbols=(snapshot_symbol,),
+        config_version=SCORING_CONFIG.config_version,
+        meta={},
+    )
+
+    def _fake_build_snapshot(*args, **kwargs):
+        return mocked_snapshot
+
+    monkeypatch.setattr("atlas_scanner.runner.offline.build_offline_snapshot", _fake_build_snapshot)
+    result = run_offline_scan()
+    assert len(result.ranked_symbols) == 1
+    assert result.ranked_symbols[0].component_scores["vol"] > 0.0
+    assert result.ranked_symbols[0].component_scores["gamma"] > 0.0
+    assert result.candidate_opportunities[0].total_score == result.ranked_symbols[0].score
 
