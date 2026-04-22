@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 from atlas_scanner.config_loader import ScanConfig, build_default_scan_config_offline
+from atlas_scanner.data.openbb_vol_macro import OpenBBVolMacroProvider
 from atlas_scanner.features.builders import (
     GammaFeatureInput,
     VolFeatureInput,
@@ -17,6 +18,7 @@ from atlas_scanner.filters.offline import (
 )
 from atlas_scanner.fixtures.offline import OFFLINE_REFERENCE_DATETIME, build_offline_snapshot
 from atlas_scanner.models import ProCandidateOpportunity, SymbolSnapshot
+from atlas_scanner.ports.vol_macro_provider import MacroData, VolData, VolMacroProvider
 from atlas_scanner.scoring.offline import ScoredSymbol, rank_symbols
 from atlas_scanner.universe.offline import select_offline_universe
 
@@ -78,6 +80,38 @@ def _gamma_input_from_snapshot(snapshot: SymbolSnapshot) -> GammaFeatureInput | 
     )
 
 
+def _provider_enriched_snapshot(
+    snapshot: SymbolSnapshot,
+    *,
+    vol_data: VolData,
+    macro_data: MacroData,
+) -> SymbolSnapshot:
+    merged_meta = dict(snapshot.meta)
+    if vol_data.iv_history:
+        merged_meta["iv_history"] = list(vol_data.iv_history)
+    if vol_data.iv_current is not None:
+        merged_meta["iv_current"] = vol_data.iv_current
+    if vol_data.rv_annualized:
+        merged_meta["rv_annualized"] = dict(vol_data.rv_annualized)
+
+    if macro_data.vix is not None:
+        merged_meta["vix"] = macro_data.vix
+    if macro_data.macro_regime is not None:
+        merged_meta["macro_regime"] = macro_data.macro_regime
+    if macro_data.seasonal_factor is not None:
+        merged_meta["seasonal_factor"] = macro_data.seasonal_factor
+
+    return SymbolSnapshot(
+        symbol=snapshot.symbol,
+        asset_type=snapshot.asset_type,
+        base_currency=snapshot.base_currency,
+        ref_price=snapshot.ref_price,
+        volatility_lookback=snapshot.volatility_lookback,
+        liquidity_score=snapshot.liquidity_score,
+        meta=merged_meta,
+    )
+
+
 def _candidate_from_scored(
     scored: ScoredSymbol,
     as_of: datetime,
@@ -110,6 +144,7 @@ def _candidate_from_scored(
 
 def run_offline_scan(
     config: ScanConfig | None = None,
+    vol_macro_provider: VolMacroProvider | None = None,
     *,
     min_volume_20d: float | int | None = None,
     max_bid_ask_spread: float | int | None = None,
@@ -119,10 +154,30 @@ def run_offline_scan(
     max_event_risk: float | int | None = None,
 ) -> OfflineScanResult:
     effective_config = config or build_default_scan_config_offline()
+    provider = vol_macro_provider or OpenBBVolMacroProvider()
     snapshot = build_offline_snapshot(config=effective_config)
+    as_of_date: date = OFFLINE_REFERENCE_DATETIME.date()
+    try:
+        macro_data = provider.get_macro_data(as_of_date)
+    except Exception:
+        macro_data = MacroData()
+    provider_enriched_symbols: list[SymbolSnapshot] = []
+    for symbol_snapshot in snapshot.symbols:
+        try:
+            vol_data = provider.get_vol_data(symbol_snapshot.symbol, as_of_date)
+        except Exception:
+            vol_data = VolData()
+        provider_enriched_symbols.append(
+            _provider_enriched_snapshot(
+                symbol_snapshot,
+                vol_data=vol_data,
+                macro_data=macro_data,
+            )
+        )
+    snapshot_symbols = tuple(provider_enriched_symbols)
     symbols_universe = select_offline_universe(
         config=effective_config,
-        snapshots=snapshot.symbols,
+        snapshots=snapshot_symbols,
     )
 
     symbols_filtered: tuple[SymbolSnapshot, ...] = symbols_universe
@@ -174,13 +229,14 @@ def run_offline_scan(
         universe_name=effective_config.universe_name,
         data_source_path=("mem",),
         meta={
-            "total_symbols_snapshot": len(snapshot.symbols),
+            "total_symbols_snapshot": len(snapshot_symbols),
             "total_symbols_universe": len(symbols_universe),
             "total_symbols_final": len(symbols_filtered),
             "ranking_applied": True,
             "explanations_applied": True,
             "total_ranked_symbols": len(ranked_symbols),
             "candidate_features_enriched": True,
+            "vol_macro_provider_applied": True,
             "filters_applied": tuple(filters_applied),
         },
     )
