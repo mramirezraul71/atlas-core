@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 from .flow import compute_flow
-from .gamma import compute_gamma
+from .gamma import (
+    GammaRegime,
+    StrikeGamma,
+    classify_gamma_regime,
+    compute_gamma,
+    find_call_wall,
+    find_gamma_flip,
+    find_put_wall,
+)
 from .macro import compute_macro
 from .price import compute_price
 from .visual import compute_visual
@@ -19,6 +27,12 @@ __all__ = [
     "compute_iv_percentile",
     "compute_vrp",
     "compute_vrp_series",
+    "StrikeGamma",
+    "GammaRegime",
+    "find_call_wall",
+    "find_put_wall",
+    "find_gamma_flip",
+    "classify_gamma_regime",
     "compute_gamma",
     "compute_flow",
     "compute_price",
