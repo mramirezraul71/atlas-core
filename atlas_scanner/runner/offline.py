@@ -5,7 +5,9 @@ from dataclasses import asdict, dataclass
 from datetime import date, datetime
 
 from atlas_scanner.config_loader import ScanConfig, build_default_scan_config_offline
+from atlas_scanner.data.dummy_gamma_oi import DummyGammaOIProvider
 from atlas_scanner.data.openbb_vol_macro import OpenBBVolMacroProvider
+from atlas_scanner.features.gamma import StrikeGamma
 from atlas_scanner.features.builders import (
     GammaFeatureInput,
     VolFeatureInput,
@@ -18,6 +20,7 @@ from atlas_scanner.filters.offline import (
 )
 from atlas_scanner.fixtures.offline import OFFLINE_REFERENCE_DATETIME, build_offline_snapshot
 from atlas_scanner.models import ProCandidateOpportunity, SymbolSnapshot
+from atlas_scanner.ports.gamma_oi_provider import GammaData, GammaOIProvider, OIFlowData
 from atlas_scanner.ports.vol_macro_provider import MacroData, VolData, VolMacroProvider
 from atlas_scanner.scoring.offline import ScoredSymbol, rank_symbols
 from atlas_scanner.universe.offline import select_offline_universe
@@ -85,6 +88,8 @@ def _provider_enriched_snapshot(
     *,
     vol_data: VolData,
     macro_data: MacroData,
+    gamma_data: GammaData,
+    oi_flow_data: OIFlowData,
 ) -> SymbolSnapshot:
     merged_meta = dict(snapshot.meta)
     if vol_data.iv_history:
@@ -100,6 +105,40 @@ def _provider_enriched_snapshot(
         merged_meta["macro_regime"] = macro_data.macro_regime
     if macro_data.seasonal_factor is not None:
         merged_meta["seasonal_factor"] = macro_data.seasonal_factor
+
+    if gamma_data.strikes:
+        merged_meta["gamma_strikes"] = [
+            {
+                "strike": row.strike,
+                "call_gamma": row.call_gamma,
+                "put_gamma": row.put_gamma,
+            }
+            for row in gamma_data.strikes
+        ]
+        merged_meta["strike_gamma"] = tuple(
+            StrikeGamma(
+                strike=row.strike,
+                call_gamma=row.call_gamma,
+                put_gamma=row.put_gamma,
+            )
+            for row in gamma_data.strikes
+        )
+    if gamma_data.net_gex is not None:
+        merged_meta["net_gex"] = gamma_data.net_gex
+        merged_meta["net_gamma"] = gamma_data.net_gex
+
+    if oi_flow_data.oi_change_1d_pct is not None:
+        merged_meta["oi_change_1d_pct"] = oi_flow_data.oi_change_1d_pct
+    if oi_flow_data.call_put_volume_ratio is not None:
+        merged_meta["call_put_volume_ratio"] = oi_flow_data.call_put_volume_ratio
+    if oi_flow_data.volume_imbalance is not None:
+        merged_meta["volume_imbalance"] = oi_flow_data.volume_imbalance
+    if oi_flow_data.call_volume is not None:
+        merged_meta["call_volume"] = oi_flow_data.call_volume
+    if oi_flow_data.put_volume is not None:
+        merged_meta["put_volume"] = oi_flow_data.put_volume
+    if oi_flow_data.meta:
+        merged_meta["oi_flow_meta"] = dict(oi_flow_data.meta)
 
     return SymbolSnapshot(
         symbol=snapshot.symbol,
@@ -145,6 +184,7 @@ def _candidate_from_scored(
 def run_offline_scan(
     config: ScanConfig | None = None,
     vol_macro_provider: VolMacroProvider | None = None,
+    gamma_oi_provider: GammaOIProvider | None = None,
     *,
     min_volume_20d: float | int | None = None,
     max_bid_ask_spread: float | int | None = None,
@@ -154,24 +194,35 @@ def run_offline_scan(
     max_event_risk: float | int | None = None,
 ) -> OfflineScanResult:
     effective_config = config or build_default_scan_config_offline()
-    provider = vol_macro_provider or OpenBBVolMacroProvider()
+    vol_provider = vol_macro_provider or OpenBBVolMacroProvider()
+    gamma_provider = gamma_oi_provider or DummyGammaOIProvider()
     snapshot = build_offline_snapshot(config=effective_config)
     as_of_date: date = OFFLINE_REFERENCE_DATETIME.date()
     try:
-        macro_data = provider.get_macro_data(as_of_date)
+        macro_data = vol_provider.get_macro_data(as_of_date)
     except Exception:
         macro_data = MacroData()
     provider_enriched_symbols: list[SymbolSnapshot] = []
     for symbol_snapshot in snapshot.symbols:
         try:
-            vol_data = provider.get_vol_data(symbol_snapshot.symbol, as_of_date)
+            vol_data = vol_provider.get_vol_data(symbol_snapshot.symbol, as_of_date)
         except Exception:
             vol_data = VolData()
+        try:
+            gamma_data = gamma_provider.get_gamma_data(symbol_snapshot.symbol, as_of_date)
+        except Exception:
+            gamma_data = GammaData()
+        try:
+            oi_flow_data = gamma_provider.get_oi_flow_data(symbol_snapshot.symbol, as_of_date)
+        except Exception:
+            oi_flow_data = OIFlowData()
         provider_enriched_symbols.append(
             _provider_enriched_snapshot(
                 symbol_snapshot,
                 vol_data=vol_data,
                 macro_data=macro_data,
+                gamma_data=gamma_data,
+                oi_flow_data=oi_flow_data,
             )
         )
     snapshot_symbols = tuple(provider_enriched_symbols)
@@ -237,6 +288,7 @@ def run_offline_scan(
             "total_ranked_symbols": len(ranked_symbols),
             "candidate_features_enriched": True,
             "vol_macro_provider_applied": True,
+            "gamma_oi_provider_applied": True,
             "filters_applied": tuple(filters_applied),
         },
     )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
+from .dummy_gamma_oi import DummyGammaOIProvider
 from .openbb_vol_macro import OpenBBVolMacroProvider
 
-__all__ = ["OpenBBVolMacroProvider"]
+__all__ = ["OpenBBVolMacroProvider", "DummyGammaOIProvider"]
 
