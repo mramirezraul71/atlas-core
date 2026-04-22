@@ -48,6 +48,7 @@ class VolFeatures:
 @dataclass(frozen=True)
 class GammaFeatures:
     net_gex: float | None = None
+    gamma_regime: str | None = None
     gamma_flip_agg: float | None = None
     gamma_flip_weekly: float | None = None
     distance_to_flip_agg_pct: float | None = None
