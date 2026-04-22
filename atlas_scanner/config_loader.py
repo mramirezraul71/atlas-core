@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 from typing import Mapping
 
 from .config import SCORING_CONFIG, ScoringConfig, ScoringRules, ScoringWeights
@@ -43,9 +44,70 @@ class OfflineScoringThresholds:
 
 
 @dataclass(frozen=True)
+class ComponentWeights:
+    vol: float = 0.40
+    gamma: float = 0.20
+    oi_flow: float = 0.15
+    price: float = 0.20
+    macro: float = 0.05
+
+    def normalized(self) -> ComponentWeights:
+        total = self.vol + self.gamma + self.oi_flow + self.price + self.macro
+        if total <= 0:
+            return ComponentWeights(0.0, 0.0, 0.0, 0.0, 0.0)
+        return ComponentWeights(
+            vol=self.vol / total,
+            gamma=self.gamma / total,
+            oi_flow=self.oi_flow / total,
+            price=self.price / total,
+            macro=self.macro / total,
+        )
+
+
+@dataclass(frozen=True)
+class VolScoringConfig:
+    iv_rank_min: float = 40.0
+    iv_rank_max: float = 85.0
+    vrp_min: float = 0.0
+
+
+@dataclass(frozen=True)
+class GammaScoringConfig:
+    max_pain_distance_pct_max: float = 1.5
+    net_gex_negative_only: bool = True
+
+
+@dataclass(frozen=True)
+class OIFlowScoringConfig:
+    oi_change_min_pct: float = 0.0
+    call_put_volume_ratio_min: float = 0.0
+    call_put_volume_ratio_max: float = 999.0
+
+
+@dataclass(frozen=True)
+class PriceScoringConfig:
+    adx_ranging_max: float = 25.0
+    adx_trending_min: float = 30.0
+
+
+@dataclass(frozen=True)
+class MacroScoringConfig:
+    seasonal_factor_min: float = 0.0
+    seasonal_factor_max: float = 2.0
+    block_on_event_risk_high: bool = True
+
+
+@dataclass(frozen=True)
 class OfflineScoringConfig:
-    weights: OfflineScoringWeights = OfflineScoringWeights()
-    thresholds: OfflineScoringThresholds = OfflineScoringThresholds()
+    component_weights: ComponentWeights = field(default_factory=ComponentWeights)
+    vol: VolScoringConfig = field(default_factory=VolScoringConfig)
+    gamma: GammaScoringConfig = field(default_factory=GammaScoringConfig)
+    oi_flow: OIFlowScoringConfig = field(default_factory=OIFlowScoringConfig)
+    price: PriceScoringConfig = field(default_factory=PriceScoringConfig)
+    macro: MacroScoringConfig = field(default_factory=MacroScoringConfig)
+    weights: OfflineScoringWeights = field(default_factory=OfflineScoringWeights)
+    thresholds: OfflineScoringThresholds = field(default_factory=OfflineScoringThresholds)
+    meta: dict[str, Any] | None = None
 
 
 DEFAULT_OFFLINE_SCORING_CONFIG = OfflineScoringConfig()
@@ -65,14 +127,24 @@ class ScanConfig:
 
 
 def validate_offline_scoring_config(scoring: OfflineScoringConfig) -> None:
-    weight_sum = (
+    runtime_weight_sum = (
         scoring.weights.liquidity
         + scoring.weights.price
         + scoring.weights.event_risk
         + scoring.weights.spread
     )
-    if weight_sum <= 0:
-        raise ScannerInputError("offline scoring weights sum must be > 0")
+    if runtime_weight_sum <= 0:
+        raise ScannerInputError("offline scoring runtime weights sum must be > 0")
+
+    component_weight_sum = (
+        scoring.component_weights.vol
+        + scoring.component_weights.gamma
+        + scoring.component_weights.oi_flow
+        + scoring.component_weights.price
+        + scoring.component_weights.macro
+    )
+    if component_weight_sum <= 0:
+        raise ScannerInputError("offline scoring component weights sum must be > 0")
 
 
 def validate_scan_config(scan_config: ScanConfig) -> None:
