@@ -74,7 +74,10 @@ def run_offline_scan(
         )
         filters_applied.append("event_risk")
 
-    ranked_symbols = rank_symbols(symbols_filtered)
+    ranked_symbols = rank_symbols(
+        symbols_filtered,
+        scoring_config=effective_config.scoring,
+    )
 
     return OfflineScanResult(
         config=effective_config,

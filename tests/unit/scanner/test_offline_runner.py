@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from atlas_scanner.config import SCORING_CONFIG
-from atlas_scanner.config_loader import build_scan_config_offline
+from atlas_scanner.config_loader import (
+    OfflineScoringConfig,
+    OfflineScoringThresholds,
+    OfflineScoringWeights,
+    build_scan_config_offline,
+)
 from atlas_scanner.fixtures.offline import OFFLINE_EXTENDED_SYMBOLS, OFFLINE_REFERENCE_DATETIME
 from atlas_scanner.runner.offline import run_offline_scan
 from atlas_scanner.universe.offline import select_offline_universe
@@ -79,4 +86,23 @@ def test_run_offline_scan_ranked_symbols_are_sorted() -> None:
     result = run_offline_scan()
     scores = tuple(item.score for item in result.ranked_symbols)
     assert scores == tuple(sorted(scores, reverse=True))
+
+
+def test_run_offline_scan_uses_config_scoring() -> None:
+    config = build_scan_config_offline(scoring_config=SCORING_CONFIG, universe_name="default")
+    custom_scoring = OfflineScoringConfig(
+        weights=OfflineScoringWeights(
+            liquidity=0.0,
+            price=0.0,
+            event_risk=1.0,
+            spread=0.0,
+        ),
+        thresholds=OfflineScoringThresholds(),
+    )
+    custom_config = replace(config, scoring=custom_scoring)
+
+    result = run_offline_scan(config=custom_config)
+    top_symbol = result.ranked_symbols[0].symbol_snapshot.symbol
+    assert top_symbol == "SPX"
+    assert result.ranked_symbols[0].component_scores["event_risk"] == 1.0
 

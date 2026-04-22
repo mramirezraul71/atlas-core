@@ -23,6 +23,35 @@ DEFAULT_ACTIVE_FEATURES: tuple[str, ...] = (
 
 
 @dataclass(frozen=True)
+class OfflineScoringWeights:
+    liquidity: float = 0.40
+    price: float = 0.20
+    event_risk: float = 0.25
+    spread: float = 0.15
+
+
+@dataclass(frozen=True)
+class OfflineScoringThresholds:
+    liquidity_lower: float = 0.0
+    liquidity_upper: float = 1.0
+    price_lower: float = 5.0
+    price_upper: float = 500.0
+    event_risk_lower: float = 0.0
+    event_risk_upper: float = 1.0
+    spread_lower: float = 0.0
+    spread_upper: float = 0.10
+
+
+@dataclass(frozen=True)
+class OfflineScoringConfig:
+    weights: OfflineScoringWeights = OfflineScoringWeights()
+    thresholds: OfflineScoringThresholds = OfflineScoringThresholds()
+
+
+DEFAULT_OFFLINE_SCORING_CONFIG = OfflineScoringConfig()
+
+
+@dataclass(frozen=True)
 class ScanConfig:
     universe_name: str
     weights: ScoringWeights
@@ -30,8 +59,20 @@ class ScanConfig:
     max_final_candidates: int
     default_max_per_family: int
     max_per_family: Mapping[str, int]
+    scoring: OfflineScoringConfig = DEFAULT_OFFLINE_SCORING_CONFIG
     active_filters: tuple[str, ...] = DEFAULT_ACTIVE_FILTERS
     active_features: tuple[str, ...] = DEFAULT_ACTIVE_FEATURES
+
+
+def validate_offline_scoring_config(scoring: OfflineScoringConfig) -> None:
+    weight_sum = (
+        scoring.weights.liquidity
+        + scoring.weights.price
+        + scoring.weights.event_risk
+        + scoring.weights.spread
+    )
+    if weight_sum <= 0:
+        raise ScannerInputError("offline scoring weights sum must be > 0")
 
 
 def validate_scan_config(scan_config: ScanConfig) -> None:
@@ -43,6 +84,7 @@ def validate_scan_config(scan_config: ScanConfig) -> None:
         raise ScannerInputError("default_max_per_family must be >= 0")
     if any(limit < 0 for limit in scan_config.max_per_family.values()):
         raise ScannerInputError("max_per_family values must be >= 0")
+    validate_offline_scoring_config(scan_config.scoring)
 
 
 def build_scan_config_offline(
