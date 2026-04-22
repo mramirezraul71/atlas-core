@@ -58,6 +58,9 @@ def test_score_symbol_returns_components_and_score_in_range() -> None:
     }
     for component in result.component_scores.values():
         assert 0.0 <= component <= 1.0
+    assert isinstance(result.explanation, str)
+    assert isinstance(result.strengths, tuple)
+    assert isinstance(result.penalties, tuple)
 
 
 def test_score_symbol_penalizes_high_event_risk_and_spread() -> None:
@@ -100,6 +103,7 @@ def test_rank_symbols_is_stable_on_ties() -> None:
     second = _snapshot("SECOND", liquidity_score=0.50, ref_price=100.0, event_risk=0.5, bid_ask_spread=0.05)
     ranked = rank_symbols((first, second))
     assert tuple(item.symbol_snapshot.symbol for item in ranked) == ("FIRST", "SECOND")
+    assert all(item.explanation for item in ranked)
 
 
 def test_score_symbol_accepts_runtime_scoring_config() -> None:
@@ -116,4 +120,5 @@ def test_score_symbol_accepts_runtime_scoring_config() -> None:
     )
     scored = score_symbol(snapshot, scoring_config=config)
     assert scored.score == scored.component_scores["liquidity"]
+    assert scored.explanation != ""
 

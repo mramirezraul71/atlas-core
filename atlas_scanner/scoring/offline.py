@@ -11,6 +11,55 @@ class ScoredSymbol:
     symbol_snapshot: SymbolSnapshot
     score: float
     component_scores: dict[str, float]
+    explanation: str
+    strengths: tuple[str, ...]
+    penalties: tuple[str, ...]
+
+
+_COMPONENT_ORDER: tuple[str, ...] = ("liquidity", "price", "event_risk", "spread")
+_STRENGTH_LABELS: dict[str, str] = {
+    "liquidity": "high liquidity",
+    "price": "strong price range",
+    "event_risk": "contained event risk",
+    "spread": "tight bid/ask spread",
+}
+_PENALTY_LABELS: dict[str, str] = {
+    "liquidity": "weak liquidity",
+    "price": "unfavorable price range",
+    "event_risk": "elevated event risk",
+    "spread": "wide bid/ask spread",
+}
+
+
+def build_score_explanation(
+    component_scores: dict[str, float],
+) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
+    strengths: list[str] = []
+    penalties: list[str] = []
+
+    for component in _COMPONENT_ORDER:
+        value = component_scores[component]
+        if value >= 0.70:
+            strengths.append(_STRENGTH_LABELS[component])
+        if value <= 0.30:
+            penalties.append(_PENALTY_LABELS[component])
+
+    strengths_tuple = tuple(strengths)
+    penalties_tuple = tuple(penalties)
+
+    if strengths_tuple and penalties_tuple:
+        explanation = (
+            f"Pros: {', '.join(strengths_tuple)}. "
+            f"Risks: {', '.join(penalties_tuple)}."
+        )
+    elif strengths_tuple:
+        explanation = f"Pros: {', '.join(strengths_tuple)}."
+    elif penalties_tuple:
+        explanation = f"Risks: {', '.join(penalties_tuple)}."
+    else:
+        explanation = "Balanced profile with mixed component signals."
+
+    return explanation, strengths_tuple, penalties_tuple
 
 
 def normalize_value(value: float, lower: float, upper: float) -> float:
@@ -71,10 +120,15 @@ def score_symbol(
         "event_risk": event_risk_component,
         "spread": spread_component,
     }
+    explanation, strengths, penalties = build_score_explanation(component_scores)
+
     return ScoredSymbol(
         symbol_snapshot=snapshot,
         score=score,
         component_scores=component_scores,
+        explanation=explanation,
+        strengths=strengths,
+        penalties=penalties,
     )
 
 

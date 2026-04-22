@@ -79,6 +79,7 @@ def test_run_offline_scan_returns_ranked_symbols() -> None:
     assert hasattr(result, "ranked_symbols")
     assert len(result.ranked_symbols) == len(result.selected_symbols)
     assert result.meta["ranking_applied"] is True
+    assert result.meta["explanations_applied"] is True
     assert result.meta["total_ranked_symbols"] == len(result.ranked_symbols)
 
 
@@ -86,6 +87,11 @@ def test_run_offline_scan_ranked_symbols_are_sorted() -> None:
     result = run_offline_scan()
     scores = tuple(item.score for item in result.ranked_symbols)
     assert scores == tuple(sorted(scores, reverse=True))
+
+
+def test_run_offline_scan_ranked_symbols_include_explanations() -> None:
+    result = run_offline_scan()
+    assert all(item.explanation for item in result.ranked_symbols)
 
 
 def test_run_offline_scan_uses_config_scoring() -> None:

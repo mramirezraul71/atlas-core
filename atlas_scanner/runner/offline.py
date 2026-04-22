@@ -91,6 +91,7 @@ def run_offline_scan(
             "total_symbols_universe": len(symbols_universe),
             "total_symbols_final": len(symbols_filtered),
             "ranking_applied": True,
+            "explanations_applied": True,
             "total_ranked_symbols": len(ranked_symbols),
             "filters_applied": tuple(filters_applied),
         },
