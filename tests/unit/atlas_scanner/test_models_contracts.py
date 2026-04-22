@@ -69,19 +69,21 @@ def test_contracts_minimal_instantiation_and_defaults() -> None:
     assert len(detailed_breakdown.components) == 1
 
     candidate = CandidateOpportunity(
-        candidate_id="cand-001",
-        snapshot_id=snapshot.snapshot_id,
         symbol="SPY",
+        underlying_type="etf",
+        strategy_family="IRON_CONDOR",
         direction="long",
         thesis="mean_reversion_intraday",
-        score=0.62,
+        expiry="2026-05-15",
+        strike_range=(515.0, 525.0),
+        normalized_score=0.62,
         score_breakdown=detailed_breakdown,
-        time_horizon_minutes=60,
-        max_risk_pct=0.02,
-        expected_rr=2.0,
+        regime_id="neutral",
+        entry_reason="scanner_signal",
+        feature_snapshot=(("volatility_bucket", "mid"),),
     )
-    assert candidate.tags == ()
-    assert candidate.meta == {}
+    assert candidate.event_risk is False
+    assert candidate.feature_snapshot[0][0] == "volatility_bucket"
 
     metrics = ScannerRunMetrics(
         total_symbols=1,
@@ -94,12 +96,14 @@ def test_contracts_minimal_instantiation_and_defaults() -> None:
     assert metrics.warnings == ()
 
     result = ScannerRunResult(
-        snapshot_id=snapshot.snapshot_id,
-        started_at="2026-04-22T12:00:01Z",
-        finished_at="2026-04-22T12:00:02Z",
+        snapshot=snapshot,
         candidates=(candidate,),
+        filtered_symbols=("SPY",),
+        rejected_symbols=(),
+        error_symbols=(),
         metrics=metrics,
     )
-    assert result.meta == {}
-    assert result.candidates[0].candidate_id == "cand-001"
+    assert result.data_source_path == ()
+    assert result.warnings == ()
+    assert result.snapshot.snapshot_id == "snap-001"
 

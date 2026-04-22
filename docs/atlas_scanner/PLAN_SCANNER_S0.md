@@ -28,7 +28,7 @@ No se permiten alternativas de nombre en S0. Los nombres canonicos son:
 
 Incluido:
 - Estructura de paquete `atlas_scanner`.
-- `config.py` con dataclasses de thresholds/scoring y `SCORING_CONFIG`.
+- `config.py` con `ScoringConfig` (dominio de scoring) y `SCORING_CONFIG`.
 - `exceptions.py` con jerarquia base.
 - `models/*.py` con contratos S0 en dataclasses `frozen=True`.
 - Exportes en `atlas_scanner/__init__.py` y `atlas_scanner/models/__init__.py`.
@@ -48,6 +48,9 @@ Base documental:
 - `ATLAS_SCANNER_ARCHITECTURE.md`
 - `ATLAS_SCANNER_PHASES.md`
 
+Nota de config S0:
+- El umbral canonico de promocion vive en `SCORING_CONFIG.rules.promotion_threshold`.
+
 ### 4.1 `SymbolSnapshot` (minimo)
 - `symbol: str`
 - `asset_type: str`
@@ -66,18 +69,19 @@ Base documental:
 - `meta: dict[str, object]`
 
 ### 4.3 `CandidateOpportunity` (minimo)
-- `candidate_id: str`
-- `snapshot_id: str`
 - `symbol: str`
+- `underlying_type: str`
+- `strategy_family: str`
 - `direction: str` (`long` / `short`)
 - `thesis: str`
-- `score: float`
+- `expiry: str`
+- `strike_range: tuple[float, float]`
+- `normalized_score: float`
 - `score_breakdown: ScoreBreakdown`
-- `time_horizon_minutes: int`
-- `max_risk_pct: float`
-- `expected_rr: float`
-- `tags: tuple[str, ...]`
-- `meta: dict[str, object]`
+- `regime_id: str`
+- `entry_reason: str`
+- `feature_snapshot: tuple[tuple[str, str], ...]`
+- `event_risk: bool = False`
 
 ### 4.4 `ScannerRunMetrics` (minimo)
 - `total_symbols: int`
@@ -89,12 +93,14 @@ Base documental:
 - `warnings: tuple[str, ...]`
 
 ### 4.5 `ScannerRunResult` (minimo)
-- `snapshot_id: str`
-- `started_at: str` (ISO8601 UTC)
-- `finished_at: str` (ISO8601 UTC)
+- `snapshot: ScanSnapshot`
 - `candidates: tuple[CandidateOpportunity, ...]`
+- `filtered_symbols: tuple[str, ...]`
+- `rejected_symbols: tuple[str, ...]`
+- `error_symbols: tuple[str, ...]`
 - `metrics: ScannerRunMetrics`
-- `meta: dict[str, object]`
+- `data_source_path: tuple[str, ...] = ()`
+- `warnings: tuple[str, ...] = ()`
 
 Nota de contrato S0 sobre `meta`:
 - Aunque los modelos sean `@dataclass(frozen=True)`, en S0 se acepta
