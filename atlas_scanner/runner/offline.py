@@ -11,6 +11,7 @@ from atlas_scanner.filters.offline import (
 )
 from atlas_scanner.fixtures.offline import OFFLINE_REFERENCE_DATETIME, build_offline_snapshot
 from atlas_scanner.models import SymbolSnapshot
+from atlas_scanner.scoring.offline import ScoredSymbol, rank_symbols
 from atlas_scanner.universe.offline import select_offline_universe
 
 
@@ -19,6 +20,7 @@ class OfflineScanResult:
     config: ScanConfig
     reference_datetime: datetime
     selected_symbols: tuple[SymbolSnapshot, ...]
+    ranked_symbols: tuple[ScoredSymbol, ...]
     universe_name: str
     data_source_path: tuple[str, ...]
     meta: dict[str, object]
@@ -72,16 +74,21 @@ def run_offline_scan(
         )
         filters_applied.append("event_risk")
 
+    ranked_symbols = rank_symbols(symbols_filtered)
+
     return OfflineScanResult(
         config=effective_config,
         reference_datetime=OFFLINE_REFERENCE_DATETIME,
         selected_symbols=symbols_filtered,
+        ranked_symbols=ranked_symbols,
         universe_name=effective_config.universe_name,
         data_source_path=("mem",),
         meta={
             "total_symbols_snapshot": len(snapshot.symbols),
             "total_symbols_universe": len(symbols_universe),
             "total_symbols_final": len(symbols_filtered),
+            "ranking_applied": True,
+            "total_ranked_symbols": len(ranked_symbols),
             "filters_applied": tuple(filters_applied),
         },
     )

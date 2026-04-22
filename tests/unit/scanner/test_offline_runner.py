@@ -65,3 +65,18 @@ def test_run_offline_scan_uses_passed_config() -> None:
     assert result.data_source_path == ("mem",)
     assert result.meta["total_symbols_universe"] == len(OFFLINE_EXTENDED_SYMBOLS)
 
+
+def test_run_offline_scan_returns_ranked_symbols() -> None:
+    result = run_offline_scan()
+
+    assert hasattr(result, "ranked_symbols")
+    assert len(result.ranked_symbols) == len(result.selected_symbols)
+    assert result.meta["ranking_applied"] is True
+    assert result.meta["total_ranked_symbols"] == len(result.ranked_symbols)
+
+
+def test_run_offline_scan_ranked_symbols_are_sorted() -> None:
+    result = run_offline_scan()
+    scores = tuple(item.score for item in result.ranked_symbols)
+    assert scores == tuple(sorted(scores, reverse=True))
+
