@@ -12,3 +12,5 @@ snapshots/**/config/.env
 snapshots/**/.env
 __pycache__/
 *.pyc
+.venv_openbb/
+artifacts/
