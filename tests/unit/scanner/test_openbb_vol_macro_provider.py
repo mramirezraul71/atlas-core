@@ -83,6 +83,28 @@ class _StaticVolMacroProvider(VolMacroProvider):
         return MacroData(vix=17.0, macro_regime="favorable", seasonal_factor=1.3)
 
 
+@dataclass
+class _EmptyVolMacroProvider(VolMacroProvider):
+    def get_vol_data(self, symbol: str, as_of) -> VolData:
+        _ = (symbol, as_of)
+        return VolData()
+
+    def get_macro_data(self, as_of) -> MacroData:
+        _ = as_of
+        return MacroData()
+
+
+@dataclass
+class _FailingVolMacroProvider(VolMacroProvider):
+    def get_vol_data(self, symbol: str, as_of) -> VolData:
+        _ = (symbol, as_of)
+        raise RuntimeError("vol failed")
+
+    def get_macro_data(self, as_of) -> MacroData:
+        _ = as_of
+        raise RuntimeError("macro failed")
+
+
 def test_runner_uses_vol_macro_provider_data_in_meta_and_scoring(monkeypatch) -> None:
     snapshot_symbol = SymbolSnapshot(
         symbol="SPY",
@@ -113,6 +135,69 @@ def test_runner_uses_vol_macro_provider_data_in_meta_and_scoring(monkeypatch) ->
     assert "iv_history" in selected.meta
     assert "rv_annualized" in selected.meta
     assert selected.meta.get("macro_regime") == "favorable"
+    assert selected.meta["provider_status"]["vol_macro"]["vol_data"] == "ok"
+    assert selected.meta["provider_status"]["vol_macro"]["macro_data"] == "ok"
     assert result.ranked_symbols[0].component_scores["vol"] > 0.0
     assert result.ranked_symbols[0].component_scores["macro"] > 0.0
+    assert result.meta["providers"]["vol_macro"]["status"] == "ok"
+
+
+def test_runner_marks_vol_macro_empty_when_provider_returns_empty_payloads(monkeypatch) -> None:
+    snapshot_symbol = SymbolSnapshot(
+        symbol="SPY",
+        asset_type="etf",
+        base_currency="USD",
+        ref_price=500.0,
+        volatility_lookback=0.15,
+        liquidity_score=0.2,
+        meta={"event_risk": 0.2, "bid_ask_spread": 0.2},
+    )
+    mocked_snapshot = ScanSnapshot(
+        snapshot_id="offline-default-1",
+        created_at=OFFLINE_REFERENCE_DATETIME.isoformat(),
+        universe_name="default",
+        symbols=(snapshot_symbol,),
+        config_version=SCORING_CONFIG.config_version,
+        meta={},
+    )
+
+    def _fake_build_snapshot(*args, **kwargs):
+        _ = (args, kwargs)
+        return mocked_snapshot
+
+    monkeypatch.setattr("atlas_scanner.runner.offline.build_offline_snapshot", _fake_build_snapshot)
+    result = run_offline_scan(vol_macro_provider=_EmptyVolMacroProvider())
+    assert result.meta["providers"]["vol_macro"]["status"] == "empty"
+
+
+def test_runner_handles_vol_macro_provider_errors_without_crashing(monkeypatch) -> None:
+    snapshot_symbol = SymbolSnapshot(
+        symbol="SPY",
+        asset_type="etf",
+        base_currency="USD",
+        ref_price=500.0,
+        volatility_lookback=0.15,
+        liquidity_score=0.2,
+        meta={"event_risk": 0.2, "bid_ask_spread": 0.2},
+    )
+    mocked_snapshot = ScanSnapshot(
+        snapshot_id="offline-default-1",
+        created_at=OFFLINE_REFERENCE_DATETIME.isoformat(),
+        universe_name="default",
+        symbols=(snapshot_symbol,),
+        config_version=SCORING_CONFIG.config_version,
+        meta={},
+    )
+
+    def _fake_build_snapshot(*args, **kwargs):
+        _ = (args, kwargs)
+        return mocked_snapshot
+
+    monkeypatch.setattr("atlas_scanner.runner.offline.build_offline_snapshot", _fake_build_snapshot)
+    result = run_offline_scan(vol_macro_provider=_FailingVolMacroProvider())
+    assert len(result.ranked_symbols) == 1
+    assert result.meta["providers"]["vol_macro"]["status"] == "error"
+    selected = result.selected_symbols[0]
+    assert selected.meta["provider_status"]["vol_macro"]["vol_data"] == "error"
+    assert selected.meta["provider_status"]["vol_macro"]["macro_data"] == "error"
 

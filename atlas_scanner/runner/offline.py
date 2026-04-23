@@ -5,8 +5,6 @@ from dataclasses import asdict, dataclass
 from datetime import date, datetime
 
 from atlas_scanner.config_loader import ScanConfig, build_default_scan_config_offline
-from atlas_scanner.data.dummy_gamma_oi import DummyGammaOIProvider
-from atlas_scanner.data.openbb_vol_macro import OpenBBVolMacroProvider
 from atlas_scanner.features.gamma import StrikeGamma
 from atlas_scanner.features.builders import (
     GammaFeatureInput,
@@ -22,6 +20,13 @@ from atlas_scanner.fixtures.offline import OFFLINE_REFERENCE_DATETIME, build_off
 from atlas_scanner.models import ProCandidateOpportunity, SymbolSnapshot
 from atlas_scanner.ports.gamma_oi_provider import GammaData, GammaOIProvider, OIFlowData
 from atlas_scanner.ports.vol_macro_provider import MacroData, VolData, VolMacroProvider
+from atlas_scanner.runner.provider_resolution import (
+    is_empty_gamma_data,
+    is_empty_macro_data,
+    is_empty_oi_flow_data,
+    is_empty_vol_data,
+    resolve_offline_providers,
+)
 from atlas_scanner.scoring.offline import ScoredSymbol, rank_symbols
 from atlas_scanner.universe.offline import select_offline_universe
 
@@ -90,6 +95,7 @@ def _provider_enriched_snapshot(
     macro_data: MacroData,
     gamma_data: GammaData,
     oi_flow_data: OIFlowData,
+    provider_status: dict[str, dict[str, str]],
 ) -> SymbolSnapshot:
     merged_meta = dict(snapshot.meta)
     if vol_data.iv_history:
@@ -139,6 +145,7 @@ def _provider_enriched_snapshot(
         merged_meta["put_volume"] = oi_flow_data.put_volume
     if oi_flow_data.meta:
         merged_meta["oi_flow_meta"] = dict(oi_flow_data.meta)
+    merged_meta["provider_status"] = provider_status
 
     return SymbolSnapshot(
         symbol=snapshot.symbol,
@@ -194,28 +201,64 @@ def run_offline_scan(
     max_event_risk: float | int | None = None,
 ) -> OfflineScanResult:
     effective_config = config or build_default_scan_config_offline()
-    vol_provider = vol_macro_provider or OpenBBVolMacroProvider()
-    gamma_provider = gamma_oi_provider or DummyGammaOIProvider()
+    providers = resolve_offline_providers(
+        vol_macro_provider=vol_macro_provider,
+        gamma_oi_provider=gamma_oi_provider,
+    )
+    vol_provider = providers.vol_macro_provider
+    gamma_provider = providers.gamma_oi_provider
     snapshot = build_offline_snapshot(config=effective_config)
     as_of_date: date = OFFLINE_REFERENCE_DATETIME.date()
+    vol_macro_call_counts = {
+        "vol_data": {"ok": 0, "empty": 0, "error": 0},
+        "macro_data": {"ok": 0, "empty": 0, "error": 0},
+    }
+    gamma_oi_call_counts = {
+        "gamma_data": {"ok": 0, "empty": 0, "error": 0},
+        "oi_flow_data": {"ok": 0, "empty": 0, "error": 0},
+    }
     try:
         macro_data = vol_provider.get_macro_data(as_of_date)
+        if is_empty_macro_data(macro_data):
+            macro_status = "empty"
+        else:
+            macro_status = "ok"
     except Exception:
         macro_data = MacroData()
+        macro_status = "error"
+    vol_macro_call_counts["macro_data"][macro_status] += 1
     provider_enriched_symbols: list[SymbolSnapshot] = []
     for symbol_snapshot in snapshot.symbols:
         try:
             vol_data = vol_provider.get_vol_data(symbol_snapshot.symbol, as_of_date)
+            if is_empty_vol_data(vol_data):
+                vol_status = "empty"
+            else:
+                vol_status = "ok"
         except Exception:
             vol_data = VolData()
+            vol_status = "error"
+        vol_macro_call_counts["vol_data"][vol_status] += 1
         try:
             gamma_data = gamma_provider.get_gamma_data(symbol_snapshot.symbol, as_of_date)
+            if is_empty_gamma_data(gamma_data):
+                gamma_status = "empty"
+            else:
+                gamma_status = "ok"
         except Exception:
             gamma_data = GammaData()
+            gamma_status = "error"
+        gamma_oi_call_counts["gamma_data"][gamma_status] += 1
         try:
             oi_flow_data = gamma_provider.get_oi_flow_data(symbol_snapshot.symbol, as_of_date)
+            if is_empty_oi_flow_data(oi_flow_data):
+                oi_flow_status = "empty"
+            else:
+                oi_flow_status = "ok"
         except Exception:
             oi_flow_data = OIFlowData()
+            oi_flow_status = "error"
+        gamma_oi_call_counts["oi_flow_data"][oi_flow_status] += 1
         provider_enriched_symbols.append(
             _provider_enriched_snapshot(
                 symbol_snapshot,
@@ -223,6 +266,16 @@ def run_offline_scan(
                 macro_data=macro_data,
                 gamma_data=gamma_data,
                 oi_flow_data=oi_flow_data,
+                provider_status={
+                    "vol_macro": {
+                        "vol_data": vol_status,
+                        "macro_data": macro_status,
+                    },
+                    "gamma_oi": {
+                        "gamma_data": gamma_status,
+                        "oi_flow_data": oi_flow_status,
+                    },
+                },
             )
         )
     snapshot_symbols = tuple(provider_enriched_symbols)
@@ -271,6 +324,21 @@ def run_offline_scan(
         for item in ranked_symbols
     )
 
+    vol_macro_status = (
+        "error"
+        if vol_macro_call_counts["vol_data"]["error"] > 0 or vol_macro_call_counts["macro_data"]["error"] > 0
+        else "ok"
+        if vol_macro_call_counts["vol_data"]["ok"] > 0 or vol_macro_call_counts["macro_data"]["ok"] > 0
+        else "empty"
+    )
+    gamma_oi_status = (
+        "error"
+        if gamma_oi_call_counts["gamma_data"]["error"] > 0 or gamma_oi_call_counts["oi_flow_data"]["error"] > 0
+        else "ok"
+        if gamma_oi_call_counts["gamma_data"]["ok"] > 0 or gamma_oi_call_counts["oi_flow_data"]["ok"] > 0
+        else "empty"
+    )
+
     return OfflineScanResult(
         config=effective_config,
         reference_datetime=OFFLINE_REFERENCE_DATETIME,
@@ -289,6 +357,18 @@ def run_offline_scan(
             "candidate_features_enriched": True,
             "vol_macro_provider_applied": True,
             "gamma_oi_provider_applied": True,
+            "providers": {
+                "vol_macro": {
+                    "name": type(vol_provider).__name__,
+                    "status": vol_macro_status,
+                    "calls": vol_macro_call_counts,
+                },
+                "gamma_oi": {
+                    "name": type(gamma_provider).__name__,
+                    "status": gamma_oi_status,
+                    "calls": gamma_oi_call_counts,
+                },
+            },
             "filters_applied": tuple(filters_applied),
         },
     )

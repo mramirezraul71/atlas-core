@@ -33,6 +33,9 @@ def test_run_offline_scan_default_config_no_filters() -> None:
         >= result.meta["total_symbols_final"]
     )
     assert result.meta["filters_applied"] == ()
+    assert "providers" in result.meta
+    assert "vol_macro" in result.meta["providers"]
+    assert "gamma_oi" in result.meta["providers"]
 
 
 def test_run_offline_scan_with_liquidity_filter() -> None:
