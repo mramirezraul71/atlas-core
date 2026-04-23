@@ -13,6 +13,23 @@ from atlas_scanner.config_loader import (
     VolScoringConfig,
 )
 from atlas_scanner.features.builders import build_gamma_features, build_vol_features
+from atlas_scanner.features.flow import (
+    normalize_call_put_volume_ratio,
+    normalize_oi_change,
+    normalize_volume_imbalance,
+    resolve_volume_imbalance,
+)
+from atlas_scanner.features.macro import (
+    normalize_event_risk,
+    normalize_seasonal_factor,
+    score_macro_regime,
+    score_vix_bucket,
+)
+from atlas_scanner.features.price import (
+    interpret_trend_state,
+    normalize_adx,
+    normalize_distance_to_vwap,
+)
 from atlas_scanner.models import SymbolSnapshot
 from atlas_scanner.models.domain_models import GammaFeatures, VolFeatures
 
@@ -277,25 +294,27 @@ def compute_price_score(
     """
     score_parts: list[tuple[float, float]] = []
 
-    adx_14 = _as_optional_float(snapshot.meta.get("adx_14"))
-    if adx_14 is not None:
-        ranging_score = (1.0 - normalize_value(adx_14, config.adx_ranging_max, config.adx_trending_min)) * 100.0
-        score_parts.append((_clamp_0_100(ranging_score), 0.50))
+    adx_score = normalize_adx(
+        adx=_as_optional_float(snapshot.meta.get("adx_14")),
+        ranging_max=config.adx_ranging_max,
+        trending_min=config.adx_trending_min,
+    )
+    if adx_score is not None:
+        score_parts.append((_clamp_0_100(adx_score), 0.50))
 
-    trend_state = snapshot.meta.get("trend_state")
-    if isinstance(trend_state, str):
-        normalized = trend_state.strip().upper()
-        if normalized == "RANGING":
-            score_parts.append((80.0, 0.30))
-        elif normalized in {"TREND_UP", "TREND_DOWN"}:
-            score_parts.append((60.0, 0.30))
-        elif normalized == "UNKNOWN":
-            score_parts.append((50.0, 0.30))
+    trend_score = interpret_trend_state(
+        trend_state=snapshot.meta.get("trend_state")
+        if isinstance(snapshot.meta.get("trend_state"), str)
+        else None
+    )
+    if trend_score is not None:
+        score_parts.append((_clamp_0_100(trend_score), 0.30))
 
-    distance_to_vwap = _as_optional_float(snapshot.meta.get("distance_to_vwap"))
-    if distance_to_vwap is not None:
-        # 0% deviation is best signal quality, >=5% is considered stretched.
-        vwap_score = (1.0 - min(abs(distance_to_vwap) / 0.05, 1.0)) * 100.0
+    vwap_score = normalize_distance_to_vwap(
+        distance=_as_optional_float(snapshot.meta.get("distance_to_vwap")),
+        max_distance=0.05,
+    )
+    if vwap_score is not None:
         score_parts.append((_clamp_0_100(vwap_score), 0.20))
 
     if not score_parts:
@@ -314,39 +333,31 @@ def compute_macro_score(
     """
     score_parts: list[tuple[float, float]] = []
 
-    regime = snapshot.meta.get("macro_regime")
-    if isinstance(regime, str):
-        normalized = regime.strip().lower()
-        if normalized in {"risk_on", "bullish", "favorable"}:
-            score_parts.append((80.0, 0.40))
-        elif normalized in {"neutral", "mixed"}:
-            score_parts.append((50.0, 0.40))
-        elif normalized in {"risk_off", "bearish", "adverse"}:
-            score_parts.append((20.0, 0.40))
+    regime_score = score_macro_regime(
+        regime=snapshot.meta.get("macro_regime")
+        if isinstance(snapshot.meta.get("macro_regime"), str)
+        else None
+    )
+    if regime_score is not None:
+        score_parts.append((regime_score, 0.40))
 
     event_risk = _as_optional_float(snapshot.meta.get("event_risk"))
-    if event_risk is not None:
-        event_score = (1.0 - max(0.0, min(1.0, event_risk))) * 100.0
+    event_score = normalize_event_risk(event_risk=event_risk)
+    if event_score is not None:
         score_parts.append((event_score, 0.40))
-        if config.block_on_event_risk_high and event_risk >= 0.9:
+        if config.block_on_event_risk_high and event_risk is not None and event_risk >= 0.9:
             return 0.0
 
-    vix_value = _as_optional_float(snapshot.meta.get("vix"))
-    if vix_value is not None:
-        if vix_value <= 20.0:
-            score_parts.append((80.0, 0.20))
-        elif vix_value <= 28.0:
-            score_parts.append((55.0, 0.20))
-        else:
-            score_parts.append((30.0, 0.20))
+    vix_score = score_vix_bucket(vix=_as_optional_float(snapshot.meta.get("vix")))
+    if vix_score is not None:
+        score_parts.append((vix_score, 0.20))
 
-    seasonal_factor = _as_optional_float(snapshot.meta.get("seasonal_factor"))
-    if seasonal_factor is not None:
-        seasonal_score = normalize_value(
-            seasonal_factor,
-            config.seasonal_factor_min,
-            config.seasonal_factor_max,
-        ) * 100.0
+    seasonal_score = normalize_seasonal_factor(
+        seasonal_factor=_as_optional_float(snapshot.meta.get("seasonal_factor")),
+        seasonal_factor_min=config.seasonal_factor_min,
+        seasonal_factor_max=config.seasonal_factor_max,
+    )
+    if seasonal_score is not None:
         score_parts.append((seasonal_score, 0.20))
 
     if not score_parts:
@@ -369,31 +380,28 @@ def compute_oi_flow_score(
     """
     score_parts: list[tuple[float, float]] = []
 
-    oi_change_1d_pct = _as_optional_float(snapshot.meta.get("oi_change_1d_pct"))
-    if oi_change_1d_pct is not None:
-        oi_upper = max(config.oi_change_min_pct + 10.0, config.oi_change_min_pct + 1.0)
-        oi_change_score = normalize_value(oi_change_1d_pct, config.oi_change_min_pct, oi_upper) * 100.0
+    oi_change_score = normalize_oi_change(
+        oi_change_1d_pct=_as_optional_float(snapshot.meta.get("oi_change_1d_pct")),
+        oi_change_min_pct=config.oi_change_min_pct,
+    )
+    if oi_change_score is not None:
         score_parts.append((_clamp_0_100(oi_change_score), 0.40))
 
-    call_put_volume_ratio = _as_optional_float(snapshot.meta.get("call_put_volume_ratio"))
-    if call_put_volume_ratio is not None:
-        ratio_upper = min(2.0, config.call_put_volume_ratio_max)
-        ratio_upper = max(config.call_put_volume_ratio_min + 0.1, ratio_upper)
-        ratio_component = normalize_value(
-            call_put_volume_ratio,
-            config.call_put_volume_ratio_min,
-            ratio_upper,
-        ) * 100.0
-        score_parts.append((_clamp_0_100(ratio_component), 0.40))
+    ratio_score = normalize_call_put_volume_ratio(
+        ratio=_as_optional_float(snapshot.meta.get("call_put_volume_ratio")),
+        ratio_min=config.call_put_volume_ratio_min,
+        ratio_max=config.call_put_volume_ratio_max,
+    )
+    if ratio_score is not None:
+        score_parts.append((_clamp_0_100(ratio_score), 0.40))
 
-    volume_imbalance = _as_optional_float(snapshot.meta.get("volume_imbalance"))
-    if volume_imbalance is None:
-        call_volume = _as_optional_float(snapshot.meta.get("call_volume"))
-        put_volume = _as_optional_float(snapshot.meta.get("put_volume"))
-        if call_volume is not None and put_volume is not None and (call_volume + put_volume) > 0:
-            volume_imbalance = (call_volume - put_volume) / (call_volume + put_volume)
-    if volume_imbalance is not None:
-        imbalance_score = ((max(-1.0, min(1.0, volume_imbalance)) + 1.0) / 2.0) * 100.0
+    imbalance_value = resolve_volume_imbalance(
+        volume_imbalance=_as_optional_float(snapshot.meta.get("volume_imbalance")),
+        call_volume=_as_optional_float(snapshot.meta.get("call_volume")),
+        put_volume=_as_optional_float(snapshot.meta.get("put_volume")),
+    )
+    imbalance_score = normalize_volume_imbalance(imbalance=imbalance_value)
+    if imbalance_score is not None:
         score_parts.append((_clamp_0_100(imbalance_score), 0.20))
 
     if not score_parts:
