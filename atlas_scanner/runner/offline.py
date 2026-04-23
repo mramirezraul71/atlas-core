@@ -199,8 +199,15 @@ def run_offline_scan(
     min_ref_price: float | int | None = None,
     max_ref_price: float | int | None = None,
     max_event_risk: float | int | None = None,
+    as_of_date: date | None = None,
+    symbol_allowlist: Sequence[str] | None = None,
 ) -> OfflineScanResult:
     effective_config = config or build_default_scan_config_offline()
+    effective_as_of_date = as_of_date or OFFLINE_REFERENCE_DATETIME.date()
+    reference_datetime = datetime.combine(
+        effective_as_of_date,
+        OFFLINE_REFERENCE_DATETIME.timetz(),
+    )
     providers = resolve_offline_providers(
         vol_macro_provider=vol_macro_provider,
         gamma_oi_provider=gamma_oi_provider,
@@ -208,7 +215,16 @@ def run_offline_scan(
     vol_provider = providers.vol_macro_provider
     gamma_provider = providers.gamma_oi_provider
     snapshot = build_offline_snapshot(config=effective_config)
-    as_of_date: date = OFFLINE_REFERENCE_DATETIME.date()
+    allowed_symbols: set[str] | None = None
+    if symbol_allowlist is not None:
+        allowed_symbols = {symbol.strip().upper() for symbol in symbol_allowlist if symbol.strip()}
+    base_snapshot_symbols = snapshot.symbols
+    if allowed_symbols is not None:
+        base_snapshot_symbols = tuple(
+            symbol_snapshot
+            for symbol_snapshot in snapshot.symbols
+            if symbol_snapshot.symbol.upper() in allowed_symbols
+        )
     vol_macro_call_counts = {
         "vol_data": {"ok": 0, "empty": 0, "error": 0},
         "macro_data": {"ok": 0, "empty": 0, "error": 0},
@@ -218,7 +234,7 @@ def run_offline_scan(
         "oi_flow_data": {"ok": 0, "empty": 0, "error": 0},
     }
     try:
-        macro_data = vol_provider.get_macro_data(as_of_date)
+        macro_data = vol_provider.get_macro_data(effective_as_of_date)
         if is_empty_macro_data(macro_data):
             macro_status = "empty"
         else:
@@ -228,9 +244,9 @@ def run_offline_scan(
         macro_status = "error"
     vol_macro_call_counts["macro_data"][macro_status] += 1
     provider_enriched_symbols: list[SymbolSnapshot] = []
-    for symbol_snapshot in snapshot.symbols:
+    for symbol_snapshot in base_snapshot_symbols:
         try:
-            vol_data = vol_provider.get_vol_data(symbol_snapshot.symbol, as_of_date)
+            vol_data = vol_provider.get_vol_data(symbol_snapshot.symbol, effective_as_of_date)
             if is_empty_vol_data(vol_data):
                 vol_status = "empty"
             else:
@@ -240,7 +256,7 @@ def run_offline_scan(
             vol_status = "error"
         vol_macro_call_counts["vol_data"][vol_status] += 1
         try:
-            gamma_data = gamma_provider.get_gamma_data(symbol_snapshot.symbol, as_of_date)
+            gamma_data = gamma_provider.get_gamma_data(symbol_snapshot.symbol, effective_as_of_date)
             if is_empty_gamma_data(gamma_data):
                 gamma_status = "empty"
             else:
@@ -250,7 +266,7 @@ def run_offline_scan(
             gamma_status = "error"
         gamma_oi_call_counts["gamma_data"][gamma_status] += 1
         try:
-            oi_flow_data = gamma_provider.get_oi_flow_data(symbol_snapshot.symbol, as_of_date)
+            oi_flow_data = gamma_provider.get_oi_flow_data(symbol_snapshot.symbol, effective_as_of_date)
             if is_empty_oi_flow_data(oi_flow_data):
                 oi_flow_status = "empty"
             else:
@@ -320,7 +336,7 @@ def run_offline_scan(
         scoring_config=effective_config.scoring,
     )
     candidate_opportunities = tuple(
-        _candidate_from_scored(scored=item, as_of=OFFLINE_REFERENCE_DATETIME)
+        _candidate_from_scored(scored=item, as_of=reference_datetime)
         for item in ranked_symbols
     )
 
@@ -341,14 +357,15 @@ def run_offline_scan(
 
     return OfflineScanResult(
         config=effective_config,
-        reference_datetime=OFFLINE_REFERENCE_DATETIME,
+        reference_datetime=reference_datetime,
         selected_symbols=symbols_filtered,
         ranked_symbols=ranked_symbols,
         candidate_opportunities=candidate_opportunities,
         universe_name=effective_config.universe_name,
         data_source_path=("mem",),
         meta={
-            "total_symbols_snapshot": len(snapshot_symbols),
+            "as_of_date": effective_as_of_date.isoformat(),
+            "total_symbols_snapshot": len(base_snapshot_symbols),
             "total_symbols_universe": len(symbols_universe),
             "total_symbols_final": len(symbols_filtered),
             "ranking_applied": True,
@@ -370,6 +387,7 @@ def run_offline_scan(
                 },
             },
             "filters_applied": tuple(filters_applied),
+            "symbol_allowlist_applied": allowed_symbols is not None,
         },
     )
 
