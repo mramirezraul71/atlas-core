@@ -49,6 +49,20 @@ class _FailingGammaOIProvider(GammaOIProvider):
 
 
 @dataclass
+class _NoBackendGammaOIProvider(GammaOIProvider):
+    def get_gamma_data(self, symbol: str, as_of) -> GammaData:
+        _ = (symbol, as_of)
+        return GammaData()
+
+    def get_oi_flow_data(self, symbol: str, as_of) -> OIFlowData:
+        _ = (symbol, as_of)
+        return OIFlowData()
+
+    def get_diagnostics(self) -> dict[str, str]:
+        return {"gamma_data": "no_backend", "oi_flow_data": "no_backend"}
+
+
+@dataclass
 class _StaticGammaOIProvider(GammaOIProvider):
     def get_gamma_data(self, symbol: str, as_of) -> GammaData:
         _ = (symbol, as_of)
@@ -188,4 +202,38 @@ def test_runner_handles_gamma_oi_provider_errors_without_crashing(monkeypatch) -
     selected = result.selected_symbols[0]
     assert selected.meta["provider_status"]["gamma_oi"]["gamma_data"] == "error"
     assert selected.meta["provider_status"]["gamma_oi"]["oi_flow_data"] == "error"
+
+
+def test_runner_marks_gamma_oi_no_backend_when_diagnostics_report_it(monkeypatch) -> None:
+    snapshot_symbol = SymbolSnapshot(
+        symbol="SPY",
+        asset_type="etf",
+        base_currency="USD",
+        ref_price=500.0,
+        volatility_lookback=0.20,
+        liquidity_score=0.3,
+        meta={"event_risk": 0.2, "bid_ask_spread": 0.2},
+    )
+    mocked_snapshot = ScanSnapshot(
+        snapshot_id="offline-default-1",
+        created_at=OFFLINE_REFERENCE_DATETIME.isoformat(),
+        universe_name="default",
+        symbols=(snapshot_symbol,),
+        config_version=SCORING_CONFIG.config_version,
+        meta={},
+    )
+
+    def _fake_build_snapshot(*args, **kwargs):
+        _ = (args, kwargs)
+        return mocked_snapshot
+
+    monkeypatch.setattr("atlas_scanner.runner.offline.build_offline_snapshot", _fake_build_snapshot)
+    result = run_offline_scan(
+        vol_macro_provider=_StaticVolMacroProvider(),
+        gamma_oi_provider=_NoBackendGammaOIProvider(),
+    )
+
+    assert result.meta["providers"]["gamma_oi"]["status"] == "no_backend"
+    assert result.meta["providers"]["gamma_oi"]["calls"]["gamma_data"]["no_backend"] == 1
+    assert result.meta["providers"]["gamma_oi"]["calls"]["oi_flow_data"]["no_backend"] == 1
 

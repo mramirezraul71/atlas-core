@@ -107,6 +107,9 @@ def test_openbb_gamma_oi_provider_returns_empty_when_client_unavailable() -> Non
     assert flow.call_volume is None
     assert flow.put_volume is None
     assert flow.meta == {}
+    diagnostics = provider.get_diagnostics()
+    assert diagnostics["gamma_data"] == "no_backend"
+    assert diagnostics["oi_flow_data"] == "no_backend"
 
 
 def test_openbb_gamma_oi_provider_handles_vendor_errors_fail_soft() -> None:
@@ -121,6 +124,9 @@ def test_openbb_gamma_oi_provider_handles_vendor_errors_fail_soft() -> None:
     assert flow.oi_change_1d_pct is None
     assert flow.call_put_volume_ratio is None
     assert flow.meta == {}
+    diagnostics = provider.get_diagnostics()
+    assert diagnostics["gamma_data"] == "error"
+    assert diagnostics["oi_flow_data"] == "error"
 
 
 def test_openbb_gamma_oi_provider_stays_as_pure_translator_contract() -> None:

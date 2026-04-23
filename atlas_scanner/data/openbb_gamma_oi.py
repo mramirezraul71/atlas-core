@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
@@ -131,6 +131,7 @@ class OpenBBGammaOIProvider(GammaOIProvider):
 
     lookback_days: int = 5
     obb_client: Any | None = None
+    diagnostics: dict[str, str] = field(default_factory=dict)
 
     def _resolve_obb_client(self) -> Any | None:
         if self.obb_client is not None:
@@ -142,10 +143,16 @@ class OpenBBGammaOIProvider(GammaOIProvider):
         except Exception:
             return None
 
-    def _load_option_rows(self, symbol: str, as_of: date) -> list[dict[str, Any]]:
+    def _set_diagnostic(self, key: str, status: str) -> None:
+        self.diagnostics[key] = status
+
+    def get_diagnostics(self) -> dict[str, str]:
+        return dict(self.diagnostics)
+
+    def _load_option_rows(self, symbol: str, as_of: date) -> tuple[list[dict[str, Any]], str]:
         obb = self._resolve_obb_client()
         if obb is None:
-            return []
+            return [], "no_backend"
         try:
             start = as_of - timedelta(days=max(1, self.lookback_days))
             response = obb.derivatives.options.chains(
@@ -153,13 +160,15 @@ class OpenBBGammaOIProvider(GammaOIProvider):
                 start_date=start.isoformat(),
                 end_date=as_of.isoformat(),
             )
-            return _extract_records(response)
+            rows = _extract_records(response)
+            return rows, "ok" if rows else "empty"
         except Exception:
-            return []
+            return [], "error"
 
     def get_gamma_data(self, symbol: str, as_of: date) -> GammaData:
-        rows = self._load_option_rows(symbol=symbol, as_of=as_of)
+        rows, source_status = self._load_option_rows(symbol=symbol, as_of=as_of)
         if not rows:
+            self._set_diagnostic("gamma_data", source_status)
             return GammaData()
 
         strike_state: dict[float, dict[str, float]] = {}
@@ -209,15 +218,18 @@ class OpenBBGammaOIProvider(GammaOIProvider):
             if state["call_gamma"] != 0.0 or state["put_gamma"] != 0.0
         )
         if not strikes and not net_gex_seen:
+            self._set_diagnostic("gamma_data", "empty")
             return GammaData()
+        self._set_diagnostic("gamma_data", "ok")
         return GammaData(
             strikes=strikes,
             net_gex=net_gex_accumulator if net_gex_seen else None,
         )
 
     def get_oi_flow_data(self, symbol: str, as_of: date) -> OIFlowData:
-        rows = self._load_option_rows(symbol=symbol, as_of=as_of)
+        rows, source_status = self._load_option_rows(symbol=symbol, as_of=as_of)
         if not rows:
+            self._set_diagnostic("oi_flow_data", source_status)
             return OIFlowData()
 
         call_volume = 0.0
@@ -262,8 +274,10 @@ class OpenBBGammaOIProvider(GammaOIProvider):
             oi_change_1d_pct = sum(oi_change_values) / len(oi_change_values)
 
         if call_volume <= 0 and put_volume <= 0 and call_oi <= 0 and put_oi <= 0 and oi_change_1d_pct is None:
+            self._set_diagnostic("oi_flow_data", "empty")
             return OIFlowData()
 
+        self._set_diagnostic("oi_flow_data", "ok")
         return OIFlowData(
             oi_change_1d_pct=oi_change_1d_pct,
             call_put_volume_ratio=ratio,

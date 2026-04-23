@@ -31,6 +31,28 @@ from atlas_scanner.scoring.offline import ScoredSymbol, rank_symbols
 from atlas_scanner.universe.offline import select_offline_universe
 
 
+def _normalize_provider_status(status: object) -> str | None:
+    if not isinstance(status, str):
+        return None
+    value = status.strip().lower()
+    if value in {"ok", "empty", "error", "no_backend"}:
+        return value
+    return None
+
+
+def _status_from_provider_diagnostics(provider: object, field: str) -> str | None:
+    diagnostics_getter = getattr(provider, "get_diagnostics", None)
+    if not callable(diagnostics_getter):
+        return None
+    try:
+        diagnostics = diagnostics_getter()
+    except Exception:
+        return None
+    if not isinstance(diagnostics, Mapping):
+        return None
+    return _normalize_provider_status(diagnostics.get(field))
+
+
 @dataclass(frozen=True)
 class OfflineScanResult:
     config: ScanConfig
@@ -226,12 +248,12 @@ def run_offline_scan(
             if symbol_snapshot.symbol.upper() in allowed_symbols
         )
     vol_macro_call_counts = {
-        "vol_data": {"ok": 0, "empty": 0, "error": 0},
-        "macro_data": {"ok": 0, "empty": 0, "error": 0},
+        "vol_data": {"ok": 0, "empty": 0, "error": 0, "no_backend": 0},
+        "macro_data": {"ok": 0, "empty": 0, "error": 0, "no_backend": 0},
     }
     gamma_oi_call_counts = {
-        "gamma_data": {"ok": 0, "empty": 0, "error": 0},
-        "oi_flow_data": {"ok": 0, "empty": 0, "error": 0},
+        "gamma_data": {"ok": 0, "empty": 0, "error": 0, "no_backend": 0},
+        "oi_flow_data": {"ok": 0, "empty": 0, "error": 0, "no_backend": 0},
     }
     try:
         macro_data = vol_provider.get_macro_data(effective_as_of_date)
@@ -242,6 +264,7 @@ def run_offline_scan(
     except Exception:
         macro_data = MacroData()
         macro_status = "error"
+    macro_status = _status_from_provider_diagnostics(vol_provider, "macro_data") or macro_status
     vol_macro_call_counts["macro_data"][macro_status] += 1
     provider_enriched_symbols: list[SymbolSnapshot] = []
     for symbol_snapshot in base_snapshot_symbols:
@@ -254,6 +277,7 @@ def run_offline_scan(
         except Exception:
             vol_data = VolData()
             vol_status = "error"
+        vol_status = _status_from_provider_diagnostics(vol_provider, "vol_data") or vol_status
         vol_macro_call_counts["vol_data"][vol_status] += 1
         try:
             gamma_data = gamma_provider.get_gamma_data(symbol_snapshot.symbol, effective_as_of_date)
@@ -264,6 +288,7 @@ def run_offline_scan(
         except Exception:
             gamma_data = GammaData()
             gamma_status = "error"
+        gamma_status = _status_from_provider_diagnostics(gamma_provider, "gamma_data") or gamma_status
         gamma_oi_call_counts["gamma_data"][gamma_status] += 1
         try:
             oi_flow_data = gamma_provider.get_oi_flow_data(symbol_snapshot.symbol, effective_as_of_date)
@@ -274,6 +299,7 @@ def run_offline_scan(
         except Exception:
             oi_flow_data = OIFlowData()
             oi_flow_status = "error"
+        oi_flow_status = _status_from_provider_diagnostics(gamma_provider, "oi_flow_data") or oi_flow_status
         gamma_oi_call_counts["oi_flow_data"][oi_flow_status] += 1
         provider_enriched_symbols.append(
             _provider_enriched_snapshot(
@@ -345,6 +371,8 @@ def run_offline_scan(
         if vol_macro_call_counts["vol_data"]["error"] > 0 or vol_macro_call_counts["macro_data"]["error"] > 0
         else "ok"
         if vol_macro_call_counts["vol_data"]["ok"] > 0 or vol_macro_call_counts["macro_data"]["ok"] > 0
+        else "no_backend"
+        if vol_macro_call_counts["vol_data"]["no_backend"] > 0 or vol_macro_call_counts["macro_data"]["no_backend"] > 0
         else "empty"
     )
     gamma_oi_status = (
@@ -352,6 +380,8 @@ def run_offline_scan(
         if gamma_oi_call_counts["gamma_data"]["error"] > 0 or gamma_oi_call_counts["oi_flow_data"]["error"] > 0
         else "ok"
         if gamma_oi_call_counts["gamma_data"]["ok"] > 0 or gamma_oi_call_counts["oi_flow_data"]["ok"] > 0
+        else "no_backend"
+        if gamma_oi_call_counts["gamma_data"]["no_backend"] > 0 or gamma_oi_call_counts["oi_flow_data"]["no_backend"] > 0
         else "empty"
     )
 
@@ -388,6 +418,9 @@ def run_offline_scan(
             },
             "filters_applied": tuple(filters_applied),
             "symbol_allowlist_applied": allowed_symbols is not None,
+            # Current default path remains fixture-driven; provider-backed universe can
+            # be introduced in future phases by emitting this marker from snapshot builders.
+            "universe_mode": str(snapshot.meta.get("universe_mode", "fixtures")),
         },
     )
 

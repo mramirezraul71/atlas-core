@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from math import log, sqrt
 from statistics import pstdev
@@ -82,6 +82,7 @@ class OpenBBVolMacroProvider(VolMacroProvider):
     iv_lookback_days: int = 100
     rv_horizons_days: tuple[int, ...] = (5, 10, 20, 60)
     obb_client: Any | None = None
+    diagnostics: dict[str, str] = field(default_factory=dict)
 
     def _resolve_obb_client(self) -> Any | None:
         if self.obb_client is not None:
@@ -93,14 +94,22 @@ class OpenBBVolMacroProvider(VolMacroProvider):
         except Exception:
             return None
 
+    def _set_diagnostic(self, key: str, status: str) -> None:
+        self.diagnostics[key] = status
+
+    def get_diagnostics(self) -> dict[str, str]:
+        return dict(self.diagnostics)
+
     def get_vol_data(self, symbol: str, as_of: date) -> VolData:
         obb = self._resolve_obb_client()
         if obb is None:
+            self._set_diagnostic("vol_data", "no_backend")
             return VolData()
 
         start = as_of - timedelta(days=self.iv_lookback_days)
 
         iv_history: tuple[float, ...] = ()
+        chain_failed = False
         try:
             chain_response = obb.derivatives.options.chains(
                 symbol,
@@ -118,8 +127,10 @@ class OpenBBVolMacroProvider(VolMacroProvider):
             iv_history = tuple(iv_values)
         except Exception:
             iv_history = ()
+            chain_failed = True
 
         rv_annualized: dict[str, float] = {}
+        price_failed = False
         try:
             price_response = obb.equity.price.historical(
                 symbol,
@@ -134,8 +145,15 @@ class OpenBBVolMacroProvider(VolMacroProvider):
                     rv_annualized[f"{horizon}d"] = rv_value
         except Exception:
             rv_annualized = {}
+            price_failed = True
 
         iv_current = iv_history[-1] if iv_history else None
+        if iv_current is not None or rv_annualized:
+            self._set_diagnostic("vol_data", "ok")
+        elif chain_failed or price_failed:
+            self._set_diagnostic("vol_data", "error")
+        else:
+            self._set_diagnostic("vol_data", "empty")
         return VolData(
             iv_history=iv_history,
             iv_current=iv_current,
@@ -145,9 +163,11 @@ class OpenBBVolMacroProvider(VolMacroProvider):
     def get_macro_data(self, as_of: date) -> MacroData:
         obb = self._resolve_obb_client()
         if obb is None:
+            self._set_diagnostic("macro_data", "no_backend")
             return MacroData()
 
         vix_value: float | None = None
+        request_failed = False
         try:
             start = as_of - timedelta(days=30)
             vix_response = obb.equity.price.historical(
@@ -161,6 +181,7 @@ class OpenBBVolMacroProvider(VolMacroProvider):
                 vix_value = close_series[-1]
         except Exception:
             vix_value = None
+            request_failed = True
 
         macro_regime: str | None = None
         if vix_value is not None:
@@ -171,8 +192,16 @@ class OpenBBVolMacroProvider(VolMacroProvider):
             else:
                 macro_regime = "adverse"
 
+        if vix_value is None:
+            if request_failed:
+                self._set_diagnostic("macro_data", "error")
+            else:
+                self._set_diagnostic("macro_data", "empty")
+            return MacroData()
+
         # Simple deterministic seasonal proxy in [0.8, 1.2].
         seasonal_factor = 0.8 + ((as_of.month - 1) / 11.0) * 0.4
+        self._set_diagnostic("macro_data", "ok")
         return MacroData(
             vix=vix_value,
             macro_regime=macro_regime,

@@ -90,7 +90,8 @@ The outputs should be stable for equal inputs.
 - No strategy execution, no fills, no slippage, no PnL.
 - Provider coverage may be constrained by OpenBB data availability/schema.
 - This experiment measures scanner behavior, not trading performance.
-- In local smoke runs, `provider_status_counts` may appear as `empty` when OpenBB data is unavailable at runtime; this is expected fail-soft behavior.
+- In local smoke runs, `provider_status_counts` may appear as `no_backend` (OpenBB backend unavailable/misconfigured) or `empty` (backend reachable but empty payloads); both preserve fail-soft behavior.
+- Offline scanner currently runs with fixture-backed universe mode (`universe_mode = "fixtures"`). A provider-backed universe mode is intentionally reserved as a future extension for real vendor-driven symbol discovery.
 
 ## Result notes (to fill after run)
 
