@@ -7,14 +7,29 @@ con ``atlas_push.intents.IntentRouter`` (ver
 """
 from typing import Any, Optional
 import time
+import os
 
 from fastapi import FastAPI
 from pydantic import BaseModel
 
 from modules.command_router import handle
 from atlas_push.intents import IntentRouter
+try:
+    from atlas_scanner.api.radar import router as radar_router
+except Exception:  # pragma: no cover - keep adapter import-safe
+    radar_router = None
+try:
+    from atlas_scanner.ui import dashboard_router
+except Exception:  # pragma: no cover - keep adapter import-safe
+    dashboard_router = None
 
 app = FastAPI(title="ATLAS Adapter", version="1.0.0")
+_RADAR_ROUTER_ENABLED = os.getenv("ATLAS_ENABLE_RADAR_ROUTER", "false").strip().lower() in {"1", "true", "yes"}
+if radar_router is not None and _RADAR_ROUTER_ENABLED:
+    app.include_router(radar_router)
+_RADAR_DASHBOARD_ENABLED = os.getenv("ATLAS_ENABLE_RADAR_DASHBOARD", "false").strip().lower() in {"1", "true", "yes"}
+if dashboard_router is not None and _RADAR_DASHBOARD_ENABLED:
+    app.include_router(dashboard_router)
 
 # Instancia única a nivel de módulo: IntentRouter es stateless, se
 # puede reutilizar entre requests. Ver docs/atlas_push/PLAN_STEP_B.md.

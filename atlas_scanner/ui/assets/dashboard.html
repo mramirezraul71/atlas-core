@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ATLAS Institutional Radar</title>
+    <link rel="stylesheet" href="/radar/dashboard/assets/dashboard.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="topbar-left">
+          <h1 class="title">Institutional Radar</h1>
+          <span id="estadoGlobal" class="badge badge-neutral">Inicializando</span>
+          <span id="estadoFresh" class="badge badge-neutral">Sin datos</span>
+        </div>
+        <div class="topbar-center">
+          <div class="command-wrap">
+            <label class="sr-only" for="comandoGlobal">Barra de comando global</label>
+            <input
+              id="comandoGlobal"
+              type="text"
+              autocomplete="off"
+              placeholder="Comando rápido (ej: Ver providers degradados, Abrir dealer de SPY)"
+            />
+          </div>
+          <div id="comandoHint" class="command-hint">Atajo: <kbd>Ctrl</kbd> + <kbd>K</kbd></div>
+        </div>
+        <div class="topbar-right">
+          <div class="topbar-meta">
+            <span class="meta-label">Símbolo</span>
+            <input id="symbolInput" class="symbol-input" type="text" value="SPY" maxlength="8" />
+          </div>
+          <div class="topbar-meta">
+            <span class="meta-label">Última actualización</span>
+            <span id="ultimaActualizacion" class="meta-value">-</span>
+          </div>
+          <div class="topbar-meta">
+            <span class="meta-label">Latencia</span>
+            <span id="latenciaActual" class="meta-value latency">-</span>
+          </div>
+          <div class="topbar-meta">
+            <span class="meta-label">Live</span>
+            <span id="liveMode" class="meta-value">Sin señal</span>
+          </div>
+          <div class="topbar-meta">
+            <span class="meta-label">Último evento</span>
+            <span id="liveLastEvent" class="meta-value">-</span>
+          </div>
+          <div class="topbar-meta">
+            <span class="meta-label">Heartbeat</span>
+            <span id="liveHeartbeat" class="meta-value">-</span>
+          </div>
+          <button id="refreshBtn" class="btn btn-primary" type="button">Actualizar</button>
+          <div class="auto-refresh">
+            <label for="autoRefreshToggle">Auto-refresh</label>
+            <input id="autoRefreshToggle" type="checkbox" checked />
+            <select id="refreshIntervalSelect">
+              <option value="5000">5s</option>
+              <option value="10000" selected>10s</option>
+              <option value="15000">15s</option>
+              <option value="30000">30s</option>
+            </select>
+          </div>
+        </div>
+      </header>
+
+      <nav class="tabbar">
+        <button class="tab active" data-tab="principal" type="button">Vista principal</button>
+        <button class="tab" data-tab="decisiones" type="button">Decisiones</button>
+        <button class="tab" data-tab="providers" type="button">Providers</button>
+        <button class="tab" data-tab="simbolo" type="button">Vista por símbolo</button>
+      </nav>
+
+      <main class="content">
+        <section id="tab-principal" class="tab-panel active">
+          <div class="grid-top">
+            <section class="panel">
+              <h2 class="panel-title">KPIs operativos</h2>
+              <div class="kpi-grid">
+                <article class="kpi">
+                  <div class="kpi-label">Clasificación snapshot</div>
+                  <div id="kpiClassification" class="kpi-value metric">-</div>
+                </article>
+                <article class="kpi">
+                  <div class="kpi-label">Fast pressure</div>
+                  <div id="kpiFastPressure" class="kpi-value score">-</div>
+                </article>
+                <article class="kpi">
+                  <div class="kpi-label">Confianza estructural</div>
+                  <div id="kpiStructural" class="kpi-value score">-</div>
+                </article>
+                <article class="kpi">
+                  <div class="kpi-label">Alineación fast/structural</div>
+                  <div id="kpiAlignment" class="kpi-value">-</div>
+                </article>
+                <article class="kpi">
+                  <div class="kpi-label">Divergencia</div>
+                  <div id="kpiDivergence" class="kpi-value score">-</div>
+                </article>
+                <article class="kpi">
+                  <div class="kpi-label">Conflicto de horizonte</div>
+                  <div id="kpiConflict" class="kpi-value">-</div>
+                </article>
+              </div>
+            </section>
+
+            <section class="panel">
+              <h2 class="panel-title">Resumen ejecutivo</h2>
+              <p id="resumenEjecutivo" class="executive-summary">
+                Cargando lectura ejecutiva del radar...
+              </p>
+              <div id="alertasRapidas" class="alerts-stack"></div>
+            </section>
+          </div>
+
+          <div class="grid-middle">
+            <section class="panel">
+              <h2 class="panel-title">Señales recientes</h2>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Símbolo</th>
+                      <th>Timeframe</th>
+                      <th>Clasificación</th>
+                      <th>Sesgo</th>
+                      <th>Fast / Structural</th>
+                      <th>Gate</th>
+                      <th>Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tablaSignals"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <h2 class="panel-title">Contexto dealer / fast</h2>
+              <div id="dealerFastSummary" class="kv-grid"></div>
+            </section>
+          </div>
+
+          <div class="grid-bottom">
+            <section class="panel">
+              <h2 class="panel-title">Estado de providers</h2>
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Provider</th>
+                      <th>Estado</th>
+                      <th>Latencia</th>
+                      <th>P95</th>
+                      <th>Fallback</th>
+                      <th>Circuito</th>
+                      <th>Disponibilidad</th>
+                      <th>Último error</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tablaProviders"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel">
+              <h2 class="panel-title">Contexto estructural</h2>
+              <div id="structuralSummary" class="kv-grid"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="tab-decisiones" class="tab-panel">
+          <section class="panel">
+            <h2 class="panel-title">Decisiones del gate</h2>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Símbolo</th>
+                    <th>Timeframe</th>
+                    <th>Clasificación</th>
+                    <th>Fast</th>
+                    <th>Structural</th>
+                    <th>Decisión</th>
+                    <th>Razón</th>
+                    <th>Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody id="tablaDecisiones"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="tab-providers" class="tab-panel">
+          <section class="panel">
+            <h2 class="panel-title">Inventario completo de providers</h2>
+            <div id="providersMetrics" class="kpi-grid compact"></div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Provider</th>
+                    <th>Ready</th>
+                    <th>Fallback</th>
+                    <th>Circuito</th>
+                    <th>Latencia</th>
+                    <th>P95</th>
+                    <th>Errores consecutivos</th>
+                    <th>Disponibilidad</th>
+                    <th>Detalles</th>
+                  </tr>
+                </thead>
+                <tbody id="tablaProvidersFull"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="tab-simbolo" class="tab-panel">
+          <section class="panel">
+            <h2 class="panel-title">Lectura por símbolo</h2>
+            <p class="subtle">
+              Ajusta el símbolo en el header y usa "Actualizar". Esta vista combina fast, structural, dealer y político.
+            </p>
+            <div id="symbolNarrative" class="executive-summary"></div>
+            <div id="symbolCards" class="kpi-grid"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="/radar/dashboard/assets/dashboard.js"></script>
+  </body>
+</html>
