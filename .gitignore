@@ -12,3 +12,7 @@ snapshots/**/config/.env
 snapshots/**/.env
 __pycache__/
 *.pyc
+.venv_openbb/
+artifacts/
+data/atlas_scanner/*.jsonl
+data/atlas_scanner/**/*.jsonl

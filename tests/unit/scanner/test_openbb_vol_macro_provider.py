@@ -1,0 +1,262 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from atlas_scanner.config import SCORING_CONFIG
+from atlas_scanner.data.openbb_vol_macro import OpenBBVolMacroProvider
+from atlas_scanner.fixtures.offline import OFFLINE_REFERENCE_DATETIME
+from atlas_scanner.models import ScanSnapshot, SymbolSnapshot
+from atlas_scanner.ports.vol_macro_provider import MacroData, VolData, VolMacroProvider
+from atlas_scanner.runner.offline import run_offline_scan
+
+
+@dataclass
+class _FakeResponse:
+    results: list[dict[str, float]]
+
+
+class _FakeOptionsClient:
+    def chains(self, symbol: str, *, start_date: str, end_date: str) -> _FakeResponse:
+        _ = (symbol, start_date, end_date)
+        return _FakeResponse(
+            results=[
+                {"implied_volatility": 0.20},
+                {"implied_volatility": 0.24},
+                {"implied_volatility": 0.28},
+            ]
+        )
+
+
+class _FakePriceClient:
+    def historical(self, symbol: str, *, start_date: str, end_date: str) -> _FakeResponse:
+        _ = (start_date, end_date)
+        if symbol == "^VIX":
+            return _FakeResponse(results=[{"close": 18.0}])
+        closes = [{"close": 100.0 + idx * 0.5} for idx in range(130)]
+        return _FakeResponse(results=closes)
+
+
+class _FakeObbClient:
+    def __init__(self) -> None:
+        class _DerivativesNamespace:
+            options = _FakeOptionsClient()
+
+        class _EquityNamespace:
+            class _PriceNamespace:
+                historical = _FakePriceClient().historical
+
+            price = _PriceNamespace()
+
+        self.derivatives = _DerivativesNamespace()
+        self.equity = _EquityNamespace()
+
+
+def test_openbb_provider_get_vol_data_maps_iv_and_rv() -> None:
+    provider = OpenBBVolMacroProvider(obb_client=_FakeObbClient())
+    vol_data = provider.get_vol_data(symbol="SPY", as_of=OFFLINE_REFERENCE_DATETIME.date())
+    assert tuple(vol_data.iv_history) == (0.20, 0.24, 0.28)
+    assert vol_data.iv_current == 0.28
+    assert "5d" in vol_data.rv_annualized
+    assert "20d" in vol_data.rv_annualized
+
+
+def test_openbb_provider_get_macro_data_maps_vix_and_regime() -> None:
+    provider = OpenBBVolMacroProvider(obb_client=_FakeObbClient())
+    macro_data = provider.get_macro_data(as_of=OFFLINE_REFERENCE_DATETIME.date())
+    assert macro_data.vix == 18.0
+    assert macro_data.macro_regime == "favorable"
+    assert macro_data.seasonal_factor is not None
+
+
+@dataclass
+class _StaticVolMacroProvider(VolMacroProvider):
+    def get_vol_data(self, symbol: str, as_of) -> VolData:
+        _ = (symbol, as_of)
+        return VolData(
+            iv_history=(0.10, 0.20, 0.30, 0.40),
+            iv_current=0.40,
+            rv_annualized={"20d": 0.25, "10d": 0.22},
+        )
+
+    def get_macro_data(self, as_of) -> MacroData:
+        _ = as_of
+        return MacroData(vix=17.0, macro_regime="favorable", seasonal_factor=1.3)
+
+
+@dataclass
+class _EmptyVolMacroProvider(VolMacroProvider):
+    def get_vol_data(self, symbol: str, as_of) -> VolData:
+        _ = (symbol, as_of)
+        return VolData()
+
+    def get_macro_data(self, as_of) -> MacroData:
+        _ = as_of
+        return MacroData()
+
+
+@dataclass
+class _FailingVolMacroProvider(VolMacroProvider):
+    def get_vol_data(self, symbol: str, as_of) -> VolData:
+        _ = (symbol, as_of)
+        raise RuntimeError("vol failed")
+
+    def get_macro_data(self, as_of) -> MacroData:
+        _ = as_of
+        raise RuntimeError("macro failed")
+
+
+@dataclass
+class _NoBackendVolMacroProvider(VolMacroProvider):
+    def get_vol_data(self, symbol: str, as_of) -> VolData:
+        _ = (symbol, as_of)
+        return VolData()
+
+    def get_macro_data(self, as_of) -> MacroData:
+        _ = as_of
+        return MacroData()
+
+    def get_diagnostics(self) -> dict[str, str]:
+        return {"vol_data": "no_backend", "macro_data": "no_backend"}
+
+
+def test_runner_uses_vol_macro_provider_data_in_meta_and_scoring(monkeypatch) -> None:
+    snapshot_symbol = SymbolSnapshot(
+        symbol="SPY",
+        asset_type="etf",
+        base_currency="USD",
+        ref_price=500.0,
+        volatility_lookback=0.15,
+        liquidity_score=0.2,
+        meta={"event_risk": 0.2, "bid_ask_spread": 0.2},
+    )
+    mocked_snapshot = ScanSnapshot(
+        snapshot_id="offline-default-1",
+        created_at=OFFLINE_REFERENCE_DATETIME.isoformat(),
+        universe_name="default",
+        symbols=(snapshot_symbol,),
+        config_version=SCORING_CONFIG.config_version,
+        meta={},
+    )
+
+    def _fake_build_snapshot(*args, **kwargs):
+        _ = (args, kwargs)
+        return mocked_snapshot
+
+    monkeypatch.setattr("atlas_scanner.runner.offline.build_offline_snapshot", _fake_build_snapshot)
+    result = run_offline_scan(vol_macro_provider=_StaticVolMacroProvider())
+    assert len(result.selected_symbols) == 1
+    selected = result.selected_symbols[0]
+    assert "iv_history" in selected.meta
+    assert "rv_annualized" in selected.meta
+    assert selected.meta.get("macro_regime") == "favorable"
+    assert selected.meta["provider_status"]["vol_macro"]["vol_data"] == "ok"
+    assert selected.meta["provider_status"]["vol_macro"]["macro_data"] == "ok"
+    assert result.ranked_symbols[0].component_scores["vol"] > 0.0
+    assert result.ranked_symbols[0].component_scores["macro"] > 0.0
+    assert result.meta["providers"]["vol_macro"]["status"] == "ok"
+
+
+def test_runner_marks_vol_macro_empty_when_provider_returns_empty_payloads(monkeypatch) -> None:
+    snapshot_symbol = SymbolSnapshot(
+        symbol="SPY",
+        asset_type="etf",
+        base_currency="USD",
+        ref_price=500.0,
+        volatility_lookback=0.15,
+        liquidity_score=0.2,
+        meta={"event_risk": 0.2, "bid_ask_spread": 0.2},
+    )
+    mocked_snapshot = ScanSnapshot(
+        snapshot_id="offline-default-1",
+        created_at=OFFLINE_REFERENCE_DATETIME.isoformat(),
+        universe_name="default",
+        symbols=(snapshot_symbol,),
+        config_version=SCORING_CONFIG.config_version,
+        meta={},
+    )
+
+    def _fake_build_snapshot(*args, **kwargs):
+        _ = (args, kwargs)
+        return mocked_snapshot
+
+    monkeypatch.setattr("atlas_scanner.runner.offline.build_offline_snapshot", _fake_build_snapshot)
+    result = run_offline_scan(vol_macro_provider=_EmptyVolMacroProvider())
+    assert result.meta["providers"]["vol_macro"]["status"] == "empty"
+
+
+def test_runner_handles_vol_macro_provider_errors_without_crashing(monkeypatch) -> None:
+    snapshot_symbol = SymbolSnapshot(
+        symbol="SPY",
+        asset_type="etf",
+        base_currency="USD",
+        ref_price=500.0,
+        volatility_lookback=0.15,
+        liquidity_score=0.2,
+        meta={"event_risk": 0.2, "bid_ask_spread": 0.2},
+    )
+    mocked_snapshot = ScanSnapshot(
+        snapshot_id="offline-default-1",
+        created_at=OFFLINE_REFERENCE_DATETIME.isoformat(),
+        universe_name="default",
+        symbols=(snapshot_symbol,),
+        config_version=SCORING_CONFIG.config_version,
+        meta={},
+    )
+
+    def _fake_build_snapshot(*args, **kwargs):
+        _ = (args, kwargs)
+        return mocked_snapshot
+
+    monkeypatch.setattr("atlas_scanner.runner.offline.build_offline_snapshot", _fake_build_snapshot)
+    result = run_offline_scan(vol_macro_provider=_FailingVolMacroProvider())
+    assert len(result.ranked_symbols) == 1
+    assert result.meta["providers"]["vol_macro"]["status"] == "error"
+    selected = result.selected_symbols[0]
+    assert selected.meta["provider_status"]["vol_macro"]["vol_data"] == "error"
+    assert selected.meta["provider_status"]["vol_macro"]["macro_data"] == "error"
+
+
+def test_openbb_vol_macro_provider_reports_no_backend_diagnostics(monkeypatch) -> None:
+    provider = OpenBBVolMacroProvider()
+    monkeypatch.setattr(provider, "_resolve_obb_client", lambda: None)
+
+    vol_data = provider.get_vol_data(symbol="SPY", as_of=OFFLINE_REFERENCE_DATETIME.date())
+    macro_data = provider.get_macro_data(as_of=OFFLINE_REFERENCE_DATETIME.date())
+
+    assert vol_data == VolData()
+    assert macro_data == MacroData()
+    diagnostics = provider.get_diagnostics()
+    assert diagnostics["vol_data"] == "no_backend"
+    assert diagnostics["macro_data"] == "no_backend"
+
+
+def test_runner_marks_vol_macro_no_backend_when_diagnostics_report_it(monkeypatch) -> None:
+    snapshot_symbol = SymbolSnapshot(
+        symbol="SPY",
+        asset_type="etf",
+        base_currency="USD",
+        ref_price=500.0,
+        volatility_lookback=0.15,
+        liquidity_score=0.2,
+        meta={"event_risk": 0.2, "bid_ask_spread": 0.2},
+    )
+    mocked_snapshot = ScanSnapshot(
+        snapshot_id="offline-default-1",
+        created_at=OFFLINE_REFERENCE_DATETIME.isoformat(),
+        universe_name="default",
+        symbols=(snapshot_symbol,),
+        config_version=SCORING_CONFIG.config_version,
+        meta={},
+    )
+
+    def _fake_build_snapshot(*args, **kwargs):
+        _ = (args, kwargs)
+        return mocked_snapshot
+
+    monkeypatch.setattr("atlas_scanner.runner.offline.build_offline_snapshot", _fake_build_snapshot)
+    result = run_offline_scan(vol_macro_provider=_NoBackendVolMacroProvider())
+
+    assert result.meta["providers"]["vol_macro"]["status"] == "no_backend"
+    assert result.meta["providers"]["vol_macro"]["calls"]["vol_data"]["no_backend"] == 1
+    assert result.meta["providers"]["vol_macro"]["calls"]["macro_data"]["no_backend"] == 1
+
