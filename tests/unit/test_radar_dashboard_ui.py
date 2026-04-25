@@ -27,6 +27,7 @@ def test_radar_dashboard_route_serves_html(monkeypatch, tmp_path) -> None:
     assert response.status_code == 200
     assert "text/html" in response.headers.get("content-type", "")
     assert "Institutional Radar" in response.text
+    assert "cameraStatusSummary" in response.text
 
 
 def test_radar_dashboard_assets_served(monkeypatch, tmp_path) -> None:

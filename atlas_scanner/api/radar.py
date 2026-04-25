@@ -39,6 +39,7 @@ from atlas_scanner.perception.institutional import (
 )
 from atlas_scanner.perception.political import resolve_political_provider
 from atlas_scanner.perception.regulatory import resolve_regulatory_provider
+from atlas_scanner.perception.sensors import resolve_camera_provider, to_camera_context
 from atlas_scanner.runner.provider_resolution import RealtimeProviderRegistry
 from atlas_scanner.store import JsonlRadarSnapshotStore
 from atlas_scanner.telemetry import InMemoryRadarTelemetryRecorder, RadarTelemetryEvent
@@ -97,6 +98,7 @@ _RADAR_ACTIVE_DOMAINS: tuple[str, ...] = (
     "regulatory",
     "gamma",
 )
+_CAMERA_CAPTURE_ENABLED = os.getenv("ATLAS_CAMERA_CAPTURE_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
 
 
 @dataclass(frozen=True)
@@ -121,6 +123,7 @@ def run_institutional_radar(
     insider_payload: Mapping[str, Any] | None = None,
     political_payload: Mapping[str, Any] | None = None,
     regulatory_payload: Mapping[str, Any] | None = None,
+    camera_context: Mapping[str, Any] | None = None,
     telemetry_recorder: InMemoryRadarTelemetryRecorder | None = None,
 ) -> RadarApiResult:
     batch = run_radar_first_cut(
@@ -138,6 +141,7 @@ def run_institutional_radar(
             insider_payload=insider_payload,
             political_payload=political_payload,
             regulatory_payload=regulatory_payload,
+            camera_context=camera_context,
         )
     )
     handoff = build_radar_handoff(batch)
@@ -216,7 +220,10 @@ def build_realtime_snapshot(
     insider_provider = resolve_insider_provider()
     political_provider = resolve_political_provider()
     regulatory_provider = resolve_regulatory_provider()
+    camera_provider = resolve_camera_provider()
     now = datetime.now(timezone.utc)
+    camera_snapshot = camera_provider.capture_snapshot() if _CAMERA_CAPTURE_ENABLED else camera_provider.health()
+    camera_context = to_camera_context(camera_snapshot)
     flow_events = flow_provider.fetch_events(
         symbol=symbol,
         since=now - timedelta(days=1),
@@ -551,6 +558,7 @@ def build_realtime_snapshot(
             "filing_count": regulatory_snapshot.meta.get("filing_count"),
             "latest_forms": regulatory_snapshot.meta.get("latest_forms"),
         },
+        camera_context=camera_context,
     )
     _SNAPSHOT_PERSISTENCE.append_batch(
         batch=result.batch,
@@ -964,6 +972,20 @@ async def get_macro_calendar(symbol: str) -> dict[str, Any]:
     return {"ok": True, **data}
 
 
+@router.get("/sensors/camera/health")
+async def get_camera_health() -> dict[str, Any]:
+    provider = resolve_camera_provider()
+    snapshot = provider.health()
+    return {"ok": True, "camera": to_camera_context(snapshot)}
+
+
+@router.get("/sensors/camera/capture")
+async def capture_camera_snapshot() -> dict[str, Any]:
+    provider = resolve_camera_provider()
+    snapshot = provider.capture_snapshot()
+    return {"ok": True, "camera": to_camera_context(snapshot)}
+
+
 @router.get("/decisions/recent")
 async def get_decisions_recent(
     limit: int = Query(default=100, ge=1, le=1000),
@@ -1068,6 +1090,7 @@ async def get_dashboard_summary(
             }
             for row in recent_snapshots
         ],
+        "camera_context": snapshot.batch.primary_signal.meta.get("camera_context", {}) if snapshot.batch.primary_signal else {},
     }
 
 
@@ -1141,6 +1164,7 @@ async def get_v4_summary(
             "horizon_conflict": primary.meta.get("horizon_conflict") if primary is not None else None,
         },
         "freshness": freshness,
+        "camera_context": primary.meta.get("camera_context", {}) if primary is not None else {},
         "last_update": last_update,
         "stream_available": _RADAR_STREAM_ENABLED and _RADAR_STREAM_MODE == "sse",
     }

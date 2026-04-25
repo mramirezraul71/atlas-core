@@ -20,6 +20,7 @@
     fast: (symbol) => `/api/radar/diagnostics/fast/${encodeURIComponent(symbol)}`,
     structural: (symbol) => `/api/radar/diagnostics/structural/${encodeURIComponent(symbol)}`,
     political: (symbol) => `/api/radar/political/${encodeURIComponent(symbol)}`,
+    cameraHealth: "/api/radar/sensors/camera/health",
     stream: "/api/radar/stream",
   };
 
@@ -46,6 +47,7 @@
     tablaProviders: document.getElementById("tablaProviders"),
     dealerFastSummary: document.getElementById("dealerFastSummary"),
     structuralSummary: document.getElementById("structuralSummary"),
+    cameraStatusSummary: document.getElementById("cameraStatusSummary"),
     tablaDecisiones: document.getElementById("tablaDecisiones"),
     providersMetrics: document.getElementById("providersMetrics"),
     tablaProvidersFull: document.getElementById("tablaProvidersFull"),
@@ -156,7 +158,7 @@
     el.refreshBtn.disabled = true;
     el.refreshBtn.textContent = "Actualizando...";
     try {
-      const [summaryRes, providersRes, decisionsRes, statsRes, dealerRes, fastRes, structuralRes, politicalRes] =
+      const [summaryRes, providersRes, decisionsRes, statsRes, dealerRes, fastRes, structuralRes, politicalRes, cameraRes] =
         await Promise.all([
           fetchJson(endpoints.summary(symbol)),
           fetchJson(endpoints.providers),
@@ -166,6 +168,7 @@
           fetchJson(endpoints.fast(symbol)),
           fetchJson(endpoints.structural(symbol)),
           fetchJson(endpoints.political(symbol)),
+          fetchJson(endpoints.cameraHealth),
         ]);
 
       const latency = Math.max(
@@ -180,7 +183,7 @@
       el.ultimaActualizacion.textContent = startedLabel;
 
       state.lastSummary = summaryRes.data;
-      renderPrincipal(summaryRes.data, providersRes.data, decisionsRes.data, dealerRes.data, fastRes.data, structuralRes.data);
+      renderPrincipal(summaryRes.data, providersRes.data, decisionsRes.data, dealerRes.data, fastRes.data, structuralRes.data, cameraRes.data);
       renderDecisions(decisionsRes.data);
       renderProviders(providersRes.data, statsRes.data);
       renderSymbol(symbol, summaryRes.data, dealerRes.data, fastRes.data, structuralRes.data, politicalRes.data);
@@ -203,7 +206,7 @@
     }
   }
 
-  function renderPrincipal(summary, providers, decisions, dealer, fast, structural) {
+  function renderPrincipal(summary, providers, decisions, dealer, fast, structural, cameraHealth) {
     const radar = summary?.radar ?? {};
     const signal = radar?.signal ?? {};
     const meta = signal?.meta ?? {};
@@ -287,6 +290,16 @@
       ["Alineación cross-horizon", String(meta?.cross_horizon_alignment ?? "-")],
       ["Clasificación", classification],
       ["Timestamp señal", formatTs(signal?.timestamp)],
+    ]);
+
+    const cam = cameraHealth?.camera || summary?.camera_context || {};
+    renderKvs(el.cameraStatusSummary, [
+      ["Provider", cam?.provider || "-"],
+      ["Estado", cam?.status || "-"],
+      ["Ready", String(cam?.provider_ready ?? "-")],
+      ["Última captura", formatTs(cam?.last_capture)],
+      ["Presencia", formatNumber(cam?.presence_score)],
+      ["Actividad", formatNumber(cam?.activity_level)],
     ]);
   }
 

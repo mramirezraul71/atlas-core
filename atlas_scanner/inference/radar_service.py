@@ -44,6 +44,7 @@ class RadarRunInput:
     market_session: str = "regular"
     provider_status: Mapping[str, str] | None = None
     provider_latency_ms: Mapping[str, int] | None = None
+    camera_context: Mapping[str, Any] | None = None
     as_of: datetime | None = None
     timeframes: tuple[RadarTimeframe, ...] = DEFAULT_TIMEFRAMES
 
@@ -190,6 +191,11 @@ def run_radar_first_cut(payload: RadarRunInput) -> RadarSignalBatch:
                 },
                 "provider_status": dict(payload.provider_status or {}),
                 "provider_latency_ms": dict(payload.provider_latency_ms or {}),
+                "camera_context": dict(payload.camera_context or {}),
+                "camera_provider_ready": bool((payload.camera_context or {}).get("provider_ready", False)),
+                "camera_last_capture": (payload.camera_context or {}).get("last_capture"),
+                "camera_presence": (payload.camera_context or {}).get("presence_score"),
+                "camera_activity_level": (payload.camera_context or {}).get("activity_level"),
             },
         )
         classification = _classify_snapshot_state(signal)
