@@ -10,6 +10,7 @@ import time
 import os
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from modules.command_router import handle
@@ -24,6 +25,19 @@ except Exception:  # pragma: no cover - keep adapter import-safe
     dashboard_router = None
 
 app = FastAPI(title="ATLAS Adapter", version="1.0.0")
+_RADAR_V4_CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ATLAS_RADAR_V4_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+if _RADAR_V4_CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_RADAR_V4_CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["GET", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Atlas-Service-Token"],
+    )
 _RADAR_ROUTER_ENABLED = os.getenv("ATLAS_ENABLE_RADAR_ROUTER", "false").strip().lower() in {"1", "true", "yes"}
 if radar_router is not None and _RADAR_ROUTER_ENABLED:
     app.include_router(radar_router)

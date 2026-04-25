@@ -83,6 +83,8 @@ _RADAR_BACKPLANE_BUFFER_SIZE = max(100, int(os.getenv("ATLAS_RADAR_BACKPLANE_BUF
 _STREAM_BUS = event_bus_from_env()
 _LAST_PROVIDER_STREAM_STATE: dict[str, tuple[bool, bool, str | None]] = {}
 _RADAR_V4_INTEGRATION_MODE = os.getenv("ATLAS_RADAR_V4_INTEGRATION_MODE", "false").strip().lower() in {"1", "true", "yes"}
+_RADAR_V4_AUTH_ENABLED = os.getenv("ATLAS_RADAR_V4_AUTH_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+_RADAR_V4_AUTH_TOKEN = os.getenv("ATLAS_RADAR_V4_AUTH_TOKEN", "").strip()
 _RADAR_SUPPORTED_TIMEFRAMES: tuple[str, ...] = ("1m", "5m", "15m", "1h", "1d")
 _RADAR_ACTIVE_DOMAINS: tuple[str, ...] = (
     "market",
@@ -629,6 +631,7 @@ async def get_provider_diagnostics() -> dict[str, Any]:
 
 @router.get("/stream")
 async def radar_stream(
+    request: Request,
     once: bool = Query(default=False),
 ) -> StreamingResponse:
     if not _RADAR_STREAM_ENABLED or _RADAR_STREAM_MODE != "sse":
@@ -1070,11 +1073,13 @@ async def get_dashboard_summary(
 
 @router.get("/v4/summary")
 async def get_v4_summary(
+    request: Request,
     symbol: str = Query(default="SPY"),
     top_n: int = Query(default=5, ge=1, le=20),
     decisions_limit: int = Query(default=20, ge=5, le=100),
 ) -> dict[str, Any]:
     _ensure_v4_mode()
+    _enforce_v4_auth(request)
     snapshot = build_realtime_snapshot(
         symbol=symbol,
         timeframes=("1m", "5m", "15m", "1h"),
@@ -1142,8 +1147,9 @@ async def get_v4_summary(
 
 
 @router.get("/v4/config")
-async def get_v4_config() -> dict[str, Any]:
+async def get_v4_config(request: Request) -> dict[str, Any]:
     _ensure_v4_mode()
+    _enforce_v4_auth(request)
     providers = _PROVIDER_REGISTRY.snapshot()
     gate_config = decision_gate_config_from_env()
     return {
@@ -1231,6 +1237,20 @@ def _ensure_v4_mode() -> None:
         return
     raise HTTPException(status_code=404, detail="radar_v4_integration_disabled")
 
+
+def _enforce_v4_auth(request: Request) -> None:
+    if not _RADAR_V4_AUTH_ENABLED:
+        return
+    auth_header = request.headers.get("authorization", "").strip()
+    service_token = request.headers.get("x-atlas-service-token", "").strip()
+    expected = _RADAR_V4_AUTH_TOKEN
+    if not expected:
+        raise HTTPException(status_code=401, detail="radar_v4_auth_misconfigured")
+    bearer_ok = auth_header.lower().startswith("bearer ") and auth_header[7:].strip() == expected
+    service_ok = service_token == expected
+    if bearer_ok or service_ok:
+        return
+    raise HTTPException(status_code=401, detail="radar_v4_auth_invalid")
 
 
 def _publish_snapshot_and_operability_events(result: RadarApiResult) -> None:

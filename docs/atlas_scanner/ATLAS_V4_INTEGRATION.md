@@ -23,6 +23,29 @@ Integrar Institutional Radar como módulo consumible por ATLAS PUSH V4 sin acopl
   - habilita endpoints `/api/radar/v4/*`
   - cuando está `false`, responde `404 radar_v4_integration_disabled`
 
+## Hardening V4 (CORS + auth opcional)
+
+### CORS configurable por whitelist
+
+- `ATLAS_RADAR_V4_CORS_ORIGINS=http://localhost:3000,https://atlas-v4.internal`
+- Si está vacío, no se agrega middleware CORS.
+- Si está definido, habilita `GET/OPTIONS` y headers `Authorization`, `X-Atlas-Service-Token`, `Content-Type`.
+
+### Auth service-to-service opcional
+
+- `ATLAS_RADAR_V4_AUTH_ENABLED=true|false` (default `false`)
+- `ATLAS_RADAR_V4_AUTH_TOKEN=<token>`
+
+Headers aceptados:
+- `Authorization: Bearer <token>`
+- `X-Atlas-Service-Token: <token>`
+
+Comportamiento:
+- auth desactivada -> mantiene comportamiento actual.
+- auth activada + token válido -> 200.
+- auth activada + token inválido/faltante -> `401 radar_v4_auth_invalid`.
+- auth activada sin token configurado -> `401 radar_v4_auth_misconfigured`.
+
 ## Endpoints recomendados para V4
 
 ### 1) Snapshot consolidado (primario)
@@ -100,12 +123,12 @@ Fallback: polling a `/api/radar/v4/summary`.
 ## CORS / seguridad
 
 Estado actual:
-- integración recomendada same-host (sin necesidad de CORS adicional).
-- si V4 corre en otro origen, habilitar CORS explícito en adapter en fase posterior.
+- same-host: funciona sin CORS.
+- cross-origin: configurar `ATLAS_RADAR_V4_CORS_ORIGINS`.
 
 Autenticación:
-- no forzada en esta fase (entorno interno/paper).
-- recomendado futuro: token service-to-service para `/api/radar/v4/*`.
+- opcional por env para integración interna S2S.
+- recomendado en entornos compartidos y staging.
 
 ## Handoff para equipo V4
 

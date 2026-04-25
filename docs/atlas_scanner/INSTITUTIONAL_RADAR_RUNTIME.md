@@ -57,6 +57,8 @@ El publisher HTTP **solo** publica `RadarDecisionHandoff`; no ejecuta órdenes.
 - `GET /api/radar/diagnostics/fast/{symbol}`
 - `GET /api/radar/dealer/{symbol}`
 - `GET /api/radar/political/{symbol}`
+- `GET /api/radar/sensors/camera/health`
+- `GET /api/radar/sensors/camera/capture`
 - `GET /api/radar/decisions/recent`
 - `GET /api/radar/decisions/{symbol}`
 - `GET /api/radar/decisions/replay/{symbol}`
@@ -199,9 +201,14 @@ Variables:
 - `ATLAS_RADAR_STREAM_MODE` (`sse`, default `sse`)
 - `ATLAS_RADAR_STREAM_HEARTBEAT_SEC` (default `10`)
 - `ATLAS_RADAR_STREAM_BUFFER_SIZE` (default `1024`)
+- `ATLAS_RADAR_BACKPLANE_TYPE` (`memory|redis`, default `memory`)
+- `ATLAS_RADAR_REDIS_URL` (solo si `redis`)
+- `ATLAS_RADAR_REDIS_CHANNEL` (default `atlas:radar:stream`)
+- `ATLAS_RADAR_BACKPLANE_BUFFER_SIZE` (default `1024`)
 
 Endpoint:
 - `GET /api/radar/stream`
+- `GET /api/radar/stream/metrics`
 
 Tipos de evento emitidos:
 - `snapshot`
@@ -224,13 +231,17 @@ Comportamiento dashboard:
 - refresh manual se mantiene como control explícito de respaldo
 
 Limitaciones conocidas:
-- bus de eventos en memoria (no persistente entre reinicios del proceso)
-- pensado para una instancia de host; multi-worker requiere backend compartido de eventos
+- `memory`: bus local por proceso (no distribuido)
+- `redis`: distribución multi-worker/multi-instancia por pub/sub
+- si backend `redis` falla, se degrada automáticamente a `memory`
 
 ## Integración ATLAS V4 (módulo consumible)
 
 Feature flag:
 - `ATLAS_RADAR_V4_INTEGRATION_MODE=true|false` (default `false`)
+- `ATLAS_RADAR_V4_AUTH_ENABLED=true|false` (default `false`)
+- `ATLAS_RADAR_V4_AUTH_TOKEN=<token>`
+- `ATLAS_RADAR_V4_CORS_ORIGINS=http://localhost:3000,https://atlas-v4.internal`
 
 Endpoints:
 - `GET /api/radar/v4/summary`
@@ -242,6 +253,32 @@ Objetivo:
 
 Referencia de integración completa:
 - `docs/atlas_scanner/ATLAS_V4_INTEGRATION.md`
+
+## Sensor cámara multimodal opcional
+
+Base vendor-agnostic para contexto operativo sin obligar hardware real.
+
+Variables:
+- `ATLAS_CAMERA_PROVIDER=stub|opencv|insta360` (default `stub`)
+- `ATLAS_CAMERA_CAPTURE_ENABLED=true|false` (default `false`)
+- `ATLAS_CAMERA_DEVICE_INDEX=0` (para `opencv`)
+- `ATLAS_CAMERA_SOURCE_ID=camera:<provider>` (opcional)
+
+Comportamiento:
+- `stub`: siempre disponible como fallback seguro.
+- `opencv`: usa cámara local si módulo/dispositivo disponible.
+- `insta360`: en esta fase queda como provider stub (sin SDK real).
+
+Campos de contexto añadidos en `signal.meta`:
+- `camera_context`
+- `camera_provider_ready`
+- `camera_last_capture`
+- `camera_presence`
+- `camera_activity_level`
+
+Alcance de fase:
+- solo contexto adicional de observabilidad.
+- no modifica decision gate ni ejecución.
 
 ## Diagnostics normalization (provider health)
 
