@@ -10,10 +10,13 @@ def _reload_http_api(monkeypatch, tmp_path, *, stream_enabled: bool = True, hear
     monkeypatch.setenv("ATLAS_ENABLE_RADAR_STREAM", "true" if stream_enabled else "false")
     monkeypatch.setenv("ATLAS_RADAR_STREAM_MODE", "sse")
     monkeypatch.setenv("ATLAS_RADAR_STREAM_HEARTBEAT_SEC", heartbeat_sec)
+    monkeypatch.setenv("ATLAS_RADAR_BACKPLANE_TYPE", "memory")
     monkeypatch.setenv("ATLAS_SCANNER_RADAR_SNAPSHOT_PATH", str(tmp_path / "radar_stream_snapshot.jsonl"))
     monkeypatch.setenv("ATLAS_DECISION_GATE_STORE_PATH", str(tmp_path / "radar_stream_decisions.jsonl"))
     for mod_name in (
         "atlas_scanner.api.radar",
+        "atlas_scanner.ui.events",
+        "atlas_scanner.ui.backplane.redis",
         "atlas_scanner.ui.dashboard",
         "atlas_scanner.ui",
         "atlas_adapter.atlas_http_api",
@@ -58,3 +61,13 @@ def test_stream_disabled_keeps_safe_response(monkeypatch, tmp_path) -> None:
     response = client.get("/api/radar/stream?once=true")
     assert response.status_code == 200
     assert "stream_disabled" in response.text
+
+
+def test_stream_metrics_endpoint(monkeypatch, tmp_path) -> None:
+    client = _reload_http_api(monkeypatch, tmp_path, stream_enabled=True, heartbeat_sec="1")
+    response = client.get("/api/radar/stream/metrics")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["configured_backplane"] == "memory"
+    assert "metrics" in body

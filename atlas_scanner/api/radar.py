@@ -42,7 +42,7 @@ from atlas_scanner.perception.regulatory import resolve_regulatory_provider
 from atlas_scanner.runner.provider_resolution import RealtimeProviderRegistry
 from atlas_scanner.store import JsonlRadarSnapshotStore
 from atlas_scanner.telemetry import InMemoryRadarTelemetryRecorder, RadarTelemetryEvent
-from atlas_scanner.ui.events import RadarEventBus, to_sse_frame
+from atlas_scanner.ui.events import event_bus_from_env, to_sse_frame
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
@@ -76,7 +76,11 @@ _RADAR_STREAM_ENABLED = os.getenv("ATLAS_ENABLE_RADAR_STREAM", "false").strip().
 _RADAR_STREAM_MODE = os.getenv("ATLAS_RADAR_STREAM_MODE", "sse").strip().lower() or "sse"
 _RADAR_STREAM_HEARTBEAT_SEC = max(3, int(os.getenv("ATLAS_RADAR_STREAM_HEARTBEAT_SEC", "10")))
 _RADAR_STREAM_BUFFER_SIZE = max(100, int(os.getenv("ATLAS_RADAR_STREAM_BUFFER_SIZE", "1024")))
-_STREAM_BUS = RadarEventBus(max_events=_RADAR_STREAM_BUFFER_SIZE)
+_RADAR_BACKPLANE_TYPE = os.getenv("ATLAS_RADAR_BACKPLANE_TYPE", "memory").strip().lower() or "memory"
+_RADAR_REDIS_URL = os.getenv("ATLAS_RADAR_REDIS_URL", "").strip()
+_RADAR_REDIS_CHANNEL = os.getenv("ATLAS_RADAR_REDIS_CHANNEL", "atlas:radar:stream").strip() or "atlas:radar:stream"
+_RADAR_BACKPLANE_BUFFER_SIZE = max(100, int(os.getenv("ATLAS_RADAR_BACKPLANE_BUFFER_SIZE", "1024")))
+_STREAM_BUS = event_bus_from_env()
 _LAST_PROVIDER_STREAM_STATE: dict[str, tuple[bool, bool, str | None]] = {}
 _RADAR_V4_INTEGRATION_MODE = os.getenv("ATLAS_RADAR_V4_INTEGRATION_MODE", "false").strip().lower() in {"1", "true", "yes"}
 _RADAR_SUPPORTED_TIMEFRAMES: tuple[str, ...] = ("1m", "5m", "15m", "1h", "1d")
@@ -625,7 +629,6 @@ async def get_provider_diagnostics() -> dict[str, Any]:
 
 @router.get("/stream")
 async def radar_stream(
-    request: Request,
     once: bool = Query(default=False),
 ) -> StreamingResponse:
     if not _RADAR_STREAM_ENABLED or _RADAR_STREAM_MODE != "sse":
@@ -663,6 +666,20 @@ async def radar_stream(
         "X-Accel-Buffering": "no",
     }
     return StreamingResponse(event_generator(), media_type="text/event-stream", headers=headers)
+
+
+@router.get("/stream/metrics")
+async def get_stream_metrics() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "stream_enabled": _RADAR_STREAM_ENABLED,
+        "stream_mode": _RADAR_STREAM_MODE,
+        "heartbeat_sec": _RADAR_STREAM_HEARTBEAT_SEC,
+        "configured_backplane": _RADAR_BACKPLANE_TYPE,
+        "redis_channel": _RADAR_REDIS_CHANNEL,
+        "buffer_size": _RADAR_BACKPLANE_BUFFER_SIZE,
+        "metrics": _STREAM_BUS.metrics(),
+    }
 
 
 @router.get("/snapshot/{symbol}")
@@ -1213,6 +1230,7 @@ def _ensure_v4_mode() -> None:
     if _RADAR_V4_INTEGRATION_MODE:
         return
     raise HTTPException(status_code=404, detail="radar_v4_integration_disabled")
+
 
 
 def _publish_snapshot_and_operability_events(result: RadarApiResult) -> None:
