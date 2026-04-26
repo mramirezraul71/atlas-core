@@ -1423,7 +1423,9 @@
           clearTimeout(state.sseReconnectTimer);
         }
         const delay = state.sseBackoffMs;
-        state.sseBackoffMs = Math.min(state.sseBackoffMs * 2, 60000);
+        const baseBackoff = Math.min(state.sseBackoffMs * 2, 60000);
+        const jitter = baseBackoff * 0.2 * (Math.random() - 0.5);
+        state.sseBackoffMs = Math.min(60000, Math.max(1000, Math.round(baseBackoff + jitter)));
         state.sseReconnectTimer = setTimeout(() => {
           state.sseReconnectTimer = null;
           setupStreamingWithFallback();
