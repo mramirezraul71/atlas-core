@@ -26,8 +26,8 @@ def _utc_iso() -> str:
 def _stub_camera() -> dict[str, Any]:
     return {
         "camera": {
-            "provider": "none",
-            "status": "stub_no_atlas_scanner",
+            "provider": "—",
+            "status": "Cámara no disponible: motor atlas_scanner no desplegado en este host.",
             "provider_ready": False,
             "last_capture": None,
             "presence_score": None,
@@ -73,8 +73,8 @@ def build_radar_stub_api_router() -> APIRouter:
         return {
             "providers": [
                 {
-                    "provider": "atlas_scanner (no desplegado)",
-                    "name": "atlas_scanner (no desplegado)",
+                    "provider": "atlas_scanner (no desplegado en este host)",
+                    "name": "atlas_scanner (no desplegado en este host)",
                     "is_ready": False,
                     "ready": False,
                     "stale_indicator": True,
@@ -84,7 +84,7 @@ def build_radar_stub_api_router() -> APIRouter:
                     "circuit_open_indicator": True,
                     "consecutive_errors": 0,
                     "availability_ratio": 0.0,
-                    "last_error_type": "stub_backend",
+                    "last_error_type": "modo_demostracion_sin_motor",
                 }
             ]
         }

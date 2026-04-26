@@ -83,6 +83,75 @@
     return new Date().toLocaleString("es-ES", { hour12: false });
   }
 
+  /** Clasificaciones del API (snake_case) → etiqueta en español para la UI. */
+  function clasificacionEs(code) {
+    const c = String(code || "").trim().toLowerCase();
+    const map = {
+      fully_operable: "Totalmente operable",
+      operable_with_degradation: "Operable con degradación",
+      structural_only: "Solo contexto estructural",
+      fast_only: "Solo contexto táctico (fast)",
+      non_operable: "No operable",
+      unknown: "Desconocido",
+      desconocido: "Desconocido",
+    };
+    if (map[c]) return map[c];
+    if (!c) return "Desconocido";
+    return String(code).replaceAll("_", " ");
+  }
+
+  function sesgoEs(code) {
+    const s = String(code || "").trim().toLowerCase();
+    const map = {
+      neutral: "neutral",
+      bullish: "alcista",
+      bearish: "bajista",
+      long: "largo",
+      short: "corto",
+    };
+    return map[s] || (code ? String(code) : "—");
+  }
+
+  function decisionEtiqueta(code) {
+    const d = String(code || "").trim().toLowerCase();
+    const map = {
+      accepted: "aceptada",
+      rejected: "rechazada",
+      caution: "precaución",
+      bypassed: "derivada",
+    };
+    return map[d] || (code ? String(code) : "sin dato");
+  }
+
+  function formatSiNo(v) {
+    if (v === true || v === "true") return "Sí";
+    if (v === false || v === "false") return "No";
+    if (v === null || v === undefined || v === "") return "—";
+    return String(v);
+  }
+
+  function ultimoErrorEs(raw) {
+    const r = String(raw || "").trim();
+    if (!r) return "—";
+    if (r === "stub_backend" || r.includes("stub")) return "Modo demostración (sin motor)";
+    if (r === "modo_demostracion_sin_motor") return "Modo demostración (sin motor)";
+    return r.replaceAll("_", " ");
+  }
+
+  function tipoEventoStreamEs(type) {
+    const t = String(type || "").toLowerCase();
+    const map = {
+      snapshot: "instantánea",
+      decision: "decisión",
+      provider_health: "salud de proveedores",
+      degradation: "degradación",
+      alert: "alerta",
+      heartbeat: "latido",
+      unknown: "desconocido",
+    };
+    return map[t] || t.replaceAll("_", " ");
+  }
+
   function badgeHtml(kind, text) {
     return `<span class="badge badge-${kind}">${text}</span>`;
   }
@@ -92,7 +161,7 @@
       accepted: ["accepted", "Aceptado"],
       rejected: ["rejected", "Rechazado"],
       caution: ["caution", "Precaución"],
-      bypassed: ["neutral", "Bypassed"],
+      bypassed: ["neutral", "Derivada"],
     };
     const [kind, text] = map[decision] || ["neutral", decision || "N/D"];
     return badgeHtml(kind, text);
@@ -120,13 +189,13 @@
   function setFreshness(timestamp) {
     if (!timestamp) {
       el.estadoFresh.className = "badge badge-neutral";
-      el.estadoFresh.textContent = "Sin timestamp";
+      el.estadoFresh.textContent = "Sin marca de tiempo";
       return;
     }
     const ageMs = Date.now() - new Date(timestamp).valueOf();
     if (!Number.isFinite(ageMs)) {
       el.estadoFresh.className = "badge badge-neutral";
-      el.estadoFresh.textContent = "Timestamp inválido";
+      el.estadoFresh.textContent = "Marca de tiempo inválida";
       return;
     }
     if (ageMs > 120000) {
@@ -188,7 +257,7 @@
       renderProviders(providersRes.data, statsRes.data);
       renderSymbol(symbol, summaryRes.data, dealerRes.data, fastRes.data, structuralRes.data, politicalRes.data);
       if (!state.streamConnected) {
-        setLiveStatus("Polling activo");
+        setLiveStatus("Encuesta periódica");
       }
     } catch (error) {
       el.latenciaActual.textContent = "-";
@@ -218,16 +287,16 @@
         : classification === "non_operable"
         ? "badge badge-rejected"
         : "badge badge-caution";
-    el.estadoGlobal.textContent = classification.replaceAll("_", " ");
+    el.estadoGlobal.textContent = clasificacionEs(classification);
 
     setFreshness(signal?.timestamp);
 
-    el.kpiClassification.textContent = classification;
+    el.kpiClassification.textContent = clasificacionEs(classification);
     el.kpiFastPressure.textContent = formatNumber(meta?.fast_pressure_score ?? meta?.fast_composite_pressure);
     el.kpiStructural.textContent = formatNumber(meta?.structural_confidence_score ?? meta?.structural_composite_confidence);
     el.kpiAlignment.textContent = formatNumber(meta?.fast_structural_alignment);
     el.kpiDivergence.textContent = formatNumber(meta?.fast_structural_divergence_score);
-    el.kpiConflict.textContent = String(meta?.horizon_conflict ?? "-");
+    el.kpiConflict.textContent = formatSiNo(meta?.horizon_conflict);
 
     el.resumenEjecutivo.textContent = buildExecutiveSummary(signal, meta, summary?.decision_gate?.latest);
     renderAlerts(meta, summary?.decision_gate?.latest);
@@ -241,8 +310,8 @@
           <tr>
             <td class="metric">${evaluation?.symbol || "-"}</td>
             <td>${evaluation?.timeframe || "-"}</td>
-            <td>${evaluation?.snapshot_classification || "-"}</td>
-            <td>${evaluation?.bias || "-"}</td>
+            <td>${clasificacionEs(evaluation?.snapshot_classification)}</td>
+            <td>${sesgoEs(evaluation?.bias)}</td>
             <td class="score">${formatNumber(evaluation?.fast_pressure_score)} / ${formatNumber(
           evaluation?.structural_confidence_score
         )}</td>
@@ -268,35 +337,35 @@
             <td>${provider?.active_fallback_indicator ? badgeHtml("caution", "Activo") : badgeHtml("neutral", "No")}</td>
             <td>${provider?.circuit_open_indicator ? badgeHtml("rejected", "Abierto") : badgeHtml("accepted", "Cerrado")}</td>
             <td class="metric">${formatPct(provider?.availability_ratio)}</td>
-            <td>${provider?.last_error_type || "-"}</td>
+            <td>${ultimoErrorEs(provider?.last_error_type)}</td>
           </tr>
         `;
       })
       .join("");
 
     renderKvs(el.dealerFastSummary, [
-      ["Gamma flip", dealer?.gamma_flip_level ?? "-"],
-      ["Dealer skew", formatNumber(dealer?.dealer_skew_score)],
-      ["Call wall", dealer?.call_wall ?? "-"],
-      ["Put wall", dealer?.put_wall ?? "-"],
-      ["Fast pressure", formatNumber(fast?.fast_pressure_score)],
-      ["Riesgo fast", formatNumber(fast?.fast_risk_score)],
+      ["Nivel gamma (flip)", dealer?.gamma_flip_level ?? "-"],
+      ["Sesgo dealer", formatNumber(dealer?.dealer_skew_score)],
+      ["Muro de calls", dealer?.call_wall ?? "-"],
+      ["Muro de puts", dealer?.put_wall ?? "-"],
+      ["Presión táctica (fast)", formatNumber(fast?.fast_pressure_score)],
+      ["Riesgo táctico (fast)", formatNumber(fast?.fast_risk_score)],
     ]);
 
     renderKvs(el.structuralSummary, [
-      ["Confianza structural", formatNumber(structural?.structural_confidence_score)],
-      ["Bullish structural", formatNumber(structural?.structural_bullish_score)],
-      ["Bearish structural", formatNumber(structural?.structural_bearish_score)],
-      ["Alineación cross-horizon", String(meta?.cross_horizon_alignment ?? "-")],
-      ["Clasificación", classification],
-      ["Timestamp señal", formatTs(signal?.timestamp)],
+      ["Confianza estructural", formatNumber(structural?.structural_confidence_score)],
+      ["Componente alcista", formatNumber(structural?.structural_bullish_score)],
+      ["Componente bajista", formatNumber(structural?.structural_bearish_score)],
+      ["Alineación multi‑marco", String(meta?.cross_horizon_alignment ?? "-")],
+      ["Clasificación", clasificacionEs(classification)],
+      ["Marca de tiempo de la señal", formatTs(signal?.timestamp)],
     ]);
 
     const cam = cameraHealth?.camera || summary?.camera_context || {};
     renderKvs(el.cameraStatusSummary, [
-      ["Provider", cam?.provider || "-"],
-      ["Estado", cam?.status || "-"],
-      ["Ready", String(cam?.provider_ready ?? "-")],
+      ["Proveedor de cámara", cam?.provider || "—"],
+      ["Estado", cam?.status || "—"],
+      ["Listo", formatSiNo(cam?.provider_ready)],
       ["Última captura", formatTs(cam?.last_capture)],
       ["Presencia", formatNumber(cam?.presence_score)],
       ["Actividad", formatNumber(cam?.activity_level)],
@@ -306,13 +375,13 @@
   function renderAlerts(meta, latestDecision) {
     const alerts = [];
     if (meta?.horizon_conflict) {
-      alerts.push("Conflicto fast vs structural activo.");
+      alerts.push("Conflicto entre señal táctica (fast) y estructural.");
     }
     if ((meta?.fast_structural_divergence_score ?? 0) > 0.6) {
       alerts.push("Divergencia de horizonte elevada.");
     }
     if (latestDecision?.decision === "rejected") {
-      alerts.push(`Gate rechazó última señal: ${latestDecision?.reason || "sin razón detallada"}.`);
+      alerts.push(`La compuerta rechazó la última señal: ${latestDecision?.reason || "sin motivo detallado"}.`);
     }
     if (alerts.length === 0) {
       alerts.push("Sin alertas críticas. Operación en régimen normal.");
@@ -321,12 +390,14 @@
   }
 
   function buildExecutiveSummary(signal, meta, latestDecision) {
-    const bias = signal?.bias || "neutral";
-    const classification = meta?.snapshot_classification || "desconocido";
+    const bias = sesgoEs(signal?.bias || "neutral");
+    const classification = clasificacionEs(meta?.snapshot_classification || "desconocido");
     const fast = formatNumber(meta?.fast_pressure_score ?? meta?.fast_composite_pressure);
     const structural = formatNumber(meta?.structural_confidence_score ?? meta?.structural_composite_confidence);
-    const gate = latestDecision?.decision ? `Gate: ${latestDecision.decision}` : "Gate sin decisión reciente";
-    return `Estado ${classification}. Sesgo ${bias}. Fast pressure ${fast} y confianza estructural ${structural}. ${gate}.`;
+    const gate = latestDecision?.decision
+      ? `Compuerta: decisión ${decisionEtiqueta(latestDecision.decision)}.`
+      : "Compuerta: sin decisión reciente.";
+    return `Estado: ${classification}. Sesgo: ${bias}. Presión táctica (fast) ${fast} y confianza estructural ${structural}. ${gate}`;
   }
 
   function renderDecisions(decisions) {
@@ -338,7 +409,7 @@
           <tr>
             <td class="metric">${ev?.symbol || "-"}</td>
             <td>${ev?.timeframe || "-"}</td>
-            <td>${ev?.snapshot_classification || "-"}</td>
+            <td>${clasificacionEs(ev?.snapshot_classification)}</td>
             <td class="score">${formatNumber(ev?.fast_pressure_score)}</td>
             <td class="score">${formatNumber(ev?.structural_confidence_score)}</td>
             <td>${decisionBadge(ev?.decision)}</td>
@@ -358,10 +429,10 @@
     const fallback = list.filter((item) => Boolean(item?.active_fallback_indicator)).length;
 
     el.providersMetrics.innerHTML = [
-      kpiCard("Providers totales", String(total)),
+      kpiCard("Proveedores totales", String(total)),
       kpiCard("Activos", String(ready)),
       kpiCard("Degradados", String(degraded)),
-      kpiCard("Fallback activo", String(fallback)),
+      kpiCard("Respaldo activo", String(fallback)),
     ].join("");
 
     el.tablaProvidersFull.innerHTML = list
@@ -378,7 +449,7 @@
             <td class="metric">${formatNumber(provider?.p95_latency_ms, 0)} ms</td>
             <td class="metric">${provider?.consecutive_errors ?? 0}</td>
             <td class="metric">${formatPct(provider?.availability_ratio)}</td>
-            <td>${provider?.last_error_type || "-"}</td>
+            <td>${ultimoErrorEs(provider?.last_error_type)}</td>
           </tr>
         `;
       })
@@ -387,10 +458,10 @@
     if (stats?.stats) {
       const s = stats.stats;
       el.providersMetrics.innerHTML += [
-        kpiCard("Decisiones accepted", String(s?.by_decision?.accepted ?? 0)),
-        kpiCard("Decisiones rejected", String(s?.by_decision?.rejected ?? 0)),
-        kpiCard("Promedio fast", formatNumber(s?.avg_fast_pressure_score)),
-        kpiCard("Promedio structural", formatNumber(s?.avg_structural_confidence_score)),
+        kpiCard("Decisiones aceptadas", String(s?.by_decision?.accepted ?? 0)),
+        kpiCard("Decisiones rechazadas", String(s?.by_decision?.rejected ?? 0)),
+        kpiCard("Promedio presión táctica (fast)", formatNumber(s?.avg_fast_pressure_score)),
+        kpiCard("Promedio confianza estructural", formatNumber(s?.avg_structural_confidence_score)),
       ].join("");
     }
   }
@@ -405,23 +476,23 @@
 
     const cards = [
       ["Símbolo", symbol],
-      ["Dealer acceleration", formatNumber(dealer?.acceleration_zone_score)],
-      ["Fast pressure", formatNumber(fast?.fast_pressure_score)],
-      ["Fast directional bias", formatNumber(fast?.fast_directional_bias_score)],
-      ["Structural confidence", formatNumber(structural?.structural_confidence_score)],
-      ["Political aggregate", formatNumber(political?.aggregate_signal_score)],
-      ["Última decisión gate", latestDecision?.decision || "-"],
-      ["Timestamp dealer", formatTs(dealer?.timestamp)],
+      ["Zona de aceleración dealer", formatNumber(dealer?.acceleration_zone_score)],
+      ["Presión táctica (fast)", formatNumber(fast?.fast_pressure_score)],
+      ["Sesgo direccional (fast)", formatNumber(fast?.fast_directional_bias_score)],
+      ["Confianza estructural", formatNumber(structural?.structural_confidence_score)],
+      ["Agregado político", formatNumber(political?.aggregate_signal_score)],
+      ["Última decisión (compuerta)", latestDecision?.decision ? decisionEtiqueta(latestDecision.decision) : "—"],
+      ["Marca de tiempo dealer", formatTs(dealer?.timestamp)],
     ];
     el.symbolCards.innerHTML = cards.map(([k, v]) => kpiCard(k, String(v))).join("");
   }
 
   function buildSymbolNarrative(symbol, dealer, fast, structural, political, latestDecision) {
-    return `${symbol}: dealer skew ${formatNumber(dealer?.dealer_skew_score)}, presión fast ${formatNumber(
+    return `${symbol}: sesgo dealer ${formatNumber(dealer?.dealer_skew_score)}, presión táctica (fast) ${formatNumber(
       fast?.fast_pressure_score
-    )}, confianza structural ${formatNumber(structural?.structural_confidence_score)} y señal política ${formatNumber(
+    )}, confianza estructural ${formatNumber(structural?.structural_confidence_score)} y agregado político ${formatNumber(
       political?.aggregate_signal_score
-    )}. Decisión más reciente del gate: ${latestDecision?.decision || "no disponible"}.`;
+    )}. Última decisión de la compuerta: ${latestDecision?.decision ? decisionEtiqueta(latestDecision.decision) : "no disponible"}.`;
   }
 
   function setupTabs() {
@@ -499,13 +570,13 @@
       state.timer = null;
     }
     if (!el.autoRefreshToggle.checked) {
-      setLiveStatus(state.streamConnected ? "Streaming activo" : "Sin señal");
+      setLiveStatus(state.streamConnected ? "Transmisión en vivo (SSE)" : "Sin señal");
       return;
     }
     const interval = Number(el.refreshIntervalSelect.value || "10000");
     state.timer = setInterval(refreshAll, interval);
     if (!state.streamConnected) {
-      setLiveStatus("Polling activo");
+      setLiveStatus("Encuesta periódica");
     }
   }
 
@@ -516,7 +587,7 @@
   function markLastEvent(label) {
     const ts = nowLabel();
     state.lastEventAt = ts;
-    el.liveLastEvent.textContent = `${label} @ ${ts}`;
+    el.liveLastEvent.textContent = `${label} · ${ts}`;
   }
 
   function markHeartbeat() {
@@ -544,7 +615,7 @@
       markHeartbeat();
       return;
     }
-    markLastEvent(type);
+    markLastEvent(tipoEventoStreamEs(type));
     if (type === "snapshot") {
       state.symbol = payload?.symbol || state.symbol;
       refreshAll();
@@ -555,7 +626,7 @@
       return;
     }
     if (type === "provider_health" || type === "degradation" || type === "alert") {
-      const msg = payload?.message || `${type} recibido`;
+      const msg = payload?.message || `${tipoEventoStreamEs(type)} recibido`;
       el.alertasRapidas.innerHTML = `<div class="alert-item">${msg}</div>${el.alertasRapidas.innerHTML}`;
       refreshAll();
     }
@@ -571,7 +642,7 @@
 
   function setupStreamingWithFallback() {
     if (typeof EventSource === "undefined") {
-      setLiveStatus("Polling activo");
+      setLiveStatus("Encuesta periódica");
       setupAutoRefresh();
       return;
     }
@@ -581,7 +652,7 @@
       state.stream = source;
       source.onopen = () => {
         state.streamConnected = true;
-        setLiveStatus("Streaming activo");
+        setLiveStatus("Transmisión en vivo (SSE)");
         markHeartbeat();
         if (state.timer) {
           clearInterval(state.timer);
@@ -603,7 +674,7 @@
             const parsed = JSON.parse(event.data);
             handleStreamEvent(name, parsed?.payload || {});
           } catch (_error) {
-            markLastEvent(`${name}-inválido`);
+            markLastEvent(`${tipoEventoStreamEs(name)} (payload inválido)`);
           }
         });
       });
@@ -615,7 +686,7 @@
       ensureStreamHealthWatchdog();
     } catch (_error) {
       teardownStream();
-      setLiveStatus("Polling activo");
+      setLiveStatus("Encuesta periódica");
       setupAutoRefresh();
     }
   }

@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ATLAS Institutional Radar</title>
+    <title>ATLAS — Radar institucional</title>
     <link rel="stylesheet" href="/radar/dashboard/assets/dashboard.css" />
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
         <div class="topbar-left">
-          <h1 class="title">Institutional Radar</h1>
+          <h1 class="title">Radar institucional</h1>
           <span id="estadoGlobal" class="badge badge-neutral">Inicializando</span>
           <span id="estadoFresh" class="badge badge-neutral">Sin datos</span>
         </div>
@@ -31,7 +31,7 @@
             <a
               href="/ui"
               style="font-size:13px;color:#58a6ff;text-decoration:none;border:1px solid rgba(88,166,255,.35);padding:6px 12px;border-radius:10px;white-space:nowrap"
-              >ATLAS Hub</a>
+              >Hub ATLAS</a>
           </div>
           <div class="topbar-meta">
             <span class="meta-label">Símbolo</span>
@@ -46,7 +46,7 @@
             <span id="latenciaActual" class="meta-value latency">-</span>
           </div>
           <div class="topbar-meta">
-            <span class="meta-label">Live</span>
+            <span class="meta-label">Tiempo real</span>
             <span id="liveMode" class="meta-value">Sin señal</span>
           </div>
           <div class="topbar-meta">
@@ -54,12 +54,12 @@
             <span id="liveLastEvent" class="meta-value">-</span>
           </div>
           <div class="topbar-meta">
-            <span class="meta-label">Heartbeat</span>
+            <span class="meta-label">Latido (SSE)</span>
             <span id="liveHeartbeat" class="meta-value">-</span>
           </div>
           <button id="refreshBtn" class="btn btn-primary" type="button">Actualizar</button>
           <div class="auto-refresh">
-            <label for="autoRefreshToggle">Auto-refresh</label>
+            <label for="autoRefreshToggle">Autoactualización</label>
             <input id="autoRefreshToggle" type="checkbox" checked />
             <select id="refreshIntervalSelect">
               <option value="5000">5s</option>
@@ -74,7 +74,7 @@
       <nav class="tabbar">
         <button class="tab active" data-tab="principal" type="button">Vista principal</button>
         <button class="tab" data-tab="decisiones" type="button">Decisiones</button>
-        <button class="tab" data-tab="providers" type="button">Providers</button>
+        <button class="tab" data-tab="providers" type="button">Proveedores</button>
         <button class="tab" data-tab="simbolo" type="button">Vista por símbolo</button>
       </nav>
 
@@ -85,11 +85,11 @@
               <h2 class="panel-title">KPIs operativos</h2>
               <div class="kpi-grid">
                 <article class="kpi">
-                  <div class="kpi-label">Clasificación snapshot</div>
+                  <div class="kpi-label">Clasificación del snapshot</div>
                   <div id="kpiClassification" class="kpi-value metric">-</div>
                 </article>
                 <article class="kpi">
-                  <div class="kpi-label">Fast pressure</div>
+                  <div class="kpi-label">Presión táctica (fast)</div>
                   <div id="kpiFastPressure" class="kpi-value score">-</div>
                 </article>
                 <article class="kpi">
@@ -97,7 +97,7 @@
                   <div id="kpiStructural" class="kpi-value score">-</div>
                 </article>
                 <article class="kpi">
-                  <div class="kpi-label">Alineación fast/structural</div>
+                  <div class="kpi-label">Alineación táctico / estructural</div>
                   <div id="kpiAlignment" class="kpi-value">-</div>
                 </article>
                 <article class="kpi">
@@ -128,12 +128,12 @@
                   <thead>
                     <tr>
                       <th>Símbolo</th>
-                      <th>Timeframe</th>
+                      <th>Marco temporal</th>
                       <th>Clasificación</th>
                       <th>Sesgo</th>
-                      <th>Fast / Structural</th>
-                      <th>Gate</th>
-                      <th>Timestamp</th>
+                      <th>Táctico / estructural</th>
+                      <th>Compuerta</th>
+                      <th>Marca de tiempo</th>
                     </tr>
                   </thead>
                   <tbody id="tablaSignals"></tbody>
@@ -142,23 +142,23 @@
             </section>
 
             <section class="panel">
-              <h2 class="panel-title">Contexto dealer / fast</h2>
+              <h2 class="panel-title">Contexto dealer / táctico</h2>
               <div id="dealerFastSummary" class="kv-grid"></div>
             </section>
           </div>
 
           <div class="grid-bottom">
             <section class="panel">
-              <h2 class="panel-title">Estado de providers</h2>
+              <h2 class="panel-title">Estado de proveedores</h2>
               <div class="table-wrap">
                 <table class="data-table">
                   <thead>
                     <tr>
-                      <th>Provider</th>
+                      <th>Proveedor</th>
                       <th>Estado</th>
                       <th>Latencia</th>
                       <th>P95</th>
-                      <th>Fallback</th>
+                      <th>Respaldo</th>
                       <th>Circuito</th>
                       <th>Disponibilidad</th>
                       <th>Último error</th>
@@ -180,19 +180,19 @@
 
         <section id="tab-decisiones" class="tab-panel">
           <section class="panel">
-            <h2 class="panel-title">Decisiones del gate</h2>
+            <h2 class="panel-title">Decisiones de la compuerta</h2>
             <div class="table-wrap">
               <table class="data-table">
                 <thead>
                   <tr>
                     <th>Símbolo</th>
-                    <th>Timeframe</th>
+                    <th>Marco temporal</th>
                     <th>Clasificación</th>
-                    <th>Fast</th>
-                    <th>Structural</th>
+                    <th>Táctico (fast)</th>
+                    <th>Estructural</th>
                     <th>Decisión</th>
                     <th>Razón</th>
-                    <th>Timestamp</th>
+                    <th>Marca de tiempo</th>
                   </tr>
                 </thead>
                 <tbody id="tablaDecisiones"></tbody>
@@ -203,15 +203,15 @@
 
         <section id="tab-providers" class="tab-panel">
           <section class="panel">
-            <h2 class="panel-title">Inventario completo de providers</h2>
+            <h2 class="panel-title">Inventario completo de proveedores</h2>
             <div id="providersMetrics" class="kpi-grid compact"></div>
             <div class="table-wrap">
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>Provider</th>
-                    <th>Ready</th>
-                    <th>Fallback</th>
+                    <th>Proveedor</th>
+                    <th>Listo</th>
+                    <th>Respaldo</th>
                     <th>Circuito</th>
                     <th>Latencia</th>
                     <th>P95</th>
@@ -230,7 +230,7 @@
           <section class="panel">
             <h2 class="panel-title">Lectura por símbolo</h2>
             <p class="subtle">
-              Ajusta el símbolo en el header y usa "Actualizar". Esta vista combina fast, structural, dealer y político.
+              Ajusta el símbolo en la cabecera y pulsa «Actualizar». Esta vista combina contexto táctico (fast), estructural, dealer y político.
             </p>
             <div id="symbolNarrative" class="executive-summary"></div>
             <div id="symbolCards" class="kpi-grid"></div>
