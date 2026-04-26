@@ -2,6 +2,7 @@
 ATLAS Core — Hands of the RAULI Robot (tools, runners, memory, audit)
 
 - **Deploy (Blue-Green + Canary):** [docs/DEPLOY.md](docs/DEPLOY.md)
+- **PUSH + Quant + Radar (arranque y URLs):** [docs/ATLAS_RADAR_STACK.md](docs/ATLAS_RADAR_STACK.md)
 
 ## Atlas Code Quant - PDT Rule Elimination (2026-04-14)
 

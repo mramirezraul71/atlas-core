@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-26T13:46:04.548436+00:00",
+  "generated_at": "2026-04-26T15:43:40.050651+00:00",
   "topic": "atlas_quant_trading_implementation_scorecard",
   "summary": "Scorecard operativo para medir dos cosas separadas: cuanto del metodo ya esta implantado y cuanta evidencia real existe de que esa implantacion esta sirviendo.",
   "metric_catalog": [
@@ -155,7 +155,7 @@
         "reload_resilience_pct": 100.0,
         "foundation_score_pct": 100.0,
         "freshness_pct": 0.0,
-        "age_hours": 160.16
+        "age_hours": 162.12
       }
     },
     "visual_benchmark_feedback_score": {

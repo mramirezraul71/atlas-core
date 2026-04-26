@@ -193,12 +193,12 @@ export function render(container) {
 
       <div class="quick-actions">
         <div class="quick-chip" data-action="health">${SVG.health} Salud del sistema</div>
-        <div class="quick-chip" data-action="institutional-radar" style="color:#79c0ff;border-color:rgba(121,192,255,0.35);background:rgba(121,192,255,0.06)">${SVG.radar} Radar institucional</div>
         <div class="quick-chip" data-action="clawd-direct">${SVG.brain} ATLAS Directo</div>
         <div class="quick-chip" data-action="bitacora">${SVG.bitacora} Bitacora</div>
         <div class="quick-chip quant-chip" data-action="code-quant-dashboard" style="color:#00d4aa;border-color:rgba(0,212,170,0.4);background:rgba(0,212,170,0.07)">${SVG.trading} Code Quant</div>
         <div class="quick-chip quant-chip" data-action="atlas-quant-scanner" style="color:#00d4aa;border-color:rgba(0,212,170,0.25)">&#9670; Escaner Quant</div>
         <div class="quick-chip quant-chip" data-action="option-strat" style="color:#00d4aa;border-color:rgba(0,212,170,0.35);background:rgba(0,212,170,0.07)">&#9651; OptionStrat</div>
+        <div class="quick-chip quant-chip" data-action="institutional-radar" style="color:#79c0ff;border-color:rgba(121,192,255,0.35);background:rgba(121,192,255,0.06)">${SVG.radar} Radar Institucional</div>
         <div class="quick-chip quant-chip" data-action="grafana-quant" style="color:#f46800;border-color:rgba(244,104,0,0.35)">${SVG.grafana} Grafana</div>
         <div class="quick-chip" data-action="rauli-vision">${SVG.eye} Rauli Vision</div>
         <div class="quick-chip" data-action="rauli-panaderia">${SVG.package} Rauli Panaderia</div>
@@ -258,6 +258,10 @@ export function render(container) {
           <div class="app-tile-icon" style="color:#00d4aa">&#9651;</div>
           <div class="app-tile-label" style="color:#00d4aa">OptionStrat</div>
         </div>
+        <div class="app-tile" data-app="institutional-radar" style="border-color:rgba(121,192,255,0.35);background:rgba(121,192,255,0.05)">
+          <div class="app-tile-icon" style="color:#79c0ff">${SVG.radar}</div>
+          <div class="app-tile-label" style="color:#79c0ff">Radar Institucional</div>
+        </div>
         <div class="app-tile" data-app="grafana-quant" style="border-color:rgba(244,104,0,0.35)">
           <div class="app-tile-icon" style="color:#f46800">${SVG.grafana}</div>
           <div class="app-tile-label">Grafana</div>
@@ -267,10 +271,6 @@ export function render(container) {
         <div class="app-tile" data-app="assistant">
           <div class="app-tile-icon">${SVG.brain}</div>
           <div class="app-tile-label">AI Assistant</div>
-        </div>
-        <div class="app-tile" data-app="institutional-radar" style="border-color:rgba(121,192,255,0.35);background:rgba(121,192,255,0.05)">
-          <div class="app-tile-icon" style="color:#79c0ff">${SVG.radar}</div>
-          <div class="app-tile-label" style="color:#79c0ff">Radar institucional</div>
         </div>
         <div class="app-tile" data-app="monitor">
           <div class="app-tile-icon">${SVG.monitor}</div>
@@ -412,7 +412,7 @@ export function render(container) {
 
   const CHIP_ROUTES = {
     health:    { hash: '/health' },
-    'institutional-radar': { href: '/radar/dashboard', newTab: true },
+    'institutional-radar': { href: '/radar/dashboard', newTab: false },
     workspace: { href: '/workspace', newTab: true },
     bitacora:  { hash: '/bitacora' },
     'rauli-vision': { hash: '/apps/vision' },
@@ -458,7 +458,7 @@ export function render(container) {
 
   const TILE_ROUTES = {
     'assistant':    { hash: '/chat' },
-    'institutional-radar': { href: '/radar/dashboard', newTab: true },
+    'institutional-radar': { href: '/radar/dashboard', newTab: false },
     'workspace-ext':{ href: '/workspace', newTab: true },
     'governance':   { hash: '/autonomy' },
     'approvals':    { hash: '/approvals' },

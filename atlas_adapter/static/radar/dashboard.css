@@ -131,6 +131,26 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
+.hidden {
+  display: none !important;
+}
+
+.symbol-search-wrap {
+  position: relative;
+  min-width: 11rem;
+  max-width: 20rem;
+}
+
+.symbol-search-inner {
+  position: relative;
+}
+
+.symbol-search-input {
+  width: 100%;
+  min-width: 10rem;
+  text-transform: none;
+}
+
 .symbol-input {
   width: 72px;
   background: var(--bg-primary);
@@ -140,6 +160,68 @@ kbd {
   padding: 4px 8px;
   font-family: var(--font-mono);
   text-transform: uppercase;
+}
+
+.symbol-suggest-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  margin: 4px 0 0;
+  padding: 4px 0;
+  list-style: none;
+  max-height: 16rem;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-emphasis);
+  border-radius: 0.375rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.symbol-suggest-item {
+  padding: 8px 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.symbol-suggest-item:last-child {
+  border-bottom: none;
+}
+
+.symbol-suggest-item:hover,
+.symbol-suggest-item.is-active,
+.symbol-suggest-item[aria-selected="true"] {
+  background: var(--accent-subtle);
+}
+
+.symbol-suggest-ticker {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.symbol-suggest-meta {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.35;
+}
+
+.symbol-search-message {
+  margin-top: 6px;
+  font-size: var(--text-xs);
+  color: var(--status-caution);
+  max-width: 20rem;
+}
+
+.symbol-active-pill {
+  margin-top: 4px;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
 }
 
 .btn {
@@ -390,6 +472,14 @@ kbd {
   color: var(--status-stale);
   background: rgba(220, 38, 38, 0.1);
   border-color: rgba(220, 38, 38, 0.3);
+}
+
+.camera-state-badge {
+  margin-left: var(--space-2);
+  font-size: 0.7rem;
+  vertical-align: middle;
+  text-transform: none;
+  letter-spacing: 0.02em;
 }
 
 .kv-grid {

@@ -18118,3 +18118,11 @@ async def quant_static(file_path: str):
 # ─────────────────────────────────────────────────────────────────────────────
 
 _dedupe_http_routes()
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    _host = os.environ.get("ATLAS_PUSH_HOST", "127.0.0.1")
+    _port = int(os.environ.get("ATLAS_PUSH_PORT", "8791"))
+    uvicorn.run(app, host=_host, port=_port, log_level="info")

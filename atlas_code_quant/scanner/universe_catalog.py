@@ -1,6 +1,7 @@
 """Universe catalog for the opportunity scanner."""
 from __future__ import annotations
 
+import bisect
 import json
 import logging
 import re
@@ -88,6 +89,7 @@ class ScannerUniverseCatalog:
         for item in rows:
             deduped.setdefault(item["symbol"], item)
         symbols = sorted(deduped)
+        entries = [dict(deduped[s]) for s in symbols]
         payload = {
             "kind": "us_equities",
             "source": "nasdaq_trader_symbol_directory",
@@ -96,6 +98,7 @@ class ScannerUniverseCatalog:
             "fetched_epoch": time.time(),
             "total_symbols": len(symbols),
             "symbols": symbols,
+            "entries": entries,
             "meta": {
                 "nasdaq_rows": len(nasdaq),
                 "other_rows": len(other),
@@ -146,3 +149,94 @@ class ScannerUniverseCatalog:
                 }
             )
         return rows
+
+    def search_us_equities(self, query: str, *, limit: int = 25) -> dict[str, Any]:
+        """Filtra el universo US del scanner (misma fuente que rotación). Sin query vacío útil."""
+        raw = str(query or "").strip()
+        lim = max(1, min(int(limit or 25), 100))
+        data = self.get_us_equities(force_refresh=False)
+        entries: list[dict[str, Any]] = list(data.get("entries") or [])
+        symbols_only: list[str] | None = None
+        if not entries:
+            raw_syms = data.get("symbols") or []
+            symbols_only = sorted(str(s).strip().upper() for s in raw_syms if str(s).strip())
+        if not raw:
+            return {
+                "query": raw,
+                "matches": [],
+                "truncated": False,
+                "universe_kind": data.get("kind"),
+                "universe_total": int(
+                    data.get("total_symbols") or (len(symbols_only) if symbols_only is not None else len(entries))
+                ),
+                "hint": "Escribe ticker o parte del nombre de la empresa.",
+            }
+        qsym = _normalize_symbol(raw)
+        ql = raw.lower()
+
+        scored: list[tuple[int, int, str, dict[str, Any]]] = []
+
+        def push_entry(rank: int, order: int, entry: dict[str, Any]) -> None:
+            sym = str(entry.get("symbol") or "").strip().upper()
+            if not sym:
+                return
+            scored.append((rank, order, sym, dict(entry)))
+
+        if symbols_only is not None:
+            # Caché antiguo sin ``entries``: solo prefijo de ticker (lista ordenada + bisect).
+            if " " in raw:
+                return {
+                    "query": raw,
+                    "matches": [],
+                    "truncated": False,
+                    "universe_kind": data.get("kind"),
+                    "universe_total": int(data.get("total_symbols") or len(symbols_only)),
+                    "source": str(data.get("source") or "nasdaq_trader_symbol_directory"),
+                    "hint": "Para buscar por nombre de empresa, refresca el catálogo en Quant (se guardan entradas con nombre). Mientras tanto usa ticker (ej. AAPL).",
+                }
+            if qsym:
+                pos = bisect.bisect_left(symbols_only, qsym)
+                order = 0
+                while pos < len(symbols_only) and str(symbols_only[pos]).startswith(qsym) and len(scored) < lim * 4:
+                    s = str(symbols_only[pos])
+                    rank = 0 if s == qsym else 1
+                    push_entry(rank, order, {"symbol": s, "security_name": "", "is_etf": False, "exchange": ""})
+                    order += 1
+                    pos += 1
+        else:
+            for order, entry in enumerate(entries):
+                sym = str(entry.get("symbol") or "")
+                sym_u = sym.upper()
+                name = str(entry.get("security_name") or "")
+                name_l = name.lower()
+                if qsym and sym_u == qsym:
+                    push_entry(0, order, entry)
+                elif qsym and sym_u.startswith(qsym):
+                    push_entry(1, order, entry)
+                elif qsym and qsym in sym_u:
+                    push_entry(2, order, entry)
+                elif len(ql) >= 2 and ql in name_l:
+                    push_entry(3, order, entry)
+
+        scored.sort(key=lambda t: (t[0], t[1]))
+        seen: set[str] = set()
+        unique_rows: list[dict[str, Any]] = []
+        for _rank, _ord, sym, entry in scored:
+            if sym in seen:
+                continue
+            seen.add(sym)
+            unique_rows.append(entry)
+
+        total_hits = len(unique_rows)
+        truncated = total_hits > lim
+        unique_rows = unique_rows[:lim]
+        return {
+            "query": raw,
+            "matches": unique_rows,
+            "truncated": truncated,
+            "universe_kind": data.get("kind"),
+            "universe_total": int(
+                data.get("total_symbols") or (len(symbols_only) if symbols_only is not None else len(entries))
+            ),
+            "source": str(data.get("source") or "nasdaq_trader_symbol_directory"),
+        }

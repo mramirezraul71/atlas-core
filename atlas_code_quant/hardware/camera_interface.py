@@ -287,10 +287,25 @@ class CameraInterface:
         _src = self.rtmp_url
         if isinstance(_src, str) and _src.lstrip("-").isdigit():
             _src = int(_src)
-        _open_args = (_src, cv2.CAP_DSHOW) if isinstance(_src, int) else (_src,)
+        # USB entero: misma prioridad DSHOW→MSMF que InstaCapture (Windows estable).
+        def _open_usb_int(idx: int):
+            if hasattr(cv2, "CAP_DSHOW"):
+                c = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+                if c.isOpened():
+                    return c
+                c.release()
+            if hasattr(cv2, "CAP_MSMF"):
+                c = cv2.VideoCapture(idx, cv2.CAP_MSMF)
+                if c.isOpened():
+                    return c
+                c.release()
+            return cv2.VideoCapture(idx)
 
         while self._running:
-            self._cap = cv2.VideoCapture(*_open_args)
+            if isinstance(_src, int):
+                self._cap = _open_usb_int(_src)
+            else:
+                self._cap = cv2.VideoCapture(_src)
             if not self._cap.isOpened():
                 logger.error("No se pudo abrir fuente: %s — reintentando en %.0fs",
                              self.rtmp_url, retry_delay)

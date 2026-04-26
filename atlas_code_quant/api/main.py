@@ -110,9 +110,15 @@ from operations.decision_shadow import (
 from operations.paper_visual_pipeline import collect_visual_evidence
 from operations.readiness_eval import evaluate_operational_readiness, startup_warmup_gate_satisfied
 from operations.readiness_payload_builder import build_readiness_fast_payload, quant_readiness_flags
-from operations.startup_visual_connect import apply_startup_visual_connections
+from operations.camera_health_payload import build_quant_camera_health_payload
+from operations.startup_visual_connect import (
+    apply_startup_camera_autoconfigure,
+    apply_startup_visual_connections,
+)
 from operations.vision_calibration import VisionCalibrationService
 from scanner.opportunity_scanner import OpportunityScannerService
+from scanner.universe_catalog import ScannerUniverseCatalog
+from scanner.asset_classifier import classify_asset
 from selector.strategy_selector import StrategySelectorService
 from atlas_code_quant.options.paper_runtime_loop import (
     build_default_options_runtime_loop,
@@ -161,6 +167,10 @@ _VISION = SensorVisionService()
 _AUTON_EXECUTOR = AutonExecutorService()
 _JOURNAL_PRO = JournalProService(_JOURNAL)
 _SCANNER = OpportunityScannerService(_ADAPTIVE_LEARNING)
+_UNIVERSE_CATALOG = ScannerUniverseCatalog(
+    cache_path=settings.scanner_universe_cache_path,
+    cache_ttl_sec=settings.scanner_universe_cache_ttl_sec,
+)
 _VISION_CALIBRATION = VisionCalibrationService()
 _SELECTOR = StrategySelectorService(_STRATEGY_TRACKER, _ADAPTIVE_LEARNING)
 _GRAFANA_METRICS = GrafanaDashboard() if _PROM_EXPORT_OK else None
@@ -434,6 +444,15 @@ async def _start_background_services() -> None:
                         logger.exception("Unable to preload Tradier %s session", scope)
             if settings.startup_visual_connect_enabled:
                 try:
+                    cam_snap = await asyncio.to_thread(
+                        apply_startup_camera_autoconfigure,
+                        vision_service=_VISION,
+                        settings=settings,
+                    )
+                    logger.info("Startup camera autoconfigure (lightweight): %s", cam_snap)
+                except Exception:
+                    logger.exception("Startup camera autoconfigure failed (lightweight, non-fatal)")
+                try:
                     snap = await asyncio.to_thread(
                         apply_startup_visual_connections,
                         vision_service=_VISION,
@@ -587,6 +606,15 @@ async def _start_background_services() -> None:
         else:
             logger.info("Snapshot prewarm omitido por QUANT_STARTUP_SNAPSHOT_PREWARM_ENABLED=false")
         if settings.startup_visual_connect_enabled:
+            try:
+                cam_snap = await asyncio.to_thread(
+                    apply_startup_camera_autoconfigure,
+                    vision_service=_VISION,
+                    settings=settings,
+                )
+                logger.info("Startup camera autoconfigure: %s", cam_snap)
+            except Exception:
+                logger.exception("Startup camera autoconfigure failed (non-fatal)")
             try:
                 snap = await asyncio.to_thread(
                     apply_startup_visual_connections,
@@ -2948,6 +2976,23 @@ async def operation_vision_status_endpoint(x_api_key: str | None = Header(None))
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
+@app.get("/camera/health", response_model=StdResponse, tags=["Operation"])
+async def camera_health_endpoint(x_api_key: str | None = Header(None)):
+    """Salud textual del sensor de visión/cámara (sin streaming de vídeo)."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        payload = await asyncio.to_thread(build_quant_camera_health_payload, _VISION)
+        return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("camera/health error")
+        return StdResponse(
+            ok=False,
+            error=str(exc),
+            ms=round((time.perf_counter() - t0) * 1000, 2),
+        )
+
+
 @app.post("/operation/vision/provider", response_model=StdResponse, tags=["Operation"])
 async def operation_vision_provider(
     body: VisionProviderRequest,
@@ -3176,6 +3221,11 @@ async def operation_vision_provider_v2(body: VisionProviderRequest, x_api_key: s
     return await operation_vision_provider(body=body, x_api_key=x_api_key)
 
 
+@app.get("/api/v2/quant/camera/health", response_model=StdResponse, tags=["V2"])
+async def camera_health_v2(x_api_key: str | None = Header(None)):
+    return await camera_health_endpoint(x_api_key=x_api_key)
+
+
 @app.get("/api/v2/quant/operation/readiness", response_model=StdResponse, tags=["V2"])
 async def operation_readiness_v2(x_api_key: str | None = Header(None)):
     return await operation_readiness_endpoint(x_api_key=x_api_key)
@@ -3366,6 +3416,51 @@ async def scanner_control(
         return StdResponse(ok=True, data=payload.model_dump(), ms=round((time.perf_counter() - t0) * 1000, 2))
     except Exception as exc:
         logger.exception("Error controlling scanner")
+        return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
+
+
+def _enrich_universe_search_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Añade ``asset_class`` e ``is_optionable`` (misma heurística que el scanner)."""
+    out: list[dict[str, Any]] = []
+    for entry in rows:
+        if not isinstance(entry, dict):
+            continue
+        sym = str(entry.get("symbol") or "").strip().upper()
+        if not sym:
+            continue
+        prof = classify_asset(sym)
+        out.append(
+            {
+                "symbol": sym,
+                "name": str(entry.get("security_name") or ""),
+                "exchange": str(entry.get("exchange") or ""),
+                "is_etf": bool(entry.get("is_etf")),
+                "asset_class": prof.asset_class.value,
+                "is_optionable": bool(prof.has_options),
+            }
+        )
+    return out
+
+
+@app.get("/scanner/universe/search", response_model=StdResponse, tags=["Scanner"])
+async def scanner_universe_search(
+    q: str = "",
+    limit: int = 25,
+    x_api_key: str | None = Header(None),
+):
+    """Búsqueda sobre el universo US del catálogo del scanner (NASDAQ Trader + other listed)."""
+    _auth(x_api_key)
+    t0 = time.perf_counter()
+    try:
+        raw = _UNIVERSE_CATALOG.search_us_equities(q, limit=max(1, min(int(limit), 100)))
+        enriched_matches = _enrich_universe_search_rows(list(raw.get("matches") or []))
+        payload = {
+            **{k: v for k, v in raw.items() if k != "matches"},
+            "matches": enriched_matches,
+        }
+        return StdResponse(ok=True, data=payload, ms=round((time.perf_counter() - t0) * 1000, 2))
+    except Exception as exc:
+        logger.exception("Error en búsqueda de universo")
         return StdResponse(ok=False, error=str(exc), ms=round((time.perf_counter() - t0) * 1000, 2))
 
 
@@ -3606,6 +3701,15 @@ async def scanner_control_v2(
     x_api_key: str | None = Header(None),
 ):
     return await scanner_control(body=body, x_api_key=x_api_key)
+
+
+@app.get("/api/v2/quant/scanner/universe/search", response_model=StdResponse, tags=["V2"])
+async def scanner_universe_search_v2(
+    q: str = "",
+    limit: int = 25,
+    x_api_key: str | None = Header(None),
+):
+    return await scanner_universe_search(q=q, limit=limit, x_api_key=x_api_key)
 
 
 @app.post("/api/v2/quant/selector/proposal", response_model=StdResponse, tags=["V2"])

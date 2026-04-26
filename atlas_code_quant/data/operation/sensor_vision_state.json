@@ -1,9 +1,9 @@
 {
-  "provider": "off",
+  "provider": "insta360",
   "operator_present": true,
   "screen_integrity_ok": true,
   "last_capture_path": null,
   "last_capture_at": "2026-04-17T06:53:41.438783",
   "last_capture_note": "Proveedor manual activo; no se intento captura automatica.",
-  "notes": ""
+  "notes": "startup: ENABLE_CAMERA auto (USB/pipeline)"
 }

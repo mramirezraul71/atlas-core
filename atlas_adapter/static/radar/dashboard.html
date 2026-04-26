@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="atlas-radar-assets" content="v8-sse-tune" />
+    <meta name="atlas-radar-assets" content="v14-sse-live" />
     <title>ATLAS — Radar institucional</title>
-    <link rel="stylesheet" href="/radar/dashboard/assets/dashboard.css?v=8" />
+    <link rel="stylesheet" href="/radar/dashboard/assets/dashboard.css?v=14" />
   </head>
   <body>
     <div class="app-shell">
@@ -34,9 +34,35 @@
               style="font-size:13px;color:#58a6ff;text-decoration:none;border:1px solid rgba(88,166,255,.35);padding:6px 12px;border-radius:10px;white-space:nowrap"
               >Hub ATLAS</a>
           </div>
-          <div class="topbar-meta">
-            <span class="meta-label">Símbolo</span>
-            <input id="symbolInput" class="symbol-input" type="text" value="SPY" maxlength="8" />
+          <div class="topbar-meta symbol-search-wrap">
+            <span class="meta-label" id="symbolSearchLabel">Símbolo</span>
+            <div class="symbol-search-inner" id="symbolSearchCombo">
+              <input
+                id="symbolInput"
+                class="symbol-input symbol-search-input"
+                type="text"
+                maxlength="32"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Buscar ticker…"
+                role="combobox"
+                aria-haspopup="listbox"
+                aria-autocomplete="list"
+                aria-controls="symbolSuggestList"
+                aria-expanded="false"
+                aria-labelledby="symbolSearchLabel"
+              />
+              <ul
+                id="symbolSuggestList"
+                class="symbol-suggest-list hidden"
+                role="listbox"
+                aria-labelledby="symbolSearchLabel"
+                aria-label="Sugerencias de símbolos"
+                tabindex="-1"
+              ></ul>
+            </div>
+            <div id="symbolActivePill" class="symbol-active-pill" aria-live="polite"></div>
+            <div id="symbolSearchMessage" class="symbol-search-message hidden"></div>
           </div>
           <div class="topbar-meta">
             <span class="meta-label">Última actualización</span>
@@ -58,6 +84,19 @@
             <span class="meta-label">Latido (SSE)</span>
             <span id="liveHeartbeat" class="meta-value">-</span>
           </div>
+          <div class="topbar-meta">
+            <span class="meta-label">SSE</span>
+            <span id="sseLiveQuality" class="badge badge-neutral" title="Estado del canal en vivo">—</span>
+          </div>
+          <div class="topbar-meta">
+            <span class="meta-label">Útil hace</span>
+            <span id="sseSinceSnapshot" class="meta-value" title="Tiempo desde último snapshot útil">-</span>
+          </div>
+          <div class="topbar-meta">
+            <span class="meta-label">Latido hace</span>
+            <span id="sseSinceHeartbeat" class="meta-value" title="Tiempo desde último heartbeat SSE">-</span>
+          </div>
+          <span id="sseReconnecting" class="badge badge-caution hidden" aria-live="polite">Reconectando…</span>
           <button id="refreshBtn" class="btn btn-primary" type="button">Actualizar</button>
           <div class="auto-refresh">
             <label for="autoRefreshToggle">Autoactualización</label>
@@ -173,7 +212,10 @@
             <section class="panel">
               <h2 class="panel-title">Contexto estructural</h2>
               <div id="structuralSummary" class="kv-grid"></div>
-              <h3 class="panel-title">Sensor cámara</h3>
+              <h3 class="panel-title">
+                Sensor cámara
+                <span id="cameraStateBadge" class="badge badge-neutral camera-state-badge" aria-live="polite">—</span>
+              </h3>
               <div id="cameraStatusSummary" class="kv-grid"></div>
             </section>
           </div>
@@ -240,6 +282,6 @@
       </main>
     </div>
 
-    <script src="/radar/dashboard/assets/dashboard.js?v=8"></script>
+    <script src="/radar/dashboard/assets/dashboard.js?v=14"></script>
   </body>
 </html>

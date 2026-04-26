@@ -1,10 +1,16 @@
 (function () {
-  /** Ventana de silencio SSE antes de marcar degradado (ms). Debe ser > varios latidos del servidor. */
-  const SSE_STALE_MS = 35000;
+  /** Sin latido SSE en este intervalo → desconectado / reconexión. */
+  const SSE_HEARTBEAT_DEAD_MS = 42000;
+  /** Sin snapshot útil (merge o refresh) → stale. */
+  const SNAPSHOT_USEFUL_STALE_MS = 48000;
+  const SESSION_SYMBOL_KEY = "atlas_radar_active_symbol";
+  const SEARCH_DEBOUNCE_MS = 420;
+  const SEARCH_MIN_CHARS = 1;
+  const DEFAULT_SYMBOL_FALLBACK = "SPY";
 
   const state = {
     activeTab: "principal",
-    symbol: "SPY",
+    symbol: "",
     timer: null,
     lastSummary: null,
     stream: null,
@@ -14,6 +20,16 @@
     staleTimer: null,
     sseReconnectTimer: null,
     sseBackoffMs: 3000,
+    cameraPollTimer: null,
+    liveQualityTicker: null,
+    lastSnapshotUsefulAt: 0,
+    lastQuantReachable: true,
+    lastEnvelopeSeq: 0,
+    lastDegradedSig: "",
+    symbolSuggestIndex: -1,
+    symbolSuggestOpen: false,
+    symbolSearchDebounce: null,
+    symbolSearchSeq: 0,
   };
 
   const endpoints = {
@@ -25,8 +41,11 @@
     fast: (symbol) => `/api/radar/diagnostics/fast/${encodeURIComponent(symbol)}`,
     structural: (symbol) => `/api/radar/diagnostics/structural/${encodeURIComponent(symbol)}`,
     political: (symbol) => `/api/radar/political/${encodeURIComponent(symbol)}`,
-    cameraHealth: "/api/radar/sensors/camera/health",
-    stream: "/api/radar/stream",
+    cameraStatus: "/api/radar/camera/status",
+    stream: () => {
+      const s = getActiveSymbol();
+      return `/api/radar/stream?symbol=${encodeURIComponent(s)}`;
+    },
   };
 
   const el = {
@@ -53,6 +72,7 @@
     dealerFastSummary: document.getElementById("dealerFastSummary"),
     structuralSummary: document.getElementById("structuralSummary"),
     cameraStatusSummary: document.getElementById("cameraStatusSummary"),
+    cameraStateBadge: document.getElementById("cameraStateBadge"),
     tablaDecisiones: document.getElementById("tablaDecisiones"),
     providersMetrics: document.getElementById("providersMetrics"),
     tablaProvidersFull: document.getElementById("tablaProvidersFull"),
@@ -61,7 +81,350 @@
     liveMode: document.getElementById("liveMode"),
     liveLastEvent: document.getElementById("liveLastEvent"),
     liveHeartbeat: document.getElementById("liveHeartbeat"),
+    sseLiveQuality: document.getElementById("sseLiveQuality"),
+    sseSinceSnapshot: document.getElementById("sseSinceSnapshot"),
+    sseSinceHeartbeat: document.getElementById("sseSinceHeartbeat"),
+    sseReconnecting: document.getElementById("sseReconnecting"),
+    symbolSuggestList: document.getElementById("symbolSuggestList"),
+    symbolSearchMessage: document.getElementById("symbolSearchMessage"),
+    symbolActivePill: document.getElementById("symbolActivePill"),
+    symbolSearchCombo: document.getElementById("symbolSearchCombo"),
   };
+
+  const searchResponseCache = new Map();
+
+  /** sessionStorage opcional: nunca lanza; devuelve cadena vacía si no hay API o acceso denegado. */
+  function safeGetSessionValue(key) {
+    try {
+      if (typeof sessionStorage === "undefined" || sessionStorage === null) return "";
+      const v = sessionStorage.getItem(String(key || ""));
+      return v == null ? "" : String(v);
+    } catch (_e) {
+      return "";
+    }
+  }
+
+  /** Devuelve true si se guardó; false si storage no disponible o error (sandbox, cuota, etc.). */
+  function safeSetSessionValue(key, value) {
+    try {
+      if (typeof sessionStorage === "undefined" || sessionStorage === null) return false;
+      sessionStorage.setItem(String(key || ""), String(value ?? ""));
+      return true;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  function safeGetSessionSymbol() {
+    const raw = safeGetSessionValue(SESSION_SYMBOL_KEY).trim().toUpperCase();
+    return raw && /^[A-Z0-9.-]{1,12}$/i.test(raw) ? raw : "";
+  }
+
+  function persistActiveSymbol(sym) {
+    const s = String(sym || "").trim().toUpperCase();
+    if (!s) return;
+    safeSetSessionValue(SESSION_SYMBOL_KEY, s);
+  }
+
+  /**
+   * Fuente de verdad del ticker activo: **state.symbol** (memoria JS).
+   * Mientras el usuario edita en el combobox (foco + texto distinto al comprometido), se usa el input.
+   * sessionStorage solo rehidrata al arranque vía init; aquí es fallback si memoria/input vacíos.
+   */
+  function isSymbolTypingDraft() {
+    if (document.activeElement !== el.symbolInput) return false;
+    const inputRaw = String(el.symbolInput?.value || "").trim().toUpperCase();
+    if (!inputRaw) return false;
+    const fromState = String(state.symbol || "").trim().toUpperCase();
+    if (!fromState) return true;
+    return inputRaw !== fromState;
+  }
+
+  function getActiveSymbol() {
+    if (isSymbolTypingDraft()) {
+      const draft = String(el.symbolInput?.value || "").trim().toUpperCase();
+      if (draft) return draft;
+    }
+    const fromState = String(state.symbol || "").trim().toUpperCase();
+    if (fromState && /^[A-Z0-9.-]{1,12}$/i.test(fromState)) return fromState;
+    const fromInput = String(el.symbolInput?.value || "").trim().toUpperCase();
+    if (fromInput) return fromInput;
+    const persisted = safeGetSessionSymbol();
+    if (persisted) return persisted;
+    return DEFAULT_SYMBOL_FALLBACK;
+  }
+
+  function updateSymbolPill() {
+    const s = getActiveSymbol();
+    el.symbolActivePill.textContent = s ? `Activo: ${s}` : "";
+  }
+
+  function setSymbolSearchMessage(text) {
+    if (!text) {
+      el.symbolSearchMessage.textContent = "";
+      el.symbolSearchMessage.classList.add("hidden");
+      return;
+    }
+    el.symbolSearchMessage.textContent = text;
+    el.symbolSearchMessage.classList.remove("hidden");
+  }
+
+  function closeSymbolSuggest() {
+    state.symbolSuggestOpen = false;
+    state.symbolSuggestIndex = -1;
+    el.symbolSuggestList.classList.add("hidden");
+    el.symbolSuggestList.innerHTML = "";
+    el.symbolInput.setAttribute("aria-expanded", "false");
+    el.symbolInput.removeAttribute("aria-activedescendant");
+  }
+
+  function setSuggestActiveIndex(newIdx) {
+    const items = Array.from(el.symbolSuggestList.querySelectorAll('[role="option"]'));
+    if (!items.length) {
+      el.symbolInput.removeAttribute("aria-activedescendant");
+      return;
+    }
+    const len = items.length;
+    const idx = ((newIdx % len) + len) % len;
+    state.symbolSuggestIndex = idx;
+    items.forEach((node, i) => {
+      const sel = i === idx;
+      node.classList.toggle("is-active", sel);
+      node.setAttribute("aria-selected", sel ? "true" : "false");
+    });
+    const active = items[idx];
+    if (active?.id) {
+      el.symbolInput.setAttribute("aria-activedescendant", active.id);
+    } else {
+      el.symbolInput.removeAttribute("aria-activedescendant");
+    }
+    active?.scrollIntoView({ block: "nearest" });
+  }
+
+  function applySelectedSymbol(sym, opts) {
+    const s = String(sym || "").trim().toUpperCase();
+    if (!s) return;
+    const o = opts || {};
+    el.symbolInput.value = s;
+    state.symbol = s;
+    persistActiveSymbol(s);
+    updateSymbolPill();
+    closeSymbolSuggest();
+    setSymbolSearchMessage("");
+    if (!o.skipDataRefresh) {
+      refreshAll();
+      setupStreamingWithFallback();
+    }
+  }
+
+  async function fetchSymbolSearchRemote(q) {
+    const key = `${q.toLowerCase()}|25`;
+    if (searchResponseCache.has(key)) {
+      return searchResponseCache.get(key);
+    }
+    const url = `/api/radar/symbols/search?q=${encodeURIComponent(q)}&limit=25`;
+    const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+    if (!res.ok) {
+      searchResponseCache.delete(key);
+      return {
+        ok: false,
+        source: "unavailable",
+        message: `Búsqueda HTTP ${res.status}. Reinicia PUSH si acabas de desplegar la ruta /api/radar/symbols/search.`,
+        matches: [],
+        truncated: false,
+      };
+    }
+    let data;
+    try {
+      data = await res.json();
+    } catch (_parseErr) {
+      searchResponseCache.delete(key);
+      return {
+        ok: false,
+        source: "unavailable",
+        message: "Respuesta de búsqueda no válida (JSON).",
+        matches: [],
+        truncated: false,
+      };
+    }
+    if (data && data.ok && data.source === "quant") {
+      searchResponseCache.set(key, data);
+      if (searchResponseCache.size > 40) {
+        const firstKey = searchResponseCache.keys().next().value;
+        searchResponseCache.delete(firstKey);
+      }
+    } else {
+      searchResponseCache.delete(key);
+    }
+    return data;
+  }
+
+  function renderSymbolSuggest(matches, activeIndex) {
+    el.symbolSuggestList.innerHTML = "";
+    if (!matches || !matches.length) return;
+    matches.forEach((m, idx) => {
+      const li = document.createElement("li");
+      const optId = `symbol-suggest-opt-${idx}`;
+      li.id = optId;
+      li.className = "symbol-suggest-item";
+      li.setAttribute("role", "option");
+      li.setAttribute("aria-selected", idx === activeIndex ? "true" : "false");
+      if (idx === activeIndex) li.classList.add("is-active");
+      li.dataset.symbol = m.symbol || "";
+      const opt = m.is_optionable ? "opciones" : "sin opciones";
+      const ex = m.exchange || "—";
+      const nm = m.name ? String(m.name).slice(0, 72) : "—";
+      li.innerHTML = `<span class="symbol-suggest-ticker">${m.symbol || ""}</span><span class="symbol-suggest-meta">${nm} · ${ex} · ${opt}</span>`;
+      let picked = false;
+      const pick = (ev) => {
+        ev.preventDefault();
+        if (picked) return;
+        picked = true;
+        applySelectedSymbol(li.dataset.symbol);
+      };
+      li.addEventListener("mousedown", pick);
+      li.addEventListener("pointerdown", pick);
+      el.symbolSuggestList.appendChild(li);
+    });
+    const start = Math.max(0, Math.min(activeIndex, matches.length - 1));
+    setSuggestActiveIndex(start);
+  }
+
+  async function runSymbolSearchQuery(raw) {
+    const q = String(raw || "").trim();
+    const seq = ++state.symbolSearchSeq;
+    if (q.length < SEARCH_MIN_CHARS) {
+      closeSymbolSuggest();
+      setSymbolSearchMessage("");
+      return;
+    }
+    try {
+      const data = await fetchSymbolSearchRemote(q);
+      if (seq !== state.symbolSearchSeq) return;
+      if (!data.ok || data.source === "unavailable") {
+        closeSymbolSuggest();
+        setSymbolSearchMessage(
+          data.message || "Búsqueda no disponible: motor Quant no accesible. Puedes escribir un ticker y pulsar Actualizar."
+        );
+        return;
+      }
+      const matches = Array.isArray(data.matches) ? data.matches : [];
+      const hint = data.hint ? String(data.hint) : "";
+      if (hint && matches.length === 0) {
+        setSymbolSearchMessage(hint);
+        closeSymbolSuggest();
+        return;
+      }
+      setSymbolSearchMessage(hint && matches.length ? hint : "");
+      state.symbolSuggestIndex = matches.length ? 0 : -1;
+      state.symbolSuggestOpen = matches.length > 0;
+      if (matches.length) {
+        el.symbolSuggestList.classList.remove("hidden");
+        el.symbolInput.setAttribute("aria-expanded", "true");
+        renderSymbolSuggest(matches, state.symbolSuggestIndex);
+      } else {
+        closeSymbolSuggest();
+        setSymbolSearchMessage("Sin resultados para esa búsqueda.");
+      }
+    } catch (_err) {
+      if (seq !== state.symbolSearchSeq) return;
+      closeSymbolSuggest();
+      setSymbolSearchMessage("Error de red al buscar símbolos.");
+    }
+  }
+
+  function scheduleSymbolSearch() {
+    if (state.symbolSearchDebounce) {
+      clearTimeout(state.symbolSearchDebounce);
+    }
+    state.symbolSearchDebounce = setTimeout(() => {
+      state.symbolSearchDebounce = null;
+      const q = el.symbolInput.value.trim();
+      runSymbolSearchQuery(q);
+    }, SEARCH_DEBOUNCE_MS);
+  }
+
+  function moveSuggestHighlight(delta) {
+    const items = el.symbolSuggestList.querySelectorAll('[role="option"]');
+    if (!state.symbolSuggestOpen || !items.length) return;
+    const len = items.length;
+    let next = state.symbolSuggestIndex + delta;
+    if (next < 0) next = len - 1;
+    if (next >= len) next = 0;
+    setSuggestActiveIndex(next);
+  }
+
+  function confirmSuggestSelection() {
+    const items = Array.from(el.symbolSuggestList.querySelectorAll('[role="option"]'));
+    if (!state.symbolSuggestOpen || !items.length) return false;
+    const idx = Math.max(0, Math.min(state.symbolSuggestIndex, items.length - 1));
+    const sym = items[idx].dataset.symbol;
+    if (sym) {
+      applySelectedSymbol(sym);
+      return true;
+    }
+    return false;
+  }
+
+  function setupSymbolSearch() {
+    el.symbolInput.addEventListener("input", () => {
+      scheduleSymbolSearch();
+    });
+    el.symbolInput.addEventListener("keydown", (event) => {
+      if (event.key === "Tab") {
+        closeSymbolSuggest();
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        if (state.symbolSuggestOpen) {
+          event.preventDefault();
+          moveSuggestHighlight(1);
+        }
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        if (state.symbolSuggestOpen) {
+          event.preventDefault();
+          moveSuggestHighlight(-1);
+        }
+        return;
+      }
+      if (event.key === "Enter") {
+        if (state.symbolSuggestOpen && confirmSuggestSelection()) {
+          event.preventDefault();
+          return;
+        }
+        const typed = el.symbolInput.value.trim();
+        if (typed) {
+          applySelectedSymbol(typed, { skipDataRefresh: false });
+          event.preventDefault();
+        }
+        return;
+      }
+      if (event.key === "Escape") {
+        closeSymbolSuggest();
+        return;
+      }
+    });
+    el.symbolInput.addEventListener("focus", () => {
+      const q = el.symbolInput.value.trim();
+      if (q.length >= SEARCH_MIN_CHARS) {
+        scheduleSymbolSearch();
+      }
+    });
+    document.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (!state.symbolSuggestOpen) return;
+        const root = el.symbolSearchCombo;
+        if (!root) return;
+        const t = event.target;
+        if (root.contains(t)) return;
+        closeSymbolSuggest();
+      },
+      true
+    );
+  }
 
   function formatNumber(value, digits = 2) {
     if (value === null || value === undefined || value === "") return "-";
@@ -148,15 +511,72 @@
   function tipoEventoStreamEs(type) {
     const t = String(type || "").toLowerCase();
     const map = {
-      snapshot: "instantánea",
+      snapshot: "instantánea (legado)",
+      snapshot_update: "instantánea (datos)",
       decision: "decisión",
       provider_health: "salud de proveedores",
+      provider_state_changed: "proveedores",
+      degraded_state_changed: "degradación operativa",
       degradation: "degradación",
       alert: "alerta",
       heartbeat: "latido",
+      camera_state_changed: "cámara",
       unknown: "desconocido",
     };
     return map[t] || t.replaceAll("_", " ");
+  }
+
+  function cameraStateBadgeKind(state) {
+    const s = String(state || "").toLowerCase();
+    if (s === "ready") return "badge-accepted";
+    if (s === "degraded") return "badge-caution";
+    if (s === "disabled" || s === "not_configured") return "badge-neutral";
+    return "badge-rejected";
+  }
+
+  function cameraStateEs(state) {
+    const s = String(state || "").toLowerCase();
+    const map = {
+      ready: "Listo",
+      unavailable: "No disponible",
+      degraded: "Degradado",
+      disabled: "Desactivado",
+      not_configured: "Sin configurar",
+    };
+    return map[s] || (state ? String(state).replaceAll("_", " ") : "—");
+  }
+
+  function renderCameraPanel(cameraHealth, summary) {
+    const cam = cameraHealth?.camera || summary?.camera_context || {};
+    const st = String(cam.state || "").toLowerCase();
+    if (el.cameraStateBadge) {
+      el.cameraStateBadge.className = `badge ${cameraStateBadgeKind(cam.state)} camera-state-badge`;
+      el.cameraStateBadge.textContent = cameraStateEs(cam.state);
+    }
+    const actNote = cam.activity_note != null ? cam.activity_note : cam.activity;
+    const actDisplay =
+      actNote != null && actNote !== ""
+        ? String(actNote)
+        : formatNumber(cam.activity_level);
+    const pnp = Array.isArray(cam.pnp_hints) && cam.pnp_hints.length ? cam.pnp_hints.join("; ") : "—";
+    const rows = [
+      ["Proveedor", cam.provider || "—"],
+      ["Resumen", cam.status || cameraStateEs(cam.state)],
+      ["Modo físico (Quant)", cam.mode_detected || "—"],
+      ["Backend captura", cam.backend || "—"],
+      ["Índice USB", cam.device_index != null && cam.device_index !== "" ? String(cam.device_index) : "—"],
+      ["PnP (hints)", pnp],
+      ["Notas", cam.notes || "—"],
+      ["Disponibilidad", cam.availability_pct != null ? `${Number(cam.availability_pct).toFixed(1)} %` : "—"],
+      ["Última captura", formatTs(cam.last_capture_ts || cam.last_capture)],
+      ["Presencia operador", formatSiNo(cam.presence)],
+      ["Actividad / contexto", actDisplay],
+    ];
+    const deg = cam.degradation_reason && String(cam.degradation_reason).toLowerCase() !== "quant_unreachable";
+    if (deg) {
+      rows.push(["Motivo degradación", String(cam.degradation_reason)]);
+    }
+    renderKvs(el.cameraStatusSummary, rows);
   }
 
   function badgeHtml(kind, text) {
@@ -220,6 +640,15 @@
     }
   }
 
+  let _sseRefreshDebounce = null;
+  function scheduleRefreshAllFromSse() {
+    if (_sseRefreshDebounce) clearTimeout(_sseRefreshDebounce);
+    _sseRefreshDebounce = setTimeout(() => {
+      _sseRefreshDebounce = null;
+      refreshAll();
+    }, 200);
+  }
+
   async function fetchJson(url) {
     const started = performance.now();
     const res = await fetch(url, {
@@ -234,7 +663,7 @@
   }
 
   async function refreshAll() {
-    const symbol = (el.symbolInput.value || "SPY").trim().toUpperCase();
+    const symbol = getActiveSymbol();
     state.symbol = symbol;
     const startedLabel = nowLabel();
     el.refreshBtn.disabled = true;
@@ -250,7 +679,7 @@
           fetchJson(endpoints.fast(symbol)),
           fetchJson(endpoints.structural(symbol)),
           fetchJson(endpoints.political(symbol)),
-          fetchJson(endpoints.cameraHealth),
+          fetchJson(endpoints.cameraStatus),
         ]);
 
       const latency = Math.max(
@@ -265,10 +694,17 @@
       el.ultimaActualizacion.textContent = startedLabel;
 
       state.lastSummary = summaryRes.data;
-      renderPrincipal(summaryRes.data, providersRes.data, decisionsRes.data, dealerRes.data, fastRes.data, structuralRes.data, cameraRes.data);
+      state.lastQuantReachable = summaryRes.data?.transport?.stub !== true;
+      state.lastSnapshotUsefulAt = Date.now();
+      renderPrincipal(summaryRes.data, providersRes.data, decisionsRes.data, dealerRes.data, fastRes.data, structuralRes.data, {
+        camera: cameraRes.data?.camera || {},
+      });
       renderDecisions(decisionsRes.data);
       renderProviders(providersRes.data, statsRes.data);
       renderSymbol(symbol, summaryRes.data, dealerRes.data, fastRes.data, structuralRes.data, politicalRes.data);
+      persistActiveSymbol(symbol);
+      updateSymbolPill();
+      updateSseConnectionUi();
       if (!state.streamConnected) {
         setLiveStatus("Encuesta periódica");
       }
@@ -276,12 +712,13 @@
       el.latenciaActual.textContent = "-";
       el.ultimaActualizacion.textContent = startedLabel;
       el.estadoGlobal.className = "badge badge-rejected";
-      el.estadoGlobal.textContent = "Error de actualización";
+      el.estadoGlobal.textContent = state.lastSummary ? "Actualización parcial" : "Error de actualización";
       el.estadoFresh.className = "badge badge-stale";
       el.estadoFresh.textContent = String(error.message || error);
-      el.alertasRapidas.innerHTML = `<div class="alert-item">No fue posible actualizar: ${String(
-        error.message || error
-      )}</div>`;
+      const keep = state.lastSummary
+        ? "Se conserva el último snapshot válido en pantalla."
+        : "No hay snapshot previo para mostrar.";
+      el.alertasRapidas.innerHTML = `<div class="alert-item">${keep} Detalle: ${String(error.message || error)}</div>`;
     } finally {
       el.refreshBtn.disabled = false;
       el.refreshBtn.textContent = "Actualizar";
@@ -380,15 +817,7 @@
       ["Marca de tiempo de la señal", formatTs(signal?.timestamp)],
     ]);
 
-    const cam = cameraHealth?.camera || summary?.camera_context || {};
-    renderKvs(el.cameraStatusSummary, [
-      ["Proveedor de cámara", cam?.provider || "—"],
-      ["Estado", cam?.status || "—"],
-      ["Listo", formatSiNo(cam?.provider_ready)],
-      ["Última captura", formatTs(cam?.last_capture)],
-      ["Presencia", formatNumber(cam?.presence_score)],
-      ["Actividad", formatNumber(cam?.activity_level)],
-    ]);
+    renderCameraPanel(cameraHealth, summary);
   }
 
   function renderAlerts(meta, latestDecision) {
@@ -554,9 +983,10 @@
     if (cmd.startsWith("abrir dealer de ")) {
       const symbol = raw.slice("abrir dealer de ".length).trim().toUpperCase();
       if (symbol) {
-        el.symbolInput.value = symbol;
+        applySelectedSymbol(symbol, { skipDataRefresh: true });
         document.querySelector('[data-tab="simbolo"]').click();
         refreshAll();
+        setupStreamingWithFallback();
       }
       return;
     }
@@ -585,6 +1015,23 @@
       const text = row.textContent.toLowerCase();
       row.style.display = text.includes(targetDecision) || text.includes("rechazado") ? "" : "none";
     });
+  }
+
+  const CAMERA_POLL_MS = 30000;
+
+  function setupCameraPolling() {
+    if (state.cameraPollTimer) {
+      clearInterval(state.cameraPollTimer);
+      state.cameraPollTimer = null;
+    }
+    state.cameraPollTimer = setInterval(async () => {
+      try {
+        const res = await fetchJson(endpoints.cameraStatus);
+        renderCameraPanel({ camera: res.data?.camera || {} }, state.lastSummary);
+      } catch (_err) {
+        /* silencioso: el estado global ya refleja fallos de red en «Actualizar» */
+      }
+    }, CAMERA_POLL_MS);
   }
 
   function setupAutoRefresh() {
@@ -618,6 +1065,163 @@
     el.liveHeartbeat.textContent = nowLabel();
   }
 
+  function formatAgeSeconds(ms) {
+    if (!ms || ms < 0 || !Number.isFinite(ms)) return "-";
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    return `${m}m ${s % 60}s`;
+  }
+
+  function setSseReconnecting(on) {
+    if (el.sseReconnecting) {
+      el.sseReconnecting.classList.toggle("hidden", !on);
+    }
+  }
+
+  function updateSseConnectionUi() {
+    const sym = getActiveSymbol();
+    const hbMs = state.lastHeartbeatMs ? Date.now() - state.lastHeartbeatMs : null;
+    const snapMs = state.lastSnapshotUsefulAt ? Date.now() - state.lastSnapshotUsefulAt : null;
+    if (el.sseSinceHeartbeat) {
+      el.sseSinceHeartbeat.textContent = hbMs == null ? "-" : formatAgeSeconds(hbMs);
+    }
+    if (el.sseSinceSnapshot) {
+      el.sseSinceSnapshot.textContent = snapMs == null ? "-" : formatAgeSeconds(snapMs);
+    }
+    let q = "fresh";
+    if (!state.streamConnected) {
+      q = "disconnected";
+    } else if (hbMs != null && hbMs > SSE_HEARTBEAT_DEAD_MS) {
+      q = "disconnected";
+    } else if (!state.lastQuantReachable) {
+      q = "degraded";
+    } else if (snapMs != null && snapMs > SNAPSHOT_USEFUL_STALE_MS) {
+      q = "stale";
+    }
+    if (el.sseLiveQuality) {
+      const labels = {
+        fresh: ["badge-accepted", "SSE: fresco"],
+        stale: ["badge-stale", "SSE: datos envejecidos"],
+        degraded: ["badge-caution", "SSE: Quant stub / degradado"],
+        disconnected: ["badge-rejected", "SSE: desconectado"],
+      };
+      const [cls, text] = labels[q] || labels.fresh;
+      el.sseLiveQuality.className = `badge ${cls}`;
+      el.sseLiveQuality.textContent = text;
+    }
+    const needle = sym ? `symbol=${encodeURIComponent(sym)}` : "";
+    if (
+      state.streamConnected &&
+      needle &&
+      !isSymbolTypingDraft() &&
+      state.stream &&
+      state.stream.url &&
+      !String(state.stream.url).includes(needle)
+    ) {
+      teardownStream();
+      setupStreamingWithFallback();
+    }
+  }
+
+  function startLiveQualityTicker() {
+    if (state.liveQualityTicker) clearInterval(state.liveQualityTicker);
+    state.liveQualityTicker = setInterval(updateSseConnectionUi, 1000);
+  }
+
+  function handleRadarEnvelope(env) {
+    if (!env || typeof env !== "object") return;
+    if (env.symbol && env.symbol !== getActiveSymbol()) return;
+    if (typeof env.sequence === "number") {
+      state.lastEnvelopeSeq = env.sequence;
+    }
+    const t = env.type;
+    const d = env.data || {};
+    if (t === "heartbeat") {
+      if (typeof d.quant_reachable === "boolean") {
+        state.lastQuantReachable = d.quant_reachable;
+      }
+      markHeartbeat();
+      markLastEvent(tipoEventoStreamEs("heartbeat"));
+      updateSseConnectionUi();
+      return;
+    }
+    markLastEvent(tipoEventoStreamEs(t));
+    if (t === "snapshot_update") {
+      if (d.summary) {
+        state.lastSummary = d.summary;
+        state.lastSnapshotUsefulAt = Date.now();
+      }
+      scheduleRefreshAllFromSse();
+      return;
+    }
+    if (t === "camera_state_changed") {
+      const c = d.camera || {};
+      renderCameraPanel({ camera: c }, state.lastSummary);
+      return;
+    }
+    if (t === "provider_state_changed") {
+      const body = d.providers_payload;
+      if (body) {
+        fetchJson(endpoints.decisionsStats)
+          .then((statsRes) => {
+            renderProviders(body, statsRes.data);
+          })
+          .catch(() => {});
+      }
+      return;
+    }
+    if (t === "degraded_state_changed") {
+      const sig = `${d.snapshot_classification}|${d.quant_reachable}|${d.transport_stub}`;
+      if (sig !== state.lastDegradedSig) {
+        state.lastDegradedSig = sig;
+        const msg = d.operational_degraded
+          ? `Degradación: ${String(d.snapshot_classification || "—")} · Quant ${d.quant_reachable ? "OK" : "no accesible"}`
+          : "Estado operativo estable";
+        el.alertasRapidas.innerHTML = `<div class="alert-item">${msg}</div>${el.alertasRapidas.innerHTML}`;
+      }
+      return;
+    }
+  }
+
+  function routeSseEvent(eventName, raw) {
+    let env;
+    try {
+      env = JSON.parse(raw);
+    } catch (_e) {
+      markLastEvent("SSE JSON inválido");
+      return;
+    }
+    if (env && typeof env.sequence === "number" && env.type && env.timestamp && env.symbol) {
+      handleRadarEnvelope(env);
+      return;
+    }
+    if (eventName === "heartbeat" && env?.payload) {
+      markHeartbeat();
+      markLastEvent(tipoEventoStreamEs("heartbeat"));
+      return;
+    }
+    if (eventName === "snapshot" && env?.payload) {
+      markLastEvent(tipoEventoStreamEs("snapshot"));
+      scheduleRefreshAllFromSse();
+      return;
+    }
+    if (eventName === "camera_state_changed") {
+      const c = env?.camera || env?.data?.camera || {};
+      renderCameraPanel({ camera: c }, state.lastSummary);
+      return;
+    }
+    if (eventName === "decision") {
+      refreshAll();
+      return;
+    }
+    if (eventName === "provider_health" || eventName === "degradation" || eventName === "alert") {
+      const msg = env?.payload?.message || env?.message || tipoEventoStreamEs(eventName);
+      el.alertasRapidas.innerHTML = `<div class="alert-item">${msg}</div>${el.alertasRapidas.innerHTML}`;
+      refreshAll();
+    }
+  }
+
   function ensureStreamHealthWatchdog() {
     if (state.staleTimer) {
       clearInterval(state.staleTimer);
@@ -625,34 +1229,13 @@
     state.staleTimer = setInterval(() => {
       if (!state.streamConnected || !state.lastHeartbeatMs) return;
       const age = Date.now() - state.lastHeartbeatMs;
-      if (age > SSE_STALE_MS) {
-        setLiveStatus("Conexión degradada");
+      if (age > SSE_HEARTBEAT_DEAD_MS) {
+        setLiveStatus("SSE sin latido — reconectando");
         teardownStream();
         setupAutoRefresh();
+        setSseReconnecting(true);
       }
     }, 5000);
-  }
-
-  function handleStreamEvent(type, payload) {
-    if (type === "heartbeat") {
-      markHeartbeat();
-      return;
-    }
-    markLastEvent(tipoEventoStreamEs(type));
-    if (type === "snapshot") {
-      state.symbol = payload?.symbol || state.symbol;
-      refreshAll();
-      return;
-    }
-    if (type === "decision") {
-      refreshAll();
-      return;
-    }
-    if (type === "provider_health" || type === "degradation" || type === "alert") {
-      const msg = payload?.message || `${tipoEventoStreamEs(type)} recibido`;
-      el.alertasRapidas.innerHTML = `<div class="alert-item">${msg}</div>${el.alertasRapidas.innerHTML}`;
-      refreshAll();
-    }
   }
 
   function teardownStream() {
@@ -675,41 +1258,50 @@
     }
     teardownStream();
     try {
-      const source = new EventSource(endpoints.stream);
+      const url = endpoints.stream();
+      const source = new EventSource(url);
       state.stream = source;
+      const typedEvents = [
+        "heartbeat",
+        "snapshot_update",
+        "snapshot",
+        "camera_state_changed",
+        "provider_state_changed",
+        "degraded_state_changed",
+        "decision",
+        "provider_health",
+        "degradation",
+        "alert",
+      ];
+      typedEvents.forEach((name) => {
+        source.addEventListener(name, (event) => {
+          try {
+            routeSseEvent(name, event.data);
+          } catch (_error) {
+            markLastEvent(`${tipoEventoStreamEs(name)} (error)`);
+          }
+        });
+      });
       source.onopen = () => {
         state.streamConnected = true;
         state.sseBackoffMs = 3000;
+        setSseReconnecting(false);
         setLiveStatus("Transmisión en vivo (SSE)");
         markHeartbeat();
+        state.lastSnapshotUsefulAt = Date.now();
         if (state.timer) {
           clearInterval(state.timer);
           state.timer = null;
         }
+        startLiveQualityTicker();
+        updateSseConnectionUi();
       };
-      source.onmessage = (event) => {
-        try {
-          const parsed = JSON.parse(event.data);
-          handleStreamEvent(parsed?.type || "unknown", parsed?.payload || {});
-        } catch (_error) {
-          markLastEvent("evento-inválido");
-        }
-      };
-      const typedEvents = ["snapshot", "decision", "provider_health", "degradation", "alert", "heartbeat"];
-      typedEvents.forEach((name) => {
-        source.addEventListener(name, (event) => {
-          try {
-            const parsed = JSON.parse(event.data);
-            handleStreamEvent(name, parsed?.payload || {});
-          } catch (_error) {
-            markLastEvent(`${tipoEventoStreamEs(name)} (payload inválido)`);
-          }
-        });
-      });
       source.onerror = () => {
         teardownStream();
-        setLiveStatus("Conexión degradada");
+        setLiveStatus("SSE desconectado");
         setupAutoRefresh();
+        updateSseConnectionUi();
+        setSseReconnecting(true);
         if (state.sseReconnectTimer) {
           clearTimeout(state.sseReconnectTimer);
         }
@@ -730,7 +1322,6 @@
 
   function setupInteractions() {
     el.refreshBtn.addEventListener("click", refreshAll);
-    el.symbolInput.addEventListener("change", refreshAll);
     el.autoRefreshToggle.addEventListener("change", setupAutoRefresh);
     el.refreshIntervalSelect.addEventListener("change", setupAutoRefresh);
 
@@ -750,9 +1341,20 @@
 
   setupTabs();
   setupInteractions();
+  setupSymbolSearch();
+  const _initial = (() => {
+    const s = safeGetSessionSymbol();
+    return s || DEFAULT_SYMBOL_FALLBACK;
+  })();
+  /* Memoria JS = fuente de verdad; input y storage alineados al mismo valor inicial. */
+  state.symbol = _initial;
+  el.symbolInput.value = _initial;
+  updateSymbolPill();
+  startLiveQualityTicker();
   setupStreamingWithFallback();
   if (!state.streamConnected) {
     setupAutoRefresh();
   }
+  setupCameraPolling();
   refreshAll();
 })();

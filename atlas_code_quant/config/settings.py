@@ -448,6 +448,8 @@ class TradingConfig:
     chart_verify_delay_sec: float = _fenv("QUANT_CHART_VERIFY_DELAY_SEC", 1.25)
     # Conexión arranque API: visión persistida + URLs TradingView iguales que StrategySelector
     default_vision_provider: str = _clean_setting(os.getenv("QUANT_DEFAULT_VISION_PROVIDER"), "").strip().lower()
+    # Cámara/visión: si true, Quant intenta autoconfigurar Insta360 en arranque (RTMP o USB) cuando no hay QUANT_DEFAULT_VISION_PROVIDER.
+    enable_camera: bool = os.getenv("ENABLE_CAMERA", "false").strip().lower() in {"1", "true", "yes", "on"}
     startup_chart_warmup_enabled: bool = os.getenv("QUANT_STARTUP_CHART_WARMUP", "false").strip().lower() not in {"0", "false", "no"}
     startup_chart_warmup_symbols_raw: str = _clean_setting(os.getenv("QUANT_STARTUP_CHART_SYMBOLS"), "SPY")
     startup_chart_warmup_timeframe: str = _clean_setting(os.getenv("QUANT_STARTUP_CHART_TIMEFRAME"), "1h")
@@ -578,7 +580,8 @@ class TradingConfig:
 
     # Internal API (Atlas/ROS2)
     api_host: str = "0.0.0.0"
-    api_port: int = 8795
+    # QUANT_API_PORT: stack radar usa 8792; default 8795 por compatibilidad histórica.
+    api_port: int = _ienv("QUANT_API_PORT", 8795)
     api_key: str = os.getenv("QUANT_API_KEY", "atlas-quant-local")
     # WebSocket dashboard: conexiones simultáneas por IP+scope (varias pestañas / reconexión)
     quant_dashboard_ws_limit: int = _ienv("QUANT_DASHBOARD_WS_LIMIT", 8)

@@ -23,7 +23,8 @@ def _clean(value: str | None) -> str:
 def get_quant_api_base() -> str:
     """Return the canonical Atlas Code-Quant base URL."""
     return (
-        _clean(os.getenv("ATLAS_QUANT_API_URL"))
+        _clean(os.getenv("QUANT_BASE_URL"))
+        or _clean(os.getenv("ATLAS_QUANT_API_URL"))
         or _clean(os.getenv("QUANT_API_URL"))
         or "http://127.0.0.1:8792"
     )
