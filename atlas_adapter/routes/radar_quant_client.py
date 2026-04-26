@@ -7,11 +7,14 @@ expone la clave al navegador. La base URL admite ``QUANT_BASE_URL`` (preferida),
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import time
 from typing import Any
 
 import httpx
+
+_log = logging.getLogger(__name__)
 
 from atlas_adapter.services.trading_quant_bridge import get_quant_api_base, get_quant_api_key
 
@@ -49,17 +52,23 @@ async def fetch_scanner_report_cached(activity_limit: int = 60) -> dict[str, Any
         read_sec = float(os.getenv("ATLAS_RADAR_SCANNER_HTTP_TIMEOUT_SEC", "120").strip() or "120")
         read_sec = max(15.0, min(read_sec, 300.0))
         timeout = httpx.Timeout(read_sec, connect=8.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
             response = await client.get(url, headers=headers, params={"activity_limit": activity_limit})
             response.raise_for_status()
             body = response.json()
-    except Exception:
+    except Exception as exc:
+        _log.debug("fetch_scanner_report_cached fallo: %s", exc, exc_info=True)
         async with _CACHE_LOCK:
             _cache_report = None
             _cache_mono = 0.0
         return None
 
     if not isinstance(body, dict) or not body.get("ok"):
+        _log.debug(
+            "fetch_scanner_report_cached respuesta no-ok: ok=%r keys=%s",
+            body.get("ok") if isinstance(body, dict) else None,
+            list(body.keys())[:12] if isinstance(body, dict) else type(body),
+        )
         async with _CACHE_LOCK:
             _cache_report = None
             _cache_mono = 0.0
@@ -108,7 +117,7 @@ async def fetch_universe_search(q: str, limit: int = 25) -> dict[str, Any] | Non
     headers = {"X-Api-Key": api_key, "Accept": "application/json"}
     try:
         timeout = httpx.Timeout(12.0, connect=3.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
             response = await client.get(
                 url,
                 headers=headers,
@@ -141,7 +150,7 @@ async def fetch_quant_camera_health() -> dict[str, Any] | None:
     headers = {"X-Api-Key": api_key, "Accept": "application/json"}
     try:
         timeout = httpx.Timeout(8.0, connect=2.5)
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
             response = await client.get(url, headers=headers)
             response.raise_for_status()
             body = response.json()

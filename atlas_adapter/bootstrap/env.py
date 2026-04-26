@@ -23,6 +23,14 @@ def load_vault_env(vault_path: str | None = None) -> None:
     try:
         from dotenv import load_dotenv
 
+        # Si el vault define ATLAS_QUANT_API_KEY / QUANT_API_KEY vacías, no deben borrar
+        # claves ya inyectadas por el proceso padre (p. ej. scripts/start_atlas_radar_stack.ps1).
+        _quant_key_snap: dict[str, str] = {}
+        for _k in ("ATLAS_QUANT_API_KEY", "QUANT_API_KEY", "QUANT_BASE_URL", "ATLAS_QUANT_API_URL", "QUANT_API_URL"):
+            _v = (os.getenv(_k) or "").strip()
+            if _v:
+                _quant_key_snap[_k] = _v
+
         primary_path = (
             vault_path
             or os.getenv("ATLAS_VAULT_PATH")
@@ -33,5 +41,9 @@ def load_vault_env(vault_path: str | None = None) -> None:
             if path.is_file():
                 load_dotenv(str(path), override=True)
                 break
+
+        for _k, _v in _quant_key_snap.items():
+            if not (os.getenv(_k) or "").strip():
+                os.environ[_k] = _v
     except Exception:
         pass

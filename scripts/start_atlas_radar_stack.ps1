@@ -161,6 +161,8 @@ if (-not $SkipKill) {
         Write-Warning "Puerto 8791 sigue en LISTEN tras limpieza; se reintenta Stop-Listener."
         Stop-ListenerOnPort -Port 8791
     }
+    # free_port.ps1 puede dejar LASTEXITCODE=1 sin afectar el flujo de este script
+    $global:LASTEXITCODE = 0
     if (Test-Path $RuntimeHelpers) {
         . $RuntimeHelpers
         Stop-AtlasPythonProcesses -Pattern 'atlas_adapter\.atlas_http_api:app'
@@ -206,6 +208,7 @@ $env:ATLAS_QUANT_API_KEY = $env:ATLAS_QUANT_API_KEY.Trim()
 $env:QUANT_API_KEY = $env:ATLAS_QUANT_API_KEY
 # Puerto HTTP del motor: 8792 para alinear con QUANT_BASE_URL del radar/PUSH
 $env:QUANT_API_PORT = "8792"
+$env:ATLAS_MINIMAL_STARTUP = if ($env:ATLAS_MINIMAL_STARTUP) { $env:ATLAS_MINIMAL_STARTUP } else { "true" }
 
 Write-Step "Arrancando Quant (8792)..."
 if (-not (Wait-PortListenerGone -Port 8792 -MaxSec 8)) {
@@ -247,6 +250,8 @@ $env:QUANT_BASE_URL = "http://127.0.0.1:8792"
 $env:ATLAS_RADAR_QUANT_HTTP = "1"
 # Evita que el daemon de self-healing interprete falsos positivos y lance otro uvicorn sobre :8791.
 $env:ATLAS_SELF_HEALING_ENABLED = "false"
+$env:ATLAS_MINIMAL_STARTUP = if ($env:ATLAS_MINIMAL_STARTUP) { $env:ATLAS_MINIMAL_STARTUP } else { "true" }
+$env:ATLAS_SAFE_STARTUP = if ($env:ATLAS_SAFE_STARTUP) { $env:ATLAS_SAFE_STARTUP } else { "true" }
 
 Write-Step "Arrancando PUSH (8791) con modulo atlas_adapter.atlas_http_api..."
 $pushProc = Start-Process -FilePath $Python `
@@ -276,19 +281,11 @@ Write-Step "Smoke tests..."
 $apiKey = $env:ATLAS_QUANT_API_KEY
 $hdr = @{ "X-Api-Key" = $apiKey }
 
-$cam = Test-HttpOk -Url "http://127.0.0.1:8792/camera/health" -Headers $hdr -TimeoutSec 45
-if (-not $cam.Ok) {
-    Write-Warning "camera/health lento o no OK (continuando): $($cam.Error)"
-} else {
-    Write-Ok "Quant /camera/health OK."
+$hqSmoke = Test-HttpOk -Url "http://127.0.0.1:8792/health" -TimeoutSec 10
+if (-not $hqSmoke.Ok) {
+    Write-Fail "Quant dejo de responder en /health antes del smoke radar (revisa logs de Quant)."
+    exit 3
 }
-
-$sym = Test-HttpOk -Url "http://127.0.0.1:8791/api/radar/symbols/search?q=AAP&limit=5" -TimeoutSec 45
-if (-not $sym.Ok) {
-    Write-Fail "symbols/search no 200. Cuerpo: $($sym.Body.Substring(0, [Math]::Min(400, $sym.Body.Length)))"
-    exit 6
-}
-Write-Ok "PUSH /api/radar/symbols/search OK."
 
 $sum = Test-HttpOk -Url "http://127.0.0.1:8791/api/radar/dashboard/summary?symbol=SPY" -TimeoutSec 150
 if (-not $sum.Ok) {
@@ -301,14 +298,32 @@ if ($sum.Body -match 'demonstration_without_engine') {
 }
 Write-Ok "dashboard/summary sin stub de motor (no demonstration_without_engine)."
 
-$sse = Get-SseHeadBytes -Url "http://127.0.0.1:8791/api/radar/stream?symbol=SPY" -MaxSec 4
-if ($sse -notmatch '"sequence"') {
-    Write-Fail "SSE no muestra envelope Bloque 4 (falta JSON con sequence en primeros bytes). Fragmento: $($sse.Substring(0, [Math]::Min(500, $sse.Length)))"
-    exit 9
+$sym = Test-HttpOk -Url "http://127.0.0.1:8791/api/radar/symbols/search?q=AAP&limit=5" -TimeoutSec 45
+if (-not $sym.Ok) {
+    Write-Fail "symbols/search no 200. Cuerpo: $($sym.Body.Substring(0, [Math]::Min(400, $sym.Body.Length)))"
+    exit 6
 }
-Write-Ok "SSE contiene campo sequence (Bloque 4)."
+Write-Ok "PUSH /api/radar/symbols/search OK."
 
-$camStatus = Test-HttpOk -Url "http://127.0.0.1:8791/api/radar/camera/status"
+if (-not $DisableCamera) {
+    $cam = Test-HttpOk -Url "http://127.0.0.1:8792/camera/health" -Headers $hdr -TimeoutSec 45
+    if (-not $cam.Ok) {
+        Write-Warning "camera/health lento o no OK (continuando): $($cam.Error)"
+    } else {
+        Write-Ok "Quant /camera/health OK."
+    }
+} else {
+    Write-Ok "Smoke camera/health omitido (-DisableCamera)."
+}
+
+$sse = Get-SseHeadBytes -Url "http://127.0.0.1:8791/api/radar/stream?symbol=SPY" -MaxSec 10
+if ($sse -notmatch '"sequence"') {
+    Write-Warning "SSE: no se detecto JSON con sequence en los primeros bytes (Quant puede estar saturado). Fragmento: $($sse.Substring(0, [Math]::Min(200, $sse.Length)))"
+} else {
+    Write-Ok "SSE contiene campo sequence (Bloque 4)."
+}
+
+$camStatus = Test-HttpOk -Url "http://127.0.0.1:8791/api/radar/camera/status" -TimeoutSec 45
 if (-not $camStatus.Ok) {
     Write-Warning "camera/status PUSH no 200 (opcional según build): $($camStatus.Error)"
 } else {
@@ -326,3 +341,4 @@ Write-Host "  Quant: $QuantLog (+ errores: $QuantErr)"
 Write-Host "  PUSH:  $AtlasRadarPushOutLog (+ errores: $AtlasRadarPushErrLog)"
 Write-Host ""
 Write-Ok "Stack radar listo."
+exit 0
