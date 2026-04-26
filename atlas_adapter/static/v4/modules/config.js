@@ -7,6 +7,8 @@
 import { poll, stop } from "../lib/polling.js";
 
 const POLL_ID = "config-module";
+const REALTIME_POLL_ID = "config-module:realtime";
+const REALTIME_INTERVAL_MS = 12000;
 const AUTO_LOCAL_MODE = "auto_local";
 const AUTO_LOCAL_MODEL = "auto_local";
 
@@ -88,6 +90,23 @@ function _extractWorkspaceModels(raw) {
       return id.includes("/") ? id.split("/").slice(1).join("/") : id;
     }),
   );
+}
+
+function _extractWorkspaceProviderCounts(raw) {
+  const data = raw?.data ?? raw ?? {};
+  const rows = Array.isArray(data?.models) ? data.models : [];
+  const counts = {};
+
+  for (const row of rows) {
+    const id = typeof row === "string" ? row : String(row?.id || "").trim();
+    if (!id) continue;
+    const provider = id.includes("/")
+      ? String(id.split("/")[0] || "").trim().toLowerCase() || "ollama"
+      : "ollama";
+    counts[provider] = (counts[provider] || 0) + 1;
+  }
+
+  return counts;
 }
 
 function _extractOllamaModels(raw) {
@@ -261,41 +280,171 @@ export default {
       ?.addEventListener("click", () => _loadAll(container));
 
     _loadAll(container);
-    poll(POLL_ID, "/health", 12000, (data) => {
-      if (data) _renderHealth(container, data);
-    });
+    poll(REALTIME_POLL_ID, null, REALTIME_INTERVAL_MS, () =>
+      _refreshRealtime(container),
+    );
   },
 
   destroy() {
     stop(POLL_ID);
+    stop(REALTIME_POLL_ID);
   },
   badge() {
     return null;
   },
 };
 
-async function _loadAll(container) {
-  const [healthRes, aiRes, workspaceRes, ollamaRes, brainStateRes] =
-    await Promise.all([
-      fetch("/health").then((r) => r.json()).catch(() => null),
-      fetch("/config/ai").then((r) => r.json()).catch(() => null),
-      fetch("/api/workspace/interpreter/models")
-        .then((r) => r.json())
-        .catch(() => null),
-      fetch("/config/ai/ollama-models").then((r) => r.json()).catch(() => null),
-      fetch("/api/brain/state").then((r) => r.json()).catch(() => null),
-    ]);
+async function _fetchConfigData() {
+  return _fetchConfigDataWithOptions({ includeAutonomy: false });
+}
 
+async function _fetchConfigDataWithOptions(options = {}) {
+  const includeAutonomy = Boolean(options?.includeAutonomy);
+  const requests = [
+    fetch("/health").then((r) => r.json()).catch(() => null),
+    fetch("/health/deep").then((r) => r.json()).catch(() => null),
+    fetch("/config/ai").then((r) => r.json()).catch(() => null),
+    fetch("/api/workspace/interpreter/models")
+      .then((r) => r.json())
+      .catch(() => null),
+    fetch("/config/ai/ollama-models").then((r) => r.json()).catch(() => null),
+    fetch("/api/brain/state").then((r) => r.json()).catch(() => null),
+  ];
+  if (includeAutonomy) {
+    requests.push(
+      fetch("/api/autonomy/status").then((r) => r.json()).catch(() => null),
+    );
+  }
+
+  const [
+    healthRes,
+    healthDeepRes,
+    aiRes,
+    workspaceRes,
+    ollamaRes,
+    brainStateRes,
+    autonomyRes,
+  ] = await Promise.all(requests);
+
+  return {
+    healthRes,
+    healthDeepRes,
+    autonomyRes: includeAutonomy ? autonomyRes : null,
+    aiRes,
+    workspaceRes,
+    ollamaRes,
+    brainStateRes,
+  };
+}
+
+function _applyConfigData(
+  container,
+  payload,
+  refreshForm = true,
+  forceFormRender = false,
+) {
+  const {
+    healthRes,
+    healthDeepRes,
+    autonomyRes,
+    aiRes,
+    workspaceRes,
+    ollamaRes,
+    brainStateRes,
+  } = payload || {};
   const workspaceModels = _extractWorkspaceModels(workspaceRes);
   const ollamaModels = _extractOllamaModels(ollamaRes);
   const catalog = _buildCatalog(workspaceModels, ollamaModels);
   container._cfgCatalog = catalog;
-  container._cfgLastAiPayload = aiRes?.data ?? aiRes ?? {};
+  const aiPayload = aiRes?.data ?? aiRes ?? {};
+  container._cfgLastAiPayload = aiPayload;
+  const aiSignature = JSON.stringify(aiPayload);
 
-  if (healthRes) _renderHealth(container, healthRes);
-  _renderAIForm(container, container._cfgLastAiPayload, catalog);
+  const normalizedHealth = _normalizeHealthPayload(
+    container,
+    healthRes,
+    healthDeepRes,
+    autonomyRes,
+  );
+  if (normalizedHealth) _renderHealth(container, normalizedHealth);
+  const shouldRenderForm =
+    refreshForm &&
+    (forceFormRender ||
+      !container.querySelector("#cfg-ai-mode") ||
+      container._cfgAppliedAiSignature !== aiSignature);
+  if (shouldRenderForm) {
+    _renderAIForm(container, aiPayload, catalog);
+    container._cfgAppliedAiSignature = aiSignature;
+  }
   _renderProviders(container, brainStateRes, workspaceRes);
   _renderOllamaTable(container, ollamaModels);
+}
+
+async function _loadAll(container) {
+  const payload = await _fetchConfigDataWithOptions({ includeAutonomy: true });
+  _applyConfigData(container, payload, true, true);
+}
+
+function _isConfigFormBusy(container) {
+  const form = container.querySelector("#cfg-form-grid");
+  const active = document.activeElement;
+  const msg = String(container.querySelector("#cfg-msg")?.textContent || "");
+  if (/Guardando|Probando/i.test(msg)) return true;
+  return Boolean(form && active && form.contains(active));
+}
+
+async function _refreshRealtime(container) {
+  const includeAutonomy = !Number.isFinite(
+    Number(container?._cfgUptimeBaseHours),
+  );
+  const payload = includeAutonomy
+    ? await _fetchConfigDataWithOptions({ includeAutonomy: true })
+    : await _fetchConfigData();
+  const refreshForm = !_isConfigFormBusy(container);
+  _applyConfigData(container, payload, refreshForm);
+}
+
+function _normalizeHealthPayload(container, healthRes, healthDeepRes, autonomyRes) {
+  const base = { ...(healthRes?.data ?? healthRes ?? {}) };
+  const deep = healthDeepRes?.data ?? healthDeepRes ?? {};
+  const autonomy = autonomyRes?.data ?? autonomyRes ?? {};
+
+  const scoreBase = Number(base?.score);
+  const scoreDeep = Number(deep?.score);
+  if (Number.isFinite(scoreBase)) {
+    base.score = scoreBase;
+  } else if (Number.isFinite(scoreDeep)) {
+    base.score = scoreDeep;
+  }
+
+  const uptimeRaw = base?.uptime_human || base?.uptime;
+  if (!uptimeRaw) {
+    const uptimeHours = Number(autonomy?.kpis?.uptime_hours);
+    if (Number.isFinite(uptimeHours)) {
+      container._cfgUptimeBaseHours = uptimeHours;
+      container._cfgUptimeBaseTs = Date.now();
+    }
+    const cachedHours = Number(container?._cfgUptimeBaseHours);
+    if (Number.isFinite(cachedHours)) {
+      const baseTs = Number(container?._cfgUptimeBaseTs) || Date.now();
+      const elapsedHours = Math.max(0, (Date.now() - baseTs) / 3600000);
+      base.uptime_human = _formatUptimeHuman(cachedHours + elapsedHours);
+    }
+  }
+
+  return base;
+}
+
+function _formatUptimeHuman(hoursValue) {
+  const totalMinutes = Math.max(0, Math.round((Number(hoursValue) || 0) * 60));
+  const days = Math.floor(totalMinutes / 1440);
+  const afterDays = totalMinutes % 1440;
+  const hours = Math.floor(afterDays / 60);
+  const minutes = afterDays % 60;
+
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
 }
 
 function _renderHealth(container, data) {
@@ -313,11 +462,11 @@ function _renderHealth(container, data) {
       <div class="stat-card-value ${ok ? "green" : "orange"}" style="font-size:18px">${ok ? "Saludable" : "Degradado"}</div>
     </div>
     <div class="stat-card">
-      <div class="stat-card-label">Score</div>
+      <div class="stat-card-label">Puntuacion</div>
       <div class="stat-card-value" style="font-size:18px">${_esc(String(payload.score ?? "--"))}</div>
     </div>
     <div class="stat-card">
-      <div class="stat-card-label">Uptime</div>
+      <div class="stat-card-label">Tiempo activo</div>
       <div class="stat-card-value" style="font-size:14px">${_esc(payload.uptime_human || payload.uptime || "--")}</div>
     </div>
     <div class="stat-card">
@@ -438,13 +587,7 @@ function _renderProviders(container, brainStateRaw, workspaceRaw) {
   const providerOptions = Array.isArray(brain?.provider_options)
     ? brain.provider_options
     : [];
-  const workspaceModels = _extractWorkspaceModels(workspaceRaw);
-
-  const countByProvider = {};
-  for (const id of workspaceModels) {
-    const provider = id.includes("/") ? id.split("/")[0] : "ollama";
-    countByProvider[provider] = (countByProvider[provider] || 0) + 1;
-  }
+  const countByProvider = _extractWorkspaceProviderCounts(workspaceRaw);
 
   const providers = new Set(["ollama"]);
   for (const p of providerOptions) providers.add(String(p?.id || "").trim());
@@ -463,10 +606,10 @@ function _renderProviders(container, brainStateRaw, workspaceRaw) {
   el.innerHTML = `<div class="provider-grid">
     ${ordered
       .map((providerId) => {
+        const modelCount = countByProvider[providerId] || 0;
         const cred = credentials[providerId] || {};
         const configured =
-          providerId === "ollama" ? true : Boolean(cred?.configured);
-        const modelCount = countByProvider[providerId] || 0;
+          providerId === "ollama" || Boolean(cred?.configured) || modelCount > 0;
         const statusClass = configured ? "active" : "down";
         const dotClass = configured ? "ok" : "down";
         return `<div class="provider-card ${statusClass}">
