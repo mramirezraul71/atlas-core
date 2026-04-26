@@ -176,6 +176,8 @@ _wt_*/
 
 # Quant local runtime learning state
 atlas_code_quant/data/learning/learning_orchestrator_state.json
+atlas_code_quant/data/learning/adaptive_policy_snapshot.json
+atlas_code_quant/data/options_paper_journal.jsonl
 
 # Archivos grandes - no subir a GitHub
 atlas_code_quant/logs/*.jsonl
@@ -216,6 +218,7 @@ atlas_code_quant/reports/backtest_metrics_*.json
 # Keep scorecard snapshots local by default
 reports/*_scorecard.json
 reports/*_scorecard_latest.md
+reports/evidence_*.png
 
 # Paper / runtime churn under quant data (no versionar)
 atlas_code_quant/data/operation/snapshots/
