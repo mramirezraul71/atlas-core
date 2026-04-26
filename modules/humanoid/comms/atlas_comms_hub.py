@@ -289,6 +289,9 @@ class AtlasCommsHub:
         self._net_cache_ts = 0.0
         self._net_cache_offline = False
         self._net_cache_diag: Dict[str, Any] = {}
+        self._last_tunnel_ok_ts = 0.0
+        self._cloudflare_alert_lock = threading.Lock()
+        self._cloudflare_alert_last: Dict[str, float] = {}
         self._clawd_state_lock = threading.Lock()
         self._clawd_backoff_until = 0.0
         self._clawd_fail_streak = 0
@@ -365,6 +368,58 @@ class AtlasCommsHub:
         except Exception:
             v = 2.0
         return max(0.8, min(v, 8.0))
+
+    def _tunnel_probe_grace_s(self) -> float:
+        try:
+            v = float((os.getenv("ATLAS_COMMS_TUNNEL_GRACE_S") or "180").strip() or "180")
+        except Exception:
+            v = 180.0
+        return max(0.0, min(v, 1800.0))
+
+    def _cloudflare_alert_cooldown_s(self) -> float:
+        try:
+            v = float(
+                (os.getenv("ATLAS_COMMS_CLOUDFLARE_ALERT_COOLDOWN_S") or "900").strip() or "900"
+            )
+        except Exception:
+            v = 900.0
+        return max(30.0, min(v, 86400.0))
+
+    def _is_transient_tunnel_error(self, reason: str) -> bool:
+        low = (reason or "").strip().lower()
+        if not low:
+            return False
+        if "process_check_error" in low:
+            return True
+        if "health_url_fail" not in low:
+            return False
+        transient_markers = (
+            "timeout",
+            "timed out",
+            "temporarily unavailable",
+            "temporary failure",
+            "name resolution",
+            "connection reset",
+            "winerror 10060",
+            "winerror 10051",
+            "winerror 10054",
+        )
+        return any(token in low for token in transient_markers)
+
+    def _allow_cloudflare_alert_emit(self, signature: str) -> bool:
+        sig = hashlib.sha1((signature or "cloudflare_alert_default").encode("utf-8")).hexdigest()
+        now = time.time()
+        cooldown_s = self._cloudflare_alert_cooldown_s()
+        with self._cloudflare_alert_lock:
+            last = float(self._cloudflare_alert_last.get(sig) or 0.0)
+            if now - last < cooldown_s:
+                return False
+            self._cloudflare_alert_last[sig] = now
+            stale_before = now - (cooldown_s * 4.0)
+            for k, ts in list(self._cloudflare_alert_last.items()):
+                if ts < stale_before:
+                    self._cloudflare_alert_last.pop(k, None)
+        return True
 
     def _clawd_timeout_s(self) -> float:
         try:
@@ -1158,15 +1213,32 @@ class AtlasCommsHub:
                 and self._net_cache_diag
             ):
                 return bool(self._net_cache_offline), dict(self._net_cache_diag)
+            last_tunnel_ok_ts = float(self._last_tunnel_ok_ts or 0.0)
 
         tunnel_up, tunnel_reason = self._cloudflare_tunnel_up()
         net_up, net_reason = self._internet_up()
+        if tunnel_up:
+            with self._net_cache_lock:
+                self._last_tunnel_ok_ts = now
+            last_tunnel_ok_ts = now
+        elif (
+            net_up
+            and last_tunnel_ok_ts > 0
+            and self._is_transient_tunnel_error(tunnel_reason)
+            and (now - last_tunnel_ok_ts) <= self._tunnel_probe_grace_s()
+        ):
+            tunnel_up = True
+            tunnel_reason = f"transient_probe_grace:{_truncate(str(tunnel_reason), 140)}"
         offline = not (tunnel_up and net_up)
+        tunnel_last_ok_age = None
+        if last_tunnel_ok_ts > 0:
+            tunnel_last_ok_age = max(0.0, now - last_tunnel_ok_ts)
         diag = {
             "tunnel_up": tunnel_up,
             "tunnel_reason": tunnel_reason,
             "internet_up": net_up,
             "internet_reason": net_reason,
+            "tunnel_last_ok_age_s": round(tunnel_last_ok_age, 3) if tunnel_last_ok_age is not None else None,
         }
         if offline:
             self._append_snapshot("NETWORK_OFFLINE_MODE", diag)
@@ -2010,15 +2082,29 @@ class AtlasCommsHub:
                     {"message_id": message_id, "channel": "cloudflare", "code": code},
                 )
                 return {"ok": True, "channel": "cloudflare", "code": code}
-            self._emit_ops_critical(
-                "Urgent customer issue detected but cloudflare alert failed.",
-                {"message_id": message_id, "error": err, "http_code": code},
-            )
+            fail_sig = f"cloudflare_alert_fail:{code}:{_truncate(err or 'unknown', 100)}"
+            if self._allow_cloudflare_alert_emit(fail_sig):
+                self._emit_ops_critical(
+                    "Urgent customer issue detected but cloudflare alert failed.",
+                    {"message_id": message_id, "error": err, "http_code": code},
+                )
+            else:
+                self._append_snapshot(
+                    "ATLAS_COMMS_URGENT_ALERT_SUPPRESSED",
+                    {"message_id": message_id, "channel": "cloudflare", "reason": "cooldown", "code": code},
+                )
             return {"ok": False, "channel": "cloudflare", "error": err, "code": code}
-        self._emit_ops_critical(
-            "Urgent customer issue detected (no ATLAS_CLOUDFLARE_ALERT_URL configured).",
-            {"message_id": message_id, "user_id": user_id, "message": _truncate(message, 260)},
-        )
+        missing_sig = "cloudflare_alert_missing_url"
+        if self._allow_cloudflare_alert_emit(missing_sig):
+            self._emit_ops_critical(
+                "Urgent customer issue detected (no ATLAS_CLOUDFLARE_ALERT_URL configured).",
+                {"message_id": message_id, "user_id": user_id, "message": _truncate(message, 260)},
+            )
+        else:
+            self._append_snapshot(
+                "ATLAS_COMMS_URGENT_ALERT_SUPPRESSED",
+                {"message_id": message_id, "channel": "ops_fallback", "reason": "cooldown"},
+            )
         self._append_snapshot(
             "ATLAS_COMMS_URGENT_ALERT",
             {"message_id": message_id, "channel": "ops_fallback", "configured": False},
